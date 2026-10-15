@@ -283,7 +283,7 @@ fn list_filter_sql(params: &ListParams) -> (String, Vec<String>) {
     // da-ghlx: default-filter review markers (`extra_metadata.flag =
     // true`, da-dnnn) and protocol notes (`extra_metadata.meta =
     // true`, da-xn8j).
-    if !params.include_meta {
+    if !params.include_meta && !params.include_notes {
         sql.push_str(&format!(" AND {NOT_FLAG_OR_META_SQL}"));
     }
     // da-lc26c: entries that describe the database — specs, layouts —

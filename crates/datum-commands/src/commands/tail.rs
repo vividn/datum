@@ -444,14 +444,12 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
         limit,
         head: args.oldest_first,
         reverse: args.reverse,
-        // da-ghlx: `--show-meta` (alias `--show-all-metadata`) flips
-        // the default-hide filter on `extra_metadata.flag = true`
-        // (da-dnnn review markers) and `extra_metadata.meta = true`
-        // (da-xn8j protocol notes). Default off — those rows live
-        // off the live tail surface and are surfaced via
-        // `datum check flags` / `datum meta show <field>` instead.
-        // `-A` shows everything, the meta fields' entries (da-lc26c) too.
+        // `--show-meta` (alias `--show-all-metadata`) and `-A` add the
+        // meta fields' entries (da-lc26c), which `_N` skips too. A flag
+        // marker or meta note is a row like any other, so `_1` is always
+        // the newest row tail shows (vividn's B9, da-9e02u).
         include_meta: args.show_meta || args.output()?.show == crate::render::Show::All,
+        include_notes: true,
         // `--above` names a row, which `tail_entries_with_default_count` reads.
         before: None,
     })

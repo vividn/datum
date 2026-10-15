@@ -135,8 +135,9 @@ pub const TERMINAL_VERBS: &[&str] = &["end", "stop"];
 /// the entire entry to that verb instead of being recorded as a literal
 /// state string. `switch <field> end|stop|start` is rewritten to
 /// `end|stop|start <field>` so the user's intent ("end the switch
-/// block") routes through the correct verb body.
-pub const SWITCH_PROMOTE_VERBS: &[&str] = &["end", "stop", "start"];
+/// block") routes through the correct verb body. `off` is `end` (vividn's
+/// B9, da-9e02u): a literal «off» is `'"off"'` or `str://off`.
+pub const SWITCH_PROMOTE_VERBS: &[&str] = &["end", "stop", "start", "off"];
 
 /// A single alias-expansion event. Rendered onto the entry's
 /// `alias_chain` column at write time.
@@ -213,7 +214,7 @@ pub fn apply_terminal_verb_override(mut argv: Vec<String>) -> Vec<String> {
 
 /// Rewrite `datum switch <field> <verb> [args...]` → `datum <verb> <field>
 /// [args...]` where `<verb>` ∈ [`SWITCH_PROMOTE_VERBS`] (currently
-/// `end`/`stop`/`start`) and `<field>` is not itself a known subcommand.
+/// `end`/`stop`/`start`, and `off` as `end`) and `<field>` is not itself a known subcommand.
 /// Without this rewrite, the switch parser would seal `end`/`stop`/`start`
 /// as a literal state string rather than routing through the verb body.
 pub fn apply_switch_promote_override(argv: Vec<String>) -> Vec<String> {
@@ -244,6 +245,11 @@ pub fn apply_switch_promote_override(argv: Vec<String>) -> Vec<String> {
     let _switch = iter.next();
     let field = iter.next().expect("argv[2]");
     let verb = iter.next().expect("argv[3]");
+    let verb = if verb == "off" {
+        "end".to_string()
+    } else {
+        verb
+    };
     let mut out = Vec::with_capacity(iter.size_hint().0 + 3);
     out.push(bin);
     out.push(verb);
@@ -1408,6 +1414,24 @@ mod tests {
         let (argv, _) =
             expand_argv(v(&["datum", "switch", "project", "start"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "start", "project"]));
+    }
+
+    /// vividn's B9 (da-9e02u): `off` is `end`, verb-first and field-first;
+    /// a quoted `"off"` or `str://off` is the literal state.
+    #[test]
+    fn switch_promote_off_is_end() {
+        for words in [
+            &["datum", "switch", "light", "off"][..],
+            &["datum", "light", "switch", "off"],
+        ] {
+            let (argv, _) = expand_argv(v(words), &NoResolver).unwrap();
+            assert_eq!(argv, v(&["datum", "end", "light"]), "{words:?}");
+        }
+        for literal in [r#""off""#, "str://off"] {
+            let words = ["datum", "switch", "light", literal];
+            let (argv, _) = expand_argv(v(&words), &NoResolver).unwrap();
+            assert_eq!(argv, v(&words));
+        }
     }
 
     #[test]

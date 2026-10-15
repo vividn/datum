@@ -943,31 +943,42 @@ fn tail_json_refuses_the_block_form() {
     );
 }
 
+/// vividn's B9 (da-9e02u): no row is hidden from tail's numbering. A flag
+/// marker and a meta note are listed like any row, so `_1` is always the
+/// newest row tail shows; `--show-meta` adds only the meta fields' entries,
+/// which `_N` skips as well.
 #[test]
-fn tail_hides_flag_and_meta_rows_by_default_and_shows_with_flag() {
-    // da-ghlx: end-to-end through tail_entries: a flagged row is
-    // hidden by default; `--show-meta` brings it back into the tail.
+fn tail_lists_flag_and_meta_rows_and_one_is_its_newest_row() {
     let db = fresh_db();
-    insert(&db, "mood", Verb::Switch, 60); // plain tracked row
-                                           // Flagged row via `datum flag`-shaped extra_metadata.
-    let mut flagged = Entry::new("mood", Verb::Point, None, None, Some(t_at(120)), None, "d1");
-    flagged.extra_metadata = Some(json!({"flag": true}));
-    db.insert_entry(&flagged).unwrap();
+    insert(&db, "mood", Verb::Switch, 60);
+    let marked = |mins, key: &str| {
+        let mut e = Entry::new(
+            "mood",
+            Verb::Point,
+            None,
+            None,
+            Some(t_at(mins)),
+            None,
+            "d1",
+        );
+        e.extra_metadata = Some(json!({ key: true }));
+        db.insert_entry(&e).unwrap();
+        e
+    };
+    marked(90, "meta");
+    let flagged = marked(120, "flag");
 
-    // Default tail (show_meta=false): plain row only.
-    let default_rows = tail_entries(&tail_args(), &db).unwrap();
-    assert_eq!(
-        default_rows.len(),
-        1,
-        "default tail hides flagged rows; got slugs: {:?}",
-        default_rows.iter().map(|e| &e.slug).collect::<Vec<_>>(),
-    );
-
-    // --show-meta surfaces both rows.
-    let mut args = tail_args();
-    args.show_meta = true;
-    let all_rows = tail_entries(&args, &db).unwrap();
-    assert_eq!(all_rows.len(), 2, "--show-meta must surface flagged rows");
+    let rows = tail_entries(&tail_args(), &db).unwrap();
+    assert_eq!(rows.len(), 3, "a flag and a meta note are listed");
+    let newest = rows.last().unwrap();
+    assert_eq!(newest.hid, flagged.hid);
+    let ordinals = datum_core::ids::quick_ordinals(&db).unwrap();
+    assert_eq!(ordinals.get(&newest.hid), Some(&1));
+    let one = datum_core::ids::resolve_quickid_single(&db, "_1").unwrap();
+    assert_eq!(one.hid, newest.hid, "`_1` names the row tail shows first");
+    for (i, row) in rows.iter().rev().enumerate() {
+        assert_eq!(ordinals.get(&row.hid), Some(&(i + 1)), "{:?}", row.slug);
+    }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

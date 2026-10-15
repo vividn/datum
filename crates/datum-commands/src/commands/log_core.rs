@@ -1344,10 +1344,16 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
         );
     }
     let following_state = post_bare.into_iter().next().unwrap();
+    // `end`/`stop`/`off` after the comma is the field off, as before it
+    // (vividn's B9, da-9e02u); under `-I` every word is the literal state.
+    let following_state = match following_state.as_str() {
+        "end" | "stop" | "off" if !args.string_state => "false".to_string(),
+        _ => following_state,
+    };
     args.rest.push(format!("following_state={following_state}"));
-    // da-b4k5: in chain context the `end`/`stop`/`start` keywords mean
-    // the same thing they do as a standalone verb — `false`/`false`/
-    // `true`. The non-chain path achieves this by rewriting `switch f
+    // da-b4k5: in chain context the `end`/`stop`/`off`/`start` keywords
+    // mean the same thing they do as a standalone verb — `false` for the
+    // first three, `true`. The non-chain path achieves this by rewriting `switch f
     // end` to `end f` so `Action::Stop` runs (which then sets
     // `state=false`). The chain path can't go through that rewrite
     // without losing the chain, so translate the keyword to the
@@ -1360,14 +1366,14 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     // must keep "end" as the first word of the state, not translate it
     // to `state=false` (and then mis-peel "of" as the duration). So the
     // keyword translation is suppressed in string-state mode; a user who
-    // wants the keyword semantics simply omits `-I`. (Post-comma keywords
-    // are literal in BOTH modes — there is no tail translation.)
+    // wants the keyword semantics simply omits `-I`, and the tail above
+    // stays literal under it too.
     let leading_keyword_idx = args
         .rest
         .iter()
         .position(|t| !t.contains('='))
         .filter(|_| !args.string_state)
-        .filter(|&i| matches!(args.rest[i].as_str(), "end" | "stop" | "start"));
+        .filter(|&i| matches!(args.rest[i].as_str(), "end" | "stop" | "off" | "start"));
     if let Some(idx) = leading_keyword_idx {
         let keyword = args.rest.remove(idx);
         let state_kv = match keyword.as_str() {
@@ -2286,6 +2292,29 @@ mod tests {
         assert_eq!(args.duration.duration.as_deref(), Some("14m"));
     }
 
+    /// vividn's B9 (da-9e02u): `off` is `end` on either side of the comma,
+    /// and so are `end` and `stop` after it.
+    #[test]
+    fn then_chain_translates_off_end_stop_to_false_on_both_sides() {
+        let mut args = switch_args(&["off", "14m", ",", "Y"]);
+        extract_switch_then_chain(&mut args).unwrap();
+        assert!(
+            args.rest.iter().any(|t| t == "state=false"),
+            "{:?}",
+            args.rest
+        );
+        assert_eq!(args.duration.duration.as_deref(), Some("14m"));
+        for word in ["off", "end", "stop"] {
+            let mut args = switch_args(&["X", "14m", ",", word]);
+            extract_switch_then_chain(&mut args).unwrap();
+            assert!(
+                args.rest.iter().any(|t| t == "following_state=false"),
+                "{word}: {:?}",
+                args.rest
+            );
+        }
+    }
+
     /// da-b4k5: `start` maps to `state=true`, mirroring the non-chain
     /// `start <field>` shorthand.
     #[test]
@@ -2636,9 +2665,9 @@ mod tests {
 
     #[test]
     fn switch_string_state_post_comma_keyword_is_literal() {
-        // da-vh30 decision: post-comma keywords are literal in BOTH modes
-        // (there is no tail translation) — `switch body -I a b 5m , end`
-        // chains into a literal "end" state, not state=false.
+        // da-vh30: under `-I` a post-comma keyword is literal too —
+        // `switch body -I a b 5m , end` chains into a literal "end" state,
+        // where without `-I` it is false (da-9e02u).
         let db = Db::open_in_memory().unwrap();
         let mut args = LogArgs::with_field("body");
         args.rest = ["a", "b", "5m", ",", "end"]

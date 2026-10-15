@@ -1047,3 +1047,29 @@ fn switch_chain_with_non_keyword_state_unchanged() {
     assert_eq!(e.following_state.as_ref(), Some(&json!("sit")));
     assert_eq!(e.duration_seconds(), Some(5 * 60));
 }
+
+/// vividn's B9 (da-9e02u): `switch light off` turns light off, as `end light`
+/// does, verb-first and field-first, where datum stored a running «off».
+/// A state named off is `'"off"'` or `str://off`.
+#[test]
+fn switch_off_is_false_and_the_literal_is_quoted_or_str_marked() {
+    for words in [&["switch", "light", "off"][..], &["light", "switch", "off"]] {
+        let db = fresh_db();
+        run_cli(&["switch", "light", "on", "-t=-2"], &db).expect("on");
+        run_cli(words, &db).expect("off");
+        let entries = datum_core::test_util::logged_entries(&db, "light");
+        let off = entries
+            .iter()
+            .max_by_key(|e| e.occur_time.as_ref().map(|t| t.utc))
+            .unwrap();
+        assert_eq!(off.state, Some(json!(false)), "{words:?}");
+        let now = chrono::Utc::now();
+        assert_eq!(db.get_active_state("light", now).unwrap(), json!(false));
+    }
+    for literal in [r#""off""#, "str://off"] {
+        let db = fresh_db();
+        run_cli(&["switch", "light", literal], &db).expect("literal");
+        let entry = &datum_core::test_util::logged_entries(&db, "light")[0];
+        assert_entry_matches!(entry, field: "light", verb: "switch", state: "off");
+    }
+}

@@ -237,6 +237,10 @@ pub struct ListParams {
     /// when the caller wants the full row set (e.g. via `datum tail
     /// --show-meta`, or `datum check flags`).
     pub include_meta: bool,
+    /// Keep the flag markers and meta notes whatever `include_meta` says,
+    /// and hide only the meta fields' entries: `tail`, whose `_N` count
+    /// them (vividn's B9, da-9e02u).
+    pub include_notes: bool,
     /// Only the rows listed before a cursor row, given as its metric
     /// timestamp and slug: the order is `(metric, slug)`, and a row with no
     /// time sorts before every row with one. What a pager asks with, since

@@ -413,6 +413,15 @@ pub fn infer_type(value: &str) -> Option<Value> {
         return Some(Value::String(".".to_string()));
     }
 
+    // `str://` makes what follows a string as typed: `str://off` is «off»,
+    // where a bare `off` is a switch's false (da-9e02u). A literal
+    // `ref://…` keeps the mark, which is how it is stored (da-s5k2s).
+    if let Some(s) = value.strip_prefix(STR_MARK) {
+        if !s.starts_with(REF_MARK) {
+            return Some(Value::String(s.to_string()));
+        }
+    }
+
     if value.eq_ignore_ascii_case("true") {
         return Some(Value::Bool(true));
     }
@@ -720,6 +729,22 @@ mod tests {
             infer_type(r#",ref://a:b,"ref://c:d","#),
             Some(json!(["ref://a:b", "str://ref://c:d"]))
         );
+    }
+
+    /// da-9e02u: `str://` makes what follows a string as typed, whatever
+    /// it would otherwise read as; `str://ref://…` keeps its mark.
+    #[test]
+    fn infer_type_str_mark_is_a_literal_string() {
+        for (typed, want) in [
+            ("str://off", json!("off")),
+            ("str://true", json!("true")),
+            ("str://5", json!("5")),
+            ("str://a,b", json!("a,b")),
+            ("str://", json!("")),
+            ("str://ref://a:b", json!("str://ref://a:b")),
+        ] {
+            assert_eq!(infer_type(typed), Some(want), "{typed}");
+        }
     }
 
     /// da-qzfnb: a single-quoted string means what the double-quoted one

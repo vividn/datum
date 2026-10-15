@@ -616,8 +616,7 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         takes_value: false,
         value_hint: None,
         value_optional: false,
-        summary:
-            "Include flag/meta and spec/layout/alias/view/command/index entries (hidden by default)",
+        summary: "Include spec/layout/alias/view/command/index entries (hidden by default)",
         long_description: None,
         left_override: Some("    --show-meta       (alias: --show-all-metadata)"),
     },
@@ -996,9 +995,9 @@ const SYNC_BODY: &str = "USAGE:\n  datum sync\n  datum sync status [--show-revok
 
 const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts [list] [--json]\n  datum conflicts resolve <HID> [--use-a | --use-b | --prefer-a | --prefer-b | --merge] [KEY=a|b|VALUE…]\n\nA conflict is a value two copies of the database set without seeing each\nother's: one key of one entry given two values, or an entry deleted on one\ncopy and edited on another. The entry shows one of them (the later clock's;\na delete stands), and every copy that holds both lists the same sides,\nlettered in clock order: A the earlier, B the later, C a third. The letters\nare the same on every copy.\n\n  list        Every entry with conflicts, each contested key's sides: the\n              letter, the device that set it, when, and the value.\n              --json: each entry's conflicts as they are stored.\n  resolve     One edit that saw every side, so it settles them on every\n              copy it reaches. A pick names a key: KEY=a or KEY=b takes\n              that side's value, KEY=VALUE a new one, typed as any data\n              value (so the text «a» is KEY='\"a\"'); `deleted=a|b|true|false`\n              for an entry deleted on one side. The keys not picked keep\n              what the entry shows, so a bare resolve settles and changes\n              no data; or, when one is named, follow a strategy over A\n              and B, as `update --strategy` combines old and new:\n                --use-a      A's value; a key only B has is unset\n                --use-b      B's value; a key only A has is unset\n                --prefer-a   A's value; a key only one has is kept\n                --prefer-b   B's value; a key only one has is kept\n                --merge      both, as one array without duplicates\n              A strategy is over two sides: a key with more takes a pick.\n              `deleted` follows it as any key does: a delete that is A is\n              kept by --use-a or --prefer-a and undone by --use-b or\n              --prefer-b. --merge refuses it, a delete and an edit being\n              no array: pick `deleted=a` or `deleted=b`.\n\nAn ordinary edit of a contested key settles it too. Integrity findings —\ndouble opens, orphan ends, overlaps, repeated states — are reported by\n`datum check` and resolved by fixing the data.\n";
 
-const FLAG_BODY: &str = "USAGE:\n  datum flag <FIELD> [COMMENT...] [-y / -q / -d / -t / -z]\n\nAttaches a 'come back to this' marker to <FIELD>. Stored as a Verb::Point\nentry with the comment as its `state` and `extra_metadata = { flag: true }`.\nThe bare form `datum flag <FIELD>` records a marker at now with no comment.\n\nDefault rendering hides flags from `datum tail` and `datum now`; use\n`tail --show-meta` to include them, or `datum check` to surface them as\npending review markers. `datum del <hid>` clears one; editing its comment\ndoes not. `datum meta` marks its notes the same way, with `meta: true`.\n";
+const FLAG_BODY: &str = "USAGE:\n  datum flag <FIELD> [COMMENT...] [-y / -q / -d / -t / -z]\n\nAttaches a 'come back to this' marker to <FIELD>. Stored as a Verb::Point\nentry with the comment as its `state` and `extra_metadata = { flag: true }`.\nThe bare form `datum flag <FIELD>` records a marker at now with no comment.\n\n`datum now` and the dayview leave flags out; `datum tail` lists them as it\nlists any row, and `datum check` surfaces them as pending review markers. `datum del <hid>` clears one; editing its comment\ndoes not. `datum meta` marks its notes the same way, with `meta: true`.\n";
 
-const META_BODY: &str = "USAGE:\n  datum meta <FIELD> <TEXT>...\n  datum meta show <FIELD>\n\nAttach (or list) a protocol-change note on <FIELD>. Stored as a Verb::Point\nentry with the note as its `state` and `extra_metadata = { meta: true }`.\n`meta show` lists every note attached to <FIELD> in create_time order.\n\nLike `flag`, meta rows are filtered from default tail / now views\n(use `tail --show-meta` to include them).\n";
+const META_BODY: &str = "USAGE:\n  datum meta <FIELD> <TEXT>...\n  datum meta show <FIELD>\n\nAttach (or list) a protocol-change note on <FIELD>. Stored as a Verb::Point\nentry with the note as its `state` and `extra_metadata = { meta: true }`.\n`meta show` lists every note attached to <FIELD> in create_time order.\n\nLike `flag`, a meta note is left out of `now` and the dayview, and `tail`\nlists it as it lists any row.\n";
 
 const KIT_BODY: &str = "USAGE:\n  datum kit install <PATH|-> [--force] [--yes] [--dry-run]\n  datum kit export <NAME> [PATH]\n  datum kit list\n  datum kit uninstall <NAME>\n  datum kit show <NAME>\n\nA kit is a TOML bundle of field specs, aliases, SQL views, indices, and\nlevel-1/2 commands. Install writes the kit's rows tagged with the kit id,\nkeeping a field's own spec unless --force (the bare one a field's first\nlog wrote is the kit's to replace); uninstall drops every row with that\nid and gives a logged field its bare spec back. Export round-trips the\ninstalled rows and the kit's [kit] table back to TOML (defaults to\nstdout when path is omitted).\nInstall reads the TOML from stdin when PATH is `-`; --dry-run prints\nwhat the kit brings and writes nothing; --yes approves its indices\nwithout asking.\n\nList shows every installed kit, its version and what it installed. Show\nprints a single kit's version, description and installed contents, and\nnames each index that would not build on this device.\n";
 
@@ -1973,7 +1972,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "transition a field to a new state",
         intro: SWITCH_INTRO,
         long_description: Some(
-            "A `:` inside a state is reserved: the state is then a full slug \
+            "`datum switch light off` (or `end`, `stop`) turns the field off, \
+             as `datum end light` does; a state named off is `'\"off\"'` or \
+             `str://off`.\n\n\
+             A `:` inside a state is reserved: the state is then a full slug \
              `field:id` naming another entry, whatever field it is logged on \
              — `datum switch media book:great_gatsby` refers to the entry \
              `book:great_gatsby`. A state without one refers to a document \

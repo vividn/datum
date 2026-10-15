@@ -70,9 +70,8 @@ pub(crate) fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
         p.extras.table = true;
         Ok(())
     }));
-    // da-ghlx: `--show-meta` (alias `--show-all-metadata`) opts into
-    // the review-marker / protocol-note rows that the live tail
-    // surface hides by default.
+    // `--show-meta` (alias `--show-all-metadata`) opts into the meta
+    // fields' entries (da-lc26c) that an unnamed tail hides by default.
     r.push(local_switch(None, Some("show-meta"), |p| {
         p.extras.show_meta = true;
         Ok(())

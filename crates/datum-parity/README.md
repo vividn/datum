@@ -262,6 +262,13 @@ following are deliberate divergences and **not** regressions:
   and nothing else of relaxed-json — not unquoted keys, not bare words
   inside brackets.
 
+* **`switch F off`** (da-9e02u, vividn's B9, 10-15). Datum stores a running
+  state named «off»; daydumb ends the field, as `switch F end` and `stop`
+  do in both, after the `,` of a chain too. A literal «off» is `'"off"'` or
+  `str://off`: `str://` makes what follows a string as typed, in any data
+  value (datum stores `str://off` as typed). `str://ref://…` keeps its
+  mark, which is how a literal reference is stored (da-s5k2s).
+
 [`GOLDEN_TZ`]: src/lib.rs
 
 ## Adding fixtures

@@ -62,6 +62,7 @@ pub(crate) fn live_window_params(fetch_start: DateTime<Utc>, end: DateTime<Utc>)
         // da-ghlx: dayview/nowview are live-data surfaces; review markers /
         // protocol notes don't belong in the visual render.
         include_meta: false,
+        include_notes: false,
         before: None,
     }
 }

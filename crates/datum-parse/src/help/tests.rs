@@ -129,7 +129,7 @@ OPTIONS:
   -q, --quick           Go back 5 min (stackable: -qq=10 min, ...)
   -w, --watch [INT]     Live scrollable view; stream entries (poll 1s)
       --table           Legacy columnar view (default: info-line)
-      --show-meta       (alias: --show-all-metadata)  Include flag/meta and spec/layout/alias/view/command/index entries (hidden by default)
+      --show-meta       (alias: --show-all-metadata)  Include spec/layout/alias/view/command/index entries (hidden by default)
       --above <ID>      Only the entries listed above this one, timeless ones included
 
 OUTPUT:

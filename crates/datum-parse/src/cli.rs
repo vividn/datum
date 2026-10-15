@@ -410,12 +410,10 @@ pub struct TailArgs {
     /// state-filter, not as a field list. Stored as raw strings;
     /// normalization happens in the command layer at compare time.
     pub state_filter: Option<Vec<String>>,
-    /// `--show-meta`: include `extra_metadata.flag = true` (da-dnnn) and
-    /// `extra_metadata.meta = true` (da-xn8j) rows. Default is to hide
-    /// them — they're review markers / out-of-band notes, not tracked
-    /// data. See da-ghlx. It also brings back the meta fields' entries —
-    /// specs, layouts, aliases, views, kit commands and kit index definitions
-    /// (da-lc26c, da-b3752, da-fwwtn) — which an unnamed tail leaves out.
+    /// `--show-meta`: bring back the meta fields' entries — specs, layouts,
+    /// aliases, views, kit commands and kit index definitions (da-lc26c,
+    /// da-b3752, da-fwwtn) — which an unnamed tail leaves out, as `_N`
+    /// does. A flag marker or meta note is listed either way (da-9e02u).
     pub show_meta: bool,
     /// `--above <ID>`: only the rows listed above that entry, whatever the
     /// page that listed it (da-mhcla). Unlike `-t` it reaches the timeless
