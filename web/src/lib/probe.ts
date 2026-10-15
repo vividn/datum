@@ -15,6 +15,7 @@ interface Probed {
 	get(file: string): Promise<Uint8Array | null>;
 	put(file: string, bytes: Uint8Array): Promise<void>;
 	remove(file: string): Promise<void>;
+	size(file: string): Promise<number | null>;
 }
 
 /**
@@ -38,6 +39,8 @@ export async function probe(dest: Probed, listed?: (file: string) => Promise<boo
 			async () => {
 				const back = await dest.get(file);
 				if (!back || new TextDecoder().decode(back) !== new TextDecoder().decode(bytes)) throw new Error('the probe read back differs');
+				// A plan asks each file's length back before it rotates (da-5okjx).
+				if ((await dest.size(file)) !== bytes.length) throw new Error("the probe's length (HEAD) is not the one written");
 			}
 		],
 		['delete', () => dest.remove(file)]

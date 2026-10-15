@@ -124,8 +124,8 @@ describe('an S3-compatible destination', () => {
 			const index = `${PREFIX}index.json`;
 			assert.deepEqual(
 				s3.requests.slice(before).map((r) => r.replace(/\.slot1\..*/, '.slot1')),
-				// The listing, the CLI's index, its slot, the re-read, the put, the listing.
-				[`GET ${index}`, `GET ${index}`, `PUT ${PREFIX}datum.slot1`, `GET ${index}`, `PUT ${index}`, `GET ${index}`]
+				// The listing, the CLI's index, its slot and its length, the re-read, the put, the listing.
+				[`GET ${index}`, `GET ${index}`, `PUT ${PREFIX}datum.slot1`, `HEAD ${PREFIX}datum.slot1`, `GET ${index}`, `PUT ${index}`, `GET ${index}`]
 			);
 			assert.deepEqual(app.errors, []);
 		});

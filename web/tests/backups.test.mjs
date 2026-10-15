@@ -163,6 +163,64 @@ describe('«Backups»', () => {
 		}, DEBUG);
 	});
 
+	// da-5okjx: a run removed the backup it replaced on the destination's
+	// yes alone, so a put cut short lost the good backup with the bad.
+	test('a slot that arrives short fails the run and keeps the backup it would replace; a whole one replaces it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
+			const sheet = await openSheet(page);
+			const plan = await addPlan(sheet, 'hourly', 'b5');
+			await plan.locator('li[data-slot="0"]').waitFor();
+			await app.clock.forward(HOUR);
+			await plan.locator('button[data-backup="now"]').click();
+			await plan.locator('li[data-slot="1"]').waitFor();
+
+			/** The file the bucket's index names for slot 1. */
+			const slotOne = () =>
+				page.evaluate(async () => {
+					const index = await window.datum.backupKinds.memory.open({ bucket: 'b5' }).get('index.json');
+					return JSON.parse(new TextDecoder().decode(index)).dbs.DEBUG.backups.find((b) => b.slot === 1).file;
+				});
+			const held = (file) => page.evaluate(async (file) => (await window.datum.backupKinds.memory.open({ bucket: 'b5' }).get(file)) !== null, file);
+			const good = await slotOne();
+
+			// The destination says yes to every put, and keeps a slot file but for its last byte.
+			await page.evaluate(() => {
+				const memory = window.datum.backupKinds.memory;
+				const whole = memory.open;
+				memory.open = (config) => {
+					const dest = whole(config);
+					return { ...dest, put: (file, bytes) => dest.put(file, file === 'index.json' ? bytes : bytes.subarray(0, -1)) };
+				};
+				memory.open.whole = whole;
+			});
+			// The same period: this run replaces slot 1's file.
+			await app.clock.forward(60_000);
+			await plan.locator('button[data-backup="now"]').click();
+			const alert = plan.locator('p.error[role="alert"]');
+			await alert.waitFor();
+			const [, got, want] = (await alert.innerText()).match(
+				/^DEBUG\.slot1\.\S+ reached the destination as (\d+) of (\d+) bytes; the backup it would replace is kept$/
+			);
+			assert.equal(Number(got), Number(want) - 1);
+			assert.equal(await slotOne(), good, 'the index names the short file');
+			assert.equal(await held(good), true, 'the good backup was removed');
+
+			// Whole again, the next run replaces it as before.
+			await page.evaluate(() => {
+				const memory = window.datum.backupKinds.memory;
+				memory.open = memory.open.whole;
+			});
+			await app.clock.forward(60_000);
+			await plan.locator('button[data-backup="now"]').click();
+			await until(slotOne, (file) => file !== good);
+			assert.equal(await held(good), false, 'the replaced backup was kept');
+			await alert.waitFor({ state: 'detached' });
+			assert.deepEqual(app.errors, []);
+		}, DEBUG);
+	});
+
 	test('restore shows the dry run’s counts, and after yes the database is the backup’s', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

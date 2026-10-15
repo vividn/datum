@@ -62,8 +62,8 @@ describe('SigV4, AWS’s S3 examples', () => {
 	});
 });
 
-test('the CORS rules allow this origin to GET, PUT and DELETE', () => {
+test('the CORS rules allow this origin to GET, HEAD, PUT and DELETE', () => {
 	assert.deepEqual(JSON.parse(corsRules('https://datum.day')), [
-		{ AllowedOrigins: ['https://datum.day'], AllowedMethods: ['GET', 'PUT', 'DELETE'], AllowedHeaders: ['*'], MaxAgeSeconds: 3000 }
+		{ AllowedOrigins: ['https://datum.day'], AllowedMethods: ['GET', 'HEAD', 'PUT', 'DELETE'], AllowedHeaders: ['*'], MaxAgeSeconds: 3000 }
 	]);
 });

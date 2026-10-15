@@ -38,6 +38,7 @@ import { findTab } from './layout/tree.js';
 import { isWidget } from './layout/types.js';
 import type { Layout, WidgetKindMeta } from './layout/types.js';
 import { KINDS } from './layout/registry.js';
+import { KINDS as BACKUP_KINDS, type DestinationKind } from './backups.js';
 import { syncConnect, syncLeads, syncOffer, syncStates, type Invite, type SyncState } from './sync.js';
 import type { SyncReport } from './syncProtocol.js';
 
@@ -113,6 +114,8 @@ export interface DatumConsole {
 	 * place's next save ran, or null when it is left without one.
 	 */
 	field(field?: string, verb?: Verb | null): Promise<RunResult | null>;
+	/** The backup destinations' kinds ($lib/backups.ts), by name: what a plan's `kind` opens. */
+	backupKinds: Record<string, DestinationKind>;
 }
 
 /** Publish the handle on `target` (the window, in the app). */
@@ -147,7 +150,8 @@ export function installConsole(target: Record<string, unknown>): void {
 		sync: { states: () => get(syncStates), leads: syncLeads, offer: syncOffer, connect: syncConnect },
 		bar: { pills: () => get(pills), setPills, removePill, last: () => get(last) },
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
-		field: openField
+		field: openField,
+		backupKinds: BACKUP_KINDS
 	};
 	target.datum = handle;
 }

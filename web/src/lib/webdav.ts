@@ -77,7 +77,7 @@ async function send(c: WebDavConfig, method: string, url: string, body?: Uint8Ar
 	throw new WebDavError(response.status, explain(response.status, response.statusText));
 }
 
-/** The destination: `get`, `put`, `remove` on files in the folder. */
+/** The destination: `get`, `put`, `remove`, `size` on files in the folder. */
 export function webdav(c: WebDavConfig) {
 	const at = (file: string) => folder(c) + encodeURIComponent(file);
 	return {
@@ -105,6 +105,10 @@ export function webdav(c: WebDavConfig) {
 			await send(c, 'DELETE', at(file)).catch((e) => {
 				if (!(e instanceof WebDavError && e.status === 404)) throw e;
 			});
+		},
+		async size(file: string): Promise<number | null> {
+			const length = (await send(c, 'HEAD', at(file))).headers.get('content-length');
+			return length === null ? null : Number(length);
 		}
 	};
 }
@@ -116,7 +120,7 @@ export const testConnection = (c: WebDavConfig): Promise<StepResult[]> => probe(
 export const corsHeaders = (origin: string): string =>
 	[
 		`Access-Control-Allow-Origin: ${origin}`,
-		'Access-Control-Allow-Methods: GET, PUT, DELETE, MKCOL',
+		'Access-Control-Allow-Methods: GET, HEAD, PUT, DELETE, MKCOL',
 		'Access-Control-Allow-Headers: Authorization',
 		'Access-Control-Max-Age: 3000'
 	].join('\n');

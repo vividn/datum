@@ -4,7 +4,7 @@
 // with the secret the server holds — the way S3 refuses a wrong secret.
 //
 // Path-style only (`/<bucket>/<key>`), and only what the destination uses:
-// PUT, GET and DELETE of an object, and ListObjectsV2 on a bucket. CORS is
+// PUT, GET, HEAD and DELETE of an object, and ListObjectsV2 on a bucket. CORS is
 // S3's: a preflight is answered by echoing the headers it asks for, which
 // is what makes `AllowedHeaders: ["*"]` cover `authorization`.
 
@@ -60,7 +60,7 @@ export async function startS3(buckets = ['backups']) {
 			if (!state.cors) return reply(res, 403);
 			return reply(res, 200, '', {
 				'access-control-allow-origin': origin,
-				'access-control-allow-methods': 'GET, PUT, DELETE',
+				'access-control-allow-methods': 'GET, HEAD, PUT, DELETE',
 				'access-control-allow-headers': req.headers['access-control-request-headers'] ?? '',
 				'access-control-max-age': '0'
 			});
@@ -93,6 +93,7 @@ export async function startS3(buckets = ['backups']) {
 		}
 		if (req.method === 'PUT') return objects.set(key, Buffer.concat(chunks)), reply(res, 200);
 		if (req.method === 'DELETE') return objects.delete(key), reply(res, 204);
+		if (req.method === 'HEAD') return objects.has(key) ? reply(res, 200, '', { 'content-length': objects.get(key).length }) : reply(res, 404);
 		// As S3 answers: `Last-Modified` and no `Cache-Control`. An hour back, so
 		// a browser's heuristic (RFC 9111 4.2.2) holds the object fresh for minutes.
 		if (req.method === 'GET')

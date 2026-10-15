@@ -15,7 +15,10 @@
 // CLI writes the period's slot file and a new index beside it, and exactly
 // the files it names as written are put back, the slot first and the index
 // last — the order the CLI itself keeps, so a run that dies halfway leaves
-// an index naming whole files — and the file it replaced is removed.
+// an index naming whole files — and the file it replaced is removed. A 2xx
+// is not taken for a whole file (da-5okjx): each slot file's length at the
+// destination is asked back and must be the length put, or the run fails
+// there, before the index names it and before anything is removed.
 //
 // A destination is three calls (`Destination`). The real kinds are an
 // S3-compatible bucket (da-pstzw, $lib/s3.ts) and a WebDAV folder
@@ -64,6 +67,8 @@ export interface Destination {
 	get(file: string): Promise<Uint8Array | null>;
 	put(file: string, bytes: Uint8Array): Promise<void>;
 	remove(file: string): Promise<void>;
+	/** The file's length as the destination holds it (a HEAD's `Content-Length`), or null when it does not say. */
+	size(file: string): Promise<number | null>;
 }
 
 /** One setting of a destination, as the widget asks for it. */
@@ -153,7 +158,8 @@ export const KINDS: Record<string, DestinationKind> = {
 			return {
 				get: async (file) => files.get(file) ?? null,
 				put: async (file, bytes) => void files.set(file, bytes),
-				remove: async (file) => void files.delete(file)
+				remove: async (file) => void files.delete(file),
+				size: async (file) => files.get(file)?.length ?? null
 			};
 		}
 	}
@@ -340,7 +346,16 @@ async function backupOne(plan: Plan, db: string): Promise<void> {
 	);
 	if (out.slot === null) return;
 	// The order the CLI keeps: the slot file, then the index, then what it replaced.
-	for (const file of out.written) if (file !== 'index.json') await dest.put(file, out.stage![file]);
+	for (const file of out.written) {
+		if (file === 'index.json') continue;
+		const want = out.stage![file].byteLength;
+		await dest.put(file, out.stage![file]);
+		const got = await dest.size(file);
+		if (got !== want)
+			throw new Error(
+				`${file} reached the destination ${got === null ? 'with no length to check' : `as ${got} of ${want} bytes`}; the backup it would replace is kept`
+			);
+	}
 	const now = await dest.get('index.json');
 	const ours = JSON.parse(new TextDecoder().decode(out.stage!['index.json']));
 	const next = merged(now && JSON.parse(new TextDecoder().decode(now)), ours, db, out.slot);

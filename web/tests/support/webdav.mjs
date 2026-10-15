@@ -2,7 +2,7 @@
 // on another origin than the app's, so the browser does real CORS and real
 // preflights against it, and every request's Basic auth is checked.
 //
-// Only what the destination uses: PUT, GET and DELETE of a file and MKCOL
+// Only what the destination uses: PUT, GET, HEAD and DELETE of a file and MKCOL
 // of a folder, under `/dav/`, which exists. A PUT into a folder that does
 // not exist is refused 409, as RFC 4918 has it. A refusal carries the CORS
 // headers too, as a server configured by the widget's note does.
@@ -32,7 +32,7 @@ export async function startWebDav() {
 		if (state.cors && req.headers.origin) res.setHeader('access-control-allow-origin', req.headers.origin);
 		if (req.method === 'OPTIONS') {
 			if (!state.cors) return reply(403);
-			res.setHeader('access-control-allow-methods', 'GET, PUT, DELETE, MKCOL');
+			res.setHeader('access-control-allow-methods', 'GET, HEAD, PUT, DELETE, MKCOL');
 			res.setHeader('access-control-allow-headers', 'Authorization');
 			return reply(200);
 		}
@@ -54,6 +54,11 @@ export async function startWebDav() {
 		}
 		if (req.method === 'GET') return files.has(path) ? reply(200, files.get(path)) : reply(404);
 		if (req.method === 'DELETE') return files.delete(path) ? reply(204) : reply(404);
+		if (req.method === 'HEAD') {
+			if (!files.has(path)) return reply(404);
+			res.setHeader('content-length', files.get(path).length);
+			return reply(200);
+		}
 		return reply(405);
 	});
 	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

@@ -88,7 +88,7 @@ async function send(c: S3Config, method: string, url: string, body?: Uint8Array)
 	throw new S3Error(tag('Code'), explain(c, response.status, tag('Code'), tag('Message')));
 }
 
-/** The destination: `get`, `put`, `remove` on files under the prefix. */
+/** The destination: `get`, `put`, `remove`, `size` on files under the prefix. */
 export function s3(c: S3Config) {
 	return {
 		async get(file: string): Promise<Uint8Array | null> {
@@ -101,6 +101,10 @@ export function s3(c: S3Config) {
 		},
 		put: async (file: string, bytes: Uint8Array) => void (await send(c, 'PUT', objectUrl(c, file), bytes)),
 		remove: async (file: string) => void (await send(c, 'DELETE', objectUrl(c, file))),
+		async size(file: string): Promise<number | null> {
+			const length = (await send(c, 'HEAD', objectUrl(c, file))).headers.get('content-length');
+			return length === null ? null : Number(length);
+		},
 		/** The keys under the prefix that start with `start` — the first thousand. */
 		async list(start = ''): Promise<string[]> {
 			const url = `${base(c)}?list-type=2&prefix=${encodeURIComponent(`${c.prefix ?? ''}${start}`)}`;
@@ -121,7 +125,7 @@ export const testConnection = (c: S3Config): Promise<StepResult[]> =>
 /** The CORS rules a bucket needs for this page, in the JSON S3 and R2 take. LIST is a GET on the bucket. */
 export const corsRules = (origin: string): string =>
 	JSON.stringify(
-		[{ AllowedOrigins: [origin], AllowedMethods: ['GET', 'PUT', 'DELETE'], AllowedHeaders: ['*'], MaxAgeSeconds: 3000 }],
+		[{ AllowedOrigins: [origin], AllowedMethods: ['GET', 'HEAD', 'PUT', 'DELETE'], AllowedHeaders: ['*'], MaxAgeSeconds: 3000 }],
 		null,
 		2
 	);
