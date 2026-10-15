@@ -405,3 +405,48 @@ fn a_glyph_factor_of_one_from_json_is_stored_unset() {
         "{json}"
     );
 }
+
+/// da-c1b6m: a dot is as tall as its lane times its scale, a fraction of
+/// the day and not pixels — the same in the dayview and the nowview, at a
+/// short band and a tall one. It was five minutes' width in the dayview,
+/// so a narrow day shrank it, and the nowview ignored the scale.
+#[test]
+fn a_dot_is_its_lane_times_its_scale_in_every_view_at_any_height() {
+    let env = Env::new();
+    env.run(&["occur", "coffee", "-t", "2026-04-27T12:00+00:00"]);
+    let (y, height, scale) = ("0.3", "0.2", "0.5");
+    env.run(&["spec", "set", "coffee", "--y", y, "--height", height]);
+    env.run(&["spec", "set", "coffee", "--glyph-scale", scale]);
+    let r = |svg: &str| -> f64 {
+        let fg = svg.split(r#"<circle class="point-fg""#).nth(1).unwrap();
+        let r = fg.split(r#" r=""#).nth(1).unwrap();
+        r.split('"').next().unwrap().parse().unwrap()
+    };
+    let bare = ["--margin", "0", "--time-axis-height", "0"];
+    for h in ["60", "200"] {
+        let dayview = env.run(
+            &[
+                &["dayview", "--width", "300", "--day-height", h],
+                &bare[..],
+                &["--label-width", "0", "--end-date", "2026-04-27"],
+            ]
+            .concat(),
+        );
+        let nowview = env.run(
+            &[
+                &["nowview", "--height", h],
+                &bare[..],
+                &["--context", "1h", "-t", "2026-04-27T12:00+00:00", "-o", "-"],
+            ]
+            .concat(),
+        );
+        let h: f64 = h.parse().unwrap();
+        for (view, svg) in [("dayview", &dayview), ("nowview", &nowview)] {
+            let tall = 2.0 * r(svg);
+            assert!(
+                (tall - 0.2 * 0.5 * h).abs() < 1.0,
+                "{view} at {h}px draws the dot {tall}px tall, not a tenth of the band"
+            );
+        }
+    }
+}

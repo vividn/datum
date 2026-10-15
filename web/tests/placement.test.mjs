@@ -73,9 +73,9 @@ describe('the Placement tab', () => {
 		return { saved };
 	}
 
-	/** Press at `y` inside the lane (a fraction of its box, or a pixel offset past it) and drag by `dy`. */
+	/** Press the middle of the lane, its bottom edge, or the middle of an occur dot's box (`dot`), and drag by `dy`. */
 	async function drag(page, at, dy) {
-		const box = await page.locator(LANE).boundingBox();
+		const box = await page.locator(at === 'dot' ? `${MODAL} .placement .dot` : LANE).boundingBox();
 		const x = box.x + box.width / 2;
 		const y = box.y + (at === 'bottom' ? box.height : box.height / 2);
 		await page.mouse.move(x, y);
@@ -94,8 +94,8 @@ describe('the Placement tab', () => {
 	test('a field nobody placed says so, and dragging writes `y`; an edge writes `height`', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
-			await app.run(['track', 'coffee', '--verb', 'occur']);
-			await app.run(['occur', 'coffee', '-t', '-30']);
+			await app.run(['track', 'coffee', '--verb', 'start']);
+			await app.run(['start', 'coffee', '-t', '-30']);
 			const hashed = await lane(app, 'coffee');
 			assert.equal((await spec(app, 'coffee')).y, undefined, 'nothing chose a lane yet');
 
@@ -130,9 +130,9 @@ describe('the Placement tab', () => {
 	test('a `y` set with no `height` is drawn where the band is, centred on it', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
-			await app.run(['track', 'coffee', '--verb', 'occur']);
+			await app.run(['track', 'coffee', '--verb', 'start']);
 			await setPlace(app, 'coffee', { y: 0.5 });
-			await app.run(['occur', 'coffee', '-t', '-30']);
+			await app.run(['start', 'coffee', '-t', '-30']);
 			const resolved = await lane(app, 'coffee');
 			assert.equal(round(resolved.y), 0.44, 'the band spans 0.44–0.56');
 
@@ -151,9 +151,9 @@ describe('the Placement tab', () => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch']);
 			await setPlace(app, 'mood', { y: 0.2, height: 0.25 });
-			await app.run(['track', 'coffee', '--verb', 'occur']);
+			await app.run(['track', 'coffee', '--verb', 'start']);
 			await setPlace(app, 'coffee', { y: 0.6, height: 0.1 });
-			await app.run(['occur', 'coffee', '-t', '-30']);
+			await app.run(['start', 'coffee', '-t', '-30']);
 
 			const { saved } = await openPlacement(page, 'coffee');
 			await page.locator(`${MODAL} .placement select`).selectOption('mood');
@@ -188,57 +188,77 @@ describe('the Placement tab', () => {
 		});
 	});
 
-	// da-c05v1: an occur field sizes its dot here, on the band, as it moves.
-	test("an occur field's size slider scales its dot on the band and in the spec; aspect widens it alone", async () => {
+	// da-c1b6m: an occur field's box is drawn round its dot. Its body moves
+	// the lane, a handle sizes the dot about its centre, and the CLI draws
+	// the dot exactly as tall as the box — here, and in every view.
+	test("an occur field's box moves and sizes its dot; lock aspect keeps its shape and reset makes it round again", async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'coffee', '--verb', 'occur']);
+			await setPlace(app, 'coffee', { y: 0.3, height: 0.2 });
 			// Not today: the band draws the day of its latest dot instead.
 			await app.run(['occur', 'coffee', '-d', '-2', '-t', '1000']);
 
 			let { saved } = await openPlacement(page, 'coffee');
 			assert.match(await page.locator(`${MODAL} .size`).innerText(), /no dot today/);
+			assert.equal(await page.locator(`${MODAL} input[type="range"]`).count(), 0, 'no sliders');
+			assert.equal(await page.locator(LANE).count(), 0, 'the box is the dot, not the lane');
+			const box = page.locator(`${MODAL} .placement .dot`);
 			const dot = page.locator(`${MODAL} .band g.field[data-field="coffee"] .point-fg`);
-			const was = await dot.boundingBox();
-			assert.ok(was && was.width > 0, 'the dot is drawn');
-
-			/** Drag `name`'s slider to `at` of its width; resolves to the factor it now says. */
-			async function slide(name, at) {
-				const input = page.locator(`${MODAL} input[name="${name}"]`);
-				const box = await input.boundingBox();
-				const y = box.y + box.height / 2;
-				await page.mouse.move(box.x + box.width * 0.4, y);
+			const near = (a, b, what) => assert.ok(Math.abs(a - b) < 1, `${what}: ${a} vs ${b}`);
+			/** The box and the dot it is drawn round, each as its centre and size. */
+			const read = async () => {
+				const [b, d] = [await box.boundingBox(), await dot.boundingBox()];
+				const at = (r) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height });
+				return { box: at(b), dot: at(d) };
+			};
+			const fits = async (w, h, what) => {
+				const { box: b, dot: d } = await read();
+				near(b.h, h, `${what}: box height`);
+				near(b.w, w, `${what}: box width`);
+				near(d.h, h, `${what}: dot height`);
+				near(d.w, w, `${what}: dot width`);
+				near(d.x, b.x, `${what}: centred across`);
+				near(d.y, b.y, `${what}: centred down`);
+			};
+			/** Drag the handle on sides `sx`,`sy` by `dx`,`dy`. */
+			async function pull(sx, sy, dx, dy) {
+				const r = await page.locator(`${MODAL} .dot [data-handle="${sx},${sy}"]`).boundingBox();
+				const [x, y] = [r.x + r.width / 2, r.y + r.height / 2];
+				await page.mouse.move(x, y);
 				await page.mouse.down();
-				await page.mouse.move(box.x + box.width * ((0.4 + at) / 2), y);
-				await page.mouse.move(box.x + box.width * at, y);
+				await page.mouse.move(x + dx / 2, y + dy / 2);
+				await page.mouse.move(x + dx, y + dy);
 				await page.mouse.up();
-				return Math.round(2 ** Number(await input.inputValue()) * 100) / 100;
 			}
-			const near = (a, b, what) => assert.ok(Math.abs(a / b - 1) < 0.03, `${what}: ${a} vs ${b}`);
+			// The lane is 0.2 of the 160px day: a round dot 32px tall.
+			await fits(32, 32, 'as saved');
 
-			const scale = await slide('glyph_scale', 0.8);
-			assert.ok(scale > 2, `dragged up to ×${scale}`);
-			const big = await dot.boundingBox();
-			near(big.width, was.width * scale, 'width scales');
-			near(big.height, was.height * scale, 'height scales');
+			await pull(0, 1, 0, 8);
+			await fits(32, 48, 'the bottom edge grows it about its centre, its width alone');
 
-			const aspect = await slide('glyph_aspect', 0.15);
-			assert.ok(aspect < 0.7, `dragged down to ${aspect}`);
-			const narrow = await dot.boundingBox();
-			near(narrow.width, big.width * aspect, 'aspect narrows it');
-			near(narrow.height, big.height, 'and leaves its height');
+			await page.locator(`${MODAL} input[name="lock_aspect"]`).check();
+			await pull(1, 0, 8, 0);
+			await fits(48, 72, 'locked, the right edge grows both');
+
+			const before = (await read()).box.y;
+			await drag(page, 'dot', -16);
+			near((await read()).box.y, before - 16, 'the body moves it up');
 
 			await done(page, saved);
-			const shown = await spec(app, 'coffee');
-			assert.deepEqual([shown.glyph_scale, shown.glyph_aspect], [scale, aspect]);
+			let shown = await spec(app, 'coffee');
+			assert.deepEqual([shown.y, shown.height], [0.2, 0.2], 'moving writes the lane; sizing leaves its height');
+			assert.ok(Math.abs(shown.glyph_scale - 2.25) < 0.01, `scale ${shown.glyph_scale}`);
+			assert.ok(Math.abs(shown.glyph_aspect - 2 / 3) < 0.01, `aspect ${shown.glyph_aspect}`);
 
-			// Opened again, the CLI draws it at the saved size: what the preview showed.
+			// Opened again, the CLI draws it at the saved size: what the box showed.
 			({ saved } = await openPlacement(page, 'coffee'));
-			const drawn = await dot.boundingBox();
-			near(drawn.width, narrow.width, 'drawn width');
-			near(drawn.height, narrow.height, 'drawn height');
-			await cancelField(page);
-			assert.equal(await saved, null);
+			await fits(48, 72, 'drawn by the CLI');
+			await page.locator(`${MODAL} button.reset`).click();
+			await fits(32, 32, 'reset');
+			await done(page, saved);
+			shown = await spec(app, 'coffee');
+			assert.equal('glyph_scale' in shown || 'glyph_aspect' in shown, false, JSON.stringify(shown));
 		});
 	});
 

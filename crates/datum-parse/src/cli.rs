@@ -728,8 +728,8 @@ pub struct SpecSetArgs {
     /// `--icon <FILE>` — an `.svg` the dayview draws for the field's dots
     /// (da-45wgz). An empty value clears it.
     pub icon: Option<String>,
-    /// `--glyph-scale <N>` — an occur dot's size, a multiple of the one
-    /// the dayview picks (da-c05v1). Positive; 1 clears it.
+    /// `--glyph-scale <N>` — an occur dot's height, a multiple of its
+    /// lane's (da-c05v1, da-c1b6m). Positive; 1 clears it.
     pub glyph_scale: Option<f64>,
     /// `--glyph-aspect <N>` — the dot's width over its height. Positive;
     /// 1 clears it.

@@ -575,19 +575,22 @@ fn build_day_fields(
             z_index: resolved.z_index,
             blocks,
             points,
-            // A stored spec may not have passed `spec set` (sync, a hand
-            // edit), so a factor that is not above 0 draws as unset.
-            glyph_size: spec.as_ref().map_or_else(Default::default, |s| {
-                let factor = |n: Option<f64>| n.filter(|n| *n > 0.0 && n.is_finite());
-                GlyphSize {
-                    scale: factor(s.presentation.glyph_scale).unwrap_or(1.0),
-                    aspect: factor(s.presentation.glyph_aspect).unwrap_or(1.0),
-                }
-            }),
+            glyph_size: glyph_size(spec.as_ref()),
             icon: spec.and_then(|s| s.presentation.icon),
         });
     }
     Ok(out)
+}
+
+/// A field's dot size as its spec stores it. A stored spec may not have
+/// passed `spec set` (sync, a hand edit), so a factor that is not above 0
+/// draws as unset.
+pub(crate) fn glyph_size(spec: Option<&datum_core::field_spec::FieldSpec>) -> GlyphSize {
+    let factor = |n: Option<f64>| n.filter(|n| *n > 0.0 && n.is_finite());
+    spec.map_or_else(Default::default, |s| GlyphSize {
+        scale: factor(s.presentation.glyph_scale).unwrap_or(1.0),
+        aspect: factor(s.presentation.glyph_aspect).unwrap_or(1.0),
+    })
 }
 
 #[cfg(test)]

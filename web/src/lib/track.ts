@@ -359,7 +359,7 @@ export interface Place {
 	relative_to?: string;
 	anchor_pos_ratio?: number;
 	anchor_size_ratio?: number;
-	/** An occur dot's size and width over height (da-c05v1); absent is 1. */
+	/** An occur dot's height over its lane's and its width over its height (da-c05v1, da-c1b6m); absent is 1. */
 	glyph_scale?: number;
 	glyph_aspect?: number;
 }

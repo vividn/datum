@@ -13,10 +13,15 @@
 	`height`, so the lane moves when its anchor does. Nothing is written
 	here: `place` is bound to the modal, which saves it with the rest.
 
-	An occur field also sizes its dot here (da-c05v1): «size» scales the
-	mark and «aspect» makes it wider or narrower, both drawn on the band as
-	they move. A day with none of the field's dots shows nothing to size,
-	so the band is then the day of its latest one.
+	An occur field's lane is its dot (da-c1b6m): the box is drawn round the
+	dot instead, centred on the lane. Its body moves the lane like any
+	other; an edge or corner sizes the dot about its centre, writing
+	`glyph_scale` (the dot's height over the lane's, so a field tied to this
+	one stays put) and `glyph_aspect`. «lock aspect» keeps width over height,
+	«reset» puts back a round dot as tall as its lane — which is how tall
+	every view draws it, as a fraction of the day. A day with none of the
+	field's dots has nothing to size, so the band is then the day of its
+	latest one.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -43,7 +48,22 @@
 	let lanes: Record<string, FieldListing> = {};
 	/** The fields today's band draws, whose names label their lanes. */
 	let named: string[] = [];
-	let drag: { mode: 'move' | 'top' | 'bottom'; at: number; y: number; h: number } | null = null;
+	let drag: {
+		mode: 'move' | 'top' | 'bottom' | 'dot';
+		at: number;
+		y: number;
+		h: number;
+		/** For `dot`: the handle's sides (-1, 0, 1 on x and y), the press's x, the box's size in px. */
+		sx?: number;
+		sy?: number;
+		ax?: number;
+		b?: number;
+		w?: number;
+	} | null = null;
+	/** Whether sizing the dot keeps its width over its height. */
+	let locked = false;
+	/** Where the dot the box is drawn round sits along the band, in px: its latest on the band. */
+	let dotX = 0;
 	/** The day the band draws when it is not today's. */
 	let sample = '';
 
@@ -77,8 +97,15 @@
 		}
 		if (!svg) return;
 		band.prepend(svg);
+		const disc = [...svg.querySelectorAll(`g.field[data-field="${CSS.escape(field)}"] .point-bg`)].at(-1);
+		dotX = disc ? Number(disc.getAttribute('cx')) : band.clientWidth / 2;
 		named = [...svg.querySelectorAll('g.field')].map((g) => g.getAttribute('data-field') ?? '');
 	});
+
+	/** The dot box's handles, by the sides each moves: four corners, four edges. */
+	const HANDLES = [-1, 0, 1].flatMap((sx) => [-1, 0, 1].map((sy) => [sx, sy])).filter(([x, y]) => x || y);
+	/** A corner's cursor, by the sign of its sides' product. */
+	const CURSORS: Record<string, string> = { '1': 'nwse-resize', '-1': 'nesw-resize' };
 
 	const round = (n: number) => Math.round(n * 1000) / 1000;
 	const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -126,13 +153,13 @@
 		place = { ...at, glyph_scale, glyph_aspect };
 	}
 
-	/** A size factor from its slider, which runs in powers of two (¼× to 8×, ¼ to 4 wide); 1 is unset. */
-	const factor = (log2: number) => {
-		const n = Math.round(2 ** log2 * 100) / 100;
-		return n === 1 ? undefined : n;
-	};
+	/** A size factor as stored: 1 is unset. */
+	const factor = (n: number) => (round(n) === 1 ? undefined : round(n));
 	$: scale = place.glyph_scale ?? 1;
 	$: aspect = place.glyph_aspect ?? 1;
+	/** The dot's box in px: as tall as its lane times its scale, about the lane's centre. */
+	$: dotH = lane.h * scale * H;
+	$: dotW = dotH * aspect;
 
 	function grab(mode: 'move' | 'top' | 'bottom', e: PointerEvent) {
 		e.preventDefault();
@@ -140,11 +167,29 @@
 		drag = { mode, at: e.clientY, y: lane.y, h: lane.h };
 	}
 
+	/** Press a handle of the dot's box: `sx`/`sy` are the sides it moves. */
+	function size(sx: number, sy: number, e: PointerEvent) {
+		grab('move', e);
+		drag = { ...drag!, mode: 'dot', sx, sy, ax: e.clientX, b: dotH, w: dotW };
+	}
+
 	function slide(e: PointerEvent) {
 		if (!drag) return;
 		const d = (e.clientY - drag.at) / H;
 		const { y, h } = drag;
-		if (drag.mode === 'move') put(clamp(y + d, 0, 1 - h), h);
+		if (drag.mode === 'dot') {
+			// About the centre, so an edge dragged out by d grows the box by 2d.
+			const { sx = 0, sy = 0, b = 1, w = 1 } = drag;
+			let tall = b + 2 * sy * (e.clientY - drag.at);
+			let wide = w + 2 * sx * (e.clientX - (drag.ax ?? 0));
+			if (locked) {
+				const k = sy ? tall / b : wide / w;
+				[tall, wide] = [b * k, w * k];
+			}
+			tall = clamp(tall, MIN * H, H);
+			wide = clamp(wide, MIN * H, band.clientWidth);
+			if (h > 0) place = { ...place, glyph_scale: factor(tall / (h * H)), glyph_aspect: locked ? place.glyph_aspect : factor(wide / tall) };
+		} else if (drag.mode === 'move') put(clamp(y + d, 0, 1 - h), h);
 		else if (drag.mode === 'bottom') put(y, clamp(h + d, MIN, 1 - y));
 		else {
 			const top = clamp(y + d, 0, y + h - MIN);
@@ -160,16 +205,17 @@
 		own.setAttribute('transform', `matrix(1 0 0 ${k} 0 ${(lane.y - drawn.y * k) * H})`);
 	}
 
-	// The dots follow the sliders: each mark is scaled about its own centre
-	// from the size the band drew it at. A CSS transform replaces the
-	// mark's own stretch, so the width is scaled from an unstretched one.
-	// Only this field's marks: the origin would move another's stretch.
-	$: if (own && occur)
+	// The dots follow the box: each mark is scaled about its own centre
+	// from the size the band drew it at, its height already carried by the
+	// group. A CSS transform replaces the mark's own stretch, so the width
+	// is scaled from an unstretched one. Only this field's marks: the
+	// origin would move another's stretch.
+	$: if (own && occur && drawn && drawn.height > 0)
 		for (const mark of own.querySelectorAll<SVGElement>('.point-fg'))
 			Object.assign(mark.style, {
 				transformBox: 'fill-box',
 				transformOrigin: 'center',
-				transform: `scale(${(scale * aspect) / saved.scale}, ${scale / saved.scale})`
+				transform: `scale(${(lane.h / drawn.height) * ((scale * aspect) / saved.scale)}, ${scale / saved.scale})`
 			});
 
 	$: relation = !anchor
@@ -205,47 +251,56 @@
 		{#each named.filter((n) => n !== field && lanes[n]) as name (name)}
 			<span class="name" style:top="{lanes[name].y * H}px">{name}</span>
 		{/each}
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="lane"
-			class:dragging={drag}
-			data-field={field}
-			style:top="{lane.y * H}px"
-			style:height="{lane.h * H}px"
-			on:pointerdown={(e) => grab('move', e)}
-		>
-			<span class="edge top" on:pointerdown={(e) => grab('top', e)}></span>
-			<span class="own">{field}</span>
-			<span class="edge bottom" on:pointerdown={(e) => grab('bottom', e)}></span>
-		</div>
+		{#if occur}
+			<!-- svelte-ignore a11y-no-static-element-interactions -->
+			<div
+				class="dot"
+				class:dragging={drag}
+				data-field={field}
+				style:top="{(lane.y + lane.h / 2) * H - dotH / 2}px"
+				style:left="{dotX - dotW / 2}px"
+				style:height="{dotH}px"
+				style:width="{dotW}px"
+				on:pointerdown={(e) => grab('move', e)}
+			>
+				{#each HANDLES as [sx, sy] (`${sx}${sy}`)}
+					<span
+						class="handle"
+						data-handle="{sx},{sy}"
+						style:left="{(sx + 1) * 50}%"
+						style:top="{(sy + 1) * 50}%"
+						style:cursor={CURSORS[`${sx * sy}`] ?? (sx ? 'ew-resize' : 'ns-resize')}
+						on:pointerdown={(e) => size(sx, sy, e)}
+					></span>
+				{/each}
+			</div>
+		{:else}
+			<!-- svelte-ignore a11y-no-static-element-interactions -->
+			<div
+				class="lane"
+				class:dragging={drag}
+				data-field={field}
+				style:top="{lane.y * H}px"
+				style:height="{lane.h * H}px"
+				on:pointerdown={(e) => grab('move', e)}
+			>
+				<span class="edge top" on:pointerdown={(e) => grab('top', e)}></span>
+				<span class="own">{field}</span>
+				<span class="edge bottom" on:pointerdown={(e) => grab('bottom', e)}></span>
+			</div>
+		{/if}
 	</div>
 
 	{#if occur}
 		<div class="size">
-			<label>
-				size ×{scale.toFixed(2)}
-				<input
-					type="range"
-					name="glyph_scale"
-					min="-2"
-					max="3"
-					step="0.05"
-					value={Math.log2(scale)}
-					on:input={(e) => (place = { ...place, glyph_scale: factor(+e.currentTarget.value) })}
-				/>
-			</label>
-			<label>
-				aspect {aspect.toFixed(2)}
-				<input
-					type="range"
-					name="glyph_aspect"
-					min="-2"
-					max="2"
-					step="0.05"
-					value={Math.log2(aspect)}
-					on:input={(e) => (place = { ...place, glyph_aspect: factor(+e.currentTarget.value) })}
-				/>
-			</label>
+			<span class="dims">dot ×{scale.toFixed(2)} · {aspect.toFixed(2)} wide</span>
+			<label><input type="checkbox" name="lock_aspect" bind:checked={locked} /> lock aspect</label>
+			<button
+				type="button"
+				class="reset"
+				disabled={scale === 1 && aspect === 1}
+				on:click={() => (place = { ...place, glyph_scale: undefined, glyph_aspect: undefined })}>reset</button
+			>
 			{#if sample}<span class="unchosen">no dot today — drawn on {sample}</span>{/if}
 		</div>
 	{/if}
@@ -358,8 +413,34 @@
 		align-items: center;
 	}
 
-	.size input {
+	/* The occur dot's box: its body moves the lane, a handle sizes the dot. */
+	.dot {
+		position: absolute;
+		box-sizing: border-box;
+		border: 1px dashed var(--accent);
+		cursor: grab;
 		touch-action: none;
+	}
+
+	.dot.dragging {
+		cursor: grabbing;
+	}
+
+	.handle {
+		position: absolute;
+		inline-size: 9px;
+		block-size: 9px;
+		transform: translate(-50%, -50%);
+		background: var(--accent);
+		touch-action: none;
+	}
+
+	.reset {
+		background: none;
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		color: var(--ink-bright);
+		font: inherit;
 	}
 
 	.readout {

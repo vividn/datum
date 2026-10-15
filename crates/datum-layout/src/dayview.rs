@@ -132,9 +132,9 @@ pub struct DayviewFieldInput {
     pub glyph_size: GlyphSize,
 }
 
-/// An occur dot's size (da-c05v1): `scale` multiplies the radius the
-/// layout picks, `aspect` is the mark's width over its height. Blocks
-/// ignore both; `1, 1` draws what was drawn before either existed.
+/// An occur dot's size (da-c05v1): `scale` is its height over its lane's
+/// (da-c1b6m), `aspect` the mark's width over its height. Blocks ignore
+/// both; `1, 1` is a round dot exactly as tall as its lane.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GlyphSize {
     pub scale: f64,
@@ -796,9 +796,6 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         };
         let (spans, dead_zones, zone_labels) =
             place_spans(day_spans, time_axis_extent, config.day_height);
-        // The whole axis in ms: every stretch runs at the one wall-clock rate.
-        let span_ms = (day_spans[0].end_ms - day_spans[0].start_ms).max(1) as f64
-            / (day_spans[0].hi - day_spans[0].lo);
         let time_to_pos = |s: &DayviewSpan, t_ms: i64| -> f64 {
             let f = (t_ms - s.start_ms) as f64 / (s.end_ms - s.start_ms).max(1) as f64;
             (s.lo + f * (s.hi - s.lo)) * time_axis_extent
@@ -854,15 +851,9 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             }
 
             let mut points: Vec<RenderedPoint> = Vec::with_capacity(f.points.len());
-            // Heuristic point radius: same intent as datum's
-            // `Math.min(five_minutes_px, height/2, width/4, 10)`.
-            let five_min_ms = 5.0 * 60_000.0;
-            let five_min_px = (five_min_ms / span_ms) * time_axis_extent;
-            let r = five_min_px
-                .min(cross_extent / 2.0)
-                .min(time_axis_extent / 4.0)
-                .clamp(1.0, 10.0)
-                * f.glyph_size.scale;
+            // A dot is as tall as its lane times its scale, whatever the
+            // view's size (da-c1b6m): a fraction of the day, never pixels.
+            let r = f.height_frac * config.day_height / 2.0 * f.glyph_size.scale;
 
             for p in &f.points {
                 let Some((span, within)) = span_of(p.time_ms) else {
