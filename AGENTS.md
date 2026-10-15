@@ -106,8 +106,12 @@ line committed, so a drain run twice writes nothing more. A REPL line
 spools as a command does. A line that fails to land for any reason but the
 lock holds every later one behind it: `datum check spool` (in the default
 battery, and `sync status`) names it an error, with when it was queued and
-why, and `--fix` sets it aside to `<db>.spool.rejected` (da-3j6g7). Native only: the
-browser's database is one process's at a time.
+why, and `--fix` sets it aside to `<db>.spool.rejected` (da-3j6g7). A line
+that does not read never blocks one after it (da-29om3): a torn last line
+(a crash mid-append) is set aside to `<db>.spool.torn`, any other to
+`<db>.spool.rejected`, with a warning, and an append starts on a fresh line
+(so a torn line an append has followed is no longer last: `.rejected`).
+Native only: the browser's database is one process's at a time.
 
 ## CLI conventions
 

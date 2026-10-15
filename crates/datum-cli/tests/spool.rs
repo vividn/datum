@@ -764,3 +764,166 @@ fn a_write_during_a_purge_queues_nothing_of_the_old_copy() {
     assert!(!err.contains("queued"), "{err}");
     assert_eq!(env.rows(), [], "the purge left an entry");
 }
+
+impl Env {
+    fn beside(&self, ext: &str) -> PathBuf {
+        let mut p = self.spool().into_os_string();
+        p.push(ext);
+        p.into()
+    }
+
+    fn fields(&self) -> Vec<String> {
+        self.rows().into_iter().map(|r| r.1).collect()
+    }
+
+    /// Cut the spool to half its bytes, as a crash mid-append leaves it:
+    /// what was cut off.
+    fn tear(&self) -> Vec<u8> {
+        let bytes = std::fs::read(self.spool()).unwrap();
+        let (kept, _) = bytes.split_at(bytes.len() / 2);
+        std::fs::write(self.spool(), kept).unwrap();
+        kept.to_vec()
+    }
+}
+
+/// A torn last line (da-29om3) is set aside, and the writes after it queue
+/// and land as if it were not there.
+#[test]
+fn a_torn_last_line_is_set_aside_and_later_writes_queue_and_land() {
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let holder = env.hold();
+    env.queued(&["occur", "walk"]);
+    let torn = env.tear();
+
+    let out = env.run(&["occur", "juice"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("QUEUED"));
+    assert!(
+        err.contains("set aside") && err.contains(".spool.torn"),
+        "{err}"
+    );
+    let aside = std::fs::read(env.beside(".torn")).unwrap();
+    assert!(aside.ends_with(&[&torn[..], b"\n"].concat()), "{aside:?}");
+    drop(holder);
+
+    env.ok(&["occur", "nap"]);
+    assert_eq!(env.fields(), ["coffee", "juice", "nap"]);
+    assert!(!env.spool().exists());
+    env.check_sync_clean(1);
+}
+
+/// A line in the middle that does not parse is set aside, and the lines
+/// either side of it land in order.
+#[test]
+fn a_garbage_line_in_the_middle_is_set_aside_and_the_rest_land_in_order() {
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let holder = env.hold();
+    env.queued(&["occur", "tea"]);
+    let mut spool = std::fs::read(env.spool()).unwrap();
+    spool.extend_from_slice(b"{\"id\": not json\n");
+    std::fs::write(env.spool(), spool).unwrap();
+    let out = env.run(&["occur", "cake"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("QUEUED"));
+    assert!(
+        err.contains("set aside") && err.contains(".spool.rejected"),
+        "{err}"
+    );
+    drop(holder);
+
+    env.ok(&["tail"]);
+    assert_eq!(env.fields(), ["coffee", "tea", "cake"]);
+    let aside = String::from_utf8(std::fs::read(env.beside(".rejected")).unwrap()).unwrap();
+    assert!(aside.ends_with("\t{\"id\": not json\n"), "{aside}");
+    assert!(!env.spool().exists());
+    env.check_sync_clean(1);
+}
+
+/// The repro of da-29om3: a queued line torn, then three writes, the first
+/// under the lock. Each lands; none is lost behind the torn line.
+#[test]
+fn writes_after_a_torn_line_are_not_lost() {
+    let env = Env::new();
+    let holder = env.hold();
+    env.queued(&["occur", "walk"]);
+    env.tear();
+    env.queued(&["occur", "juice"]);
+    drop(holder);
+    env.ok(&["occur", "nap"]);
+    env.ok(&["occur", "nap2"]);
+    assert_eq!(env.fields(), ["juice", "nap", "nap2"]);
+    assert!(env.beside(".torn").exists());
+}
+
+/// A torn line with a multibyte character cut in half is not UTF-8: it is
+/// set aside like any other.
+#[test]
+fn a_torn_line_cut_mid_character_is_set_aside() {
+    let env = Env::new();
+    let holder = env.hold();
+    env.queued(&["note", "café", "ééééééééééééééééééééééééééééééééééééééé"]);
+    let bytes = std::fs::read(env.spool()).unwrap();
+    let cut = bytes.iter().rposition(|b| *b == 0xc3).unwrap() + 1;
+    std::fs::write(env.spool(), &bytes[..cut]).unwrap();
+    env.queued(&["occur", "juice"]);
+    drop(holder);
+    env.ok(&["tail"]);
+    assert_eq!(env.fields(), ["juice"]);
+    assert!(env.beside(".torn").exists());
+}
+
+/// A queued line that reads but will not land holds no write back: the
+/// snapshot stops short of it, and the command still queues its own line.
+#[test]
+fn a_line_that_will_not_land_does_not_stop_a_write_queueing() {
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let holder = env.hold();
+    std::fs::write(env.spool(), "{\"id\":\"stuck\",\"ops\":[{\"op\":1}]}\n").unwrap();
+    let out = env.run(&["occur", "juice"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("QUEUED"));
+    assert!(err.contains("ran without some changes queued"), "{err}");
+    let spool = std::fs::read_to_string(env.spool()).unwrap();
+    assert_eq!(spool.lines().count(), 2, "{spool}");
+    assert!(
+        spool.contains("\"stuck\"") && spool.contains("juice"),
+        "{spool}"
+    );
+    drop(holder);
+
+    // A drain that sets a line aside and then stops at the stuck one says
+    // both.
+    let mut torn = std::fs::read(env.spool()).unwrap();
+    torn.extend_from_slice(b"{\"id\":\"to");
+    std::fs::write(env.spool(), torn).unwrap();
+    let out = env.run(&["tail"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains(".spool.torn") && err.contains("cannot land"),
+        "{err}"
+    );
+}
+
+/// A purge counts every line of a damaged spool, the ones that do not read
+/// too, and counting sets nothing aside: it reads under no lock of its own.
+#[test]
+fn a_purge_counts_the_lines_that_do_not_read_and_sets_none_aside() {
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let holder = env.hold();
+    env.queued(&["occur", "tea"]);
+    drop(holder);
+    let mut spool = std::fs::read(env.spool()).unwrap();
+    spool.extend_from_slice(b"not json\n{\"id\":\"to");
+    std::fs::write(env.spool(), spool).unwrap();
+
+    let out = env.ok(&["db", "purge", "--yes"]);
+    assert!(out.contains("removed: 3 queued change(s)"), "{out}");
+    assert!(!env.beside(".rejected").exists() && !env.beside(".torn").exists());
+}

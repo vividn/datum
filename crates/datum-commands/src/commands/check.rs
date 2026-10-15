@@ -1005,7 +1005,7 @@ pub fn spool_issues(db: &Db, fix: bool) -> Result<Vec<Issue>> {
         return Ok(Vec::new());
     };
     let spool = format!("{}.spool", path.display());
-    let mut stuck = db.drain_spool().err();
+    let mut stuck = db.drain_spool().map_or_else(Some, |d| d.stuck);
     let mut out = Vec::new();
     let mut issue = |severity, category, count, message| {
         out.push(Issue {
@@ -1025,7 +1025,7 @@ pub fn spool_issues(db: &Db, fix: bool) -> Result<Vec<Issue>> {
                 "set aside to {}: the first queued change ({e})",
                 to.display()
             );
-            stuck = db.drain_spool().err();
+            stuck = db.drain_spool().map_or_else(Some, |d| d.stuck);
         }
     }
     let (waiting, aside) = db.spool_queue()?;

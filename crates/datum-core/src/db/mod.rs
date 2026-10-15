@@ -71,7 +71,7 @@ pub use now::{
 };
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
-pub use spool::{busy, Spool};
+pub use spool::{busy, Drained, Spool};
 pub use stats_cache::{CachedDay, CachedState, CachedSum, Dirty, Refill};
 pub(crate) use sync::derive_all_conflicts;
 pub use sync::{

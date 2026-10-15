@@ -192,6 +192,7 @@ fn asks(command: &Command) -> bool {
 /// command waiting on a person can spend and a log cannot.
 fn ask_first(path: &str, cli: Cli) -> Result<()> {
     let (snapshot, spool) = datum_core::db::Db::spool_open(path)?;
+    snapshot_notes(path, &spool);
     cmd::dispatch(cli, &snapshot)?;
     if !spool.append(&snapshot)? {
         return Ok(());
@@ -222,12 +223,22 @@ fn open_to_write(path: &str, spools: bool) -> Result<datum_core::db::Db> {
 /// `spools` and a write now would not land.
 fn ready_to_write(db: &datum_core::db::Db, path: &str, spools: bool) -> Result<()> {
     #[cfg(not(target_family = "wasm"))]
-    match db.drain_spool() {
-        Ok(0) => {}
-        Ok(n) => eprintln!("note: {n} queued change(s) written"),
-        Err(e) => eprintln!(
-            "⚠ the changes queued in {path}.spool cannot land: {e} — `datum check spool` shows them"
-        ),
+    {
+        let stuck = match db.drain_spool() {
+            Ok(d) => {
+                if d.landed > 0 {
+                    eprintln!("note: {} queued change(s) written", d.landed);
+                }
+                set_aside(path, &d.set_aside);
+                d.stuck
+            }
+            Err(e) => Some(e),
+        };
+        if let Some(e) = stuck {
+            eprintln!(
+                "⚠ the changes queued in {path}.spool cannot land: {e} — `datum check spool` shows them"
+            );
+        }
     }
     // Behind changes still queued (a drain stepped aside, or a line waits),
     // a write queues too: this copy's changes land in the order they were
@@ -263,6 +274,26 @@ pub(crate) fn run_on(db: &datum_core::db::Db, path: &str, invocation: Invocation
     )
 }
 
+/// Say where each line queued beside `path` that could not be read was set
+/// aside (da-29om3).
+fn set_aside(path: &str, to: &[std::path::PathBuf]) {
+    for p in to {
+        eprintln!(
+            "warning: a change queued in {path}.spool could not be read: set aside in {}",
+            p.display()
+        );
+    }
+}
+
+/// Say what the snapshot of `path` a command runs on could not take from
+/// the spool: lines set aside, and the queued changes it stops short of.
+fn snapshot_notes(path: &str, spool: &datum_core::db::Spool) {
+    set_aside(path, spool.set_aside());
+    if let Some(e) = spool.short() {
+        eprintln!("warning: this command ran without some changes queued in {path}.spool: {e}");
+    }
+}
+
 /// Whether `result`, of a command that `spools` and changed nothing on
 /// `db` since `before`, failed for the lock: then it is [`Locked`] too.
 fn locked_out(
@@ -288,6 +319,7 @@ fn locked_out(
 /// QUEUED for its action word, and spool what it signed (da-9q3fr).
 pub(crate) fn queue(path: &str, invocation: Invocation) -> Result<()> {
     let (snapshot, spool) = datum_core::db::Db::spool_open(path)?;
+    snapshot_notes(path, &spool);
     {
         let _queued = output::Queued::hold();
         cmd::dispatch_invocation(invocation, &snapshot)?;

@@ -779,8 +779,17 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                     }
                     // What a command spooled while another held the lock (da-9q3fr).
                     match db.drain_spool() {
-                        Ok(0) => {}
-                        Ok(n) => println!("{} wrote {n} queued change(s)", now()),
+                        Ok(d) => {
+                            if d.landed > 0 {
+                                println!("{} wrote {} queued change(s)", now(), d.landed);
+                            }
+                            if let Some(e) = d.stuck {
+                                eprintln!("{} queued changes wait: {e:#}", now());
+                            }
+                            for p in d.set_aside {
+                                eprintln!("{} a queued change could not be read: set aside in {}", now(), p.display());
+                            }
+                        }
                         Err(e) => eprintln!("{} queued changes wait: {e:#}", now()),
                     }
                     // Paused (da-wlbyx), it idles: an incoming session's
