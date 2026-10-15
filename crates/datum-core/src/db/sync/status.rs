@@ -118,7 +118,8 @@ impl Db {
     /// which says nothing of the two copies now (da-t3ey2). A failed
     /// session's vector is the peer's as its last round began, before that
     /// round's ops reached it, so `to_send` may count more than is waiting,
-    /// never less. A chain
+    /// never less. A failed session that changes neither the error nor the
+    /// vector writes nothing. A chain
     /// member gets a row if it has none; anyone else has none to update.
     /// Nor has a session's file that was purged under it: it is asked who it
     /// is in the transaction that writes (da-otz0d).
@@ -133,6 +134,24 @@ impl Db {
             return Err(DatumError::Other(format!("not an endpoint id: {endpoint}")));
         }
         let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let vector = vector.map(serde_json::to_string).transpose()?;
+        // A failure the row already says writes nothing (da-u1ul1): a peer
+        // that is down is dialed again and again, failing alike each time,
+        // and `last_error_at` stays when it first failed so.
+        if error.is_some() && verify.is_none() {
+            let same: Option<bool> = self
+                .conn
+                .query_row(
+                    "SELECT last_error IS ?2 AND (?3 IS NULL OR last_vector IS ?3)
+                     FROM sync_peers WHERE endpoint_id = ?1",
+                    params![endpoint, error, vector],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if same == Some(true) {
+                return Ok(());
+            }
+        }
         let tx = self.conn.unchecked_transaction()?;
         super::endpoint(&tx)?;
         if let Some(m) = self.sync_chain()?.member(endpoint) {
@@ -142,7 +161,6 @@ impl Db {
                 params![endpoint, m.label, now],
             )?;
         }
-        let vector = vector.map(serde_json::to_string).transpose()?;
         let n = tx.execute(
             "UPDATE sync_peers SET
                last_vector = COALESCE(?2, last_vector),

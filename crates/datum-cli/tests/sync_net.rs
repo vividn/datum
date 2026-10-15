@@ -944,7 +944,7 @@ fn daemon_run_serves_every_chained_database() {
 /// `sync run` is the one that gives way (da-lk1s2): with a write holding its
 /// file, it fails a session within its short busy timeout, where any other
 /// connection waits out 5 s, and tries every peer again at its next tick
-/// rather than after a failed push's 30 s.
+/// rather than after a failed push's backoff.
 #[test]
 fn run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once() {
     let (a, b) = paired();
@@ -962,7 +962,7 @@ fn run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once() {
             break;
         }
     };
-    // Up before b first pushes, or that push is unreachable and waits 30 s.
+    // Up before b first pushes, or that push is unreachable and waits a minute.
     until("is up");
     let _b_runs = b.serve(&["sync", "run"]);
     let write = rusqlite::Connection::open(a.db()).unwrap();
@@ -977,6 +977,71 @@ fn run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once() {
 
     write.execute_batch("COMMIT").unwrap();
     eventually("b's walk reaching a", || a.has("walk"));
+}
+
+/// Each line `stream` prints, as it prints it.
+fn lines(stream: impl Read + Send + 'static) -> std::sync::mpsc::Receiver<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        BufReader::new(stream)
+            .lines()
+            .map_while(Result::ok)
+            .try_for_each(|l| tx.send(l))
+    });
+    rx
+}
+
+/// A child killed when dropped, its streams the test's to take.
+struct Killed(Child);
+
+impl Drop for Killed {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// A member that is down is tried again after a gap that doubles with each
+/// failure up to thirty times the first, every failure after the first
+/// writes nothing, and the member, up again, is heard and pushed to at once
+/// — not at the next try (da-u1ul1). The first gap is 200 ms here, a minute for real.
+#[test]
+fn an_unreachable_member_is_tried_less_often_and_heard_at_once_when_it_is_back() {
+    let (mut a, b) = paired();
+    a.env.extend([
+        ("DATUM_SYNC_TIMEOUT_S", "1"),
+        ("DATUM_SYNC_TEST_RETRY_MS", "200"),
+    ]);
+    let mut a_runs = Killed(a.cmd(&["sync", "run"]).spawn().unwrap());
+    let (err, out) = (
+        lines(a_runs.0.stderr.take().unwrap()),
+        lines(a_runs.0.stdout.take().unwrap()),
+    );
+    let mut gaps = Vec::new();
+    let mut first = None;
+    while gaps.len() < 6 {
+        let line = err
+            .recv_timeout(Duration::from_secs(10))
+            .expect("a failure");
+        if let Some((_, gap)) = line.split_once("; next try in ") {
+            gaps.push(gap.to_string());
+            first.get_or_insert_with(|| held(&a));
+        }
+    }
+    assert_eq!(gaps, ["200ms", "400ms", "800ms", "1.6s", "3.2s", "6s"]);
+    assert_eq!(Some(held(&a)), first, "a failure alike wrote");
+
+    let start = Instant::now();
+    let _b_runs = b.serve(&["sync", "run"]);
+    let heard = out
+        .recv_timeout(Duration::from_secs(10))
+        .expect("b's session");
+    assert!(heard.contains(": sent "), "{heard}");
+    // And pushes to it again at once, its gap of 6 s forgotten.
+    a.ok(&["occur", "tea"]);
+    eventually("a's write reaching b", || b.has("tea"));
+    let took = start.elapsed();
+    assert!(took < Duration::from_secs(4), "a reached b after {took:?}");
 }
 
 #[test]

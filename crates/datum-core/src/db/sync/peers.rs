@@ -270,6 +270,7 @@ impl Db {
 mod tests {
     use super::*;
     use serde_json::{json, Value};
+    use std::collections::BTreeMap;
 
     fn id(db: &Db) -> String {
         db.sync_endpoint_id().unwrap()
@@ -321,6 +322,40 @@ mod tests {
         let rows = "SELECT (SELECT COUNT(*) FROM sync_peers) + (SELECT COUNT(*) FROM sync_local)";
         let rows: i64 = db.conn.query_row(rows, [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 0);
+    }
+
+    /// A peer that is down fails alike each time it is dialed, and the
+    /// second failure writes nothing (da-u1ul1): no row changes and no
+    /// statement writes. Another error, a vector or a success writes.
+    #[test]
+    fn a_failure_the_row_already_says_writes_nothing() {
+        let [a, b] = [(); 2].map(|()| Db::open_in_memory().unwrap());
+        genesis(&a, "a");
+        admit(&a, &b, "b", json!({}));
+        let row = || {
+            let sql = "SELECT json_array(last_seen, last_vector, last_error, last_error_at)
+                       FROM sync_peers WHERE endpoint_id = ?1";
+            a.conn
+                .query_row(sql, [id(&b)], |r| r.get::<_, String>(0))
+                .unwrap()
+        };
+        let fail = |why: &str, vector: Option<&BTreeMap<String, i64>>| {
+            let changes = a.conn.total_changes();
+            a.sync_record_session(&id(&b), vector, None, Some(why))
+                .unwrap();
+            a.conn.total_changes() - changes
+        };
+        assert_eq!(fail("could not reach b: timed out", None), 1);
+        let failed = row();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert_eq!(fail("could not reach b: timed out", None), 0);
+        assert_eq!(row(), failed);
+        let vector = BTreeMap::from([(id(&a), 3)]);
+        assert_eq!(fail("could not reach b: timed out", Some(&vector)), 1);
+        assert_eq!(fail("could not reach b: timed out", Some(&vector)), 0);
+        assert_eq!(fail("could not reach b: refused", None), 1);
+        a.sync_record_session(&id(&b), None, None, None).unwrap();
+        assert_eq!(fail("could not reach b: refused", None), 1);
     }
 
     /// `from` sends `to` what it lacks, as a session does.

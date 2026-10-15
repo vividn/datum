@@ -34,6 +34,7 @@ use datum_sync_wire::{
     Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector, Version, Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
+use iroh::Watcher;
 use tokio::time::Instant;
 
 fn now() -> String {
@@ -367,6 +368,9 @@ impl Store for DbStore<'_> {
         met: &[EndpointAddr],
     ) -> Result<()> {
         self.0.sync_record_session(peer, vector, verify, error)?;
+        if met.is_empty() {
+            return Ok(());
+        }
         Ok(self.0.sync_introduce(&serde_json::to_string(met)?)?)
     }
 
@@ -657,8 +661,25 @@ pub fn diff(db: &Db, id: &str) -> Result<Diffed> {
 /// A session and, for a push, the peer's id and label.
 type Session<'a> = Pin<Box<dyn Future<Output = (Option<(String, String)>, Result<Report>)> + 'a>>;
 
-/// How long a peer a push failed to reach is left before the next try.
-const RETRY: Duration = Duration::from_secs(30);
+/// How long a peer a push failed to reach is left before the next try:
+/// [`RETRY`] after the first failure, twice the last gap after each one
+/// after it, up to [`RETRY_CAP`] times it (da-u1ul1) —
+/// `DATUM_SYNC_TEST_RETRY_MS` in place of [`RETRY`], for the tests.
+fn backoff(last: Option<Duration>) -> Duration {
+    let first = env("DATUM_SYNC_TEST_RETRY_MS").map_or(RETRY, Duration::from_millis);
+    last.map_or(first, |prev| (prev * 2).min(first * RETRY_CAP))
+}
+
+const RETRY: Duration = Duration::from_secs(60);
+const RETRY_CAP: u32 = 30;
+
+/// A gap as the log says it: whole minutes as such.
+fn gap(d: Duration) -> String {
+    match d.as_secs() {
+        s if s >= 60 && s % 60 == 0 => format!("{} min", s / 60),
+        _ => format!("{d:?}"),
+    }
+}
 
 /// How long `sync run` waits for a write lock another connection holds,
 /// against every other connection's 5 s (da-lk1s2). Nobody waits on a
@@ -670,7 +691,11 @@ const YIELD: Duration = Duration::from_millis(250);
 /// time this copy's vector moves (a write here, or ops from another peer).
 /// A push does not wait for an earlier one to the same peer: a dial to a
 /// peer that is down takes 30s to fail. A failed push is tried again after
-/// [`RETRY`], whether or not anything new was written.
+/// [`backoff`], whether or not anything new was written, and the gap grows
+/// with each failure until the peer reaches this copy or a push reaches it.
+/// It dials every member once it is up, and again when its address changes
+/// (its network came back, or moved), so a member that backed off from it
+/// hears at once that it is up (da-u1ul1).
 ///
 /// It stops, with an error, once the file's endpoint key is no longer the
 /// one it bound: a `db purge` or `sync chain rekey` made it another copy
@@ -686,15 +711,30 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
         let store = &DbStore::new(db);
         eprintln!("datum sync run: {} is up; Ctrl-C to stop", short(&ep.id().to_string()));
         let mut sessions: FuturesUnordered<Session> = FuturesUnordered::new();
-        // Per peer, the vector last pushed to it, and when to retry a failed push.
+        // Per peer, the vector last pushed to it, and when to retry a failed
+        // push with the gap it waits.
         let mut pushed: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
-        let mut retry: BTreeMap<String, tokio::time::Instant> = BTreeMap::new();
+        let mut retry: BTreeMap<String, (Instant, Duration)> = BTreeMap::new();
+        let (mut mine, mut seen) = (ep.watch_addr(), ep.addr());
         let mut tick = tokio::time::interval(Duration::from_millis(500));
         let ctrl_c = tokio::signal::ctrl_c();
         tokio::pin!(ctrl_c);
         loop {
             tokio::select! {
                 _ = &mut ctrl_c => break,
+                Ok(at) = mine.updated() => {
+                    if std::mem::replace(&mut seen, at.clone()) == at {
+                        continue;
+                    }
+                    eprintln!("{} this copy's address changed: dialing every member", now());
+                    pushed.clear();
+                    // Due now, each keeping its gap: the address moves when
+                    // the network goes down too, and a peer down all along
+                    // fails again at the gap it had reached.
+                    for (at, _) in retry.values_mut() {
+                        *at = Instant::now();
+                    }
+                }
                 Some(incoming) = ep.accept() => {
                     let ep = &ep;
                     sessions.push(Box::pin(async move {
@@ -709,7 +749,7 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                             println!("{} {rep}", now());
                         }
                         // A write held this copy's file past YIELD, or the
-                        // peer's: every peer not waiting out RETRY for being
+                        // peer's: every peer not backing off for being
                         // unreachable is tried again at the next tick. Matched
                         // on the text, which sync_net's test pins:
                         // `run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once`.
@@ -719,9 +759,10 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                         }
                         (Err(e), None) => eprintln!("{} incoming: {e:#}", now()),
                         (Err(e), Some((id, label))) => {
-                            eprintln!("{} {label}: {e:#}", now());
+                            let wait = backoff(retry.get(&id).map(|r| r.1));
+                            eprintln!("{} {label}: {e:#}; next try in {}", now(), gap(wait));
                             pushed.remove(&id);
-                            retry.insert(id, tokio::time::Instant::now() + RETRY);
+                            retry.insert(id, (Instant::now() + wait, wait));
                         }
                     }
                 }
@@ -738,7 +779,7 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                     };
                     let vector = db.sync_vector()?;
                     for p in peers {
-                        let waiting = retry.get(&p.id).is_some_and(|t| *t > tokio::time::Instant::now());
+                        let waiting = retry.get(&p.id).is_some_and(|r| r.0 > Instant::now());
                         if waiting || pushed.get(&p.id) == Some(&vector) {
                             continue;
                         }
@@ -771,5 +812,20 @@ mod tests {
             let wire = e.downcast_ref::<Refusal>().unwrap().0;
             assert_eq!(serde_json::json!(kind), serde_json::json!(wire));
         }
+    }
+
+    /// A push that fails waits a minute, then twice as long after each
+    /// failure, never more than half an hour (da-u1ul1).
+    #[test]
+    fn a_failed_push_waits_twice_as_long_each_time_up_to_half_an_hour() {
+        let mut last = None;
+        let minutes: Vec<String> = (0..8)
+            .map(|_| {
+                last = Some(backoff(last));
+                gap(last.unwrap())
+            })
+            .collect();
+        let want = ["1", "2", "4", "8", "16", "30", "30", "30"].map(|m| format!("{m} min"));
+        assert_eq!(minutes, want);
     }
 }
