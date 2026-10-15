@@ -583,7 +583,7 @@ fn build_day_fields(
 }
 
 /// A field's dot size as its spec stores it. A stored spec may not have
-/// passed `spec set` (sync, a hand edit), so a factor that is not above 0
+/// passed `spec` (sync, a hand edit), so a factor that is not above 0
 /// draws as unset.
 pub(crate) fn glyph_size(spec: Option<&datum_core::field_spec::FieldSpec>) -> GlyphSize {
     let factor = |n: Option<f64>| n.filter(|n| *n > 0.0 && n.is_finite());
@@ -1211,7 +1211,7 @@ mod tests {
         assert_eq!(states, [Some("idle")], "the day is idle, as `now` says");
     }
 
-    /// da-c05v1 review: a spec saved without `spec set`'s checks (sync, a
+    /// da-c05v1 review: a spec saved without `spec`'s checks (sync, a
     /// hand edit) may carry a factor that is not above 0; it draws as unset
     /// rather than as `r="NaN"`, and a good one still reaches the layout.
     #[test]

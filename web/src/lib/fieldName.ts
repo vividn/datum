@@ -1,7 +1,7 @@
 // What a field name may be.
 //
 // Mirrors `crates/datum-parse/src/field_name.rs`, which is what actually
-// enforces the rule — `spec set`'s parser refuses a bad name, and the (+)
+// enforces the rule — `spec`'s parser refuses a bad name, and the (+)
 // form's declaration goes through that parser like everything else. This
 // module exists so the form can say *before* the press what the parser
 // would say after it, and offer the nearest name that works: a first-time

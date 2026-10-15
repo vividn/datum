@@ -188,11 +188,11 @@ fn track_without_a_verb_or_a_log_names_the_choices() {
     assert!(db.load_spec("x").unwrap().is_none(), "a spec was minted");
 }
 
-/// `spec set` on a new field is the same question, asked the same way.
+/// `spec` on a new field is the same question, asked the same way.
 #[test]
 fn spec_set_on_a_new_field_needs_a_verb() {
     let db = fresh_db();
-    let err = run_cli(&["spec", "set", "y", "--color", "red"], &db)
+    let err = run_cli(&["spec", "y", "--color", "red"], &db)
         .unwrap_err()
         .to_string();
     assert!(err.contains("--verb"), "err = {err}");
@@ -205,7 +205,7 @@ fn spec_set_on_a_new_field_needs_a_verb() {
 fn default_verb_flag_is_an_error_naming_verb() {
     let db = fresh_db();
     for argv in [
-        vec!["spec", "set", "y", "--default-verb", "occur"],
+        vec!["spec", "y", "--default-verb", "occur"],
         vec!["track", "y", "--default-verb", "occur"],
     ] {
         let err = run_cli(&argv, &db).unwrap_err().to_string();

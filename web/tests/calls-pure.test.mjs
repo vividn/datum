@@ -319,7 +319,7 @@ describe('every call the page sends', () => {
 					assert.ok(READS[name], `${at} asks for JSON: name the type the page reads it as in Reads`);
 					assert.equal(r.code, 0, `${at}: datum ${argv.join(' ')}: ${r.stderr}`);
 				}
-				// Some answer JSON unasked (`spec show`, `sync new-invite`), and some samples do not (a purge's `--yes`).
+				// Some answer JSON unasked (`sync new-invite`), and some samples do not (a purge's `--yes`).
 				if (READS[name] && r.code === 0) answers.push(parse(r.stdout));
 			}
 			const missing = (READS[name] ?? []).filter((path) => !answers.some((answer) => has(answer, path.split('.'))));
@@ -329,7 +329,7 @@ describe('every call the page sends', () => {
 
 	// The check above is only as good as USAGE: a CLI that said it otherwise would pass every call.
 	test('a flag, subcommand or argument the CLI does not take is seen as a usage error', () => {
-		for (const argv of [['head', '--metrik', 'occur'], ['sync', 'chainz', 'list'], ['sync', 'chain', 'rename', 'a', 'b', 'c'], ['spec', 'show']])
+		for (const argv of [['head', '--metrik', 'occur'], ['sync', 'chainz', 'list'], ['sync', 'chain', 'rename', 'a', 'b', 'c'], ['spec', 'show', 'mood']])
 			assert.match(datum(copy(seeded), argv).stderr, USAGE, `datum ${argv.join(' ')}`);
 	});
 

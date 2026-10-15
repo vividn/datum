@@ -236,18 +236,18 @@ fn a_show_the_command_cannot_draw_is_refused_by_name() {
 fn spec_set_takes_the_body_from_from_json() {
     let (_tmp, db) = seeded();
     let body = r#"{"field":"x","verb":"occur"}"#;
-    ok(&db, &["spec", "set", "x", "--from-json", body]);
-    let shown = ok(&db, &["spec", "show", "x"]);
+    ok(&db, &["spec", "x", "--from-json", body]);
+    let shown = ok(&db, &["spec", "x", "--json"]);
     assert!(shown.contains("\"verb\": \"occur\""), "{shown:?}");
 
-    let out = datum(&db, &["spec", "set", "y", "--json", body]);
+    let out = datum(&db, &["spec", "y", "--json", body]);
     assert!(!out.status.success(), "the old spelling must not pass");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--from-json"), "{stderr:?}");
 
     // …and `--json` now means what it means everywhere: `--show json`.
-    let explicit = ok(&db, &["spec", "show", "x", "--json"]);
-    assert_eq!(explicit, shown, "`--show json` is spec show's default");
+    let explicit = ok(&db, &["spec", "x", "--show", "json"]);
+    assert_eq!(explicit, shown, "`--json` is `--show json`");
 }
 
 /// `--json` takes no value, so it must not eat the flag behind it.

@@ -77,7 +77,7 @@ describe('the wasi CLI', () => {
 	// so the argument after a non-ASCII one arrived mangled ($lib/cli.ts).
 	test('a non-ASCII argument arrives intact, and so does the next one', async () => {
 		await onSeam(async (app) => {
-			const set = await app.run(['spec', 'set', '日本語', '--verb', 'occur']);
+			const set = await app.run(['spec', '日本語', '--verb', 'occur']);
 			assert.equal(set.code, 0, set.stderr);
 			const logged = await app.run(['occur', 'café', 'note=très bien', '-t', '0700']);
 			assert.equal(logged.code, 0, logged.stderr);

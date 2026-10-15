@@ -949,8 +949,8 @@ fn help_json_subcommands_are_the_parsers() {
         }
     }
     assert_eq!(
-        named, 6,
-        "db, spec, alias, kit, config and completions name their set"
+        named, 5,
+        "db, alias, kit, config and completions name their set"
     );
 }
 

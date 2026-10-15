@@ -127,8 +127,8 @@ describe('a field with a required key', () => {
 	test('a spaced field: the add chip’s title and the ring’s `end` title quote it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await type(page, 'spec set "my notes" --verb add');
-			await type(page, 'spec set "my mood" --verb switch --state false --state good');
+			await type(page, 'spec "my notes" --verb add');
+			await type(page, 'spec "my mood" --verb switch --state false --state good');
 			await app.idle();
 			assert.match(await chip(page, 'my notes').getAttribute('title'), /^add "my notes" … — fills the prompt/);
 			await chip(page, 'my mood').click();

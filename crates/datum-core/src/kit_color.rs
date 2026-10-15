@@ -1,4 +1,4 @@
-//! Color resolution for field specs: a kit's `color` and `spec set --color`.
+//! Color resolution for field specs: a kit's `color` and `spec --color`.
 //!
 //! A colour value can be one of three forms:
 //!
@@ -47,7 +47,7 @@ const LIGHT_MAX: f64 = 85.0;
 const HUE_RANGE_DEG: f64 = 30.0;
 
 /// Resolve a user-typed color into what the spec stores: the one colour
-/// rule for a kit's `color` and `spec set --color` / `--state-color` /
+/// rule for a kit's `color` and `spec --color` / `--state-color` /
 /// `add-state`'s COLOR alike (da-xw1rx), and only what the renderer draws.
 ///
 /// * hex, six or eight digits, `#` optional → lowercase `#rrggbb[aa]`.

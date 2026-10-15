@@ -32,7 +32,7 @@ A field's spec can declare keys, and bare values after the field then fill them 
 order, so a log line needs no `key=`:
 
 ```bash
-datum spec set juice --verb occur --data-key cups --data-key temp=cold
+datum spec juice --verb occur --data-key cups --data-key temp=cold
 datum juice 2              # cups=2, temp=cold (the default)
 datum juice 3 temp=warm    # a key=value still overrides
 datum juice                # Error: Missing required key: cups
@@ -41,7 +41,7 @@ datum juice                # Error: Missing required key: cups
 `--data-key K` is required, `K=` optional, and `K=D` has a default. `--id-key K` puts
 the value in the entry's id (like `-K`), and `--assign K=V` writes a fixed value on
 every log. A new field needs `--verb` (occur | start | switch | add) so its bare
-name knows what a press means. `datum spec show <field>` prints what is declared.
+name knows what a press means. `datum spec <field>` prints what is declared.
 
 ### note vs add — timeless data, split by identity (when vs what)
 
@@ -152,5 +152,5 @@ selection. Use a throwaway db while experimenting: `datum --db /tmp/scratch.db o
   then `datum vbp` runs the body.
 - A whitespace-bounded `,` token logs **multiple entries atomically** with one shared
   timestamp: `datum switch body vertical , occur caffeine`.
-- `datum --man <command>` prints a man page to stdout; `datum spec set <field> …`
+- `datum --man <command>` prints a man page to stdout; `datum spec <field> …`
   shapes a field: its keys (above), allowed states, colours, glyphs and id template.

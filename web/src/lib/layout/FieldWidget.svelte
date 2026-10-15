@@ -22,7 +22,7 @@
 
 	Save on a new field runs its one command (da-2pbvd) and STAYS, on the
 	field it made — but for the person's first, which goes on to the tour of
-	where it is logged ($lib/tour.ts). Done on a field runs its one `spec set` and leaves the place, Cancel leaves it running nothing; in a pane
+	where it is logged ($lib/tour.ts). Done on a field runs its one `spec F` and leaves the place, Cancel leaves it running nothing; in a pane
 	that is no place, the form is read afresh. A save the CLI refuses
 	leaves the form as it was typed, to be put right.
 -->
@@ -82,8 +82,8 @@
 	}
 
 	async function close(save: Save | null): Promise<void> {
-		// The field a new one's `track F` or `spec set F` names.
-		const [asked, made] = [$editing, spec === null && save && save.argv[save.argv[0] === 'spec' ? 2 : 1]];
+		// The field a new one's `track F` or `spec F` names.
+		const [asked, made] = [$editing, spec === null && save && save.argv[1]];
 		// The person's first field, tracked: the tour follows its save (da-ii8lo).
 		const first = made && tracked.length === 0 && !save?.argv.includes('--ignore');
 		const result = save && (await press(save.argv));

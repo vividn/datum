@@ -912,8 +912,8 @@ fn subprocess_backup_to_stdout_restores_from_stdin() {
     );
     assert_eq!(to.entry_count(), 2);
     // The specs came back with the entries: a backup carries them now.
-    let spec = to.run(&["spec", "show", "mood"]);
-    assert_ok(&spec, "spec show mood");
+    let spec = to.run(&["spec", "mood", "--json"]);
+    assert_ok(&spec, "spec mood --json");
     assert!(
         String::from_utf8_lossy(&spec.stdout).contains(r#""verb": "switch""#),
         "{}",
@@ -1094,10 +1094,7 @@ fn subprocess_fields_lists_logged_and_declared_fields() {
         "switch",
     );
     assert_ok(&env.run(&["switch", "mood", "sad", "-t", "0930"]), "switch");
-    assert_ok(
-        &env.run(&["spec", "set", "sleep", "--verb", "start"]),
-        "spec",
-    );
+    assert_ok(&env.run(&["spec", "sleep", "--verb", "start"]), "spec");
 
     let out = env.run(&["fields", "--json"]);
     assert_ok(&out, "fields --json");
@@ -1117,7 +1114,7 @@ fn subprocess_fields_ignored_is_the_latest_status_not_the_spec() {
     let env = Env::new();
     assert_ok(&env.run(&["track", "tea", "--verb", "occur"]), "track");
     assert_ok(&env.run(&["occur", "walk"]), "occur");
-    assert_ok(&env.run(&["spec", "set", "run", "--verb", "occur"]), "spec");
+    assert_ok(&env.run(&["spec", "run", "--verb", "occur"]), "spec");
     assert_ok(&env.run(&["ignore", "run"]), "ignore");
 
     let out = env.run(&["fields", "--json"]);

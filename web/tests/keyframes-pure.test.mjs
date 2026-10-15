@@ -12,7 +12,7 @@ const { advance, complete, framesOf } = await import('../src/lib/keyframes.ts');
 const { keysOf, stateKeysOf } = await import('../src/lib/fields.ts');
 const { shellSpans, shellSplit } = await import('../src/lib/shellSplit.ts');
 
-/** tea: a required key, an optional one, then one with a default — `spec show`'s parsed `keys`. */
+/** tea: a required key, an optional one, then one with a default — `spec F --json`'s parsed `keys`. */
 const TEA = {
 	keys: [
 		{ name: 'amount', kind: 'required', in_slug: false },

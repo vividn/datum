@@ -81,7 +81,7 @@ describe('aliases in the REPL', () => {
 
 	test('a field spec makes its own names commands', async () => {
 		await onSeam(async ({ run, entries }) => {
-			await ok(run, ['spec', 'set', 'mood', '--verb', 'switch', '--state', 'happy']);
+			await ok(run, ['spec', 'mood', '--verb', 'switch', '--state', 'happy']);
 
 			// The bare field name, and the state name, both without a verb.
 			await ok(run, ['mood', '-t', '0910']);
@@ -147,7 +147,7 @@ describe('the aliases widget', () => {
 			// resolved server-side by `crates/datum-commands/src/render/colors.rs`,
 			// which only understands `#rrggbb` (or a legacy ANSI-256 number) —
 			// a name like `orange` would fall through to `md5(field)` (da-yiyj).
-			await ok(run, ['spec', 'set', 'coffee', '--verb', 'occur', '--color', '#ffa500']);
+			await ok(run, ['spec', 'coffee', '--verb', 'occur', '--color', '#ffa500']);
 			await ok(run, ['alias', 'set', 'cof', 'occur coffee cups=1']);
 			// Split is layout mode's (da-vvcxc).
 			await manage(page, 'tail', 'split: a new pane to the right');

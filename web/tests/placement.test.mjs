@@ -1,7 +1,7 @@
 // The field form's Placement tab (da-btyvj): drag a field's lane on
 // today's real dayview band, optionally tied to a neighbour.
 //
-// Every assertion reads what was WRITTEN — `spec show`, `fields --json`,
+// Every assertion reads what was WRITTEN — `spec F --json`, `fields --json`,
 // `dayview --show json` — and never the pixels a drag leaves behind: a
 // driven drag sends its moves faster than frames are drawn, so a picture
 // read after it can look exactly like «the feature is missing».
@@ -57,11 +57,11 @@ describe('the Placement tab', () => {
 	// and drawing it costs what a boot did (da-m1m9a).
 	const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
-	const spec = async (app, field) => JSON.parse((await app.run(['spec', 'show', field])).stdout);
+	const spec = async (app, field) => JSON.parse((await app.run(['spec', field, '--json'])).stdout);
 	const lane = async (app, field) =>
 		JSON.parse((await app.run(['fields', '--json'])).stdout).find((f) => f.field === field);
 	const setPlace = async (app, field, place) => {
-		const r = await app.run(['spec', 'set', field, '--from-json', JSON.stringify({ ...(await spec(app, field)), ...place })]);
+		const r = await app.run(['spec', field, '--from-json', JSON.stringify({ ...(await spec(app, field)), ...place })]);
 		assert.equal(r.code, 0, r.stderr);
 	};
 

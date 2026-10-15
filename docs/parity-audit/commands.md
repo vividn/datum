@@ -351,7 +351,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Daydumb today:** `NowArgs` — `-A/--show-all`. Colored field display
   via spec metadata.
 - **Missing in daydumb:** nothing.
-- **Divergences:** daydumb uses per-field color from `datum spec set
+- **Divergences:** daydumb uses per-field color from `datum spec <field>
   --color` (stored in DB); datum uses a hard-coded palette.
 - **Tests in datum not in daydumb:** no dedicated file.
 - **Ideas / cleanup:** expose `--no-color` for pipe-friendly output.

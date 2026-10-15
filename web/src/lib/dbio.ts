@@ -7,7 +7,7 @@
 // browser's file dialog IS the command's stdin and a download IS its
 // stdout, and the CLI runs `-` exactly as it would in a pipe. `db purge`,
 // which wants a TTY to ask on, asks in a dialog instead, and so do
-// `kit install`'s trust (da-axrk), a replacing `db restore`'s
+// `spec F --delete` (da-ez40f), `kit install`'s trust (da-axrk), a replacing `db restore`'s
 // deletions (da-jrbwc), a `--hard` one's drops (da-qq7gb) and a stale
 // `_LAST`'s question (da-f5pg2, `asking`).
 //
@@ -24,6 +24,7 @@ import { writable } from 'svelte/store';
 import { saveFile } from './backup.js';
 import { backupArgv, chainListArgv, dbPurgeArgv, dbPurgeProbeArgv, restorePreviewArgv } from './calls.js';
 import { choose, confirm } from './confirm.js';
+import { runEchoed } from './echo.js';
 import { fileArgv } from './fileargv.js';
 import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
 
@@ -44,6 +45,10 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 		const typed = ['--yes', '-y', '--keep-sync-chain'].some((f) => flags.includes(f));
 		return typed ? null : purge(flags);
 	}
+	// The field is the line's one word that is not a flag, as the CLI reads
+	// it; a `--delete` with none is the CLI's to refuse, unasked.
+	const field = argv.slice(1).find((w) => !w.startsWith('-'));
+	if (cmd === 'spec' && field && argv.includes('--delete')) return deleteSpec(argv, field);
 	const file = fileArgv(argv);
 	if (!file) return null;
 	const ran =
@@ -59,6 +64,13 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	// the download — and saying so is one quiet line.
 	const note = `not a file in the browser: ${file.paths.join(', ')}`;
 	return ran.then((r) => ({ ...r, stderr: [r.stderr, note].filter(Boolean).join('\n') }));
+}
+
+/** `spec F --delete`, once the reader has said yes to it; its echo is the bar's DELETE. */
+async function deleteSpec(argv: string[], field: string): Promise<RunResult> {
+	const text = `Delete the spec of ${field}? Its entries stay, and one Undo brings the spec back.`;
+	if (!(await confirm(text, 'delete'))) return nothing(argv, 'spec not deleted — nothing ran');
+	return runEchoed(run, argv);
 }
 
 /** `datum`'s exit code for a question stdin did not answer (`EXIT_UNANSWERED`). */

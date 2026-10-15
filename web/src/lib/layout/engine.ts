@@ -28,7 +28,7 @@ import { run, type RunResult } from '$lib/run.js';
 import { conflictsArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '$lib/calls.js';
 import { listsConflicts, type Conflicted } from '$lib/conflicts.js';
 import { verbAsked } from '$lib/track.js';
-import { openField } from '$lib/fieldWidget.js';
+import { openField, specOpens } from '$lib/fieldWidget.js';
 import { openPlace } from './shell.js';
 import {
 	buttonsFor,
@@ -255,6 +255,9 @@ export async function press(
 	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
 	// The listing, typed, opens the widget they are resolved in (da-6cutb).
 	if (result.code === 0 && listsConflicts(argv)) void openPlace('conflicts');
+	// So do `spec` and `spec F` the field widget, on F (da-ez40f).
+	const field = specOpens(argv);
+	if (result.code === 0 && field !== null) void openField(field);
 	return (await answerVerb(argv, result)) ?? result;
 }
 

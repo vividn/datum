@@ -517,7 +517,7 @@ describe("the day strip's day height and its pin", () => {
 	// whose pane has only the SVG's own root style — takes no text at all.
 	test("a picture's text is not selectable: a dot's symbol, the ruler, nowview", async () => {
 		await shared.solo(async (app) => {
-			await app.run(['spec', 'set', 'coffee', '--verb', 'occur', '--glyph', '▲']);
+			await app.run(['spec', 'coffee', '--verb', 'occur', '--glyph', '▲']);
 			await app.submit('occur coffee -t -30');
 			const glyph = app.page.locator('.band[data-days-ago="0"] text.point-fg', { hasText: '▲' });
 			const nowGlyph = app.page.locator(`${NOWVIEW} text.point-fg`, { hasText: '▲' });

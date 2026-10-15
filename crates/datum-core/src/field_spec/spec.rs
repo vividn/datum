@@ -134,7 +134,7 @@ pub struct FieldSpec {
     pub state_colors: HashMap<String, String>,
     /// Per-state human descriptions (da-zwqk). Mirrors `state_colors`'s
     /// per-state pattern — empty by default, absent in JSON when empty.
-    /// Surfaced by `datum spec show <field>` and `datum spec describe
+    /// Surfaced by `datum spec <field>` and `datum spec describe
     /// <field>` so the meaning of each state lives alongside its name
     /// rather than only in prose.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -214,7 +214,7 @@ pub struct FieldSpec {
     pub comment_remainder: bool,
 
     /// Free-form tags. Used by views and kit commands to group fields by a
-    /// schema-level marker (e.g. `["chore"]`); `datum spec list --tag`
+    /// schema-level marker (e.g. `["chore"]`); `datum spec --tag`
     /// filters on it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
@@ -410,6 +410,11 @@ impl FieldSpec {
         }
         let listed = self.allowed_states.as_deref().unwrap_or_default();
         let field = &self.field;
+        // `--state` names the whole list, so the line that adds one names them all.
+        let adding = |s: &str| {
+            let states = listed.iter().map(String::as_str).chain([s]);
+            states.map(|s| format!(" --state {s}")).collect::<String>()
+        };
         match state {
             JsonValue::Null => None,
             JsonValue::Array(states) => states.iter().find_map(|s| self.refuses_state(s)),
@@ -418,8 +423,9 @@ impl FieldSpec {
             JsonValue::Bool(false) => Some(format!(
                 "field '{field}' is never false and takes only its listed states \
                  (never_false, only_listed_states): it cannot be ended — switch it \
-                 to another state, list `false` (`datum spec add-state {field} false`), \
-                 or `datum spec set {field} --allow-false`"
+                 to another state, list `false` (`datum spec {field}{}`), \
+                 or `datum spec {field} --allow-false`",
+                adding("false")
             )),
             JsonValue::String(s) if s == IGNORED_STATE_VALUE || s == TRACKED_STATE_VALUE => None,
             JsonValue::Bool(true) => Some(format!(
@@ -434,9 +440,10 @@ impl FieldSpec {
                 (!listed.contains(&text)).then(|| {
                     format!(
                         "field '{field}' takes only its listed states (only_listed_states): \
-                         '{text}' is not one of [{}] — add it with `datum spec add-state \
-                         {field} {text}`, or `datum spec set {field} --any-states`",
-                        listed.join(", ")
+                         '{text}' is not one of [{}] — add it with `datum spec {field}{}`, \
+                         or `datum spec {field} --any-states`",
+                        listed.join(", "),
+                        adding(&text)
                     )
                 })
             }

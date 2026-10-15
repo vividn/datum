@@ -20,8 +20,8 @@
 		["dayview", "--end-date", "2026-03-16", "--width", "600", "--height", "200"],
 		["nowview", "-o", "-", "--width", "400", "--height", "300"],
 		["check"],
-		["spec", "set", "coffee", "--color", "#884400"],
-		["spec", "show", "coffee"],
+		["spec", "coffee", "--color", "#884400"],
+		["spec", "coffee"],
 		["nosuch"]
 	],
 	"cases": [
@@ -121,14 +121,14 @@
 			"stdout": "✓ No consistency issues found: 14 entries, 5 field specs, 1 alias examined, 0 cached days recomputed, 0 differ, 14 rows read against 14 sync ops, 0 differ (checkers: base, verbs, aliases, slugs, integrity, flags, tz, refs, stats, sync, spool)."
 		},
 		{
-			"argv": ["spec", "set", "coffee", "--color", "#884400"],
+			"argv": ["spec", "coffee", "--color", "#884400"],
 			"code": 0,
-			"stdout": "✓ Spec saved for 'coffee'"
+			"stdout": "\u001b[36mUPDATE\u001b[0m \u001b[36m<id8>\u001b[0m \u001b[90mspec:coffee\u001b[0m\ncoffee  occur  #884400  tracked\n+ color   #884400"
 		},
 		{
-			"argv": ["spec", "show", "coffee"],
+			"argv": ["spec", "coffee"],
 			"code": 0,
-			"stdout": "{\n  \"field\": \"coffee\",\n  \"verb\": \"occur\",\n  \"subfields\": {},\n  \"description\": null,\n  \"id_template\": null,\n  \"color\": \"#884400\",\n  \"allowed_states\": null,\n  \"state_colors\": {},\n  \"derived_aliases\": [\n    {\n      \"state\": \"coffee\",\n      \"expands_to\": \"occur coffee\",\n      \"kind\": \"bare_field\"\n    }\n  ],\n  \"id_keys\": [],\n  \"data_keys\": [],\n  \"no_autoalias\": false,\n  \"keys\": []\n}"
+			"stdout": "coffee  occur  #884400  tracked"
 		},
 		{
 			"argv": ["nosuch"],

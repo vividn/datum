@@ -108,8 +108,22 @@ fn a_moment_state_resumes_the_state_before_it() {
     let env = Env::new();
     let day = ["-d", "2025-01-08"];
     env.ok(&[&["switch", "mood", "happy", "-t", "09:00"][..], &day].concat());
-    env.ok(&["spec", "add-state", "mood", "startled", "#ff0000", "x"]);
-    env.ok(&["spec", "add-state", "mood", "startled2", "#0000ff", "y"]);
+    env.ok(&[
+        "spec",
+        "mood",
+        "--state",
+        "startled",
+        "--state",
+        "startled2",
+        "--state-color",
+        "startled=#ff0000",
+        "--state-color",
+        "startled2=#0000ff",
+        "--state-description",
+        "startled=x",
+        "--state-description",
+        "startled2=y",
+    ]);
     env.ok(&[
         &["switch", "mood", "startled", "-t", "11:00", "dur=MOMENT"][..],
         &day,

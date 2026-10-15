@@ -65,12 +65,12 @@ const onPage = (fn) =>
  * its states, which is the other half of `start`'s rule.
  */
 const SEED = [
-	'spec set coffee --verb occur',
-	'spec set sleep --verb start',
-	'spec set work --verb start',
-	'spec set mood --verb switch --state good --state bad',
-	'spec set light --verb switch --state true --state false',
-	'spec set rec --verb add',
+	'spec coffee --verb occur',
+	'spec sleep --verb start',
+	'spec work --verb start',
+	'spec mood --verb switch --state good --state bad',
+	'spec light --verb switch --state true --state false',
+	'spec rec --verb add',
 	'start work -t -60',
 	'switch mood good -t -30'
 ];
@@ -362,7 +362,7 @@ describe('holding a command fills it and shows its flags', () => {
 	test('after a run, or under another command, a flag tap starts `occur -q ` again', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec set coffee --verb occur']);
+			await seedLines(app, ['spec coffee --verb occur']);
 			const q = commands(page).locator('button[data-flag="occur -q"]');
 			const value = (v) => page.waitForFunction((v) => document.querySelector('.prompt-bar input').value === v, v);
 			await hold(page, 'occur');
@@ -387,7 +387,7 @@ describe('holding a command fills it and shows its flags', () => {
 	test('a field tap under `occur -q ` runs `occur -q coffee` and spends the line', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec set coffee --verb occur']);
+			await seedLines(app, ['spec coffee --verb occur']);
 			await hold(page, 'occur');
 			await commands(page).locator('button[data-flag="occur -q"]').click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');
@@ -563,9 +563,9 @@ describe('a verb fills the line and filters the fields', () => {
 describe('a verb under a field pill', () => {
 	const KEYED = [
 		...SEED,
-		'spec set tea --verb occur --data-key amount',
-		'spec set juice --verb occur --data-key cups=1',
-		'spec set shift --verb start --data-key project --data-key n=1',
+		'spec tea --verb occur --data-key amount',
+		'spec juice --verb occur --data-key cups=1',
+		'spec shift --verb start --data-key project --data-key n=1',
 		'start shift project=a n=1 -t -30'
 	];
 	const verb = (page, name) => commands(page).locator(`button[data-command="${name}"]`);
@@ -643,7 +643,7 @@ describe('a verb under a field pill', () => {
 	test('a spaced field under its pill: the fill and the echo quote it, and both log to it', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec set "my coffee" --verb occur --data-key amount', 'spec set "iced tea" --verb occur']);
+			await seedLines(app, ['spec "my coffee" --verb occur --data-key amount', 'spec "iced tea" --verb occur']);
 			await pillOf(page, 'my coffee');
 			await verb(page, 'occur').click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur "my coffee" ');
@@ -998,7 +998,7 @@ describe('Undo', () => {
 	test('runs at once, and past ten minutes runs anyway and says how old', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec set coffee --verb occur', 'occur coffee']);
+			await seedLines(app, ['spec coffee --verb occur', 'occur coffee']);
 			assert.equal((await app.entries(1))[0].field, 'coffee');
 
 			await commands(page).locator('button[data-command="undo"]').click();
@@ -1060,7 +1060,7 @@ describe('Undo', () => {
 				await app.idle();
 			};
 
-			await seedLines(app, ['spec set coffee --verb occur', 'occur coffee']);
+			await seedLines(app, ['spec coffee --verb occur', 'occur coffee']);
 			assert.deepEqual(await lit(false), { label: 'redo', title: 'nothing to redo' });
 			assert.equal(await undo.getAttribute('aria-label'), 'undo');
 

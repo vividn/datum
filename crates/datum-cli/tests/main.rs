@@ -105,6 +105,7 @@ mod show_flag_family;
 mod show_json;
 mod spec_cmd;
 mod spec_entries;
+mod spec_grammar;
 mod spec_keys;
 mod spec_lists;
 mod spool;

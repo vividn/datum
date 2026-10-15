@@ -184,7 +184,7 @@ pub fn split_off_global_db_flag(argv: Vec<String>) -> (Vec<String>, Vec<String>)
 
 /// Split the global `--color WHEN` / `--color=WHEN` off argv, as
 /// [`split_off_global_db_flag`] does `--db`. Only in front of the command
-/// and of any `--`: after the command, `--color` is `track`'s and `spec set`'s.
+/// and of any `--`: after the command, `--color` is `track`'s and `spec`'s.
 pub fn split_off_global_color_flag(mut argv: Vec<String>) -> (Vec<String>, Vec<String>) {
     let mut i = 1;
     while let Some(tok) = argv.get(i) {

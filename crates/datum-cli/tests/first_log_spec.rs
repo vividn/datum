@@ -98,7 +98,7 @@ fn the_last_live_entry_takes_the_spec_and_undo_returns_both() {
 fn a_shaped_spec_survives_its_last_entry() {
     let db = fresh_db();
     run_cli(&["occur", "x"], &db).unwrap();
-    run_cli(&["spec", "set", "x", "--data-key", "size"], &db).unwrap();
+    run_cli(&["spec", "x", "--data-key", "size"], &db).unwrap();
     run_cli(&["delete", "_"], &db).unwrap();
     assert_count!(db, "x", 0);
     assert!(db.load_spec("x").unwrap().is_some());

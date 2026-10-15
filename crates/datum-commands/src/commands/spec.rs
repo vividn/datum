@@ -1,50 +1,44 @@
-//! `datum spec` — field-spec management (set, show, list, aliases).
+//! `datum spec` — field-spec management: `spec [FIELD] [CHANGES]`.
 
 use anyhow::{Context, Result};
 use datum_core::{
     action::Action,
     db::{Db, IGNORED_STATE_VALUE},
+    entry::Entry,
     field_spec::{parse_key_decl, FieldSpec, GlyphBy, KeyKind},
     kit_color::resolve,
     shape::{is_ignored_state, TRACKED_STATE_VALUE},
     time::DatumTime,
     track::track_entry,
 };
+use datum_parse::parse::SPEC;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::args::{SpecCommand, SpecSetArgs};
 use crate::config::client_id;
+use crate::render::{self, show_action, Outcome, OutputArgs};
+use datum_parse::input::Show;
 
 pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
     // A spec is an entry (da-lc26c): a write is stamped with this client.
-    if matches!(sub, SpecCommand::Set(_) | SpecCommand::AddState { .. }) {
+    if matches!(sub, SpecCommand::Set(_)) {
         db.set_client_id(&client_id()?);
     }
     match sub {
-        SpecCommand::Show { field, text } => match db.load_spec(&field)? {
-            Some(spec) if text => render_spec_text(&spec),
-            Some(spec) => println!("{}", serde_json::to_string_pretty(&spec_json(&spec))?),
+        SpecCommand::Show { field, show } => match db.load_spec(&field)? {
+            Some(spec) if show == Show::Json => {
+                println!("{}", serde_json::to_string_pretty(&spec_json(&spec))?)
+            }
+            Some(spec) => print!("{}", Block::of(&spec, ignored(db, &field)?).render(None)),
+            // `spec list` and the rest were subcommands (da-ez40f): a field
+            // of that name with no spec is most likely the old line.
+            None if ["list", "show", "set", "remove", "add-state"].contains(&field.as_str()) => {
+                println!("No spec defined for field '{field}' (`{SPEC}` alone lists the specs)")
+            }
             None => println!("No spec defined for field '{field}'"),
         },
-        SpecCommand::AddState {
-            field,
-            name,
-            color,
-            description,
-            glyph,
-            keys,
-            assign,
-        } => spec_add_state(
-            &field,
-            &name,
-            color.as_deref(),
-            description.as_deref(),
-            glyph.as_deref(),
-            (&keys, &assign),
-            db,
-        )?,
         SpecCommand::Set(args) => spec_set(*args, db)?,
         SpecCommand::List { tag } => {
             if let Some(tag) = tag {
@@ -69,13 +63,39 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
                 }
             }
         }
-        SpecCommand::Remove { field } => {
-            if let Some(hid) = db.delete_field_spec(&field)? {
-                remember(db, hid);
-            }
-            println!("✓ Spec removed for '{field}' (derived aliases dropped)");
+        SpecCommand::Delete { field, show } => {
+            // Deleting what is not there changes nothing, and says so.
+            let Some(row) = db.spec_entry(&field)? else {
+                eprintln!("⚠ '{field}' has no spec: nothing deleted");
+                return Ok(());
+            };
+            db.delete_field_spec(&field)?;
+            remember(db, row.hid.clone());
+            echo(db, &row, Outcome::Delete, show)?;
         }
     }
+    Ok(())
+}
+
+/// Is `field` ignored now? What a spec's block says beside it.
+fn ignored(db: &Db, field: &str) -> Result<bool> {
+    Ok(db
+        .state_at(field, DatumTime::now().utc)?
+        .is_some_and(|s| is_ignored_state(&s)))
+}
+
+/// The spec entry's action: the one-line summary over its block, or under
+/// `--show json` the echo the web's bar draws (da-ez40f).
+fn echo(db: &Db, entry: &Entry, action: Outcome, show: Show) -> Result<()> {
+    let show = match show {
+        Show::Json => render::Show::Json,
+        _ => render::Show::Minimal,
+    };
+    let args = OutputArgs {
+        show,
+        format_string: None,
+    };
+    show_action(entry, action, Some(&db.load_registry()?), &args);
     Ok(())
 }
 
@@ -86,7 +106,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             serde_json::from_str(json).with_context(|| "Invalid field spec JSON")?;
         if let Some(obj) = v.as_object_mut() {
             obj.insert("field".into(), args.field.clone().into());
-            // `spec show`'s reading of the keys, not the spec (`SpecJson`).
+            // `spec F --json`'s reading of the keys, not the spec (`SpecJson`).
             obj.remove("keys");
             obj.remove("keys_by_state");
         }
@@ -100,8 +120,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             // da-c8mh: a spec cannot be born verbless. On a field with a
             // log, `--verb` is optional and the log answers once; on a new
             // one the user is asked, because there is nothing to read.
-            // Naming the states a field can be in says it is a switch
-            // field, the same claim `spec add-state` makes.
+            // Naming the states a field can be in says it is a switch field.
             None if args.verb.is_none() && !args.states.is_empty() => {
                 FieldSpec::new(&args.field, Action::Switch)
             }
@@ -327,9 +346,34 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     } else {
         None
     };
+    let before = db.spec_entry(&spec.field)?;
+    let old = db.load_spec(&spec.field)?;
+    // No change, no write, no undo step (da-ez40f).
+    if status.is_none()
+        && old.as_ref().map(serde_json::to_value).transpose()? == Some(serde_json::to_value(&spec)?)
+    {
+        match (&before, args.show) {
+            (Some(row), Show::Json) => echo(db, row, Outcome::NoDiff, Show::Json)?,
+            _ => println!("no change"),
+        }
+        return Ok(());
+    }
+    let was_ignored = ignored(db, &spec.field)?;
+    let was = old.as_ref().map(|old| Block::of(old, was_ignored));
     let report = db.save_field_spec_with(&spec, status.as_ref())?;
     remember(db, report.hid.clone());
-    println!("✓ Spec saved for '{}'", spec.field);
+    let row = db
+        .spec_entry(&spec.field)?
+        .context("the spec just saved is not there")?;
+    let action = match old {
+        Some(_) => Outcome::Update,
+        None => Outcome::Create,
+    };
+    echo(db, &row, action, args.show)?;
+    if args.show != Show::Json {
+        let now = Block::of(&spec, ignored(db, &spec.field)?);
+        print!("{}", now.render(was.as_ref()));
+    }
     warn_alias_conflicts(&report);
     Ok(())
 }
@@ -517,12 +561,12 @@ fn check_factors(spec: &mut FieldSpec) -> Result<()> {
     Ok(())
 }
 
-/// A kit's field meets `spec set`'s checks (da-dtmlv): every glyph is one
+/// A kit's field meets `spec`'s checks (da-dtmlv): every glyph is one
 /// printable character, the icon is vetted and stored as `--icon`'s is, and
 /// so are the glyph's size factors (da-gah1q).
 pub(crate) fn check_presentation(spec: &mut FieldSpec) -> Result<()> {
     let pres = &mut spec.presentation;
-    // Each glyph names what it belongs to, as spec set's flags do (da-am7cq).
+    // Each glyph names what it belongs to, as spec's flags do (da-am7cq).
     if let Some(glyph) = &pres.glyph {
         check_glyph("glyph", glyph)?;
     }
@@ -539,7 +583,7 @@ pub(crate) fn check_presentation(spec: &mut FieldSpec) -> Result<()> {
 }
 
 /// Vet a STORED icon again where it is drawn (da-45wgz): a spec can arrive
-/// by sync or a hand edit without passing `spec set`, so the stored text is
+/// by sync or a hand edit without passing `spec`, so the stored text is
 /// untrusted whatever route it came by. One that fails is dropped — its dots
 /// draw as if it had none — and said once per field on stderr.
 pub(crate) fn drop_unvetted_icon(spec: &mut FieldSpec) {
@@ -607,87 +651,12 @@ fn warn_alias_conflicts(report: &datum_core::db::SaveSpecReport) {
     }
 }
 
-/// `datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]` — merge one
-/// state into a field spec without disturbing the others (da-t9ps).
-///
-/// The incremental, footgun-free counterpart to `spec set --state`, which
-/// replaces the whole `allowed_states` list. Appends NAME to the states
-/// (idempotent — re-adding an existing state just refreshes its color and
-/// description) and, when supplied, records the per-state color and
-/// description alongside it. Creates the spec (Occur default) if absent.
-fn spec_add_state(
-    field: &str,
-    name: &str,
-    color: Option<&str>,
-    description: Option<&str>,
-    glyph: Option<&str>,
-    (keys, assign): (&[String], &[String]),
-    db: &Db,
-) -> Result<()> {
-    check_state_name(field, name)?;
-    if let Some(g) = glyph {
-        check_glyph("GLYPH", g)?;
-    }
-    let mut spec = match db.load_spec(field)? {
-        Some(s) => s,
-        // A field named only by its states is a switch field — that is
-        // what `add-state` says about it (da-c8mh).
-        None => FieldSpec::new(field, Action::Switch),
-    };
-
-    let states = spec.allowed_states.get_or_insert_with(Vec::new);
-    let existed = states.iter().any(|s| s == name);
-    if !existed {
-        states.push(name.to_string());
-    }
-    if let Some(c) = color {
-        let c = resolve(c, name).context("COLOR")?;
-        spec.state_colors.insert(name.to_string(), c);
-    }
-    if let Some(d) = description {
-        spec.state_descriptions
-            .insert(name.to_string(), d.to_string());
-    }
-    if let Some(g) = glyph {
-        spec.presentation
-            .state_glyphs
-            .insert(name.to_string(), g.to_string());
-    }
-    if !keys.is_empty() {
-        let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
-        set_state_keys(&mut spec, name, &keys);
-    }
-    set_state_assign(&mut spec, name, assign)?;
-
-    spec.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
-    spec.regenerate_derived_aliases();
-
-    let report = db.save_field_spec_with_report(&spec)?;
-    remember(db, report.hid.clone());
-    let verb = if existed { "updated" } else { "added" };
-    println!("✓ State '{name}' {verb} on '{field}'");
-    warn_alias_conflicts(&report);
-    Ok(())
-}
-
-/// A state's own keys with their kinds, under the state's line (da-cej7q),
-/// its assigned ones after them (da-ulc0v).
-fn print_state_keys(spec: &FieldSpec, state: &str) {
-    for key in spec.state_keys.get(state).into_iter().flatten() {
-        let (name, kind) = datum_parse::spec_keys::parse_key_decl(key);
-        println!("      {name:<14} {kind}");
-    }
-    for (name, v) in spec.state_assign.get(state).into_iter().flatten() {
-        println!("      {name:<14} assign {v}");
-    }
-}
-
-/// A spec as `spec show` and `fields --json` print it (da-p3hxn): the
+/// A spec as `spec F --json` and `fields --json` print it (da-p3hxn): the
 /// stored spec, plus every key it declares ALREADY PARSED, so no reader
 /// splits a spelling — `keys`, [`FieldSpec::declared_keys`] in binding
 /// order as `{name, kind, value?, in_slug}`, and `keys_by_state`, the same
 /// list for an entry in each state that declares keys of its own. Neither
-/// is stored: `spec set --from-json` ignores both.
+/// is stored: `spec --from-json` ignores both.
 #[derive(serde::Serialize)]
 pub struct SpecJson<'a> {
     #[serde(flatten)]
@@ -724,113 +693,211 @@ pub fn spec_json(spec: &FieldSpec) -> SpecJson<'_> {
     }
 }
 
-/// Human-readable summary of a FieldSpec — `datum spec show <FIELD> --text`.
-///
-/// JSON output (`spec show <FIELD>` without `--text`) is precise and good
-/// for programmatic use, but a typed-out reading of the spec's intent reads
-/// faster for humans. This format prints field-level metadata first, then
-/// per-state lines listing color + description side by side (da-nhzo).
-fn render_spec_text(spec: &FieldSpec) {
-    println!("{}", spec.field);
-    println!("  verb: {}", spec.verb);
-    if let Some(d) = &spec.description {
-        println!("  description: {d}");
-    }
-    if let Some(c) = &spec.color {
-        println!("  color: {c}");
-    }
-    if let Some(g) = &spec.presentation.glyph {
-        println!("  glyph: {g}");
-    }
-    if let Some(icon) = &spec.presentation.icon {
-        println!("  icon: {:.1} kB of SVG", icon.len() as f64 / 1024.0);
-    }
-    if let Some(by) = &spec.presentation.glyph_by {
-        let values: Vec<_> = by.map.iter().map(|(v, g)| format!("{v}={g}")).collect();
-        println!("  glyph by {}: {}", by.key, values.join(" "));
-    }
-    if let Some(n) = spec.presentation.glyph_scale {
-        println!("  glyph scale: ×{n}");
-    }
-    if let Some(n) = spec.presentation.glyph_aspect {
-        println!("  glyph aspect: {n}");
-    }
-    if let Some(f) = &spec.state_lookup_field {
-        println!("  state lookup field: {f}");
-    }
-    if let Some(states) = &spec.allowed_states {
-        println!("  states:");
-        for state in states {
-            let mut color = spec
-                .state_colors
-                .get(state)
-                .cloned()
-                .unwrap_or_else(|| "(auto)".to_string());
-            if let Some(g) = spec.presentation.state_glyphs.get(state) {
-                color = format!("{color} {g}");
-            }
-            let desc = spec
-                .state_descriptions
-                .get(state)
+/// A spec as `spec F` prints it (da-ez40f): the field, its verb, colour and
+/// status on one line, then one labelled line for each thing it says — every
+/// flag's, so a change to any of them has a line to mark.
+struct Block {
+    field: String,
+    /// The head's values by label (verb, color, status), then the lines'.
+    head: Vec<(String, String)>,
+    lines: Vec<(String, String)>,
+}
+
+impl Block {
+    fn of(spec: &FieldSpec, ignored: bool) -> Self {
+        let mut head = vec![("verb".to_string(), spec.verb.to_string())];
+        if let Some(c) = &spec.color {
+            head.push(("color".into(), c.clone()));
+        }
+        let status = if ignored { "ignored" } else { "tracked" };
+        head.push(("status".into(), status.into()));
+        let mut lines: Vec<(String, String)> = Vec::new();
+        let mut line = |label: &str, value: String| lines.push((label.to_string(), value));
+        let pres = &spec.presentation;
+        let listed = |only: bool| if only { "  only listed" } else { "" };
+        if let Some(d) = &spec.description {
+            line("description", d.clone());
+        }
+        if let Some(t) = &spec.id_template {
+            line("id template", t.clone());
+        }
+        if let Some(g) = &pres.glyph {
+            line("glyph", g.clone());
+        }
+        if let Some(icon) = &pres.icon {
+            line(
+                "icon",
+                format!("{:.1} kB of SVG", icon.len() as f64 / 1024.0),
+            );
+        }
+        if let Some(by) = &pres.glyph_by {
+            let values: Vec<_> = by.map.iter().map(|(v, g)| format!("{v}={g}")).collect();
+            line("glyph by", format!("{} {}", by.key, values.join(" ")));
+        }
+        if let Some(n) = pres.glyph_scale {
+            line("glyph scale", format!("×{n}"));
+        }
+        if let Some(n) = pres.glyph_aspect {
+            line("glyph aspect", n.to_string());
+        }
+        let position: Vec<String> = [("y", pres.y), ("height", pres.height), ("z", pres.z_index)]
+            .into_iter()
+            .filter_map(|(k, v)| v.map(|v| format!("{k} {v}")))
+            .collect();
+        if !position.is_empty() {
+            line("position", position.join("  "));
+        }
+        if let Some(f) = &spec.state_lookup_field {
+            line("state lookup", f.clone());
+        }
+        let states = spec.allowed_states.as_deref().unwrap_or_default();
+        if !states.is_empty() || spec.only_listed_states {
+            let only = listed(spec.only_listed_states);
+            line("states", format!("{}{only}", states.join(" · ")));
+        }
+        if spec.never_false {
+            line("never false", "yes".into());
+        }
+        // Each state's own, listed or not, in the list's order and then by name.
+        let mut named: Vec<&String> = spec
+            .state_colors
+            .keys()
+            .chain(spec.state_descriptions.keys())
+            .chain(pres.state_glyphs.keys())
+            .chain(spec.state_keys.keys())
+            .chain(spec.state_assign.keys())
+            .filter(|s| !states.contains(s))
+            .collect();
+        named.sort();
+        named.dedup();
+        for state in states.iter().chain(named) {
+            let own: Vec<&str> = [spec.state_colors.get(state), pres.state_glyphs.get(state)]
+                .into_iter()
+                .flatten()
                 .map(String::as_str)
-                .unwrap_or("");
-            if desc.is_empty() {
-                println!("    {state:<16} {color}");
-            } else {
-                println!("    {state:<16} {color}  — {desc}");
+                .collect();
+            let mut own = own.join(" ");
+            if let Some(d) = spec.state_descriptions.get(state) {
+                own = format!("{own} — {d}").trim_start().to_string();
             }
-            // da-cej7q: the state's own keys, under it.
-            print_state_keys(spec, state);
+            if !own.is_empty() {
+                line(&format!("state {state}"), own);
+            }
+            let keys: Vec<String> = spec
+                .state_keys
+                .get(state)
+                .into_iter()
+                .flatten()
+                .cloned()
+                .chain(
+                    spec.state_assign
+                        .get(state)
+                        .into_iter()
+                        .flatten()
+                        .map(|(k, v)| format!("{k}={v} (assign)")),
+                )
+                .collect();
+            if !keys.is_empty() {
+                line(&format!("state {state} keys"), keys.join(" "));
+            }
         }
-    } else if !spec.state_descriptions.is_empty() {
-        // Descriptions without an allowed_states list — list them anyway.
-        println!("  state_descriptions:");
-        let mut names: Vec<&String> = spec.state_descriptions.keys().collect();
-        names.sort();
-        for name in names {
-            let desc = &spec.state_descriptions[name];
-            println!("    {name:<16} {desc}");
+        // Every key the spec declares, subfields too (da-9s98k), as the
+        // line would spell it: `-K` a slug key, `-k` a data key.
+        let (assigned, slots): (Vec<_>, Vec<_>) = spec
+            .declared_keys(None)
+            .into_iter()
+            .partition(|k| matches!(k.kind, KeyKind::Assign(_)));
+        let spell = |k: &datum_core::field_spec::DeclaredKey| {
+            let flag = if k.id { "-K" } else { "-k" };
+            match &k.kind {
+                KeyKind::Required => format!("{flag} {}", k.name),
+                KeyKind::Optional => format!("{flag} {}=", k.name),
+                KeyKind::Default(v) | KeyKind::Assign(v) => format!("{flag} {}={v}", k.name),
+            }
+        };
+        if !slots.is_empty() || spec.only_listed_keys {
+            let keys: Vec<String> = slots.iter().map(spell).collect();
+            line(
+                "keys",
+                format!("{}{}", keys.join(" "), listed(spec.only_listed_keys)),
+            );
+        }
+        if !assigned.is_empty() {
+            let keys: Vec<String> = assigned.iter().map(spell).collect();
+            line("assign", keys.join(" "));
+        }
+        if let Some(r) = &spec.remainder {
+            line("remainder", r.clone());
+        }
+        if !spec.tags.is_empty() {
+            line("tags", spec.tags.join(" · "));
+        }
+        if spec.no_autoalias {
+            line("auto-aliases", "off".into());
+        }
+        Block {
+            field: spec.field.clone(),
+            head,
+            lines,
         }
     }
-    // da-9s98k: every key the spec declares — `id_keys`, `data_keys` and
-    // subfields alike — with its kind, `(id)` marking a slug key; the
-    // assigned ones as a group of their own (da-ulc0v).
-    let (assigned, slots): (Vec<_>, Vec<_>) = spec
-        .declared_keys(None)
-        .into_iter()
-        .partition(|k| matches!(k.kind, KeyKind::Assign(_)));
-    for (head, keys) in [("keys", slots), ("assign", assigned)] {
-        if !keys.is_empty() {
-            println!("  {head}:");
+
+    /// The block, each line `was` does not hold marked: `+` new, `~` changed
+    /// (`old → new`), `−` gone. With no `was`, the block as it stands.
+    fn render(&self, was: Option<&Block>) -> String {
+        let head: Vec<&str> = self.head.iter().map(|(_, v)| v.as_str()).collect();
+        let mut out = format!(
+            "{}  {}
+",
+            self.field,
+            head.join("  ")
+        );
+        let labels = [&self.head, &self.lines]
+            .into_iter()
+            .chain(was.into_iter().flat_map(|w| [&w.head, &w.lines]))
+            .flatten();
+        let width = labels.map(|(l, _)| l.width()).max().unwrap_or(0);
+        // A head value that changed gets a line of its own under the head.
+        if let Some(was) = was {
+            diff(&mut out, &self.head, Some(&was.head), width, false);
         }
-        for k in keys {
-            let id = if k.id { "  (id)" } else { "" };
-            let kind = match k.kind {
-                KeyKind::Assign(v) => v,
-                kind => kind.to_string(),
-            };
-            println!("    {:<16} {kind}{id}", k.name);
+        diff(
+            &mut out,
+            &self.lines,
+            was.map(|w| &w.lines[..]),
+            width,
+            true,
+        );
+        out
+    }
+}
+
+/// `now`'s lines against `then`'s, by label, onto `out`; an unchanged one
+/// only if `unchanged`.
+fn diff(
+    out: &mut String,
+    now: &[(String, String)],
+    then: Option<&[(String, String)]>,
+    width: usize,
+    unchanged: bool,
+) {
+    let mut put = |mark: &str, label: &str, value: &str| {
+        let pad = " ".repeat(width - label.width());
+        out.push_str(&format!("{mark} {label}{pad}  {value}\n"));
+    };
+    let find = |of: &[(String, String)], label: &str| of.iter().position(|(l, _)| l == label);
+    for (label, value) in now {
+        match then.map(|t| find(t, label).map(|i| &t[i].1)) {
+            Some(None) => put("+", label, value),
+            Some(Some(old)) if old != value => put("~", label, &format!("{old} → {value}")),
+            _ if unchanged => put(" ", label, value),
+            _ => {}
         }
     }
-    // A state holding keys the `states` list does not name — list it anyway.
-    let listed = spec.allowed_states.as_deref().unwrap_or_default();
-    let mut unlisted: Vec<&String> = spec
-        .state_keys
-        .keys()
-        .chain(spec.state_assign.keys())
-        .filter(|s| !listed.contains(s))
-        .collect();
-    unlisted.sort();
-    unlisted.dedup();
-    if !unlisted.is_empty() {
-        println!("  state keys:");
-        for state in unlisted {
-            println!("    {state}");
-            print_state_keys(spec, state);
+    for (label, value) in then.unwrap_or_default() {
+        if find(now, label).is_none() {
+            put("−", label, value);
         }
-    }
-    if !spec.tags.is_empty() {
-        println!("  tags: {:?}", spec.tags);
     }
 }
 
@@ -844,7 +911,7 @@ mod tests {
     fn cmd_spec_set_flag_flow_creates_derived_aliases() {
         let db = Db::open_in_memory().unwrap();
 
-        // spec set mood --verb switch --state happy --state sad \
+        // spec mood --verb switch --state happy --state sad \
         //               --color green --id-template "%field%:%state%"
         let args = SpecSetArgs {
             field: "mood".to_string(),
@@ -877,7 +944,7 @@ mod tests {
         assert_eq!(spec.color, Some(resolve("green", "mood").unwrap()));
         let states = spec.allowed_states.as_ref().unwrap();
         assert!(states.contains(&"happy".to_string()) && states.contains(&"sad".to_string()));
-        // da-2sr, da-2pbvd: --track on `spec set` writes the TRACK row; the
+        // da-2sr, da-2pbvd: --track on `spec` writes the TRACK row; the
         // spec itself carries no tracked/ignored bits.
         let mood_tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let mood_row = mood_tracked.iter().find(|f| f.field == "mood").unwrap();
@@ -962,95 +1029,6 @@ mod tests {
     }
 
     #[test]
-    fn cmd_spec_add_state_merges_without_dropping_others() {
-        let db = Db::open_in_memory().unwrap();
-
-        // A live multi-state field.
-        spec_set(
-            SpecSetArgs {
-                field: "mood".to_string(),
-                verb: Some("switch".to_string()),
-                states: vec!["happy".to_string(), "sad".to_string()],
-                state_descriptions: vec!["happy=joyful".to_string()],
-                ..Default::default()
-            },
-            &db,
-        )
-        .unwrap();
-
-        // Add one state with color + description — the others must survive.
-        spec_add_state(
-            "mood",
-            "meh",
-            Some("yellow"),
-            Some("so-so"),
-            None,
-            (&[], &[]),
-            &db,
-        )
-        .unwrap();
-
-        let spec = db.load_spec("mood").unwrap().unwrap();
-        let states = spec.allowed_states.as_ref().unwrap();
-        assert_eq!(states, &["happy", "sad", "meh"]);
-        assert_eq!(
-            spec.state_colors.get("meh"),
-            Some(&resolve("yellow", "meh").unwrap())
-        );
-        assert_eq!(
-            spec.state_descriptions.get("meh").map(String::as_str),
-            Some("so-so")
-        );
-        // Pre-existing description is untouched.
-        assert_eq!(
-            spec.state_descriptions.get("happy").map(String::as_str),
-            Some("joyful")
-        );
-        // The new state's derived alias landed.
-        let meh = db.lookup_alias("meh").unwrap().unwrap();
-        assert_eq!(meh.expands_to, "switch mood meh");
-    }
-
-    #[test]
-    fn cmd_spec_add_state_creates_spec_and_reupdates_idempotently() {
-        let db = Db::open_in_memory().unwrap();
-
-        // No spec yet — add-state creates an Occur-default spec.
-        spec_add_state(
-            "energy",
-            "high",
-            Some("green"),
-            Some("wired"),
-            None,
-            (&[], &[]),
-            &db,
-        )
-        .unwrap();
-        let spec = db.load_spec("energy").unwrap().unwrap();
-        assert_eq!(
-            spec.allowed_states.as_deref(),
-            Some(&["high".to_string()][..])
-        );
-
-        // Re-adding refreshes the color but does not duplicate the state or
-        // clobber a description that wasn't re-supplied.
-        spec_add_state("energy", "high", Some("lime"), None, None, (&[], &[]), &db).unwrap();
-        let spec = db.load_spec("energy").unwrap().unwrap();
-        assert_eq!(
-            spec.allowed_states.as_deref(),
-            Some(&["high".to_string()][..])
-        );
-        assert_eq!(
-            spec.state_colors.get("high"),
-            Some(&resolve("lime", "high").unwrap())
-        );
-        assert_eq!(
-            spec.state_descriptions.get("high").map(String::as_str),
-            Some("wired")
-        );
-    }
-
-    #[test]
     fn cmd_spec_set_empty_state_value_clears_entry() {
         let db = Db::open_in_memory().unwrap();
 
@@ -1092,7 +1070,7 @@ mod tests {
         assert!(!spec.state_descriptions.contains_key("happy"));
     }
 
-    /// `spec show` hands a reader every key already parsed (da-p3hxn), so
+    /// `spec F --json` hands a reader every key already parsed (da-p3hxn), so
     /// the web never splits a spelling: an assign, which no list spells,
     /// is `brand` of kind assign; a state's own key is in its state's list
     /// alone.

@@ -144,7 +144,7 @@ fn no_candidate_carries_a_description() {
 
 #[test]
 fn a_command_with_subcommands_offers_them() {
-    let found = Env::new().complete("spec ");
+    let found = Env::new().complete("alias ");
     assert!(has(&found, "show") && has(&found, "set"), "{found:?}");
 }
 
@@ -235,10 +235,8 @@ fn a_field_position_offers_the_fields_quoted_for_the_shell() {
 fn a_lone_field_offers_the_commands_that_take_one() {
     let found = Env::new().complete("mood ");
     assert!(has(&found, "tail") && has(&found, "happy"), "{found:?}");
-    assert!(
-        !has(&found, "spec"),
-        "spec takes a subcommand first: {found:?}"
-    );
+    // `spec` takes the field first (da-ez40f): `mood spec` prints its spec.
+    assert!(has(&found, "spec"), "{found:?}");
 }
 
 #[test]

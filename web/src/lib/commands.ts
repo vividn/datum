@@ -364,7 +364,7 @@ export interface Takes {
 	/**
 	 * WHICH POSITIONAL its FIELD argument is, or `false` when it names no
 	 * field (da-8810n): `1` for `tail [FIELD]` and `occur <FIELD>`, `2` for
-	 * `spec show <FIELD>`, where a subcommand comes first.
+	 * `meta show <FIELD>`, where a subcommand comes first.
 	 *
 	 * The slot and not a flag, because a field pill's word has to land IN
 	 * it: datum's line is field-first, so a field appended to an argv that
@@ -395,7 +395,7 @@ const ID_ARG = /^datum \S+ [<[](?:ID_OR_SLUG|SLUG|HID)(\[,)?/;
 
 /**
  * A FIELD as the command's first positional, with at most a SUBCOMMAND
- * before it: `datum tail [FIELD]`, `datum spec show <FIELD>`.
+ * before it: `datum tail [FIELD]`, `datum meta show <FIELD>`.
  *
  * The middle word must be a bare one, so `datum stats <FIELD[:STATE]>`
  * reads as the field at slot 1 rather than as a subcommand. A field behind
@@ -581,13 +581,12 @@ const BACKUPS = ['db backup', 'db restore'];
 
 /**
  * Does a tap on `name` open the setup widget? `track` does, on a new field
- * or the pilled one (da-fu29p), and so does `spec` under a field pill
- * (da-ybai9, vividn: «no need for sub commands or pressing enter»): a field
- * is made and edited in a place (da-hbrfg), which the pane opens with the
- * fill.
+ * or the pilled one (da-fu29p), and so does `spec` (da-ybai9, vividn: «no
+ * need for sub commands or pressing enter»), which has no subcommands left
+ * to drill into (da-ez40f): a field is made and edited in a place
+ * (da-hbrfg), which the pane opens with the fill.
  */
-export const opensField = (name: string, pills: Pill[]): boolean =>
-	name === 'track' || (name === 'spec' && argumentsOf(pills).some((p) => p.kind === 'field'));
+export const opensField = (name: string, _pills: Pill[]): boolean => name === 'track' || name === 'spec';
 
 /** Does a tap on `name` drill into its subcommands? Not where it opens the setup widget instead. */
 export const drills = (grammar: Grammar | null, name: string, pills: Pill[]): boolean =>

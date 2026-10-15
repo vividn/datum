@@ -45,7 +45,6 @@ fn issue_db() -> Db {
     run_cli(
         &[
             "spec",
-            "set",
             "issue",
             "--verb",
             "switch",
@@ -111,7 +110,7 @@ fn a_bare_state_resolves_through_the_lookup_field() {
     assert!(dangling(&db).is_empty(), "{:?}", dangling(&db));
 }
 
-/// `spec set --state-lookup-field` writes the key, `spec show`'s JSON and
+/// `spec --state-lookup-field` writes the key, `spec F --json`'s JSON and
 /// `--from-json` carry it, a kit installs and exports it, and `''` clears.
 #[test]
 fn state_lookup_field_round_trip() {
@@ -122,7 +121,7 @@ fn state_lookup_field_round_trip() {
 
     let from_json = fresh_db();
     run_cli(
-        &["spec", "set", "issue", "--from-json", &value.to_string()],
+        &["spec", "issue", "--from-json", &value.to_string()],
         &from_json,
     )
     .unwrap();
@@ -148,7 +147,7 @@ fn state_lookup_field_round_trip() {
     let spec = again.load_spec("issue").unwrap().unwrap();
     assert_eq!(spec.state_lookup_field.as_deref(), Some("issue_state"));
 
-    run_cli(&["spec", "set", "issue", "--state-lookup-field", ""], &db).unwrap();
+    run_cli(&["spec", "issue", "--state-lookup-field", ""], &db).unwrap();
     let cleared = serde_json::to_value(db.load_spec("issue").unwrap().unwrap()).unwrap();
     assert_eq!(
         cleared.get("state_lookup_field"),

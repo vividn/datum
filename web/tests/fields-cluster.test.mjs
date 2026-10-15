@@ -182,8 +182,8 @@ const OTHERS = 'alfa bravo charlie delta echo foxtrot golf hotel india juliet ki
 const STATES = ['a', 'b', 'c', 'd'];
 const RING = ['< Back', 'false', ...STATES, '+ Add state'];
 const SEED = [
-	...OTHERS.map((f) => `spec set ${f} --verb occur`),
-	`spec set mood --verb switch --state false ${STATES.map((s) => `--state ${s}`).join(' ')}`
+	...OTHERS.map((f) => `spec ${f} --verb occur`),
+	`spec mood --verb switch --state false ${STATES.map((s) => `--state ${s}`).join(' ')}`
 ];
 
 /**
@@ -309,7 +309,7 @@ describe('a switch field’s states around the tap', () => {
 				for (let i = 0; i < 3; i++) await page.locator(`${FIELD_FORM} [aria-label="move d up"]`).click();
 				await page.locator(`${FIELD_FORM} .commit`).click();
 				await saved;
-				assert.deepEqual(JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout).allowed_states, ['false', 'd', 'a', 'b', 'c']);
+				assert.deepEqual(JSON.parse((await app.run(['spec', 'mood', '--json'])).stdout).allowed_states, ['false', 'd', 'a', 'b', 'c']);
 
 				await page.locator(`${BAR} [data-field="mood"]`).waitFor();
 				await app.idle();
@@ -331,7 +331,7 @@ describe('a switch field’s states around the tap', () => {
 					});
 				await page.locator(`${BAR} [data-field="mood"]`).click();
 				await page.locator(`${BAR} [data-add-state]`).waitFor();
-				await app.submit('spec add-state mood e');
+				await app.submit('spec mood --state false --state d --state a --state b --state c --state e');
 				await page.locator(`${BAR} [data-state="e"]`).waitFor();
 				const live = await offset();
 				await page.locator(`${BAR} [data-back]`).click();
@@ -357,7 +357,7 @@ describe('a switch field’s states around the tap', () => {
 				const { page } = app;
 				await seedLines(
 					app,
-					[...OTHERS, 'mood'].map((f) => `spec set ${f} --verb switch --state false ${STATES.map((s) => `--state ${s}`).join(' ')}`)
+					[...OTHERS, 'mood'].map((f) => `spec ${f} --verb switch --state false ${STATES.map((s) => `--state ${s}`).join(' ')}`)
 				);
 				await page.locator(`${BAR} [data-field="mood"]`).waitFor();
 				await atRows(page, 'bar', 3);

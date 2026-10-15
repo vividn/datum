@@ -4,7 +4,7 @@
 //! The break this guards against was measured, not imagined: with
 //! `FieldSpec.verb` required and no alias, every command that loads a
 //! spec answered `Serialization error: missing field `verb`` on a real
-//! database — `switch`, `occur`, `now`, `fields`, `spec show` — and the
+//! database — `switch`, `occur`, `now`, `fields`, `spec F` — and the
 //! post-merge hook installs this binary over the one those databases
 //! were written by. So the old spellings are read:
 //!
@@ -16,7 +16,7 @@
 //! (Only the STORED key is forgiven. The FLAG `--default-verb` is still
 //! an error naming `--verb` — `track_cmd.rs` holds it to that.)
 //!
-//! The spec rows below are verbatim output of `datum spec set` from the
+//! The spec rows below are verbatim output of `datum spec ` from the
 //! binary that preceded this bead.
 
 use std::path::PathBuf;
@@ -25,11 +25,11 @@ use std::process::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 
-/// `spec set activity --default-verb switch --color blue`, as the
+/// `spec activity --default-verb switch --color blue`, as the
 /// previous binary stored it.
 const SPEC_WITH_OLD_KEY: &str = r#"{"field":"activity","default_verb":"switch","subfields":{},"description":null,"unit":null,"id_template":null,"color":"blue","allowed_states":null,"state_colors":{},"derived_aliases":[{"state":"activity","expands_to":"switch activity","kind":"bare_field"},{"state":"activitye","expands_to":"end activity","kind":"terminal_end"}],"id_keys":[],"data_keys":[],"no_autoalias":false,"strict":false}"#;
 
-/// `spec set <field> --color red` — a spec that was never asked about
+/// `spec <field> --color red` — a spec that was never asked about
 /// the verb (da-emze), stored with the key present and null.
 fn verbless_spec(field: &str) -> String {
     format!(
@@ -107,8 +107,8 @@ impl Env {
     }
 
     fn spec_verb(&self, field: &str) -> String {
-        let shown = self.run(&["spec", "show", field]);
-        let spec: Value = serde_json::from_str(&shown).expect("spec show prints json");
+        let shown = self.run(&["spec", field, "--json"]);
+        let spec: Value = serde_json::from_str(&shown).expect("spec prints --json json");
         assert!(
             spec["default_verb"].is_null(),
             "{field} is shown with the old key: {shown}"
@@ -141,9 +141,9 @@ fn a_database_written_before_this_bead_still_reads() {
         vec!["now"],
         vec!["fields"],
         vec!["fields", "--json"],
-        vec!["spec", "show", "activity"],
-        vec!["spec", "show", "tea"],
-        vec!["spec", "list"],
+        vec!["spec", "activity", "--json"],
+        vec!["spec", "tea", "--json"],
+        vec!["spec"],
         vec!["tail", "-n", "5"],
         vec!["check"],
     ] {
@@ -161,7 +161,7 @@ fn a_database_written_before_this_bead_still_reads() {
     assert_eq!(env.spec_verb("mood"), "switch");
     assert_eq!(env.spec_verb("tea"), "occur");
 
-    let spec: Value = serde_json::from_str(&env.run(&["spec", "show", "activity"])).unwrap();
+    let spec: Value = serde_json::from_str(&env.run(&["spec", "activity", "--json"])).unwrap();
     assert_eq!(spec["color"], "blue");
 
     // The widget bar reads the same verb the CLI does (da-c8mh: the web
@@ -192,7 +192,7 @@ fn a_spec_with_an_unreadable_verb_is_still_an_error() {
     env.run(&["occur", "tea"]);
     env.store_old_spec("tea", r#"{"field":"tea","default_verb":"pirouette"}"#);
 
-    let (ok, text) = env.try_run(&["spec", "show", "tea"]);
+    let (ok, text) = env.try_run(&["spec", "tea", "--json"]);
     assert!(!ok, "an unreadable verb should error, got:\n{text}");
 }
 
@@ -209,17 +209,17 @@ fn a_stored_unit_is_ignored_and_dropped_on_the_next_write() {
     );
 
     for args in [
-        vec!["spec", "show", "tea"],
-        vec!["spec", "show", "tea", "--text"],
+        vec!["spec", "tea", "--json"],
+        vec!["spec", "tea"],
         vec!["fields", "--json"],
     ] {
         let text = env.run(&args);
         assert!(!text.contains("unit"), "{args:?} shows a unit:\n{text}");
     }
-    let spec: Value = serde_json::from_str(&env.run(&["spec", "show", "tea"])).unwrap();
+    let spec: Value = serde_json::from_str(&env.run(&["spec", "tea", "--json"])).unwrap();
     assert_eq!(spec["subfields"]["dose"]["value_type"], "number");
 
-    env.run(&["spec", "set", "tea", "--description", "green"]);
+    env.run(&["spec", "tea", "--description", "green"]);
     let conn = rusqlite::Connection::open(&env.db).unwrap();
     let stored: String = conn
         .query_row(
@@ -247,7 +247,7 @@ fn a_stored_strict_reads_as_only_listed_keys() {
         r#"{"field":"tea","verb":"occur","data_keys":["cups"],"strict":true}"#,
     );
 
-    let spec: Value = serde_json::from_str(&env.run(&["spec", "show", "tea"])).unwrap();
+    let spec: Value = serde_json::from_str(&env.run(&["spec", "tea", "--json"])).unwrap();
     assert_eq!(spec["only_listed_keys"], true, "{spec}");
     assert!(
         spec.get("strict").is_none(),
@@ -260,7 +260,7 @@ fn a_stored_strict_reads_as_only_listed_keys() {
         "an unlisted key was taken:\n{text}"
     );
 
-    env.run(&["spec", "set", "tea", "--description", "green"]);
+    env.run(&["spec", "tea", "--description", "green"]);
     let conn = rusqlite::Connection::open(&env.db).unwrap();
     let stored: String = conn
         .query_row(

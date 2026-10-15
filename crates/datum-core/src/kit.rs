@@ -2,8 +2,8 @@
 //! (slice 1: field specs, whole since da-dtmlv; slice 5: indices).
 //!
 //! A kit is a TOML file declaring named fields — each one's whole spec, as
-//! `spec set` would store it (see [`FieldEntry`]). An `icon` is embedded in
-//! the kit as SVG text, under `spec set`'s cap. On install, each `[[field]]` is converted into a
+//! `spec` would store it (see [`FieldEntry`]). An `icon` is embedded in
+//! the kit as SVG text, under `spec`'s cap. On install, each `[[field]]` is converted into a
 //! [`FieldSpec`] `spec` entry whose data carries `kit_id` = the kit's name;
 //! on uninstall, every row tagged with that `kit_id` is deleted. Round-trip
 //! (install → export → diff) is required to be clean.
@@ -77,7 +77,7 @@ pub struct KitMeta {
 /// presence/absence is preserved through round-trip and merge with defaults
 /// happens at install time only.
 ///
-/// It declares the field's whole spec (da-dtmlv): every key `spec set` can
+/// It declares the field's whole spec (da-dtmlv): every key `spec` can
 /// set, except `derived_aliases`, which is computed on save. A kit that
 /// wants its own list sets `no_autoalias` and declares `[[alias]]` entries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,7 +138,7 @@ pub struct FieldEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph_by: Option<GlyphBy>,
     /// A custom SVG icon, the whole `<svg>` element, embedded in the kit
-    /// and vetted as `spec set --icon` vets it.
+    /// and vetted as `spec --icon` vets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     /// An occur dot's size and width-over-height, as multiples — the spec's

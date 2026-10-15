@@ -20,7 +20,7 @@ const PANE = 'section.pane[data-title="fields"]';
 const BAR = `${PANE} .bar`;
 
 const at = (field, verb, y, height) =>
-	`spec set ${field} --from-json '${JSON.stringify({ field, verb, y, ...(height ? { height } : {}) })}'`;
+	`spec ${field} --from-json '${JSON.stringify({ field, verb, y, ...(height ? { height } : {}) })}'`;
 
 /** A point whose band is the middle tenth, a tall block at the top, and a band of sixteen at 0.8. */
 const SMALL = [
@@ -30,7 +30,7 @@ const SMALL = [
 ];
 
 /** Sixty fields where their names put them. */
-const MANY = Array.from({ length: 60 }, (_, i) => `spec set f${i} --verb occur`);
+const MANY = Array.from({ length: 60 }, (_, i) => `spec f${i} --verb occur`);
 
 async function aligned(app, seed) {
 	for (const line of seed) assert.equal((await app.runLine(line)).code, 0, line);

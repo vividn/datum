@@ -218,7 +218,9 @@ const READERS = [
 	['check'],
 	['meta'],
 	['db', 'backup', '-'],
-	['spec', 'list'],
+	['spec'],
+	['spec', 'coffee'],
+	['spec', 'coffee', '--json'],
 	['alias', 'list'],
 	['sync'],
 	['kit', 'list'],
@@ -244,7 +246,11 @@ const WRITERS = [
 	// `_LAST`, not `mood`: a field names its entry AND the TRACK document
 	// that declared it (da-c8mh), which is two rows, not one.
 	['delete', '_LAST'],
-	['undo']
+	['undo'],
+	// da-ez40f: a change to a spec echoes its entry; `spec` and `spec F` read.
+	['spec', 'coffee', '--glyph', '▲'],
+	// The flag may come first; the field is still the word that is not one.
+	['spec', '--delete', 'coffee']
 ];
 
 describe('the list says what the CLI does', () => {
@@ -343,7 +349,7 @@ describe('a kit alias logs in the bar', () => {
 			await app.submit('newchore vacuum 4');
 			assert.match((await app.stdouts()).at(-1) ?? '', /Tracking 'vacuum'/);
 			assert.equal(await tracked(), 1);
-			const spec = await app.run(['spec', 'show', 'vacuum']);
+			const spec = await app.run(['spec', 'vacuum', '--json']);
 			assert.match(spec.stdout, /next_date=\+4/, spec.stdout || spec.stderr);
 
 			// Again, now the page has learned the word: it runs, and writes

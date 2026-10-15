@@ -148,7 +148,6 @@ fn tracker() -> (Env, String) {
     let env = Env::new();
     env.ok(&[
         "spec",
-        "set",
         "issue",
         "--verb",
         "switch",
@@ -331,7 +330,6 @@ fn a_bare_slug_hops_only_on_a_key_the_spec_types_ref() {
     let env = Env::new();
     env.ok(&[
         "spec",
-        "set",
         "task",
         "--from-json",
         r#"{"field":"task","verb":"occur","subfields":{"blocker":{"value_type":"ref"}}}"#,

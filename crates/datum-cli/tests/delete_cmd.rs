@@ -609,7 +609,7 @@ fn live_fields(db: &datum_core::db::Db) -> Vec<String> {
 #[test]
 fn delete_all_keep_meta_spares_the_setup_and_undo_restores_the_data() {
     let db = fresh_db();
-    run_cli(&["spec", "set", "coffee", "--verb", "occur"], &db).unwrap();
+    run_cli(&["spec", "coffee", "--verb", "occur"], &db).unwrap();
     run_cli(&["occur", "coffee"], &db).unwrap();
     run_cli(&["switch", "mood", "happy"], &db).unwrap();
     run_cli(&["alias", "set", "c", "occur coffee"], &db).unwrap();

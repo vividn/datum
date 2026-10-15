@@ -37,13 +37,13 @@ async function purgeOf(writes) {
 }
 
 test('a device that signed only a definition is told it goes', async () => {
-	assert.match(await purgeOf([['spec', 'set', 'coffee', '--verb', 'occur']]), /only 1 definition: this revokes it and sets that aside\./);
+	assert.match(await purgeOf([['spec', 'coffee', '--verb', 'occur']]), /only 1 definition: this revokes it and sets that aside\./);
 });
 
 test('a device that made an entry and a definition is told both go', async () => {
 	assert.match(
 		await purgeOf([
-			['spec', 'set', 'coffee', '--verb', 'occur'],
+			['spec', 'coffee', '--verb', 'occur'],
 			['occur', 'coffee']
 		]),
 		/: 1 entry it created and 1 definition it signed, /

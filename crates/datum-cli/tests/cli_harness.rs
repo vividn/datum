@@ -16,7 +16,7 @@ fn run_cli_harness_dispatches_to_occur() {
     // da-gvcen: declare the field first — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the harness dispatch, not the declaration.
-    run_cli(&["spec", "set", "coffee", "--verb", "occur"], &db).expect("declare coffee");
+    run_cli(&["spec", "coffee", "--verb", "occur"], &db).expect("declare coffee");
 
     run_cli(&["occur", "coffee", "-k", "amount=2"], &db).expect("occur dispatch");
 

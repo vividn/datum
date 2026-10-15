@@ -1,5 +1,5 @@
 //! A flag before the name of `alias show/remove`, `kit show/uninstall` or
-//! `spec remove` is refused as a flag, not taken as the name (da-dnvgk):
+//! `spec F --delete` is refused as a flag, not taken as the name (da-dnvgk):
 //! `alias remove --force tea` said «unexpected argument: 'tea'», blaming
 //! the one word that was right.
 
@@ -26,7 +26,7 @@ fn a_leading_flag_is_named_and_nothing_is_removed() {
         ["alias", "remove", "--force", "tea"],
         ["kit", "show", "--force", "tea"],
         ["kit", "uninstall", "--force", "tea"],
-        ["spec", "remove", "--force", "tea"],
+        ["spec", "--force", "--delete", "tea"],
     ] {
         let out = run(&db, &args);
         let stderr = String::from_utf8_lossy(&out.stderr);

@@ -123,7 +123,7 @@ export interface Key {
 }
 
 /**
- * A key as the CLI parsed it (da-p3hxn): `spec show`'s and `fields
+ * A key as the CLI parsed it (da-p3hxn): `spec F --json`'s and `fields
  * --json`'s `keys` — `FieldSpec::declared_keys`, in binding order. The web
  * never splits a spelling: `brand` of kind assign is how it learns of an
  * assign, which no spelling carries.

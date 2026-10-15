@@ -9,13 +9,13 @@ import { shellSplit } from '../../src/lib/shellSplit.ts';
 export const FIELD_FORM = '.field-form:not(.beside *)';
 
 /**
- * A new field's Save as a preview or an echo reads it — ONE `spec set F
+ * A new field's Save as a preview or an echo reads it — ONE `spec F
  * --from-json J --track` or `--ignore` (da-2pbvd) — as the line without J,
  * and J parsed: the shell's quoting of the JSON is none of a test's business.
  */
 export function declared(text) {
 	const argv = shellSplit(text.trim());
-	const [json] = argv.splice(4, 1);
+	const [json] = argv.splice(3, 1);
 	return { line: argv.join(' '), spec: JSON.parse(json) };
 }
 

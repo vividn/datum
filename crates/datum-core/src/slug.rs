@@ -24,7 +24,7 @@ use crate::error::{DatumError, Result};
 /// This is the *storage* guard, and it stays this permissive on purpose:
 /// tightening it would strand entries already written. The stricter rule
 /// for a name being *declared* is `datum_parse::field_name::check`, which
-/// `spec set` runs — it is a superset of this one, so anything that may be
+/// `spec` runs — it is a superset of this one, so anything that may be
 /// declared may also be stored (da-b049).
 pub fn validate_field_name(field: &str) -> Result<()> {
     if field.is_empty() {
@@ -45,7 +45,7 @@ pub fn validate_field_name(field: &str) -> Result<()> {
 /// the entry separator, so such a field could never be named in a list.
 /// Checked where a name is chosen — a logged entry's field once aliases and
 /// its template have expanded, a field an update or `edit` moves it to, and a spec
-/// written for a field that has none (`track`, `spec add-state`, a kit's
+/// written for a field that has none (`track`, `spec`, a kit's
 /// `[[field]]`) — not in
 /// [`validate_field_name`], which a restore writes through too, so a row
 /// that already holds one stays restorable. Spaces stay allowed; an ASCII

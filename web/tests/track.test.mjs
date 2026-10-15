@@ -67,7 +67,7 @@ async function addStates(page, names) {
 }
 
 describe('the argv it composes', () => {
-	test('`track`, not `spec set`: declaring a field is an event in the log', () => {
+	test('`track`, not `spec F`: declaring a field is an event in the log', () => {
 		assert.deepEqual(trackArgv('coffee', 'occur'), ['track', 'coffee', '--verb', 'occur']);
 		assert.deepEqual(trackArgv('sleep', 'start'), ['track', 'sleep', '--verb', 'start']);
 	});
@@ -102,10 +102,10 @@ describe('the argv it composes', () => {
 		]);
 	});
 
-	// da-ci85o: an edited spec is saved WHOLE, in one `spec set` — the
+	// da-ci85o: an edited spec is saved WHOLE, in one `spec F` — the
 	// shape that replaces the list, so a state removed takes its colour and
 	// description with it, and a blank clears where a flag could not.
-	test('an edited spec is the whole spec, in one `spec set --from-json`', () => {
+	test('an edited spec is the whole spec, in one `spec --from-json`', () => {
 		const spec = {
 			field: 'mood', verb: 'switch', color: '#123456', description: null,
 			allowed_states: ['good', 'bad'], state_colors: { good: '#00ff00', bad: '#ff0000' },
@@ -122,7 +122,7 @@ describe('the argv it composes', () => {
 			state_descriptions: { good: 'fine' }
 		});
 		assert.deepEqual(edited.subfields, spec.subfields, 'what the modal does not edit is carried');
-		// `spec show` leaves an empty description map out; so does the save.
+		// `spec F --json` leaves an empty description map out; so does the save.
 		const bare = { ...spec, state_descriptions: undefined };
 		delete bare.state_descriptions;
 		assert.deepEqual(stateRows(bare), [row('good', '#00ff00'), row('bad', '#ff0000')]);
@@ -130,8 +130,8 @@ describe('the argv it composes', () => {
 		// A spec with no list keeps none when none is added.
 		assert.equal(editedSpec({ ...spec, allowed_states: null }, { verb: 'occur', color: '', description: '', states: [] }).allowed_states, null);
 		const argv = specArgv(edited);
-		assert.deepEqual(argv.slice(0, 4), ['spec', 'set', 'mood', '--from-json']);
-		assert.deepEqual(JSON.parse(argv[4]), edited);
+		assert.deepEqual(argv.slice(0, 3), ['spec', 'mood', '--from-json']);
+		assert.deepEqual(JSON.parse(argv[3]), edited);
 	});
 
 	// da-ogyxa: a state's glyph goes with the state when the state leaves the
@@ -152,7 +152,7 @@ describe('the argv it composes', () => {
 		// Rows with no glyph key — the rows that re-add colours — keep every glyph of a kept state.
 		const bare = editedSpec(spec, { ...base, states: [{ name: 'up', color: '', description: '' }] });
 		assert.deepEqual(bare.state_glyphs, { up: '▲', logged: '○' });
-		// None left: the key is left out, as `spec show` leaves it out.
+		// None left: the key is left out, as `spec F --json` leaves it out.
 		assert.equal('state_glyphs' in editedSpec({ ...spec, state_glyphs: { down: '▼' } }, { ...base, states: [{ ...up, glyph: '' }] }), false);
 	});
 
@@ -230,7 +230,7 @@ describe('the argv it composes', () => {
 		assert.deepEqual(made.assign, { reps: '3' }, 'an assign leaves the slots, and the one that was is gone');
 		assert.deepEqual(made.subfields, { pos: sub({ value_type: 'string', in_slug: true, default: '42' }) }, 'only a typed key keeps a subfield');
 		assert.equal('keys' in made, false, "the CLI's reading of the spec is not sent");
-		assert.equal('id_assign' in made, false, 'an empty map is left out, as `spec show` prints it');
+		assert.equal('id_assign' in made, false, 'an empty map is left out, as `spec F --json` prints it');
 		assert.equal(made.no_autoalias, false);
 		assert.deepEqual(made.derived_aliases, spec.derived_aliases, 'a made list is carried: the CLI makes it again');
 
@@ -241,7 +241,7 @@ describe('the argv it composes', () => {
 	});
 
 	// da-45wgz: the icon is replaced when given, cleared when given empty —
-	// the key left out, as `spec show` leaves it — and carried when not given.
+	// the key left out, as `spec F --json` leaves it — and carried when not given.
 	test('an edited icon is set, cleared, or carried', () => {
 		const spec = { field: 'coffee', verb: 'occur', color: null, description: null, allowed_states: null, state_colors: {}, icon: '<svg/>' };
 		const edit = { verb: 'occur', color: '', description: '', states: [] };
@@ -356,7 +356,7 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
 			await addStates(page, ['good', 'bad']);
 			const { line, spec } = declared(await page.locator(`${MODAL} code.preview`).getAttribute('title'));
-			assert.equal(line, 'spec set mood --from-json --track');
+			assert.equal(line, 'spec mood --from-json --track');
 			assert.deepEqual([spec.verb, spec.allowed_states], ['switch', ['good', 'bad']]);
 			assert.deepEqual(app.errors, []);
 		});
@@ -371,8 +371,8 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} button.commit`).click();
 
 			await page.locator('.bar button[data-field="mood"]').waitFor();
-			assert.match((await app.echoes()).at(-1), /^spec set mood --from-json .* --track$/);
-			const spec = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
+			assert.match((await app.echoes()).at(-1), /^spec mood --from-json .* --track$/);
+			const spec = JSON.parse((await app.run(['spec', 'mood', '--json'])).stdout);
 			assert.equal(spec.verb, 'switch');
 			assert.deepEqual(spec.allowed_states, ['good', 'bad']);
 
@@ -411,7 +411,7 @@ describe('in the app', () => {
 			const result = await ran;
 			assert.equal(result.code, 0, result.stderr);
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout).verb, 'occur');
+			assert.equal(JSON.parse((await app.run(['spec', 'coffee', '--json'])).stdout).verb, 'occur');
 		});
 	});
 
@@ -428,7 +428,7 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await typed).code, 0);
 			await page.locator('.bar button[data-field="sleep"]').waitFor();
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).verb, 'start');
+			assert.equal(JSON.parse((await app.run(['spec', 'sleep', '--json'])).stdout).verb, 'start');
 		});
 	});
 
@@ -457,7 +457,7 @@ describe('in the app', () => {
 	test('an ignored spaced field’s title quotes it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await app.submit('spec set "my x" --verb occur');
+			await app.submit('spec "my x" --verb occur');
 			await page.locator('.bar button[data-field="my x"]').waitFor();
 			await app.clock.forward(1000);
 			await app.submit('ignore "my x"');
@@ -488,12 +488,12 @@ describe('in the app', () => {
 	});
 
 	// The same form on a field that has a spec: everything it edits comes
-	// back in ONE `spec set`, and `spec show` then reads what was sent.
-	test('editing a spec writes one `spec set`, and the CLI reads back what it was sent', async () => {
+	// back in ONE `spec F`, and `spec F --json` then reads what was sent.
+	test('editing a spec writes one `spec F`, and the CLI reads back what it was sent', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'sleep', '--verb', 'start']);
-			await app.run(['spec', 'set', 'sleep', '--description', 'night']);
+			await app.run(['spec', 'sleep', '--description', 'night']);
 			const before = (await app.echoes()).length;
 			const { saved } = await openField(page, 'sleep');
 			await page.locator(MODAL).waitFor();
@@ -524,10 +524,10 @@ describe('in the app', () => {
 			await app.idle();
 			const echoes = await app.echoes();
 			assert.equal(echoes.length, before + 1, `one command, not a stream: ${echoes.slice(before).join(' | ')}`);
-			assert.match(echoes.at(-1), /^spec set sleep --from-json /);
+			assert.match(echoes.at(-1), /^spec sleep --from-json /);
 
 			const sent = JSON.parse(result.argv[result.argv.indexOf('--from-json') + 1]);
-			const shown = JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout);
+			const shown = JSON.parse((await app.run(['spec', 'sleep', '--json'])).stdout);
 			// The CLI regenerates the aliases a spec derives from its states,
 			// so those are the one key it does not take as sent; and `keys` is
 			// its reading of the spec, which is never sent (da-p3hxn).
@@ -542,14 +542,14 @@ describe('in the app', () => {
 			assert.deepEqual(shown.state_descriptions, { awake: 'up' });
 
 			// Opened and saved untouched, a spec with no state descriptions —
-			// the key `spec show` leaves out — reads back byte for byte.
-			await app.run(['spec', 'set', 'sleep', '--state-description', 'awake=']);
-			const untouched = (await app.run(['spec', 'show', 'sleep'])).stdout;
+			// the key `spec F --json` leaves out — reads back byte for byte.
+			await app.run(['spec', 'sleep', '--state-description', 'awake=']);
+			const untouched = (await app.run(['spec', 'sleep', '--json'])).stdout;
 			assert.doesNotMatch(untouched, /state_descriptions/);
 			const { saved: again } = await openField(page, 'sleep');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await again).code, 0);
-			assert.equal((await app.run(['spec', 'show', 'sleep'])).stdout, untouched);
+			assert.equal((await app.run(['spec', 'sleep', '--json'])).stdout, untouched);
 		});
 	});
 
@@ -560,15 +560,15 @@ describe('in the app', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch']);
-			const spec = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
+			const spec = JSON.parse((await app.run(['spec', 'mood', '--json'])).stdout);
 			const future = { a: [1, 2.5] };
-			await app.run(['spec', 'set', 'mood', '--from-json', JSON.stringify({ ...spec, zz_future_key: future })]);
+			await app.run(['spec', 'mood', '--from-json', JSON.stringify({ ...spec, zz_future_key: future })]);
 			const { saved } = await openField(page, 'mood');
 			await page.locator(`${MODAL} input.description`).fill('how I feel');
 			await page.locator(`${MODAL} button.commit`).click();
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
-			const shown = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
+			const shown = JSON.parse((await app.run(['spec', 'mood', '--json'])).stdout);
 			assert.equal(shown.description, 'how I feel');
 			assert.deepEqual(shown.zz_future_key, future);
 		});
@@ -597,7 +597,7 @@ describe('in the app', () => {
 
 			const ok = await pick('beans.svg', beans);
 			assert.equal(ok.code, 0, ok.stderr);
-			const shown = JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout);
+			const shown = JSON.parse((await app.run(['spec', 'coffee', '--json'])).stdout);
 			assert.equal(shown.icon, beans);
 			assert.equal('glyph' in shown, false, 'no fallback named: the standard dot');
 			const svg = (await app.run(['dayview'])).stdout;
@@ -607,7 +607,7 @@ describe('in the app', () => {
 			const big = await pick('big.svg', `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="${'M0 0'.repeat(1200)}"/></svg>`);
 			assert.notEqual(big.code, 0);
 			assert.match(big.stderr, /at most 4 kB/);
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout).icon, beans, 'the refusal wrote nothing');
+			assert.equal(JSON.parse((await app.run(['spec', 'coffee', '--json'])).stdout).icon, beans, 'the refusal wrote nothing');
 		});
 	});
 
@@ -616,7 +616,7 @@ describe('in the app', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'sleep', '--verb', 'start']);
-			const spec = (await app.run(['spec', 'show', 'sleep'])).stdout;
+			const spec = (await app.run(['spec', 'sleep', '--json'])).stdout;
 			const before = (await app.echoes()).length;
 			for (const dismiss of [() => cancelField(page), () => page.goBack()]) {
 				const { saved: shut } = await openField(page, 'sleep');
@@ -626,7 +626,7 @@ describe('in the app', () => {
 				await page.waitForFunction((sel) => !document.querySelector(sel), MODAL);
 			}
 			await app.idle();
-			assert.equal((await app.run(['spec', 'show', 'sleep'])).stdout, spec);
+			assert.equal((await app.run(['spec', 'sleep', '--json'])).stdout, spec);
 			assert.equal((await app.echoes()).length, before);
 		});
 	});
@@ -720,15 +720,15 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await ran).code, 0);
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'walk'])).stdout).verb, 'occur');
+			assert.equal(JSON.parse((await app.run(['spec', 'walk', '--json'])).stdout).verb, 'occur');
 		});
 	});
 
 	// da-h119q: vividn, «when tracking something new something users
 	// immediately want to do is to add in keys they care about». So Basics
 	// asks for them, in place of the field-level unit nothing read, and a
-	// field being declared carries them in its one `spec set --track` (da-2pbvd).
-	test('Basics asks for keys and not a unit, and a new field\'s keys are saved in its one `spec set --track`', async () => {
+	// field being declared carries them in its one `spec F --track` (da-2pbvd).
+	test('Basics asks for keys and not a unit, and a new field\'s keys are saved in its one `spec F --track`', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
@@ -749,8 +749,8 @@ describe('in the app', () => {
 			await app.idle();
 			const echoes = (await app.echoes()).slice(before);
 			assert.equal(echoes.length, 1, `one command: ${echoes.join(' | ')}`);
-			assert.match(echoes[0], /^spec set coffee --from-json .* --track$/);
-			const shown = JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout);
+			assert.match(echoes[0], /^spec coffee --from-json .* --track$/);
+			const shown = JSON.parse((await app.run(['spec', 'coffee', '--json'])).stdout);
 			assert.deepEqual(shown.keys, [{ name: 'cups', kind: 'default', value: '2', in_slug: false }]);
 
 			// Saved, it is on Basics with its keys there, and still no unit; and so it opens again.
@@ -815,7 +815,7 @@ describe('in the app', () => {
 		await app.idle();
 		const echoes = (await app.echoes()).slice(before);
 		assert.equal(echoes.length, 1, `one command, not a stream: ${echoes.join(' | ')}`);
-		assert.match(echoes[0], /^spec set /);
+		assert.match(echoes[0], /^spec /);
 	}
 
 	/** The rows' names, in order. */
@@ -838,7 +838,7 @@ describe('in the app', () => {
 	test('Data: a key dragged to the top binds the first word, and keeps its type', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const shown = async () => JSON.parse((await app.run(['spec', 'show', 'word'])).stdout);
+			const shown = async () => JSON.parse((await app.run(['spec', 'word', '--json'])).stdout);
 			await app.run(['track', 'word', '--verb', 'occur']);
 
 			let opened = await openFieldTab(app, 'word', 'data');
@@ -902,7 +902,7 @@ describe('in the app', () => {
 			assert.deepEqual(await routes(), [['id'], ['title'], undefined, undefined, true]);
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator(`${MODAL} h2`).waitFor();
-			const spec = JSON.parse((await app.run(['spec', 'show', 'book'])).stdout);
+			const spec = JSON.parse((await app.run(['spec', 'book', '--json'])).stdout);
 			assert.equal(spec.comment_remainder, true);
 			assert.equal((await app.run(['add', 'book', 'dune', 'Dune', 'a', 'great', 'read'])).code, 0);
 			assert.deepEqual((await app.entries(1))[0].data, { id: 'dune', title: 'Dune', comment: ['a great read'] });
@@ -913,11 +913,11 @@ describe('in the app', () => {
 	// da-p3hxn: vividn, «required · optional · default · assign, mapping onto
 	// `-k key`, `-k key=`, `-k key=default`, `key=value`». da-zqnt3: `=`
 	// makes a key optional and shows its default; a fixed one is on Data.
-	// Each is what `spec show` reads back, and a key lives in ONE place (da-ulc0v).
-	test('Data: each kind round-trips through `spec show`, and a key changing kind moves, never copied', async () => {
+	// Each is what `spec F --json` reads back, and a key lives in ONE place (da-ulc0v).
+	test('Data: each kind round-trips through `spec F --json`, and a key changing kind moves, never copied', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const shown = async () => JSON.parse((await app.run(['spec', 'show', 'tea'])).stdout);
+			const shown = async () => JSON.parse((await app.run(['spec', 'tea', '--json'])).stdout);
 			const kinds = (spec) => spec.keys.map(({ name, kind, value }) => [name, kind, value]);
 			const rows = page.locator(`${MODAL} ul.data li.key`);
 			await app.run(['track', 'tea', '--verb', 'occur']);
@@ -965,7 +965,7 @@ describe('in the app', () => {
 	test('an alias removed stops resolving, one added runs, and made again when switched back on', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const shown = async () => JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout);
+			const shown = async () => JSON.parse((await app.run(['spec', 'sleep', '--json'])).stdout);
 			await app.run(['track', 'sleep', '--verb', 'start']);
 
 			let opened = await openFieldTab(app, 'sleep', 'aliases');
@@ -1031,7 +1031,7 @@ describe('in the app', () => {
 	const drawn = async (app) =>
 		[...(await app.run(['dayview'])).stdout.matchAll(/<text class="point-fg"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
 
-	test('a field glyph is picked from the grid, saved in one `spec set`, and drawn by `now` and the dayview', async () => {
+	test('a field glyph is picked from the grid, saved in one `spec F`, and drawn by `now` and the dayview', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
@@ -1055,7 +1055,7 @@ describe('in the app', () => {
 			await app.idle();
 			const echoes = await app.echoes();
 			assert.equal(echoes.length, before + 1, `one command: ${echoes.slice(before).join(' | ')}`);
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'tea'])).stdout).glyph, '▲');
+			assert.equal(JSON.parse((await app.run(['spec', 'tea', '--json'])).stdout).glyph, '▲');
 
 			await app.clock.forward(1000);
 			const logged = await app.run(['occur', 'tea']);
@@ -1078,7 +1078,7 @@ describe('in the app', () => {
 			assert.equal(await tile(page, 'the glyph of up').getAttribute('data-glyph'), '✺');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await saved).code, 0);
-			assert.deepEqual(JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout).state_glyphs, { up: '✺' });
+			assert.deepEqual(JSON.parse((await app.run(['spec', 'mood', '--json'])).stdout).state_glyphs, { up: '✺' });
 
 			await app.clock.forward(1000);
 			const logged = await app.run(['switch', 'mood', 'up', '-m']);
@@ -1092,7 +1092,7 @@ describe('in the app', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'up', '--state', 'down', '--state', 'flat']);
-			await app.run(['spec', 'set', 'mood', '--state-glyph', 'up=▲', '--state-glyph', 'down=▼', '--state-glyph', 'flat=■']);
+			await app.run(['spec', 'mood', '--state-glyph', 'up=▲', '--state-glyph', 'down=▼', '--state-glyph', 'flat=■']);
 			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
 			await page.locator(`${MODAL} [data-tab="states"]`).click();
@@ -1101,7 +1101,7 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} .state input.name`).nth(1).fill('level');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await saved).code, 0);
-			const shown = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
+			const shown = JSON.parse((await app.run(['spec', 'mood', '--json'])).stdout);
 			assert.deepEqual(shown.allowed_states, ['up', 'level']);
 			assert.deepEqual(shown.state_glyphs, { up: '▲', level: '■' });
 		});
@@ -1126,7 +1126,7 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} .picker [data-glyph="○"]`).click();
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await saved).code, 0);
-			const shown = (await app.run(['spec', 'show', 'tea'])).stdout;
+			const shown = (await app.run(['spec', 'tea', '--json'])).stdout;
 			assert.deepEqual(JSON.parse(shown).glyph_by, { key: 'size', map: { large: '☕' } });
 			assert.equal(JSON.parse(shown).glyph, '○');
 
@@ -1144,7 +1144,7 @@ describe('in the app', () => {
 			const { saved: again } = await openField(page, 'tea');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await again).code, 0);
-			assert.equal((await app.run(['spec', 'show', 'tea'])).stdout, shown);
+			assert.equal((await app.run(['spec', 'tea', '--json'])).stdout, shown);
 		});
 	});
 

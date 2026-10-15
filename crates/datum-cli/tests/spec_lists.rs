@@ -13,7 +13,7 @@ use datum_core::test_util::{fresh_db, logged_entries};
 use serde_json::json;
 
 fn spec(db: &Db, field: &str, args: &[&str]) {
-    run_cli(&[&["spec", "set", field], args].concat(), db).unwrap();
+    run_cli(&[&["spec", field], args].concat(), db).unwrap();
 }
 
 fn refused(db: &Db, line: &[&str]) -> String {
@@ -72,7 +72,7 @@ fn only_listed_states_refuses_an_unlisted_state() {
     run_cli(&["switch", "env", "office"], &db).unwrap();
     // Not never-false: off stays allowed.
     run_cli(&["end", "env"], &db).unwrap();
-    // A later `spec set` keeps it; `--any-states` clears it.
+    // A later `spec` keeps it; `--any-states` clears it.
     spec(&db, "env", &["--state", "home"]);
     assert!(db.load_spec("env").unwrap().unwrap().only_listed_states);
     spec(&db, "env", &["--any-states"]);
@@ -196,8 +196,8 @@ fn the_old_spellings_are_unknown_flags() {
         (&["occur", "tea", "--lenient", "x"], "--lenient"),
         (&["delete", "tea:_", "--strict"], "--strict"),
         (&["update", "tea:_", "a=1", "--strict"], "--strict"),
-        (&["spec", "set", "tea", "--strict"], "--strict"),
-        (&["spec", "set", "tea", "--no-strict"], "--no-strict"),
+        (&["spec", "tea", "--strict"], "--strict"),
+        (&["spec", "tea", "--no-strict"], "--no-strict"),
     ] {
         let msg = refused(&db, line);
         assert!(

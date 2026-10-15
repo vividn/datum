@@ -194,9 +194,9 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         // spelling of its `--include-ignored` (da-1lnf). `stats --show
         // all` is its text and then its JSON line, from one run (da-cddng).
         "fields" | "stats" => &[Show::Default, Show::None, Show::Json, Show::All],
-        // `spec show` prints its document by default, so `--show json` is
-        // the explicit form of that; it has no silent mode to offer. Its
-        // sibling subcommands refuse it.
+        // `spec F --json` is its document, and a change's or a delete's
+        // echo (da-ez40f); there is no silent mode to offer, and the
+        // listing refuses it.
         "spec" => &[Show::Default, Show::Json],
         // `help --json` is the command table itself (da-r13j).
         "help" => &[Show::Default, Show::Json],
@@ -342,7 +342,7 @@ mod tests {
     }
 
     /// `--json` carries no value of its own, so a value behind it is left
-    /// standing as an argument — which is how `spec set x --json '{…}'`
+    /// standing as an argument — which is how `spec x --json '{…}'`
     /// reaches the parser that points at `--from-json`.
     #[test]
     fn json_takes_no_value_and_leaves_one_standing() {

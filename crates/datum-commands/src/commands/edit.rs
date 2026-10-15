@@ -457,7 +457,7 @@ mod tests {
         assert_eq!(after.state, before.state);
     }
 
-    /// da-eciuy: editing a spec holds the colour it changes to `spec set
+    /// da-eciuy: editing a spec holds the colour it changes to `spec
     /// --color`'s rule — a hue resolves, anything else is refused.
     #[test]
     fn edit_holds_a_spec_colour_to_the_rule() {

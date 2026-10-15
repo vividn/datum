@@ -126,7 +126,7 @@ pub(super) fn m11_to_12_extra_metadata(conn: &Connection) -> Result<()> {
 }
 
 /// da-d4t.1: kits scope `field_specs` rows. `kit_id` is NULL for
-/// user-declared specs (set via `datum spec set` or auto-tracked) and
+/// user-declared specs (set via `datum spec` or auto-tracked) and
 /// non-NULL for rows installed by `datum kit install`. Uninstall deletes
 /// only rows with the matching `kit_id`. Additive + idempotent.
 pub(super) fn m12_to_13_field_specs_kit_id(conn: &Connection) -> Result<()> {
@@ -225,7 +225,7 @@ pub(super) fn m16_to_17_kit_commands_table(conn: &Connection) -> Result<()> {
 
 /// da-a7g: tag-based field grouping. `tags` mirrors `FieldSpec.tags` out of
 /// `spec_json` into a column so SQL filters (`tags LIKE '%"chore"%'`) and
-/// the `datum spec list --tag` query can run without JSON parsing. Additive
+/// the `datum spec --tag` query can run without JSON parsing. Additive
 /// + idempotent.
 pub(super) fn m17_to_18_field_specs_tags(conn: &Connection) -> Result<()> {
     let has_col: bool = conn

@@ -95,7 +95,7 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
         spec.allowed_states = Some(states);
     }
     // da-a7g: `--tag <name>` is repeatable and idempotent — each flag adds
-    // the tag if absent. To replace the full set, use `datum spec set`.
+    // the tag if absent. To replace the full set, use `datum spec`.
     for tag in &args.tags {
         spec.add_tag(tag);
     }
@@ -129,7 +129,7 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     }
     // da-ulc0v: the alias-style tail. `-k` / `-K` add a slot to the ordered
     // lists (a name already in that list takes the new kind in its place),
-    // and a bare `KEY=VALUE` assigns (`KEY=` removes one, as `spec set
+    // and a bare `KEY=VALUE` assigns (`KEY=` removes one, as `spec
     // --assign`). A key lives in one place: each declaration takes its name
     // out of the others.
     for (keys, id) in [(&args.data_keys, false), (&args.id_keys, true)] {

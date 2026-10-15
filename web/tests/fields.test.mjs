@@ -85,7 +85,7 @@ describe('the logic', () => {
 	});
 
 	// da-lxqqz: only a key with no default asks anything of the person.
-	// da-p3hxn: the kinds are the CLI's (`spec show`'s `keys`); nothing splits a spelling.
+	// da-p3hxn: the kinds are the CLI's (`spec F --json`'s `keys`); nothing splits a spelling.
 	test('requiredKeys: the keys of kind required, in binding order', () => {
 		const key = (name, kind, value) => ({ name, kind, value, in_slug: false });
 		assert.deepEqual(
@@ -344,7 +344,7 @@ describe('in the app', () => {
 			// No spec, logged once: a point, a button like any other.
 			assert.equal((await look(page, 'untracked')).tag, 'BUTTON');
 
-			await type(page, 'spec set coffee --glyph ☕');
+			await type(page, 'spec coffee --glyph ☕');
 			await page.waitForFunction(() => document.querySelector('.bar [data-field="coffee"] .glyph')?.textContent === '☕');
 			assert.equal((await look(page, 'coffee')).text, '☕coffee', "the spec's glyph, in place of the dot");
 		});
@@ -355,9 +355,9 @@ describe('in the app', () => {
 	test('track tea and occur walk are buttons; an ignored run with a spec is not, and the (+) un-ignores it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			for (const line of ['track tea --verb occur', 'occur walk', 'spec set run --verb occur']) await type(page, line);
+			for (const line of ['track tea --verb occur', 'occur walk', 'spec run --verb occur']) await type(page, line);
 			// Drawn BEFORE it is ignored. `['tea', 'walk']` is also what the bar
-			// says one beat EARLIER, before `spec set run` lands — the store
+			// says one beat EARLIER, before `spec run` lands — the store
 			// catches up a refresh behind the echo `type` waits for — so
 			// asserting it without first seeing `run` appear passes on the
 			// wrong state, and the field widget then opens on an ignored list

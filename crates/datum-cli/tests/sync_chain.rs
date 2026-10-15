@@ -967,9 +967,9 @@ fn check_clean(copy: &Copy, others: &[&Copy]) {
 #[test]
 fn a_purge_preview_of_a_device_that_only_made_specs_says_they_go() {
     let (a, b) = chained();
-    b.ok(&["spec", "set", "coffee", "--verb", "occur"]);
+    b.ok(&["spec", "coffee", "--verb", "occur"]);
     assert!(b.send(&a).0);
-    let spec = || a.ok(&["spec", "show", "coffee"]);
+    let spec = || a.ok(&["spec", "coffee", "--json"]);
     assert!(!spec().contains("No spec defined"), "{}", spec());
     let preview = a.ok(&["sync", "chain", "revert", "b"]);
     assert!(
@@ -2896,7 +2896,7 @@ fn verify_with(copy: &Copy, peer: &Copy) -> String {
 fn a_filtered_reader_gets_its_fields_and_their_specs_and_nothing_else() {
     let (a, b) = chained();
     for (f, copy) in [("coffee", &a), ("tea", &a)] {
-        copy.ok(&["spec", "set", f, "--verb", "occur"]);
+        copy.ok(&["spec", f, "--verb", "occur"]);
         copy.ok(&["occur", f]);
     }
     b.ok(&["occur", "coffee", "cups=2"]);
@@ -3142,7 +3142,7 @@ fn an_op_outside_its_filter_sent_to_a_filtered_reader_is_refused() {
 #[test]
 fn a_kit_names_its_fields_and_only_a_reader_is_filtered() {
     let (a, _b) = chained();
-    a.ok(&["spec", "set", "coffee", "--verb", "occur"]);
+    a.ok(&["spec", "coffee", "--verb", "occur"]);
     a.exec(
         "UPDATE entries SET data = json_set(data, '$.kit_id', 'drinks') WHERE slug = 'spec:coffee'",
     );

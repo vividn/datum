@@ -22,7 +22,7 @@
 // an empty one.
 //
 // The bar is the fields widget now (da-c7u8): the (+) first, then a button
-// per TRACKED field — so the handful here is declared with `spec set`,
+// per TRACKED field — so the handful here is declared with `spec F`,
 // which is what gives a field its button.
 //
 // And the count that wraps is not a constant: it is what fits across the
@@ -77,7 +77,7 @@ const FIELDS = ['coffee', 'mood', 'sleep', 'water', 'run'];
 
 /** Track `fields` and wait until every one of them has a button. */
 async function track(app, fields) {
-	await seedLines(app, fields.map((field) => `spec set ${field} --verb occur`));
+	await seedLines(app, fields.map((field) => `spec ${field} --verb occur`));
 	await app.page.locator('.bar button.widget').nth(fields.length - 1).waitFor();
 }
 
@@ -117,7 +117,7 @@ describe('on a phone-sized screen', () => {
 	test("a tracked field's button is on screen", async (t) => {
 		await phone.solo(async (app) => {
 			const { page, submit } = app;
-			await submit('spec set coffee --verb occur');
+			await submit('spec coffee --verb occur');
 			await page.locator('.bar button.widget', { hasText: 'coffee' }).waitFor();
 			await atEachScreen(t, page, [PHONE, SHORT], async () => {
 				await assertOnScreen(page, '.bar button.widget', "the coffee field's chip");
@@ -348,7 +348,7 @@ describe('on a phone-sized screen', () => {
 		await phone.room('pressed', async (app) => {
 			const { page, submit } = app;
 			// mood is the switch here, so the other four are what wrap the bar.
-			await submit('spec set mood --verb switch --state happy --state sad');
+			await submit('spec mood --verb switch --state happy --state sad');
 			await track(app, FIELDS.filter((f) => f !== 'mood'));
 			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
 			await chip.waitFor();

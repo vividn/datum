@@ -257,7 +257,7 @@ fn switch_dur_creates_block_ending_at_occur() {
     // da-gvcen: declare the field first — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the block a trailing duration makes, not the declaration.
-    run_cli(&["spec", "set", "project", "--verb", "switch"], &db).expect("declare project");
+    run_cli(&["spec", "project", "--verb", "switch"], &db).expect("declare project");
 
     run_cli(&["switch", "project", "household", "10m"], &db).expect("switch household 10m");
 
@@ -318,7 +318,7 @@ fn switch_moment_produces_point_in_time_entry() {
     // da-gvcen: declare the field first — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the `-m` moment rule, not the declaration.
-    run_cli(&["spec", "set", "project", "--verb", "switch"], &db).expect("declare project");
+    run_cli(&["spec", "project", "--verb", "switch"], &db).expect("declare project");
 
     run_cli(
         &[
@@ -480,7 +480,7 @@ fn switch_multiple_keys_attach_without_complex_state_synthesis() {
     // da-gvcen: declare the field first — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is how keyed data attaches, not the declaration.
-    run_cli(&["spec", "set", "book", "--verb", "switch"], &db).expect("declare book");
+    run_cli(&["spec", "book", "--verb", "switch"], &db).expect("declare book");
 
     run_cli(
         &[

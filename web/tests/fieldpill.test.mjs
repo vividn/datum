@@ -124,8 +124,8 @@ const frames = (page) =>
  * a value this file wrote, not about md5.
  */
 const SEED = [
-	'spec set coffee --verb occur --color #ffa500',
-	'spec set mood --verb switch --state happy --color #0000ff',
+	'spec coffee --verb occur --color #ffa500',
+	'spec mood --verb switch --state happy --color #0000ff',
 	'occur coffee',
 	'switch mood happy'
 ];
@@ -799,11 +799,11 @@ describe('`spec` under the pill', () => {
 			assert.equal(await fieldPill(page).count(), 0, 'the pill outlived the tap');
 			assert.equal(await line(page).inputValue(), '', 'the tap wrote a line as well');
 
-			// And what it saves is the one `spec set`, with no pill after it.
+			// And what it saves is the one `spec F`, with no pill after it.
 			await page.locator(`${MODAL} button[type="submit"]`).click();
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 			await app.idle();
-			assert.match((await app.echoes()).at(-1), /^spec set mood --from-json /);
+			assert.match((await app.echoes()).at(-1), /^spec mood --from-json /);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -813,8 +813,8 @@ describe('`spec` under the pill', () => {
 			const { page } = app;
 			// Logging declares a field, so its spec is taken away after.
 			await app.submit('occur tea');
-			await app.submit('spec remove tea');
-			assert.match((await app.run(['spec', 'show', 'tea'])).stdout, /No spec defined/, 'tea has a spec to edit');
+			await app.run(['spec', 'tea', '--delete']);
+			assert.match((await app.run(['spec', 'tea', '--json'])).stdout, /No spec defined/, 'tea has a spec to edit');
 			await chip(page, 'tea').waitFor();
 			await longPress(page, 'tea');
 			await fieldPill(page).waitFor();
@@ -831,22 +831,40 @@ describe('`spec` under the pill', () => {
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 			await app.idle();
 			assert.equal(await fieldPill(page).count(), 0, 'a dismiss put the pill back');
-			assert.match((await app.run(['spec', 'show', 'tea'])).stdout, /No spec defined/, 'a dismiss declared tea');
+			assert.match((await app.run(['spec', 'tea', '--json'])).stdout, /No spec defined/, 'a dismiss declared tea');
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	// With no pill there is no subject, so `spec` opens its subcommands
-	// (da-803mk), a tap on one writes it on the line, and nothing opens.
-	// On `onPage`: it leaves the commands widget in `spec`'s subcommands.
-	test('with no pill, `spec` opens its subcommands and `show` writes `spec show `', async () => {
-		await onPage(async (app) => {
+	// With no pill there is no subject, and `spec` has no subcommands to
+	// open (da-ez40f): it opens the widget on a new field, as `track` does.
+	// da-ez40f: typed, `spec` and `spec F` run and open the widget, on F.
+	test('typed, `spec` opens the widget on a new field', async () => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
+			await app.submit('spec');
+			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
+			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), '');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('typed, `spec mood` opens the widget on mood', async () => {
+		await seeded(async (app) => {
+			const { page } = app;
+			await app.submit('spec mood');
+			await page.locator(`${MODAL}[aria-label="the spec of mood"]`).waitFor();
+			assert.equal(await page.locator(`${MODAL} h2`).innerText(), 'mood');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('with no pill, `spec` opens the field widget on a new field', async () => {
+		await seeded(async (app) => {
+			const { page } = app;
 			await specButton(page).click();
-			await pane(page, 'cmd').locator('[data-command="spec show"]').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input')?.value === 'spec show ');
-			assert.equal(await page.locator(MODAL).count(), 0);
+			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
+			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), '');
 			assert.deepEqual(app.errors, []);
 		});
 	});

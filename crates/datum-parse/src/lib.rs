@@ -15,7 +15,7 @@
 //! * Hand-authored help rendering ([`help`]).
 //! * Public error type ([`error`]) — `ParseError` and the shared
 //!   `Result` alias for callers that want to match on the variants.
-//! * What a field name may be ([`field_name`]) — the rule `spec set`
+//! * What a field name may be ([`field_name`]) — the rule `spec`
 //!   enforces so no field is declared that nothing can log to.
 //! * The pure entry-shape rules the storage layer applies but does not
 //!   own: the duration type ([`dur`]), the verb truth table ([`verb`]),

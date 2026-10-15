@@ -20,7 +20,7 @@ fn install(db: &Db, toml: &str, extra: &[&str]) -> anyhow::Result<()> {
 }
 
 /// `hidden = true` installs a hidden spec — the `render = false` that
-/// `spec set` stores — and export writes it back.
+/// `spec` stores — and export writes it back.
 #[test]
 fn hidden_installs_a_hidden_spec() {
     let db = fresh_db();
@@ -99,9 +99,7 @@ fn a_kit_refuses_a_status_as_a_state() {
 fn uninstall_after_force_gives_back_the_hand_set_spec() {
     let db = fresh_db();
     run_cli(
-        &[
-            "spec", "set", "mood", "--verb", "switch", "--color", "#123456",
-        ],
+        &["spec", "mood", "--verb", "switch", "--color", "#123456"],
         &db,
     )
     .unwrap();
@@ -181,9 +179,7 @@ fn a_kit_forced_over_a_kit_unwinds_in_either_order() {
     for order in [["a", "b"], ["b", "a"]] {
         let db = fresh_db();
         run_cli(
-            &[
-                "spec", "set", "mood", "--verb", "switch", "--color", "#123456",
-            ],
+            &["spec", "mood", "--verb", "switch", "--color", "#123456"],
             &db,
         )
         .unwrap();
@@ -208,7 +204,7 @@ fn a_kit_forced_over_a_kit_unwinds_in_either_order() {
 
 const ICON: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>"#;
 
-/// A `[[field]]` that says everything `spec set` can (da-dtmlv), states
+/// A `[[field]]` that says everything `spec` can (da-dtmlv), states
 /// written out of alphabetical order.
 fn whole_field_kit() -> String {
     format!(
@@ -243,7 +239,7 @@ fn spec_json(db: &Db, field: &str) -> serde_json::Value {
     serde_json::to_value(db.load_spec(field).unwrap().unwrap()).unwrap()
 }
 
-/// A kit field installs the spec `spec set` stores for the same keys, and
+/// A kit field installs the spec `spec` stores for the same keys, and
 /// its states keep the order the kit wrote them in.
 #[test]
 fn a_kit_field_installs_what_spec_set_stores() {
@@ -277,7 +273,7 @@ fn a_kit_field_installs_what_spec_set_stores() {
         "state_descriptions": {"tired": "worn out"},
     });
     run_cli(
-        &["spec", "set", "mood", "--from-json", &json.to_string()],
+        &["spec", "mood", "--from-json", &json.to_string()],
         &by_hand,
     )
     .unwrap();
@@ -392,7 +388,7 @@ fn a_kit_routes_leftover_words_as_track_does() {
     }
 }
 
-/// An icon `spec set` refuses, a kit refuses with the same words, and a
+/// An icon `spec` refuses, a kit refuses with the same words, and a
 /// glyph that is not one character too; nothing is installed.
 #[test]
 fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
@@ -404,7 +400,6 @@ fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
     let by_hand = run_cli(
         &[
             "spec",
-            "set",
             "mood",
             "--verb",
             "switch",
@@ -437,7 +432,7 @@ fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
     );
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
 
-    // A size factor spec set refuses, a kit refuses too (da-gah1q).
+    // A size factor spec refuses, a kit refuses too (da-gah1q).
     let kit = whole_field_kit().replace("glyph_aspect = 0.5", "glyph_aspect = 0");
     let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
     assert!(
@@ -448,7 +443,7 @@ fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
 }
 
 /// A factor of 1 is what an unset one draws: a kit stores it unset, as
-/// `spec set` does (da-gah1q).
+/// `spec` does (da-gah1q).
 #[test]
 fn a_kit_factor_of_one_is_stored_unset() {
     let db = fresh_db();

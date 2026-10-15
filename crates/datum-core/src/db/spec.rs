@@ -131,7 +131,7 @@ fn check_spec_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Resu
     let Some(mut data) = data.filter(|d| d.is_object()).cloned() else {
         return refuse(format!(
             "`{SPEC_FIELD}` is reserved for field specs, and this entry carries none \
-             (see `datum spec set`)"
+             (see `datum spec`)"
         ));
     };
     // A stored spec may predate its verb (da-c8mh); reading fills it from
@@ -218,7 +218,7 @@ impl Db {
     }
 
     /// The live entry holding `field`'s spec, if it has one.
-    pub(crate) fn spec_entry(&self, field: &str) -> Result<Option<Entry>> {
+    pub fn spec_entry(&self, field: &str) -> Result<Option<Entry>> {
         Ok(self
             .conn
             .query_row(
@@ -347,7 +347,7 @@ impl Db {
     /// in its history, and nothing at all when the spec is unchanged), else
     /// an insert — which revives a deleted spec's tombstone in place.
     /// `kit_id` is the mark to write: `Some` sets it, `None` keeps the one
-    /// the entry already carries, so a user's `spec set` on a kit field
+    /// the entry already carries, so a user's `spec` on a kit field
     /// leaves it the kit's. A kit taking the spec over from its owner keeps
     /// the owner's data as `displaced`, for uninstall to hand back; any
     /// other write carries the `displaced` already there. Returns the entry.

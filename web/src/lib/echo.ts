@@ -119,7 +119,6 @@ const NO_ECHO = new Set([
 	'meta',
 	// Command groups whose subcommands take no `--show`.
 	'db',
-	'spec',
 	'alias',
 	'config',
 	'sync',
@@ -175,9 +174,21 @@ export function echoEnv(argv: string[]): string[] {
 	}
 	const echoes = sides.every((side) => {
 		const command = commandOf(side);
-		return command !== undefined && !NO_ECHO.has(command) && !learnedNoEcho.has(command);
+		return command !== undefined && !NO_ECHO.has(command) && !learnedNoEcho.has(command) && !readsSpec(command, side);
 	});
 	return echoes ? [SHOW_JSON] : [];
+}
+
+/**
+ * `spec`, `spec F`, `spec F --json` and `spec --tag T` read; only a field
+ * with a change after it, or `--delete` wherever it stands, echoes the spec
+ * entry (da-ez40f).
+ */
+function readsSpec(command: string, side: string[]): boolean {
+	if (command !== 'spec') return false;
+	if (side.includes('--delete')) return false;
+	const [field, ...flags] = side.slice(side.indexOf('spec') + 1);
+	return field === undefined || field.startsWith('-') || !flags.some((w) => w.startsWith('-') && w !== '--json');
 }
 
 /** The command words learned this session to go without an echo. */

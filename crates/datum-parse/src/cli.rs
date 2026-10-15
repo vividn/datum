@@ -611,47 +611,25 @@ pub struct WhyArgs {
 
 // ─── Spec / alias management ──────────────────────────────────────────────
 
+/// `datum spec [FIELD] [CHANGES]` (da-ez40f): no subcommands — the shape
+/// of the line says which of these it is.
 #[derive(Debug)]
 pub enum SpecCommand {
-    /// `datum spec show <FIELD> [--text]` — JSON by default; `--text`
-    /// switches to a human-readable summary including per-state colors
-    /// and descriptions (da-nhzo). `--show json` (and its `--json`
-    /// shorthand) is the explicit form of the default, read by the shared
-    /// output layer like every other command's (da-qt6z).
-    Show {
-        field: String,
-        text: bool,
-    },
-    /// `datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION] [GLYPH]` —
-    /// merge a single state into a field spec without disturbing the others
-    /// (da-t9ps). The safe, incremental counterpart to `spec set --state`,
-    /// which replaces the whole list. `-` in a slot leaves it alone.
-    AddState {
-        field: String,
-        name: String,
-        color: Option<String>,
-        description: Option<String>,
-        /// The state's occur-dot glyph (da-gzowt).
-        glyph: Option<String>,
-        /// `--key KEY`, repeated: the state's whole key list (da-cej7q).
-        /// An empty `--key=` clears the ones before it.
-        keys: Vec<String>,
-        /// `--assign KEY=VALUE`, repeated: the state's assigned keys
-        /// (da-ulc0v); an empty VALUE removes one.
-        assign: Vec<String>,
-    },
+    /// `datum spec [--tag T]` — the fields that have a spec.
+    List { tag: Option<String> },
+    /// `datum spec <FIELD>` — its spec as a block; `--json` as JSON.
+    Show { field: String, show: Show },
+    /// `datum spec <FIELD> <CHANGES>` — apply them.
     Set(Box<SpecSetArgs>),
-    List {
-        tag: Option<String>,
-    },
-    Remove {
-        field: String,
-    },
+    /// `datum spec <FIELD> --delete` — delete the spec document.
+    Delete { field: String, show: Show },
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct SpecSetArgs {
     pub field: String,
+    /// The echo's level: `--show json` echoes the spec entry (da-ez40f).
+    pub show: Show,
     /// `--from-json <JSON>` — the whole spec body, replacing the existing
     /// one. Spelled `--json` until da-qt6z made that the global
     /// `--show json`; vividn picked the new name.
@@ -1134,7 +1112,7 @@ pub struct TrackArgs {
     pub verb: Option<String>,
     pub color: Option<String>,
     /// Repeatable `--state`. A bare `NAME` is one of the states the field
-    /// may be switched to, as `spec set --state` means it; `NAME=COLOR`
+    /// may be switched to, as `spec --state` means it; `NAME=COLOR`
     /// paints that state instead. The two forms are told apart by the `=`,
     /// so one flag declares a switch field whole (da-94q1).
     pub states: Vec<String>,
@@ -1153,7 +1131,7 @@ pub struct TrackArgs {
     /// ...and a bare `KEY=VALUE` declares an assigned key.
     pub assign: Vec<String>,
     /// `-R KEY` / `--remainder KEY`: where the words no slot takes go, as
-    /// `spec set --remainder` says it (da-fu29p); `''` clears it.
+    /// `spec --remainder` says it (da-fu29p); `''` clears it.
     pub remainder: Option<String>,
     /// `-S`: the remainder's words joined into one string; `-C`: the
     /// leftover words as one comment, with no `-R` (da-zqnt3).

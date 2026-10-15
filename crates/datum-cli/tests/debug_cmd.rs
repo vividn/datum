@@ -152,7 +152,7 @@ fn a_database_holding_real_entries_is_refused_and_nothing_is_written() {
 #[test]
 fn specs_and_sample_entries_are_not_real_entries() {
     let env = Env::new();
-    env.run(&["spec", "set", "mood", "--verb", "switch"]);
+    env.run(&["spec", "mood", "--verb", "switch"]);
     env.run(&["occur", "coffee", "sample=true"]);
     let (ok, out) = env.run(&["debug", "conflicts", "1"]);
     assert!(ok, "{out}");

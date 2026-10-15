@@ -116,7 +116,7 @@ fn a_subcommand_with_no_json_ignores_the_env_and_refuses_the_flag() {
         ),
         ("alias remove", &["alias", "remove", "aa", "--json"]),
         ("db setup", &["db", "setup", "--json"]),
-        ("spec list", &["spec", "list", "--json"]),
+        ("spec", &["spec", "--json"]),
     ] {
         let out = datum(&db, "", argv);
         assert!(!out.status.success(), "{name} should have refused");

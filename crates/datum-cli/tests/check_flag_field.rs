@@ -43,7 +43,7 @@ fn a_logged_field_with_no_spec_is_still_an_unknown_field() {
     let dir = TempDir::new().unwrap();
     let db = dir.path().join("t.db");
     datum(&db, &["occur", "tea"]);
-    datum(&db, &["spec", "remove", "tea"]);
+    datum(&db, &["spec", "tea", "--delete"]);
 
     let check = datum(&db, &["check"]);
     assert!(check.contains("unknown_field (x1)"), "{check}");

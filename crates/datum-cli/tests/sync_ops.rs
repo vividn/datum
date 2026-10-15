@@ -1000,7 +1000,7 @@ fn a_kit_spec_applies_over_an_automatic_one_created_later() {
 
 #[test]
 fn a_key_the_automatic_specs_owner_set_is_an_intent_like_any_other() {
-    let (k, p, spec) = a_kit_then_a_first_log(&["spec", "set", "weighin", "--remainder", "memo"]);
+    let (k, p, spec) = a_kit_then_a_first_log(&["spec", "weighin", "--remainder", "memo"]);
     for copy in [&k, &p] {
         let data = copy.data(&spec);
         assert_eq!(data["remainder"], "memo", "the edit goes over the create");
@@ -1389,17 +1389,15 @@ fn the_same_ops_twice_or_in_any_order_give_the_same_state() {
 #[test]
 fn specs_merged_under_one_slug_fold_the_same_however_their_apply_is_cut() {
     let make = |copy: &Copy, declared: bool, color: &str| match declared {
-        true => copy.ok(&["spec", "set", "tea", "--verb", "occur", "--color", color]),
+        true => copy.ok(&["spec", "tea", "--verb", "occur", "--color", color]),
         false => copy.ok(&["occur", "tea", "-t", "2026-10-04 08:00"]),
     };
     for (first, second) in [(false, true), (true, false), (true, true)] {
         let (x, y, z) = (Copy::new(), Copy::new(), Copy::new());
         make(&x, first, "#ff0000");
         make(&y, second, "#00ffff");
-        y.ok(&["spec", "set", "tea", "--glyph", "y"]);
-        z.ok(&[
-            "spec", "set", "tea", "--verb", "occur", "--color", "#0000ff",
-        ]);
+        y.ok(&["spec", "tea", "--glyph", "y"]);
+        z.ok(&["spec", "tea", "--verb", "occur", "--color", "#0000ff"]);
         let lines: Vec<String> = [&x, &y, &z]
             .iter()
             .flat_map(|c| {
@@ -1833,7 +1831,7 @@ fn a_synced_value_its_spec_would_refuse_is_applied_and_check_lists_it() {
     a.send(&b);
     // `b` types the key; `a` logs before it hears of that.
     let spec = r#"{"field":"run","verb":"occur","subfields":{"km":{"value_type":"number"}}}"#;
-    b.ok(&["spec", "set", "run", "--from-json", spec]);
+    b.ok(&["spec", "run", "--from-json", spec]);
     assert!(!b.run(&["occur", "run", "km=abc"], "").status.success());
     a.ok(&["occur", "run", "km=abc"]);
     a.send(&b);

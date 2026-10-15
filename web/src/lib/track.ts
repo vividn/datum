@@ -138,7 +138,7 @@ export interface StateRow {
 /**
  * The argv that declares `field`.
  *
- * `track`, not `spec set`: declaring a field is an event in the log — the
+ * `track`, not `spec F`: declaring a field is an event in the log — the
  * TRACK document that says what the field IS (da-c8mh) — and only `track`
  * writes one. It also un-ignores, which is what the ignored list below it
  * is for. A bare `--state` names a state the field may be switched to
@@ -150,7 +150,7 @@ export interface StateRow {
  * order of their names, so a card's `person vr520 vremya cantown` stored
  * the name as the city. The row that takes the rest of the line is `-R
  * KEY`, `-SR KEY` or `-C` (da-fu29p, da-zqnt3). The field form declares
- * a new field with `spec set --track` instead (`declareArgv`), which says
+ * a new field with `spec F --track` instead (`declareArgv`), which says
  * all the form does in one command.
  */
 export function trackArgv(
@@ -176,7 +176,7 @@ export function trackArgv(
 	return argv;
 }
 
-/** A spec as `spec show` prints it; only the keys the modal edits are named. */
+/** A spec as `spec F --json` prints it; only the keys the modal edits are named. */
 export interface Spec {
 	field: string;
 	verb: Verb;
@@ -184,7 +184,7 @@ export interface Spec {
 	description: string | null;
 	allowed_states: string[] | null;
 	state_colors: Record<string, string>;
-	/** Left out of `spec show` when empty, as the CLI serialises it. */
+	/** Left out of `spec F --json` when empty, as the CLI serialises it. */
 	state_descriptions?: Record<string, string>;
 	/** The occur dot's glyph (da-gzowt) and its overrides; each left out when empty. */
 	glyph?: string;
@@ -193,7 +193,7 @@ export interface Spec {
 	subfields?: Record<string, Subfield>;
 	derived_aliases?: DerivedAlias[];
 	no_autoalias?: boolean;
-	/** The field is never off (da-cwieh); left out of `spec show` when false. */
+	/** The field is never off (da-cwieh); left out of `spec F --json` when false. */
 	never_false?: boolean;
 	/** The key a line's leftover words go to, as `-R KEY` sends them; left out when none. */
 	remainder?: string;
@@ -336,7 +336,7 @@ export interface DerivedAlias {
 }
 
 /**
- * The modal's key rows for `spec`: `spec show`'s `keys`, parsed by the CLI
+ * The modal's key rows for `spec`: `spec F --json`'s `keys`, parsed by the CLI
  * and in binding order (da-p3hxn) — every key the spec declares, not only
  * its subfields — each with its subfield's type where it has one; then the
  * row that takes the rest of the line, if one does.
@@ -449,8 +449,8 @@ function placed(rows: KeyRow[]): Partial<Spec> {
  * edit (placement, tags, id keys) carried as it was, and so are the keys
  * and aliases when the edit leaves them out.
  *
- * The states are the WHOLE list, which is `spec set`'s shape and not
- * `add-state`'s: a state removed takes its colour, description and glyph
+ * The states are the WHOLE list, which is `--from-json`'s shape: a
+ * state removed takes its colour, description and glyph
  * with it, and an empty one clears the entry. A glyph goes only for a
  * state that LEFT the list — `state_glyphs` may name a state the list
  * never did — or a row that carries an empty one; a renamed row carries
@@ -525,7 +525,7 @@ export function editedSpec(
 		description: edit.description.trim() || null,
 		allowed_states: spec.allowed_states === null && names.length === 0 ? null : names,
 		state_colors,
-		// Each absent when empty, as `spec show` prints it, so what is sent is what is read back.
+		// Each absent when empty, as `spec F --json` prints it, so what is sent is what is read back.
 		...(Object.keys(state_descriptions).length ? { state_descriptions } : {}),
 		...(glyph ? { glyph } : {}),
 		...(Object.keys(state_glyphs).length ? { state_glyphs } : {}),
@@ -568,7 +568,7 @@ const blank = (field: string, verb: Verb): Spec => ({ field, verb, color: null, 
 
 /**
  * The ONE command that declares a new field, which one Undo takes back
- * whole (da-2pbvd): `spec set --from-json` with the whole of its form, and
+ * whole (da-2pbvd): `spec F --from-json` with the whole of its form, and
  * `--track` or `--ignore`, which write its TRACK or IGNORED row in the same
  * transaction.
  */
@@ -583,14 +583,13 @@ export interface Save {
 }
 
 /**
- * The ONE command that saves an edited spec: `spec set --from-json` with
+ * The ONE command that saves an edited spec: `spec F --from-json` with
  * the whole of it, so it lands entire or not at all — never a stream of
- * `add-state`s half applied — and so a colour or a state can be
+ * one-state changes half applied — and so a colour or a state can be
  * cleared, which the one-value flags cannot say.
  */
 export const specArgv = (spec: Spec): string[] => [
 	'spec',
-	'set',
 	spec.field,
 	'--from-json',
 	JSON.stringify(spec)

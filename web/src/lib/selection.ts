@@ -78,7 +78,7 @@ export const hidPill = (hids: string[], locked = false): Pill | null =>
  * may fill it (da-8810n).
  *
  * `takes.field` is which positional the command's field is — 1 for `tail
- * [FIELD]`, 2 for `spec show <FIELD>` — so the slot is open exactly when
+ * [FIELD]`, 2 for `meta show <FIELD>` — so the slot is open exactly when
  * the argv is that many words short of it. THIS IS WHERE THE SILENT ONE
  * WOULD BE: datum's line is field-first, so a press from the fields widget
  * already carries its own field (`occur coffee`), and a second field

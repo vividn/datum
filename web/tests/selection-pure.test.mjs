@@ -58,7 +58,9 @@ const GRAMMAR = grammarOf([
 	// behind a SUBCOMMAND at slot 2, a field behind a FLAG (not a slot at
 	// all), and `stats`, whose `<FIELD[:STATE]>` must not read as one.
 	entry('stats', ['datum stats <FIELD[:STATE]> [SLICE] [--since TIME]']),
-	entry('spec', ['datum spec show <FIELD> [--text]', 'datum spec list [--tag T]']),
+	entry('meta', ['datum meta show <FIELD>']),
+	// da-ez40f: `spec` has no subcommands; its field is the first word.
+	entry('spec', ['datum spec [--tag T]', 'datum spec <FIELD> [--json]']),
 	entry('grep', ['datum grep <PATTERN>... [-f FIELD]']),
 	entry('count', ['datum count [FIELD] [--group-by KEY]'])
 ]);
@@ -99,12 +101,12 @@ describe('what the grammar says a command takes', () => {
 	});
 
 	// da-8810n. The SLOT, not a boolean: a field pill's word has to land in
-	// the positional the command keeps for it, and `spec show <FIELD>` keeps
+	// the positional the command keeps for it, and `meta show <FIELD>` keeps
 	// the second.
 	test('a FIELD is the positional it sits at — 1, or 2 behind a subcommand', () => {
 		const field = (name) => GRAMMAR.get(name).field;
-		assert.deepEqual(['occur', 'end', 'tail', 'flag', 'stats', 'count'].map(field), [1, 1, 1, 1, 1, 1]);
-		assert.equal(field('spec'), 2, 'the field is behind `show`');
+		assert.deepEqual(['occur', 'end', 'tail', 'flag', 'stats', 'count', 'spec'].map(field), [1, 1, 1, 1, 1, 1, 1]);
+		assert.equal(field('meta'), 2, 'the field is behind `show`');
 		// Not a positional at all: a bare word in `grep`'s place is a second
 		// PATTERN, and `get`/`now` name no field.
 		assert.deepEqual(['grep', 'get', 'now', 'delete'].map(field), [false, false, false, false]);
@@ -176,11 +178,12 @@ describe('what a press runs with the pills', () => {
 	});
 
 	// da-8810n. The field goes in the command's OWN field slot — after
-	// `spec show`, not after `spec` — and BEFORE the other pills, since
+	// `meta show`, not after `meta` — and BEFORE the other pills, since
 	// `tail -t 14:30 mood` is not the command `tail mood -t 14:30` is.
 	test('a field pill fills the field slot, wherever that is, ahead of the other pills', () => {
 		assert.deepEqual(withPills(GRAMMAR, ['tail'], [mood]).argv, ['tail', 'mood']);
-		assert.deepEqual(withPills(GRAMMAR, ['spec', 'show'], [mood]).argv, ['spec', 'show', 'mood']);
+		assert.deepEqual(withPills(GRAMMAR, ['meta', 'show'], [mood]).argv, ['meta', 'show', 'mood']);
+		assert.deepEqual(withPills(GRAMMAR, ['spec'], [mood]).argv, ['spec', 'mood']);
 		assert.deepEqual(withPills(GRAMMAR, ['stats'], [mood]).argv, ['stats', 'mood']);
 		assert.deepEqual(withPills(GRAMMAR, ['tail'], [mood, time]).argv, ['tail', 'mood', '-t', '14:30']);
 	});
@@ -192,11 +195,7 @@ describe('what a press runs with the pills', () => {
 		const { argv, used } = withPills(GRAMMAR, ['occur', 'coffee'], [mood, time]);
 		assert.deepEqual(argv, ['occur', 'coffee', '-t', '14:30']);
 		assert.deepEqual(used, [time], 'the field pill was spent on a filled slot');
-		assert.deepEqual(withPills(GRAMMAR, ['spec', 'show', 'coffee'], [mood]).argv, [
-			'spec',
-			'show',
-			'coffee'
-		]);
+		assert.deepEqual(withPills(GRAMMAR, ['spec', 'coffee'], [mood]).argv, ['spec', 'coffee']);
 	});
 
 	// da-e9e5g. A flag's value is not a positional: `datum help --json`

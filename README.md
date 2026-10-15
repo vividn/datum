@@ -87,7 +87,7 @@ One-line summaries of the model:
   nested `extra_data`.
 - **Field** — what is being tracked: `mood`, `coffee`, `weight`,
   `project`. Freeform by default; can be schema-constrained via
-  `datum spec set`.
+  `datum spec <field>`.
 - **Action** — the user's command intent at the CLI: `add`, `occur`,
   `start`, `stop`, `switch`. Action is parsed from argv, canonicalizes
   the (state, dur, following_state) triple (`start` ⇒ state=true,

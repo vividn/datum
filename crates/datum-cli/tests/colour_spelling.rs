@@ -33,9 +33,9 @@ fn colour_is_color_on_track_spec_set_and_tail() {
         &[
             "track", "mood", "--verb", "switch", "--state", "happy", "--color", "red",
         ],
-        &["spec", "set", "mood2", "--verb", "switch", "--color=blue"],
-        &["spec", "set", "mood", "--state-color", "happy=green"],
-        &["spec", "set", "mood2", "--state-color=calm=pink"],
+        &["spec", "mood2", "--verb", "switch", "--color=blue"],
+        &["spec", "mood", "--state-color", "happy=green"],
+        &["spec", "mood2", "--state-color=calm=pink"],
         &["switch", "mood", "happy"],
     ];
     let (us, uk) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -45,10 +45,10 @@ fn colour_is_color_on_track_spec_set_and_tail() {
         ok(&uk, &british.iter().map(String::as_str).collect::<Vec<_>>());
     }
     for field in ["mood", "mood2"] {
-        let show = |dir| ok(dir, &["spec", "show", field]);
+        let show = |dir| ok(dir, &["spec", field, "--json"]);
         assert_eq!(show(&us), show(&uk));
     }
-    let mood = ok(&uk, &["spec", "show", "mood"]);
+    let mood = ok(&uk, &["spec", "mood", "--json"]);
     assert!(
         mood.contains("\"color\": \"#") && mood.contains("\"happy\": \"#"),
         "{mood}"
@@ -80,7 +80,7 @@ fn only_color_is_ever_shown() {
     let refusal = |flag| datum(&dir, &["tail", flag, "always"]).stderr;
     assert_eq!(refusal("--colour"), refusal("--color"));
 
-    for line in ["spec set mood --", "track mood --", "tail --"] {
+    for line in ["spec mood --", "track mood --", "tail --"] {
         let mut words: Vec<&str> = line.split(' ').collect();
         words.insert(0, "datum");
         let cword = (words.len() - 1).to_string();
@@ -89,9 +89,6 @@ fn only_color_is_ever_shown() {
         let found = ok(&dir, &args);
         assert!(!found.contains("colour"), "{line}: {found}");
     }
-    let found = ok(
-        &dir,
-        &["__complete", "3", "--", "datum", "spec", "set", "--"],
-    );
+    let found = ok(&dir, &["__complete", "2", "--", "datum", "spec", "--"]);
     assert!(found.lines().any(|l| l == "--color"), "{found}");
 }

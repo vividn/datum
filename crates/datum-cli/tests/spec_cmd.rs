@@ -1,4 +1,4 @@
-//! `datum spec set` integration tests for da-dqb position flags
+//! `datum spec` integration tests for da-dqb position flags
 //! (`--y`, `--height`, `--z-index`).
 
 use crate::common;
@@ -13,7 +13,6 @@ fn spec_set_persists_position_flags() {
     run_cli(
         &[
             "spec",
-            "set",
             "sleep",
             "--verb",
             "start",
@@ -26,7 +25,7 @@ fn spec_set_persists_position_flags() {
         ],
         &db,
     )
-    .expect("spec set with position flags");
+    .expect("spec with position flags");
 
     let spec = db.load_spec("sleep").unwrap().expect("spec persisted");
     assert_eq!(spec.presentation.y, Some(0.05));
@@ -44,7 +43,7 @@ fn spec_set_position_flags_merge_into_existing_spec() {
     let db = fresh_db();
 
     // First call: set the verb only. Position fields stay None.
-    run_cli(&["spec", "set", "focus", "--verb", "switch"], &db).expect("first spec set");
+    run_cli(&["spec", "focus", "--verb", "switch"], &db).expect("first spec ");
     let spec = db.load_spec("focus").unwrap().unwrap();
     assert!(spec.presentation.y.is_none());
     assert!(spec.presentation.height.is_none());
@@ -53,7 +52,7 @@ fn spec_set_position_flags_merge_into_existing_spec() {
     // Second call: only --y. Existing default_verb must survive; the other
     // position fields must remain None (so the resolver continues to apply
     // defaults).
-    run_cli(&["spec", "set", "focus", "--y", "0.42"], &db).expect("merge --y");
+    run_cli(&["spec", "focus", "--y", "0.42"], &db).expect("merge --y");
     let spec = db.load_spec("focus").unwrap().unwrap();
     assert_eq!(spec.presentation.y, Some(0.42));
     assert!(spec.presentation.height.is_none());
@@ -74,7 +73,6 @@ fn spec_set_overlap_two_fields_share_y_with_distinct_z_index() {
     run_cli(
         &[
             "spec",
-            "set",
             "sleep",
             "--verb",
             "start",
@@ -91,7 +89,6 @@ fn spec_set_overlap_two_fields_share_y_with_distinct_z_index() {
     run_cli(
         &[
             "spec",
-            "set",
             "focus",
             "--verb",
             "switch",
@@ -123,7 +120,6 @@ fn spec_set_attached_value_form_works_for_position_flags() {
     run_cli(
         &[
             "spec",
-            "set",
             "energy",
             "--verb",
             "switch",
@@ -149,7 +145,6 @@ fn spec_set_persists_state_descriptions() {
     run_cli(
         &[
             "spec",
-            "set",
             "mood",
             "--verb",
             "switch",
@@ -163,7 +158,7 @@ fn spec_set_persists_state_descriptions() {
         ],
         &db,
     )
-    .expect("spec set with state descriptions");
+    .expect("spec with state descriptions");
 
     let spec = db.load_spec("mood").unwrap().expect("spec persisted");
     assert_eq!(
@@ -173,45 +168,6 @@ fn spec_set_persists_state_descriptions() {
     assert_eq!(
         spec.state_descriptions.get("sad").map(String::as_str),
         Some("down or flat"),
-    );
-}
-
-// ─── da-t9ps: safe incremental `spec add-state` ───────────────────────
-
-#[test]
-fn spec_add_state_merges_positionally_without_dropping_others() {
-    let db = fresh_db();
-    // Seed a two-state field.
-    run_cli(
-        &[
-            "spec", "set", "mood", "--verb", "switch", "--state", "happy", "--state", "sad",
-        ],
-        &db,
-    )
-    .expect("seed mood");
-
-    // add-state <FIELD> <NAME> <COLOR> <DESCRIPTION> — all four positionals.
-    run_cli(
-        &["spec", "add-state", "mood", "meh", "yellow", "so-so"],
-        &db,
-    )
-    .expect("add-state with color + description");
-
-    let spec = db.load_spec("mood").unwrap().expect("spec persisted");
-    // Existing states survive; the new one is appended.
-    assert_eq!(
-        spec.allowed_states.as_ref().unwrap(),
-        &["happy".to_string(), "sad".to_string(), "meh".to_string()],
-    );
-    assert_eq!(
-        spec.state_colors.get("meh"),
-        datum_core::kit_color::resolve_color(Some("yellow"), "meh")
-            .unwrap()
-            .as_ref()
-    );
-    assert_eq!(
-        spec.state_descriptions.get("meh").map(String::as_str),
-        Some("so-so"),
     );
 }
 
@@ -227,9 +183,8 @@ fn spec_refuses_a_status_as_a_state() {
     ] {
         let json = format!(r#"{{"field":"mood","verb":"switch","allowed_states":["{status}"]}}"#);
         for line in [
-            &["spec", "add-state", "mood", status][..],
-            &["spec", "set", "mood", "--state", "calm", "--state", status],
-            &["spec", "set", "mood", "--from-json", &json],
+            &["spec", "mood", "--state", "calm", "--state", status][..],
+            &["spec", "mood", "--from-json", &json],
             &["track", "mood", "--verb", "switch", "--state", status],
         ] {
             let msg = run_cli(line, &db).unwrap_err().to_string();
@@ -241,28 +196,13 @@ fn spec_refuses_a_status_as_a_state() {
     }
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing written");
 
-    for name in ["calm", "false"] {
-        run_cli(&["spec", "add-state", "mood", name], &db).unwrap();
-    }
-    let spec = db.load_spec("mood").unwrap().unwrap();
-    assert_eq!(spec.allowed_states.unwrap(), ["calm", "false"]);
-}
-
-#[test]
-fn spec_add_state_dash_color_sets_description_only() {
-    let db = fresh_db();
     run_cli(
-        &["spec", "add-state", "mood", "grumpy", "-", "irritable"],
+        &["spec", "mood", "--state", "calm", "--state", "false"],
         &db,
     )
-    .expect("dash color, description only");
-
-    let spec = db.load_spec("mood").unwrap().expect("spec persisted");
-    assert!(!spec.state_colors.contains_key("grumpy"));
-    assert_eq!(
-        spec.state_descriptions.get("grumpy").map(String::as_str),
-        Some("irritable"),
-    );
+    .unwrap();
+    let spec = db.load_spec("mood").unwrap().unwrap();
+    assert_eq!(spec.allowed_states.unwrap(), ["calm", "false"]);
 }
 
 #[test]
@@ -271,7 +211,6 @@ fn spec_set_state_description_with_empty_text_clears_entry() {
     run_cli(
         &[
             "spec",
-            "set",
             "mood",
             "--verb",
             "switch",
@@ -283,11 +222,7 @@ fn spec_set_state_description_with_empty_text_clears_entry() {
         &db,
     )
     .expect("seed description");
-    run_cli(
-        &["spec", "set", "mood", "--state-description", "happy="],
-        &db,
-    )
-    .expect("clear with STATE=");
+    run_cli(&["spec", "mood", "--state-description", "happy="], &db).expect("clear with STATE=");
 
     let spec = db.load_spec("mood").unwrap().expect("spec persisted");
     assert!(
@@ -297,12 +232,12 @@ fn spec_set_state_description_with_empty_text_clears_entry() {
 }
 
 /// da-cwieh: `--never-false` marks a field that is never off, a later
-/// `spec set` without it keeps it, and `--allow-false` clears it.
+/// `spec` without it keeps it, and `--allow-false` clears it.
 #[test]
 fn spec_set_never_false_sets_keeps_and_clears() {
     let db = fresh_db();
     let never = || db.load_spec("env").unwrap().unwrap().never_false;
-    let set = |args: &[&str]| run_cli(&[&["spec", "set", "env"], args].concat(), &db).unwrap();
+    let set = |args: &[&str]| run_cli(&[&["spec", "env"], args].concat(), &db).unwrap();
     set(&["--verb", "switch", "--state", "home", "--never-false"]);
     assert!(never());
     set(&["--state", "office"]);
@@ -311,14 +246,14 @@ fn spec_set_never_false_sets_keeps_and_clears() {
     assert!(!never());
 }
 
-/// da-59amk: a never-false field has no end, so `spec set` makes it no
+/// da-59amk: a never-false field has no end, so `spec` makes it no
 /// `<field>e` alias: the flag takes the saved one away, `--allow-false`
 /// or a listed `false` brings it back.
 #[test]
 fn spec_set_never_false_drops_the_end_alias_and_allow_false_restores_it() {
     let db = fresh_db();
     let end_alias = || db.lookup_alias("enve").unwrap().map(|a| a.expands_to);
-    let set = |args: &[&str]| run_cli(&[&["spec", "set", "env"], args].concat(), &db).unwrap();
+    let set = |args: &[&str]| run_cli(&[&["spec", "env"], args].concat(), &db).unwrap();
     set(&["--verb", "switch", "--state", "home"]);
     assert_eq!(end_alias().as_deref(), Some("end env"));
     set(&["--never-false"]);
@@ -345,8 +280,8 @@ fn the_spec_help_names_color_and_its_example_runs() {
 
     let line = page
         .lines()
-        .find(|l| l.trim().starts_with("datum spec set mood --color"))
-        .expect("no `datum spec set mood --color` example on spec --help");
+        .find(|l| l.trim().starts_with("datum spec mood --color"))
+        .expect("no `datum spec mood --color` example on spec --help");
     // `datum` dropped, and the shell's quotes around `#…`
     let argv: Vec<&str> = line
         .split_whitespace()
@@ -354,23 +289,23 @@ fn the_spec_help_names_color_and_its_example_runs() {
         .map(|w| w.trim_matches('\''))
         .collect();
     let db = fresh_db();
-    run_cli(&["spec", "set", "mood", "--verb", "switch"], &db).unwrap();
+    run_cli(&["spec", "mood", "--verb", "switch"], &db).unwrap();
     run_cli(&argv, &db).unwrap();
     let color = || db.load_spec("mood").unwrap().unwrap().color;
     assert_eq!(color().as_deref(), Some("#b87333"));
-    run_cli(&["spec", "set", "mood", "--color", ""], &db).unwrap();
+    run_cli(&["spec", "mood", "--color", ""], &db).unwrap();
     // cleared, however it is stored: no colour of its own is left
     assert_eq!(color().filter(|c| !c.is_empty()), None);
 }
 
-/// One colour rule (da-xw1rx): `spec set --color`, `--state-color`,
-/// `add-state`'s COLOR and `track`'s `--color` / `--state S=C` resolve a colour as a kit's `color` does, so a hue
+/// One colour rule (da-xw1rx): `spec --color`, `--state-color` and
+/// `track`'s `--color` / `--state S=C` resolve a colour as a kit's `color` does, so a hue
 /// name stores the hex `kit install` would, and what the renderer cannot
 /// draw is refused and changes nothing.
 #[test]
 fn spec_set_color_takes_a_kits_colours_and_refuses_the_rest() {
     let db = fresh_db();
-    let set = |args: &[&str]| run_cli(&[&["spec", "set", "mood"][..], args].concat(), &db);
+    let set = |args: &[&str]| run_cli(&[&["spec", "mood"][..], args].concat(), &db);
     let hue = |c, name| datum_core::kit_color::resolve_color(Some(c), name).unwrap();
     let spec = || db.load_spec("mood").unwrap().unwrap();
 
@@ -381,7 +316,7 @@ fn spec_set_color_takes_a_kits_colours_and_refuses_the_rest() {
         spec().state_colors.get("happy"),
         hue("blue", "happy").as_ref()
     );
-    run_cli(&["spec", "add-state", "mood", "sad", "violet"], &db).unwrap();
+    set(&["--state-color", "sad=violet"]).unwrap();
     assert_eq!(
         spec().state_colors.get("sad"),
         hue("violet", "sad").as_ref()
@@ -404,7 +339,7 @@ fn spec_set_color_takes_a_kits_colours_and_refuses_the_rest() {
             "{args:?}: {err}"
         );
     }
-    assert!(run_cli(&["spec", "add-state", "mood", "meh", "beige"], &db).is_err());
+    assert!(set(&["--state-color", "meh=beige"]).is_err());
     assert!(run_cli(&["track", "mood", "--color", "beige"], &db).is_err());
     assert!(run_cli(&["track", "mood", "--state", "happy=beige"], &db).is_err());
     assert!(run_cli(&["track", "mood", "--state", "happy="], &db).is_err());
@@ -414,7 +349,7 @@ fn spec_set_color_takes_a_kits_colours_and_refuses_the_rest() {
     assert_eq!(after.allowed_states, before.allowed_states);
 }
 
-/// datum.day's field form saves an edited spec whole, as `spec set
+/// datum.day's field form saves an edited spec whole, as `spec
 /// --from-json`, and a colour stored before the rule (da-xw1rx), which it
 /// sends back untouched, saves with it: the rule guards a colour a write
 /// changes, and leaves alone one nobody touched (da-eciuy).
@@ -422,9 +357,7 @@ fn spec_set_color_takes_a_kits_colours_and_refuses_the_rest() {
 fn the_field_forms_save_keeps_a_colour_stored_before_the_rule() {
     let db = fresh_db();
     run_cli(
-        &[
-            "spec", "set", "mood", "--verb", "switch", "--state", "happy",
-        ],
+        &["spec", "mood", "--verb", "switch", "--state", "happy"],
         &db,
     )
     .unwrap();
@@ -434,14 +367,14 @@ fn the_field_forms_save_keeps_a_colour_stored_before_the_rule() {
     db.save_field_spec(&spec).unwrap();
     spec.description = Some("edited".into());
     let json = serde_json::to_string(&spec).unwrap();
-    run_cli(&["spec", "set", "mood", "--from-json", &json], &db).unwrap();
+    run_cli(&["spec", "mood", "--from-json", &json], &db).unwrap();
     let spec = db.load_spec("mood").unwrap().unwrap();
     assert_eq!(spec.description.as_deref(), Some("edited"));
     assert_eq!(spec.color.as_deref(), Some("#0f0"));
     assert_eq!(spec.state_colors["happy"], "beige");
 }
 
-/// `update spec:F color=…` and `spec set --from-json` hold a colour they
+/// `update spec:F color=…` and `spec --from-json` hold a colour they
 /// change to `--color`'s rule (da-eciuy): a hue resolves as the kit's
 /// does, and anything else is refused, naming the key, with nothing
 /// written.
@@ -449,9 +382,7 @@ fn the_field_forms_save_keeps_a_colour_stored_before_the_rule() {
 fn update_and_from_json_hold_a_changed_colour_to_the_rule() {
     let db = fresh_db();
     run_cli(
-        &[
-            "spec", "set", "mood", "--verb", "switch", "--state", "happy",
-        ],
+        &["spec", "mood", "--verb", "switch", "--state", "happy"],
         &db,
     )
     .unwrap();
@@ -463,11 +394,7 @@ fn update_and_from_json_hold_a_changed_colour_to_the_rule() {
     let mut json = serde_json::to_value(spec()).unwrap();
     json["color"] = "00FF00".into();
     json["state_colors"]["happy"] = "pink".into();
-    run_cli(
-        &["spec", "set", "mood", "--from-json", &json.to_string()],
-        &db,
-    )
-    .unwrap();
+    run_cli(&["spec", "mood", "--from-json", &json.to_string()], &db).unwrap();
     assert_eq!(spec().color.as_deref(), Some("#00ff00"));
     assert_eq!(spec().state_colors["happy"], hue("pink", "happy"));
 
@@ -480,11 +407,7 @@ fn update_and_from_json_hold_a_changed_colour_to_the_rule() {
     json["state_colors"]["happy"] = "beige".into();
     let err = format!(
         "{:#}",
-        run_cli(
-            &["spec", "set", "mood", "--from-json", &json.to_string()],
-            &db
-        )
-        .unwrap_err()
+        run_cli(&["spec", "mood", "--from-json", &json.to_string()], &db).unwrap_err()
     );
     assert!(
         err.contains("state_colors.happy: 'beige' is not a color"),
@@ -495,8 +418,8 @@ fn update_and_from_json_hold_a_changed_colour_to_the_rule() {
 }
 
 /// A key this datum does not know — a newer datum's — survives a save
-/// here (da-klaf8): `spec set --from-json` of what `spec show` printed with
-/// it added, and a flag's edit after, both keep it. `keys`, `spec show`'s
+/// here (da-klaf8): `spec --from-json` of what `spec F` printed with
+/// it added, and a flag's edit after, both keep it. `keys`, `spec F --json`'s
 /// reading of the spec, is not stored.
 #[test]
 fn a_key_this_datum_does_not_know_survives_a_save() {
@@ -506,12 +429,8 @@ fn a_key_this_datum_does_not_know_survives_a_save() {
     let mut json = serde_json::to_value(datum_commands::commands::spec::spec_json(&spec)).unwrap();
     json["zz_future_key"] = serde_json::json!({"a": [1, 2.5]});
     json["description"] = "how I feel".into();
-    run_cli(
-        &["spec", "set", "mood", "--from-json", &json.to_string()],
-        &db,
-    )
-    .unwrap();
-    run_cli(&["spec", "set", "mood", "--color", "red"], &db).unwrap();
+    run_cli(&["spec", "mood", "--from-json", &json.to_string()], &db).unwrap();
+    run_cli(&["spec", "mood", "--color", "red"], &db).unwrap();
     let stored = db.get_entry("spec:mood").unwrap().data.unwrap();
     assert_eq!(stored["zz_future_key"], serde_json::json!({"a": [1, 2.5]}));
     assert_eq!(stored["description"], "how I feel");

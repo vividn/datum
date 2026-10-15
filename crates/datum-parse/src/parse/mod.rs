@@ -49,6 +49,7 @@ mod now;
 mod retime;
 mod search;
 mod spec;
+pub use self::spec::SPEC;
 mod sync;
 mod tail;
 mod track_ignore;
@@ -273,7 +274,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
 
         "retime" | "rt" => Command::Retime(parse_retime_args(rest)?),
 
-        "spec" => Command::Spec(parse_spec_cmd(rest)?),
+        SPEC => Command::Spec(parse_spec_cmd(rest)?),
         "alias" => Command::Alias(parse_alias_cmd(rest)?),
         "kit" => Command::Kit(parse_kit_cmd(rest)?),
         "conflicts" => Command::Conflicts(parse_conflicts_cmd(rest)?),
@@ -376,7 +377,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
             let words = match (sub, rest.first()) {
                 ("sync", Some(&("chain" | "admin" | "daemon" | "pipe")))
                 | ("db", Some(&"migrate")) => 2,
-                ("sync" | "alias" | "config" | "conflicts" | "db" | "spec", _) => 1,
+                ("sync" | "alias" | "config" | "conflicts" | "db", _) => 1,
                 _ => 0,
             };
             let name = [&[sub], &rest[..words.min(rest.len())]].concat().join(" ");
@@ -441,8 +442,12 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::History(a) => a.show = show,
         Command::Check(a) => a.show = show,
         Command::Config(ConfigCommand::Show(a)) => a.show = show,
-        // `spec show` prints its document by default: `json` is what it draws.
-        Command::Spec(SpecCommand::Show { .. }) => {}
+        // `spec F` draws its block or its JSON; a change or a delete echoes
+        // the spec entry (da-ez40f). The listing has one rendering.
+        Command::Spec(SpecCommand::Show { show: s, .. } | SpecCommand::Delete { show: s, .. }) => {
+            *s = show
+        }
+        Command::Spec(SpecCommand::Set(a)) => a.show = show,
         Command::Alias(AliasCommand::List { show: s }) => *s = show,
         Command::Conflicts(ConflictsCommand::List(a)) => a.show = show,
         Command::Sync(c) => {
@@ -1322,8 +1327,12 @@ mod tests {
             assert_ne!(typed, debug(parse(carried)), "{carried}");
             assert_eq!(env(carried), typed, "{carried}");
         }
-        // `spec show` draws JSON with or without it.
-        assert!(parse("spec show x --json").is_ok());
+        // `spec F` draws JSON with it, and a change echoes with it.
+        for carried in ["spec x", "spec x --color red", "spec x --delete"] {
+            let typed = debug(parse(&format!("{carried} --json")));
+            assert_ne!(typed, debug(parse(carried)), "{carried}");
+            assert_eq!(env(carried), typed, "{carried}");
+        }
 
         for (name, args) in [
             ("alias set", "zz occur"),
@@ -1336,10 +1345,7 @@ mod tests {
             ("db migrate status", ""),
             ("db migrate edit", ""),
             ("db v2import", "f"),
-            ("spec list", ""),
-            ("spec set", "x"),
-            ("spec add-state", "x on"),
-            ("spec remove", "x"),
+            ("spec", ""),
         ] {
             let plain = debug(parse(&format!("{name} {args}")));
             for show in ["json", "none"] {

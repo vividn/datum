@@ -69,8 +69,8 @@ fn an_existing_comma_entry_stays_updatable() {
     assert_eq!(logged_entries(&db, "a,b").len(), 1);
 }
 
-/// Declaring a field chooses its name too: `track`, `spec add-state` and a
-/// kit's `[[field]]` each refuse one no log could then reach.
+/// Declaring a field chooses its name too: `track`, `spec` and a kit's
+/// `[[field]]` each refuse one no log could then reach.
 #[test]
 fn declaring_a_comma_field_is_refused() {
     let db = fresh_db();
@@ -81,19 +81,22 @@ fn declaring_a_comma_field_is_refused() {
     let path = path.to_string_lossy().to_string();
     for (args, field) in [
         (vec!["track", "x,y", "--verb", "occur"], "x,y"),
-        (vec!["spec", "add-state", "p,q", "on"], "p,q"),
+        (vec!["spec", "p,q", "--state", "on"], "p,q"),
         (vec!["kit", "install", &path], "k,l"),
     ] {
         let err = refusal(&args, &db);
-        assert!(err.contains("cannot contain ','"), "{args:?}: {err}");
+        // `spec`'s parser says the whole rule (`datum_parse::field_name`).
+        let said = err.contains("cannot contain ','") || err.contains("no equals, commas");
+        assert!(said, "{args:?}: {err}");
         assert!(db.load_spec(field).unwrap().is_none(), "{args:?}");
     }
 }
 
-/// A spec a comma field already has stays editable: the check is for a
-/// name being chosen, not one already stored.
+/// A spec a comma field already has stays readable and deletable: the
+/// check is for a name being chosen, not one already stored, and
+/// `spec F --delete` is the way out (`datum_parse::field_name`).
 #[test]
-fn an_existing_comma_spec_stays_editable() {
+fn an_existing_comma_spec_stays_reachable() {
     let db = fresh_db();
     let mut row = datum_core::test_util::EntryBuilder::new("spec")
         .no_time()
@@ -101,7 +104,9 @@ fn an_existing_comma_spec_stays_editable() {
         .build();
     row.slug = datum_core::ids::Slug("spec:a,b".into());
     db.insert_entry(&row).unwrap();
-    run_cli(&["spec", "add-state", "a,b", "on"], &db).unwrap();
+    run_cli(&["spec", "a,b"], &db).unwrap();
+    run_cli(&["spec", "a,b", "--delete"], &db).unwrap();
+    assert!(db.load_spec("a,b").unwrap().is_none());
 }
 
 #[test]
@@ -124,7 +129,7 @@ fn the_colon_refusal_is_unchanged() {
 #[test]
 fn a_spaced_fields_derived_aliases_log_to_it() {
     let db = fresh_db();
-    run_cli(&["spec", "set", "tea time", "--verb", "start"], &db).unwrap();
+    run_cli(&["spec", "tea time", "--verb", "start"], &db).unwrap();
     run_cli(&["tea time"], &db).unwrap();
     run_cli(&["tea timee"], &db).unwrap();
     assert_eq!(logged_entries(&db, "tea time").len(), 2);

@@ -94,7 +94,7 @@ fn an_icon_draws_once_in_defs_per_dot_in_the_svg_and_the_band_draws_its_fallback
     assert_eq!(plain_band, "●●●");
 
     let icon = env.file("beans.svg", BEANS);
-    env.run(&["spec", "set", "coffee", "--icon", &icon]);
+    env.run(&["spec", "coffee", "--icon", &icon]);
     let svg = env.dayview();
     assert_eq!(
         svg.matches(r#"<svg id="icon-coffee""#).count(),
@@ -105,7 +105,7 @@ fn an_icon_draws_once_in_defs_per_dot_in_the_svg_and_the_band_draws_its_fallback
     assert_eq!(svg.matches("<ellipse").count(), 1);
     assert_eq!(env.band_marks("coffee"), plain_band, "no fallback named: ●");
 
-    env.run(&["spec", "set", "coffee", "--glyph", "▲"]);
+    env.run(&["spec", "coffee", "--glyph", "▲"]);
     assert_eq!(env.band_marks("coffee"), "▲▲▲");
     let svg = env.dayview();
     assert_eq!(svg.matches(r##"href="#icon-coffee""##).count(), 3);
@@ -123,8 +123,8 @@ fn a_state_glyph_wins_over_the_icon() {
     env.run(&["switch", "mood", "sad", "-m", "-t", "-30"]);
     env.run(&["switch", "mood", "calm", "-m", "-t", "-20"]);
     let icon = env.file("m.svg", BEANS);
-    env.run(&["spec", "set", "mood", "--icon", &icon]);
-    env.run(&["spec", "add-state", "mood", "sad", "-", "-", "▼"]);
+    env.run(&["spec", "mood", "--icon", &icon]);
+    env.run(&["spec", "mood", "--state", "sad", "--state-glyph", "sad=▼"]);
     let svg = env.dayview();
     assert_eq!(svg.matches(r##"href="#icon-mood""##).count(), 1);
     assert!(svg.contains(">▼</text>"), "{svg}");
@@ -138,7 +138,7 @@ fn an_oversize_non_svg_or_unsafe_icon_is_refused() {
     env.run(&["occur", "coffee", "-t", "-30"]);
     let refused = |name: &str, svg: &str| {
         let path = env.file(name, svg);
-        env.fails(&["spec", "set", "coffee", "--icon", &path])
+        env.fails(&["spec", "coffee", "--icon", &path])
     };
 
     let big = format!(
@@ -206,18 +206,17 @@ fn an_oversize_non_svg_or_unsafe_icon_is_refused() {
         "g.svg",
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><linearGradient id="g"/><rect style="fill:url( '#g')" fill="url(#g)" stroke="rgba(0,0,0,.5)" transform="translate(1 0) rotate (90) scale(.5)"/></svg>"#,
     );
-    env.run(&["spec", "set", "coffee", "--icon", &gradient]);
-    env.run(&["spec", "set", "coffee", "--icon", ""]);
+    env.run(&["spec", "coffee", "--icon", &gradient]);
+    env.run(&["spec", "coffee", "--icon", ""]);
     // `--from-json` is vetted the same way: the web saves through it.
     let err = env.fails(&[
         "spec",
-        "set",
         "coffee",
         "--from-json",
         r#"{"field":"coffee","verb":"occur","icon":"<svg viewBox='0 0 1 1'><script/></svg>"}"#,
     ]);
     assert!(err.contains("<script>"), "{err}");
-    assert!(!env.run(&["spec", "show", "coffee"]).contains("icon"));
+    assert!(!env.run(&["spec", "coffee", "--json"]).contains("icon"));
 }
 
 /// Acceptance 5: a field with no icon renders byte for byte as before —
@@ -232,23 +231,23 @@ fn a_cleared_icon_renders_byte_identically_and_only_the_svg_element_is_stored() 
         "beans.svg",
         &format!("<?xml version=\"1.0\"?>\n<!-- beans -->\n{BEANS}\n"),
     );
-    env.run(&["spec", "set", "coffee", "--icon", &icon]);
+    env.run(&["spec", "coffee", "--icon", &icon]);
     let shown: serde_json::Value =
-        serde_json::from_str(&env.run(&["spec", "show", "coffee"])).unwrap();
+        serde_json::from_str(&env.run(&["spec", "coffee", "--json"])).unwrap();
     assert_eq!(shown["icon"], BEANS);
     assert_ne!(env.dayview(), before);
-    env.run(&["spec", "set", "coffee", "--icon", ""]);
+    env.run(&["spec", "coffee", "--icon", ""]);
     assert_eq!(env.dayview(), before);
 }
 
 /// A stored icon is vetted again where it is drawn: one that reached the
-/// database around `spec set` (sync, a hand edit) is not drawn — its dot is
+/// database around `spec` (sync, a hand edit) is not drawn — its dot is
 /// the standard dot — and the dayview says so once, on stderr.
 #[test]
 fn an_unvetted_icon_in_the_database_is_not_drawn() {
     let env = Env::new();
     env.run(&["occur", "coffee", "-t", "-30"]);
-    env.run(&["spec", "set", "coffee", "--description", "beans"]);
+    env.run(&["spec", "coffee", "--description", "beans"]);
     let before = env.dayview();
     let conn = rusqlite::Connection::open(env.tmp.path().join("i.db")).unwrap();
     for bad in [
@@ -292,7 +291,7 @@ fn ids_inside_two_icons_are_scoped_to_each_field() {
                 r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1 1"><linearGradient id="g"><stop stop-color="{colour}"/></linearGradient><rect id="r" style="fill:url( '#g')" fill="url(#g)" stroke="#fff"/><use xlink:href="#r"/><use href="#r"/></svg>"##
             ),
         );
-        env.run(&["spec", "set", field, "--icon", &icon]);
+        env.run(&["spec", field, "--icon", &icon]);
     }
     let svg = env.dayview();
     for field in ["coffee", "tea"] {

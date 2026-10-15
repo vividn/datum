@@ -398,18 +398,20 @@ describe('subcommands', () => {
 	const TREE = grammarOf([
 		{ name: 'db', aliases: [], usage: ['datum db setup', 'datum db backup <PATH | ->'], flags: [], subcommands: sub('setup', 'backup'), bare: false },
 		{ name: 'conflicts', aliases: [], usage: ['datum conflicts [list] [--json]'], flags: [], subcommands: sub('resolve'), bare: true },
-		{ name: 'spec', aliases: [], usage: ['datum spec show <FIELD>'], flags: [], subcommands: sub('show'), bare: false },
+		// da-ez40f: `spec` has no subcommands, its field the first word.
+		{ name: 'spec', aliases: [], usage: ['datum spec [--tag T]', 'datum spec <FIELD> [--json]'], flags: [], subcommands: [], bare: true },
 		// Two forms, no subcommands: `add` fills as it always did.
 		{ name: 'add', aliases: [], usage: ['datum add <FIELD>', 'datum add <FIELD> <DUR>'], flags: [] }
 	]);
 	const field = { id: 'field', kind: 'field', text: 'mood' };
 
 	test('a command with subcommands drills; alternate forms do not; spec under a field opens the field widget instead, and so does track', () => {
-		assert.deepEqual(['db', 'conflicts', 'spec', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, true, false, false]);
+		assert.deepEqual(['db', 'conflicts', 'spec', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, false, false, false]);
 		assert.equal(drills(TREE, 'spec', [field]), false, 'da-ybai9: the field widget, not the subcommands');
 		assert.equal(drills(TREE, 'db', [field]), true);
 		// da-hbrfg: the spec is a place, so that tap OPENS, and draws the `›`.
-		assert.deepEqual([opensField('spec', [field]), opensField('spec', []), opensField('db', [field])], [true, false, false]);
+		// da-ez40f: with no subcommands, `spec` opens it with no pill too.
+		assert.deepEqual([opensField('spec', [field]), opensField('spec', []), opensField('db', [field])], [true, true, false]);
 		// da-fu29p: `track` opens it with a field named or none, a new one.
 		assert.deepEqual([opensField('track', []), opensField('track', [field])], [true, true]);
 	});

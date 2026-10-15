@@ -140,7 +140,7 @@ describe('time and duration land on the entry', () => {
 			// Declared first: a FIRST log declares its field in its own
 			// `following_state` and is compound for that reason (da-gvcen).
 			// What is under test here is MOMENT.
-			await run(['spec', 'set', 'coffee', '--verb', 'occur']);
+			await run(['spec', 'coffee', '--verb', 'occur']);
 			await run(['occur', 'coffee', '-t', '0915']);
 			const [stored] = await entries();
 			// `MOMENT` is datum's in-column spelling of "no duration, this is
@@ -206,7 +206,7 @@ describe('the teach-echo', () => {
 		await onPage(async ({ run, redraw, pressWidget, echoes, spyOnRunner }) => {
 			// Give the bar a widget to press: a declared field gets one before
 			// its first entry.
-			assert.equal((await run(['spec', 'set', 'coffee', '--verb', 'occur'])).code, OK);
+			assert.equal((await run(['spec', 'coffee', '--verb', 'occur'])).code, OK);
 			await redraw();
 
 			const seen = await spyOnRunner();
@@ -455,24 +455,24 @@ describe('the visual views', () => {
 });
 
 describe('spec', () => {
-	// Every subcommand from `datum spec --help`. The stand-in served `set`
-	// alone, and there was no way to remove a field in the browser; the CLI
-	// serves them all.
-	const SUBCOMMANDS = [
-		['show', 'coffee'],
-		['show', 'coffee', '--text'],
-		['list'],
-		['remove', 'coffee'],
-		['add-state', 'mood', 'happy']
+	// Every shape of `datum spec --help` (da-ez40f). The stand-in served
+	// `set` alone, and there was no way to remove a field in the browser;
+	// the CLI serves them all.
+	const SHAPES = [
+		['coffee'],
+		['coffee', '--json'],
+		[],
+		['mood', '--state', 'happy'],
+		['coffee', '--delete']
 	];
 
-	test('every spec subcommand answers', async () => {
+	test('every spec line answers', async () => {
 		await onSeam(async ({ run }) => {
 			assert.equal(
-				(await run(['spec', 'set', 'coffee', '--verb', 'occur', '--color', '#884400'])).code,
+				(await run(['spec', 'coffee', '--verb', 'occur', '--color', '#884400'])).code,
 				OK
 			);
-			for (const args of SUBCOMMANDS) {
+			for (const args of SHAPES) {
 				const label = ['spec', ...args].join(' ');
 				const result = await run(['spec', ...args]);
 				assert.equal(result.code, OK, `${label}: ${result.stderr}`);
@@ -481,33 +481,49 @@ describe('spec', () => {
 		});
 	});
 
-	test('`spec set` still works — it is what the `+` button runs', async () => {
+	test('a spec change still works — it is what the `+` button runs', async () => {
 		await onSeam(async ({ run }) => {
-			const saved = await run(['spec', 'set', 'mood', '--state', 'happy']);
+			const saved = await run(['spec', 'mood', '--state', 'happy']);
 			assert.equal(saved.code, OK, saved.stderr);
 			assert.match(saved.stdout, /mood/);
-			// And the neighbouring subcommands did not take it down with them.
-			assert.equal((await run(['spec', 'set', 'mood', '--color', '#00ff00'])).code, OK);
+			// And a second change after it.
+			assert.equal((await run(['spec', 'mood', '--color', '#00ff00'])).code, OK);
 		});
 	});
 
-	test('typed at the prompt, a spec subcommand answers on the screen', async () => {
+	test('typed at the prompt, a spec delete asks, and answers on the screen', async () => {
 		// The report this came from was of a blank REPL — so one case walks
 		// the whole way a reader does, and reads the answer back off the
 		// scrollback (da-e0m6's trap).
 		await onPage(async ({ submit, page }) => {
-			await submit('spec remove coffee');
-			// The rendered output blocks, not the whole entry: the echoed
-			// `❯ spec remove coffee` above them carries every word of the
-			// command, so an entry-wide match proves nothing.
-			const printed = (await answer(page, 'spec remove coffee').locator('pre').allInnerTexts()).join('\n');
+			await submit('spec coffee --verb occur');
+			// Behind the confirm a delete wears (dbio.ts).
+			const typed = submit('spec coffee --delete');
+			await page.locator('dialog.confirm').getByRole('button', { name: 'delete', exact: true }).click();
+			await typed;
+			// The entry, whose echoed `❯ spec coffee --delete` carries the
+			// word in lower case: the answer is the CLI's DELETE document.
+			const entry = answer(page, 'spec coffee --delete');
+			await entry.getByText(/\bDELETE\b/).first().waitFor();
+			const printed = await entry.innerText();
 			assert.notEqual(printed.trim(), '', 'the prompt answered with nothing at all');
-			assert.match(printed, /remove/, `the answer does not name remove: ${printed}`);
+			assert.match(printed, /DELETE/, `the answer does not say DELETE: ${printed}`);
 			assert.doesNotMatch(
 				printed,
 				/\bspec\b:?\s+(is\s+)?not available/,
 				`the answer calls spec itself unavailable: ${printed}`
 			);
+			// With no field there is nothing to ask about: the CLI refuses it.
+			await submit('spec --delete');
+			await answer(page, 'spec --delete').getByText('takes the field alone').waitFor();
+			assert.equal(await page.locator('dialog.confirm[open]').count(), 0, 'it asked about a field called --delete');
+			// The flag may come first, and it asks all the same. (After the line
+			// above: `answer` matches by substring, and this one holds that one.)
+			await submit('spec coffee --verb occur');
+			const first = submit('spec --delete coffee');
+			await page.locator('dialog.confirm').getByRole('button', { name: 'delete', exact: true }).click();
+			await first;
+			await answer(page, 'spec --delete coffee').getByText(/\bDELETE\b/).first().waitFor();
 		});
 	});
 });

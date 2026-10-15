@@ -223,7 +223,7 @@ async function parity() {
 		['dayview', '--width', '600', '--height', '200'],
 		['nowview', '-o', '-', '--width', '400', '--height', '300'],
 		['check'],
-		['spec', 'set', 'coffee', '--color', '#884400'],
+		['spec', 'coffee', '--color', '#884400'],
 		['nosuch']
 	];
 	const today = new Date().toISOString().slice(0, 10);

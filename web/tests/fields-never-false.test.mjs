@@ -65,9 +65,9 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					const { page } = app;
 					// Neither lists `false`: `end` is the default all the same.
 					await seedLines(app, [
-						...OTHERS.map((f) => `spec set ${f} --verb occur`),
-						'spec set mood --verb switch --state good --state meh --state bad',
-						'spec set env --verb switch --state home --state office --state cafe --never-false'
+						...OTHERS.map((f) => `spec ${f} --verb occur`),
+						'spec mood --verb switch --state good --state meh --state bad',
+						'spec env --verb switch --state home --state office --state cafe --never-false'
 					]);
 					await atRows(page, 'bar', 3);
 
@@ -97,7 +97,7 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					await box.uncheck();
 					await page.locator(`${FIELD_FORM} .commit`).click();
 					await saved;
-					assert.equal(JSON.parse((await app.run(['spec', 'show', 'env'])).stdout).never_false, undefined);
+					assert.equal(JSON.parse((await app.run(['spec', 'env', '--json'])).stdout).never_false, undefined);
 					await app.idle();
 					// On a phone the spec is a tab, which slides back after Done:
 					// tapped mid-glide, the bar is not where it stands.

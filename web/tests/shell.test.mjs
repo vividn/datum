@@ -656,7 +656,7 @@ describe('the bottom bar', () => {
 			const echoed = (await app.echoes()).length;
 			const input = page.locator('.prompt-bar input');
 			// Tracked, so the fields widget has a button to press (da-c7u8).
-			await app.run(['spec', 'set', 'coffee', '--verb', 'occur']);
+			await app.run(['spec', 'coffee', '--verb', 'occur']);
 			await input.fill('occur coffee');
 			await input.press('Enter');
 			await until(() => receipt(page).innerText(), (t) => t.startsWith('CREATE '));
@@ -736,7 +736,7 @@ describe('the bottom bar', () => {
 			assert.equal(await repl.locator('input, .line').count(), 0, 'the REPL still has a prompt of its own');
 
 			// Tracked, so the fields widget has a button to press (da-c7u8).
-			await app.run(['spec', 'set', 'coffee', '--verb', 'occur']);
+			await app.run(['spec', 'coffee', '--verb', 'occur']);
 			const docs = await repl.locator('.doc').count();
 			await app.submit('occur coffee');
 			await until(() => receipt(page).innerText(), (t) => /^CREATE \S+$/.test(t));

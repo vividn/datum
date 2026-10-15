@@ -31,9 +31,9 @@ describe('the field form', () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch']);
-			const spec = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
+			const spec = JSON.parse((await app.run(['spec', 'mood', '--json'])).stdout);
 			const key = { required: false, value_type: 'any', in_slug: false, default: null };
-			const r = await app.run(['spec', 'set', 'mood', '--from-json', JSON.stringify({
+			const r = await app.run(['spec', 'mood', '--from-json', JSON.stringify({
 				...spec,
 				allowed_states: ['happy', 'sad', 'tired'],
 				subfields: { where: key, who: key }

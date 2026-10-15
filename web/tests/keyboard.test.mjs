@@ -43,7 +43,7 @@ const onPhone = (fn, layout = page_()) =>
 		return fn(app);
 	}, layout);
 
-const SEED = ['spec set coffee --verb occur', 'spec set sleep --verb start', 'spec set rec --verb add'];
+const SEED = ['spec coffee --verb occur', 'spec sleep --verb start', 'spec rec --verb add'];
 
 const BAR = '.prompt-bar input';
 const commands = (page) => page.locator('.bar.commands');

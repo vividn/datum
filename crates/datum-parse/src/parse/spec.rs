@@ -1,144 +1,102 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
+use crate::input::Show;
 
+/// The command's name, said once (da-ez40f): `spec` may yet be renamed.
+pub const SPEC: &str = "spec";
+
+/// `spec [FIELD] [CHANGES]` (da-ez40f). No field is the listing, a field
+/// alone its spec, a field with flags a change, and `--delete` the field's
+/// spec document gone.
 pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
-    let Some(sub) = tail.first() else {
-        return Err(ParseError::InvalidArg(
-            "missing spec subcommand (show|add-state|set|list|remove)".into(),
-        ));
-    };
-    let rest: &[&str] = &tail[1..];
-    match *sub {
-        "show" => {
-            // `spec show <FIELD> [--text]` — parse a single positional
-            // (the field) plus optional --text flag (da-nhzo).
-            let mut field: Option<String> = None;
-            let mut text = false;
-            for arg in rest {
-                match split_flag(arg) {
-                    FlagSplit::Long("text") => text = true,
-                    FlagSplit::LongAttached("text", _) => text = true,
-                    FlagSplit::Positional(p) => {
-                        if field.is_none() {
-                            field = Some(p.to_string());
-                        } else {
-                            return Err(ParseError::InvalidArg(format!(
-                                "unexpected argument: '{p}'"
-                            )));
-                        }
-                    }
-                    other => return Err(unknown_flag(other)),
-                }
-            }
-            let field =
-                field.ok_or_else(|| ParseError::MissingRequiredKey("<FIELD>".to_string()))?;
-            Ok(SpecCommand::Show { field, text })
-        }
-        "add-state" => parse_spec_add_state(rest),
-        "set" => Ok(SpecCommand::Set(Box::new(parse_spec_set(rest)?))),
-        "list" => Ok(SpecCommand::List {
-            tag: parse_spec_list_tag(rest)?,
+    gone(tail)?;
+    let delete = tail.contains(&"--delete");
+    let tail: Vec<&str> = tail.iter().copied().filter(|t| *t != "--delete").collect();
+    let (mut out, flagged, named) = parse_spec_set(&tail)?;
+    let field = out.field.clone();
+    match (!named, flagged, delete) {
+        (false, false, true) => Ok(SpecCommand::Delete {
+            field,
+            show: Show::Default,
         }),
-        "remove" => {
-            let field = require_pos(&positionals(rest)?, "<FIELD>")?;
-            Ok(SpecCommand::Remove { field })
-        }
-        other => Err(ParseError::InvalidArg(format!(
-            "unknown spec subcommand: '{other}'"
+        (_, _, true) => Err(ParseError::InvalidArg(format!(
+            "--delete takes the field alone: `{SPEC} <FIELD> --delete`"
         ))),
-    }
-}
-
-/// `spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION] [GLYPH] [--key
-/// KEY]...` — up to five positionals. The last three are optional; a lone
-/// dash (`-`) in a slot leaves it unset while still supplying the ones
-/// after it (`add-state mood meh - "so-so"`, `add-state mood meh - - ▼`).
-/// `--key` gives the state's own keys (da-cej7q), `--assign KEY=VALUE` its
-/// assigned ones (da-ulc0v).
-pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
-    let mut pos: Vec<&str> = Vec::new();
-    let mut keys: Vec<String> = Vec::new();
-    let mut assign: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(p) => {
-                pos.push(p);
-                i += 1;
+        (false, false, false) => Ok(SpecCommand::Show {
+            field,
+            show: Show::Default,
+        }),
+        (false, true, false) => {
+            // Declaring a field is the one place a name is chosen, so it is
+            // the place to refuse a name nothing can log to (da-b049).
+            // Logging stays permissive, and so do reading and deleting: a
+            // bad name already in a database can still be put right.
+            crate::field_name::check(&field)?;
+            Ok(SpecCommand::Set(Box::new(out)))
+        }
+        (true, _, false) => {
+            let mut tags = std::mem::take(&mut out.tags);
+            if out != SpecSetArgs::default() {
+                return Err(ParseError::MissingRequiredKey("<FIELD>".to_string()));
             }
-            FlagSplit::Long("key") => {
-                let (v, ni) = take_value(tail, i, None, "--key")?;
-                keys.push(v.to_string());
-                i = ni;
+            if tags.len() > 1 {
+                return Err(ParseError::InvalidArg(format!(
+                    "`{SPEC}` lists by one --tag"
+                )));
             }
-            FlagSplit::LongAttached("key", v) => {
-                keys.push(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("assign") => {
-                let (v, ni) = take_value(tail, i, None, "--assign")?;
-                assign.push(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("assign", v) => {
-                assign.push(v.to_string());
-                i += 1;
-            }
-            other => return Err(unknown_flag(other)),
+            Ok(SpecCommand::List { tag: tags.pop() })
         }
     }
-    let mut it = pos.into_iter();
-    let field = it
-        .next()
-        .ok_or_else(|| ParseError::MissingRequiredKey("<FIELD>".to_string()))?
-        .to_string();
-    let name = it
-        .next()
-        .ok_or_else(|| ParseError::MissingRequiredKey("<NAME>".to_string()))?
-        .to_string();
-    // `-` in any slot leaves that slot alone.
-    let mut slot = || it.next().filter(|v| *v != "-").map(str::to_string);
-    let color = slot();
-    let description = slot();
-    let glyph = slot();
-    if let Some(extra) = it.next() {
-        return Err(ParseError::InvalidArg(format!(
-            "unexpected argument: '{extra}'"
-        )));
-    }
-    Ok(SpecCommand::AddState {
-        field,
-        name,
-        color,
-        description,
-        glyph,
-        keys,
-        assign,
-    })
 }
 
-pub(crate) fn parse_spec_list_tag(tail: &[&str]) -> Result<Option<String>> {
-    let mut tag: Option<String> = None;
-    let mut i = 0;
-    while i < tail.len() {
-        match split_flag(tail[i]) {
-            FlagSplit::Long("tag") => {
-                let (v, ni) = take_value(tail, i, None, "--tag")?;
-                tag = Some(v.to_string());
-                i = ni;
+/// The subcommands `spec` had, refused by name with the line that does it
+/// now. A field may be called any of them, so it is the second positional,
+/// which no `spec` line takes, that makes one the old form.
+fn gone(tail: &[&str]) -> Result<()> {
+    let (Some(&sub), Some(&field)) = (tail.first(), tail.get(1)) else {
+        return Ok(());
+    };
+    if field.starts_with('-') {
+        return Ok(());
+    }
+    let rest = &tail[2..];
+    let words = |words: &[&str]| {
+        let words: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+        crate::alias::expand::shell_join(&words)
+    };
+    let now = match sub {
+        "set" => words(&tail[1..]),
+        "show" => words(&[field]),
+        "remove" => words(&[field, "--delete"]),
+        "add-state" => {
+            let name = rest.first().copied().unwrap_or("NAME");
+            let mut line = vec![field.to_string(), "--state".into(), "…".into()];
+            line.extend(["--state".into(), name.to_string()]);
+            // The slots end at the first flag; a lone `-` leaves one alone.
+            let slots = rest
+                .iter()
+                .skip(1)
+                .take_while(|w| **w == "-" || !w.starts_with('-'));
+            for (flag, v) in ["--state-color", "--state-description", "--state-glyph"]
+                .into_iter()
+                .zip(slots)
+                .filter(|(_, v)| **v != "-")
+            {
+                line.extend([flag.to_string(), format!("{name}={v}")]);
             }
-            FlagSplit::LongAttached("tag", v) => {
-                tag = Some(v.to_string());
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
+            crate::alias::expand::shell_join(&line)
         }
-    }
-    Ok(tag)
+        _ => return Ok(()),
+    };
+    Err(ParseError::InvalidArg(format!(
+        "`{SPEC} {sub}` is gone: `{SPEC} {now}`"
+    )))
 }
 
-pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
+/// The flags of a change and the field they change, whether a flag was
+/// given, and whether a field was.
+pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)> {
     let mut out = SpecSetArgs::default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
@@ -454,7 +412,7 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
     if let Some(extra) = pos.get(1) {
         if extra.trim_start().starts_with('{') {
             return Err(ParseError::InvalidArg(format!(
-                "spec set: the spec body is `--from-json <JSON>` now — `--json` \
+                "{SPEC}: the spec body is `--from-json <JSON>` now — `--json` \
                  is the global `--show json`, so '{extra}' arrived as an argument"
             )));
         }
@@ -462,13 +420,8 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
             "unexpected argument: '{extra}'"
         )));
     }
-    out.field = require_pos(&pos.to_vec(), "<FIELD>")?;
-    // Declaring a field is the one place a name is chosen, so it is the
-    // place to refuse a name nothing can log to (da-b049). Logging stays
-    // permissive — a quoted `occur "my coffee"` still works, so nothing
-    // already in a database becomes unreachable.
-    crate::field_name::check(&out.field)?;
-    Ok(out)
+    out.field = pos.first().map(|f| f.to_string()).unwrap_or_default();
+    Ok((out, tail.len() > pos.len(), !pos.is_empty()))
 }
 
 /// A size factor (da-c05v1): a number above zero.

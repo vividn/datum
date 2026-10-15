@@ -20,7 +20,7 @@ const rootTabs = (page) =>
 const shown = (page) =>
 	page.locator('.root-bar [role="tab"][aria-selected="true"]').evaluate((b) => b.textContent.replace('•', '').trim());
 
-const described = async (app, field) => JSON.parse((await app.run(['spec', 'show', field])).stdout).description;
+const described = async (app, field) => JSON.parse((await app.run(['spec', field, '--json'])).stdout).description;
 
 describe('the spec place, on a phone', () => {
 	const phone = sharedApp(PHONE);
@@ -59,7 +59,7 @@ describe('the spec place, on a phone', () => {
 		});
 	});
 
-	test('Done saves in one `spec set` and returns; Cancel returns and writes nothing', async () => {
+	test('Done saves in one `spec F` and returns; Cancel returns and writes nothing', async () => {
 		await phone.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
@@ -70,7 +70,7 @@ describe('the spec place, on a phone', () => {
 			await page.locator(`${FIELD_FORM} button.commit`).click();
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
-			assert.match(result.argv.join(' '), /^spec set tea --from-json /);
+			assert.match(result.argv.join(' '), /^spec tea --from-json /);
 			const sent = JSON.parse(result.argv[result.argv.indexOf('--from-json') + 1]);
 			assert.equal(sent.description, 'green', 'what Done sent');
 			await until(() => rootTabs(page), (t) => t.join() === was.join());

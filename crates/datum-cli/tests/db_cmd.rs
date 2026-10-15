@@ -83,7 +83,7 @@ fn db_purge_yes_recovers_corrupt_db() {
         )
         .unwrap();
     assert_eq!(field_specs, 0);
-    run_cli(&["spec", "set", "mood", "--verb", "switch"], &db).expect("a spec writes");
+    run_cli(&["spec", "mood", "--verb", "switch"], &db).expect("a spec writes");
     assert!(db.load_spec("mood").unwrap().is_some());
 }
 

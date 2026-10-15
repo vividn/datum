@@ -29,7 +29,7 @@ after(stopApp);
 const BAR = 'section.pane[data-title="fields"] .bar';
 
 /** A field with its `y` set, the way a spec sets it. */
-const at = (field, verb, y) => `spec set ${field} --from-json '${JSON.stringify({ field, verb, y })}'`;
+const at = (field, verb, y) => `spec ${field} --from-json '${JSON.stringify({ field, verb, y })}'`;
 
 /**
  * Six fields, three high and three low, used 0–3 times each — so that the

@@ -161,7 +161,7 @@ describe('the field widget', () => {
 			assert.equal(await page.locator(`${FIELD_FORM} .tile[aria-label^="the field's glyph:"]`).getAttribute('data-glyph'), '🌳');
 			assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(environment.states));
 			const { line, spec } = declared(await page.locator(`${FIELD_FORM} code.preview`).getAttribute('title'));
-			assert.equal(line, 'spec set environment --from-json --track');
+			assert.equal(line, 'spec environment --from-json --track');
 			assert.deepEqual([spec.verb, spec.color, spec.allowed_states], ['switch', environment.color, Object.keys(environment.states)]);
 			assert.deepEqual(spec.state_colors, Object.fromEntries(Object.entries(environment.states).filter(([, color]) => color)));
 			assert.equal(environment.states.outside, '#9ad48a');
@@ -197,16 +197,16 @@ describe('the field widget', () => {
 						.evaluateAll((all) => all.map((li) => [li.querySelector('.mode').textContent, li.querySelector('input.name').value, li.querySelector('.eq').getAttribute('aria-pressed')])),
 					(example.keys ?? []).map((k) => [k.in_slug ? '-K' : '-k', k.name, String(k.kind !== 'required')])
 				);
-				// One `spec set` with the whole form, which writes its TRACK row too (da-2pbvd): the
+				// One `spec F` with the whole form, which writes its TRACK row too (da-2pbvd): the
 				// spec is `{…}` in the preview, and the whole line its title.
 				const code = page.locator(`${FIELD_FORM} code.preview`);
-				assert.equal((await code.innerText()).trim(), `spec set ${example.field} --from-json {…} --track`);
+				assert.equal((await code.innerText()).trim(), `spec ${example.field} --from-json {…} --track`);
 				const preview = await code.getAttribute('title');
-				assert.equal(declared(preview).line, `spec set ${example.field} --from-json --track`);
+				assert.equal(declared(preview).line, `spec ${example.field} --from-json --track`);
 				// And nothing is written yet.
 				await app.idle();
 				assert.deepEqual(await app.allEntries(), []);
-				assert.equal((await app.run(['spec', 'list'])).stdout.includes(example.field), false, 'the tap declared it');
+				assert.equal((await app.run(['spec'])).stdout.includes(example.field), false, 'the tap declared it');
 
 				// Saved, it is the ONE command the preview showed; the widget stays on the field it made.
 				const before = (await app.echoes()).length;
@@ -215,7 +215,7 @@ describe('the field widget', () => {
 				assert.equal(result.code, 0, result.stderr);
 				const echoes = (await app.echoes()).slice(before);
 				assert.deepEqual(echoes, [preview], 'one command, not a stream');
-				const shown = JSON.parse((await app.run(['spec', 'show', example.field])).stdout);
+				const shown = JSON.parse((await app.run(['spec', example.field, '--json'])).stdout);
 				assert.equal(shown.color, example.color);
 				assert.equal(shown.description, null);
 				assert.equal(shown.glyph, example.glyph);
@@ -240,7 +240,7 @@ describe('the field widget', () => {
 
 				// Undo takes back the entry, and one more the field whole: its spec and TRACK row (da-2pbvd).
 				for (const _ of [1, 2]) assert.equal((await app.run(['undo'])).code, 0);
-				assert.match((await app.run(['spec', 'show', example.field])).stdout, /No spec defined/);
+				assert.match((await app.run(['spec', example.field, '--json'])).stdout, /No spec defined/);
 				assert.deepEqual(await app.allEntries(), []);
 			});
 		});
@@ -280,7 +280,7 @@ describe('the field widget', () => {
 			await page.locator(`${WIDGET} .chips [data-chip="coffee"]`).click();
 			await asks('leave');
 			await until(h2, (t) => t === 'coffee');
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).description, null, 'leaving saved');
+			assert.equal(JSON.parse((await app.run(['spec', 'sleep', '--json'])).stdout).description, null, 'leaving saved');
 
 			// And «+ new field» is the way back to an empty form and its examples.
 			await page.locator(`${WIDGET} .chips .new`).click();
@@ -348,7 +348,7 @@ describe('the field widget', () => {
 
 	// vividn, 2026-10-14: «it should be able to change a field to be IGNORED or TRACKED (maybe with an
 	// explanation of what that means. Probably right under the field name».
-	test('tracked or ignored, under the name: a new field saved ignored is one `spec set --ignore`', async () => {
+	test('tracked or ignored, under the name: a new field saved ignored is one `spec --ignore`', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
@@ -371,19 +371,19 @@ describe('the field widget', () => {
 			assert.ok(![ignored.color, ignored.line].includes(red), 'ignored is red');
 			assert.ok(!Object.values(await worn(page, 'tracked')).includes(green), 'tracked is green unchosen');
 			const command = await page.locator(`${FIELD_FORM} code.preview`).getAttribute('title');
-			assert.equal(declared(command).line, 'spec set tea --from-json --ignore');
+			assert.equal(declared(command).line, 'spec tea --from-json --ignore');
 			assert.equal(declared(command).spec.verb, 'occur');
 			const before = (await app.echoes()).length;
 			await page.locator(`${FIELD_FORM} button.commit`).click();
 			assert.equal((await saved).code, 0);
 			assert.deepEqual((await app.echoes()).slice(before), [command]);
 			assert.equal(await ignoredIn(app, 'tea'), true);
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'tea'])).stdout).verb, 'occur', 'the spec was not written');
+			assert.equal(JSON.parse((await app.run(['spec', 'tea', '--json'])).stdout).verb, 'occur', 'the spec was not written');
 			assert.deepEqual(app.errors, []);
 		}, MOVING);
 	});
 
-	test('a field is ignored from here and tracked again, each with one Done and its one `spec set`', async () => {
+	test('a field is ignored from here and tracked again, each with one Done and its one `spec F`', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'coffee', '--verb', 'occur']);
@@ -396,10 +396,10 @@ describe('the field widget', () => {
 				const before = (await app.echoes()).length;
 				await page.locator(`${FIELD_FORM} button.commit`).click();
 				assert.equal((await saved).code, 0);
-				// One `spec set`, the status in it: one Undo takes the change back (da-2pbvd).
+				// One `spec F`, the status in it: one Undo takes the change back (da-2pbvd).
 				const echoes = (await app.echoes()).slice(before);
 				assert.equal(echoes.length, 1, echoes.join(' | '));
-				assert.match(echoes[0], new RegExp(`^spec set coffee --from-json .* --${to === 'ignored' ? 'ignore' : 'track'}$`));
+				assert.match(echoes[0], new RegExp(`^spec coffee --from-json .* --${to === 'ignored' ? 'ignore' : 'track'}$`));
 				assert.equal(await ignoredIn(app, 'coffee'), to === 'ignored');
 			}
 			// Left as it was, Done writes neither.
@@ -414,7 +414,7 @@ describe('the field widget', () => {
 	});
 
 	// Every tab is there before a save (da-uipyt), so what is set on one is saved with the field.
-	test('a new field\'s tabs are saved with it, in one `spec set --track` that one Undo takes back (da-2pbvd)', async () => {
+	test('a new field\'s tabs are saved with it, in one `spec F --track` that one Undo takes back (da-2pbvd)', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
@@ -431,14 +431,14 @@ describe('the field widget', () => {
 			assert.equal((await saved).code, 0);
 			const echoes = (await app.echoes()).slice(before);
 			assert.equal(echoes.length, 1, echoes.join(' | '));
-			assert.match(echoes[0], /^spec set mood --from-json .* --track$/);
-			const shown = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
+			assert.match(echoes[0], /^spec mood --from-json .* --track$/);
+			const shown = JSON.parse((await app.run(['spec', 'mood', '--json'])).stdout);
 			assert.equal(shown.description, 'how it feels');
 			assert.deepEqual(shown.state_descriptions, { good: 'a good day' });
 			assert.deepEqual(shown.allowed_states, ['good']);
 			assert.equal((await app.allEntries()).filter((e) => e.field === 'mood').length, 1, 'no TRACK row');
 			assert.equal((await app.run(['undo'])).code, 0);
-			assert.match((await app.run(['spec', 'show', 'mood'])).stdout, /No spec defined/, 'one Undo left the spec');
+			assert.match((await app.run(['spec', 'mood', '--json'])).stdout, /No spec defined/, 'one Undo left the spec');
 			assert.deepEqual(await app.allEntries(), [], 'one Undo left a row');
 		});
 	});
@@ -462,18 +462,18 @@ describe('the field widget', () => {
 			await until(async () => (await app.echoes()).length, (n) => n === before + 1);
 			await app.idle();
 			assert.equal((await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim(), 'tea', 'the save took the place away, or the field back');
-			assert.match((await app.echoes()).at(-1), /^spec set nap /);
+			assert.match((await app.echoes()).at(-1), /^spec nap /);
 		});
 	});
 
 	// The key a line's leftover words go to is a spec's to change as well as
 	// a new field's: a row's mode (da-zqnt3).
-	test('the rest-of-line row of a saved field is read, renamed, made one string and removed, each in its one `spec set`', async () => {
+	test('the rest-of-line row of a saved field is read, renamed, made one string and removed, each in its one `spec F`', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'emotion', '--verb', 'occur', '-R', 'emotions']);
 			const route = async () => {
-				const { remainder, string_remainder } = JSON.parse((await app.run(['spec', 'show', 'emotion'])).stdout);
+				const { remainder, string_remainder } = JSON.parse((await app.run(['spec', 'emotion', '--json'])).stdout);
 				return [remainder, string_remainder];
 			};
 			const row = page.locator(`${FIELD_FORM} ul.data li.key[data-mode^="R"], ${FIELD_FORM} ul.data li.key[data-mode="SR"]`);
@@ -531,7 +531,7 @@ describe('the field widget', () => {
 			await pane.locator(`${FIELD_FORM} button[data-verb="start"]`).click();
 			await pane.locator(`${FIELD_FORM} button.commit`).click();
 			await until(async () => (await pane.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim(), (t) => t === 'nap');
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'nap'])).stdout).verb, 'start');
+			assert.equal(JSON.parse((await app.run(['spec', 'nap', '--json'])).stdout).verb, 'start');
 			assert.equal(await page.locator('dialog[open]').count(), 0);
 			assert.deepEqual(app.errors, []);
 		});

@@ -23,8 +23,8 @@ use datum_core::test_util::fresh_db;
 fn spec_set_refuses_unit_as_an_unknown_flag() {
     let db = fresh_db();
     for argv in [
-        vec!["spec", "set", "tea", "--unit", "cups"],
-        vec!["spec", "set", "tea", "--unit=cups"],
+        vec!["spec", "tea", "--unit", "cups"],
+        vec!["spec", "tea", "--unit=cups"],
     ] {
         let err = run_cli(&argv, &db)
             .map(|_| String::new())

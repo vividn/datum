@@ -666,9 +666,9 @@ e2e_case!(fast, admin_now: CaseSpec {
 });
 
 e2e_case!(fast, admin_spec_list: CaseSpec {
-    argv: "spec list",
+    argv: "spec",
     setup: seed_mood_field_spec,
-    // `spec list` is a read: nothing is logged (the seeded spec is a
+    // `spec` is a read: nothing is logged (the seeded spec is a
     // meta entry, which the logged rows leave out).
     expected: no_rows(),
     freeze_time: Some("09:00"),
@@ -884,7 +884,7 @@ e2e_case!(full, err_alias_unknown: CaseSpec {
 });
 
 e2e_case!(full, admin_spec_list_empty: CaseSpec {
-    argv: "spec list",
+    argv: "spec",
     setup: no_setup,
     expected: no_rows(),
     freeze_time: Some("09:00"),
