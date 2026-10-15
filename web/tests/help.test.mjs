@@ -164,6 +164,18 @@ describe('the Help button', () => {
 		});
 	});
 
+	// da-6i6dx: the Track widget's help speaks the form's words — its shapes
+	// and its data, and a new field's save that may be `track` + `spec set`.
+	test('then the Track widget: its help in the words its form uses', async () => {
+		const withField = JSON.stringify(along('column', widgetPane('field', 'field'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')));
+		await onPage(async ({ page }) => {
+			const lines = await explain(page, page.locator('.host[data-widget="field"] p.what'), 'field');
+			assert.match(lines[0], /its shape, states, data, aliases and placement\.$/);
+			assert.match(lines[1], /^Save makes a new field with `track`, and a `spec set` for anything `track` can't say;/);
+			assert.doesNotMatch(lines.join('\n'), /\bkind\b|\bkeys\b|in one `track`/);
+		}, withField);
+	});
+
 	test('then a pill: what that kind of pill does, with its value; the pill stays', async () => {
 		await onPage(async ({ page }) => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 14:30' }]));

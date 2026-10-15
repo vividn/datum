@@ -148,7 +148,7 @@ describe('the field widget', () => {
 				assert.equal(await tall(), was, 'the form changed height from the examples to Basics');
 				assert.equal(await page.locator(`${FIELD_FORM} [data-example]`).count(), 0, 'the examples stayed open');
 
-				// The form says what the field would be: its name, ready to retype, its kind, states, keys.
+				// The form says what the field would be: its name, ready to retype, its shape, states, data.
 				assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), example.field);
 				assert.equal(await picked(page), true, 'the name box did not take the focus');
 				assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), '', 'what was typed before stayed');
