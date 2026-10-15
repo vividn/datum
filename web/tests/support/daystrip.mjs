@@ -182,11 +182,24 @@ export async function setBox(app, px) {
 	await boxTo(app, px);
 }
 
-/** The box alone, with nothing held: what «follows its widget» is driven by. */
-export const boxTo = ({ page }, px) =>
-	page.evaluate((h) => {
+/**
+ * The box alone, with nothing held: what «follows its widget» is driven by.
+ *
+ * Returns once the strip has HEARD the box, a settle after the cell has it
+ * (layout/resizing.ts). What the strip draws from its height moves only
+ * then — the `+` among it, 93px on a box grown from shorter than a day — so
+ * a press aimed at the grip before it lands on the band under where the
+ * grip was, and a drag reads as nothing on a loaded runner (da-s6395).
+ */
+export async function boxTo({ page }, px) {
+	await page.evaluate((h) => {
 		document.querySelector('.cell.dayview').style.flex = `0 0 ${h}px`;
 	}, px);
+	await page.waitForFunction(() => {
+		const strip = document.querySelector('.strip');
+		return Number(strip.dataset.height) === Math.floor(strip.getBoundingClientRect().height);
+	});
+}
 
 /**
  * The day height the box would choose for itself — `dayUnderSliver`

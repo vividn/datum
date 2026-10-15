@@ -1353,6 +1353,7 @@
 		class="strip"
 		bind:this={stripEl}
 		data-mode={mode}
+		data-height={height}
 		on:pointerdown={onPointerDown}
 		on:touchmove|nonpassive={onTouchMove}
 		on:wheel|nonpassive={onWheel}
