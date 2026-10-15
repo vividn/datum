@@ -708,6 +708,12 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         db.conn().busy_timeout(YIELD)?;
+        // Its own holds of the write lock past a second, with what they
+        // wrote: what a person's write waited on (da-hyem1).
+        let long = Duration::from_millis(env("DATUM_SYNC_LONG_HOLD_MS").unwrap_or(1000));
+        db.on_long_hold(long, |held, what| {
+            eprintln!("{} held the write lock {:.1} s: {what}", now(), held.as_secs_f64())
+        });
         let store = &DbStore::new(db);
         eprintln!("datum sync run: {} is up; Ctrl-C to stop", short(&ep.id().to_string()));
         let mut sessions: FuturesUnordered<Session> = FuturesUnordered::new();

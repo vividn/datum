@@ -195,3 +195,49 @@ fn a_write_beside_a_large_sync_apply_waits_a_chunk() {
         .unwrap();
     assert_eq!(n, writes);
 }
+
+/// A write that waits out the lock names who held it and for how long
+/// (da-hyem1): here this test's own process, through datum-core, holding a
+/// transaction open while `datum kit install` waits its 5 s. A kit's write,
+/// since an entry's no longer fails on the lock but spools (da-9q3fr).
+#[test]
+fn a_write_timed_out_on_the_lock_names_the_holder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("held.db");
+    let holder = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
+    let out = holder
+        .write_with(|_| {
+            let mut kit = Command::new(env!("CARGO_BIN_EXE_datum"))
+                .env("DATUM_DB", &path)
+                .env("DATUM_HOME", tmp.path())
+                .env("DATUM_CONFIG_HOME", tmp.path())
+                .env("NO_COLOR", "1")
+                .args(["kit", "install", "-", "--yes"])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            std::io::Write::write_all(
+                &mut kit.stdin.take().unwrap(),
+                b"[kit]\nname = \"k\"\n[[field]]\nname = \"nap\"\nverb = \"start\"\n",
+            )
+            .unwrap();
+            Ok::<_, datum_core::error::DatumError>(kit.wait_with_output().unwrap())
+        })
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{err}");
+    let test = std::env::args().next().unwrap();
+    let test = std::path::Path::new(&test)
+        .file_name()
+        .unwrap()
+        .to_string_lossy();
+    let named = format!("Error: the database is locked by `{test}");
+    assert!(err.starts_with(&named), "{err}");
+    // It waited out its 5 s, and the holder held for at least as long.
+    let pid = format!("(pid {}) for ", std::process::id());
+    let held = err.split(&pid).nth(1).and_then(|r| r.split(' ').next());
+    let held: f64 = held.and_then(|h| h.parse().ok()).expect(&err);
+    assert!(held >= 5.0, "{err}");
+}

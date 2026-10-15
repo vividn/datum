@@ -1127,6 +1127,33 @@ fn an_unreachable_member_is_tried_less_often_and_heard_at_once_when_it_is_back()
     assert!(took < Duration::from_secs(4), "a reached b after {took:?}");
 }
 
+/// `sync run` logs a hold of its write lock past `DATUM_SYNC_LONG_HOLD_MS`
+/// (a second unless set) with what it wrote (da-hyem1): here every hold,
+/// and the apply of b's walk among them.
+#[test]
+fn run_logs_its_long_holds_of_the_write_lock_with_what_they_wrote() {
+    let (a, b) = paired();
+    let mut a_runs = Serving::of(a.cmd(&["sync", "run"]).env("DATUM_SYNC_LONG_HOLD_MS", "0"));
+    let err = BufReader::new(a_runs.child.stderr.take().unwrap());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        err.lines()
+            .map_while(Result::ok)
+            .try_for_each(|l| tx.send(l))
+    });
+    let until = |needle: &str| loop {
+        let line = rx.recv_timeout(Duration::from_secs(10)).expect(needle);
+        if line.contains(needle) {
+            break line;
+        }
+    };
+    until("is up");
+    b.ok(&["occur", "walk"]);
+    b.ok(&["sync"]);
+    let held = until("entries");
+    assert!(held.contains(" held the write lock 0."), "{held}");
+}
+
 #[test]
 fn concurrent_edits_across_the_link_file_a_conflict_on_both_sides() {
     let (a, b) = paired();

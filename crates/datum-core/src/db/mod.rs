@@ -21,6 +21,7 @@
 
 mod alias;
 mod definition;
+mod holder;
 mod insert;
 mod integrity;
 mod kit;
@@ -57,6 +58,7 @@ pub use crate::migrations::{MigrationReport, MAX_PRE_MIGRATION_BACKUPS};
 
 pub use alias::{InstallAliasesReport, KitAliasOutcome, ALIAS_FIELD};
 pub use definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, VIEW_FIELD};
+pub use holder::lock_holder;
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use kit_command::{
     validate_command, InstallCommandsReport, InstalledKitCommand, KitCommandOutcome,
@@ -106,6 +108,8 @@ pub(crate) use types::{
 
 pub struct Db {
     conn: Connection,
+    /// Records this handle's holds of the write lock (da-hyem1).
+    holds: Option<std::sync::Arc<holder::Watch>>,
     /// Lazy cache of the spec-derived alias index, stamped with the
     /// connection's `total_changes()` when it was built: any write since
     /// makes it stale, so it is never a second copy of the spec entries
@@ -235,6 +239,7 @@ impl Db {
         let mut conn = Connection::open(path)?;
         Self::configure_connection(&mut conn)?;
         let mut db = Db {
+            holds: holder::watch(&conn, std::path::Path::new(path)),
             conn,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
@@ -257,6 +262,7 @@ impl Db {
         let mut conn = Connection::open(path)?;
         Self::configure_connection(&mut conn)?;
         Ok(Db {
+            holds: holder::watch(&conn, std::path::Path::new(path)),
             conn,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
@@ -299,6 +305,7 @@ impl Db {
         )?;
         Ok(Db {
             conn,
+            holds: None,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
@@ -312,6 +319,7 @@ impl Db {
         let conn = Connection::open_in_memory()?;
         let mut db = Db {
             conn,
+            holds: None,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
@@ -320,6 +328,19 @@ impl Db {
         };
         db.last_migration = db.migrate(None)?;
         Ok(db)
+    }
+
+    /// Call `log` with the time held and the rows written per table each
+    /// time this handle lets go of the write lock after holding it `after`
+    /// or longer (da-hyem1). A file-backed handle only, and not on wasm.
+    pub fn on_long_hold(
+        &self,
+        after: std::time::Duration,
+        log: impl Fn(std::time::Duration, &str) + Send + 'static,
+    ) {
+        if let Some(holds) = &self.holds {
+            holds.on_long_hold(after, Box::new(log));
+        }
     }
 
     /// What the migration walk during [`Db::open`] did, or `None` if the

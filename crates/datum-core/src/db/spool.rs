@@ -231,6 +231,7 @@ impl Db {
         let _ = conn.execute("UPDATE sync_local SET path = ''", []);
         let db = Db {
             conn,
+            holds: None,
             spec_alias_cache: Default::default(),
             client_id: Default::default(),
             apply_run: Default::default(),

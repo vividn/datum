@@ -351,20 +351,36 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         }
         return ask_first(&path, cli);
     }
-    let db = if matches!(&cli.command, Command::Db(DbCommand::Purge(_))) {
-        let db = datum_core::db::Db::open_unmigrated(&path)?;
-        datum_commands::announce_migration(&db);
-        db
-    } else {
-        open_to_write(&path, spools)?
-    };
+    let db = name_holder(
+        if matches!(&cli.command, Command::Db(DbCommand::Purge(_))) {
+            datum_core::db::Db::open_unmigrated(&path)
+                .inspect(datum_commands::announce_migration)
+                .map_err(Into::into)
+        } else {
+            open_to_write(&path, spools)
+        },
+        &resolved.path,
+    )?;
 
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
     }
 
     let before = db.conn().total_changes();
-    locked_out(cmd::dispatch(cli, &db), &db, before, spools, &path)
+    name_holder(
+        locked_out(cmd::dispatch(cli, &db), &db, before, spools, &path),
+        &resolved.path,
+    )
+}
+
+/// A write that waited out the lock says who held it (da-hyem1).
+fn name_holder<T>(result: Result<T>, db: &std::path::Path) -> Result<T> {
+    result.map_err(|e| match datum_core::db::lock_holder(db) {
+        Some(holder) if e.chain().any(datum_core::db::busy) => {
+            e.context(format!("the database is locked by {holder}"))
+        }
+        _ => e,
+    })
 }
 
 fn dispatch_multi(invocation: Invocation) -> Result<()> {
@@ -391,17 +407,20 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
         Invocation::Multi { sides, .. } => sides.iter().any(|c| spools(&c.command)),
         Invocation::Single(c) => spools(&c.command),
     };
-    let db = open_to_write(&path, spools)?;
+    let db = name_holder(open_to_write(&path, spools), &resolved.path)?;
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
     }
     let before = db.conn().total_changes();
-    locked_out(
-        cmd::dispatch_invocation(invocation, &db),
-        &db,
-        before,
-        spools,
-        &path,
+    name_holder(
+        locked_out(
+            cmd::dispatch_invocation(invocation, &db),
+            &db,
+            before,
+            spools,
+            &path,
+        ),
+        &resolved.path,
     )
 }
 

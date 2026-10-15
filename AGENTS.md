@@ -246,7 +246,12 @@ thread already serving the database steps aside on its next tick, da-8sah2 — a
 a second `connect` or `invite` on the database is refused while it is held,
 da-apd52; a chained copy with none says so in `sync status`, da-qr7gz).
 `DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
-tests), `DATUM_SYNC_RELAY=<url>` one relay and nothing else. A copy of the file at another path mints its own key (`sync_local.path`,
+tests), `DATUM_SYNC_RELAY=<url>` one relay and nothing else. A transaction datum
+opens writes who holds the lock — pid, command, since — to `<db>.writing`
+until it lets go, so a write that waits out the lock and does not spool (above)
+names its holder, and
+`sync run` logs its own holds past a second (`DATUM_SYNC_LONG_HOLD_MS`) with
+the rows each wrote per table (`db/holder.rs`, da-hyem1). A copy of the file at another path mints its own key (`sync_local.path`,
 v44); two copies found signing with one key are refused by name, and
 `sync chain rekey` gives one a new key. Membership is the signed chain
 (`db/sync/chain.rs`), and there is one mechanism: a
