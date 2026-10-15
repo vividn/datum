@@ -17,9 +17,9 @@
 // swallowed, so a drag never also switches or opens the menu.
 //
 // A HOLD THAT NEVER MOVES is the other gesture (da-vvcxc): a press held
-// for `HOLD_MS` and let go where it was — a finger's or a mouse's — is
-// `hold`, and so is the `contextmenu` a right click, the menu key or
-// Shift+F10 raises on a tab. That is how layout mode is entered. A hold
+// for `HOLD_MS` and let go where it was, never having left it — a
+// finger's or a mouse's — is `hold`, and so is the `contextmenu` a right
+// click, the menu key or Shift+F10 raises on a tab. That is how layout mode is entered. A hold
 // that moves is still a drag, exactly as before; the undecided hold is the
 // nowview's pattern (`nowpoint.ts`): HOLD, then a drag on a move or the
 // hold's own act on the lift.
@@ -52,6 +52,8 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 	let dragging = false;
 	/** The press has lasted `HOLD_MS`: let go where it was, it is a hold. */
 	let still = false;
+	/** The pointer has been past `SLOP` since the press: brought back, it is still no hold (da-y8ccu). */
+	let wandered = false;
 	let frame = 0;
 	/**
 	 * The pointer's x, and the index the tab would land at in the list
@@ -95,8 +97,10 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 	function move(event: PointerEvent) {
 		if (!press || event.pointerId !== press.id) return;
 		x = event.clientX;
+		const far = Math.hypot(x - press.x, event.clientY - press.y) > SLOP;
+		wandered ||= far;
 		if (!dragging) {
-			if (Math.hypot(x - press.x, event.clientY - press.y) <= SLOP) return;
+			if (!far) return;
 			// A finger that moves before its hold has fired is scrolling.
 			if (event.pointerType === 'touch') return end();
 			start();
@@ -135,7 +139,7 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 	function up(event: PointerEvent) {
 		if (!press || event.pointerId !== press.id) return;
 		const moved = dragging && to !== press.from ? [press.from, to] : null;
-		const stayed = still && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP;
+		const stayed = still && !wandered && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP;
 		const tab = press.tab;
 		// A drag's click is swallowed by `end`; a mouse's hold never was one.
 		if (stayed && !dragging) swallowTail();
@@ -164,6 +168,7 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 		press = null;
 		dragging = false;
 		still = false;
+		wandered = false;
 		removeEventListener('pointermove', move);
 		removeEventListener('pointerup', up);
 		removeEventListener('pointercancel', end);

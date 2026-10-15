@@ -50,7 +50,7 @@ const asking = (page) => page.locator('dialog.confirm[open]');
 const TWO = { home: { names: ['main', 'repl'], active: 0 } };
 
 /** A finger's long press through CDP, `move`d by (dx, 0) before the lift when given. */
-async function fingerHold(page, locator, dx = 0) {
+async function fingerHold(page, locator, dx = 0, back = false) {
 	const box = await locator.boundingBox();
 	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
 	const cdp = await page.context().newCDPSession(page);
@@ -58,6 +58,8 @@ async function fingerHold(page, locator, dx = 0) {
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
 		await page.waitForTimeout(700);
 		for (let i = 1; dx && i <= 8; i++)
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + (dx * i) / 8, y }] });
+		for (let i = 7; back && i >= 0; i--)
 			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + (dx * i) / 8, y }] });
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 	} finally {
@@ -180,6 +182,23 @@ describe('the ways in', () => {
 				await mode(page).waitFor();
 			},
 			{ viewport: { width: 1280, height: 900 }, device: { hasTouch: true }, ...TWO }
+		);
+	});
+
+	test('a finger held, dragged away and brought back to where it started moves nothing and enters nothing (da-y8ccu)', async () => {
+		await withApp(
+			async ({ page }) => {
+				const order = () =>
+					page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim()));
+				const first = await order();
+				await fingerHold(page, rootMenuButton(page), 120, true);
+				await page.waitForTimeout(300);
+				assert.equal(await isOn(page), false, 'a hold that wandered and came home entered layout mode');
+				assert.deepEqual(await order(), first, 'the tabs moved');
+				await fingerHold(page, rootMenuButton(page));
+				await mode(page).waitFor();
+			},
+			{ viewport: { width: 390, height: 844 }, device: { hasTouch: true }, ...TWO }
 		);
 	});
 });
