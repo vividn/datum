@@ -47,6 +47,13 @@ function countPushes() {
 	window.setInterval = (f, ms, ...a) => (ms === 30000 ? 0 : every(f, ms, ...a));
 }
 
+/** The origin of `field`'s newest entry's latest op, as the copy `run` runs on holds it. */
+async function originOf(run, field) {
+	const { rows } = JSON.parse((await run(['tail', field, '--show', 'json'])).stdout);
+	const versions = JSON.parse((await run(['history', rows.at(-1).hid, '--show', 'json'])).stdout);
+	return versions[0].origin;
+}
+
 /** `app`'s push counts once they and its peers' sessions have stood still for a second. */
 async function settled(app) {
 	const read = () =>
@@ -76,6 +83,17 @@ describe('datum.day and a native copy', () => {
 					assert.equal(await native.verify(), await verifyOf(app));
 					assert.equal(await countOf(app, 'tea'), 1);
 					assert.equal(await native.count('coffee'), 1);
+					// Each op names who and what signed it, read on the other copy
+					// (da-zjc9w): the page's says datum.day, with no user or host,
+					// which a page cannot know; the native one's says datum.
+					const web = await originOf(native.run, 'coffee');
+					assert.equal(web.program, 'datum.day', JSON.stringify(web));
+					assert.equal(web.user, undefined, JSON.stringify(web));
+					assert.equal(web.host, undefined, JSON.stringify(web));
+					assert.ok(web.installation && web.version, JSON.stringify(web));
+					const cli = await originOf((argv) => app.run(argv), 'tea');
+					assert.equal(cli.program, 'datum', JSON.stringify(cli));
+					assert.ok(cli.host && cli.installation && cli.version, JSON.stringify(cli));
 				},
 				{ prepare: relayed(relay) }
 			);

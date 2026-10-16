@@ -35,6 +35,11 @@ pub struct Version {
     /// The line that wrote it.
     pub raw: Option<String>,
     pub alias_chain: Option<Value>,
+    /// Who and what signed it: `user`, `host`, `installation`, `program`,
+    /// `version`, `script`, each where known (da-zjc9w). None on an op
+    /// signed before origins, and on a baseline, which only signed a row
+    /// something else wrote.
+    pub origin: Option<Value>,
     /// What it changed: `create`, or `set` / `unset` / `deleted`.
     pub effect: Value,
     /// The keys this op left contested: per key each side as `conflicts`
@@ -116,12 +121,13 @@ fn versions(conn: &Connection, e: &Entry) -> Result<Vec<Version>> {
         // A baseline is signed by whatever first needed it; the line that
         // wrote what it holds is the row's own.
         let created = |k: &str| op.effect["create"].get(k).filter(|v| !v.is_null());
-        let (raw, alias_chain) = match op.is_baseline() {
+        let (raw, alias_chain, origin) = match op.is_baseline() {
             true => (
                 created("raw_input").and_then(Value::as_str).map(Into::into),
                 created("alias_chain").cloned(),
+                None,
             ),
-            false => (op.raw.clone(), op.alias_chain.clone()),
+            false => (op.raw.clone(), op.alias_chain.clone(), op.origin.clone()),
         };
         out.push(Version {
             version: i as u32 + 1,
@@ -133,6 +139,7 @@ fn versions(conn: &Connection, e: &Entry) -> Result<Vec<Version>> {
             kind: op.kind.clone(),
             raw,
             alias_chain,
+            origin,
             effect: op.effect.clone(),
             fork,
             join,

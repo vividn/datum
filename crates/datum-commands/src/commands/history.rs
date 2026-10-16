@@ -103,9 +103,37 @@ fn history_of(
             None | Some("") => String::new(),
             Some(s) => format!("'{s}'"),
         };
-        println!("{}", version_lines(&v, &now, &raw, devices).join("\n"));
+        let mut lines = version_lines(&v, &now, &raw, devices);
+        lines.insert(1, format!("        origin: {}", origin(v.origin.as_ref())));
+        println!("{}", lines.join("\n"));
     }
     Ok(())
+}
+
+/// Who and what signed a version (da-zjc9w): `user@host`, the program and
+/// its version, the installation, the script. A part the op does not carry
+/// is said to be unknown, and an op signed before origins says so.
+fn origin(o: Option<&JsonValue>) -> String {
+    let Some(o) = o else {
+        return "not recorded".into();
+    };
+    let part = |k: &str| o[k].as_str();
+    let who = match (part("user"), part("host")) {
+        (None, None) => "user and host unknown".to_string(),
+        (u, h) => format!(
+            "{}@{}",
+            u.unwrap_or("(user unknown)"),
+            h.unwrap_or("(host unknown)")
+        ),
+    };
+    let program = [part("program"), part("version")].into_iter().flatten();
+    let parts = [
+        Some(who),
+        Some(program.collect::<Vec<_>>().join(" ")).filter(|p| !p.is_empty()),
+        part("installation").map(|i| format!("installation {i}")),
+        part("script").map(|s| format!("script {s}")),
+    ];
+    parts.into_iter().flatten().collect::<Vec<_>>().join(" · ")
 }
 
 fn print_history_diff(a: u32, snap_a: &Entry, b: u32, snap_b: &Entry) {

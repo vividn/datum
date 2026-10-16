@@ -229,7 +229,9 @@ old name as its alias when it was renamed (da-a4ptr, then da-3ie71: «leave
 The relay sync is deleted; p2p «Easy Sync» replaced it. Its core is in
 `crates/datum-core/src/db/sync.rs`: every
 entry change emits a signed op beside its `history::record` (endpoint key in
-`sync_local`, HLC, the change's own `raw` line, its key-level `effect`), and
+`sync_local`, HLC, the change's own `raw` line, its key-level `effect`, its
+`origin`: user, host, installation, program, version and the `DATUM_SCRIPT`
+name, each where known, which `datum history` shows, da-zjc9w), and
 an entry's row is the FOLD of its ops in HLC order, so the same ops in any
 order give the same row. Its conflicts are part of the fold (da-05rkv): the
 `conflicts` column names each key two ops set without seeing each other's

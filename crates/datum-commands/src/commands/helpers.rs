@@ -807,6 +807,7 @@ mod tests {
             kind: "update".into(),
             raw: None,
             alias_chain: None,
+            origin: None,
             effect: json!({ "set": { "data.cups": 5 } }),
             fork: Default::default(),
             join: json!({ "data.cups": { "value": 5, "took": took } })

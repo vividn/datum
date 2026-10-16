@@ -108,6 +108,7 @@ struct Invocation {
     alias_chain: Option<Value>,
     client_source: Option<fn() -> Option<String>>,
     client: Option<String>,
+    origin: Option<Value>,
 }
 
 thread_local! {
@@ -139,6 +140,52 @@ fn client_id() -> String {
         }
         i.client.clone().unwrap_or_default()
     })
+}
+
+/// Who and what signs the ops from here (da-zjc9w), carried in each as
+/// `origin`: the OS `user` and `host`, the `installation` (this client's id),
+/// the `program` — `datum`, or `datum.day` for the browser's CLI — its
+/// `version`, and the `script` `DATUM_SCRIPT` names. A part this process
+/// cannot know, as a browser cannot its user or host, is left out rather
+/// than invented. Read once, at the first op.
+fn origin() -> Value {
+    if let Some(o) = INVOCATION.with(|i| i.borrow().origin.clone()) {
+        return o;
+    }
+    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    let program = match cfg!(target_os = "wasi") {
+        true => "datum.day",
+        false => "datum",
+    };
+    let parts = [
+        ("user", env("USER").or_else(|| env("USERNAME"))),
+        ("host", host()),
+        ("installation", Some(client_id()).filter(|c| !c.is_empty())),
+        ("program", Some(program.into())),
+        ("version", Some(crate::build().into())),
+        ("script", env("DATUM_SCRIPT")),
+    ];
+    let o: Map<String, Value> = parts
+        .into_iter()
+        .filter_map(|(k, v)| Some((k.to_string(), Value::String(v?))))
+        .collect();
+    let o = Value::Object(o);
+    INVOCATION.with(|i| i.borrow_mut().origin = Some(o.clone()));
+    o
+}
+
+#[cfg(unix)]
+fn host() -> Option<String> {
+    let mut buf = [0u8; 256];
+    // SAFETY: `buf` is writable for its whole length, which is what is passed.
+    let ok = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } == 0;
+    let end = buf.iter().position(|&b| b == 0)?;
+    (ok && end > 0).then(|| String::from_utf8_lossy(&buf[..end]).into_owned())
+}
+
+#[cfg(not(unix))]
+fn host() -> Option<String> {
+    std::env::var("COMPUTERNAME").ok().filter(|v| !v.is_empty())
 }
 
 // ─── Canonical JSON, hex ────────────────────────────────────────────────────
@@ -590,6 +637,9 @@ struct Op {
     raw: Option<String>,
     #[serde(default)]
     alias_chain: Option<Value>,
+    /// Who and what signed it ([`origin`]); none on an op signed before.
+    #[serde(default)]
+    origin: Option<Value>,
     effect: Value,
     #[serde(default)]
     deps: BTreeMap<String, i64>,
@@ -757,7 +807,8 @@ fn push(
     if of.is_none() {
         deps.entry(ep.id.clone()).or_insert(0);
     }
-    sign(conn, ep, head, kind, effect, (raw, alias_chain, None), deps)
+    let made = (raw, alias_chain, Some(origin()), None);
+    sign(conn, ep, head, kind, effect, made, deps)
 }
 
 /// Sign and store an op as this copy's next: its seq and HLC are taken
@@ -768,7 +819,12 @@ fn sign(
     (hid, slug, field): (&str, &str, Option<String>),
     kind: &str,
     effect: Value,
-    (raw, alias_chain, queued): (Option<String>, Option<Value>, Option<&str>),
+    (raw, alias_chain, origin, queued): (
+        Option<String>,
+        Option<Value>,
+        Option<Value>,
+        Option<&str>,
+    ),
     deps: BTreeMap<String, i64>,
 ) -> Result<i64> {
     let seq: i64 = conn
@@ -793,6 +849,9 @@ fn sign(
     if let Some(f) = &field {
         v["field"] = f.as_str().into();
     }
+    if let Some(o) = &origin {
+        v["origin"] = o.clone();
+    }
     if let Some(q) = queued {
         v["queued"] = q.into();
     }
@@ -808,6 +867,7 @@ fn sign(
         field,
         raw: None,
         alias_chain: None,
+        origin: None,
         // `store` reads the head and the body; the effect is in the body.
         effect: Value::Null,
         deps: BTreeMap::new(),
@@ -1590,6 +1650,7 @@ pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<bool> {
             let made = (
                 op.raw.clone(),
                 op.alias_chain.clone(),
+                op.origin.clone(),
                 Some(op.hlc.as_str()),
             );
             sign(
@@ -3196,6 +3257,47 @@ mod tests {
             b.sync_state_hash(None).unwrap().0,
             c.sync_state_hash(None).unwrap().0
         );
+    }
+
+    /// An op names who and what signed it (da-zjc9w), and the build before
+    /// origins reads it: that build's `Op`, this one without `origin`, denies
+    /// no key it does not know, and a signature is checked over the body as
+    /// sent, so the op verifies, applies and is served on whole.
+    #[test]
+    fn a_build_before_origins_reads_an_op_carrying_one() {
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct Before {
+            endpoint: String,
+            seq: i64,
+            hlc: String,
+            hid: String,
+            slug: String,
+            kind: String,
+            #[serde(default)]
+            field: Option<String>,
+            #[serde(default)]
+            raw: Option<String>,
+            #[serde(default)]
+            alias_chain: Option<Value>,
+            effect: Value,
+            #[serde(default)]
+            deps: BTreeMap<String, i64>,
+            #[serde(default)]
+            queued: Option<String>,
+            sig: String,
+        }
+        let (a, b) = (Db::open_in_memory().unwrap(), Db::open_in_memory().unwrap());
+        let lines = log_at(&a, 0, "coffee");
+        for line in &lines {
+            let op: Value = serde_json::from_str(line).unwrap();
+            assert_eq!(op["origin"]["program"], "datum", "{line}");
+            assert_eq!(op["origin"]["version"], crate::build(), "{line}");
+            serde_json::from_value::<Before>(op).expect("the build before reads it");
+        }
+        assert_eq!(apply_at(&b, 0, &lines).applied, lines.len());
+        let served = b.sync_ops_since(&BTreeMap::new(), false, None).unwrap();
+        assert!(lines.iter().all(|l| served.contains(l)), "{served:?}");
     }
 
     #[test]

@@ -27,7 +27,13 @@ impl Copy {
     }
 
     fn run(&self, args: &[&str], stdin: &str) -> Output {
+        self.run_env(args, stdin, &[])
+    }
+
+    fn run_env(&self, args: &[&str], stdin: &str, env: &[(&str, &str)]) -> Output {
         let mut child = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env_remove("DATUM_SCRIPT")
+            .envs(env.iter().copied())
             .env("DATUM_DB", self.db())
             .env("DATUM_HOME", self.tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", self.tmp.path().join("config"))
@@ -191,6 +197,49 @@ fn two_copies_converge_over_a_pipe() {
         b.ok(&["sync", "pipe", "vector"]),
         a.ok(&["sync", "pipe", "vector"])
     );
+}
+
+/// Every op names who and what signed it (da-zjc9w), and a second copy
+/// reads that back from the ops it was sent: the CLI's host, installation,
+/// program and build, and on a scripted run the script `DATUM_SCRIPT` names.
+#[test]
+fn a_second_copy_reads_each_op_s_origin() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee"]);
+    let scripted = a.run_env(&["occur", "tea"], "", &[("DATUM_SCRIPT", "nightly")]);
+    assert!(scripted.status.success());
+    a.send(&b);
+    let origin = |field: &str| {
+        let hid = b.hid(field);
+        let versions: Value =
+            serde_json::from_str(&b.ok(&["history", &hid, "--show", "json"])).unwrap();
+        versions[0]["origin"].clone()
+    };
+    // One resolver gives an entry its `client_id` and an op its installation.
+    let installation = a.query(
+        "SELECT client_id FROM entries WHERE hid = ?1",
+        &a.hid("coffee"),
+    );
+    for (field, script) in [("coffee", None), ("tea", Some("nightly"))] {
+        let o = origin(field);
+        assert_eq!(o["program"], "datum", "{o}");
+        assert_eq!(o["installation"], installation, "{o}");
+        assert!(
+            o["version"].as_str().is_some_and(|v| v.starts_with("3.")),
+            "{o}"
+        );
+        assert!(o["host"].as_str().is_some_and(|h| !h.is_empty()), "{o}");
+        assert_eq!(
+            o["user"].as_str(),
+            std::env::var("USER")
+                .ok()
+                .filter(|u| !u.is_empty())
+                .as_deref()
+        );
+        assert_eq!(o["script"].as_str(), script, "{o}");
+    }
+    let history = b.ok(&["history", &b.hid("tea")]);
+    assert!(history.contains(" · script nightly"), "{history}");
 }
 
 #[test]
@@ -2030,17 +2079,21 @@ fn a_database_that_never_synced_shows_a_version_per_command() {
         .collect();
     assert_eq!(kinds, ["update", "update", "create"]);
     let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines.len(), 6, "{text}");
+    assert_eq!(lines.len(), 9, "{text}");
     assert_eq!(lines[0], format!("hid: {hid}"));
     assert!(
         lines[1].starts_with("  v3  ")
             && lines[1].ends_with(&format!("update    'update {hid} cups=4 with=oat'")),
         "{text}"
     );
-    assert_eq!(lines[2], r#"        set data.cups=4 data.with="oat""#);
-    assert_eq!(lines[4], "        set data.cups=3");
+    // Each version says who and what signed it (da-zjc9w).
+    for at in [2, 5, 8] {
+        assert!(lines[at].starts_with("        origin: "), "{text}");
+    }
+    assert_eq!(lines[3], r#"        set data.cups=4 data.with="oat""#);
+    assert_eq!(lines[6], "        set data.cups=3");
     assert!(
-        lines[5].starts_with("  v1  ") && lines[5].ends_with("create    'occur coffee cups=2'"),
+        lines[7].starts_with("  v1  ") && lines[7].ends_with("create    'occur coffee cups=2'"),
         "{text}"
     );
     assert!(

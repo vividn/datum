@@ -951,7 +951,7 @@ const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to
 
 const REDO_BODY: &str = "USAGE:\n  datum redo [ID_OR_SLUG[,ID_OR_SLUG]...] [--dry-run]\n\nThe inverse of `datum undo`. With no ID_OR_SLUG it re-applies the oldest\ncommand a bare undo took back, every entry of it the undo took back (not\nwhat an `undo --skip-changed` left as it was), and the next redo the one\nafter; a command run since an undo drops what was undone, leaving nothing to\nredo. Redo of an undone create re-creates the entry under the same hid; redo\nof an undone delete deletes it again. With ID_OR_SLUG it re-applies the\nversion that entry's last undo stepped back from; every row of a named\n`_LAST` steps together, as every entry of a comma list does.\n\nExits 1 with 'nothing to redo' when nothing lies ahead, so\n`undo; redo; redo` moves once, not twice. --dry-run moves nothing and\nprints nothing: it only exits as the redo would, 0 or 1.\n";
 
-const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG[,ID_OR_SLUG]...> [--version N | --diff A B]\n\nA comma list prints each entry's trail in turn, each under its own `hid:` line\n(`--show json`: one array of `{hid, versions}`). `--version` and `--diff` number\nONE entry's versions, so with a list they are refused.\n\nThe trail is read from the entry's ops, a version per change, newest first:\nwhen, its kind, the line that wrote it, what it set and unset, and in a sync\nchain the device that made it. Every copy that holds the same ops prints the\nsame trail. Where two copies set a key without seeing each other, the later\nversion reads `fork KEY:` with each side (value, device, time, version), and\nthe edit that saw them all `join KEY:` with the value it took and whose side\nthat was. `--version N` prints the entry as version N left it, `--diff A B`\nwhat differs between two; `undo ID --to-version N` goes back to one. An\nentry no command has changed since before ops has no trail yet.\n";
+const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG[,ID_OR_SLUG]...> [--version N | --diff A B]\n\nA comma list prints each entry's trail in turn, each under its own `hid:` line\n(`--show json`: one array of `{hid, versions}`). `--version` and `--diff` number\nONE entry's versions, so with a list they are refused.\n\nThe trail is read from the entry's ops, a version per change, newest first:\nwhen, its kind, the line that wrote it, what it set and unset, and in a sync\nchain the device that made it. Under each, its origin: who signed it\n(`user@host`), the program and its version, the installation, and the\nscript `DATUM_SCRIPT` named; a part the op does not carry is unknown (a\nbrowser knows no user or host), and an op signed before origins says\n`not recorded`. Every copy that holds the same ops prints the\nsame trail. Where two copies set a key without seeing each other, the later\nversion reads `fork KEY:` with each side (value, device, time, version), and\nthe edit that saw them all `join KEY:` with the value it took and whose side\nthat was. `--version N` prints the entry as version N left it, `--diff A B`\nwhat differs between two; `undo ID --to-version N` goes back to one. An\nentry no command has changed since before ops has no trail yet.\n";
 
 const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG[,ID_OR_SLUG]...> [--full]\n\nA comma list answers for each entry in turn, each under its own `hid:` line.\n";
 
@@ -1674,6 +1674,10 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
     EnvVarSpec {
         name: "DATUM_CLIENT_ID",
         summary: "Override the per-installation client id stamped on entries.",
+    },
+    EnvVarSpec {
+        name: "DATUM_SCRIPT",
+        summary: "Name a scripted run: every change it makes says so in its origin (`datum history`).",
     },
     EnvVarSpec {
         name: "DATUM_EDITOR",

@@ -667,6 +667,7 @@ dependencies = [
  "datum-parse",
  "ed25519-dalek 2.2.0",
  "indexmap",
+ "libc",
  "md-5",
  "p256",
  "rand 0.8.6",
