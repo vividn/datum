@@ -1062,7 +1062,7 @@ fn subcommand_help_is_its_own_page() {
             .map(String::from)
             .collect();
         let e = crate::parse_argv(&argv).unwrap_err();
-        super::special_output(&e, "").unwrap()
+        super::special_output(&e, "", None).unwrap()
     };
     let purge = parse("db purge --leave --help");
     assert_ne!(purge, command_help("db"));

@@ -22,7 +22,8 @@
 <script lang="ts">
 	import { ansiSpans } from '$lib/ansi.js';
 	import AnsiText from '$lib/AnsiText.svelte';
-	import { explained } from '$lib/help.js';
+	import { explained, fitHelp } from '$lib/help.js';
+	import { charactersIn } from '$lib/panes.js';
 	import Pane from '$lib/Pane.svelte';
 	import SyncGuide from './SyncGuide.svelte';
 	import WelcomeText from './WelcomeText.svelte';
@@ -45,36 +46,43 @@
 		}
 	}
 
+	/** The explanation, whose width in characters a help page is asked for at (da-nrjze). */
+	let box: HTMLDivElement | undefined;
+	let width = 0;
+	$: fitHelp(box && width ? charactersIn(box.querySelector('pre') ?? box, width) : null);
+
 	/** `GLOBAL OPTIONS` → `Global options`. */
 	const label = (heading: string) => heading.charAt(0) + heading.slice(1).toLowerCase();
 </script>
 
 <Pane title="help">
 	{#if $explained}
-		<button type="button" class="front" on:click={() => explained.set(null)}>← front page</button>
-		<h3 class="asked">{$explained.title}</h3>
-		{#if $explained.guide === 'sync'}
-			<SyncGuide widget={$explained.text} />
-		{:else if $explained.page}
-			{@const page = $explained.page}
-			<pre class="help">{page.title}{page.intro ? `\n\n${page.intro}` : ''}</pre>
-			{#each page.sections as section, i (i)}
-				{#if section.reference}
-					<details
-						data-section={section.heading}
-						open={opened.includes(section.heading)}
-						on:toggle={(e) => toggled(section.heading, e.currentTarget.open)}
-					>
-						<summary>{label(section.heading)}</summary>
-						<pre class="section">{section.text}</pre>
-					</details>
-				{:else}
-					<pre class="section">{section.heading ? `${section.heading}:\n` : ''}{section.text}</pre>
-				{/if}
-			{/each}
-		{:else}
-			<pre class="help"><AnsiText spans={ansiSpans($explained.text)} /></pre>
-		{/if}
+		<div bind:this={box} bind:clientWidth={width}>
+			<button type="button" class="front" on:click={() => explained.set(null)}>← front page</button>
+			<h3 class="asked">{$explained.title}</h3>
+			{#if $explained.guide === 'sync'}
+				<SyncGuide widget={$explained.text} />
+			{:else if $explained.page}
+				{@const page = $explained.page}
+				<pre class="help">{page.title}{page.intro ? `\n\n${page.intro}` : ''}</pre>
+				{#each page.sections as section, i (i)}
+					{#if section.reference}
+						<details
+							data-section={section.heading}
+							open={opened.includes(section.heading)}
+							on:toggle={(e) => toggled(section.heading, e.currentTarget.open)}
+						>
+							<summary>{label(section.heading)}</summary>
+							<pre class="section">{section.text}</pre>
+						</details>
+					{:else}
+						<pre class="section">{section.heading ? `${section.heading}:\n` : ''}{section.text}</pre>
+					{/if}
+				{/each}
+			{:else}
+				<pre class="help"><AnsiText spans={ansiSpans($explained.text)} /></pre>
+			{/if}
+		</div>
 	{:else}
 		<!-- The front page is the welcome's own words (vividn, 2026-10-14), its «Learn more» links leading here. -->
 		<p class="quiet">Press Help, then tap a command, a widget or a pill: it is explained here.</p>

@@ -350,7 +350,7 @@ describe('a help page', () => {
 			assert.deepEqual(await place(page).locator('details summary').allInnerTexts(), ['Usage', 'Options', 'Output']);
 			const options = place(page).locator('details[data-section="OPTIONS"]');
 			await options.locator('summary').click();
-			assert.match(await options.locator('pre').innerText(), /common logging options: `datum help logging`/);
+			assert.match(await options.locator('pre').innerText(), /common logging options: `datum help\s+logging`/);
 			await open(page, 'start');
 			assert.equal(await options.getAttribute('open'), '', 'the opened fold closed on the next page');
 			assert.equal(await place(page).locator('details[data-section="USAGE"]').getAttribute('open'), null);

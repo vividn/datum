@@ -10,6 +10,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -50,6 +51,46 @@ for (const line of ['help occur', 'help']) {
 				assert.equal(at(a), at(b), `${a} and ${b} line up:\n${lines.join('\n')}`);
 			},
 			{ viewport: PHONE, query: 'repl' }
+		);
+	});
+}
+
+// THE HELP PLACE TOO (da-nrjze): it asks for its page at its own width in
+// characters, and again when that changes, so a page reads in the lines the
+// CLI wrapped it to — none wrapped a second time by the browser, which is
+// what a line drawn `pre` wider than the place would be under `pre-wrap`.
+
+/** Each of the Help place's texts, its folds opened, wider than the place drawn unwrapped: its widest line. */
+const wrapped = (page) =>
+	page.evaluate(() => {
+		const host = document.querySelector('.host[data-widget="help"]');
+		for (const fold of host.querySelectorAll('details')) fold.open = true;
+		return [...host.querySelectorAll('pre')].flatMap((pre) => {
+			pre.style.whiteSpace = 'pre';
+			const [wide, room] = [pre.scrollWidth, pre.clientWidth];
+			pre.style.whiteSpace = '';
+			const widest = pre.textContent.split('\n').reduce((a, b) => (b.length > a.length ? b : a), '');
+			return wide > room ? [`${wide}px > ${room}px: ${widest}`] : [];
+		});
+	});
+
+for (const name of ['occur', undefined, 'logging']) {
+	const title = `datum help${name ? ` ${name}` : ''}`;
+	test(`the Help place's ${title} on a ${PHONE.width}px phone is wrapped by the CLI alone`, async () => {
+		await withApp(
+			async (app) => {
+				await app.page.evaluate((n) => window.datum.help(n), name);
+				const asked = app.page.locator('.host[data-widget="help"] h3.asked');
+				await until(() => asked.innerText().catch(() => ''), (t) => t.trim() === title);
+				await until(() => wrapped(app.page), (over) => over.length === 0);
+				if (name !== 'occur') return;
+				// Its example rows stack as the REPL's do.
+				const intro = (await app.page.locator('.host[data-widget="help"] pre.help').innerText()).split('\n');
+				const row = intro.indexOf('  datum occur coffee');
+				assert.ok(row > 0, intro.join('\n'));
+				assert.equal(intro[row + 1], '      a coffee, now');
+			},
+			{ viewport: PHONE }
 		);
 	});
 }

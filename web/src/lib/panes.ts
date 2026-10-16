@@ -142,6 +142,18 @@ export function fitArgv(argv: string[], width: number | null): string[] {
 }
 
 /**
+ * How many characters fit across `width` pixels in `el`'s own font: the
+ * width a help page is asked for at (da-nt53d, da-nrjze).
+ */
+export function charactersIn(el: Element, width: number): number | null {
+	const pen = document.createElement('canvas').getContext('2d');
+	if (!pen) return null;
+	const { fontStyle, fontWeight, fontSize, fontFamily } = getComputedStyle(el);
+	pen.font = `${fontStyle} ${fontWeight} ${fontSize} ${fontFamily}`;
+	return Math.floor((width * 80) / pen.measureText('0'.repeat(80)).width);
+}
+
+/**
  * The env that asks a help page for the scrollback's width in characters
  * (da-nt53d): `COLUMNS`, as a terminal that wide sets it, which the CLI
  * fits a help page to. Only for a line that asks for help: `now` and

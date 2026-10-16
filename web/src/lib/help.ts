@@ -75,8 +75,28 @@ export type HelpPage = {
  * The last explanation asked for, titled with what it explains: what the Help place shows.
  * `guide` names a page of `GUIDES` drawn in place of the text, which it is given.
  * A command's or a topic's is a `page`, which the place leads with its intro.
+ * `help` is what `explainCommand` was given, the general help's `''`.
  */
-export const explained = writable<{ title: string; text: string; guide?: string; page?: HelpPage } | null>(null);
+export const explained = writable<Explanation | null>(null);
+type Explanation = { title: string; text: string; guide?: string; page?: HelpPage; help?: string };
+
+/** The Help place's width in characters, once it has drawn: a page is asked for at it (da-nrjze). */
+let columns: number | null = null;
+
+/**
+ * The Help place's width in characters, as it draws and resizes: the help
+ * it shows is asked for again at a new one, so it is the CLI that wraps it,
+ * and replaces it there unless something else was explained meanwhile.
+ */
+export function fitHelp(width: number | null): void {
+	if (!width || width === columns) return;
+	columns = width;
+	const help = get(explained)?.help;
+	if (help === undefined) return;
+	void helpOf(help || undefined).then((now) => {
+		if (get(explained)?.help === help) explained.set(now);
+	});
+}
 
 /**
  * The guides, by name, and their titles: a page in plain words of how to use a
@@ -92,7 +112,7 @@ export const GUIDES: Record<string, string> = { sync: 'Syncing your devices' };
  * one, else the place `openPlace` opens. A pane's tabs behind the front one stay
  * mounted, hidden (TabBody.svelte), so a Help widget in one is not in view.
  */
-function show(title: string, text: string, more: { guide?: string; page?: HelpPage } = {}): void {
+function show(title: string, text: string, more: Omit<Explanation, 'title' | 'text'> = {}): void {
 	explained.set({ title, text, ...more });
 	const hosts = [...document.querySelectorAll('.host[data-widget="help"]')];
 	if (!hosts.some((host) => !host.closest('.tab-body.behind'))) void openPlace('help');
@@ -123,15 +143,23 @@ export function explainGuide(name: string): void {
  * `datum help <name>` in the Help place, as the Help button lands a command's: the
  * welcome's «Learn more» links take this path, so what they open is the CLI's own help.
  * A named page is asked for as JSON, to lead with its intro (da-efruz); the general
- * help, the list of commands, is its text.
+ * help, the list of commands, is its text. Either is asked for at the place's
+ * width, `COLUMNS` as a terminal that wide sets it, once it has one (da-nrjze).
  */
 export async function explainCommand(name?: string): Promise<void> {
+	const { title, text, ...more } = await helpOf(name);
+	show(title, text, more);
+}
+
+async function helpOf(name?: string): Promise<Explanation> {
 	const argv = helpArgv(name);
 	const paged = argv.length > 1;
-	const { stdout, stderr } = await run(paged ? [...argv, '--json'] : argv);
+	const env = columns ? [`COLUMNS=${columns}`] : [];
+	const { stdout, stderr } = await run(paged ? [...argv, '--json'] : argv, undefined, undefined, undefined, undefined, env);
 	const title = `datum ${argv.join(' ')}`;
-	if (paged && stdout) return show(title, '', { page: JSON.parse(stdout) });
-	show(title, stdout || stderr);
+	const help = name ?? '';
+	if (paged && stdout) return { title, text: '', page: JSON.parse(stdout), help };
+	return { title, text: stdout || stderr, help };
 }
 
 /** Every event a tap is made of — none of them reaches the page while armed. */

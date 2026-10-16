@@ -55,20 +55,29 @@ pub fn command_help(cmd: &str) -> String {
 /// honouring a smaller contract than the CLI does. `datum-cli` prints the
 /// text to stdout (da-e0m6). `version` is the `--version` line, which is
 /// the binary's own — its build.rs reads git — and not this crate's
-/// (da-5172a).
-pub fn special_output(e: &crate::ParseError, version: &str) -> Option<String> {
+/// (da-5172a). A help page, text or `--json`, is [`fit`] to `width` when
+/// one is given (da-nt53d, da-nrjze).
+pub fn special_output(
+    e: &crate::ParseError,
+    version: &str,
+    width: Option<usize>,
+) -> Option<String> {
     use crate::ParseError as E;
+    let fitted = |text: String| match width {
+        Some(width) => fit(&text, width),
+        None => text,
+    };
     match e {
-        E::HelpRequested(cmd) => Some(match cmd.as_deref() {
+        E::HelpRequested(cmd) => Some(fitted(match cmd.as_deref() {
             Some(c) => command_help(c),
             None => top_level_help(),
-        }),
+        })),
         // The newline `println!` used to add, now part of the text so
         // every caller writes the same bytes.
         E::VersionRequested => Some(format!("{version}\n")),
         E::ManRequested(cmd) => Some(render_roff(cmd.as_deref())),
         E::GrammarRequested(None) => Some(render_json()),
-        E::GrammarRequested(Some(page)) => Some(render_page_json(&command_help(page))),
+        E::GrammarRequested(Some(page)) => Some(render_page_json(&fitted(command_help(page)))),
         _ => None,
     }
 }

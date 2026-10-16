@@ -35,3 +35,25 @@ fn help_fits_columns() {
         assert_eq!(help(Some("200"), args), written, "{args:?} at 200");
     }
 }
+
+/// The page datum.day's Help place reads, `help NAME --json`, is fitted
+/// too (da-nrjze): its intro and sections are the fitted page's.
+#[test]
+fn help_json_fits_columns() {
+    let lines = |columns| {
+        let page: serde_json::Value =
+            serde_json::from_str(&help(columns, &["help", "occur", "--json"])).unwrap();
+        let mut text = vec![page["intro"].as_str().unwrap().to_string()];
+        text.extend(
+            page["sections"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["text"].as_str().unwrap().to_string()),
+        );
+        text.join("\n")
+    };
+    assert!(widest(&lines(None)) > 40, "as written");
+    assert!(widest(&lines(Some("40"))) <= 40, "at 40");
+    assert_eq!(lines(Some("200")), lines(None), "at 200");
+}
