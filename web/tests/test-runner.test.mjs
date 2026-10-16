@@ -119,18 +119,36 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+/** `scripts/test.mjs` run over `files` alone; cut, with no exit code, a minute on. */
+const runner = new URL('../scripts/test.mjs', import.meta.url).pathname;
+const suite = (files, retry, extra = {}) => {
+	const dir = mkdtempSync(join(tmpdir(), 'datum-retry-'));
+	mkdirSync(join(dir, 'tests'));
+	for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, 'tests', name), body);
+	const env = { ...process.env, DATUM_TEST_RETRY: retry, DATUM_TEST_CONCURRENCY: '1', ...extra };
+	delete env.NODE_TEST_CONTEXT; // or the child reports to this runner instead of running
+	const r = spawnSync(process.execPath, [runner], { cwd: dir, env, encoding: 'utf8', timeout: 60_000 });
+	rmSync(dir, { recursive: true, force: true });
+	return { code: r.status, out: r.stdout + r.stderr };
+};
+
+// quartz's run held a can six hours (da-cvd7y): `after(stopApp)` timed out
+// with Chromium and the server open, and nothing ended the file's process.
+// A timer stands in for them here, and lets go of an orphan on its own.
+test('a file whose hook failed holding the process open ends, red', () => {
+	const held = `import { after, test } from 'node:test';
+test('passes', () => {});
+after(() => {
+	setTimeout(() => {}, 90_000);
+	throw new Error('stopApp gave up with Chromium open');
+});
+`;
+	const { code, out } = suite({ 'held.test.mjs': held }, '');
+	assert.match(out, /stopApp gave up with Chromium open/);
+	assert.equal(code, 1, out);
+});
+
 describe('DATUM_TEST_RETRY', () => {
-	const runner = new URL('../scripts/test.mjs', import.meta.url).pathname;
-	const suite = (files, retry, extra = {}) => {
-		const dir = mkdtempSync(join(tmpdir(), 'datum-retry-'));
-		mkdirSync(join(dir, 'tests'));
-		for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, 'tests', name), body);
-		const env = { ...process.env, DATUM_TEST_RETRY: retry, DATUM_TEST_CONCURRENCY: '1', ...extra };
-		delete env.NODE_TEST_CONTEXT; // or the child reports to this runner instead of running
-		const r = spawnSync(process.execPath, [runner], { cwd: dir, env, encoding: 'utf8' });
-		rmSync(dir, { recursive: true, force: true });
-		return { code: r.status, out: r.stdout + r.stderr };
-	};
 	const once = `import test from 'node:test';
 import { existsSync, writeFileSync } from 'node:fs';
 const mark = new URL(import.meta.url + '.ran');

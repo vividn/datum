@@ -47,6 +47,13 @@
 // job read the same budget. Making the slow files snappier is the follow-up;
 // the budget is not the place to assert speed.
 //
+// The budget is each test's and each hook's, not the file's: `run()` hands it
+// to the file's process as `--test-timeout`, and that process ends only when
+// nothing is left open in it. So `after(stopApp)` timing out under load 50,
+// Chromium and the server still open, left its file red and running and the
+// run waiting on it for six hours (da-cvd7y). `forceExit` ends a file's
+// process once its tests and hooks are done, whatever it still holds.
+//
 // FAIL FAST (da-s2g46). Once THREE files have failed the run is aborted: the
 // files in flight are cut, and the ones never started are named under
 // `NOT RUN:`, so a stopped suite cannot read as a pass. `DATUM_TEST_BAIL=0`
@@ -153,6 +160,7 @@ const stream = run({
 	concurrency,
 	signal: stop.signal,
 	timeout: 300_000,
+	forceExit: true,
 	testNamePatterns
 });
 // An aborted run still dequeues and completes every file, so what had
@@ -191,7 +199,7 @@ out.on('end', async () => {
 	if (!notRun && !missing.length) {
 		for (const f of red.filter((f) => retry.has(f))) {
 			let passed = false;
-			const again = run({ files: [f], timeout: 300_000, testNamePatterns });
+			const again = run({ files: [f], timeout: 300_000, forceExit: true, testNamePatterns });
 			again.on('test:summary', (s) => {
 				if (s.file === undefined) passed = s.success;
 			});
