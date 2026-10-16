@@ -14,8 +14,10 @@
 //!     collected both into an array — the note `add_cmd.rs` carries (#371).
 //!     TS #2 expects `foo: "baz"`, not `["bar", "baz"]`.
 //!   * `--strategy update` and `merge` are daydumb's, not datum's rows of
-//!     the same names; every other `combineData` name is its row
-//!     (`datum_parse::combine`, da-0id4s).
+//!     the same names, and `preferNew` is `merge` by its datum name; useOld,
+//!     useNew, preferOld and append are their `combineData` rows
+//!     (`datum_parse::combine`, da-0id4s), and the other six are refused
+//!     (da-zd0vx). TS #3's `xor` is one of them.
 //!   * `update` is a SHALLOW overlay: a payload object replaces the stored
 //!     one, where datum's `update` strategy recursed into objects present on
 //!     both sides. Chosen in c4050ccc (da-gd1j, "update: shallow overlay");
@@ -142,8 +144,8 @@ fn merge_fills_declared_key_slots_from_positionals() {
 // ─── TS #3: "calls quickId and updateDoc" ─────────────────────────────────────
 
 /// Adapted: the spies become the row they stood for — the quick id resolves,
-/// and the named strategy (not the default) is what combines the payload:
-/// `xor` drops the `foo` both hold.
+/// and the named strategy (not the default) is what combines the payload.
+/// datum's `xor` is refused (da-zd0vx), so `append` stands in for it.
 #[test]
 fn the_named_strategy_combines_the_payload_into_the_resolved_row() {
     let db = fresh_db();
@@ -159,16 +161,28 @@ fn the_named_strategy_combines_the_payload_into_the_resolved_row() {
         &db,
     )
     .unwrap();
-    run_cli(
+    let err = run_cli(
         &["update", "n:input_quick", "--strategy", "xor", "foo=bar"],
         &db,
     )
+    .unwrap_err();
+    assert!(
+        format!("{err:#}").contains("invalid --strategy value: 'xor'"),
+        "{err:#}"
+    );
+    run_cli(
+        &["update", "n:input_quick", "--strategy", "append", "foo=bar"],
+        &db,
+    )
     .unwrap();
-    assert_eq!(data(&db, "n:input_quick"), json!({"o": {"a": 0}}));
+    assert_eq!(
+        data(&db, "n:input_quick"),
+        json!({"o": {"a": 0}, "foo": ["baz", "bar"]})
+    );
 }
 
-/// Every combineData name works from the CLI, the stored data as A and the
-/// payload as B (da-0id4s); the table itself is tested in datum-parse.
+/// Every combineData name kept works from the CLI, the stored data as A and
+/// the payload as B (da-0id4s); the table itself is tested in datum-parse.
 #[test]
 fn every_combine_strategy_works_from_the_cli() {
     let db = fresh_db();
@@ -177,13 +191,7 @@ fn every_combine_strategy_works_from_the_cli() {
         ("useNew", json!({"b": 2, "both": "y"})),
         ("preferOld", json!({"a": 1, "b": 2, "both": "x"})),
         ("preferNew", json!({"a": 1, "b": 2, "both": "y"})),
-        ("intersection", json!(null)),
-        ("removeConflicting", json!({"a": 1, "b": 2})),
-        ("xor", json!({"a": 1, "b": 2})),
         ("append", json!({"a": 1, "b": 2, "both": ["x", "y"]})),
-        ("prepend", json!({"a": 1, "b": 2, "both": ["y", "x"]})),
-        ("mergeSort", json!({"a": 1, "b": 2, "both": ["x", "y"]})),
-        ("appendSort", json!({"a": 1, "b": 2, "both": ["x", "y"]})),
     ]
     .into_iter()
     .enumerate()
@@ -207,8 +215,6 @@ fn a_joining_strategy_takes_each_comment_once() {
     let db = fresh_db();
     for (i, (strategy, want)) in [
         ("append", json!(["c1", "c2"])),
-        ("prepend", json!(["c2", "c1"])),
-        ("appendSort", json!(["c1", "c2"])),
         ("preferNew", json!(["c1", "c2"])),
     ]
     .into_iter()

@@ -726,7 +726,7 @@ ARGS:
   <ID_OR_SLUG>            Several ids are joined with commas (`a1b2,c3d4`): a word after a space is a VALUE
 
 OPTIONS:
-      --strategy <S>      update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|intersection|removeConflicting|xor|append|prepend|mergeSort|appendSort
+      --strategy <S>      update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|append
       --id <TEMPLATE>     New id/slug template
       --id-delimiter <S>  Delimiter between empty segments
   -k, --key <KV>          Extra key=value (repeatable)
@@ -747,7 +747,7 @@ fn snapshot_update_help() {
 #[test]
 fn merge_and_rekey_share_update_options() {
     // All three share UPDATE_FLAGS; only the header + USAGE differ.
-    let options = "OPTIONS:\n      --strategy <S>      update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|intersection|removeConflicting|xor|append|prepend|mergeSort|appendSort\n";
+    let options = "OPTIONS:\n      --strategy <S>      update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|append\n";
     assert!(
         command_help("merge").contains(options),
         "merge should render generated OPTIONS"

@@ -51,13 +51,14 @@ pub(crate) fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
     r
 }
 
-/// update, merge and rekey are daydumb's own; every other combineData name
-/// is its row of the table (datum's own `update` and `merge` are not these).
+/// update, merge and rekey are daydumb's own, and preferNew is merge by v2's
+/// name; every other name is its row of the combineData table (datum's own
+/// `update` and `merge` are not these).
 fn parse_update_strategy(v: &str) -> Result<UpdateStrategyArg> {
     use crate::combine::{Combine, STRATEGIES};
     Ok(match v.to_ascii_lowercase().as_str() {
         "update" => UpdateStrategyArg::Update,
-        "merge" => UpdateStrategyArg::Merge,
+        "merge" | "prefernew" => UpdateStrategyArg::Merge,
         "rekey" => UpdateStrategyArg::Rekey,
         _ => UpdateStrategyArg::Combine(Combine::named(v).ok_or_else(|| {
             let names = STRATEGIES

@@ -1180,8 +1180,7 @@ mod tests {
             (
                 &["update", "doc:z", "--strategy", "ignore", "foo=bar"][..],
                 "invalid --strategy value: 'ignore' (expected update|merge|rekey|useOld|useNew|\
-                 preferOld|preferNew|intersection|removeConflicting|xor|append|prepend|\
-                 mergeSort|appendSort)",
+                 preferOld|preferNew|append)",
             ),
             (
                 &["add", "doc", "--conflict", "xor", "foo=bar"][..],
@@ -1192,6 +1191,30 @@ mod tests {
             assert!(msg.ends_with(want), "{words:?} got: {msg}");
         }
         assert!(parse_argv(&argv(&["add", "doc", "--conflict", "ignore"])).is_ok());
+    }
+
+    /// da-zd0vx: preferNew is daydumb's merge by datum's name, and the six
+    /// combineData rows vividn left out are refused.
+    #[test]
+    fn prefer_new_is_merge_and_the_rows_left_out_are_refused() {
+        let strategy = |s| match parse_argv(&argv(&["update", "doc:z", "--strategy", s])) {
+            Ok(Cli {
+                command: Command::Update(a),
+                ..
+            }) => a.strategy,
+            _ => None,
+        };
+        assert_eq!(strategy("preferNew"), Some(UpdateStrategyArg::Merge));
+        for s in [
+            "intersection",
+            "removeConflicting",
+            "xor",
+            "prepend",
+            "mergeSort",
+            "appendSort",
+        ] {
+            assert_eq!(strategy(s), None, "{s}");
+        }
     }
 
     #[test]

@@ -460,7 +460,7 @@ fn apply_mutation(
     // is kept as the first element rather than replaced. A strategy that
     // joins a conflict's arrays (append, merge, …) does that itself.
     let joins = matches!(mode, ExtraMergeMode::Combine(c)
-        if !matches!(c.conflict, Conflict::A | Conflict::B | Conflict::Drop));
+        if matches!(c.conflict, Conflict::Merge | Conflict::Append));
     if let (false, Some(old), Some(JsonValue::Array(new))) = (
         joins,
         existing.data.as_ref().and_then(|d| d.get("comment")),
@@ -1611,11 +1611,8 @@ mod tests {
         let run = |e: Option<&JsonValue>, p: Option<&JsonValue>, how| {
             combine_extra(e.cloned(), p.cloned(), ExtraMergeMode::Combine(how)).unwrap()
         };
-        let intersection = Combine::named("intersection").unwrap();
         assert_eq!(run(None, Some(&b), Combine::USE_A), None);
-        assert_eq!(run(None, Some(&b), intersection), None);
         assert_eq!(run(Some(&a), None, Combine::USE_B), None);
-        assert_eq!(run(Some(&a), None, intersection), None);
         // daydumb's merge keeps whichever side there is.
         assert_eq!(run(None, Some(&b), Combine::PREFER_B), Some(b.clone()));
         assert_eq!(run(Some(&a), None, Combine::PREFER_B), Some(a.clone()));
