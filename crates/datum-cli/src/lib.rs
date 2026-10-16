@@ -198,7 +198,7 @@ fn reads(command: &Command) -> bool {
                 | Command::Dayview(_)
                 | Command::Nowview(_)
                 | Command::View(_)
-                | Command::Kit(KitCommand::List | KitCommand::Export(_))
+                | Command::Kit(KitCommand::List | KitCommand::Export(_) | KitCommand::Show { .. })
                 | Command::Db(DbCommand::Backup(_))
                 | Command::Spec(SpecCommand::List { .. } | SpecCommand::Show { .. })
                 | Command::Alias(AliasCommand::List { .. } | AliasCommand::Show { .. })

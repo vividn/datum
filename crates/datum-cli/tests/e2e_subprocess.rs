@@ -286,6 +286,7 @@ fn subprocess_read_of_a_missing_db_errors_and_a_write_creates_it() {
         &["sync", "status"],
         &["alias", "list"],
         &["alias", "show", "vbp"],
+        &["kit", "show", "sleep"],
     ] {
         let out = env.run(read);
         assert!(!out.status.success(), "{read:?} on a missing db succeeded");
