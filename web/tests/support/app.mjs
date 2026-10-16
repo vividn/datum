@@ -822,11 +822,12 @@ function app(page, errors, query, clean, internal) {
 		 * What a test LOGGED, newest first: the CLI's `db backup -` rows
 		 * without the TRACK documents that declare each field on its first
 		 * use (da-c8mh), the spec entry that first use writes (da-lc26c),
-		 * or an alias entry (da-b3752).
+		 * or an alias entry (da-b3752). Of the database `db` when it is
+		 * named, the page's own otherwise.
 		 * `allEntries` keeps those.
 		 */
-		entries: async (limit = 50) =>
-			(await page.evaluate((n) => window.datum.entries(n), Math.max(limit * 3, 50)))
+		entries: async (limit = 50, db) =>
+			(await page.evaluate(([n, d]) => window.datum.entries(n, d), [Math.max(limit * 3, 50), db]))
 				.filter((row) => row.extra_metadata?.track === undefined && !['spec', 'alias'].includes(row.field))
 				.slice(0, limit),
 

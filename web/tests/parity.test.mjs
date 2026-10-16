@@ -25,7 +25,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { comparable, fromBackupRow } from './support/semantics.mjs';
 
 const fixture = JSON.parse(
@@ -35,6 +35,20 @@ const fixture = JSON.parse(
 before(startApp);
 after(stopApp);
 
+// On the repl layout, not the day page. A case here asks the seam one
+// question and reads the row back; it never looks at the screen. Opening
+// the day frame for it draws a fortnight of dayview bands first — 1.2 s a
+// case, and there are two dozen (da-x6ea).
+//
+// ONE app for the file, and a DATABASE of its own for each case (da-8c2uc):
+// a context each cost 2.5 s a case, and the isolation these need is one
+// argv, one entry — which a database gives. A case's setup writes nothing
+// outside it: an alias and a spec are entries in the database they were set
+// in, and the config a command writes (the database registry, the client
+// id) no case reads. The clock stays where the app opened: nothing here
+// moves it.
+const shared = sharedApp({ query: 'repl' });
+
 describe('the same argv stores the same entry as the CLI', () => {
 	test('the fixture has been captured from a real binary', () => {
 		assert.ok(fixture.cases.length > 0);
@@ -42,38 +56,36 @@ describe('the same argv stores the same entry as the CLI', () => {
 		for (const testCase of fixture.cases) assert.ok(testCase.cli, `no capture for ${testCase.argv}`);
 	});
 
-	for (const testCase of fixture.cases) {
+	fixture.cases.forEach((testCase, n) => {
 		const name = 'datum ' + testCase.argv.join(' ');
 		test(name, { todo: testCase.divergence ?? undefined }, async () => {
-			// On the repl layout, not the day page. A case here asks the seam
-			// one question and reads the row back; it never looks at the
-			// screen. Opening the day frame for it draws a fortnight of
-			// dayview bands first — 1.2 s a case, and there are two dozen
-			// (da-x6ea). A context each is still a database each, which is
-			// the isolation these need: one argv, one entry.
-			await withApp(async ({ run, entries }) => {
-				// A case's `setup` runs through the same seam the case does,
-				// so the world the browser logs into is one the browser built
-				// — `alias set` in the REPL, not a row written behind it.
-				for (const argv of testCase.setup ?? []) {
-					const prepared = await run(argv);
-					assert.equal(prepared.code, 0, `setup \`datum ${argv.join(' ')}\`: ${prepared.stderr}`);
-				}
-				const result = await run(testCase.argv);
-				assert.equal(
-					result.code === 0,
-					testCase.cli.code === 0,
-					`the CLI exited ${testCase.cli.code}, the browser ${result.code}: ${result.stderr}`
-				);
-				if (testCase.cli.code !== 0) return;
+			const { run, entries } = await shared();
+			const database = `parity-${n}`;
+			const db = ['--db', database];
+			// A case's `setup` runs through the same seam the case does,
+			// so the world the browser logs into is one the browser built
+			// — `alias set` in the REPL, not a row written behind it.
+			for (const argv of testCase.setup ?? []) {
+				const prepared = await run([...db, ...argv]);
+				assert.equal(prepared.code, 0, `setup \`datum ${argv.join(' ')}\`: ${prepared.stderr}`);
+			}
+			const result = await run([...db, ...testCase.argv]);
+			assert.equal(
+				result.code === 0,
+				testCase.cli.code === 0,
+				`the CLI exited ${testCase.cli.code}, the browser ${result.code}: ${result.stderr}`
+			);
+			if (testCase.cli.code !== 0) return;
 
-				// `entries` drops the TRACK document a field's first log
-				// declares it with (da-c8mh): the same row on both sides,
-				// and this case is about what its own argv stores.
-				const stored = await entries();
-				assert.equal(stored.length, 1, 'expected exactly one entry');
-				assert.deepEqual(comparable(fromBackupRow(stored[0]), testCase.time), testCase.cli.entry);
-			}, { query: 'repl' });
+			// `entries` drops the TRACK document a field's first log
+			// declares it with (da-c8mh): the same row on both sides, and
+			// this case is about what its own argv stores.
+			const stored = await entries(50, database);
+			assert.equal(stored.length, 1, 'expected exactly one entry');
+			// The raw input is the argv as typed, and the native CLI keeps a
+			// `--db` in it too: what the browser ran had one more flag.
+			const expected = { ...testCase.cli.entry, rawInput: `${db.join(' ')} ${testCase.cli.entry.rawInput}` };
+			assert.deepEqual(comparable(fromBackupRow(stored[0]), testCase.time), expected);
 		});
-	}
+	});
 });

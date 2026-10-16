@@ -54,8 +54,8 @@ export interface DatumConsole {
 	runQuietLine(line: string): Promise<RunResult>;
 	/** Swap the active runner; returns the one replaced. */
 	setRunner(next: CommandRunner): CommandRunner | null;
-	/** The most recent entries as the CLI stores them, newest first. */
-	entries(limit?: number): Promise<StoredEntry[]>;
+	/** The most recent entries as the CLI stores them, newest first — of `db` when named. */
+	entries(limit?: number, db?: string): Promise<StoredEntry[]>;
 	/** `datum tail --json`: the rows and the painted columns the tail pane lays out. */
 	tailRows(): Promise<{ rows: TailRow[]; columns: TailColumn[] }>;
 	/** The layout store: the person's own in `_internal` and a kit's in the data db (da-gg0v). */

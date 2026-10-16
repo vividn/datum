@@ -9,9 +9,9 @@
 import { backupArgv } from './calls.js';
 import { cliError, run } from './run.js';
 
-/** The backup document, as the CLI wrote it. Rejects on a failed command. */
-export async function backup(): Promise<string> {
-	const result = await run(backupArgv());
+/** The backup document, as the CLI wrote it — of `db` when named. Rejects on a failed command. */
+export async function backup(db?: string): Promise<string> {
+	const result = await run(db ? ['--db', db, ...backupArgv()] : backupArgv());
 	if (result.code !== 0) throw cliError(result.stderr, `db backup exited ${result.code}`);
 	return result.stdout;
 }
@@ -30,9 +30,9 @@ export interface StoredEntry {
 	[key: string]: unknown;
 }
 
-/** The backup's entries, newest first by occur time, at most `limit` of them. */
-export async function storedEntries(limit = 50): Promise<StoredEntry[]> {
-	const [, ...lines] = (await backup()).split('\n').filter(Boolean);
+/** The backup's entries, newest first by occur time, at most `limit` of them — of `db` when named. */
+export async function storedEntries(limit = 50, db?: string): Promise<StoredEntry[]> {
+	const [, ...lines] = (await backup(db)).split('\n').filter(Boolean);
 	// A timeless entry has no occur time and sorts last, as SQLite's NULL does.
 	const at = (e: StoredEntry) => (e.occur_time ? Date.parse(e.occur_time.utc) : -Infinity);
 	return lines
