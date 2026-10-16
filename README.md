@@ -272,6 +272,8 @@ Time flags at the call site compose with the ones the alias bound: `-q` and a re
 
 After a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.
 
+After an alias's slots are filled, a word naming a command runs that command on the alias's field: a log verb logs (`bed end`, with `bed` = `start sleep`, ends sleep), and any other takes the field as its first word, with the state the alias names as its filter where it takes one (`outside tail`, with `outside` = `switch environment outside`, is `tail environment:outside`) and ignoring its other data. An alias of several fields passes them all. Slots fill first, so a state wins over a command: `envi tail`, with `envi` = `switch environment`, switches to «tail», and `envi . tail` is `tail environment`. `.` takes a slot's default (a switch's state is true, a start's duration none, a key its default or nothing, a required key refuses it), and `...` is a `.` for every slot left: `practice ... tail` is `tail session` when `practice` = `occur session -k skill -k dur`.
+
 #### Usage
 
 ```

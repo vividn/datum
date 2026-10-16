@@ -33,7 +33,7 @@
 use std::sync::OnceLock;
 
 use crate::error::{ParseError, Result};
-use crate::help::commands::GLOBAL_FLAGS;
+use crate::help::commands::{find_command, GLOBAL_FLAGS};
 use crate::input::data_args::COMMAND_CHANGES;
 use crate::input::flag_registry::ValueMode;
 use crate::parse::log::log_args_registry;
@@ -526,6 +526,8 @@ fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
 /// Classified region content.
 struct RegionContent {
     positionals: Vec<String>,
+    /// Where each positional stands in the region's tokens.
+    positional_at: Vec<usize>,
     /// Flag groups (flag + its value when it takes one) to blanket.
     flags: Vec<String>,
     /// `key=value` tokens to blanket (also satisfy matching key slots).
@@ -537,6 +539,7 @@ struct RegionContent {
 /// positional, even dash-prefixed — spec rule 4).
 fn classify_region(tokens: &[String]) -> RegionContent {
     let mut positionals: Vec<String> = Vec::new();
+    let mut positional_at: Vec<usize> = Vec::new();
     let mut flags: Vec<String> = Vec::new();
     let mut kv: Vec<String> = Vec::new();
     let mut no_more_flags = false;
@@ -562,11 +565,13 @@ fn classify_region(tokens: &[String]) -> RegionContent {
             kv.push(tok.clone());
         } else {
             positionals.push(tok.clone());
+            positional_at.push(i);
         }
         i += 1;
     }
     RegionContent {
         positionals,
+        positional_at,
         flags,
         kv,
     }
@@ -600,13 +605,39 @@ enum Fill {
         sides: Vec<usize>,
         tokens: Vec<String>,
     },
+    /// A command other than a log verb past the slots (`outside tail`):
+    /// the region's words from its `at`th positional on are that command,
+    /// which runs on the scope's fields (da-90pv8).
+    Command {
+        at: usize,
+    },
+}
+
+/// [`walk_slots`], and `...`: a `.` for every slot left, so a long alias
+/// reaches the command after it (`practice ... tail`, da-90pv8).
+fn walk_region(
+    positionals: Vec<String>,
+    slots: &mut [Slot],
+    scope: std::ops::RangeInclusive<usize>,
+) -> Result<Vec<Fill>> {
+    let Some(p) = positionals.iter().position(|t| t == "...") else {
+        return walk_slots(positionals, slots, scope);
+    };
+    let open = slots.iter().filter(|s| !s.all_satisfied()).count();
+    let mut queue = positionals[..p].to_vec();
+    queue.resize(open.max(p), ".".to_string());
+    let fills = walk_slots(queue, slots, scope.clone())?;
+    if p + 1 == positionals.len() {
+        return Ok(fills);
+    }
+    trailing(fills, &positionals, p + 1, scope)
 }
 
 /// Walk one region's positionals across the prefix's unified slots.
 /// Implements reservation (rule 7), greedy sharing / first-wins (rule
 /// 8), `.` skips, and the excess rules (rule 9). Returns the fills and
 /// marks consumed slots satisfied in `slots`.
-fn walk_region(
+fn walk_slots(
     positionals: Vec<String>,
     slots: &mut [Slot],
     scope: std::ops::RangeInclusive<usize>,
@@ -739,8 +770,8 @@ fn walk_region(
             continue;
         }
         let value = queue[qi].clone();
-        if matches!(slot.kind, SlotKind::Dur) && COMMAND_CHANGES.contains(&value.as_str()) {
-            break; // a trailing verb: the side reads it (v2's changeDatumCommand)
+        if matches!(slot.kind, SlotKind::Dur) && find_command(&value).is_some() {
+            break; // a trailing command, as v2's changeDatumCommand
         }
         qi += 1;
         let open = slot.open_sides();
@@ -752,19 +783,95 @@ fn walk_region(
         push_fill(&mut fills, &slot.kind, open, unesc(&value));
     }
     if qi < queue.len() {
-        // `bed end 30m` (`bed` → `start sleep`): the command and the words
-        // after it go to the sides as typed, whose data parser changes the
-        // command and reads the rest as the new command's.
-        if COMMAND_CHANGES.contains(&queue[qi].as_str()) {
-            fills.push(Fill::Window {
-                sides: scope.collect(),
-                tokens: queue.split_off(qi),
-            });
-            return Ok(fills);
-        }
+        return trailing(fills, &queue, qi, scope);
+    }
+    Ok(fills)
+}
+
+/// The words past the slots, from `queue[qi]`. A log verb goes to the
+/// sides as typed, whose data parser changes the command and reads the
+/// rest as the new command's (`bed end 30m`, `bed` → `start sleep`); any
+/// other command runs on the sides' fields (`outside tail`); any other
+/// word is extra data.
+fn trailing(
+    mut fills: Vec<Fill>,
+    queue: &[String],
+    qi: usize,
+    scope: std::ops::RangeInclusive<usize>,
+) -> Result<Vec<Fill>> {
+    if COMMAND_CHANGES.contains(&queue[qi].as_str()) {
+        fills.push(Fill::Window {
+            sides: scope.collect(),
+            tokens: queue[qi..].to_vec(),
+        });
+    } else if find_command(&queue[qi]).is_some() {
+        fills.push(Fill::Command { at: qi });
+    } else {
         return Err(ParseError::ExtraData(queue[qi..].to_vec()));
     }
     Ok(fills)
+}
+
+/// The commands that read a state after their field (`tail F:S`).
+const STATE_FILTERED: &[&str] = &["tail", "head", "stats"];
+
+/// The trailing command `tokens` run on the fields of `sides` (da-90pv8):
+/// `outside tail` (`outside` → `switch environment outside`) is `tail
+/// environment:outside`, the state a filter where the command takes one
+/// and the alias has one side: `F:S` filters one field, so `oov tail`
+/// (`switch environment outside , occur body`) is `tail environment,body`,
+/// with no state. The sides' other data it ignores; whether the command
+/// takes several fields, or any, is the command's to say.
+fn command_side(sides: &[Vec<String>], tokens: Vec<String>) -> Vec<String> {
+    let read: Vec<(Option<&String>, Option<String>)> =
+        sides.iter().map(|s| field_and_state(s)).collect();
+    let mut fields: Vec<&str> = Vec::new();
+    for f in read.iter().filter_map(|(f, _)| *f) {
+        if !fields.contains(&f.as_str()) {
+            fields.push(f);
+        }
+    }
+    let mut target = fields.join(",");
+    if let [(Some(_), Some(state))] = read.as_slice() {
+        if STATE_FILTERED.contains(&tokens[0].as_str()) {
+            target = format!("{target}:{state}");
+        }
+    }
+    let mut side = tokens;
+    if !target.is_empty() {
+        side.insert(1, target);
+    }
+    side
+}
+
+/// A log side's field, and the state it names: a switch's positional (an
+/// `-I` switch's words), or `state=`. A `.` names none.
+fn field_and_state(side: &[String]) -> (Option<&String>, Option<String>) {
+    let (mut bare, mut state_kv, mut join, mut dd) = (Vec::new(), None, false, false);
+    let mut it = side.iter().skip(1);
+    while let Some(t) = it.next() {
+        if !dd && t == "--" {
+            dd = true;
+        } else if !dd && is_flag(t) {
+            join |= t == "-I" || t == "--string-state";
+            if is_value_flag(t) {
+                it.next();
+            }
+        } else if let Some(v) = t.strip_prefix("state=") {
+            state_kv = Some(v.to_string());
+        } else if !t.contains('=') {
+            bare.push(t);
+        }
+    }
+    let field = bare.first().copied();
+    let named = bare.iter().skip(1).map(|t| t.as_str());
+    let state = match side.first().map(String::as_str) {
+        Some("switch") if join => Some(named.filter(|t| *t != ".").collect::<Vec<_>>().join(" ")),
+        Some("switch") => named.take(1).next().map(str::to_string),
+        _ => None,
+    };
+    let state = state.filter(|s| !s.is_empty()).or(state_kv);
+    (field, state.filter(|s| s != "."))
 }
 
 /// A `.` skip is passed on for a state or key slot, which the side's
@@ -828,9 +935,18 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
     let mut key_skips: Vec<Vec<String>> = vec![Vec::new(); n];
     let mut dur_fills: Vec<Vec<String>> = vec![Vec::new(); n];
     let mut window_fills: Vec<Vec<String>> = vec![Vec::new(); n];
+    // A trailing command, its scope's sides and its words; a later region
+    // over that scope adds its words to the command's.
+    let mut command: Option<(usize, usize, Vec<String>)> = None;
 
     for region in &regions {
         let (lo, hi) = (region.start_side, region.end_side);
+        if let Some((clo, chi, words)) = command.as_mut() {
+            if lo <= *clo && *chi <= hi {
+                words.extend(region.tokens.iter().cloned());
+                continue;
+            }
+        }
         let content = classify_region(&region.tokens);
         // Blanket flags + k=v to every side in scope.
         for s in lo..=hi {
@@ -891,6 +1007,10 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
                         window_fills[s].extend(tokens.iter().cloned());
                     }
                 }
+                Fill::Command { at } => {
+                    let words = region.tokens[content.positional_at[at]..].to_vec();
+                    command = Some((lo, hi, words));
+                }
             }
         }
         // A region's flags and k=v are its sides' own from here on: a
@@ -944,6 +1064,10 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
         side.extend(dur_fills[i].iter().cloned());
         side.extend(window_fills[i].iter().cloned());
         out.push(side);
+    }
+    if let Some((lo, hi, words)) = command {
+        let side = command_side(&out[lo..=hi], words);
+        out.splice(lo..=hi, [side]);
     }
     Ok(out)
 }

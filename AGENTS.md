@@ -212,6 +212,15 @@ Native only: the browser's database is one process's at a time.
   remainder keeps the word as text (`datum note jot the end of it`).
   `handle_log_data_args` in `datum-parse`'s `input/data_args`, the alias
   walk in `alias/regions.rs`, and `change_command` in `log_core.rs` (da-z5vek)
+- Trailing commands: after an alias, any other command in the same place
+  runs on the alias's fields, its state the filter where the command takes
+  one, the rest of its data ignored (`command_side` in `alias/regions.rs`,
+  da-90pv8). Slots fill first, so a state wins: with `envi` → `switch
+  environment` and `outside` → `envi outside`, `datum envi tail` switches to
+  «tail», `datum outside tail` is `tail environment:outside`, `datum envi .
+  tail` is `tail environment`. `.` takes a slot's default (a switch's state
+  true, a start's dur none), and `...` is a `.` for every slot left
+  (`datum practice ... tail`). `datum help alias` says it.
 
 ### Alias system (built-in, not shell aliases)
 Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
