@@ -103,7 +103,7 @@ describe('a WebDAV destination', () => {
 				await sheet.locator('[data-found]').waitFor();
 				assert.match(
 					await sheet.locator('[data-found]').innerText(),
-					/^1 backup of datum from Chrome on \w+ found, newest 0 s ago Add plan keeps this device's own beside them\.$/
+					/^1 backup of datum from Chrome on \w+ \(this device, earlier\?\) found, newest 0 s ago Add plan keeps this device's own beside them\.$/
 				);
 				assert.deepEqual(other.errors, []);
 			});

@@ -171,7 +171,7 @@ describe('an S3-compatible destination', () => {
 				await sheetB.locator('[data-found]').waitFor();
 				assert.match(
 					await sheetB.locator('[data-found]').innerText(),
-					/^1 backup of datum from Chrome on \w+ found, newest 2 h ago Add plan keeps this device's own beside them\.$/
+					/^1 backup of datum from Chrome on \w+ \(this device, earlier\?\) found, newest 2 h ago Add plan keeps this device's own beside them\.$/
 				);
 				await sheetB.locator('button[data-backup="add"]').click();
 				await held.reached;

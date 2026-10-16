@@ -163,6 +163,40 @@ describe('«Backups»', () => {
 		}, DEBUG);
 	});
 
+	// da-r6hsj: a device whose client id changed (cleared site data, a fresh
+	// install) leaves its earlier folder under its own label, which listed as
+	// another device's with the same name.
+	test('another folder under this device’s label says it may be this device, earlier; one under another label does not', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
+			const sheet = await openSheet(page);
+			const plan = await addPlan(sheet, 'hourly', 'b6');
+			await plan.locator('li[data-slot="0"]').waitFor();
+			// This device's folder, copied as two others': its own label, and another's.
+			const label = await page.evaluate(async () => {
+				const bucket = window.datum.backupKinds.memory.open({ bucket: 'b6' });
+				const at = `client-${localStorage.getItem('datum-client-id')}/`;
+				const index = JSON.parse(new TextDecoder().decode(await bucket.get(`${at}index.json`)));
+				const file = index.dbs.DEBUG.backups[0].file;
+				for (const [folder, label] of [['client-earlier/', index.label], ['client-other/', 'Firefox on macOS']]) {
+					await bucket.put(folder + file, await bucket.get(at + file));
+					await bucket.put(`${folder}index.json`, new TextEncoder().encode(JSON.stringify({ ...index, label })));
+				}
+				return index.label;
+			});
+			await inMemory(sheet, 'b6');
+			await sheet.getByRole('button', { name: 'Look for backups there', exact: true }).click();
+			await sheet.locator('[data-found]').waitFor();
+			assert.equal(
+				await sheet.locator('[data-found]').innerText(),
+				`1 backup of DEBUG found, newest 0 s ago; 1 backup of DEBUG from ${label} (this device, earlier?) found, newest 0 s ago; ` +
+					'1 backup of DEBUG from Firefox on macOS found, newest 0 s ago Add plan continues that rotation.'
+			);
+			assert.deepEqual(app.errors, []);
+		}, DEBUG);
+	});
+
 	// da-5okjx: a run removed the backup it replaced on the destination's
 	// yes alone, so a put cut short lost the good backup with the bad.
 	test('a slot that arrives short fails the run and keeps the backup it would replace; a whole one replaces it', async () => {

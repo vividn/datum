@@ -301,7 +301,10 @@ async function inFolder(dest: Destination, folder: string): Promise<Backup[]> {
 	const index = await dest.get(folder + 'index.json');
 	if (!index) return [];
 	const label = (JSON.parse(new TextDecoder().decode(index)) as { label?: string }).label;
-	const owner = folder === mine() ? 'this device' : folder ? (label ?? folder.slice(0, -1)) : 'before devices had folders';
+	// A folder under this device's label may be its own from before its client
+	// id changed (cleared site data, a fresh install), or a twin's: say both (da-r6hsj).
+	const named = label === deviceLabel() ? `${label} (this device, earlier?)` : label;
+	const owner = folder === mine() ? 'this device' : folder ? (named ?? folder.slice(0, -1)) : 'before devices had folders';
 	const { backups } = await json<{ backups: Listed[] }>(backupListArgv(), { 'index.json': index });
 	return backups.map((b) => ({ ...b, folder, owner, mine: folder === mine() }));
 }
