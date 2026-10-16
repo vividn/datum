@@ -1286,7 +1286,13 @@ const GHOST_MS = 1000;
  * feature (da-wjz42). A loaded CI runner took 1032ms once (da-d7ndh): that
  * is the runner, not the bar, so a press that slow is pressed again with a
  * fresh pill — at a time of its own, so no two presses write one entry —
- * and three of them fail, with every timing.
+ * and five of them fail, with every timing.
+ *
+ * Each press waits for nothing to be in flight (da-8ep3q): a press lands
+ * after the write's own bar reads, and one pressed at once after the last
+ * landed queued its write behind that landing's pane refreshes — 2 to 8 of
+ * them in flight at every retry, measured — so on a loaded runner every
+ * retry ran slow for the press before it (1028, 1066, 1151ms).
  *
  * Answers the bar's live and spent pill counts read in the landing's own
  * evaluation, since a press landing just under GHOST_MS leaves the spent
@@ -1295,9 +1301,11 @@ const GHOST_MS = 1000;
 const pressLanded = async (app) => {
 	const { page } = app;
 	const took = [];
-	while (took.length < 3) {
+	while (took.length < 5) {
 		await setPill(page, { text: `-t 14:3${took.length}` });
 		await page.locator(`${BAR} .pill`).waitFor();
+		await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+		await app.idle();
 		await page.evaluate(() => (window.__pressedAt = performance.now()));
 		await app.pressWidget('coffee');
 		const landed = await page
