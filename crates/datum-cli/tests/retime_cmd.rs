@@ -364,10 +364,14 @@ fn retime_bulk_filter_matching_nothing_errors() {
 #[test]
 fn retime_lone_unsigned_number_not_found_hints_signed_shift() {
     let db = fresh_db();
-    entry_builder("coffee")
+    // A fixed hid: a random one begins with `30` one run in 1296, and then
+    // `retime 30` finds it by prefix (da-jd7vp).
+    let mut e = entry_builder("coffee")
         .time_start_utc(utc("2024-01-01T08:00:00Z"))
         .state(json!(1))
-        .insert(&db);
+        .build();
+    e.hid = datum_core::ids::Hid("a00000000000".into());
+    db.insert_entry(&e).unwrap();
 
     let msg = run_cli(&["retime", "30"], &db).unwrap_err().to_string();
     assert!(msg.contains("Entry not found: 30"), "{msg}");
