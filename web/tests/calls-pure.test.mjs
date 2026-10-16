@@ -188,20 +188,24 @@ const SAMPLES = {
 		[{ field: 'work', shape: { kind: 'state' }, current: false }],
 		[{ field: 'mood', shape: { kind: 'switch' } }, 'happy']
 	],
-	trackArgv: [
-		['tea', 'occur'],
+	declareArgv: [
+		['tea', { verb: 'occur', color: '', description: '', states: [] }],
 		[
 			'tea',
-			'switch',
-			[{ name: 'hot', color: '#ff0000' }],
-			'#00ff00',
-			[
-				{ name: 'cups', kind: 'default', value: '1' },
-				{ name: 'brand', kind: 'required', value: '' },
-				{ name: 'note', kind: 'optional', value: '' },
-				{ name: 'size', kind: 'assign', value: 'big' },
-				{ name: 'words', kind: 'optional', value: '', rest: 'SR' }
-			]
+			{
+				verb: 'switch',
+				color: '#00ff00',
+				description: '',
+				states: [{ name: 'hot', color: '#ff0000', description: '' }],
+				keys: [
+					{ name: 'cups', kind: 'default', value: '1', value_type: 'number', in_slug: false },
+					{ name: 'brand', kind: 'required', value: '', value_type: 'any', in_slug: true },
+					{ name: 'note', kind: 'optional', value: '', value_type: 'any', in_slug: false },
+					{ name: 'size', kind: 'assign', value: 'big', value_type: 'any', in_slug: false },
+					{ name: 'words', kind: 'optional', value: '', value_type: 'any', in_slug: false, rest: 'SR' }
+				]
+			},
+			true
 		]
 	],
 	specArgv: [[{ field: 'coffee', verb: 'occur', color: '#123456', description: 'beans', allowed_states: null, state_colors: {} }]],

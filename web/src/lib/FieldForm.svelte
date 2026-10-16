@@ -405,7 +405,7 @@
 					{/if}
 				</div>
 			{/if}
-			<!-- A new field's states are a switch's, asked under its kind as well: `track` carries them for no other verb. -->
+			<!-- A new field's states are a switch's, asked under its kind as well: its Save sends them for no other verb. -->
 			{#if !spec && verb === 'switch' && tab === 'basics'}<span class="label late">states</span>{/if}
 			{#if tab === 'states' || (!spec && verb === 'switch' && tab === 'basics')}
 				<ul class="states" class:glyphed={tab === 'states'} class:late={tab === 'basics'}>

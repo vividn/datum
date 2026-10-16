@@ -29,7 +29,7 @@ import type { Spec } from './track.js';
 export { bandArgv, geometryArgv, nowviewSpec } from './panes.js';
 export { statsArgv } from './stats.js';
 export { pressArgv } from './fields.js';
-export { specArgv, trackArgv } from './track.js';
+export { declareArgv, specArgv } from './track.js';
 export { resolveArgv } from './conflicts.js';
 
 // ---- the fields bar, the strip, the panes --------------------------------------

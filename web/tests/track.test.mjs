@@ -21,7 +21,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
-	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
+	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, specKeys, stateRows, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
 import { FIELD_FORM as MODAL, cancelField, declared, openField } from './support/field.mjs';
@@ -67,24 +67,30 @@ async function addStates(page, names) {
 }
 
 describe('the argv it composes', () => {
-	test('`track`: declaring a field is an event in the log', () => {
-		assert.deepEqual(trackArgv('coffee', 'occur'), ['track', 'coffee', '--verb', 'occur']);
-		assert.deepEqual(trackArgv('sleep', 'start'), ['track', 'sleep', '--verb', 'start']);
+	/** What `declareArgv` sends for a new field: the spec it carries, and the flags around it. */
+	const declaring = (field, edit, ignore) => {
+		const argv = declareArgv(field, { color: '', description: '', states: [], ...edit }, ignore);
+		return { around: [...argv.slice(0, 3), ...argv.slice(4)], spec: JSON.parse(argv[3]) };
+	};
+
+	// da-2pbvd: a new field's Save is ONE command, which one Undo takes back
+	// whole: the spec and the TRACK (or IGNORED) row in one transaction.
+	test('declaring a field is one `setup F --from-json` with `--track`, or `--ignore`', () => {
+		assert.deepEqual(declaring('coffee', { verb: 'occur' }), {
+			around: ['setup', 'coffee', '--from-json', '--track'],
+			spec: { field: 'coffee', verb: 'occur', color: null, description: null, allowed_states: null, state_colors: {} }
+		});
+		assert.deepEqual(declaring('sleep', { verb: 'start' }, true).around, ['setup', 'sleep', '--from-json', '--ignore']);
 	});
 
 	const row = (name, color = '', description = '', glyph = '') => ({ name, color, description, glyph });
 
-	test('a switch carries its states, an `--add-state` each and a painted one a `--state-color`; a colour is optional', () => {
-		assert.deepEqual(trackArgv('mood', 'switch', [row('good', '#00ff00'), row(' bad '), row('  ')]), [
-			'track', 'mood', '--verb', 'switch', '--add-state', 'good', '--add-state', 'bad', '--state-color', 'good=#00ff00'
-		]);
-		assert.deepEqual(trackArgv('coffee', 'occur', [], '#ffa500').slice(-2), ['--color', '#ffa500']);
-		// The states belong to `switch` alone: a point with one added and
-		// then changed away would otherwise smuggle it out.
-		assert.deepEqual(trackArgv('coffee', 'occur', [row('good')]), ['track', 'coffee', '--verb', 'occur']);
+	test('a switch carries its states, a painted one its colour; a blank state is dropped, a colour optional', () => {
+		const { spec } = declaring('mood', { verb: 'switch', color: '#ffa500', states: [row('good', '#00ff00'), row(' bad '), row('  ')] });
+		assert.deepEqual([spec.color, spec.allowed_states, spec.state_colors], ['#ffa500', ['good', 'bad'], { good: '#00ff00' }]);
 	});
 
-	// da-5j4rn: the same rule for the one command a new field's Save sends.
+	// da-5j4rn: a new field's states are a switch's alone.
 	test('a new field\'s `spec F --track` carries its states on a switch alone', () => {
 		const edit = (verb) => ({ verb, color: '', description: '', states: [row('good', '#00ff00')] });
 		const sent = (verb) => JSON.parse(declareArgv('coffee', edit(verb))[3]);
@@ -98,10 +104,10 @@ describe('the argv it composes', () => {
 		}
 	});
 
-	// da-h119q: a field's keys are declared in the same `track`.
-	// da-p3hxn: the four kinds, as `track` spells them — slots, in the
-	// form's order (da-uipyt), as subfields would not be: they bind by name.
-	test('keys ride on the `track` as slots: `-k K`, `-k K=`, a default after `=`, `-K` in the slug, an assign as `--assign KEY=VALUE`, a blank name dropped', () => {
+	// da-h119q, da-p3hxn: a field's keys are declared in the same command,
+	// as slots in the form's order (da-uipyt) — they bind by position, as
+	// subfields would not — `-K` ones in the slug, an assign in its map.
+	test('keys ride on the declaration as slots: `K`, `K=`, a default after `=`, in the slug or not, an assign in its map, a blank name dropped', () => {
 		const key = (name, kind, value = '', in_slug = false) => ({ name, kind, value, value_type: 'any', in_slug });
 		const keys = [
 			key('id', 'required', '', true),
@@ -111,9 +117,8 @@ describe('the argv it composes', () => {
 			key('brand', 'assign', 'acme'),
 			key(' ', 'required')
 		];
-		assert.deepEqual(trackArgv('coffee', 'occur', [], '', keys), [
-			'track', 'coffee', '--verb', 'occur', '-K', 'id', '-k', 'cups', '-k', 'size=', '-k', 'temp=hot', '--assign', 'brand=acme'
-		]);
+		const { spec } = declaring('coffee', { verb: 'occur', keys });
+		assert.deepEqual([spec.id_keys, spec.data_keys, spec.assign], [['id'], ['cups', 'size=', 'temp=hot'], { brand: 'acme' }]);
 	});
 
 	// da-ci85o: an edited spec is saved WHOLE, in one `setup F` — the
@@ -265,15 +270,19 @@ describe('the argv it composes', () => {
 		assert.equal(set.icon, '<svg viewBox="0 0 1 1"/>');
 	});
 
-	// da-fu29p: where a line's leftover words go rides on the `track` too.
+	// da-fu29p: where a line's leftover words go rides on the declaration too.
 	// da-zqnt3: it is a mode of one row — `-R`, `-SR` or `-C` — saved as
 	// the spec's remainder, and carried when the keys are not edited.
-	test('the row that takes the rest of the line is `-R`, `-SR` or `-C` on the track, and the remainder on an edit', () => {
+	test('the row that takes the rest of the line is `-R`, `-SR` or `-C`, saved as the remainder on a declaration and an edit', () => {
 		const key = (name, rest) => ({ name, kind: 'optional', value: '', value_type: 'any', in_slug: false, ...(rest && { rest }) });
-		assert.deepEqual(trackArgv('emotion', 'occur', [], '', [key(' emotions ', 'R')]).slice(-2), ['-R', 'emotions']);
-		assert.deepEqual(trackArgv('jot', 'occur', [], '', [key('words', 'SR'), key('n')]).slice(-4), ['-k', 'n=', '-SR', 'words']);
-		assert.deepEqual(trackArgv('tea', 'occur', [], '', [key('', 'C')]).slice(-1), ['-C']);
-		assert.deepEqual(trackArgv('emotion', 'occur', [], '', [key(' ', 'R')]), ['track', 'emotion', '--verb', 'occur']);
+		const rest = (keys) => {
+			const { spec } = declaring('f', { verb: 'occur', keys });
+			return [spec.data_keys, spec.remainder, spec.string_remainder, spec.comment_remainder];
+		};
+		assert.deepEqual(rest([key(' emotions ', 'R')]), [[], 'emotions', undefined, undefined]);
+		assert.deepEqual(rest([key('words', 'SR'), key('n')]), [['n='], 'words', true, undefined]);
+		assert.deepEqual(rest([key('', 'C')]), [[], undefined, undefined, true]);
+		assert.deepEqual(rest([key(' ', 'R')]), [[], undefined, undefined, undefined], 'a row with no name takes nothing');
 		const spec = { field: 'emotion', verb: 'occur', color: null, description: null, allowed_states: null, state_colors: {}, remainder: 'emotions' };
 		const edit = { verb: 'occur', color: '', description: '', states: [] };
 		assert.deepEqual(keyRows(spec), [key('emotions', 'R')]);
@@ -333,7 +342,7 @@ describe('in the app', () => {
 	// read back: the web's table has to BE those four glyphs.
 	test('the four pictograms are the glyphs the CLI prints for the row each one writes', async () => {
 		await withApp(async (app) => {
-			for (const { verb } of VERBS) await app.run(trackArgv(`f_${verb}`, verb));
+			for (const { verb } of VERBS) await app.run(declareArgv(`f_${verb}`, { verb, color: '', description: '', states: [] }));
 			for (const { verb, glyph } of VERBS) {
 				assert.equal(await actionWord(app, `f_${verb}`), `TRACK${glyph}`, `the ${verb} pictogram is not the CLI's`);
 				assert.equal(trackLabel(verb), `TRACK${glyph}`);

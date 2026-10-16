@@ -135,45 +135,6 @@ export interface StateRow {
 	glyph?: string;
 }
 
-/**
- * The argv that declares `field`.
- *
- * `track F …` is `setup F … --track` (da-ijf3p): the spec and the TRACK
- * document that says tracking began (da-c8mh), in one write. It also
- * un-ignores, which is what the ignored list below it is for. Each state
- * is an `--add-state NAME`, and a painted one a `--state-color NAME=COLOR`
- * too, so a switch field is declared whole in one command. Its keys are
- * slots, in the order the form has them (da-h119q, da-p3hxn): `-k NAME`
- * required, `-k NAME=` optional, `-k NAME=DEFAULT`, `-K` for one in the
- * slug — a card's id — and `--assign NAME=VALUE` for an assign. The row
- * that takes the rest of the line is `-R KEY`, `-SR KEY` or `-C`
- * (da-fu29p, da-zqnt3). The field form declares a new field with `setup F
- * --track` instead (`declareArgv`), which says all the form does in one
- * command.
- */
-export function trackArgv(
-	field: string,
-	verb: Verb,
-	states: StateRow[] = [],
-	color = '',
-	keys: KeyRow[] = []
-): string[] {
-	const argv = ['track', field, '--verb', verb];
-	if (verb === 'switch') {
-		const named = states.filter((s) => s.name.trim());
-		for (const { name } of named) argv.push('--add-state', name.trim());
-		for (const { name, color } of named) if (color) argv.push('--state-color', `${name.trim()}=${color}`);
-	}
-	if (color) argv.push('--color', color);
-	const named = keys.filter((k) => k.name.trim() || k.rest === 'C');
-	for (const { name, kind, value, in_slug } of named.filter((k) => !k.rest))
-		if (kind === 'assign') argv.push('--assign', `${name.trim()}=${value}`);
-		else argv.push(in_slug ? '-K' : '-k', kind === 'required' ? name.trim() : `${name.trim()}=${kind === 'default' ? value : ''}`);
-	const route = named.find((k) => k.rest);
-	if (route) argv.push(...(route.rest === 'C' ? ['-C'] : [`-${route.rest}`, route.name.trim()]));
-	return argv;
-}
-
 /** A spec as `setup F --json` prints it; only the keys the modal edits are named. */
 export interface Spec {
 	field: string;

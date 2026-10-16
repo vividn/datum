@@ -254,7 +254,7 @@ describe('the logic', () => {
 	});
 
 	// What the (+) declares a field WITH is the field form's (da-94q1):
-	// `trackArgv` in $lib/track.ts, held to the CLI in tests/track.test.mjs.
+	// `declareArgv` in $lib/track.ts, held to the CLI in tests/track.test.mjs.
 });
 
 /** What the widget's entry for `field` looks like, as computed. */
