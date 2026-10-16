@@ -352,7 +352,7 @@ impl TimeFlags {
 /// silently drops time flags for these (Rule 4 second sentence).
 const TIME_IRRELEVANT_VERBS: &[&str] = &[
     "add", "note", "alias", "rekey", "edit", "config", "db", "spec", "help", "ids", "count",
-    "fields", "check", "grep", "info",
+    "fields", "states", "check", "grep", "info",
 ];
 
 /// Does this verb consume time flags? `false` for `add`, `alias`, etc.

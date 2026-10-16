@@ -759,18 +759,7 @@ impl Block {
             line("never false", "yes".into());
         }
         // Each state's own, listed or not, in the list's order and then by name.
-        let mut named: Vec<&String> = spec
-            .state_colors
-            .keys()
-            .chain(spec.state_descriptions.keys())
-            .chain(pres.state_glyphs.keys())
-            .chain(spec.state_keys.keys())
-            .chain(spec.state_assign.keys())
-            .filter(|s| !states.contains(s))
-            .collect();
-        named.sort();
-        named.dedup();
-        for state in states.iter().chain(named) {
+        for state in spec.declared_states() {
             let own: Vec<&str> = [spec.state_colors.get(state), pres.state_glyphs.get(state)]
                 .into_iter()
                 .flatten()

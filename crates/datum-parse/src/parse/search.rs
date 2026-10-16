@@ -250,6 +250,13 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
     })
 }
 
+pub(crate) fn parse_states_args(tail: &[&str]) -> Result<StatesArgs> {
+    Ok(StatesArgs {
+        field: require_pos(&positionals(tail)?, "FIELD")?,
+        show: Show::default(),
+    })
+}
+
 pub(crate) fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
     let mut pos: Vec<&str> = Vec::new();
     let mut out = IdsArgs::default();

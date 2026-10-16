@@ -357,6 +357,7 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Stats(args) => commands::stats::stats(args, db),
         Command::Ids(args) => commands::ids::ids(args, db),
         Command::Fields(args) => commands::fields::fields(args, db),
+        Command::States(args) => commands::states::states(args, db),
         Command::Dayview(args) => commands::dayview::dayview(args, db),
         Command::Nowview(args) => commands::nowview::nowview(args, db),
         Command::View(args) => commands::view::view(args, db),

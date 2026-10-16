@@ -225,6 +225,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `stats` — Count, total duration, and per-state ratio over a time slice
 - `ids` — List entry ids (newest-first by default)
 - `fields` — List every field: its spec and the states it was logged with
+- `states` — A field's declared and logged states, with counts and last use
 - `sync` — Sync with the other copies in this database's sync chain
 - `conflicts` — Triage sync conflicts (see `datum check` for integrity findings)
 - `view` — Execute a named SELECT view and render the rows

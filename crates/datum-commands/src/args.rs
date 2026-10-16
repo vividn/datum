@@ -41,6 +41,7 @@ pub use pcli::{
     SyncFilter, TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
 };
 // Apart from the list above, which every added name reflows.
+pub use pcli::StatesArgs;
 pub use pcli::UpdateStrategyArg;
 
 /// The `--show` level the shared layer swept out of argv (da-qt6z).

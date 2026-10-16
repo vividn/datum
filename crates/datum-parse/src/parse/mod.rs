@@ -294,6 +294,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "stats" => Command::Stats(parse_stats_args(rest)?),
         "ids" => Command::Ids(parse_ids_args(rest)?),
         "fields" => Command::Fields(parse_fields_args(rest)?),
+        "states" => Command::States(parse_states_args(rest)?),
 
         "dayview" => Command::Dayview(parse_dayview_args(rest)?),
         "nowview" => Command::Nowview(parse_nowview_args(rest)?),
@@ -433,6 +434,7 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::Dayview(a) => a.show = show,
         Command::Stats(a) => a.show = show,
         Command::Count(a) => a.show = show,
+        Command::States(a) => a.show = show,
         Command::Ids(a) => a.show = show,
         Command::Fields(a) => {
             a.show = show;

@@ -15,6 +15,10 @@ use super::types::{
 };
 use super::Db;
 
+/// A state, how many live entries carry it, and its last use
+/// ([`Db::field_state_uses`]).
+pub type StateUse = (serde_json::Value, usize, Option<DateTime<Utc>>);
+
 /// How far back [`Db::field_frecency`] reads, in weeks.
 pub const FRECENCY_HORIZON_WEEKS: i64 = 26;
 
@@ -233,6 +237,58 @@ impl Db {
             Ok((field, serde_json::from_str(&state)?))
         })
         .collect()
+    }
+
+    /// Every state `field` has been logged with — as an entry's `state` or
+    /// its trailing `following_state` — with how many live entries carry it
+    /// and the latest `occur_time` among them, None when every one is
+    /// timeless (da-7905t). Most used first, then by name. A concurrent
+    /// array counts once for each of its states. A declaration, a flag or a
+    /// meta note is no use of a state.
+    pub fn field_state_uses(&self, field: &str) -> Result<Vec<StateUse>> {
+        let rows = format!(
+            "FROM entries WHERE field = ?1 AND {LIVE_SQL} AND {NOT_FLAG_OR_META_SQL} AND {}",
+            crate::track::NOT_A_DECLARATION_SQL
+        );
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT s, COUNT(DISTINCT hid), MAX(occur_time) FROM (
+               SELECT hid, state AS s, occur_time {rows}
+               UNION ALL SELECT hid, following_state, occur_time {rows})
+             WHERE s IS NOT NULL GROUP BY s"
+        ))?;
+        let mut uses: HashMap<String, (serde_json::Value, usize, Option<String>)> = HashMap::new();
+        for row in stmt.query_map([field], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })? {
+            let (state, n, last) = row.map_err(DatumError::Db)?;
+            let states = match serde_json::from_str(&state)? {
+                serde_json::Value::Array(states) => states,
+                state => vec![state],
+            };
+            for state in states {
+                let used = uses
+                    .entry(state.to_string())
+                    .or_insert_with(|| (state, 0, None));
+                used.1 += n as usize;
+                used.2 = used.2.take().max(last.clone());
+            }
+        }
+        let mut uses: Vec<_> = uses
+            .into_values()
+            .map(|(state, n, last)| {
+                let last = last.and_then(|t| DateTime::parse_from_rfc3339(&t).ok());
+                (state, n, last.map(|t| t.with_timezone(&Utc)))
+            })
+            .collect();
+        uses.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| a.0.to_string().cmp(&b.0.to_string()))
+        });
+        Ok(uses)
     }
 
     /// How much each field is used, recent use weighing more (da-xtkcp):

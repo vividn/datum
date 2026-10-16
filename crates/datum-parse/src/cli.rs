@@ -94,6 +94,9 @@ pub enum Command {
     /// `datum fields` — every field the database knows, with its spec and
     /// the states it has been logged with.
     Fields(FieldsArgs),
+    /// `datum states <field>` — the states a field declares and the states
+    /// it has been logged with, each with its count and last use (da-7905t).
+    States(StatesArgs),
 
     Dayview(DayviewArgs),
     Nowview(NowviewArgs),
@@ -1190,6 +1193,13 @@ pub struct FieldsArgs {
     /// `--sort frecency`: most used first, recent use weighing more, and
     /// each row carries its `frecency` (da-xtkcp). Otherwise alphabetical.
     pub by_frecency: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct StatesArgs {
+    pub field: String,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    pub show: Show,
 }
 
 #[derive(Debug)]

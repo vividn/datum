@@ -186,6 +186,7 @@ fn reads(command: &Command) -> bool {
                 | Command::Stats(_)
                 | Command::Ids(_)
                 | Command::Fields(_)
+                | Command::States(_)
                 | Command::Dayview(_)
                 | Command::Nowview(_)
                 | Command::View(_)

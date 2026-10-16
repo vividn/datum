@@ -278,6 +278,17 @@ fn a_lone_field_offers_the_commands_that_take_one() {
     assert!(has(&found, "spec"), "{found:?}");
 }
 
+/// `states` (da-7905t) is a command, takes a field, and runs field-first.
+#[test]
+fn states_completes_and_takes_a_field() {
+    let env = Env::new();
+    assert!(has(&env.complete("sta"), "states"));
+    assert!(has(&env.complete("states "), "mood"));
+    assert!(has(&env.complete("mood "), "states"));
+    let out = env.ok(&["mood", "states"]);
+    assert!(out.contains("calm") && out.contains("happy"), "{out}");
+}
+
 #[test]
 fn a_key_position_offers_the_declared_keys_not_on_the_line() {
     let env = Env::new();

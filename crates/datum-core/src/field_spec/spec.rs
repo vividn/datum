@@ -450,6 +450,25 @@ impl FieldSpec {
         }
     }
 
+    /// The states this spec declares: `allowed_states` in its order, then by
+    /// name each state it gives anything of its own — a colour, a
+    /// description, a glyph, keys (da-7905t).
+    pub fn declared_states(&self) -> Vec<&String> {
+        let listed = self.allowed_states.as_deref().unwrap_or_default();
+        let mut named: Vec<&String> = self
+            .state_colors
+            .keys()
+            .chain(self.state_descriptions.keys())
+            .chain(self.presentation.state_glyphs.keys())
+            .chain(self.state_keys.keys())
+            .chain(self.state_assign.keys())
+            .filter(|s| !listed.contains(s))
+            .collect();
+        named.sort();
+        named.dedup();
+        listed.iter().chain(named).collect()
+    }
+
     /// Where a line's leftover words go (da-zqnt3): `remainder`, joined
     /// or not, or one comment.
     pub fn spec_remainder(&self) -> datum_parse::spec_keys::SpecRemainder {
