@@ -112,6 +112,68 @@ fn in_a_locked_chain_a_chain_restore_takes_the_admin_key() {
     assert_eq!(a.hash(), b.hash());
 }
 
+/// datum.day's way in a passkey-locked chain (da-sd7xt): the backup is on
+/// stdin, where the CLI would ask for the approval code. The dry run names
+/// the order to approve, and the run takes it back signed — refused when it
+/// is not this chain's restore order or not signed by the admin, with
+/// nothing changed.
+#[test]
+fn a_passkey_approves_a_chain_restore_named_by_its_dry_run() {
+    let (a, b) = chained();
+    a.ok(&["sync", "admin", "add", &passkey_json()]);
+    assert!(a.send(&b).0);
+    b.ok(&["occur", "tea"]);
+    let backup = b.key("good.jsonl");
+    b.ok(&["db", "backup", &backup]);
+    b.ok(&["occur", "poison"]);
+    let bytes = std::fs::read_to_string(&backup).unwrap();
+    let piped = ["db", "restore", "-", "--hard", "--chain"];
+    let dry = json(&b.ok_in(&[&piped[..], &["--dry-run", "--json"]].concat(), &bytes));
+    let link = dry["approve"].as_str().unwrap().to_string();
+    let record = BASE64URL_NOPAD
+        .decode(link.rsplit('#').next().unwrap().as_bytes())
+        .unwrap();
+    let code = approval_code(&Sha256::digest(&record));
+    let run = |link: &str, code: &str| {
+        let approval = ["--yes", "--approve-link", link, "--approval-code", code];
+        b.run(&[&piped[..], &approval].concat(), &bytes)
+    };
+    // A purge's order, signed, restores nothing: it is not a restore's.
+    let mut purge: serde_json::Value = serde_json::from_slice(&record).unwrap();
+    purge.as_object_mut().unwrap().remove("restore");
+    let purge = format!(
+        "https://datum.day/sync/approve#{}",
+        BASE64URL_NOPAD.encode(purge.to_string().as_bytes())
+    );
+    for (link, code, why) in [
+        (
+            purge.as_str(),
+            code.as_str(),
+            "not an order restoring sync chain",
+        ),
+        (
+            &link,
+            &approval_code(&Sha256::digest(b"another")),
+            "the sync chain refuses it",
+        ),
+    ] {
+        let out = run(link, code);
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success() && err.contains(why), "{err}");
+        assert_eq!(fields(&b), "poison spec spec tea");
+    }
+    let out = run(&link, &code);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(fields(&b), "spec tea");
+    assert!(b.send(&a).0);
+    assert_eq!(fields(&a), "spec tea");
+    assert_eq!(a.hash(), b.hash());
+}
+
 /// da-uk23v, vividn: «you should never be afraid of data loss regardless
 /// which client you're entering into». c, offline, logs before a chain
 /// restore: as it syncs the entry goes from its database, as the restore

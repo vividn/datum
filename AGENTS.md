@@ -318,6 +318,10 @@ and finished with Enter, keeps the backup it wrote before asking (da-xc321).
 the backup written on the ordering copy as new ops, signed after it, so
 every copy holds exactly the backup once it syncs; plain `--hard` on a
 chained copy is refused, naming `--chain` and `--leave` (this copy alone).
+In a locked chain its order is an admin's to sign, and its stdin can be the
+backup: so `--dry-run --json` names the order as `approve`, an approve link,
+and the run takes it back signed (`--approve-link`, `--approval-code`),
+refusing any but this chain's restore order — datum.day's passkey (da-sd7xt).
 Its order says `restore`, and every other copy it reaches writes what it
 held first, `<db>.wiped-<the wipe's HLC>.jsonl` beside it (da-uk23v): an entry made
 offline before the restore is dropped as it syncs, and not lost. A `wipe`

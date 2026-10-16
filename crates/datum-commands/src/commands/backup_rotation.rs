@@ -493,6 +493,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: true,
                 if_unchanged: None,
                 show: ShowFlag::None,

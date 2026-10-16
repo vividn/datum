@@ -809,7 +809,7 @@ fn purge(db: &Db, all: bool, yes: bool, admin_key: Option<&str>) -> Result<()> {
         println!("nothing changed: `datum sync chain purge {flag} --yes` does it");
         return Ok(());
     }
-    let backup = order_wipe(db, &chain, scope, false, admin_key)?;
+    let backup = order_wipe(db, &chain, wipe_record(&chain, scope, false), admin_key)?;
     println!("purged: every other copy follows when it next connects; backup: {backup}");
     Ok(())
 }
@@ -834,18 +834,11 @@ pub(crate) fn wipe_reach(db: &Db, does: &str) -> Result<String> {
     Ok(out)
 }
 
-/// Sign a `wipe {scope}` order, which this copy carries out at once, after
-/// a backup of its entries beside the database; refused, it leaves none.
-/// A `restore`'s order says so, and every copy it reaches keeps a backup of
-/// its own too (da-uk23v). Returns where the backup is, in words.
-pub(crate) fn order_wipe(
-    db: &Db,
-    chain: &chain::Chain,
-    scope: &str,
-    restore: bool,
-    admin_key: Option<&str>,
-) -> Result<String> {
-    let backup = wipe_backup(db)?;
+/// A `wipe {scope}` order of `chain`. A `restore`'s order says so, and every
+/// copy it reaches keeps a backup of its own too (da-uk23v). `created` is
+/// when it was made, which a signature covers: one a passkey approved keeps
+/// its dry run's (da-sd7xt), and the HLC it is written at orders it.
+pub(crate) fn wipe_record(chain: &chain::Chain, scope: &str, restore: bool) -> Value {
     let mut record = json!({
         "type": "wipe", "scope": scope, "chain": chain.id,
         "created": chrono::Utc::now().to_rfc3339(),
@@ -853,6 +846,19 @@ pub(crate) fn order_wipe(
     if restore {
         record["restore"] = true.into();
     }
+    record
+}
+
+/// Sign a wipe order, `record`, which this copy carries out at once, after
+/// a backup of its entries beside the database; refused, it leaves none.
+/// Returns where the backup is, in words.
+pub(crate) fn order_wipe(
+    db: &Db,
+    chain: &chain::Chain,
+    record: Value,
+    admin_key: Option<&str>,
+) -> Result<String> {
+    let backup = wipe_backup(db)?;
     // Refused, it leaves no backup of a purge that never happened.
     if let Err(e) = sign(db, record, chain, admin_key) {
         if let Some(to) = &backup {
@@ -992,8 +998,11 @@ fn key_file(path: &str, create: bool) -> Result<[u8; 32]> {
 /// chain's record goes unsigned: the fold asks no `sig` of it while the
 /// chain has no admin (`Chain::step`), and this copy's endpoint key signs
 /// its op like any other.
+/// An admin's signature, when the chain is locked, on a record that has none:
+/// one approved before it came here carries its own (da-sd7xt), which the
+/// chain checks as it writes the record, refusing it unless an admin signed.
 fn sign(db: &Db, mut record: Value, chain: &Chain, admin_key: Option<&str>) -> Result<()> {
-    if !chain.is_open() {
+    if !chain.is_open() && record.get("sig").is_none() {
         let sig = match admin_key {
             Some(path) => chain::sign_ed25519(&record, &key_file(path, false)?),
             None => {

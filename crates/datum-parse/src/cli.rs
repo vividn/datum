@@ -1361,6 +1361,11 @@ pub struct RestoreArgs {
     /// `--admin-key <FILE>`, with `--chain` — the wipe is an admin act in a
     /// locked chain.
     pub admin_key: Option<String>,
+    /// `--approve-link <LINK> --approval-code <CODE>`, with `--chain`
+    /// (da-sd7xt) — the wipe order a passkey approved: the link its
+    /// `--dry-run --json` named as `approve`, and the code the passkey
+    /// gave. Its stdin can be the backup, where the CLI would ask for one.
+    pub approval: Option<(String, String)>,
     /// `--yes` / `-y` — replace without asking, on a TTY, even when the
     /// restore deletes entries.
     pub yes: bool,

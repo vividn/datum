@@ -27,6 +27,7 @@ import { choose, confirm } from './confirm.js';
 import { runEchoed } from './echo.js';
 import { fileArgv } from './fileargv.js';
 import { STALE } from './layout/draft.js';
+import { approve } from './passkey.js';
 import { forget } from './replStore.js';
 import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
 import type { ChainList } from './syncView.js';
@@ -156,6 +157,12 @@ export interface RestorePreview {
 	dropped?: { entries?: number; tombstones?: number; history?: number };
 	/** The sync chain a `--hard --chain` restores every copy of (da-ncmmj). */
 	chain?: string;
+	/**
+	 * In a locked chain, the approve link of the order a passkey signs for
+	 * the run (da-sd7xt).
+	 * @shallow no seeded chain is locked.
+	 */
+	approve?: string | null;
 }
 
 /**
@@ -225,18 +232,18 @@ function hard(argv: string[]): Promise<RunResult> {
 		for (let moved = ''; ; moved = '⚠ The database changed since it was counted. ') {
 			const seen = await feed(restorePreviewArgv(argv), backup);
 			if (seen.code !== 0) return seen;
-			const { would_insert, dropped, warnings, fingerprint, chain } = JSON.parse(seen.stdout) as RestorePreview;
+			const { would_insert, dropped, warnings, fingerprint, chain, approve: link } = JSON.parse(seen.stdout) as RestorePreview;
 			// An empty file is a backup of nothing, and replaces nothing: no fingerprint.
 			const pin = fingerprint ? ['--if-unchanged', fingerprint] : [];
-			// A locked chain's order takes an admin's signature, which the CLI
-			// reads on stdin, and here stdin is the backup (da-art6t): an approve
-			// link answered alone would wipe every copy and restore none.
+			// A locked chain's order takes an admin's signature (da-art6t): a
+			// passkey's this page asks for and hands the run beside the backup on
+			// its stdin (da-sd7xt), a key file's only the CLI reads — said before the name.
 			const listed = chain ? await run(['--db', db, ...chainListArgv()]) : null;
-			if (listed?.code === 0 && (JSON.parse(listed.stdout) as ChainList).admins.length) {
+			const { admins } = listed?.code === 0 ? (JSON.parse(listed.stdout) as ChainList) : { admins: [] };
+			if (admins.length && admins.every((a) => a.key.startsWith('ed25519:'))) {
 				const stderr =
-					`db restore --hard --chain: sync chain ${chain} is locked, and restoring every copy takes an admin’s approval, ` +
-					'which this page cannot hand a restore: the backup is read where the approval would be. Nothing changed. ' +
-					'On a computer, `datum db restore --hard --chain <BACKUP>` asks for it: the link it prints for a passkey, or `--admin-key <FILE>`.';
+					`db restore --hard --chain: sync chain ${chain} is locked by an admin key file, which only the CLI reads. Nothing changed. ` +
+					'On a computer, `datum db restore --hard --chain <BACKUP> --admin-key <FILE>` restores every copy.';
 				return { argv, code: 1, stdout: '', stderr };
 			}
 			const { entries = 0, tombstones = 0, history = 0 } = dropped ?? {};
@@ -251,12 +258,21 @@ function hard(argv: string[]): Promise<RunResult> {
 					: `This replaces ALL data in ${db} with the backup (${would_insert} written); dropped: `) +
 				`${entries} live, ${tombstones} tombstoned or superseded, ${history} in history. ` +
 				'It cannot be undone: the history `undo` reads goes with it.' +
+				(link ? ' The chain is locked, so an admin’s passkey approves it once the name is typed.' : '') +
 				warnings.map((w: string) => ` ⚠ ${w}.`).join('');
 			if (!(await confirm(text, chain ? 'restore every copy' : 'restore --hard', db))) {
 				// The CLI's own words for a mismatch at its prompt.
 				return { argv, code: 1, stdout: '', stderr: `db restore --hard: aborted (input did not match ${db})` };
 			}
-			const ran = await feed([...argv, '--yes', ...pin], backup);
+			let approval: string[] = [];
+			if (link) {
+				try {
+					approval = ['--approve-link', link, '--approval-code', await approve(link)];
+				} catch (e) {
+					return { argv, code: 1, stdout: '', stderr: `db restore --hard --chain: no passkey approved it (${e}). Nothing changed.` };
+				}
+			}
+			const ran = await feed([...argv, '--yes', ...pin, ...approval], backup);
 			if (ran.code !== UNANSWERED) return ran;
 		}
 	});

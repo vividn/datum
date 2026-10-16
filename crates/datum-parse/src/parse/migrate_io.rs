@@ -173,6 +173,8 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
     let mut leave = false;
     let mut chain = false;
     let mut admin_key = None;
+    let mut approve_link = None;
+    let mut approval_code = None;
     let mut yes = false;
     let mut if_unchanged = None;
     let mut i = 0;
@@ -190,6 +192,17 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
                 let attached = tail[i].split_once('=').map(|(_, v)| v);
                 let (v, ni) = take_value(tail, i, attached, "--admin-key")?;
                 admin_key = Some(v.to_string());
+                i = ni;
+                continue;
+            }
+            FlagSplit::Long(f @ ("approve-link" | "approval-code"))
+            | FlagSplit::LongAttached(f @ ("approve-link" | "approval-code"), _) => {
+                let attached = tail[i].split_once('=').map(|(_, v)| v);
+                let (v, ni) = take_value(tail, i, attached, &format!("--{f}"))?;
+                *match f {
+                    "approve-link" => &mut approve_link,
+                    _ => &mut approval_code,
+                } = Some(v.to_string());
                 i = ni;
                 continue;
             }
@@ -234,6 +247,17 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
             "--admin-key is for --hard --chain, an admin act on the chain".into(),
         ));
     }
+    let approval = match (approve_link, approval_code) {
+        (Some(link), Some(code)) if chain && admin_key.is_none() => Some((link, code)),
+        (None, None) => None,
+        _ => {
+            return Err(ParseError::InvalidArg(
+                "--approve-link and --approval-code go together, with --hard --chain and \
+                 without --admin-key: the order a passkey approved"
+                    .into(),
+            ))
+        }
+    };
     let path = require_pos(&pos, "<PATH>")?;
     Ok(RestoreArgs {
         path,
@@ -244,6 +268,7 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         leave,
         chain,
         admin_key,
+        approval,
         yes,
         if_unchanged,
         show: Show::default(),

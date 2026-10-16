@@ -20,7 +20,7 @@
 
 use anyhow::{Context, Result};
 use datum_core::{
-    db::{ConflictStrategy, Db, InsertOutcome},
+    db::{chain, ConflictStrategy, Db, InsertOutcome},
     entry::{new_hid, Entry},
     error::DatumError,
 };
@@ -563,6 +563,30 @@ fn restore_chain(
             .map_err(unpinned),
         None => restore_pinned(&args.path, db, mode),
     };
+    // A locked chain's order is an admin's to sign. A passkey signs it in a
+    // browser, before this run (da-sd7xt): the dry run names the order to
+    // approve, and this one takes it back signed, if it is this chain's.
+    let held = db.sync_chain()?;
+    let approved = match &args.approval {
+        Some((link, code)) => {
+            let mut record = chain::approve_record(link).context(
+                "--approve-link is not an approve link: https://datum.day/sync/approve#<record>",
+            )?;
+            anyhow::ensure!(
+                record["type"] == "wipe"
+                    && record["scope"] == "data"
+                    && record["restore"] == true
+                    && record["chain"] == held.id,
+                "--approve-link is not an order restoring sync chain {chain}: the one to approve is \
+                 the `approve` of `datum db restore <BACKUP> --hard --chain --dry-run --json`"
+            );
+            record["sig"] = code.as_str().into();
+            Some(record)
+        }
+        None => None,
+    };
+    let approve = (args.dry_run && !held.is_open() && args.admin_key.is_none())
+        .then(|| chain::approve_link(&super::sync::wipe_record(&held, "data", true)));
     // A live set changed since `--if-unchanged` counted it stops here too.
     let preview = run(Mode {
         dry_run: true,
@@ -594,7 +618,7 @@ fn restore_chain(
             "would_insert": args.dry_run.then_some(written),
             "dropped": {"entries": h.entries, "tombstones": h.tombstones, "history": h.history},
             "fingerprint": preview.fingerprint.map(|f| format!("{f:016x}")),
-            "warnings": preview.warnings, "backup": backup,
+            "warnings": preview.warnings, "backup": backup, "approve": approve,
         })
     };
     if args.dry_run {
@@ -621,13 +645,9 @@ fn restore_chain(
     if preview.fingerprint.is_some_and(|f| f != live) {
         return Err(unpinned(DatumError::Changed.into()));
     }
-    let backup = super::sync::order_wipe(
-        db,
-        &db.sync_chain()?,
-        "data",
-        true,
-        args.admin_key.as_deref(),
-    )?;
+    let held = db.sync_chain()?;
+    let order = approved.unwrap_or_else(|| super::sync::wipe_record(&held, "data", true));
+    let backup = super::sync::order_wipe(db, &held, order, args.admin_key.as_deref())?;
     // The wipe emptied this copy; a replace writes the backup into it, each
     // entry an op signed after the wipe.
     let restore = Mode {
@@ -1147,6 +1167,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1242,6 +1263,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1286,6 +1308,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1313,6 +1336,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1386,6 +1410,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1447,6 +1472,7 @@ mod tests {
             leave: false,
             chain: false,
             admin_key: None,
+            approval: None,
             yes: false,
             if_unchanged: None,
             show: ShowFlag::Default,
@@ -1552,6 +1578,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1610,6 +1637,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1659,6 +1687,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1699,6 +1728,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1752,6 +1782,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1806,6 +1837,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1858,6 +1890,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1883,6 +1916,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1937,6 +1971,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1957,6 +1992,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -2005,6 +2041,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -2059,6 +2096,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -2121,6 +2159,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -2151,6 +2190,7 @@ mod tests {
             leave: false,
             chain: false,
             admin_key: None,
+            approval: None,
             yes: false,
             if_unchanged: None,
             show: ShowFlag::Default,
@@ -2361,6 +2401,7 @@ mod tests {
             leave: false,
             chain: false,
             admin_key: None,
+            approval: None,
             ..replace_args(&path, dry_run)
         };
         let dry = cmd_restore_with_report(merge(true), &db).unwrap();
@@ -2451,6 +2492,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -2498,6 +2540,7 @@ mod tests {
                 leave: false,
                 chain: false,
                 admin_key: None,
+                approval: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
