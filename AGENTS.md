@@ -296,7 +296,12 @@ carries out as it comes to hold it, offline a year or not — every entry op
 before it scrubbed to a stub (`applied` = 3: its endpoint, seq and HLC, so
 no vector waits on a gap and no seq is signed twice), every entry, history,
 undo step, warning and stats cache row gone — a change spooled before it too,
-which its drain drops and says so (da-59hwx) — and a sender's `{"purged": …}`
+which its drain drops and says so (da-59hwx), or drained before the order
+came signs again with the HLC it was queued at (`queued`), which the wipe
+compares (da-m6c4j); a build before that reads `hlc` alone and keeps
+such an op, so its rows differ from a newer copy's (`verify MISMATCH`,
+`check sync` clean on both) until the next wipe, updating or not (da-371m8)
+— and a sender's `{"purged": …}`
 line after the order filling the gaps of a copy behind. `--all` dissolves the
 chain: the fold takes no record after it, a copy holding it serves only
 records and stubs and says «in no sync chain», and keeps its key and records

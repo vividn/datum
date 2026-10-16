@@ -326,3 +326,28 @@ fn a_change_queued_before_a_wipe_does_not_outlive_it() {
     }
     assert_eq!(a.hash(), b.hash());
 }
+
+/// A change queued before a wipe but landed before the order reaches its
+/// copy is the old copy's data too (da-m6c4j): signed again as it drains,
+/// it carries when its command ran, and the wipe reads that. Here it
+/// reaches the ordering copy after the wipe, and the order reaches it
+/// after; both take it.
+#[test]
+fn a_change_queued_before_a_wipe_and_landed_before_it_arrives_does_not_outlive_it() {
+    let (a, b) = chained();
+    a.ok(&["occur", "tea"]);
+    assert!(a.send(&b).0);
+    let db = b.tmp.path().join("data.db");
+    let holder = rusqlite::Connection::open(&db).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+    assert!(b.ok(&["occur", "old_b"]).contains("QUEUED"));
+    a.ok(&["sync", "chain", "purge", "--data", "--yes"]);
+    drop(holder);
+    b.ok(&["tail"]);
+    assert!(b.has("old_b"));
+    assert!(b.send(&a).0);
+    assert!(!a.has("old_b") && data_of(&a) == EMPTY);
+    assert!(a.send(&b).0);
+    assert!(!b.has("old_b") && data_of(&b) == EMPTY);
+    assert_eq!(a.hash(), b.hash());
+}

@@ -593,6 +593,11 @@ struct Op {
     effect: Value,
     #[serde(default)]
     deps: BTreeMap<String, i64>,
+    /// The HLC a spooled op was signed with on its snapshot, when its
+    /// command ran (da-m6c4j): signed again as it drains, it is still that
+    /// command's, and a wipe ordered between the two takes it.
+    #[serde(default)]
+    queued: Option<String>,
     sig: String,
     #[serde(skip)]
     body: String,
@@ -752,7 +757,7 @@ fn push(
     if of.is_none() {
         deps.entry(ep.id.clone()).or_insert(0);
     }
-    sign(conn, ep, head, kind, effect, (raw, alias_chain), deps)
+    sign(conn, ep, head, kind, effect, (raw, alias_chain, None), deps)
 }
 
 /// Sign and store an op as this copy's next: its seq and HLC are taken
@@ -763,7 +768,7 @@ fn sign(
     (hid, slug, field): (&str, &str, Option<String>),
     kind: &str,
     effect: Value,
-    (raw, alias_chain): (Option<String>, Option<Value>),
+    (raw, alias_chain, queued): (Option<String>, Option<Value>, Option<&str>),
     deps: BTreeMap<String, i64>,
 ) -> Result<i64> {
     let seq: i64 = conn
@@ -788,6 +793,9 @@ fn sign(
     if let Some(f) = &field {
         v["field"] = f.as_str().into();
     }
+    if let Some(q) = queued {
+        v["queued"] = q.into();
+    }
     let sig = hex(&ep.key.sign(&digest(&v)).to_bytes());
     v["sig"] = sig.clone().into();
     let op = Op {
@@ -803,6 +811,7 @@ fn sign(
         // `store` reads the head and the body; the effect is in the body.
         effect: Value::Null,
         deps: BTreeMap::new(),
+        queued: None,
         sig,
         body: canonical_json(&v),
     };
@@ -1549,7 +1558,9 @@ pub(super) fn signed_since(conn: &Connection, seq: i64) -> Result<Vec<Value>> {
 /// command was; an undo or a redo moves the stack as it did on the snapshot.
 /// An op made before a wipe this copy carried out is the old copy's data
 /// (da-59hwx): the order took every op signed before it, and this one,
-/// signed again, would outlive it. Whether any op was left to land.
+/// signed again, would outlive it; one made before a wipe that has not
+/// reached this copy yet carries when it was made (`queued`), which that
+/// wipe reads (da-m6c4j). Whether any op was left to land.
 pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<bool> {
     let wiped: Option<String> = conn
         .query_row(
@@ -1576,7 +1587,11 @@ pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<bool> {
                 continue;
             }
             let head = (op.hid.as_str(), op.slug.as_str(), op.field.clone());
-            let made = (op.raw.clone(), op.alias_chain.clone());
+            let made = (
+                op.raw.clone(),
+                op.alias_chain.clone(),
+                Some(op.hlc.as_str()),
+            );
             sign(
                 conn,
                 &ep,
@@ -1779,7 +1794,8 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
             if !op.is_chain() {
                 // A purge order took it, or a dissolved chain takes nothing
                 // of another copy's: neither its data nor a refusal is kept.
-                let wiped = chain.wiped(&op.hlc).is_some()
+                let made = op.queued.as_deref().unwrap_or(&op.hlc);
+                let wiped = chain.wiped(made).is_some()
                     || chain.dissolved().is_some() && op.endpoint != mine;
                 match chain.allows(&op.endpoint, &op.hlc) {
                     _ if wiped => scrub(conn, &op.endpoint, op.seq)?,
@@ -1995,9 +2011,12 @@ fn wipe(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
     // What it frees is overwritten, not left in the file's free pages.
     let secure: i64 = conn.query_row("PRAGMA secure_delete", [], |r| r.get(0))?;
     conn.execute_batch("PRAGMA secure_delete = ON")?;
+    // A spooled op was made when its command ran, not when it drained.
     conn.execute(
         "UPDATE ops SET applied = 3, hid = ?1, slug = '', kind = 'purged', body = ''
-         WHERE applied IN (1, 2) AND hid != ?2 AND (hlc < ?3 OR ?4 AND endpoint != ?5)",
+         WHERE applied IN (1, 2) AND hid != ?2
+           AND (COALESCE(CASE WHEN body != '' THEN body ->> '$.queued' END, hlc) < ?3
+                OR ?4 AND endpoint != ?5)",
         params![PURGED, CHAIN_HID, w.hlc, w.all, mine],
     )?;
     conn.execute_batch(
