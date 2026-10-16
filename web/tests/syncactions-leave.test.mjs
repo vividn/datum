@@ -7,14 +7,14 @@
 // Chromium it launches, and every test in it. `syncactions`, `-leave` and
 // `-purge` were one file, its six leave and purge tests waiting out real
 // 20 s budgets and idle timeouts: 189 s alone, 243 s in a whole run, and cut
-// at 300 s on CI (da-xwjul). A cancelled file hides every other file's
-// failures behind it. A group that costs a minute wants a file of its own,
-// not another `describe` in one of these. What more than one of them needs
-// is `./support/syncactions.mjs`.
+// at 300 s on CI (da-xwjul), before `withApp` shortened them (da-eqjri). A
+// cancelled file hides every other file's failures behind it. A group that
+// costs a minute wants a file of its own, not another `describe` in one of
+// these. What more than one of them needs is `./support/syncactions.mjs`.
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp } from './support/app.mjs';
+import { SYNC_TIMEOUT_S, startApp, stopApp } from './support/app.mjs';
 import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
 import { AT_DATUM_DAY, DESKTOP, WIDGET, cli, members, more, openChain } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
@@ -53,8 +53,8 @@ describe('the sync widget’s Leave chain', () => {
 			assert.equal(await page.locator(`${WIDGET} .waiting`).innerText(), 'Telling the chain’s other devices that this one is leaving…');
 			await dialog.getByRole('button', { name: 'leave anyway' }).waitFor({ timeout: 30_000 });
 			assert.match(await dialog.innerText(), /No device of the chain could be reached to receive this device’s departure/);
-			// The phone has an address, so it is dialled: only the 20 s budget ends the wait.
-			assert.ok(Date.now() - pressed >= 19_000, `asked again after ${Date.now() - pressed} ms`);
+			// The phone has an address, so it is dialled: only the budget (`SYNC_TIMEOUT_S`) ends the wait.
+			assert.ok(Date.now() - pressed >= SYNC_TIMEOUT_S * 1000 - 1000, `asked again after ${Date.now() - pressed} ms`);
 			assert.match(JSON.stringify(await members(app)), /"left":"/);
 			await dialog.getByRole('button', { name: 'leave anyway' }).click();
 			await page.locator(`${WIDGET} .actions[data-db="home"]`).getByRole('button', { name: 'Turn on sync' }).waitFor();
@@ -98,7 +98,7 @@ describe('the sync widget’s Leave chain', () => {
 					await serve();
 					assert.equal(await left(), false);
 					await dialog.getByRole('button', { name: 'leave anyway' }).click();
-					// First the dial begun while it was down, which a dead peer holds for the wire's 60 s idle timeout.
+					// First the dial begun while it was down, which a dead peer holds for the wire's idle timeout.
 					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).waitFor({ timeout: 90_000 });
 					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 					assert.equal(await left(), true);

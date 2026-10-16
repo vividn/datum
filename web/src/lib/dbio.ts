@@ -351,9 +351,9 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	// A departure leaves only once a member holds it (da-dsob1), which this
 	// page's sync delivers: each session it ends well is a reason to run the
 	// purge again (da-a7kf7), as the sync widget's Leave does (da-2o19r).
-	const { DELIVER_MS, syncedSince, syncNow } = await import('./sync.js');
+	const { deliverMs, syncedSince, syncNow } = await import('./sync.js');
 	const refused = (r: RunResult) => r.code !== 0 && r.stderr.includes('no member holds');
-	const until = Date.now() + DELIVER_MS;
+	const until = Date.now() + deliverMs();
 	for (;;) {
 		const since = Date.now();
 		const r = await run(dbPurgeArgv(flags));

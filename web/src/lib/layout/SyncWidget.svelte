@@ -41,7 +41,7 @@
 	import { onAnyChange } from '$lib/changes.js';
 	import { currentDb, INTERNAL_DB, withDb } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
-	import { DELIVER_MS, inviting, joinLink, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
+	import { deliverMs, inviting, joinLink, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
 	import {
 		ackNotice,
 		approvalWords,
@@ -322,7 +322,7 @@
 			const refused = (r: RunResult) => r.code !== 0 && r.stderr.includes('no member holds');
 			// A departure leaves only once a member holds it (da-dsob1), which this page's sync
 			// delivers: each session it ends well is a reason to try again (da-2o19r).
-			const until = Date.now() + DELIVER_MS;
+			const until = Date.now() + deliverMs();
 			try {
 				for (;;) {
 					const since = Date.now();

@@ -411,6 +411,12 @@ export const focusTop = (page) =>
  * `clock: null` is the wall clock, for a test about real time passing.
  * `app.clock` moves it (`clockOf`).
  *
+ * `syncTimeout` (`SYNC_TIMEOUT_S`) is the seconds the page's sync waits
+ * where production waits a minute on a silent peer and 20 s for a departure
+ * to be delivered (`shortTimeout` in $lib/sync.ts, da-eqjri), as
+ * `DATUM_SYNC_TIMEOUT_S` shortens the CLI's; `syncTimeout: null` is
+ * production's.
+ *
  * `holdTimers` hands the page's clock to Playwright, which holds its
  * timers too: nothing the page schedules runs until `app.clock.forward`
  * or `page.clock.runFor` says so. For a test that DRIVES time — a minute
@@ -423,6 +429,8 @@ export const focusTop = (page) =>
  * device opened alone until then, `mobile`'s tree on a phone.
  */
 export const ON_COLLECT = { names: ['welcome', 'setup', 'collect'], active: 2 };
+
+export const SYNC_TIMEOUT_S = 5;
 
 export async function withApp(fn, options) {
 	const { app, close } = await openApp(options);
@@ -448,7 +456,8 @@ async function openApp({
 	desk = DESK,
 	timezone = TIMEZONE,
 	origin,
-	tour = false
+	tour = false,
+	syncTimeout = SYNC_TIMEOUT_S
 } = {}) {
 	const options = {
 		// An origin of the test's own is served by a route, which a service
@@ -498,6 +507,12 @@ async function openApp({
 				localStorage.setItem('datum.tour', 'seen');
 			} catch {}
 		});
+		if (syncTimeout !== null)
+			await context.addInitScript((s) => {
+				try {
+					localStorage.setItem('datum.syncTimeoutS', String(s));
+				} catch {}
+			}, syncTimeout);
 		if (origin) await serveAt(context, origin);
 		await prepare?.(context);
 		const page = await context.newPage();

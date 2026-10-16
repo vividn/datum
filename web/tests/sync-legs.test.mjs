@@ -22,7 +22,10 @@ after(async () => {
 });
 
 const WIDGET = 'section.pane[data-title="sync"]';
-/** A dial to a copy that is not there fails in iroh's 30 s, the relay's in the wire's 60 s. */
+/**
+ * A dial to a copy that is not there fails in the wire's idle timeout
+ * (`SYNC_TIMEOUT_S`), where production's waits iroh's 30 s or its own 60 s.
+ */
 const DIAL = 90_000;
 
 test('the page invites, the CLI connects, they sync both ways, and the widget names a leg that is down', { timeout: 280_000 }, async () => {

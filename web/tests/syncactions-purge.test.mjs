@@ -7,10 +7,10 @@
 // Chromium it launches, and every test in it. `syncactions`, `-leave` and
 // `-purge` were one file, its six leave and purge tests waiting out real
 // 20 s budgets and idle timeouts: 189 s alone, 243 s in a whole run, and cut
-// at 300 s on CI (da-xwjul). A cancelled file hides every other file's
-// failures behind it. A group that costs a minute wants a file of its own,
-// not another `describe` in one of these. What more than one of them needs
-// is `./support/syncactions.mjs`.
+// at 300 s on CI (da-xwjul), before `withApp` shortened them (da-eqjri). A
+// cancelled file hides every other file's failures behind it. A group that
+// costs a minute wants a file of its own, not another `describe` in one of
+// these. What more than one of them needs is `./support/syncactions.mjs`.
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -107,7 +107,7 @@ describe('`db purge --leave` in the bar', () => {
 					await serve();
 					assert.equal(await left(), false);
 					await anyway.click();
-					// First the dial begun while it was down, which a dead peer holds for the wire's 60 s idle timeout.
+					// First the dial begun while it was down, which a dead peer holds for the wire's idle timeout.
 					const out = await until(() => app.outputs(), (o) => /left sync chain/.test(o.at(-1) ?? ''), 90_000);
 					assert.match(out.at(-1), /left sync chain \S+\n\s+its departure is with: /);
 					assert.equal(await left(), true);

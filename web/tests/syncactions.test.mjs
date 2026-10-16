@@ -11,10 +11,10 @@
 // Chromium it launches, and every test in it. `syncactions`, `-leave` and
 // `-purge` were one file, its six leave and purge tests waiting out real
 // 20 s budgets and idle timeouts: 189 s alone, 243 s in a whole run, and cut
-// at 300 s on CI (da-xwjul). A cancelled file hides every other file's
-// failures behind it. A group that costs a minute wants a file of its own,
-// not another `describe` in one of these. What more than one of them needs
-// is `./support/syncactions.mjs`.
+// at 300 s on CI (da-xwjul), before `withApp` shortened them (da-eqjri). A
+// cancelled file hides every other file's failures behind it. A group that
+// costs a minute wants a file of its own, not another `describe` in one of
+// these. What more than one of them needs is `./support/syncactions.mjs`.
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';

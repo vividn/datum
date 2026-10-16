@@ -295,10 +295,12 @@ impl Node {
     /// Bind the endpoint whose key is `key` (hex, `datum sync
     /// endpoint-key`), on n0's relays or the one `relay` names. `datum`
     /// and `schema` are what the CLI runs (`sync status --json`'s `this`).
+    /// `idle` is `DATUM_SYNC_TIMEOUT_S` for a page's tests, every node's.
     #[allow(clippy::too_many_arguments)]
     pub async fn bind(
         key: String,
         relay: Option<String>,
+        idle: Option<u32>,
         label: String,
         datum: String,
         schema: u32,
@@ -311,6 +313,7 @@ impl Node {
             .collect::<Result<_, _>>()
             .map_err(js)?;
         let secret: [u8; 32] = bytes.try_into().map_err(|_| js("not an endpoint key"))?;
+        IDLE_S.store(idle.unwrap_or(0).into(), Relaxed);
         let net = relay.map_or(Net::N0, Net::Relay);
         let ep = bind(secret, &net).await.map_err(js)?;
         Ok(Node {

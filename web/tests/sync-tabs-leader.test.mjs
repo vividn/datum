@@ -22,8 +22,8 @@ after(async () => {
 
 /**
  * `native` comes to hold `n` bursts. A miss keeps watching past a pull and a
- * hung dial's 60 s, and fails saying whether the write came late or never,
- * and what `leader`'s sync saw — the question da-zyox0 could not settle from
+ * hung dial's idle timeout, and fails saying whether the write came late or
+ * never, and what `leader`'s sync saw — the question da-zyox0 could not settle from
  * one CI red that no local run reproduced.
  */
 async function arrives(native, leader, n) {

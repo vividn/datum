@@ -41,7 +41,8 @@
 //   comes here (`syncCommand`) rather than to the CLI, which has no network.
 //
 // A relay other than n0's is named in `localStorage` (`datum.syncRelay`),
-// as `DATUM_SYNC_RELAY` names one for the CLI: the tests' local relay.
+// as `DATUM_SYNC_RELAY` names one for the CLI: the tests' local relay. So
+// are the tests' short timeouts (`datum.syncTimeoutS`, `shortTimeout`).
 
 import { writable, type Readable } from 'svelte/store';
 import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, uniqueRenameArgv, vectorArgv } from './calls.js';
@@ -189,6 +190,20 @@ function failInjected(): void {
 	if (n > 0) throw new Error(`${FAIL_KEY}: failed on purpose`);
 }
 
+/**
+ * Whole seconds for the wire's idle timeout (60 s) and `deliverMs` (20 s)
+ * alike, as `DATUM_SYNC_TIMEOUT_S` shortens the CLI's: a test's lever
+ * (da-eqjri). Whole, as the wire counts them.
+ */
+function shortTimeout(): number | undefined {
+	try {
+		const s = Number(localStorage.getItem('datum.syncTimeoutS'));
+		return Number.isInteger(s) && s > 0 ? s : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 function relay(): string | undefined {
 	try {
 		return localStorage.getItem('datum.syncRelay') ?? undefined;
@@ -272,7 +287,7 @@ class Leader {
 		// Held only once bound: a failed bind is tried again on the next start.
 		const { datum, schema } =
 			this.version ?? (this.version = (JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])) as SyncStatus).this);
-		this.endpoint = await ask<string>(this.db, { op: 'start', key, relay: relay(), label: this.label, datum, schema });
+		this.endpoint = await ask<string>(this.db, { op: 'start', key, relay: relay(), idle: shortTimeout(), label: this.label, datum, schema });
 		this.key = key;
 		this.post();
 	}
@@ -592,7 +607,9 @@ export function syncLeads(): string[] {
 }
 
 /** How long a leave or a purge's departure waits for a sync to deliver it (da-2o19r). */
-export const DELIVER_MS = 20_000;
+export function deliverMs(): number {
+	return (shortTimeout() ?? 20) * 1000;
+}
 
 /**
  * True once `db`'s leader, this tab or another, ends a session well after

@@ -61,6 +61,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::pin;
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
@@ -203,10 +204,21 @@ fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
     std::env::var(name).ok()?.parse().ok()
 }
 
+/// [`idle`]'s seconds where there is no environment to name them: datum.day's
+/// tests, through `web::Node::bind` (da-eqjri). 0 is unset. One for the
+/// process, as the environment is: every node a page binds is the page's,
+/// and so its test's.
+static IDLE_S: AtomicU64 = AtomicU64::new(0);
+
 /// How long a session may go with no frame moving either way
-/// (`DATUM_SYNC_TIMEOUT_S`, for the tests).
+/// (`DATUM_SYNC_TIMEOUT_S` or [`IDLE_S`], for the tests).
 fn idle() -> Duration {
-    Duration::from_secs(env("DATUM_SYNC_TIMEOUT_S").unwrap_or(60))
+    idle_of(IDLE_S.load(Relaxed))
+}
+
+fn idle_of(set: u64) -> Duration {
+    let set = Some(set).filter(|&s| s > 0);
+    Duration::from_secs(set.or_else(|| env("DATUM_SYNC_TIMEOUT_S")).unwrap_or(60))
 }
 
 async fn within<T>(f: impl Future<Output = Result<T>>) -> Result<T> {
@@ -1459,5 +1471,15 @@ mod tests {
             verdict("B", true, &mine, &theirs),
             (Some(true), "verify ok".into())
         );
+    }
+
+    /// A session waits 60 s on a silent peer, and only a test says less:
+    /// the environment natively, [`IDLE_S`] in datum.day (da-eqjri).
+    #[test]
+    fn idle_is_a_minute_unless_a_test_says() {
+        assert_eq!(env::<u64>("DATUM_SYNC_TIMEOUT_S"), None, "set for this run");
+        assert_eq!(idle(), Duration::from_secs(60));
+        assert_eq!(idle_of(0), Duration::from_secs(60));
+        assert_eq!(idle_of(4), Duration::from_secs(4));
     }
 }
