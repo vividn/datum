@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { startApp, stopApp } from './support/app.mjs';
 import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
-import { AT_DATUM_DAY, DESKTOP, WIDGET, cli, endpointId, members, more, openChain, runIn } from './support/syncactions.mjs';
+import { AT_DATUM_DAY, DESKTOP, WIDGET, addAdmin, authenticator, cli, endpointId, members, more, openChain, runIn } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -33,31 +33,6 @@ after(async () => {
 	await relay?.stop();
 	await stopApp();
 });
-
-/** A passkey the page can make and use, with the user verified. */
-async function authenticator(page) {
-	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('WebAuthn.enable');
-	await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: {
-			protocol: 'ctap2',
-			transport: 'internal',
-			hasResidentKey: true,
-			hasUserVerification: true,
-			isUserVerified: true,
-			automaticPresenceSimulation: true
-		}
-	});
-}
-
-/** Lock `home`'s chain with a new passkey, through the widget's More. */
-async function addAdmin(page) {
-	await more(page);
-	await page.locator(`${WIDGET} .chain[data-db="home"]`).getByRole('button', { name: 'add admin' }).click();
-	await page.locator('dialog.ask input').fill('my phone');
-	await page.locator('dialog.ask').getByRole('button', { name: 'add' }).click();
-	await page.locator(`${WIDGET} .chain[data-db="home"] .admin`).waitFor();
-}
 
 const revokedOf = async (app, id) => (await members(app)).members.find((m) => m.endpoint === id).revoked;
 

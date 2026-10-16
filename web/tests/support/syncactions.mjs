@@ -32,3 +32,28 @@ export async function openChain(app, label = 'phone') {
 export const more = (page) => page.locator(`${WIDGET} .actions`).getByRole('button', { name: /^More/ }).click();
 
 export const members = async (app) => JSON.parse(await cli(app, ['--db', 'home', 'sync', 'chain', 'list', '--json']));
+
+/** A passkey the page can make and use, with the user verified. */
+export async function authenticator(page) {
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('WebAuthn.enable');
+	await cdp.send('WebAuthn.addVirtualAuthenticator', {
+		options: {
+			protocol: 'ctap2',
+			transport: 'internal',
+			hasResidentKey: true,
+			hasUserVerification: true,
+			isUserVerified: true,
+			automaticPresenceSimulation: true
+		}
+	});
+}
+
+/** Lock `home`'s chain with a new passkey, through the widget's More. */
+export async function addAdmin(page) {
+	await more(page);
+	await page.locator(`${WIDGET} .chain[data-db="home"]`).getByRole('button', { name: 'add admin' }).click();
+	await page.locator('dialog.ask input').fill('my phone');
+	await page.locator('dialog.ask').getByRole('button', { name: 'add' }).click();
+	await page.locator(`${WIDGET} .chain[data-db="home"] .admin`).waitFor();
+}

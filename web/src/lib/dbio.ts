@@ -29,6 +29,7 @@ import { fileArgv } from './fileargv.js';
 import { STALE } from './layout/draft.js';
 import { forget } from './replStore.js';
 import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
+import type { ChainList } from './syncView.js';
 
 /**
  * `argv` run the browser's way if it is one of the file commands, else
@@ -327,14 +328,24 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	// `sync chain list` answers `chain: null` in a copy in no chain, and one
 	// joining a chain is in none: what the CLI's purge reads.
 	const listed = await run(['--db', db, ...chainListArgv()]);
-	const chain = listed.code === 0 ? (JSON.parse(listed.stdout) as { chain: string | null }).chain : null;
+	const { chain, admins } = listed.code === 0 ? (JSON.parse(listed.stdout) as ChainList) : { chain: null, admins: [] };
 	let way = flags.find((f) => f === '--leave' || f === '--rejoin')?.slice(2) ?? null;
 	if (chain && !way) {
+		// A locked chain's order takes an admin's signature (da-x5lw4): a
+		// passkey's this page asks for (`syncAct`), a key file's only the CLI
+		// reads — said before the name, which would otherwise be typed for nothing.
+		const passkey = admins.some((a) => !a.key.startsWith('ed25519:'));
+		const offered = !admins.length || passkey;
+		const whole = !admins.length
+			? 'chain wipes every copy in the chain, each as it next syncs.'
+			: passkey
+				? 'chain wipes every copy in the chain, each as it next syncs; the chain is locked, so an admin’s passkey approves it once the name is typed.'
+				: 'the chain is locked by an admin key file, which only the CLI reads: `datum db purge --chain --admin-key <FILE>` wipes every copy in it.';
 		way = await choose(
 			`This copy is in sync chain ${chain}: leave tells the chain this copy leaves, then wipes it; ` +
-				'rejoin wipes it and refetches everything from the chain, staying a member; ' +
-				'chain wipes every copy in the chain, each as it next syncs.\nLeave, rejoin, or purge the whole chain?',
-			['leave', 'rejoin', 'chain']
+				`rejoin wipes it and refetches everything from the chain, staying a member; ${whole}\n` +
+				(offered ? 'Leave, rejoin, or purge the whole chain?' : 'Leave or rejoin?'),
+			offered ? ['leave', 'rejoin', 'chain'] : ['leave', 'rejoin']
 		);
 		if (!way) return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: 'db purge: aborted (none of leave, rejoin or chain)' };
 		if (way === 'chain') return purgeChain(db);

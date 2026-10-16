@@ -365,7 +365,7 @@ export async function syncAct(db: string, argv: string[]): Promise<RunResult> {
 	const link = r.code !== 0 && approveLink(r.stderr);
 	if (!link) return r;
 	const done = await run(['--db', db, ...approveArgv(link)], await approve(link));
-	return { ...done, stdout: r.stdout + done.stdout };
+	return { ...done, stdout: [r.stdout.trimEnd(), done.stdout].filter(Boolean).join('\n') };
 }
 
 /** Acknowledge `n` in `db`: every unlock by the word, anything else by its subject. */

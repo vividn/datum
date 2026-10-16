@@ -16,7 +16,7 @@ import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp } from './support/app.mjs';
 import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
-import { DESKTOP, cli, openChain, runIn } from './support/syncactions.mjs';
+import { AT_DATUM_DAY, DESKTOP, addAdmin, authenticator, cli, openChain, runIn } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -117,5 +117,54 @@ describe('`db purge --leave` in the bar', () => {
 		} finally {
 			await native.close();
 		}
+	});
+});
+
+// da-x5lw4: a locked chain's purge takes an admin's signature, which the page
+// asks a passkey for and a key file can give only the CLI. The dialog says
+// so before the name, which was otherwise typed for a refusal.
+describe('the purge dialog in a locked chain', () => {
+	const ask = async (app) => {
+		const dialog = app.page.locator('dialog.confirm');
+		await cli(app, ['--db', 'home', 'occur', 'tea']);
+		await app.goto('/repl?db=home');
+		const said = app.submit('db purge');
+		// Handled, so a failed assertion is the failure reported, not its closing the page under this.
+		said.catch(() => {});
+		await dialog.waitFor();
+		const button = (label) => dialog.getByRole('button', { name: label, exact: true });
+		return { said, dialog, button, text: await dialog.locator('p').innerText() };
+	};
+
+	test('locked by a key file: said before any name, and the whole chain is not offered', async () => {
+		await withWallClock(async (app) => {
+			await cli(app, ['--db', 'home', 'sync', 'new-invite', '--expires', '1d']);
+			await cli(app, ['--db', 'home', 'sync', 'admin', 'add', '/data/admin.key']);
+			const { said, dialog, button, text } = await ask(app);
+			assert.match(text, /; the chain is locked by an admin key file, which only the CLI reads: `datum db purge --chain --admin-key <FILE>` wipes every copy in it\.\nLeave or rejoin\?$/);
+			assert.equal(await button('chain').count(), 0);
+			assert.equal(await dialog.locator('input').count(), 0);
+			await button('cancel').click();
+			await said;
+			assert.equal((await runIn(app, ['--db', 'home', 'count', 'tea'])).stdout.trim(), '1');
+		}, AT_DATUM_DAY);
+	});
+
+	test('locked by a passkey: said before the name, and the passkey approves the purge of every copy', async () => {
+		await withWallClock(async (app) => {
+			await authenticator(app.page);
+			await cli(app, ['--db', 'home', 'sync', 'new-invite', '--expires', '1d']);
+			await app.goto('/sync?db=home');
+			await addAdmin(app.page);
+			const { said, dialog, button, text } = await ask(app);
+			assert.match(text, /; the chain is locked, so an admin’s passkey approves it once the name is typed\.\nLeave, rejoin, or purge the whole chain\?$/);
+			await button('chain').click();
+			await dialog.locator('input').fill('home');
+			await dialog.locator('input').press('Enter');
+			await said;
+			// The preview's lines, then the approval's, each on its own.
+			assert.match((await app.outputs()).at(-1), /beside the database\napproved: wipe/);
+			assert.equal((await runIn(app, ['--db', 'home', 'count', 'tea'])).stdout.trim(), '0');
+		}, AT_DATUM_DAY);
 	});
 });
