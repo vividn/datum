@@ -109,3 +109,20 @@ test('another tab holding the files: the line says so, and the page opens once i
 		await line.waitFor({ state: 'detached' });
 	}, PHONE);
 });
+
+// A boot that never becomes ready fails naming what it waited on (da-hqpe7):
+// on CI one sat 30 s short of an enabled prompt, and its bare TimeoutError
+// said nothing more. Here the database worker's script is never answered.
+test('a boot that never becomes ready says what it was waiting on', async () => {
+	const prepare = async (context) => {
+		// The hang-stop shortened for this test alone: the wait is the subject.
+		context.setDefaultTimeout(3000);
+		await context.route('**/db.worker-*', () => {});
+	};
+	await assert.rejects(withApp(() => {}, { prepare }), (e) => {
+		assert.match(e.message, /Timeout/);
+		assert.match(e.message, /the boot: shows "[^"]*Opening your data/);
+		assert.match(e.message, /unanswered \S+\/db\.worker-/);
+		return true;
+	});
+});

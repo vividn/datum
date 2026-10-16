@@ -642,12 +642,53 @@ function serveAt(context, origin) {
 	});
 }
 
+/**
+ * What a boot is waiting on, for the error of one that never became ready
+ * (da-hqpe7): the requests still unanswered, those that failed, what the
+ * console said, and the page's own words for the wait (Waiting.svelte).
+ * A stuck boot is not a slow one — on a loaded runner one context sat 30 s
+ * short of an enabled prompt while the next, in the same file, was ready in
+ * under 4 — and its bare `TimeoutError` named nothing it waited on.
+ * `stuck` rethrows `ready`'s timeout with all of it.
+ */
+function watchBoot(page) {
+	const out = new Set();
+	const said = [];
+	const on = {
+		request: (r) => out.add(r),
+		requestfinished: (r) => out.delete(r),
+		requestfailed: (r) => {
+			out.delete(r);
+			said.push(`failed ${r.url()}: ${r.failure()?.errorText}`);
+		},
+		console: (m) => /error|warning/.test(m.type()) && said.push(`${m.type()}: ${m.text()}`)
+	};
+	for (const [event, fn] of Object.entries(on)) page.on(event, fn);
+	const stop = () => {
+		for (const [event, fn] of Object.entries(on)) page.off(event, fn);
+	};
+	const stuck = async (e) => {
+		stop();
+		if (e?.name !== 'TimeoutError') throw e;
+		const shows = await page
+			.locator('.waiting')
+			.textContent({ timeout: 1000 })
+			.catch(() => null);
+		const unanswered = [...out].map((r) => `unanswered ${r.url()}`);
+		e.message += `\nthe boot: ${[`shows ${JSON.stringify(shows)}`, ...unanswered, ...said].join('; ')}`;
+		throw e;
+	};
+	return { stop, stuck };
+}
+
 /** Navigate to the day frame and wait until the database is open. */
 async function open(page, query, origin = baseUrl()) {
 	const errors = [];
 	page.on('pageerror', (e) => errors.push(String(e)));
+	const boot = watchBoot(page);
 	await page.goto(origin + '/' + query);
-	await ready(page);
+	await ready(page).catch(boot.stuck);
+	boot.stop();
 	await countRuns(page);
 	// What the database's change counter reads as it opened — empty, on a
 	// fresh context: `empty` has nothing to do until something writes.
