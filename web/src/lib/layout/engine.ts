@@ -259,7 +259,7 @@ export async function press(
 	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
 	// The listing, typed, opens the widget they are resolved in (da-6cutb).
 	if (result.code === 0 && listsConflicts(argv)) void openPlace('conflicts');
-	// So do `spec` and `spec F` the field widget, on F (da-ez40f).
+	// So do `setup` and `setup F` the field widget, on F (da-ez40f).
 	const field = specOpens(argv);
 	if (result.code === 0 && field !== null) void openField(field);
 	return (await answerVerb(argv, result)) ?? result;

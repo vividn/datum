@@ -3,14 +3,13 @@ use crate::cli::*;
 use crate::error::{ParseError, Result};
 use crate::input::Show;
 
-/// The command's name, said once (da-ez40f): `spec` may yet be renamed.
-pub const SPEC: &str = "spec";
+/// The command's name, said once (da-ez40f): `spec` until da-a4ptr.
+pub const SETUP: &str = "setup";
 
-/// `spec [FIELD] [CHANGES]` (da-ez40f). No field is the listing, a field
+/// `setup [FIELD] [CHANGES]` (da-ez40f). No field is the listing, a field
 /// alone its spec, a field with flags a change, and `--delete` the field's
 /// spec document gone.
 pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
-    gone(tail)?;
     let delete = tail.contains(&"--delete");
     let tail: Vec<&str> = tail.iter().copied().filter(|t| *t != "--delete").collect();
     let (mut out, flagged, named) = parse_spec_set(&tail)?;
@@ -24,7 +23,7 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
             show: Show::Default,
         }),
         (_, _, true) => Err(ParseError::InvalidArg(format!(
-            "--delete takes the field alone: `{SPEC} <FIELD> --delete`"
+            "--delete takes the field alone: `{SETUP} <FIELD> --delete`"
         ))),
         (false, false, false) => Ok(SpecCommand::Show {
             field,
@@ -45,55 +44,12 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
             }
             if tags.len() > 1 {
                 return Err(ParseError::InvalidArg(format!(
-                    "`{SPEC}` lists by one --tag"
+                    "`{SETUP}` lists by one --tag"
                 )));
             }
             Ok(SpecCommand::List { tag: tags.pop() })
         }
     }
-}
-
-/// The subcommands `spec` had, refused by name with the line that does it
-/// now. A field may be called any of them, so it is the second positional,
-/// which no `spec` line takes, that makes one the old form.
-fn gone(tail: &[&str]) -> Result<()> {
-    let (Some(&sub), Some(&field)) = (tail.first(), tail.get(1)) else {
-        return Ok(());
-    };
-    if field.starts_with('-') {
-        return Ok(());
-    }
-    let rest = &tail[2..];
-    let words = |words: &[&str]| {
-        let words: Vec<String> = words.iter().map(|w| w.to_string()).collect();
-        crate::alias::expand::shell_join(&words)
-    };
-    let now = match sub {
-        "set" => words(&tail[1..]),
-        "show" => words(&[field]),
-        "remove" => words(&[field, "--delete"]),
-        "add-state" => {
-            let name = rest.first().copied().unwrap_or("NAME");
-            let mut line = vec![field.to_string(), "--add-state".into(), name.to_string()];
-            // The slots end at the first flag; a lone `-` leaves one alone.
-            let slots = rest
-                .iter()
-                .skip(1)
-                .take_while(|w| **w == "-" || !w.starts_with('-'));
-            for (flag, v) in ["--state-color", "--state-description", "--state-glyph"]
-                .into_iter()
-                .zip(slots)
-                .filter(|(_, v)| **v != "-")
-            {
-                line.extend([flag.to_string(), format!("{name}={v}")]);
-            }
-            crate::alias::expand::shell_join(&line)
-        }
-        _ => return Ok(()),
-    };
-    Err(ParseError::InvalidArg(format!(
-        "`{SPEC} {sub}` is gone: `{SPEC} {now}`"
-    )))
 }
 
 /// The flags of a change and the field they change, whether a flag was
@@ -356,7 +312,7 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
                 out.z_index = Some(parse_position_f64(v, "--z-index")?);
                 i += 1;
             }
-            // The listing's filter: `spec --tag T`.
+            // The listing's filter: `setup --tag T`.
             FlagSplit::Long("tag") => {
                 let (v, ni) = take_value(tail, i, None, "--tag")?;
                 out.list_tags.push(v.to_string());
@@ -450,7 +406,7 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
     if let Some(extra) = pos.get(1) {
         if extra.trim_start().starts_with('{') {
             return Err(ParseError::InvalidArg(format!(
-                "{SPEC}: the spec body is `--from-json <JSON>` now — `--json` \
+                "{SETUP}: the spec body is `--from-json <JSON>` now — `--json` \
                  is the global `--show json`, so '{extra}' arrived as an argument"
             )));
         }

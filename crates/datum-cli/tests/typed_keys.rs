@@ -22,7 +22,7 @@ fn typed_db() -> Db {
         "on": {"value_type": "date"},
         "at": {"value_type": "datetime"},
     }});
-    run_cli(&["spec", "run", "--from-json", &spec.to_string()], &db).unwrap();
+    run_cli(&["setup", "run", "--from-json", &spec.to_string()], &db).unwrap();
     db
 }
 
@@ -174,7 +174,7 @@ fn an_untyped_key_is_guessed_as_before() {
     let spec = json!({"field": "f", "verb": "occur", "subfields": {
         "ref_num": {"value_type": "string"},
     }});
-    run_cli(&["spec", "f", "--from-json", &spec.to_string()], &db).unwrap();
+    run_cli(&["setup", "f", "--from-json", &spec.to_string()], &db).unwrap();
     assert_eq!(log(&db, "f", "ref_num=0042x"), Ok(json!("0042x")));
 }
 
@@ -195,7 +195,7 @@ fn a_missing_required_key_refuses_a_raw_occur() {
     let spec = json!({"field": "run", "verb": "occur", "subfields": {
         "km": {"value_type": "number", "required": true},
     }});
-    run_cli(&["spec", "run", "--from-json", &spec.to_string()], &db).unwrap();
+    run_cli(&["setup", "run", "--from-json", &spec.to_string()], &db).unwrap();
     let err = run_cli(&["occur", "run"], &db).unwrap_err();
     assert_eq!(format!("{err:#}"), "Missing required key: km");
     assert!(logged_entries(&db, "run").is_empty());
@@ -253,7 +253,7 @@ const LIFT: &str = r#"{"field": "lift", "verb": "occur", "subfields": {
 #[test]
 fn a_list_typed_key_parses_each_element_or_refuses() {
     let db = fresh_db();
-    run_cli(&["spec", "lift", "--from-json", LIFT], &db).unwrap();
+    run_cli(&["setup", "lift", "--from-json", LIFT], &db).unwrap();
     for (kv, want) in [
         ("reps=8,8,6", Ok(json!([8, 8, 6]))),
         ("reps=8", Ok(json!([8]))),
@@ -313,13 +313,13 @@ fn a_list_typed_key_parses_each_element_or_refuses() {
     }
 }
 
-/// Each list type goes through `spec`, a kit's export and its install,
+/// Each list type goes through `setup`, a kit's export and its install,
 /// and the installed kit logs; a `ref[]` element refers as a bare `ref`
 /// value does.
 #[test]
 fn list_types_round_trip_through_a_kit() {
     let db = fresh_db();
-    run_cli(&["spec", "lift", "--from-json", LIFT], &db).unwrap();
+    run_cli(&["setup", "lift", "--from-json", LIFT], &db).unwrap();
     let spec = db.load_spec("lift").unwrap().unwrap();
     let toml = datum_core::kit::KitToml::from_field_specs("lifts", None, &[spec], &[])
         .to_toml()
@@ -360,7 +360,7 @@ fn the_spec_help_update_clears_an_old_value_a_later_type_lists() {
     let db = fresh_db();
     // A lone value is not a list (da-jhi0x).
     log(&db, "lift", "reps=8").unwrap();
-    run_cli(&["spec", "lift", "--from-json", LIFT], &db).unwrap();
+    run_cli(&["setup", "lift", "--from-json", LIFT], &db).unwrap();
     let mistyped = |db: &Db| {
         let entries = db.list_including_deleted().unwrap();
         let report = datum_commands::commands::check::collect_issues(db, &entries).unwrap();
@@ -370,10 +370,10 @@ fn the_spec_help_update_clears_an_old_value_a_later_type_lists() {
             .any(|i| i.category == "mistyped_data_value")
     };
     assert!(mistyped(&db), "check lists the old value");
-    let page = datum_parse::help::command_help("spec");
+    let page = datum_parse::help::command_help("setup");
     let at = page
         .find("`datum update <hid> ")
-        .expect("no update on spec --help");
+        .expect("no update on setup --help");
     let hid = logged_entries(&db, "lift")[0].hid.0.clone();
     let argv: Vec<&str> = page[at + 1..]
         .split('`')

@@ -117,7 +117,7 @@ pub(crate) fn load_registry_opt(db: &Db) -> Option<datum_core::field_spec::SpecR
 }
 
 /// An edit of a spec entry (`update spec:F`, `edit`) holds the colours it
-/// changes to `spec --color`'s rule (da-eciuy). Here and not in
+/// changes to `setup --color`'s rule (da-eciuy). Here and not in
 /// storage, which takes a synced spec as its copy wrote it.
 pub(crate) fn resolve_spec_colors(updated: &mut Entry, existing: &Entry) -> Result<()> {
     match updated.data.as_mut() {
@@ -173,8 +173,8 @@ pub(crate) fn enforce_spec_lists_against(entry: &Entry, registry: &SpecRegistry)
     let plural = if undeclared.len() == 1 { "" } else { "s" };
     anyhow::bail!(
         "field '{field}' takes only its listed keys (only_listed_keys): undeclared key{plural}: \
-         {rendered} (declare {them} in the spec, e.g. `datum spec {field} --data-key <key>`, \
-          or `datum spec {field} --any-keys`)",
+         {rendered} (declare {them} in the spec, e.g. `datum setup {field} --data-key <key>`, \
+          or `datum setup {field} --any-keys`)",
         field = entry.field,
         them = if undeclared.len() == 1 { "it" } else { "them" },
     );

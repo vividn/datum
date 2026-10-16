@@ -106,7 +106,7 @@ pub struct PresentationSpec {
     pub glyph_by: Option<GlyphBy>,
 
     /// A custom SVG icon (da-45wgz): the whole `<svg>` element, vetted and
-    /// size-capped by `spec`. The dayview draws it where the field's
+    /// size-capped by `setup`. The dayview draws it where the field's
     /// glyph would stand; the terminal band cannot draw an image, so there
     /// the dot keeps its glyph, which is `●` unless one is named.
     #[serde(default, skip_serializing_if = "Option::is_none")]

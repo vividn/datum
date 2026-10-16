@@ -393,7 +393,7 @@ describe('a place on a phone', () => {
 				await back(page).waitFor();
 				await roundTrip(page);
 				assert.equal(await back(page).count(), 1, 'the bar came back at the top');
-				assert.equal(await commands(page).locator('button[data-command="db setup"]').count(), 1);
+				assert.equal(await commands(page).locator('button[data-command="db migrate"]').count(), 1);
 
 				await back(page).click();
 				await back(page).waitFor({ state: 'detached' });

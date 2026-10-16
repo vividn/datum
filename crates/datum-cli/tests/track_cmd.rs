@@ -188,11 +188,11 @@ fn track_without_a_verb_or_a_log_names_the_choices() {
     assert!(db.load_spec("x").unwrap().is_none(), "a spec was minted");
 }
 
-/// `spec` on a new field is the same question, asked the same way.
+/// `setup` on a new field is the same question, asked the same way.
 #[test]
 fn spec_set_on_a_new_field_needs_a_verb() {
     let db = fresh_db();
-    let err = run_cli(&["spec", "y", "--color", "red"], &db)
+    let err = run_cli(&["setup", "y", "--color", "red"], &db)
         .unwrap_err()
         .to_string();
     assert!(err.contains("--verb"), "err = {err}");
@@ -205,7 +205,7 @@ fn spec_set_on_a_new_field_needs_a_verb() {
 fn default_verb_flag_is_an_error_naming_verb() {
     let db = fresh_db();
     for argv in [
-        vec!["spec", "y", "--default-verb", "occur"],
+        vec!["setup", "y", "--default-verb", "occur"],
         vec!["track", "y", "--default-verb", "occur"],
     ] {
         let err = run_cli(&argv, &db).unwrap_err().to_string();
@@ -237,7 +237,7 @@ fn a_stored_verb_wins_over_the_log() {
 fn track_or_ignore_alone_on_a_spec_is_the_status_only() {
     let _clock = set_time("2026-01-15T12:00:00Z");
     let db = fresh_db();
-    let spec_line = &["spec", "mood", "--verb", "switch", "--add-state", "calm"];
+    let spec_line = &["setup", "mood", "--verb", "switch", "--add-state", "calm"];
     run_cli(spec_line, &db).unwrap();
     let spec_row = || serde_json::to_value(db.spec_entry("mood").unwrap()).unwrap();
     let before = spec_row();
@@ -255,7 +255,7 @@ fn track_or_ignore_alone_on_a_spec_is_the_status_only() {
     }
 }
 
-/// `track F <changes>` is `spec F <changes> --track`, and `ignore` the same
+/// `track F <changes>` is `setup F <changes> --track`, and `ignore` the same
 /// with `--ignore`: the same spec and the same row, and one `undo` takes
 /// both back.
 #[test]
@@ -279,7 +279,7 @@ fn track_or_ignore_with_changes_is_spec_with_the_status() {
         let spec = fresh_db();
         let line = [&[word][..], &changes].concat();
         run_cli(&line, &sugar).unwrap();
-        run_cli(&[&["spec"][..], &changes, &[flag]].concat(), &spec).unwrap();
+        run_cli(&[&["setup"][..], &changes, &[flag]].concat(), &spec).unwrap();
         let shape = |db: &Db| {
             let mut spec = serde_json::to_value(db.load_spec("mood").unwrap()).unwrap();
             spec.as_object_mut().unwrap().remove("modify_time");
@@ -294,7 +294,7 @@ fn track_or_ignore_with_changes_is_spec_with_the_status() {
     }
 }
 
-/// `track F` on a field with no spec declares one, as `spec F --verb V
+/// `track F` on a field with no spec declares one, as `setup F --verb V
 /// --track`: the log answers the verb, and a field with none is asked
 /// (`track_without_a_verb_or_a_log_names_the_choices`). `ignore F` there
 /// writes the row and declares nothing (vremya, 10-16, until vividn rules).
@@ -303,7 +303,7 @@ fn alone_on_a_field_with_no_spec() {
     let _clock = set_time("2026-01-15T12:00:00Z");
     let db = fresh_db();
     run_cli(&["start", "nap", "-t", "-5"], &db).unwrap();
-    run_cli(&["spec", "nap", "--delete"], &db).unwrap();
+    run_cli(&["setup", "nap", "--delete"], &db).unwrap();
     advance_time("1s");
     run_cli(&["track", "nap"], &db).unwrap();
     assert_eq!(db.load_spec("nap").unwrap().unwrap().verb, Action::Start);
@@ -319,7 +319,7 @@ fn alone_on_a_field_with_no_spec() {
 }
 
 /// `track` has no flags of its own: the ones it had are refused, `--state`
-/// and `--tag` naming what replaced them, as on `spec`.
+/// and `--tag` naming what replaced them, as on `setup`.
 #[test]
 fn track_has_no_flags_of_its_own() {
     let db = fresh_db();

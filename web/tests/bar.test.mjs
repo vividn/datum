@@ -1110,7 +1110,7 @@ const pillAt = (page) =>
 /** Track `coffee` and get its button onto the widget bar, as ghost.test.mjs does. */
 async function withCoffee(app) {
 	// Typed, not quiet: a write is what refreshes the bar, a read does not (da-fprk0).
-	await seedLines(app, ['spec coffee --verb occur']);
+	await seedLines(app, ['setup coffee --verb occur']);
 	await app.page.locator('.bar [data-field="coffee"]').waitFor();
 }
 

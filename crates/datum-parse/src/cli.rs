@@ -68,7 +68,7 @@ pub enum Command {
     /// (da-4dvk7). Kept off the command list; `datum help debug` has it.
     Debug(DebugCommand),
 
-    /// `track F [CHANGES]` and `ignore F [CHANGES]` (da-ijf3p): `spec F
+    /// `track F [CHANGES]` and `ignore F [CHANGES]` (da-ijf3p): `setup F
     /// [CHANGES] --track` / `--ignore`, with `track` or `ignore` set.
     Track(Box<SpecSetArgs>),
     Ignore(Box<SpecSetArgs>),
@@ -108,8 +108,8 @@ pub enum Command {
 
     Info(InfoArgs),
     /// `datum db <subcommand>` — DB-lifecycle group. Houses every database
-    /// administration verb: `setup`, `purge`, `backup`, `restore`,
-    /// `migrate`, `import` (da-33g consolidated the standalone verbs).
+    /// administration verb: `purge`, `backup`, `restore`,
+    /// `migrate`, `v2import` (da-33g consolidated the standalone verbs).
     Db(DbCommand),
 
     Config(ConfigCommand),
@@ -177,16 +177,13 @@ pub struct ConfigShowArgs {
     pub show: Show,
 }
 
-// ─── Info / Setup ─────────────────────────────────────────────────────────
+// ─── Info ─────────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub struct InfoArgs {
     pub target: Option<String>,
     pub all: bool,
 }
-
-#[derive(Debug, Default)]
-pub struct SetupArgs {}
 
 /// `datum reparse <hid>...` — replay one or more named entries' stored
 /// `raw_input` through the current parser, diffing the result against
@@ -216,8 +213,6 @@ pub struct ReparseArgs {
 
 #[derive(Debug)]
 pub enum DbCommand {
-    /// `datum db setup` — initialize or migrate the active DB schema.
-    Setup(SetupArgs),
     /// `datum db purge` — drop every datum table and rebuild from scratch.
     Purge(DbPurgeArgs),
     /// `datum db backup` — dump live entries to JSONL or tar.gz.
@@ -227,7 +222,8 @@ pub enum DbCommand {
     BackupRotation(BackupRotationArgs),
     /// `datum db restore` — replay entries from a backup file.
     Restore(RestoreArgs),
-    /// `datum db migrate` — schema migration runner (run/status/edit).
+    /// `datum db migrate` — schema migration runner: bare or `run` applies
+    /// what is pending; `status`, `edit`.
     Migrate(MigrateCommand),
     /// `datum db v2import` — load a legacy datum CouchDB backup JSON.
     V2import(DbImportArgs),
@@ -614,17 +610,17 @@ pub struct WhyArgs {
 
 // ─── Spec / alias management ──────────────────────────────────────────────
 
-/// `datum spec [FIELD] [CHANGES]` (da-ez40f): no subcommands — the shape
+/// `datum setup [FIELD] [CHANGES]` (da-ez40f): no subcommands — the shape
 /// of the line says which of these it is.
 #[derive(Debug)]
 pub enum SpecCommand {
-    /// `datum spec [--tag T]` — the fields that have a spec.
+    /// `datum setup [--tag T]` — the fields that have a spec.
     List { tag: Option<String> },
-    /// `datum spec <FIELD>` — its spec as a block; `--json` as JSON.
+    /// `datum setup <FIELD>` — its spec as a block; `--json` as JSON.
     Show { field: String, show: Show },
-    /// `datum spec <FIELD> <CHANGES>` — apply them.
+    /// `datum setup <FIELD> <CHANGES>` — apply them.
     Set(Box<SpecSetArgs>),
-    /// `datum spec <FIELD> --delete` — delete the spec document.
+    /// `datum setup <FIELD> --delete` — delete the spec document.
     Delete { field: String, show: Show },
 }
 
@@ -695,7 +691,7 @@ pub struct SpecSetArgs {
     pub tags: Option<Vec<String>>,
     pub add_tags: Vec<String>,
     pub remove_tags: Vec<String>,
-    /// `spec --tag T`, the listing's filter; refused beside a field.
+    /// `setup --tag T`, the listing's filter; refused beside a field.
     pub list_tags: Vec<String>,
     /// `--only-listed-keys` / `--any-keys` (da-eqb30): the spec's
     /// `only_listed_keys`; `None` leaves the existing value.

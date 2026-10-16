@@ -1,4 +1,4 @@
-//! `datum spec` — field-spec management: `spec [FIELD] [CHANGES]`.
+//! `datum setup` — field-spec management: `setup [FIELD] [CHANGES]`.
 
 use anyhow::{Context, Result};
 use datum_core::{
@@ -11,7 +11,6 @@ use datum_core::{
     time::DatumTime,
     track::track_entry,
 };
-use datum_parse::parse::SPEC;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -32,11 +31,6 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&spec_json(&spec))?)
             }
             Some(spec) => print!("{}", Block::of(&spec, ignored(db, &field)?).render(None)),
-            // `spec list` and the rest were subcommands (da-ez40f): a field
-            // of that name with no spec is most likely the old line.
-            None if ["list", "show", "set", "remove", "add-state"].contains(&field.as_str()) => {
-                println!("No spec defined for field '{field}' (`{SPEC}` alone lists the specs)")
-            }
             None => println!("No spec defined for field '{field}'"),
         },
         SpecCommand::Set(args) => spec_set(*args, db)?,
@@ -106,7 +100,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             serde_json::from_str(json).with_context(|| "Invalid field spec JSON")?;
         if let Some(obj) = v.as_object_mut() {
             obj.insert("field".into(), args.field.clone().into());
-            // `spec F --json`'s reading of the keys, not the spec (`SpecJson`).
+            // `setup F --json`'s reading of the keys, not the spec (`SpecJson`).
             obj.remove("keys");
             obj.remove("keys_by_state");
         }
@@ -642,7 +636,7 @@ fn check_factors(spec: &mut FieldSpec) -> Result<()> {
     Ok(())
 }
 
-/// A kit's field meets `spec`'s checks (da-dtmlv): every glyph is one
+/// A kit's field meets `setup`'s checks (da-dtmlv): every glyph is one
 /// printable character, the icon is vetted and stored as `--icon`'s is, and
 /// so are the glyph's size factors (da-gah1q).
 pub(crate) fn check_presentation(spec: &mut FieldSpec) -> Result<()> {
@@ -664,7 +658,7 @@ pub(crate) fn check_presentation(spec: &mut FieldSpec) -> Result<()> {
 }
 
 /// Vet a STORED icon again where it is drawn (da-45wgz): a spec can arrive
-/// by sync or a hand edit without passing `spec`, so the stored text is
+/// by sync or a hand edit without passing `setup`, so the stored text is
 /// untrusted whatever route it came by. One that fails is dropped — its dots
 /// draw as if it had none — and said once per field on stderr.
 pub(crate) fn drop_unvetted_icon(spec: &mut FieldSpec) {
@@ -732,12 +726,12 @@ fn warn_alias_conflicts(report: &datum_core::db::SaveSpecReport) {
     }
 }
 
-/// A spec as `spec F --json` and `fields --json` print it (da-p3hxn): the
+/// A spec as `setup F --json` and `fields --json` print it (da-p3hxn): the
 /// stored spec, plus every key it declares ALREADY PARSED, so no reader
 /// splits a spelling — `keys`, [`FieldSpec::declared_keys`] in binding
 /// order as `{name, kind, value?, in_slug}`, and `keys_by_state`, the same
 /// list for an entry in each state that declares keys of its own. Neither
-/// is stored: `spec --from-json` ignores both.
+/// is stored: `setup --from-json` ignores both.
 #[derive(serde::Serialize)]
 pub struct SpecJson<'a> {
     #[serde(flatten)]
@@ -774,7 +768,7 @@ pub fn spec_json(spec: &FieldSpec) -> SpecJson<'_> {
     }
 }
 
-/// A spec as `spec F` prints it (da-ez40f): the field, its verb, colour and
+/// A spec as `setup F` prints it (da-ez40f): the field, its verb, colour and
 /// status on one line, then one labelled line for each thing it says — every
 /// flag's, so a change to any of them has a line to mark.
 struct Block {
@@ -1013,7 +1007,7 @@ mod tests {
         assert_eq!(spec.color, Some(resolve("green", "mood").unwrap()));
         let states = spec.allowed_states.as_ref().unwrap();
         assert!(states.contains(&"happy".to_string()) && states.contains(&"sad".to_string()));
-        // da-2sr, da-2pbvd: --track on `spec` writes the TRACK row; the
+        // da-2sr, da-2pbvd: --track on `setup` writes the TRACK row; the
         // spec itself carries no tracked/ignored bits.
         let mood_tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let mood_row = mood_tracked.iter().find(|f| f.field == "mood").unwrap();
@@ -1138,7 +1132,7 @@ mod tests {
         assert!(!spec.state_descriptions.contains_key("happy"));
     }
 
-    /// `spec F --json` hands a reader every key already parsed (da-p3hxn), so
+    /// `setup F --json` hands a reader every key already parsed (da-p3hxn), so
     /// the web never splits a spelling: an assign, which no list spells,
     /// is `brand` of kind assign; a state's own key is in its state's list
     /// alone.

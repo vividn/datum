@@ -97,7 +97,7 @@ fn a_sync_subcommand_with_no_json_ignores_the_env_and_refuses_the_flag() {
     );
 }
 
-/// da-a6p7v: so do the subcommands of `alias`, `db` and `spec` that draw no
+/// da-a6p7v: so do the subcommands of `alias`, `db` and `setup` that draw no
 /// JSON, having done nothing; and `redo` draws the level it used to drop.
 #[test]
 fn a_subcommand_with_no_json_ignores_the_env_and_refuses_the_flag() {
@@ -115,8 +115,8 @@ fn a_subcommand_with_no_json_ignores_the_env_and_refuses_the_flag() {
             &["alias", "set", "zz", "occur coffee", "--json"][..],
         ),
         ("alias remove", &["alias", "remove", "aa", "--json"]),
-        ("db setup", &["db", "setup", "--json"]),
-        ("spec", &["spec", "--json"]),
+        ("db migrate", &["db", "migrate", "--json"]),
+        ("setup", &["setup", "--json"]),
     ] {
         let out = datum(&db, "", argv);
         assert!(!out.status.success(), "{name} should have refused");

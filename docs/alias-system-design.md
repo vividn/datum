@@ -51,7 +51,7 @@ On spec save: **drop rows whose `source` matches this field, then re-project the
 3. Collect allowed states — one per line, **or** a pasted comma-list (don't force nine prompts).
 4. Optional: color, tag.
 
-Non-interactive `track <field> --add-state …` (`spec <field> … --track`) remains for scripting and re-runs.
+Non-interactive `track <field> --add-state …` (`setup <field> … --track`) remains for scripting and re-runs.
 
 ## Keep it lean
 

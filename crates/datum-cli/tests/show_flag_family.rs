@@ -9,7 +9,7 @@
 //!    quietly leaves the family is a visible `12 of 13`.
 //! 2. `--show` reaches a command that never had it (`fields --show json`),
 //!    and `--json` reaches one that never had it (`occur x --json`).
-//! 3. `spec` is in the family like everything else: its `--json <JSON>`
+//! 3. `setup` is in the family like everything else: its `--json <JSON>`
 //!    input flag is `--from-json <JSON>` now (vividn, 2026-09-15), and the
 //!    old spelling says so rather than silently dropping the body.
 //!
@@ -230,23 +230,23 @@ fn a_show_the_command_cannot_draw_is_refused_by_name() {
     );
 }
 
-/// `spec` joins the family: the spec body is `--from-json` now, and the
+/// `setup` joins the family: the spec body is `--from-json` now, and the
 /// old `--json` spelling says where it went instead of dropping it.
 #[test]
 fn spec_set_takes_the_body_from_from_json() {
     let (_tmp, db) = seeded();
     let body = r#"{"field":"x","verb":"occur"}"#;
-    ok(&db, &["spec", "x", "--from-json", body]);
-    let shown = ok(&db, &["spec", "x", "--json"]);
+    ok(&db, &["setup", "x", "--from-json", body]);
+    let shown = ok(&db, &["setup", "x", "--json"]);
     assert!(shown.contains("\"verb\": \"occur\""), "{shown:?}");
 
-    let out = datum(&db, &["spec", "y", "--json", body]);
+    let out = datum(&db, &["setup", "y", "--json", body]);
     assert!(!out.status.success(), "the old spelling must not pass");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--from-json"), "{stderr:?}");
 
     // …and `--json` now means what it means everywhere: `--show json`.
-    let explicit = ok(&db, &["spec", "x", "--show", "json"]);
+    let explicit = ok(&db, &["setup", "x", "--show", "json"]);
     assert_eq!(explicit, shown, "`--json` is `--show json`");
 }
 

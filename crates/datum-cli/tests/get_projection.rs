@@ -147,7 +147,7 @@ fn a_further_double_colon_is_a_hop_not_part_of_a_key() {
 fn tracker() -> (Env, String) {
     let env = Env::new();
     env.ok(&[
-        "spec",
+        "setup",
         "issue",
         "--verb",
         "switch",
@@ -329,7 +329,7 @@ fn a_data_ref_hops_and_chains_with_state_hops() {
 fn a_bare_slug_hops_only_on_a_key_the_spec_types_ref() {
     let env = Env::new();
     env.ok(&[
-        "spec",
+        "setup",
         "task",
         "--from-json",
         r#"{"field":"task","verb":"occur","subfields":{"blocker":{"value_type":"ref"}}}"#,

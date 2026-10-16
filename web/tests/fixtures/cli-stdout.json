@@ -20,8 +20,8 @@
 		["dayview", "--end-date", "2026-03-16", "--width", "600", "--height", "200"],
 		["nowview", "-o", "-", "--width", "400", "--height", "300"],
 		["check"],
-		["spec", "coffee", "--color", "#884400"],
-		["spec", "coffee"],
+		["setup", "coffee", "--color", "#884400"],
+		["setup", "coffee"],
 		["nosuch"]
 	],
 	"cases": [
@@ -121,12 +121,12 @@
 			"stdout": "✓ No consistency issues found: 14 entries, 5 field specs, 1 alias examined, 0 cached days recomputed, 0 differ, 14 rows read against 14 sync ops, 0 differ (checkers: base, verbs, aliases, slugs, integrity, flags, tz, refs, stats, sync, spool)."
 		},
 		{
-			"argv": ["spec", "coffee", "--color", "#884400"],
+			"argv": ["setup", "coffee", "--color", "#884400"],
 			"code": 0,
 			"stdout": "\u001b[36mUPDATE\u001b[0m \u001b[36m<id8>\u001b[0m \u001b[90mspec:coffee\u001b[0m\ncoffee  occur  #884400  tracked\n+ color   #884400"
 		},
 		{
-			"argv": ["spec", "coffee"],
+			"argv": ["setup", "coffee"],
 			"code": 0,
 			"stdout": "coffee  occur  #884400  tracked"
 		},

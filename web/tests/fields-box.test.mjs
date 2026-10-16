@@ -45,11 +45,11 @@ describe("the fields pane's box", () => {
 
 	test('tracking ten more fields does not change it', async () => {
 		await withApp(async ({ page }) => {
-			await type(page, 'spec coffee --verb occur');
+			await type(page, 'setup coffee --verb occur');
 			await page.locator('.bar [data-field="coffee"]').waitFor();
 			const before = await boxOf(page);
 
-			for (const field of TEN) await type(page, `spec ${field} --verb occur`);
+			for (const field of TEN) await type(page, `setup ${field} --verb occur`);
 			await page.locator('.bar [data-field="juliett"]').waitFor();
 
 			assert.deepEqual(await boxOf(page), before, 'the pane grew with its buttons');
@@ -66,7 +66,7 @@ describe("the fields pane's box", () => {
 	// axis the bar chose.
 	test('a button past the end of the bar is scrolled to and pressed', async () => {
 		await withApp(async ({ page }) => {
-			for (const field of TEN) await type(page, `spec ${field} --verb occur`);
+			for (const field of TEN) await type(page, `setup ${field} --verb occur`);
 			await page.locator('.bar [data-field="juliett"]').waitFor();
 
 			const bar = page.locator('section[data-pane="bar"] .bar');

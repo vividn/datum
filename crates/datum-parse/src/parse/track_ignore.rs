@@ -1,8 +1,8 @@
 use crate::cli::*;
 use crate::error::{ParseError, Result};
 
-/// `track F [CHANGES]` is `spec F [CHANGES] --track`, and `ignore` the same
-/// with `--ignore` (da-ijf3p): `spec`'s flags, and none of their own.
+/// `track F [CHANGES]` is `setup F [CHANGES] --track`, and `ignore` the same
+/// with `--ignore` (da-ijf3p): `setup`'s flags, and none of their own.
 pub(crate) fn parse_status(tail: &[&str], track: bool) -> Result<Box<SpecSetArgs>> {
     let (mut out, flagged, named) = super::spec::parse_spec_set(tail)?;
     if !named {
@@ -11,7 +11,7 @@ pub(crate) fn parse_status(tail: &[&str], track: bool) -> Result<Box<SpecSetArgs
     if !out.list_tags.is_empty() {
         return Err(super::spec::gone_list("tag", "T", "--tags a,b"));
     }
-    // A change declares the field, as `spec`'s does (da-b049); a bare
+    // A change declares the field, as `setup`'s does (da-b049); a bare
     // `track` or `ignore` of a bad name already in the database still puts
     // it right.
     if flagged {

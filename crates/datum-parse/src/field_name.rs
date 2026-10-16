@@ -1,7 +1,7 @@
 //! What a field name may be.
 //!
 //! A field name is written as one argv token — `datum occur coffee`, and
-//! the widget bar's `spec coffee …`. A name that does not survive that
+//! the widget bar's `setup coffee …`. A name that does not survive that
 //! round trip is a name nothing can log to: `cups=2` is read as a
 //! `KEY=VALUE` data arg and never reaches the field slot, `-weird` is read
 //! as a flag, and a leading `,` makes the token a comma-list that coerces
@@ -17,7 +17,7 @@
 //! from the one it looks like.
 //!
 //! So the rule is enforced where names are chosen — [`check`] runs inside
-//! `spec`'s parser, the one door both the terminal and datum.day go
+//! `setup`'s parser, the one door both the terminal and datum.day go
 //! through. Logging itself stays permissive, so no entry already in a
 //! database becomes unreachable, and `datum_core::slug::validate_field_name`
 //! — the storage-layer guard, which rejects only an empty name and a `:` —
@@ -27,7 +27,7 @@
 //! Nothing is migrated. A database that already holds a `cups=2` spec keeps
 //! it, and its chip goes on erroring when pressed — the parser cannot
 //! address that name from any surface, so there is no argv a migration
-//! could rewrite the press into. What there is, is a way out: `spec F --delete`
+//! could rewrite the press into. What there is, is a way out: `setup F --delete`
 //! takes a bare positional and reaches all three names, from the terminal
 //! and from datum.day alike, and (+) can no longer make another.
 //!

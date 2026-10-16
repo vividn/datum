@@ -109,7 +109,7 @@ fn a_moment_state_resumes_the_state_before_it() {
     let day = ["-d", "2025-01-08"];
     env.ok(&[&["switch", "mood", "happy", "-t", "09:00"][..], &day].concat());
     env.ok(&[
-        "spec",
+        "setup",
         "mood",
         "--states",
         "startled,startled2",

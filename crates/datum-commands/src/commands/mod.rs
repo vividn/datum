@@ -46,7 +46,6 @@ pub mod rekey;
 pub mod render_helpers;
 pub mod reparse;
 pub mod retime;
-pub mod setup;
 pub mod spec;
 pub mod start;
 pub mod states;

@@ -155,7 +155,7 @@ fn a_cut_off_kit_install_is_what_a_bare_undo_reverts() {
     )
     .unwrap();
     env.cut_off(&["kit", "install", kit.to_str().unwrap()]);
-    let coffee = || String::from_utf8(env.ok(&["spec", "coffee", "--json"]).stdout).unwrap();
+    let coffee = || String::from_utf8(env.ok(&["setup", "coffee", "--json"]).stdout).unwrap();
     assert!(!coffee().contains("No spec defined"), "{}", coffee());
     env.ok(&["undo"]);
     assert_eq!(env.live(), ["tea=null"]);
@@ -170,7 +170,7 @@ fn a_named_undo_of_a_create_deletes_it() {
     let tea = env.occur("tea", "0900");
     env.ok(&["undo", &tea]);
     assert_eq!(env.live(), Vec::<String>::new());
-    let spec = || String::from_utf8(env.ok(&["spec", "tea", "--json"]).stdout).unwrap();
+    let spec = || String::from_utf8(env.ok(&["setup", "tea", "--json"]).stdout).unwrap();
     assert!(spec().contains("No spec defined"), "{}", spec());
     env.ok(&["undo", &tea]);
     assert_eq!(env.live(), ["tea=null"]);

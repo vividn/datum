@@ -38,22 +38,14 @@ pub(crate) fn parse_reparse_args(tail: &[&str]) -> Result<ReparseArgs> {
     Ok(out)
 }
 
-pub(crate) fn parse_setup_args(tail: &[&str]) -> Result<SetupArgs> {
-    if let Some(tok) = tail.first() {
-        return Err(unknown_flag(split_flag(tok)));
-    }
-    Ok(SetupArgs {})
-}
-
 pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing db subcommand (setup|purge|backup|restore|migrate|v2import)".into(),
+            "missing db subcommand (purge|backup|restore|migrate|v2import)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
     match *sub {
-        "setup" => Ok(DbCommand::Setup(parse_setup_args(rest)?)),
         "purge" => Ok(DbCommand::Purge(parse_db_purge_args(rest)?)),
         "backup" => parse_backup_cmd(rest),
         "restore" => Ok(DbCommand::Restore(parse_restore_args(rest)?)),

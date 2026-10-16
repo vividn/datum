@@ -1057,9 +1057,9 @@ fn check_clean(copy: &Copy, others: &[&Copy]) {
 #[test]
 fn a_purge_preview_of_a_device_that_only_made_specs_says_they_go() {
     let (a, b) = chained();
-    b.ok(&["spec", "coffee", "--verb", "occur"]);
+    b.ok(&["setup", "coffee", "--verb", "occur"]);
     assert!(b.send(&a).0);
-    let spec = || a.ok(&["spec", "coffee", "--json"]);
+    let spec = || a.ok(&["setup", "coffee", "--json"]);
     assert!(!spec().contains("No spec defined"), "{}", spec());
     let preview = a.ok(&["sync", "chain", "revert", "b"]);
     assert!(
@@ -2094,8 +2094,8 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
 #[test]
 fn status_of_a_copy_in_no_chain_is_empty() {
     let a = Copy::new();
-    // A read creates no database (da-ov6x5): `db setup` makes it.
-    a.ok(&["db", "setup"]);
+    // A read creates no database (da-ov6x5): `db migrate` makes it.
+    a.ok(&["db", "migrate"]);
     let all = json(&a.ok(&["sync", "status", "--json"]));
     assert!(all["chain"].is_null(), "{all}");
     assert_eq!(all["members"], serde_json::json!([]));
@@ -3033,7 +3033,7 @@ fn verify_with(copy: &Copy, peer: &Copy) -> String {
 fn a_filtered_reader_gets_its_fields_and_their_specs_and_nothing_else() {
     let (a, b) = chained();
     for (f, copy) in [("coffee", &a), ("tea", &a)] {
-        copy.ok(&["spec", f, "--verb", "occur"]);
+        copy.ok(&["setup", f, "--verb", "occur"]);
         copy.ok(&["occur", f]);
     }
     b.ok(&["occur", "coffee", "cups=2"]);
@@ -3279,7 +3279,7 @@ fn an_op_outside_its_filter_sent_to_a_filtered_reader_is_refused() {
 #[test]
 fn a_kit_names_its_fields_and_only_a_reader_is_filtered() {
     let (a, _b) = chained();
-    a.ok(&["spec", "coffee", "--verb", "occur"]);
+    a.ok(&["setup", "coffee", "--verb", "occur"]);
     a.exec(
         "UPDATE entries SET data = json_set(data, '$.kit_id', 'drinks') WHERE slug = 'spec:coffee'",
     );

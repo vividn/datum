@@ -36,9 +36,9 @@ pub use pcli::{
     CountArgs, DayviewArgs, DbCommand, DbImportArgs, DbPurgeArgs, DebugCommand, DeleteArgs,
     EditArgs, FieldsArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, InfoArgs, KitCommand,
     KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs, NowviewArgs,
-    RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SetupArgs, SpecCommand,
-    SpecSetArgs, StatsArgs, StatsPeriod, SyncAdminAct, SyncCommand, SyncDaemonAct, SyncFilter,
-    TailArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
+    RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SpecCommand, SpecSetArgs,
+    StatsArgs, StatsPeriod, SyncAdminAct, SyncCommand, SyncDaemonAct, SyncFilter, TailArgs,
+    UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
 };
 // Apart from the list above, which every added name reflows.
 pub use pcli::StatesArgs;

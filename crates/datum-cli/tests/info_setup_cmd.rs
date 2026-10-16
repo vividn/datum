@@ -1,4 +1,4 @@
-//! `datum info` and `datum setup` integration tests (da-ndd.11).
+//! `datum info` and `datum db migrate` integration tests (da-ndd.11).
 
 use crate::common;
 
@@ -9,14 +9,14 @@ use datum_core::migrations::{
 use datum_core::test_util::{entry_builder, fresh_db};
 
 #[test]
-fn setup_is_idempotent_on_current_db() {
+fn bare_migrate_is_idempotent_on_current_db() {
     let db = fresh_db();
     assert_eq!(
         read_schema_version(db.conn()).unwrap(),
         Some(CURRENT_SCHEMA_VERSION)
     );
-    run_cli(&["db", "setup"], &db).expect("first setup");
-    run_cli(&["db", "setup"], &db).expect("second setup is a no-op");
+    run_cli(&["db", "migrate"], &db).expect("first migrate");
+    run_cli(&["db", "migrate"], &db).expect("second migrate is a no-op");
     // Schema version unchanged.
     assert_eq!(
         read_schema_version(db.conn()).unwrap(),
@@ -25,11 +25,11 @@ fn setup_is_idempotent_on_current_db() {
 }
 
 #[test]
-fn setup_rejects_newer_schema_version() {
+fn bare_migrate_rejects_newer_schema_version() {
     let db = fresh_db();
     // Stamp a version the binary cannot handle.
     set_schema_version(db.conn(), CURRENT_SCHEMA_VERSION + 1).unwrap();
-    let err = run_cli(&["db", "setup"], &db).unwrap_err();
+    let err = run_cli(&["db", "migrate"], &db).unwrap_err();
     let msg = format!("{err}");
     assert!(
         msg.to_lowercase().contains("newer"),

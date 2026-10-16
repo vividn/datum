@@ -270,7 +270,7 @@ fn stop_dur_plus_extra_still_marks_verb_stop() {
     // da-gvcen: declare the field first — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the verb a `dur=` lands, not the declaration.
-    run_cli(&["spec", "field", "--verb", "start"], &db).expect("declare field");
+    run_cli(&["setup", "field", "--verb", "start"], &db).expect("declare field");
 
     run_cli(
         &["stop", "field", "reqVal1", "dur=30m", "-k", "req1=extra"],

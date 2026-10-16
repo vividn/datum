@@ -96,7 +96,7 @@ fn print_info_block(name: Option<&str>, path: &std::path::Path, db: Option<&Db>)
         Some(v) if v == current => ("✓", "current".to_string()),
         Some(v) if v < current => ("⚠", format!("older than current v{current}")),
         Some(_) => ("✗", format!("newer than binary (v{current})")),
-        None => ("⚠", "unversioned (run `datum db setup`)".to_string()),
+        None => ("⚠", "unversioned (run `datum db migrate`)".to_string()),
     };
     let version_str = stored
         .map(|v| format!("v{v}"))

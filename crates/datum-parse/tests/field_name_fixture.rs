@@ -44,7 +44,7 @@ fn judges_every_shared_case() {
     }
 }
 
-/// The rule is enforced where names are created, so `spec F <changes>` has
+/// The rule is enforced where names are created, so `setup F <changes>` has
 /// to refuse — and refuse by *saying the rule*. `-weird` used to come back
 /// as "unexpected flag: -w", which is a third way of failing for a person
 /// who typed a name, so the message is asserted and not just the error
@@ -53,7 +53,7 @@ fn judges_every_shared_case() {
 #[test]
 fn spec_set_refuses_every_name_the_fixture_calls_bad() {
     for case in &fixture().cases {
-        let argv = ["datum", "spec", &case.field, "--verb", "occur"];
+        let argv = ["datum", "setup", &case.field, "--verb", "occur"];
         let parsed = parse_argv(&argv.map(str::to_string));
         assert_eq!(parsed.is_ok(), case.ok, "{}: {parsed:?}", case.name);
         if let Err(e) = parsed {
@@ -67,7 +67,7 @@ fn spec_set_refuses_every_name_the_fixture_calls_bad() {
 /// must not swallow `--defualt-verb` into a field-name complaint.
 #[test]
 fn a_mistyped_long_flag_keeps_its_own_message() {
-    let argv = ["datum", "spec", "--defualt-verb", "occur", "coffee"];
+    let argv = ["datum", "setup", "--defualt-verb", "occur", "coffee"];
     let e = parse_argv(&argv.map(str::to_string))
         .unwrap_err()
         .to_string();

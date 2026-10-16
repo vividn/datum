@@ -65,12 +65,12 @@ const onPage = (fn) =>
  * its states, which is the other half of `start`'s rule.
  */
 const SEED = [
-	'spec coffee --verb occur',
-	'spec sleep --verb start',
-	'spec work --verb start',
-	'spec mood --verb switch --states good,bad',
-	'spec light --verb switch --states true,false',
-	'spec rec --verb add',
+	'setup coffee --verb occur',
+	'setup sleep --verb start',
+	'setup work --verb start',
+	'setup mood --verb switch --states good,bad',
+	'setup light --verb switch --states true,false',
+	'setup rec --verb add',
 	'start work -t -60',
 	'switch mood good -t -30'
 ];
@@ -249,9 +249,9 @@ describe('the bar of commands', () => {
 // instead.» Which are subcommands is `datum help --json`'s to say.
 describe('a command with subcommands drills into them', () => {
 	const back = (page) => commands(page).locator('button[data-back]');
-	const DB = ['setup', 'purge', 'backup', 'restore', 'migrate', 'v2import'];
+	const DB = ['purge', 'backup', 'restore', 'migrate', 'v2import'];
 
-	test('db shows its subcommands under < Back, and setup fills `db setup `', async () => {
+	test('db shows its subcommands under < Back, and migrate fills `db migrate `', async () => {
 		await onPage(async ({ page }) => {
 			await commands(page).locator('button[data-command="db"]').click();
 			await back(page).waitFor();
@@ -261,7 +261,7 @@ describe('a command with subcommands drills into them', () => {
 			assert.deepEqual((await sectionsOf(page)).map((s) => s.name), [undefined]);
 			assert.equal((await line(page)).text, '', '`db ` runs nothing, so a tap never writes it');
 
-			await tap(page, 'db setup');
+			await tap(page, 'db migrate');
 			assert.equal(await back(page).count(), 1, 'a fill stays among the subcommands');
 		});
 	});
@@ -292,11 +292,11 @@ describe('a command with subcommands drills into them', () => {
 			assert.ok((await drawn(page)).includes('occur'), 'Back is the whole list');
 
 			await commands(page).locator('button[data-command="db"]').click();
-			await tap(page, 'db setup');
+			await tap(page, 'db migrate');
 			await page.keyboard.press('Escape');
 			await back(page).waitFor({ state: 'detached' });
 			assert.ok((await drawn(page)).includes('db'));
-			assert.equal((await line(page)).text, 'db setup ', 'the same Escape peeled the line too');
+			assert.equal((await line(page)).text, 'db migrate ', 'the same Escape peeled the line too');
 		});
 	});
 
@@ -362,7 +362,7 @@ describe('holding a command fills it and shows its flags', () => {
 	test('after a run, or under another command, a flag tap starts `occur -q ` again', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec coffee --verb occur']);
+			await seedLines(app, ['setup coffee --verb occur']);
 			const q = commands(page).locator('button[data-flag="occur -q"]');
 			const value = (v) => page.waitForFunction((v) => document.querySelector('.prompt-bar input').value === v, v);
 			await hold(page, 'occur');
@@ -387,7 +387,7 @@ describe('holding a command fills it and shows its flags', () => {
 	test('a field tap under `occur -q ` runs `occur -q coffee` and spends the line', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec coffee --verb occur']);
+			await seedLines(app, ['setup coffee --verb occur']);
 			await hold(page, 'occur');
 			await commands(page).locator('button[data-flag="occur -q"]').click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');
@@ -563,9 +563,9 @@ describe('a verb fills the line and filters the fields', () => {
 describe('a verb under a field pill', () => {
 	const KEYED = [
 		...SEED,
-		'spec tea --verb occur --data-key amount',
-		'spec juice --verb occur --data-key cups=1',
-		'spec shift --verb start --data-key project --data-key n=1',
+		'setup tea --verb occur --data-key amount',
+		'setup juice --verb occur --data-key cups=1',
+		'setup shift --verb start --data-key project --data-key n=1',
 		'start shift project=a n=1 -t -30'
 	];
 	const verb = (page, name) => commands(page).locator(`button[data-command="${name}"]`);
@@ -643,7 +643,7 @@ describe('a verb under a field pill', () => {
 	test('a spaced field under its pill: the fill and the echo quote it, and both log to it', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec "my coffee" --verb occur --data-key amount', 'spec "iced tea" --verb occur']);
+			await seedLines(app, ['setup "my coffee" --verb occur --data-key amount', 'setup "iced tea" --verb occur']);
 			await pillOf(page, 'my coffee');
 			await verb(page, 'occur').click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur "my coffee" ');
@@ -998,7 +998,7 @@ describe('Undo', () => {
 	test('runs at once, and past ten minutes runs anyway and says how old', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec coffee --verb occur', 'occur coffee']);
+			await seedLines(app, ['setup coffee --verb occur', 'occur coffee']);
 			assert.equal((await app.entries(1))[0].field, 'coffee');
 
 			await commands(page).locator('button[data-command="undo"]').click();
@@ -1060,7 +1060,7 @@ describe('Undo', () => {
 				await app.idle();
 			};
 
-			await seedLines(app, ['spec coffee --verb occur', 'occur coffee']);
+			await seedLines(app, ['setup coffee --verb occur', 'occur coffee']);
 			assert.deepEqual(await lit(false), { label: 'redo', title: 'nothing to redo' });
 			assert.equal(await undo.getAttribute('aria-label'), 'undo');
 

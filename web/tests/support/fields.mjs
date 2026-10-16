@@ -13,11 +13,11 @@
 // the same model both the CLI and the widget now share (da-yiyj) — so a name
 // like `orange` would silently fall through to `md5(field)`.
 export const FIXTURE = [
-	'spec coffee --verb occur --color #ffa500',
-	'spec work --verb start --color #0000ff',
+	'setup coffee --verb occur --color #ffa500',
+	'setup work --verb start --color #0000ff',
 	// `--state good=green` would name a state `good=green`: the colours are `--state-color`.
-	'spec mood --verb switch --states good,bad --state-color good=#008000 --state-color bad=#ff0000 --color #800080',
-	'spec note --verb add',
+	'setup mood --verb switch --states good,bad --state-color good=#008000 --state-color bad=#ff0000 --color #800080',
+	'setup note --verb add',
 	'occur untracked'
 ];
 

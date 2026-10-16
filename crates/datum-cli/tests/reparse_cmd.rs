@@ -465,7 +465,7 @@ fn reparse_fix_replays_a_spec_typed_value_as_its_type() {
         "on": {"value_type": "date"},
         "code": {"value_type": "string"},
     }});
-    run_cli(&["spec", "run", "--from-json", &spec.to_string()], &db).unwrap();
+    run_cli(&["setup", "run", "--from-json", &spec.to_string()], &db).unwrap();
     let line = [
         "occur",
         "run",

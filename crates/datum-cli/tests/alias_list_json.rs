@@ -34,7 +34,7 @@ fn ok(db: &Path, args: &[&str]) -> String {
 fn alias_list_json_has_user_and_derived() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("t.db");
-    ok(&db, &["spec", "coffee", "--verb", "occur"]);
+    ok(&db, &["setup", "coffee", "--verb", "occur"]);
     ok(&db, &["alias", "set", "cof", "occur coffee cups=1"]);
 
     let listed: Value = serde_json::from_str(&ok(&db, &["alias", "list", "--json"])).unwrap();
@@ -58,8 +58,8 @@ fn alias_list_json_has_user_and_derived() {
 fn alias_list_json_on_an_empty_db_is_an_empty_array() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("t.db");
-    // A read creates no database (da-ov6x5): `db setup` makes it.
-    ok(&db, &["db", "setup"]);
+    // A read creates no database (da-ov6x5): `db migrate` makes it.
+    ok(&db, &["db", "migrate"]);
     assert_eq!(ok(&db, &["alias", "list", "--json"]).trim(), "[]");
 }
 

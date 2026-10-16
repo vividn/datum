@@ -87,7 +87,7 @@ One-line summaries of the model:
   nested `extra_data`.
 - **Field** — what is being tracked: `mood`, `coffee`, `weight`,
   `project`. Freeform by default; can be schema-constrained via
-  `datum spec <field>`.
+  `datum setup <field>`.
 - **Action** — the user's command intent at the CLI: `add`, `occur`,
   `start`, `stop`, `switch`. Action is parsed from argv, canonicalizes
   the (state, dur, following_state) triple (`start` ⇒ state=true,
@@ -208,10 +208,10 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 ## ADMIN
 
-- `spec` — Manage field specs (schemas)
+- `setup` — Set up a field: its verb, states and look
 - `alias` — Manage aliases
 - `check` — Run database consistency checks
-- `db` — DB-lifecycle (setup, purge, backup, restore, migrate, v2import)
+- `db` — DB-lifecycle (purge, backup, restore, migrate, v2import)
 - `info` — Show health/metadata for DB(s)
 - `config` — Show or manage user configuration
 - `completions` — Shell tab completion: print, install or remove the script

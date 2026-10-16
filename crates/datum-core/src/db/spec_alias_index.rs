@@ -29,7 +29,7 @@ impl Db {
     /// recorded under [`SpecAliasIndex::collisions`].
     ///
     /// The cache is stamped with the connection's `total_changes()`, so
-    /// ANY write — `spec`, a kit install, or an `update` / `undo` of a
+    /// ANY write — `setup`, a kit install, or an `update` / `undo` of a
     /// spec entry — rebuilds it on the next read. The returned [`Ref`] is
     /// valid until dropped; do not hold it across a write.
     pub fn spec_alias_index(&self) -> Result<Ref<'_, SpecAliasIndex>> {

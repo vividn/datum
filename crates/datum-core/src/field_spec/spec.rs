@@ -134,7 +134,7 @@ pub struct FieldSpec {
     pub state_colors: BTreeMap<String, String>,
     /// Per-state human descriptions (da-zwqk). Mirrors `state_colors`'s
     /// per-state pattern — empty by default, absent in JSON when empty.
-    /// Surfaced by `datum spec <field>` and `datum spec describe
+    /// Surfaced by `datum setup <field>` and `datum setup describe
     /// <field>` so the meaning of each state lives alongside its name
     /// rather than only in prose.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -214,7 +214,7 @@ pub struct FieldSpec {
     pub comment_remainder: bool,
 
     /// Free-form tags. Used by views and kit commands to group fields by a
-    /// schema-level marker (e.g. `["chore"]`); `datum spec --tag`
+    /// schema-level marker (e.g. `["chore"]`); `datum setup --tag`
     /// filters on it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
@@ -436,8 +436,8 @@ impl FieldSpec {
             JsonValue::Bool(false) => Some(format!(
                 "field '{field}' is never false and takes only its listed states \
                  (never_false, only_listed_states): it cannot be ended — switch it \
-                 to another state, list `false` (`datum spec {field}{}`), \
-                 or `datum spec {field} --allow-false`",
+                 to another state, list `false` (`datum setup {field}{}`), \
+                 or `datum setup {field} --allow-false`",
                 adding("false")
             )),
             JsonValue::String(s) if s == IGNORED_STATE_VALUE || s == TRACKED_STATE_VALUE => None,
@@ -453,8 +453,8 @@ impl FieldSpec {
                 (!listed.contains(&text)).then(|| {
                     format!(
                         "field '{field}' takes only its listed states (only_listed_states): \
-                         '{text}' is not one of [{}] — add it with `datum spec {field}{}`, \
-                         or `datum spec {field} --any-states`",
+                         '{text}' is not one of [{}] — add it with `datum setup {field}{}`, \
+                         or `datum setup {field} --any-states`",
                         listed.join(", "),
                         adding(&text)
                     )

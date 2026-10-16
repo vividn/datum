@@ -903,7 +903,7 @@ describe('the day strip zooms onto an hour range', () => {
 			// `work` is centred on the band's middle by its spec, where the
 			// double tap lands, rather than wherever its name hashes to.
 			await seedLines(app, [
-				'spec work --verb switch --y 0.5',
+				'setup work --verb switch --y 0.5',
 				...['mood', 'work', 'place', 'posture'].flatMap((field, lane) =>
 					[0, 6, 12, 18].map(
 						(hour) => `switch ${field} s${lane}${hour} -t ${String(hour).padStart(2, '0')}:00`

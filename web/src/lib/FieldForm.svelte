@@ -31,14 +31,14 @@
 	are `DataKeys.svelte`'s rows, on Basics and, with each key's type, on
 	Data (da-zqnt3). Aliases are made by datum from
 	the verb and the states until that is switched off (`no_autoalias`).
-	The rows are `spec F --json`'s own `keys`, parsed by the CLI, so what is
+	The rows are `setup F --json`'s own `keys`, parsed by the CLI, so what is
 	saved is what it reads back.
 
 	What it writes is decided by what it was opened on. A new field gets
-	ONE command, which one Undo takes back whole (da-2pbvd): `spec F
+	ONE command, which one Undo takes back whole (da-2pbvd): `setup F
 	--from-json` with the whole spec and `--track`, which writes the TRACK
 	document with it, or `--ignore` (`declareArgv`). A field with a
-	spec gets the whole edited spec back in ONE `spec F --from-json` — the
+	spec gets the whole edited spec back in ONE `setup F --from-json` — the
 	list entire, never a stream of one-state changes — with
 	`--track` or `--ignore` where tracked or ignored changed. It is all
 	handed up as `close`'s `Save` for the widget to run; null runs nothing.
@@ -81,7 +81,7 @@
 	export let verb: Verb | null = null;
 	/** The ignored fields (`fields --json`), which get no button until they are re-tracked. */
 	export let ignored: string[] = [];
-	/** The spec to edit (`spec F --json`); null declares a new field instead. */
+	/** The spec to edit (`setup F --json`); null declares a new field instead. */
 	export let spec: Spec | null = null;
 	/** The fields there are already: an example of that name would re-declare one, so it is not offered. */
 	export let taken: string[] = [];
@@ -146,7 +146,7 @@
 		icon,
 		lookup
 	};
-	// Tracked or ignored, changed on a field: `--track` or `--ignore` in its one `spec F`.
+	// Tracked or ignored, changed on a field: `--track` or `--ignore` in its one `setup F`.
 	$: argv = spec
 		? [...specArgv(editedSpec(spec, edits)), ...(ignore === wasIgnored ? [] : [ignore ? '--ignore' : '--track'])]
 		: declareArgv(field.trim() || '<field>', edits, ignore);

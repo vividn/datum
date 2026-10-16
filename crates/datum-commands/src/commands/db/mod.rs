@@ -1,10 +1,9 @@
 //! `datum db <subcommand>` — DB-lifecycle group.
 //!
-//! Houses every database administration verb: `setup`, `purge`, `backup`,
+//! Houses every database administration verb: `purge`, `backup`,
 //! `restore`, `migrate`, `v2import`. da-33g consolidated the standalone
-//! `setup` / `backup` / `restore` / `migrate` top-level verbs under here.
-//! da-57t removed the deprecated `setup --force-recreate` alias; `db purge`
-//! is its replacement.
+//! `setup` / `backup` / `restore` / `migrate` top-level verbs under here,
+//! and da-a4ptr folded `db setup` into `db migrate`.
 
 use std::io::{BufRead, IsTerminal, Write};
 
@@ -18,7 +17,6 @@ pub mod import;
 
 pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
     match cmd {
-        DbCommand::Setup(args) => super::setup::setup(args, db),
         DbCommand::Purge(args) => purge(args, cli_db, db),
         DbCommand::Backup(args) => super::backup_restore::cmd_backup(args, cli_db, db),
         DbCommand::BackupRotation(args) => {

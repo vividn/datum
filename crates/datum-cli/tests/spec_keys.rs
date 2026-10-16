@@ -19,7 +19,7 @@ fn juice_db() -> Db {
     let db = fresh_db();
     run_cli(
         &[
-            "spec",
+            "setup",
             "juice",
             "--verb",
             "occur",
@@ -107,7 +107,7 @@ fn id_keys_are_slug_slots() {
     let db = fresh_db();
     run_cli(
         &[
-            "spec",
+            "setup",
             "word",
             "--verb",
             "occur",
@@ -130,7 +130,7 @@ fn an_add_binds_its_keys() {
     let db = fresh_db();
     run_cli(
         &[
-            "spec",
+            "setup",
             "book",
             "--verb",
             "add",
@@ -160,9 +160,9 @@ fn an_add_binds_its_keys() {
 fn morning_db() -> Db {
     let db = fresh_db();
     for line in [
-        &["spec", "coffee", "--verb", "occur", "--data-key", "cups"][..],
-        &["spec", "work", "--verb", "start", "--data-key", "project="],
-        &["spec", "bike", "--verb", "start", "--data-key", "project="],
+        &["setup", "coffee", "--verb", "occur", "--data-key", "cups"][..],
+        &["setup", "work", "--verb", "start", "--data-key", "project="],
+        &["setup", "bike", "--verb", "start", "--data-key", "project="],
         &["alias", "set", "morning", "occur coffee , start work"],
     ] {
         run_cli(line, &db).unwrap();
@@ -223,7 +223,7 @@ fn alias_and_spec_slots_walk_in_side_order() {
 }
 
 /// A name declared twice is one key — the first place, the last kind — as
-/// repeated `-k` are, through `track` as through `spec`.
+/// repeated `-k` are, through `track` as through `setup`.
 #[test]
 fn a_key_declared_twice_is_one_key() {
     let db = juice_db();
@@ -247,7 +247,7 @@ fn mood_db() -> Db {
     let db = fresh_db();
     run_cli(
         &[
-            "spec",
+            "setup",
             "mood",
             "--verb",
             "switch",
@@ -301,13 +301,13 @@ fn inactive_entries_ignore_the_specs_keys() {
     }
 }
 
-/// Every route keeps the kind: `spec` and `track` write it, the
-/// stored spec (what `spec F` prints) carries it, `--from-json` reads it
+/// Every route keeps the kind: `setup` and `track` write it, the
+/// stored spec (what `setup F` prints) carries it, `--from-json` reads it
 /// back, and a kit exports and installs it.
 #[test]
 fn the_kind_round_trips() {
     let db = juice_db();
-    run_cli(&["spec", "juice", "--id-assign", "lang=pt"], &db).unwrap();
+    run_cli(&["setup", "juice", "--id-assign", "lang=pt"], &db).unwrap();
     run_cli(
         &["track", "juice", "--assign", "origin=farm", "-k", "n"],
         &db,
@@ -332,7 +332,7 @@ fn the_kind_round_trips() {
 
     let shown = serde_json::to_string(&spec).unwrap();
     let from_json = fresh_db();
-    run_cli(&["spec", "juice", "--from-json", &shown], &from_json).unwrap();
+    run_cli(&["setup", "juice", "--from-json", &shown], &from_json).unwrap();
     assert_eq!(
         from_json
             .load_spec("juice")
@@ -364,7 +364,7 @@ fn the_kind_round_trips() {
     );
 }
 
-/// `track`'s alias-style keys (da-ulc0v), `spec`'s flags: `-k` declares a
+/// `track`'s alias-style keys (da-ulc0v), `setup`'s flags: `-k` declares a
 /// slot, `--assign KEY=VALUE` an assign. The control is the same field tracked without the
 /// tail, which logs neither.
 #[test]
@@ -411,14 +411,14 @@ fn track_takes_an_alias_style_tail() {
     assert_eq!(spec.data_keys, ["next_date="]);
 }
 
-/// `spec --assign` round-trips through `spec F` (text and JSON), a
+/// `setup --assign` round-trips through `setup F` (text and JSON), a
 /// kit's export and install, and `--assign KEY=` removes it. The control:
 /// `brand:=acme` is no spelling of an assign any more — `:=` is gone.
 #[test]
 fn assign_round_trips_through_show_and_kits() {
     let db = fresh_db();
     run_cli(
-        &["spec", "f", "--verb", "occur", "--assign", "brand=acme"],
+        &["setup", "f", "--verb", "occur", "--assign", "brand=acme"],
         &db,
     )
     .unwrap();
@@ -446,10 +446,10 @@ fn assign_round_trips_through_show_and_kits() {
         Some(json!({"brand": "acme"}))
     );
 
-    run_cli(&["spec", "f", "--assign", "brand="], &db).unwrap();
+    run_cli(&["setup", "f", "--assign", "brand="], &db).unwrap();
     assert!(db.load_spec("f").unwrap().unwrap().assign.is_empty());
 
-    run_cli(&["spec", "f", "--data-key", "brand:=acme"], &db).unwrap();
+    run_cli(&["setup", "f", "--data-key", "brand:=acme"], &db).unwrap();
     let kinds = db.load_spec("f").unwrap().unwrap().declared_keys(None);
     assert!(
         kinds.iter().all(|k| !matches!(k.kind, KeyKind::Assign(_))),
@@ -460,7 +460,7 @@ fn assign_round_trips_through_show_and_kits() {
 /// A key lives in one place, and the latest declaration wins (da-ulc0v,
 /// review 12132): a slot declared after an assign of the same name takes
 /// the positional, and an assign declared after a slot drops it — through
-/// `track`, `spec` and a state's keys alike.
+/// `track`, `setup` and a state's keys alike.
 #[test]
 fn a_key_lives_in_one_place_and_the_latest_declaration_wins() {
     // Every `track` writes a row at now: step the clock between commands so
@@ -500,10 +500,10 @@ fn a_key_lives_in_one_place_and_the_latest_declaration_wins() {
     run(&["track", "y", "--assign", "proj="], &db);
     assert_eq!(db.load_spec("y").unwrap().unwrap().data_keys, ["proj="]);
 
-    // `spec`'s other lists follow the same rule.
-    run(&["spec", "x2", "--data-key", "proj"], &db);
+    // `setup`'s other lists follow the same rule.
+    run(&["setup", "x2", "--data-key", "proj"], &db);
     assert!(db.load_spec("x2").unwrap().unwrap().assign.is_empty());
-    run(&["spec", "x2", "--id-assign", "proj=a"], &db);
+    run(&["setup", "x2", "--id-assign", "proj=a"], &db);
     let spec = db.load_spec("x2").unwrap().unwrap();
     assert!(spec.data_keys.is_empty(), "{:?}", spec.data_keys);
     run(&["track", "x2", "-k", "proj="], &db);
@@ -512,15 +512,15 @@ fn a_key_lives_in_one_place_and_the_latest_declaration_wins() {
     // A state's keys too.
     let db = fresh_db();
     run(
-        &["spec", "mood", "--verb", "switch", "--states", "sad"],
+        &["setup", "mood", "--verb", "switch", "--states", "sad"],
         &db,
     );
-    run(&["spec", "mood", "--state-assign", "sad=why=x"], &db);
-    run(&["spec", "mood", "--state-key", "sad=why="], &db);
+    run(&["setup", "mood", "--state-assign", "sad=why=x"], &db);
+    run(&["setup", "mood", "--state-key", "sad=why="], &db);
     let spec = db.load_spec("mood").unwrap().unwrap();
     assert_eq!(spec.state_keys["sad"], ["why="]);
     assert!(spec.state_assign.is_empty(), "{:?}", spec.state_assign);
-    run(&["spec", "mood", "--state-assign", "sad=why=y"], &db);
+    run(&["setup", "mood", "--state-assign", "sad=why=y"], &db);
     let spec = db.load_spec("mood").unwrap().unwrap();
     assert!(spec.state_keys.is_empty(), "{:?}", spec.state_keys);
     assert_eq!(spec.state_assign["sad"]["why"], "y");
@@ -534,7 +534,7 @@ fn reparse_replays_the_keys_the_line_bound() {
         let db = juice_db();
         run_cli(&[head, &["2", "large"]].concat(), &db).unwrap();
         let logged = logged_entries(&db, "juice")[0].clone();
-        run_cli(&["spec", "juice", "--remove-key", "cups"], &db).unwrap();
+        run_cli(&["setup", "juice", "--remove-key", "cups"], &db).unwrap();
         let now = db.load_spec("juice").unwrap().unwrap().declared_keys(None);
         assert_eq!(now[0].name, "size", "{now:?}");
         run_cli(&["reparse", &logged.hid.0, "--fix"], &db).unwrap();
@@ -544,14 +544,14 @@ fn reparse_replays_the_keys_the_line_bound() {
     }
 }
 
-/// The argv of the backticked example on `datum spec --help` that starts
+/// The argv of the backticked example on `datum setup --help` that starts
 /// with `head`, `datum` dropped. A `head` ending in a backtick matches
 /// the whole example: "datum sad`" is `datum sad`, not `datum sad because`.
 fn spec_help_example(head: &str) -> Vec<String> {
-    let page = datum_parse::help::command_help("spec");
+    let page = datum_parse::help::command_help("setup");
     let at = page
         .find(&format!("`{head}"))
-        .unwrap_or_else(|| panic!("no `{head}…` on spec --help"));
+        .unwrap_or_else(|| panic!("no `{head}…` on setup --help"));
     let span = page[at + 1..].split('`').next().unwrap();
     span.split_whitespace()
         .skip_while(|w| *w == "datum")
@@ -570,7 +570,7 @@ fn run_example(head: &str, db: &Db) -> anyhow::Result<()> {
 #[test]
 fn the_spec_help_keys_examples_run() {
     let db = fresh_db();
-    run_example("spec juice", &db).unwrap();
+    run_example("setup juice", &db).unwrap();
     run_example("datum juice 2", &db).unwrap();
     assert_eq!(
         logged_entries(&db, "juice")[0].data,
@@ -580,7 +580,7 @@ fn the_spec_help_keys_examples_run() {
     let db = fresh_db();
     // two writes to one field must not share a millisecond (07d92a0)
     let _clock = set_time("2026-01-15T12:00:00Z");
-    run_example("spec mood", &db).unwrap();
+    run_example("setup mood", &db).unwrap();
     let err = run_example("datum sad`", &db).unwrap_err();
     assert!(
         format!("{err:#}").contains("Missing required key: reason"),

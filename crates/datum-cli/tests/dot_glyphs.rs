@@ -122,12 +122,12 @@ fn field_glyph_draws_in_svg_and_band_and_no_glyph_draws_the_circle() {
     assert_eq!(env.svg_marks("mood"), ["●", "●"]);
     assert_eq!(env.band_marks("mood"), "●●");
 
-    env.run(&["spec", "mood", "--glyph", "▲"]);
+    env.run(&["setup", "mood", "--glyph", "▲"]);
     assert_eq!(env.svg_marks("mood"), ["▲", "▲"]);
     assert_eq!(env.band_marks("mood"), "▲▲");
 
     // An empty value clears it, back to the circle.
-    env.run(&["spec", "mood", "--glyph", ""]);
+    env.run(&["setup", "mood", "--glyph", ""]);
     assert_eq!(env.svg_marks("mood"), ["●", "●"]);
 }
 
@@ -139,13 +139,13 @@ fn state_glyph_draws_on_a_moment_switch_dot_and_other_dots_draw_the_field_glyph(
     env.run(&["switch", "mood", "happy", "-t", "-40"]);
     env.run(&["switch", "mood", "sad", "-m", "-t", "-30"]);
     env.run(&["switch", "mood", "calm", "-m", "-t", "-20"]);
-    env.run(&["spec", "mood", "--glyph", "▲"]);
-    env.run(&["spec", "mood", "--states", "sad", "--state-glyph", "sad=▼"]);
+    env.run(&["setup", "mood", "--glyph", "▲"]);
+    env.run(&["setup", "mood", "--states", "sad", "--state-glyph", "sad=▼"]);
     assert_eq!(env.svg_marks("mood"), ["▼", "▲"]);
     assert_eq!(env.band_marks("mood"), "▼▲");
 
     let shown = env
-        .run(&["spec", "mood"])
+        .run(&["setup", "mood"])
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
@@ -162,7 +162,7 @@ fn glyph_by_maps_a_data_key_and_an_unmapped_value_draws_the_field_glyph() {
     env.run(&["occur", "coffee", "size=medium", "-t", "-30"]);
     env.run(&["occur", "coffee", "-t", "-20"]);
     env.run(&[
-        "spec",
+        "setup",
         "coffee",
         "--glyph-by",
         "size",
@@ -171,18 +171,18 @@ fn glyph_by_maps_a_data_key_and_an_unmapped_value_draws_the_field_glyph() {
     ]);
     // No field glyph: an unmapped value, and no value, draw the circle.
     assert_eq!(env.svg_marks("coffee"), ["•", "●", "●"]);
-    env.run(&["spec", "coffee", "--glyph", "◆"]);
+    env.run(&["setup", "coffee", "--glyph", "◆"]);
     assert_eq!(env.svg_marks("coffee"), ["•", "◆", "◆"]);
     assert_eq!(env.band_marks("coffee"), "•◆◆");
 
     // `--glyph-map` alone adds to the map; `VALUE=` removes an entry.
-    env.run(&["spec", "coffee", "--glyph-map", "medium=▪"]);
-    env.run(&["spec", "coffee", "--glyph-map", "small="]);
+    env.run(&["setup", "coffee", "--glyph-map", "medium=▪"]);
+    env.run(&["setup", "coffee", "--glyph-map", "small="]);
     assert_eq!(env.svg_marks("coffee"), ["◆", "▪", "◆"]);
 }
 
 /// A two-column glyph draws as itself in the SVG and as `●` in the band,
-/// which gives every slice of time one column (as `spec --help` says).
+/// which gives every slice of time one column (as `setup --help` says).
 ///
 /// Its row is compared with a glyphless field's at the same instant in ONE
 /// render: the band is anchored to the real clock, so two renders a moment
@@ -194,7 +194,7 @@ fn a_double_width_glyph_draws_the_dot_in_the_band_so_no_column_moves() {
     env.run(&["occur", "coffee", "size=large", "-t", &at]);
     env.run(&["occur", "tea", "size=large", "-t", &at]);
     env.run(&[
-        "spec",
+        "setup",
         "coffee",
         "--glyph-by",
         "size",
@@ -216,7 +216,7 @@ fn spec_json_round_trips_the_glyph_keys() {
     let env = Env::new();
     env.run(&["occur", "coffee", "-t", "-30"]);
     env.run(&[
-        "spec",
+        "setup",
         "coffee",
         "--glyph",
         "◆",
@@ -228,7 +228,7 @@ fn spec_json_round_trips_the_glyph_keys() {
         "large=☕",
     ]);
     let json: serde_json::Value =
-        serde_json::from_str(&env.run(&["spec", "coffee", "--json"])).unwrap();
+        serde_json::from_str(&env.run(&["setup", "coffee", "--json"])).unwrap();
     assert_eq!(json["glyph"], "◆");
     assert_eq!(json["state_glyphs"]["decaf"], "○");
     assert_eq!(
@@ -236,9 +236,9 @@ fn spec_json_round_trips_the_glyph_keys() {
         serde_json::json!({"key": "size", "map": {"large": "☕"}})
     );
 
-    env.run(&["spec", "coffee", "--from-json", &json.to_string()]);
+    env.run(&["setup", "coffee", "--from-json", &json.to_string()]);
     let again: serde_json::Value =
-        serde_json::from_str(&env.run(&["spec", "coffee", "--json"])).unwrap();
+        serde_json::from_str(&env.run(&["setup", "coffee", "--json"])).unwrap();
     assert_eq!(again, json);
 }
 
@@ -246,13 +246,13 @@ fn spec_json_round_trips_the_glyph_keys() {
 fn a_glyph_is_one_printable_character() {
     let env = Env::new();
     for bad in ["ab", " ", "\u{301}"] {
-        let err = env.fails(&["spec", "mood", "--verb", "occur", "--glyph", bad]);
+        let err = env.fails(&["setup", "mood", "--verb", "occur", "--glyph", bad]);
         assert!(
             err.contains("--glyph expects one printable character"),
             "{bad:?}: {err}"
         );
     }
-    let err = env.fails(&["spec", "mood", "--verb", "occur", "--glyph-map", "a=b"]);
+    let err = env.fails(&["setup", "mood", "--verb", "occur", "--glyph-map", "a=b"]);
     assert!(err.contains("--glyph-map needs --glyph-by"), "{err}");
 }
 
@@ -290,22 +290,22 @@ fn glyph_scale_and_aspect_size_a_dot_and_leave_blocks_alone() {
         .contains("transform=\"matrix("));
 
     env.run(&[
-        "spec",
+        "setup",
         "coffee",
         "--glyph-scale",
         "2",
         "--glyph-aspect",
         "1.5",
     ]);
-    env.run(&["spec", "work", "--glyph-scale", "3", "--glyph-aspect", "2"]);
+    env.run(&["setup", "work", "--glyph-scale", "3", "--glyph-aspect", "2"]);
     let json: serde_json::Value =
-        serde_json::from_str(&env.run(&["spec", "coffee", "--json"])).unwrap();
+        serde_json::from_str(&env.run(&["setup", "coffee", "--json"])).unwrap();
     assert_eq!(
         (json["glyph_scale"].as_f64(), json["glyph_aspect"].as_f64()),
         (Some(2.0), Some(1.5))
     );
     let text = env
-        .run(&["spec", "coffee"])
+        .run(&["setup", "coffee"])
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
@@ -336,7 +336,7 @@ fn glyph_scale_and_aspect_size_a_dot_and_leave_blocks_alone() {
     assert_eq!(work(), blocks, "a block ignores both");
 
     env.run(&[
-        "spec",
+        "setup",
         "coffee",
         "--glyph-scale",
         "1",
@@ -344,7 +344,7 @@ fn glyph_scale_and_aspect_size_a_dot_and_leave_blocks_alone() {
         "1",
     ]);
     let json: serde_json::Value =
-        serde_json::from_str(&env.run(&["spec", "coffee", "--json"])).unwrap();
+        serde_json::from_str(&env.run(&["setup", "coffee", "--json"])).unwrap();
     assert!(
         json.get("glyph_scale").is_none() && json.get("glyph_aspect").is_none(),
         "{json}"
@@ -352,7 +352,7 @@ fn glyph_scale_and_aspect_size_a_dot_and_leave_blocks_alone() {
     assert_eq!(radii(), r);
 
     for bad in ["0", "-1", "x"] {
-        let err = env.fails(&["spec", "coffee", "--glyph-scale", bad]);
+        let err = env.fails(&["setup", "coffee", "--glyph-scale", bad]);
         assert!(
             err.contains("--glyph-scale expects a number"),
             "{bad}: {err}"
@@ -365,7 +365,7 @@ fn glyph_scale_and_aspect_size_a_dot_and_leave_blocks_alone() {
 }
 
 fn json_refuses(env: &Env, json: &str) {
-    let err = env.fails(&["spec", "coffee", "--from-json", json]);
+    let err = env.fails(&["setup", "coffee", "--from-json", json]);
     assert!(
         err.contains("glyph_aspect must be a number above 0"),
         "{err}"
@@ -379,13 +379,13 @@ fn a_glyph_factor_of_one_from_json_is_stored_unset() {
     let env = Env::new();
     env.run(&["occur", "coffee", "-t", "-30"]);
     env.run(&[
-        "spec",
+        "setup",
         "coffee",
         "--from-json",
         r#"{"field":"coffee","verb":"occur","glyph_scale":1,"glyph_aspect":1}"#,
     ]);
     let json: serde_json::Value =
-        serde_json::from_str(&env.run(&["spec", "coffee", "--json"])).unwrap();
+        serde_json::from_str(&env.run(&["setup", "coffee", "--json"])).unwrap();
     assert!(
         json.get("glyph_scale").is_none() && json.get("glyph_aspect").is_none(),
         "{json}"
@@ -401,8 +401,8 @@ fn a_dot_is_its_lane_times_its_scale_in_every_view_at_any_height() {
     let env = Env::new();
     env.run(&["occur", "coffee", "-t", "2026-04-27T12:00+00:00"]);
     let (y, height, scale) = ("0.3", "0.2", "0.5");
-    env.run(&["spec", "coffee", "--y", y, "--height", height]);
-    env.run(&["spec", "coffee", "--glyph-scale", scale]);
+    env.run(&["setup", "coffee", "--y", y, "--height", height]);
+    env.run(&["setup", "coffee", "--glyph-scale", scale]);
     let r = |svg: &str| -> f64 {
         let fg = svg.split(r#"<circle class="point-fg""#).nth(1).unwrap();
         let r = fg.split(r#" r=""#).nth(1).unwrap();

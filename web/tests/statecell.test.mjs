@@ -484,7 +484,7 @@ describe("an occur dot's declared keys follow it, as the CLI prints them (da-545
 			const { page } = app;
 			// `weightKg` before `reps`: not alphabetical, so a page reading
 			// `data` in key order would draw `15 25`.
-			await seedLines(app, ['spec lift --verb occur --data-key weightKg --data-key reps=', 'occur lift 25 15 -t 0900']);
+			await seedLines(app, ['setup lift --verb occur --data-key weightKg --data-key reps=', 'occur lift 25 15 -t 0900']);
 			await settled(page, 1);
 			const lift = (await cells(page)).find((r) => r.field === 'lift');
 			assert.ok(lift, 'no lift row');

@@ -40,7 +40,7 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
 
     let all =
         "checkers: base, verbs, aliases, slugs, integrity, flags, tz, refs, stats, sync, spool";
-    datum(&empty, &["db", "setup"]);
+    datum(&empty, &["db", "migrate"]);
     let on_empty = datum(&empty, &["check"]);
     let on_seeded = datum(&seeded, &["check"]);
     assert_ne!(

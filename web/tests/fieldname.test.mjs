@@ -11,7 +11,7 @@
 // alone leaves the bug:
 //
 //   1. the modal refuses a name that cannot be logged to, and says why;
-//   2. `spec F` typed into the REPL refuses it too — otherwise the fix is
+//   2. `setup F` typed into the REPL refuses it too — otherwise the fix is
 //      a coat of paint on one of the two ways to declare a field;
 //   3. every name the form DOES accept logs from both surfaces, and the
 //      entry is read back out of storage. Checking only that no `error:`
@@ -49,7 +49,7 @@ const acceptable = cases.filter((c) => c.ok);
 // The empty name is not a state the form can be typed into — it is what the
 // modal starts as, and the (+) has always refused to submit it. Nor is a
 // space at either end: the form trims what is typed, so ` coffee` declares
-// `coffee` there, and only `spec F` sees the name untrimmed.
+// `coffee` there, and only `setup F` sees the name untrimmed.
 const refused = cases.filter((c) => !c.ok && c.field !== '');
 const formRefused = refused.filter((c) => c.field.trim() === c.field);
 
@@ -169,14 +169,14 @@ describe('a field name the (+) form accepts', () => {
 		});
 	});
 
-	test('typing `spec F` refuses the same names', async () => {
+	test('typing `setup F` refuses the same names', async () => {
 		await onBar(async ({ submit, outputs, run }) => {
 			for (const testCase of refused) {
-				const result = await run(['spec', testCase.field, '--verb', 'occur']);
+				const result = await run(['setup', testCase.field, '--verb', 'occur']);
 				assert.notEqual(result.code, 0, `${testCase.name}: '✓ Spec saved' for a dead field`);
-				// A lone comma never reaches `spec` as a name: the CLI
+				// A lone comma never reaches `setup` as a name: the CLI
 				// splits its entry chain on it first, and what is left is
-				// `spec` and a line of flags alone. Refused all the same, in
+				// `setup` and a line of flags alone. Refused all the same, in
 				// the CLI's words.
 				const rule = testCase.field === ',' ? /unexpected flag: --verb/ : THE_RULE;
 				assert.match(result.stderr, rule, testCase.name);
@@ -184,7 +184,7 @@ describe('a field name the (+) form accepts', () => {
 			// And through the REPL as a person reaches it, quoted so the line
 			// is one token: the refusal has to be on the screen, not only in
 			// the value the seam returned.
-			await submit('spec " coffee" --verb occur');
+			await submit('setup " coffee" --verb occur');
 			assert.match((await outputs()).at(-1), THE_RULE);
 		});
 	});

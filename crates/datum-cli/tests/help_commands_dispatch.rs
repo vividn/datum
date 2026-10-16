@@ -13,7 +13,7 @@
 //! binary's own entry path (da-wdo9's `repl`) fails here just as a
 //! phantom does.
 //!
-//! Any *other* error is fine and expected: `datum spec` alone is
+//! Any *other* error is fine and expected: `datum setup` alone is
 //! "missing spec subcommand", `datum get` is "missing required
 //! positional". Those prove the command exists. Only "unknown
 //! subcommand" — the parser's typo guard — means the help registry is

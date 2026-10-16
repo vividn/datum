@@ -59,8 +59,8 @@ const GRAMMAR = grammarOf([
 	// all), and `stats`, whose `<FIELD[:STATE]>` must not read as one.
 	entry('stats', ['datum stats <FIELD[:STATE]> [SLICE] [--since TIME]']),
 	entry('meta', ['datum meta show <FIELD>']),
-	// da-ez40f: `spec` has no subcommands; its field is the first word.
-	entry('spec', ['datum spec [--tag T]', 'datum spec <FIELD> [--json]']),
+	// da-ez40f: `setup` has no subcommands; its field is the first word.
+	entry('setup', ['datum setup [--tag T]', 'datum setup <FIELD> [--json]']),
 	entry('grep', ['datum grep <PATTERN>... [-f FIELD]']),
 	entry('count', ['datum count [FIELD] [--group-by KEY]'])
 ]);
@@ -105,7 +105,7 @@ describe('what the grammar says a command takes', () => {
 	// the second.
 	test('a FIELD is the positional it sits at — 1, or 2 behind a subcommand', () => {
 		const field = (name) => GRAMMAR.get(name).field;
-		assert.deepEqual(['occur', 'end', 'tail', 'flag', 'stats', 'count', 'spec'].map(field), [1, 1, 1, 1, 1, 1, 1]);
+		assert.deepEqual(['occur', 'end', 'tail', 'flag', 'stats', 'count', 'setup'].map(field), [1, 1, 1, 1, 1, 1, 1]);
 		assert.equal(field('meta'), 2, 'the field is behind `show`');
 		// Not a positional at all: a bare word in `grep`'s place is a second
 		// PATTERN, and `get`/`now` name no field.
@@ -183,7 +183,7 @@ describe('what a press runs with the pills', () => {
 	test('a field pill fills the field slot, wherever that is, ahead of the other pills', () => {
 		assert.deepEqual(withPills(GRAMMAR, ['tail'], [mood]).argv, ['tail', 'mood']);
 		assert.deepEqual(withPills(GRAMMAR, ['meta', 'show'], [mood]).argv, ['meta', 'show', 'mood']);
-		assert.deepEqual(withPills(GRAMMAR, ['spec'], [mood]).argv, ['spec', 'mood']);
+		assert.deepEqual(withPills(GRAMMAR, ['setup'], [mood]).argv, ['setup', 'mood']);
 		assert.deepEqual(withPills(GRAMMAR, ['stats'], [mood]).argv, ['stats', 'mood']);
 		assert.deepEqual(withPills(GRAMMAR, ['tail'], [mood, time]).argv, ['tail', 'mood', '-t', '14:30']);
 	});
@@ -195,7 +195,7 @@ describe('what a press runs with the pills', () => {
 		const { argv, used } = withPills(GRAMMAR, ['occur', 'coffee'], [mood, time]);
 		assert.deepEqual(argv, ['occur', 'coffee', '-t', '14:30']);
 		assert.deepEqual(used, [time], 'the field pill was spent on a filled slot');
-		assert.deepEqual(withPills(GRAMMAR, ['spec', 'coffee'], [mood]).argv, ['spec', 'coffee']);
+		assert.deepEqual(withPills(GRAMMAR, ['setup', 'coffee'], [mood]).argv, ['setup', 'coffee']);
 	});
 
 	// da-e9e5g. A flag's value is not a positional: `datum help --json`
@@ -298,9 +298,9 @@ describe('which commands are active under the pills', () => {
 	// da-8810n, and the trap the bead names: `fits` FAILS OPEN, so a kind it
 	// has not been taught leaves every command visible and the filter
 	// silently does nothing. What is held here is the HIDING.
-	test('a field pill: what names a field — and `spec`, which the spec editor is reached by', () => {
+	test('a field pill: what names a field — and `setup`, which the spec editor is reached by', () => {
 		const names = active([mood]);
-		for (const n of ['occur', 'end', 'tail', 'flag', 'stats', 'count', 'spec'])
+		for (const n of ['occur', 'end', 'tail', 'flag', 'stats', 'count', 'setup'])
 			assert.ok(names.includes(n), `${n} takes a field and was hidden`);
 		for (const n of ['get', 'now', 'delete', 'update', 'retime', 'grep', 'conflicts'])
 			assert.ok(!names.includes(n), `${n} takes no field and was not hidden`);

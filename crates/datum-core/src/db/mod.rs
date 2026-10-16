@@ -455,7 +455,7 @@ impl Db {
     }
 
     /// Borrow the underlying connection. Low-level — callers should prefer
-    /// the typed API; this is intended for `datum db setup`, `datum info`,
+    /// the typed API; this is intended for `datum db migrate`, `datum info`,
     /// and other schema-level tooling.
     pub fn conn(&self) -> &rusqlite::Connection {
         &self.conn

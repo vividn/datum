@@ -330,7 +330,7 @@ describe('every call the page sends', () => {
 
 	// The check above is only as good as USAGE: a CLI that said it otherwise would pass every call.
 	test('a flag, subcommand or argument the CLI does not take is seen as a usage error', () => {
-		for (const argv of [['head', '--metrik', 'occur'], ['sync', 'chainz', 'list'], ['sync', 'chain', 'rename', 'a', 'b', 'c'], ['spec', 'show', 'mood']])
+		for (const argv of [['head', '--metrik', 'occur'], ['sync', 'chainz', 'list'], ['sync', 'chain', 'rename', 'a', 'b', 'c'], ['setup', 'show', 'mood']])
 			assert.match(datum(copy(seeded), argv).stderr, USAGE, `datum ${argv.join(' ')}`);
 	});
 

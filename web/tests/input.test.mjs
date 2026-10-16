@@ -244,7 +244,7 @@ describe('a focus nobody clicked', () => {
 	test('lands in the input widget when one is on screen', async () => {
 		await withApp(async (app) => {
 			const { page, submit } = app;
-			await submit('spec coffee --verb add');
+			await submit('setup coffee --verb add');
 			await open(app, 'both', ['widgetbar', 'input']);
 			await page.locator('.bar [data-field="coffee"]').waitFor();
 
@@ -266,7 +266,7 @@ describe('a focus nobody clicked', () => {
 	test('lands in the bar when there is none', async () => {
 		await shared.solo(async (app) => {
 			const { page, submit } = app;
-			await submit('spec coffee --verb add');
+			await submit('setup coffee --verb add');
 			await page.locator('.bar [data-field="coffee"]').waitFor();
 			assert.equal(await page.locator('.input-widget').count(), 0, 'the day page has an input widget');
 

@@ -168,7 +168,7 @@ fn ignoring_a_never_seen_field_notes_it_and_writes_the_row() {
 #[test]
 fn ignoring_a_known_field_prints_no_note() {
     let env = Env::new();
-    env.run(&["spec", "declared", "--verb", "occur"]);
+    env.run(&["setup", "declared", "--verb", "occur"]);
     for field in ["work", "declared"] {
         let (out, err) = env.run_both(&["ignore", field]);
         assert_eq!(out, format!("✓ Ignoring '{field}'\n"));
@@ -182,7 +182,7 @@ fn ignoring_a_known_field_prints_no_note() {
 /// `argv`'s `FIELD` is the field.
 fn notes_only_a_never_seen_field(argv: &[&str], doing: &str) {
     let env = Env::new();
-    env.run(&["spec", "declared", "--verb", "start"]);
+    env.run(&["setup", "declared", "--verb", "start"]);
     let stderr = |field: &str| {
         let line: Vec<&str> = argv
             .iter()

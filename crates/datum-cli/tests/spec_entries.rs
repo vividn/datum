@@ -61,7 +61,7 @@ impl Env {
     }
 
     fn spec(&self, field: &str) -> Json {
-        serde_json::from_str(&self.ok(&["spec", field, "--json"])).unwrap()
+        serde_json::from_str(&self.ok(&["setup", field, "--json"])).unwrap()
     }
 
     fn kit(&self, name: &str, fields: &[&str]) {
@@ -82,8 +82,8 @@ impl Env {
 fn a_spec_edits_and_undoes_like_a_doc() {
     let env = Env::new();
     env.ok(&["switch", "mood", "happy"]);
-    env.ok(&["spec", "mood", "--color", "#0000ff"]);
-    env.ok(&["spec", "mood", "--color", "#ff0000"]);
+    env.ok(&["setup", "mood", "--color", "#0000ff"]);
+    env.ok(&["setup", "mood", "--color", "#ff0000"]);
 
     env.ok(&["undo"]);
     assert_eq!(env.spec("mood")["color"], "#0000ff");
@@ -123,7 +123,7 @@ fn meta_entries_stay_off_the_life_data_surfaces() {
     env.ok(&["add", "layout", "--id", "%name%", "name=main", "root=1"]);
     // A spec for a meta field, as an older datum minted on a layout's first
     // log: still not a field to list.
-    env.ok(&["spec", "layout", "--verb", "occur"]);
+    env.ok(&["setup", "layout", "--verb", "occur"]);
     let hidden = |out: String| {
         assert!(!out.contains("spec") && !out.contains("layout"), "{out}");
         out
@@ -145,7 +145,7 @@ fn meta_entries_stay_off_the_life_data_surfaces() {
 #[test]
 fn kit_install_and_uninstall_touch_only_the_kits_specs() {
     let env = Env::new();
-    env.ok(&["spec", "sleep", "--verb", "start"]);
+    env.ok(&["setup", "sleep", "--verb", "start"]);
     env.kit("drinks", &["coffee", "tea"]);
     env.kit("water", &["water"]);
 
@@ -165,7 +165,7 @@ fn kit_install_and_uninstall_touch_only_the_kits_specs() {
     env.ok(&["kit", "uninstall", "drinks"]);
     for gone in ["coffee", "tea"] {
         assert!(
-            env.ok(&["spec", gone, "--json"]).contains("No spec"),
+            env.ok(&["setup", gone, "--json"]).contains("No spec"),
             "{gone}"
         );
     }

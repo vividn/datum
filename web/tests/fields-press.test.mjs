@@ -51,14 +51,14 @@ describe('a press', () => {
 			const { page } = app;
 			for (const line of ['start sleep -t -60', 'end sleep -t -1', 'track sleep --color #0000ff']) await type(page, line);
 			await untilFieldStyle(page, 'sleep', 'borderTopColor', BLUE);
-			assert.equal(JSON.parse((await app.run(['spec', 'sleep', '--json'])).stdout).verb, 'start');
+			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).verb, 'start');
 
 			await untilShape(page, 'state');
 			await app.pressWidget('sleep');
 			assert.equal((await app.echoes()).at(-1), 'start sleep', 'a colour made it a point');
 
 			await type(page, 'end sleep');
-			await type(page, 'spec sleep --verb occur');
+			await type(page, 'setup sleep --verb occur');
 			await untilShape(page, 'point');
 			await app.pressWidget('sleep');
 			assert.equal((await app.echoes()).at(-1), 'occur sleep', 'an explicit verb was not honoured');
@@ -77,11 +77,11 @@ describe('a press', () => {
 
 			await modal.locator('button[data-verb="start"]').click();
 			const { line, spec } = declared(await modal.locator('code.preview').getAttribute('title'));
-			assert.equal(line, 'spec sleep --from-json --track');
+			assert.equal(line, 'setup sleep --from-json --track');
 			assert.equal(spec.verb, 'start');
 			await modal.locator('button.commit').click();
 			await page.locator('.bar button[data-field="sleep"]').waitFor();
-			assert.equal(JSON.parse((await app.run(['spec', 'sleep', '--json'])).stdout).verb, 'start');
+			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).verb, 'start');
 		});
 	});
 

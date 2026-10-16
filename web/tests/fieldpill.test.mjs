@@ -81,7 +81,7 @@ const onPage = (fn) => {
 // (support/app.mjs) apart from the layouts, which no test here touches —
 // and like `solo` it leaves `localStorage` outside them alone, the pills'
 // key being the one these tests write. A test that leaves a widget
-// somewhere the reset does not reach — the commands widget in `spec`'s
+// somewhere the reset does not reach — the commands widget in `setup`'s
 // subcommands — stays on `onPage`.
 let seed = null;
 async function seeded(fn) {
@@ -124,8 +124,8 @@ const frames = (page) =>
  * a value this file wrote, not about md5.
  */
 const SEED = [
-	'spec coffee --verb occur --color #ffa500',
-	'spec mood --verb switch --states happy --color #0000ff',
+	'setup coffee --verb occur --color #ffa500',
+	'setup mood --verb switch --states happy --color #0000ff',
 	'occur coffee',
 	'switch mood happy'
 ];
@@ -457,7 +457,7 @@ describe('what narrows to it', () => {
 	// The bead's trap: `fits` FAILS OPEN, so a `field` kind it had not been
 	// taught would leave every command visible and the filter would do
 	// nothing at all while looking as though it worked. The claim is the
-	// HIDING, and that `spec` — the way to the spec editor — survives.
+	// HIDING, and that `setup` — the way to the spec editor — survives.
 	test('the commands widget keeps the commands that name a field, and hides the rest', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
@@ -469,7 +469,7 @@ describe('what narrows to it', () => {
 				() => !document.querySelector('[data-command="get"]')
 			);
 			const under = await commands(page);
-			for (const name of ['occur', 'tail', 'stats', 'count', 'ids', 'spec'])
+			for (const name of ['occur', 'tail', 'stats', 'count', 'ids', 'setup'])
 				assert.ok(under.includes(name), `${name} names a field and was hidden`);
 			for (const name of ['get', 'now', 'delete', 'update', 'grep', 'dayview'])
 				assert.ok(!under.includes(name), `${name} names no field and was not hidden`);
@@ -779,12 +779,12 @@ describe('what survives a reload', () => {
 // no need for sub commands or pressing enter. It should just work.» Two
 // gestures with a settle between them: the long press MOUNTS the pill, and
 // the tap is only driven once the pill is drawn.
-describe('`spec` under the pill', () => {
+describe('`setup` under the pill', () => {
 	const MODAL = FIELD_FORM;
-	const specButton = (page) => pane(page, 'cmd').locator('[data-command="spec"]');
+	const specButton = (page) => pane(page, 'cmd').locator('[data-command="setup"]');
 	const line = (page) => page.locator('.prompt-bar input').first();
 
-	test('long press, tap `spec`: the modal is open on that field, and the pill is spent', async () => {
+	test('long press, tap `setup`: the modal is open on that field, and the pill is spent', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			await longPress(page, 'mood');
@@ -799,11 +799,11 @@ describe('`spec` under the pill', () => {
 			assert.equal(await fieldPill(page).count(), 0, 'the pill outlived the tap');
 			assert.equal(await line(page).inputValue(), '', 'the tap wrote a line as well');
 
-			// And what it saves is the one `spec F`, with no pill after it.
+			// And what it saves is the one `setup F`, with no pill after it.
 			await page.locator(`${MODAL} button[type="submit"]`).click();
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 			await app.idle();
-			assert.match((await app.echoes()).at(-1), /^spec mood --from-json /);
+			assert.match((await app.echoes()).at(-1), /^setup mood --from-json /);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -813,8 +813,8 @@ describe('`spec` under the pill', () => {
 			const { page } = app;
 			// Logging declares a field, so its spec is taken away after.
 			await app.submit('occur tea');
-			await app.run(['spec', 'tea', '--delete']);
-			assert.match((await app.run(['spec', 'tea', '--json'])).stdout, /No spec defined/, 'tea has a spec to edit');
+			await app.run(['setup', 'tea', '--delete']);
+			assert.match((await app.run(['setup', 'tea', '--json'])).stdout, /No spec defined/, 'tea has a spec to edit');
 			await chip(page, 'tea').waitFor();
 			await longPress(page, 'tea');
 			await fieldPill(page).waitFor();
@@ -831,35 +831,35 @@ describe('`spec` under the pill', () => {
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 			await app.idle();
 			assert.equal(await fieldPill(page).count(), 0, 'a dismiss put the pill back');
-			assert.match((await app.run(['spec', 'tea', '--json'])).stdout, /No spec defined/, 'a dismiss declared tea');
+			assert.match((await app.run(['setup', 'tea', '--json'])).stdout, /No spec defined/, 'a dismiss declared tea');
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	// With no pill there is no subject, and `spec` has no subcommands to
+	// With no pill there is no subject, and `setup` has no subcommands to
 	// open (da-ez40f): it opens the widget on a new field, as `track` does.
-	// da-ez40f: typed, `spec` and `spec F` run and open the widget, on F.
-	test('typed, `spec` opens the widget on a new field', async () => {
+	// da-ez40f: typed, `setup` and `setup F` run and open the widget, on F.
+	test('typed, `setup` opens the widget on a new field', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
-			await app.submit('spec');
+			await app.submit('setup');
 			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), '');
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	test('typed, `spec mood` opens the widget on mood', async () => {
+	test('typed, `setup mood` opens the widget on mood', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
-			await app.submit('spec mood');
+			await app.submit('setup mood');
 			await page.locator(`${MODAL}[aria-label="the spec of mood"]`).waitFor();
 			assert.equal(await page.locator(`${MODAL} h2`).innerText(), 'mood');
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	test('with no pill, `spec` opens the field widget on a new field', async () => {
+	test('with no pill, `setup` opens the field widget on a new field', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			await specButton(page).click();

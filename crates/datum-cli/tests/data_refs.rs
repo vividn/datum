@@ -42,7 +42,7 @@ fn typed_db() -> Db {
     let db = fresh_db();
     let spec =
         json!({"field": "task", "verb": "occur", "subfields": {"blocker": {"value_type": "ref"}}});
-    run_cli(&["spec", "task", "--from-json", &spec.to_string()], &db).unwrap();
+    run_cli(&["setup", "task", "--from-json", &spec.to_string()], &db).unwrap();
     db
 }
 

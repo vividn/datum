@@ -275,7 +275,7 @@ describe('the sample seeder', () => {
 			const FIELDS = ['sleep', 'mood', 'work', 'project', 'walk', 'read', 'coffee', 'water'];
 			/** What the kit may change and what it must not: every spec, the aliases, the entries. */
 			const state = async () => ({
-				specs: await Promise.all(FIELDS.map(async (f) => (await app.run(['spec', f, '--json'])).stdout)),
+				specs: await Promise.all(FIELDS.map(async (f) => (await app.run(['setup', f, '--json'])).stdout)),
 				aliases: (await app.run(['alias', 'list'])).stdout,
 				entries: JSON.parse((await app.run(['tail', '--json', '-n', '1000'])).stdout).rows
 			});

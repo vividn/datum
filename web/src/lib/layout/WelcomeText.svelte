@@ -38,7 +38,7 @@
 	const MORE: [string, string][] = [
 		['logging', 'Logging an entry'],
 		['time', 'Times, dates and durations'],
-		['spec', 'Fields and their shapes'],
+		['setup', 'Fields and their shapes'],
 		['alias', 'Aliases'],
 		['sync', 'Syncing your devices'],
 		['db', 'Backups and databases'],

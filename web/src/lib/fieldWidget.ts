@@ -8,7 +8,7 @@
 // of each — so two copies on one page cannot be on two fields: a chip
 // pressed in one moves the other. Its chips write it, a field pill minted beside it writes it, and
 // `openField` writes it and brings the widget into view — which is what the
-// fields widget's `+`, the commands widget's `track` and `spec`, and the
+// fields widget's `+`, the commands widget's `track` and `setup`, and the
 // CLI's «which verb?» refusal ($lib/layout/engine.ts) all call. The empty
 // name is a NEW field, with its kind chosen when the door knew one.
 //
@@ -38,12 +38,12 @@ export const editing = writable<{ field: string; verb?: Verb | null }>({ field: 
 let waiting: ((result: RunResult | null) => void) | null = null;
 
 /**
- * The field a `spec` line opens the widget on (da-ez40f): `''`, a new one,
- * for `spec` alone, F for `spec F`, and null for any other line — a
+ * The field a `setup` line opens the widget on (da-ez40f): `''`, a new one,
+ * for `setup` alone, F for `setup F`, and null for any other line — a
  * change or a `--delete` runs and opens nothing.
  */
 export const specOpens = (argv: string[]): string | null =>
-	argv[0] !== 'spec' || argv.length > 2 || argv[1]?.startsWith('-') ? null : (argv[1] ?? '');
+	argv[0] !== 'setup' || argv.length > 2 || argv[1]?.startsWith('-') ? null : (argv[1] ?? '');
 
 /** The widget ran `result`, or was left running nothing: what `openField` resolves with. */
 export function answerField(result: RunResult | null): void {

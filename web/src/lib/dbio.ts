@@ -7,7 +7,7 @@
 // browser's file dialog IS the command's stdin and a download IS its
 // stdout, and the CLI runs `-` exactly as it would in a pipe. `db purge`,
 // which wants a TTY to ask on, asks in a dialog instead, and so do
-// `spec F --delete` (da-ez40f), `kit install`'s trust (da-axrk), a replacing `db restore`'s
+// `setup F --delete` (da-ez40f), `kit install`'s trust (da-axrk), a replacing `db restore`'s
 // deletions (da-jrbwc), a `--hard` one's drops (da-qq7gb) and a stale
 // `_LAST`'s question (da-f5pg2, `asking`).
 //
@@ -57,7 +57,7 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	// The field is the line's one word that is not a flag, as the CLI reads
 	// it; a `--delete` with none is the CLI's to refuse, unasked.
 	const field = argv.slice(1).find((w) => !w.startsWith('-'));
-	if (cmd === 'spec' && field && argv.includes('--delete')) return deleteSpec(argv, field);
+	if (cmd === 'setup' && field && argv.includes('--delete')) return deleteSpec(argv, field);
 	const file = fileArgv(argv);
 	if (!file) return null;
 	const ran =
@@ -75,7 +75,7 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	return ran.then((r) => ({ ...r, stderr: [r.stderr, note].filter(Boolean).join('\n') }));
 }
 
-/** `spec F --delete`, once the reader has said yes to it; its echo is the bar's DELETE. */
+/** `setup F --delete`, once the reader has said yes to it; its echo is the bar's DELETE. */
 async function deleteSpec(argv: string[], field: string): Promise<RunResult> {
 	const text = `Delete the spec of ${field}? Its entries stay, and one Undo brings the spec back.`;
 	if (!(await confirm(text, 'delete'))) return nothing(argv, 'spec not deleted — nothing ran');

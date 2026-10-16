@@ -18,7 +18,7 @@ to the renderer must keep this doc and the fixture tests
   brightness = (R*299 + G*587 + B*114) / 1000
   text_color = brightness > 128 ? "#000000" : "#ffffff"
   ```
-- **Spec override:** `spec <field> --color <hex>` and `spec <field> --state-color <name>=<hex>` take precedence over MD5. Check spec first; fall back to hash.
+- **Spec override:** `setup <field> --color <hex>` and `setup <field> --state-color <name>=<hex>` take precedence over MD5. Check spec first; fall back to hash.
 - **Emit via ANSI truecolor** (`\x1b[48;2;R;G;Bm` for bg, `\x1b[38;2;R;G;Bm` for fg).
 
 ## 2. Line layout

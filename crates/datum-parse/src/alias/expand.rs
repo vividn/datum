@@ -92,7 +92,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "tail",
     "head",
     "now",
-    "spec",
+    "setup",
     "alias",
     "get",
     "delete",

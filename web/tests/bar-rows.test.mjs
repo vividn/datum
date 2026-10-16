@@ -18,8 +18,8 @@ const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPa
 const EIGHT = ['alfa', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel'];
 const STATES = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
 const SEED = [
-	...EIGHT.slice(1).map((f) => `spec ${f} --verb occur`),
-	`spec alfa --verb switch --states ${STATES.join(',')}`
+	...EIGHT.slice(1).map((f) => `setup ${f} --verb occur`),
+	`setup alfa --verb switch --states ${STATES.join(',')}`
 ];
 
 const bar = (page) => page.locator('section[data-pane="bar"] .bar');
@@ -73,7 +73,7 @@ describe('the fields bar takes every row its box fits', () => {
 	);
 	/** Eighteen fields, each its own `y`, so six rows of three and three of six are both equal counts. */
 	const FIELDS = Array.from({ length: 18 }, (_, i) => `f${String(i).padStart(2, '0')}`);
-	const at = (field, i) => `spec ${field} --from-json '${JSON.stringify({ field, verb: 'occur', y: i / 18 })}'`;
+	const at = (field, i) => `setup ${field} --from-json '${JSON.stringify({ field, verb: 'occur', y: i / 18 })}'`;
 	/** The fields cut top to bottom into `n` bands of `y`, each read as a set. */
 	const banded = (n) =>
 		Array.from({ length: n }, (_, k) => FIELDS.slice((k * 18) / n, ((k + 1) * 18) / n));

@@ -461,7 +461,7 @@ store `str://ref://…`, which is shown without its `str://` and refers to
 nothing. `str://` means this only in front of `ref://`. An array takes
 the rule per element.
 
-On a key whose subfield `value_type` is `ref` — set with `spec F
+On a key whose subfield `value_type` is `ref` — set with `setup F
 --from-json` or in a kit's field spec — a bare slug is a reference too,
 stored as typed; a marker there is accepted and reads alike.
 
@@ -475,7 +475,7 @@ datum occur read what=ref://book:dune
 datum occur quote said='"ref://book:dune"'
 datum get read:_::what::title
 datum get quote:_::said
-datum spec task --from-json '{"field":"task","verb":"occur","subfields":{"blocker":{"value_type":"ref"}}}'
+datum setup task --from-json '{"field":"task","verb":"occur","subfields":{"blocker":{"value_type":"ref"}}}'
 datum occur task blocker=issue:k7f2a
 datum occur plan needs=ref://book:dune,ref://book:emma
 datum check refs
@@ -753,7 +753,7 @@ from the string's shape — `12:30` is a reference too, and one that names
 nothing.
 
 A state without `:` refers to an entry only when its field's spec names a
-lookup field: `spec issue --state-lookup-field issue_state` makes the
+lookup field: `setup issue --state-lookup-field issue_state` makes the
 state `queued` refer to `issue_state:queued`. Anything else is a plain
 state. An array state takes the rule per element; `false`, `true`, a
 number, and the TRACKED and IGNORED sentinels never refer.
@@ -765,7 +765,7 @@ line per field and slug:
 ```bash
 datum add book id=great_gatsby
 datum switch media book:great_gatsby
-datum spec issue --verb switch --state-lookup-field issue_state
+datum setup issue --verb switch --state-lookup-field issue_state
 datum switch issue queued
 datum switch clock 12:30
 datum check refs

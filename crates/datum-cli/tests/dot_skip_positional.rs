@@ -81,7 +81,7 @@ fn alias_dot_skips_switch_state_and_key() {
 fn spec_key_dot_skips_to_the_dur() {
     let db = fresh_db();
     run_cli(
-        &["spec", "work", "--verb", "start", "--data-key", "project="],
+        &["setup", "work", "--verb", "start", "--data-key", "project="],
         &db,
     )
     .unwrap();

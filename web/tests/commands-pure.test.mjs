@@ -44,7 +44,7 @@ import {
 const SECTIONS = [
 	['undo', ['undo', 'help']],
 	['log', ['occur', 'start', 'end', 'switch', 'add', 'note', 'flag']],
-	['setup', ['track', 'ignore', 'spec', 'alias', 'kit', 'view', 'config']],
+	['setup', ['track', 'ignore', 'setup', 'alias', 'kit', 'view', 'config']],
 	['edit', ['delete', 'update', 'retime']],
 	[
 		'analysis',
@@ -396,22 +396,22 @@ describe('the `command` kind', () => {
 describe('subcommands', () => {
 	const sub = (...names) => names.map((name) => ({ name }));
 	const TREE = grammarOf([
-		{ name: 'db', aliases: [], usage: ['datum db setup', 'datum db backup <PATH | ->'], flags: [], subcommands: sub('setup', 'backup'), bare: false },
+		{ name: 'db', aliases: [], usage: ['datum db migrate', 'datum db backup <PATH | ->'], flags: [], subcommands: sub('migrate', 'backup'), bare: false },
 		{ name: 'conflicts', aliases: [], usage: ['datum conflicts [list] [--json]'], flags: [], subcommands: sub('resolve'), bare: true },
-		// da-ez40f: `spec` has no subcommands, its field the first word.
-		{ name: 'spec', aliases: [], usage: ['datum spec [--tag T]', 'datum spec <FIELD> [--json]'], flags: [], subcommands: [], bare: true },
+		// da-ez40f: `setup` has no subcommands, its field the first word.
+		{ name: 'setup', aliases: [], usage: ['datum setup [--tag T]', 'datum setup <FIELD> [--json]'], flags: [], subcommands: [], bare: true },
 		// Two forms, no subcommands: `add` fills as it always did.
 		{ name: 'add', aliases: [], usage: ['datum add <FIELD>', 'datum add <FIELD> <DUR>'], flags: [] }
 	]);
 	const field = { id: 'field', kind: 'field', text: 'mood' };
 
-	test('a command with subcommands drills; alternate forms do not; spec under a field opens the field widget instead, and so does track', () => {
-		assert.deepEqual(['db', 'conflicts', 'spec', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, false, false, false]);
-		assert.equal(drills(TREE, 'spec', [field]), false, 'da-ybai9: the field widget, not the subcommands');
+	test('a command with subcommands drills; alternate forms do not; setup under a field opens the field widget instead, and so does track', () => {
+		assert.deepEqual(['db', 'conflicts', 'setup', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, false, false, false]);
+		assert.equal(drills(TREE, 'setup', [field]), false, 'da-ybai9: the field widget, not the subcommands');
 		assert.equal(drills(TREE, 'db', [field]), true);
 		// da-hbrfg: the spec is a place, so that tap OPENS, and draws the `›`.
-		// da-ez40f: with no subcommands, `spec` opens it with no pill too.
-		assert.deepEqual([opensField('spec', [field]), opensField('spec', []), opensField('db', [field])], [true, true, false]);
+		// da-ez40f: with no subcommands, `setup` opens it with no pill too.
+		assert.deepEqual([opensField('setup', [field]), opensField('setup', []), opensField('db', [field])], [true, true, false]);
 		// da-fu29p: `track` opens it with a field named or none, a new one.
 		assert.deepEqual([opensField('track', []), opensField('track', [field])], [true, true]);
 	});
@@ -421,7 +421,7 @@ describe('subcommands', () => {
 		assert.deepEqual(bar('db'), [
 			['back', '< Back', 'back'],
 			['help', 'Help', 'help'],
-			['db setup', 'setup', 'fill'],
+			['db migrate', 'migrate', 'fill'],
 			// da-9ow8m: it opens «Backups» rather than fill the line.
 			['db backup', 'backup', 'backups']
 		]);

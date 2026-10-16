@@ -4,7 +4,7 @@
 //! The break this guards against was measured, not imagined: with
 //! `FieldSpec.verb` required and no alias, every command that loads a
 //! spec answered `Serialization error: missing field `verb`` on a real
-//! database — `switch`, `occur`, `now`, `fields`, `spec F` — and the
+//! database — `switch`, `occur`, `now`, `fields`, `setup F` — and the
 //! post-merge hook installs this binary over the one those databases
 //! were written by. So the old spellings are read:
 //!
@@ -16,7 +16,7 @@
 //! (Only the STORED key is forgiven. The FLAG `--default-verb` is still
 //! an error naming `--verb` — `track_cmd.rs` holds it to that.)
 //!
-//! The spec rows below are verbatim output of `datum spec ` from the
+//! The spec rows below are verbatim output of `datum setup ` from the
 //! binary that preceded this bead.
 
 use std::path::PathBuf;
@@ -107,7 +107,7 @@ impl Env {
     }
 
     fn spec_verb(&self, field: &str) -> String {
-        let shown = self.run(&["spec", field, "--json"]);
+        let shown = self.run(&["setup", field, "--json"]);
         let spec: Value = serde_json::from_str(&shown).expect("spec prints --json json");
         assert!(
             spec["default_verb"].is_null(),
@@ -141,9 +141,9 @@ fn a_database_written_before_this_bead_still_reads() {
         vec!["now"],
         vec!["fields"],
         vec!["fields", "--json"],
-        vec!["spec", "activity", "--json"],
-        vec!["spec", "tea", "--json"],
-        vec!["spec"],
+        vec!["setup", "activity", "--json"],
+        vec!["setup", "tea", "--json"],
+        vec!["setup"],
         vec!["tail", "-n", "5"],
         vec!["check"],
     ] {
@@ -161,7 +161,7 @@ fn a_database_written_before_this_bead_still_reads() {
     assert_eq!(env.spec_verb("mood"), "switch");
     assert_eq!(env.spec_verb("tea"), "occur");
 
-    let spec: Value = serde_json::from_str(&env.run(&["spec", "activity", "--json"])).unwrap();
+    let spec: Value = serde_json::from_str(&env.run(&["setup", "activity", "--json"])).unwrap();
     assert_eq!(spec["color"], "blue");
 
     // The widget bar reads the same verb the CLI does (da-c8mh: the web
@@ -192,7 +192,7 @@ fn a_spec_with_an_unreadable_verb_is_still_an_error() {
     env.run(&["occur", "tea"]);
     env.store_old_spec("tea", r#"{"field":"tea","default_verb":"pirouette"}"#);
 
-    let (ok, text) = env.try_run(&["spec", "tea", "--json"]);
+    let (ok, text) = env.try_run(&["setup", "tea", "--json"]);
     assert!(!ok, "an unreadable verb should error, got:\n{text}");
 }
 
@@ -209,17 +209,17 @@ fn a_stored_unit_is_ignored_and_dropped_on_the_next_write() {
     );
 
     for args in [
-        vec!["spec", "tea", "--json"],
-        vec!["spec", "tea"],
+        vec!["setup", "tea", "--json"],
+        vec!["setup", "tea"],
         vec!["fields", "--json"],
     ] {
         let text = env.run(&args);
         assert!(!text.contains("unit"), "{args:?} shows a unit:\n{text}");
     }
-    let spec: Value = serde_json::from_str(&env.run(&["spec", "tea", "--json"])).unwrap();
+    let spec: Value = serde_json::from_str(&env.run(&["setup", "tea", "--json"])).unwrap();
     assert_eq!(spec["subfields"]["dose"]["value_type"], "number");
 
-    env.run(&["spec", "tea", "--description", "green"]);
+    env.run(&["setup", "tea", "--description", "green"]);
     let conn = rusqlite::Connection::open(&env.db).unwrap();
     let stored: String = conn
         .query_row(
@@ -247,7 +247,7 @@ fn a_stored_strict_reads_as_only_listed_keys() {
         r#"{"field":"tea","verb":"occur","data_keys":["cups"],"strict":true}"#,
     );
 
-    let spec: Value = serde_json::from_str(&env.run(&["spec", "tea", "--json"])).unwrap();
+    let spec: Value = serde_json::from_str(&env.run(&["setup", "tea", "--json"])).unwrap();
     assert_eq!(spec["only_listed_keys"], true, "{spec}");
     assert!(
         spec.get("strict").is_none(),
@@ -260,7 +260,7 @@ fn a_stored_strict_reads_as_only_listed_keys() {
         "an unlisted key was taken:\n{text}"
     );
 
-    env.run(&["spec", "tea", "--description", "green"]);
+    env.run(&["setup", "tea", "--description", "green"]);
     let conn = rusqlite::Connection::open(&env.db).unwrap();
     let stored: String = conn
         .query_row(

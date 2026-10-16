@@ -129,7 +129,7 @@ fn the_db_named_by_db_is_the_one_asked() {
 #[test]
 fn a_fields_own_word_names_the_page_of_its_verb() {
     let env = Env::new();
-    env.ok(&["spec", "coffee", "--verb", "occur"]);
+    env.ok(&["setup", "coffee", "--verb", "occur"]);
     assert_eq!(
         env.ok(&["coffee", "--help"]),
         "datum coffee — coffee's own word\n\n\

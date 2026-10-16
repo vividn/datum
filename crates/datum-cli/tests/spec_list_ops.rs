@@ -1,4 +1,4 @@
-//! `spec`'s lists take three operations each (da-f9bky): `--add-state`,
+//! `setup`'s lists take three operations each (da-f9bky): `--add-state`,
 //! `--remove-state`, `--states`, and the same for tags; keys take `-k`/`-K`
 //! as `track` does, and `--remove-key`. Adding what is there and removing
 //! what is not write nothing, the second saying so.
@@ -30,7 +30,7 @@ fn ok(dir: &TempDir, args: &[&str]) -> (String, String) {
 }
 
 fn spec(dir: &TempDir, field: &str) -> Value {
-    serde_json::from_str(&ok(dir, &["spec", field, "--json"]).0).unwrap()
+    serde_json::from_str(&ok(dir, &["setup", field, "--json"]).0).unwrap()
 }
 
 /// mood: happy, sad and calm, sad carrying one of everything a state can.
@@ -39,7 +39,7 @@ fn mood() -> TempDir {
     ok(
         &dir,
         &[
-            "spec",
+            "setup",
             "mood",
             "--verb",
             "switch",
@@ -65,19 +65,19 @@ fn mood() -> TempDir {
 #[test]
 fn add_state_appends_once() {
     let dir = mood();
-    ok(&dir, &["spec", "mood", "--add-state", "meh"]);
+    ok(&dir, &["setup", "mood", "--add-state", "meh"]);
     assert_eq!(
         spec(&dir, "mood")["allowed_states"],
         json!(["happy", "sad", "calm", "meh"])
     );
-    let (out, _) = ok(&dir, &["spec", "mood", "--add-state", "meh"]);
+    let (out, _) = ok(&dir, &["setup", "mood", "--add-state", "meh"]);
     assert_eq!(out, "no change\n");
 }
 
 #[test]
 fn remove_state_drops_what_it_carries() {
     let dir = mood();
-    ok(&dir, &["spec", "mood", "--remove-state", "sad"]);
+    ok(&dir, &["setup", "mood", "--remove-state", "sad"]);
     let s = spec(&dir, "mood");
     assert_eq!(s["allowed_states"], json!(["happy", "calm"]));
     for key in [
@@ -100,13 +100,13 @@ fn remove_state_drops_what_it_carries() {
 #[test]
 fn removing_what_is_absent_warns_and_writes_nothing() {
     let dir = mood();
-    ok(&dir, &["spec", "mood", "--color", "#b87333"]);
+    ok(&dir, &["setup", "mood", "--color", "#b87333"]);
     for (flag, what) in [
         ("--remove-state", "state"),
         ("--remove-tag", "tag"),
         ("--remove-key", "key"),
     ] {
-        let (out, err) = ok(&dir, &["spec", "mood", flag, "nope"]);
+        let (out, err) = ok(&dir, &["setup", "mood", flag, "nope"]);
         assert_eq!(out, "no change\n", "{flag}");
         assert!(
             err.contains(&format!("'mood' has no {what} 'nope': nothing removed")),
@@ -127,7 +127,7 @@ fn a_state_dropped_twice_over_is_not_absent() {
     let (_, err) = ok(
         &dir,
         &[
-            "spec",
+            "setup",
             "mood",
             "--states",
             "happy,calm",
@@ -144,11 +144,11 @@ fn a_state_dropped_twice_over_is_not_absent() {
 #[test]
 fn states_sets_the_order_and_keeps_what_kept_states_carry() {
     let dir = mood();
-    ok(&dir, &["spec", "mood", "--states", "calm,happy"]);
+    ok(&dir, &["setup", "mood", "--states", "calm,happy"]);
     let s = spec(&dir, "mood");
     assert_eq!(s["allowed_states"], json!(["calm", "happy"]));
     assert_eq!(s["state_colors"], json!({"happy": "#00ff00"}));
-    ok(&dir, &["spec", "mood", "--states", ""]);
+    ok(&dir, &["setup", "mood", "--states", ""]);
     assert!(spec(&dir, "mood")
         .get("allowed_states")
         .is_none_or(Value::is_null));
@@ -159,18 +159,18 @@ fn tags_take_the_same_three_operations() {
     let dir = mood();
     ok(
         &dir,
-        &["spec", "mood", "--add-tag", "mind", "--add-tag", "body"],
+        &["setup", "mood", "--add-tag", "mind", "--add-tag", "body"],
     );
     assert_eq!(
-        ok(&dir, &["spec", "mood", "--add-tag", "mind"]).0,
+        ok(&dir, &["setup", "mood", "--add-tag", "mind"]).0,
         "no change\n"
     );
     assert_eq!(spec(&dir, "mood")["tags"], json!(["mind", "body"]));
-    ok(&dir, &["spec", "mood", "--remove-tag", "mind"]);
+    ok(&dir, &["setup", "mood", "--remove-tag", "mind"]);
     assert_eq!(spec(&dir, "mood")["tags"], json!(["body"]));
-    ok(&dir, &["spec", "mood", "--tags", "b, a"]);
+    ok(&dir, &["setup", "mood", "--tags", "b, a"]);
     assert_eq!(spec(&dir, "mood")["tags"], json!(["b", "a"]));
-    assert_eq!(ok(&dir, &["spec", "--tag", "a"]).0.trim(), "mood");
+    assert_eq!(ok(&dir, &["setup", "--tag", "a"]).0.trim(), "mood");
 }
 
 /// The flags that replaced a list are refused, naming the three that do it.
@@ -179,11 +179,11 @@ fn state_and_a_fields_tag_are_gone() {
     let dir = mood();
     for (args, now) in [
         (
-            &["spec", "mood", "--state", "x"][..],
+            &["setup", "mood", "--state", "x"][..],
             "--add-state S, --remove-state S, or --states a,b,c",
         ),
         (
-            &["spec", "mood", "--tag", "x"],
+            &["setup", "mood", "--tag", "x"],
             "--add-tag T, --remove-tag T, or --tags a,b",
         ),
     ] {
@@ -204,7 +204,7 @@ fn keys_add_in_place_and_remove() {
     ok(
         &dir,
         &[
-            "spec",
+            "setup",
             "juice",
             "--verb",
             "occur",
@@ -216,7 +216,7 @@ fn keys_add_in_place_and_remove() {
     );
     ok(
         &dir,
-        &["spec", "juice", "-k", "size=", "-k", "cups=1", "-K", "day"],
+        &["setup", "juice", "-k", "size=", "-k", "cups=1", "-K", "day"],
     );
     let s = spec(&dir, "juice");
     assert_eq!(s["data_keys"], json!(["cups=1", "temp=cold", "size="]));
@@ -225,11 +225,11 @@ fn keys_add_in_place_and_remove() {
     // no warning.
     let mut s = spec(&dir, "juice");
     s["subfields"]["brand"] = json!({"value_type": "any"});
-    ok(&dir, &["spec", "juice", "--from-json", &s.to_string()]);
+    ok(&dir, &["setup", "juice", "--from-json", &s.to_string()]);
     let (_, err) = ok(
         &dir,
         &[
-            "spec",
+            "setup",
             "juice",
             "--remove-key",
             "temp",
@@ -250,15 +250,15 @@ fn keys_add_in_place_and_remove() {
 #[test]
 fn remainder_short_flags() {
     let dir = tempfile::tempdir().unwrap();
-    ok(&dir, &["spec", "note", "--verb", "occur", "-SR", "text"]);
+    ok(&dir, &["setup", "note", "--verb", "occur", "-SR", "text"]);
     let s = spec(&dir, "note");
     assert_eq!(
         (&s["remainder"], &s["string_remainder"]),
         (&json!("text"), &json!(true))
     );
-    ok(&dir, &["spec", "note", "-C"]);
+    ok(&dir, &["setup", "note", "-C"]);
     let s = spec(&dir, "note");
     assert!(s.get("remainder").is_none_or(Value::is_null), "{s}");
     assert_eq!(s["comment_remainder"], json!(true));
-    assert!(!datum(&dir, &["spec", "note", "-S"]).status.success());
+    assert!(!datum(&dir, &["setup", "note", "-S"]).status.success());
 }

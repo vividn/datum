@@ -110,7 +110,7 @@ fn trailing_duration_sets_time_end_for_closed_block() {
     // da-gvcen: declare the field first — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the trailing duration, not the declaration.
-    run_cli(&["spec", "dance", "--verb", "start"], &db).expect("declare dance");
+    run_cli(&["setup", "dance", "--verb", "start"], &db).expect("declare dance");
 
     run_cli(&["start", "dance", "5m"], &db).expect("start dance 5m");
 
@@ -183,7 +183,7 @@ fn start_moment_records_point_dot() {
     // da-gvcen: declare the field first — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the `-m` moment rule, not the declaration.
-    run_cli(&["spec", "meeting", "--verb", "start"], &db).expect("declare meeting");
+    run_cli(&["setup", "meeting", "--verb", "start"], &db).expect("declare meeting");
 
     run_cli(&["start", "meeting", "-m"], &db).expect("start -m dispatch");
 
@@ -318,7 +318,7 @@ fn dur_plus_extra_still_marks_verb_start() {
     // da-gvcen: declare the field first — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the verb a `dur=` lands, not the declaration.
-    run_cli(&["spec", "field", "--verb", "start"], &db).expect("declare field");
+    run_cli(&["setup", "field", "--verb", "start"], &db).expect("declare field");
 
     run_cli(&["start", "field", "dur=30m", "-k", "req1=reqVal1"], &db)
         .expect("start field dur=30m -k req1=reqVal1");

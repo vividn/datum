@@ -368,7 +368,7 @@ const FIELD_OCCURTIME_INDEX_V36: &str = "CREATE UNIQUE INDEX IF NOT EXISTS entri
 /// transactions dated to one day, which are two events and not one undefined
 /// fact. Adding `state IS NOT NULL` makes the predicate say what the rule
 /// always meant. A stateless pair that shares a slug as well is still
-/// refused by `entries_slug`; an id template (`--id`, `spec --id-template`)
+/// refused by `entries_slug`; an id template (`--id`, `setup --id-template`)
 /// is the user's declaration that the two are different events.
 ///
 /// No pre-check: narrowing a UNIQUE predicate can only ever admit rows a

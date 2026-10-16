@@ -23,7 +23,7 @@ fn a_control_character_is_refused_by_name() {
         ),
         (vec!["occur", "c\td"], "c\td", r#"a tab (U+0009): "c\td""#),
         (
-            vec!["spec", "x\ry", "--verb", "occur"],
+            vec!["setup", "x\ry", "--verb", "occur"],
             "x\ry",
             r#"a carriage return (U+000D): "x\ry""#,
         ),

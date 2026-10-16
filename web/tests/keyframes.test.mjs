@@ -20,8 +20,8 @@ const shared = sharedApp({ viewport: { width: 1280, height: 800 } });
 // and drawing it costs what a boot did (da-m1m9a).
 const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
-const TEA = 'spec tea --verb occur --data-key amount --data-key size= --data-key cups=1 --assign brand=acme';
-const WORK = 'spec work --verb start --data-key project --data-key n=1';
+const TEA = 'setup tea --verb occur --data-key amount --data-key size= --data-key cups=1 --assign brand=acme';
+const WORK = 'setup work --verb start --data-key project --data-key n=1';
 
 /** The bar's line, and the keys it frames: written ones over the text, waiting ones after it. */
 const drawn = (page) =>
@@ -123,7 +123,7 @@ describe('key frames', () => {
 	test("a switch frames its state's own keys: sad asks for reason, happy for nothing", async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec mood --verb switch --states happy,sad --state-key sad=reason']);
+			await seedLines(app, ['setup mood --verb switch --states happy,sad --state-key sad=reason']);
 			await type(page, 'switch mood happy');
 			assert.deepEqual((await drawn(page)).waiting, []);
 			await page.locator('.prompt-bar input').fill('');

@@ -84,7 +84,7 @@ export function showAllArgv(argv: string[]): string[] {
 }
 
 export function specShowArgv(field: string): string[] {
-	return ['spec', field, '--json'];
+	return ['setup', field, '--json'];
 }
 
 export function redoArgv(): string[] {

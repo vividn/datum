@@ -49,7 +49,7 @@ mod now;
 mod retime;
 mod search;
 mod spec;
-pub use self::spec::SPEC;
+pub use self::spec::SETUP;
 mod sync;
 mod tail;
 mod track_ignore;
@@ -230,7 +230,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     // the same invocation; the last one wins; and a value the named
     // command has no rendering for is an error rather than a no-op.
     //
-    // `spec` is in the family too: its `--json <JSON>` input flag was
+    // `setup` is in the family too: its `--json <JSON>` input flag was
     // renamed `--from-json` (vividn, 2026-09-15), so nothing collides.
     //
     // The leading half's survivors are the globals the loop above already
@@ -274,7 +274,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
 
         "retime" | "rt" => Command::Retime(parse_retime_args(rest)?),
 
-        SPEC => Command::Spec(parse_spec_cmd(rest)?),
+        SETUP => Command::Spec(parse_spec_cmd(rest)?),
         "alias" => Command::Alias(parse_alias_cmd(rest)?),
         "kit" => Command::Kit(parse_kit_cmd(rest)?),
         "conflicts" => Command::Conflicts(parse_conflicts_cmd(rest)?),
@@ -444,7 +444,7 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::History(a) => a.show = show,
         Command::Check(a) => a.show = show,
         Command::Config(ConfigCommand::Show(a)) => a.show = show,
-        // `spec F` draws its block or its JSON; a change or a delete echoes
+        // `setup F` draws its block or its JSON; a change or a delete echoes
         // the spec entry (da-ez40f). The listing has one rendering.
         Command::Spec(SpecCommand::Show { show: s, .. } | SpecCommand::Delete { show: s, .. }) => {
             *s = show
@@ -1325,7 +1325,7 @@ mod tests {
     }
 
     /// da-a6p7v: so is it by every command with no place for it. `alias`,
-    /// `db` and `spec` are groups as `sync` is, and `redo` carries the
+    /// `db` and `setup` are groups as `sync` is, and `redo` carries the
     /// level `undo` does, where it had no arm and dropped it.
     #[test]
     fn a_typed_show_is_refused_by_any_command_with_no_place_for_it() {
@@ -1355,8 +1355,8 @@ mod tests {
             assert_ne!(typed, debug(parse(carried)), "{carried}");
             assert_eq!(env(carried), typed, "{carried}");
         }
-        // `spec F` draws JSON with it, and a change echoes with it.
-        for carried in ["spec x", "spec x --color red", "spec x --delete"] {
+        // `setup F` draws JSON with it, and a change echoes with it.
+        for carried in ["setup x", "setup x --color red", "setup x --delete"] {
             let typed = debug(parse(&format!("{carried} --json")));
             assert_ne!(typed, debug(parse(carried)), "{carried}");
             assert_eq!(env(carried), typed, "{carried}");
@@ -1366,14 +1366,14 @@ mod tests {
             ("alias set", "zz occur"),
             ("alias show", "zz"),
             ("alias remove", "zz"),
-            ("db setup", ""),
+            ("db migrate", ""),
             ("db purge", ""),
             ("db backup", "f"),
             ("db migrate run", ""),
             ("db migrate status", ""),
             ("db migrate edit", ""),
             ("db v2import", "f"),
-            ("spec", ""),
+            ("setup", ""),
         ] {
             let plain = debug(parse(&format!("{name} {args}")));
             for show in ["json", "none"] {

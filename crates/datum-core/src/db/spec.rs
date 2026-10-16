@@ -131,7 +131,7 @@ fn check_spec_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Resu
     let Some(mut data) = data.filter(|d| d.is_object()).cloned() else {
         return refuse(format!(
             "`{SPEC_FIELD}` is reserved for field specs, and this entry carries none \
-             (see `datum spec`)"
+             (see `datum setup`)"
         ));
     };
     // A stored spec may predate its verb (da-c8mh); reading fills it from

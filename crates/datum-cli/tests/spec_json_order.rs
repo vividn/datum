@@ -1,4 +1,4 @@
-//! `spec F --json` prints the same bytes in every process (da-l6950): a
+//! `setup F --json` prints the same bytes in every process (da-l6950): a
 //! spec's maps are sorted by name, not in a process's hash order.
 
 use std::process::Command;
@@ -25,8 +25,8 @@ fn spec_json_is_byte_identical_across_processes() {
         .map(|n| (format!("{n}k"), serde_json::json!({"value_type": "any"})))
         .collect();
     let json = serde_json::json!({"verb": "switch", "subfields": subfields});
-    datum(&["spec", "mood", "--from-json", &json.to_string()]);
-    let mut args = vec!["spec", "mood"];
+    datum(&["setup", "mood", "--from-json", &json.to_string()]);
+    let mut args = vec!["setup", "mood"];
     let flags: Vec<String> = names
         .iter()
         .flat_map(|n| {
@@ -41,8 +41,8 @@ fn spec_json_is_byte_identical_across_processes() {
         .collect();
     args.extend(flags.iter().map(String::as_str));
     datum(&args);
-    let first = datum(&["spec", "mood", "--json"]);
+    let first = datum(&["setup", "mood", "--json"]);
     for _ in 0..4 {
-        assert_eq!(datum(&["spec", "mood", "--json"]), first);
+        assert_eq!(datum(&["setup", "mood", "--json"]), first);
     }
 }

@@ -195,7 +195,7 @@ describe('the echo is painted in datum’s colours', () => {
  * The argvs `echoEnv` leaves alone, with arguments that make each one a
  * command the CLI will actually try to run.
  *
- * `db`, `spec`, `alias`, `config`, `sync` and `kit` are groups: the flag
+ * `db`, `setup`, `alias`, `config`, `sync` and `kit` are groups: the flag
  * they refuse is refused at the subcommand, so each is probed as one.
  *
  * `help`, `repl` and the flag-only argvs are here for da-1hdg: they are
@@ -218,9 +218,9 @@ const READERS = [
 	['check'],
 	['meta'],
 	['db', 'backup', '-'],
-	['spec'],
-	['spec', 'coffee'],
-	['spec', 'coffee', '--json'],
+	['setup'],
+	['setup', 'coffee'],
+	['setup', 'coffee', '--json'],
 	['alias', 'list'],
 	['sync'],
 	['kit', 'list'],
@@ -247,10 +247,10 @@ const WRITERS = [
 	// that declared it (da-c8mh), which is two rows, not one.
 	['delete', '_LAST'],
 	['undo'],
-	// da-ez40f: a change to a spec echoes its entry; `spec` and `spec F` read.
-	['spec', 'coffee', '--glyph', '▲'],
+	// da-ez40f: a change to a spec echoes its entry; `setup` and `setup F` read.
+	['setup', 'coffee', '--glyph', '▲'],
 	// The flag may come first; the field is still the word that is not one.
-	['spec', '--delete', 'coffee']
+	['setup', '--delete', 'coffee']
 ];
 
 describe('the list says what the CLI does', () => {
@@ -347,10 +347,10 @@ describe('a kit alias logs in the bar', () => {
 			const tracked = async () =>
 				(await app.run(['grep', '-f', 'vacuum', 'TRACKED'])).stdout.match(/TRACKED/g)?.length ?? 0;
 			await app.submit('newchore vacuum 4');
-			// `track F …` is `spec F … --track` (da-ijf3p): it echoes the spec.
+			// `track F …` is `setup F … --track` (da-ijf3p): it echoes the spec.
 			assert.match((await app.stdouts()).at(-1) ?? '', /spec:vacuum/);
 			assert.equal(await tracked(), 1);
-			const spec = await app.run(['spec', 'vacuum', '--json']);
+			const spec = await app.run(['setup', 'vacuum', '--json']);
 			assert.match(spec.stdout, /next_date=\+4/, spec.stdout || spec.stderr);
 
 			// Again, now the page has learned the word: it runs, and writes

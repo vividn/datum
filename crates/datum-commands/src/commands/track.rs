@@ -1,4 +1,4 @@
-//! `datum track <field>` / `datum ignore <field>` — `spec F … --track` /
+//! `datum track <field>` / `datum ignore <field>` — `setup F … --track` /
 //! `--ignore` (da-ijf3p), and the TRACK row that says tracking began, for a
 //! field that is IGNORED or has no entries (da-6fvys).
 
@@ -53,7 +53,7 @@ pub(crate) fn begins_tracking(db: &Db, field: &str, now: &DatumTime) -> Result<b
     })
 }
 
-/// `track F [CHANGES]` / `ignore F [CHANGES]` (da-ijf3p): `spec F [CHANGES]
+/// `track F [CHANGES]` / `ignore F [CHANGES]` (da-ijf3p): `setup F [CHANGES]
 /// --track` / `--ignore`, but for `F` alone on a field with a spec, which
 /// writes the status only and leaves the spec as it is. `ignore F` alone
 /// on a field with none writes its row too, and declares nothing: hiding a
@@ -94,7 +94,7 @@ pub fn status(args: SpecSetArgs, db: &Db) -> Result<()> {
         }
         _ => return super::spec::spec(SpecCommand::Set(Box::new(args)), db),
     };
-    // Nothing if it's already in that status, as `spec --track` (da-2pbvd).
+    // Nothing if it's already in that status, as `setup --track` (da-2pbvd).
     let Some(entry) = entry else {
         println!("no change");
         return Ok(());

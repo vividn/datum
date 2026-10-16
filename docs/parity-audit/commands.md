@@ -34,7 +34,7 @@ Reference points:
 | migrate | ✓ | ✓ | run/status/edit/import | — |
 | setup | ✓ | ✓ | ✓ | bare migrate-only (purge moved to `db purge`) |
 | sync | ✓ | ✓ | both exist, **different protocols** | OAuth + E2E key mgmt |
-| spec | ✗ | ✓ | — | field schemas in DB |
+| setup | ✗ | ✓ | — | field schemas in DB |
 | alias | ✗ | ✓ | — | DB-backed CLI aliases |
 | track / ignore | ✗ | ✓ | — | tracked-fields registry |
 | info | ✗ | ✓ | — | multi-DB health view |
@@ -351,7 +351,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Daydumb today:** `NowArgs` — `-A/--show-all`. Colored field display
   via spec metadata.
 - **Missing in daydumb:** nothing.
-- **Divergences:** daydumb uses per-field color from `datum spec <field>
+- **Divergences:** daydumb uses per-field color from `datum setup <field>
   --color` (stored in DB); datum uses a hard-coded palette.
 - **Tests in datum not in daydumb:** no dedicated file.
 - **Ideas / cleanup:** expose `--no-color` for pipe-friendly output.
@@ -393,10 +393,11 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Ideas / cleanup:** `status` could print the list of pending
   migrations with descriptions, not just a version range.
 
-### setup (datum db setup)
+### setup (datum db migrate)
 
 - **Original datum:** no flags; bare `datum setup` initialises PouchDB.
-- **Daydumb today:** bare `datum db setup` (da-33g) — applies any
+- **Daydumb today:** bare `datum db migrate` (da-a4ptr; `db setup`
+  until then, da-33g) — applies any
   pending schema migrations and stamps the version. The destructive
   rebuild moved to `datum db purge` (da-e16); the `--force-recreate`
   alias was removed in da-57t.
@@ -417,7 +418,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   bare `sync` syncs them over iroh (da-rugg8, da-odwc7, da-aam46). A chain is open until its first admin
   (da-6177s).
 
-### spec (daydumb only)
+### setup (daydumb only; `spec` until da-a4ptr)
 
 - **Purpose:** field-schema management stored in the SQLite DB (no
   datum equivalent).

@@ -53,10 +53,10 @@ RENDER:
   now      Show the current state of tracked fields + terminal nowview band
 
 ADMIN:
-  spec         Manage field specs (schemas)
+  setup        Set up a field: its verb, states and look
   alias        Manage aliases
   check        Run database consistency checks
-  db           DB-lifecycle (setup, purge, backup, restore, migrate, v2import)
+  db           DB-lifecycle (purge, backup, restore, migrate, v2import)
   info         Show health/metadata for DB(s)
   config       Show or manage user configuration
   completions  Shell tab completion: print, install or remove the script
@@ -882,11 +882,8 @@ fn help_json_lists_db_subcommands() {
         .iter()
         .map(|s| s["name"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        names,
-        ["setup", "purge", "backup", "restore", "migrate", "v2import"]
-    );
-    assert_eq!(db["subcommands"][2]["usage"].as_array().unwrap().len(), 4);
+    assert_eq!(names, ["purge", "backup", "restore", "migrate", "v2import"]);
+    assert_eq!(db["subcommands"][1]["usage"].as_array().unwrap().len(), 4);
     assert_eq!(db["bare"], false);
     assert_eq!(entry("sync")["bare"], true);
     assert_eq!(entry("conflicts")["bare"], true);
@@ -1141,7 +1138,7 @@ fn no_help_page_says_colour() {
 /// The pages a newcomer reaches first: the welcome's «Learn more», then the
 /// verbs and the commands met next.
 const NEWCOMER_PAGES: &[&str] = &[
-    "logging", "time", "spec", "alias", "sync", "db", "stats", "track", "occur", "start", "stop",
+    "logging", "time", "setup", "alias", "sync", "db", "stats", "track", "occur", "start", "stop",
     "switch", "tail", "undo",
 ];
 

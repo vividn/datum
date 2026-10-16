@@ -312,7 +312,7 @@ fn the_explicit_track_command_still_writes_its_document() {
     ] {
         let env = Env::new();
         // A spec first, so the `track` is the row alone and `_LAST` is it.
-        env.run(&["spec", "coffee", "--verb", verb]);
+        env.run(&["setup", "coffee", "--verb", verb]);
         env.run(&["track", "coffee"]);
 
         // The single-document surface names it.
@@ -555,18 +555,18 @@ fn v2import_declares_every_field_it_brings() {
     }
 }
 
-/// `spec --from-json --track` declares a new field whole — the spec, a
+/// `setup --from-json --track` declares a new field whole — the spec, a
 /// glyph and all, and its TRACK row — in one command, which one `undo`
 /// takes back whole (da-2pbvd): the web's new-field Save, which was `track`
-/// and then a `spec` for the glyph, two undos with the field half made.
+/// and then a `setup` for the glyph, two undos with the field half made.
 /// On a field already tracked it writes the spec and no second row.
 #[test]
 fn spec_set_track_declares_in_one_and_undoes_in_one() {
     let env = Env::new();
     let spec = r##"{"verb":"occur","color":"#c69c6d","glyph":"☕"}"##;
-    env.run(&["spec", "coffee", "--from-json", spec, "--track"]);
+    env.run(&["setup", "coffee", "--from-json", spec, "--track"]);
 
-    let shown: Value = serde_json::from_str(&env.run(&["spec", "coffee", "--json"])).unwrap();
+    let shown: Value = serde_json::from_str(&env.run(&["setup", "coffee", "--json"])).unwrap();
     assert_eq!(shown["glyph"], "☕", "{shown}");
     let rows = |env: &Env| {
         env.run(&["tail"])
@@ -583,18 +583,18 @@ fn spec_set_track_declares_in_one_and_undoes_in_one() {
         "one `undo`, the TRACK row and the spec: {undone:?}"
     );
     assert!(env
-        .run(&["spec", "coffee", "--json"])
+        .run(&["setup", "coffee", "--json"])
         .contains("No spec defined"));
     assert!(env.run(&["tail"]).contains("[No data]"), "the row is gone");
 
     // Already tracked: the status has no change, so the spec alone.
-    env.run(&["spec", "coffee", "--from-json", spec, "--track"]);
+    env.run(&["setup", "coffee", "--from-json", spec, "--track"]);
     let again = r##"{"verb":"occur","glyph":"☕","description":"cups"}"##;
-    env.run(&["spec", "coffee", "--from-json", again, "--track"]);
+    env.run(&["setup", "coffee", "--from-json", again, "--track"]);
     assert_eq!(rows(&env), 1, "a second `--track` wrote a second TRACK row");
     // And `--ignore` likewise: one IGNORED row however often it is said.
-    env.run(&["spec", "coffee", "--ignore"]);
-    env.run(&["spec", "coffee", "--ignore"]);
+    env.run(&["setup", "coffee", "--ignore"]);
+    env.run(&["setup", "coffee", "--ignore"]);
     assert_eq!(
         rows(&env),
         2,

@@ -274,8 +274,8 @@ fn a_field_position_offers_the_fields_quoted_for_the_shell() {
 fn a_lone_field_offers_the_commands_that_take_one() {
     let found = Env::new().complete("mood ");
     assert!(has(&found, "tail") && has(&found, "happy"), "{found:?}");
-    // `spec` takes the field first (da-ez40f): `mood spec` prints its spec.
-    assert!(has(&found, "spec"), "{found:?}");
+    // `setup` takes the field first (da-ez40f): `mood setup` prints its spec.
+    assert!(has(&found, "setup"), "{found:?}");
 }
 
 /// `states` (da-7905t) is a command, takes a field, and runs field-first.

@@ -83,7 +83,7 @@ fn db_purge_yes_recovers_corrupt_db() {
         )
         .unwrap();
     assert_eq!(field_specs, 0);
-    run_cli(&["spec", "mood", "--verb", "switch"], &db).expect("a spec writes");
+    run_cli(&["setup", "mood", "--verb", "switch"], &db).expect("a spec writes");
     assert!(db.load_spec("mood").unwrap().is_some());
 }
 
@@ -139,20 +139,19 @@ fn db_purge_non_tty_without_yes_aborts() {
     assert_eq!(db.count_entries().unwrap(), 1);
 }
 
-/// `datum db setup --force-recreate` was removed (da-57t); the flag must now
-/// be rejected as unknown so users discover `datum db purge` instead.
+/// `datum db setup` is gone (da-a4ptr): `db migrate` applies what is
+/// pending, so «setup» means the field command alone.
 #[test]
-fn setup_force_recreate_flag_is_rejected() {
+fn db_setup_is_an_unknown_subcommand() {
     let db = fresh_db();
     entry_builder("coffee")
         .state(serde_json::json!(1))
         .insert(&db);
-    let err = run_cli(&["db", "setup", "--force-recreate"], &db)
-        .expect_err("--force-recreate is no longer accepted");
+    let err = run_cli(&["db", "setup"], &db).expect_err("db setup is gone");
     let msg = err.to_string();
     assert!(
-        msg.contains("--force-recreate") || msg.to_lowercase().contains("unexpected flag"),
-        "expected unknown-flag error, got: {msg}"
+        msg.contains("unknown db subcommand: 'setup'"),
+        "expected unknown-subcommand error, got: {msg}"
     );
     // Data is intact — the rejection happens at parse time.
     assert_eq!(db.count_entries().unwrap(), 1);

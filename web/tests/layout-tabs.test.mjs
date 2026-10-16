@@ -159,7 +159,7 @@ describe('a tab behind takes no focus and no key', () => {
 	test('a prefill skips an input widget behind: to the widget in front, else the bar', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await app.submit('spec coffee --verb add');
+			await app.submit('setup coffee --verb add');
 			await addTab(page, 'custom', 'input');
 			await addTab(page, 'tail', 'input');
 			// Out of layout mode, where Escape would ask how to leave it.

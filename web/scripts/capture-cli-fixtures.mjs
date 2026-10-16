@@ -18,7 +18,7 @@
 // from the existing file and written back untouched, so re-capturing
 // refreshes the CLI's answers without rewriting the cases.
 //
-// `setup` is the commands a case needs run first — `alias set`, `spec F …`
+// `setup` is the commands a case needs run first — `alias set`, `setup F …`
 // — against its own database, so an aliased argv is compared as one thing
 // the CLI did rather than as two separately-authored fixtures (da-5kbj).
 //

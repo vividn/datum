@@ -40,9 +40,9 @@ fn colour_is_color_on_track_spec_set_and_tail() {
             "--color",
             "red",
         ],
-        &["spec", "mood2", "--verb", "switch", "--color=blue"],
-        &["spec", "mood", "--state-color", "happy=green"],
-        &["spec", "mood2", "--state-color=calm=pink"],
+        &["setup", "mood2", "--verb", "switch", "--color=blue"],
+        &["setup", "mood", "--state-color", "happy=green"],
+        &["setup", "mood2", "--state-color=calm=pink"],
         &["switch", "mood", "happy"],
     ];
     let (us, uk) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -52,10 +52,10 @@ fn colour_is_color_on_track_spec_set_and_tail() {
         ok(&uk, &british.iter().map(String::as_str).collect::<Vec<_>>());
     }
     for field in ["mood", "mood2"] {
-        let show = |dir| ok(dir, &["spec", field, "--json"]);
+        let show = |dir| ok(dir, &["setup", field, "--json"]);
         assert_eq!(show(&us), show(&uk));
     }
-    let mood = ok(&uk, &["spec", "mood", "--json"]);
+    let mood = ok(&uk, &["setup", "mood", "--json"]);
     assert!(
         mood.contains("\"color\": \"#") && mood.contains("\"happy\": \"#"),
         "{mood}"
@@ -87,7 +87,7 @@ fn only_color_is_ever_shown() {
     let refusal = |flag| datum(&dir, &["tail", flag, "always"]).stderr;
     assert_eq!(refusal("--colour"), refusal("--color"));
 
-    for line in ["spec mood --", "track mood --", "tail --"] {
+    for line in ["setup mood --", "track mood --", "tail --"] {
         let mut words: Vec<&str> = line.split(' ').collect();
         words.insert(0, "datum");
         let cword = (words.len() - 1).to_string();
@@ -96,6 +96,6 @@ fn only_color_is_ever_shown() {
         let found = ok(&dir, &args);
         assert!(!found.contains("colour"), "{line}: {found}");
     }
-    let found = ok(&dir, &["__complete", "2", "--", "datum", "spec", "--"]);
+    let found = ok(&dir, &["__complete", "2", "--", "datum", "setup", "--"]);
     assert!(found.lines().any(|l| l == "--color"), "{found}");
 }

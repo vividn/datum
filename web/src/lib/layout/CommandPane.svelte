@@ -16,13 +16,13 @@
 	$lib/commands.ts, da-k34p).
 
 	`track` opens the setup widget on a new field (da-fu29p), and `track`
-	or `spec` with a FIELD pill loaded opens it on that field at once
+	or `setup` with a FIELD pill loaded opens it on that field at once
 	(da-ybai9, vividn: «no need for sub commands or pressing enter. It should
 	just work»): the pill named the subject, so it is spent at the TAP — not
 	on success, as a press spends its pills — because the bead asked that it
 	not sit in the bar once the widget is open; leaving it without a save
 	leaves it spent too. There is only ever one field pill (`setFieldPill`).
-	Without one, `spec ` goes on the line as ever. A HOLD is the bare
+	Without one, `setup ` goes on the line as ever. A HOLD is the bare
 	command and its flags, as on any button.
 
 	`occur`/`start`/`end` under a FIELD pill run it (da-lxqqz); when the

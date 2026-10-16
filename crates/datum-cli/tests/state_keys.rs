@@ -17,7 +17,7 @@ fn mood_db() -> Db {
     let db = fresh_db();
     run_cli(
         &[
-            "spec",
+            "setup",
             "mood",
             "--verb",
             "switch",
@@ -77,7 +77,7 @@ fn a_state_key_overrides_a_field_key_by_name() {
     let db = fresh_db();
     run_cli(
         &[
-            "spec",
+            "setup",
             "mood",
             "--verb",
             "switch",
@@ -128,14 +128,14 @@ fn an_end_ignores_the_states_keys() {
     }
 }
 
-/// `spec --state-key` and `--state-assign` write a state's keys,
+/// `setup --state-key` and `--state-assign` write a state's keys,
 /// the stored spec carries them, `--from-json` reads them back, a kit
 /// exports and installs them, and `S=` clears.
 #[test]
 fn state_keys_round_trip() {
     let db = mood_db();
     let calm = [
-        "spec",
+        "setup",
         "mood",
         "--states",
         "happy,sad,calm",
@@ -155,7 +155,7 @@ fn state_keys_round_trip() {
 
     let shown = serde_json::to_string(&spec).unwrap();
     let from_json = fresh_db();
-    run_cli(&["spec", "mood", "--from-json", &shown], &from_json).unwrap();
+    run_cli(&["setup", "mood", "--from-json", &shown], &from_json).unwrap();
     let back = from_json.load_spec("mood").unwrap().unwrap();
     assert_eq!(back.state_keys, spec.state_keys);
     assert_eq!(back.state_assign, spec.state_assign);
@@ -182,7 +182,7 @@ fn state_keys_round_trip() {
     };
     run_cli(
         &[
-            "spec",
+            "setup",
             "mood",
             "--state-key",
             "sad=",
@@ -195,7 +195,7 @@ fn state_keys_round_trip() {
     assert_eq!(keys(&db)["sad"], json!(["a"]));
     run_cli(
         &[
-            "spec",
+            "setup",
             "mood",
             "--state-key",
             "calm=b",
@@ -206,13 +206,13 @@ fn state_keys_round_trip() {
     )
     .unwrap();
     assert_eq!(keys(&db).get("calm"), None);
-    run_cli(&["spec", "mood", "--state-key", "calm=why="], &db).unwrap();
-    run_cli(&["spec", "mood", "--state-key", "calm="], &db).unwrap();
+    run_cli(&["setup", "mood", "--state-key", "calm=why="], &db).unwrap();
+    run_cli(&["setup", "mood", "--state-key", "calm="], &db).unwrap();
     assert_eq!(keys(&db).get("calm"), None);
     run_cli(&calm, &db).unwrap();
     run_cli(
         &[
-            "spec",
+            "setup",
             "mood",
             "--state-key",
             "sad=reason",
@@ -228,14 +228,14 @@ fn state_keys_round_trip() {
         json!({"calm": ["why="]})
     );
     // `--state-assign S=K=V` merges into the state's map, `S=K=` removes.
-    run_cli(&["spec", "mood", "--state-assign", "calm=tea="], &db).unwrap();
+    run_cli(&["setup", "mood", "--state-assign", "calm=tea="], &db).unwrap();
     assert!(db
         .load_spec("mood")
         .unwrap()
         .unwrap()
         .state_assign
         .is_empty());
-    run_cli(&["spec", "mood", "--state-assign", "sad=tea=black"], &db).unwrap();
+    run_cli(&["setup", "mood", "--state-assign", "sad=tea=black"], &db).unwrap();
     run_cli(&["sad", "-t", "-1", "why"], &db).unwrap();
     let teas: Vec<Value> = logged_entries(&db, "mood")
         .into_iter()
@@ -244,7 +244,7 @@ fn state_keys_round_trip() {
     assert_eq!(teas, [json!("green"), json!("black")]);
 }
 
-/// `spec F` lists each state's keys on a line of its own, a state the
+/// `setup F` lists each state's keys on a line of its own, a state the
 /// `states` list does not name too.
 #[test]
 fn text_view_lists_state_keys() {
@@ -263,7 +263,7 @@ fn text_view_lists_state_keys() {
         String::from_utf8(out.stdout).unwrap()
     };
     run(&[
-        "spec",
+        "setup",
         "mood",
         "--verb",
         "switch",
@@ -274,7 +274,7 @@ fn text_view_lists_state_keys() {
         "--state-key",
         "gone=why=",
     ]);
-    let text = run(&["spec", "mood"]);
+    let text = run(&["setup", "mood"]);
     let lines: Vec<String> = text
         .lines()
         .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
@@ -291,7 +291,7 @@ fn reparse_replays_the_state_keys_the_line_bound() {
         let db = mood_db();
         run_cli(&[head, &["sad", "2", "because"]].concat(), &db).unwrap();
         let logged = logged_entries(&db, "mood")[0].clone();
-        run_cli(&["spec", "mood", "--state-key", "sad=cause"], &db).unwrap();
+        run_cli(&["setup", "mood", "--state-key", "sad=cause"], &db).unwrap();
         run_cli(&["reparse", &logged.hid.0, "--fix"], &db).unwrap();
         let after = db.get_entry(&logged.hid.0).unwrap();
         assert_eq!(after.data, logged.data, "{head:?}");
@@ -309,7 +309,7 @@ fn a_subcommand_word_after_a_state_alias_is_a_value() {
             let db = fresh_db();
             run_cli(
                 &[
-                    "spec",
+                    "setup",
                     "mood",
                     "--verb",
                     "switch",

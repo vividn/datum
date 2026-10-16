@@ -157,7 +157,7 @@ describe('the Help button', () => {
 	test('then a widget: its kind\'s help, and a press inside it does nothing else', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec coffee --verb occur']);
+			await seedLines(app, ['setup coffee --verb occur']);
 			const coffee = page.locator('section[data-pane="bar"] .bar button.widget', { hasText: 'coffee' }).first();
 			const lines = await explain(page, coffee, 'fields');
 			assert.match(lines[0], /^Every field you log/);
@@ -166,13 +166,13 @@ describe('the Help button', () => {
 	});
 
 	// da-6i6dx: the setup widget's help speaks the form's words — its shapes
-	// and its data, and a new field's save, one `spec F --track` and one Undo (da-2pbvd).
+	// and its data, and a new field's save, one `setup F --track` and one Undo (da-2pbvd).
 	test('then the setup widget: its help in the words its form uses', async () => {
 		const withField = JSON.stringify(along('column', widgetPane('setup', 'setup'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')));
 		await onPage(async ({ page }) => {
 			const lines = await explain(page, page.locator('.host[data-widget="setup"] p.what'), 'setup');
 			assert.match(lines[0], /its shape, states, data, aliases and placement\.$/);
-			assert.match(lines[1], /^Save makes a new field with one `spec F --track`, which one Undo takes back;/);
+			assert.match(lines[1], /^Save makes a new field with one `setup F --track`, which one Undo takes back;/);
 			assert.doesNotMatch(lines.join('\n'), /\bkind\b|\bkeys\b/);
 		}, withField);
 	});
@@ -308,7 +308,7 @@ describe('a help page', () => {
 	/** The pages `datum help` answers to that are not commands (`TOPICS` in datum-parse's help). */
 	const TOPICS = ['logging', 'time', 'debug', 'color', 'env'];
 	/** The pages whose intros were written as guides for a newcomer. */
-	const GUIDES = ['logging', 'time', 'spec', 'alias', 'sync', 'db', 'stats', 'track', 'occur', 'start', 'stop', 'switch', 'tail', 'undo'];
+	const GUIDES = ['logging', 'time', 'setup', 'alias', 'sync', 'db', 'stats', 'track', 'occur', 'start', 'stop', 'switch', 'tail', 'undo'];
 
 	/** Open `datum help <name>` in the Help pane, as a «Learn more» link does. */
 	async function open(page, name) {

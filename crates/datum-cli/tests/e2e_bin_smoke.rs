@@ -243,8 +243,8 @@ fn smoke_multi_alias_body() {
 fn smoke_admin_now() {
     let _g = env_lock();
     let h = BinHarness::new();
-    // A read creates no database (da-oo6tr): `db setup` makes it.
-    h.run(&["db", "setup"]).expect("setup");
+    // A read creates no database (da-oo6tr): `db migrate` makes it.
+    h.run(&["db", "migrate"]).expect("migrate");
     h.run(&["now"]).expect("dispatch");
     let rows = live_rows(&h.db());
     assert!(rows.is_empty(), "admin verb must not write rows");

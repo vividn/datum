@@ -110,7 +110,7 @@ describe('fileArgv', () => {
 	});
 
 	test('anything else runs as typed', () => {
-		for (const line of ['db purge', 'db setup', 'tail', 'backup x', 'kit list', 'kit export rest']) {
+		for (const line of ['db purge', 'db migrate', 'tail', 'backup x', 'kit list', 'kit export rest']) {
 			assert.equal(fileArgv(line.split(' ')), null);
 		}
 	});

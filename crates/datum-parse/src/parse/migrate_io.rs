@@ -5,9 +5,7 @@ use crate::input::Show;
 
 pub(crate) fn parse_migrate_cmd(tail: &[&str]) -> Result<MigrateCommand> {
     let Some(sub) = tail.first() else {
-        return Err(ParseError::InvalidArg(
-            "missing migrate subcommand (run|status|edit)".into(),
-        ));
+        return Ok(MigrateCommand::Run);
     };
     match *sub {
         "run" => Ok(MigrateCommand::Run),

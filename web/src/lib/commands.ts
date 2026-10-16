@@ -116,7 +116,7 @@ export const COMMANDS: CommandButton[] = [
 	{ name: 'help', label: 'Help', press: 'help', section: 'undo' },
 	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap', section: 'log' })),
 	...fills('log', ['note', 'flag']),
-	...fills('setup', ['track', 'ignore', 'spec', 'alias', 'kit', 'view', 'config']),
+	...fills('setup', ['track', 'ignore', 'setup', 'alias', 'kit', 'view', 'config']),
 	...fills('edit', ['delete', 'update', 'retime']),
 	...fills('analysis', [
 		'tail',
@@ -581,12 +581,12 @@ const BACKUPS = ['db backup', 'db restore'];
 
 /**
  * Does a tap on `name` open the setup widget? `track` does, on a new field
- * or the pilled one (da-fu29p), and so does `spec` (da-ybai9, vividn: «no
+ * or the pilled one (da-fu29p), and so does `setup` (da-ybai9, vividn: «no
  * need for sub commands or pressing enter»), which has no subcommands left
  * to drill into (da-ez40f): a field is made and edited in a place
  * (da-hbrfg), which the pane opens with the fill.
  */
-export const opensField = (name: string, _pills: Pill[]): boolean => name === 'track' || name === 'spec';
+export const opensField = (name: string, _pills: Pill[]): boolean => name === 'track' || name === 'setup';
 
 /** Does a tap on `name` drill into its subcommands? Not where it opens the setup widget instead. */
 export const drills = (grammar: Grammar | null, name: string, pills: Pill[]): boolean =>

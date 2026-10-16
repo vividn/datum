@@ -43,9 +43,9 @@
 	  takes goes into the line with it, in its slot, and is spent, when
 	  words are TYPED next (da-8ru0m): `note coffee `, `update <hid> `,
 	  the caret after them.
-	- a command with SUBCOMMANDS (`db`, `spec`, …) opens them
+	- a command with SUBCOMMANDS (`db`, `sync`, …) opens them
 	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
-	  tap on one fills `db setup `. `< Back` and Escape return to the list.
+	  tap on one fills `db migrate `. `< Back` and Escape return to the list.
 	  `db backup` and `db restore` open the «Backups» place instead
 	  (da-9ow8m, da-ea5q2, $lib/backups.ts) — drawn, as Help is, in a
 	  SINGLE outline of the accent: they open something, and run nothing.
@@ -207,7 +207,7 @@
 			const keyed = fieldVerb(command.name, pills, fields);
 			const slotted = command.next === 'type' || keyed ? pills.filter((p) => p.kind === 'field' || p.kind === 'hid') : [];
 			const { argv, used } = withPills(grammar, [command.name], slotted);
-			// The command's own words stay bare (`db setup` is two); what follows is quoted.
+			// The command's own words stay bare (`db migrate` is two); what follows is quoted.
 			const line = [argv[0], shellJoin(argv.slice(1))].join(' ').trimEnd();
 			// Straight into the first key's frame, where a bare word fills it (da-31d1d, da-p3hxn).
 			if (keyed) dispatch('line', { name: command.name, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: used });

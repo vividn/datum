@@ -232,7 +232,7 @@ fn cached_stats_are_the_uncached_stats_through_every_kind_of_write() {
     run_cli(&["del", &hid], &db).unwrap();
     assert_same(&db, "a delete");
 
-    run_cli(&["spec", "activity", "--states", "piano"], &db).unwrap();
+    run_cli(&["setup", "activity", "--states", "piano"], &db).unwrap();
     assert_same(&db, "a spec change");
 
     // A sync merge: another copy's backdated switch, applied by the real

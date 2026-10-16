@@ -180,14 +180,14 @@ export function echoEnv(argv: string[]): string[] {
 }
 
 /**
- * `spec`, `spec F`, `spec F --json` and `spec --tag T` read; only a field
+ * `setup`, `setup F`, `setup F --json` and `setup --tag T` read; only a field
  * with a change after it, or `--delete` wherever it stands, echoes the spec
  * entry (da-ez40f).
  */
 function readsSpec(command: string, side: string[]): boolean {
-	if (command !== 'spec') return false;
+	if (command !== 'setup') return false;
 	if (side.includes('--delete')) return false;
-	const [field, ...flags] = side.slice(side.indexOf('spec') + 1);
+	const [field, ...flags] = side.slice(side.indexOf('setup') + 1);
 	return field === undefined || field.startsWith('-') || !flags.some((w) => w.startsWith('-') && w !== '--json');
 }
 
