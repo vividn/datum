@@ -94,3 +94,52 @@ for (const name of ['occur', undefined, 'logging']) {
 		);
 	});
 }
+
+// THE FIRST COMMAND, typed the moment the prompt takes it (da-2flub): a
+// newcomer's first `help` is typed straight away, and at `/repl` the prompt
+// takes typing before the REPL's tab is even added — it ran through no REPL,
+// so with no width, and the page came at 73 columns. Typed here by the page
+// itself in the frame the prompt is enabled, before `withApp` settles
+// anything; and `dayview` the same way, the `--width` a drawn command is
+// asked for being the same measurement.
+const first = (line) => (context) =>
+	context.addInitScript((line) => {
+		const type = () => {
+			const input = document.querySelector('.prompt-bar input:not([disabled])');
+			if (!input) return requestAnimationFrame(type);
+			input.value = line;
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+			input.form.requestSubmit();
+		};
+		requestAnimationFrame(type);
+	}, line);
+
+test(`help occur typed as the prompt is enabled fits a ${PHONE.width}px phone`, async () => {
+	await withApp(
+		async (app) => {
+			await app.page.locator('.repl .entry pre').first().waitFor();
+			await app.idle();
+			const { lines, wide, room, sideways } = await newest(app.page);
+			assert.ok(lines.length > 10, `help occur printed ${lines.length} lines`);
+			assert.ok(wide <= room, `help occur is ${wide}px wide in a ${room}px pane`);
+			assert.equal(sideways, 0, `the history scrolls ${sideways}px sideways`);
+		},
+		{ viewport: PHONE, query: 'repl', prepare: first('help occur') }
+	);
+});
+
+test(`dayview typed as the prompt is enabled is drawn at a ${PHONE.width}px phone's width`, async () => {
+	await withApp(
+		async (app) => {
+			const svg = app.page.locator('.repl .entry svg').first();
+			await svg.waitFor();
+			await app.idle();
+			const { drawn, room } = await svg.evaluate((el) => ({
+				drawn: el.width.baseVal.value,
+				room: el.closest('.entry').clientWidth
+			}));
+			assert.ok(drawn <= room, `dayview is drawn ${drawn}px wide for a ${room}px pane`);
+		},
+		{ viewport: PHONE, query: 'repl', prepare: first('dayview') }
+	);
+});

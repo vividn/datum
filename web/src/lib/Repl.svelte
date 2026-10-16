@@ -79,6 +79,9 @@
 	export let body: HTMLDivElement | undefined = undefined;
 	/** The scrollback's content width, in whole pixels, once measured. */
 	let width: number | null = null;
+	/** Resolved by the first measurement, which a command run before it waits for (da-2flub). */
+	let measured: () => void;
+	const measuring = new Promise<void>((done) => (measured = done));
 
 	$: ordered = reversed ? [...$repl.scrollback].reverse() : $repl.scrollback;
 	// `skip` takes from the NEWEST end whichever way the list runs.
@@ -117,12 +120,15 @@
 	// size; scrollback keeps the size it was drawn at, the way a terminal's
 	// does.
 	onMount(() => {
-		if (!body) return;
+		if (!body) return measured();
 		const observer = new ResizeObserver(([entry]) => {
 			width = Math.floor(entry.contentRect.width);
+			measured();
 		});
 		observer.observe(body);
-		return () => observer.disconnect();
+		// Unmounted before it reported — the boot's real tree replacing the
+		// one drawn early — a command waiting on it runs unmeasured, not never.
+		return () => (observer.disconnect(), measured());
 	});
 
 	/**
@@ -152,7 +158,7 @@
 		const ranAt = Date.now();
 		const result = await (
 			(stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ??
-			runEchoed(asking(run), fitArgv(argv, width), stdin, helpEnv(argv, characters()))
+			measuring.then(() => runEchoed(asking(run), fitArgv(argv, width), stdin, helpEnv(argv, characters())))
 		);
 		await land(line ?? shellJoin(argv), result, ranAt);
 		return result;

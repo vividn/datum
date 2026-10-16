@@ -34,7 +34,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { open, openPreview } from '$lib/layout/shell.js';
+	import { arriving, open, openPreview } from '$lib/layout/shell.js';
 	import { withDb } from '$lib/database.js';
 
 	// Every way out of this page stays in the database the reader is in
@@ -44,7 +44,9 @@
 
 	let unknown: string | null = null;
 
-	onMount(async () => {
+	onMount(() => arriving(enter()));
+
+	async function enter(): Promise<void> {
 		const name = $page.params.name ?? '';
 		// `|| null`: an empty `?from=` is no `from`, not a layout called "".
 		const from = $page.url.searchParams.get('from') || null;
@@ -52,7 +54,7 @@
 		const missing = from === null ? ((await open(name)) ? null : name) : await openPreview(name, from);
 		if (missing === null) await goto(home, { replaceState: true });
 		else unknown = missing;
-	});
+	}
 </script>
 
 {#if unknown !== null}

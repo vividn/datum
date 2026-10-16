@@ -14,6 +14,7 @@
 // the epoch itself, so the panes still refresh; the echo is simply
 // nowhere to put, and comes back the moment a REPL is added.
 
+import { tick } from 'svelte';
 import { get, writable } from 'svelte/store';
 import { clearUnlockedPills, dropHids, focusLine, pills, showGhost } from '$lib/bar.js';
 import { grammarOf, type Grammar, type GrammarEntry } from '$lib/commands.js';
@@ -29,7 +30,7 @@ import { conflictsArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '$
 import { listsConflicts, type Conflicted } from '$lib/conflicts.js';
 import { verbAsked } from '$lib/track.js';
 import { openField, specOpens } from '$lib/fieldWidget.js';
-import { openPlace } from './shell.js';
+import { openPlace, settledTree } from './shell.js';
 import {
 	buttonsFor,
 	type FieldButton,
@@ -252,6 +253,9 @@ export async function press(
 	// «the output section shows the command that was run again, so it is
 	// okay for it to fade before then».
 	if (!typed) showGhost(echo ?? line ?? shellJoin(argv));
+	// Typed before the tree is filled, the REPL it is for may not be
+	// mounted yet: wait for the tree, and for that REPL to announce itself.
+	if (!repl) await settledTree().then(tick);
 	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
 	// The listing, typed, opens the widget they are resolved in (da-6cutb).
 	if (result.code === 0 && listsConflicts(argv)) void openPlace('conflicts');

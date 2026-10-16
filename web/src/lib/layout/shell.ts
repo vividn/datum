@@ -627,6 +627,21 @@ const withDebug = (state: RootState): RootState =>
 		? { names: [DEBUG_LAYOUT, ...state.names], active: 0 }
 		: state;
 
+/** The page's door not yet through, `settledTree`'s to wait out. */
+let arrival: Promise<unknown> = Promise.resolve();
+
+/**
+ * A `/<name>` link's way in (da-2flub): its tab is added after the boot's
+ * reads and drawn once it has gone home, so the prompt takes typing before
+ * that tab's REPL is there.
+ */
+export function arriving(door: Promise<unknown>): void {
+	arrival = door.catch(() => {});
+}
+
+/** The tree as the boot and the page's door leave it: a line typed meanwhile waits, to run in the REPL it lands in. */
+export const settledTree = (): Promise<unknown> => boot().then(() => arrival);
+
 /** Fill the root from this device's open layouts (`fresh`'s at first). Once. */
 export function boot(): Promise<void> {
 	return (booting ??= (async () => {
