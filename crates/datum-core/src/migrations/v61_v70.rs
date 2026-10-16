@@ -33,3 +33,21 @@ pub(super) fn down_61_to_60_hybrid_indexes(conn: &Connection) -> Result<()> {
     )?;
     Ok(())
 }
+
+/// da-qctsr: every command's first write runs `DELETE FROM undo_actions
+/// WHERE undone = 1`, which scanned every action this copy ever made.
+pub(super) fn m61_to_62_undo_undone_index(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "undo_actions")? {
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS undo_actions_undone
+                 ON undo_actions(id) WHERE undone = 1;",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v61→v62.
+pub(super) fn down_62_to_61_undo_undone_index(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS undo_actions_undone;")?;
+    Ok(())
+}

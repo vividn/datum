@@ -99,6 +99,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "ops_hid",
         "ops_hlc",
         "ops_slug",
+        "undo_actions_undone",
     ];
     assert_eq!(indexes, expected_indexes);
 }

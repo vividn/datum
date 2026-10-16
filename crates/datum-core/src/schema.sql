@@ -342,6 +342,11 @@ CREATE TABLE IF NOT EXISTS undo_actions (
     skipped   TEXT
 );
 
+-- The redo tail, which a new action drops: undone rows alone, so dropping it
+-- costs the tail and not every action this copy made (v62, da-qctsr).
+CREATE INDEX IF NOT EXISTS undo_actions_undone
+    ON undo_actions(id) WHERE undone = 1;
+
 -- Easy Sync (da-k329q). Every change to an entry is a signed op, made here
 -- or received from another copy. Append-only: an op is never edited. `body`
 -- is the op's canonical JSON, signature included; the other columns are

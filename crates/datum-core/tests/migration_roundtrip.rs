@@ -208,6 +208,7 @@ fn every_pair_has_a_roundtrip_test() {
         (58, 59),
         (59, 60),
         (60, 61),
+        (61, 62),
     ];
     assert_eq!(
         covered.len(),
@@ -2684,6 +2685,17 @@ fn roundtrip_v60_to_v61_hybrid_indexes() {
     apply_one_down(conn, 61);
     assert!(!index_exists(conn, "entries_hybrid"));
     assert!(!index_exists(conn, "entries_live_field_hybrid"));
+}
+
+/// da-qctsr: the redo tail's index comes and goes.
+#[test]
+fn roundtrip_v61_to_v62_undo_undone_index() {
+    let db = fresh_at(61);
+    let conn = db.conn();
+    apply_one_up(conn, 61);
+    assert!(index_exists(conn, "undo_actions_undone"));
+    apply_one_down(conn, 62);
+    assert!(!index_exists(conn, "undo_actions_undone"));
 }
 
 #[test]

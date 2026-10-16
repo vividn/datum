@@ -60,7 +60,7 @@ use v61_v70::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 61;
+pub const CURRENT_SCHEMA_VERSION: u32 = 62;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -505,5 +505,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries_hybrid, entries_live_field_hybrid: the listing's order, `occur_time ?? create_time` (da-2vgj1)",
         apply: m60_to_61_hybrid_indexes,
         down: down_61_to_60_hybrid_indexes,
+    },
+    Migration {
+        from: 61,
+        to: 62,
+        summary: "undo_actions_undone: a new action drops the redo tail without visiting every past action (da-qctsr)",
+        apply: m61_to_62_undo_undone_index,
+        down: down_62_to_61_undo_undone_index,
     },
 ];

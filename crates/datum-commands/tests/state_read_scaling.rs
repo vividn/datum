@@ -318,3 +318,28 @@ fn stats_with_a_period_does_not_grow_with_the_history() {
         );
     }
 }
+
+/// da-qctsr: a command's first write drops the redo tail, `DELETE FROM
+/// undo_actions WHERE undone = 1`, which visited every action this copy
+/// ever made: a write behind 16k of them must cost what it does behind 1k.
+#[test]
+fn a_write_does_not_grow_with_the_undo_stack() {
+    let stores = [1_000, 16_000].map(|n| {
+        let db = store(200, 8);
+        db.conn()
+            .execute(
+                "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
+                 INSERT INTO undo_actions (time) SELECT '2026-09-14T12:00:00Z' FROM n",
+                [n],
+            )
+            .unwrap();
+        db
+    });
+    let argv = ["switch", "f1", "on", "-t", "2026-09-14T12:05:00Z"];
+    let [small, large] = [&stores[0], &stores[1]].map(|db| vm_steps(db, &argv));
+    assert!(
+        large <= small + small / 10,
+        "a write visits more behind a longer undo stack: \
+         {small} hundred VM steps behind 1k actions, {large} behind 16k",
+    );
+}
