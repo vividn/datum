@@ -309,7 +309,11 @@ to pass the order on until an invite or connect starts it afresh. The
 ordering copy alone writes a backup, `<db>.purge-<time>.jsonl.gz`, before it
 purges: one on every copy would defeat a remote wipe. A passkey's order is
 written by `sync approve` (datum.day's), which writes the backup then, and
-datum.day keeps it in OPFS (da-459uh).
+datum.day keeps it in OPFS (da-459uh). The backup is the approving copy's:
+an approve link opened on another device (`/sync/approve`) backs up what
+that device holds, and the ordering copy's own changes no sync has yet
+carried are wiped and kept in no backup. The CLI's order, approved elsewhere
+and finished with Enter, keeps the backup it wrote before asking (da-xc321).
 `db restore <B> --hard --chain` (da-ncmmj) is that `--data` order and then
 the backup written on the ordering copy as new ops, signed after it, so
 every copy holds exactly the backup once it syncs; plain `--hard` on a
