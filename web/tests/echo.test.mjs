@@ -347,18 +347,18 @@ describe('a kit alias logs in the bar', () => {
 			const tracked = async () =>
 				(await app.run(['grep', '-f', 'vacuum', 'TRACKED'])).stdout.match(/TRACKED/g)?.length ?? 0;
 			await app.submit('newchore vacuum 4');
-			assert.match((await app.stdouts()).at(-1) ?? '', /Tracking 'vacuum'/);
+			// `track F …` is `spec F … --track` (da-ijf3p): it echoes the spec.
+			assert.match((await app.stdouts()).at(-1) ?? '', /spec:vacuum/);
 			assert.equal(await tracked(), 1);
 			const spec = await app.run(['spec', 'vacuum', '--json']);
 			assert.match(spec.stdout, /next_date=\+4/, spec.stdout || spec.stderr);
 
 			// Again, now the page has learned the word: it runs, and writes
-			// no second row, the field being tracked already (da-6fvys).
-			const ran = async () => (await app.stdouts()).filter((out) => /Tracking 'vacuum'/.test(out)).length;
-			assert.equal(await ran(), 1);
+			// nothing, the spec being the same and the field tracked already
+			// (da-6fvys).
 			await app.clock.forward(1000);
 			await app.submit('newchore vacuum 4');
-			assert.equal(await ran(), 2);
+			assert.match((await app.stdouts()).at(-1) ?? '', /no change/);
 			assert.equal(await tracked(), 1);
 		});
 	});

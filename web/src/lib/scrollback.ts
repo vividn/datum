@@ -72,7 +72,7 @@ export const MIN = 160;
  * `14:59:59+0  coffee  TRACKED` — a field's DECLARATION, which every
  * first log used to echo beside its entry. da-gvcen folds the
  * declaration into the entry's own `following_state`, and `datum track`
- * prints `✓ Tracking …` rather than a document, so no scrollback draws
+ * echoes the spec, or `✓ Tracking …`, rather than its row, so no scrollback draws
  * that shape any more. 270 had come loose from anything measurable,
  * which `scrollback.test.mjs` says in as many words.
  *

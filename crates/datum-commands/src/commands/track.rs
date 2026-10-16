@@ -1,21 +1,19 @@
-//! `datum track <field>` — declare a field: what a press of it means,
-//! written down (da-c8mh), plus the TRACK row that says tracking began,
-//! for a field that is IGNORED or has no entries (da-6fvys).
+//! `datum track <field>` / `datum ignore <field>` — `spec F … --track` /
+//! `--ignore` (da-ijf3p), and the TRACK row that says tracking began, for a
+//! field that is IGNORED or has no entries (da-6fvys).
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use datum_core::{
     action::Action,
-    db::Db,
-    field_spec::{
-        parse_key_decl, FieldSpec, KeyKind, SubfieldSpec, SubfieldType, VERB_CHOICES_TEXT,
-    },
-    kit_color::resolve,
+    db::{Db, IGNORED_STATE_VALUE},
+    entry::{Entry, Verb},
+    field_spec::{FieldSpec, VERB_CHOICES_TEXT},
     shape::is_ignored_state,
     time::DatumTime,
     track::track_entry,
 };
 
-use crate::args::TrackArgs;
+use crate::args::{SpecCommand, SpecSetArgs};
 use crate::config::client_id;
 
 /// The verb `field` should be declared with, given an explicit `--verb`
@@ -55,111 +53,67 @@ pub(crate) fn begins_tracking(db: &Db, field: &str, now: &DatumTime) -> Result<b
     })
 }
 
-pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
-    // da-2sr: tracking lives in the entry log, as a switch entry. da-c8mh:
-    // the spec is written in the same breath, so the field's verb is a
-    // fact about the field rather than a re-reading of its log.
-    let verb = resolve_verb(&args.field, args.verb.as_deref(), db)?;
+/// `track F [CHANGES]` / `ignore F [CHANGES]` (da-ijf3p): `spec F [CHANGES]
+/// --track` / `--ignore`, but for `F` alone on a field with a spec, which
+/// writes the status only and leaves the spec as it is. `ignore F` alone
+/// on a field with none writes its row too, and declares nothing: hiding a
+/// field asks for no verb (vremya, 10-16; vividn to rule).
+pub fn status(args: SpecSetArgs, db: &Db) -> Result<()> {
+    // Bare: nothing set but the field and the status. A flag `SpecSetArgs`
+    // gains is a change by this comparison with no edit here.
+    let bare = args.track != args.ignore
+        && SpecSetArgs {
+            field: args.field.clone(),
+            show: args.show,
+            track: args.track,
+            ignore: args.ignore,
+            ..Default::default()
+        } == args;
+    let spec = db.load_spec(&args.field)?;
+    let field = &args.field;
     let now = DatumTime::now();
-    let begins_tracking = begins_tracking(db, &args.field, &now)?;
-    let mut spec = db
-        .load_spec(&args.field)?
-        .unwrap_or_else(|| FieldSpec::new(&args.field, verb));
-    spec.verb = verb;
-    if let Some(c) = &args.color {
-        spec.color = Some(c)
-            .filter(|c| !c.is_empty())
-            .map(|c| resolve(c, &args.field))
-            .transpose()
-            .context("--color")?;
-    }
-    // `--state` carries both halves of a switch field's declaration
-    // (da-94q1): a bare NAME is a state it may be switched to, `NAME=COLOR`
-    // paints one. So `track mood --verb switch --state good --state bad`
-    // declares the field whole, in the one command the web's field form
-    // runs.
-    let mut states: Vec<String> = Vec::new();
-    for sc in &args.states {
-        match sc.split_once('=') {
-            Some((state, color)) => {
-                let color = resolve(color, state).context("--state")?;
-                spec.state_colors.insert(state.to_string(), color);
-            }
-            None => {
-                super::spec::check_state_name(&args.field, sc)?;
-                states.push(sc.clone());
-            }
+    let (entry, said) = match spec {
+        Some(spec) if bare && args.track => (
+            begins_tracking(db, field, &now)?
+                .then(|| client_id().map(|c| track_entry(field, spec.verb, now, &c)))
+                .transpose()?,
+            format!("Tracking '{field}' ({})", spec.verb),
+        ),
+        _ if bare && args.ignore => {
+            // da-t3quu: a typo's IGNORED row is hidden from `fields`.
+            super::helpers::note_unseen_field(db, field, "ignoring")?;
+            let ignored = db
+                .state_at(field, now.utc)?
+                .is_some_and(|s| is_ignored_state(&s));
+            (
+                (!ignored)
+                    .then(|| client_id().map(|c| ignored_entry(field, c)))
+                    .transpose()?,
+                format!("Ignoring '{field}'"),
+            )
         }
-    }
-    if !states.is_empty() {
-        spec.allowed_states = Some(states);
-    }
-    // da-a7g: `--tag <name>` is repeatable and idempotent — each flag adds
-    // the tag if absent. `datum spec F --tags` sets the whole set.
-    for tag in &args.tags {
-        spec.add_tag(tag);
-    }
-    // da-h119q: `--key NAME[=DEFAULT]` / `--required-key`, so a field is
-    // declared with the keys a person cares about in the one command. A
-    // default is JSON when it parses and text when it does not, as the
-    // web's key editor stores an `any` key's. Naming a key the spec already
-    // has sets its kind and keeps the rest — its type, and whether it is in
-    // the slug, which is what an entry IS.
-    let keys = args.keys.iter().map(|k| (k, false));
-    for (key, required) in keys.chain(args.required_keys.iter().map(|k| (k, true))) {
-        let (name, kind) = parse_key_decl(key);
-        let json = |d: &str| serde_json::from_str(d).unwrap_or_else(|_| d.into());
-        let default = match &kind {
-            KeyKind::Default(d) => Some(json(d)),
-            _ => None,
-        };
-        anyhow::ensure!(!name.trim().is_empty(), "--key needs a name: '{key}'");
-        spec.forget_key(name);
-        let sub = spec
-            .subfields
-            .entry(name.to_string())
-            .or_insert(SubfieldSpec {
-                required,
-                value_type: SubfieldType::Any,
-                in_slug: false,
-                default: None,
-            });
-        sub.required = required;
-        sub.default = default;
-    }
-    // da-ulc0v: the alias-style tail. `-k` / `-K` add a slot to the ordered
-    // lists (a name already in that list takes the new kind in its place),
-    // and a bare `KEY=VALUE` assigns (`KEY=` removes one, as `spec
-    // --assign`). A key lives in one place: each declaration takes its name
-    // out of the others.
-    super::spec::add_slots(&mut spec, &args.data_keys, false);
-    super::spec::add_slots(&mut spec, &args.id_keys, true);
-    for (k, v) in args.assign.iter().filter_map(|kv| kv.split_once('=')) {
-        if v.is_empty() {
-            spec.assign.remove(k);
-        } else {
-            spec.forget_key(k);
-            spec.assign.insert(k.to_string(), v.to_string());
-        }
-    }
-    // da-fu29p: `-R KEY`, as a log line's own, so a field whose entries are
-    // «whatever words follow» is declared in the one command too; `-S`
-    // joins them, and `-C` makes them one comment (da-zqnt3; the parser
-    // refuses `-S` alone and `-C` with `-R`). Either names the whole route,
-    // replacing the spec's.
-    if args.remainder.is_some() || args.comment_remainder {
-        spec.remainder = args.remainder.clone().filter(|r| !r.is_empty());
-        spec.string_remainder = args.string_remainder && spec.remainder.is_some();
-        spec.comment_remainder = args.comment_remainder;
-    }
-    spec.regenerate_derived_aliases();
-    let client = client_id()?;
-    db.set_client_id(&client);
-    let entry = begins_tracking.then(|| track_entry(&args.field, verb, now, &client));
-    db.save_field_spec_with(&spec, entry.as_ref())?;
-    if let Some(entry) = entry {
-        let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&entry.hid));
-    }
-    println!("✓ Tracking '{}' ({verb})", args.field);
+        _ => return super::spec::spec(SpecCommand::Set(Box::new(args)), db),
+    };
+    // Nothing if it's already in that status, as `spec --track` (da-2pbvd).
+    let Some(entry) = entry else {
+        println!("no change");
+        return Ok(());
+    };
+    db.insert_entry(&entry)?;
+    let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&entry.hid));
+    println!("✓ {said}");
     Ok(())
+}
+
+/// The row that ignores `field` from now on.
+pub(crate) fn ignored_entry(field: &str, client: String) -> Entry {
+    Entry::new_legacy(
+        field,
+        Verb::Switch,
+        Some(serde_json::Value::String(IGNORED_STATE_VALUE.to_string())),
+        None,
+        Some(DatumTime::now()),
+        None,
+        client,
+    )
 }

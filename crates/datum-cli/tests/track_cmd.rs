@@ -7,10 +7,10 @@ use chrono::Utc;
 use common::run_cli;
 use datum_commands::commands::fields::compute_fields;
 use datum_core::action::Action;
+use datum_core::db::IGNORED_STATE_VALUE;
 use datum_core::db::{Db, NowFilter};
-use datum_core::field_spec::SubfieldType;
 use datum_core::shape::TRACKED_STATE_VALUE;
-use datum_core::test_util::fresh_db;
+use datum_core::test_util::{advance_time, fresh_db, set_time};
 use serde_json::{json, Value as JsonValue};
 
 /// The state of the newest entry on `field`, TRACK documents included —
@@ -230,106 +230,124 @@ fn a_stored_verb_wins_over_the_log() {
     assert_eq!(db.field_verb("sleep").unwrap(), Action::Occur);
 }
 
-/// One `track` declares a switch field whole: `--state NAME` names a state
-/// it may be switched to, `--state NAME=COLOR` paints one, and the `=` is
-/// what tells the two apart (da-94q1). The web's field form runs exactly
-/// this argv, so the two forms have to coexist on the one flag.
+/// da-ijf3p: `track F` alone on a field with a spec writes the TRACK row
+/// and leaves the spec as it was, and `ignore F` alone the IGNORED row.
+/// Again, in the status it is in, it writes nothing.
 #[test]
-fn a_bare_state_is_an_allowed_state_and_a_keyed_one_is_a_colour() {
+fn track_or_ignore_alone_on_a_spec_is_the_status_only() {
+    let _clock = set_time("2026-01-15T12:00:00Z");
     let db = fresh_db();
-    run_cli(
-        &[
-            "track",
-            "mood",
-            "--verb",
-            "switch",
-            "--state",
-            "good",
-            "--state",
-            "bad",
-            "--state",
-            "good=#00ff00",
-        ],
-        &db,
-    )
-    .unwrap();
-
-    let spec = db.load_spec("mood").unwrap().unwrap();
-    assert_eq!(spec.verb, Action::Switch);
-    assert_eq!(
-        spec.allowed_states.as_deref(),
-        Some(["good".to_string(), "bad".to_string()].as_slice())
-    );
-    assert_eq!(
-        spec.state_colors.get("good").map(String::as_str),
-        Some("#00ff00")
-    );
-
-    // Naming no state leaves the list alone, so a later `track` — the one
-    // that un-ignores a field — does not empty it.
-    run_cli(&["track", "mood", "--color", "#800080"], &db).unwrap();
-    let again = db.load_spec("mood").unwrap().unwrap();
-    assert_eq!(
-        again.allowed_states.as_deref().map(<[String]>::len),
-        Some(2)
-    );
+    let spec_line = &["spec", "mood", "--verb", "switch", "--add-state", "calm"];
+    run_cli(spec_line, &db).unwrap();
+    let spec_row = || serde_json::to_value(db.spec_entry("mood").unwrap()).unwrap();
+    let before = spec_row();
+    let rows = |db: &Db| db.entries_for_field("mood", None).unwrap().len();
+    for (line, state, n) in [
+        ("ignore", json!(IGNORED_STATE_VALUE), 1),
+        ("ignore", json!(IGNORED_STATE_VALUE), 1),
+        ("track", json!(TRACKED_STATE_VALUE), 2),
+        ("track", json!(TRACKED_STATE_VALUE), 2),
+    ] {
+        advance_time("1s");
+        run_cli(&[line, "mood"], &db).unwrap();
+        assert_eq!((latest_state(&db, "mood"), rows(&db)), (state, n), "{line}");
+        assert_eq!(spec_row(), before, "{line} changed the spec");
+    }
 }
 
-/// `--key` / `--required-key` declare a field's keys in the same command
-/// that declares the field (da-h119q) — the web's field form asks for keys
-/// on its first page, and a field being tracked for the first time has no
-/// spec for a second command to edit. A default is JSON when it parses.
+/// `track F <changes>` is `spec F <changes> --track`, and `ignore` the same
+/// with `--ignore`: the same spec and the same row, and one `undo` takes
+/// both back.
 #[test]
-fn keys_ride_on_the_track() {
+fn track_or_ignore_with_changes_is_spec_with_the_status() {
+    let changes = [
+        "mood",
+        "--verb",
+        "switch",
+        "--add-state",
+        "good",
+        "--state-color",
+        "good=#00ff00",
+        "-k",
+        "why=",
+    ];
+    for (word, flag, state) in [
+        ("track", "--track", TRACKED_STATE_VALUE),
+        ("ignore", "--ignore", IGNORED_STATE_VALUE),
+    ] {
+        let sugar = fresh_db();
+        let spec = fresh_db();
+        let line = [&[word][..], &changes].concat();
+        run_cli(&line, &sugar).unwrap();
+        run_cli(&[&["spec"][..], &changes, &[flag]].concat(), &spec).unwrap();
+        let shape = |db: &Db| {
+            let mut spec = serde_json::to_value(db.load_spec("mood").unwrap()).unwrap();
+            spec.as_object_mut().unwrap().remove("modify_time");
+            (spec, latest_state(db, "mood"))
+        };
+        assert_eq!(shape(&sugar), shape(&spec), "{word}");
+        assert_eq!(latest_state(&sugar, "mood"), json!(state), "{word}");
+
+        run_cli(&["undo"], &sugar).unwrap();
+        assert!(sugar.load_spec("mood").unwrap().is_none(), "{word}");
+        assert!(sugar.entries_for_field("mood", None).unwrap().is_empty());
+    }
+}
+
+/// `track F` on a field with no spec declares one, as `spec F --verb V
+/// --track`: the log answers the verb, and a field with none is asked
+/// (`track_without_a_verb_or_a_log_names_the_choices`). `ignore F` there
+/// writes the row and declares nothing (vremya, 10-16, until vividn rules).
+#[test]
+fn alone_on_a_field_with_no_spec() {
+    let _clock = set_time("2026-01-15T12:00:00Z");
     let db = fresh_db();
-    run_cli(
-        &[
-            "track",
-            "coffee",
-            "--verb",
-            "occur",
+    run_cli(&["start", "nap", "-t", "-5"], &db).unwrap();
+    run_cli(&["spec", "nap", "--delete"], &db).unwrap();
+    advance_time("1s");
+    run_cli(&["track", "nap"], &db).unwrap();
+    assert_eq!(db.load_spec("nap").unwrap().unwrap().verb, Action::Start);
+    assert_eq!(
+        latest_state(&db, "nap"),
+        json!(true),
+        "a running field runs on"
+    );
+
+    run_cli(&["ignore", "typo"], &db).unwrap();
+    assert_eq!(latest_state(&db, "typo"), json!(IGNORED_STATE_VALUE));
+    assert!(db.load_spec("typo").unwrap().is_none());
+}
+
+/// `track` has no flags of its own: the ones it had are refused, `--state`
+/// and `--tag` naming what replaced them, as on `spec`.
+#[test]
+fn track_has_no_flags_of_its_own() {
+    let db = fresh_db();
+    for (line, says) in [
+        (
+            &["track", "f", "--verb", "occur", "--key", "a"][..],
+            "--key",
+        ),
+        (
+            &["track", "f", "--verb", "occur", "--required-key", "a"],
             "--required-key",
-            "cups=2",
-            "--key",
-            "place",
-            "--key",
-            "note=decaf",
-        ],
-        &db,
-    )
-    .unwrap();
-
-    let keys = db.load_spec("coffee").unwrap().unwrap().subfields;
-    let (cups, place, note) = (&keys["cups"], &keys["place"], &keys["note"]);
-    assert!(cups.required && !place.required && !note.required);
-    assert_eq!(cups.default, Some(json!(2)));
-    assert_eq!(place.default, None);
-    assert_eq!(note.default, Some(json!("decaf")));
-    assert!(!cups.in_slug);
-
-    // A key the spec already has keeps its type and its place in the slug:
-    // re-tracking sets required and the default, and nothing an entry's
-    // identity rests on.
-    let mut spec = db.load_spec("coffee").unwrap().unwrap();
-    let cups = spec.subfields.get_mut("cups").unwrap();
-    cups.in_slug = true;
-    cups.value_type = SubfieldType::Number;
-    db.save_field_spec(&spec).unwrap();
-    run_cli(&["track", "coffee", "--key", "cups=3"], &db).unwrap();
-    let cups = &db.load_spec("coffee").unwrap().unwrap().subfields["cups"];
-    assert!(cups.in_slug && matches!(cups.value_type, SubfieldType::Number));
-    assert!(!cups.required);
-    assert_eq!(cups.default, Some(json!(3)));
-
-    // A key needs a name.
-    let err = run_cli(&["track", "coffee", "--key", "=5"], &db).unwrap_err();
-    assert!(err.to_string().contains("--key needs a name"), "{err}");
-    assert!(!db
-        .load_spec("coffee")
-        .unwrap()
-        .unwrap()
-        .subfields
-        .contains_key(""));
+        ),
+        (&["track", "f", "--verb", "occur", "a=1"], "a=1"),
+        (
+            &["track", "f", "--verb", "switch", "--state", "a"],
+            "--add-state",
+        ),
+        (
+            &["track", "f", "--verb", "occur", "--tag", "a"],
+            "--add-tag",
+        ),
+        (&["ignore", "f", "--tag", "a"], "--add-tag"),
+        (&["track", "f", "--verb", "occur", "--ignore"], "give one"),
+    ] {
+        let err = run_cli(line, &db).unwrap_err().to_string();
+        assert!(err.contains(says), "{line:?}: {err}");
+    }
+    assert!(db.load_spec("f").unwrap().is_none());
 }
 
 /// `-R KEY` says where a line's leftover words go in the command that
@@ -361,4 +379,21 @@ fn the_remainder_rides_on_the_track() {
     assert_eq!(remainder(&db).as_deref(), Some("emotions"));
     run_cli(&["track", "emotion", "--remainder", ""], &db).unwrap();
     assert_eq!(remainder(&db), None);
+}
+
+/// A bad name already in the database (logging is permissive, da-b049) is
+/// tracked and ignored alone, which declares nothing; a change to it is a
+/// declaration, and refused.
+#[test]
+fn a_bad_name_is_tracked_and_ignored_but_not_changed() {
+    let _clock = set_time("2026-01-15T12:00:00Z");
+    let db = fresh_db();
+    run_cli(&["occur", " lead"], &db).unwrap();
+    for line in [["ignore", " lead"], ["track", " lead"]] {
+        advance_time("1s");
+        run_cli(&line, &db).unwrap_or_else(|e| panic!("{line:?}: {e:#}"));
+    }
+    assert_eq!(latest_state(&db, " lead"), json!(TRACKED_STATE_VALUE));
+    let err = run_cli(&["track", " lead", "--color", "red"], &db).unwrap_err();
+    assert!(err.to_string().contains("cannot declare"), "{err:#}");
 }

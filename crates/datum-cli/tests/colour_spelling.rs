@@ -31,7 +31,14 @@ fn ok(dir: &TempDir, args: &[&str]) -> String {
 fn colour_is_color_on_track_spec_set_and_tail() {
     let lines: &[&[&str]] = &[
         &[
-            "track", "mood", "--verb", "switch", "--state", "happy", "--color", "red",
+            "track",
+            "mood",
+            "--verb",
+            "switch",
+            "--add-state",
+            "happy",
+            "--color",
+            "red",
         ],
         &["spec", "mood2", "--verb", "switch", "--color=blue"],
         &["spec", "mood", "--state-color", "happy=green"],

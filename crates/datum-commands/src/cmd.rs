@@ -347,8 +347,8 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Kit(sub) => commands::kit::kit(sub, db),
         Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
         Command::Debug(sub) => commands::debug::debug(sub, db),
-        Command::Track(args) => commands::track::track(args, db),
-        Command::Ignore(args) => commands::ignore::ignore(args, db),
+        // One handler: `args` says which status (`track` or `ignore` set).
+        Command::Track(args) | Command::Ignore(args) => commands::track::status(*args, db),
         Command::Meta(sub) => commands::meta::meta(sub, db),
         Command::Flag(args) => commands::flag::flag(args, db),
         Command::Grep(args) => commands::grep::grep(args, db),
@@ -557,37 +557,34 @@ mod tests {
 
     #[test]
     fn test_cmd_track_and_ignore() {
-        use crate::args::{IgnoreArgs, TrackArgs};
         use datum_core::db::Db;
         use datum_core::test_util::{advance_time, set_time};
         let db = Db::open_in_memory().unwrap();
+        let run = |line: &[&str]| {
+            let argv = std::iter::once("datum").chain(line.iter().copied());
+            dispatch_argv(argv.map(String::from).collect(), &db).unwrap();
+        };
 
-        // da-afk: cmd_track/cmd_ignore stamp entries with `DatumTime::now()`,
-        // and the slug is `field:<ms-iso>`. Three back-to-back calls on a fast
-        // machine can land in the same millisecond and hard-error on the slug
-        // collision. Freeze the clock and step it between calls so the slugs
-        // are distinct by construction.
+        // da-afk: the rows are stamped with `DatumTime::now()`, and the slug
+        // is `field:<ms-iso>`: freeze the clock and step it between calls so
+        // the slugs are distinct by construction.
         let _g = set_time("2026-01-15T12:00:00Z");
 
-        let track_args = TrackArgs {
-            field: "mood".to_string(),
-            verb: Some("switch".to_string()),
-            color: Some("ff6600".to_string()),
-            states: vec!["happy=00ff00".to_string(), "sad=ff0000".to_string()],
-            tags: vec![],
-            keys: vec![],
-            required_keys: vec![],
-            data_keys: vec![],
-            id_keys: vec![],
-            assign: vec![],
-            remainder: None,
-            string_remainder: false,
-            comment_remainder: false,
-        };
-        crate::commands::track::track(track_args, &db).unwrap();
+        run(&[
+            "track",
+            "mood",
+            "--verb",
+            "switch",
+            "--color",
+            "ff6600",
+            "--add-state",
+            "happy",
+            "--state-color",
+            "happy=00ff00",
+        ]);
 
-        // da-2sr: track wrote a switch entry (value=NULL) and a spec for the
-        // colors. The derived projection sees mood as tracked.
+        // da-2sr: track wrote the TRACK row and a spec for the colors. The
+        // derived projection sees mood as tracked.
         let tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let mood = tracked.iter().find(|f| f.field == "mood").unwrap();
         assert!(!mood.ignored);
@@ -604,13 +601,7 @@ mod tests {
         advance_time("1m");
         // Ignore writes a switch IGNORED entry — supersedes the prior
         // track switch — and leaves the spec (and its color) alone.
-        crate::commands::ignore::ignore(
-            IgnoreArgs {
-                field: "mood".to_string(),
-            },
-            &db,
-        )
-        .unwrap();
+        run(&["ignore", "mood"]);
         let tracked2 = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let mood2 = tracked2.iter().find(|f| f.field == "mood").unwrap();
         assert!(mood2.ignored);
@@ -619,25 +610,7 @@ mod tests {
 
         advance_time("1m");
         // Re-track flips it back to tracked (most recent switch wins).
-        crate::commands::track::track(
-            TrackArgs {
-                field: "mood".to_string(),
-                verb: None,
-                color: None,
-                states: vec![],
-                tags: vec![],
-                keys: vec![],
-                required_keys: vec![],
-                data_keys: vec![],
-                id_keys: vec![],
-                assign: vec![],
-                remainder: None,
-                string_remainder: false,
-                comment_remainder: false,
-            },
-            &db,
-        )
-        .unwrap();
+        run(&["track", "mood"]);
         let tracked3 = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         assert!(!tracked3.iter().find(|f| f.field == "mood").unwrap().ignored);
     }

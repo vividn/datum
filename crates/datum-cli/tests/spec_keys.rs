@@ -222,12 +222,12 @@ fn alias_and_spec_slots_walk_in_side_order() {
     );
 }
 
-/// `spec --data-key` and `track --key` write different lists; a name in
-/// both is one key — the first place, the last kind — as repeated `-k` are.
+/// A name declared twice is one key — the first place, the last kind — as
+/// repeated `-k` are, through `track` as through `spec`.
 #[test]
 fn a_key_declared_twice_is_one_key() {
     let db = juice_db();
-    run_cli(&["track", "juice", "--key", "cups=5"], &db).unwrap();
+    run_cli(&["track", "juice", "-k", "cups=5"], &db).unwrap();
     let spec = db.load_spec("juice").unwrap().unwrap();
     let cups: Vec<_> = spec
         .declared_keys(None)
@@ -309,7 +309,7 @@ fn the_kind_round_trips() {
     let db = juice_db();
     run_cli(&["spec", "juice", "--id-assign", "lang=pt"], &db).unwrap();
     run_cli(
-        &["track", "juice", "origin=farm", "--required-key", "n"],
+        &["track", "juice", "--assign", "origin=farm", "-k", "n"],
         &db,
     )
     .unwrap();
@@ -364,8 +364,8 @@ fn the_kind_round_trips() {
     );
 }
 
-/// `track`'s alias-style tail (da-ulc0v): `-k` declares a slot, a bare
-/// `KEY=VALUE` an assign. The control is the same field tracked without the
+/// `track`'s alias-style keys (da-ulc0v), `spec`'s flags: `-k` declares a
+/// slot, `--assign KEY=VALUE` an assign. The control is the same field tracked without the
 /// tail, which logs neither.
 #[test]
 fn track_takes_an_alias_style_tail() {
@@ -386,6 +386,7 @@ fn track_takes_an_alias_style_tail() {
             "occur",
             "-k",
             "next_date=+4",
+            "--assign",
             "proj=household",
         ],
         &db,
@@ -470,7 +471,17 @@ fn a_key_lives_in_one_place_and_the_latest_declaration_wins() {
         run_cli(args, db).unwrap_or_else(|e| panic!("{args:?}: {e:#}"));
     };
     let db = fresh_db();
-    run(&["track", "x2", "--verb", "occur", "proj=household"], &db);
+    run(
+        &[
+            "track",
+            "x2",
+            "--verb",
+            "occur",
+            "--assign",
+            "proj=household",
+        ],
+        &db,
+    );
     run(&["track", "x2", "-k", "proj="], &db);
     let spec = db.load_spec("x2").unwrap().unwrap();
     assert_eq!(spec.data_keys, ["proj="]);
@@ -479,24 +490,23 @@ fn a_key_lives_in_one_place_and_the_latest_declaration_wins() {
     assert_eq!(logged_entries(&db, "x2")[0].data, Some(json!({"proj": 5})));
 
     // The reverse order ends with the assign only.
-    run(&["track", "x2", "proj=household"], &db);
+    run(&["track", "x2", "--assign", "proj=household"], &db);
     let spec = db.load_spec("x2").unwrap().unwrap();
     assert!(spec.data_keys.is_empty(), "{:?}", spec.data_keys);
     assert_eq!(spec.assign["proj"], "household");
 
-    // A bare `KEY=` removes an assign and leaves a slot alone, as `spec
-    // --assign KEY=` does.
+    // `--assign KEY=` removes an assign and leaves a slot alone.
     run(&["track", "y", "--verb", "occur", "-k", "proj="], &db);
-    run(&["track", "y", "proj="], &db);
+    run(&["track", "y", "--assign", "proj="], &db);
     assert_eq!(db.load_spec("y").unwrap().unwrap().data_keys, ["proj="]);
 
-    // `spec` and `track --key` follow the same rule.
+    // `spec`'s other lists follow the same rule.
     run(&["spec", "x2", "--data-key", "proj"], &db);
     assert!(db.load_spec("x2").unwrap().unwrap().assign.is_empty());
     run(&["spec", "x2", "--id-assign", "proj=a"], &db);
     let spec = db.load_spec("x2").unwrap().unwrap();
     assert!(spec.data_keys.is_empty(), "{:?}", spec.data_keys);
-    run(&["track", "x2", "--key", "proj="], &db);
+    run(&["track", "x2", "-k", "proj="], &db);
     assert!(db.load_spec("x2").unwrap().unwrap().id_assign.is_empty());
 
     // A state's keys too.

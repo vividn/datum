@@ -68,8 +68,10 @@ pub enum Command {
     /// (da-4dvk7). Kept off the command list; `datum help debug` has it.
     Debug(DebugCommand),
 
-    Track(TrackArgs),
-    Ignore(IgnoreArgs),
+    /// `track F [CHANGES]` and `ignore F [CHANGES]` (da-ijf3p): `spec F
+    /// [CHANGES] --track` / `--ignore`, with `track` or `ignore` set.
+    Track(Box<SpecSetArgs>),
+    Ignore(Box<SpecSetArgs>),
 
     /// `datum meta <field> <text>` — record an out-of-band protocol
     /// note about how a field is being classified or interpreted.
@@ -1121,46 +1123,6 @@ pub struct NowArgs {
     /// instead of the live wall-clock state, and centres the terminal
     /// nowview band on that point (da-coi0m).
     pub time: TimeArgs,
-}
-
-#[derive(Debug)]
-pub struct TrackArgs {
-    pub field: String,
-    /// `--verb <occur|start|switch|add>`. Required for a field that has
-    /// neither a spec nor a log to read the answer off (da-c8mh).
-    pub verb: Option<String>,
-    pub color: Option<String>,
-    /// Repeatable `--state`. A bare `NAME` is one of the states the field
-    /// may be switched to, as `spec --state` means it; `NAME=COLOR`
-    /// paints that state instead. The two forms are told apart by the `=`,
-    /// so one flag declares a switch field whole (da-94q1).
-    pub states: Vec<String>,
-    /// Each `--tag <name>` flag adds the tag to the field's spec
-    /// idempotently. Repeatable; order preserved on first-add.
-    pub tags: Vec<String>,
-    /// Repeatable `--key NAME[=DEFAULT]`: a data key the field's entries
-    /// may carry, declared in the same breath as the field (da-h119q).
-    pub keys: Vec<String>,
-    /// Repeatable `--required-key NAME[=DEFAULT]`: the same, marked required.
-    pub required_keys: Vec<String>,
-    /// The alias-style tail (da-ulc0v): `-k` / `-K` declare the field's
-    /// data / id slots in order, the kind by spelling (`K`, `K=`, `K=D`).
-    pub data_keys: Vec<String>,
-    pub id_keys: Vec<String>,
-    /// ...and a bare `KEY=VALUE` declares an assigned key.
-    pub assign: Vec<String>,
-    /// `-R KEY` / `--remainder KEY`: where the words no slot takes go, as
-    /// `spec --remainder` says it (da-fu29p); `''` clears it.
-    pub remainder: Option<String>,
-    /// `-S`: the remainder's words joined into one string; `-C`: the
-    /// leftover words as one comment, with no `-R` (da-zqnt3).
-    pub string_remainder: bool,
-    pub comment_remainder: bool,
-}
-
-#[derive(Debug)]
-pub struct IgnoreArgs {
-    pub field: String,
 }
 
 // ─── Meta (da-xn8j) ───────────────────────────────────────────────────────

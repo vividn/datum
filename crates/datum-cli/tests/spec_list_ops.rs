@@ -221,8 +221,11 @@ fn keys_add_in_place_and_remove() {
     let s = spec(&dir, "juice");
     assert_eq!(s["data_keys"], json!(["cups=1", "temp=cold", "size="]));
     assert_eq!(s["id_keys"], json!(["day"]));
-    ok(&dir, &["track", "juice", "--key", "brand"]);
-    // brand is a subfield alone (`track --key`): removed, with no warning.
+    // brand is a subfield alone (a kit's, or `--from-json`'s): removed, with
+    // no warning.
+    let mut s = spec(&dir, "juice");
+    s["subfields"]["brand"] = json!({"value_type": "any"});
+    ok(&dir, &["spec", "juice", "--from-json", &s.to_string()]);
     let (_, err) = ok(
         &dir,
         &[

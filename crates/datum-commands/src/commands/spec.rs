@@ -370,7 +370,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             .state_at(&spec.field, now.utc)?
             .is_some_and(|s| is_ignored_state(&s))
     {
-        Some(super::ignore::ignored_entry(&spec.field, client_id()?))
+        Some(super::track::ignored_entry(&spec.field, client_id()?))
     } else {
         None
     };

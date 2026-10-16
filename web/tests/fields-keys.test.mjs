@@ -12,10 +12,10 @@ import { changeCounter, sharedApp, startApp, stopApp } from './support/app.mjs';
 import { type } from './support/fields.mjs';
 
 const SEED = [
-	'track tea --verb occur --required-key amount --key cups=1',
-	'track juice --verb occur --key cups=1',
-	'track shift --verb start --required-key project',
-	'track mood --verb switch --state good --state bad --required-key why'
+	'track tea --verb occur -k amount -k cups=1',
+	'track juice --verb occur -k cups=1',
+	'track shift --verb start -k project',
+	'track mood --verb switch --states good,bad -k why'
 ];
 
 const chip = (page, field) => page.locator(`.bar [data-field="${field}"]`);
@@ -102,7 +102,7 @@ describe('a field with a required key', () => {
 	test('a spaced field: its fill quotes it, from the chip and under a pending verb, and Enter logs to it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await type(page, 'track "my coffee" --verb occur --required-key amount');
+			await type(page, 'track "my coffee" --verb occur -k amount');
 			// The clock is held: a log at the declaration's instant would share its slug.
 			await app.clock.forward(1000);
 			await app.idle();

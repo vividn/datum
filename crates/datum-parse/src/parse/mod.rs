@@ -280,8 +280,8 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "conflicts" => Command::Conflicts(parse_conflicts_cmd(rest)?),
         "debug" => Command::Debug(parse_debug_cmd(rest)?),
 
-        "track" => Command::Track(parse_track_args(rest)?),
-        "ignore" => Command::Ignore(parse_ignore_args(rest)?),
+        "track" => Command::Track(parse_status(rest, true)?),
+        "ignore" => Command::Ignore(parse_status(rest, false)?),
 
         "meta" => Command::Meta(parse_meta_cmd(rest)?),
 

@@ -19,9 +19,9 @@ impl Env {
         let env = Self {
             tmp: tempfile::tempdir().expect("create tmpdir"),
         };
-        env.ok(&["track", "mood", "--verb", "switch", "--state", "calm"]);
+        env.ok(&["track", "mood", "--verb", "switch", "--add-state", "calm"]);
         env.ok(&["switch", "mood", "happy"]);
-        env.ok(&["track", "tea", "--verb", "occur", "--key", "cups="]);
+        env.ok(&["track", "tea", "--verb", "occur", "-k", "cups="]);
         env.ok(&["occur", "tea", "cups=2"]);
         env.ok(&["occur", "my field"]);
         env.ok(&["alias", "set", "vbp", "note word pos=verb"]);

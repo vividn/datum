@@ -186,7 +186,7 @@ fn spec_refuses_a_status_as_a_state() {
         for line in [
             &["spec", "mood", "--states", &states][..],
             &["spec", "mood", "--from-json", &json],
-            &["track", "mood", "--verb", "switch", "--state", status],
+            &["track", "mood", "--verb", "switch", "--add-state", status],
         ] {
             let msg = run_cli(line, &db).unwrap_err().to_string();
             assert!(

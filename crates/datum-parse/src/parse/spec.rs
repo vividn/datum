@@ -468,7 +468,7 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
 }
 
 /// `--state` and a field's `--tag`, which replaced the list (da-f9bky).
-fn gone_list(flag: &str, name: &str, whole: &str) -> ParseError {
+pub(crate) fn gone_list(flag: &str, name: &str, whole: &str) -> ParseError {
     ParseError::InvalidArg(format!(
         "--{flag} is gone: --add-{flag} {name}, --remove-{flag} {name}, or {whole} for the whole list"
     ))

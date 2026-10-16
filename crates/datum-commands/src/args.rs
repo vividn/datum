@@ -34,11 +34,11 @@ pub use pcli::{
     AliasCommand, BackupArgs, BackupRotationArgs, CheckArgs, Cli, Command, ConfigCommand,
     ConfigShowArgs, ConflictStrategyArg, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
     CountArgs, DayviewArgs, DbCommand, DbImportArgs, DbPurgeArgs, DebugCommand, DeleteArgs,
-    EditArgs, FieldsArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs,
-    KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs,
-    NowviewArgs, RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SetupArgs,
-    SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod, SyncAdminAct, SyncCommand, SyncDaemonAct,
-    SyncFilter, TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
+    EditArgs, FieldsArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, InfoArgs, KitCommand,
+    KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs, NowviewArgs,
+    RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SetupArgs, SpecCommand,
+    SpecSetArgs, StatsArgs, StatsPeriod, SyncAdminAct, SyncCommand, SyncDaemonAct, SyncFilter,
+    TailArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
 };
 // Apart from the list above, which every added name reflows.
 pub use pcli::StatesArgs;

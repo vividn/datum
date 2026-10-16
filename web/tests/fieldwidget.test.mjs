@@ -251,7 +251,7 @@ describe('the field widget', () => {
 			const { page } = app;
 			await app.run(['track', 'coffee', '--verb', 'occur', '--color', '#884400']);
 			await app.run(['track', 'sleep', '--verb', 'start']);
-			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'good']);
+			await app.run(['track', 'mood', '--verb', 'switch', '--add-state', 'good']);
 			await app.run(['track', 'person', '--verb', 'add']);
 			await app.redraw();
 			await openField(page, 'coffee');

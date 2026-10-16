@@ -311,7 +311,9 @@ fn the_explicit_track_command_still_writes_its_document() {
         ("add", "TRACK\u{a2}"),
     ] {
         let env = Env::new();
-        env.run(&["track", "coffee", "--verb", verb]);
+        // A spec first, so the `track` is the row alone and `_LAST` is it.
+        env.run(&["spec", "coffee", "--verb", verb]);
+        env.run(&["track", "coffee"]);
 
         // The single-document surface names it.
         let got = env.run(&["get", "_LAST"]);

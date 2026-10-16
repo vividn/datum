@@ -67,16 +67,16 @@ async function addStates(page, names) {
 }
 
 describe('the argv it composes', () => {
-	test('`track`, not `spec F`: declaring a field is an event in the log', () => {
+	test('`track`: declaring a field is an event in the log', () => {
 		assert.deepEqual(trackArgv('coffee', 'occur'), ['track', 'coffee', '--verb', 'occur']);
 		assert.deepEqual(trackArgv('sleep', 'start'), ['track', 'sleep', '--verb', 'start']);
 	});
 
 	const row = (name, color = '', description = '', glyph = '') => ({ name, color, description, glyph });
 
-	test('a switch carries its states, one flag each, a painted one twice; a colour is optional', () => {
+	test('a switch carries its states, an `--add-state` each and a painted one a `--state-color`; a colour is optional', () => {
 		assert.deepEqual(trackArgv('mood', 'switch', [row('good', '#00ff00'), row(' bad '), row('  ')]), [
-			'track', 'mood', '--verb', 'switch', '--state', 'good', '--state', 'bad', '--state', 'good=#00ff00'
+			'track', 'mood', '--verb', 'switch', '--add-state', 'good', '--add-state', 'bad', '--state-color', 'good=#00ff00'
 		]);
 		assert.deepEqual(trackArgv('coffee', 'occur', [], '#ffa500').slice(-2), ['--color', '#ffa500']);
 		// The states belong to `switch` alone: a point with one added and
@@ -86,8 +86,8 @@ describe('the argv it composes', () => {
 
 	// da-h119q: a field's keys are declared in the same `track`.
 	// da-p3hxn: the four kinds, as `track` spells them — slots, in the
-	// form's order (da-uipyt): `--key` makes subfields, which bind by name.
-	test('keys ride on the `track` as slots: `-k K`, `-k K=`, a default after `=`, `-K` in the slug, an assign as `KEY=VALUE`, a blank name dropped', () => {
+	// form's order (da-uipyt), as subfields would not be: they bind by name.
+	test('keys ride on the `track` as slots: `-k K`, `-k K=`, a default after `=`, `-K` in the slug, an assign as `--assign KEY=VALUE`, a blank name dropped', () => {
 		const key = (name, kind, value = '', in_slug = false) => ({ name, kind, value, value_type: 'any', in_slug });
 		const keys = [
 			key('id', 'required', '', true),
@@ -98,7 +98,7 @@ describe('the argv it composes', () => {
 			key(' ', 'required')
 		];
 		assert.deepEqual(trackArgv('coffee', 'occur', [], '', keys), [
-			'track', 'coffee', '--verb', 'occur', '-K', 'id', '-k', 'cups', '-k', 'size=', '-k', 'temp=hot', 'brand=acme'
+			'track', 'coffee', '--verb', 'occur', '-K', 'id', '-k', 'cups', '-k', 'size=', '-k', 'temp=hot', '--assign', 'brand=acme'
 		]);
 	});
 
@@ -657,7 +657,7 @@ describe('in the app', () => {
 			await page.keyboard.press('Escape');
 			await page.waitForFunction((sel) => !document.querySelector(sel), MODAL);
 
-			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'good', '--state', 'good=#00ff00', '--color', '#123456']);
+			await app.run(['track', 'mood', '--verb', 'switch', '--add-state', 'good', '--state-color', 'good=#00ff00', '--color', '#123456']);
 			const { saved: shut } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
 			await noHex('spec, basics');
@@ -676,7 +676,7 @@ describe('in the app', () => {
 	test('a swatch left at auto is the colour datum paints it, dashed; a picked one is solid', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await app.run(['track', 'hue', '--verb', 'switch', '--state', 'calm']);
+			await app.run(['track', 'hue', '--verb', 'switch', '--add-state', 'calm']);
 			const [listed] = JSON.parse((await app.run(['fields', '--json'])).stdout).filter((f) => f.field === 'hue');
 			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 			const looks = (swatch) =>
@@ -1068,7 +1068,7 @@ describe('in the app', () => {
 	test('a state glyph is typed beside its swatch and drawn on a `switch -m` dot', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'up', '--state', 'down']);
+			await app.run(['track', 'mood', '--verb', 'switch', '--states', 'up,down']);
 			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
 			await page.locator(`${MODAL} [data-tab="states"]`).click();
@@ -1091,7 +1091,7 @@ describe('in the app', () => {
 	test('removing a state leaves no glyph for it; the states kept keep theirs', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'up', '--state', 'down', '--state', 'flat']);
+			await app.run(['track', 'mood', '--verb', 'switch', '--states', 'up,down,flat']);
 			await app.run(['spec', 'mood', '--state-glyph', 'up=▲', '--state-glyph', 'down=▼', '--state-glyph', 'flat=■']);
 			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();

@@ -138,20 +138,18 @@ export interface StateRow {
 /**
  * The argv that declares `field`.
  *
- * `track`, not `spec F`: declaring a field is an event in the log — the
- * TRACK document that says what the field IS (da-c8mh) — and only `track`
- * writes one. It also un-ignores, which is what the ignored list below it
- * is for. A bare `--state` names a state the field may be switched to
- * (da-94q1) and `--state NAME=COLOR` paints it, so a switch field is
- * declared whole in one command. Its keys are slots, in the order the
- * form has them (da-h119q, da-p3hxn): `-k NAME` required, `-k NAME=`
- * optional, `-k NAME=DEFAULT`, `-K` for one in the slug — a card's id —
- * and `NAME=VALUE` for an assign. Not `--key`, whose subfields bind in the
- * order of their names, so a card's `person vr520 vremya cantown` stored
- * the name as the city. The row that takes the rest of the line is `-R
- * KEY`, `-SR KEY` or `-C` (da-fu29p, da-zqnt3). The field form declares
- * a new field with `spec F --track` instead (`declareArgv`), which says
- * all the form does in one command.
+ * `track F …` is `spec F … --track` (da-ijf3p): the spec and the TRACK
+ * document that says tracking began (da-c8mh), in one write. It also
+ * un-ignores, which is what the ignored list below it is for. Each state
+ * is an `--add-state NAME`, and a painted one a `--state-color NAME=COLOR`
+ * too, so a switch field is declared whole in one command. Its keys are
+ * slots, in the order the form has them (da-h119q, da-p3hxn): `-k NAME`
+ * required, `-k NAME=` optional, `-k NAME=DEFAULT`, `-K` for one in the
+ * slug — a card's id — and `--assign NAME=VALUE` for an assign. The row
+ * that takes the rest of the line is `-R KEY`, `-SR KEY` or `-C`
+ * (da-fu29p, da-zqnt3). The field form declares a new field with `spec F
+ * --track` instead (`declareArgv`), which says all the form does in one
+ * command.
  */
 export function trackArgv(
 	field: string,
@@ -163,13 +161,13 @@ export function trackArgv(
 	const argv = ['track', field, '--verb', verb];
 	if (verb === 'switch') {
 		const named = states.filter((s) => s.name.trim());
-		for (const { name } of named) argv.push('--state', name.trim());
-		for (const { name, color } of named) if (color) argv.push('--state', `${name.trim()}=${color}`);
+		for (const { name } of named) argv.push('--add-state', name.trim());
+		for (const { name, color } of named) if (color) argv.push('--state-color', `${name.trim()}=${color}`);
 	}
 	if (color) argv.push('--color', color);
 	const named = keys.filter((k) => k.name.trim() || k.rest === 'C');
 	for (const { name, kind, value, in_slug } of named.filter((k) => !k.rest))
-		if (kind === 'assign') argv.push(`${name.trim()}=${value}`);
+		if (kind === 'assign') argv.push('--assign', `${name.trim()}=${value}`);
 		else argv.push(in_slug ? '-K' : '-k', kind === 'required' ? name.trim() : `${name.trim()}=${kind === 'default' ? value : ''}`);
 	const route = named.find((k) => k.rest);
 	if (route) argv.push(...(route.rest === 'C' ? ['-C'] : [`-${route.rest}`, route.name.trim()]));

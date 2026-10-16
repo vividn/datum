@@ -31,7 +31,6 @@ pub mod help;
 pub mod helpers;
 pub mod history;
 pub mod ids;
-pub mod ignore;
 pub mod info;
 pub mod kit;
 pub mod kit_command;
