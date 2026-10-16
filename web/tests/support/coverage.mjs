@@ -8,7 +8,9 @@
 // Two sides, one rule: a FUNCTION ran. A module's top level runs wherever its
 // chunk loads, which in a bundle is every test, so it counts for nothing.
 // - node: the process's own V8, by the inspector, for the `src/` modules a
-//   test imports (the pure tests, the harness).
+//   test imports (the pure tests, the harness), and the `tests/support/`
+//   ones, whose top level counts: node loads each alone, never in a bundle
+//   (da-icb7g).
 // - Chromium: every page of every context Playwright opens in the process,
 //   started before the page can navigate and taken before it closes. What is
 //   kept is each function's START offset in its script, which lies inside
@@ -91,9 +93,10 @@ if (dir && test) {
 		let wrote = false;
 		session.post('Profiler.takePreciseCoverage', (_, taken) => {
 			const node = taken.result
-				.filter((s) => s.url.startsWith('file:') && ran(s.functions).length)
-				.map((s) => relative(web, fileURLToPath(s.url)))
-				.filter((p) => p.startsWith('src/'));
+				.filter((s) => s.url.startsWith('file:'))
+				.map((s) => [relative(web, fileURLToPath(s.url)), s.functions])
+				.filter(([p, fns]) => (p.startsWith('src/') ? ran(fns).length : p.startsWith('tests/support/') && fns.some((f) => f.ranges[0].count > 0)))
+				.map(([p]) => p);
 			const out = { test, node, browser: Object.fromEntries(Object.entries(browser).map(([k, v]) => [k, [...v]])) };
 			writeFileSync(`${dir}/${basename(test)}.${process.pid}.json`, JSON.stringify(out));
 			wrote = true;

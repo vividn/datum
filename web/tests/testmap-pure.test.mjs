@@ -44,7 +44,7 @@ test('a test that reads src/ or the build as data runs on every selection', () =
 });
 
 test('a change to the suite itself, its fixtures or config runs everything', () => {
-	for (const path of ['web/README.md', 'web/tests/support/app.mjs', 'web/tests/fixtures/cli-parity.json', 'web/package.json', 'web/pnpm-lock.yaml', 'web/vite.config.ts', 'web/static/manifest.json', 'web/scripts/test.mjs']) {
+	for (const path of ['web/README.md', 'web/tests/fixtures/cli-parity.json', 'web/package.json', 'web/pnpm-lock.yaml', 'web/vite.config.ts', 'web/static/manifest.json', 'web/scripts/test.mjs']) {
 		assert.match(run([path]).full?.join() ?? '', /the web suite reads it/, path);
 	}
 });
@@ -61,6 +61,12 @@ test('a Rust change that reaches the CLI module runs everything', () => {
 
 test('a web/src file no test reached runs everything', () => {
 	assert.match(run(['web/src/lib/brandNew.ts']).full?.join() ?? '', /no test's coverage reaches it/);
+});
+
+test('a support module runs the tests whose node ran it, and one no test ran runs everything', () => {
+	const map = { ...MAP, files: { ...MAP.files, 'tests/strip.test.mjs': [...MAP.files['tests/strip.test.mjs'], 'tests/support/daystrip.mjs'] } };
+	assert.deepEqual(picked(run(['web/tests/support/daystrip.mjs'], { map })), ['tests/strip.test.mjs']);
+	assert.match(run(['web/tests/support/app.mjs'], { map }).full?.join() ?? '', /no test's coverage reaches it/);
 });
 
 test('a stale or missing map runs everything', () => {
@@ -101,11 +107,12 @@ test('every test that reads src/ or the build as data is one the map always runs
 test('the preload writes what a process ran when it exits, by itself or by process.exit', () => {
 	const preload = new URL('./support/coverage.mjs', import.meta.url).href;
 	const split = new URL('../src/lib/shellSplit.ts', import.meta.url).href;
+	const until = new URL('./support/until.mjs', import.meta.url).href;
 	for (const end of ['', 'process.exit(0);']) {
 		const dir = mkdtempSync(join(tmpdir(), 'datum-coverage-'));
 		const r = spawnSync(
 			process.execPath,
-			['--import', preload, '--input-type=module', '-e', `const { shellSplit } = await import(${JSON.stringify(split)}); shellSplit('a b'); ${end}`],
+			['--import', preload, '--input-type=module', '-e', `const { shellSplit } = await import(${JSON.stringify(split)}); await import(${JSON.stringify(until)}); shellSplit('a b'); ${end}`],
 			{ env: { ...process.env, NODE_OPTIONS: '', DATUM_TEST_COVERAGE: dir, DATUM_COVERAGE_TEST: 'tests/probe.test.mjs' }, encoding: 'utf8' }
 		);
 		const written = readdirSync(dir);
@@ -115,5 +122,7 @@ test('the preload writes what a process ran when it exits, by itself or by proce
 		assert.equal(written.length, 1, `${end || 'natural exit'}: ${r.stderr}`);
 		assert.equal(out[0].test, 'tests/probe.test.mjs');
 		assert.ok(out[0].node.includes('src/lib/shellSplit.ts'), JSON.stringify(out[0].node));
+		// A support module counts by its top level alone: until.mjs's functions never ran.
+		assert.ok(out[0].node.includes('tests/support/until.mjs'), JSON.stringify(out[0].node));
 	}
 });

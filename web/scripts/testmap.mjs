@@ -15,15 +15,16 @@
 // staging's full run is what catches that. A source a worker bundles is left
 // out (workers are not recorded), so a change to it runs everything. `always`
 // is every test that reads `src/` or the build as data, which no coverage
-// sees.
+// sees. A `tests/support/` module is reached by the tests whose node ran any
+// of it, its top level too, since node loads it alone (da-icb7g).
 //
 // `select` reads a PR's changed files against the map and writes the test
 // files to run, one per line, to OUT_DIR/web.tests, or OUT_DIR/FULL with
-// why everything runs. A `web/src/` file selects the tests whose set has it,
-// and a test file added or edited selects itself; every test the map does
-// not know runs. Everything runs for any other change that can reach the
-// web, a `web/src/` file no set holds, or a map missing or more than
-// MAX_BEHIND commits behind the base.
+// why everything runs. A `web/src/` or `web/tests/support/` file selects the
+// tests whose set has it, and a test file added or edited selects itself;
+// every test the map does not know runs. Everything runs for any other change
+// that can reach the web, a `web/src/` or support file no set holds, or a map
+// missing or more than MAX_BEHIND commits behind the base.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -61,11 +62,11 @@ export function choose({ map, behind, changed, tests }) {
 		if (/^web\/tests\/.+\.test\.mjs$/.test(path)) {
 			if (tests.includes(p)) pick(p, `${path}: added or edited`);
 			else notes.push(`${path}: deleted`);
-		} else if (path.startsWith('web/src/')) {
+		} else if (/^web\/(src|tests\/support)\//.test(path)) {
 			const by = Object.keys(map.files).filter((t) => map.files[t].includes(p));
 			if (!by.length) full.push(`${path}: no test's coverage reaches it (new, unreached, or a worker's)`);
 			for (const t of by) pick(t, path);
-		} else if (path.startsWith('web/')) full.push(`${path}: the web suite reads it (support, fixtures, config, static, scripts)`);
+		} else if (path.startsWith('web/')) full.push(`${path}: the web suite reads it (fixtures, config, static, scripts)`);
 		else if (NOT_WEB.test(path)) notes.push(`${path}: no web test reads it`);
 		else full.push(`${path}: can reach the web (the CLI's wasm, a kit, CI)`);
 	}
