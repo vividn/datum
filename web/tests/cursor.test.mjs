@@ -117,6 +117,21 @@ const lineXs = (page, scope) =>
 	);
 
 /**
+ * Give the strip a 400px box and wait until yesterday is drawn at the day
+ * it derives. Heard, not just laid out: the stack is there at any box
+ * (da-2hd21), so yesterday's band drawn is no sign the strip has taken its
+ * new box — its day following it is. And yesterday drawn AT that day: the
+ * new height re-draws and moves every band, so a spot read before it is
+ * clicked where the band no longer is (da-2n99b).
+ */
+async function tallStrip(page) {
+	await page.evaluate(() => (document.querySelector('.cell.dayview').style.flex = '0 0 400px'));
+	const day = await following({ page });
+	await settledAt({ page }, day);
+	await page.locator(`${PAST} svg.svg[height="${day}"]`).waitFor();
+}
+
+/**
  * Type a line into the bottom bar and wait for its receipt.
  *
  * The receipt is the first line of a document section in the result area
@@ -245,10 +260,7 @@ describe('the time cursor', () => {
 	test("a click on yesterday's band: the dated pill, and a line logged with it lands on yesterday", async () => {
 		await withDay(async (app) => {
 			const { page } = app;
-			await page.evaluate(() => (document.querySelector('.cell.dayview').style.flex = '0 0 400px'));
-			await page
-				.locator(`${PAST} [data-lo][data-from="2026-09-09T00:00:00.000Z"]`)
-				.waitFor({ state: 'attached' });
+			await tallStrip(page);
 			const at = await spot(page, PAST, 0.25, '2026-09-09T00:00:00.000Z');
 			await page.mouse.click(at.x, at.y);
 
@@ -284,15 +296,7 @@ describe('the time cursor', () => {
 	// drag, and the stack scrolling back through the days.
 	test('a drag on the notch and a scroll of the stack set no cursor', async () => {
 		await withDay(async ({ page }) => {
-			await page.evaluate(() => (document.querySelector('.cell.dayview').style.flex = '0 0 400px'));
-			// Heard, not just laid out: the stack is there at any box
-			// (da-2hd21), so yesterday's band drawn is no sign the strip has
-			// taken its new box — its day following it is.
-			const day = await following({ page });
-			await settledAt({ page }, day);
-			// And yesterday drawn AT that day: the new height re-draws every
-			// band, and a picture from before it is replaced under the reads.
-			await page.locator(`${PAST} svg.svg[height="${day}"]`).waitFor();
+			await tallStrip(page);
 
 			const past = await page.locator(`${PAST} svg.svg`).boundingBox();
 			await page.mouse.move(past.x + past.width / 2, past.y + past.height - 10);
