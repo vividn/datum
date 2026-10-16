@@ -19,7 +19,7 @@ const EIGHT = ['alfa', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', '
 const STATES = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
 const SEED = [
 	...EIGHT.slice(1).map((f) => `spec ${f} --verb occur`),
-	`spec alfa --verb switch ${STATES.map((s) => `--state ${s}`).join(' ')}`
+	`spec alfa --verb switch --states ${STATES.join(',')}`
 ];
 
 const bar = (page) => page.locator('section[data-pane="bar"] .bar');

@@ -638,7 +638,13 @@ pub struct SpecSetArgs {
     /// `--verb <occur|start|switch|add>` — what a bare press of the
     /// field means. Required when the spec is being created (da-c8mh).
     pub verb: Option<String>,
-    pub states: Vec<String>,
+    /// `--states a,b,c` — exactly these, in this order (da-f9bky); `''`
+    /// clears. A state kept keeps its own, one dropped loses it.
+    pub states: Option<Vec<String>>,
+    /// `--add-state S` — appended if absent; `--remove-state S` — dropped
+    /// with its colour, glyph, description, keys and assigns.
+    pub add_states: Vec<String>,
+    pub remove_states: Vec<String>,
     pub color: Option<String>,
     /// Per-state colors in `STATE=COLOR` form. An empty COLOR clears the
     /// entry — the clear convention shared by all `STATE=VALUE` flags here.
@@ -660,8 +666,12 @@ pub struct SpecSetArgs {
     pub description: Option<String>,
     pub track: bool,
     pub ignore: bool,
+    /// `-K`/`--id-key` and `-k`/`--data-key`: a slot added to its list, or
+    /// given its new spelling in its place, as `track`'s (da-f9bky).
     pub id_keys: Vec<String>,
     pub data_keys: Vec<String>,
+    /// `--remove-key K` — K gone from wherever the field declares it.
+    pub remove_keys: Vec<String>,
     /// `--assign KEY=VALUE` / `--id-assign KEY=VALUE` (da-ulc0v): an
     /// assigned key, merged into the spec's map; an empty VALUE removes it.
     pub assign: Vec<String>,
@@ -678,10 +688,13 @@ pub struct SpecSetArgs {
     /// Stacking order. Higher values render on top. `None` here means
     /// "leave as-is"; default fallback is the resolved `y`.
     pub z_index: Option<f64>,
-    /// Replace the spec's `tags` list with this. Empty (`Vec::is_empty`) is
-    /// treated as "leave as-is" — to clear tags, pass
-    /// `--from-json '...tags=[]'`.
-    pub tags: Vec<String>,
+    /// `--tags a,b`, `--add-tag T`, `--remove-tag T`: the states' three
+    /// operations, on the tags (da-f9bky).
+    pub tags: Option<Vec<String>>,
+    pub add_tags: Vec<String>,
+    pub remove_tags: Vec<String>,
+    /// `spec --tag T`, the listing's filter; refused beside a field.
+    pub list_tags: Vec<String>,
     /// `--only-listed-keys` / `--any-keys` (da-eqb30): the spec's
     /// `only_listed_keys`; `None` leaves the existing value.
     pub only_listed_keys: Option<bool>,
@@ -691,6 +704,10 @@ pub struct SpecSetArgs {
     /// `--remainder <KEY>` (da-eqb30): where the field's leftover words
     /// go, as `-R <KEY>` would send them. An empty value clears it.
     pub remainder: Option<String>,
+    /// `-S` / `-C`, as `track`'s (da-zqnt3): with `-R`, either names the
+    /// whole route of the leftover words.
+    pub string_remainder: bool,
+    pub comment_remainder: bool,
     /// `--never-false` / `--allow-false` (da-cwieh): the spec's
     /// `never_false`; `None` leaves the existing value.
     pub never_false: Option<bool>,

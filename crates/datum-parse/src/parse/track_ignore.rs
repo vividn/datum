@@ -89,18 +89,11 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    // One route for the leftover words (da-zqnt3): `-S` joins what `-R K`
-    // sends, and `-C` is the other route, not a second one.
-    if composed.string_remainder && composed.remainder.is_none() {
-        return Err(ParseError::InvalidArg(
-            "-S joins the words -R KEY takes: give -R KEY too (-SR KEY)".into(),
-        ));
-    }
-    if composed.comment_remainder && composed.remainder.is_some() {
-        return Err(ParseError::InvalidArg(
-            "-C and -R both say where the leftover words go: give one".into(),
-        ));
-    }
+    check_remainder_route(
+        composed.remainder.is_some(),
+        composed.string_remainder,
+        composed.comment_remainder,
+    )?;
     Ok(TrackArgs {
         field: require_pos(&pos, "<FIELD>")?,
         verb: composed.verb,
@@ -116,6 +109,22 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         string_remainder: composed.string_remainder,
         comment_remainder: composed.comment_remainder,
     })
+}
+
+/// One route for the leftover words (da-zqnt3): `-S` joins what `-R K`
+/// sends, and `-C` is the other route, not a second one.
+pub(crate) fn check_remainder_route(remainder: bool, string: bool, comment: bool) -> Result<()> {
+    if string && !remainder {
+        return Err(ParseError::InvalidArg(
+            "-S joins the words -R KEY takes: give -R KEY too (-SR KEY)".into(),
+        ));
+    }
+    if comment && remainder {
+        return Err(ParseError::InvalidArg(
+            "-C and -R both say where the leftover words go: give one".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn parse_ignore_args(tail: &[&str]) -> Result<IgnoreArgs> {

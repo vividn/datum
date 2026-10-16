@@ -488,7 +488,7 @@
 		},
 		{
 			"setup": [
-				["spec", "mood", "--verb", "switch", "--state", "happy"]
+				["spec", "mood", "--verb", "switch", "--add-state", "happy"]
 			],
 			"argv": ["happy", "-t", "0930"],
 			"time": "clock",

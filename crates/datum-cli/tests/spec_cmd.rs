@@ -148,11 +148,11 @@ fn spec_set_persists_state_descriptions() {
             "mood",
             "--verb",
             "switch",
-            "--state",
+            "--states",
             "happy",
             "--state-description",
             "happy=feeling good",
-            "--state",
+            "--states",
             "sad",
             "--state-description=sad=down or flat",
         ],
@@ -182,8 +182,9 @@ fn spec_refuses_a_status_as_a_state() {
         ("TRACKED", "datum track mood"),
     ] {
         let json = format!(r#"{{"field":"mood","verb":"switch","allowed_states":["{status}"]}}"#);
+        let states = format!("calm,{status}");
         for line in [
-            &["spec", "mood", "--state", "calm", "--state", status][..],
+            &["spec", "mood", "--states", &states][..],
             &["spec", "mood", "--from-json", &json],
             &["track", "mood", "--verb", "switch", "--state", status],
         ] {
@@ -196,11 +197,7 @@ fn spec_refuses_a_status_as_a_state() {
     }
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing written");
 
-    run_cli(
-        &["spec", "mood", "--state", "calm", "--state", "false"],
-        &db,
-    )
-    .unwrap();
+    run_cli(&["spec", "mood", "--states", "calm,false"], &db).unwrap();
     let spec = db.load_spec("mood").unwrap().unwrap();
     assert_eq!(spec.allowed_states.unwrap(), ["calm", "false"]);
 }
@@ -214,7 +211,7 @@ fn spec_set_state_description_with_empty_text_clears_entry() {
             "mood",
             "--verb",
             "switch",
-            "--state",
+            "--states",
             "happy",
             "--state-description",
             "happy=initial meaning",
@@ -238,9 +235,9 @@ fn spec_set_never_false_sets_keeps_and_clears() {
     let db = fresh_db();
     let never = || db.load_spec("env").unwrap().unwrap().never_false;
     let set = |args: &[&str]| run_cli(&[&["spec", "env"], args].concat(), &db).unwrap();
-    set(&["--verb", "switch", "--state", "home", "--never-false"]);
+    set(&["--verb", "switch", "--states", "home", "--never-false"]);
     assert!(never());
-    set(&["--state", "office"]);
+    set(&["--states", "office"]);
     assert!(never());
     set(&["--allow-false"]);
     assert!(!never());
@@ -254,15 +251,15 @@ fn spec_set_never_false_drops_the_end_alias_and_allow_false_restores_it() {
     let db = fresh_db();
     let end_alias = || db.lookup_alias("enve").unwrap().map(|a| a.expands_to);
     let set = |args: &[&str]| run_cli(&[&["spec", "env"], args].concat(), &db).unwrap();
-    set(&["--verb", "switch", "--state", "home"]);
+    set(&["--verb", "switch", "--states", "home"]);
     assert_eq!(end_alias().as_deref(), Some("end env"));
     set(&["--never-false"]);
     assert_eq!(end_alias(), None);
     assert!(db.lookup_alias("env").unwrap().is_some());
     assert!(db.lookup_alias("home").unwrap().is_some());
-    set(&["--state", "home", "--state", "false"]);
+    set(&["--states", "home,false"]);
     assert_eq!(end_alias().as_deref(), Some("end env"));
-    set(&["--state", "home"]);
+    set(&["--states", "home"]);
     assert_eq!(end_alias(), None);
     set(&["--allow-false"]);
     assert_eq!(end_alias().as_deref(), Some("end env"));
@@ -357,7 +354,7 @@ fn spec_set_color_takes_a_kits_colours_and_refuses_the_rest() {
 fn the_field_forms_save_keeps_a_colour_stored_before_the_rule() {
     let db = fresh_db();
     run_cli(
-        &["spec", "mood", "--verb", "switch", "--state", "happy"],
+        &["spec", "mood", "--verb", "switch", "--states", "happy"],
         &db,
     )
     .unwrap();
@@ -382,7 +379,7 @@ fn the_field_forms_save_keeps_a_colour_stored_before_the_rule() {
 fn update_and_from_json_hold_a_changed_colour_to_the_rule() {
     let db = fresh_db();
     run_cli(
-        &["spec", "mood", "--verb", "switch", "--state", "happy"],
+        &["spec", "mood", "--verb", "switch", "--states", "happy"],
         &db,
     )
     .unwrap();

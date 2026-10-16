@@ -134,7 +134,7 @@ describe('a state field fills the widget with its states', () => {
 			await seed(
 				app,
 				[
-					'spec mood --verb switch --state good --state bad --state-color good=#008000 --state-color bad=#ff0000 --color #800080',
+					'spec mood --verb switch --states good,bad --state-color good=#008000 --state-color bad=#ff0000 --color #800080',
 					'switch mood good -t 0930'
 				],
 				'mood'

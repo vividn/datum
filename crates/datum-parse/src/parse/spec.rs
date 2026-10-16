@@ -14,6 +14,9 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
     let delete = tail.contains(&"--delete");
     let tail: Vec<&str> = tail.iter().copied().filter(|t| *t != "--delete").collect();
     let (mut out, flagged, named) = parse_spec_set(&tail)?;
+    if named && !out.list_tags.is_empty() {
+        return Err(gone_list("tag", "T", "--tags a,b"));
+    }
     let field = out.field.clone();
     match (!named, flagged, delete) {
         (false, false, true) => Ok(SpecCommand::Delete {
@@ -36,7 +39,7 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
             Ok(SpecCommand::Set(Box::new(out)))
         }
         (true, _, false) => {
-            let mut tags = std::mem::take(&mut out.tags);
+            let mut tags = std::mem::take(&mut out.list_tags);
             if out != SpecSetArgs::default() {
                 return Err(ParseError::MissingRequiredKey("<FIELD>".to_string()));
             }
@@ -71,8 +74,7 @@ fn gone(tail: &[&str]) -> Result<()> {
         "remove" => words(&[field, "--delete"]),
         "add-state" => {
             let name = rest.first().copied().unwrap_or("NAME");
-            let mut line = vec![field.to_string(), "--state".into(), "…".into()];
-            line.extend(["--state".into(), name.to_string()]);
+            let mut line = vec![field.to_string(), "--add-state".into(), name.to_string()];
             // The slots end at the first flag; a lone `-` leaves one alone.
             let slots = rest
                 .iter()
@@ -130,13 +132,40 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
             FlagSplit::Long("default-verb") | FlagSplit::LongAttached("default-verb", _) => {
                 return Err(renamed_default_verb())
             }
-            FlagSplit::Long("state") => {
-                let (v, ni) = take_value(tail, i, None, "--state")?;
-                out.states.push(v.to_string());
+            // da-f9bky: a list takes three operations, and the flag that
+            // replaced it names them.
+            FlagSplit::Long("state") | FlagSplit::LongAttached("state", _) => {
+                return Err(gone_list("state", "S", "--states a,b,c"))
+            }
+            FlagSplit::Long(f @ ("states" | "tags")) => {
+                let (v, ni) = take_value(tail, i, None, &format!("--{f}"))?;
+                *if f == "states" {
+                    &mut out.states
+                } else {
+                    &mut out.tags
+                } = Some(names(v));
                 i = ni;
             }
-            FlagSplit::LongAttached("state", v) => {
-                out.states.push(v.to_string());
+            FlagSplit::LongAttached(f @ ("states" | "tags"), v) => {
+                *if f == "states" {
+                    &mut out.states
+                } else {
+                    &mut out.tags
+                } = Some(names(v));
+                i += 1;
+            }
+            FlagSplit::Long(
+                f @ ("add-state" | "remove-state" | "add-tag" | "remove-tag" | "remove-key"),
+            ) => {
+                let (v, ni) = take_value(tail, i, None, &format!("--{f}"))?;
+                list_op(&mut out, f, v);
+                i = ni;
+            }
+            FlagSplit::LongAttached(
+                f @ ("add-state" | "remove-state" | "add-tag" | "remove-tag" | "remove-key"),
+                v,
+            ) => {
+                list_op(&mut out, f, v);
                 i += 1;
             }
             FlagSplit::Long("color") => {
@@ -210,21 +239,21 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
                 out.ignore = true;
                 i += 1;
             }
-            FlagSplit::Long("id-key") => {
+            FlagSplit::Long("id-key") | FlagSplit::Short('K') => {
                 let (v, ni) = take_value(tail, i, None, "--id-key")?;
                 out.id_keys.push(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("id-key", v) => {
+            FlagSplit::LongAttached("id-key", v) | FlagSplit::ShortAttached('K', v) => {
                 out.id_keys.push(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("data-key") => {
+            FlagSplit::Long("data-key") | FlagSplit::Short('k') => {
                 let (v, ni) = take_value(tail, i, None, "--data-key")?;
                 out.data_keys.push(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("data-key", v) => {
+            FlagSplit::LongAttached("data-key", v) | FlagSplit::ShortAttached('k', v) => {
                 out.data_keys.push(v.to_string());
                 i += 1;
             }
@@ -275,13 +304,21 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
                 out.only_listed_states = Some(false);
                 i += 1;
             }
-            FlagSplit::Long("remainder") => {
+            FlagSplit::Long("remainder") | FlagSplit::Short('R') => {
                 let (v, ni) = take_value(tail, i, None, "--remainder")?;
                 out.remainder = Some(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("remainder", v) => {
+            FlagSplit::LongAttached("remainder", v) | FlagSplit::ShortAttached('R', v) => {
                 out.remainder = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("string-remainder") | FlagSplit::Short('S') => {
+                out.string_remainder = true;
+                i += 1;
+            }
+            FlagSplit::Long("comment-remainder") | FlagSplit::Short('C') => {
+                out.comment_remainder = true;
                 i += 1;
             }
             FlagSplit::Long("never-false") => {
@@ -319,13 +356,14 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
                 out.z_index = Some(parse_position_f64(v, "--z-index")?);
                 i += 1;
             }
+            // The listing's filter: `spec --tag T`.
             FlagSplit::Long("tag") => {
                 let (v, ni) = take_value(tail, i, None, "--tag")?;
-                out.tags.push(v.to_string());
+                out.list_tags.push(v.to_string());
                 i = ni;
             }
             FlagSplit::LongAttached("tag", v) => {
-                out.tags.push(v.to_string());
+                out.list_tags.push(v.to_string());
                 i += 1;
             }
             FlagSplit::Long("glyph") => {
@@ -420,8 +458,42 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
             "unexpected argument: '{extra}'"
         )));
     }
+    super::track_ignore::check_remainder_route(
+        out.remainder.is_some(),
+        out.string_remainder,
+        out.comment_remainder,
+    )?;
     out.field = pos.first().map(|f| f.to_string()).unwrap_or_default();
     Ok((out, tail.len() > pos.len(), !pos.is_empty()))
+}
+
+/// `--state` and a field's `--tag`, which replaced the list (da-f9bky).
+fn gone_list(flag: &str, name: &str, whole: &str) -> ParseError {
+    ParseError::InvalidArg(format!(
+        "--{flag} is gone: --add-{flag} {name}, --remove-{flag} {name}, or {whole} for the whole list"
+    ))
+}
+
+/// `--states a, b,c`'s names (da-f9bky): split on commas, spaces trimmed,
+/// so `''` is none. A state or a tag can't hold a comma.
+fn names(v: &str) -> Vec<String> {
+    v.split(',')
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// One `--add-…` / `--remove-…`: its names onto the list it adds or removes.
+fn list_op(out: &mut SpecSetArgs, flag: &str, v: &str) {
+    let list = match flag {
+        "add-state" => &mut out.add_states,
+        "remove-state" => &mut out.remove_states,
+        "add-tag" => &mut out.add_tags,
+        "remove-tag" => &mut out.remove_tags,
+        _ => return out.remove_keys.push(v.to_string()),
+    };
+    list.extend(names(v));
 }
 
 /// A size factor (da-c05v1): a number above zero.

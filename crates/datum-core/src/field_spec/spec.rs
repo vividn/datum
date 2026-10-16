@@ -358,6 +358,19 @@ impl FieldSpec {
         self.id_assign.remove(name);
     }
 
+    /// Drop what `state` carries of its own — colour, description, glyph,
+    /// keys, assigns — leaving the list alone (da-f9bky). Whether it had any.
+    pub fn forget_state(&mut self, state: &str) -> bool {
+        let own = [
+            self.state_colors.remove(state).is_some(),
+            self.state_descriptions.remove(state).is_some(),
+            self.presentation.state_glyphs.remove(state).is_some(),
+            self.state_keys.remove(state).is_some(),
+            self.state_assign.remove(state).is_some(),
+        ];
+        own.contains(&true)
+    }
+
     /// [`FieldSpec::forget_key`] for `state`'s own keys.
     pub fn forget_state_key(&mut self, state: &str, name: &str) {
         if let Some(keys) = self.state_keys.get_mut(state) {

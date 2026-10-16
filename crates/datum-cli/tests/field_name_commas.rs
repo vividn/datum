@@ -81,7 +81,7 @@ fn declaring_a_comma_field_is_refused() {
     let path = path.to_string_lossy().to_string();
     for (args, field) in [
         (vec!["track", "x,y", "--verb", "occur"], "x,y"),
-        (vec!["spec", "p,q", "--state", "on"], "p,q"),
+        (vec!["spec", "p,q", "--states", "on"], "p,q"),
         (vec!["kit", "install", &path], "k,l"),
     ] {
         let err = refusal(&args, &db);

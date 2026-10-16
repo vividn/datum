@@ -52,11 +52,7 @@ fn only_listed_keys_refuses_an_undeclared_key() {
 #[test]
 fn only_listed_states_refuses_an_unlisted_state() {
     let db = fresh_db();
-    spec(
-        &db,
-        "env",
-        &["--verb", "switch", "--state", "home", "--state", "office"],
-    );
+    spec(&db, "env", &["--verb", "switch", "--states", "home,office"]);
     // Off by default: an unlisted state is logged, as before.
     run_cli(&["switch", "env", "cafe"], &db).unwrap();
 
@@ -73,7 +69,7 @@ fn only_listed_states_refuses_an_unlisted_state() {
     // Not never-false: off stays allowed.
     run_cli(&["end", "env"], &db).unwrap();
     // A later `spec` keeps it; `--any-states` clears it.
-    spec(&db, "env", &["--state", "home"]);
+    spec(&db, "env", &["--states", "home"]);
     assert!(db.load_spec("env").unwrap().unwrap().only_listed_states);
     spec(&db, "env", &["--any-states"]);
     run_cli(&["switch", "env", "park"], &db).unwrap();
@@ -85,7 +81,7 @@ fn a_never_false_field_with_only_listed_states_cannot_be_ended() {
     spec(
         &db,
         "env",
-        &["--verb", "switch", "--state", "home", "--never-false"],
+        &["--verb", "switch", "--states", "home", "--never-false"],
     );
     run_cli(&["switch", "env", "home"], &db).unwrap();
     // never_false alone is the ring's: `end` is still taken.
@@ -104,7 +100,7 @@ fn a_never_false_field_with_only_listed_states_cannot_be_ended() {
         );
     }
     // Listing `false` keeps the field's end.
-    spec(&db, "env", &["--state", "home", "--state", "false"]);
+    spec(&db, "env", &["--states", "home,false"]);
     run_cli(&["end", "env"], &db).unwrap();
 }
 

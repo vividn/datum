@@ -83,8 +83,8 @@ describe('the widget fits its screen, legibly', () => {
 	const PLAIN = [
 		'spec pushups --verb occur',
 		'spec work --verb start',
-		'spec mood --verb switch --state good --state bad',
-		'spec energy --verb switch --state high --state low --state-color high=#008000',
+		'spec mood --verb switch --states good,bad',
+		'spec energy --verb switch --states high,low --state-color high=#008000',
 		'start work',
 		'switch mood good',
 		'switch energy high',

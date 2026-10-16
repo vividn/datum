@@ -251,7 +251,7 @@ fn mood_db() -> Db {
             "mood",
             "--verb",
             "switch",
-            "--state",
+            "--states",
             "happy",
             "--data-key",
             "level",
@@ -501,7 +501,10 @@ fn a_key_lives_in_one_place_and_the_latest_declaration_wins() {
 
     // A state's keys too.
     let db = fresh_db();
-    run(&["spec", "mood", "--verb", "switch", "--state", "sad"], &db);
+    run(
+        &["spec", "mood", "--verb", "switch", "--states", "sad"],
+        &db,
+    );
     run(&["spec", "mood", "--state-assign", "sad=why=x"], &db);
     run(&["spec", "mood", "--state-key", "sad=why="], &db);
     let spec = db.load_spec("mood").unwrap().unwrap();
@@ -521,7 +524,7 @@ fn reparse_replays_the_keys_the_line_bound() {
         let db = juice_db();
         run_cli(&[head, &["2", "large"]].concat(), &db).unwrap();
         let logged = logged_entries(&db, "juice")[0].clone();
-        run_cli(&["spec", "juice", "--data-key", "size"], &db).unwrap();
+        run_cli(&["spec", "juice", "--remove-key", "cups"], &db).unwrap();
         let now = db.load_spec("juice").unwrap().unwrap().declared_keys(None);
         assert_eq!(now[0].name, "size", "{now:?}");
         run_cli(&["reparse", &logged.hid.0, "--fix"], &db).unwrap();

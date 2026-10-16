@@ -111,10 +111,8 @@ fn a_moment_state_resumes_the_state_before_it() {
     env.ok(&[
         "spec",
         "mood",
-        "--state",
-        "startled",
-        "--state",
-        "startled2",
+        "--states",
+        "startled,startled2",
         "--state-color",
         "startled=#ff0000",
         "--state-color",

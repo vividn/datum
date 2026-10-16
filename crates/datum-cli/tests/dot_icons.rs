@@ -124,7 +124,7 @@ fn a_state_glyph_wins_over_the_icon() {
     env.run(&["switch", "mood", "calm", "-m", "-t", "-20"]);
     let icon = env.file("m.svg", BEANS);
     env.run(&["spec", "mood", "--icon", &icon]);
-    env.run(&["spec", "mood", "--state", "sad", "--state-glyph", "sad=▼"]);
+    env.run(&["spec", "mood", "--states", "sad", "--state-glyph", "sad=▼"]);
     let svg = env.dayview();
     assert_eq!(svg.matches(r##"href="#icon-mood""##).count(), 1);
     assert!(svg.contains(">▼</text>"), "{svg}");

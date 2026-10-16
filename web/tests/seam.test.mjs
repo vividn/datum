@@ -462,7 +462,7 @@ describe('spec', () => {
 		['coffee'],
 		['coffee', '--json'],
 		[],
-		['mood', '--state', 'happy'],
+		['mood', '--add-state', 'happy'],
 		['coffee', '--delete']
 	];
 
@@ -483,7 +483,7 @@ describe('spec', () => {
 
 	test('a spec change still works — it is what the `+` button runs', async () => {
 		await onSeam(async ({ run }) => {
-			const saved = await run(['spec', 'mood', '--state', 'happy']);
+			const saved = await run(['spec', 'mood', '--add-state', 'happy']);
 			assert.equal(saved.code, OK, saved.stderr);
 			assert.match(saved.stdout, /mood/);
 			// And a second change after it.

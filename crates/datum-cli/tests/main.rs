@@ -107,6 +107,7 @@ mod spec_cmd;
 mod spec_entries;
 mod spec_grammar;
 mod spec_keys;
+mod spec_list_ops;
 mod spec_lists;
 mod spool;
 mod stale_last_gate_removed;

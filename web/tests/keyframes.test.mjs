@@ -123,7 +123,7 @@ describe('key frames', () => {
 	test("a switch frames its state's own keys: sad asks for reason, happy for nothing", async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['spec mood --verb switch --state happy --state sad --state-key sad=reason']);
+			await seedLines(app, ['spec mood --verb switch --states happy,sad --state-key sad=reason']);
 			await type(page, 'switch mood happy');
 			assert.deepEqual((await drawn(page)).waiting, []);
 			await page.locator('.prompt-bar input').fill('');

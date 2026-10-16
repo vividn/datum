@@ -183,7 +183,7 @@ const STATES = ['a', 'b', 'c', 'd'];
 const RING = ['< Back', 'false', ...STATES, '+ Add state'];
 const SEED = [
 	...OTHERS.map((f) => `spec ${f} --verb occur`),
-	`spec mood --verb switch --state false ${STATES.map((s) => `--state ${s}`).join(' ')}`
+	`spec mood --verb switch --states false,${STATES.join(',')}`
 ];
 
 /**
@@ -331,7 +331,7 @@ describe('a switch field’s states around the tap', () => {
 					});
 				await page.locator(`${BAR} [data-field="mood"]`).click();
 				await page.locator(`${BAR} [data-add-state]`).waitFor();
-				await app.submit('spec mood --state false --state d --state a --state b --state c --state e');
+				await app.submit('spec mood --states false,d,a,b,c,e');
 				await page.locator(`${BAR} [data-state="e"]`).waitFor();
 				const live = await offset();
 				await page.locator(`${BAR} [data-back]`).click();
@@ -357,7 +357,7 @@ describe('a switch field’s states around the tap', () => {
 				const { page } = app;
 				await seedLines(
 					app,
-					[...OTHERS, 'mood'].map((f) => `spec ${f} --verb switch --state false ${STATES.map((s) => `--state ${s}`).join(' ')}`)
+					[...OTHERS, 'mood'].map((f) => `spec ${f} --verb switch --states false,${STATES.join(',')}`)
 				);
 				await page.locator(`${BAR} [data-field="mood"]`).waitFor();
 				await atRows(page, 'bar', 3);

@@ -81,7 +81,7 @@ describe('aliases in the REPL', () => {
 
 	test('a field spec makes its own names commands', async () => {
 		await onSeam(async ({ run, entries }) => {
-			await ok(run, ['spec', 'mood', '--verb', 'switch', '--state', 'happy']);
+			await ok(run, ['spec', 'mood', '--verb', 'switch', '--add-state', 'happy']);
 
 			// The bare field name, and the state name, both without a verb.
 			await ok(run, ['mood', '-t', '0910']);

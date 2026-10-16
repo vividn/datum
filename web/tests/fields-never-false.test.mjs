@@ -66,8 +66,8 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					// Neither lists `false`: `end` is the default all the same.
 					await seedLines(app, [
 						...OTHERS.map((f) => `spec ${f} --verb occur`),
-						'spec mood --verb switch --state good --state meh --state bad',
-						'spec env --verb switch --state home --state office --state cafe --never-false'
+						'spec mood --verb switch --states good,meh,bad',
+						'spec env --verb switch --states home,office,cafe --never-false'
 					]);
 					await atRows(page, 'bar', 3);
 

@@ -125,7 +125,7 @@ const frames = (page) =>
  */
 const SEED = [
 	'spec coffee --verb occur --color #ffa500',
-	'spec mood --verb switch --state happy --color #0000ff',
+	'spec mood --verb switch --states happy --color #0000ff',
 	'occur coffee',
 	'switch mood happy'
 ];

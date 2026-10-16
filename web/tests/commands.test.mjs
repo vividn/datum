@@ -68,8 +68,8 @@ const SEED = [
 	'spec coffee --verb occur',
 	'spec sleep --verb start',
 	'spec work --verb start',
-	'spec mood --verb switch --state good --state bad',
-	'spec light --verb switch --state true --state false',
+	'spec mood --verb switch --states good,bad',
+	'spec light --verb switch --states true,false',
 	'spec rec --verb add',
 	'start work -t -60',
 	'switch mood good -t -30'

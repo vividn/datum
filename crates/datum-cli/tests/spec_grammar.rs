@@ -43,8 +43,18 @@ fn mood() -> TempDir {
     ok(
         &dir,
         &[
-            "spec", "mood", "--verb", "switch", "--state", "happy", "--state", "sad", "--color",
-            "#888888", "--tag", "mind", "--glyph", "●",
+            "spec",
+            "mood",
+            "--verb",
+            "switch",
+            "--states",
+            "happy,sad",
+            "--color",
+            "#888888",
+            "--add-tag",
+            "mind",
+            "--glyph",
+            "●",
         ],
     );
     ok(&dir, &["spec", "coffee", "--verb", "occur"]);
@@ -84,7 +94,13 @@ fn a_change_prints_the_spec_with_what_changed_marked() {
     let out = ok(
         &dir,
         &[
-            "spec", "mood", "--color", "#b87333", "--state", "happy", "--state", "calm", "--glyph",
+            "spec",
+            "mood",
+            "--color",
+            "#b87333",
+            "--states",
+            "happy,calm",
+            "--glyph",
             "",
         ],
     );
@@ -155,16 +171,25 @@ fn a_new_field_needs_a_verb() {
 fn the_old_subcommands_are_refused_with_the_line_that_does_it_now() {
     let dir = mood();
     for (old, now) in [
-        (&["spec", "set", "mood", "--color", "red"][..], "`spec set` is gone: `spec mood --color red`"),
-        (&["spec", "show", "mood"], "`spec show` is gone: `spec mood`"),
-        (&["spec", "remove", "mood"], "`spec remove` is gone: `spec mood --delete`"),
+        (
+            &["spec", "set", "mood", "--color", "red"][..],
+            "`spec set` is gone: `spec mood --color red`",
+        ),
+        (
+            &["spec", "show", "mood"],
+            "`spec show` is gone: `spec mood`",
+        ),
+        (
+            &["spec", "remove", "mood"],
+            "`spec remove` is gone: `spec mood --delete`",
+        ),
         (
             &["spec", "add-state", "mood", "meh", "-", "so-so"],
-            "`spec add-state` is gone: `spec mood --state … --state meh --state-description meh=so-so`",
+            "`spec add-state` is gone: `spec mood --add-state meh --state-description meh=so-so`",
         ),
         (
             &["spec", "add-state", "mood"],
-            "`spec add-state` is gone: `spec mood --state … --state NAME`",
+            "`spec add-state` is gone: `spec mood --add-state NAME`",
         ),
     ] {
         let err = refused(&dir, old);

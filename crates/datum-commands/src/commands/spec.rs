@@ -121,7 +121,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             // log, `--verb` is optional and the log answers once; on a new
             // one the user is asked, because there is nothing to read.
             // Naming the states a field can be in says it is a switch field.
-            None if args.verb.is_none() && !args.states.is_empty() => {
+            None if args.verb.is_none() && !states_named(&args).is_empty() => {
                 FieldSpec::new(&args.field, Action::Switch)
             }
             None => FieldSpec::new(
@@ -136,12 +136,32 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             .parse::<Action>()
             .map_err(|e| anyhow::anyhow!("Invalid --verb: {e}"))?;
     }
-    if !args.states.is_empty() {
-        spec.allowed_states = Some(args.states.clone());
-    }
-    if args.from_json.is_some() || !args.states.is_empty() {
+    if args.from_json.is_some() {
         for state in spec.allowed_states.iter().flatten() {
             check_state_name(&spec.field, state)?;
+        }
+    }
+    for state in states_named(&args) {
+        check_state_name(&spec.field, state)?;
+    }
+    // da-f9bky: a state dropped from the list drops what it carries, and
+    // one removed that was neither listed nor carried anything is said.
+    if args.states.is_some() || !args.remove_states.is_empty() || !args.add_states.is_empty() {
+        let mut states = spec.allowed_states.take().unwrap_or_default();
+        let (lost, absent) = edit_list(
+            &mut states,
+            &args.states,
+            &args.add_states,
+            &args.remove_states,
+        );
+        spec.allowed_states = Some(states).filter(|s| !s.is_empty());
+        for state in lost {
+            spec.forget_state(&state);
+        }
+        for state in absent {
+            if !spec.forget_state(&state) {
+                eprintln!("⚠ '{}' has no state '{state}': nothing removed", spec.field);
+            }
         }
     }
     // One colour rule, a kit's (da-xw1rx): `--color red` is the red
@@ -271,17 +291,18 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     check_factors(&mut spec)?;
     // da-ulc0v: a key lives in one place — each declaration takes its name
     // out of the others first.
-    for key in args.id_keys.iter().chain(&args.data_keys) {
-        spec.forget_key(parse_key_decl(key).0);
-    }
+    add_slots(&mut spec, &args.data_keys, false);
+    add_slots(&mut spec, &args.id_keys, true);
     for (k, _) in assigned(args.assign.iter().chain(&args.id_assign)) {
         spec.forget_key(k);
     }
-    if !args.id_keys.is_empty() {
-        spec.id_keys = args.id_keys.clone();
-    }
-    if !args.data_keys.is_empty() {
-        spec.data_keys = args.data_keys.clone();
+    for key in &args.remove_keys {
+        let had = spec.declared_keys(None).iter().any(|k| k.name == *key);
+        spec.forget_key(key);
+        spec.subfields.remove(key);
+        if !had {
+            eprintln!("⚠ '{}' has no key '{key}': nothing removed", spec.field);
+        }
     }
     set_assign(&mut spec.assign, &args.assign, "--assign")?;
     set_assign(&mut spec.id_assign, &args.id_assign, "--id-assign")?;
@@ -297,8 +318,12 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(s) = args.only_listed_states {
         spec.only_listed_states = s;
     }
-    if let Some(r) = &args.remainder {
-        spec.remainder = Some(r.clone()).filter(|r| !r.is_empty());
+    // `-R KEY` or `-C` names the whole route of the leftover words, as on
+    // `track` (da-zqnt3; the parser refuses `-S` alone and `-C` with `-R`).
+    if args.remainder.is_some() || args.comment_remainder {
+        spec.remainder = args.remainder.clone().filter(|r| !r.is_empty());
+        spec.string_remainder = args.string_remainder && spec.remainder.is_some();
+        spec.comment_remainder = args.comment_remainder;
     }
     if let Some(n) = args.never_false {
         spec.never_false = n;
@@ -312,11 +337,14 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if args.z_index.is_some() {
         spec.presentation.z_index = args.z_index;
     }
-    // da-a7g: `--tag <name>` repeats replace the spec's full tag set
-    // (mirrors how `--state <name>` replaces `allowed_states`). To clear
-    // tags, re-set the spec from JSON with `tags: []`.
-    if !args.tags.is_empty() {
-        spec.tags = args.tags.clone();
+    let (_, absent) = edit_list(
+        &mut spec.tags,
+        &args.tags,
+        &args.add_tags,
+        &args.remove_tags,
+    );
+    for tag in absent {
+        eprintln!("⚠ '{}' has no tag '{tag}': nothing removed", spec.field);
     }
 
     spec.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
@@ -376,6 +404,59 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     }
     warn_alias_conflicts(&report);
     Ok(())
+}
+
+/// The states `--states` and `--add-state` name.
+fn states_named(args: &SpecSetArgs) -> Vec<&String> {
+    args.states
+        .iter()
+        .flatten()
+        .chain(&args.add_states)
+        .collect()
+}
+
+/// A list's three operations (da-f9bky): exactly `exact` in its order, then
+/// each of `add` it lacks appended, then each of `remove` dropped. The names
+/// it lost, and those of `remove` it neither held nor was given.
+fn edit_list(
+    list: &mut Vec<String>,
+    exact: &Option<Vec<String>>,
+    add: &[String],
+    remove: &[String],
+) -> (Vec<String>, Vec<String>) {
+    let was = std::mem::take(list);
+    for name in exact.as_ref().unwrap_or(&was).iter().chain(add) {
+        if !list.contains(name) {
+            list.push(name.clone());
+        }
+    }
+    // Absent is neither held before nor added now: one `--states` drops is
+    // removed, whichever flag says so.
+    let absent = remove
+        .iter()
+        .filter(|n| !was.contains(n) && !list.contains(n))
+        .cloned()
+        .collect();
+    list.retain(|n| !remove.contains(n));
+    let lost = was.into_iter().filter(|n| !list.contains(n)).collect();
+    (lost, absent)
+}
+
+/// `-k` / `-K` (da-ulc0v): each a slot of its list, a name already there
+/// taking the new spelling in its place, and out of every other place.
+pub(crate) fn add_slots(spec: &mut FieldSpec, keys: &[String], id: bool) {
+    for key in keys {
+        let name = parse_key_decl(key).0;
+        let list = if id { &spec.id_keys } else { &spec.data_keys };
+        let at = list.iter().position(|k| parse_key_decl(k).0 == name);
+        spec.forget_key(name);
+        let list = if id {
+            &mut spec.id_keys
+        } else {
+            &mut spec.data_keys
+        };
+        list.insert(at.unwrap_or(list.len()), key.clone());
+    }
 }
 
 /// IGNORED and TRACKED are statuses, not states a spec can list (da-h1l5o):
@@ -900,13 +981,13 @@ mod tests {
     fn cmd_spec_set_flag_flow_creates_derived_aliases() {
         let db = Db::open_in_memory().unwrap();
 
-        // spec mood --verb switch --state happy --state sad \
+        // spec mood --verb switch --states happy,sad \
         //               --color green --id-template "%field%:%state%"
         let args = SpecSetArgs {
             field: "mood".to_string(),
             from_json: None,
             verb: Some("switch".to_string()),
-            states: vec!["happy".to_string(), "sad".to_string()],
+            states: Some(vec!["happy".to_string(), "sad".to_string()]),
             color: Some("green".to_string()),
             state_colors: vec!["happy=00ff00".to_string()],
             state_descriptions: vec![],
@@ -920,7 +1001,6 @@ mod tests {
             y: None,
             height: None,
             z_index: None,
-            tags: vec![],
             only_listed_keys: None,
             only_listed_states: None,
             remainder: None,
@@ -950,7 +1030,7 @@ mod tests {
             field: "mood".to_string(),
             from_json: None,
             verb: None,
-            states: vec!["happy".to_string()],
+            states: Some(vec!["happy".to_string()]),
             color: None,
             state_colors: vec![],
             state_descriptions: vec![],
@@ -964,7 +1044,6 @@ mod tests {
             y: None,
             height: None,
             z_index: None,
-            tags: vec![],
             only_listed_keys: None,
             only_listed_states: None,
             remainder: None,

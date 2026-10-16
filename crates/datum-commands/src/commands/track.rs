@@ -95,7 +95,7 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
         spec.allowed_states = Some(states);
     }
     // da-a7g: `--tag <name>` is repeatable and idempotent — each flag adds
-    // the tag if absent. To replace the full set, use `datum spec`.
+    // the tag if absent. `datum spec F --tags` sets the whole set.
     for tag in &args.tags {
         spec.add_tag(tag);
     }
@@ -132,20 +132,8 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     // and a bare `KEY=VALUE` assigns (`KEY=` removes one, as `spec
     // --assign`). A key lives in one place: each declaration takes its name
     // out of the others.
-    for (keys, id) in [(&args.data_keys, false), (&args.id_keys, true)] {
-        for key in keys {
-            let name = parse_key_decl(key).0;
-            let list = if id { &spec.id_keys } else { &spec.data_keys };
-            let at = list.iter().position(|k| parse_key_decl(k).0 == name);
-            spec.forget_key(name);
-            let list = if id {
-                &mut spec.id_keys
-            } else {
-                &mut spec.data_keys
-            };
-            list.insert(at.unwrap_or(list.len()), key.clone());
-        }
-    }
+    super::spec::add_slots(&mut spec, &args.data_keys, false);
+    super::spec::add_slots(&mut spec, &args.id_keys, true);
     for (k, v) in args.assign.iter().filter_map(|kv| kv.split_once('=')) {
         if v.is_empty() {
             spec.assign.remove(k);

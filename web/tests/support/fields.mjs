@@ -16,7 +16,7 @@ export const FIXTURE = [
 	'spec coffee --verb occur --color #ffa500',
 	'spec work --verb start --color #0000ff',
 	// `--state good=green` would name a state `good=green`: the colours are `--state-color`.
-	'spec mood --verb switch --state good --state bad --state-color good=#008000 --state-color bad=#ff0000 --color #800080',
+	'spec mood --verb switch --states good,bad --state-color good=#008000 --state-color bad=#ff0000 --color #800080',
 	'spec note --verb add',
 	'occur untracked'
 ];

@@ -140,7 +140,7 @@ fn state_glyph_draws_on_a_moment_switch_dot_and_other_dots_draw_the_field_glyph(
     env.run(&["switch", "mood", "sad", "-m", "-t", "-30"]);
     env.run(&["switch", "mood", "calm", "-m", "-t", "-20"]);
     env.run(&["spec", "mood", "--glyph", "▲"]);
-    env.run(&["spec", "mood", "--state", "sad", "--state-glyph", "sad=▼"]);
+    env.run(&["spec", "mood", "--states", "sad", "--state-glyph", "sad=▼"]);
     assert_eq!(env.svg_marks("mood"), ["▼", "▲"]);
     assert_eq!(env.band_marks("mood"), "▼▲");
 

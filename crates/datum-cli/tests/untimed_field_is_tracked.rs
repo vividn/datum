@@ -66,7 +66,7 @@ fn a_declared_but_unlogged_field_is_tracked_on_every_surface() {
     let db = fresh_db();
     // A spec with no entry behind it: `fields` has always listed it, and
     // the other two surfaces did not see it at all.
-    run_cli(&["spec", "sleep", "--state", "in", "--state", "out"], &db).unwrap();
+    run_cli(&["spec", "sleep", "--states", "in,out"], &db).unwrap();
 
     assert!(!fields_json_ignored(&db, "sleep"));
     assert_eq!(

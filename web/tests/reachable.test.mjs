@@ -348,7 +348,7 @@ describe('on a phone-sized screen', () => {
 		await phone.room('pressed', async (app) => {
 			const { page, submit } = app;
 			// mood is the switch here, so the other four are what wrap the bar.
-			await submit('spec mood --verb switch --state happy --state sad');
+			await submit('spec mood --verb switch --states happy,sad');
 			await track(app, FIELDS.filter((f) => f !== 'mood'));
 			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
 			await chip.waitFor();
