@@ -72,8 +72,18 @@ export interface Admins {
  */
 export interface ChainList extends Admins {
 	chain: string | null;
+	members: Listed[];
 	joining?: { endpoint: string; label: string }[];
 	dissolved?: string;
+}
+
+/** A member as `sync chain list` has it: what admitted it, and when (da-2bvxq). */
+export interface Listed {
+	label: string;
+	/** `genesis`, or `invite <id>`. */
+	via: string;
+	admitted: string;
+	rejoined: string | null;
 }
 
 /** A new member or admin, or an unlock, not yet acknowledged (`sync chain ack`). */
@@ -114,6 +124,8 @@ export interface DbSync {
 	};
 	members: Member[];
 	admins?: Admin[];
+	/** `sync chain list`'s members, revoked ones too. */
+	listed?: Listed[];
 	/** When this copy's sync was paused, while it is. */
 	paused?: string | null;
 	notices?: Notice[];
@@ -128,7 +140,7 @@ export interface DbSync {
  * `sync status --json`: a `DbSync` but for the database's name and the admins, which `sync chain list` has.
  * `this` is always there: only a `DbSync` made for a database in no chain lacks it.
  */
-export type SyncStatus = Omit<DbSync, 'db' | 'admins'> & Required<Pick<DbSync, 'this'>>;
+export type SyncStatus = Omit<DbSync, 'db' | 'admins' | 'listed'> & Required<Pick<DbSync, 'this'>>;
 
 /**
  * A link's `#` held in this tab's `sessionStorage` as well as in memory
@@ -200,6 +212,12 @@ export function joinWords(
 	return { words };
 }
 
+/** The device that redeemed invite `id` of `d`'s, and when it joined: none while the invite is unused. */
+export function redeemer(d: DbSync | undefined, id: string): { label: string; at: string } | undefined {
+	const m = d?.listed?.find((m) => m.via === `invite ${id}`);
+	return m && { label: m.label, at: m.rejoined ?? m.admitted };
+}
+
 /** Whether `db` may leave its chain to join another: it holds nothing but its own data (da-h7pnc). */
 export async function canLeave(db: string): Promise<boolean> {
 	return (await run(['--db', db, ...canLeaveArgv()])).code === 0;
@@ -214,8 +232,8 @@ export function readSync(dbs: string[]): Promise<DbSync[]> {
 			const status = await run(['--db', db, ...syncStatusArgv()]);
 			if (status.code !== 0) return { db, chain: null, members: [] };
 			const s = JSON.parse(status.stdout) as SyncStatus;
-			const { admins } = JSON.parse(members.stdout) as Admins;
-			return { db, chain: s.chain, this: s.this, members: s.members, admins, paused: s.paused, notices: s.notices, clock: s.clock };
+			const { admins, members: listed } = JSON.parse(members.stdout) as ChainList;
+			return { db, chain: s.chain, this: s.this, members: s.members, admins, listed, paused: s.paused, notices: s.notices, clock: s.clock };
 		})
 	);
 }

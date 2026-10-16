@@ -97,6 +97,8 @@ export interface Invite {
 	secret: string;
 	/** RFC 3339. */
 	expires: string;
+	/** Its id, which its redeemer is admitted `via` (da-2bvxq). */
+	id: string;
 }
 
 type Call = { op: 'offer'; invite?: Invite } | { op: 'connect'; ticket: string; label?: string } | { op: 'sync' };

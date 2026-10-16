@@ -23,7 +23,9 @@
 	(da-6du3o). The header's `?` opens the guide to all of it (da-oyvsz).
 	[Add device], or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
 	and its own buttons at its bottom — with the ticket under a closed
-	«connect from a terminal». The cards a link opens — `/sync/approve#…`,
+	«connect from a terminal». Once the invite is used, or expired, the QR and
+	link go: the panel names the device that joined, or says it expired, and
+	offers [Add another device] (da-2bvxq). The cards a link opens — `/sync/approve#…`,
 	which names what the passkey signs before it offers the passkey, since
 	a link is anyone's to send, and `/sync/join#…` (da-l9kdr), which names
 	the inviting device, its chain and the page's database before it joins
@@ -56,6 +58,7 @@
 		purgeWords,
 		qr,
 		readSync,
+		redeemer,
 		syncAct,
 		table,
 		type Admin,
@@ -81,6 +84,7 @@
 		revokeArgv
 	} from '$lib/calls.js';
 	import { act } from '$lib/act.js';
+	import { now } from '$lib/clock.js';
 	import { prefill } from '$lib/bar.js';
 	import { explainGuide } from '$lib/help.js';
 	import { grammar } from './engine.js';
@@ -112,8 +116,8 @@
 	/** More's acts shown, and the whole legend. */
 	let more = false;
 	let key = false;
-	/** The join link of the last device invited, its QR, and until when it works. */
-	let offer: { db: string; link: string; svg: string; until: string } | null = null;
+	/** The join link of the last device invited, its QR, until when it works, and its invite's id. */
+	let offer: { db: string; link: string; svg: string; until: string; expires: number; id: string } | null = null;
 	/** The approval card's outcome: written here, or the code to paste. */
 	let approval: { done?: string; code?: string } = {};
 	/**
@@ -138,6 +142,10 @@
 		void addDevice($inviting);
 		inviting.set(null);
 	}
+
+	// A used or expired invite admits no one (da-2bvxq): its panel says so in place of the QR.
+	$: joined = offer && redeemer(dbs.find((d) => d.db === offer?.db), offer.id);
+	$: expired = !!offer && !joined && +$now >= offer.expires;
 
 	$: if (browser) void read(epoch);
 	$: cur = dbs.find((d) => d.db === db) ?? { db, chain: null, members: [] };
@@ -258,7 +266,8 @@
 		doing(async () => {
 			const invite = await newInvite(db);
 			const link = joinLink(await syncOffer(db, invite));
-			offer = { db, link, svg: await qr(link), until: hm(Date.parse(invite.expires)) };
+			const expires = Date.parse(invite.expires);
+			offer = { db, link, svg: await qr(link), until: hm(expires), expires, id: invite.id };
 		});
 
 	const share = (link: string) => navigator.share({ title: 'Join a datum sync chain', url: link }).catch(() => {});
@@ -511,15 +520,25 @@
 
 		{#if offer}
 			<section class="card offer" data-db={offer.db}>
-				<p class="head">Add a device to {offer.db}: scan this with it, or open the link in its browser. It works once, until {offer.until}.</p>
-				<div class="qr">{@html offer.svg}</div>
-				<details class="terminal">
-					<summary>connect from a terminal</summary>
-					<code class="code ticket">datum sync chain connect '{offer.link}'</code>
-				</details>
+				{#if joined}
+					<p class="head joined">{joined.label} joined at {hm(Date.parse(joined.at))}.</p>
+				{:else if expired}
+					<p class="head expired">This invite expired at {offer.until}, unused.</p>
+				{:else}
+					<p class="head">Add a device to {offer.db}: scan this with it, or open the link in its browser. It works once, until {offer.until}.</p>
+					<div class="qr">{@html offer.svg}</div>
+					<details class="terminal">
+						<summary>connect from a terminal</summary>
+						<code class="code ticket">datum sync chain connect '{offer.link}'</code>
+					</details>
+				{/if}
 				<div class="actions">
-					<button type="button" class="command" use:act={'run'} on:click={() => navigator.clipboard?.writeText(offer?.link ?? '')}>Copy link</button>
-					{#if canShare}<button type="button" class="command" use:act={'open'} on:click={() => offer && share(offer.link)}>Share</button>{/if}
+					{#if joined || expired}
+						<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => offer && addDevice(offer.db)}>Add another device</button>
+					{:else}
+						<button type="button" class="command" use:act={'run'} on:click={() => navigator.clipboard?.writeText(offer?.link ?? '')}>Copy link</button>
+						{#if canShare}<button type="button" class="command" use:act={'open'} on:click={() => offer && share(offer.link)}>Share</button>{/if}
+					{/if}
 					<button type="button" class="command" use:act={'show'} on:click={() => (offer = null)}>Done</button>
 				</div>
 			</section>

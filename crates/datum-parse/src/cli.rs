@@ -995,7 +995,8 @@ pub enum SyncCommand {
     },
     /// Hidden: `datum sync new-invite [--reader] [--expires <DUR>]
     /// [--admin-key <FILE>]` — write `invite`'s record and print its
-    /// secret, for datum.day's transport to serve.
+    /// secret, expiry and id (its redeemer's `via`), for datum.day's
+    /// transport to serve.
     NewInvite {
         reader: bool,
         filter: Option<SyncFilter>,

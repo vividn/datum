@@ -671,12 +671,17 @@ fn invite(
         );
     }
     let (secret, expires_at) = datum_core::db::peers::invite_secret(expires);
+    // The id names the invite in its redeemer's `via` (da-2bvxq).
+    let id = ulid::Ulid::new().to_string().to_lowercase();
     if print {
-        println!("{}", json!({"secret": secret, "expires": expires_at}));
+        println!(
+            "{}",
+            json!({"secret": secret, "expires": expires_at, "id": id})
+        );
     }
     let record = json!({
         "type": "invite", "chain": chain.id,
-        "invite_id": ulid::Ulid::new().to_string().to_lowercase(),
+        "invite_id": id,
         "secret_hash": chain::secret_hash(&secret), "expires": expires_at,
         "caps": caps,
         "created": chrono::Utc::now().to_rfc3339(),

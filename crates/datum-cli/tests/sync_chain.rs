@@ -176,6 +176,36 @@ fn admit(member: &Copy, copy: &Copy, label: &str, admin_key: Option<&str>) {
     assert!(member.send(copy).0);
 }
 
+/// `new-invite` prints the invite's id, which its redeemer's `via` names:
+/// how datum.day's invite panel hears that its invite was used (da-2bvxq).
+#[test]
+fn new_invite_prints_the_id_its_redeemer_is_admitted_via() {
+    let (a, b) = (Copy::new(), Copy::new());
+    let invite = json(&a.ok(&["sync", "new-invite"]));
+    let (secret, id) = (
+        invite["secret"].as_str().unwrap(),
+        invite["id"].as_str().unwrap(),
+    );
+    let hello = ["sync", "handshake", &b.id(), "--label", "b", "--addr", "{}"];
+    let out = a.run(
+        &[&hello[..], &["--invite", secret, "--chain", ""]].concat(),
+        "",
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let list = json(&a.ok(&["sync", "chain", "list", "--json"]));
+    let joined = list["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["label"] == "b")
+        .unwrap();
+    assert_eq!(joined["via"], format!("invite {id}"));
+}
+
 /// A refusal of a kind a redeemer acts on prints the kind on stdout, which
 /// is how datum.day's store hears it (da-b6xh6); one of no kind prints none.
 #[test]
