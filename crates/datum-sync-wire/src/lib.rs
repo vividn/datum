@@ -39,6 +39,11 @@
 //!   process that commits, and a commit rewrites every index page the chunk
 //!   touched, however few ops it held. So is the side verifying, whose hash
 //!   of a big history takes minutes (da-0mwws).
+//! - **One applies.** Every session of a copy runs on one thread, so a chunk
+//!   that does not yield is sized by the clock and the apply yields between
+//!   chunks; and one session applies at a time ([`Store::apply_gate`]),
+//!   which a copy holding it answers a new one with: [`Why::Busy`], no
+//!   failure on either side (da-h31wt).
 //! - **Versions.** Two copies one version apart is the ordinary case:
 //!   datum.day deploys on its schedule, a person's CLI updates on theirs. So
 //!   a change to a frame is additive (da-2bnr6): a new field is optional and
@@ -137,6 +142,18 @@ pub trait Store {
     }
     /// `done` of a session's `of` received ops are applied.
     fn progress(&self, _done: usize, _of: usize) {}
+    /// Whether a session holds this copy's [`apply_gate`](Store::apply_gate),
+    /// in this process or another: a session begun meanwhile is refused as
+    /// [`Why::Busy`], and would only bring the same ops again (da-h31wt).
+    fn applying(&self) -> bool {
+        false
+    }
+    /// Wait until no other session applies into this copy, and hold it
+    /// until what this returns drops: one applies at a time, and its writes
+    /// wait out no other's.
+    fn apply_gate(&self) -> impl Future<Output = Result<impl Sized>> {
+        async { Ok(()) }
+    }
     /// `done` of the `of` ops a round sends are on the wire.
     fn sent(&self, _done: usize, _of: usize) {}
     /// `n` of the ops a round receives have come.
@@ -316,6 +333,9 @@ struct Hello {
     /// copy before da-b6xh6, is refused the old way.
     #[serde(default)]
     typed: bool,
+    /// The dialer reads [`Why::Busy`]; a copy before da-h31wt does not.
+    #[serde(default)]
+    busy: bool,
     /// Where the dialer last saw the chain's members (da-fly3f); a redeemer,
     /// not yet one of them, says none.
     #[serde(default)]
@@ -354,6 +374,10 @@ impl Reply {
         match (hello.typed, kind) {
             (false, _) => Reply::Refused(why),
             (true, Why::NotMember) if !hello.proves => Reply::Refusal {
+                why,
+                kind: Why::Other,
+            },
+            (true, Why::Busy) if !hello.busy => Reply::Refusal {
                 why,
                 kind: Why::Other,
             },
@@ -507,6 +531,9 @@ pub enum Why {
     Paused,
     /// The dialer is no member of the chain as the refusing copy holds it.
     NotMember,
+    /// The refusing copy is applying another session's ops: try again
+    /// later, which is no failure (da-h31wt).
+    Busy,
     Other,
 }
 
@@ -570,30 +597,55 @@ async fn busy<T>(s: &mut SendStream, work: impl Future<Output = Result<T>>) -> R
     }
 }
 
-/// Apply `ops` in chunks, and between chunks send a [`BUSY`]: a [`CHUNK`]
-/// at a time, or where the store [`yields`](Store::yields), twice the last
-/// up to [`MAX_CHUNK`], each run [`busy`].
+/// Apply `ops` under the store's [`apply_gate`](Store::apply_gate), in
+/// chunks, and between chunks send a [`BUSY`]: a [`CHUNK`] first, then
+/// where the store [`yields`](Store::yields) twice the last, each run
+/// [`busy`], and otherwise as many as take [`idle`]`/16`, at most twice the
+/// last — never over [`MAX_CHUNK`].
 async fn apply(
     store: &impl Store,
     s: &mut SendStream,
     ops: &[String],
     rep: &mut Report,
 ) -> Result<()> {
+    if ops.is_empty() {
+        return Ok(());
+    }
     // Test knob: the keepalives off (the mutation control).
     let keepalive = env::<u8>("DATUM_SYNC_TEST_KEEPALIVE") != Some(0);
+    // The peer has read this round's last frame, and skips a BUSY: one as
+    // the wait begins, which may follow another session's chunk (da-h31wt).
+    if keepalive {
+        put(s, BUSY).await?;
+    }
+    let _gate = busy(s, store.apply_gate()).await?;
     let (mut done, mut size) = (0, CHUNK);
     while done < ops.len() {
         if done > 0 && keepalive {
             put(s, BUSY).await?;
         }
+        // Every session of a copy runs on one thread, and a chunk applied
+        // and a BUSY sent never wait: without this, one catch-up held it
+        // to the end, and every other session's peer heard nothing
+        // (da-h31wt).
+        n0_future::future::yield_now().await;
         let chunk = &ops[done..ops.len().min(done + size)];
+        let took = n0_future::time::Instant::now();
         let applied = match store.yields() {
             false => store.apply(chunk).await?,
-            true => {
-                size = (size * 2).min(MAX_CHUNK);
-                busy(s, store.apply(chunk)).await?
+            true => busy(s, store.apply(chunk)).await?,
+        };
+        // A chunk that does not yield holds every session's thread: sized
+        // by the clock, so a slow copy's leave the others room (da-h31wt).
+        let pace = match store.yields() {
+            true => 2 * size,
+            false => {
+                let took = took.elapsed().as_micros().max(1);
+                (size as u128 * (idle() / 16).as_micros() / took).clamp(1, 2 * size as u128)
+                    as usize
             }
         };
+        size = pace.min(MAX_CHUNK);
         done += chunk.len();
         store.progress(done, ops.len());
         for why in &applied.refused {
@@ -739,10 +791,32 @@ pub async fn dial(
     invite: Option<&Redeem<'_>>,
 ) -> Result<Report> {
     let id = addr.id.to_string();
+    if store.applying() {
+        return Err(Failed(Failure::Refused(Why::Busy), format!("this copy {BUSY_WHY}")).into());
+    }
     let rep = session(store, ep, addr, invite).await;
+    // Busy is no session, and nothing failed (da-h31wt).
+    let busy = rep.as_ref().err().and_then(failure) == Some(Failure::Refused(Why::Busy));
+    if busy {
+        return rep;
+    }
     record(store, &id, &rep).await;
     rep
 }
+
+/// The reason a dialer closes with when its own handshake found it busy,
+/// after the acceptor welcomed it: the acceptor records nothing (da-h31wt).
+const CLOSED_BUSY: &[u8] = b"busy";
+
+/// Whether `e` is the peer closing with [`CLOSED_BUSY`].
+fn closed_busy(e: &anyhow::Error) -> bool {
+    e.chain().any(|e| {
+        matches!(e.downcast_ref(), Some(ConnectionError::ApplicationClosed(c)) if c.reason == CLOSED_BUSY)
+    })
+}
+
+/// Why a copy applying another session's ops refuses one more.
+const BUSY_WHY: &str = "is busy applying another sync's changes; it syncs again once done";
 
 async fn session(
     store: &impl Store,
@@ -767,6 +841,7 @@ async fn session(
         holds,
         proves: invite.is_none(),
         typed: true,
+        busy: true,
         known: match invite {
             Some(_) => Vec::new(),
             None => known(store).await,
@@ -807,12 +882,15 @@ async fn session(
                 if left.is_some() {
                     store.leave(false).await?;
                 }
-                Ok(added)
+                Ok::<_, anyhow::Error>(added)
             };
             match admitted.await {
                 Ok(added) => (label, added, known),
                 Err(e) => {
-                    conn.close(0u32.into(), b"refused");
+                    let busy = e
+                        .downcast_ref::<Refusal>()
+                        .is_some_and(|r| r.0 == Why::Busy);
+                    conn.close(0u32.into(), if busy { CLOSED_BUSY } else { b"refused" });
                     return Err(e);
                 }
             }
@@ -866,6 +944,7 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
         proves: false,
         known: Vec::new(),
         typed: true,
+        busy: true,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -961,6 +1040,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let verdict = loop {
         let verdict = match conn.remote_id() == ep.id() {
             true => Err((Why::Other, COPY.to_string())),
+            false if !diff && store.applying() => Err((Why::Busy, BUSY_WHY.to_string())),
             false => store
                 .handshake(
                     &id,
@@ -996,7 +1076,8 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
             let reply = Reply::refusal(&hello, kind, why.clone());
             put_json(&mut s, &reply).await?;
             let _ = timeout(Duration::from_secs(5), conn.closed()).await;
-            bail!("refused {} ({}): {why}", hello.label, short(&id));
+            let why = format!("refused {} ({}): {why}", hello.label, short(&id));
+            return Err(Failed(Failure::Refused(kind), why).into());
         }
     };
     let welcome = Reply::Welcome {
@@ -1022,6 +1103,10 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         Ok(()) => {
             let _ = timeout(Duration::from_secs(5), conn.closed()).await;
             Ok(rep)
+        }
+        Err(e) if closed_busy(&e) => {
+            let why = format!("{}: {e:#}", rep.label);
+            return Err(Failed(Failure::Refused(Why::Busy), why).into());
         }
         Err(e) => Err(Lost(rep, e).into()),
     };
@@ -1062,7 +1147,7 @@ pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Resul
         let next = rep.as_ref().err().and_then(failure);
         if !matches!(
             next,
-            Some(Failure::Unreachable | Failure::Refused(Why::UnknownInvite))
+            Some(Failure::Unreachable | Failure::Refused(Why::UnknownInvite | Why::Busy))
         ) {
             break;
         }
@@ -1192,6 +1277,7 @@ mod tests {
                     holds: 3,
                     proves: true,
                     typed: true,
+                    busy: true,
                     known: vec![addr.clone()],
                     version: version.clone(),
                 },
@@ -1222,6 +1308,7 @@ mod tests {
                     Why::InviteExpired,
                     Why::Paused,
                     Why::NotMember,
+                    Why::Busy,
                     Why::Other,
                 ],
             ),
@@ -1406,6 +1493,16 @@ mod tests {
             ..typed
         };
         assert_eq!(said(&proves)["Refusal"]["kind"], "not-member");
+        // Nor one that says nothing of `busy`, a copy before da-h31wt.
+        let said = |hello: &Hello| {
+            serde_json::to_value(Reply::refusal(hello, Why::Busy, "busy".into())).unwrap()
+        };
+        assert_eq!(said(&proves)["Refusal"]["kind"], "other");
+        let busy = Hello {
+            busy: true,
+            ..proves
+        };
+        assert_eq!(said(&busy)["Refusal"]["kind"], "busy");
         // An older acceptor's refusal reads, and «unknown invite» still
         // sends a redeemer on to the next address.
         for (words, kind) in [

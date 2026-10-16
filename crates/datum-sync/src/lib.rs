@@ -16,6 +16,7 @@
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::fs::{File, TryLockError};
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -73,6 +74,9 @@ pub fn label() -> String {
 pub fn describe_self(db: &Db, label: Option<&str>, kind: &str) -> Result<()> {
     Ok(db.sync_describe_self(label, kind, user().as_deref(), &host())?)
 }
+
+/// A copy applying another session's ops refused this one.
+const BUSY: Failure = Failure::Refused(Why::Busy);
 
 fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
     std::env::var(name).ok()?.parse().ok()
@@ -256,6 +260,29 @@ impl Store for DbStore<'_> {
         self.tell(|t| t.applied = (done, of));
     }
 
+    fn applying(&self) -> bool {
+        let gate = apply_gate(self.0).and_then(|p| File::open(p).ok());
+        gate.is_some_and(|f| matches!(f.try_lock_shared(), Err(TryLockError::WouldBlock)))
+    }
+
+    /// A lock on `<db>.applying`, so the sessions of every process take
+    /// turns. Where the filesystem has no locks, none is held.
+    async fn apply_gate(&self) -> Result<impl Sized> {
+        let Some(path) = apply_gate(self.0) else {
+            return Ok(None);
+        };
+        let gate = File::options().create(true).append(true).open(&path)?;
+        loop {
+            match gate.try_lock() {
+                Ok(()) => return Ok(Some(gate)),
+                Err(TryLockError::WouldBlock) => {
+                    tokio::time::sleep(Duration::from_millis(100)).await
+                }
+                Err(TryLockError::Error(_)) => return Ok(None),
+            }
+        }
+    }
+
     fn sent(&self, done: usize, of: usize) {
         self.tell(|t| t.sent = (done, of));
     }
@@ -364,6 +391,11 @@ impl Store for DbStore<'_> {
         offline: bool,
         met: &[EndpointAddr],
     ) -> Result<()> {
+        // A session that gave way to a write on this file failed nobody:
+        // `run` tries again at its next tick (da-h31wt).
+        if error.is_some_and(|e| e.contains("database is locked")) {
+            return Ok(());
+        }
         self.0
             .sync_record_session(peer, vector, verify, error, offline)?;
         if met.is_empty() {
@@ -377,9 +409,22 @@ impl Store for DbStore<'_> {
     }
 }
 
+/// The file whose lock is `db`'s one applying session (da-h31wt); none for
+/// a database with no file.
+fn apply_gate(db: &Db) -> Option<std::path::PathBuf> {
+    let mut path = db.path()?.as_os_str().to_owned();
+    path.push(".applying");
+    Some(path.into())
+}
+
 /// A handshake's error, with its kind where it is a [`Refusal`] the wire
 /// sends (da-b6xh6).
 fn refusal(e: DatumError) -> anyhow::Error {
+    // Another process's write held the file past `run`'s YIELD: try again,
+    // no failure (da-h31wt). Matched on the text, as `run` matches it.
+    if e.to_string().contains("database is locked") {
+        return Refusal(Why::Busy, e.to_string()).into();
+    }
     let DatumError::Refused(kind, why) = e else {
         return e.into();
     };
@@ -590,6 +635,7 @@ fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
             "sync is paused on {from}, not on this copy: resume it there (`datum sync \
              resume`, or tap «sync paused» on datum.day) and connect again"
         ),
+        Some(Failure::Refused(Why::Busy)) => format!("connect again once {from} is done"),
         Some(Failure::Refused(Why::Other | Why::NotMember)) => {
             "`datum sync status` shows where this copy stands".into()
         }
@@ -623,6 +669,8 @@ pub fn now_all(db: &Db) -> Result<()> {
         {
             match rep {
                 Ok(rep) => println!("{rep}"),
+                // It syncs with this copy once done: no failure (da-h31wt).
+                Err(e) if failure(&e) == Some(BUSY) => println!("{}: {e:#}", p.label),
                 Err(e) => {
                     failed += 1;
                     println!("{}: {e:#}", p.label);
@@ -718,6 +766,7 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
         // push with the gap it waits.
         let mut pushed: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
         let mut retry: BTreeMap<String, (Instant, Duration)> = BTreeMap::new();
+        let mut busy: BTreeMap<String, Instant> = BTreeMap::new();
         let (mut mine, mut seen) = (ep.watch_addr(), ep.addr());
         let mut tick = tokio::time::interval(Duration::from_millis(500));
         let ctrl_c = tokio::signal::ctrl_c();
@@ -760,6 +809,16 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                             eprintln!("{} gave way to a write: {e:#}", now());
                             pushed.clear();
                         }
+                        // A copy applying refused it, here or there: no failure.
+                        // The one applying pushes once done; a push is tried
+                        // again after the first gap, which does not grow
+                        // (da-h31wt).
+                        (Err(e), peer) if failure(&e) == Some(BUSY) => {
+                            if let Some((id, _)) = peer {
+                                pushed.remove(&id);
+                                busy.insert(id, Instant::now() + backoff(None));
+                            }
+                        }
                         (Err(e), None) => eprintln!("{} incoming: {e:#}", now()),
                         (Err(e), Some((id, label))) => {
                             let wait = backoff(retry.get(&id).map(|r| r.1));
@@ -793,14 +852,17 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                         Err(e) => eprintln!("{} queued changes wait: {e:#}", now()),
                     }
                     // Paused (da-wlbyx), it idles: an incoming session's
-                    // handshake refuses, and nothing is pushed.
+                    // handshake refuses, and nothing is pushed. Applying, it
+                    // waits: each push would bring the same ops (da-h31wt).
                     let peers = match db.sync_paused()? {
                         Some(_) => Vec::new(),
+                        None if store.applying() => Vec::new(),
                         None => synced_peers(db)?,
                     };
                     let vector = db.sync_vector()?;
                     for p in peers {
-                        let waiting = retry.get(&p.id).is_some_and(|r| r.0 > Instant::now());
+                        let waiting = retry.get(&p.id).is_some_and(|r| r.0 > Instant::now())
+                            || busy.get(&p.id).is_some_and(|at| *at > Instant::now());
                         if waiting || pushed.get(&p.id) == Some(&vector) {
                             continue;
                         }

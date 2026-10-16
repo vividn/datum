@@ -289,7 +289,11 @@ member (the transport's `Failure::Unreachable`) is recorded as such
 (`sync_peers.last_error_offline`), and `sync status` calls the member
 `offline`, with when it was last seen and none of the words, which `--json`'s
 `error` still carries; one that reached it and then failed is `error`, with
-them (da-ueb4p). Each side says in its handshake where it last
+them (da-ueb4p). One session applies into a database at a time, in any
+process (`<db>.applying`, da-h31wt): another waits its turn sending BUSYs, a
+copy applying refuses a new session as busy and pushes to every member once
+done, and neither side counts busy, or giving way to a write, as a failure.
+Each side says in its handshake where it last
 saw the chain's members (`known` on `Hello` and `Welcome`), and the other
 keeps what it has not itself seen once the session has synced, so two copies
 one inviter admitted dial each other (da-fly3f); a member with no address yet

@@ -1062,7 +1062,8 @@ fn daemon_run_serves_every_chained_database() {
 /// `sync run` is the one that gives way (da-lk1s2): with a write holding its
 /// file, it fails a session within its short busy timeout, where any other
 /// connection waits out 5 s, and tries every peer again at its next tick
-/// rather than after a failed push's backoff.
+/// rather than after a failed push's backoff — quietly: the peer it refused
+/// records no error (da-h31wt).
 #[test]
 fn run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once() {
     let (a, b) = paired();
@@ -1092,6 +1093,12 @@ fn run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once() {
     let took = start.elapsed();
     assert!(took < Duration::from_secs(4), "a gave way after {took:?}");
     assert!(!a.has("walk"));
+
+    // Giving way failed nobody: b, refused while a's file is held, does
+    // not say so in its status (da-h31wt).
+    std::thread::sleep(Duration::from_millis(500));
+    let said = b.query("SELECT COUNT(*) FROM sync_peers WHERE last_error IS NOT NULL");
+    assert_eq!(said, "0", "{}", b.ok(&["sync", "status"]));
 
     write.execute_batch("COMMIT").unwrap();
     eventually("b's walk reaching a", || a.has("walk"));
@@ -1582,6 +1589,82 @@ fn a_first_sync_says_how_far_it_is_on_both_sides() {
         rest.contains(" ops sent, waiting for it to apply them ("),
         "{rest}"
     );
+}
+
+/// A slow copy catching up from three members at once (da-h31wt): vividn's,
+/// after a purge, lost every session but one to «connection lost: timed
+/// out» or «database is locked». x applies at 20 ms an op, on a 3 s
+/// timeout, while three members running `sync run` each bring it 100
+/// entries, and a command is typed on it meanwhile: all four converge, and
+/// none of them says a session failed.
+#[test]
+fn a_slow_copy_catches_up_from_three_members_at_once() {
+    let mut x = Copy::new();
+    let mut peers: Vec<Copy> = (0..3).map(|_| Copy::new()).collect();
+    for p in &peers {
+        let (mut inviting, ticket) = x.invite(&[]);
+        p.ok(&["sync", "chain", "connect", &ticket]);
+        assert!(inviting.finish().0);
+    }
+    for (i, p) in peers.iter().enumerate() {
+        for n in 0..100 {
+            p.ok(&["occur", &format!("p{i}"), &format!("n={n}")]);
+        }
+    }
+    let said = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let mut runs = Vec::new();
+    let mut up = |c: &Copy| {
+        let mut child = Killed(c.cmd(&["sync", "run"]).spawn().unwrap());
+        for rx in [
+            lines(child.0.stdout.take().unwrap()),
+            lines(child.0.stderr.take().unwrap()),
+        ] {
+            let (said, who) = (said.clone(), c.env[0].1);
+            std::thread::spawn(move || {
+                rx.iter()
+                    .for_each(|l| said.lock().unwrap().push(format!("{who}: {l}")))
+            });
+        }
+        runs.push(child);
+    };
+    let timeout = ("DATUM_SYNC_TIMEOUT_S", "3");
+    x.env
+        .extend([timeout, ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "20")]);
+    up(&x);
+    for p in &mut peers {
+        p.env.extend([timeout, ("DATUM_SYNC_TEST_RETRY_MS", "200")]);
+        up(p);
+    }
+    let count = || x.query("SELECT COUNT(*) FROM entries WHERE field LIKE 'p_'");
+    let start = Instant::now();
+    while count() == "0" {
+        assert!(
+            start.elapsed() < Duration::from_secs(30),
+            "x applied nothing"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    x.ok(&["occur", "typed"]);
+    assert_ne!(count(), "300", "the command was typed after the catch-up");
+    while !peers.iter().all(|p| p.has("typed") && p.hash() == x.hash()) {
+        assert!(
+            start.elapsed() < Duration::from_secs(120),
+            "converged: {:#?}",
+            said.lock().unwrap()
+        );
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    drop(runs);
+    let said = said.lock().unwrap();
+    let failed: Vec<&String> = said
+        .iter()
+        .filter(|l| {
+            ["locked", "timed out", "connection lost", "failed"]
+                .iter()
+                .any(|w| l.contains(w))
+        })
+        .collect();
+    assert!(failed.is_empty(), "{failed:#?}");
 }
 
 // ─── The sync chain (da-odwc7) ──────────────────────────────────────────────
