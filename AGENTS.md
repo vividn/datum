@@ -293,10 +293,14 @@ this copy has an address for. Bare `sync` on a copy a `sync run` serves dials
 nothing itself: it connects to the run's socket beside the database,
 `<db>.sync`, and the run dials every member at once and answers each
 session's line, so the endpoint key is bound once and the traffic is not
-doubled; with no run listening it dials as before (da-tltjj). `sync run` tries a member it failed to reach
+doubled; with no run listening it dials as before (da-tltjj). A round carries at most 8,192 ops, the lowest
+by HLC so each applies whole, and applies before the next is sent; rounds go
+on while full, so a big catch-up finishes in one session and one cut short
+loses a round (da-ymgiv). `sync run` tries a member it failed to reach
 again after a minute, the gap doubling to half an hour, dials every member when
-it starts or its address changes, and a failure the peer's row already says
-writes nothing (da-u1ul1). A session that failed before it reached the
+it starts or its address changes, dials no member it is already in a session
+with unless `datum sync` asks, and a failure the peer's row already says writes nothing (da-u1ul1). A
+session that failed before it reached the
 member (the transport's `Failure::Unreachable`) is recorded as such
 (`sync_peers.last_error_offline`), and `sync status` calls the member
 `offline`, with when it was last seen and none of the words, which `--json`'s

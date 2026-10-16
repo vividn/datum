@@ -16,7 +16,9 @@
 //!   chain's records ([`Reply::Prove`]), and admits it if they make it a
 //!   member (da-2u95o). Then rounds: each side sends its version vector, then the ops
 //!   the other lacks, one frame each, and an empty frame, and applies what
-//!   came — until a round in which neither vector moved. Last the verify
+//!   came — until a round in which neither vector moved. A round carries at
+//!   most a [`ROUND`] of ops, the lowest by HLC, so a big catch-up moves in
+//!   rounds that each apply before the next is sent (da-ymgiv). Last the verify
 //!   hashes, the dialer's first, and the dialer closes.
 //! - **Diff.** ALPN `datum/sync-diff/1` (da-n0ruf), which a copy before it
 //!   refuses: after the same handshake the dialer sends its state hash and
@@ -91,13 +93,27 @@ const MAX_FRAME: usize = 64 << 20;
 const MAX_HELLO: usize = 64 << 10;
 /// A chain's records, from a dialer not yet admitted.
 const MAX_RECORDS: usize = 1 << 20;
-/// A session in which both sides keep writing still ends.
+/// A session in which both sides keep writing still ends: after this many
+/// rounds that were not full.
 const MAX_ROUNDS: usize = 16;
 /// Before its hash, from a copy whose state moved after the last round: a
 /// write or another session's apply landed under the verify, so the hash is
 /// not of the vector the peer judges it by (da-o2arv). A copy before it reads
 /// a hash that differs, a MISMATCH, as it always did.
 const MOVED: &str = "moved ";
+
+/// The most ops a round sends (da-ymgiv): what a session cut short loses,
+/// and what each side holds of it at once. A full round has more behind it,
+/// and the session goes on while rounds are full, however many.
+const ROUND: usize = 8192;
+
+/// [`ROUND`], or `DATUM_SYNC_TEST_ROUND` (the tests).
+fn round() -> usize {
+    env("DATUM_SYNC_TEST_ROUND")
+        .filter(|&n| n > 0)
+        .unwrap_or(ROUND)
+}
+
 /// Ops per apply — the first, where a store [`yields`](Store::yields).
 const CHUNK: usize = 64;
 /// The most ops a doubling chunk grows to: one CLI process applying 8,192
@@ -138,7 +154,9 @@ pub trait Store {
     async fn vector(&self) -> Result<Vector>;
     /// Every op `since` lacks, as JSON lines — for `peer`, whose filter, if
     /// it is a filtered reader, the lines pass (da-u81u1).
-    async fn ops_since(&self, peer: &str, since: &Vector) -> Result<Vec<String>>;
+    /// At most `limit` of them, the lowest by HLC (da-ymgiv), a round that
+    /// applies whole: each op's deps sort before it.
+    async fn ops_since(&self, peer: &str, since: &Vector, limit: usize) -> Result<Vec<String>>;
     async fn apply(&self, ops: &[String]) -> Result<Applied>;
     /// Whether [`apply`](Store::apply) awaits work done off this thread,
     /// so that a session can send meanwhile: a browser's CLI process.
@@ -163,6 +181,9 @@ pub trait Store {
     fn sent(&self, _done: usize, _of: usize) {}
     /// `n` of the ops a round receives have come.
     fn got(&self, _n: usize) {}
+    /// A session served to `peer` begins (`on`), or ends: a copy serving
+    /// one need not dial it as well (da-ymgiv).
+    fn serving(&self, _peer: &str, _on: bool) {}
     /// The session's ops are all applied, and its verify begins.
     fn verifying(&self) {}
     /// The state hash, over what a session with `peer` shares. One whose
@@ -345,6 +366,10 @@ struct Hello {
     /// not yet one of them, says none.
     #[serde(default)]
     known: Vec<EndpointAddr>,
+    /// The most ops a round of the dialer's carries ([`ROUND`]); a copy
+    /// before da-ymgiv says none, and ends after [`MAX_ROUNDS`] rounds.
+    #[serde(default)]
+    round: usize,
     #[serde(flatten)]
     version: Version,
 }
@@ -357,6 +382,9 @@ enum Reply {
         /// Where the acceptor last saw the chain's members (da-fly3f).
         #[serde(default)]
         known: Vec<EndpointAddr>,
+        /// As [`Hello`]'s.
+        #[serde(default)]
+        round: usize,
         #[serde(flatten)]
         version: Version,
     },
@@ -470,6 +498,9 @@ pub struct Report {
     /// The members' addresses the peer passed on.
     #[serde(skip)]
     met: Vec<EndpointAddr>,
+    /// The most ops a round of the peer's carries, as its handshake said.
+    #[serde(skip)]
+    round: usize,
     /// The chain of one this copy left to redeem the invite, and the chain
     /// it joined (da-h7pnc).
     pub left: Option<(String, String)>,
@@ -491,6 +522,7 @@ impl Report {
             diffed: false,
             vector: BTreeMap::new(),
             left: None,
+            round: 0,
         }
     }
 }
@@ -670,8 +702,8 @@ async fn exchange(
     dialer: bool,
     rep: &mut Report,
 ) -> Result<()> {
-    let mut last = None;
-    for _ in 0..MAX_ROUNDS {
+    let (mut last, mut quiet) = (None, 0);
+    while quiet < MAX_ROUNDS {
         let mine = store.vector().await?;
         put_json(s, &mine).await?;
         let theirs: Vector = get_json(r, MAX_FRAME).await?;
@@ -680,10 +712,13 @@ async fn exchange(
         if last.as_ref() == Some(&round) {
             break;
         }
-        let ops = store.ops_since(&rep.id, &round.1).await?;
+        let ops = store.ops_since(&rep.id, &round.1, self::round()).await?;
+        // Counted as each goes, so a session cut short says what it cost.
+        let sent = &mut rep.sent;
         let send = async {
             for (i, op) in ops.iter().enumerate() {
                 put(s, op.as_bytes()).await?;
+                *sent += 1;
                 store.sent(i + 1, ops.len());
             }
             put(s, b"").await
@@ -700,8 +735,12 @@ async fn exchange(
             }
         };
         let ((), lines) = futures_util::future::try_join(send, recv).await?;
-        rep.sent += ops.len();
+        // Both sides read the same two counts against the same two caps. A
+        // copy before da-ymgiv says round 0 and counts every round: so must
+        // this side, or the two end the session at different rounds.
+        let full = rep.round > 0 && (ops.len() >= self::round() || lines.len() >= rep.round);
         apply(store, s, &lines, rep).await?;
+        quiet += usize::from(!full);
         last = Some(round);
     }
     // A big history hashes for minutes on each side at once (da-0mwws).
@@ -874,6 +913,7 @@ async fn session(
             Some(_) => Vec::new(),
             None => known(store).await,
         },
+        round: round(),
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -882,11 +922,12 @@ async fn session(
         put_json(&mut s, &store.records().await?).await?;
         reply = get_json(&mut r, MAX_HELLO).await?;
     }
-    let (label, added, met) = match reply {
+    let (label, added, met, round) = match reply {
         Reply::Welcome {
             label,
             addr,
             known,
+            round,
             version,
         } => {
             // Its own handshake may refuse too (a paused copy): only then
@@ -913,7 +954,7 @@ async fn session(
                 Ok::<_, anyhow::Error>(added)
             };
             match admitted.await {
-                Ok(added) => (label, added, known),
+                Ok(added) => (label, added, known, round),
                 Err(e) => {
                     let busy = e
                         .downcast_ref::<Refusal>()
@@ -934,6 +975,7 @@ async fn session(
         Reply::Prove => bail!("{} asked for what it was not offered", short(&id)),
     };
     let mut rep = Report::new(label, id, added, invite.is_some(), met);
+    rep.round = round;
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
     if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
         rep.left = Some((old, new));
@@ -973,6 +1015,7 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
         known: Vec::new(),
         typed: true,
         busy: true,
+        round: 0,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -1059,6 +1102,7 @@ async fn accepted(incoming: Incoming) -> Result<Connection> {
 pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
     let conn = accepted(incoming).await?;
     let id = conn.remote_id().to_string();
+    let _served = Served::new(store, &id);
     let (mut s, mut r) = within(async { Ok(conn.accept_bi().await?) }).await?;
     let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
     // A diff admits no one: it answers a member this copy holds, redeems
@@ -1112,11 +1156,13 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         label: store.label(),
         addr: ep.addr(),
         known: self::known(store).await,
+        round: round(),
         version: store.version(),
     };
     put_json(&mut s, &welcome).await?;
     let redeemed = hello.invite.is_some() && !diff;
     let mut rep = Report::new(hello.label, id.clone(), !known, redeemed, hello.known);
+    rep.round = hello.round;
     if diff {
         let theirs: String = get_json(&mut r, MAX_HELLO).await?;
         let (hash, digest) = store.digest(&id).await?;
@@ -1140,6 +1186,22 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     };
     record(store, &id, &done).await;
     done
+}
+
+/// A session [`serve`] is serving, said to its store as it begins and ends.
+struct Served<'a, S: Store>(&'a S, String);
+
+impl<'a, S: Store> Served<'a, S> {
+    fn new(store: &'a S, peer: &str) -> Self {
+        store.serving(peer, true);
+        Served(store, peer.to_string())
+    }
+}
+
+impl<S: Store> Drop for Served<'_, S> {
+    fn drop(&mut self) {
+        self.0.serving(&self.1, false);
+    }
 }
 
 /// Redeem `ticket`'s invite and sync, with the first of its addresses that
@@ -1307,6 +1369,7 @@ mod tests {
                     typed: true,
                     busy: true,
                     known: vec![addr.clone()],
+                    round: ROUND,
                     version: version.clone(),
                 },
             ),
@@ -1316,6 +1379,7 @@ mod tests {
                     label: "phone".into(),
                     addr: addr.clone(),
                     known: vec![addr.clone()],
+                    round: ROUND,
                     version,
                 },
             ),

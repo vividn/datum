@@ -350,11 +350,17 @@ fn parse_pipe(rest: &mut Rest) -> Result<SyncCommand> {
             peer: opts(rest, &["peer"], &[], 0..=0)?.get("peer"),
         },
         Some("ops") => {
-            let o = opts(rest, &["since", "peer"], &["no-overlap"], 0..=0)?;
+            let o = opts(rest, &["since", "peer", "limit"], &["no-overlap"], 0..=0)?;
             SyncCommand::Ops {
                 since: o.get("since"),
                 overlap: !o.on("no-overlap"),
                 peer: o.get("peer"),
+                limit: match o.get("limit") {
+                    Some(n) => Some(n.parse().map_err(|_| {
+                        ParseError::InvalidArg(format!("--limit is a count, not {n}"))
+                    })?),
+                    None => None,
+                },
             }
         }
         Some(other) => return Err(unknown("sync pipe", other, SET)),
@@ -527,15 +533,26 @@ mod tests {
             SyncCommand::Ops {
                 since: Some("{\"a\":1}".into()),
                 overlap: true,
-                peer: None
+                peer: None,
+                limit: None
             }
         );
         assert_eq!(
-            p(&["pipe", "ops", "--since", "{}", "--no-overlap", "--peer=ab"]),
+            p(&[
+                "pipe",
+                "ops",
+                "--since",
+                "{}",
+                "--no-overlap",
+                "--peer=ab",
+                "--limit",
+                "9"
+            ]),
             SyncCommand::Ops {
                 since: Some("{}".into()),
                 overlap: false,
-                peer: Some("ab".into())
+                peer: Some("ab".into()),
+                limit: Some(9)
             }
         );
         assert_eq!(

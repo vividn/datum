@@ -117,8 +117,8 @@ impl Store for Cli {
         )?)
     }
 
-    async fn ops_since(&self, peer: &str, since: &Vector) -> Result<Vec<String>> {
-        let since = serde_json::to_string(since)?;
+    async fn ops_since(&self, peer: &str, since: &Vector, limit: usize) -> Result<Vec<String>> {
+        let (since, limit) = (serde_json::to_string(since)?, limit.to_string());
         let out = self
             .run(
                 &[
@@ -130,6 +130,8 @@ impl Store for Cli {
                     "--no-overlap",
                     "--peer",
                     peer,
+                    "--limit",
+                    &limit,
                 ],
                 None,
             )

@@ -902,11 +902,13 @@ pub enum SyncCommand {
     /// `--no-overlap` leaves out the one op a pipe adds to catch a shared
     /// key: what a session sends, for datum.day's transport (da-6kpj5).
     /// `--peer <ENDPOINT>`: what a session with that member is sent — a
-    /// filtered reader, only its fields (da-u81u1).
+    /// filtered reader, only its fields (da-u81u1). `--limit <N>`: a
+    /// session's round, the N lowest by HLC (da-ymgiv).
     Ops {
         since: Option<String>,
         overlap: bool,
         peer: Option<String>,
+        limit: Option<usize>,
     },
     /// Hidden: `datum sync pipe apply [--json]` — apply op lines from stdin.
     Apply {

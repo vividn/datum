@@ -2775,6 +2775,21 @@ impl Db {
         overlap: bool,
         peer: Option<&str>,
     ) -> Result<Vec<String>> {
+        self.sync_ops_round(since, overlap, peer, None)
+    }
+
+    /// [`Db::sync_ops_since`], and with a `limit` only the `limit` of them
+    /// lowest by HLC (da-ymgiv), the purged seqs aside: a copy's HLC passes
+    /// every op it has applied, so each op's deps sort before it, and a
+    /// round of them applies whole, which the next round continues. A
+    /// filtered reader's lines are not cut.
+    pub fn sync_ops_round(
+        &self,
+        since: &BTreeMap<String, i64>,
+        overlap: bool,
+        peer: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<String>> {
         pause::refuse_paused(&self.conn)?;
         debug::refuse(&self.conn)?;
         // Outside any transaction, where minting or moving its key on first
@@ -2824,9 +2839,40 @@ impl Db {
                     filtered_lines(tx, since, filter, &chain, reader.then_some(&mine))?;
                 return Ok(lines);
             }
+            // A member's refused op goes too, for every copy to refuse
+            // itself: the ops after it are counted past it. A non-member's
+            // stays here.
+            let serves = |e: &str, applied: i64| {
+                !(reader && e != mine || applied == 2 && chain.member(e).is_none())
+            };
+            let lacks = |e: &str, seq: i64| seq > since.get(e).copied().unwrap_or(0);
+            // The round's last HLC, read without the bodies: the value of the
+            // nth lowest, which no order of equal HLCs changes, and the round is
+            // every op at or below it, so ops that share it go together.
+            let cut = match limit {
+                Some(n) => {
+                    let mut stmt = tx.prepare(
+                        "SELECT endpoint, seq, applied, hid, hlc FROM ops WHERE applied IN (1, 2)",
+                    )?;
+                    let mut hlcs = Vec::new();
+                    let mut rows = stmt.query([])?;
+                    while let Some(r) = rows.next()? {
+                        let (e, applied, hid): (String, i64, String) =
+                            (r.get(0)?, r.get(2)?, r.get(3)?);
+                        if lacks(&e, r.get(1)?)
+                            && serves(&e, applied)
+                            && (hid == CHAIN_HID || !dissolved)
+                        {
+                            hlcs.push(r.get::<_, String>(4)?);
+                        }
+                    }
+                    (n > 0 && hlcs.len() > n).then(|| hlcs.select_nth_unstable(n - 1).1.clone())
+                }
+                None => None,
+            };
             let (mut lines, mut purged, mut after) = (Vec::new(), Map::new(), 0);
             let mut stmt = tx.prepare(
-                "SELECT endpoint, seq, body, applied, hid FROM ops WHERE applied > 0
+                "SELECT endpoint, seq, body, applied, hid, hlc FROM ops WHERE applied > 0
              ORDER BY endpoint, seq",
             )?;
             let rows = stmt.query_map([], |r| {
@@ -2836,16 +2882,15 @@ impl Db {
                     r.get::<_, String>(2)?,
                     r.get::<_, i64>(3)?,
                     r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
                 ))
             })?;
             for row in rows {
-                let (e, seq, body, applied, hid) = row?;
-                let sent = seq > since.get(&e).copied().unwrap_or(0)
+                let (e, seq, body, applied, hid, hlc) = row?;
+                let sent = lacks(&e, seq)
                     || overlap && e == mine && since.get(&e) == Some(&seq) && !body.is_empty();
-                // A member's refused op goes too, for every copy to refuse
-                // itself: the ops after it are counted past it. A non-member's
-                // stays here.
-                if !sent || reader && e != mine || applied == 2 && chain.member(&e).is_none() {
+                let past = applied != 3 && cut.as_ref().is_some_and(|c| &hlc > c);
+                if !sent || !serves(&e, applied) || past {
                     continue;
                 }
                 if applied == 3 {
@@ -3298,6 +3343,39 @@ mod tests {
         assert_eq!(apply_at(&b, 0, &lines).applied, lines.len());
         let served = b.sync_ops_since(&BTreeMap::new(), false, None).unwrap();
         assert!(lines.iter().all(|l| served.contains(l)), "{served:?}");
+    }
+
+    /// A round with a limit is the ops lowest by HLC (da-ymgiv): each
+    /// applies whole, and the next round goes on from the vector it left.
+    #[test]
+    fn rounds_of_a_limit_apply_whole_and_continue_from_the_vector() {
+        let (a, b) = (Db::open_in_memory().unwrap(), Db::open_in_memory().unwrap());
+        // Two endpoints, each op made after the other's last: a cut by
+        // endpoint and seq would send ops whose deps it left out.
+        let c = Db::open_in_memory().unwrap();
+        for (i, f) in ["a", "b", "c", "d", "e", "f", "g"].into_iter().enumerate() {
+            let (from, to) = if i % 2 == 0 { (&a, &c) } else { (&c, &a) };
+            let lines = log_at(from, 0, f);
+            apply_at(to, 0, &lines);
+        }
+        let all = a.sync_ops_since(&BTreeMap::new(), false, None).unwrap();
+        let mut rounds = 0;
+        loop {
+            let since = b.sync_vector().unwrap();
+            let round = a.sync_ops_round(&since, false, None, Some(3)).unwrap();
+            if round.is_empty() {
+                break;
+            }
+            assert!(round.len() <= 3, "{round:?}");
+            let s = apply_at(&b, 0, &round);
+            assert_eq!((s.applied, s.held), (round.len(), 0), "{round:?}");
+            rounds += 1;
+        }
+        assert_eq!(rounds, all.len().div_ceil(3));
+        assert_eq!(
+            a.sync_state_hash(None).unwrap(),
+            b.sync_state_hash(None).unwrap()
+        );
     }
 
     #[test]

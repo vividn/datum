@@ -14,7 +14,7 @@
 //!   unrevoked members are served or dialed (`Db::sync_handshake`). Anyone
 //!   else is refused at the handshake, and so is this copy's own key.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fs::{File, TryLockError};
 use std::future::Future;
@@ -103,17 +103,48 @@ struct DbStore<'a>(
     Option<&'a Mutex<Told>>,
     Cell<Option<&'a dyn Fn()>>,
     Option<&'a str>,
+    /// The sessions served now (da-ymgiv).
+    RefCell<Open>,
 );
 
 impl<'a> DbStore<'a> {
     fn new(db: &'a Db) -> Self {
-        DbStore(db, None, Cell::new(None), None)
+        DbStore(db, None, Cell::new(None), None, Default::default())
     }
 
     fn tell(&self, f: impl FnOnce(&mut Told)) {
         if let Some(told) = self.1 {
             f(&mut told.lock().unwrap());
         }
+    }
+
+    /// Whether a session is served to `peer` now ([`Store::serving`]).
+    fn serves(&self, peer: &str) -> bool {
+        self.4.borrow().has(peer)
+    }
+}
+
+/// Per peer, how many sessions with it are open (da-ymgiv): a peer is held
+/// until the last of them ends, however many began.
+#[derive(Default)]
+struct Open(BTreeMap<String, usize>);
+
+impl Open {
+    fn open(&mut self, peer: &str) {
+        *self.0.entry(peer.to_string()).or_default() += 1;
+    }
+
+    fn close(&mut self, peer: &str) {
+        if let Some(n) = self.0.get_mut(peer) {
+            *n -= 1;
+            if *n == 0 {
+                self.0.remove(peer);
+            }
+        }
+    }
+
+    fn has(&self, peer: &str) -> bool {
+        self.0.contains_key(peer)
     }
 }
 
@@ -238,8 +269,10 @@ impl Store for DbStore<'_> {
         Ok(self.0.sync_vector()?)
     }
 
-    async fn ops_since(&self, peer: &str, since: &Vector) -> Result<Vec<String>> {
-        Ok(self.0.sync_ops_since(since, false, Some(peer))?)
+    async fn ops_since(&self, peer: &str, since: &Vector, limit: usize) -> Result<Vec<String>> {
+        Ok(self
+            .0
+            .sync_ops_round(since, false, Some(peer), Some(limit))?)
     }
 
     async fn apply(&self, ops: &[String]) -> Result<Applied> {
@@ -289,6 +322,14 @@ impl Store for DbStore<'_> {
 
     fn got(&self, n: usize) {
         self.tell(|t| t.got = n);
+    }
+
+    fn serving(&self, peer: &str, on: bool) {
+        let mut served = self.4.borrow_mut();
+        match on {
+            true => served.open(peer),
+            false => served.close(peer),
+        }
     }
 
     fn verifying(&self) {
@@ -513,7 +554,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         let told = Told::new(String::new());
-        let store = DbStore(db, Some(&told), Cell::new(None), None);
+        let store = DbStore(db, Some(&told), Cell::new(None), None, Default::default());
         let mut addrs = vec![ep.addr()];
         addrs.extend(known(db)?);
         let chain = db.sync_chain()?;
@@ -599,7 +640,13 @@ pub fn connect(db: &Db, ticket: &str, name: Option<&str>, admitted: &dyn Fn()) -
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         let told = Told::new(format!("still waiting for {from}"));
-        let store = DbStore(db, Some(&told), Cell::new(Some(admitted)), name);
+        let store = DbStore(
+            db,
+            Some(&told),
+            Cell::new(Some(admitted)),
+            name,
+            Default::default(),
+        );
         let rep = telling(&told, redeem(&store, &ep, &t)).await;
         ep.close().await;
         // Admitted, it says what it is; its peers hear on the next sync. A
@@ -839,10 +886,12 @@ const YIELD: Duration = Duration::from_millis(250);
 
 /// `datum sync run`: stay up — serve peers, and push to every peer each
 /// time this copy's vector moves (a write here, or ops from another peer).
-/// A push does not wait for an earlier one to the same peer: a dial to a
-/// peer that is down takes 30s to fail. A failed push is tried again after
-/// [`backoff`], whether or not anything new was written, and the gap grows
-/// with each failure until the peer reaches this copy or a push reaches it.
+/// A push waits for an earlier one to the same peer to end: its rounds go
+/// on while the vectors move, so it carries what is written meanwhile, and
+/// a second beside it sends the peer the same ops again (da-ymgiv). A
+/// failed push is tried again after [`backoff`], whether or not anything
+/// new was written, and the gap grows with each failure until the peer
+/// reaches this copy or a push reaches it.
 /// It dials every member once it is up, and again when its address changes
 /// (its network came back, or moved), so a member that backed off from it
 /// hears at once that it is up (da-u1ul1).
@@ -873,6 +922,8 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
         let mut pushed: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
         let mut retry: BTreeMap<String, (Instant, Duration)> = BTreeMap::new();
         let mut busy: BTreeMap<String, Instant> = BTreeMap::new();
+        // The pushes open: a tick's and an ask's can be open to one peer.
+        let mut open = Open::default();
         let (mut mine, mut seen) = (ep.watch_addr(), ep.addr());
         let mut tick = tokio::time::interval(Duration::from_millis(500));
         let ctrl_c = tokio::signal::ctrl_c();
@@ -914,6 +965,7 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                     let vector = db.sync_vector()?;
                     for p in peers {
                         pushed.insert(p.id.clone(), vector.clone());
+                        open.open(&p.id);
                         sessions.push(push(store, &ep, p, Some(tx.clone())));
                     }
                 }
@@ -924,6 +976,9 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                     }));
                 }
                 Some((peer, rep)) = sessions.next() => {
+                    if let Some((id, _)) = &peer {
+                        open.close(id);
+                    }
                     match (rep, peer) {
                         (Ok(rep), _) => {
                             // A peer that reached us, or we it, is up again.
@@ -949,7 +1004,11 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                                 busy.insert(id, Instant::now() + backoff(None));
                             }
                         }
-                        (Err(e), None) => eprintln!("{} incoming: {e:#}", now()),
+                        // A session lost past the handshake names its peer.
+                        (Err(e), None) => match e.downcast_ref::<Lost>() {
+                            Some(Lost(rep, _)) => eprintln!("{} {}: {e:#}", now(), rep.label),
+                            None => eprintln!("{} incoming: {e:#}", now()),
+                        },
                         (Err(e), Some((id, label))) => {
                             let wait = backoff(retry.get(&id).map(|r| r.1));
                             eprintln!("{} {label}: {e:#}; next try in {}", now(), gap(wait));
@@ -993,10 +1052,13 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                     for p in peers {
                         let waiting = retry.get(&p.id).is_some_and(|r| r.0 > Instant::now())
                             || busy.get(&p.id).is_some_and(|at| *at > Instant::now());
-                        if waiting || pushed.get(&p.id) == Some(&vector) {
+                        // Nor while serving it: that session carries it too.
+                        let held = open.has(&p.id) || store.serves(&p.id);
+                        if waiting || held || pushed.get(&p.id) == Some(&vector) {
                             continue;
                         }
                         pushed.insert(p.id.clone(), vector.clone());
+                        open.open(&p.id);
                         sessions.push(push(store, &ep, p, None));
                     }
                 }
@@ -1010,6 +1072,21 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tick's push and an ask's open to one peer at once (da-ymgiv): the
+    /// peer stays held until both have ended, not only the first.
+    #[test]
+    fn a_peer_with_two_sessions_open_is_held_until_both_end() {
+        let mut open = Open::default();
+        open.open("p");
+        open.open("p");
+        open.close("p");
+        assert!(open.has("p"), "one session still runs");
+        open.close("p");
+        assert!(!open.has("p"));
+        open.close("p");
+        assert!(!open.has("p"), "a close with none open holds nothing");
+    }
 
     /// datum.day's store reads the kind the CLI prints (core's name) as the
     /// wire's: each kind is named alike in both (da-b6xh6).

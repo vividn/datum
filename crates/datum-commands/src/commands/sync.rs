@@ -154,13 +154,14 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             since,
             overlap,
             peer,
+            limit,
         } => {
             let since: BTreeMap<String, i64> = match since {
                 Some(v) => serde_json::from_str(&v)
                     .with_context(|| format!("--since is not a version vector: {v}"))?,
                 None => BTreeMap::new(),
             };
-            for line in db.sync_ops_since(&since, overlap, peer.as_deref())? {
+            for line in db.sync_ops_round(&since, overlap, peer.as_deref(), limit)? {
                 println!("{line}");
             }
         }
