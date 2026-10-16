@@ -1,7 +1,7 @@
 # The test map (da-fnt3v): which tests reach which functions, read by ci.yml
 # on a PR to run only the tests its change can reach (`cargo xtask testmap
 # select`). Built from staging's tip by one instrumented run of the suite
-# (scripts/testmap-build.sh) and kept on the `testmap` branch: ONE orphan
+# (scripts/testmap-build.sh), on a timer, and kept on the `testmap` branch: ONE orphan
 # commit, force-pushed, holding `testmap.json`, whose `commit` is the staging
 # sha it maps. Only the newest map is worth having, so there is no history.
 # The `web` job puts the web suite's map beside it (da-e0gtq): one
@@ -17,9 +17,17 @@
 # prove it, and pushes nothing.
 name: testmap
 
+# On a timer, not on every staging push (da-2r82v): between 02:59 and 07:22
+# on 10-16 the push builds took 260 of a lane's 263 minutes, 44 each, more
+# than ci.yml's run of the same commit. A map more than MAX_BEHIND (10)
+# commits behind sends a PR to its whole suite; staging moved up to 3
+# commits an hour that week, so a build every two hours keeps the map within
+# it, and one staging has not moved past since is skipped. A schedule runs
+# on the default branch, staging; a dispatch from any ref maps staging's tip
+# too, which `newest` reads.
 on:
-  push:
-    branches: [staging]
+  schedule:
+    - cron: "40 */2 * * *"
   workflow_dispatch:
   pull_request:
     paths:
@@ -29,16 +37,13 @@ on:
       - web/scripts/testmap.mjs
       - web/tests/support/coverage.mjs
 
-# A staging build once started finishes (da-wqdmq): cancelled by each newer
-# push, 7 of the 11 runs that ended between 22:31 and 00:08 on 10-15 mapped
-# nothing. With `cancel-in-progress` false Forgejo queues every run of the
-# group behind the one running, oldest first, and cancels none (QueueBehind,
-# as ci.yml's staging runs do), so `newest` skips a run whose commit staging
-# has moved past, and the run queued behind it maps the newer tip. A PR's
-# run is still cancelled by the PR's next push.
+# A staging build once started finishes (da-wqdmq): with `cancel-in-progress`
+# false Forgejo queues every run of the group behind the one running and
+# cancels none (QueueBehind), and `newest` skips a queued run whose tip the
+# one before it mapped. A PR's run is still cancelled by the PR's next push.
 concurrency:
-  group: testmap-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/staging' }}
+  group: testmap-${{ github.event_name == 'pull_request' && github.ref || 'staging' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -46,35 +51,46 @@ env:
   CARGO_BUILD_JOBS: 3
 
 jobs:
-  # ci.yml's tip read. An unreadable tip builds.
+  # Staging's tip, and whether the `testmap` branch maps it already (its
+  # commit says `testmap for <sha>`, scripts/testmap-push.sh). An unreadable
+  # tip builds the run's own commit, staging's on a schedule. A PR maps its
+  # own head and pushes nothing.
   newest:
     runs-on: ubuntu-latest
     outputs:
-      superseded: ${{ steps.tip.outputs.superseded }}
+      sha: ${{ steps.tip.outputs.sha }}
+      mapped: ${{ steps.tip.outputs.mapped }}
     steps:
       - id: tip
-        if: github.ref == 'refs/heads/staging'
+        if: github.event_name != 'pull_request'
         env:
           TOKEN: ${{ github.token }}
           SERVER: ${{ github.server_url }}
         run: |
-          set -uo pipefail
-          tip=$(printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - "${SERVER%/}/api/v1/repos/${{ github.repository }}/branches/staging" |
-            node -p 'JSON.parse(require("fs").readFileSync(0)).commit.id' 2>/dev/null) || tip=
-          if [ -n "$tip" ] && [ "$tip" != "${{ github.sha }}" ]; then
-            echo "staging has moved on to $tip, which the run queued behind this one maps"
-            echo "superseded=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          read_branch() {
+            printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - "${SERVER%/}/api/v1/repos/${{ github.repository }}/branches/$1" |
+              node -p "JSON.parse(require('fs').readFileSync(0)).commit.$2"
+          }
+          tip=$(read_branch staging id) || tip=${{ github.sha }}
+          echo "sha=$tip" >> "$GITHUB_OUTPUT"
+          map=$(read_branch testmap message 2>/dev/null) || map=
+          if [ "$map" = "testmap for $tip" ] && [ "${{ github.event_name }}" = schedule ]; then
+            echo "the testmap branch maps staging's tip $tip already"
+            echo "mapped=true" >> "$GITHUB_OUTPUT"
           else
-            echo "mapping ${{ github.sha }} (staging's tip: ${tip:-unread})"
+            echo "mapping staging's tip $tip (the testmap branch: ${map:-unread})"
           fi
 
   testmap:
     needs: newest
-    if: needs.newest.outputs.superseded != 'true'
+    if: needs.newest.outputs.mapped != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.newest.outputs.sha }}
 
       - name: System tools the image lacks (time, for max RSS per step)
         run: apt-get update -qq && apt-get install -y -qq --no-install-recommends time >/dev/null
@@ -104,7 +120,7 @@ jobs:
         run: /usr/bin/time -v scripts/testmap-build.sh "$RUNNER_TEMP/testmap.json" --test-threads 3
 
       - name: Commit it to `testmap`
-        if: github.ref == 'refs/heads/staging' && github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request'
         env:
           GIT_AUTHOR_NAME: testmap workflow
           GIT_AUTHOR_EMAIL: testmap@git.vividn.dev
@@ -114,7 +130,7 @@ jobs:
 
   web:
     needs: newest
-    if: needs.newest.outputs.superseded != 'true'
+    if: needs.newest.outputs.mapped != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
@@ -122,6 +138,7 @@ jobs:
       # merge-base and fetch its module instead of building one.
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ needs.newest.outputs.sha }}
           fetch-depth: 0
 
       - name: System tools the image lacks (time, for max RSS per step)
@@ -176,7 +193,7 @@ jobs:
           cp scripts/durations.json "$RUNNER_TEMP/web-durations.json"
 
       - name: Commit it to `testmap`
-        if: github.ref == 'refs/heads/staging' && github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request'
         env:
           GIT_AUTHOR_NAME: testmap workflow
           GIT_AUTHOR_EMAIL: testmap@git.vividn.dev
