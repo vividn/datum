@@ -111,6 +111,7 @@
     "relaxed-json": "^1.0.3",
     "sharp": "^0.34.1",
     "shell-quote": "^1.8.1",
+    "smol-toml": "1.9.0",
     "string-width": "^4.2.3",
     "string.ify": "^1.0.64",
     "tmp-promise": "^3.0.3",

@@ -12,5 +12,8 @@ process.env["POUCHDB_ADAPTER"] = "memory"
 // disable colored chalk unless specifically enabled
 process.env["FORCE_COLOR"] = "0"
 
+// the dayview's field specs come from the example, never the user's ~/.config/datum/my_specs.toml
+process.env["DATUM_SPECS"] = `${__dirname}/my_specs.example.toml`;
+
 // mock load config
 jest.mock("./src/config/loadConfig");

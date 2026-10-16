@@ -103,6 +103,13 @@ Datum uses PouchDB by default for local storage. For remote synchronization or m
    - Config file: Update `host:` and credentials
    - CLI: Use the `--host` flag
 
+## Field Specs
+
+How the dayview draws each field (colour, position, height, the colour of each state) comes from
+`~/.config/datum/my_specs.toml` (or `$DATUM_SPECS`). It is a datum v3 kit, so the same file installs in v3 with
+`datum kit install`. `my_specs.example.toml` shows the format; without the file, every field takes a colour and
+position from its name.
+
 ## Document ID Structure
 
 Datum automatically generates document IDs based on the data you provide. By default, document IDs follow this pattern:
