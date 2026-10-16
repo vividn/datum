@@ -70,3 +70,41 @@ fn alias_list_refuses_what_it_does_not_take() {
         assert!(!out.status.success(), "`alias list {extra}` must fail");
     }
 }
+
+/// A kit's alias names its kit, and an alias's description is printed:
+/// by `alias list`, `alias show` and `--json` (da-wxan9). The person's own
+/// alias, with neither, keeps its one line.
+#[test]
+fn alias_list_and_show_name_the_kit_and_the_description() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = tmp.path().join("t.db");
+    let kit = tmp.path().join("lang.toml");
+    std::fs::write(
+        &kit,
+        "[kit]\nname = \"lang\"\n\n[[alias]]\nname = \"vbp\"\n\
+         expands_to = \"note word pos=verb\"\ndescription = \"a verb and its gloss\"\n",
+    )
+    .unwrap();
+    ok(&db, &["kit", "install", "--yes", kit.to_str().unwrap()]);
+    ok(&db, &["alias", "set", "cof", "occur coffee"]);
+
+    assert_eq!(
+        ok(&db, &["alias", "list"]),
+        "  cof → datum occur coffee\n\
+         \x20 vbp → datum note word pos=verb  (kit lang)\n\
+         \x20     a verb and its gloss\n"
+    );
+    assert_eq!(
+        ok(&db, &["alias", "show", "vbp"]),
+        "vbp → datum note word pos=verb  (kit lang)\n    a verb and its gloss\n"
+    );
+    let listed: Value = serde_json::from_str(&ok(&db, &["alias", "list", "--json"])).unwrap();
+    assert_eq!(
+        listed,
+        json!([
+            { "name": "cof", "expansion": "occur coffee", "source": "user" },
+            { "name": "vbp", "expansion": "note word pos=verb", "source": "user",
+              "kit": "lang", "description": "a verb and its gloss" },
+        ])
+    );
+}

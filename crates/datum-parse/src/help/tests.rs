@@ -162,6 +162,7 @@ OPTIONS:
   -K, --slug-key <S>    Required: derive the id from this key (K / K= / K=val)
       --id <TEMPLATE>   ...or set the id directly (e.g. %field%:%uid%)
   common logging options: `datum help logging`
+    including -I/-R/-S/-C for values with spaces
 
 OUTPUT:
       --show <MODE>     default|none|minimal|standard|format|all|json
@@ -365,6 +366,7 @@ OPTIONS:
       --if-changed      switch/start/end: write nothing if already in this state
   -L, --last-state <V>  The state being left; `datum check` flags a mismatch
   common logging options: `datum help logging`
+    including -I/-R/-S/-C for values with spaces
 
 OUTPUT:
       --show <MODE>     default|none|minimal|standard|format|all|json
@@ -522,6 +524,17 @@ fn logging_pages_point_at_the_topic_instead_of_reprinting_the_wall() {
         assert!(
             page.contains("  common logging options: `datum help logging`\n"),
             "`datum help {verb}` should send the reader to the topic page:\n{page}"
+        );
+        // What is behind the pointer that a reader would miss (da-wxan9):
+        // the binders for a value with spaces. `note`'s USAGE says where
+        // its words go, and it has no -C.
+        assert_eq!(
+            page.contains(
+                "  common logging options: `datum help logging`\n    \
+                 including -I/-R/-S/-C for values with spaces\n"
+            ),
+            verb != "note",
+            "`datum help {verb}` and the binders behind its pointer:\n{page}"
         );
         assert!(
             !page.contains("--remainder <KEY>"),

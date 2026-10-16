@@ -71,11 +71,17 @@ fn an_alias_a_kit_command_and_a_miss_each_answer_for_themselves() {
     let env = Env::new();
     assert_eq!(
         env.ok(&["help", "ache"]),
-        "datum ache — ache <name> [severity 0-10]\n\nexpands to: datum note symptom\n"
+        "datum ache — ache <name> [severity 0-10]\n\nexpands to: datum note symptom\n\
+         options: datum help note\n\
+         from the kit 'helpkit': datum kit show helpkit\n"
     );
+    // `ALIAS --help` is that page too, not the page of what it expands to
+    // (da-wxan9): `note`'s says nothing of the alias or its description.
+    assert_eq!(env.ok(&["ache", "--help"]), env.ok(&["help", "ache"]));
+    assert_eq!(env.ok(&["tea", "-h"]), env.ok(&["help", "tea"]));
     assert_eq!(
         env.ok(&["help", "tea"]),
-        "datum tea — an alias\n\nexpands to: datum occur tea\n"
+        "datum tea — an alias\n\nexpands to: datum occur tea\noptions: datum help occur\n"
     );
     assert_eq!(
         env.ok(&["help", "aches"]),
@@ -114,6 +120,20 @@ fn the_db_named_by_db_is_the_one_asked() {
         .unwrap();
     assert_eq!(
         String::from_utf8(out.stdout).unwrap(),
-        "datum tea — an alias\n\nexpands to: datum occur tea\n"
+        "datum tea — an alias\n\nexpands to: datum occur tea\noptions: datum help occur\n"
+    );
+}
+
+/// The commonest alias is a field's own word, and `FIELD --help` is asked
+/// for what may follow it: the page names the page that says (da-wxan9).
+#[test]
+fn a_fields_own_word_names_the_page_of_its_verb() {
+    let env = Env::new();
+    env.ok(&["spec", "coffee", "--verb", "occur"]);
+    assert_eq!(
+        env.ok(&["coffee", "--help"]),
+        "datum coffee — coffee's own word\n\n\
+         expands to: datum occur coffee\n\
+         options: datum help occur\n"
     );
 }

@@ -24,7 +24,7 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
     let user = db.list_user_aliases()?;
     let effect = {
         let derived = db.spec_alias_index()?;
-        alias_effect(&sub, &user, &derived)
+        alias_effect(&sub, &user, &db.alias_kits()?, &derived)
     };
     match effect {
         AliasEffect::Say(text) => println!("{text}"),

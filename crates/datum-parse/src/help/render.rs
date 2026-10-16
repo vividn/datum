@@ -406,6 +406,12 @@ fn render_command_body_structured(spec: &CommandSpec, displayed_name: &str) -> S
                 "  common {} options: `datum help {}`\n",
                 shared.topic, shared.topic
             ));
+            if !shared.binders.is_empty() {
+                block.push_str(&format!(
+                    "    including {} for values with spaces\n",
+                    shared.binders
+                ));
+            }
             block
         }
         None => render_options_block(spec.flags, spec.summary_col),

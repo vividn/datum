@@ -331,6 +331,7 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
                 .any(|f| a.starts_with(f))
             || (a.starts_with('-') && !a.starts_with("--") && a.contains(['h', 'V']))
     });
+    let mut unanswered = None;
     if asks_for_text {
         if let Err(e) = parse_invocation_inner(argv.clone(), &palias::NoResolver) {
             let answered = match e.downcast_ref::<ParseError>() {
@@ -354,6 +355,7 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
             if answered {
                 return Err(e);
             }
+            unanswered = Some(e);
         }
     }
     // da-hfi3: honour the global `--db <value>` / `--db=<value>` flag
@@ -373,6 +375,16 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
             // dispatcher's later open finds the schema already current and
             // has nothing left to report (da-ksao).
             crate::announce_migration(&db);
+            // `ALIAS --help` is the alias's own page, as `help ALIAS` is, and
+            // not the page of the command it expands to (da-wxan9).
+            let names_an_alias = |e: &anyhow::Error| {
+                e.downcast_ref::<ParseError>()
+                    .and_then(crate::commands::help::asks_the_db)
+                    .is_some_and(|name| matches!(db.lookup_alias(name), Ok(Some(_))))
+            };
+            if let Some(e) = unanswered.filter(names_an_alias) {
+                return Err(e);
+            }
             parse_invocation_inner(argv, &DbAliasResolver::new(&db))
         }
         None => parse_invocation_inner(argv, &palias::NoResolver),

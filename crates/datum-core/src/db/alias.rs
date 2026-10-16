@@ -282,6 +282,17 @@ impl Db {
         self.stored_aliases("", [])
     }
 
+    /// The kit each kit-installed alias came from, by alias name. The
+    /// person's own aliases have no entry.
+    pub fn alias_kits(&self) -> Result<std::collections::HashMap<String, String>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT json_extract(data, '$.name'), json_extract(data, '$.{ALIAS_KIT_KEY}')
+             FROM entries WHERE {ALIAS_DOC_SQL} AND json_extract(data, '$.{ALIAS_KIT_KEY}') IS NOT NULL"
+        ))?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Every [`Alias`] marked with the given `kit_id`, by name — `datum
     /// kit export`'s source.
     pub fn load_aliases_by_kit(&self, kit_id: &str) -> Result<Vec<Alias>> {

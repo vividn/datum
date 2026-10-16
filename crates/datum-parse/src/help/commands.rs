@@ -1145,10 +1145,20 @@ const fn drop_short(src: &[FlagSpec], short: char) -> [FlagSpec; LOG_FLAGS.len()
 // each verb's page keeps what is PARTICULAR to it and points there.
 // ---------------------------------------------------------------------------
 
+/// The binders the pointer names on every verb but `note`.
+const BINDERS: &str = "-I/-R/-S/-C";
+
 /// Nothing particular: the verb is told apart by its USAGE lines.
 const LOG_SHARED_FLAGS: SharedFlags = SharedFlags {
     topic: "logging",
     own: &[],
+    binders: BINDERS,
+};
+
+/// `note` names no binders: its USAGE already says where its words go.
+const NOTE_SHARED_FLAGS: SharedFlags = SharedFlags {
+    binders: "",
+    ..LOG_SHARED_FLAGS
 };
 
 /// `--if-changed` (da-hxmtg): the switch family's one flag of its own.
@@ -1187,6 +1197,7 @@ const LAST_STATE: FlagSpec = FlagSpec {
 const SWITCH_SHARED_FLAGS: SharedFlags = SharedFlags {
     topic: "logging",
     own: &[IF_CHANGED, LAST_STATE],
+    binders: BINDERS,
 };
 
 /// `add` is the one verb that REQUIRES an id, so the two flags that give it
@@ -1215,6 +1226,7 @@ const ADD_SHARED_FLAGS: SharedFlags = SharedFlags {
             left_override: None,
         },
     ],
+    binders: BINDERS,
 };
 
 /// `datum help logging`'s opening: the welcome's «Logging an entry» (da-efruz).
@@ -1888,7 +1900,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NOTE_FLAGS,
-        shared_flags: Some(&LOG_SHARED_FLAGS),
+        shared_flags: Some(&NOTE_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,

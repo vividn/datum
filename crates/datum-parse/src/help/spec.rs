@@ -176,6 +176,10 @@ pub struct SharedFlags {
     /// above the pointer. Their wording may be narrower than the shared
     /// table's (`add`'s `-K` is required; nobody else's is).
     pub own: &'static [FlagSpec],
+    /// The wall's flags that bind a value with spaces, named under the
+    /// pointer so a reader knows they are behind it (da-wxan9); empty for
+    /// none.
+    pub binders: &'static str,
 }
 
 /// A `datum help <NAME>` page that is not a command: the one place an

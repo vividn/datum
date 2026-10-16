@@ -128,7 +128,12 @@ impl SpecAliasIndex {
                     Alias {
                         name: d.name.clone(),
                         expands_to: d.expands_to.clone(),
-                        description: Some(format!("Derived from {} spec", spec.field)),
+                        // The words a page shows for it (da-wxan9).
+                        description: Some(match d.kind {
+                            DerivedAliasKind::BareField => format!("{}'s own word", spec.field),
+                            DerivedAliasKind::TerminalEnd => format!("ends {}", spec.field),
+                            DerivedAliasKind::State => format!("a state of {}", spec.field),
+                        }),
                     },
                 );
                 owner.insert(d.name.clone(), spec.field.clone());
@@ -210,44 +215,67 @@ pub fn user_alias_to_save(
 pub fn alias_effect(
     sub: &datum_parse::cli::AliasCommand,
     user: &[Alias],
+    kits: &HashMap<String, String>,
     derived: &SpecAliasIndex,
 ) -> AliasEffect {
     use datum_parse::cli::AliasCommand;
     use datum_parse::input::Show;
 
     /// The effective namespace, sorted by name — derived first so a user
-    /// row of the same name overwrites it.
-    fn namespace<'a>(user: &'a [Alias], derived: &'a SpecAliasIndex) -> Vec<(&'a str, &'a str)> {
-        let mut merged: std::collections::BTreeMap<&str, &str> = derived
+    /// row of the same name overwrites it. `true` marks a user row.
+    fn namespace<'a>(user: &'a [Alias], derived: &'a SpecAliasIndex) -> Vec<(&'a Alias, bool)> {
+        let mut merged: std::collections::BTreeMap<&str, (&Alias, bool)> = derived
             .entries
             .iter()
-            .map(|(name, a)| (name.as_str(), a.expands_to.as_str()))
+            .map(|(name, a)| (name.as_str(), (a, false)))
             .collect();
         for a in user {
-            merged.insert(a.name.as_str(), a.expands_to.as_str());
+            merged.insert(a.name.as_str(), (a, true));
         }
-        merged.into_iter().collect()
+        merged.into_values().collect()
+    }
+
+    /// `NAME → datum EXPANSION`, then the kit it came from and, on a line
+    /// of its own, its description (da-wxan9).
+    fn line(a: &Alias, kit: Option<&String>, description: Option<&str>, indent: &str) -> String {
+        let mut s = format!("{indent}{} → datum {}", a.name, a.expands_to);
+        if let Some(kit) = kit {
+            s.push_str(&format!("  (kit {kit})"));
+        }
+        if let Some(d) = description {
+            s.push_str(&format!("\n{indent}    {d}"));
+        }
+        s
     }
 
     match sub {
         AliasCommand::Show { name } => AliasEffect::Say(
             match namespace(user, derived)
                 .into_iter()
-                .find(|(n, _)| n == name)
+                .find(|(a, _)| &a.name == name)
             {
-                Some((_, expands_to)) => format!("{name} → datum {expands_to}"),
+                Some((a, _)) => line(a, kits.get(name), a.description.as_deref(), ""),
                 None => format!("No alias '{name}'"),
             },
         ),
-        // One object per name in the namespace: a user row as `user`, a
-        // derived one as `derived` with the field and kind it came from.
+        // One object per name in the namespace: a user row as `user`, with
+        // its `kit` and `description` when it has them, a derived one as
+        // `derived` with the field and kind it came from.
         AliasCommand::List { show: Show::Json } => AliasEffect::Say(
             serde_json::Value::Array(
                 namespace(user, derived)
                     .into_iter()
-                    .map(|(name, expansion)| {
-                        if user.iter().any(|a| a.name == name) {
-                            serde_json::json!({ "name": name, "expansion": expansion, "source": "user" })
+                    .map(|(a, is_user)| {
+                        let (name, expansion) = (a.name.as_str(), a.expands_to.as_str());
+                        if is_user {
+                            let mut o = serde_json::json!({ "name": name, "expansion": expansion, "source": "user" });
+                            if let Some(kit) = kits.get(name) {
+                                o["kit"] = kit.as_str().into();
+                            }
+                            if let Some(d) = &a.description {
+                                o["description"] = d.as_str().into();
+                            }
+                            o
                         } else {
                             serde_json::json!({
                                 "name": name,
@@ -264,6 +292,8 @@ pub fn alias_effect(
         ),
         // `--show none` asks for silence, and an empty `Say` is it.
         AliasCommand::List { show: Show::None } => AliasEffect::Nothing,
+        // A derived alias's description only names its spec, which a list
+        // of every state would repeat on each; `alias show` gives it.
         AliasCommand::List { .. } => {
             let all = namespace(user, derived);
             if all.is_empty() {
@@ -271,7 +301,10 @@ pub fn alias_effect(
             }
             AliasEffect::Say(
                 all.into_iter()
-                    .map(|(name, expands_to)| format!("  {name} → datum {expands_to}"))
+                    .map(|(a, is_user)| {
+                        let description = a.description.as_deref().filter(|_| is_user);
+                        line(a, kits.get(&a.name), description, "  ")
+                    })
                     .collect::<Vec<_>>()
                     .join("\n"),
             )

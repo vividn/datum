@@ -29,6 +29,15 @@ pub fn page(name: &str, db: &Db) -> Result<Option<String>> {
     if let Some(a) = db.lookup_alias(name)? {
         let mut s = heading(name, a.description.as_deref(), "an alias");
         s.push_str(&format!("\nexpands to: datum {}\n", a.expands_to));
+        // What may follow it is the page of what it expands to (da-wxan9).
+        if let Some(next) = a.expands_to.split_whitespace().next() {
+            if help::find_command(next).is_some() || db.lookup_alias(next)?.is_some() {
+                s.push_str(&format!("options: datum help {next}\n"));
+            }
+        }
+        if let Some(kit) = db.alias_kits()?.get(name) {
+            s.push_str(&from_kit(kit));
+        }
         return Ok(Some(s));
     }
     let Some(c) = db.get_kit_command(name)? else {
@@ -55,9 +64,13 @@ pub fn page(name: &str, db: &Db) -> Result<Option<String>> {
         }
     }
     if let Some(kit) = &c.kit_id {
-        s.push_str(&format!("from the kit '{kit}': datum kit show {kit}\n"));
+        s.push_str(&from_kit(kit));
     }
     Ok(Some(s))
+}
+
+fn from_kit(kit: &str) -> String {
+    format!("from the kit '{kit}': datum kit show {kit}\n")
 }
 
 fn heading(name: &str, about: Option<&str>, kind: &str) -> String {
