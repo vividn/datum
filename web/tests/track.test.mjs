@@ -21,7 +21,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
-	cycle, editedSpec, GLYPHS, keyRows, modeOf, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
+	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
 import { FIELD_FORM as MODAL, cancelField, declared, openField } from './support/field.mjs';
@@ -82,6 +82,20 @@ describe('the argv it composes', () => {
 		// The states belong to `switch` alone: a point with one added and
 		// then changed away would otherwise smuggle it out.
 		assert.deepEqual(trackArgv('coffee', 'occur', [row('good')]), ['track', 'coffee', '--verb', 'occur']);
+	});
+
+	// da-5j4rn: the same rule for the one command a new field's Save sends.
+	test('a new field\'s `spec F --track` carries its states on a switch alone', () => {
+		const edit = (verb) => ({ verb, color: '', description: '', states: [row('good', '#00ff00')] });
+		const sent = (verb) => JSON.parse(declareArgv('coffee', edit(verb))[3]);
+		assert.deepEqual(sent('switch').allowed_states, ['good']);
+		assert.deepEqual(sent('switch').state_colors, { good: '#00ff00' });
+		// The states belong to `switch` alone: a field given one and then
+		// changed to another verb would otherwise smuggle it out.
+		for (const verb of ['occur', 'start', 'add']) {
+			assert.equal(sent(verb).allowed_states, null, verb);
+			assert.deepEqual(sent(verb).state_colors, {}, verb);
+		}
 	});
 
 	// da-h119q: a field's keys are declared in the same `track`.

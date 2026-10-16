@@ -568,10 +568,11 @@ const blank = (field: string, verb: Verb): Spec => ({ field, verb, color: null, 
  * The ONE command that declares a new field, which one Undo takes back
  * whole (da-2pbvd): `spec F --from-json` with the whole of its form, and
  * `--track` or `--ignore`, which write its TRACK or IGNORED row in the same
- * transaction.
+ * transaction. The states belong to `switch` alone: a field given one and
+ * then changed to another verb would otherwise smuggle it out.
  */
 export const declareArgv = (field: string, edit: Parameters<typeof editedSpec>[1], ignore = false): string[] => [
-	...specArgv(editedSpec(blank(field, edit.verb), edit)),
+	...specArgv(editedSpec(blank(field, edit.verb), edit.verb === 'switch' ? edit : { ...edit, states: [] })),
 	ignore ? '--ignore' : '--track'
 ];
 
