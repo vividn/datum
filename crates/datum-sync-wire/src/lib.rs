@@ -93,6 +93,11 @@ const MAX_HELLO: usize = 64 << 10;
 const MAX_RECORDS: usize = 1 << 20;
 /// A session in which both sides keep writing still ends.
 const MAX_ROUNDS: usize = 16;
+/// Before its hash, from a copy whose state moved after the last round: a
+/// write or another session's apply landed under the verify, so the hash is
+/// not of the vector the peer judges it by (da-o2arv). A copy before it reads
+/// a hash that differs, a MISMATCH, as it always did.
+const MOVED: &str = "moved ";
 /// Ops per apply — the first, where a store [`yields`](Store::yields).
 const CHUNK: usize = 64;
 /// The most ops a doubling chunk grows to: one CLI process applying 8,192
@@ -701,27 +706,49 @@ async fn exchange(
     }
     // A big history hashes for minutes on each side at once (da-0mwws).
     store.verifying();
-    let hash = busy(s, store.verify(&rep.id)).await?;
+    let (hash, now) = busy(s, async {
+        let hash = store.verify(&rep.id).await?;
+        Ok((hash, store.vector().await?))
+    })
+    .await?;
+    let mine = last.map(|round| round.0).unwrap_or_default();
+    let said = match now == mine {
+        true => hash.clone(),
+        false => format!("{MOVED}{hash}"),
+    };
     // The acceptor answers only after it has read the dialer's hash, so
     // the dialer's close can never cut a frame still in flight.
     let theirs: String = if dialer {
-        put_json(s, &hash).await?;
+        put_json(s, &said).await?;
         get_json(r, MAX_HELLO).await?
     } else {
         let h = get_json(r, MAX_HELLO).await?;
-        put_json(s, &hash).await?;
+        put_json(s, &said).await?;
         h
     };
-    let mine = last.map(|round| round.0).unwrap_or_default();
-    (rep.verified, rep.verify) = verdict(&rep.label, theirs == hash, &mine, &rep.vector);
+    let (they_moved, theirs) = theirs
+        .strip_prefix(MOVED)
+        .map_or((false, &theirs[..]), |h| (true, h));
+    let moved = match now == mine {
+        false => Some("this copy"),
+        true => they_moved.then_some(rep.label.as_str()),
+    };
+    (rep.verified, rep.verify) = verdict(&rep.label, theirs == hash, &mine, &rep.vector, moved);
     Ok(())
 }
 
 /// A session's verify, and its words. Hashes that differ are a MISMATCH only
 /// over the same ops: with one copy ahead of the other they could not agree,
 /// and it says who is ahead by how many ops instead. A reader ahead of a
-/// member stays so, since it never relays (da-t3ey2).
-fn verdict(label: &str, same: bool, mine: &Vector, theirs: &Vector) -> (Option<bool>, String) {
+/// member stays so, since it never relays (da-t3ey2). Nor is it one when
+/// a copy, `moved`, changed after the vectors were read (da-o2arv).
+fn verdict(
+    label: &str,
+    same: bool,
+    mine: &Vector,
+    theirs: &Vector,
+    moved: Option<&str>,
+) -> (Option<bool>, String) {
     let ahead = |a: &Vector, of: &Vector| -> i64 {
         a.iter()
             .map(|(e, s)| (s - of.get(e).copied().unwrap_or(0)).max(0))
@@ -738,10 +765,11 @@ fn verdict(label: &str, same: bool, mine: &Vector, theirs: &Vector) -> (Option<b
     .into_iter()
     .flatten()
     .collect();
-    match apart.is_empty() {
+    match (apart.is_empty(), moved) {
         _ if same => (Some(true), "verify ok".into()),
-        true => (Some(false), "verify MISMATCH".into()),
-        false => (None, format!("not verified: {}", apart.join(", "))),
+        (false, _) => (None, format!("not verified: {}", apart.join(", "))),
+        (true, Some(who)) => (None, format!("not verified: {who} changed as it verified")),
+        (true, None) => (Some(false), "verify MISMATCH".into()),
     }
 }
 
@@ -1557,7 +1585,7 @@ mod tests {
         };
         let (mine, theirs) = (v(&[("a", 3), ("b", 1)]), v(&[("b", 2), ("c", 0)]));
         assert_eq!(
-            verdict("B", false, &mine, &theirs),
+            verdict("B", false, &mine, &theirs, None),
             (
                 None,
                 "not verified: this copy is 3 changes ahead of B, \
@@ -1566,11 +1594,21 @@ mod tests {
             )
         );
         assert_eq!(
-            verdict("B", false, &mine, &mine),
+            verdict("B", false, &mine, &mine, None),
             (Some(false), "verify MISMATCH".into())
         );
         assert_eq!(
-            verdict("B", true, &mine, &theirs),
+            verdict("B", true, &mine, &theirs, None),
+            (Some(true), "verify ok".into())
+        );
+        // A copy that changed under the verify: hashes that differ are no
+        // verdict either (da-o2arv), and ones that agree still are.
+        assert_eq!(
+            verdict("B", false, &mine, &mine, Some("B")),
+            (None, "not verified: B changed as it verified".into())
+        );
+        assert_eq!(
+            verdict("B", true, &mine, &mine, Some("this copy")),
             (Some(true), "verify ok".into())
         );
     }

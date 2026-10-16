@@ -306,7 +306,9 @@ ends by comparing state hashes: `verify ok`, `verify MISMATCH` when they
 differ over the same ops, and with one copy ahead of the other — a reader
 holding what a member lacks, which it never relays — «not verified: R is N
 changes ahead of this copy», `pending` in `sync status` and no error
-(da-t3ey2). The tree:
+(da-t3ey2); a copy whose vector moved between the last round and its hash (a
+write, another session) sends `moved <hash>`, and both say «not verified: X
+changed as it verified», never a MISMATCH (da-o2arv). The tree:
 `sync`, `status`, `pause | resume`, `diff <WHO>`, `refold`, `chain invite | connect | leave |
 list | rename | revoke | revert | ack | rekey`, `admin list | add | remove`, `daemon
 install | uninstall | status` (a systemd user unit / launchd agent

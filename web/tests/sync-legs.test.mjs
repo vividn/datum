@@ -58,9 +58,14 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 				// The terminal stops: the page's next push reaches the relay, and nobody there.
 				running.child.kill();
 				await app.run(['occur', 'unheard', '-t', '1200']);
-				const down = await until(() => reason.innerText().catch(() => ''), (t) => t.includes('could not reach'), DIAL);
+				// Read with the mark: a dial again in flight reads «syncing now: could not reach …».
+				const mark = () => line.getAttribute('data-mark').catch(() => '');
+				const [down] = await until(
+					async () => [await reason.innerText().catch(() => ''), await mark()],
+					([t, m]) => t.includes('could not reach') && m === 'offline',
+					DIAL
+				);
 				assert.match(down, /is the other copy running\? A terminal syncs while `datum sync run` or its daemon runs/);
-				assert.equal(await line.getAttribute('data-mark'), 'offline');
 				assert.equal(await line.locator('.reason').count(), 0);
 
 				// The relay stops: this copy is the one cut off, and it says so.
