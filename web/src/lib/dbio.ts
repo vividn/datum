@@ -228,6 +228,17 @@ function hard(argv: string[]): Promise<RunResult> {
 			const { would_insert, dropped, warnings, fingerprint, chain } = JSON.parse(seen.stdout) as RestorePreview;
 			// An empty file is a backup of nothing, and replaces nothing: no fingerprint.
 			const pin = fingerprint ? ['--if-unchanged', fingerprint] : [];
+			// A locked chain's order takes an admin's signature, which the CLI
+			// reads on stdin, and here stdin is the backup (da-art6t): an approve
+			// link answered alone would wipe every copy and restore none.
+			const listed = chain ? await run(['--db', db, ...chainListArgv()]) : null;
+			if (listed?.code === 0 && (JSON.parse(listed.stdout) as ChainList).admins.length) {
+				const stderr =
+					`db restore --hard --chain: sync chain ${chain} is locked, and restoring every copy takes an admin’s approval, ` +
+					'which this page cannot hand a restore: the backup is read where the approval would be. Nothing changed. ' +
+					'On a computer, `datum db restore --hard --chain <BACKUP>` asks for it: the link it prints for a passkey, or `--admin-key <FILE>`.';
+				return { argv, code: 1, stdout: '', stderr };
+			}
 			const { entries = 0, tombstones = 0, history = 0 } = dropped ?? {};
 			const text =
 				moved +

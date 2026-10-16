@@ -168,3 +168,47 @@ describe('the purge dialog in a locked chain', () => {
 		}, AT_DATUM_DAY);
 	});
 });
+
+// da-art6t: a hard restore of every copy in a locked chain takes an admin's
+// signature, which the CLI reads on stdin, and here stdin is the backup. An
+// approve link answered alone would wipe every copy and restore none, so the
+// page says it cannot before the name, and nothing is wiped.
+describe('the hard restore dialog in a locked chain', () => {
+	const restore = async (app) => {
+		const { page } = app;
+		await cli(app, ['--db', 'home', 'occur', 'tea']);
+		const backup = await cli(app, ['--db', 'home', 'db', 'backup', '-']);
+		await app.goto('/repl?db=home');
+		const chooser = page.waitForEvent('filechooser');
+		// Its echo lands once the file is chosen: handled, so a failed assertion is the failure reported.
+		const ran = app.submit('db restore --hard --chain');
+		ran.catch(() => {});
+		await (await chooser).setFiles({ name: 'home.jsonl', mimeType: 'application/json', buffer: Buffer.from(backup) });
+		const dialog = page.locator('dialog.confirm[open]');
+		const [asked, said] = await until(
+			async () => [await dialog.count(), (await app.outputs()).at(-1) ?? ''],
+			([asked, said]) => asked > 0 || /locked/.test(said)
+		);
+		assert.equal(asked, 0, `asked before saying it cannot: ${asked && (await dialog.innerText())}`);
+		assert.equal((await runIn(app, ['--db', 'home', 'count', 'tea'])).stdout.trim(), '1');
+		return said;
+	};
+
+	test('locked by a key file: said before any name, and nothing restored', async () => {
+		await withWallClock(async (app) => {
+			await cli(app, ['--db', 'home', 'sync', 'new-invite', '--expires', '1d']);
+			await cli(app, ['--db', 'home', 'sync', 'admin', 'add', '/data/admin.key']);
+			assert.match(await restore(app), /--admin-key <FILE>/);
+		}, AT_DATUM_DAY);
+	});
+
+	test('locked by a passkey: said before any name, and nothing restored', async () => {
+		await withWallClock(async (app) => {
+			await authenticator(app.page);
+			await cli(app, ['--db', 'home', 'sync', 'new-invite', '--expires', '1d']);
+			await app.goto('/sync?db=home');
+			await addAdmin(app.page);
+			assert.match(await restore(app), /the link it prints for a passkey/);
+		}, AT_DATUM_DAY);
+	});
+});
