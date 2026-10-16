@@ -70,9 +70,17 @@
 // count toward the fail-fast three. Every retry is logged as `RETRIED
 // web/tests/<file> (<bead>): …`, and an unlisted file is never retried. The
 // list lives in ci.yml, beside the beads whose fixes take each file off it.
+//
+// ONLY THE FILES A CHANGE REACHES, ON A PR (da-e0gtq). `DATUM_TEST_ONLY`
+// names a file listing test files, one per line — `testmap.mjs select`'s
+// choice — and the run takes those of its files alone. `DATUM_TEST_COVERAGE`
+// names a directory, and every process of the run records into it what it
+// executed (tests/support/coverage.mjs), which `testmap.mjs index` makes the
+// map that choice is read from.
 
 import { availableParallelism, loadavg } from 'node:os';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { run } from 'node:test';
 import { spec as Spec, tap } from 'node:test/reporters';
 import { filesAtOnce } from './concurrency.mjs';
@@ -139,7 +147,19 @@ const retry = new Map(
 for (const [f, bead] of retry) if (!all.includes(f) || !bead) throw new Error(`DATUM_TEST_RETRY wants tests/<file>=<bead> naming a file this run has; got ${f}=${bead ?? ''}`);
 const record = new URL('durations.json', import.meta.url);
 const known = JSON.parse(readFileSync(record, 'utf8'));
-const files = shardFiles(all, shard).sort((a, b) => (known[b] ?? Infinity) - (known[a] ?? Infinity) || a.localeCompare(b));
+const onlyList = process.env.DATUM_TEST_ONLY;
+// Not passed on: a run a test starts (test-runner.test.mjs) takes its own files.
+delete process.env.DATUM_TEST_ONLY;
+const only = onlyList && new Set(readFileSync(onlyList, 'utf8').split('\n').filter(Boolean));
+const files = shardFiles(all, shard).filter((f) => !only || only.has(f)).sort((a, b) => (known[b] ?? Infinity) - (known[a] ?? Infinity) || a.localeCompare(b));
+if (only) console.log(`test: ${files.length} of ${all.length} files, the ones this change reaches (${onlyList})`);
+if (process.env.DATUM_TEST_COVERAGE) {
+	// Absolute, for the processes a test spawns somewhere else.
+	process.env.DATUM_TEST_COVERAGE = resolve(process.env.DATUM_TEST_COVERAGE);
+	mkdirSync(process.env.DATUM_TEST_COVERAGE, { recursive: true });
+	process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${new URL('../tests/support/coverage.mjs', import.meta.url)}`;
+	console.log(`test: recording what each file executes into ${process.env.DATUM_TEST_COVERAGE}`);
+}
 if (shard) {
 	console.log(`test: shard ${shard.n}/${shard.total} — ${files.length} of ${all.length} files:`);
 	for (const f of files) console.log(`  ${f}`);

@@ -4,6 +4,12 @@
 # (scripts/testmap-build.sh) and kept on the `testmap` branch: ONE orphan
 # commit, force-pushed, holding `testmap.json`, whose `commit` is the staging
 # sha it maps. Only the newest map is worth having, so there is no history.
+# The `web` job puts the web suite's map beside it (da-e0gtq): one
+# instrumented run of `pnpm test` (web/scripts/testmap.mjs), whose
+# `testmap-web.json` ci.yml reads with `testmap.mjs select`, and whose
+# `web-durations.json` is every file's seconds for the longest-first order
+# (da-gqwh2). Each job pushes its own files and keeps the other's
+# (scripts/testmap-push.sh).
 #
 # Its own workflow, so it never gates anything: a red or missing map makes a
 # PR run its whole suite, saying so, and staging's verdict (ci.yml) never
@@ -20,6 +26,8 @@ on:
       - .forgejo/workflows/testmap.yml
       - scripts/testmap-*
       - xtask/src/testmap.rs
+      - web/scripts/testmap.mjs
+      - web/tests/support/coverage.mjs
 
 # A staging build once started finishes (da-wqdmq): cancelled by each newer
 # push, 7 of the 11 runs that ended between 22:31 and 00:08 on 10-15 mapped
@@ -102,11 +110,76 @@ jobs:
           GIT_AUTHOR_EMAIL: testmap@git.vividn.dev
           GIT_COMMITTER_NAME: testmap workflow
           GIT_COMMITTER_EMAIL: testmap@git.vividn.dev
+        run: scripts/testmap-push.sh "$RUNNER_TEMP/testmap.json"
+
+  web:
+    needs: newest
+    if: needs.newest.outputs.superseded != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      # The whole history, so ensure-wasm.mjs can find origin/main's
+      # merge-base and fetch its module instead of building one.
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: System tools the image lacks (time, for max RSS per step)
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends time >/dev/null
+
+      # ci.yml's install, under its lock (da-nmf83), for a CLI module
+      # ensure-wasm.mjs has to build and the native `datum` below.
+      - name: Install rustup and the pinned toolchain
         run: |
           set -euo pipefail
-          export GIT_INDEX_FILE=$(mktemp -u)
-          git read-tree --empty
-          git update-index --add --cacheinfo "100644,$(git hash-object -w "$RUNNER_TEMP/testmap.json"),testmap.json"
-          commit=$(git commit-tree "$(git write-tree)" -m "testmap for $(git rev-parse HEAD)")
-          git push -f origin "$commit:refs/heads/testmap"
-          echo "testmap $commit for $(git rev-parse HEAD)"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          mkdir -p "$HOME/.cargo" && exec 9>"$HOME/.cargo/.ci-install.lock" && flock 9
+          RUSTUP_AUTO_INSTALL=0 rustup --version >/dev/null 2>&1 ||
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+          rustup toolchain install --no-self-update
+          rustup target add wasm32-wasip1
+
+      # The sync tests pair the page with a native copy (tests/support/sync.mjs).
+      # Without one each fails at its first line, and the map holds only
+      # that much of what it reaches.
+      - name: Build the native datum the sync tests pair with
+        run: /usr/bin/time -v cargo build -p datum-cli
+
+      - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - uses: https://github.com/pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: web/package.json
+
+      - name: pnpm install and the headless browser
+        working-directory: web
+        run: pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps --only-shell chromium
+
+      # ci.yml's run, at its concurrency, with every file run to its end
+      # (no fail-fast) and timed. A file that fails is still mapped by what
+      # it ran; one cut before it finished is unknown to the map, so every
+      # PR runs it.
+      - name: Build the web map
+        working-directory: web
+        env:
+          DATUM_TEST_CONCURRENCY: 3
+          DATUM_TEST_BAIL: '0'
+          DATUM_TEST_RECORD: '1'
+        run: |
+          set -euo pipefail
+          export DATUM_TEST_COVERAGE="$RUNNER_TEMP/web-coverage"
+          /usr/bin/time -v pnpm test || echo "::warning::the instrumented web run failed; the map holds what each file ran"
+          node scripts/testmap.mjs index "$DATUM_TEST_COVERAGE" "$RUNNER_TEMP/testmap-web.json"
+          cp scripts/durations.json "$RUNNER_TEMP/web-durations.json"
+
+      - name: Commit it to `testmap`
+        if: github.ref == 'refs/heads/staging' && github.event_name != 'pull_request'
+        env:
+          GIT_AUTHOR_NAME: testmap workflow
+          GIT_AUTHOR_EMAIL: testmap@git.vividn.dev
+          GIT_COMMITTER_NAME: testmap workflow
+          GIT_COMMITTER_EMAIL: testmap@git.vividn.dev
+        run: scripts/testmap-push.sh "$RUNNER_TEMP/testmap-web.json" "$RUNNER_TEMP/web-durations.json"

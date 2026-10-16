@@ -123,6 +123,9 @@ export default defineConfig({
 		__DATUM_COMMIT__: JSON.stringify(build.commit)
 	},
 	plugins: [sveltekit(), crossOriginIsolation(), workerPrecache()],
+	// The web test map's instrumented run (da-e0gtq) reads its coverage back
+	// to source files through these; nothing else builds them.
+	build: { sourcemap: process.env.DATUM_TEST_COVERAGE ? 'hidden' : false },
 	// The database worker ($lib/db.worker.ts) is a module worker; Vite's
 	// default worker format — iife — cannot code-split.
 	worker: {

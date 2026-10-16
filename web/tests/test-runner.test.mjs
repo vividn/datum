@@ -193,4 +193,20 @@ test('fails', () => { throw new Error('always'); });
 		assert.match(out, /DATUM_TEST_RETRY wants .* got tests\/debug-x\.test\.mjs=da-x/);
 		assert.notEqual(code, 0);
 	});
+
+	// da-e0gtq: a PR's selection. Not passed on, or a run THIS file starts
+	// would take the PR's list for its own and run nothing.
+	test('DATUM_TEST_ONLY runs the files it lists alone, and keeps the list to itself', () => {
+		const list = join(mkdtempSync(join(tmpdir(), 'datum-only-')), 'web.tests');
+		writeFileSync(list, 'tests/picked.test.mjs\n');
+		const picked = `import test from 'node:test';
+import assert from 'node:assert/strict';
+test('sees no list', () => assert.equal(process.env.DATUM_TEST_ONLY, undefined));
+`;
+		const { code, out } = suite({ 'picked.test.mjs': picked, 'other.test.mjs': always }, '', { DATUM_TEST_ONLY: list });
+		assert.match(out, /^test: 1 of 2 files, the ones this change reaches/m);
+		assert.match(out, /^ +[\d.]+ s +tests\/picked\.test\.mjs$/m);
+		assert.doesNotMatch(out, /other\.test\.mjs/);
+		assert.equal(code, 0, out);
+	});
 });
