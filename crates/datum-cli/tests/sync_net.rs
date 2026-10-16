@@ -1349,16 +1349,24 @@ fn an_unset_label_is_assembled_alike_on_every_copy() {
 #[test]
 fn a_new_member_is_announced_once() {
     let (a, b) = paired();
-    for copy in [&a, &b] {
+    // The inviter is told a device joined, and what revokes it; the joiner
+    // only who was in the chain it joined, plainly (da-o9xdd).
+    let told = [
+        "⚠ another device joined: ",
+        "you joined this sync chain; its members: ",
+    ];
+    for (copy, told) in [(&a, told[0]), (&b, told[1])] {
         let first = String::from_utf8(copy.run(&["tail"]).stderr).unwrap();
-        assert!(first.contains("⚠ new sync endpoint"), "{first}");
-        assert!(
-            first.contains("`datum sync chain list` to review"),
-            "{first}"
-        );
+        assert!(first.starts_with(told), "{first}");
+        assert_eq!(first.lines().count(), 1, "{first}");
         let second = String::from_utf8(copy.run(&["tail"]).stderr).unwrap();
-        assert!(!second.contains("new sync"), "{second}");
+        assert!(!second.contains(told), "{second}");
     }
+    let first = a.ok(&["sync", "status"]);
+    assert!(
+        first.contains("not yours? `datum sync chain revoke "),
+        "{first}"
+    );
 }
 
 /// A first sync whose apply outlasts the progress timeout (da-039jx): b applies

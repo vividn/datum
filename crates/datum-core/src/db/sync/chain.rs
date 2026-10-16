@@ -1100,14 +1100,18 @@ fn admin_signed(admins: &[Admin], digest: &[u8; 32], sig: &str) -> std::result::
 /// aside. `quiet` notes them as seen: an act done here, by the person here.
 pub(super) fn note(conn: &Connection, chain: &Chain, quiet: bool) -> Result<()> {
     let mine = endpoint(conn)?.id;
+    // A member admitted before this copy was, or heard of while it is none
+    // yet, is one it found on joining (da-o9xdd): named, not news.
+    let joined = chain.member(&mine).map(|m| m.admitted.as_str());
     let mut stmt = conn.prepare_cached(
         "INSERT OR IGNORE INTO sync_notices (subject, kind, label, at, via, announced, acked)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
     )?;
     for m in chain.members.iter().filter(|m| m.endpoint != mine) {
+        let found = joined.is_none_or(|j| m.admitted.as_str() < j);
         stmt.execute(params![
             m.endpoint,
-            "endpoint",
+            if found { "member" } else { "endpoint" },
             m.label,
             hlc_time(&m.admitted),
             m.via,
@@ -1165,7 +1169,8 @@ pub struct PurgePreview {
 #[derive(Debug, Clone)]
 pub struct Notice {
     pub subject: String,
-    /// `endpoint`, `rejoin`, `admin` or `unlock`.
+    /// `endpoint`, `member` (one found on joining), `rejoin`, `admin`,
+    /// `unlock` or `wipe`.
     pub kind: String,
     pub label: String,
     pub at: String,
@@ -1173,41 +1178,26 @@ pub struct Notice {
 }
 
 impl Notice {
-    /// What `datum sync chain ack` takes to acknowledge it: `unlock`, or
-    /// the id its line shows.
+    /// What `datum sync chain ack` takes to acknowledge it: `unlock`,
+    /// `joined` (every member found on joining), or the id its line shows.
     pub fn who(&self) -> &str {
         match self.kind.as_str() {
-            "unlock" => return "unlock",
-            "wipe" => return &self.subject,
-            _ => {}
+            "unlock" => "unlock",
+            "member" => "joined",
+            "wipe" => &self.subject,
+            _ => {
+                let id = self.endpoint().unwrap_or(&self.subject);
+                &id[..id.len().min(18)]
+            }
         }
-        let id = self.subject.trim_start_matches("rejoin:");
-        &id[..id.len().min(18)]
     }
-}
 
-impl std::fmt::Display for Notice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let id = self.who();
+    /// The device it is about.
+    pub fn endpoint(&self) -> Option<&str> {
         match self.kind.as_str() {
-            "admin" => write!(f, "new sync admin {} ({id}) added {}", self.label, self.at),
-            "unlock" => write!(f, "sync chain unlocked by {} at {}", self.label, self.at),
-            "wipe" => write!(
-                f,
-                "sync chain restored to a backup by {} at {}: what this copy held is in {} \
-                 — `datum db restore {} --merge` brings it back",
-                self.label, self.at, self.via, self.via
-            ),
-            "rejoin" => write!(
-                f,
-                "sync endpoint {} ({id}) admitted again {} via {}",
-                self.label, self.at, self.via
-            ),
-            _ => write!(
-                f,
-                "new sync endpoint {} ({id}) admitted {} via {}",
-                self.label, self.at, self.via
-            ),
+            "endpoint" | "member" => Some(&self.subject),
+            "rejoin" => self.subject.split(':').nth(1),
+            _ => None,
         }
     }
 }
@@ -1562,10 +1552,10 @@ impl Db {
     /// no notice: name it by its whole id). How many rows it settled.
     pub fn sync_ack(&self, who: &str) -> Result<usize> {
         let prefix = |id: &str| who.len() >= MIN_PREFIX && id.starts_with(who);
-        // `unlock` is a word of its own: it never names a member or admin
-        // that happens to carry that label.
+        // `unlock` and `joined` are words of their own: neither names a
+        // member or admin that happens to carry that label.
         let named = |n: &Notice| match who {
-            "unlock" => n.kind == "unlock",
+            "unlock" | "joined" => n.who() == who,
             _ => n.label == who,
         };
         let hits: Vec<Notice> = self
@@ -1573,7 +1563,7 @@ impl Db {
             .into_iter()
             .filter(|n| {
                 named(n)
-                    || who != "unlock"
+                    || !matches!(who, "unlock" | "joined")
                         && (prefix(&n.subject)
                             || n.subject.split_once(':').is_some_and(|(_, k)| prefix(k)))
             })

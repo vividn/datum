@@ -470,27 +470,32 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
         }
         // `--all`: every notice pending, each named, so none goes unseen.
         SyncCommand::Ack { all: true, .. } => {
-            let notices = db.sync_notices_unacked()?;
+            let notices = said(db, db.sync_notices_unacked()?);
             if notices.is_empty() {
                 println!("nothing to acknowledge");
             }
-            for n in notices {
+            for (n, text) in notices {
                 db.sync_ack(n.who())?;
-                println!("acknowledged {n}");
+                println!("acknowledged {text}");
             }
         }
         // Bare: the one notice pending, or the list to name one from.
-        SyncCommand::Ack { who: None, .. } => match db.sync_notices_unacked()?.as_slice() {
+        SyncCommand::Ack { who: None, .. } => match said(db, db.sync_notices_unacked()?).as_slice()
+        {
             [] => bail!("nothing to acknowledge"),
-            [n] => {
+            [(n, text)] => {
                 db.sync_ack(n.who())?;
-                println!("acknowledged {n}");
+                println!("acknowledged {text}");
             }
             many => bail!(
                 "{} to acknowledge; name one, or `datum sync chain ack --all`:\n{}",
                 many.len(),
                 many.iter()
-                    .map(|n| format!("  ⚠ {n} — `datum sync chain ack {}`", n.who()))
+                    .map(|(n, text)| format!(
+                        "  {}{text} — `datum sync chain ack {}`",
+                        warns(n),
+                        n.who()
+                    ))
                     .collect::<Vec<_>>()
                     .join("\n")
             ),
@@ -1278,8 +1283,10 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 "filter": filter_json(chain.filter(&mine)),
             },
             "members": members,
-            "notices": notices.iter().map(|n| json!({
-                "subject": n.subject, "kind": n.kind, "label": n.label, "at": n.at, "text": n.to_string(),
+            "notices": said(db, notices.clone()).into_iter().map(|(n, text)| json!({
+                "subject": n.subject, "kind": n.kind, "label": n.label, "at": n.at, "via": n.via,
+                "who": n.who(), "endpoint": (n.kind != "member").then(|| n.endpoint()).flatten(),
+                "text": text,
             })).collect::<Vec<_>>(),
             "clock": clock.iter().map(|w| json!({
                 "endpoint": w.endpoint, "label": w.label, "ops": w.ops,
@@ -1351,8 +1358,8 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     for w in upgrade.iter().chain(&unsent) {
         println!("⚠ {w}");
     }
-    for n in &notices {
-        println!("{}", notice_line(n));
+    for (n, text) in said(db, notices) {
+        println!("{}", notice_line(&n, &text));
     }
     let (shown, hidden): (Vec<_>, Vec<_>) = peers.iter().partition(|p| show_revoked || !p.revoked);
     let width = shown
@@ -1410,23 +1417,114 @@ pub fn warn_new_members(db: &Db, before: &[Notice]) {
     if before.is_empty() {
         return;
     }
-    for n in db.sync_notices_unannounced().unwrap_or_default() {
-        if !before.iter().any(|b| b.subject == n.subject) {
-            continue;
-        }
-        eprintln!("{}", notice_line(&n));
-        let _ = db.sync_notice_announced(&n);
+    let mut now = db.sync_notices_unannounced().unwrap_or_default();
+    now.retain(|n| before.iter().any(|b| b.subject == n.subject));
+    for n in &now {
+        let _ = db.sync_notice_announced(n);
+    }
+    for (n, text) in said(db, now) {
+        eprintln!("{}", notice_line(&n, &text));
     }
 }
 
-/// A notice as a warning, with what clears it.
-fn notice_line(n: &Notice) -> String {
+/// The notices in words (da-o9xdd), in this reader's local time and by
+/// the label the chain gives each device now, each with its text: the
+/// members a copy found on joining as one line, which `joined`
+/// acknowledges, every other notice alone.
+fn said(db: &Db, mut notices: Vec<Notice>) -> Vec<(Notice, String)> {
+    if let Ok(chain) = db.sync_chain() {
+        for n in &mut notices {
+            if let Some(m) = n.endpoint().and_then(|e| chain.member(e)) {
+                n.label = m.label.clone();
+            }
+        }
+    }
+    let (found, rest): (Vec<_>, Vec<_>) = notices.into_iter().partition(|n| n.kind == "member");
+    let mut out: Vec<_> = rest
+        .into_iter()
+        .map(|n| {
+            let at = local(&n.at);
+            let text = match n.kind.as_str() {
+                "endpoint" => format!("another device joined: {}, at {at}", n.label),
+                "rejoin" => format!("{} joined again, at {at}", n.label),
+                "admin" => format!("new sync admin {} ({}) added {at}", n.label, n.who()),
+                "unlock" => format!("sync chain unlocked by {} at {at}", n.label),
+                "wipe" => format!(
+                    "sync chain restored to a backup by {} at {at}: what this copy held is in {} \
+                     — `datum db restore {} --merge` brings it back",
+                    n.label, n.via, n.via
+                ),
+                kind => format!("sync notice ({kind}): {}, at {at}", n.label),
+            };
+            (n, text)
+        })
+        .collect();
+    if let Some(first) = found.first() {
+        let members: Vec<_> = found
+            .iter()
+            .map(|n| format!("{} (since {})", n.label, local(&n.at)))
+            .collect();
+        let text = format!(
+            "you joined this sync chain; its members: {}",
+            members.join(", ")
+        );
+        let labels: Vec<_> = found.iter().map(|n| n.label.as_str()).collect();
+        let label = labels.join(", ");
+        out.insert(
+            0,
+            (
+                Notice {
+                    label,
+                    ..first.clone()
+                },
+                text,
+            ),
+        );
+    }
+    out
+}
+
+/// An RFC 3339 instant on this reader's clock: the time alone today.
+fn local(at: &str) -> String {
+    let Ok(t) = chrono::DateTime::parse_from_rfc3339(at) else {
+        return at.to_string();
+    };
+    let zone = datum_core::time::Zone::host();
+    let t = zone.local_naive(t.to_utc());
+    let today = zone
+        .local_naive(datum_core::time::DatumTime::now().utc)
+        .date();
+    let format = if t.date() == today {
+        "%H:%M"
+    } else {
+        "%Y-%m-%d %H:%M"
+    };
+    t.format(format).to_string()
+}
+
+/// The ⚠ a notice wears: none for the members found on joining, which are
+/// not news (da-o9xdd).
+fn warns(n: &Notice) -> &'static str {
+    if n.kind == "member" {
+        ""
+    } else {
+        "⚠ "
+    }
+}
+
+/// A notice as a warning, with what clears it: a device's, what revokes
+/// it, should it not be the reader's.
+fn notice_line(n: &Notice, text: &str) -> String {
+    let (warn, who) = (warns(n), n.who());
     match n.kind.as_str() {
-        "unlock" => format!("⚠ {n} — {UNLOCK_HINT}"),
-        "wipe" => format!("⚠ {n}; `datum sync chain ack {}` to acknowledge", n.who()),
+        "unlock" => format!("⚠ {text} — {UNLOCK_HINT}"),
+        "wipe" => format!("⚠ {text}; `datum sync chain ack {who}` to acknowledge"),
+        "endpoint" | "rejoin" => format!(
+            "⚠ {text} — not yours? `datum sync chain revoke {who}`; \
+             `datum sync chain ack {who}` to acknowledge"
+        ),
         _ => format!(
-            "⚠ {n} — `datum sync chain list` to review, `datum sync chain ack {}` to acknowledge",
-            n.who()
+            "{warn}{text} — `datum sync chain list` to review, `datum sync chain ack {who}` to acknowledge"
         ),
     }
 }
@@ -1441,12 +1539,13 @@ const UNLOCK_HINT: &str =
 /// changes no other device has. `sync status` shows each from the same
 /// source (da-nq07y).
 pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
-    let (wipes, rest): (Vec<_>, Vec<_>) = db
-        .sync_notices_unacked()?
+    let (wipes, rest): (Vec<_>, Vec<_>) = said(db, db.sync_notices_unacked()?)
         .into_iter()
-        .partition(|n| n.kind == "wipe");
-    let (unlocks, new): (Vec<_>, Vec<_>) = rest.into_iter().partition(|n| n.kind == "unlock");
-    let issue = |category, head: String, notices: &[Notice]| Issue {
+        .partition(|(n, _)| n.kind == "wipe");
+    let (unlocks, rest): (Vec<_>, Vec<_>) = rest.into_iter().partition(|(n, _)| n.kind == "unlock");
+    let (found, new): (Vec<_>, Vec<_>) = rest.into_iter().partition(|(n, _)| n.kind == "member");
+    // A device's line is `sync status`'s, with what acknowledges or revokes it.
+    let issue = |category, head: String, notices: &[(Notice, String)]| Issue {
         domain: Domain::Sync,
         severity: Severity::Warning,
         category,
@@ -1454,7 +1553,10 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
             "{head}:\n{}",
             notices
                 .iter()
-                .map(|n| format!("  ⚠ {n}"))
+                .map(|(n, text)| match n.kind.as_str() {
+                    "unlock" | "wipe" => format!("  ⚠ {text}"),
+                    _ => format!("  {}", notice_line(n, text)),
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         ),
@@ -1465,12 +1567,15 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
     };
     let mut out = Vec::new();
     if !new.is_empty() {
-        let head = format!(
-            "{} new to the sync chain; `datum sync chain ack <id>` once you know {}",
-            new.len(),
-            if new.len() == 1 { "it" } else { "them" },
-        );
+        let head = format!("{} new to the sync chain", new.len());
         out.push(issue("sync_new_member", head, &new));
+    }
+    if !found.is_empty() {
+        out.push(issue(
+            "sync_joined",
+            "this copy joined a sync chain".into(),
+            &found,
+        ));
     }
     if !unlocks.is_empty() {
         let head = format!("the sync chain was unlocked: {UNLOCK_HINT}");

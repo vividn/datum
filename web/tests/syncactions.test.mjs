@@ -210,7 +210,7 @@ describe('the sync widget’s actions', () => {
 	// saying that another device joined. ok to dismiss. tells user to go to
 	// sync to manage». The Sync widget's own line was the only place a notice
 	// showed, so this page has none.
-	test('an unacknowledged notice is a ⚠ in the root bar with no Sync widget on the page: its dialog names the device and the Sync widget, OK acknowledges it, and the next device brings it back', async () => {
+	test('an unacknowledged notice is a ⚠ in the root bar with no Sync widget on the page: its dialog names the device and the Sync widget, OK acknowledges it, the next device brings it back, and its revoke revokes it', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			const notices = async () => JSON.parse(await cli(app, ['--db', 'home', 'sync', 'status', '--json'])).notices;
@@ -222,22 +222,69 @@ describe('the sync widget’s actions', () => {
 
 			await warn.click();
 			const said = await dialog.innerText();
-			assert.match(said, /Another device joined \(«home»\): new sync endpoint phone /);
+			// By label, on this page's clock, with a revoke one step away (da-o9xdd).
+			assert.match(said, /«home»: Another device joined: phone, at \d\d:\d\d$/m);
+			assert.doesNotMatch(said, /via|Z\b|[0-9a-f]{10}/);
+			assert.match(said, /Not yours\? Revoke it/);
 			assert.match(said, /To manage devices, open the Sync widget/);
+			assert.equal(await warn.innerText(), '⚠');
+			await dialog.getByRole('button', { name: 'revoke phone' }).waitFor();
 			// Closed without an OK, nothing is acknowledged.
 			await dialog.getByRole('button', { name: 'not now' }).click();
 			assert.equal((await notices()).length, 1);
 
 			await warn.click();
-			await dialog.getByRole('button', { name: 'OK' }).click();
+			await dialog.getByRole('button', { name: 'OK', exact: true }).click();
 			await until(() => warn.count(), (n) => n === 0);
 			assert.deepEqual(await notices(), []);
 
 			// With the page open: no reload brings the next one.
 			await openChain(app, 'tablet');
 			await warn.click();
-			assert.match(await dialog.innerText(), /new sync endpoint tablet /);
+			assert.match(await dialog.innerText(), /Another device joined: tablet, at /);
 			assert.doesNotMatch(await dialog.innerText(), /phone/);
+			// Not this reader's: its revoke revokes it, and acknowledges what was shown.
+			await dialog.getByRole('button', { name: 'revoke tablet' }).click();
+			await until(() => warn.count(), (n) => n === 0);
+			assert.deepEqual(await notices(), []);
+			const tablet = (await members(app)).members.find((m) => m.label === 'tablet');
+			assert.ok(tablet?.revoked, JSON.stringify(tablet));
+
+			// Two devices one label: each button names its own by its id too.
+			const pads = [await openChain(app, 'pad'), await openChain(app, 'pad')];
+			await until(() => page.evaluate(() => window.datum.sync.states().home?.notices?.length), (n) => n === 2);
+			await warn.click();
+			for (const pad of pads) await dialog.getByRole('button', { name: `revoke pad (${pad.slice(0, 8)})`, exact: true }).waitFor();
+			await dialog.getByRole('button', { name: 'not now' }).click();
+		}, { viewport: DESKTOP });
+	});
+
+	// The joiner's side (da-o9xdd): the members it found in the chain it
+	// joined were there before it, so they are no news of a device joining.
+	// vremya: «on the joiner, one plain line in place of a ⚠ per member».
+	test('a database that joins a chain is told its members once, plainly, under an ⓘ and not a ⚠ per member', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await openChain(app);
+			const { secret } = JSON.parse(await cli(app, ['--db', 'home', 'sync', 'new-invite', '--expires', '1d']));
+			const away = (await cli(app, ['--db', 'away', 'sync', 'endpoint-key'])).trim();
+			await cli(app, ['--db', 'home', 'sync', 'handshake', away, '--label', 'away', '--addr', '{}', '--invite', secret, '--chain', '']);
+			const vector = (await cli(app, ['--db', 'away', 'sync', 'pipe', 'vector'])).trim();
+			await cli(app, ['--db', 'away', 'sync', 'pipe', 'apply'], await cli(app, ['--db', 'home', 'sync', 'pipe', 'ops', '--since', vector]));
+			const notices = async () => JSON.parse(await cli(app, ['--db', 'away', 'sync', 'status', '--json'])).notices;
+			assert.deepEqual((await notices()).map((n) => [n.kind, n.who]), [['member', 'joined']]);
+
+			await app.goto('/repl?db=away');
+			const told = page.locator('.root-bar').getByRole('button', { name: 'sync notices' });
+			assert.equal(await told.innerText(), 'ⓘ');
+			await told.click();
+			const dialog = page.locator('dialog.confirm');
+			const said = await dialog.innerText();
+			assert.match(said, /«away»: You joined this sync chain; its members: .*phone \(since \d\d:\d\d\)/);
+			assert.doesNotMatch(said, /Another device joined|Revoke/);
+			await dialog.getByRole('button', { name: 'OK' }).click();
+			await until(() => told.count(), (n) => n === 0);
+			assert.deepEqual(await notices(), []);
 		}, { viewport: DESKTOP });
 	});
 
@@ -257,7 +304,7 @@ describe('the sync widget’s actions', () => {
 					const said = () => page.evaluate(() => (window.datum.sync.states().datum?.notices ?? []).map((n) => n.label));
 					await until(said, (labels) => labels.includes('tablet'));
 					await page.locator('.root-bar').getByRole('button', { name: 'sync notices' }).click();
-					assert.match(await page.locator('dialog.confirm').innerText(), /Another device joined \(«datum»\): new sync endpoint tablet /);
+					assert.match(await page.locator('dialog.confirm').innerText(), /«datum»: Another device joined: tablet, at /);
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
 			);

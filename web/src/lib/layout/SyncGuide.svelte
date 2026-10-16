@@ -77,8 +77,9 @@
 
 	<h3>When it says a device joined</h3>
 	<p>
-		Every other device shows a ⚠ at the top: tap it, and it says «Another device joined» and names it. Sync lists it
-		too, with <b class="ui">OK</b>.
+		Every other device shows a ⚠ at the top: tap it, and it says «Another device joined», names it and when, and offers
+		to revoke it should it not be yours. Sync lists it too, with <b class="ui">OK</b>. The device that joined is told
+		the chain’s members once, plainly.
 	</p>
 	<ul>
 		<li>One you added: press OK.</li>

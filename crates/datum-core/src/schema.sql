@@ -429,7 +429,7 @@ CREATE TABLE IF NOT EXISTS sync_caught_up (
 );
 
 -- The sync chain's members and admins this copy has heard of (da-odwc7):
--- `announced` once the next command has printed «new sync endpoint», and
+-- `announced` once the next command has printed it, and
 -- `acked` once `datum sync chain ack` took it off `datum check`. `subject` is an
 -- endpoint id, an admin key, or `unlock:<hlc>` (da-aam46). LOCAL, never
 -- synced; the chain is in `ops`.

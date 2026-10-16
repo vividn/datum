@@ -17,7 +17,7 @@
 // broadcast reachability ($lib/sync.ts `syncStates`) into clients × databases.
 
 import { writable } from 'svelte/store';
-import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, syncStatusArgv } from './calls.js';
+import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, revokeArgv, syncStatusArgv } from './calls.js';
 import { cliError, run, type RunResult } from './run.js';
 import { approve, approveLink } from './passkey.js';
 import { syncs, type Invite, type Reach, type SyncState } from './sync.js';
@@ -86,25 +86,24 @@ export interface Listed {
 	rejoined: string | null;
 }
 
-/** A new member or admin, or an unlock, not yet acknowledged (`sync chain ack`). */
+/**
+ * A new member or admin, or an unlock, not yet acknowledged (`sync chain ack`).
+ * `member` is every member a copy found on joining, as one (da-o9xdd).
+ */
 export interface Notice {
 	subject: string;
-	kind: 'endpoint' | 'rejoin' | 'admin' | 'unlock' | 'wipe';
+	kind: 'endpoint' | 'member' | 'rejoin' | 'admin' | 'unlock' | 'wipe';
 	label: string;
+	/** What `sync chain ack` takes for it. */
+	who: string;
+	/** The device it is about, which a revoke names. */
+	endpoint?: string | null;
+	/** The CLI's own words: who, by label, in local time (da-o9xdd). */
 	text: string;
 }
 
-/** A notice's kind in plain words (da-8fucg), said before the CLI's own line, which names who and when. */
-const NOTICED: Record<string, string> = {
-	endpoint: 'Another device joined',
-	rejoin: 'A device joined again',
-	admin: 'An admin was added',
-	unlock: 'The chain was unlocked',
-	wipe: 'The chain was restored to a backup'
-};
-
-/** `n`, a notice of `db`'s, as the root bar's dialog says it. */
-export const noticeWords = (db: string, n: Notice): string => `${NOTICED[n.kind] ?? 'Sync notice'} («${db}»): ${n.text}`;
+/** `n`, a notice of `db`'s, as the root bar's dialog says it: the CLI's words. */
+export const noticeWords = (db: string, n: Notice): string => `«${db}»: ${n.text.charAt(0).toUpperCase()}${n.text.slice(1)}`;
 
 /** One database's chain, or `chain: null` for one that is in none. */
 export interface DbSync {
@@ -388,7 +387,10 @@ export async function syncAct(db: string, argv: string[]): Promise<RunResult> {
 
 /** Acknowledge `n` in `db`: every unlock by the word, anything else by its subject. */
 export const ackNotice = (db: string, n: Notice): Promise<RunResult> =>
-	syncAct(db, ackArgv(n.kind === 'unlock' ? 'unlock' : n.subject));
+	syncAct(db, ackArgv(n.who));
+
+/** Revoke `endpoint`, the device a notice of `db`'s is about: «not yours?» (da-o9xdd). */
+export const revokeDevice = (db: string, endpoint: string): Promise<RunResult> => syncAct(db, revokeArgv(endpoint));
 
 /** Write `link`'s record into `db`, signed with `code`. */
 export const approveInto = (db: string, link: string, code: string): Promise<RunResult> =>

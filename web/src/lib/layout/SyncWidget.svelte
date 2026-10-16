@@ -507,7 +507,7 @@
 		{#each dbs as d (d.db)}
 			{#each d.notices ?? [] as n (n.subject + n.kind)}
 				<p class="notice" data-db={d.db}>
-					⚠ {d.db}: {n.text}
+					{n.kind === 'member' ? '' : '⚠ '}{d.db}: {n.text}
 					<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => ack(d.db, n)}>OK</button>
 				</p>
 			{/each}

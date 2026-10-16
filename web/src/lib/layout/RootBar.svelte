@@ -121,11 +121,11 @@
 	import { run } from '$lib/run.js';
 	import { pausedArgv } from '$lib/calls.js';
 	import { syncStates } from '$lib/sync.js';
-	import { ackNotice, noticeWords } from '$lib/syncView.js';
+	import { ackNotice, noticeWords, revokeDevice } from '$lib/syncView.js';
 	import { act } from '$lib/act.js';
 	import { storageSentence } from '$lib/storageState.js';
 	import { openBackups } from '$lib/backups.js';
-	import { confirm } from '$lib/confirm.js';
+	import { choose as chooseAnswer, confirm } from '$lib/confirm.js';
 	import { arm, helping } from '$lib/help.js';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, editing, layout, loaded } from './current.js';
@@ -173,6 +173,8 @@
 	 * again when it is opened.
 	 */
 	$: noticed = Object.values($syncStates).flatMap((s) => (s.notices ?? []).map((n) => ({ db: s.db, n })));
+	/** The members a copy found on joining are not news (da-o9xdd): an ⓘ, unless something else is. */
+	$: alarming = noticed.some(({ n }) => n.kind !== 'member');
 
 	/**
 	 * The widget's own options, inline (da-vhwq), for a root tab that SHOWS
@@ -335,18 +337,33 @@
 
 	/**
 	 * The ⚠'s dialog (da-8fucg): each notice, where devices are managed, and
-	 * an OK that acknowledges what it showed, as the Sync widget's OK does.
-	 * Nothing is checked of an ack: one settles a device's rejoins with it,
-	 * the next then has nothing to acknowledge, and whatever is left the
-	 * leader says again, the ⚠ with it.
+	 * an OK that acknowledges what it showed, as the Sync widget's OK does —
+	 * and for each device that joined, a revoke, should it not be the
+	 * reader's (da-o9xdd), which acknowledges them too. Nothing is checked of
+	 * an ack: one settles a device's rejoins with it, the next then has
+	 * nothing to acknowledge, and whatever is left the leader says again, the
+	 * ⚠ with it.
 	 */
 	const doNotices = () =>
 		attempt(async () => {
 			const shown = noticed;
+			// One button a device, its admission and its rejoin alike; a label
+			// two devices carry names its id as well.
+			const byId = new Map<string, { db: string; label: string; endpoint: string }>();
+			for (const { db, n } of shown)
+				if ((n.kind === 'endpoint' || n.kind === 'rejoin') && n.endpoint) byId.set(`${db} ${n.endpoint}`, { db, label: n.label, endpoint: n.endpoint });
+			const devices = [...byId.values()];
+			const shared = (label: string) => devices.filter((d) => d.label === label).length > 1;
+			const revokes = devices.map((d) => `revoke ${d.label}${shared(d.label) ? ` (${d.endpoint.slice(0, 8)})` : ''}`);
 			const text =
 				shown.map(({ db, n }) => noticeWords(db, n)).join('\n\n') +
+				(devices.length ? '\n\nNot yours? Revoke it, and it syncs no more.' : '') +
 				'\n\nTo manage devices, open the Sync widget: the + in this bar, then sync. OK acknowledges this.';
-			if (await confirm(text, 'OK', '', 'not now')) for (const { db, n } of shown) await ackNotice(db, n);
+			const picked = await chooseAnswer(text, ['OK', ...revokes], 'not now', 'run');
+			if (picked === null) return;
+			const revoked = devices[revokes.indexOf(picked)];
+			if (revoked) await revokeDevice(revoked.db, revoked.endpoint);
+			for (const { db, n } of shown) await ackNotice(db, n);
 		});
 
 	/**
@@ -480,7 +497,7 @@
 			aria-label="sync notices"
 			title="a device joined, or the sync chain changed: tap to read"
 			data-help="Something changed in a sync chain: a device joined, an admin was added, or the chain was unlocked. Tap to read it and acknowledge it."
-			on:click={doNotices}>⚠</button
+			on:click={doNotices}>{alarming ? '⚠' : 'ⓘ'}</button
 		>
 	{/if}
 	<span class="end">

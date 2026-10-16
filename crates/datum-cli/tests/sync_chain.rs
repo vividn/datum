@@ -1309,7 +1309,7 @@ fn a_revoked_device_rejoins_by_a_fresh_invite_with_what_it_made_while_out() {
     let members = json(&c.ok(&["sync", "chain", "list", "--json"]))["members"].clone();
     assert_eq!(members.as_array().unwrap().len(), 3, "{members}");
     let notices = c.ok(&["sync", "status", "--json"]);
-    assert!(notices.contains("admitted again"), "{notices}");
+    assert!(notices.contains("b joined again, at "), "{notices}");
     // Its whole id names its admission and its rejoin: one endpoint.
     c.ok(&["sync", "chain", "ack", &b.id()]);
     let notices = json(&c.ok(&["sync", "status", "--json"]))["notices"].to_string();
@@ -1376,14 +1376,23 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
     let admitted = a.ok(&["check"]);
     assert!(
         admitted.contains("sync:\n[WARN ] sync_new_member (x1)")
-            && admitted.contains("⚠ new sync endpoint b")
+            && admitted.contains("⚠ another device joined: b, at ")
             && !admitted.contains("new sync admin"),
         "{admitted}"
     );
+    // In plain words (da-o9xdd): by label, on the reader's clock, and what
+    // revokes it should it not be theirs.
     let status = a.ok(&["sync", "status"]);
+    let line = status
+        .lines()
+        .find(|l| l.starts_with("⚠ another device joined: b, at "))
+        .unwrap_or_else(|| panic!("{status}"));
     assert!(
-        status.contains("⚠ new sync endpoint b") && status.contains("to acknowledge"),
-        "{status}"
+        line.contains("not yours? `datum sync chain revoke ")
+            && line.contains("to acknowledge")
+            && !line.contains("via")
+            && !line.contains('Z'),
+        "{line}"
     );
     let report = json(&a.ok(&["check", "--show", "json"]));
     let issue = report["issues"]
@@ -1395,7 +1404,7 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
     assert_eq!(issue["domain"], "sync");
     a.ok(&["sync", "chain", "ack", "b"]);
     assert!(!a.ok(&["check"]).contains("new to the sync chain"));
-    assert!(!a.ok(&["sync", "status"]).contains("new sync endpoint"));
+    assert!(!a.ok(&["sync", "status"]).contains("another device joined"));
 
     // b heard of a, then of the lock: each announced once, on the first
     // command after it arrived.
@@ -1403,13 +1412,17 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
     assert!(first.contains("⚠ new sync admin"), "{first}");
     assert!(!b.stderr_of(&["tail"]).contains("new sync"));
 
+    // a was a member before b joined: named once, plainly, with no ⚠ — not
+    // news of a device joining (da-o9xdd).
     let check = b.ok(&["check"]);
+    assert!(check.contains("[WARN ] sync_joined (x1)"), "{check}");
+    let a_label = member_of(&b, &a.id())["label"].as_str().unwrap().to_owned();
+    let joined = format!("  you joined this sync chain; its members: {a_label} (since ");
+    assert!(check.contains(&joined), "{check}");
+    assert!(!check.contains("another device joined"), "{check}");
     assert!(check.contains("new to the sync chain"), "{check}");
-    assert!(
-        check.contains("⚠ new sync endpoint") && check.contains("via genesis"),
-        "{check}"
-    );
-    b.ok(&["sync", "chain", "ack", &a.id()[..10]]);
+    b.ok(&["sync", "chain", "ack", "joined"]);
+    assert!(!b.ok(&["check"]).contains("you joined"));
     b.ok(&["sync", "chain", "ack", "ed25519:"]);
     assert!(!b.ok(&["check"]).contains("new to the sync chain"));
     let none = b.fails(&["sync", "chain", "ack", "nobody"], "");
@@ -1433,7 +1446,7 @@ fn the_warning_names_its_ack_and_a_bare_ack_takes_the_only_notice() {
     let (a, b) = (Copy::new(), Copy::new());
     assert!(redeem(&a, &b, "b", None, &["--chain", ""]).status.success());
     let joined = a.stderr_of(&["tail"]);
-    assert!(joined.contains("⚠ new sync endpoint b"), "{joined}");
+    assert!(joined.contains("⚠ another device joined: b"), "{joined}");
     let [command] = acks(&joined)[..] else {
         panic!("{joined}")
     };
@@ -1448,7 +1461,11 @@ fn the_warning_names_its_ack_and_a_bare_ack_takes_the_only_notice() {
 
     // With a's endpoint, two are pending: a bare ack lists both, each with
     // its command, and takes neither.
-    let pending = |copy: &Copy| copy.ok(&["check"]).matches("⚠ new sync").count();
+    let pending = |copy: &Copy| {
+        copy.ok(&["check"])
+            .matches("`datum sync chain ack ")
+            .count()
+    };
     let both = b.fails(&["sync", "chain", "ack"], "");
     assert!(both.contains("2 to acknowledge; name one"), "{both}");
     assert!(both.contains(&format!("`{}`", commands[0])), "{both}");
@@ -1464,7 +1481,10 @@ fn the_warning_names_its_ack_and_a_bare_ack_takes_the_only_notice() {
     assert_eq!(pending(&b), 1);
 
     let one = b.ok(&["sync", "chain", "ack"]);
-    assert!(one.starts_with("acknowledged new sync endpoint "), "{one}");
+    assert!(
+        one.starts_with("acknowledged you joined this sync chain; its members: "),
+        "{one}"
+    );
     assert!(both.contains(one.trim_start_matches("acknowledged ").trim()));
     assert_eq!(pending(&b), 0);
     let none = b.fails(&["sync", "chain", "ack"], "");
@@ -1479,22 +1499,33 @@ fn ack_all_acknowledges_every_notice_and_names_each() {
     let c = Copy::new();
     admit(&a, &c, "c", None);
     assert!(a.send(&b).0);
-    // d joins a chain of three: a notice per member it has not met.
+    // d joins a chain of three: its members named in one line (da-o9xdd),
+    // and a device that joins after it is news.
     let d = Copy::new();
     admit(&b, &d, "d", None);
-    let pending = d.ok(&["check"]).matches("⚠ new sync").count();
-    assert!(pending >= 3, "{}", d.ok(&["check"]));
+    admit(&b, &Copy::new(), "e", None);
+    assert!(b.send(&d).0);
+    let check = d.ok(&["check"]);
+    assert_eq!(
+        check.matches("you joined this sync chain").count(),
+        1,
+        "{check}"
+    );
+    assert!(check.contains("⚠ another device joined: e, at "), "{check}");
 
     let acked = d.ok(&["sync", "chain", "ack", "--all"]);
     let lines: Vec<&str> = acked.lines().collect();
-    assert_eq!(lines.len(), pending, "{acked}");
-    assert!(lines
-        .iter()
-        .all(|l| l.starts_with("acknowledged new sync ")));
+    assert_eq!(lines.len(), 2, "{acked}");
+    assert!(lines[0].starts_with("acknowledged you joined this sync chain; its members: "));
+    assert!(lines[1].starts_with("acknowledged another device joined: e, at "));
     for copy in [&a, &b, &c] {
-        assert!(acked.contains(&copy.id()[..18]), "{acked}");
+        let label = member_of(&d, &copy.id())["label"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(lines[0].contains(&format!("{label} (since ")), "{acked}");
     }
-    assert!(!d.ok(&["check"]).contains("⚠ new sync"));
+    assert!(!d.ok(&["check"]).contains("sync chain ack"));
     assert_eq!(
         d.ok(&["sync", "chain", "ack", "--all"]).trim(),
         "nothing to acknowledge"
@@ -1512,7 +1543,7 @@ fn the_warning_comes_after_the_commands_own_output() {
         assert!(redeem(&a, &b, "b", None, &["--chain", ""]).status.success());
         a
     };
-    const WARNING: &str = "⚠ new sync endpoint b";
+    const WARNING: &str = "⚠ another device joined: b";
 
     // Both streams into one file, in the order they were written.
     let a = joined();
@@ -2517,7 +2548,7 @@ fn removing_the_last_admin_unlocks_the_chain_only_on_purpose() {
     }
     let check = a.ok(&["check"]);
     assert!(
-        check.contains("⚠ new sync endpoint unlock") && !check.contains(unlocked),
+        check.contains("⚠ another device joined: unlock") && !check.contains(unlocked),
         "{check}"
     );
 }
