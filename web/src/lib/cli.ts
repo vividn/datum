@@ -99,10 +99,10 @@ let memory: Map<string, Handle> | null = null;
  * The databases this worker keeps files for: `datum` and `_internal`, plus
  * every name a command has since asked for (da-vk1x).
  *
- * A page on `?db=other` prefixes `--db other` at the seam ($lib/run.ts), and
+ * A page on `?db=other` sets `DATUM_DB=other` at the seam ($lib/run.ts), and
  * without this the CLI would make `/data/other.db` inside the process's own
  * in-memory filesystem and lose it at exit — the entry would be stored and
- * gone. So the worker reads the name out of argv the way the CLI does and
+ * gone. So the worker reads the name out of argv and env the way the CLI does and
  * opens a real file for it: a database is persisted because a command named
  * it, not because this file knew about it.
  *
@@ -114,34 +114,34 @@ let memory: Map<string, Handle> | null = null;
 let databases: readonly string[] = DATABASES;
 
 /**
- * The database `argv` names, if it names one by NAME.
+ * The database `argv` and `env` name, if they name one by NAME.
  *
- * The CLI's own pre-scan, in TypeScript: `--db X` or `--db=X`, before any
- * `--`, and a value that is a name rather than a path
- * (`extract_global_db_flag` and `looks_like_path`,
+ * The CLI's own resolution, in TypeScript: `--db X` or `--db=X`, before any
+ * `--`, else `DATUM_DB`, and a value that is a name rather than a path
+ * (`extract_global_db_flag`, `locate` and `looks_like_path`,
  * `crates/datum-commands/src/config.rs`). A path is left to the process's
  * own filesystem, as it always has been.
  */
-function dbNamed(argv: string[]): string | undefined {
-	for (let i = 0; i < argv.length; i += 1) {
+function dbNamed(argv: string[], env: string[]): string | undefined {
+	let value: string | undefined;
+	for (let i = 0; i < argv.length && value === undefined; i += 1) {
 		const word = argv[i];
-		if (word === '--') return undefined;
-		const value = word === '--db' ? argv[i + 1] : word.startsWith('--db=') ? word.slice(5) : undefined;
-		if (value === undefined) continue;
-		if (!value || value.includes('/') || value.startsWith('.') || value.endsWith('.db')) return undefined;
-		return value;
+		if (word === '--') break;
+		value = word === '--db' ? (argv[i + 1] ?? '') : word.startsWith('--db=') ? word.slice(5) : undefined;
 	}
-	return undefined;
+	value ??= env.findLast((v) => v.startsWith('DATUM_DB='))?.slice(9);
+	if (!value || value.includes('/') || value.startsWith('.') || value.endsWith('.db')) return undefined;
+	return value;
 }
 
 /**
- * Note that `argv` runs against its database, so this worker opens a file
+ * Note that `argv` with `env` runs against its database, so this worker opens a file
  * for it. The files a burst is holding are the wrong set once the list has
  * grown; `withFiles` gives them back and takes the new set on the next
  * command, which is the only moment no process is running.
  */
-function useDatabase(argv: string[]): void {
-	const name = dbNamed(argv);
+function useDatabase(argv: string[], env: string[]): void {
+	const name = dbNamed(argv, env);
 	if (name === undefined || databases.includes(name)) return;
 	databases = [...databases, name];
 	// In memory, the new database is another pair of handles in the same map
@@ -197,7 +197,7 @@ const rank = (job: Job) => (job.pane ? (cost.get(job.word) ?? 0) : -1);
 /**
  * `argv`'s command word: the first that is neither a flag nor `--db`'s value.
  * Only a pane's is ranked, and a pane's argv starts with its command; `--db`
- * is the one flag the seam puts before it ($lib/run.ts `dbArgv`).
+ * is the one flag a caller puts before it.
  */
 const wordOf = (argv: string[]) => argv.find((word, i) => !word.startsWith('-') && argv[i - 1] !== '--db') ?? '';
 
@@ -461,11 +461,13 @@ async function exec(
 	const data = opfsDirectory('/data', handles, stage);
 	const fds: Fd[] = [new OpenFile(new MemFile(new TextEncoder().encode(stdin))), stdout, stderr, data];
 	// HOME inside the preopen: datum makes its config dir there, in memory
-	// for the length of the process. The database is DATUM_DB — and datum's
+	// for the length of the process. The database is DATUM_DB, unless `env`
+	// names one (the page's, $lib/run.ts `dbEnv`) — and datum's
 	// data dir is the preopen itself, so `--db <name>` lands on
 	// `/data/<name>.db` by the CLI's own rule, and `--db _internal` is the
 	// other persisted file with nothing here parsing argv for it.
-	const vars = ['HOME=/data', 'DATUM_HOME=/data', 'DATUM_DB=/data/datum.db', ...env];
+	const fallback = env.some((v) => v.startsWith('DATUM_DB=')) ? [] : ['DATUM_DB=/data/datum.db'];
+	const vars = ['HOME=/data', 'DATUM_HOME=/data', ...fallback, ...env];
 	const args = ['datum', ...argv];
 	const wasi = new WASI(args, vars, fds, { debug: false });
 	// The shim (0.4.2, the latest) sizes argv in UTF-16 units and writes it
@@ -649,7 +651,7 @@ export function runCli(
 	pane = false
 ): Promise<CliResult | null> {
 	lastEnv = env;
-	useDatabase(argv);
+	useDatabase(argv, env);
 	return enqueue(async () => {
 		const t0 = performance.now();
 		const module = await compile();

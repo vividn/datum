@@ -207,12 +207,14 @@ describe('the sample seeder', () => {
 			assert.ok(n > 60, `a week of sample is ${report}`);
 			assert.equal(await tagged(app), n, 'the report is not what the database holds');
 
-			// The log shows every command against THIS database, each dated and
-			// timed, and each answered with a CREATE.
+			// The log shows every command as typed on this page — the page's
+			// database is no flag of argv (da-7xne1), and `tagged` above is
+			// where the rows landed — each dated and timed, and each answered
+			// with a CREATE.
 			const log = await written(page);
 			assert.equal(log.length, n);
 			for (const { argv, created } of log) {
-				assert.match(argv, /^❯ datum --db DEBUG \w+ \w+ .*-d \d{4}-\d\d-\d\d -t \d\d:\d\d:\d\d\.\d{3} sample=true$/);
+				assert.match(argv, /^❯ datum \w+ \w+ .*-d \d{4}-\d\d-\d\d -t \d\d:\d\d:\d\d\.\d{3} sample=true$/);
 				assert.ok(created, `${argv} came back without a CREATE`);
 			}
 

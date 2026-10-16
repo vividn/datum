@@ -520,15 +520,16 @@ start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `ir
   the same. NB `touch-action: pan-x` is on `.field` as well as the bar: the
   value resolves only up to the nearest scroll container, so without it the
   browser claims every drag that starts on the box.
-- `?db=<name>` names the DATABASE the page runs against (`web/src/lib/database.ts`): the name becomes the CLI's own `--db` at the
-  one seam (`run` in `run.ts`), so no caller carries it, and a caller that
+- `?db=<name>` names the DATABASE the page runs against (`web/src/lib/database.ts`): the name becomes the CLI's `DATUM_DB` at the
+  one seam (`run` in `run.ts`), outside argv so `raw_input` is what was typed
+  (da-7xne1), so no caller carries it, and a caller that
   names its own database keeps it — which is what leaves the layout store's
   `--db _internal` alone, layouts being the device's and not the database's.
-  Nothing is prefixed at the default, the query is the whole of the state
+  Nothing is set at the default, the query is the whole of the state
   (it survives a reload, links and `goto` carry it, nothing is stored), the
   tab is named after it, and `_internal` or a path is refused with a notice.
   The worker persists whatever database a command NAMES — it reads the name
-  out of argv as the CLI does and opens a handle for `<name>.db` — and the
+  out of argv and env as the CLI does and opens a handle for `<name>.db` — and the
   cross-tab refresh is keyed by it, on the names `announceChange` already
   carries.
 - A burst takes the database files for itself (sync access handles) under

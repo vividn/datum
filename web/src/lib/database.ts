@@ -6,10 +6,10 @@
 // database named in the URL — and the URL is the whole of the state: it
 // survives a reload, it is what a link carries, and nothing is stored.
 //
-// The name reaches the CLI as its own `--db <name>`, prefixed at the one
-// seam every command goes through ($lib/run.ts). It is the WEB's flag, like
-// `--width` (da-xfa4): the scrollback echoes what the reader typed, not what
-// the runner received. What a reader sees of it is the page — the title.
+// The name reaches the CLI as its `DATUM_DB`, set at the one seam every
+// command goes through ($lib/run.ts `dbEnv`), and never in argv: argv is what
+// an entry records as typed (da-7xne1). What a reader sees of it is the
+// page — the title.
 //
 // `_internal` is refused. It is the app's own database, where the saved
 // layouts live (da-wpgy), and a page that ran the panes against it would be

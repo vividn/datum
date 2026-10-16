@@ -87,6 +87,14 @@ describe('the database in the URL', () => {
 		});
 	});
 
+	test('the record is what was typed, with no --db in it (da-7xne1)', async () => {
+		await onOther(async (app) => {
+			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
+			const [row] = await entriesIn(app, 'other');
+			assert.equal(row?.raw_input, 'occur coffee -t 0700', JSON.stringify(row));
+		});
+	});
+
 	test('no ?db, and an empty one, are the default database', async () => {
 		for (const query of ['', '?db=']) {
 			const body = async (app) => {

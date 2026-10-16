@@ -42,7 +42,8 @@ export interface RunResult {
  * `onStderr` hears the process's stderr as it is written, before the result.
  * `key` names who is asking (a pane): a newer command with the same key drops
  * this one if it has not started yet. Without a key a command always runs.
- * `env` is added to the process's environment (`DATUM_SHOW`, $lib/echo.ts).
+ * `env` is added to the process's environment (`DATUM_SHOW`, $lib/echo.ts;
+ * `DATUM_DB`, `dbEnv`).
  * `pane`: a pane's refresh, which waits behind every other command and is
  * run cheapest first (da-icmo1).
  */
@@ -94,23 +95,21 @@ function namedDb(argv: string[]): { named: boolean; db?: string } {
 }
 
 /**
- * `argv` against the page's database (da-vk1x).
+ * The env that runs `argv` against the page's database (da-vk1x).
  *
- * The ONE place `?db=<name>` becomes a flag: every command the app runs on
+ * The ONE place `?db=<name>` reaches the CLI: every command the app runs on
  * the reader's behalf — the panes, the bar's line, the widgets, the day
  * strip's bands — passes through `run`, so none of them carries the query
  * itself. A caller that names its own database keeps it, which is what
  * leaves the layout store's `--db _internal` alone ($lib/layout/store.ts).
  *
- * Prefixed, because `--db` is a global flag the CLI reads before it looks
- * for a command word, and a multi-side `a , b` run has one of them for both
- * sides. Nothing is added at the default: `--db datum` and no flag at all
- * resolve to the same file, and the argv the runner sees is then exactly
- * the argv the caller asked for.
+ * `DATUM_DB`, not `--db`: the CLI reads it below the flag, and a flag in
+ * argv lands in every entry's `raw_input`, so `why` quoted «--db work occur
+ * coffee» for a line typed as `occur coffee` (da-7xne1, as da-vx31e did for
+ * `--show`). Nothing is added at the default.
  */
-export function dbArgv(argv: string[], db: string = currentDb()): string[] {
-	if (db === DEFAULT_DB || argv.length === 0 || namedDb(argv).named) return argv;
-	return ['--db', db, ...argv];
+export function dbEnv(argv: string[], db: string = currentDb()): string[] {
+	return db === DEFAULT_DB || namedDb(argv).named ? [] : [`DATUM_DB=${db}`];
 }
 
 /**
@@ -167,11 +166,10 @@ export async function run(
 	pane?: boolean
 ): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
-	const against = dbArgv(argv);
 	out++;
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
-		const result = await runner(against, stdin, onStderr, key, stage, env, pane);
+		const result = await runner(argv, stdin, onStderr, key, stage, [...dbEnv(argv), ...(env ?? [])], pane);
 		// `sync new-invite`, a revoke, an admin…: its leader reads the setup again (da-6kpj5).
 		if (argv.includes('sync') && result.changed?.length) {
 			void import('./sync.js').then(({ syncTouched }) => syncTouched(dbOf(argv)));
