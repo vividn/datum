@@ -347,7 +347,7 @@ fn snapshot_end_alias_substitutes_verb() {
     // `-t` is the block's END and the duration is the span that preceded
     // it (da-vq0z fixed the words).
     let expected = "\
-datum end — end a duration-tracked activity (alias: end)
+datum end — end a duration-tracked activity (also: stop)
 
 Stop, or end, closes what a `start` of the same field opened.
 
@@ -392,10 +392,18 @@ fn snapshot_sync_help_starts_with_header() {
 fn alias_end_renders_with_input_name() {
     let s = command_help("end");
     assert!(
-        s.starts_with("datum end — end a duration-tracked activity (alias: end)\n"),
+        s.starts_with("datum end — end a duration-tracked activity (also: stop)\n"),
         "expected `datum end — …` header, got: {}",
         &s[..s.find('\n').unwrap_or(s.len())]
     );
+}
+
+#[test]
+fn canonical_stop_names_its_alias() {
+    // Under its own name the page names the alias; only under the alias
+    // does the suffix turn to name the canonical command (da-5jsqx).
+    let s = command_help("stop");
+    assert!(s.starts_with("datum stop — end a duration-tracked activity (alias: end)\n"));
 }
 
 #[test]

@@ -337,7 +337,17 @@ fn render_command(spec: &CommandSpec, input_name: &str, was_alias: bool) -> Stri
         spec.name
     };
 
-    let mut s = format!("datum {} — {}\n", displayed_name, spec.summary);
+    // Under its alias the summary's «(alias: end)» would name the page
+    // itself, so it names the canonical command instead.
+    let summary = if displayed_name == spec.name {
+        spec.summary.to_string()
+    } else {
+        spec.summary.replace(
+            &format!("(alias: {displayed_name})"),
+            &format!("(also: {})", spec.name),
+        )
+    };
+    let mut s = format!("datum {} — {}\n", displayed_name, summary);
 
     s.push('\n');
     if !spec.intro.is_empty() {
