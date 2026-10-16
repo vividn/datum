@@ -1352,11 +1352,12 @@ fn collect_stats_cache_drift(db: &Db, fix: bool) -> Result<(usize, Option<Issue>
 }
 
 /// da-ghlx: surface every live row whose `extra_metadata.flag` is JSON
-/// `true` as a `flagged_entry` warning. These rows are the `datum flag
-/// <field> [comment]` review markers (da-dnnn) — they live in the DB
-/// alongside tracked data but are hidden from the default tail /
-/// dayview / nowview surface, so `datum check flags` is the canonical
-/// way to remind the user that pending reviews exist.
+/// `true`, and whose data is not `done=true`, as a `flagged_entry`
+/// warning. These rows are the `datum flag <field> [comment]` review
+/// markers (da-dnnn) — they live in the DB alongside tracked data but
+/// are hidden from the default tail / dayview / nowview surface, so
+/// `datum check flags` is the canonical way to remind the user that
+/// pending reviews exist.
 ///
 /// A single roll-up issue is emitted (one `flagged_entry` row, count =
 /// #flagged), with the rendered block carrying one line per flagged
@@ -1384,6 +1385,9 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
         })
+        // A flag dealt with is `done=true` in its data, and stays in the
+        // record (da-wvte1).
+        .filter(|e| e.data.as_ref().and_then(|d| d.get("done")) != Some(&JsonValue::Bool(true)))
         .collect();
     if flagged.is_empty() {
         return Ok(Vec::new());
@@ -1391,7 +1395,7 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
     let count = flagged.len();
     let message = format!(
         "{count} entr{y} flagged for review. Inspect with `datum check flags`; \
-         clear one with `datum del <hid>`.",
+         mark one done with `datum update <hid> done=true`, or delete it with `datum del <hid>`.",
         y = if count == 1 { "y" } else { "ies" },
     );
     let first = &flagged[0];

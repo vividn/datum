@@ -170,7 +170,9 @@ fn a_flags_words_have_one_copy_and_del_alone_clears_it() {
     assert_eq!(issue["example"]["detail"], "checked: fine");
     let message = issue["message"].as_str().unwrap();
     assert!(
-        message.ends_with("clear one with `datum del <hid>`."),
+        message.ends_with(
+            "mark one done with `datum update <hid> done=true`, or delete it with `datum del <hid>`."
+        ),
         "{message}"
     );
     let row = datum_core::db::Db::open(db.to_str().unwrap()).unwrap();
@@ -179,6 +181,33 @@ fn a_flags_words_have_one_copy_and_del_alone_clears_it() {
 
     datum(&db, &["del", &hid]);
     assert_eq!(issues(), serde_json::json!([]));
+}
+
+/// da-wvte1: a flag with `done=true` in its data is dealt with: `check`
+/// lists it no more, and it stays in the record. `done=false` still pends.
+#[test]
+fn a_flag_marked_done_leaves_check_and_stays_in_the_record() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("flag.db");
+    datum(&db, &["flag", "mood", "check this"]);
+    let issues = || -> Value {
+        serde_json::from_str::<Value>(&datum(&db, &["check", "flags", "--json"])).unwrap()["issues"]
+            .take()
+    };
+    let hid = issues()[0]["entries"][0]["hid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    datum(&db, &["update", &hid, "done=false"]);
+    assert_eq!(issues()[0]["count"], 1);
+
+    datum(&db, &["update", &hid, "done=true"]);
+    assert_eq!(issues(), serde_json::json!([]));
+    let row = datum_core::db::Db::open(db.to_str().unwrap()).unwrap();
+    let row = datum_core::test_util::logged_entries(&row, "mood").remove(0);
+    assert_eq!(row.extra_metadata, Some(serde_json::json!({"flag": true})));
+    assert_eq!(row.data.unwrap()["done"], true);
 }
 
 /// da-gmjyx: a meta note's words are in `state` alone, as a flag's are, so
