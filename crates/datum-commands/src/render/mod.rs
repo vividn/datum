@@ -814,8 +814,8 @@ struct Row {
     field_name: String,
     state: String,
     /// da-gw0sh: an occur dot's declared keys' values, plain, as typed
-    /// after the field (`25 15` for `lift 25 15`). The terminal table's
-    /// alone: `table_columns_with` and `--json` never carry it.
+    /// after the field (`25 15` for `lift 25 15`). `table_columns_with`
+    /// never carries it; `--json` rows do, as `keys` (da-545c9).
     keys: String,
     dur: String,
     /// da-8sx8: the `_N` quickId shorthand for this row, or empty when
@@ -955,7 +955,7 @@ fn build_rows(
 /// (da-gw0sh, vividn: «show the first few defined keys in the spec so that
 /// it is similar to what a user would type in to log it»). A row with a
 /// state of its own, or a key the entry lacks, shows nothing for it.
-fn declared_key_values(e: &Entry, registry: Option<&SpecRegistry>) -> String {
+pub(super) fn declared_key_values(e: &Entry, registry: Option<&SpecRegistry>) -> String {
     use datum_parse::spec_keys::KeyKind;
     let Some(spec) = registry.and_then(|r| r.fields.get(&e.field)) else {
         return String::new();
@@ -2552,10 +2552,10 @@ mod tests {
         assert!(out.contains("x…"), "{out}");
     }
 
-    /// The keys are the terminal table's: `--json`'s columns and rows carry
-    /// the dot alone, as they did.
+    /// `--json`'s columns and state cell carry the dot alone, as they did;
+    /// the keys ride beside them in the row's own `keys` (da-545c9).
     #[test]
-    fn occur_row_keys_stay_out_of_json() {
+    fn occur_row_keys_beside_the_json_state_cell() {
         let _env_lock = env_lock();
         let _no = ScopedEnv::set("NO_COLOR", "1");
         let (e, registry) = lift(serde_json::json!({"weightKg": 25, "reps": 15}));
@@ -2566,5 +2566,6 @@ mod tests {
         assert_eq!(state.cells, vec!["●".to_string()]);
         let rows = tail_rows::tail_rows(&entries, None, TimeMetricCol::Hybrid, Some(&registry));
         assert_eq!(rows[0].state_body, "●");
+        assert_eq!(rows[0].keys, "25 15");
     }
 }

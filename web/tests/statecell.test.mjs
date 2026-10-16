@@ -67,10 +67,10 @@ const cells = (page) =>
 			hid: tr.dataset.hid,
 			field: text(tr.querySelector('td.field')).trim(),
 			state: text(tr.querySelector('td.state')).trim(),
-			// The chip alone: the cell's text less its edge words — what the
-			// CLI paints as `state_body`.
+			// The chip alone: the cell's text less its edge words and an
+			// occur dot's keys — what the CLI paints as `state_body`.
 			body: [...(tr.querySelector('td.state')?.childNodes ?? [])]
-				.filter((n) => !(n instanceof Element) || !n.classList.contains('edge'))
+				.filter((n) => !(n instanceof Element) || !n.matches('.edge, .keys'))
 				.map((n) => text(n))
 				.join('')
 				.trim(),
@@ -474,6 +474,31 @@ describe('a state transition is three values, and the page draws them', () => {
 			// Whether the state moved is the CLI's answer, not a
 			// comparison the page makes (set-aware, da-g1b8).
 			assert.equal(rows[1].state_repeat, false);
+		});
+	});
+});
+
+describe("an occur dot's declared keys follow it, as the CLI prints them (da-545c9)", () => {
+	test('`lift 25 15` draws `∅● 25 15`, and the state cell stays the dot', async () => {
+		await onTail(async (app) => {
+			const { page } = app;
+			// `weightKg` before `reps`: not alphabetical, so a page reading
+			// `data` in key order would draw `15 25`.
+			await seedLines(app, ['spec lift --verb occur --data-key weightKg --data-key reps=', 'occur lift 25 15 -t 0900']);
+			await settled(page, 1);
+			const lift = (await cells(page)).find((r) => r.field === 'lift');
+			assert.ok(lift, 'no lift row');
+			assert.equal(lift.state, '∅● 25 15', `the CLI's cell: ${JSON.stringify(lift)}`);
+			assert.equal(lift.body, '●', `the dot alone: ${JSON.stringify(lift)}`);
+			// The JSON's state cell is unchanged; the keys ride beside it.
+			const out = await app.run(['tail', 'lift', '--json']);
+			const doc = JSON.parse(out.stdout);
+			const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
+			assert.equal(plain(doc.rows[0].state_body), '●');
+			assert.equal(doc.rows[0].keys, '25 15');
+			const state = doc.columns.find((c) => c.key === 'state');
+			assert.equal(plain(state.cells[0]), '∅●', `the keys leaked into columns: ${JSON.stringify(state)}`);
+			assert.deepEqual(app.errors, []);
 		});
 	});
 });

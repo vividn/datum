@@ -64,6 +64,8 @@ export interface TailRow {
 	state_body: string;
 	/** This row's state is the one it was already in — the CLI's `!` (da-qfv0). */
 	state_repeat: boolean;
+	/** An occur dot's declared keys' values, as typed (`25 15`), drawn after the cell (da-545c9); absent before it. */
+	keys?: string;
 	/** How long a block lasted, ending at `time`; null for a row with no duration (DayStrip.svelte's first entry). */
 	dur_seconds: number | null;
 	[key: string]: unknown;

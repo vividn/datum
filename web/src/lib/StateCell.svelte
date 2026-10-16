@@ -82,6 +82,8 @@
 	 * was drawn before and is the same pixels.
 	 */
 	$: body = typeof row.state_body === 'string' ? row.state_body : painted;
+	/** An occur dot's declared keys, plain, after the cell as the CLI prints them (da-545c9). */
+	$: keys = typeof row.keys === 'string' ? row.keys : '';
 
 	/*
 	 * A NOTE ON THE MARKUP BELOW, which lives here rather than in an HTML
@@ -105,7 +107,7 @@
 		class="edge to"
 		title={hover(row.following_state, row.following_state_label)}
 		><AnsiText spans={ansiSpans(trail)} /></span
-	>{/if}<svelte:options immutable />
+	>{/if}{#if keys}<span class="keys">{` ${keys}`}</span>{/if}<svelte:options immutable />
 
 <style>
 	/*

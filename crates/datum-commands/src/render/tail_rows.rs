@@ -134,6 +134,12 @@ pub struct TailRow {
     /// `previous_state_cell` + `state_body` + `following_state_cell` is
     /// the `state` column's cell, byte for byte, for every verb.
     pub following_state_cell: String,
+    /// An occur dot's values for its spec's declared keys, plain and
+    /// space-separated in the order a person types them (`25 15` for `lift
+    /// 25 15`), which the terminal table prints after the state cell
+    /// (da-gw0sh). Empty for any other row. Beside the state cell rather
+    /// than in it, so the cell stays byte for byte what it was (da-545c9).
+    pub keys: String,
     /// This row's state is the state it was already in: the transition
     /// went nowhere (da-qfv0). The terminal marks it with a bold `!` in
     /// the LEAD slot — the signal that an intermediate transition is
@@ -219,6 +225,7 @@ pub fn tail_rows(
                     .and_then(|v| slot_hex(Some(v), &e.field, spec)),
                 following_state_cell: format_trail_cell(e, spec, ctx),
                 following_state: following.unwrap_or(JsonValue::Null),
+                keys: super::declared_key_values(e, registry),
                 state_repeat: ctx.is_state_repeat,
                 dur: e.dur.as_ref().map(|d| d.to_storage_string()),
                 dur_seconds: e.duration_seconds(),
@@ -342,6 +349,7 @@ mod tests {
                 "following_state_color",
                 "following_state_label",
                 "hid",
+                "keys",
                 "modify_time",
                 "previous_state",
                 "previous_state_cell",
