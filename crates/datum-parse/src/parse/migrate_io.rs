@@ -171,6 +171,8 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
     let mut merge = false;
     let mut hard = false;
     let mut leave = false;
+    let mut chain = false;
+    let mut admin_key = None;
     let mut yes = false;
     let mut if_unchanged = None;
     let mut i = 0;
@@ -182,7 +184,15 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
             FlagSplit::Long("merge") => merge = true,
             FlagSplit::Long("hard") => hard = true,
             FlagSplit::Long("leave") => leave = true,
+            FlagSplit::Long("chain") => chain = true,
             FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
+            FlagSplit::Long("admin-key") | FlagSplit::LongAttached("admin-key", _) => {
+                let attached = tail[i].split_once('=').map(|(_, v)| v);
+                let (v, ni) = take_value(tail, i, attached, "--admin-key")?;
+                admin_key = Some(v.to_string());
+                i = ni;
+                continue;
+            }
             FlagSplit::Long("if-unchanged") | FlagSplit::LongAttached("if-unchanged", _) => {
                 let attached = tail[i].split_once('=').map(|(_, v)| v);
                 let (v, ni) = take_value(tail, i, attached, "--if-unchanged")?;
@@ -214,6 +224,16 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
             "--leave is for --hard: no other restore drops this copy's sync ops".into(),
         ));
     }
+    if chain && (leave || !hard) {
+        return Err(ParseError::InvalidArg(
+            "--chain is for --hard, without --leave: it restores every copy in the chain".into(),
+        ));
+    }
+    if admin_key.is_some() && !chain {
+        return Err(ParseError::InvalidArg(
+            "--admin-key is for --hard --chain, an admin act on the chain".into(),
+        ));
+    }
     let path = require_pos(&pos, "<PATH>")?;
     Ok(RestoreArgs {
         path,
@@ -222,6 +242,8 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         merge,
         hard,
         leave,
+        chain,
+        admin_key,
         yes,
         if_unchanged,
         show: Show::default(),

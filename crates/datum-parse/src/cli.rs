@@ -1357,12 +1357,19 @@ pub struct RestoreArgs {
     /// `--hard` (da-rle8g) — the database becomes exactly the backup:
     /// every entry, tombstone and history row is dropped and the backup's
     /// entries written verbatim. A chained copy refuses it without `--leave`
-    /// (da-95y4o).
+    /// (da-95y4o) or `--chain` (da-ncmmj).
     pub hard: bool,
     /// `--leave`, with `--hard` — leave this copy's sync chain, telling it
     /// first, as `db purge --leave` does: the ops, chain and endpoint key go
     /// with the rows, and a fresh invite rejoins it.
     pub leave: bool,
+    /// `--chain`, with `--hard` (da-ncmmj) — restore EVERY copy in the
+    /// chain to the backup: a chain wipe, then the backup's entries signed
+    /// after it, as each copy next syncs.
+    pub chain: bool,
+    /// `--admin-key <FILE>`, with `--chain` — the wipe is an admin act in a
+    /// locked chain.
+    pub admin_key: Option<String>,
     /// `--yes` / `-y` — replace without asking, on a TTY, even when the
     /// restore deletes entries.
     pub yes: bool,

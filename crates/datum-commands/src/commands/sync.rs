@@ -763,23 +763,46 @@ fn purge(db: &Db, all: bool, yes: bool, admin_key: Option<&str>) -> Result<()> {
         "every copy in sync chain {} drops every entry, op and history; {what}:",
         chain.id
     );
-    for p in db.sync_status()? {
-        let who = format!("{} ({})", p.label, &p.endpoint[..10]);
-        match (p.revoked, &p.last_seen) {
-            (true, _) => println!("  {who} is revoked: it is never told, and keeps what it holds"),
-            (_, Some(at)) => {
-                println!("  {who} last synced with this copy {at}: it purges when it next connects")
-            }
-            (_, None) => println!(
-                "  {who} has not synced with this copy: it purges when it next connects to a member"
-            ),
-        }
-    }
+    print!("{}", wipe_reach(db, "purges")?);
     println!("  this copy purges now, after a backup of its entries beside the database");
     if !yes {
         println!("nothing changed: `datum sync chain purge {flag} --yes` does it");
         return Ok(());
     }
+    let backup = order_wipe(db, &chain, scope, admin_key)?;
+    println!("purged: every other copy follows when it next connects; backup: {backup}");
+    Ok(())
+}
+
+/// When each other member of this copy's chain carries out a wipe order,
+/// one line each: `does` is what it does then. This copy, which carries it
+/// out at once, is each caller's own line.
+pub(crate) fn wipe_reach(db: &Db, does: &str) -> Result<String> {
+    let mut out = String::new();
+    for p in db.sync_status()? {
+        let who = format!("{} ({})", p.label, &p.endpoint[..10]);
+        out += &match (p.revoked, &p.last_seen) {
+            (true, _) => format!("  {who} is revoked: it is never told, and keeps what it holds\n"),
+            (_, Some(at)) => {
+                format!("  {who} last synced with this copy {at}: it {does} when it next connects\n")
+            }
+            (_, None) => format!(
+                "  {who} has not synced with this copy: it {does} when it next connects to a member\n"
+            ),
+        };
+    }
+    Ok(out)
+}
+
+/// Sign a `wipe {scope}` order, which this copy carries out at once, after
+/// a backup of its entries beside the database; refused, it leaves none.
+/// Returns where the backup is, in words.
+pub(crate) fn order_wipe(
+    db: &Db,
+    chain: &chain::Chain,
+    scope: &str,
+    admin_key: Option<&str>,
+) -> Result<String> {
     // Beside the database, its name as the file system has it.
     let now = chrono::Utc::now();
     let backup = db.path().map(|path| {
@@ -798,17 +821,17 @@ fn purge(db: &Db, all: bool, yes: bool, admin_key: Option<&str>) -> Result<()> {
         "created": chrono::Utc::now().to_rfc3339(),
     });
     // Refused, it leaves no backup of a purge that never happened.
-    if let Err(e) = sign(db, record, &chain, admin_key) {
+    if let Err(e) = sign(db, record, chain, admin_key) {
         if let Some((_, to)) = &backup {
             let _ = std::fs::remove_file(to);
         }
         return Err(e);
     }
-    let backup = backup.map_or("none: this database has no file".into(), |(_, to)| {
-        to.display().to_string()
-    });
-    println!("purged: every other copy follows when it next connects; backup: {backup}");
-    Ok(())
+    Ok(
+        backup.map_or("none: this database has no file".into(), |(_, to)| {
+            to.display().to_string()
+        }),
+    )
 }
 
 /// What reverting `who` sets aside, in words (da-ry11c): a verb agrees with

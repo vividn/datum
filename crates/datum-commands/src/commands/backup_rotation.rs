@@ -491,6 +491,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: true,
                 if_unchanged: None,
                 show: ShowFlag::None,

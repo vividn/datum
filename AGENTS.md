@@ -302,6 +302,10 @@ records and stubs and says «in no sync chain», and keeps its key and records
 to pass the order on until an invite or connect starts it afresh. The
 ordering copy alone writes a backup, `<db>.purge-<time>.jsonl.gz`, before it
 purges: one on every copy would defeat a remote wipe.
+`db restore <B> --hard --chain` (da-ncmmj) is that `--data` order and then
+the backup written on the ordering copy as new ops, signed after it, so
+every copy holds exactly the backup once it syncs; plain `--hard` on a
+chained copy is refused, naming `--chain` and `--leave` (this copy alone).
 A copy belongs to one chain — its apply refuses another chain's records
 (da-d8ort). `chain leave` leaves it from any chain: its ops, peers and
 notices go, its entries stay — signed again as baselines on the next sync —

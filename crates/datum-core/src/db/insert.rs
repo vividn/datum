@@ -459,6 +459,13 @@ impl Db {
         }
     }
 
+    /// The fingerprint of the live set, as a replace's counts carry it: what
+    /// `db restore --hard --chain` holds its wipe to after the question
+    /// (da-ncmmj), the wipe being no replace to pin.
+    pub fn live_set_fingerprint(&self) -> Result<u64> {
+        Ok(live_fingerprint(&self.conn, None)?.1)
+    }
+
     /// Make the database exactly `entries` (da-rle8g, `db restore --hard`):
     /// every entry row, tombstone and `entry_history` row is DROPPED, not
     /// tombstoned, and each entry is written back verbatim, hid and slug

@@ -351,15 +351,18 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             .map(|c| c.id),
         false => None,
     };
-    // Restoring the whole chain is da-ncmmj's; this copy alone leaves it.
-    match (&chain, args.leave) {
-        (Some(c), false) => anyhow::bail!(
+    // A chained copy says which it means: the whole chain, or itself alone.
+    match (&chain, args.leave, args.chain) {
+        (Some(c), false, false) => anyhow::bail!(
             "db restore --hard: this copy is in sync chain {c}, whose other copies would keep \
-             what it drops. --leave leaves the chain for this copy alone, telling it first; \
-             --chain, restoring the whole chain to the backup, is not built yet (da-ncmmj)"
+             what it drops. --chain restores every copy in the chain to the backup (--admin-key \
+             in a locked chain); --leave leaves the chain for this copy alone, telling it first"
         ),
-        (None, true) => anyhow::bail!(
-            "db restore --hard: this copy is in no sync chain; --leave is for one that is"
+        (Some(c), _, true) => return restore_chain(&args, cli_db, db, c, mode),
+        (None, leave, _) => anyhow::ensure!(
+            !leave && !args.chain,
+            "db restore --hard: this copy is in no sync chain; --{} is for one that is",
+            if leave { "leave" } else { "chain" }
         ),
         _ => {}
     }
@@ -527,6 +530,122 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
     Ok(())
 }
 
+/// `db restore --hard --chain` (da-ncmmj): every copy in the chain restored
+/// to the backup. A chain wipe, as `sync chain purge --data` orders it, then
+/// the backup written into the emptied copy as a replace, so each entry is
+/// an op signed after the wipe and every other copy holds exactly the
+/// backup once it next syncs. An entry made before the wipe is dropped
+/// wherever it arrives, an offline copy's too; one made after it is kept.
+fn restore_chain(
+    args: &RestoreArgs,
+    cli_db: Option<&str>,
+    db: &Db,
+    chain: &str,
+    mode: Mode,
+) -> Result<()> {
+    use std::io::{IsTerminal, Read};
+    // Read twice, the first time to know it restores before anything is
+    // wiped: a backup on stdin is held for the second.
+    let piped = match args.path == STDIO_PATH {
+        true => {
+            let mut bytes = Vec::new();
+            std::io::stdin().lock().read_to_end(&mut bytes)?;
+            Some(bytes)
+        }
+        false => None,
+    };
+    let run = |mode: Mode| match &piped {
+        Some(bytes) => restore_from_reader(bytes.as_slice(), db, mode)
+            .and_then(|report| {
+                db.derive_kit_indices()?;
+                Ok(report)
+            })
+            .map_err(unpinned),
+        None => restore_pinned(&args.path, db, mode),
+    };
+    // A live set changed since `--if-unchanged` counted it stops here too.
+    let preview = run(Mode {
+        dry_run: true,
+        ..mode
+    })?;
+    let h = preview.hard.unwrap_or_default();
+    let said = format!(
+        "every copy in sync chain {chain} is restored to the backup ({} written), its own data \
+         dropped:\n{}  this copy now, dropping {} live, {} tombstoned or superseded, {} in \
+         history, after a backup of its entries beside the database\n\
+         An entry a copy made before the restore is dropped as it syncs, offline or not; one \
+         made after it is kept.",
+        h.written,
+        super::sync::wipe_reach(db, "restores to the backup")?,
+        h.entries,
+        h.tombstones,
+        h.history
+    );
+    let json = args.show == ShowFlag::Json;
+    if !json && args.show != ShowFlag::None {
+        for w in &preview.warnings {
+            eprintln!("⚠ {w}");
+        }
+    }
+    let out = |written: usize, backup: Option<&str>| {
+        serde_json::json!({
+            "dry_run": args.dry_run, "mode": "chain", "chain": chain, "written": written,
+            "would_insert": args.dry_run.then_some(written),
+            "dropped": {"entries": h.entries, "tombstones": h.tombstones, "history": h.history},
+            "fingerprint": preview.fingerprint.map(|f| format!("{f:016x}")),
+            "warnings": preview.warnings, "backup": backup,
+        })
+    };
+    if args.dry_run {
+        match args.show {
+            ShowFlag::None => {}
+            _ if json => println!("{}", serde_json::to_string_pretty(&out(h.written, None))?),
+            _ => println!("Dry run (no DB changes): {said}"),
+        }
+        return Ok(());
+    }
+    if !args.yes {
+        super::db::confirm_by_name(
+            "restore --hard --chain",
+            &format!("{said}\nIt cannot be undone."),
+            &mut std::io::stdin().lock(),
+            // A backup piped in took stdin: there is no one to ask on it.
+            piped.is_none() && std::io::stdin().is_terminal(),
+            &super::db::purge_confirmation_token(cli_db, db),
+        )?;
+    }
+    // The yes was to the live set the preview counted: a write while the
+    // question was open refuses, as `--if-unchanged` does (exit 12).
+    let live = db.live_set_fingerprint()?;
+    if preview.fingerprint.is_some_and(|f| f != live) {
+        return Err(unpinned(DatumError::Changed.into()));
+    }
+    let backup = super::sync::order_wipe(db, &db.sync_chain()?, "data", args.admin_key.as_deref())?;
+    // The wipe emptied this copy; a replace writes the backup into it, each
+    // entry an op signed after the wipe.
+    let restore = Mode {
+        hard: false,
+        replace: true,
+        if_unchanged: None,
+        ..mode
+    };
+    let report = run(restore)?;
+    crate::cmd::stamp_batch(db);
+    match args.show {
+        ShowFlag::None => {}
+        _ if json => println!(
+            "{}",
+            serde_json::to_string_pretty(&out(report.inserted, Some(&backup)))?
+        ),
+        _ => println!(
+            "✓ Restore --hard --chain: {} written; every other copy in sync chain {chain} is \
+             restored to the backup when it next connects; what was here: {backup}",
+            report.inserted
+        ),
+    }
+    Ok(())
+}
+
 /// Name each live entry a merge reconciled a backup entry with (da-4ldvb):
 /// merged into it under one slug, kept over it under one state instant.
 fn print_merged(slugs: &[String], verb: &str) {
@@ -599,13 +718,17 @@ fn cmd_restore_with_report(args: RestoreArgs, db: &Db) -> Result<RestoreReport> 
 /// da-2zqad) said in one line and made a question unanswered: it was asked
 /// about one database and handed another, and datum.day asks it again.
 fn restore_pinned(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
-    restore_path(path, db, mode).map_err(|e| match e.downcast_ref() {
+    restore_path(path, db, mode).map_err(unpinned)
+}
+
+fn unpinned(e: anyhow::Error) -> anyhow::Error {
+    match e.downcast_ref() {
         Some(DatumError::Changed) => {
             eprint!("db restore: the database changed since it was counted — nothing changed; count it again");
             super::helpers::Unanswered.into()
         }
         _ => e,
-    })
+    }
 }
 
 fn restore_path(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
@@ -1015,6 +1138,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1108,6 +1233,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1150,6 +1277,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1175,6 +1304,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1246,6 +1377,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1305,6 +1438,8 @@ mod tests {
             merge: true,
             hard: false,
             leave: false,
+            chain: false,
+            admin_key: None,
             yes: false,
             if_unchanged: None,
             show: ShowFlag::Default,
@@ -1408,6 +1543,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1464,6 +1601,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1511,6 +1650,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1549,6 +1690,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1600,6 +1743,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1652,6 +1797,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1702,6 +1849,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1725,6 +1874,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1777,6 +1928,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1795,6 +1948,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1841,6 +1996,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1893,6 +2050,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1953,6 +2112,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1981,6 +2142,8 @@ mod tests {
             merge: false,
             hard: false,
             leave: false,
+            chain: false,
+            admin_key: None,
             yes: false,
             if_unchanged: None,
             show: ShowFlag::Default,
@@ -2189,6 +2352,8 @@ mod tests {
             merge: true,
             hard: false,
             leave: false,
+            chain: false,
+            admin_key: None,
             ..replace_args(&path, dry_run)
         };
         let dry = cmd_restore_with_report(merge(true), &db).unwrap();
@@ -2277,6 +2442,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -2322,6 +2489,8 @@ mod tests {
                 merge: true,
                 hard: false,
                 leave: false,
+                chain: false,
+                admin_key: None,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
