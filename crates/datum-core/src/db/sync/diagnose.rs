@@ -258,13 +258,26 @@ impl Db {
     /// number — writes again every row that is not what its ops fold to now,
     /// as `sync refold` does, and stamps the rule in `_meta` `fold_rule`; a
     /// copy on it reads that one row. A stamp newer than this build's is a
-    /// newer build's rule, which this one does not fold back to its own.
+    /// newer build's rule, which this one does not fold back to its own; but
+    /// a row this connection writes is folded by its rule, so each write
+    /// lowers such a stamp to it (da-w13ei, a trigger of this connection's
+    /// alone: a daemon or REPL opened before the newer build stamped is
+    /// covered too), and the newer build's next open refolds.
     /// With the lock another's, nothing is checked or stamped, and the next
     /// open tries again. A refold that fails otherwise is stamped all the same, and why
     /// is [`Db::refold_failed`], for the CLI to say: what it left is
     /// `datum check sync`'s to name, which a database no command could open
     /// would not let it do.
     pub(crate) fn refold_for_rule(&self) -> Result<()> {
+        for on in ["INSERT", "UPDATE", "DELETE"] {
+            self.conn.execute_batch(&format!(
+                "CREATE TEMP TRIGGER IF NOT EXISTS fold_rule_on_{on} AFTER {on} ON main.entries
+                 BEGIN
+                   UPDATE _meta SET value = '{FOLD_RULE}'
+                   WHERE key = 'fold_rule' AND CAST(value AS INTEGER) > {FOLD_RULE};
+                 END;"
+            ))?;
+        }
         let stamped: Option<String> = self
             .conn
             .query_row("SELECT value FROM _meta WHERE key = 'fold_rule'", [], |r| {

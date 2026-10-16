@@ -2320,6 +2320,27 @@ fn a_copy_folded_under_an_older_rule_refolds_as_it_opens() {
     assert_eq!(b.query(rule, "fold_rule"), current);
 }
 
+/// A build older than the stamp does not fold back to its own rule as it
+/// opens, but a row it writes is folded by that rule, so the write lowers
+/// the stamp to it (da-w13ei) and a newer build's next open refolds — which
+/// is the open above, from a stamp below its rule.
+#[test]
+fn a_write_under_an_older_rule_lowers_a_newer_stamp() {
+    let b = Copy::new();
+    b.ok(&["occur", "coffee", "cups=2"]);
+    let rule = "SELECT value FROM _meta WHERE key = ?1";
+    let current: u32 = b.query(rule, "fold_rule").parse().unwrap();
+    let newer = (current + 1).to_string();
+    b.sql(&format!(
+        "UPDATE _meta SET value = '{newer}' WHERE key = 'fold_rule'"
+    ));
+
+    b.ok(&["tail"]);
+    assert_eq!(b.query(rule, "fold_rule"), newer, "a read leaves it");
+    b.ok(&["occur", "tea"]);
+    assert_eq!(b.query(rule, "fold_rule"), current.to_string());
+}
+
 /// The `conflicts` column is the fold's as well: one this copy lost is
 /// found by name and written again.
 #[test]

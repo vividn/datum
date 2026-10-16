@@ -403,6 +403,10 @@ its rows were folded under an older fold rule (da-sqpjt): `FOLD_RULE` in
 what the same ops fold to, schema change or not —
 `the_fold_rule_is_fingerprinted` fails on a change to that code until it is
 bumped or recorded as none. A copy on the current rule reads one row.
+A build older than the stamp does not fold back as it opens, but each row
+it writes lowers the stamp to its rule (a trigger of its connection's, so a
+daemon or REPL opened before the newer build stamped too), and the newer
+build's next open refolds (da-w13ei).
 `datum sync diff <WHO>` asks one member
 over a second ALPN, `datum/sync-diff/1`, which `serve` answers after the same
 handshake and a copy before it refuses: state hashes, then a hash per row by
