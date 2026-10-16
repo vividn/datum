@@ -40,7 +40,7 @@
 	import ReplEntry from './ReplEntry.svelte';
 	import { asking, fileCommand, progress } from './dbio.js';
 	import { parseEcho, runEchoed } from './echo.js';
-	import { fitArgv } from './panes.js';
+	import { fitArgv, helpEnv } from './panes.js';
 	import { GAP, columnsIn, rowsOf } from './scrollback.js';
 	import { run, type RunResult } from './run.js';
 	import { shellJoin } from './shellSplit.js';
@@ -126,6 +126,19 @@
 	});
 
 	/**
+	 * How many characters fit across the scrollback, in the font its output
+	 * is drawn in: a help page is asked for at that width (da-nt53d), and
+	 * takes the whole row, having no echo.
+	 */
+	function characters(): number | null {
+		const pen = body && width ? document.createElement('canvas').getContext('2d') : null;
+		if (!pen || !body || !width) return null;
+		const { fontStyle, fontWeight, fontSize, fontFamily } = getComputedStyle(body);
+		pen.font = `${fontStyle} ${fontWeight} ${fontSize} ${fontFamily}`;
+		return Math.floor((width * 80) / pen.measureText('0'.repeat(80)).width);
+	}
+
+	/**
 	 * Run an argv — the bottom bar's line, a widget press (da-nz29).
 	 *
 	 * A typed `line` is echoed as typed, quotes and all. A press has no
@@ -145,7 +158,7 @@
 		const ranAt = Date.now();
 		const result = await (
 			(stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ??
-			runEchoed(asking(run), fitArgv(argv, width), stdin)
+			runEchoed(asking(run), fitArgv(argv, width), stdin, helpEnv(argv, characters()))
 		);
 		await land(line ?? shellJoin(argv), result, ranAt);
 		return result;

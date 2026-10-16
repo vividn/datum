@@ -196,7 +196,8 @@ const learnedNoEcho = new Set<string>();
 
 /**
  * Run `argv` with its echo asked for, and when what answered has no echo
- * after all, run it again without asking.
+ * after all, run it again without asking. `more` is env of the caller's own,
+ * which both runs are given: the second is still the command it asked for.
  *
  * A kit command (`chorelist`) is a reader NO_ECHO cannot name, because the
  * database installs it (da-5x6x0). Given `--show json` it prints its rows
@@ -215,16 +216,17 @@ const learnedNoEcho = new Set<string>();
 export async function runEchoed(
 	run: CommandRunner,
 	argv: string[],
-	stdin?: string
+	stdin?: string,
+	more: string[] = []
 ): Promise<RunResult> {
 	const env = echoEnv(argv);
-	const result = await run(argv, stdin, undefined, undefined, undefined, env);
+	const result = await run(argv, stdin, undefined, undefined, undefined, [...env, ...more]);
 	const reader = result.code === 0 && result.stdout.startsWith('[');
 	if (env.length === 0 || !reader) return result;
 	// A line of several sides does not say which side answered, so it is
 	// asked again without being learned from.
 	if (!argv.includes(',')) learnedNoEcho.add(commandOf(argv) ?? '');
-	return run(argv, stdin);
+	return run(argv, stdin, undefined, undefined, undefined, more);
 }
 
 /**

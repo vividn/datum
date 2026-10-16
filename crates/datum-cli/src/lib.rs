@@ -35,14 +35,19 @@ pub const VERSION_BANNER: &str = concat!("datum ", env!("DATUM_BUILD"));
 /// where the web runner reaches it too (da-e0m6) — so `run`, `repl::run_line`
 /// and the browser all honour exactly the same contract. `help NAME` for a
 /// name only `db` defines, an alias or a kit command, is answered from it
-/// first (da-3odno).
+/// first (da-3odno). A help page is fitted to the width it was given,
+/// `$COLUMNS` or the terminal's (da-nt53d).
 pub fn render_parse_special(e: &ParseError, db: Option<&datum_core::db::Db>) -> Option<Result<()>> {
+    let fit = |text: String| match (e, output::term_layout::given_cols(20)) {
+        (ParseError::HelpRequested(_), Some(width)) => help::fit(&text, width),
+        _ => text,
+    };
     if let (Some(name), Some(db)) = (commands::help::asks_the_db(e), db) {
         match commands::help::page(name, db) {
             Ok(Some(text)) => {
                 match e {
                     ParseError::GrammarRequested(_) => print!("{}", help::render_page_json(&text)),
-                    _ => print!("{text}"),
+                    _ => print!("{}", fit(text)),
                 }
                 return Some(Ok(()));
             }
@@ -51,7 +56,7 @@ pub fn render_parse_special(e: &ParseError, db: Option<&datum_core::db::Db>) -> 
         }
     }
     let text = help::special_output(e, VERSION_BANNER)?;
-    print!("{text}");
+    print!("{}", fit(text));
     Some(Ok(()))
 }
 

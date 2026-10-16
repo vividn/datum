@@ -142,6 +142,17 @@ export function fitArgv(argv: string[], width: number | null): string[] {
 }
 
 /**
+ * The env that asks a help page for the scrollback's width in characters
+ * (da-nt53d): `COLUMNS`, as a terminal that wide sets it, which the CLI
+ * fits a help page to. Only for a line that asks for help: `now` and
+ * `nowview` read `COLUMNS` too, and are drawn as they always were.
+ */
+export function helpEnv(argv: string[], columns: number | null): string[] {
+	const asks = argv.some((word) => word === 'help' || word === '--help' || word === '-h');
+	return asks && columns ? [`COLUMNS=${columns}`] : [];
+}
+
+/**
  * The day strip's day height at rest, in pixels — datum's `--day-height`.
  *
  * The same value for every band, which is what makes the stack a stack

@@ -18,10 +18,12 @@
 //! thin shims for the existing CLI entry point.
 
 pub mod commands;
+mod fit;
 pub mod render;
 pub mod spec;
 
 pub use commands::{find_command, find_topic, page_name, COMMANDS, ENV_VARS, GLOBAL_FLAGS, TOPICS};
+pub use fit::fit;
 pub use render::{render_help_text, render_json, render_markdown, render_page_json, render_roff};
 pub use spec::{
     ArgSpec, Category, CommandSpec, EnvVarSpec, ExampleSpec, FlagSpec, FormGroup, FormSpec,

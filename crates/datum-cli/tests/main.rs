@@ -66,6 +66,7 @@ mod get_cmd;
 mod get_projection;
 mod help_commands_dispatch;
 mod help_defined_names;
+mod help_fits_columns;
 mod history_cmd;
 mod id_lists;
 mod ids_cmd;

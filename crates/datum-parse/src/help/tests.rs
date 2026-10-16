@@ -1260,3 +1260,48 @@ fn a_page_as_json_leads_with_its_intro_and_marks_its_reference_sections() {
     // `datum help --json` is still the whole command table.
     assert!(render_json().starts_with("[{"));
 }
+
+/// A page fitted to a width (da-nt53d): no line wider than it, every word
+/// of the page still there in order, and a page that already fits left
+/// byte for byte.
+#[test]
+fn every_page_fits_any_width() {
+    let ink = |s: &str| s.split_whitespace().collect::<String>();
+    let pages = every_page().into_iter().map(|p| command_help(&p));
+    for page in pages.chain([top_level_help()]) {
+        let widest = page.lines().map(|l| l.chars().count()).max().unwrap();
+        assert_eq!(super::fit(&page, widest), page);
+        for width in [1, 5, 20, 30, 40, 43, 60] {
+            let fitted = super::fit(&page, width);
+            for line in fitted.lines() {
+                let most = width.max(16);
+                assert!(line.chars().count() <= most, "at {width}: {line:?}");
+            }
+            assert_eq!(ink(&fitted), ink(&page), "at {width}, a word went");
+        }
+    }
+}
+
+/// A table keeps its columns where it has room for them: each row's
+/// description starts where it did, and wraps under itself.
+#[test]
+fn a_fitted_table_still_lines_up() {
+    let page = command_help("logging");
+    let fitted = super::fit(&page, 43);
+    for (flag, says) in [
+        ("-y, --yesterday", "Go back 1"),
+        ("-q, --quick", "Go back 5"),
+    ] {
+        let line = fitted.lines().find(|l| l.contains(flag)).unwrap();
+        assert_eq!(line.find(says), Some(24), "{line}");
+    }
+    let quick = fitted.lines().skip_while(|l| !l.contains("--quick"));
+    let under: Vec<&str> = quick
+        .skip(1)
+        .take_while(|l| l.starts_with(&" ".repeat(24)))
+        .collect();
+    assert!(
+        !under.is_empty(),
+        "--quick's description wraps under its column"
+    );
+}

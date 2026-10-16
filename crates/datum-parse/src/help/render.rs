@@ -230,7 +230,7 @@ const REFERENCE: &[&str] = &["USAGE", "ARGS", "OPTIONS", "OUTPUT", "GLOBAL OPTIO
 
 /// A section heading of a text page: `OPTIONS:`, `TIME OF DAY (today):` —
 /// a line at the margin ending in `:` whose words before any `(` are capitals.
-fn heading(line: &str) -> Option<&str> {
+pub(super) fn heading(line: &str) -> Option<&str> {
     let h = line.strip_suffix(':').filter(|_| !line.starts_with(' '))?;
     let caps = h.split('(').next().unwrap_or(h);
     let upper = caps.chars().filter(char::is_ascii_uppercase).count();
