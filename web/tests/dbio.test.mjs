@@ -264,14 +264,31 @@ for (const engine of [chromium, webkit]) {
 					assert.match((await app.outputs()).at(-1), /aborted/);
 					assert.equal(await count(app), 4);
 
+					// What the page keeps of the data — the REPL's scrollback and
+					// the widgets' last drawings, written as a tab is left — holds it.
+					const kept = () =>
+						page.evaluate(() => {
+							dispatchEvent(new Event('pagehide'));
+							return [localStorage.getItem('datum.repl.v1'), localStorage.getItem('datum.stale.v1')];
+						});
+					for (const k of await kept()) assert.match(k ?? '', /coffee/);
+
 					// The right one does, and every pane follows without a reload.
-					before = await echoes(page);
 					await type(page, 'db purge');
+					assert.match(await page.locator('dialog.confirm p').innerText(), /it clears the command history and what the widgets last showed/);
 					await name.fill('datum');
 					await name.press('Enter');
-					await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+					// The purge is the one command left in the scrollback.
+					await page.waitForFunction(() => document.querySelectorAll('.repl .echo').length === 1);
 					await tailShows(page, 0);
 					assert.equal(await count(app), 0);
+					// ...and none of it is left on the device: the purge is the oldest command the REPL holds (da-3ni5m).
+					// Read as stored, no tab left: a pagehide would draw the
+					// widgets afresh into the cache and hide one never cleared.
+					const repl = await page.waitForFunction(() => localStorage.getItem('datum.repl.v1'));
+					assert.equal(JSON.parse(await repl.jsonValue()).history[0], 'db purge');
+					assert.doesNotMatch(await repl.jsonValue(), /coffee/);
+					assert.ok(await page.evaluate(() => localStorage.getItem('datum.stale.v1') === null), 'the widgets’ drawings outlived the purge');
 					const layouts = await page.evaluate(() => window.datum.layouts.listLayouts());
 					assert.ok(layouts.some((l) => l.name === 'kept'), JSON.stringify(layouts));
 

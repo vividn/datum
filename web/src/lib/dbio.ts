@@ -22,10 +22,12 @@
 
 import { writable } from 'svelte/store';
 import { saveFile } from './backup.js';
-import { backupArgv, chainListArgv, dbPurgeArgv, dbPurgeProbeArgv, restorePreviewArgv } from './calls.js';
+import { backupArgv, chainListArgv, dbPurgeArgv, dbPurgeChainArgv, dbPurgeProbeArgv, restorePreviewArgv } from './calls.js';
 import { choose, confirm } from './confirm.js';
 import { runEchoed } from './echo.js';
 import { fileArgv } from './fileargv.js';
+import { STALE } from './layout/draft.js';
+import { forget } from './replStore.js';
 import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
 
 /**
@@ -42,8 +44,13 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 		// `--yes` typed by hand is the CLI's contract: straight through. So is
 		// `--keep-sync-chain`, `sync chain purge --data` by another name
 		// (da-2bb7z), which asks nothing and changes nothing without `--yes`.
-		const typed = ['--yes', '-y', '--keep-sync-chain'].some((f) => flags.includes(f));
-		return typed ? null : purge(flags);
+		const yes = flags.some((f) => f === '--yes' || f === '-y');
+		if (!yes && flags.includes('--keep-sync-chain')) return null;
+		// A purge that ran takes what the page kept of the data with it.
+		return (yes ? runEchoed(asking(run), argv) : purge(flags)).then((r) => {
+			if (r.code === 0) forgetKept();
+			return r;
+		});
 	}
 	// The field is the line's one word that is not a flag, as the CLI reads
 	// it; a `--delete` with none is the CLI's to refuse, unasked.
@@ -299,6 +306,7 @@ export async function saveBackup(): Promise<RunResult> {
  * it, as the CLI asks on a TTY (da-0hay9): off one it refuses naming
  * `--leave` and `--rejoin`, which reached the reader only after they had
  * typed the name for nothing. A typed `--leave` or `--rejoin` is the answer.
+ * The third answer, the chain, purges every copy in it (da-3ni5m).
  */
 export async function purge(flags: string[] = []): Promise<RunResult> {
 	// The database this will really purge, never the word `datum` written
@@ -317,10 +325,12 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	if (chain && !way) {
 		way = await choose(
 			`This copy is in sync chain ${chain}: leave tells the chain this copy leaves, then wipes it; ` +
-				'rejoin wipes it and refetches everything from the chain, staying a member.\nLeave or rejoin?',
-			['leave', 'rejoin']
+				'rejoin wipes it and refetches everything from the chain, staying a member; ' +
+				'chain wipes every copy in the chain, each as it next syncs.\nLeave, rejoin, or purge the whole chain?',
+			['leave', 'rejoin', 'chain']
 		);
-		if (!way) return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: 'db purge: aborted (neither leave nor rejoin)' };
+		if (!way) return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: 'db purge: aborted (none of leave, rejoin or chain)' };
+		if (way === 'chain') return purgeChain(db);
 		flags = [...flags, `--${way}`];
 	}
 	// What the CLI refuses before its name prompt — either flag out of a
@@ -330,16 +340,14 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	const probe = await run(dbPurgeProbeArgv(flags));
 	if (!probe.stderr.includes('stdin is not a TTY')) return probe;
 	const text =
-		`This will destroy ALL data in ${db}, and the copies of it kept before upgrades.` +
+		`This will destroy ALL data in ${db}, every entry and its history, and the copies of it kept before upgrades.` +
 		(way === 'rejoin'
 			? `\nIt stays a member of sync chain ${chain}, and refetches everything from it.`
 			: way
 				? `\nIt leaves sync chain ${chain} first.`
-				: '');
-	if (!(await confirm(text, 'purge', db))) {
-		// The CLI's own words for a mismatch at its prompt.
-		return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: `db purge: aborted (input did not match ${db})` };
-	}
+				: '') +
+		`\n${CLEARS}`;
+	if (!(await confirm(text, 'purge', db))) return mismatch(db);
 	// A departure leaves only once a member holds it (da-dsob1), which this
 	// page's sync delivers: each session it ends well is a reason to run the
 	// purge again (da-a7kf7), as the sync widget's Leave does (da-2o19r).
@@ -360,5 +368,40 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 		await syncNow(db);
 		const again = await run(dbPurgeArgv(flags));
 		return refused(again) ? run(dbPurgeArgv([...flags, '--force'])) : again;
+	}
+}
+
+/** What a purge on this page clears beyond the database, in the dialog's words. */
+const CLEARS = 'On this device it clears the command history and what the widgets last showed too.';
+
+/** The CLI's own words for a mismatch at its prompt. */
+const mismatch = (db: string): RunResult => ({ argv: ['db', 'purge'], code: 1, stdout: '', stderr: `db purge: aborted (input did not match ${db})` });
+
+/**
+ * Every copy in the chain purged (da-3ni5m), `db purge --keep-sync-chain`:
+ * the CLI's own warning naming each copy, then the name, then the signed
+ * order — with a passkey's approval when the chain is locked.
+ */
+async function purgeChain(db: string): Promise<RunResult> {
+	const said = await run(['--db', db, ...dbPurgeChainArgv()]);
+	if (said.code !== 0) return said;
+	// All but the line naming the `--yes` that does it: here, typing the name.
+	const warning = said.stdout
+		.trimEnd()
+		.split('\n')
+		.filter((line) => !line.startsWith('nothing changed:'))
+		.join('\n');
+	if (!(await confirm(`${warning}\n${CLEARS}`, 'purge every copy', db))) return mismatch(db);
+	const { syncAct } = await import('./syncView.js');
+	return syncAct(db, dbPurgeChainArgv(true));
+}
+
+/** The REPL's scrollback and the widgets' last drawings, both the purged data's words. */
+function forgetKept(): void {
+	forget();
+	try {
+		localStorage.removeItem(STALE);
+	} catch {
+		// Refused: nothing was kept.
 	}
 }

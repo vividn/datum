@@ -358,7 +358,11 @@ describe('the seam under review', () => {
 
 			let said = ask();
 			await dialog.waitFor();
-			assert.equal(await dialog.locator('p').innerText(), 'This will destroy ALL data in other, and the copies of it kept before upgrades.');
+			assert.equal(
+				await dialog.locator('p').innerText(),
+				'This will destroy ALL data in other, every entry and its history, and the copies of it kept before upgrades.\n' +
+					'On this device it clears the command history and what the widgets last showed too.'
+			);
 			assert.match(await dialog.locator('label').innerText(), /Type\s+other\s+to confirm/);
 
 			// The OTHER database's name is now the wrong answer, and refused.
@@ -383,7 +387,7 @@ describe('the seam under review', () => {
 	// da-0hay9: off a TTY the CLI refuses a chained purge naming --leave and
 	// --rejoin, and the dialog asked the name first, for nothing. Now it asks
 	// which, as the CLI does on a TTY, and the name only for a purge that runs.
-	test('db purge on a chained copy asks leave or rejoin before the name, and runs the answer', async () => {
+	test('db purge on a chained copy asks leave, rejoin or the whole chain before the name, and runs the answer', async () => {
 		await withApp(async (app) => { // purges its database
 			const { page } = app;
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
@@ -396,15 +400,16 @@ describe('the seam under review', () => {
 			// The question comes first, with no name to type; cancel runs nothing.
 			let said = app.submit('db purge');
 			await dialog.waitFor();
-			assert.match(await dialog.locator('p').innerText(), /^This copy is in sync chain \S+: leave .*rejoin .*\nLeave or rejoin\?$/s);
+			assert.match(await dialog.locator('p').innerText(), /^This copy is in sync chain \S+: leave .*rejoin .*chain .*\nLeave, rejoin, or purge the whole chain\?$/s);
 			assert.equal(await name.count(), 0);
 			// Neither answer destroys (the name is asked next), so neither is red.
 			assert.ok(await inks(button('leave'), '--accent'));
 			assert.ok(await inks(button('rejoin'), '--accent'));
+			assert.ok(await inks(button('chain'), '--accent'));
 			assert.ok(!(await inks(button('cancel'), '--error')));
 			await button('cancel').click();
 			await said;
-			assert.match((await app.outputs()).at(-1), /aborted \(neither leave nor rejoin\)/);
+			assert.match((await app.outputs()).at(-1), /aborted \(none of leave, rejoin or chain\)/);
 			assert.deepEqual(await fieldsIn(app, 'datum'), ['coffee']);
 
 			// Rejoin, with no other member to refetch from: the CLI's own
@@ -416,11 +421,27 @@ describe('the seam under review', () => {
 			assert.equal(await dialog.count(), 0);
 			assert.deepEqual(await fieldsIn(app, 'datum'), ['coffee']);
 
+			// The chain (da-3ni5m): the CLI's own warning naming every copy, then
+			// the name; a lone member's copy purges now and stays in its chain.
+			said = app.submit('db purge');
+			await button('chain').click();
+			await name.waitFor();
+			const warned = await dialog.locator('p').innerText();
+			assert.match(warned, /^every copy in sync chain \S+ drops every entry, op and history; its members stay:\n/);
+			assert.match(warned, /\n {2}this copy purges now, after a backup of its entries beside the database\nOn this device it clears/);
+			await name.fill('datum');
+			await name.press('Enter');
+			await said;
+			assert.match((await app.outputs()).at(-1), /purged: every other copy follows when it next connects/);
+			assert.deepEqual(await fieldsIn(app, 'datum'), []);
+			assert.equal((await app.run(['sync', 'chain', 'list'])).code, 0, 'a chain purge left the chain');
+
 			// Leave: the name, then a lone member leaves telling no one and is wiped.
+			assert.equal((await app.run(['occur', 'coffee', '-t', '0800'])).code, 0);
 			said = app.submit('db purge');
 			await button('leave').click();
 			await name.waitFor();
-			assert.match(await dialog.locator('p').innerText(), /\nIt leaves sync chain \S+ first\.$/);
+			assert.match(await dialog.locator('p').innerText(), /\nIt leaves sync chain \S+ first\.\nOn this device/);
 			await name.fill('datum');
 			await name.press('Enter');
 			await said;

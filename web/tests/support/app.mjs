@@ -865,13 +865,14 @@ function app(page, errors, query, clean, internal) {
 		 * prompt (da-rfs9).
 		 */
 		async submit(line) {
-			const before = await page.locator('.repl .echo').count();
+			// An echo not there before, not a higher count: a purge empties
+			// the scrollback (da-3ni5m), and an entry is a new element.
+			await page.locator('.repl .echo').evaluateAll((echoes) => echoes.forEach((e) => (e.dataset.seen = '')));
 			const input = page.locator('.prompt-bar input');
 			await input.fill(line);
 			await input.press('Enter');
-			await page.waitForFunction(
-				(n) => document.querySelectorAll('.repl .echo').length > n,
-				before
+			await page.waitForFunction(() =>
+				[...document.querySelectorAll('.repl .echo')].some((e) => !('seen' in e.dataset))
 			);
 		},
 

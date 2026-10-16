@@ -115,5 +115,25 @@ function persist(): void {
 	}
 }
 
-// A reload is the one moment a debounced write would lose: flush.
-if (browser) addEventListener('pagehide', persist);
+/**
+ * Every command and what it printed, gone (da-3ni5m): a purge leaves none
+ * of the purged database on this device, its scrollback included.
+ */
+export function forget(): void {
+	clearTimeout(pending);
+	repl.set({ scrollback: [], history: [] });
+	try {
+		localStorage.removeItem(STORE_KEY);
+	} catch {
+		// Refused: nothing was kept to forget.
+	}
+}
+
+if (browser) {
+	// A reload is the one moment a debounced write would lose: flush.
+	addEventListener('pagehide', persist);
+	// Another tab forgot, so this one does, or its next command writes it all back.
+	addEventListener('storage', (e) => {
+		if (e.key === STORE_KEY && e.newValue === null) repl.set({ scrollback: [], history: [] });
+	});
+}

@@ -213,6 +213,14 @@ export function dbPurgeProbeArgv(flags: string[] = []): string[] {
 	return ['db', 'purge', ...flags.filter((f) => f !== '--yes' && f !== '-y')];
 }
 
+/**
+ * `db purge --keep-sync-chain`, every copy in the chain (da-2bb7z): without
+ * `yes` it names each copy and when it purges, and changes nothing.
+ */
+export function dbPurgeChainArgv(yes = false): string[] {
+	return ['db', 'purge', '--keep-sync-chain', ...(yes ? ['--yes'] : [])];
+}
+
 /** What a restore would do, counted on the same file (da-5fooh). */
 export function restorePreviewArgv(argv: string[]): string[] {
 	return [...argv, '--dry-run', '--json'];
