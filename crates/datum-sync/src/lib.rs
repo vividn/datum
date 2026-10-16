@@ -783,6 +783,9 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                             if d.landed > 0 {
                                 println!("{} wrote {} queued change(s)", now(), d.landed);
                             }
+                            if d.wiped > 0 {
+                                println!("{} dropped {} queued change(s) made before the sync chain's purge", now(), d.wiped);
+                            }
                             if let Some(e) = d.stuck {
                                 eprintln!("{} queued changes wait: {e:#}", now());
                             }

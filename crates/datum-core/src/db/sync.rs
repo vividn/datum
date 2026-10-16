@@ -1547,15 +1547,29 @@ pub(super) fn signed_since(conn: &Connection, seq: i64) -> Result<Vec<Value>> {
 /// from its ops — so an op that landed since, which it never saw, stands
 /// beside it as a sync's would. One action on the undo stack, as the
 /// command was; an undo or a redo moves the stack as it did on the snapshot.
-pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<()> {
+/// An op made before a wipe this copy carried out is the old copy's data
+/// (da-59hwx): the order took every op signed before it, and this one,
+/// signed again, would outlive it. Whether any op was left to land.
+pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<bool> {
+    let wiped: Option<String> = conn
+        .query_row(
+            "SELECT value FROM _meta WHERE key = 'sync_wiped'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let mut ops = ops
+        .iter()
+        .map(|v| serde_json::from_value::<Op>(v.clone()).map_err(Into::into))
+        .collect::<Result<Vec<_>>>()?;
+    ops.retain(|op| wiped.as_deref().is_none_or(|w| op.hlc.as_str() >= w));
+    if ops.is_empty() {
+        return Ok(false);
+    }
     let ep = endpoint(conn)?;
     if let Some(why) = read_only(conn, &ep)? {
         return Err(DatumError::Other(why.into()));
     }
-    let ops = ops
-        .iter()
-        .map(|v| serde_json::from_value::<Op>(v.clone()).map_err(Into::into))
-        .collect::<Result<Vec<_>>>()?;
     crate::undo_log::scope(|| {
         for op in &ops {
             if op.is_baseline() && has_ops(conn, &Hid::from(op.hid.clone()))? {
@@ -1613,7 +1627,7 @@ pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<()> {
             _ => {}
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Write the row an entry's ops fold to. Two distinct entries claiming one

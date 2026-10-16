@@ -204,11 +204,13 @@ fn queued(conn: &Connection, spool: &Path) -> usize {
 }
 
 /// Land one line, in its own transaction: ops computed already, so the
-/// lock is held for their writes (da-8i7f0).
-fn land(db: &Db, (id, line): &(String, Value)) -> Result<()> {
+/// lock is held for their writes (da-8i7f0). Whether it wrote anything: a
+/// line made before a wipe this copy carried out writes nothing (da-59hwx).
+fn land(db: &Db, (id, line): &(String, Value)) -> Result<bool> {
     db.write_with(|tx| {
-        sync::apply_spooled(tx, line["ops"].as_array().map_or(&[], Vec::as_slice))?;
-        if let Some(last) = line.get("last").filter(|l| !l.is_null()) {
+        let ops: &[Value] = line["ops"].as_array().map_or(&[], Vec::as_slice);
+        let landed = sync::apply_spooled(tx, ops)?;
+        if let Some(last) = line.get("last").filter(|l| landed && !l.is_null()) {
             tx.execute(
                 "INSERT INTO last_docs (id, hids, time) VALUES (?1, ?2, ?3)
              ON CONFLICT(id) DO UPDATE SET hids = excluded.hids, time = excluded.time",
@@ -224,7 +226,7 @@ fn land(db: &Db, (id, line): &(String, Value)) -> Result<()> {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [id],
         )?;
-        Ok(())
+        Ok(landed)
     })
 }
 
@@ -281,6 +283,8 @@ pub struct Spool {
 #[derive(Debug, Default)]
 pub struct Drained {
     pub landed: usize,
+    /// Lines made before a wipe this copy carried out, dropped (da-59hwx).
+    pub wiped: usize,
     pub set_aside: Vec<PathBuf>,
     pub stuck: Option<DatumError>,
 }
@@ -420,24 +424,26 @@ impl Db {
         };
         let (queued, set_aside) = lines(&spool)?;
         let todo = pending(&self.conn, queued)?;
-        let mut landed = 0;
+        let (mut landed, mut wiped) = (0, 0);
         let stuck = waiting(&self.conn, DRAIN_WAIT, || {
             for line in &todo {
                 match land(self, line) {
-                    Ok(()) => landed += 1,
+                    Ok(true) => landed += 1,
+                    Ok(false) => wiped += 1,
                     Err(e) if busy(&e) => return None,
                     Err(e) => return Some(e),
                 }
             }
             None
         })?;
-        let rest: String = todo[landed..]
+        let rest: String = todo[landed + wiped..]
             .iter()
             .map(|(_, v)| format!("{v}\n"))
             .collect();
         replace(&spool, &rest)?;
         Ok(Drained {
             landed,
+            wiped,
             set_aside,
             stuck,
         })

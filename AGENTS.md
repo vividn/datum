@@ -295,7 +295,8 @@ admin act any member orders in an open chain: a `wipe` record each copy
 carries out as it comes to hold it, offline a year or not — every entry op
 before it scrubbed to a stub (`applied` = 3: its endpoint, seq and HLC, so
 no vector waits on a gap and no seq is signed twice), every entry, history,
-undo step, warning and stats cache row gone, and a sender's `{"purged": …}`
+undo step, warning and stats cache row gone — a change spooled before it too,
+which its drain drops and says so (da-59hwx) — and a sender's `{"purged": …}`
 line after the order filling the gaps of a copy behind. `--all` dissolves the
 chain: the fold takes no record after it, a copy holding it serves only
 records and stubs and says «in no sync chain», and keeps its key and records

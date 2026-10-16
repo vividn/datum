@@ -272,3 +272,54 @@ fn a_filtered_reader_with_holes_is_purged_and_reads_on() {
     assert_eq!(held("applied = 3"), stubs);
     assert_eq!(verify_with(&a, &r), verify_with(&r, &a));
 }
+
+/// A change queued before a wipe is the old copy's data (da-59hwx): landed
+/// after the wipe, signed again as this copy's next, it would outlive the
+/// order and reach every member. Here one waits on the ordering copy and
+/// one on a copy the order reaches, each behind a drain that stepped aside
+/// (another holds the spool's lock), and each drain after the wipe drops
+/// its line and says so. A change queued after the order still lands.
+#[test]
+fn a_change_queued_before_a_wipe_does_not_outlive_it() {
+    let (a, b) = chained();
+    a.ok(&["occur", "tea"]);
+    assert!(a.send(&b).0);
+    // Queued behind the write lock, then kept queued behind the spool's.
+    let queue = |copy: &Copy, field: &str| {
+        let db = copy.tmp.path().join("data.db");
+        let holder = rusqlite::Connection::open(&db).unwrap();
+        holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+        assert!(copy.ok(&["occur", field]).contains("QUEUED"));
+        let spool = std::fs::File::create(copy.key("data.db.spool.lock")).unwrap();
+        spool.lock().unwrap();
+        spool
+    };
+    let held = (queue(&a, "old_a"), queue(&b, "old_b"));
+    a.ok(&["sync", "chain", "purge", "--data", "--yes"]);
+    assert!(a.send(&b).0);
+    assert_eq!(data_of(&b), EMPTY);
+    drop(held);
+    for copy in [&a, &b] {
+        let out = copy.run(&["tail"], "");
+        let said = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            said.contains("dropped 1 queued change(s) made before the sync chain's purge"),
+            "{said}"
+        );
+        assert!(!said.contains("written"), "{said}");
+        assert_eq!(data_of(copy), EMPTY);
+    }
+    let db = b.tmp.path().join("data.db");
+    let holder = rusqlite::Connection::open(&db).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+    assert!(b.ok(&["occur", "new"]).contains("QUEUED"));
+    drop(holder);
+    b.ok(&["tail"]);
+    for (from, to) in [(&a, &b), (&b, &a)] {
+        assert!(from.send(to).0);
+    }
+    for copy in [&a, &b] {
+        assert!(copy.has("new") && !copy.has("old_a") && !copy.has("old_b"));
+    }
+    assert_eq!(a.hash(), b.hash());
+}

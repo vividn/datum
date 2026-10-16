@@ -272,6 +272,12 @@ fn ready_to_write(db: &datum_core::db::Db, path: &str, spools: bool) -> Result<(
                 if d.landed > 0 {
                     eprintln!("note: {} queued change(s) written", d.landed);
                 }
+                if d.wiped > 0 {
+                    eprintln!(
+                        "note: dropped {} queued change(s) made before the sync chain's purge",
+                        d.wiped
+                    );
+                }
                 set_aside(path, &d.set_aside);
                 d.stuck
             }
