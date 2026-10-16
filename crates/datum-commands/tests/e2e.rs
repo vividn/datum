@@ -424,12 +424,19 @@ e2e_case!(fast, verb_note_with_data: CaseSpec {
     freeze_time: Some("09:00"),
 });
 
-// Field-first form: the pre-pass swaps `<field> <verb>` to
-// `<verb> <field>`.
-e2e_case!(fast, verb_switch_field_first: CaseSpec {
-    argv: "mood switch happy",
+// A trailing verb changes the command (v2's changeDatumCommand, da-z5vek).
+e2e_case!(fast, verb_trailing_occur_to_switch: CaseSpec {
+    argv: "occur mood switch happy",
     setup: no_setup,
     expected: rows(vec![row("mood").state(json!("happy"))]),
+    freeze_time: Some("09:00"),
+});
+
+// The command comes first: nothing swaps `<field> <verb>` (da-z5vek).
+e2e_case!(fast, field_before_command_is_unknown: CaseSpec {
+    argv: "mood switch happy",
+    setup: no_setup,
+    expected: err("unknown subcommand: 'mood'"),
     freeze_time: Some("09:00"),
 });
 
@@ -719,22 +726,24 @@ e2e_case!(fast, alias_vbp_expansion: CaseSpec {
 // bead body. These run only with `--features e2e-full` so polecat
 // pre-submit stays fast.
 
-e2e_case!(full, verb_occur_field_first: CaseSpec {
+// A field before its command is no command (da-z5vek).
+e2e_case!(full, field_before_occur_is_unknown: CaseSpec {
     argv: "coffee occur",
     setup: no_setup,
-    expected: rows(vec![row("coffee").no_state().dur("MOMENT")]),
+    expected: err("unknown subcommand: 'coffee'"),
     freeze_time: Some("09:00"),
 });
 
-e2e_case!(full, verb_start_field_first: CaseSpec {
-    argv: "workout start",
+// Trailing verbs (v2's changeDatumCommand, da-z5vek).
+e2e_case!(full, verb_trailing_occur_to_start: CaseSpec {
+    argv: "occur workout start",
     setup: no_setup,
     expected: rows(vec![row("workout").state(json!(true))]),
     freeze_time: Some("09:00"),
 });
 
-e2e_case!(full, verb_stop_field_first: CaseSpec {
-    argv: "workout stop",
+e2e_case!(full, verb_trailing_start_to_stop: CaseSpec {
+    argv: "start workout stop",
     setup: no_setup,
     expected: rows(vec![row("workout").state(json!(false))]),
     freeze_time: Some("09:00"),
@@ -861,7 +870,7 @@ e2e_case!(full, k_multi_values_per_call: CaseSpec {
 
 // Bare-field invocation is *not* auto-routed to the field-spec's
 // `default_action` at this layer — the user must either supply the
-// verb (`mood switch happy`) or install an alias for the bare token.
+// verb (`switch mood happy`) or install an alias for the bare token.
 e2e_case!(full, fieldspec_bare_is_not_routed: CaseSpec {
     argv: "mood happy",
     setup: seed_mood_field_spec,

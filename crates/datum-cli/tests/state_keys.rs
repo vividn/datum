@@ -34,7 +34,7 @@ fn mood_db() -> Db {
     db
 }
 
-/// The typed line, the field-first line and the state's auto-alias.
+/// The typed line, the field's own alias and the state's auto-alias.
 const HEADS: [&[&str]; 3] = [&["switch", "mood"], &["mood"], &[]];
 
 fn logged(db: &Db) -> Value {
@@ -299,9 +299,9 @@ fn reparse_replays_the_state_keys_the_line_bound() {
     }
 }
 
-/// A state alias is no field, so a subcommand's name after it is a value
-/// for its slots, not the field-first form: `sad why -t -1` read as
-/// `why sad -t -1` and was refused with «unexpected flag: -t» (da-y40jf).
+/// A subcommand's name after an alias is a value for its slots: `sad why
+/// -t -1` once read as `why sad -t -1` and was refused with «unexpected
+/// flag: -t» (da-y40jf).
 #[test]
 fn a_subcommand_word_after_a_state_alias_is_a_value() {
     for word in ["why", "tail", "check"] {

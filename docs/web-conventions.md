@@ -112,7 +112,7 @@ writing it down.
    `info` (`switch mood mood` names it twice) and never derives a colour of its own.
    `NO_ECHO` in that file is the
    denylist of commands with no action echo: it is a denylist because an argv whose first word
-   is not a command (`mood switch happy`, an alias) is a write under another name and must get
+   is not a command (`mood happy`, `vbp correr`: an alias) is a write under another name and must get
    the flag, and `tests/echo.test.mjs` holds the list to what the CLI actually does. A stdout
    with no document in it falls back to the lines the CLI printed.
 

@@ -22,8 +22,6 @@
 //!
 //! * `-b`/`--base-data` (JSON seed). Low demand, explicitly dropped by the
 //!   parity audit; add back later once the typed API lands.
-//! * Command-change mid-parse escape (`dur=5 start` → switch verb).
-//!   Daydumb dispatches verb-first; conflicts with the field/verb swap.
 //! * Chrono-node natural-language parsing inside `alter_datum_data`'s
 //!   time/date inference paths. Values that would require NL parsing
 //!   stay as strings; structured forms (ISO date, `±N[unit]`, `+/-N` day
@@ -185,6 +183,11 @@ pub struct DataArgs {
     /// pair, and `null` stays a JSON null, which `rekey` refuses. A quoted
     /// value loses its quotes, as anywhere: `a='"b c"'` names `b c`.
     pub literal: bool,
+    /// v2's trailing verbs (`changeDatumCommand`): a command word in the
+    /// `dur=` slot, or leading the words no slot or remainder takes,
+    /// changes the line's command. Set by the log commands alone; see
+    /// [`handle_log_data_args`].
+    pub command_change: bool,
 }
 
 impl FlexibleTarget for DataArgs {
@@ -224,9 +227,24 @@ pub(crate) struct Compat<'a> {
 /// Resolve `DataArgs` into the final `DatumData` object.
 ///
 /// See the TS `handleDataArgs` for the reference algorithm; the Rust
-/// version differs only in that the excluded non-ports (`baseData`,
-/// command-change escape) never surface.
+/// version differs only in that the excluded non-port (`baseData`)
+/// never surfaces.
 pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
+    handle_log_data_args(args).map(|(data, _)| data)
+}
+
+/// The commands a trailing word changes a log line to, as v2's
+/// `commandChanges` (`stop` being `end`'s other name).
+pub const COMMAND_CHANGES: &[&str] = &["occur", "start", "end", "stop", "switch"];
+
+/// [`handle_data_args`], and the command a trailing verb changed the line
+/// to (`start sleep end` → `end`, `occur coffee start` → `start`): with
+/// [`DataArgs::command_change`] set, a command word filling the `dur=` slot,
+/// or leading the leftover words when no remainder key takes them, is the
+/// line's command from there, and the words after it are read again as its
+/// own (v2's `changeDatumCommand`). The data already read stays; a `switch`
+/// clears the state for the words after it to fill.
+pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String>)> {
     let compat = Compat {
         base: args.base.as_ref(),
         time_flags: args.time_flags.as_ref(),
@@ -267,101 +285,121 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     // one side only (`vertical, sit`) is refused (da-oe3so). Any other slot's
     // value may end in a comma: there `a,b` would be a list, not a state.
     let mut prev_slot: Option<String> = None;
+    let mut command: Option<String> = None;
+    let is_command = |w: &str| args.command_change && COMMAND_CHANGES.contains(&w);
 
-    // ── positional loop ────────────────────────────────────────────────
-    while !data_queue.is_empty() {
-        let arg = data_queue.remove(0);
-        let (before_eq, after_eq) = split_first_eq(&arg);
-        let prev = prev_slot.take();
+    loop {
+        // ── positional loop ────────────────────────────────────────────────
+        while !data_queue.is_empty() {
+            let arg = data_queue.remove(0);
+            let (before_eq, after_eq) = split_first_eq(&arg);
+            let prev = prev_slot.take();
 
-        if let Some(value) = after_eq {
-            // Explicit key=value in the positional stream.
-            let path = datum_path(before_eq);
-            let existing = accumulate::get_path(&datum_data, &path).cloned();
-            // Find the first declared key matching this path so an
-            // explicit `key=.` can fall back to its default.
-            let default_value = if let Some(v) = existing {
-                inferred_value_for_default(&v)
-            } else {
-                find_default_for_path(&keys, &path)
-            };
-            alter_datum_data(
-                &mut datum_data,
-                &path,
-                Some(value),
-                default_value.as_deref(),
-                false, // append
-                false, // isRequired — explicit key=... is never required
-                compat,
-            )?;
-            continue;
-        }
-
-        // Positional slot — try to consume the next unfilled key.
-        let data_value = before_eq;
-        let mut consumed = false;
-        if let Some(prev) =
-            prev.filter(|p| !keys.is_empty() && (p.ends_with(',') || data_value.starts_with(',')))
-        {
-            let (a, b) = (
-                prev.trim_end_matches(','),
-                data_value.trim_start_matches(','),
-            );
-            return Err(ParseError::InvalidArg(format!(
-                "`{prev} {data_value}`: a comma touches one side only. `{a},{b}` is one \
-                 parallel state; a comma standing alone between two commands \
-                 (`<command> , <command>`) logs both at one instant"
-            )));
-        }
-        while !keys.is_empty() {
-            let spec = keys.remove(0);
-            let (raw_path, default_value) = split_first_eq(&spec);
-            let is_required = default_value.is_none();
-            let path = datum_path(raw_path);
-
-            if accumulate::get_path(&datum_data, &path).is_some() {
-                // Already filled manually — skip to the next declared key.
+            if let Some(value) = after_eq {
+                // Explicit key=value in the positional stream.
+                let path = datum_path(before_eq);
+                let existing = accumulate::get_path(&datum_data, &path).cloned();
+                // Find the first declared key matching this path so an
+                // explicit `key=.` can fall back to its default.
+                let default_value = if let Some(v) = existing {
+                    inferred_value_for_default(&v)
+                } else {
+                    find_default_for_path(&keys, &path)
+                };
+                alter_datum_data(
+                    &mut datum_data,
+                    &path,
+                    Some(value),
+                    default_value.as_deref(),
+                    false, // append
+                    false, // isRequired — explicit key=... is never required
+                    compat,
+                )?;
                 continue;
             }
 
+            // Positional slot — try to consume the next unfilled key.
+            let data_value = before_eq;
+            let mut consumed = false;
+            if let Some(prev) = prev
+                .filter(|p| !keys.is_empty() && (p.ends_with(',') || data_value.starts_with(',')))
+            {
+                let (a, b) = (
+                    prev.trim_end_matches(','),
+                    data_value.trim_start_matches(','),
+                );
+                return Err(ParseError::InvalidArg(format!(
+                    "`{prev} {data_value}`: a comma touches one side only. `{a},{b}` is one \
+                 parallel state; a comma standing alone between two commands \
+                 (`<command> , <command>`) logs both at one instant"
+                )));
+            }
+            while !keys.is_empty() {
+                let spec = keys.remove(0);
+                let (raw_path, default_value) = split_first_eq(&spec);
+                let is_required = default_value.is_none();
+                let path = datum_path(raw_path);
+
+                if accumulate::get_path(&datum_data, &path).is_some() {
+                    // Already filled manually — skip to the next declared key.
+                    continue;
+                }
+                if path == "dur" && is_command(data_value) {
+                    change_command(&mut datum_data, &mut keys, data_value);
+                    command = Some(data_value.to_string());
+                    consumed = true;
+                    break;
+                }
+
+                alter_datum_data(
+                    &mut datum_data,
+                    &path,
+                    Some(data_value),
+                    default_value,
+                    false,
+                    is_required,
+                    compat,
+                )?;
+                consumed = true;
+                prev_slot = (path == "state.id").then(|| data_value.to_string());
+                break;
+            }
+
+            if !consumed {
+                remainder_data.push(data_value.to_string());
+            }
+        }
+
+        // ── unfilled keys: apply defaults; unfilled required → error ───────
+        for spec in keys.drain(..) {
+            let (raw_path, default_value) = split_first_eq(&spec);
+            let path = datum_path(raw_path);
+            let is_required = default_value.is_none();
+
+            match accumulate::get_path(&datum_data, &path) {
+                Some(existing) if !is_dot_scalar(existing) => continue,
+                _ => {}
+            }
             alter_datum_data(
                 &mut datum_data,
                 &path,
-                Some(data_value),
                 default_value,
+                None,
                 false,
                 is_required,
                 compat,
             )?;
-            consumed = true;
-            prev_slot = (path == "state.id").then(|| data_value.to_string());
-            break;
         }
 
-        if !consumed {
-            remainder_data.push(data_value.to_string());
+        // ── leftover words led by a command: the line is that command ──────
+        if remainder_key.is_none() && remainder_data.first().is_some_and(|w| is_command(w)) {
+            let word = remainder_data.remove(0);
+            change_command(&mut datum_data, &mut keys, &word);
+            command = Some(word);
+            data_queue = std::mem::take(&mut remainder_data);
+            continue;
         }
-    }
-
-    // ── unfilled keys: apply defaults; unfilled required → error ───────
-    for spec in keys.drain(..) {
-        let (raw_path, default_value) = split_first_eq(&spec);
-        let path = datum_path(raw_path);
-        let is_required = default_value.is_none();
-
-        match accumulate::get_path(&datum_data, &path) {
-            Some(existing) if !is_dot_scalar(existing) => continue,
-            _ => {}
-        }
-        alter_datum_data(
-            &mut datum_data,
-            &path,
-            default_value,
-            None,
-            false,
-            is_required,
-            compat,
-        )?;
+        break;
     }
 
     // ── comments ───────────────────────────────────────────────────────
@@ -439,7 +477,26 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
         }
     }
 
-    Ok(datum_data)
+    Ok((datum_data, command))
+}
+
+/// What v2's `changeDatumCommand` does to the data and the slots: an occur
+/// has no duration, and every other command takes one next; a switch
+/// clears the state and takes a new one first. The rest of a command's
+/// meaning (a start's or an end's state) is its own, from its verb.
+fn change_command(data: &mut DatumData, keys: &mut Vec<String>, command: &str) {
+    if command == "occur" {
+        data.insert("dur".into(), Value::Null);
+        return;
+    }
+    if data.get("dur").is_some_and(Value::is_null) {
+        data.remove("dur");
+    }
+    keys.insert(0, "dur=".into());
+    if command == "switch" {
+        data.remove("state");
+        keys.insert(0, "state=true".into());
+    }
 }
 
 /// Append one comment, as typed, to `data.comment` (da-ult68): every
@@ -1649,5 +1706,77 @@ mod tests {
         let mut a = args();
         a.data = vec!["cups=".into()];
         assert_eq!(run(a), Map::new());
+    }
+
+    // ── trailing verbs (v2's changeDatumCommand, da-z5vek) ──────────────
+
+    fn changed(data: &[&str], keys: &[&str]) -> (Value, Option<String>) {
+        let a = DataArgs {
+            data: data.iter().map(|s| s.to_string()).collect(),
+            keys: keys.iter().map(|s| s.to_string()).collect(),
+            command_change: true,
+            ..args()
+        };
+        let (d, c) = handle_log_data_args(&a).expect("handle_log_data_args");
+        (Value::Object(d), c)
+    }
+
+    #[test]
+    fn a_command_in_the_dur_slot_changes_the_command() {
+        // `start sleep end 30m`: `end` is the command, 30m its duration.
+        assert_eq!(
+            changed(&["end", "30m"], &["dur="]),
+            (json!({"dur": "PT30M"}), Some("end".into()))
+        );
+        // `mood happy end`: the state read stays, for the end to assert.
+        assert_eq!(
+            changed(&["happy", "end"], &["state=true", "dur="]),
+            (json!({"state": {"id": "happy"}}), Some("end".into()))
+        );
+    }
+
+    #[test]
+    fn leftover_words_led_by_a_command_are_read_again_as_its_own() {
+        // `occur coffee start 5m`: an occur has no slot for either word.
+        assert_eq!(
+            changed(&["start", "5m"], &[]),
+            (json!({"dur": "PT5M"}), Some("start".into()))
+        );
+        // A switch takes its state from the words after it.
+        assert_eq!(
+            changed(&["switch", "tired"], &[]),
+            (json!({"state": {"id": "tired"}}), Some("switch".into()))
+        );
+        // An occur has no duration.
+        assert_eq!(
+            changed(&["end", "occur"], &["dur="]),
+            (json!({"dur": null}), Some("occur".into()))
+        );
+    }
+
+    #[test]
+    fn a_command_word_with_somewhere_to_go_is_data() {
+        // A remainder takes it: `note jot the end of it`.
+        let a = DataArgs {
+            data: vec!["the".into(), "end".into()],
+            comment_remainder: true,
+            command_change: true,
+            ..args()
+        };
+        let (d, c) = handle_log_data_args(&a).unwrap();
+        assert_eq!(
+            (Value::Object(d), c),
+            (json!({"comment": ["the end"]}), None)
+        );
+        // A slot that is not `dur=` takes it.
+        assert_eq!(changed(&["end"], &["what"]), (json!({"what": "end"}), None));
+        // Without the flag (`update`, kit commands) nothing changes.
+        assert!(matches!(
+            handle_data_args(&DataArgs {
+                data: vec!["end".into()],
+                ..args()
+            }),
+            Err(ParseError::ExtraData(_))
+        ));
     }
 }

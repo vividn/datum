@@ -365,7 +365,7 @@ fn a_command_does_not_grow_with_the_fields_it_does_not_name() {
         &["occur", "tea"],
         &["tea"],
         &["switch", "mood", "calm"],
-        &["mood", "switch", "happy"],
+        &["mood", "happy"],
         &["tail", "-n", "1"],
         &["get", "_LAST"],
         &["update", "_LAST", "x=1"],

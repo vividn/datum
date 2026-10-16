@@ -255,7 +255,7 @@ describe('a duration on the bar leaves the fields it can be spent on', () => {
 // ── the now region: a height and no time at all ────────────────────────
 
 describe('the now region re-orders by height alone, on a phone', () => {
-	test('a press on a chip in the snapshot selects no time and puts that field first', async () => {
+	test('a press on a chip in the snapshot selects no time and puts that field at the top', async () => {
 		await withFields(
 			async ({ page }) => {
 				// `mobile` draws the snapshot (`history: '0'`) beside the tail

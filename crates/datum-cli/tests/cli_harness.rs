@@ -13,7 +13,7 @@ fn run_cli_harness_dispatches_to_occur() {
     // Verb-first form: `datum occur coffee` — occur is stateless and
     // takes no bare positional value (da-k5o6 contract). Per-entry data
     // attaches via `-k`, e.g. `occur coffee -k amount=2`.
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the harness dispatch, not the declaration.
     run_cli(&["setup", "coffee", "--verb", "occur"], &db).expect("declare coffee");
@@ -41,12 +41,12 @@ fn run_cli_harness_dispatches_to_occur() {
 }
 
 #[test]
-fn run_cli_harness_surfaces_field_verb_swap() {
+fn run_cli_harness_surfaces_a_trailing_verb() {
     let db = fresh_db();
 
-    // Field-first form: `datum mood switch happy` — the harness must route
-    // through the pre-pass swap so the parser sees `switch mood happy`.
-    run_cli(&["mood", "switch", "happy"], &db).expect("field/verb swap dispatch");
+    // A trailing verb (v2's changeDatumCommand, da-z5vek): `occur mood
+    // switch happy` is `switch mood happy`.
+    run_cli(&["occur", "mood", "switch", "happy"], &db).expect("trailing verb dispatch");
 
     assert_count!(db, "mood", 1);
     let entry = &datum_core::test_util::logged_entries(&db, "mood")[0];

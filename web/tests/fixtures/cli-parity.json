@@ -83,7 +83,7 @@
 			}
 		},
 		{
-			"argv": ["mood", "switch", "sad", "-t", "0945"],
+			"argv": ["occur", "mood", "switch", "sad", "-t", "0945"],
 			"time": "clock",
 			"cli": {
 				"code": 0,
@@ -94,7 +94,7 @@
 					"dur": null,
 					"data": null,
 					"slug": "mood:<t>",
-					"rawInput": "mood switch sad -t 0945",
+					"rawInput": "occur mood switch sad -t 0945",
 					"aliasChain": null,
 					"time": {
 						"clock": "09:45"

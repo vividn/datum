@@ -367,7 +367,7 @@ export interface Takes {
 	 * `meta show <FIELD>`, where a subcommand comes first.
 	 *
 	 * The slot and not a flag, because a field pill's word has to land IN
-	 * it: datum's line is field-first, so a field appended to an argv that
+	 * it: the field is a line's first positional, so a field appended to an argv that
 	 * already carries one is read as that field's STATE — silently, as data
 	 * (`fieldSlotOpen` in $lib/selection.ts is the other half of this).
 	 */
@@ -484,7 +484,7 @@ export const argumentsOf = (all: Pill[]): Pill[] => all.filter((p) => roleOf(p, 
  * command that takes several; a `field` pill wants a command that names a
  * field. A kind this does not know is let through.
  *
- * A command the grammar does not know — a field-first line, an alias, or no
+ * A command the grammar does not know — an alias, or no
  * grammar at all — takes every pill but an hid and a FIELD: `coffee <hid>`
  * would log the hid as coffee's STATE (vremya, review 1498), and `coffee`
  * typed under a `mood` pill would log `mood` as coffee's state the same

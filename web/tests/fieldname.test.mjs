@@ -178,7 +178,7 @@ describe('a field name the (+) form accepts', () => {
 				// splits its entry chain on it first, and what is left is
 				// `setup` and a line of flags alone. Refused all the same, in
 				// the CLI's words.
-				const rule = testCase.field === ',' ? /unexpected flag: --verb/ : THE_RULE;
+				const rule = testCase.field === ',' ? /unexpected flag before subcommand: --verb/ : THE_RULE;
 				assert.match(result.stderr, rule, testCase.name);
 			}
 			// And through the REPL as a person reaches it, quoted so the line

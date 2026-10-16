@@ -6,8 +6,7 @@
 //! # Scope
 //!
 //! This parser is the back half of the `datum` command line; the
-//! pre-pass (alias expansion, terminal-verb override, field/verb swap,
-//! stacked short-flag expansion) runs before `parse_argv` is called.
+//! pre-pass (alias expansion, stacked short-flag expansion) runs before `parse_argv` is called.
 //! Callers that want the whole pipeline should go through
 //! `datum_commands::args::expand_argv` first (which returns the
 //! already-expanded argv).
@@ -128,6 +127,9 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
                 command: Command::Repl,
             });
         };
+        if *tok == "--" && i + 1 < tail.len() {
+            break i + 1; // `--` ends the flags in front of the command
+        }
         match split_flag(tok) {
             FlagSplit::LongAttached("db", v) => {
                 db = Some(v.to_string());
@@ -150,6 +152,12 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
                     .ok_or_else(|| ParseError::InvalidArg("--color requires a value".into()))?;
                 color = parse_color(v)?;
                 i += 2;
+            }
+            // `datum --help tail` is `datum help tail`.
+            FlagSplit::Long("help") | FlagSplit::Short('h')
+                if tail.get(i + 1).is_some_and(|t| !t.starts_with('-')) =>
+            {
+                return parse_tail(&[&["help"], &tail[i + 1..]].concat(), fallback);
             }
             FlagSplit::LongAttached("help", _) | FlagSplit::Long("help") => {
                 return Err(ParseError::HelpRequested(None));
@@ -223,8 +231,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
                     ParseError::HelpRequested(Some(crate::help::page_name(sub, words)))
                 }));
             }
-            // `datum SUB --man` and (after the field/verb prepass swap)
-            // `datum --man SUB` both land here.
+            // `datum SUB --man` lands here; `datum --man SUB` is read above.
             "--man" => return Err(ParseError::ManRequested(Some(sub.to_string()))),
             _ => {}
         }

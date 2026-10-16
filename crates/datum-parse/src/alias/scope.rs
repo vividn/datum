@@ -28,9 +28,9 @@
 use crate::error::{ParseError, Result};
 
 use super::expand::{
-    apply_switch_promote_override, apply_terminal_verb_override, expand_stacked_flags,
-    maybe_collapse_switch_chain, maybe_swap_field_verb, split_argv_at_commas, try_expand_alias,
-    AliasStep, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, MULTI_COMMA,
+    apply_switch_promote_override, expand_stacked_flags, maybe_collapse_switch_chain,
+    split_argv_at_commas, try_expand_alias, AliasStep, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS,
+    MULTI_COMMA,
 };
 
 /// Result of [`expand_into_sides`]: N per-side argvs (each without the
@@ -41,7 +41,7 @@ pub struct ExpandedSides {
     pub chain: Vec<AliasStep>,
 }
 
-/// Steps 1–4 of the spec v2.1 pipeline: terminal-verb override, alias
+/// Steps 1–4 of the spec v2.1 pipeline: alias
 /// expansion (every resolve wraps its body in `( body ,, own-trailing )`),
 /// comma split, and per-side fixpoint expansion with multi-of-multi
 /// flattening.
@@ -57,8 +57,7 @@ pub fn expand_wrapped(argv: Vec<String>, resolver: &dyn Resolver) -> Result<Expa
     }
     let bin = argv[0].clone();
 
-    // Step 1 + 2: terminal verb override + outermost alias expansion.
-    let argv = apply_terminal_verb_override(argv);
+    // Step 1 + 2: outermost alias expansion.
     let (argv, mut chain) = try_expand_alias(argv, resolver)?;
 
     // Step 3: comma-split (skip the leading binary token).
@@ -104,7 +103,7 @@ pub fn expand_wrapped(argv: Vec<String>, resolver: &dyn Resolver) -> Result<Expa
 ///
 /// Steps:
 ///
-/// 1. Apply the terminal-verb override (`<field> end` → `end <field>`).
+/// 1. (retired: a word before the command was swapped behind it, da-z5vek.)
 /// 2. Run [`try_expand_alias`] on the whole argv — every resolve wraps
 ///    its body in `( … ,, own-trailing )`.
 /// 3. Comma-split the resulting flat argv into N sides (groups and
@@ -118,7 +117,7 @@ pub fn expand_wrapped(argv: Vec<String>, resolver: &dyn Resolver) -> Result<Expa
 ///    [`super::regions::apply_regions`] pass: each `,,` binds the
 ///    sides to its left within its innermost enclosing group.
 /// 6. (retired — `--` is unix end-of-flags now, spec rule 4.)
-/// 7. Per side, apply the field/verb swap, BlockSwitch-chain collapse,
+/// 7. Per side, apply the BlockSwitch-chain collapse,
 ///    switch-promote override, and stacked-short-flag expansion.
 pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<ExpandedSides> {
     if argv.is_empty() {
@@ -168,24 +167,11 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
     // promote-to-all behavior is gone. Trailing regions (`,,`) replaced
     // it above.)
 
-    // Step 7a (da-b4k5): per-side `maybe_swap_field_verb` so any
-    // field-first form is normalized to verb-first BEFORE the
-    // BlockSwitch-chain collapse runs — the collapse keys off
-    // `sides[0][0] == "switch"`, which a pre-swap field-first side
-    // (`["activity", "switch", "end", "14m"]`) wouldn't match.
-    let mut swapped_sides: Vec<Vec<String>> = Vec::with_capacity(sides.len());
-    for side in sides {
-        let mut side_argv = vec![bin.clone()];
-        side_argv.extend(side);
-        let side_argv = maybe_swap_field_verb(side_argv);
-        swapped_sides.push(side_argv.into_iter().skip(1).collect());
-    }
-
     // Step 7b (da-b4k5): collapse a two-sided `switch f X , Y` chain
     // into a single side BEFORE switch-promote-override fires. Running
     // promote first would rewrite `switch f end <D>` → `end f <D>` on
     // side 0, hiding the `switch` lede the chain detector needs.
-    let collapsed_sides = maybe_collapse_switch_chain(swapped_sides);
+    let collapsed_sides = maybe_collapse_switch_chain(sides);
 
     // Step 7c: per-side switch-promote + stacked flags. The promote step
     // now no-ops on a side that carries a standalone `,` (the chain

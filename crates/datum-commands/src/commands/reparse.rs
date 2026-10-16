@@ -40,8 +40,9 @@ use serde_json::Value as JsonValue;
 use crate::args::{Command, ReparseArgs};
 use crate::commands::helpers::build_resolver_from_chain;
 use crate::commands::log_core::{
-    bind_spec_words, build_time_from_flags, expand_array_states, extract_reserved_columns,
-    lift_time_keys, parse_log_args, prepare_log_args, validate_switch_state_token, LiftedTimes,
+    bind_spec_words, build_time_from_flags, change_command, expand_array_states,
+    extract_reserved_columns, lift_time_keys, parse_log_args, prepare_log_args,
+    validate_switch_state_token, LiftedTimes,
 };
 
 /// Parser-derivable Entry shape — what the parser alone determines from
@@ -163,6 +164,12 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     let parsed = parse_log_args(&log_args, action, Some(base.clone()))?;
     let mut extra_data = parsed.extra_data;
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
+    action = change_command(
+        action,
+        parsed.command,
+        &mut reserved.state,
+        &mut log_args.last_state,
+    );
 
     // `end_time=` alone on `start` / `switch`, with no duration, ran as
     // `end` — a switch's state became the `-L` assertion (da-mjwq).

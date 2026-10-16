@@ -128,11 +128,6 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "completions",
 ];
 
-/// Terminal verb tokens the override pre-pass recognises. `end`/`stop`
-/// are synonymous — `<field> end` and `<field> stop` both rewrite to
-/// `end <field>`.
-pub const TERMINAL_VERBS: &[&str] = &["end", "stop"];
-
 /// Verbs that, when supplied as the state argument to `switch`, promote
 /// the entire entry to that verb instead of being recorded as a literal
 /// state string. `switch <field> end|stop|start` is rewritten to
@@ -150,13 +145,11 @@ pub struct AliasStep {
 }
 
 /// Apply the full pre-pass pipeline:
-/// 1. Terminal-verb override: `<field> end|stop` → `end|stop <field>`.
-/// 2. Alias expansion (DB-backed via [`Resolver`]).
-/// 3. Trailing regions: split at `,` and consume `,,` (spec v2.1, see
+/// 1. Alias expansion (DB-backed via [`Resolver`]).
+/// 2. Trailing regions: split at `,` and consume `,,` (spec v2.1, see
 ///    `regions::apply_regions`).
-/// 4. Field/verb swap: `<field> <verb>` → `<verb> <field>`.
-/// 5. Switch promote: `switch <field> end|stop|start` → `end|stop|start <field>`.
-/// 6. Stacked short-flag expansion: `-yy` → `-y -y`.
+/// 3. Switch promote: `switch <field> end|stop|start` → `end|stop|start <field>`.
+/// 4. Stacked short-flag expansion: `-yy` → `-y -y`.
 ///
 /// Returns the expanded argv plus the list of alias steps that were
 /// applied (for provenance stamping onto the entry). Returns
@@ -166,7 +159,6 @@ pub fn expand_argv(
     argv: Vec<String>,
     resolver: &dyn Resolver,
 ) -> crate::Result<(Vec<String>, Vec<AliasStep>)> {
-    let argv = apply_terminal_verb_override(argv);
     let (argv, chain) = try_expand_alias(argv, resolver)?;
     // Spec v2: consume `,,` trailing regions on the flat path too (this
     // wrapper survives for the kit-command recovery + `reparse`
@@ -179,15 +171,7 @@ pub fn expand_argv(
     let sides = super::regions::apply_regions(sides)?;
     // A switch chain is one command here too: `reparse` replays `switch
     // f sit 5 , switch f stand` as the one point-switch it wrote.
-    let sides = maybe_collapse_switch_chain(
-        sides
-            .into_iter()
-            .map(|side| {
-                let swapped = maybe_swap_field_verb([vec![bin.clone()], side].concat());
-                swapped[1..].to_vec()
-            })
-            .collect(),
-    );
+    let sides = maybe_collapse_switch_chain(sides);
     let mut argv = vec![bin];
     for (i, side) in sides.into_iter().enumerate() {
         if i > 0 {
@@ -195,23 +179,9 @@ pub fn expand_argv(
         }
         argv.extend(side);
     }
-    let argv = maybe_swap_field_verb(argv);
     let argv = apply_switch_promote_override(argv);
     let argv = expand_stacked_flags(argv);
     Ok((argv, chain))
-}
-
-/// Rewrite `datum <field> end [args...]` → `datum end <field> [args...]`.
-pub fn apply_terminal_verb_override(mut argv: Vec<String>) -> Vec<String> {
-    if argv.len() < 3 {
-        return argv;
-    }
-    let terminal_is_second = TERMINAL_VERBS.contains(&argv[2].as_str());
-    let first_is_known_subcommand = KNOWN_SUBCOMMANDS.contains(&argv[1].as_str());
-    if terminal_is_second && !first_is_known_subcommand {
-        argv.swap(1, 2);
-    }
-    argv
 }
 
 /// Rewrite `datum switch <field> <verb> [args...]` → `datum <verb> <field>
@@ -285,49 +255,8 @@ pub fn try_expand_alias(
         if argv.len() <= name_idx || KNOWN_SUBCOMMANDS.contains(&argv[name_idx].as_str()) {
             return Ok((argv, chain));
         }
-        // da-c8mh: `datum mood switch sad` is the FIELD-FIRST form, one of
-        // the two syntaxes the CLI promises. A verb in the next slot says
-        // so, and the head is that verb's field — not a word to expand.
-        // Every spec now projects a bare-field alias (`mood` → `switch
-        // mood`), so without this the field-first form would expand into
-        // `switch mood switch sad` for every field that has ever been
-        // logged. The swap below turns it into `switch mood sad`.
-        //
-        // da-y40jf: only a head that IS a field reads field-first — an
-        // alias whose body logs the head itself (`mood` → `switch mood`),
-        // or no alias at all. A state alias (`sad` → `switch mood sad`)
-        // is no field, so `sad why` binds `why` to its slots rather than
-        // turning into `why sad`.
-        //
-        // da-71pkp: an abbreviation (`m` → `switch mood`) names a field and
-        // adds nothing, so it reads field-first as THAT field: `m tail` is
-        // `mood tail`, which the swap turns into `tail mood`.
         let name = argv[name_idx].clone();
         let alias = resolver.lookup(&name);
-        if argv
-            .get(name_idx + 1)
-            .is_some_and(|t| KNOWN_SUBCOMMANDS.contains(&t.as_str()))
-        {
-            match alias.as_ref().map(|a| a.tokens.as_slice()) {
-                None => return Ok((argv, chain)),
-                Some([_, field, ..]) if *field == name => return Ok((argv, chain)),
-                Some([verb, field])
-                    if matches!(
-                        verb.as_str(),
-                        "occur" | "start" | "stop" | "end" | "switch" | "add" | "note"
-                    ) && !field.starts_with('-')
-                        && !field.contains('$') =>
-                {
-                    chain.push(AliasStep {
-                        name,
-                        expansion: field.clone(),
-                    });
-                    argv[name_idx] = field.clone();
-                    return Ok((argv, chain));
-                }
-                _ => {}
-            }
-        }
         if visited.iter().any(|v| v == &name) {
             let mut path = visited;
             path.push(name);
@@ -610,18 +539,6 @@ fn scan_placeholders(s: &str, mut f: impl FnMut(usize)) {
             }
         }
     }
-}
-
-/// Swap `argv[1]` and `argv[2]` when `argv[1]` is a field name and `argv[2]` is
-/// a verb. E.g. `datum mood switch happy` → `datum switch mood happy`.
-pub fn maybe_swap_field_verb(mut argv: Vec<String>) -> Vec<String> {
-    if argv.len() >= 3
-        && !KNOWN_SUBCOMMANDS.contains(&argv[1].as_str())
-        && KNOWN_SUBCOMMANDS.contains(&argv[2].as_str())
-    {
-        argv.swap(1, 2);
-    }
-    argv
 }
 
 /// Expand stacked short flags. Same-letter runs (`-yy`, `-qqq`),
@@ -961,8 +878,7 @@ pub fn maybe_collapse_switch_chain(sides: Vec<Vec<String>>) -> Vec<Vec<String>> 
         return sides;
     }
     // Side 0 must start with `switch`. Aliases were resolved upstream so
-    // a bare-string compare is sufficient; field/verb swap (per side)
-    // already promoted any field-first form to verb-first.
+    // a bare-string compare is sufficient: the command is a side's first word.
     if sides[0].first().map(|s| s.as_str()) != Some("switch") {
         return sides;
     }
@@ -1385,16 +1301,23 @@ mod tests {
         assert!(chain.is_empty());
     }
 
+    /// Commands are verb-first (da-z5vek): a word that names no command and
+    /// no alias stays where it was typed, for the parser to refuse.
     #[test]
-    fn field_verb_swap() {
-        let (argv, _) = expand_argv(v(&["datum", "mood", "switch", "happy"]), &NoResolver).unwrap();
-        assert_eq!(argv, v(&["datum", "switch", "mood", "happy"]));
-    }
-
-    #[test]
-    fn terminal_verb_override() {
-        let (argv, _) = expand_argv(v(&["datum", "work", "end"]), &NoResolver).unwrap();
-        assert_eq!(argv, v(&["datum", "end", "work"]));
+    fn a_field_before_a_command_is_left_as_typed() {
+        for words in [
+            &["datum", "mood", "switch", "happy"][..],
+            &["datum", "work", "end"],
+            &["datum", "mood", "tail"],
+        ] {
+            let (argv, _) = expand_argv(v(words), &NoResolver).unwrap();
+            assert_eq!(argv, v(words));
+            let err = crate::parse_argv(&argv).unwrap_err().to_string();
+            assert!(
+                err.contains(&format!("unknown subcommand: '{}'", words[1])),
+                "{err}"
+            );
+        }
     }
 
     #[test]
@@ -1418,17 +1341,12 @@ mod tests {
         assert_eq!(argv, v(&["datum", "start", "project"]));
     }
 
-    /// vividn's B9 (da-9e02u): `off` is `end`, verb-first and field-first;
-    /// a quoted `"off"` or `str://off` is the literal state.
+    /// vividn's B9 (da-9e02u): `off` is `end`; a quoted `"off"` or
+    /// `str://off` is the literal state.
     #[test]
     fn switch_promote_off_is_end() {
-        for words in [
-            &["datum", "switch", "light", "off"][..],
-            &["datum", "light", "switch", "off"],
-        ] {
-            let (argv, _) = expand_argv(v(words), &NoResolver).unwrap();
-            assert_eq!(argv, v(&["datum", "end", "light"]), "{words:?}");
-        }
+        let (argv, _) = expand_argv(v(&["datum", "switch", "light", "off"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "end", "light"]));
         for literal in [r#""off""#, "str://off"] {
             let words = ["datum", "switch", "light", literal];
             let (argv, _) = expand_argv(v(&words), &NoResolver).unwrap();
@@ -1452,13 +1370,6 @@ mod tests {
         let (argv, _) =
             expand_argv(v(&["datum", "switch", "project", "happy"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "switch", "project", "happy"]));
-    }
-
-    #[test]
-    fn switch_promote_via_field_verb_swap() {
-        // `mood switch end` → swap → `switch mood end` → promote → `end mood`.
-        let (argv, _) = expand_argv(v(&["datum", "mood", "switch", "end"]), &NoResolver).unwrap();
-        assert_eq!(argv, v(&["datum", "end", "mood"]));
     }
 
     #[test]
@@ -1666,19 +1577,21 @@ mod tests {
         }
     }
 
-    /// An abbreviation (`m` → `switch mood`) reads field-first as the field
-    /// it names: `m tail` tails mood rather than logging a state `tail`
-    /// (da-71pkp).
+    /// A field's own word is its alias and the words after it are the
+    /// alias's (da-z5vek): `mood switch sad` is `switch mood switch sad`,
+    /// as `m switch sad` is with `m` → `switch mood`, never `switch mood sad`.
     #[test]
-    fn an_abbreviation_reads_field_first_as_its_field() {
+    fn a_command_after_an_alias_is_the_alias_words() {
         let mut aliases = std::collections::HashMap::new();
         aliases.insert("m".to_string(), alias("switch mood"));
         aliases.insert("mood".to_string(), alias("switch mood"));
         for (call, want) in [
-            (&["m", "tail"][..], &["tail", "mood"][..]),
-            (&["m", "check"], &["check", "mood"]),
-            (&["m", "why", "-t", "-1"], &["why", "mood", "-t", "-1"]),
-            (&["m", "switch", "sad"], &["switch", "mood", "sad"]),
+            (&["m", "tail"][..], &["switch", "mood", "tail"][..]),
+            (&["mood", "tail"], &["switch", "mood", "tail"]),
+            (
+                &["mood", "switch", "sad"],
+                &["switch", "mood", "switch", "sad"],
+            ),
         ] {
             let argv = [&["datum"], call].concat();
             let (out, _) = expand_argv(v(&argv), &MapResolver(&aliases)).unwrap();

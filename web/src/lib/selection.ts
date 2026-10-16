@@ -80,7 +80,7 @@ export const hidPill = (hids: string[], locked = false): Pill | null =>
  * `takes.field` is which positional the command's field is — 1 for `tail
  * [FIELD]`, 2 for `meta show <FIELD>` — so the slot is open exactly when
  * the argv is that many words short of it. THIS IS WHERE THE SILENT ONE
- * WOULD BE: datum's line is field-first, so a press from the fields widget
+ * WOULD BE: the field is a line's first positional, so a press from the fields widget
  * already carries its own field (`occur coffee`), and a second field
  * appended to it is read as coffee's STATE — no error, just a wrong row. A
  * refused pill stays loaded, as any other pill a command cannot take does.
@@ -130,7 +130,7 @@ function positionals(takes: Takes, argv: string[]): number {
  *
  * A command gets only the ARGUMENT pills its grammar takes — the rest stay
  * loaded for the next one, and a context pill is never its (`argumentsOf`).
- * A first word the grammar does not know (a field-first line, an alias, or
+ * A first word the grammar does not know (an alias, or
  * no grammar yet) gets every pill but the hid and the field (`fits`). The hids go right after the command's name, where every
  * id-taking usage line has them (`retime <id> -5` parses, `retime -5 <id>`
  * does not), several as ONE comma-joined word (`update A B` takes B as a

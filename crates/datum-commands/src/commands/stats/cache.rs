@@ -158,7 +158,7 @@ impl<'a> Cache<'a> {
                     .chain(timeline.rows.first().map(|r| r.occur))
                     .min();
                 // A field with no closed day has nothing to cache: `stats
-                // typo`, or a field first logged today, keeps no watermark.
+                // typo`, or a field logged today for the first time, keeps no watermark.
                 let Some(first) = from.or(begins.map(|t| local_date_at(&zones, t))) else {
                     return Ok(None);
                 };

@@ -107,7 +107,7 @@ fn start_after_switch_preserves_prior_state() {
 fn trailing_duration_sets_time_end_for_closed_block() {
     let db = fresh_db();
 
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the trailing duration, not the declaration.
     run_cli(&["setup", "dance", "--verb", "start"], &db).expect("declare dance");
@@ -180,7 +180,7 @@ fn start_without_dur_is_moment_like() {
 fn start_moment_records_point_dot() {
     let db = fresh_db();
 
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the `-m` moment rule, not the declaration.
     run_cli(&["setup", "meeting", "--verb", "start"], &db).expect("declare meeting");
@@ -315,7 +315,7 @@ fn invalid_dur_is_rejected() {
 fn dur_plus_extra_still_marks_verb_start() {
     let db = fresh_db();
 
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the verb a `dur=` lands, not the declaration.
     run_cli(&["setup", "field", "--verb", "start"], &db).expect("declare field");

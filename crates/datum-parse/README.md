@@ -29,9 +29,10 @@ subcommand is a matter of:
 3. Add help copy in [`help`](help).
 4. Add a parse test in `tests/parse_<command>.rs`.
 
-There is no clap derive layer to fight; flag-vs-positional, field-first
-vs verb-first, and `-y`/`-q`/`-d`/`-t` time stacking are all handled
-in [`input`](input) and [`parse`](parse) directly.
+There is no clap derive layer to fight; flag-vs-positional, trailing
+verbs and `-y`/`-q`/`-d`/`-t` time stacking are all handled in
+[`input`](input) and [`parse`](parse) directly. The command is always
+the first word: a field's own word is its alias, never a swapped order.
 
 ## Adding a new flag
 

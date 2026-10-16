@@ -34,6 +34,7 @@ use std::sync::OnceLock;
 
 use crate::error::{ParseError, Result};
 use crate::help::commands::GLOBAL_FLAGS;
+use crate::input::data_args::COMMAND_CHANGES;
 use crate::input::flag_registry::ValueMode;
 use crate::parse::log::log_args_registry;
 use crate::time::dur::parse_duration;
@@ -337,16 +338,10 @@ fn build_view(atoms: &[Atom], lo: usize, hi: usize) -> (Vec<Slot>, Vec<Vec<usize
 /// rule-5 order, with satisfaction derived from the body (positional
 /// state, explicit `key=` assignments, body-fed joins).
 fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
-    // Identify the verb, tolerating field-first order.
-    let verb: Option<&str> = match (side.first(), side.get(1)) {
-        (Some(t0), _) if DUR_VERBS.contains(&t0.as_str()) || t0 == "occur" || t0 == "add" => {
-            Some(t0.as_str())
-        }
-        (_, Some(t1)) if DUR_VERBS.contains(&t1.as_str()) || t1 == "occur" || t1 == "add" => {
-            Some(t1.as_str())
-        }
-        _ => None,
-    };
+    let verb: Option<&str> = side
+        .first()
+        .map(String::as_str)
+        .filter(|t0| DUR_VERBS.contains(t0) || *t0 == "occur" || *t0 == "add");
 
     let mut keys: Vec<String> = Vec::new();
     let mut explicit_kv: Vec<String> = Vec::new(); // body `key=value` names
@@ -611,7 +606,11 @@ enum Fill {
 /// Implements reservation (rule 7), greedy sharing / first-wins (rule
 /// 8), `.` skips, and the excess rules (rule 9). Returns the fills and
 /// marks consumed slots satisfied in `slots`.
-fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>> {
+fn walk_region(
+    positionals: Vec<String>,
+    slots: &mut [Slot],
+    scope: std::ops::RangeInclusive<usize>,
+) -> Result<Vec<Fill>> {
     let mut fills: Vec<Fill> = Vec::new();
     if positionals.is_empty() {
         return Ok(fills);
@@ -740,6 +739,9 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
             continue;
         }
         let value = queue[qi].clone();
+        if matches!(slot.kind, SlotKind::Dur) && COMMAND_CHANGES.contains(&value.as_str()) {
+            break; // a trailing verb: the side reads it (v2's changeDatumCommand)
+        }
         qi += 1;
         let open = slot.open_sides();
         slot.mark_all_satisfied();
@@ -750,6 +752,16 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
         push_fill(&mut fills, &slot.kind, open, unesc(&value));
     }
     if qi < queue.len() {
+        // `bed end 30m` (`bed` → `start sleep`): the command and the words
+        // after it go to the sides as typed, whose data parser changes the
+        // command and reads the rest as the new command's.
+        if COMMAND_CHANGES.contains(&queue[qi].as_str()) {
+            fills.push(Fill::Window {
+                sides: scope.collect(),
+                tokens: queue.split_off(qi),
+            });
+            return Ok(fills);
+        }
         return Err(ParseError::ExtraData(queue[qi..].to_vec()));
     }
     Ok(fills)
@@ -841,7 +853,7 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
         // Walk the positionals over the scope's merged view, then
         // write satisfaction back to the atoms.
         let (mut view, backing) = build_view(&atoms, lo, hi);
-        let fills = walk_region(content.positionals.clone(), &mut view)?;
+        let fills = walk_region(content.positionals.clone(), &mut view, lo..=hi)?;
         for (vi, slot) in view.iter().enumerate() {
             for (si, sr) in slot.sides.iter().enumerate() {
                 if sr.satisfied {

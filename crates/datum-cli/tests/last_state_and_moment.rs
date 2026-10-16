@@ -237,7 +237,7 @@ fn last_state_takes_the_next_word_as_its_value() {
 #[test]
 fn switch_moment_records_point_in_time() {
     let db = fresh_db();
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the `--moment` rule, not the declaration.
     run_cli(&["setup", "mood", "--verb", "switch"], &db).expect("declare mood");

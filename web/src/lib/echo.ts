@@ -84,9 +84,9 @@ export interface EchoDoc {
  * ACCEPTS `--show json` answers with its own JSON document instead of the
  * table or picture the pane asked for; one that draws no JSON ignores
  * `DATUM_SHOW` (it would exit 1 on the flag). The set stays a denylist and
- * not an allowlist: an argv whose first word is NOT a command — `mood
- * switch happy` field-first, or an alias the CLI expands in its own
- * pre-pass — is a write command under another name, and must be asked.
+ * not an allowlist: an argv whose first word is NOT a command — an alias
+ * the CLI expands in its own pre-pass, a field's own (`mood happy`)
+ * included — is a write command under another name, and must be asked.
  *
  * `tests/echo.test.mjs` runs every word here and every echoing verb
  * through the real CLI and holds this list to what the CLI does, so it

@@ -185,21 +185,21 @@ describe('a tap on a tail row', () => {
 });
 
 describe('a line the grammar does not know', () => {
-	// Review 1498: a field-first line typed with an entry selected got the
-	// hid as its STATE. A bare field is the CLI's typo guard, so the line is
-	// the field-first form, which the grammar does not know either.
-	test('never gets the hid: `a occur` logs a stateless entry, and the pill stays', async () => {
+	// Review 1498: a line led by a word the grammar does not know, typed with
+	// an entry selected, got the hid as its STATE. An alias is such a word.
+	test('never gets the hid: the alias `a` logs a stateless entry, and the pill stays', async () => {
 		await solo(async (app) => {
 			const { page } = app;
 			await seedApart(app);
+			await page.evaluate(() => window.datum.runQuiet(['alias', 'set', 'a', 'occur a']));
 			const [row] = await last(page, 1);
 			const hid = await row.getAttribute('data-hid');
 			await row.click();
 			await hidPill(page).waitFor();
 
-			await app.submit('a occur');
+			await app.submit('a');
 			await app.idle();
-			assert.equal((await app.echoes()).at(-1), 'a occur');
+			assert.equal((await app.echoes()).at(-1), 'a');
 			const listing = await page.evaluate(() => window.datum.runQuiet(['tail', '--json']));
 			const newest = JSON.parse(listing.stdout).rows.at(-1);
 			assert.notEqual(newest.hid, hid);

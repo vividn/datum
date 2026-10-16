@@ -188,7 +188,7 @@ describe('what a press runs with the pills', () => {
 		assert.deepEqual(withPills(GRAMMAR, ['tail'], [mood, time]).argv, ['tail', 'mood', '-t', '14:30']);
 	});
 
-	// THE SILENT ONE. datum's line is field-first, so `occur coffee` with a
+	// THE SILENT ONE. The field is a line's first positional, so `occur coffee` with a
 	// `mood` pill on the bar would log `mood` as coffee's STATE — a wrong
 	// row, not an error. The slot is taken, so the pill is refused and stays.
 	test('a command that already names a field does not get a second one', () => {

@@ -1761,7 +1761,6 @@ a mood, where you are, what you are reading. No stop is needed, because
 each switch ends the state before it.
 
   datum switch mood happy
-  datum mood switch tired             the field first works too
 
 `datum end mood` turns the field off. With states in its spec (`datum
 track mood --verb switch --add-state happy`), `datum happy` is enough.

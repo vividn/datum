@@ -823,7 +823,7 @@ fn read_header_line<R: std::io::BufRead>(
             continue;
         }
         // Only a metadata object carries the sentinel discriminator. Peek
-        // the "type" field first so a legacy Entry (which has no `type`
+        // the "type" field before the rest so a legacy Entry (which has no `type`
         // key with that value) falls through to the headerless path
         // without us running a full Entry deserialize twice.
         let is_header = serde_json::from_str::<serde_json::Value>(&trimmed)

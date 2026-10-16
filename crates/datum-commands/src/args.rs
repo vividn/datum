@@ -431,8 +431,8 @@ fn parse_invocation_inner(
     // `parse_invocation` already used the same flag value, so the
     // alias DB and the dispatch DB stay aligned.)
     let (argv_for_expand, mut db_flag_tokens) = crate::config::split_off_global_db_flag(argv);
-    // `--color WHEN` likewise, or the field/verb swap moves a lone
-    // `--color=always` behind the command.
+    // `--color WHEN` likewise, or a lone `--color=always` stands where
+    // the alias name is looked up.
     let (argv_for_expand, color_tokens) =
         crate::config::split_off_global_color_flag(argv_for_expand);
     db_flag_tokens.extend(color_tokens);
@@ -508,8 +508,8 @@ fn parse_invocation_inner(
     })
 }
 
-/// Legacy flat-argv expansion: terminal-verb override + alias
-/// expansion + field/verb swap + stacked-flag expansion, returning a
+/// Legacy flat-argv expansion: alias expansion + stacked-flag
+/// expansion, returning a
 /// single argv. Retained only for the Level-2 kit-command
 /// post-parse-error recovery path in `datum-cli/src/main.rs`, which
 /// needs the re-expanded argv to look up the verb after `parse_argv`

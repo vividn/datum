@@ -8,7 +8,7 @@
 //    the page's flag (da-vx31e).
 // 2. `NO_ECHO` — the commands it leaves alone — says what the CLI does.
 //    That list is a DENYLIST because an argv whose first word is not a
-//    command (`mood switch happy` field-first, an alias) is a write under
+//    command (an alias, a field's own `mood happy` too) is a write under
 //    another name and must be asked; the cost of a denylist is that a
 //    command added to the CLI and not added here would be asked, and a
 //    reader that draws JSON would then answer with it instead of its
@@ -47,11 +47,11 @@ describe('echoEnv', () => {
 		assert.deepEqual(echoEnv(['occur', 'coffee']), ASKED);
 	});
 
-	test('a command not in the CLI — field-first, an alias — is asked too', () => {
-		// `mood switch happy` and `vbp correr` are both write commands the
+	test('a command not in the CLI — an alias — is asked too', () => {
+		// `mood happy` and `vbp correr` are both write commands the
 		// CLI resolves in its own pre-pass; the web cannot tell them from a
 		// verb and must not treat an unknown word as a reader.
-		assert.deepEqual(echoEnv(['mood', 'switch', 'happy']), ASKED);
+		assert.deepEqual(echoEnv(['mood', 'happy']), ASKED);
 		assert.deepEqual(echoEnv(['vbp', 'correr']), ASKED);
 	});
 

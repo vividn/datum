@@ -1240,8 +1240,6 @@ fn every_intro_example_parses() {
                 continue;
             }
             let argv = crate::alias::expand::shell_split(example);
-            // The field-first order, as the CLI swaps it before parsing.
-            let argv = crate::alias::expand::maybe_swap_field_verb(argv);
             let parsed = crate::parse_argv(&argv);
             assert!(parsed.is_ok(), "`{example}`: {parsed:?}");
             n += 1;
@@ -1358,4 +1356,24 @@ fn a_fitted_table_still_lines_up() {
         !under.is_empty(),
         "--quick's description wraps under its column"
     );
+}
+
+/// `datum --help tail` is `datum help tail`, as `--man tail` is tail's man
+/// page: nothing swaps the command in front of the flag (da-z5vek).
+#[test]
+fn help_before_a_command_is_that_commands_page() {
+    let argv = |w: &[&str]| {
+        [&["datum"], w]
+            .concat()
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+    };
+    for flag in ["--help", "-h"] {
+        for page in [&["tail"][..], &["sync", "chain"]] {
+            let typed = crate::parse_argv(&argv(&[&[flag], page].concat()));
+            let help = crate::parse_argv(&argv(&[&["help"], page].concat()));
+            assert_eq!(format!("{typed:?}"), format!("{help:?}"), "{flag} {page:?}");
+        }
+    }
 }

@@ -243,8 +243,8 @@ fn switch_offers_the_fields_states_then_its_keys() {
     let found = env.complete("switch mood ");
     assert!(has(&found, "calm"), "the spec's state: {found:?}");
     assert!(has(&found, "happy"), "a logged state: {found:?}");
-    // The field-first form is the same line.
-    assert_eq!(env.complete("mood switch "), found);
+    // The field's own word is its alias, the same line.
+    assert_eq!(env.complete("mood "), found);
     // Past the state there are no more states.
     assert!(!has(&env.complete("switch mood happy "), "calm"));
 }
@@ -270,22 +270,21 @@ fn a_field_position_offers_the_fields_quoted_for_the_shell() {
     assert_eq!(env.complete("tail my"), ["'my field'"]);
 }
 
+/// A field's own word is its alias (da-z5vek): no command follows it.
 #[test]
-fn a_lone_field_offers_the_commands_that_take_one() {
+fn a_lone_field_offers_its_alias_line_and_no_command() {
     let found = Env::new().complete("mood ");
-    assert!(has(&found, "tail") && has(&found, "happy"), "{found:?}");
-    // `setup` takes the field first (da-ez40f): `mood setup` prints its spec.
-    assert!(has(&found, "setup"), "{found:?}");
+    assert!(has(&found, "happy"), "{found:?}");
+    assert!(!has(&found, "tail") && !has(&found, "setup"), "{found:?}");
 }
 
-/// `states` (da-7905t) is a command, takes a field, and runs field-first.
+/// `states` (da-7905t) is a command and takes a field.
 #[test]
 fn states_completes_and_takes_a_field() {
     let env = Env::new();
     assert!(has(&env.complete("sta"), "states"));
     assert!(has(&env.complete("states "), "mood"));
-    assert!(has(&env.complete("mood "), "states"));
-    let out = env.ok(&["mood", "states"]);
+    let out = env.ok(&["states", "mood"]);
     assert!(out.contains("calm") && out.contains("happy"), "{out}");
 }
 

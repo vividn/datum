@@ -218,8 +218,7 @@ fn count_since_accepts_rfc3339_datetime() {
 
 #[test]
 fn count_cli_dispatch_smoke_test() {
-    // The string-level dispatch path must accept `datum count [field]`
-    // without tripping the field/verb pre-pass.
+    // The string-level dispatch path must accept `datum count [field]`.
     let db = fresh_db();
     entry_builder("coffee").state(json!(1)).insert(&db);
     run_cli(&["count"], &db).expect("bare count must dispatch");

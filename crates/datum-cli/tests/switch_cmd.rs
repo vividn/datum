@@ -254,7 +254,7 @@ fn switch_without_state_promotes_to_true() {
 #[test]
 fn switch_dur_creates_block_ending_at_occur() {
     let db = fresh_db();
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the block a trailing duration makes, not the declaration.
     run_cli(&["setup", "project", "--verb", "switch"], &db).expect("declare project");
@@ -315,7 +315,7 @@ fn switch_negative_dur_is_rejected() {
 #[test]
 fn switch_moment_produces_point_in_time_entry() {
     let db = fresh_db();
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the `-m` moment rule, not the declaration.
     run_cli(&["setup", "project", "--verb", "switch"], &db).expect("declare project");
@@ -477,7 +477,7 @@ fn switch_does_not_auto_record_last_state_in_extra_data() {
 #[test]
 fn switch_multiple_keys_attach_without_complex_state_synthesis() {
     let db = fresh_db();
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is how keyed data attaches, not the declaration.
     run_cli(&["setup", "book", "--verb", "switch"], &db).expect("declare book");
@@ -1049,11 +1049,12 @@ fn switch_chain_with_non_keyword_state_unchanged() {
 }
 
 /// vividn's B9 (da-9e02u): `switch light off` turns light off, as `end light`
-/// does, verb-first and field-first, where datum stored a running «off».
+/// does, typed or through the field's own alias (`light off`), where datum
+/// stored a running «off».
 /// A state named off is `'"off"'` or `str://off`.
 #[test]
 fn switch_off_is_false_and_the_literal_is_quoted_or_str_marked() {
-    for words in [&["switch", "light", "off"][..], &["light", "switch", "off"]] {
+    for words in [&["switch", "light", "off"][..], &["light", "off"]] {
         let db = fresh_db();
         run_cli(&["switch", "light", "on", "-t=-2"], &db).expect("on");
         run_cli(words, &db).expect("off");

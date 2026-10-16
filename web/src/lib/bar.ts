@@ -247,7 +247,7 @@ export const toggleLockPill = (id: string): void =>
 // ONE field at a time, as the time cursor holds one instant: the id is
 // fixed, so minting on a second field REPLACES the first rather than
 // asking every reader what two of them would mean. Its `text` is the bare
-// field name, which is the word the CLI's field-first line takes — where
+// field name, the word a command's field positional takes — where
 // that word lands in an argv, and which commands may have it at all, is
 // `fits` and `withPills` ($lib/commands.ts, $lib/selection.ts).
 //

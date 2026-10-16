@@ -428,8 +428,8 @@ describe('the gesture, and the pill it mints', () => {
 		});
 	});
 
-	// THE SILENT ONE, at the seam rather than in the pure test: datum's line
-	// is field-first, so `occur coffee` under a `mood` pill would log mood as
+	// THE SILENT ONE, at the seam rather than in the pure test: the field is
+	// a line's first positional, so `occur coffee` under a `mood` pill would log mood as
 	// coffee's STATE. The pill is refused and stays loaded.
 	test('a press that already names a field does not get the pill appended', async () => {
 		await seeded(async (app) => {

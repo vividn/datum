@@ -267,7 +267,7 @@ fn stop_invalid_dur_is_rejected() {
 #[test]
 fn stop_dur_plus_extra_still_marks_verb_stop() {
     let db = fresh_db();
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the verb a `dur=` lands, not the declaration.
     run_cli(&["setup", "field", "--verb", "start"], &db).expect("declare field");

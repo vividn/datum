@@ -30,7 +30,7 @@ use datum_core::db::{is_meta_field, Db, NOT_FLAG_OR_META_SQL};
 use datum_core::shape::is_ignored_state;
 use datum_core::track::NOT_A_DECLARATION_SQL;
 use datum_parse::alias::{self as palias, expand_argv};
-use datum_parse::help::{find_command, CommandSpec, FlagSpec, COMMANDS, GLOBAL_FLAGS};
+use datum_parse::help::{find_command, FlagSpec, COMMANDS, GLOBAL_FLAGS};
 
 use crate::args::DbAliasResolver;
 use crate::config;
@@ -145,27 +145,12 @@ pub fn complete(cword: usize, words: &[String]) -> Candidates {
         };
         return filtered(found, cur);
     }
-    // A lone field is the field-first form (`coffee tail`), and a log line
-    // of its own (`mood happy`): offer both.
-    let lone_field = rest.len() == 1 && is_field(&rest[0], db);
-    let mut found = if lone_field {
-        field_first_commands()
-    } else {
-        Vec::new()
-    };
-    found.extend(after_command(rest, db, cur));
-    filtered(found, cur)
-}
-
-/// Every field has an alias of its own name (`mood` → `switch mood`), and
-/// `mood tail` is still the field-first form: a field is known by its spec.
-fn is_field(word: &str, db: Option<&Db>) -> bool {
-    find_command(word).is_none() && db.is_none_or(|db| db.load_spec(word).ok().flatten().is_some())
+    filtered(after_command(rest, db, cur), cur)
 }
 
 /// The candidates once there is a command (or a field) before the cursor.
 fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidates {
-    // The pre-pass the parser's input takes: aliases, the field-first swap.
+    // The pre-pass the parser's input takes: aliases.
     let mut argv = vec![String::from("datum")];
     argv.append(&mut rest);
     let expanded = match db {
@@ -558,22 +543,6 @@ fn first_words(db: Option<&Db>, cur: &str) -> Candidates {
             .map(|k| k.name),
     );
     out
-}
-
-/// The commands a field may be followed by (`coffee tail`).
-fn field_first_commands() -> Candidates {
-    COMMANDS
-        .iter()
-        .filter(|c| takes_field_first(c))
-        .map(|c| c.name.to_string())
-        .collect()
-}
-
-fn takes_field_first(c: &CommandSpec) -> bool {
-    c.subcommands.is_empty()
-        && slots(c.usage, 2)
-            .first()
-            .is_some_and(|s| s.0 == Slot::Field)
 }
 
 /// Every field, logged or declared.

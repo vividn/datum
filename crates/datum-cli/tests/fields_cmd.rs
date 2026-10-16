@@ -206,7 +206,6 @@ fn notes_only_a_never_seen_field(argv: &[&str], doing: &str) {
 fn ending_a_never_seen_field_notes_it() {
     notes_only_a_never_seen_field(&["end", "FIELD"], "ending");
     notes_only_a_never_seen_field(&["stop", "FIELD"], "ending");
-    notes_only_a_never_seen_field(&["FIELD", "end"], "ending");
 }
 
 /// A dry run ends nothing, so it says no «ending it anyway»; the end after

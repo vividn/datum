@@ -2,7 +2,7 @@
 //!
 //! [`run_cli`] bypasses the process boundary but still routes args through the
 //! full arg-parse → command-dispatch path, so behaviors like alias expansion,
-//! field/verb swap, and stacked-flag expansion are exercised end-to-end.
+//! trailing verbs, and stacked-flag expansion are exercised end-to-end.
 
 use datum_cli::cmd::dispatch_argv;
 use datum_core::db::Db;

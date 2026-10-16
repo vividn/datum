@@ -9,9 +9,8 @@ Reference points:
 * daydumb parse (post-R2 layout): `crates/datum-parse/src/`.
 * daydumb argv parsing (post step-3/N): `crates/datum-parse/src/parse.rs`
   + `cli.rs` (typed `Command` enum). Bespoke parser; no clap.
-* daydumb alias/swap pre-pass: `crates/datum-parse/src/alias/`
-  (`expand_argv`, `apply_terminal_verb_override`, `maybe_swap_field_verb`,
-  `expand_stacked_flags`, `try_expand_alias`) — relocated from
+* daydumb alias pre-pass: `crates/datum-parse/src/alias/`
+  (`expand_argv`, `expand_stacked_flags`, `try_expand_alias`) — relocated from
   `datum-commands` in step 3/N.
 * datum `src/input/`: argparse-backed argument groups, consolidation, and
   flexible positional handling.
@@ -51,9 +50,7 @@ should deliver it.
 | `-d` / `-t` / `-y*` / `-q*` / `-z` / `-D` / `-T` | ✓ | ✓ (datum-parse) | ✓ | `-yy`/`-qqq` shorthand via pre-pass; `±N[unit]` uncertainty suffix (D2) |
 | duration | `duration` positional | trailing positional or `dur=` | ✓ | da-ooe2 added the positional; da-azqq removed the `--dur` flag it replaced |
 | `-m/--moment` | ✓ | ✓ | ✓ | — |
-| field/verb order-swap | ✗ | ✓ | — | `datum <field> <verb>` ↔ `datum <verb> <field>` |
 | alias pre-pass in DB | ✗ | ✓ | — | DB-backed CLI aliases (D3) |
-| terminal-verb override (`<field> end` → `end <field>`) | ✗ | ✓ | — | — |
 | spec-driven auto-alias | ✗ | ✓ (planned D3 auto-gen) | — | field-spec-derived |
 | `--show` / `--show-all` / `-o` | ✓ | ✓ | ✓ | richer `Show` enum parsing |
 | `quickId` positional | ✓ | ✓ | ✓ | — |
@@ -106,9 +103,10 @@ The workhorse: turns the raw `data` positional list + `-k/-K/-R/-S/-C/-c
    - Without any of the above, extra data throws `ExtraDataError`.
 7. **Default values** — `-k key=default` fills from default when the
    positional slot is missing OR when the user wrote `.` as a skip.
-8. **Command-change escape** — positional `dur`/`start`/`stop` values can
-   trigger a mid-parse command change (`changeDatumCommand`); the parser
-   recurses with the remainder.
+8. **Command-change escape** — `occur`/`start`/`end`/`switch` filling the
+   `dur` slot, or leading the extra data with no remainder key, changes
+   the command (`changeDatumCommand`); the parser recurses with the
+   remainder. Ported (da-z5vek).
 9. **Idempotence** — re-entering `handleDataArgs` with the returned
    namespace yields the same result (used internally when a command
    change happens).
@@ -155,9 +153,9 @@ The workhorse: turns the raw `data` positional list + `-k/-K/-R/-S/-C/-c
     positionals fall through to PRIMARY_VALUE_KEY → leaked into `state`
     on stateless verbs (the da-k5o6 regression: `occur pushup -k n=1 10`
     ended up `n=1, state=10` instead of `n=10`).
-  - Still missing: `-l/--lenient` / `--strict` toggles, `-b/--base-data`
-    JSON seeding, and the `dur=5 start` mid-parse command-change escape
-    (daydumb dispatches verb-first by design).
+  - Still missing: `-l/--lenient` / `--strict` toggles and `-b/--base-data`
+    JSON seeding. The trailing-verb command change (`start sleep end`) is
+    ported (da-z5vek): `handle_log_data_args`.
 - **Target (step 2/N):** `datum_parse::input::data_args` module with a
   `DataArgs` struct + `handle_data_args(&mut DataArgs) -> DatumData`
   returning `serde_json::Value`.
@@ -487,11 +485,9 @@ underline on future.
 | `-R`/`-S`/`-C` remainder | ✓ | ✓ (step 2/N) | ✓ (da-4t5f) |
 | `-l`/`--strict` remainder toggles | ✓ | removed (da-eqb30) | — |
 | `.` skip token | ✓ | ✓ (step 2/N) | missing |
-| Command-change escape mid-parse | ✓ | N/A (intentional) | intentional non-port |
+| Command-change escape mid-parse | ✓ | ✓ (`handle_log_data_args`) | ✓ (da-z5vek) |
 | `-d`/`-t`/`-y*`/`-q*` stackable | ✓ (`-q*` via count) | ✓ | ✓ |
 | `±N[unit]` uncertainty (D2) | ✗ | ✓ | ✓ (already in `datum-parse`) |
-| Field/verb swap (`<field> <verb>`) | ✗ | ✓ | ✓ |
-| Terminal-verb override (`<field> end`) | ✗ | ✓ | ✓ |
 | DB-backed alias pre-pass | ✗ | ✓ (in `datum_parse::alias`) | ✓ (in `datum_parse::alias`, post step-3/N) |
 | Spec-driven auto-alias | ✗ | ✓ (planned D3) | stubbed |
 | String API (`datum_parse::parse_argv_string(&str)`) | ✓ (via `shell-quote`) | ✓ (step 3/N) | ✓ (post step-3/N) |
@@ -541,11 +537,6 @@ Deliberately *not* carried forward from datum:
   only NLP dep, which would also blow up WASM bundle size. Daydumb
   callers who want NL parsing can preprocess before calling
   `datum_parse::parse_argv`.
-- **Command-change mid-parse escape** (dataArgs.ts §8). Daydumb
-  dispatches verb-first; switching verbs during data-arg parsing was
-  a datum ergonomic hack that conflicted with the field/verb swap
-  pre-pass. Users who want a different verb should write a different
-  verb.
 - **`v1Cmd`** (datum's legacy-format exporter). Migration goes the
   other direction (datum JSON → daydumb SQLite via `datum db v2import`);
   exporting back out is not a goal.

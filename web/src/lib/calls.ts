@@ -67,7 +67,7 @@ export function aliasesArgv(): string[] {
 	return ['alias', 'list', '--json'];
 }
 
-/** The field FIRST: it is the command's positional, and a flag between `tail` and it would make it the flag's value. */
+/** The field before any flag: it is the command's positional, and a flag between `tail` and it would make it the flag's value. */
 export function tailArgv(page: TailPage = {}): string[] {
 	return [
 		'tail',

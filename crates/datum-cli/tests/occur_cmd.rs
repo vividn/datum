@@ -39,7 +39,7 @@ fn occur_creates_entry_with_time_start() {
     let db = fresh_db();
 
     let before = Utc::now();
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is `occur`'s own shape, not the declaration.
     run_cli(&["setup", "field", "--verb", "occur"], &db).expect("declare field");
@@ -89,7 +89,7 @@ fn occur_creates_entry_with_time_start() {
 fn date_and_time_flags_set_absolute_time() {
     let db = fresh_db();
 
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the time flags, not the declaration.
     run_cli(&["setup", "event", "--verb", "occur"], &db).expect("declare event");
@@ -409,7 +409,7 @@ fn occur_flips_state_from_null_to_tracked() {
 
     // Distinct explicit times: two stateless occurs in one millisecond share
     // a slug and the second is a duplicate by contract (da-2fkr, da-lq8a).
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the state an occur compiles to, not the declaration.
     run_cli(&["setup", "event", "--verb", "occur"], &db).expect("declare event");
@@ -1048,7 +1048,7 @@ fn occur_explicit_state_key_is_rejected() {
 fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
     let db = fresh_db();
 
-    // da-gvcen: declare the field first — a FIRST log declares its own
+    // da-gvcen: declare the field up front — a FIRST log declares its own
     // field in a `following_state`, which makes it a compound verb. What
     // is under test here is the MOMENT rule, not the declaration.
     run_cli(&["setup", "pushup", "--verb", "occur"], &db).expect("declare pushup");

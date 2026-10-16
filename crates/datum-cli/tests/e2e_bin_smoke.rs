@@ -147,12 +147,13 @@ fn smoke_occur_direct() {
     assert_eq!(rows[0].dur.as_deref(), Some("MOMENT"));
 }
 
-/// Field-first form: mirrors `verb_switch_field_first`.
+/// A trailing verb: mirrors `verb_trailing_occur_to_switch`.
 #[test]
-fn smoke_field_first_swap() {
+fn smoke_trailing_verb() {
     let _g = env_lock();
     let h = BinHarness::new();
-    h.run(&["mood", "switch", "happy"]).expect("dispatch");
+    h.run(&["occur", "mood", "switch", "happy"])
+        .expect("dispatch");
     let rows = live_rows(&h.db());
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].field, "mood");

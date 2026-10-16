@@ -167,12 +167,14 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         value,
         mut extra_data,
         slug_values,
+        command,
     } = parsed;
 
     // da-5ns.3: route reserved column-bound keys (`state=`, `dur=`,
     // `following_state=`, `occur_time=`) out of the data blob.
     // Unknown keys (including `value=`) stay in the data payload (da-53rz).
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
+    let action = change_command(action, command, &mut reserved.state, &mut args.last_state);
 
     // da-mjwq: `end_time=` alone on `start` closes the field's open block
     // at E — the action becomes `end` (≡ `end field -t E`), so one alias
@@ -960,6 +962,9 @@ pub(crate) struct ParsedLogArgs {
     /// Values captured from `-K` slots, in declaration order. Empty when
     /// no slug-contributing slot was filled.
     pub(crate) slug_values: Vec<String>,
+    /// The command a trailing verb changed the line to (`start sleep end`
+    /// is `end`), which [`change_command`] makes the action.
+    pub(crate) command: Option<Action>,
 }
 
 /// Sentinel remainder-bucket key. Holds positionals that don't fill a
@@ -981,7 +986,7 @@ pub(crate) fn parse_log_args(
     action: Action,
     base: Option<DatumTime>,
 ) -> Result<ParsedLogArgs> {
-    use datum_parse::input::data_args::{handle_data_args, DataArgs};
+    use datum_parse::input::data_args::{handle_log_data_args, DataArgs};
     use datum_parse::input::flexible_positional::flexible_positional;
 
     // All data-taking actions route the field through the data-slot
@@ -1008,6 +1013,10 @@ pub(crate) fn parse_log_args(
         base,
         time_flags: Some(args.time.clone()),
         types: args.key_types.clone(),
+        command_change: matches!(
+            action,
+            Action::Occur | Action::Start | Action::Stop | Action::Switch
+        ),
         ..DataArgs::default()
     };
     let mut slug_paths: Vec<String> = Vec::new();
@@ -1161,7 +1170,14 @@ pub(crate) fn parse_log_args(
         (args.string_state || args.string_remainder || args.comment_remainder)
             && dur_bearing(action);
 
-    let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
+    let (mut datum_data, command) =
+        handle_log_data_args(&data_args).map_err(anyhow::Error::from)?;
+    let command = command.map(|c| match c.as_str() {
+        "occur" => Action::Occur,
+        "start" => Action::Start,
+        "switch" => Action::Switch,
+        _ => Action::Stop,
+    });
 
     // da-5t94: `field` is peeled by the shared `extract_reserved_columns`
     // boundary (called after `parse_log_args` returns), so it lands on
@@ -1233,7 +1249,33 @@ pub(crate) fn parse_log_args(
         value,
         extra_data,
         slug_values,
+        command,
     })
+}
+
+/// The action a trailing verb made of the line (v2's `changeDatumCommand`):
+/// `start sleep end` ends sleep, `occur coffee start` starts coffee. An
+/// end takes no state of its own, and a switch's is the state being left,
+/// the `-L` assertion as on `end_time=` (`mood happy end` ≡ `end mood -L
+/// happy`).
+pub(crate) fn change_command(
+    action: Action,
+    command: Option<Action>,
+    state: &mut Option<JsonValue>,
+    last_state: &mut Option<String>,
+) -> Action {
+    let Some(to) = command else {
+        return action;
+    };
+    if matches!(to, Action::Stop) {
+        let left = state.take();
+        if matches!(action, Action::Switch) && last_state.is_none() {
+            *last_state = left
+                .filter(|s| *s != JsonValue::Bool(true))
+                .map(|s| switch_state_raw(&s));
+        }
+    }
+    to
 }
 
 /// Translate a `-K`/`-k` raw key name to the path `handle_data_args`
