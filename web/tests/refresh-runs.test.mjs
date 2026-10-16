@@ -49,3 +49,21 @@ test('a write runs each pane once, and a read runs nothing past itself', async (
 		}
 	}, DESKTOP);
 });
+
+// A database switch is no command, so no `changed` reports it: it is a LOAD
+// (Brand.svelte), which runs every pane on the database it lands on. The sync
+// widget's «Other databases» are links, which SvelteKit would otherwise take
+// as a client-side navigation: the panes stayed on the database left, and
+// went on hearing its writes (da-tlqde).
+test('the sync widget\'s link to another database loads the page on it', async () => {
+	await withApp(async (app) => {
+		const { page } = app;
+		await page.evaluate(() => window.datum.runQuiet(['--db', 'work', 'occur', 'tea']));
+		await app.goto('/sync');
+		const widget = page.locator('section.pane[data-title="sync"]');
+		await widget.locator('.others li[data-db="work"] a').click();
+		await page.waitForURL(/[?&]db=work/);
+		// Loaded on `work`, the widget has `datum` among the others.
+		await widget.locator('.others li[data-db="datum"]').waitFor();
+	}, DESKTOP);
+});

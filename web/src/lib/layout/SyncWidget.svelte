@@ -470,7 +470,7 @@
 				{#each others as d (d.db)}
 					{@const s = standing(d, $syncStates)}
 					<li data-db={d.db} data-mark={s.mark}>
-						<a href={withDb(location.pathname, d.db)}
+						<a href={withDb(location.pathname, d.db)} data-sveltekit-reload
 							><span class="name">{d.db}</span><span class="state {s.mark}">{SYMBOL[s.mark]}</span><span class="seen">{devices(d)}</span></a
 						>
 					</li>
