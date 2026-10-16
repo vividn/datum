@@ -923,9 +923,11 @@ pub enum SyncCommand {
         who: String,
         show: Show,
     },
-    /// `datum sync refold [--json]` (da-n0ruf): write every row that is not
-    /// what its ops fold to again from its ops. Signs no op.
+    /// `datum sync refold [--dry-run] [--json]` (da-n0ruf): write every row
+    /// that is not what its ops fold to again from its ops. Signs no op.
+    /// `--dry-run` (da-g8wj9) says what each would lose and writes nothing.
     Refold {
+        dry_run: bool,
         show: Show,
     },
     /// Hidden: `datum sync run` — stay up: serve members and push new ops.

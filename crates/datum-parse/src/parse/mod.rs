@@ -464,7 +464,7 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
                 | SyncCommand::Status { show: s, .. }
                 | SyncCommand::Apply { show: s }
                 | SyncCommand::Diff { show: s, .. }
-                | SyncCommand::Refold { show: s }
+                | SyncCommand::Refold { show: s, .. }
                 | SyncCommand::Admin {
                     act: SyncAdminAct::Revert { show: s, .. },
                     ..

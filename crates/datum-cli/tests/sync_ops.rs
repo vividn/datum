@@ -2195,6 +2195,62 @@ fn check_names_a_row_that_is_not_its_ops_fold_and_refold_writes_it_again() {
     assert!(check_sync(&b, false).0);
 }
 
+/// `sync refold --dry-run` (da-g8wj9) names each row a refold would write,
+/// every column old → new, and leaves the database byte for byte as it was;
+/// the refold then makes exactly those changes.
+#[test]
+fn refold_dry_run_says_what_each_row_loses_and_writes_nothing() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    converged(&a, &b);
+    let hid = b.hid("coffee");
+    b.sql(&format!(
+        "UPDATE entries SET data = '{{\"cups\":5,\"milk\":true}}' WHERE hid = '{hid}'"
+    ));
+    let (_, said) = check_sync(&b, false);
+    assert!(
+        said.contains("`datum sync refold --dry-run` says what each would lose"),
+        "{said}"
+    );
+
+    let files = || {
+        std::fs::read_dir(b.tmp.path())
+            .unwrap()
+            .map(|f| f.unwrap().path())
+            .filter(|p| p.to_string_lossy().contains("data.db"))
+            .map(|p| (p.clone(), std::fs::read(p).unwrap()))
+            .collect::<Vec<_>>()
+    };
+    // A read first, so the files are as a command leaves them.
+    b.ok(&["tail"]);
+    let before = files();
+    let dry = b.ok(&["sync", "refold", "--dry-run"]);
+    assert!(dry.contains("would refold 1 row from its ops"), "{dry}");
+    assert!(dry.contains("nothing written"), "{dry}");
+    assert!(
+        dry.contains("\n    data.cups: holds 5, becomes 2\n"),
+        "{dry}"
+    );
+    assert!(
+        dry.contains("\n    data.milk: holds true, becomes ∅"),
+        "{dry}"
+    );
+    let would: Value =
+        serde_json::from_str(&b.ok(&["sync", "refold", "--dry-run", "--json"])).unwrap();
+    assert!(files() == before, "a dry run writes nothing");
+    assert_eq!(b.data(&hid)["cups"], 5);
+    assert_eq!(
+        would["would_refold"].as_array().unwrap().len(),
+        1,
+        "{would}"
+    );
+    assert!(would.get("still").is_none(), "{would}");
+
+    let done: Value = serde_json::from_str(&b.ok(&["sync", "refold", "--json"])).unwrap();
+    assert_eq!(done["refolded"], would["would_refold"], "{done}");
+    assert_eq!(a.hash(), b.hash());
+}
+
 /// A copy whose rows were folded under an older fold rule refolds them as
 /// it opens (da-sqpjt): the row an older build's rule left — stood in for
 /// by one set by hand — is written again from its ops by the next command,

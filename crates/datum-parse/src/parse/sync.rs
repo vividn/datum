@@ -29,6 +29,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             show: Show::Default,
         },
         "refold" => SyncCommand::Refold {
+            dry_run: opts(&mut rest, &[], &["dry-run"], 0..=0)?.on("dry-run"),
             show: Show::Default,
         },
         "help" => return Err(ParseError::HelpRequested(Some("sync".into()))),
@@ -645,6 +646,15 @@ mod tests {
                 check: false
             }
         );
+        assert_eq!(
+            p(&["refold", "--dry-run"]),
+            SyncCommand::Refold {
+                dry_run: true,
+                show: Show::Default
+            }
+        );
+        // A flag it does not take is refused, never a refold that writes.
+        assert!(parse_sync_cmd(&["refold", "--dryrun"]).is_err());
         assert_eq!(
             p(&["chain", "revoke", "b"]),
             SyncCommand::Admin {

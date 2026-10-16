@@ -132,7 +132,8 @@ pub fn fold_issues(db: &Db) -> Result<(FoldCheck, Vec<Issue>)> {
             .collect();
         let message = format!(
             "{} not what {} ops fold to, so this copy shows something a copy that applied \
-             the same ops does not. `datum sync refold` writes {} again from the ops.\n{}",
+             the same ops does not. `datum sync refold --dry-run` says what each would \
+             lose, and `datum sync refold` writes {} again from the ops.\n{}",
             match of.len() {
                 1 => "1 row is".into(),
                 n => format!("{n} rows are"),
@@ -215,13 +216,18 @@ fn stale_json(s: &Stale, (was, now): (&str, &str)) -> Value {
     json!({ "hid": s.hid, "slug": s.slug, "columns": columns })
 }
 
-/// `datum sync refold [--json]`. The JSON is `rows` and `ops` examined,
-/// `refolded` (per row, each column's `was` and `now`), `still` (rows that
-/// differ from their ops after it: a bug in the fold, and exit 1, as a
-/// failing `check --json` exits), and how many `orphans` and `unfoldable`
-/// entries it left as found.
-pub fn refold(db: &Db, json: bool) -> Result<()> {
-    let (found, left) = db.sync_refold()?;
+/// `datum sync refold [--dry-run] [--json]`. The JSON is `rows` and `ops`
+/// examined, `refolded` (per row, each column's `was` and `now`), `still`
+/// (rows that differ from their ops after it: a bug in the fold, and exit 1,
+/// as a failing `check --json` exits), and how many `orphans` and
+/// `unfoldable` entries it left as found. `--dry-run` (da-g8wj9) writes
+/// nothing and says what each row would lose: its `refolded` is
+/// `would_refold`, and there is no `still`.
+pub fn refold(db: &Db, dry_run: bool, json: bool) -> Result<()> {
+    let (found, left) = match dry_run {
+        true => (db.sync_fold_check()?, Vec::new()),
+        false => db.sync_refold()?,
+    };
     let examined = format!(
         "{}, {}",
         n(found.entries, "row", "rows"),
@@ -231,16 +237,37 @@ pub fn refold(db: &Db, json: bool) -> Result<()> {
         let list = |stale: &[Stale], names| -> Vec<Value> {
             stale.iter().map(|s| stale_json(s, names)).collect()
         };
-        let out = json!({
+        let refolded = if dry_run { "would_refold" } else { "refolded" };
+        let mut out = json!({
             "rows": found.entries, "ops": found.ops,
-            "refolded": list(&found.stale, ("was", "now")),
-            "still": list(&left, ("row", "ops")),
+            refolded: list(&found.stale, ("was", "now")),
             "orphans": found.orphans.len(),
             "unfoldable": found.unfoldable.len(),
         });
+        if !dry_run {
+            out["still"] = json!(list(&left, ("row", "ops")));
+        }
         println!("{out}");
     } else if found.stale.is_empty() {
         println!("nothing to refold: every row is what its ops fold to ({examined} examined)");
+    } else if dry_run {
+        println!(
+            "would refold {} from {} ops ({examined} examined), losing what {} now; nothing written:",
+            n(found.stale.len(), "row", "rows"),
+            if found.stale.len() == 1 {
+                "its"
+            } else {
+                "their"
+            },
+            if found.stale.len() == 1 {
+                "it holds"
+            } else {
+                "each holds"
+            },
+        );
+        for s in &found.stale {
+            println!("{}", stale_lines(s, ("holds", "becomes")));
+        }
     } else {
         println!(
             "refolded {} from {} ops ({examined} examined):",

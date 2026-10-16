@@ -389,7 +389,9 @@ storage takes (`sync_unfoldable`, an error naming it and why, which the check
 reads on past), and in a chain a row no op covers
 (`sync_no_op`, a warning: the next sync signs it). `datum sync refold` writes
 each stale row again from its ops and signs none, so a correct copy is
-unchanged; orphans it leaves as found. A copy does the same as it opens when
+unchanged; orphans it leaves as found. It stays manual, since a row a write
+left without its op holds the newer data and loses it: `--dry-run` names each
+row it would write, every column old → new, and writes nothing (da-g8wj9). A copy does the same as it opens when
 its rows were folded under an older fold rule (da-sqpjt): `FOLD_RULE` in
 `db/sync.rs`, stamped in `_meta` `fold_rule` and bumped by any change to
 what the same ops fold to, schema change or not —

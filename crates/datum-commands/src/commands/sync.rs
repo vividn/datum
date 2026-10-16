@@ -202,7 +202,9 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
                 serde_json::from_str(&input).context("stdin is not a JSON array of hids")?;
             println!("{}", json!(db.sync_held(peer.as_deref(), &hids)?));
         }
-        SyncCommand::Refold { show } => super::sync_diagnose::refold(db, show == ShowFlag::Json)?,
+        SyncCommand::Refold { dry_run, show } => {
+            super::sync_diagnose::refold(db, dry_run, show == ShowFlag::Json)?
+        }
         SyncCommand::Admin {
             act,
             who,
