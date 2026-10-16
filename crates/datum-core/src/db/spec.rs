@@ -557,7 +557,7 @@ mod tag_tests {
     use super::Db;
     use crate::action::Action;
     use crate::field_spec::{FieldSpec, Render};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     /// da-lc26c: a spec is the entry `spec:<field>`, and a re-save is a new
     /// version of that one entry, not a second row.
@@ -733,7 +733,7 @@ mod tag_tests {
         assert!(back.presentation.render.is_none());
 
         let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map));
         db.save_field_spec(&spec).unwrap();

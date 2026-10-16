@@ -396,7 +396,7 @@ mod tests {
     use crate::action::Action;
 
     fn word_spec() -> FieldSpec {
-        let mut subfields = HashMap::new();
+        let mut subfields = std::collections::BTreeMap::new();
         subfields.insert(
             "srcLang".to_string(),
             SubfieldSpec {

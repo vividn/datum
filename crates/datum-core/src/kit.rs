@@ -1338,7 +1338,7 @@ render.dayview = false
     #[test]
     fn round_trip_preserves_per_surface_render() {
         let mut spec = FieldSpec::new("partial", Action::Occur);
-        let mut map = std::collections::HashMap::new();
+        let mut map = std::collections::BTreeMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map.clone()));
         let kit = KitToml::from_field_specs("k", None, std::slice::from_ref(&spec), &[]);

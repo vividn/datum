@@ -107,6 +107,7 @@ mod show_json;
 mod spec_cmd;
 mod spec_entries;
 mod spec_grammar;
+mod spec_json_order;
 mod spec_keys;
 mod spec_list_ops;
 mod spec_lists;

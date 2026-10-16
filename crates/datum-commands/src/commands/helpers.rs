@@ -745,7 +745,7 @@ mod tests {
         time::DatumTime,
     };
     use serde_json::json;
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     /// da-r8xj: version rows render modify_time through the local
     /// formatter WITH seconds, so two edits in the same minute stay
@@ -808,7 +808,7 @@ mod tests {
     }
 
     fn spec_with_intensity(only_listed_keys: bool) -> FieldSpec {
-        let mut subfields = HashMap::new();
+        let mut subfields = BTreeMap::new();
         subfields.insert(
             "intensity".to_string(),
             SubfieldSpec {

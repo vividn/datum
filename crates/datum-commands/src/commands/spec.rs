@@ -534,7 +534,7 @@ fn set_state_assign(spec: &mut FieldSpec, state: &str, pairs: &[String]) -> Resu
 /// such flag here: an empty VALUE removes KEY's entry. `check` vets a
 /// non-empty VALUE.
 fn set_pairs(
-    map: &mut std::collections::HashMap<String, String>,
+    map: &mut std::collections::BTreeMap<String, String>,
     pairs: &[String],
     flag: &str,
     shape: &str,

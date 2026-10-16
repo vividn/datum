@@ -856,7 +856,7 @@ fn only_listed_keys_rejects_undeclared_extra_data_key_at_insert() {
     spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     spec.only_listed_keys = true;
-    let mut subfields = std::collections::HashMap::new();
+    let mut subfields = std::collections::BTreeMap::new();
     subfields.insert(
         "intensity".to_string(),
         datum_core::field_spec::SubfieldSpec {
@@ -892,7 +892,7 @@ fn only_listed_keys_accepts_declared_extra_data_key_at_insert() {
     spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     spec.only_listed_keys = true;
-    let mut subfields = std::collections::HashMap::new();
+    let mut subfields = std::collections::BTreeMap::new();
     subfields.insert(
         "intensity".to_string(),
         datum_core::field_spec::SubfieldSpec {
@@ -920,7 +920,7 @@ fn any_keys_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
 
     spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
-    let mut subfields = std::collections::HashMap::new();
+    let mut subfields = std::collections::BTreeMap::new();
     subfields.insert(
         "intensity".to_string(),
         datum_core::field_spec::SubfieldSpec {

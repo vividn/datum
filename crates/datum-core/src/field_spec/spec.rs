@@ -14,7 +14,7 @@ use datum_parse::alias::shell_join;
 use datum_parse::input::KeyType;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use crate::action::Action;
 use crate::db::spec::{SPEC_DISPLACED_KEY, SPEC_KIT_KEY};
@@ -115,7 +115,7 @@ pub struct FieldSpec {
     pub verb: Action,
     /// Named subfields with their constraints.
     #[serde(default)]
-    pub subfields: HashMap<String, SubfieldSpec>,
+    pub subfields: BTreeMap<String, SubfieldSpec>,
     /// Human description of this field.
     #[serde(default)]
     pub description: Option<String>,
@@ -131,23 +131,23 @@ pub struct FieldSpec {
     pub allowed_states: Option<Vec<String>>,
     /// Per-state color overrides.
     #[serde(default)]
-    pub state_colors: HashMap<String, String>,
+    pub state_colors: BTreeMap<String, String>,
     /// Per-state human descriptions (da-zwqk). Mirrors `state_colors`'s
     /// per-state pattern — empty by default, absent in JSON when empty.
     /// Surfaced by `datum spec <field>` and `datum spec describe
     /// <field>` so the meaning of each state lives alongside its name
     /// rather than only in prose.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub state_descriptions: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub state_descriptions: BTreeMap<String, String>,
     /// Per-state keys (da-cej7q): a state's own declarations, in the
     /// `data_keys` spellings, which join the field's keys when an entry is
     /// in that state — a name the field declares too takes the state's
     /// kind. Absent in JSON when empty.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub state_keys: HashMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub state_keys: BTreeMap<String, Vec<String>>,
     /// Per-state assigned keys (da-ulc0v), as `assign` is the field's.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub state_assign: HashMap<String, BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub state_assign: BTreeMap<String, BTreeMap<String, String>>,
     /// The field a bare state names a document of (da-f9jyv): with
     /// `issue_state`, a state `queued` refers to `issue_state:queued`. One
     /// field name, never a template. A state holding `:` is a full slug
@@ -279,15 +279,15 @@ impl FieldSpec {
         Self {
             field: field.into(),
             verb,
-            subfields: HashMap::new(),
+            subfields: BTreeMap::new(),
             description: None,
             id_template: None,
             color: None,
             allowed_states: None,
-            state_colors: HashMap::new(),
-            state_descriptions: HashMap::new(),
-            state_keys: HashMap::new(),
-            state_assign: HashMap::new(),
+            state_colors: BTreeMap::new(),
+            state_descriptions: BTreeMap::new(),
+            state_keys: BTreeMap::new(),
+            state_assign: BTreeMap::new(),
             state_lookup_field: None,
             derived_aliases: Vec::new(),
             id_keys: Vec::new(),
@@ -528,10 +528,8 @@ impl FieldSpec {
                 .map(|(name, v)| key(name, KeyKind::Assign(v.clone()), id))
                 .collect()
         };
-        let mut subs: Vec<_> = self.subfields.iter().collect();
-        subs.sort_by_key(|(name, _)| name.as_str());
         let text = |v: &JsonValue| v.as_str().map_or_else(|| v.to_string(), str::to_string);
-        let subs = subs.into_iter().map(|(name, s)| DeclaredKey {
+        let subs = self.subfields.iter().map(|(name, s)| DeclaredKey {
             name: name.clone(),
             kind: match &s.default {
                 Some(v) => KeyKind::Default(text(v)),
@@ -862,7 +860,7 @@ mod tests {
     fn render_serde_roundtrip_per_surface_form() {
         use super::super::Render;
         let mut spec = FieldSpec::new("partial", Action::Occur);
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map));
         let json = serde_json::to_string(&spec).unwrap();

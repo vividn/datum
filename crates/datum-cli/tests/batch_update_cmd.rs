@@ -281,7 +281,7 @@ fn only_listed_keys_blocks_update_introducing_undeclared_key() {
 
     let mut spec =
         datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
-    let mut subfields = std::collections::HashMap::new();
+    let mut subfields = std::collections::BTreeMap::new();
     subfields.insert(
         "intensity".to_string(),
         datum_core::field_spec::SubfieldSpec {
@@ -323,7 +323,7 @@ fn only_listed_keys_blocks_rekey_into_undeclared_name() {
 
     let mut spec =
         datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
-    let mut subfields = std::collections::HashMap::new();
+    let mut subfields = std::collections::BTreeMap::new();
     subfields.insert(
         "intensity".to_string(),
         datum_core::field_spec::SubfieldSpec {

@@ -21,7 +21,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 /// Visual layout + visibility for a single field.
 ///
@@ -95,8 +95,8 @@ pub struct PresentationSpec {
 
     /// Per-state glyph overrides, keyed by state name — `state_colors`'
     /// shape, for the states where the mark carries meaning.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub state_glyphs: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub state_glyphs: BTreeMap<String, String>,
 
     /// A glyph chosen by the value of one data key: `coffee size=large`
     /// draws `map["large"]`. A value the map does not name falls through
@@ -149,7 +149,7 @@ pub struct GlyphBy {
 #[serde(untagged)]
 pub enum Render {
     All(bool),
-    PerSurface(HashMap<String, bool>),
+    PerSurface(BTreeMap<String, bool>),
 }
 
 impl Render {
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn render_per_surface_hides_only_named_surface() {
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         map.insert("dayview".to_string(), false);
         let pres = PresentationSpec {
             render: Some(Render::PerSurface(map)),
@@ -466,7 +466,7 @@ mod tests {
 
     #[test]
     fn render_per_surface_explicit_overrides() {
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         map.insert("dayview".to_string(), false);
         map.insert("nowview".to_string(), false);
         let pres = PresentationSpec {
@@ -494,7 +494,7 @@ mod tests {
     fn coffee() -> PresentationSpec {
         PresentationSpec {
             glyph: Some("●".into()),
-            state_glyphs: HashMap::from([("decaf".into(), "○".into())]),
+            state_glyphs: BTreeMap::from([("decaf".into(), "○".into())]),
             glyph_by: Some(GlyphBy {
                 key: "size".into(),
                 map: BTreeMap::from([("small".into(), "•".into()), ("large".into(), "☕".into())]),

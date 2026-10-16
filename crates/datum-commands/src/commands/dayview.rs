@@ -1136,7 +1136,7 @@ mod tests {
 
         let db = Db::open_in_memory().unwrap();
         let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
-        let mut map = std::collections::HashMap::new();
+        let mut map = std::collections::BTreeMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map));
         db.save_field_spec(&spec).unwrap();

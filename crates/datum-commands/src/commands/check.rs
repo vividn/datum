@@ -1767,7 +1767,7 @@ mod tests {
     use datum_core::entry::{Entry, Verb};
     use datum_core::field_spec::{FieldSpec, SubfieldSpec, SubfieldType};
     use datum_core::time::DatumTime;
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     /// The walk `check` hands its checkers.
     pub(super) fn all(db: &Db) -> Vec<Entry> {
@@ -1932,7 +1932,7 @@ mod tests {
     fn check_reports_orphaned_extra_data_key_as_warning() {
         let db = Db::open_in_memory().unwrap();
         // Register a spec for "mood" that declares only `intensity` as a subfield.
-        let mut subfields = HashMap::new();
+        let mut subfields = BTreeMap::new();
         subfields.insert(
             "intensity".to_string(),
             SubfieldSpec {
@@ -1979,7 +1979,7 @@ mod tests {
     #[test]
     fn check_skips_orphaned_extra_data_key_without_only_listed_keys() {
         let db = Db::open_in_memory().unwrap();
-        let mut subfields = HashMap::new();
+        let mut subfields = BTreeMap::new();
         subfields.insert(
             "intensity".to_string(),
             SubfieldSpec {

@@ -1034,7 +1034,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         let mut muted = FieldSpec::new("muted", Action::Occur);
-        let mut map = std::collections::HashMap::new();
+        let mut map = std::collections::BTreeMap::new();
         map.insert("nowview".to_string(), false);
         muted.presentation.render = Some(Render::PerSurface(map));
         db.save_field_spec(&muted).unwrap();
