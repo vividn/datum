@@ -1210,6 +1210,8 @@ fn a_copy_behind_a_members_schema_syncs_and_warns_to_upgrade() {
     );
     let b_runs = b.serve(&["sync", "run"]);
     a.ok(&["occur", "walk"]);
+    // As a names b when it warns: b's describe, which can grow it, arrives after.
+    let label = member_label(&a, &b.id());
     let first = a.run(&["sync"]);
     let (out, err) = (
         String::from_utf8(first.stdout).unwrap(),
@@ -1217,7 +1219,6 @@ fn a_copy_behind_a_members_schema_syncs_and_warns_to_upgrade() {
     );
     assert!(out.contains("verify ok"), "{out}{err}");
     assert!(b.has("walk"));
-    let label = member_label(&a, &b.id());
     for said in [&format!("⚠ {label} runs datum 3.0."), "(schema 999)", &mine] {
         assert!(err.contains(said), "{said} in: {err}");
     }
@@ -1302,35 +1303,47 @@ fn a_label_the_chain_refuses_is_refused_at_the_flag() {
     }
 }
 
-/// Unnamed, a copy is `<user>@<host>`, and only where another member
-/// carries that already the database's name follows, then a short id: two
-/// accounts on one host, and two databases of one account, join with labels
-/// that differ and need no rename (da-ey3hz).
+/// Unnamed, a copy's label is assembled from what it runs on (da-xijlw),
+/// alike on every copy: beside a second user on its host, `user@` before
+/// it and the database's name after it (`sync_chain.rs` has a copy alone,
+/// its host); ann's second
+/// database tells her two copies apart by that name. Every copy here runs
+/// on this one host; members on different hosts (a laptop and a phone) are
+/// tested in chain.rs, `a_label_is_the_least_that_tells_the_chains_members_apart`.
 #[test]
-fn the_default_label_is_user_at_host_and_grows_only_on_a_collision() {
+fn an_unset_label_is_assembled_alike_on_every_copy() {
     let a = Copy::of("ann", "data.db");
-    let join = |copy: &Copy, args: &[&str]| {
+    let join = |copy: &Copy| {
         let (mut inviting, ticket) = a.invite(&[]);
-        copy.ok(&[&["sync", "chain", "connect", &ticket][..], args].concat());
+        copy.ok(&["sync", "chain", "connect", &ticket]);
         assert!(inviting.finish().0);
-        member_label(copy, &copy.id())
     };
-    let bob = Copy::of("bob", "data.db");
-    let joined = join(&bob, &[]);
-    let label = member_label(&a, &a.id());
-    let host = label
-        .strip_prefix("ann@")
-        .unwrap_or_else(|| panic!("{label}"));
-    assert_eq!(joined, format!("bob@{host}"));
-    let work = Copy::of("ann", "work.db");
-    assert_eq!(join(&work, &[]), format!("ann@{host} (work)"));
-    // With `ann@<host> (data)` taken as well, another copy of ann's data
-    // takes its short id too.
-    let taken = format!("ann@{host} (data)");
-    join(&Copy::of("ann", "data.db"), &["--label", &taken]);
-    let third = Copy::of("ann", "data.db");
-    let label = join(&third, &[]);
-    assert_eq!(label, format!("{taken} {}", &third.id()[..10]));
+    let (bob, work) = (Copy::of("bob", "data.db"), Copy::of("ann", "work.db"));
+    join(&bob);
+    let list = a.ok(&["sync", "chain", "list", "--json"]);
+    let host = member_of_list(&list, &a.id())["host"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(member_label(&bob, &bob.id()), format!("bob@{host} (data)"));
+    join(&work);
+    {
+        // Each describe reaches every copy.
+        let _a_runs = a.serve(&["sync", "run"]);
+        // A bare sync dials every member, and only a runs.
+        for copy in [&bob, &work, &bob] {
+            copy.run(&["sync"]);
+        }
+    }
+    for copy in [&a, &bob, &work] {
+        let labels = [&a, &bob, &work].map(|c| member_label(copy, &c.id()));
+        let want = [
+            "ann@{host} (data)",
+            "bob@{host} (data)",
+            "ann@{host} (work)",
+        ];
+        assert_eq!(labels, want.map(|w| w.replace("{host}", &host)));
+    }
 }
 
 #[test]
@@ -1764,7 +1777,6 @@ fn a_reader_ahead_of_a_member_says_so_and_the_same_ops_apart_are_a_mismatch() {
     assert!(got.contains("verify ok") && r.has("later"), "{got}");
     drop(a_runs);
 
-    let (b_label, r_label) = (member_label(&r, &b.id()), member_label(&b, &r.id()));
     // b's run dials r in its turn, and reaches no one: its status would say
     // that, so not while this looks.
     b.env = vec![("DATUM_SYNC_TIMEOUT_S", "30")];
@@ -1772,6 +1784,8 @@ fn a_reader_ahead_of_a_member_says_so_and_the_same_ops_apart_are_a_mismatch() {
     let dialed = sync(&r);
     let served = b_runs.lines_until(" got ");
     drop(b_runs);
+    // As each names the other now: r's describe reached b in that session.
+    let (b_label, r_label) = (member_label(&r, &b.id()), member_label(&b, &r.id()));
     b.env = r.env.clone();
     // The entry, and the spec its first log declared.
     let ahead = format!("not verified: this copy is 2 changes ahead of {b_label}");

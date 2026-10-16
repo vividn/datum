@@ -246,16 +246,7 @@ impl Db {
                 endpoint: p.id,
                 label: p.label,
                 admitted: p.added_at,
-                via: String::new(),
-                client: None,
-                kind: None,
-                revoked: None,
-                purged: None,
-                left: None,
-                last_act: String::new(),
-                rejoined: None,
-                roles: Vec::new(),
-                filter: None,
+                ..Default::default()
             })
             .collect();
         let mut out = Vec::new();

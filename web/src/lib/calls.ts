@@ -148,12 +148,9 @@ export function renameArgv(label: string, endpoint?: string): string[] {
 	return ['sync', 'chain', 'rename', ...(endpoint ? [endpoint] : []), label];
 }
 
-/**
- * This copy's own label, or where another member carries it, it with this
- * copy's short id after it (da-uyyyg).
- */
-export function uniqueRenameArgv(label: string): string[] {
-	return ['sync', 'chain', 'rename', '--unique', label];
+/** No label for this copy: every member shows the one assembled from what it runs on (da-xijlw). */
+export function unsetRenameArgv(): string[] {
+	return ['sync', 'chain', 'rename', '--unset'];
 }
 
 /** Whether `label` is one a member may carry, asked before a join: it writes nothing. */

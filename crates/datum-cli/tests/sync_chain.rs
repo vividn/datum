@@ -1664,7 +1664,12 @@ fn a_copy_describes_itself_at_its_first_invite_and_renames_itself_without_an_adm
     let me = member_of(&a, &a.id());
     assert_eq!(me["client"], client_of(&a).as_str(), "{me}");
     assert_eq!(me["kind"], "cli", "{me}");
-    assert!(me["label"].as_str().unwrap().starts_with("ann@"), "{me}");
+    // Alone, its host (da-xijlw); its user is said all the same.
+    assert_eq!(
+        (&me["label"], &me["user"]),
+        (&me["host"], &serde_json::json!("ann")),
+        "{me}"
+    );
     assert_eq!(me["this"], true);
 
     // b was admitted at a handshake: it names itself, no key needed.
@@ -1679,22 +1684,31 @@ fn a_copy_describes_itself_at_its_first_invite_and_renames_itself_without_an_adm
     assert!(a.ok(&["sync", "chain", "list"]).contains("phone"));
 }
 
-/// datum.day names itself after a join (da-uyyyg): `rename --unique` keeps
-/// a label no other member carries and adds this copy's short id to one
-/// another does, and `--check` refuses what a member may not carry, in no
-/// chain and writing nothing — before a join.
+/// `rename --unset` (da-xijlw) hands a copy's label back to the chain to
+/// assemble — its host, alone in saying what it runs on — and its
+/// describe keeps what it runs on while it carries a label; datum.day joins
+/// so. Another member that never said what it runs on is refused it.
+/// `--check` refuses what a member may not carry, in no chain and writing
+/// nothing — before a join (da-uyyyg).
 #[test]
-fn rename_unique_grows_only_a_taken_label_and_check_needs_no_chain() {
+fn rename_unset_goes_back_to_the_assembled_label_and_check_needs_no_chain() {
     let (a, b) = chained();
-    let label = |c: &Copy| member_of(c, &c.id())["label"].clone();
-    a.ok(&["sync", "chain", "rename", "--unique", "kitchen"]);
-    assert_eq!(label(&a), "kitchen");
-    // b joined as «b».
-    a.ok(&["sync", "chain", "rename", "--unique", "b"]);
-    assert_eq!(label(&a), format!("b {}", &a.id()[..10]).as_str());
+    let me = || member_of(&a, &a.id());
+    let host = me()["host"].as_str().unwrap().to_string();
+    assert_eq!(me()["label"], host.as_str());
+    a.ok(&["sync", "chain", "rename", "kitchen"]);
+    assert_eq!(
+        (me()["label"].as_str(), me()["host"].as_str()),
+        (Some("kitchen"), Some(host.as_str()))
+    );
+    a.ok(&["sync", "chain", "rename", "--unset"]);
+    assert_eq!(me()["label"], host.as_str());
     assert!(a
-        .fails(&["sync", "chain", "rename", "--unique", &b.id(), "x"], "")
-        .contains("--unique names this copy alone"));
+        .fails(&["sync", "chain", "rename", "--unset", &b.id(), "x"], "")
+        .contains("rename takes [<WHO>] <LABEL>, or [<WHO>] --unset"));
+    // b never described itself: nothing to assemble, and no `auto` record written.
+    let why = a.fails(&["sync", "chain", "rename", "--unset", &b.id()], "");
+    assert!(why.contains("b has not said what it runs on"), "{why}");
 
     let c = Copy::new();
     c.ok(&["sync", "chain", "rename", "--check", "datum.day (work)"]);

@@ -45,7 +45,7 @@
 // are the tests' short timeouts (`datum.syncTimeoutS`, `shortTimeout`).
 
 import { writable, type Readable } from 'svelte/store';
-import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, uniqueRenameArgv, vectorArgv } from './calls.js';
+import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, type RunResult } from './run.js';
@@ -275,8 +275,8 @@ class Leader {
 		this.peers = (status?.members ?? []).filter((p): p is Peer => !p.revoked && !!p.addr);
 		if (listed) await this.start();
 		// It joined as the name its admit records: one it was told stays, the
-		// suggestion grows on a collision, as after a join not cut short.
-		const named = this.label === suggestedLabel(this.db) ? uniqueRenameArgv(this.label) : renameArgv(this.label);
+		// suggestion goes for the assembled label, as after a join not cut short.
+		const named = this.label === suggestedLabel(this.db) ? unsetRenameArgv() : renameArgv(this.label);
 		if (joined) await cli(['--db', this.db, ...named]);
 		this.post();
 	}
@@ -390,9 +390,9 @@ class Leader {
 			const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket, label }).finally(() => this.progress());
 			this.done(report.id, report);
 			// Admitted to a chain, it says what it is (`datum sync chain connect`):
-			// a name it was told as told, else the suggestion, grown on a collision.
+			// a name it was told as told, else none: the chain assembles one (da-xijlw).
 			await this.refresh();
-			const named = c.label ? renameArgv(c.label) : uniqueRenameArgv(suggestedLabel(this.db));
+			const named = c.label ? renameArgv(c.label) : unsetRenameArgv();
 			if (this.chain) await cli(['--db', this.db, ...named]);
 			return report;
 		}
@@ -583,9 +583,9 @@ async function inviteHere(argv: string[]): Promise<RunResult> {
 }
 
 /**
- * What a browser joining a chain is called unless told (da-uyyyg): it has no
- * user or host to name it by, as the CLI's `<user>@<host>` does, so its
- * database's name; a member carrying it already, it grows a short id.
+ * What a browser joining a chain is called unless told, until it describes
+ * itself (da-uyyyg): it has no user or host, so its database's name. Then
+ * its label is assembled as every member's is (da-xijlw).
  */
 export function suggestedLabel(db: string): string {
 	return `datum.day (${db})`;

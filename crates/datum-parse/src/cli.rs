@@ -821,7 +821,7 @@ pub enum SyncCommand {
     },
     /// `datum sync chain connect [<TICKET>] [--label <L>]` — redeem an
     /// invite (the ticket from stdin when not given) and sync, joining as
-    /// `--label` or a default no other member carries (da-ey3hz).
+    /// `--label` or with none, its label assembled by the chain (da-xijlw).
     Connect {
         ticket: Option<String>,
         label: Option<String>,
@@ -852,17 +852,16 @@ pub enum SyncCommand {
         show: Show,
         show_revoked: bool,
     },
-    /// `datum sync chain rename [<WHO>] <LABEL> [--admin-key <FILE>]` —
-    /// relabel this copy (no admin needed), or another member (an admin
-    /// act in a locked chain). datum.day's, unlisted: `--unique` takes
-    /// LABEL with this copy's short id after it where another member
-    /// carries it, and `--check` only says whether LABEL is one a member
-    /// may carry, before a join (da-uyyyg).
+    /// `datum sync chain rename [<WHO>] (<LABEL> | --unset) [--admin-key
+    /// <FILE>]` — relabel this copy (no admin needed), or another member
+    /// (an admin act in a locked chain); `--unset` (no LABEL) goes back to
+    /// the label assembled from what it runs on (da-xijlw). datum.day's,
+    /// unlisted: `--check` only says whether LABEL is one a member may
+    /// carry, before a join (da-uyyyg).
     Rename {
         who: Option<String>,
-        label: String,
+        label: Option<String>,
         admin_key: Option<String>,
-        unique: bool,
         check: bool,
     },
     /// `datum sync chain ack [<WHO> | --all]` — acknowledge a notice: a new

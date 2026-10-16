@@ -193,13 +193,21 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             show_revoked: opts(rest, &[], &["show-revoked"], 0..=0)?.on("show-revoked"),
         },
         Some("rename") => {
-            let mut o = opts(rest, &["admin-key"], &["unique", "check"], 1..=2)?;
-            let label = o.positional.pop().unwrap_or_default();
+            let mut o = opts(rest, &["admin-key"], &["unset", "check"], 0..=2)?;
+            let unset = o.on("unset");
+            let given = match unset {
+                true => 0..=1,
+                false => 1..=2,
+            };
+            if !given.contains(&o.positional.len()) {
+                return Err(ParseError::InvalidArg(
+                    "rename takes [<WHO>] <LABEL>, or [<WHO>] --unset".into(),
+                ));
+            }
             SyncCommand::Rename {
+                label: (!unset).then(|| o.positional.pop()).flatten(),
                 who: o.positional.pop(),
-                label,
                 admin_key: o.get("admin-key"),
-                unique: o.on("unique"),
                 check: o.on("check"),
             }
         }
@@ -640,9 +648,8 @@ mod tests {
             p(&["chain", "rename", "abcd", "phone", "--admin-key", "k"]),
             SyncCommand::Rename {
                 who: Some("abcd".into()),
-                label: "phone".into(),
+                label: Some("phone".into()),
                 admin_key: Some("k".into()),
-                unique: false,
                 check: false
             }
         );

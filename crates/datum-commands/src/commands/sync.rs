@@ -335,37 +335,41 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             who,
             label,
             admin_key,
-            unique,
             check,
         } => {
-            let label = checked(label)?;
+            let label = label.map(checked).transpose()?;
             if check {
                 return Ok(());
             }
             let chain = db.sync_chain()?;
             ensure!(chain.exists(), NO_CHAIN);
-            ensure!(!unique || who.is_none(), "--unique names this copy alone");
-            let label = match unique {
-                true => db.sync_untaken_label(&[label])?,
-                false => label,
-            };
             let mine = db.sync_endpoint_id()?;
             let target = match &who {
                 Some(who) => member(&chain, who)?,
                 None => mine.clone(),
             };
             let m = chain.member(&target).context("this copy is not a member")?;
+            // An old describe says no host: there is nothing to assemble from.
+            ensure!(
+                label.is_some() || target == mine || m.host.is_some(),
+                "{} has not said what it runs on, so there is no label to assemble for it: \
+                 give it one, or run `datum sync chain rename --unset` on that copy",
+                m.label
+            );
             if target == mine {
-                db.sync_describe_self(&label, m.kind.as_deref().unwrap_or(kind()))?;
+                describe_self(db, label.as_deref(), m.kind.as_deref().unwrap_or(kind()))?;
             } else {
                 let record = json!({
                     "type": "describe", "chain": chain.id, "endpoint": target,
-                    "client": m.client, "label": label, "kind": m.kind,
+                    "client": m.client, "label": label.as_ref().unwrap_or(&m.label),
+                    "auto": label.is_none(), "kind": m.kind,
+                    "user": m.user, "host": m.host, "db": m.db,
                     "created": chrono::Utc::now().to_rfc3339(),
                 });
                 sign(db, record, &chain, admin_key.as_deref())?;
             }
-            println!("renamed {} to {label}", m.label);
+            let now = db.sync_chain()?.member(&target).map(|n| n.label.clone());
+            println!("renamed {} to {}", m.label, now.unwrap_or_default());
         }
         SyncCommand::Status { show, show_revoked } => {
             status(db, show == ShowFlag::Json, show_revoked)?
@@ -649,7 +653,7 @@ fn invite(
     let name = label.map_or_else(copy_label, String::from);
     // The chain stands without it: a failure here is no reason to fail.
     let describe = || {
-        if let Err(e) = db.sync_describe_self(&name, kind()) {
+        if let Err(e) = describe_self(db, label, kind()) {
             eprintln!("⚠ this copy could not describe itself ({e}); `datum sync chain rename <LABEL>` tries again");
         }
     };
@@ -684,6 +688,15 @@ fn invite(
         describe();
     }
     Ok((secret, expires_at))
+}
+
+/// Write this copy's `describe`: `label`, or one assembled from what it
+/// runs on (da-xijlw) — a browser, datum.day, has no user or host but that.
+fn describe_self(db: &Db, label: Option<&str>, kind: &str) -> Result<()> {
+    #[cfg(feature = "net")]
+    return datum_sync::describe_self(db, label, kind);
+    #[cfg(not(feature = "net"))]
+    Ok(db.sync_describe_self(label, kind, None, "datum.day")?)
 }
 
 /// How this copy names itself in the chain.
@@ -1078,7 +1091,8 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
             .map(|m| {
                 json!({
                     "endpoint": m.endpoint, "label": m.label, "client": m.client,
-                    "kind": m.kind, "admitted": chain::hlc_time(&m.admitted), "via": m.via,
+                    "kind": m.kind, "user": m.user, "host": m.host, "db": m.db,
+                    "admitted": chain::hlc_time(&m.admitted), "via": m.via,
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
                     "purged": m.purged.as_deref().map(chain::hlc_time),
                     "left": m.left.as_deref().map(chain::hlc_time),

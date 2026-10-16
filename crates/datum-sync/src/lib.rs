@@ -45,37 +45,33 @@ fn short(id: &str) -> &str {
     &id[..id.len().min(10)]
 }
 
-/// How this copy names itself by default (da-ey3hz): `<user>@<host>`, the
-/// user from `USER` (else `LOGNAME`), so two accounts on one host differ.
-pub fn label() -> String {
+/// The host this copy runs on, which its label is assembled from (da-xijlw).
+pub fn host() -> String {
     let mut buf = [0u8; 256];
     // SAFETY: gethostname writes at most `buf.len()` bytes into `buf`.
-    let host = if unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } == 0 {
-        let n = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-        String::from_utf8_lossy(&buf[..n]).into_owned()
-    } else {
-        "unknown".into()
-    };
-    match std::env::var("USER").or_else(|_| std::env::var("LOGNAME")) {
-        Ok(user) if !user.is_empty() => chain::fit(&format!("{user}@{host}"), chain::MAX_LABEL),
-        _ => chain::fit(&host, chain::MAX_LABEL),
+    if unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } != 0 {
+        return "unknown".into();
     }
+    let n = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    String::from_utf8_lossy(&buf[..n]).into_owned()
 }
 
-/// The label this copy takes in its chain unless told one: [`label`], and
-/// where another member already carries that, the database's name after it,
-/// then a short id too. A label is printed on every member for the chain's
-/// life, so it grows only where two would read alike (da-ey3hz).
-fn named(db: &Db) -> Result<String> {
-    // The chain as its inviter held it: a member whose describe had not
-    // reached the inviter carries its Hello's label here, so two copies
-    // joining one after the other can both take the same longer label.
-    let base = label();
-    let with_db = match db.path().and_then(|p| p.file_stem()) {
-        Some(name) => format!("{base} ({})", name.to_string_lossy()),
-        None => base.clone(),
-    };
-    Ok(db.sync_untaken_label(&[base, chain::fit(&with_db, chain::MAX_LABEL)])?)
+/// The user it runs as: `USER`, else `LOGNAME`.
+pub fn user() -> Option<String> {
+    let user = std::env::var("USER").or_else(|_| std::env::var("LOGNAME"));
+    user.ok().filter(|u| !u.is_empty())
+}
+
+/// How this copy names itself before it describes itself (da-ey3hz):
+/// `<user>@<host>`, so two accounts on one host differ.
+pub fn label() -> String {
+    chain::assembled(user().as_deref(), &host(), None)
+}
+
+/// Write this copy's `describe` (da-xijlw): `label`, or with none one
+/// assembled from its user, host and database's name.
+pub fn describe_self(db: &Db, label: Option<&str>, kind: &str) -> Result<()> {
+    Ok(db.sync_describe_self(label, kind, user().as_deref(), &host())?)
 }
 
 fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
@@ -569,8 +565,7 @@ pub fn connect(db: &Db, ticket: &str, name: Option<&str>, admitted: &dyn Fn()) -
             .map_or_else(|e| paired_unfinished(e, joined), |_| true);
         let me = db.sync_endpoint_id()?;
         if admitted && db.sync_chain()?.member(&me).is_some() {
-            let name = name.map_or_else(|| named(db), |n| Ok(n.to_string()))?;
-            db.sync_describe_self(&name, "cli")?;
+            describe_self(db, name, "cli")?;
         }
         let rep = match rep {
             Err(e) if !admitted => return Err(next_step(e, from)),

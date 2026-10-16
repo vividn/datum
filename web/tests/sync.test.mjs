@@ -353,8 +353,6 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 describe('the name a browser joins as (da-uyyyg)', () => {
 	/** `app`'s own label and endpoint, as its `sync status` has them. */
 	const self = async (app) => JSON.parse((await app.run(['sync', 'status', '--json'])).stdout).this;
-	/** The labels `native`'s chain holds, one per member. */
-	const labels = async (native) => JSON.parse((await native.run(['sync', 'chain', 'list', '--json'])).stdout).members.map((m) => m.label);
 
 	/** Open a join link to `native`'s chain in `app`, the card's name field filled in as it comes. */
 	async function card(app, native) {
@@ -368,22 +366,38 @@ describe('the name a browser joins as (da-uyyyg)', () => {
 		return { card, name, join: card.getByRole('button', { name: 'Join', exact: true }) };
 	}
 
-	test('two browsers joining one chain, neither typing a name, are named apart: the second grows a short id', async () => {
+	test('two browsers joining one chain, neither typing a name, are named apart alike on every copy: the chain assembles both (da-xijlw)', async () => {
 		const native = await nativeCopy(relay);
 		try {
 			await twoBrowsers(async (a, b) => {
 				const first = await card(a, native);
 				await first.join.click();
 				await first.card.locator('.done').waitFor();
-				assert.equal((await self(a)).label, 'datum.day (datum)');
-				// The inviter holds the name from the admit, before the second joins through it.
-				assert.ok((await labels(native)).includes('datum.day (datum)'));
+				// Alone on its host, a browser is its host: datum.day.
+				assert.equal((await self(a)).label, 'datum.day');
 
 				const second = await card(b, native);
 				await second.join.click();
 				await second.card.locator('.done').waitFor();
-				const me = await self(b);
-				assert.equal(me.label, `datum.day (datum) ${me.endpoint.slice(0, 10)}`);
+				// Two on one host and one database: each its database and short id,
+				// on every copy, once it holds both describes. The invites served
+				// only the joins: native hears the describes on a run of its own,
+				// and each browser the other's at a session a write of its pushes.
+				native.spawn(['sync', 'run']);
+				const ids = [(await self(a)).endpoint, (await self(b)).endpoint];
+				const want = JSON.stringify(ids.map((id) => `datum.day (datum) ${id.slice(0, 10)}`).sort());
+				const shown = async (run) =>
+					JSON.stringify(
+						JSON.parse((await run(['sync', 'chain', 'list', '--json'])).stdout)
+							.members.map((m) => m.label)
+							.filter((l) => l.startsWith('datum.day'))
+							.sort()
+					);
+				await until(() => shown(native.run), (ls) => ls === want);
+				for (const [app, field] of [[a, 'pokea'], [b, 'pokeb']]) {
+					await app.run(['occur', field, '-t', '1000']);
+					await until(() => shown((argv) => app.run(argv)), (ls) => ls === want);
+				}
 			});
 		} finally {
 			await native.close();

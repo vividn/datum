@@ -206,7 +206,7 @@ const SAMPLES = {
 	],
 	specArgv: [[{ field: 'coffee', verb: 'occur', color: '#123456', description: 'beans', allowed_states: null, state_colors: {} }]],
 	renameArgv: [['phone'], ['phone', MEMBER]],
-	uniqueRenameArgv: [['datum.day (datum)']],
+	unsetRenameArgv: [[]],
 	labelCheckArgv: [['kitchen']],
 	revokeArgv: [[MEMBER]],
 	revertArgv: [[MEMBER], [MEMBER, true]],

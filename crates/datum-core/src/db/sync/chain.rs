@@ -62,10 +62,14 @@
 //!     `caps` may carry a filter (da-u81u1): `fields`, the fields it is
 //!     sent, and `of`, how many the database had when it was written. The
 //!     latest record's filter stands; one without `fields` clears it.
-//!   - `describe {endpoint, client, label, kind}` (da-rcb5m): what a
-//!     member is — the client it runs in (one per CLI data directory or
-//!     browser profile, shared by every db there, so one installation's
-//!     copies group as one client — da-lfsei), its label, `cli` or `web`. The latest per endpoint wins. Unsigned when an
+//!   - `describe {endpoint, client, label, kind, user, host, db, auto}`
+//!     (da-rcb5m): what a member is — the client it runs in (one per CLI
+//!     data directory or browser profile, shared by every db there, so one
+//!     installation's copies group as one client — da-lfsei), its label,
+//!     `cli` or `web`, and the user, host and database name it runs as.
+//!     With `auto` its label was not given, and is assembled from those
+//!     pieces ([`Chain::assemble`], da-xijlw); `label` is then only what a
+//!     copy before it shows. The latest per endpoint wins. Unsigned when an
 //!     endpoint describes ITSELF; about another member, an admin act.
 //!
 //!   - `leave {endpoint}` (da-dsob1): a member's departure, which it signs
@@ -150,6 +154,13 @@ pub fn fit(s: &str, max: usize) -> String {
         .filter(|c| label_problem(&c.to_string()).is_none())
         .take(max)
         .collect()
+}
+
+/// `user@host (db)`, of the pieces given (da-xijlw).
+pub fn assembled(user: Option<&str>, host: &str, db: Option<&str>) -> String {
+    let user = user.map_or(String::new(), |u| format!("{u}@"));
+    let db = db.map_or(String::new(), |d| format!(" ({d})"));
+    fit(&format!("{user}{host}{db}"), MAX_LABEL)
 }
 
 /// A client id every member can print (`<kind> on <client>`): not blank,
@@ -370,7 +381,7 @@ pub struct Admin {
     pub added: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Member {
     pub endpoint: String,
     pub label: String,
@@ -380,6 +391,12 @@ pub struct Member {
     /// From its latest `describe`: its client id and `cli` / `web`.
     pub client: Option<String>,
     pub kind: Option<String>,
+    /// From its latest `describe` (da-xijlw): the user, host and database
+    /// name it runs as, and whether its label is assembled from them.
+    pub user: Option<String>,
+    pub host: Option<String>,
+    pub db: Option<String>,
+    pub auto: bool,
     /// The HLC of the revoke: its ops from then on are refused.
     pub revoked: Option<String>,
     /// The HLC of its purge (da-ry11c): every op of its is refused.
@@ -692,7 +709,57 @@ impl Chain {
                 chain.rejected.insert((op.endpoint.clone(), op.seq), why);
             }
         }
+        chain.assemble();
         chain
+    }
+
+    /// Label each member whose label was not given (da-xijlw) with the least
+    /// that tells it apart: its host; `user@` before it once the members
+    /// hold more than one user name; its database's name after it where
+    /// another member shares its host; and its short id after that where a
+    /// label still reads like another's. A member in the chain is told apart
+    /// from the others in it now: a revoked, reverted or departed one makes
+    /// no label grow, or `user@` would stay on every label for a device long
+    /// gone. A former member is told apart from those in it now, as if
+    /// beside them: sharing a live member's host it takes its database's
+    /// name, so the two read apart, and only a label someone GAVE may read
+    /// like another's, as it always could. A label is read from the CHAIN,
+    /// which every copy holding its records folds alike, and never from who
+    /// is looking — so every copy shows a member by the same label, and the
+    /// label grows when a new member would read like it.
+    fn assemble(&mut self) {
+        let ms = &self.members;
+        let out = |m: &Member| m.revoked.is_some() || m.left.is_some() || m.purged.is_some();
+        let among = |i: usize| (0..ms.len()).filter(move |&j| j != i && !out(&ms[j]));
+        let users: BTreeSet<_> = ms
+            .iter()
+            .filter(|m| !out(m))
+            .filter_map(|m| m.user.as_ref())
+            .collect();
+        let labels: Vec<String> = (0..ms.len())
+            .map(|i| match (&ms[i], &ms[i].host) {
+                (m, Some(host)) if m.auto => {
+                    let host_shared = among(i).any(|j| ms[j].host.as_ref() == Some(host));
+                    let user = m.user.as_deref().filter(|_| users.len() > 1);
+                    assembled(user, host, m.db.as_deref().filter(|_| host_shared))
+                }
+                (m, _) => m.label.clone(),
+            })
+            .collect();
+        let shown: Vec<String> = (0..ms.len())
+            .map(
+                |i| match ms[i].auto && among(i).any(|j| labels[j] == labels[i]) {
+                    true => {
+                        let id = format!(" {}", &ms[i].endpoint[..ms[i].endpoint.len().min(10)]);
+                        fit(&labels[i], MAX_LABEL - id.len()) + &id
+                    }
+                    false => labels[i].clone(),
+                },
+            )
+            .collect();
+        for (m, label) in self.members.iter_mut().zip(shown) {
+            m.label = label;
+        }
     }
 
     /// Fold one op in, noting its record as taken when it is.
@@ -711,7 +778,8 @@ impl Chain {
             return Err("a record already in the chain".into());
         }
         let admins = r["admins"].as_array().into_iter().flatten();
-        for label in admins.map(|a| &a["label"]).chain([&r["label"]]) {
+        let pieces = ["label", "user", "host", "db"].map(|k| &r[k]);
+        for label in admins.map(|a| &a["label"]).chain(pieces) {
             if let Some(why) = label.as_str().and_then(label_problem) {
                 return Err(why);
             }
@@ -830,9 +898,12 @@ impl Chain {
                     .iter_mut()
                     .find(|m| m.endpoint == s("endpoint"))
                     .ok_or("not a member")?;
+                let piece = |k: &str| r[k].as_str().filter(|p| !p.is_empty()).map(Into::into);
                 m.label = s("label");
                 m.client = client.as_str().map(Into::into);
                 m.kind = kind.as_str().map(Into::into);
+                (m.user, m.host, m.db) = (piece("user"), piece("host"), piece("db"));
+                m.auto = r["auto"] == true && m.host.is_some();
                 m.last_act = op.hlc.clone();
                 Ok(())
             }
@@ -992,6 +1063,10 @@ impl Chain {
             rejoined: None,
             client: None,
             kind: None,
+            user: None,
+            host: None,
+            db: None,
+            auto: false,
             roles: vec![(hlc.into(), role)],
             filter,
         });
@@ -1261,34 +1336,30 @@ impl Db {
     }
 
     /// Write this copy's own `describe`: unsigned, as only an endpoint
-    /// describing itself may be.
-    pub fn sync_describe_self(&self, label: &str, kind: &str) -> Result<()> {
+    /// describing itself may be. It says the user and host it runs as and
+    /// its database's name; with no `label`, its label is assembled from
+    /// those (da-xijlw), and the record's `label` is all of them, for a copy
+    /// before that to show.
+    pub fn sync_describe_self(
+        &self,
+        label: Option<&str>,
+        kind: &str,
+        user: Option<&str>,
+        host: &str,
+    ) -> Result<()> {
+        // Each is printed on every member, so each within a label's rules.
+        let db = self.path().and_then(|p| p.file_stem());
+        let db = db.map(|s| fit(&s.to_string_lossy(), MAX_LABEL));
+        let (user, host) = (user.map(|u| fit(u, MAX_LABEL)), fit(host, MAX_LABEL));
+        let (user, host) = (user.as_deref(), host.as_str());
         let record = json!({
             "type": "describe", "chain": self.sync_chain()?.id,
             "endpoint": self.sync_endpoint_id()?, "client": self.sync_client_id()?,
-            "label": label, "kind": kind, "created": Utc::now().to_rfc3339(),
+            "label": label.map_or_else(|| assembled(user, host, db.as_deref()), String::from),
+            "auto": label.is_none(), "kind": kind, "user": user, "host": host, "db": db,
+            "created": Utc::now().to_rfc3339(),
         });
         self.sync_chain_write(record, true)
-    }
-
-    /// The first of `labels` no other member of this copy's chain carries,
-    /// else the last with this copy's short id after it. A label is printed
-    /// on every member for the chain's life, so it grows only where two
-    /// would read alike (da-ey3hz, da-uyyyg).
-    pub fn sync_untaken_label(&self, labels: &[String]) -> Result<String> {
-        let (chain, me) = (self.sync_chain()?, self.sync_endpoint_id()?);
-        let taken = |l: &String| {
-            chain
-                .members
-                .iter()
-                .any(|m| m.endpoint != me && m.label == *l)
-        };
-        if let Some(l) = labels.iter().find(|l| !taken(l)) {
-            return Ok(l.clone());
-        }
-        let id = format!(" {}", &me[..me.len().min(10)]);
-        let last = labels.last().map_or("", String::as_str);
-        Ok(fit(last, MAX_LABEL - id.len()) + &id)
     }
 
     /// Redeem an invite for `endpoint`, which `holds` that many entries:
@@ -1554,6 +1625,91 @@ mod tests {
             })
             .collect();
         (chain, done)
+    }
+
+    /// An unset label is the least that tells the chain's members apart
+    /// (da-xijlw): one user's laptop and phone are `laptop` and `phone`; a
+    /// second database on the laptop names both laptop's; a second user puts
+    /// `user@` on every one, until it is out; two still alike take short
+    /// ids; and a label given always wins. Read from the records alone, so
+    /// any copy holding them shows the same.
+    #[test]
+    fn a_label_is_the_least_that_tells_the_chains_members_apart() {
+        fn add(ops: &mut Vec<Op>, by: &str, mut rec: Value) -> Vec<String> {
+            let t = ops.len() + 1;
+            rec["chain"] = "c1".into();
+            let op = json!({
+                "endpoint": by, "seq": t, "hlc": format!("2026-09-29T00:{:02}:{:02}.000Z/0000", t / 60, t % 60),
+                "hid": CHAIN_HID, "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
+            });
+            ops.push(Op::parse(&op.to_string()).unwrap());
+            let chain = Chain::fold(ops.clone());
+            assert!(chain.rejected.is_empty(), "{:?}", chain.rejected);
+            chain.members.iter().map(|m| m.label.clone()).collect()
+        }
+        fn describe(who: &str, user: &str, host: &str, db: &str) -> Value {
+            json!({"type": "describe", "endpoint": who, "label": "old", "auto": true,
+                "user": user, "host": host, "db": db})
+        }
+        fn join(ops: &mut Vec<Op>, who: &str, user: &str, host: &str, db: &str) -> Vec<String> {
+            let first = ops[0].endpoint.clone();
+            let invite = json!({"type": "invite", "invite_id": who, "secret_hash": sha256_hex(who),
+                "expires": "2099-01-01T00:00:00Z", "caps": {}});
+            add(ops, &first, invite);
+            let admit = json!({"type": "admit", "endpoint": who, "label": "new", "via": who, "secret": who});
+            add(ops, &first, admit);
+            add(ops, who, describe(who, user, host, db))
+        }
+        let [a, b, c, d, e] = ["a1", "b2", "c3", "d4", "e5"].map(|h| h.repeat(32));
+        let ops = &mut Vec::new();
+        add(
+            ops,
+            &a,
+            json!({"type": "genesis", "admins": [], "label": "a"}),
+        );
+        assert_eq!(
+            add(ops, &a, describe(&a, "ann", "laptop", "data")),
+            ["laptop"]
+        );
+        assert_eq!(join(ops, &b, "ann", "phone", "data"), ["laptop", "phone"]);
+        assert_eq!(
+            join(ops, &c, "ann", "laptop", "work"),
+            ["laptop (data)", "phone", "laptop (work)"]
+        );
+        assert_eq!(
+            join(ops, &d, "bob", "desk", "data"),
+            [
+                "ann@laptop (data)",
+                "ann@phone",
+                "ann@laptop (work)",
+                "bob@desk"
+            ]
+        );
+        let given = json!({"type": "describe", "endpoint": d, "label": "kitchen", "user": "bob", "host": "desk"});
+        assert_eq!(
+            add(ops, &d, given),
+            [
+                "ann@laptop (data)",
+                "ann@phone",
+                "ann@laptop (work)",
+                "kitchen"
+            ]
+        );
+        // Bob's desk out, one user is left: no `user@`.
+        assert_eq!(
+            add(ops, &a, json!({"type": "revoke", "endpoint": d})),
+            ["laptop (data)", "phone", "laptop (work)", "kitchen"]
+        );
+        let shown = join(ops, &e, "ann", "phone", "data");
+        let alike = |id: &str| format!("phone (data) {}", &id[..10]);
+        assert_eq!((&shown[1], &shown[4]), (&alike(&b), &alike(&e)));
+        // e gone, b is the phone again; e, listed beside the chain, is told
+        // apart from it, and b does not grow for it.
+        let shown = add(ops, &a, json!({"type": "revoke", "endpoint": e}));
+        assert_eq!(
+            (&shown[1], &shown[4]),
+            (&"phone".into(), &"phone (data)".into())
+        );
     }
 
     /// The last admin goes only with `unlock` (da-aam46), and the chain is
