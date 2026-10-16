@@ -207,7 +207,7 @@ pub struct Entry {
     #[serde(default = "default_parser_version")]
     pub parser_version: u32,
 
-    /// S6: explicit user assertion from `-L/--last-state=<v>`. Normalized JSON
+    /// S6: explicit user assertion from `-l/--last-state=<v>` (or `-L`). Normalized JSON
     /// value recorded verbatim; `None` for the common case (no assertion).
     #[serde(default)]
     pub user_asserted_last_state: Option<JsonValue>,

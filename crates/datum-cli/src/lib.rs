@@ -147,9 +147,10 @@ const SPOOL_AFTER: std::time::Duration = std::time::Duration::from_millis(750);
 /// command that does, but sync's, `db`'s and `config`'s, which act on the
 /// file, the network or a device rather than on what it holds, and `kit`'s,
 /// whose indices are DDL no op carries. None in the browser, whose database
-/// is one process's at a time.
+/// is one process's at a time. Nor a [`claims`] command.
 fn spools(command: &Command) -> bool {
     !cfg!(target_family = "wasm")
+        && !claims(command)
         && matches!(
             command,
             Command::Occur(_)
@@ -173,6 +174,31 @@ fn spools(command: &Command) -> bool {
                 | Command::Ignore(_)
                 | Command::Flag(_)
         )
+}
+
+/// Is `command` a `-L` claim (da-ovnf9)? It holds only against the database
+/// as it is when it lands, so it is never queued: it waits for the lock, and
+/// refuses while changes queued before it have not landed.
+fn claims(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Occur(a)
+            | Command::Start(a)
+            | Command::Stop(a)
+            | Command::Switch(a)
+            | Command::Add(a)
+            | Command::Note(a) if a.ensure_last_state
+    )
+}
+
+/// Refuse a [`claims`] command while changes queued before it wait.
+fn claim_behind_queue(db: &datum_core::db::Db, path: &str, command: &Command) -> Result<()> {
+    if claims(command) && db.spool_waiting() {
+        anyhow::bail!(
+            "-L: changes queued in {path}.spool have not landed, and the claim would be checked without them; try again"
+        );
+    }
+    Ok(())
 }
 
 /// Does `command` only read the database? Then one that is not there is an
@@ -325,6 +351,9 @@ pub(crate) fn run_on(db: &datum_core::db::Db, path: &str, invocation: Invocation
         i => i,
     };
     ready_to_write(db, path, spools)?;
+    if let Invocation::Single(cli) = &invocation {
+        claim_behind_queue(db, path, &cli.command)?;
+    }
     let before = db.conn().total_changes();
     locked_out(
         cmd::dispatch_invocation(invocation, db),
@@ -463,6 +492,7 @@ fn dispatch_single(cli: Cli) -> Result<()> {
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
     }
+    claim_behind_queue(&db, &path, &cli.command)?;
 
     let before = db.conn().total_changes();
     name_holder(

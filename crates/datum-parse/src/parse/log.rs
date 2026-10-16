@@ -91,13 +91,15 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     }));
     // The value is required, as v2's `-L` (da-n86g3): an optional one left
     // `-L happy` taking nothing and `happy` landing in the duration slot.
-    r.push(local_value(Some('L'), Some("last-state"), |p, v| {
-        if v.is_empty() {
-            return Err(ParseError::InvalidArg(
-                "-L/--last-state needs a value: the state being left".into(),
-            ));
-        }
-        p.last_state = Some(v.to_string());
+    // `-l` records the state being left; `-L` claims it (da-ovnf9).
+    r.push(local_value(Some('l'), Some("last-state"), |p, v| {
+        p.last_state = Some(state_left("-l/--last-state", v)?);
+        p.ensure_last_state = false;
+        Ok(())
+    }));
+    r.push(local_value(Some('L'), Some("ensure-last-state"), |p, v| {
+        p.last_state = Some(state_left("-L/--ensure-last-state", v)?);
+        p.ensure_last_state = true;
         Ok(())
     }));
     r.push(local_value(None, Some("conflict"), |p, v| {
@@ -156,6 +158,16 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         Ok(())
     }));
     r
+}
+
+/// The state `-l` / `-L` name: required, as v2's `-L` was.
+fn state_left(flag: &str, v: &str) -> Result<String> {
+    if v.is_empty() {
+        return Err(ParseError::InvalidArg(format!(
+            "{flag} needs a value: the state being left"
+        )));
+    }
+    Ok(v.to_string())
 }
 
 /// Normalize a single `--id` value into one slug-interpolation segment.

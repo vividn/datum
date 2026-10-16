@@ -411,6 +411,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         left_override: None,
     },
     LAST_STATE,
+    ENSURE_LAST_STATE,
     FlagSpec {
         short: Some('m'),
         long: "moment",
@@ -1176,9 +1177,10 @@ const IF_CHANGED: FlagSpec = FlagSpec {
     left_override: None,
 };
 
-/// `-L` (da-n86g3): the state being left, a required value as in v2.
+/// `-l` (da-n86g3, lowercase since da-ovnf9): the state being left, a
+/// required value as v2's `-L` was.
 const LAST_STATE: FlagSpec = FlagSpec {
-    short: Some('L'),
+    short: Some('l'),
     long: "last-state",
     takes_value: true,
     value_hint: Some("V"),
@@ -1192,10 +1194,30 @@ const LAST_STATE: FlagSpec = FlagSpec {
     left_override: None,
 };
 
-/// `start`, `stop` and `switch` keep `--if-changed` and `-L` on their own pages.
+/// `-L` (da-ovnf9): `-l` as a claim, which refuses unless it holds.
+const ENSURE_LAST_STATE: FlagSpec = FlagSpec {
+    short: Some('L'),
+    long: "ensure-last-state",
+    takes_value: true,
+    value_hint: Some("V"),
+    value_optional: false,
+    summary: "As -l, but write nothing unless the field is in V",
+    long_description: Some(
+        "Refuses, exit non-zero, naming the state found, unless the field \
+         holds V just before the entry (at `-t`, or now). The check and the \
+         write are one transaction, so of two writers claiming the same \
+         state on one database only one lands; never queued while the \
+         database is locked. Synced copies are not one database: two \
+         claims made on two copies can both land and meet at the next sync. \
+         v2's `-L` recorded; this one refuses — record with `-l`.",
+    ),
+    left_override: None,
+};
+
+/// `start`, `stop` and `switch` keep `--if-changed`, `-l` and `-L` on their own pages.
 const SWITCH_SHARED_FLAGS: SharedFlags = SharedFlags {
     topic: "logging",
-    own: &[IF_CHANGED, LAST_STATE],
+    own: &[IF_CHANGED, LAST_STATE, ENSURE_LAST_STATE],
     binders: BINDERS,
 };
 

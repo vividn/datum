@@ -364,7 +364,8 @@ USAGE:
 
 OPTIONS:
       --if-changed      switch/start/end: write nothing if already in this state
-  -L, --last-state <V>  The state being left; `datum check` flags a mismatch
+  -l, --last-state <V>  The state being left; `datum check` flags a mismatch
+  -L, --ensure-last-state <V>  As -l, but write nothing unless the field is in V
   common logging options: `datum help logging`
     including -I/-R/-S/-C for values with spaces
 
@@ -549,9 +550,10 @@ fn logging_pages_point_at_the_topic_instead_of_reprinting_the_wall() {
             "`datum help {verb}` still reprints the shared wall:\n{page}"
         );
         // From USAGE on: the intro above it is the page's guide (da-efruz).
+        // `end`'s 15 is its own flags: `--if-changed`, `-l`, `-L` (da-ovnf9).
         let lines = page[page.find("USAGE:").unwrap()..].lines().count();
         assert!(
-            lines <= 14,
+            lines <= 15,
             "`datum help {verb}` is {lines} lines; the wall is meant to be gone"
         );
     }

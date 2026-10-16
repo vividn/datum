@@ -55,6 +55,7 @@ mod dot_skip_positional;
 mod dur_flag_removed;
 mod e2e_subprocess;
 mod edit_cmd;
+mod ensure_last_state;
 mod env_table_coverage;
 mod field_key_slot;
 mod field_name_commas;

@@ -444,7 +444,7 @@ describe('flags', () => {
 			usage: ['datum occur <FIELD>'],
 			flags: [f('y', 'yesterday'), f('q', 'quick'), f('d', 'date', true), f('t', 'time', true), f('z', 'timezone', true), f('c', 'comment', true), f(null, 'id', true), f('m', 'moment')]
 		},
-		{ name: 'stop', aliases: ['end'], usage: ['datum stop <FIELD>'], flags: [f('t', 'time', true), f('L', 'last-state', true)] }
+		{ name: 'stop', aliases: ['end'], usage: ['datum stop <FIELD>'], flags: [f('t', 'time', true), f('L', 'ensure-last-state', true)] }
 	]);
 
 	test('< Back and Help lead; the curated flags first, the rest in the CLI order; a value flag is typed next', () => {

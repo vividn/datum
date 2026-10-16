@@ -184,7 +184,7 @@ fn switch_last_state_assertion_mismatch_files_conflict() {
 
     run_cli(&["switch", "mood", "happy", "-t=-2"], &db).expect("seed happy");
     // User thinks prior state was "sad", but history says "happy".
-    run_cli(&["switch", "mood", "grumpy", "-L=sad"], &db).expect("assertion still lands");
+    run_cli(&["switch", "mood", "grumpy", "-l=sad"], &db).expect("assertion still lands");
 
     let entries = datum_core::test_util::logged_entries(&db, "mood");
     assert_eq!(entries.len(), 2, "grumpy entry still lands");
@@ -202,13 +202,14 @@ fn switch_last_state_assertion_mismatch_files_conflict() {
     );
 }
 
-/// da-n86g3: `-L` takes its value as v2's did, so `-L happy` is the
-/// assertion and not `-L` plus a duration `happy`; a bare one is refused.
+/// da-n86g3: `-l` takes its value as v2's `-L` did, so `-l happy` is the
+/// assertion and not `-l` plus a duration `happy`; a bare one is refused,
+/// as a bare `-L` is (da-ovnf9).
 #[test]
 fn last_state_takes_the_next_word_as_its_value() {
     let db = fresh_db();
     run_cli(&["switch", "mood", "happy", "-t=-1"], &db).expect("first switch");
-    run_cli(&["switch", "mood", "sad", "-L", "happy"], &db).expect("-L happy");
+    run_cli(&["switch", "mood", "sad", "-l", "happy"], &db).expect("-l happy");
 
     let sad = db
         .entries_for_field("mood", None)
@@ -222,15 +223,17 @@ fn last_state_takes_the_next_word_as_its_value() {
     );
     assert_eq!(sad.dur, None, "`happy` is not a duration");
 
-    for bare in [
-        &["switch", "mood", "ok", "-L"][..],
-        &["end", "mood", "--last-state"],
+    for (bare, flag) in [
+        (&["switch", "mood", "ok", "-l"][..], "-l/--last-state"),
+        (&["end", "mood", "--last-state"], "-l/--last-state"),
+        (&["switch", "mood", "ok", "-L"], "-L/--ensure-last-state"),
+        (
+            &["end", "mood", "--ensure-last-state"],
+            "-L/--ensure-last-state",
+        ),
     ] {
-        let err = run_cli(bare, &db).expect_err("bare -L is a usage error");
-        assert!(
-            err.to_string().contains("-L/--last-state"),
-            "{bare:?}: {err}"
-        );
+        let err = run_cli(bare, &db).expect_err("a bare -l or -L is a usage error");
+        assert!(err.to_string().contains(flag), "{bare:?}: {err}");
     }
 }
 

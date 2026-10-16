@@ -172,7 +172,7 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     );
 
     // `end_time=` alone on `start` / `switch`, with no duration, ran as
-    // `end` — a switch's state became the `-L` assertion (da-mjwq).
+    // `end` — a switch's state became the `-l` assertion (da-mjwq).
     if lifted.end.is_some()
         && lifted.start.is_none()
         && reserved.dur.is_none()
@@ -226,7 +226,7 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         dur = Some(Dur::moment());
     }
 
-    // `-L` on `end` records the closed block's state as `data.last_state`,
+    // `-l` on `end` records the closed block's state as `data.last_state`,
     // which `log_entry` looks up rather than the line spelling it. Keep
     // the stored one, as the declaration below (da-pdk6q).
     if matches!(action, Action::Stop) && log_args.last_state.is_some() {

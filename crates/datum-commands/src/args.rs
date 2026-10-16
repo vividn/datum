@@ -195,10 +195,15 @@ pub fn take_pending_declarations() -> Vec<(String, datum_core::action::Action)> 
 /// (canary-kimi-k3 on #75). With no window open the answer is no,
 /// whatever the buffer still holds.
 pub fn field_declared_in_window(field: &str) -> bool {
-    if MULTI_COLLECTOR.with(|slot| slot.borrow().is_none()) {
+    if !in_multi_window() {
         return false;
     }
     PENDING_DECLARATIONS.with(|slot| slot.borrow().iter().any(|(f, _)| f == field))
+}
+
+/// Is a multi-entry write window open?
+pub fn in_multi_window() -> bool {
+    MULTI_COLLECTOR.with(|slot| slot.borrow().is_some())
 }
 
 /// Drain the multi-collector buffer, leaving the thread-local empty.

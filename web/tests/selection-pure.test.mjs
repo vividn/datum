@@ -33,7 +33,7 @@ const GRAMMAR = grammarOf([
 	entry(
 		'stop',
 		['datum stop <FIELD> [VALUE | KEY=VALUE]... [DUR]'],
-		[T, Y, { short: 'L', long: 'last-state', takes_value: true }],
+		[T, Y, { short: 'L', long: 'ensure-last-state', takes_value: true }],
 		['end']
 	),
 	entry(

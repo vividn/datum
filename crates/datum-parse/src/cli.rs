@@ -310,15 +310,18 @@ pub struct LogArgs {
     /// `datumrc.toml` / built-in default" at the slug-interpolation site;
     /// `Some(_)` is the user's per-invocation override.
     pub id_delimiter: Option<String>,
-    /// `-L`/`--last-state` user assertion.
+    /// `-l`/`--last-state` user assertion (or `-L`'s, below).
     ///
     /// * `None` — flag not supplied.
-    /// * `Some("<value>")` — `-L <value>`/`--last-state=<value>`; recorded
+    /// * `Some("<value>")` — `-l <value>`/`--last-state=<value>`; recorded
     ///   as an assertion on the entry's `user_asserted_last_state`, and on
     ///   Stop closes the most recent open block.
     /// * `Some("")` — never from the parser, which requires a value; set
     ///   internally by `end_time=` on a switch that names no state.
     pub last_state: Option<String>,
+    /// `-L`/`--ensure-last-state` (da-ovnf9): `last_state` is a CLAIM — the
+    /// write lands only if the field holds it, checked in its transaction.
+    pub ensure_last_state: bool,
     pub conflict: Option<ConflictStrategyArg>,
     pub update: bool,
     pub merge: bool,

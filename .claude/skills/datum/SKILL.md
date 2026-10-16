@@ -88,7 +88,7 @@ An entry logs *now* unless you place it:
   takes: `start posture start_time=-20 end_time=-5` (a 15-minute block ending five
   minutes ago), `start posture start_time=4pm 15` (16:00–16:15, the row `-t 16:15
   15` writes). `end_time=` alone on `start` is `end -t E`; on `switch STATE` it is
-  `end -t E -L=STATE`. The keys are consumed, never stored, and never combine
+  `end -t E -l=STATE`. The keys are consumed, never stored, and never combine
   with `-t`.
 
 ## Reading it back

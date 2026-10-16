@@ -40,7 +40,7 @@ pub enum FlagAction<T> {
     Value(fn(&mut T, &str) -> Result<()>),
     /// Optional-value flag — accepts the bare form (no value) and the
     /// attached `=VALUE` form, but does NOT consume a detached next
-    /// token. Mirrors `-L`/`--last-state` and other "presence sets one
+    /// token. Mirrors `-l`/`--last-state` and other "presence sets one
     /// thing, presence+value sets another" flags.
     OptionalValue(fn(&mut T, Option<&str>) -> Result<()>),
 }

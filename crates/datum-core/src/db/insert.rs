@@ -242,18 +242,21 @@ impl Db {
         entry: &Entry,
         strategy: ConflictStrategy,
     ) -> Result<InsertOutcome> {
-        self.insert_entry_declaring(entry, strategy, None)
+        self.insert_entry_declaring(entry, strategy, None, false)
     }
 
     /// [`Self::insert_entry_with_strategy`], and — when the entry lands —
     /// `declare` as its field's spec entry, in the SAME transaction
     /// (da-lc26c): a first log and the spec it writes are both-or-neither,
-    /// so a failure (a full disk) leaves the database as it was.
+    /// so a failure (a full disk) leaves the database as it was. With
+    /// `ensure`, nothing lands unless the field holds the state the entry
+    /// asserts, read in that transaction ([`crate::integrity::ensure_last_state`]).
     pub fn insert_entry_declaring(
         &self,
         entry: &Entry,
         strategy: ConflictStrategy,
         declare: Option<&crate::field_spec::FieldSpec>,
+        ensure: bool,
     ) -> Result<InsertOutcome> {
         let spec = declare
             .map(|spec| -> Result<Entry> {
@@ -265,6 +268,9 @@ impl Db {
             })
             .transpose()?;
         self.write_with(|tx| {
+            if ensure {
+                crate::integrity::ensure_last_state(tx, entry)?;
+            }
             let outcome = insert_entry_in_tx(tx, entry, strategy)?;
             let landed = matches!(
                 outcome,

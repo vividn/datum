@@ -181,11 +181,19 @@ Native only: the browser's database is one process's at a time.
   A full-day time (`-y`, `-d`, `-D`, a `-t` naming a day) takes a duration
   in whole days alone (`outside -D 3d`); `start walk -y 13:00`, `24h` or
   `1d2h` is refused saying so (da-s6ech)
+- `-l V` / `--last-state V` records the state being left
+  (`user_asserted_last_state`, `tail -A`; `datum check` flags a mismatch).
+  `-L V` / `--ensure-last-state V` is the claim: nothing is written, exit
+  non-zero naming the state found, unless the field holds V just before the
+  entry and nothing has changed it since — read in the insert's own
+  transaction, so of racing claims on one database one lands, and never
+  spooled. Two synced copies can each grant one (da-ovnf9). v2's `-L`
+  recorded: record with `-l`
 - `start_time=` / `end_time=` on `add`/`note`/`start`/`switch`/`occur` are
   lifted onto `occur_time`/`dur`, parsed exactly as `-t` is: the
   pair is the block between them, `start_time=S` + a duration ends at
   `S + dur`, `end_time=E` alone on `start` becomes `end -t E` (on `switch
-  STATE`, `end -t E -L=STATE`). Never combined with `-t`; nothing of the
+  STATE`, `end -t E -l=STATE`). Never combined with `-t`; nothing of the
   keys stays in `data`
 
 ### The command comes first
@@ -200,7 +208,7 @@ Native only: the browser's database is one process's at a time.
   leading the words no slot or remainder takes, change the command and the
   words after it are read again as the new command's. So with `bed` →
   `start sleep`, `datum bed end` ends sleep; `datum occur coffee start`
-  starts coffee; `datum mood happy end` ends mood with `-L happy`. A
+  starts coffee; `datum mood happy end` ends mood with `-l happy`. A
   remainder keeps the word as text (`datum note jot the end of it`).
   `handle_log_data_args` in `datum-parse`'s `input/data_args`, the alias
   walk in `alias/regions.rs`, and `change_command` in `log_core.rs` (da-z5vek)

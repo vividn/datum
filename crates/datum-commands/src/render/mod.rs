@@ -1515,7 +1515,7 @@ fn extract_column(entry: &Entry, col: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The column `-L`'s assertion shows in, ahead of a `last_state` data key.
+/// The column `-l`'s assertion shows in, ahead of a `last_state` data key.
 const LAST_STATE_COLUMN: &str = "last_state";
 
 /// `-A` adds the `last_state` column when a row asserts one (da-n86g3).
@@ -2417,7 +2417,7 @@ mod tests {
         assert_eq!(format_ago(-10080), "in 2h48m");
     }
 
-    /// da-n86g3: `-A` adds a `last_state` column holding what `-L` asserted,
+    /// da-n86g3: `-A` adds a `last_state` column holding what `-l` asserted,
     /// only when a row asserts one; the default view never does.
     #[test]
     fn show_all_adds_the_asserted_last_state_column() {

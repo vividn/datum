@@ -48,7 +48,7 @@ fn a_verb_in_the_dur_slot_or_left_over_changes_the_command() {
 }
 
 /// A switch's state is the state being left: `mood happy end` is `end mood
-/// -L happy`, through the field's own alias.
+/// -l happy`, through the field's own alias.
 #[test]
 fn a_switch_ended_by_a_trailing_verb_asserts_the_state_it_named() {
     let db = fresh_db();

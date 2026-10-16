@@ -241,24 +241,7 @@ pub fn detect_for_entries(
     triggers: &[Entry],
     detected_by: DetectedBy,
 ) -> Result<Vec<IntegrityWarning>> {
-    let mut snaps = FieldSnapshots::default();
-    // Every state probe below sits just before a trigger's leading edge or
-    // at its `occur`, so a field's state rows are read over its triggers'
-    // span and no further (da-asgt4).
-    for t in triggers {
-        let Some(span) = t
-            .leading_edge_utc()
-            .zip(t.occur_time.as_ref().map(|o| o.utc))
-        else {
-            continue;
-        };
-        let lo = span.0 - chrono::Duration::microseconds(1);
-        snaps
-            .spans
-            .entry(t.field.clone())
-            .and_modify(|(l, h)| (*l, *h) = ((*l).min(lo), (*h).max(span.1)))
-            .or_insert((lo, span.1));
-    }
+    let mut snaps = FieldSnapshots::over(triggers);
     let mut filed = Vec::new();
     for trigger in triggers {
         detect_one(conn, trigger, detected_by, &mut snaps, &mut filed)?;
@@ -282,6 +265,28 @@ struct FieldSnapshots {
 }
 
 impl FieldSnapshots {
+    /// Snapshots for `triggers`. Every state probe sits just before a
+    /// trigger's leading edge or at its `occur`, so a field's state rows
+    /// are read over its triggers' span and no further (da-asgt4).
+    fn over(triggers: &[Entry]) -> Self {
+        let mut snaps = FieldSnapshots::default();
+        for t in triggers {
+            let Some(span) = t
+                .leading_edge_utc()
+                .zip(t.occur_time.as_ref().map(|o| o.utc))
+            else {
+                continue;
+            };
+            let lo = span.0 - chrono::Duration::microseconds(1);
+            snaps
+                .spans
+                .entry(t.field.clone())
+                .and_modify(|(l, h)| (*l, *h) = ((*l).min(lo), (*h).max(span.1)))
+                .or_insert((lo, span.1));
+        }
+        snaps
+    }
+
     /// State of `field` at `probe`, as though `exclude_hid` had never
     /// been written.
     fn state_at(
@@ -626,7 +631,7 @@ fn find_overlapping_block<'a>(blocks: &'a [Entry], trigger: &Entry) -> Option<&'
 // re-exported here for the callers that always knew them by this path.
 pub use crate::state::{states_equal_set_aware, states_share_element};
 
-/// S6/S12: compare the user's explicit `-L` assertion against the computed
+/// S6/S12: compare the user's explicit `-l` assertion against the computed
 /// last-state. `Ok(None)` when there's no assertion or the assertion
 /// matches; `Ok(Some(_))` on mismatch — the inner Option is a counterpart
 /// entry for display (may be None if no prior entry exists).
@@ -635,25 +640,9 @@ fn detect_last_state_mismatch(
     trigger: &Entry,
     snaps: &mut FieldSnapshots,
 ) -> Result<Option<Option<Entry>>> {
-    let Some(asserted_raw) = trigger.user_asserted_last_state.as_ref() else {
+    let Some((probe, _)) = last_state_found(conn, trigger, snaps)? else {
         return Ok(None);
     };
-    // da-zwct: `-L` asserts the state the row walked in on, so the probe
-    // sits just before the row's LEADING edge — a duration before
-    // `occur_time` for a block, whose stored instant is its end.
-    let Some(probe) = trigger
-        .leading_edge_utc()
-        .map(|t| t - chrono::Duration::microseconds(1))
-    else {
-        return Ok(None);
-    };
-    let asserted = crate::state::normalize_state(asserted_raw).to_json();
-    let actual = snaps
-        .state_at(conn, &trigger.field, probe, trigger.hid.as_str())?
-        .unwrap_or(serde_json::Value::Null);
-    if states_equal_set_aware(&asserted, &actual) {
-        return Ok(None);
-    }
     let at_str = probe.to_rfc3339();
     let sql = format!(
         "SELECT * FROM entries
@@ -676,6 +665,93 @@ fn detect_last_state_mismatch(
         .optional()
         .map_err(DatumError::Db)?;
     Ok(Some(counterpart))
+}
+
+/// The probe and the state `trigger`'s field holds there when it is not
+/// the one `-l` / `-L` asserted; `None` when it is, or nothing is asserted.
+fn last_state_found(
+    conn: &Connection,
+    trigger: &Entry,
+    snaps: &mut FieldSnapshots,
+) -> Result<Option<(DateTime<Utc>, serde_json::Value)>> {
+    let Some(asserted_raw) = trigger.user_asserted_last_state.as_ref() else {
+        return Ok(None);
+    };
+    // da-zwct: `-l` asserts the state the row walked in on, so the probe
+    // sits just before the row's LEADING edge — a duration before
+    // `occur_time` for a block, whose stored instant is its end.
+    let Some(probe) = trigger
+        .leading_edge_utc()
+        .map(|t| t - chrono::Duration::microseconds(1))
+    else {
+        return Ok(None);
+    };
+    let asserted = crate::state::normalize_state(asserted_raw).to_json();
+    let actual = snaps
+        .state_at(conn, &trigger.field, probe, trigger.hid.as_str())?
+        .unwrap_or(serde_json::Value::Null);
+    Ok((!states_equal_set_aware(&asserted, &actual)).then_some((probe, actual)))
+}
+
+/// `-L` (da-ovnf9): refuse `entry` unless its field holds the state it
+/// asserts from just before it on — that state, and no change of the field
+/// logged since — read on `conn`'s open
+/// transaction, the one that writes it, so no other writer moves the field
+/// between the check and the write. The "since" is what makes a claim made
+/// NOW one: two racing claims each read their time before the lock, and
+/// the later one may land first.
+pub fn ensure_last_state(conn: &Connection, entry: &Entry) -> Result<()> {
+    let name = |v: &serde_json::Value| match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => "no state".into(),
+        v => v.to_string(),
+    };
+    let claimed = entry.user_asserted_last_state.as_ref().map(name);
+    let claimed = claimed.unwrap_or_default();
+    let snaps = &mut FieldSnapshots::over(std::slice::from_ref(entry));
+    if let Some((_, found)) = last_state_found(conn, entry, snaps)? {
+        return Err(DatumError::Other(format!(
+            "-L {claimed}: {} is in {}, so nothing is written",
+            entry.field,
+            name(&found)
+        )));
+    }
+    // From the probe on, where the state read above stops: a row between
+    // the probe and the edge, a microsecond later, is a change too.
+    let Some(probe) = entry
+        .leading_edge_utc()
+        .map(|t| t - chrono::Duration::microseconds(1))
+    else {
+        return Ok(());
+    };
+    let sql = format!(
+        "SELECT state FROM entries
+          WHERE field = ?1 AND {participation} AND {declaration}
+            AND NOT {dot} AND occur_time >= ?2 AND hid != ?3
+          ORDER BY {order} LIMIT 1",
+        participation = crate::db::STATE_PARTICIPATION_SQL,
+        declaration = crate::track::NOT_A_DECLARATION_SQL,
+        dot = crate::state::OCCUR_DOT_SQL,
+        order = crate::db::STATE_ORDER_NEWEST_FIRST,
+    );
+    let later: Option<Option<String>> = conn
+        .query_row(
+            &sql,
+            params![entry.field, probe.to_rfc3339(), entry.hid.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    match later {
+        None => Ok(()),
+        Some(state) => {
+            let state = state.and_then(|s| serde_json::from_str(&s).ok());
+            Err(DatumError::Other(format!(
+                "-L {claimed}: {} has changed since, to {}, so nothing is written",
+                entry.field,
+                name(&state.unwrap_or(serde_json::Value::Null))
+            )))
+        }
+    }
 }
 
 fn file_warning(

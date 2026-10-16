@@ -221,7 +221,7 @@ fn t_flag_with_a_key_is_an_error_naming_both() {
     assert!(err.to_string().contains("end_time="), "got: {err}");
 }
 
-/// `switch mood STATE end_time=E` is `end mood -t E -L=STATE`: it closes
+/// `switch mood STATE end_time=E` is `end mood -t E -l=STATE`: it closes
 /// the block at E and asserts that STATE is what was open. The row records
 /// the actual prior state as `last_state` and the asserted one on the
 /// entry; when they disagree, `datum check` reports `last_state_mismatch`.
@@ -234,7 +234,7 @@ fn end_time_alone_on_switch_is_end_asserting_the_state() {
 
     let flagged = fresh_db();
     run_cli(&["switch", "mood", "happy", "-t", "-30"], &flagged).unwrap();
-    run_cli(&["end", "mood", "-t", "-5", "-L=happy"], &flagged).expect("end -L=happy");
+    run_cli(&["end", "mood", "-t", "-5", "-l=happy"], &flagged).expect("end -l=happy");
 
     let want = shape(&rows(&flagged, "mood")[1]);
     assert_eq!(want["occur_time"], json!("2026-09-10T11:55:00+00:00"));

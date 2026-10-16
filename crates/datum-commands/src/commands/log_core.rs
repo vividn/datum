@@ -179,7 +179,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // da-mjwq: `end_time=` alone on `start` closes the field's open block
     // at E — the action becomes `end` (≡ `end field -t E`), so one alias
     // `posture → start posture` serves both directions. On `switch` the
-    // state it names is the block being closed: ≡ `end field -t E -L=STATE`,
+    // state it names is the block being closed: ≡ `end field -t E -l=STATE`,
     // and `datum check` reports a `last_state_mismatch` when history
     // disagrees. A duration alongside keeps the verb: that is `-t E <dur>`.
     let has_dur = reserved.dur.is_some() || args.duration.duration.is_some();
@@ -190,7 +190,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     {
         if matches!(action, Action::Switch) {
             if args.last_state.is_some() {
-                anyhow::bail!("end_time= on switch already asserts the prior state; drop -L");
+                anyhow::bail!("end_time= on switch already asserts the prior state; drop -l/-L");
             }
             // The slot's default `true` names nothing; a stated state is
             // the assertion. Without one the block still closes, its state
@@ -427,7 +427,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
         // --last-state on Stop: close the most recent open block, recording
         // its prior state as `last_state` metadata. Errors if there's nothing
-        // to close. The value (`-L <v>`, required since da-n86g3) is carried
+        // to close. The value (`-l <v>`, required since da-n86g3) is carried
         // onto the entry's `user_asserted_last_state` for the post-write
         // mismatch detector.
         if args.last_state.is_some() && matches!(action, Action::Stop) {
@@ -597,14 +597,14 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
 
-    // S6: carry an explicit `-L/--last-state <v>` assertion onto the entry.
+    // S6: carry an explicit `-l/--last-state <v>` (or `-L`) assertion onto the entry.
     // The empty sentinel (`end_time=` on a switch naming no state) asserts
     // nothing; only a supplied value enters the column. Parsed through the same token parser that handles
     // positional switch values so `null` / `true` / numbers normalize
     // consistently with state compilation downstream.
     if let Some(raw) = args.last_state.as_deref() {
         if !raw.is_empty() {
-            // S12: `-L=a,b` asserts the prior state was a concurrent array.
+            // S12: `-l=a,b` asserts the prior state was a concurrent array.
             entry.user_asserted_last_state = Some(parse_switch_state_token(raw)?);
         }
     }
@@ -837,6 +837,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // touching the DB or the multi-collector. Skips `_LAST` pointer
     // updates so a dry-run never moves the last-accessed cursor. Exits 0
     // so `dm <verb> --dry-run` is safe to chain.
+    // da-ovnf9: a claim is checked where it is written, so a dry run asks
+    // the question it would, and a multi window (one atomic write of every
+    // side) and a timeless entry, which leaves no state, take none.
+    if args.ensure_last_state {
+        if entry.occur_time.is_none() {
+            anyhow::bail!("-L needs a time: a timeless entry leaves no state to claim");
+        }
+        if args.dry_run {
+            db.read(|view| datum_core::integrity::ensure_last_state(view.conn(), &entry))?;
+        }
+    }
     if args.dry_run {
         let registry = crate::commands::helpers::registry_for(db, &[&entry.field]);
         let ctx = RenderContext::for_entry(db, &entry, Surface::Action, None)?;
@@ -876,6 +887,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // side's `OutputArgs` rides along so the multi driver can honour
     // per-side flags (`--show none`, format strings) when rendering
     // the resulting merged row (da-dayk).
+    if args.ensure_last_state && crate::args::in_multi_window() {
+        anyhow::bail!("-L claims one write; a multi-entry line is not one: use -l");
+    }
     if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
         // The window owns the spec write, once its atomic insert lands.
         if declares_field {
@@ -890,7 +904,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         true => crate::commands::helpers::track_spec(db, &entry.field, action)?,
         false => None,
     };
-    let outcome = db.insert_entry_declaring(&entry, strategy, declare.as_ref())?;
+    let outcome =
+        db.insert_entry_declaring(&entry, strategy, declare.as_ref(), args.ensure_last_state)?;
     // Stamp the last-accessed pointer at the affected entry's hid so a
     // follow-up bare `get` / `delete` / `update` can target it — before
     // anything prints, since a closed pipe ends the process at the print
@@ -1256,7 +1271,7 @@ pub(crate) fn parse_log_args(
 /// The action a trailing verb made of the line (v2's `changeDatumCommand`):
 /// `start sleep end` ends sleep, `occur coffee start` starts coffee. An
 /// end takes no state of its own, and a switch's is the state being left,
-/// the `-L` assertion as on `end_time=` (`mood happy end` ≡ `end mood -L
+/// the `-l` assertion as on `end_time=` (`mood happy end` ≡ `end mood -l
 /// happy`).
 pub(crate) fn change_command(
     action: Action,
@@ -1752,7 +1767,7 @@ pub(crate) fn lift_time_keys(rest: &mut Vec<String>) -> LiftedTimes {
     lifted
 }
 
-/// The `-L=<v>` spelling of a switch state, so `switch f STATE end_time=E`
+/// The `-l=<v>` spelling of a switch state, so `switch f STATE end_time=E`
 /// can hand its state to the `--last-state` path as the user would have
 /// typed it: a string as itself, a concurrent array joined by `,`.
 fn switch_state_raw(state: &JsonValue) -> String {

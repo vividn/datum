@@ -267,7 +267,7 @@ fn last_state_assertion_flags_element_mismatch() {
     let db = fresh_db();
 
     run_cli(&["switch", "project", "a,c", "-t=-1"], &db).expect("seed [a,c]");
-    run_cli(&["switch", "project", "d", "-L=a,b"], &db).expect("switch with wrong -L assertion");
+    run_cli(&["switch", "project", "d", "-l=a,b"], &db).expect("switch with wrong -L assertion");
 
     let mismatches = db
         .list_integrity_warnings(&ListFilter {
@@ -284,7 +284,7 @@ fn last_state_assertion_flags_element_mismatch() {
 fn last_state_assertion_records_array_value() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "c", "-L=a,b"], &db).expect("switch with comma-separated -L");
+    run_cli(&["switch", "project", "c", "-l=a,b"], &db).expect("switch with comma-separated -L");
 
     let entry = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(

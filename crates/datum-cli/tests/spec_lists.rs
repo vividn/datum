@@ -188,8 +188,7 @@ fn the_old_spellings_are_unknown_flags() {
     let db = fresh_db();
     run_cli(&["occur", "tea"], &db).unwrap();
     for (line, flag) in [
-        (&["occur", "tea", "-l", "x"][..], "-l"),
-        (&["occur", "tea", "--lenient", "x"], "--lenient"),
+        (&["occur", "tea", "--lenient", "x"][..], "--lenient"),
         (&["delete", "tea:_", "--strict"], "--strict"),
         (&["update", "tea:_", "a=1", "--strict"], "--strict"),
         (&["setup", "tea", "--strict"], "--strict"),
