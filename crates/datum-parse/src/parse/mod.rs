@@ -213,8 +213,10 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         match *tok {
             // `db purge --help` is purge's page, not db's (da-2bb7z).
             "--help" | "-h" => {
-                let page = crate::help::page_name(sub, &tail[sub_idx + 1..]);
-                return Err(ParseError::HelpRequested(Some(page)));
+                let words = &tail[sub_idx + 1..];
+                return Err(unknown_subcommand(sub, words).unwrap_or_else(|| {
+                    ParseError::HelpRequested(Some(crate::help::page_name(sub, words)))
+                }));
             }
             // `datum SUB --man` and (after the field/verb prepass swap)
             // `datum --man SUB` both land here.
@@ -336,6 +338,12 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
 
         "help" => {
             // `datum help <cmd> [<sub>…]` → help request with that page.
+            if let Some(e) = rest
+                .split_first()
+                .and_then(|(c, w)| unknown_subcommand(c, w))
+            {
+                return Err(e);
+            }
             let cmd = rest
                 .split_first()
                 .map(|(cmd, words)| crate::help::page_name(cmd, words));
@@ -390,6 +398,30 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
 }
 
 /// `--color auto|always|never`, as git, cargo and ripgrep spell it.
+/// The error `datum CMD WORDS…` gives without its `--help`, when that error
+/// is a group's «unknown … subcommand»: help asked for on a mistyped word
+/// says so, as the plain form does, rather than show the group's page as if
+/// the word were not there (da-rnv1z).
+fn unknown_subcommand(cmd: &str, words: &[&str]) -> Option<ParseError> {
+    crate::help::find_command(cmd)?;
+    let line: Vec<&str> = std::iter::once(cmd)
+        .chain(
+            words
+                .iter()
+                .copied()
+                .filter(|w| !matches!(*w, "--help" | "-h")),
+        )
+        .collect();
+    match parse_tail(&line, None) {
+        Err(ParseError::InvalidArg(m))
+            if m.starts_with("unknown ") && m.contains(" subcommand: '") =>
+        {
+            Some(ParseError::InvalidArg(m))
+        }
+        _ => None,
+    }
+}
+
 fn parse_color(v: &str) -> Result<Option<bool>> {
     match v {
         "auto" => Ok(None),

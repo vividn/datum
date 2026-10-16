@@ -1083,10 +1083,59 @@ fn subcommand_help_is_its_own_page() {
     assert!(parse("sync daemon status -h").contains("Whether it is installed"));
     // A word that names no subcommand stops the path.
     assert_eq!(parse("occur coffee --help"), command_help("occur"));
-    assert_eq!(parse("db nope --help"), command_help("db"));
     // The renderer reads a page name as the parser does.
     assert_eq!(command_help("db nope"), command_help("db"));
     assert_eq!(command_help("db purge --leave"), purge);
+}
+
+/// da-rnv1z: help asked for on a mistyped subcommand — `--help` after it, or
+/// `help` before it — is the plain form's error, «expected …» and all, and
+/// not the group's page; a word that is no subcommand of a command without
+/// any still has that command's page.
+#[test]
+fn help_on_a_mistyped_subcommand_says_it_is_unknown() {
+    let argv = |line: &str| -> Vec<String> {
+        std::iter::once("datum")
+            .chain(line.split(' '))
+            .map(String::from)
+            .collect()
+    };
+    let err = |line: &str| crate::parse_argv(&argv(line)).unwrap_err().to_string();
+    for (plain, asked) in [
+        (
+            "sync chain conect x",
+            ["sync chain conect x --help", "help sync chain conect x"],
+        ),
+        (
+            "sync admin frob",
+            ["sync admin frob -h", "help sync admin frob"],
+        ),
+        ("sync frob", ["sync frob --help", "help sync frob"]),
+        ("db frob", ["db frob --help", "help db frob"]),
+        ("alias frob", ["alias frob --help", "help alias frob"]),
+        ("kit frob", ["kit frob --help", "help kit frob"]),
+        ("config frob", ["config frob --help", "help config frob"]),
+    ] {
+        let want = err(plain);
+        assert!(want.contains("subcommand: '"), "{plain}: {want}");
+        for line in asked {
+            let e = crate::parse_argv(&argv(line)).unwrap_err();
+            assert!(super::special_output(&e, "", None).is_none(), "{line}");
+            assert_eq!(e.to_string(), want, "{line}");
+        }
+    }
+    assert!(err("sync chain conect --help").contains("(expected invite|connect|"));
+    // A real subcommand missing its arguments is still its page.
+    let page = |line: &str| {
+        let e = crate::parse_argv(&argv(line)).unwrap_err();
+        super::special_output(&e, "", None).unwrap()
+    };
+    assert_eq!(
+        page("sync chain connect --help"),
+        command_help("sync chain connect")
+    );
+    assert_eq!(page("help sync chain"), command_help("sync chain"));
+    assert_eq!(page("occur coffee --help"), command_help("occur"));
 }
 
 /// Every subcommand's page carries its usage lines and something its
