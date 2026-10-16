@@ -242,8 +242,9 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Missing in daydumb:** single-entry-point mental model.
 - **Divergences:** daydumb splits into three verbs because each has a
   different default and `rekey` additionally takes `--id` template
-  flags. datum uses "deep-merge" wording; daydumb uses `merge` (deep
-  in extra_data) distinct from `update` (shallow replace).
+  flags. `merge` is datum's `merge` (da-scdm3): a key both hold collects
+  both values into one list without duplicates; `--strategy preferNew` is
+  the deep merge where the new value wins, and `update` a shallow replace.
 - **Tests in datum not in daydumb:** 11 tests — most strategies are
   covered by daydumb `update_cmd.rs` + `merge_cmd.rs`; batch
   quickId-based mutations are a gap.

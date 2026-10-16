@@ -1237,10 +1237,10 @@ mod tests {
         assert!(parse_argv(&argv(&["add", "doc", "--conflict", "ignore"])).is_ok());
     }
 
-    /// da-zd0vx: preferNew is daydumb's merge by datum's name, and the six
-    /// combineData rows vividn left out are refused.
+    /// da-scdm3: merge is datum's merge and preferNew its own combine row,
+    /// not merge; da-zd0vx: the six combineData rows vividn left out are refused.
     #[test]
-    fn prefer_new_is_merge_and_the_rows_left_out_are_refused() {
+    fn prefer_new_is_its_combine_and_the_rows_left_out_are_refused() {
         let strategy = |s| match parse_argv(&argv(&["update", "doc:z", "--strategy", s])) {
             Ok(Cli {
                 command: Command::Update(a),
@@ -1248,7 +1248,13 @@ mod tests {
             }) => a.strategy,
             _ => None,
         };
-        assert_eq!(strategy("preferNew"), Some(UpdateStrategyArg::Merge));
+        assert_eq!(strategy("merge"), Some(UpdateStrategyArg::Merge));
+        assert_eq!(
+            strategy("preferNew"),
+            Some(UpdateStrategyArg::Combine(
+                crate::combine::Combine::PREFER_B
+            ))
+        );
         for s in [
             "intersection",
             "removeConflicting",

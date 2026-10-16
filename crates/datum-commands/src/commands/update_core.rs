@@ -32,7 +32,8 @@ pub enum UpdateStrategy {
     /// Shallow: payload keys replace existing top-level keys; omitted keys
     /// preserved. Empty value (`key=`) drops the key.
     Replace,
-    /// Deep: recursive object merge; scalar conflicts → payload wins.
+    /// datum's `merge`: recursive object merge; a conflict collects both
+    /// values into one array, the stored first, duplicates removed.
     Merge,
     /// Rename keys inside `data`. Payload is read as a `{oldKey: "newKey"}`
     /// mapping (values must be strings); each existing `data.oldKey` is
@@ -110,12 +111,12 @@ pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOut
             req.slug_delimiter,
             db,
         ),
-        // daydumb's merge is datum's preferNew: the payload wins a conflict.
+        // datum's merge: a conflict collects both values, no duplicates.
         UpdateStrategy::Merge => apply_mutation(
             existing,
             req.payload_value,
             req.payload_extra,
-            ExtraMergeMode::Combine(Combine::PREFER_B),
+            ExtraMergeMode::Combine(Combine::MERGE),
             req.slug_delimiter,
             db,
         ),

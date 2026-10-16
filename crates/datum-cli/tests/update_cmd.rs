@@ -10,12 +10,9 @@
 //! Divergences from datum:
 //!   * daydumb has no data-only docs (a payload with no `data`/`meta`): every
 //!     entry carries a field. TS #2 is ported onto an ordinary entry.
-//!   * `--merge` lets the incoming value win a key, where datum's `merge`
-//!     collected both into an array — the note `add_cmd.rs` carries (#371).
-//!     TS #2 expects `foo: "baz"`, not `["bar", "baz"]`.
-//!   * `--strategy update` and `merge` are daydumb's, not datum's rows of
-//!     the same names, and `preferNew` is `merge` by its datum name; useOld,
-//!     useNew, preferOld and append are their `combineData` rows
+//!   * `--strategy update` is daydumb's, not datum's row of the same name;
+//!     `merge` is datum's (da-scdm3), and useOld, useNew, preferOld,
+//!     preferNew and append are their `combineData` rows too
 //!     (`datum_parse::combine`, da-0id4s), and the other six are refused
 //!     (da-zd0vx). TS #3's `xor` is one of them.
 //!   * `update` is a SHALLOW overlay: a payload object replaces the stored
@@ -113,8 +110,8 @@ fn updates_a_row_from_a_prefix_of_its_hid() {
 
 // ─── TS #2: "can update a dataonly doc from the first letters of its id" ──────
 
-/// Adapted: no data-only docs, and `merge` lets the incoming value win (see
-/// the header). The `-k` slots are filled by the positionals, as in datum.
+/// Adapted: no data-only docs. `merge` collects both values, as in datum
+/// (da-scdm3), and the `-k` slots are filled by the positionals.
 #[test]
 fn merge_fills_declared_key_slots_from_positionals() {
     let db = fresh_db();
@@ -137,7 +134,7 @@ fn merge_fills_declared_key_slots_from_positionals() {
     .unwrap();
     assert_eq!(
         data(&db, "d:some_data_only"),
-        json!({"foo": "baz", "newField": "newData"})
+        json!({"foo": ["bar", "baz"], "newField": "newData"})
     );
 }
 
@@ -192,6 +189,7 @@ fn every_combine_strategy_works_from_the_cli() {
         ("preferOld", json!({"a": 1, "b": 2, "both": "x"})),
         ("preferNew", json!({"a": 1, "b": 2, "both": "y"})),
         ("append", json!({"a": 1, "b": 2, "both": ["x", "y"]})),
+        ("merge", json!({"a": 1, "b": 2, "both": ["x", "y"]})),
     ]
     .into_iter()
     .enumerate()
@@ -206,6 +204,27 @@ fn every_combine_strategy_works_from_the_cli() {
         .unwrap();
         assert_eq!(data(&db, &slug), want, "{strategy}");
     }
+}
+
+/// `datum merge` is datum's merge (da-scdm3): a key both hold collects both
+/// values into a list, and a value already in it is not added again.
+#[test]
+fn merge_collects_values_without_duplicates() {
+    let db = fresh_db();
+    run_cli(&["note", "fruit", "item=apple", "--id", "x"], &db).unwrap();
+    run_cli(&["merge", "fruit:x", "item=pear"], &db).unwrap();
+    assert_eq!(data(&db, "fruit:x")["item"], json!(["apple", "pear"]));
+    run_cli(&["merge", "fruit:x", "item=pear"], &db).unwrap();
+    assert_eq!(data(&db, "fruit:x")["item"], json!(["apple", "pear"]));
+
+    // The deep merge where the new value wins is preferNew.
+    run_cli(&["note", "veg", "item=leek", "--id", "x"], &db).unwrap();
+    run_cli(
+        &["update", "veg:x", "--strategy", "preferNew", "item=kale"],
+        &db,
+    )
+    .unwrap();
+    assert_eq!(data(&db, "veg:x")["item"], json!("kale"));
 }
 
 /// A comment appends (da-ult68) by the row's own going first in the payload;

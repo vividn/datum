@@ -47,6 +47,9 @@ a top-level `migrations/` folder.)
 - `state`: the primary JSON value (the state for a switch, the quantity for an occur). **There is no `value` field** — `state` is the canonical name, and a `value` appearing in new code is a bug, not a synonym.
 - `following_state`: the trailing-edge state of a switch-style verb; meaningful only alongside a `dur`.
 - `data`: arbitrarily nested JSON. (Not `extra_data`.) Nothing infers a unit: `weight=75.2kg` stores the string `"75.2kg"`.
+  `update` replaces its top-level keys; `merge` is datum's: a key both hold collects both values
+  into one list without duplicates (`item=apple`, `merge … item=pear` → `["apple","pear"]`).
+  The deep merge where the new value wins is `update --strategy preferNew` (da-scdm3).
   datum has no units anywhere, in specs, subfields or entries.
   The only planned form is a typed value (`u://`/`unit://`), not built.
 - `occur_time` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.

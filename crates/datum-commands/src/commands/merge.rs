@@ -1,4 +1,5 @@
-//! `datum merge <id_or_slug>` — deep-merge into an entry's payload.
+//! `datum merge <id_or_slug>` — merge into an entry's data as datum does:
+//! a key both hold collects both values into one list, no duplicates.
 //!
 //! Thin wrapper over [`crate::commands::update_core::update_with_strategy`]
 //! with `UpdateStrategy::Merge`.

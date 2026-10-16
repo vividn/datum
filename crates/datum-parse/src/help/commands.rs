@@ -2206,9 +2206,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "merge",
         aliases: &[],
         category: Category::Mutate,
-        summary: "deep-merge new values into an entry",
+        summary: "merge values into an entry, collecting a key's into a list",
         intro: "",
-        long_description: None,
+        long_description: Some(
+            "`merge <id> item=pear` merges into the entry's data as datum does: a key only one side holds is kept, an object in both is merged again, and a key both hold with different values collects both into one list, the entry's first, without duplicates. So `item=apple` becomes `[\"apple\",\"pear\"]`, and a second `item=pear` changes nothing. `update --strategy preferNew` merges with the new value winning instead.",
+        ),
         usage: &["datum merge <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: UPDATE_FLAGS,
