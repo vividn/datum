@@ -120,7 +120,7 @@ pub fn purge_with_io(
                 chain_id
             );
         }
-        confirm_by_name("purge", &headline, stdin, is_tty, confirm)?;
+        confirm_by_name("db purge", &headline, stdin, is_tty, confirm)?;
     }
     let told = match leave && !args.force {
         true => super::sync::depart(db, chain_id, "datum db purge --leave")?,
@@ -200,7 +200,7 @@ fn purge_headline(path: &str, snapshots: &[std::path::PathBuf]) -> String {
 }
 
 /// The confirmation a command that destroys the whole database asks for:
-/// `headline` says what goes, then the database's identifier, retyped —
+/// `cmd` names it, `headline` (if any) says what goes, then the database's identifier, retyped —
 /// reflexive `y`-mashing won't do it. Off a TTY it refuses; `--yes` is
 /// how a script says it means it.
 pub(crate) fn confirm_by_name(
@@ -211,12 +211,12 @@ pub(crate) fn confirm_by_name(
     confirm: &str,
 ) -> Result<()> {
     if !is_tty {
-        anyhow::bail!(
-            "db {cmd}: stdin is not a TTY; re-run with --yes to confirm without a prompt"
-        );
+        anyhow::bail!("{cmd}: stdin is not a TTY; re-run with --yes to confirm without a prompt");
     }
     let mut stderr = std::io::stderr().lock();
-    writeln!(stderr, "{headline}")?;
+    if !headline.is_empty() {
+        writeln!(stderr, "{headline}")?;
+    }
     // Branch the prompt copy on confirmation-token shape so the
     // user sees "Type 'vremya'" instead of "Type the database
     // path" when the resolution was name-based.
@@ -233,7 +233,7 @@ pub(crate) fn confirm_by_name(
     let mut line = String::new();
     stdin.read_line(&mut line)?;
     if line.trim() != confirm {
-        anyhow::bail!("db {cmd}: aborted (input did not match {confirm})");
+        anyhow::bail!("{cmd}: aborted (input did not match {confirm})");
     }
     Ok(())
 }

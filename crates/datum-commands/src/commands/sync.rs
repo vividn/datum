@@ -7,7 +7,7 @@
 //! (da-6177s).
 
 use std::collections::BTreeMap;
-use std::io::Read;
+use std::io::{BufRead, BufReader, IsTerminal, Read};
 
 use anyhow::{bail, ensure, Context, Result};
 use datum_core::db::chain::{self, Chain, Notice};
@@ -50,17 +50,63 @@ const OPEN: &str =
 /// `datum sync …`. A session it ran bound this thread to the endpoint it
 /// began as, and that ends with the command (da-otz0d): the next one here, a
 /// REPL's next line, may purge or rekey the copy.
-pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
-    let done = command(cmd, db);
+pub fn sync(cmd: SyncCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
+    let is_tty = std::io::stdin().is_terminal();
+    sync_with_io(
+        cmd,
+        cli_db,
+        db,
+        &mut BufReader::new(std::io::stdin()),
+        is_tty,
+    )
+}
+
+/// Test seam — [`sync`] with the reader a confirmation is answered on, and
+/// whether it is a TTY, injected, as `db::purge_with_io` has them.
+pub fn sync_with_io(
+    cmd: SyncCommand,
+    cli_db: Option<&str>,
+    db: &Db,
+    stdin: &mut dyn BufRead,
+    is_tty: bool,
+) -> Result<()> {
+    let done = command(cmd, db, &mut |canonical| {
+        confirmed(canonical, db, cli_db, stdin, is_tty)
+    });
     db.sync_session_as(None);
     done
 }
 
-fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
+/// Without `--yes`, a destructive act once it has said what goes
+/// (da-a2wyw): on a TTY it asks for the database's name, as `db purge`
+/// does; off one it changes nothing and names the command as typed, with
+/// `--yes` — datum.day's preview reads past that line. `canonical` is the
+/// command where nothing was typed.
+fn confirmed(
+    canonical: &str,
+    db: &Db,
+    cli_db: Option<&str>,
+    stdin: &mut dyn BufRead,
+    is_tty: bool,
+) -> Result<bool> {
+    let typed = crate::args::peek_intent_context()
+        .map(|c| c.raw_input)
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| canonical.into());
+    if !is_tty {
+        println!("nothing changed: `datum {typed} --yes` does it");
+        return Ok(false);
+    }
+    let confirm = super::db::purge_confirmation_token(cli_db, db);
+    super::db::confirm_by_name(&typed, "", stdin, true, &confirm)?;
+    Ok(true)
+}
+
+fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>) -> Result<()> {
     match cmd {
         SyncCommand::As(endpoint, cmd) => {
             db.sync_session_as(Some(&endpoint));
-            command(*cmd, db)?
+            command(*cmd, db, ask)?
         }
         SyncCommand::Now => {
             db.sync_refuse_debug()?;
@@ -242,10 +288,10 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
                     );
                     let what = revert_words(&who, &m, &p);
                     if !yes {
-                        println!(
-                            "{what}\nnothing changed: `datum sync chain revert {who} --yes` does it"
-                        );
-                        return Ok(());
+                        println!("{what}");
+                        if !ask(&format!("sync chain revert {who}"))? {
+                            return Ok(());
+                        }
                     }
                     (
                         json!({"type": "purge", "endpoint": m}),
@@ -326,7 +372,7 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             all,
             yes,
             admin_key,
-        } => purge(db, all, yes, admin_key.as_deref())?,
+        } => purge(db, all, yes, admin_key.as_deref(), ask)?,
         SyncCommand::Members { show, show_revoked } => {
             members(db, show == ShowFlag::Json, show_revoked)?
         }
@@ -794,8 +840,15 @@ fn names(who: &str, label: &str, id: &str) -> bool {
 /// `datum sync chain purge --data | --all` (da-qzrj9): a signed order every
 /// copy carries out as it comes to hold it, this one first, after a backup
 /// beside the database — on this copy alone: one on every copy would keep
-/// what a remote wipe is for. Without `--yes`, who learns of it when.
-fn purge(db: &Db, all: bool, yes: bool, admin_key: Option<&str>) -> Result<()> {
+/// what a remote wipe is for. Without `--yes`, who learns of it when, and
+/// then it asks.
+fn purge(
+    db: &Db,
+    all: bool,
+    yes: bool,
+    admin_key: Option<&str>,
+    ask: &mut dyn FnMut(&str) -> Result<bool>,
+) -> Result<()> {
     let chain = db.sync_chain()?;
     ensure!(chain.exists() && chain.dissolved().is_none(), NO_CHAIN);
     let (flag, scope, what) = match all {
@@ -812,8 +865,7 @@ fn purge(db: &Db, all: bool, yes: bool, admin_key: Option<&str>) -> Result<()> {
     );
     print!("{}", wipe_reach(db, "purges")?);
     println!("  this copy purges now, after a backup of its entries beside the database");
-    if !yes {
-        println!("nothing changed: `datum sync chain purge {flag} --yes` does it");
+    if !yes && !ask(&format!("sync chain purge {flag}"))? {
         return Ok(());
     }
     let backup = order_wipe(db, &chain, wipe_record(&chain, scope, false), admin_key)?;
@@ -1658,7 +1710,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let id = db.sync_endpoint_id().unwrap();
         let vector = SyncCommand::As(id.clone(), Box::new(SyncCommand::Vector));
-        sync(vector, &db).unwrap();
+        sync(vector, None, &db).unwrap();
         assert_ne!(db.sync_rekey().unwrap(), id);
     }
 

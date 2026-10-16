@@ -385,3 +385,77 @@ fn a_change_queued_before_a_wipe_and_landed_before_it_arrives_does_not_outlive_i
     assert!(!b.has("old_b") && data_of(&b) == EMPTY);
     assert_eq!(a.hash(), b.hash());
 }
+
+/// da-a2wyw (vividn 10-16): without --yes, a chain purge and a revert say what
+/// goes, then on a TTY ask for the database's name, as `db purge` does: a
+/// wrong answer writes nothing, the right one does it. Off a TTY they change
+/// nothing and name the command as it was typed, with --yes.
+#[test]
+fn a_chain_purge_and_a_revert_ask_on_a_tty_and_name_the_command_as_typed() {
+    let (a, b) = chained();
+    a.ok(&["occur", "tea"]);
+    assert!(a.send(&b).0);
+    b.ok(&["occur", "coffee"]);
+    assert!(b.send(&a).0);
+    for (argv, typed) in [
+        (
+            &["db", "purge", "--chain"][..],
+            "datum db purge --chain --yes",
+        ),
+        (
+            &["sync", "chain", "purge", "--all"],
+            "datum sync chain purge --all --yes",
+        ),
+        (
+            &["sync", "chain", "revert", "b"],
+            "datum sync chain revert b --yes",
+        ),
+    ] {
+        let said = a.ok(argv);
+        assert!(
+            said.contains(&format!("nothing changed: `{typed}` does it")),
+            "{said}"
+        );
+    }
+    assert!(a.has("tea") && a.has("coffee"));
+
+    let path = a.tmp.path().join("data.db");
+    let path = path.to_str().unwrap();
+    let db = datum_core::db::Db::open(path).unwrap();
+    // This thread signs as a's client, so it is a's endpoint.
+    thread_local!(static CLIENT: std::cell::RefCell<String> = Default::default());
+    CLIENT.with(|c| *c.borrow_mut() = a.query("SELECT client_id FROM sync_local"));
+    datum_core::db::set_client_source(|| Some(CLIENT.with(|c| c.borrow().clone())));
+    let on_a_tty = |words: &[&str], answer: &str| {
+        let argv: Vec<String> = std::iter::once("datum")
+            .chain(words.iter().copied())
+            .map(Into::into)
+            .collect();
+        let datum_parse::Command::Sync(cmd) = datum_parse::parse_argv(&argv).unwrap().command
+        else {
+            unreachable!("{words:?} is a sync command")
+        };
+        datum_commands::commands::sync::sync_with_io(
+            cmd,
+            Some(path),
+            &db,
+            &mut answer.as_bytes(),
+            true,
+        )
+    };
+    for words in [
+        &["sync", "chain", "revert", "b"][..],
+        &["db", "purge", "--chain"],
+    ] {
+        let e = on_a_tty(words, "nope\n").unwrap_err();
+        assert!(
+            e.to_string().contains("aborted (input did not match"),
+            "{e}"
+        );
+        assert!(a.has("tea") && a.has("coffee"), "{words:?} wrote nothing");
+    }
+    on_a_tty(&["sync", "chain", "revert", "b"], &format!("{path}\n")).unwrap();
+    assert!(a.has("tea") && !a.has("coffee"));
+    on_a_tty(&["db", "purge", "--chain"], &format!("{path}\n")).unwrap();
+    assert_eq!(data_of(&a), EMPTY);
+}

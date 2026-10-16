@@ -364,7 +364,7 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
         Command::Db(sub) => commands::db::dispatch(sub, cli.db.as_deref(), db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
-        Command::Sync(sub) => commands::sync::sync(sub, db),
+        Command::Sync(sub) => commands::sync::sync(sub, cli.db.as_deref(), db),
         Command::Reparse(args) => commands::reparse::reparse(args, db),
         Command::Completions(sub) => commands::completions::run(&sub),
     }

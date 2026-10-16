@@ -385,7 +385,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             Default::default()
         };
         super::db::confirm_by_name(
-            "restore --hard",
+            "db restore --hard",
             &format!(
                 "This replaces ALL data in {} with the backup ({} written); dropped: \
                  {} live, {} tombstoned or superseded, {} in history, {} sync ops. It cannot \
@@ -631,7 +631,7 @@ fn restore_chain(
     }
     if !args.yes {
         super::db::confirm_by_name(
-            "restore --hard --chain",
+            "db restore --hard --chain",
             &format!("{said}\nIt cannot be undone."),
             &mut std::io::stdin().lock(),
             // A backup piped in took stdin: there is no one to ask on it.
