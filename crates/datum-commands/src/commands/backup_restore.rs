@@ -573,8 +573,9 @@ fn restore_chain(
         "every copy in sync chain {chain} is restored to the backup ({} written), its own data \
          dropped:\n{}  this copy now, dropping {} live, {} tombstoned or superseded, {} in \
          history, after a backup of its entries beside the database\n\
-         An entry a copy made before the restore is dropped as it syncs, offline or not; one \
-         made after it is kept.",
+         An entry a copy made before the restore is dropped as it syncs, offline or not, and \
+         kept on that copy in <db>.wiped-<time>.jsonl, which `datum db restore <it> --merge` \
+         brings back; one made after it is kept.",
         h.written,
         super::sync::wipe_reach(db, "restores to the backup")?,
         h.entries,

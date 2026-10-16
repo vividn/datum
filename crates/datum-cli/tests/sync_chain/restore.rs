@@ -47,6 +47,11 @@ fn a_chain_restore_puts_every_copy_back_to_the_backup() {
         said.contains("restored to the backup (2 written)"),
         "{said}"
     );
+    // An entry made before it is kept on its copy, and the way back named.
+    assert!(
+        said.contains("kept on that copy in <db>.wiped-<time>.jsonl, which `datum db restore <it> --merge` brings back"),
+        "{said}"
+    );
     assert_eq!(fields(&a), "poison spec spec tea");
     // datum.day's question reads the JSON, and its yes is pinned to it: a
     // write since refuses with nothing wiped.

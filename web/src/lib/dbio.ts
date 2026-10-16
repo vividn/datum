@@ -234,7 +234,8 @@ function hard(argv: string[]): Promise<RunResult> {
 				// `--chain` restores every copy, not this one alone (da-t26vv): the CLI's own words for it.
 				(chain
 					? `Every copy in sync chain ${chain} is restored to the backup (${would_insert} written), its own data dropped: ` +
-						'an entry a copy made before the restore is dropped as it syncs, offline or not; one made after it is kept. ' +
+						'an entry a copy made before the restore is dropped as it syncs, offline or not, and kept on that copy in ' +
+						'<db>.wiped-<time>.jsonl, which `db restore <it> --merge` brings back; one made after it is kept. ' +
 						'This copy drops '
 					: `This replaces ALL data in ${db} with the backup (${would_insert} written); dropped: `) +
 				`${entries} live, ${tombstones} tombstoned or superseded, ${history} in history. ` +

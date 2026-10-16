@@ -957,7 +957,7 @@ test('a hard restore with --chain asks naming the chain whose every copy it rest
 		await dialog.waitFor();
 		const text = await dialog.locator('p').innerText();
 		assert.ok(text.startsWith(`Every copy in sync chain ${chain} is restored to the backup (`), text);
-		assert.match(text, /made before the restore is dropped as it syncs, offline or not; .* This copy drops \d+ live, /);
+		assert.match(text, /made before the restore is dropped as it syncs, offline or not, and kept on that copy in <db>\.wiped-<time>\.jsonl, which `db restore <it> --merge` brings back; .* This copy drops \d+ live, /);
 		assert.equal(await dialog.getByRole('button', { name: 'restore every copy', exact: true }).count(), 1);
 
 		// The wrong name restores nothing.
