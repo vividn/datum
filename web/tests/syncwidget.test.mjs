@@ -23,6 +23,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { startApp, stopApp } from './support/app.mjs';
 import { nativeCopy, withWallClock } from './support/sync.mjs';
+import { OPFS_DIR } from '../src/lib/databases.ts';
 
 before(startApp);
 after(stopApp);
@@ -314,6 +315,41 @@ describe('the sync widget', () => {
 				},
 				{ clock: Date.now() - 3_600_000 }
 			);
+		} finally {
+			await lap.close();
+		}
+	});
+});
+
+// da-uk23v: a chain restore's wipe reaching the page takes what it held, an
+// entry made offline before the restore with it; it must not be lost.
+describe('a chain restore reaching datum.day', () => {
+	test('keeps what it took in a backup beside the database, in OPFS past a reload, which its notice names and `db restore --merge` brings back', async () => {
+		const lap = await laptop();
+		try {
+			await withWallClock(async (app) => {
+				const home = inPage(app, 'home');
+				await chain(app, 'home', lap);
+				const good = await lap.run(['db', 'backup', '-']);
+				await home(['occur', 'before']);
+				await lap.run(['db', 'restore', '-', '--hard', '--chain', '--yes'], good);
+				await home(['sync', 'pipe', 'apply'], await lap.run(['sync', 'pipe', 'ops']));
+				assert.equal((await home(['tail'])).includes('before'), false);
+
+				const notice = JSON.parse(await home(['sync', 'status', '--json'])).notices.find((n) => n.kind === 'wipe');
+				const file = notice?.text.match(/`datum db restore (\S+) --merge`/)?.[1];
+				assert.ok(file, JSON.stringify(notice));
+				await app.reload();
+				const names = await app.page.evaluate(async (dir) => {
+					const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+					const names = [];
+					for await (const name of files.keys()) names.push(name);
+					return names;
+				}, OPFS_DIR);
+				assert.ok(names.includes(file.split('/').at(-1)), names.join(', '));
+				await home(['db', 'restore', file, '--merge']);
+				assert.equal((await home(['tail'])).includes('before'), true);
+			});
 		} finally {
 			await lap.close();
 		}

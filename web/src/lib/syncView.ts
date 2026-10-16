@@ -79,7 +79,7 @@ export interface ChainList extends Admins {
 /** A new member or admin, or an unlock, not yet acknowledged (`sync chain ack`). */
 export interface Notice {
 	subject: string;
-	kind: 'endpoint' | 'admin' | 'unlock';
+	kind: 'endpoint' | 'rejoin' | 'admin' | 'unlock' | 'wipe';
 	label: string;
 	text: string;
 }
@@ -89,7 +89,8 @@ const NOTICED: Record<string, string> = {
 	endpoint: 'Another device joined',
 	rejoin: 'A device joined again',
 	admin: 'An admin was added',
-	unlock: 'The chain was unlocked'
+	unlock: 'The chain was unlocked',
+	wipe: 'The chain was restored to a backup'
 };
 
 /** `n`, a notice of `db`'s, as the root bar's dialog says it. */

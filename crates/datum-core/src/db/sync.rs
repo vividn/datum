@@ -1989,6 +1989,9 @@ fn wipe(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
         return Ok(());
     }
     let mine = endpoint(conn)?.id;
+    if w.restore && w.by != mine {
+        keep_what_was_here(conn, chain, w)?;
+    }
     // What it frees is overwritten, not left in the file's free pages.
     let secure: i64 = conn.query_row("PRAGMA secure_delete", [], |r| r.get(0))?;
     conn.execute_batch("PRAGMA secure_delete = ON")?;
@@ -2018,6 +2021,58 @@ fn wipe(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
         params![w.hlc],
     )?;
     s.wiped = true;
+    Ok(())
+}
+
+/// A chain restore's wipe reaching a copy that did not order it (da-uk23v):
+/// its live entries first, as a `db backup` writes them, beside the
+/// database, so one made offline before the restore is not lost with it —
+/// `db restore <it> --merge` brings it back — and a notice of where. The
+/// ordering copy wrote its own; a copy with no file or no entry writes none.
+fn keep_what_was_here(conn: &Connection, chain: &Chain, w: &chain::Wipe) -> Result<()> {
+    use std::io::Write;
+    let Some(path) = conn.path().filter(|p| !p.is_empty()) else {
+        return Ok(());
+    };
+    let live = format!("FROM entries WHERE {}", super::types::LIVE_SQL);
+    let count: usize = conn.query_row(&format!("SELECT count(*) {live}"), [], |r| r.get(0))?;
+    if count == 0 {
+        return Ok(());
+    }
+    // Named by the wipe, which is carried out once: a retry of one that
+    // failed writes the same file again, and no two wipes share a name.
+    let to = format!(
+        "{path}.wiped-{}.jsonl",
+        w.hlc.replace(['-', ':'], "").replace('/', "-")
+    );
+    let write = || -> Result<()> {
+        let io = |e: std::io::Error| DatumError::Other(format!("{to}: {e}"));
+        let file = std::fs::File::create(&to).map_err(io)?;
+        let mut out = std::io::BufWriter::new(&file);
+        let header = json!({
+            "type": "daydumb_backup", "schema_version": CURRENT_SCHEMA_VERSION,
+            "backup_time": Utc::now().to_rfc3339(), "source_db": path, "entry_count": count,
+        });
+        writeln!(out, "{header}").map_err(io)?;
+        let mut stmt = conn.prepare(&format!("SELECT * {live} ORDER BY slug"))?;
+        for e in stmt.query_map([], row_to_entry)? {
+            writeln!(out, "{}", serde_json::to_string(&e?)?).map_err(io)?;
+        }
+        out.flush().map_err(io)?;
+        drop(out);
+        file.sync_all().map_err(io)
+    };
+    // Cut short, it leaves no part of a backup to be taken for the whole.
+    if let Err(e) = write() {
+        let _ = std::fs::remove_file(&to);
+        return Err(e);
+    }
+    let by = chain.member(&w.by).map_or(&w.by[..10], |m| &m.label);
+    conn.execute(
+        "INSERT OR IGNORE INTO sync_notices (subject, kind, label, at, via)
+         VALUES (?1, 'wipe', ?2, ?3, ?4)",
+        params![format!("wipe:{}", w.hlc), by, chain::hlc_time(&w.hlc), to],
+    )?;
     Ok(())
 }
 

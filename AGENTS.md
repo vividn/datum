@@ -307,6 +307,12 @@ purges: one on every copy would defeat a remote wipe.
 the backup written on the ordering copy as new ops, signed after it, so
 every copy holds exactly the backup once it syncs; plain `--hard` on a
 chained copy is refused, naming `--chain` and `--leave` (this copy alone).
+Its order says `restore`, and every other copy it reaches writes what it
+held first, `<db>.wiped-<the wipe's HLC>.jsonl` beside it (da-uk23v): an entry made
+offline before the restore is dropped as it syncs, and not lost. A `wipe`
+notice names the file and `db restore <it> --merge`, which brings it back,
+until `sync chain ack`; datum.day keeps the file in OPFS. A purge's order
+still leaves its copies none.
 A copy belongs to one chain — its apply refuses another chain's records
 (da-d8ort). `chain leave` leaves it from any chain: its ops, peers and
 notices go, its entries stay — signed again as baselines on the next sync —

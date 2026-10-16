@@ -106,3 +106,54 @@ fn in_a_locked_chain_a_chain_restore_takes_the_admin_key() {
     assert_eq!(fields(&a), "spec tea");
     assert_eq!(a.hash(), b.hash());
 }
+
+/// da-uk23v, vividn: «you should never be afraid of data loss regardless
+/// which client you're entering into». c, offline, logs before a chain
+/// restore: as it syncs the entry goes from its database, as the restore
+/// says, and into a backup beside it, which the next command, `check` and
+/// `sync status` name until acknowledged; `db restore --merge` of it brings
+/// the entry back, to every copy. The ordering copy keeps only its own.
+#[test]
+fn a_chain_restore_leaves_an_offline_copy_a_backup_of_what_it_drops() {
+    let (a, c) = chained();
+    a.ok(&["occur", "tea"]);
+    assert!(a.send(&c).0);
+    let backup = a.key("good.jsonl");
+    a.ok(&["db", "backup", &backup]);
+    c.ok(&["occur", "before"]);
+    a.ok(&["db", "restore", &backup, "--hard", "--chain", "--yes"]);
+    assert!(kept(&a).is_empty(), "{:?}", kept(&a));
+
+    assert!(a.send(&c).0);
+    assert!(!c.has("before") && c.has("tea"));
+    let [file] = kept(&c).try_into().unwrap();
+    let file = file.display().to_string();
+    let lines = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        lines.lines().next().unwrap().contains("daydumb_backup"),
+        "{lines}"
+    );
+    assert!(lines.contains(r#""field":"before""#), "{lines}");
+
+    let next = c.run(&["tail"], "");
+    let said = String::from_utf8_lossy(&next.stderr);
+    let merge = format!("`datum db restore {file} --merge` brings it back");
+    assert!(said.contains(&merge), "{said}");
+    assert!(c.ok(&["sync", "status"]).contains(&merge));
+    let check = c.run(&["check"], "");
+    assert!(String::from_utf8_lossy(&check.stdout).contains(&merge));
+
+    c.ok(&["db", "restore", &file, "--merge"]);
+    assert!(c.has("before"));
+    assert!(c.send(&a).0);
+    assert!(a.has("before") && a.has("tea"));
+    assert_eq!(a.hash(), c.hash());
+    c.ok(&["sync", "chain", "ack", "--all"]);
+    assert!(!c.ok(&["sync", "status"]).contains(&merge));
+
+    // A second restore, as soon as the first: each wipe its own file.
+    a.ok(&["db", "restore", &backup, "--hard", "--chain", "--yes"]);
+    assert!(a.send(&c).0);
+    assert!(!c.has("before"));
+    assert_eq!(kept(&c).len(), 2, "{:?}", kept(&c));
+}

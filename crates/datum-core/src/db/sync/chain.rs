@@ -530,6 +530,11 @@ pub struct Wipe {
     pub hlc: String,
     /// `all` dissolves the chain too; `data` leaves it.
     pub all: bool,
+    /// The endpoint that ordered it.
+    pub by: String,
+    /// A `db restore --hard --chain`'s (da-uk23v): each copy it reaches
+    /// keeps what it held in a backup beside it ([`super::wipe`]).
+    pub restore: bool,
 }
 
 #[derive(Debug)]
@@ -988,6 +993,8 @@ impl Chain {
                 self.wipes.push(Wipe {
                     hlc: op.hlc.clone(),
                     all,
+                    by: op.endpoint.clone(),
+                    restore: r["restore"].as_bool().unwrap_or(false),
                 });
                 Ok(())
             }
@@ -1169,8 +1176,10 @@ impl Notice {
     /// What `datum sync chain ack` takes to acknowledge it: `unlock`, or
     /// the id its line shows.
     pub fn who(&self) -> &str {
-        if self.kind == "unlock" {
-            return "unlock";
+        match self.kind.as_str() {
+            "unlock" => return "unlock",
+            "wipe" => return &self.subject,
+            _ => {}
         }
         let id = self.subject.trim_start_matches("rejoin:");
         &id[..id.len().min(18)]
@@ -1183,6 +1192,12 @@ impl std::fmt::Display for Notice {
         match self.kind.as_str() {
             "admin" => write!(f, "new sync admin {} ({id}) added {}", self.label, self.at),
             "unlock" => write!(f, "sync chain unlocked by {} at {}", self.label, self.at),
+            "wipe" => write!(
+                f,
+                "sync chain restored to a backup by {} at {}: what this copy held is in {} \
+                 — `datum db restore {} --merge` brings it back",
+                self.label, self.at, self.via, self.via
+            ),
             "rejoin" => write!(
                 f,
                 "sync endpoint {} ({id}) admitted again {} via {}",

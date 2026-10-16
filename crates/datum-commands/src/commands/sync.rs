@@ -784,7 +784,7 @@ fn purge(db: &Db, all: bool, yes: bool, admin_key: Option<&str>) -> Result<()> {
         println!("nothing changed: `datum sync chain purge {flag} --yes` does it");
         return Ok(());
     }
-    let backup = order_wipe(db, &chain, scope, admin_key)?;
+    let backup = order_wipe(db, &chain, scope, false, admin_key)?;
     println!("purged: every other copy follows when it next connects; backup: {backup}");
     Ok(())
 }
@@ -811,11 +811,13 @@ pub(crate) fn wipe_reach(db: &Db, does: &str) -> Result<String> {
 
 /// Sign a `wipe {scope}` order, which this copy carries out at once, after
 /// a backup of its entries beside the database; refused, it leaves none.
-/// Returns where the backup is, in words.
+/// A `restore`'s order says so, and every copy it reaches keeps a backup of
+/// its own too (da-uk23v). Returns where the backup is, in words.
 pub(crate) fn order_wipe(
     db: &Db,
     chain: &chain::Chain,
     scope: &str,
+    restore: bool,
     admin_key: Option<&str>,
 ) -> Result<String> {
     // Beside the database, its name as the file system has it.
@@ -831,10 +833,13 @@ pub(crate) fn order_wipe(
             std::fs::File::create(to).with_context(|| format!("creating {}", to.display()))?;
         super::backup_restore::write_jsonl_gz(file, db, &header)?;
     }
-    let record = json!({
+    let mut record = json!({
         "type": "wipe", "scope": scope, "chain": chain.id,
         "created": chrono::Utc::now().to_rfc3339(),
     });
+    if restore {
+        record["restore"] = true.into();
+    }
     // Refused, it leaves no backup of a purge that never happened.
     if let Err(e) = sign(db, record, chain, admin_key) {
         if let Some((_, to)) = &backup {
@@ -1413,6 +1418,7 @@ pub fn warn_new_members(db: &Db, before: &[Notice]) {
 fn notice_line(n: &Notice) -> String {
     match n.kind.as_str() {
         "unlock" => format!("⚠ {n} — {UNLOCK_HINT}"),
+        "wipe" => format!("⚠ {n}; `datum sync chain ack {}` to acknowledge", n.who()),
         _ => format!(
             "⚠ {n} — `datum sync chain list` to review, `datum sync chain ack {}` to acknowledge",
             n.who()
@@ -1425,14 +1431,16 @@ const UNLOCK_HINT: &str =
     "other devices may have relied on the lock; `datum sync chain ack unlock` to acknowledge";
 
 /// The sync chain's new endpoints and admins (da-odwc7), and its unlocks
-/// (da-aam46), until `datum sync chain ack` says they are known; a member's
-/// newer schema; and changes no other device has. `sync status` shows each
-/// from the same source (da-nq07y).
+/// (da-aam46), and the backups a chain restore left here (da-uk23v), until
+/// `datum sync chain ack` says they are known; a member's newer schema; and
+/// changes no other device has. `sync status` shows each from the same
+/// source (da-nq07y).
 pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
-    let (unlocks, new): (Vec<_>, Vec<_>) = db
+    let (wipes, rest): (Vec<_>, Vec<_>) = db
         .sync_notices_unacked()?
         .into_iter()
-        .partition(|n| n.kind == "unlock");
+        .partition(|n| n.kind == "wipe");
+    let (unlocks, new): (Vec<_>, Vec<_>) = rest.into_iter().partition(|n| n.kind == "unlock");
     let issue = |category, head: String, notices: &[Notice]| Issue {
         domain: Domain::Sync,
         severity: Severity::Warning,
@@ -1462,6 +1470,11 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
     if !unlocks.is_empty() {
         let head = format!("the sync chain was unlocked: {UNLOCK_HINT}");
         out.push(issue("sync_unlocked", head, &unlocks));
+    }
+    if !wipes.is_empty() {
+        let head = "a restore of the sync chain dropped what this copy held, which a backup \
+                    keeps; `datum sync chain ack` once it is back or not wanted";
+        out.push(issue("sync_wiped", head.into(), &wipes));
     }
     // A member runs a newer schema than this copy (da-3zqyv), and changes
     // made here no other device has (da-u10rl).

@@ -103,6 +103,9 @@ fn a_data_purge_empties_every_copy_as_it_connects_and_the_chain_syncs_on() {
         assert_eq!(members_of(copy), members);
         assert_eq!(data_of(copy), EMPTY);
     }
+    // A purge erases: unlike a restore's (da-uk23v), its order leaves the
+    // copies it reaches no backup.
+    assert!(kept(&b).is_empty() && kept(&c).is_empty());
 
     // Afterwards a new entry on any copy syncs to the others.
     c.ok(&["occur", "later"]);

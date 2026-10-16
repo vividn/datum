@@ -620,7 +620,13 @@ fn restore_chain(
     if preview.fingerprint.is_some_and(|f| f != live) {
         return Err(unpinned(DatumError::Changed.into()));
     }
-    let backup = super::sync::order_wipe(db, &db.sync_chain()?, "data", args.admin_key.as_deref())?;
+    let backup = super::sync::order_wipe(
+        db,
+        &db.sync_chain()?,
+        "data",
+        true,
+        args.admin_key.as_deref(),
+    )?;
     // The wipe emptied this copy; a replace writes the backup into it, each
     // entry an op signed after the wipe.
     let restore = Mode {

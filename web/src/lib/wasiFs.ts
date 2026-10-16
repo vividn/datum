@@ -19,7 +19,7 @@
 // (`Db::choose_vfs`, da-dfmg8), since the handles already keep processes apart.
 //
 // Every other path lives in memory for the length of one process: anything
-// datum writes under HOME — except a pre-migration backup, which the worker keeps in OPFS once the
+// datum writes under HOME — except a backup it leaves beside the database (`KEPT`), which the worker keeps in OPFS once the
 // process is over (`unkept`), and whose kept copies are handles here too.
 //
 // The process's own stdout and stderr are here too (`Sink`), for the same
@@ -56,6 +56,13 @@ export const DB_FILES = dbFiles(DATABASES);
  */
 export const PRE_MIGRATION = /\.pre-v\d+-to-v\d+-[^/]*\.bak$/;
 
+/**
+ * What datum leaves beside a database to be kept: a pre-migration snapshot,
+ * and what a chain restore's wipe took from this copy, `<db>.wiped-<stamp>.jsonl`
+ * (`keep_what_was_here`, da-uk23v), which `db restore <it> --merge` brings back.
+ */
+export const KEPT = new RegExp(`${PRE_MIGRATION.source}|\\.wiped-[^/]*\\.jsonl$`);
+
 let upgradeHeard: (() => void) | undefined;
 
 /**
@@ -90,7 +97,7 @@ export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?
 			const opfs = backed.get(path);
 			// A backup grows by doubling, not by a copy per page (`File`'s
 			// way), and is a handle for `unkept` to hand to OPFS (da-hse93).
-			if (!opfs && !isDir && PRE_MIGRATION.test(path) && !path.includes('/')) {
+			if (!opfs && !isDir && KEPT.test(path) && !path.includes('/')) {
 				const backup = new SyncOPFSFile(new MemoryHandle());
 				this.contents.set(path, backup);
 				return { ret: wasi.ERRNO_SUCCESS, entry: backup as Inode };
@@ -109,7 +116,7 @@ export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?
 	return preopen;
 }
 
-/** The pre-migration backups the process wrote that are still only in memory. */
+/** The backups the process left beside the database (`KEPT`) that are still only in memory. */
 export function unkept(preopen: PreopenDirectory): [string, Handle][] {
 	return [...preopen.dir.contents].flatMap(([file, inode]) =>
 		inode instanceof SyncOPFSFile && inode.handle instanceof MemoryHandle ? [[file, inode.handle]] : []

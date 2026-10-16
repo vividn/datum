@@ -491,6 +491,18 @@ fn an_older_chains_records_piped_in_are_refused() {
 }
 
 /// `a`, holding an open chain, and `b`, invited into it.
+/// The backups beside `copy`'s database that a chain restore left it
+/// (da-uk23v).
+fn kept(copy: &Copy) -> Vec<std::path::PathBuf> {
+    let dir = std::fs::read_dir(copy.tmp.path()).unwrap();
+    let mut kept: Vec<_> = dir
+        .map(|f| f.unwrap().path())
+        .filter(|p| p.to_string_lossy().contains("data.db.wiped-"))
+        .collect();
+    kept.sort();
+    kept
+}
+
 fn chained() -> (Copy, Copy) {
     let (a, b) = (Copy::new(), Copy::new());
     admit(&a, &b, "b", None);

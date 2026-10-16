@@ -39,7 +39,7 @@
 
 import { File as MemFile, OpenFile, WASI, type Fd, type PreopenDirectory } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
-import { cached, DATABASES, dbFiles, forgetCached, MemoryHandle, opfsDirectory, PRE_MIGRATION, Sink, staged, unkept, type Handle } from './wasiFs.js';
+import { cached, DATABASES, dbFiles, forgetCached, KEPT, MemoryHandle, opfsDirectory, Sink, staged, unkept, type Handle } from './wasiFs.js';
 import { backupArgv, mergeArgv } from './calls.js';
 import { OPFS_DIR } from './databases.js';
 import type { CliResult, Stage, StorageKind } from './dbProtocol.js';
@@ -280,13 +280,14 @@ async function open(): Promise<Map<string, Handle>> {
 			// The journal is read only to roll it back: there is nothing to keep.
 			handles.set(name, name.endsWith('.db') ? cached(name, handle) : handle);
 		}
-		// The kept pre-migration backups, so the CLI sees them to keep one
-		// per state and prune the oldest; one it pruned was truncated, and
+		// The kept backups (`KEPT`), so `db restore` reads one and the CLI
+		// sees the pre-migration ones to keep one per state and prune the
+		// oldest; one it pruned was truncated, and
 		// goes now (da-hse93) — once the listing is over, which a removal
 		// could otherwise cut short.
 		const pruned: string[] = [];
 		for await (const name of (dir as unknown as { keys(): AsyncIterable<string> }).keys()) {
-			if (!PRE_MIGRATION.test(name)) continue;
+			if (!KEPT.test(name)) continue;
 			const file = await dir.getFileHandle(name);
 			const handle = await (file as unknown as { createSyncAccessHandle(): Promise<Handle> }).createSyncAccessHandle();
 			if (handle.getSize() > 0) {
@@ -511,7 +512,7 @@ async function exec(
 }
 
 /**
- * Write every pre-migration backup the process left in memory to OPFS,
+ * Write every backup the process left in memory (`KEPT`) to OPFS,
  * beside the database, and hold it with the burst's other files (da-hse93).
  * The CLI has already said it was saved, so one that cannot be is told on
  * stderr, as the process's own warning would be.
@@ -534,7 +535,7 @@ async function keep(handles: Map<string, Handle>, data: PreopenDirectory): Promi
 		} catch (e) {
 			handle?.close();
 			await dir.removeEntry(name).catch(() => {});
-			said.push(`warning: the pre-migration backup ${name} could not be kept: ${e}`);
+			said.push(`warning: the backup ${name} could not be kept: ${e}`);
 		}
 	}
 	return said;
