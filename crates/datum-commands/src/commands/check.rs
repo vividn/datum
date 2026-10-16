@@ -2234,6 +2234,51 @@ mod tests {
         assert_eq!(issue2.count, 1);
     }
 
+    /// da-ppkv6: a `spec_alias_names` row gone, as a migration that
+    /// rebuilt `entries` without `fill_spec_alias_names` leaves it, and one
+    /// no spec carries: the word stops resolving, the check names both,
+    /// and `--fix` refills the table.
+    #[test]
+    fn spec_alias_names_drift_is_found_and_refilled() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_field_spec(&switch_spec("mood", &["happy", "sad"]))
+            .unwrap();
+        assert!(db.lookup_alias("happy").unwrap().is_some());
+        let names = |db: &Db| collect_alias_drift(db, false).unwrap().issues;
+        assert!(
+            !names(&db)
+                .iter()
+                .any(|i| i.category == "spec_alias_names_stale"),
+            "clean before the table is touched",
+        );
+        db.conn()
+            .execute_batch(
+                "INSERT INTO spec_alias_names
+                     SELECT 'ghost', spec FROM spec_alias_names WHERE name = 'happy';
+                 DELETE FROM spec_alias_names WHERE name = 'happy';",
+            )
+            .unwrap();
+        assert!(db.lookup_alias("happy").unwrap().is_none());
+
+        let report = collect_alias_drift(&db, true).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "spec_alias_names_stale")
+            .expect("drift reported");
+        assert_eq!(issue.severity, Severity::Error);
+        assert_eq!(issue.count, 3, "{}", issue.message);
+        let detail = issue.example.as_ref().unwrap().detail.as_deref().unwrap();
+        assert!(detail.starts_with("'happy' of spec row "), "{detail}");
+        assert!(detail.ends_with(" missing"), "{detail}");
+        assert!(issue.message.contains("(refilled)"), "{}", issue.message);
+
+        assert!(db.lookup_alias("happy").unwrap().is_some());
+        assert!(!names(&db)
+            .iter()
+            .any(|i| i.category == "spec_alias_names_stale"));
+    }
+
     /// A user alias whose chain ends in an unresolvable name (typically a
     /// deleted spec's bare-field alias) is flagged as `alias_orphan`.
     #[test]

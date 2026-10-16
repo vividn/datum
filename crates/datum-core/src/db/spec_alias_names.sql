@@ -4,7 +4,8 @@
 -- `spec` row, live or not (the reader keeps to the live ones), kept true by
 -- the triggers below whichever path writes a row. Laid down after
 -- `schema.sql` at every open, and filled by the v62→v63 migration; a later
--- migration that rebuilds `entries` fills it again (`fill_spec_alias_names`).
+-- migration that rebuilds `entries` fills it again (`fill_spec_alias_names`);
+-- `datum check aliases` finds one that did not (da-ppkv6).
 CREATE TABLE IF NOT EXISTS spec_alias_names (
     name TEXT NOT NULL,
     spec INTEGER NOT NULL, -- the `spec` row's rowid

@@ -94,7 +94,8 @@ every field. The word a command starts with is looked up by name:
 `spec_alias_names` (`db/spec_alias_names.sql`) holds each derived alias name
 by the `spec` row carrying it, kept by triggers on `entries` like the stats
 cache, local and derived; a migration that rebuilds `entries` refills it
-(`fill_spec_alias_names`). `state_read_scaling.rs` holds both to it in VM
+(`fill_spec_alias_names`), and `datum check aliases` says so where one
+did not, `--fix` refilling it (da-ppkv6). `state_read_scaling.rs` holds both to it in VM
 steps (da-ulu8f).
 
 ### The spool: a write is never lost to the lock

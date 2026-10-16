@@ -22,7 +22,7 @@ use crate::error::Result;
 use crate::field_spec::{Alias, FieldSpec, SpecAliasIndex};
 
 use super::spec::SPEC_DOC_SQL;
-use super::Db;
+use super::{Db, WriteBatch};
 
 /// Every derived alias name by the `spec` row carrying it, and the
 /// triggers keeping it so (`spec_alias_names.sql`, da-ulu8f).
@@ -32,15 +32,35 @@ pub(crate) const SPEC_ALIAS_NAMES_SQL: &str = include_str!("spec_alias_names.sql
 /// triggers would have: for a file whose rows were written without them.
 pub(crate) fn fill_spec_alias_names(conn: &Connection) -> Result<()> {
     conn.execute_batch(SPEC_ALIAS_NAMES_SQL)?;
-    conn.execute_batch(
-        "DELETE FROM spec_alias_names;
-         INSERT OR IGNORE INTO spec_alias_names
-             SELECT json_extract(e.data, a.fullkey || '.state') AS name, e.rowid
-               FROM entries e,
-                    json_each(CASE WHEN json_valid(e.data) THEN e.data END, '$.derived_aliases') a
-              WHERE e.field = 'spec' AND name IS NOT NULL;",
-    )?;
+    conn.execute_batch(&format!(
+        "DELETE FROM spec_alias_names; INSERT OR IGNORE INTO spec_alias_names {FILL};"
+    ))?;
     Ok(())
+}
+
+/// The rows a fill writes: each derived alias name by its `spec` row.
+const FILL: &str = "SELECT json_extract(e.data, a.fullkey || '.state') AS name, e.rowid
+                      FROM entries e,
+                           json_each(CASE WHEN json_valid(e.data) THEN e.data END,
+                                     '$.derived_aliases') a
+                     WHERE e.field = 'spec' AND name IS NOT NULL";
+
+/// Where `spec_alias_names` is not what the specs say (da-ppkv6).
+#[derive(Debug, Default, PartialEq)]
+pub struct SpecAliasNamesDrift {
+    /// `(name, spec rowid)` a fill writes and the table lacks.
+    pub missing: Vec<(String, i64)>,
+    /// `(name, spec rowid)` the table holds and a fill does not write.
+    pub stale: Vec<(String, i64)>,
+    /// Each name the index of every spec holds that a read by name reads
+    /// otherwise.
+    pub misread: Vec<String>,
+}
+
+impl SpecAliasNamesDrift {
+    pub fn is_empty(&self) -> bool {
+        self.missing.is_empty() && self.stale.is_empty() && self.misread.is_empty()
+    }
 }
 
 impl Db {
@@ -103,6 +123,45 @@ impl Db {
         json.map(|j| self.parse_spec(&j)).transpose()
     }
 
+    /// `spec_alias_names` against a fill and against the index of every
+    /// spec, as `datum check aliases` reads it: a migration that rebuilt
+    /// `entries` and did not fill it again shows here (da-ppkv6).
+    pub fn spec_alias_names_drift(&self) -> Result<SpecAliasNamesDrift> {
+        let rows = |sql: String| -> Result<Vec<(String, i64)>> {
+            Ok(self
+                .conn
+                .prepare(&sql)?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?)
+        };
+        let held = "SELECT name, spec FROM spec_alias_names";
+        let index = self.spec_alias_index()?.clone();
+        let mut misread = Vec::new();
+        for (name, alias) in &index.entries {
+            if self.derived_alias(name)?.as_ref() != Some(alias) {
+                misread.push(name.clone());
+            }
+        }
+        misread.sort();
+        Ok(SpecAliasNamesDrift {
+            missing: rows(format!("{FILL} EXCEPT {held} ORDER BY 1, 2"))?,
+            stale: rows(format!("{held} EXCEPT {FILL} ORDER BY 1, 2"))?,
+            misread,
+        })
+    }
+
+    /// Write `spec_alias_names` again from every `spec` row: `datum check
+    /// aliases --fix`.
+    pub fn refill_spec_alias_names(&self) -> Result<()> {
+        let mut batch = WriteBatch::default();
+        batch.push("DELETE FROM spec_alias_names", Vec::new());
+        batch.push(
+            format!("INSERT OR IGNORE INTO spec_alias_names {FILL}"),
+            Vec::new(),
+        );
+        self.write(&batch).map(drop)
+    }
+
     /// The derived alias `name`, as [`Db::spec_alias_index`] has it.
     pub(crate) fn derived_alias(&self, name: &str) -> Result<Option<Alias>> {
         let owner = self.derived_alias_owner(name)?;
@@ -124,30 +183,13 @@ mod tests {
         spec
     }
 
-    /// Every name the whole index holds, and two it does not, read by
-    /// name; and the table the triggers kept is the one a fill writes.
+    /// Every name the whole index holds read by name, and two it does
+    /// not; and the table the triggers kept is the one a fill writes.
     fn agrees(db: &Db) {
-        let index = db.spec_alias_index().unwrap().clone();
-        let names = index
-            .entries
-            .keys()
-            .map(String::as_str)
-            .chain(["nothing", "moodx"]);
-        for name in names {
-            let by_name = db.derived_alias(name).unwrap();
-            assert_eq!(by_name.as_ref(), index.entries.get(name), "{name}");
+        assert_eq!(db.spec_alias_names_drift().unwrap(), Default::default());
+        for name in ["nothing", "moodx"] {
+            assert_eq!(db.derived_alias(name).unwrap(), None, "{name}");
         }
-        let rows = |db: &Db| -> Vec<(String, i64)> {
-            let mut stmt = db
-                .conn
-                .prepare("SELECT name, spec FROM spec_alias_names")
-                .unwrap();
-            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
-            rows.map(Result::unwrap).collect()
-        };
-        let kept = rows(db);
-        super::fill_spec_alias_names(&db.conn).unwrap();
-        assert_eq!(rows(db), kept);
     }
 
     /// da-ulu8f: the word a command starts with is read by name, and reads

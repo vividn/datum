@@ -31,13 +31,15 @@ pub(super) struct AliasReport {
 /// * `alias_cycle` — expanding a user/kit alias revisits a name in the
 ///   chain. The `expand_argv` pre-pass would bail at
 ///   [`MAX_ALIAS_HOPS`], but the cycle would otherwise go undetected.
+/// * `spec_alias_names_stale` — an error: `spec_alias_names` lacks a row a
+///   fill writes, holds one it does not, or a name read by it is not the
+///   index's (da-ppkv6).
 ///
-/// `--fix` (`fix_collisions = true`) annotates state-collision examples
-/// with the explicit first-saved-wins resolution. There is no DB
-/// mutation: the precedence is already deterministic and forcing a
-/// rebuild of the index would produce the same outcome. Orphans and
-/// cycles need user judgment per the bead direction and are report-only.
-pub(super) fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
+/// `--fix` (`fix = true`) refills `spec_alias_names`, and annotates
+/// state-collision examples with the explicit first-saved-wins
+/// resolution, which is already deterministic. Orphans and cycles need
+/// user judgment per the bead direction and are report-only.
+pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
     let mut issues: Vec<Issue> = Vec::new();
 
     // 1. Cross-spec state-name collisions (already tracked by the index).
@@ -47,7 +49,7 @@ pub(super) fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<Alias
     };
     if !collisions.is_empty() {
         let first = &collisions[0];
-        let detail = if fix_collisions {
+        let detail = if fix {
             format!(
                 "alias '{name}' kept by '{winner}' (first-saved-wins); displaced from '{loser}'",
                 name = first.name,
@@ -123,6 +125,51 @@ pub(super) fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<Alias
                 rendered_block: String::new(),
             });
         }
+    }
+
+    // 1c. `spec_alias_names`, the names a command's first word is read
+    // by, against the specs (da-ppkv6): a migration that rebuilt `entries`
+    // and did not fill it again leaves a word that resolves to nothing.
+    let drift = db.spec_alias_names_drift()?;
+    if !drift.is_empty() {
+        let row = |what: &str, (name, spec): &(String, i64)| {
+            format!("'{name}' of spec row {spec} {what}")
+        };
+        let found: Vec<String> = (drift.missing.iter().map(|r| row("missing", r)))
+            .chain(drift.stale.iter().map(|r| row("stale", r)))
+            .chain(
+                drift
+                    .misread
+                    .iter()
+                    .map(|n| format!("'{n}' read by name is not the index's")),
+            )
+            .collect();
+        if fix {
+            db.refill_spec_alias_names()?;
+        }
+        issues.push(Issue {
+            domain: Domain::Aliases,
+            severity: Severity::Error,
+            category: "spec_alias_names_stale",
+            message: format!(
+                "spec_alias_names disagrees with the specs in {n} place{s}{fixed}",
+                n = found.len(),
+                s = if found.len() == 1 { "" } else { "s" },
+                fixed = if fix {
+                    " (refilled)"
+                } else {
+                    " (--fix refills it)"
+                },
+            ),
+            count: found.len(),
+            example: Some(IssueExample {
+                id: None,
+                field: None,
+                detail: Some(found[0].clone()),
+            }),
+            entries: Vec::new(),
+            rendered_block: String::new(),
+        });
     }
 
     // 2 + 3. Orphans and cycles in user/kit alias chains. Spec-derived
