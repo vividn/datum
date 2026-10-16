@@ -353,7 +353,7 @@ mod tests {
             .unwrap()
             .join("\n");
         assert!(
-            plan.contains("SEARCH entries USING INDEX entries_live_field_occur"),
+            plan.contains("SEARCH entries USING INDEX entries_live_field_"),
             "expected an index seek per name, got:\n{plan}"
         );
         assert!(

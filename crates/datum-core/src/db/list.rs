@@ -57,17 +57,10 @@ impl Db {
 
     /// [`Self::list_entries`]' rows, in its order, as the columns `stats`
     /// reads of them: a row's `data` can be any size, and reading and
-    /// decoding it was most of what a timeline cost (da-ypz6c). A timed
-    /// `before` cursor is refused: its query orders by `slug`, which a
-    /// timeline does not select, and nothing pages one (da-jpvan).
+    /// decoding it was most of what a timeline cost (da-ypz6c).
     pub fn list_timeline(&self, params: &ListParams) -> Result<Vec<TimelineEntry>> {
         const COLUMNS: &str = "hid, state, occur_time, occur_time_offset, occur_time_tz, \
              occur_time_uncertainty, client_id, json_extract(extra_metadata, '$.track')";
-        if let Some((Some(_), slug)) = &params.before {
-            return Err(DatumError::Other(format!(
-                "a timeline does not page: list_timeline takes no timed `before` cursor ({slug})"
-            )));
-        }
         self.list_rows(COLUMNS, params, |row| {
             Ok(TimelineEntry {
                 hid: row.get(0)?,
@@ -213,11 +206,11 @@ impl Db {
 
 /// The SQL + bindings for [`Db::list_entries`], split out so the plan can
 /// be asserted (da-vmjh). The window read every render surface makes —
-/// `TimeMetric::Hybrid`, which resolves to `occur_time`, bounded at both
-/// ends — must be served by `entries_occur_time`, the partial
-/// `(occur_time, slug) WHERE deleted_at IS NULL` index: it covers the
-/// range AND the whole ORDER BY, so the read touches only the rows in
-/// the window and never sorts.
+/// `TimeMetric::Occur`, bounded at both ends — must be served by
+/// `entries_occur_time`, the partial `(occur_time, slug) WHERE deleted_at
+/// IS NULL` index: it covers the range AND the whole ORDER BY, so the read
+/// touches only the rows in the window and never sorts. The listing's,
+/// `TimeMetric::Hybrid`, is served the same way by `entries_hybrid`.
 pub(super) fn list_entries_sql(columns: &str, params: &ListParams) -> (String, Vec<String>) {
     let metric_expr: &str = time_expr(params.metric);
     let (filter, mut bindings) = list_filter_sql(params);
@@ -237,32 +230,17 @@ pub(super) fn list_entries_sql(columns: &str, params: &ListParams) -> (String, V
         order.push_str(&format!(" LIMIT {n}"));
     }
 
-    // da-mhcla: the rows before a cursor row in that order, where NULL
-    // sorts first. `(metric, slug) < (?, ?)` is a seek and is never true
-    // of a timeless row, and with `OR metric IS NULL` it is a scan of the
-    // whole index, so a timed cursor reads its two reaches as two seeks.
-    match &params.before {
-        None => sql.push_str(&order),
-        Some((None, slug)) => {
-            sql.push_str(&format!(" AND {metric_expr} IS NULL AND slug < ?{order}"));
-            bindings.push(slug.clone());
-        }
-        Some((Some(time), slug)) => {
-            let timed = format!("SELECT * FROM ({sql} AND ({metric_expr}, slug) < (?, ?){order})");
-            let timeless = format!("SELECT * FROM ({sql} AND {metric_expr} IS NULL{order})");
-            let cursor = [time.to_rfc3339(), slug.clone()];
-            let filter = bindings.clone();
-            if params.head {
-                sql = format!("{timeless} UNION ALL {timed}{order}");
-                bindings.extend(filter);
-                bindings.extend(cursor);
-            } else {
-                sql = format!("{timed} UNION ALL {timeless}{order}");
-                bindings.extend(cursor);
-                bindings.extend(filter);
-            }
-        }
+    // da-mhcla: the rows before a cursor row in that order, spelled as a
+    // range: SQLite seeks an expression index on `<=` and not on a row
+    // value `(metric, slug) < (?, ?)`, which walked from the live end.
+    if let Some((time, slug)) = &params.before {
+        let time = time.to_rfc3339();
+        sql.push_str(&format!(
+            " AND {metric_expr} <= ? AND ({metric_expr} < ? OR slug < ?)"
+        ));
+        bindings.extend([time.clone(), time, slug.clone()]);
     }
+    sql.push_str(&order);
 
     (sql, bindings)
 }
@@ -321,37 +299,41 @@ mod tests {
     use super::*;
     use crate::db::types::TimeMetric;
 
-    /// da-vmjh item 4: the window read every render surface makes is
-    /// index-bounded, and was already. `dayview` / `nowview` fetch
-    /// `TimeMetric::Hybrid` between two instants with no field filter;
-    /// `entries_occur_time` — partial `(occur_time, slug) WHERE
-    /// deleted_at IS NULL` — covers the range and the whole ORDER BY, so
-    /// the plan is one SEARCH with no sort and no scan. Recorded here so
-    /// a later edit to the predicate (a metric change, a new default
-    /// filter that is not sargable) cannot quietly turn the last-few-days
-    /// read back into a whole-history one.
-    #[test]
-    fn the_render_window_read_is_index_bounded() {
-        let db = Db::open_in_memory().unwrap();
-        let params = ListParams {
-            metric: TimeMetric::Hybrid,
-            start_utc: Some("2026-09-12T00:00:00Z".parse().unwrap()),
-            end_utc: Some("2026-09-14T12:00:00Z".parse().unwrap()),
-            ..Default::default()
-        };
-        let (sql, bindings) = list_entries_sql("*", &params);
+    fn plan(db: &Db, params: &ListParams) -> String {
+        let (sql, bindings) = list_entries_sql("*", params);
         let mut stmt = db
             .conn
             .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
             .unwrap();
-        let plan = stmt
-            .query_map(rusqlite::params_from_iter(bindings.iter()), |r| {
-                r.get::<_, String>(3)
-            })
-            .unwrap()
-            .collect::<rusqlite::Result<Vec<String>>>()
-            .unwrap()
-            .join("\n");
+        stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |r| {
+            r.get::<_, String>(3)
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<String>>>()
+        .unwrap()
+        .join("\n")
+    }
+
+    /// da-vmjh item 4: the window read every render surface makes is
+    /// index-bounded. `dayview` / `nowview` fetch `TimeMetric::Occur`
+    /// between two instants with no field filter; `entries_occur_time` —
+    /// partial `(occur_time, slug) WHERE deleted_at IS NULL` — covers the
+    /// range and the whole ORDER BY, so the plan is one SEARCH with no sort
+    /// and no scan. Recorded here so a later edit to the predicate (a
+    /// metric change, a new default filter that is not sargable) cannot
+    /// quietly turn the last-few-days read back into a whole-history one.
+    #[test]
+    fn the_render_window_read_is_index_bounded() {
+        let db = Db::open_in_memory().unwrap();
+        let plan = plan(
+            &db,
+            &ListParams {
+                metric: TimeMetric::Occur,
+                start_utc: Some("2026-09-12T00:00:00Z".parse().unwrap()),
+                end_utc: Some("2026-09-14T12:00:00Z".parse().unwrap()),
+                ..Default::default()
+            },
+        );
         assert!(
             plan.contains("SEARCH entries USING INDEX entries_occur_time"),
             "expected the window to be walked on entries_occur_time, got:\n{plan}"
@@ -366,40 +348,54 @@ mod tests {
         );
     }
 
-    /// da-mhcla: a page above a cursor row is a seek wherever the cursor
-    /// is: a pager deep in a long history must not read the index from
-    /// its live end down to its place on every page.
+    /// da-2vgj1: the listing orders by `occur_time ?? create_time`, and
+    /// every read of it walks an index in that order: `tail`, `tail -t`, a
+    /// page above a cursor row (da-mhcla: a pager deep in a long history
+    /// must not read from the live end down to its place), and each with a
+    /// field named.
     #[test]
-    fn the_page_above_a_cursor_is_index_bounded() {
+    fn the_listing_reads_are_index_ordered() {
         let db = Db::open_in_memory().unwrap();
-        let slug = "walk:2026-09-12T00:00:00.000Z".to_string();
-        for time in [Some("2026-09-12T00:00:00Z".parse().unwrap()), None] {
-            let params = ListParams {
-                limit: Some(100),
-                before: Some((time, slug.clone())),
+        let time: DateTime<Utc> = "2026-09-12T00:00:00Z".parse().unwrap();
+        let before = Some((time, "walk:2026-09-12T00:00:00.000Z".to_string()));
+        for fields in [vec![], vec!["walk".to_string()]] {
+            let index = if fields.is_empty() {
+                "entries_hybrid"
+            } else {
+                "entries_live_field_hybrid"
+            };
+            let listing = ListParams {
+                fields,
+                limit: Some(10),
                 ..Default::default()
             };
-            let (sql, bindings) = list_entries_sql("*", &params);
-            let mut stmt = db
-                .conn
-                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
-                .unwrap();
-            let plan = stmt
-                .query_map(rusqlite::params_from_iter(bindings.iter()), |r| {
-                    r.get::<_, String>(3)
-                })
-                .unwrap()
-                .collect::<rusqlite::Result<Vec<String>>>()
-                .unwrap()
-                .join("\n");
-            assert!(
-                plan.contains("SEARCH entries USING INDEX entries_occur_time"),
-                "expected a seek on entries_occur_time above {time:?}, got:\n{plan}"
-            );
-            assert!(
-                !plan.contains("SCAN entries"),
-                "a SCAN reads the whole history for one page above {time:?}, got:\n{plan}"
-            );
+            let reads = [
+                listing.clone(),
+                ListParams {
+                    end_utc: Some(time),
+                    ..listing.clone()
+                },
+                ListParams {
+                    before: before.clone(),
+                    ..listing
+                },
+            ];
+            for (i, params) in reads.into_iter().enumerate() {
+                let plan = plan(&db, &params);
+                assert!(
+                    plan.contains(&format!("USING INDEX {index}")),
+                    "expected {index} for {params:?}, got:\n{plan}"
+                );
+                // A bound is a seek, not a walk from the live end down to it.
+                assert!(
+                    i == 0 || plan.contains("<expr><?)"),
+                    "expected a seek to the bound for {params:?}, got:\n{plan}"
+                );
+                assert!(
+                    !plan.contains("TEMP B-TREE"),
+                    "the index covers the ORDER BY for {params:?}, got:\n{plan}"
+                );
+            }
         }
     }
 
@@ -504,27 +500,5 @@ mod tests {
         }
         let declared = db.list_timeline(&walk).unwrap();
         assert_eq!(declared.iter().filter(|e| e.declaration).count(), 1);
-    }
-
-    /// da-jpvan: a timed `before` cursor is refused in the timeline's own
-    /// words, where SQLite said «2nd ORDER BY term does not match any
-    /// column in the result set»; a timeless one, whose query is no
-    /// compound, pages as the listing does.
-    #[test]
-    fn a_timeline_refuses_a_timed_cursor() {
-        let db = Db::open_in_memory().unwrap();
-        let slug = "walk:2026-09-12T00:00:00.000Z".to_string();
-        let before = |time| ListParams {
-            before: Some((time, slug.clone())),
-            ..Default::default()
-        };
-        let timed = before(Some("2026-09-12T00:00:00Z".parse().unwrap()));
-        assert!(db.list_entries(&timed).unwrap().is_empty());
-        let refused = db.list_timeline(&timed).unwrap_err().to_string();
-        assert!(
-            refused.starts_with("a timeline does not page") && refused.contains(&slug),
-            "{refused}"
-        );
-        assert!(db.list_timeline(&before(None)).unwrap().is_empty());
     }
 }

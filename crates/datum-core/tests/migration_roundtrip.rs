@@ -207,6 +207,7 @@ fn every_pair_has_a_roundtrip_test() {
         (57, 58),
         (58, 59),
         (59, 60),
+        (60, 61),
     ];
     assert_eq!(
         covered.len(),
@@ -2670,6 +2671,19 @@ fn roundtrip_v59_to_v60_undo_skipped() {
     apply_one_down(conn, 60);
     assert!(!column_exists(conn, "undo_actions", "skipped"));
     assert!(table_exists(conn, "undo_actions"));
+}
+
+/// da-2vgj1: the listing's indexes come and go.
+#[test]
+fn roundtrip_v60_to_v61_hybrid_indexes() {
+    let db = fresh_at(60);
+    let conn = db.conn();
+    apply_one_up(conn, 60);
+    assert!(index_exists(conn, "entries_hybrid"));
+    assert!(index_exists(conn, "entries_live_field_hybrid"));
+    apply_one_down(conn, 61);
+    assert!(!index_exists(conn, "entries_hybrid"));
+    assert!(!index_exists(conn, "entries_live_field_hybrid"));
 }
 
 #[test]

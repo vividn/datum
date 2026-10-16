@@ -19,7 +19,8 @@
 //!   change when a migration is added;
 //! * [`support`] holds the introspection and table-rebuild helpers used
 //!   by more than one era;
-//! * `v01_v10`, `v11_v20`, `v21_v30`, `v31_v40`, `v41_v50`, `v51_v60`
+//! * `v01_v10`, `v11_v20`, `v21_v30`, `v31_v40`, `v41_v50`, `v51_v60`,
+//!   `v61_v70`
 //!   hold the migration **bodies**, one module per decade of schema versions.
 //!
 //! Adding a migration therefore appends one entry here and one function
@@ -38,6 +39,7 @@ mod v21_v30;
 mod v31_v40;
 mod v41_v50;
 mod v51_v60;
+mod v61_v70;
 
 #[cfg(test)]
 mod tests;
@@ -50,6 +52,7 @@ use v21_v30::*;
 use v31_v40::*;
 use v41_v50::*;
 use v51_v60::*;
+use v61_v70::*;
 
 /// The schema version this binary writes.
 ///
@@ -57,7 +60,7 @@ use v51_v60::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 60;
+pub const CURRENT_SCHEMA_VERSION: u32 = 61;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -495,5 +498,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "undo_actions.skipped: the entries an `undo --skip-changed` left as they are, which its redo leaves too (da-2ahs4)",
         apply: m59_to_60_undo_skipped,
         down: down_60_to_59_undo_skipped,
+    },
+    Migration {
+        from: 60,
+        to: 61,
+        summary: "entries_hybrid, entries_live_field_hybrid: the listing's order, `occur_time ?? create_time` (da-2vgj1)",
+        apply: m60_to_61_hybrid_indexes,
+        down: down_61_to_60_hybrid_indexes,
     },
 ];

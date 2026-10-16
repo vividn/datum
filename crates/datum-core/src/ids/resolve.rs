@@ -63,12 +63,14 @@ pub const UNDO_TOKEN: &str = "_UNDO";
 /// Maximum number of candidates surfaced on an ambiguous resolution.
 const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
 
-/// The order `_`, `__`, `_4`, … count in: most recent first. Shared by the
+/// The order `_`, `__`, `_4`, … count in: most recent first, by the
+/// listing's own `occur_time ?? create_time` (da-2vgj1), so a timeless row
+/// counts at its create time as `tail` lists it there. Shared by the
 /// resolvers below and by [`quick_ordinals`], so what `tail` displays and
 /// what `_N` resolves to can't drift apart. Both skip the meta fields'
 /// entries (specs, layouts, aliases, views, commands, index definitions —
 /// da-lc26c) unless the field is named.
-const NTH_ORDER: &str = "ORDER BY occur_time DESC, slug DESC";
+const NTH_ORDER: &str = "ORDER BY COALESCE(occur_time, create_time) DESC, slug DESC";
 
 /// Resolve a quickId pattern to zero or more live entries.
 ///
@@ -388,8 +390,8 @@ fn state_entry_range(
 /// entry, including the ones the caller's own filters hide, so a filtered
 /// listing shows gaps rather than a renumbered 1..n that wouldn't resolve.
 ///
-/// The `entries_occur_time` partial index covers this exact ordering, so
-/// the scan stops after [`QUICK_ORDINAL_CAP`] rows.
+/// The `entries_hybrid` partial index covers this exact ordering, so the
+/// scan stops after [`QUICK_ORDINAL_CAP`] rows.
 pub fn quick_ordinals(db: &Db) -> Result<HashMap<Hid, usize>> {
     let mut stmt = db.conn().prepare(&format!(
         "SELECT hid FROM entries WHERE deleted_at IS NULL AND superseded_by IS NULL \

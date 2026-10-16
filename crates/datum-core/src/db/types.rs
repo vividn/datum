@@ -31,8 +31,9 @@ pub use datum_parse::shape::IGNORED_STATE_VALUE;
 
 /// Which timestamp to sort/filter entries by in [`super::Db::list_entries`].
 ///
-/// `Hybrid` falls back to `modify_time` for entries without a `start_time`
-/// (e.g. notes). `Occur` excludes rows lacking `start_time` entirely.
+/// `Hybrid` is `occur_time ?? create_time`, so a timeless row (a note)
+/// sits at its create time, as v2's hybrid did (da-2vgj1). `Occur`
+/// excludes timeless rows entirely.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TimeMetric {
     #[default]
@@ -119,10 +120,11 @@ impl std::str::FromStr for GroupColumn {
 /// SQL expression for an entry's effective sort time under a given
 /// [`TimeMetric`]. Centralizes the metric-aware branch used by `tail`/`head`.
 pub(super) fn time_expr(metric: TimeMetric) -> &'static str {
-    // da-5ns: occur_time is NOT NULL post-pivot, so the COALESCE
-    // chains collapse to single-column references.
+    // Spelled as `entries_hybrid` / `entries_live_field_hybrid` spell it,
+    // or SQLite will not use them.
     match metric {
-        TimeMetric::Hybrid | TimeMetric::Occur => "occur_time",
+        TimeMetric::Hybrid => "COALESCE(occur_time, create_time)",
+        TimeMetric::Occur => "occur_time",
         TimeMetric::Create => "create_time",
         TimeMetric::Modify => "modify_time",
     }
@@ -242,10 +244,10 @@ pub struct ListParams {
     /// them (vividn's B9, da-9e02u).
     pub include_notes: bool,
     /// Only the rows listed before a cursor row, given as its metric
-    /// timestamp and slug: the order is `(metric, slug)`, and a row with no
-    /// time sorts before every row with one. What a pager asks with, since
-    /// `end_utc` never reaches a timeless row (da-mhcla).
-    pub before: Option<(Option<DateTime<Utc>>, String)>,
+    /// timestamp and slug: the order is `(metric, slug)`. What a pager asks
+    /// with, since `end_utc` cannot tell two rows at one instant apart
+    /// (da-mhcla).
+    pub before: Option<(DateTime<Utc>, String)>,
 }
 
 /// A row of [`super::Db::list_timeline`]: what `stats` reads of an entry.

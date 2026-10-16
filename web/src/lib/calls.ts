@@ -54,7 +54,7 @@ export function helpArgv(command?: string): string[] {
 	return command && command !== 'help' ? ['help', ...command.split(' ')] : ['help'];
 }
 
-/** The oldest TIMED entry: a timeless one sorts first and has no day. */
+/** The oldest TIMED entry: a timeless one has no day. */
 export function firstEntryArgv(): string[] {
 	return ['head', '-n', '1', '--metric', 'occur', '--json'];
 }

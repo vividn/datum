@@ -126,7 +126,7 @@ const marker = (page) => page.locator('section.pane[data-title="tail"] button.ne
  * a time: a page of 300 rows is not a thing to log through the REPL.
  * The hids are the minute's ordinal, so `seed(i)` names the i-th oldest.
  */
-async function seed(app, count) {
+async function seed(app, count, timeless = []) {
 	const at = (i) => new Date(Date.UTC(2026, 8, 10, 5, 0) - (count - 1 - i) * 60_000).toISOString();
 	// The header the CLI itself writes, so the schema version is its own.
 	const backup = await app.run(['db', 'backup', '-']);
@@ -134,10 +134,11 @@ async function seed(app, count) {
 	const header = JSON.parse(backup.stdout.split('\n')[0]);
 	const lines = [JSON.stringify({ ...header, backup_time: at(count - 1), source_db: 'seed', entry_count: count })];
 	for (let i = 0; i < count; i++) {
+		const none = timeless.includes(i);
 		lines.push(
 			JSON.stringify({
 				hid: seedHid(i),
-				slug: `seed:${at(i)}`,
+				slug: `seed:${none ? 'c' : ''}${at(i)}`,
 				content_hash: i.toString(16).padStart(64, '0'),
 				field: 'seed',
 				verb: 'point',
@@ -145,11 +146,11 @@ async function seed(app, count) {
 				dur: 'MOMENT',
 				following_state: null,
 				data: null,
-				occur_time: { utc: at(i), offset_minutes: 0, timezone: 'UTC' },
+				occur_time: none ? null : { utc: at(i), offset_minutes: 0, timezone: 'UTC' },
 				create_time: at(i),
 				modify_time: at(i),
 				client_id: '01M281T64122KN04Z1VN626W9J',
-				id_structure: '%occur_time%',
+				id_structure: none ? '%create_time%' : '%occur_time%',
 				raw_input: 'occur seed',
 				parser_version: 2
 			})
@@ -325,29 +326,28 @@ describe('scrolling up', () => {
 		});
 	});
 
-	// A timeless row (`add`, `-T`) is at no time, and `tail` lists it above
-	// every timed one. The page above was asked for by time, which no
-	// timeless row is at or before: in a log longer than a page the pane
-	// marked the oldest timed row as the start, and they never showed
-	// (da-mhcla). The rows are the ones the CLI lists, in its order.
-	test('in a log longer than a page, the timeless rows page in above the oldest timed one, and the first of them is the start', async () => {
+	// A timeless row (`add`, `-T`) is listed at the stamp it was created at,
+	// as `tail` lists it (da-2vgj1), and pages in there: the page above is
+	// asked for by a row's place in the listing, not by a time (da-mhcla).
+	// The rows are the ones the CLI lists, in its order.
+	test('in a log longer than a page, a timeless row pages in at the stamp it was created at', async () => {
 		await TALL.solo(async (app) => {
 			const { page } = app;
-			for (const argv of [['add', 'book', 'title=Dune', '-K', 'title'], ['occur', 'snack', '-T'], ['occur', 'tea', '-T']]) {
-				const made = await app.run(argv);
-				assert.equal(made.code, 0, made.stderr);
-			}
-			const timed = 250;
-			await seed(app, timed);
+			const total = 253;
+			const timeless = [3, 4, 120];
+			await seed(app, total, timeless);
 			await atRest(page);
 			const listed = await app.run(['tail', '--json', '-n', '1000']);
 			assert.equal(listed.code, 0, listed.stderr);
 			const rows = JSON.parse(listed.stdout).rows;
 			const want = rows.map((row) => row.hid);
-			assert.equal(want.length, timed + 3);
-			assert.deepEqual(rows.slice(0, 4).map((row) => row.time_metric), ['create', 'create', 'create', 'occur'], 'the log does not start with its three timeless rows');
+			assert.deepEqual(want, Array.from({ length: total }, (_, i) => seedHid(i)), '`tail` does not list a timeless row at its create time');
+			assert.deepEqual(
+				timeless.map((i) => rows[i].time_metric),
+				['create', 'create', 'create']
+			);
 			const g0 = await geometry(page);
-			assert.ok(g0.n + pageOf(g0.n) < timed, `${timed} timed rows are not more than a page above the screen`);
+			assert.ok(g0.n + pageOf(g0.n) < total - timeless[0], `the timeless rows are not more than a page above the screen`);
 
 			// Up until the pane says it is at the start, wherever it says so.
 			await wheelUp(page);
@@ -364,12 +364,11 @@ describe('scrolling up', () => {
 			assert.deepEqual(g1.hids, want, 'the pane, scrolled to its top, does not list what `tail` lists');
 			assert.deepEqual(g1.start, [want[0]], 'the start of the log is not its first row');
 
-			// A write while they are on screen keeps them: where a timeless
-			// row is listed is not the stamp its `time` cell shows.
+			// A write while they are on screen keeps them.
 			await app.submit('occur seed');
 			await app.idle();
 			await marker(page).waitFor();
-			assert.deepEqual((await geometry(page)).hids.slice(0, 4), want.slice(0, 4), 'a write below dropped the timeless rows the reader was at');
+			assert.deepEqual((await geometry(page)).hids.slice(0, 6), want.slice(0, 6), 'a write below dropped the rows the reader was at');
 		});
 	});
 

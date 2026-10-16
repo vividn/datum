@@ -626,7 +626,7 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("ID"),
         value_optional: false,
-        summary: "Only the entries listed above this one, timeless ones included",
+        summary: "Only the entries listed above this one",
         long_description: None,
         left_override: None,
     },

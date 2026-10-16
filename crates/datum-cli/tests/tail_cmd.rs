@@ -99,9 +99,8 @@ fn tail_args() -> TailArgs {
 }
 
 /// da-mhcla: paged by `--above`, a listing is every row the unbounded `tail`
-/// lists, in its order: the timeless rows too, which sort above every timed
-/// one and which a `-t` bound never reaches, and both of two rows at one
-/// instant.
+/// lists, in its order: the timeless rows too, at their create time
+/// (da-2vgj1), and both of two rows at one instant.
 #[test]
 fn tail_above_pages_the_whole_listing_timeless_rows_included() {
     let db = fresh_db();
@@ -121,16 +120,7 @@ fn tail_above_pages_the_whole_listing_timeless_rows_included() {
         ..tail_args()
     });
     assert_eq!(all.len(), 10);
-    assert!(all[..3].iter().all(|e| e.occur_time.is_none()));
-
-    // The control: `-t` at the oldest timed row is that row and nothing above it.
-    let bounded = db
-        .list_entries(&ListParams {
-            end_utc: all[3].occur_time.as_ref().map(|t| t.utc),
-            ..Default::default()
-        })
-        .unwrap();
-    assert_eq!(hids(&bounded), hids(&all[3..4]));
+    assert!(all[7..].iter().all(|e| e.occur_time.is_none()));
 
     let mut paged: Vec<Entry> = Vec::new();
     loop {
@@ -154,6 +144,60 @@ fn tail_above_pages_the_whole_listing_timeless_rows_included() {
         ..tail_args()
     });
     assert_eq!(hids(&first), hids(&all[..5]));
+}
+
+/// da-2vgj1 (vividn's B3): the listing orders by its metric, `occur_time ??
+/// create_time` by default, so a note created at 17:30 is listed after a
+/// walk at 07:00 by `head`, `tail` and `-t`, and `-m create` / `-m modify`
+/// order by their own stamp.
+#[test]
+fn the_listing_orders_a_timeless_row_at_its_create_time() {
+    let db = fresh_db();
+    let at = |h: i64, m: i64| anchor() + Duration::minutes(h * 60 + m);
+    let mut walk = Entry::new(
+        "walk",
+        Verb::Point,
+        None,
+        None,
+        Some(t_at(7 * 60)),
+        None,
+        "d1",
+    );
+    (walk.create_time, walk.modify_time) = (at(18, 0), at(18, 0));
+    let mut note = Entry::new("journal", Verb::Point, None, None, None, None, "d1");
+    (note.create_time, note.modify_time) = (at(17, 30), at(19, 0));
+    db.insert_entry(&note).unwrap();
+    db.insert_entry(&walk).unwrap();
+    let fields = |args: TailArgs| -> Vec<String> {
+        let rows = tail_entries(&args, &db).unwrap();
+        rows.into_iter().map(|e| e.field).collect()
+    };
+    let metric = |m: &str| TailArgs {
+        metric: m.into(),
+        ..tail_args()
+    };
+
+    let head = TailArgs {
+        oldest_first: true,
+        count: Some(1),
+        ..tail_args()
+    };
+    assert_eq!(fields(head), ["walk"], "head opens with the walk");
+    assert_eq!(
+        fields(tail_args()),
+        ["walk", "journal"],
+        "tail ends with the note"
+    );
+    let before_eight = db
+        .list_entries(&ListParams {
+            end_utc: Some(at(8, 0)),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(before_eight.len(), 1, "-t 08:00 leaves the note out");
+    assert_eq!(before_eight[0].field, "walk");
+    assert_eq!(fields(metric("create")), ["journal", "walk"]);
+    assert_eq!(fields(metric("modify")), ["walk", "journal"]);
 }
 
 // ─── Direct db::list_entries acceptance tests ────────────────────────────────

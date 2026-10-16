@@ -80,9 +80,9 @@ export interface TailListing {
  * the one on screen — the row they are listed above (`--above`).
  *
  * `above` is a row's hid, and the CLI's bound is that row's place in the
- * listing's own order, so a page is exactly the rows above it: the timeless
- * ones too, which sort above every timed row and which a time (`-t`) never
- * reaches (da-mhcla), and each of two rows at one instant once.
+ * listing's own order, `occur_time ?? create_time` (da-2vgj1), so a page
+ * is exactly the rows above it, each of two rows at one instant once
+ * (da-mhcla).
  */
 export interface TailPage {
 	count?: number;

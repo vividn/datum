@@ -263,6 +263,17 @@ CREATE INDEX IF NOT EXISTS entries_occur_time
     ON entries (occur_time, slug)
     WHERE deleted_at IS NULL;
 
+-- The listing's order, `-m hybrid`: `occur_time ?? create_time`, so a
+-- timeless row sits at its create time (da-2vgj1). Spelled as `time_expr`
+-- spells it, or SQLite will not use them: bare tail/head, then a field's
+-- (v61).
+CREATE INDEX IF NOT EXISTS entries_hybrid
+    ON entries (COALESCE(occur_time, create_time), slug)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS entries_live_field_hybrid
+    ON entries (field, COALESCE(occur_time, create_time), slug)
+    WHERE deleted_at IS NULL;
+
 -- Drift-detection partial indexes (da-b423). Back `dm check slugs` scans
 -- that need to walk just the rows with a non-NULL template. Selectivity
 -- is asymmetric: almost every row carries `id_structure` (default

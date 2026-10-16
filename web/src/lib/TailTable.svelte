@@ -30,8 +30,8 @@
 	reader gets there — while all but a screen of the last page is still
 	above them — and asks for several screens at once (da-j6frl, vividn: "rows should load long before you get
 	to them"), `tail -n <size> --above <oldest shown>` (the CLI's own bound,
-	that row's place in the listing, so the timeless rows above every timed
-	one page in like any others, da-mhcla), prepended with the reader's
+	that row's place in the listing, so two rows at one instant page in
+	like any others, da-mhcla), prepended with the reader's
 	place kept. The reader scrolls on
 	through what is held while it is in flight. A write lands as the epoch bump does
 	today: pinned at the bottom the newest page simply replaces the screen;
@@ -330,11 +330,10 @@
 	}
 
 	/**
-	 * A row's place in the listing, the CLI's order: the timeless rows
-	 * first — the `time` of one is the stamp it was created at, which is no
-	 * place (da-mhcla) — then by time, and by slug within either.
+	 * A row's place in the listing, the CLI's order: by time — a timeless
+	 * row's is the stamp it was created at (da-2vgj1) — then by slug.
 	 */
-	const at = (row: Shown) => (row.time === null || row.row.time_metric === 'create' ? -Infinity : Date.parse(row.time));
+	const at = (row: Shown) => (row.time === null ? -Infinity : Date.parse(row.time));
 	const above = (a: Shown, b: Shown) => at(a) < at(b) || (at(a) === at(b) && a.row.slug < b.row.slug);
 
 	/** A cell a row has no listing's word for: `keys` is every listing's columns. */

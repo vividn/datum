@@ -497,6 +497,28 @@ fn run_binary(db: &PathBuf, args: &[&str]) -> (String, String) {
     (stdout, stderr)
 }
 
+/// `_1` is the row `tail` lists last (da-2vgj1): a note written after a walk
+/// logged an hour back is listed at its create time, after the walk, and
+/// `del _1` removes the note, not the walk.
+#[test]
+fn del_one_removes_the_note_tail_lists_last() {
+    let db = tmp_db_path();
+    run_binary(&db, &["occur", "walk", "-t", "-60"]);
+    run_binary(&db, &["note", "journal", "hello"]);
+    let (listed, _) = run_binary(&db, &["tail"]);
+    let last = listed.lines().last().unwrap_or_default();
+    assert!(
+        last.starts_with("_1") && last.contains("journal"),
+        "{listed}"
+    );
+    run_binary(&db, &["del", "_1"]);
+    let (after, _) = run_binary(&db, &["tail"]);
+    assert!(
+        after.contains("walk") && !after.contains("journal"),
+        "{after}"
+    );
+}
+
 /// `--all-or-nothing` that fails on a later row after deleting an earlier one still
 /// stamps `_LAST` at what it deleted, so a bare `undo` restores that row
 /// rather than acting on the command before (da-5leng). Resolution drops

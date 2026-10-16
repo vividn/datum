@@ -694,8 +694,8 @@
 	}
 
 	/**
-	 * The oldest TIMED entry (`--metric occur`: a timeless one sorts first
-	 * and has no day), counted back from the CLI's `today`. A block's day is
+	 * The oldest TIMED entry (`--metric occur`: a timeless one has no
+	 * day), counted back from the CLI's `today`. A block's day is
 	 * where it BEGINS, and its time is its end (da-zwct).
 	 */
 	async function firstEntry(today: string): Promise<{ back: number; date: string } | null> {

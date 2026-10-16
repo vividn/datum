@@ -53,7 +53,7 @@ pub(crate) fn field_positions(
 pub(crate) fn live_window_params(fetch_start: DateTime<Utc>, end: DateTime<Utc>) -> ListParams {
     ListParams {
         fields: Vec::new(),
-        metric: TimeMetric::Hybrid,
+        metric: TimeMetric::Occur,
         start_utc: Some(fetch_start),
         end_utc: Some(end),
         limit: None,

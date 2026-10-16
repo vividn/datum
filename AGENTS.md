@@ -633,8 +633,9 @@ start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `ir
   with the REPL's `tail`; nothing is asked until the box is taller than
   the header), scrolling to the top pages
   the rows above in (`tail -n <page> --above <oldest row's hid>`, the
-  CLI's bound in the listing's own order, so the timeless rows above every
-  timed one page in too, da-mhcla; capped at 300 rows) with the
+  CLI's bound in the listing's own order, `occur_time ?? create_time`,
+  so a timeless row pages in at its create time, da-mhcla, da-2vgj1;
+  capped at 300 rows) with the
   reader's row anchored, and a write while scrolled up keeps the place
   and shows `↓ new`. `web/tests/tailwatch.test.mjs` holds it to that.
   Its STATE cell is the one cell not taken whole from `columns` (`web/src/lib/StateCell.svelte`), and the reason is NOT that the page

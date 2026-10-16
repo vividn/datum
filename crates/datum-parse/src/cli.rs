@@ -416,8 +416,8 @@ pub struct TailArgs {
     /// does. A flag marker or meta note is listed either way (da-9e02u).
     pub show_meta: bool,
     /// `--above <ID>`: only the rows listed above that entry, whatever the
-    /// page that listed it (da-mhcla). Unlike `-t` it reaches the timeless
-    /// rows, which sort above every timed one.
+    /// page that listed it (da-mhcla). Unlike `-t` it tells two rows at one
+    /// instant apart.
     pub above: Option<String>,
     /// `-A/--show-all` / `-o/--format-string`, plus the swept `--show`.
     ///

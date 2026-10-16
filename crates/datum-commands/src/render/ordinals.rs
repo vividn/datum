@@ -17,11 +17,11 @@ use super::RenderContext;
 
 /// hid → `_N` for the [`QUICK_ORDINAL_CAP`] newest of `entries`.
 ///
-/// The order is `quick_ordinals`' `ORDER BY occur_time DESC, slug DESC`,
-/// spelled in Rust: newest occur time first, ties broken by the slug
-/// descending, and — as SQLite orders a descending column — rows with no
-/// occur time last. `entries` may arrive in any order; a listing renders
-/// oldest-first and still counts from its newest row.
+/// The order is `quick_ordinals`' `ORDER BY COALESCE(occur_time,
+/// create_time) DESC, slug DESC`, spelled in Rust: the listing's time
+/// newest first — a timeless row's is its create time (da-2vgj1) — ties
+/// broken by the slug descending. `entries` may arrive in any order; a
+/// listing renders oldest-first and still counts from its newest row.
 ///
 /// Past the cap a row has no short form. It is left out of the map rather
 /// than given a number, because a `_100` the resolver would refuse is
@@ -29,9 +29,10 @@ use super::RenderContext;
 pub fn quick_ordinal_map(entries: &[Entry]) -> HashMap<Hid, usize> {
     let mut order: Vec<&Entry> = entries.iter().collect();
     order.sort_by(|a, b| {
-        let key = |e: &Entry| (e.occur_time.as_ref().map(|t| t.utc), e.slug.0.clone());
-        // Descending on both, and `None` sorts below every instant here —
-        // which puts the timeless rows last, where the SQL leaves them.
+        let key = |e: &Entry| {
+            let time = e.occur_time.as_ref().map_or(e.create_time, |t| t.utc);
+            (time, e.slug.0.clone())
+        };
         key(b).cmp(&key(a))
     });
     order
@@ -89,16 +90,17 @@ mod tests {
         assert_eq!(quick_ordinal_map(&reversed), map);
     }
 
-    /// A timeless row has no occur time to be newest by; SQLite puts it
-    /// last under a descending column and so does this.
+    /// A timeless row counts at its create time, where the listing puts it
+    /// (da-2vgj1): created after every dated row, it is `_1`.
     #[test]
-    fn a_timeless_row_counts_last() {
+    fn a_timeless_row_counts_at_its_create_time() {
         let dated = row("a", "2026-05-01T10:00:00Z");
-        let mut timeless = row("b", "2026-05-01T11:00:00Z");
+        let mut timeless = row("b", "2026-05-01T09:00:00Z");
         timeless.occur_time = None;
+        timeless.create_time = "2026-05-01T11:00:00Z".parse().unwrap();
         let map = quick_ordinal_map(&[timeless.clone(), dated.clone()]);
-        assert_eq!(map.get(&dated.hid), Some(&1));
-        assert_eq!(map.get(&timeless.hid), Some(&2));
+        assert_eq!(map.get(&timeless.hid), Some(&1));
+        assert_eq!(map.get(&dated.hid), Some(&2));
     }
 
     /// Past the cap there is no shorthand — absent, not guessed. The
