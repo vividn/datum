@@ -55,8 +55,9 @@ export class Node {
      * Bind the endpoint whose key is `key` (hex, `datum sync
      * endpoint-key`), on n0's relays or the one `relay` names. `datum`
      * and `schema` are what the CLI runs (`sync status --json`'s `this`).
+     * `idle` is `DATUM_SYNC_TIMEOUT_S` for a page's tests, every node's.
      */
-    static bind(key: string, relay: string | null | undefined, label: string, datum: string, schema: number, run: Function, progress: Function): Promise<Node>;
+    static bind(key: string, relay: string | null | undefined, idle: number | null | undefined, label: string, datum: string, schema: number, run: Function, progress: Function): Promise<Node>;
     close(): Promise<void>;
     /**
      * `datum sync chain connect [--label]`: redeem `ticket` as `label`,
@@ -105,7 +106,7 @@ export interface InitOutput {
     readonly about: (a: number, b: number, c: number) => void;
     readonly node_accept: (a: number) => number;
     readonly node_addr: (a: number, b: number) => void;
-    readonly node_bind: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+    readonly node_bind: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
     readonly node_close: (a: number) => number;
     readonly node_connect: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly node_dial: (a: number, b: number, c: number) => number;

@@ -173,8 +173,10 @@ export class Node {
      * Bind the endpoint whose key is `key` (hex, `datum sync
      * endpoint-key`), on n0's relays or the one `relay` names. `datum`
      * and `schema` are what the CLI runs (`sync status --json`'s `this`).
+     * `idle` is `DATUM_SYNC_TIMEOUT_S` for a page's tests, every node's.
      * @param {string} key
      * @param {string | null | undefined} relay
+     * @param {number | null | undefined} idle
      * @param {string} label
      * @param {string} datum
      * @param {number} schema
@@ -182,7 +184,7 @@ export class Node {
      * @param {Function} progress
      * @returns {Promise<Node>}
      */
-    static bind(key, relay, label, datum, schema, run, progress) {
+    static bind(key, relay, idle, label, datum, schema, run, progress) {
         const ptr0 = passStringToWasm0(key, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         var ptr1 = isLikeNone(relay) ? 0 : passStringToWasm0(relay, wasm.__wbindgen_export, wasm.__wbindgen_export2);
@@ -191,7 +193,7 @@ export class Node {
         const len2 = WASM_VECTOR_LEN;
         const ptr3 = passStringToWasm0(datum, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len3 = WASM_VECTOR_LEN;
-        const ret = wasm.node_bind(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, schema, addHeapObject(run), addHeapObject(progress));
+        const ret = wasm.node_bind(ptr0, len0, ptr1, len1, isLikeNone(idle) ? 0x100000001 : (idle) >>> 0, ptr2, len2, ptr3, len3, schema, addHeapObject(run), addHeapObject(progress));
         return takeObject(ret);
     }
     /**
