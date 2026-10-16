@@ -382,3 +382,47 @@ fn a_command_does_not_grow_with_the_fields_it_does_not_name() {
         );
     }
 }
+
+/// da-38obu: a template spec costs a command nothing in the number of
+/// fields it covers — they hold no spec rows, and a read finds the
+/// templates by their own index. The same name is covered in both stores.
+#[test]
+fn a_template_costs_nothing_in_the_fields_it_covers() {
+    let run = |db: &Db, argv: &[&str]| {
+        let argv = std::iter::once("datum").chain(argv.iter().copied());
+        datum_commands::cmd::dispatch_argv(argv.map(String::from).collect(), db).unwrap();
+    };
+    let stores = [100, 1_000].map(|n| {
+        let db = Db::open_in_memory().unwrap();
+        let states = ["--states", "queued,done"];
+        run(
+            &db,
+            &[
+                &["setup", "issue__%hid:8%", "--verb", "switch"][..],
+                &states,
+            ]
+            .concat(),
+        );
+        for _ in 0..n {
+            run(&db, &["add", "issue__%hid:8%", "--id", "doc", "title=x"]);
+        }
+        db
+    });
+    let commands: [&[&str]; 6] = [
+        &["switch", "issue__aaaaaaaa", "queued"],
+        &["issue__aaaaaaaa", "done"],
+        &["occur", "tea"],
+        &["tail", "-n", "1"],
+        &["get", "_LAST"],
+        &["setup", "issue__aaaaaaaa", "--color", "red"],
+    ];
+    for argv in commands {
+        let [small, large] = [&stores[0], &stores[1]].map(|db| vm_steps(db, argv));
+        assert!(
+            large <= small + small / 10,
+            "`{}` visits more with more covered fields: {small} hundred VM steps \
+             with 100, {large} with 1,000",
+            argv.join(" "),
+        );
+    }
+}

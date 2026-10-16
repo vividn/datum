@@ -25,14 +25,16 @@ use crate::error::{DatumError, Result};
 /// tightening it would strand entries already written. The stricter rule
 /// for a name being *declared* is `datum_parse::field_name::check`, which
 /// `setup` runs — it is a superset of this one, so anything that may be
-/// declared may also be stored (da-b049).
+/// declared may also be stored (da-b049). A field template's placeholders
+/// are not its text (`issue__%hid:8%`, da-38obu): only its literal text is
+/// held to the `:`.
 pub fn validate_field_name(field: &str) -> Result<()> {
     if field.is_empty() {
         return Err(DatumError::InvalidFieldSpec(
             "field name cannot be empty".to_string(),
         ));
     }
-    if field.contains(':') {
+    if datum_parse::field_template::literal(field).contains(':') {
         return Err(DatumError::InvalidFieldSpec(format!(
             "field name cannot contain ':' (got {field:?})"
         )));

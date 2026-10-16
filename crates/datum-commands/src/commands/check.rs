@@ -1548,7 +1548,13 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
         .map(|e| e.field.as_str())
         .filter(|f| !datum_core::db::is_meta_field(f) && registry.field_spec(f).is_none())
         .collect();
-    let unknown: Vec<String> = logged.into_iter().map(String::from).collect();
+    // A field a template spec covers is registered by it (da-38obu).
+    let mut unknown: Vec<String> = Vec::new();
+    for field in logged {
+        if db.load_spec(field)?.is_none() {
+            unknown.push(field.to_string());
+        }
+    }
     if !unknown.is_empty() {
         issues.push(Issue {
             domain: Domain::Entries,

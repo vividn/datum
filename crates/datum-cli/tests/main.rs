@@ -131,6 +131,7 @@ mod sync_daemon;
 mod sync_net;
 mod sync_ops;
 mod tail_cmd;
+mod template_spec;
 mod temporal_keys;
 mod timeless_id_redesign;
 mod timeless_state_note;

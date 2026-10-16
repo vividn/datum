@@ -34,7 +34,7 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
             // the place to refuse a name nothing can log to (da-b049).
             // Logging stays permissive, and so do reading and deleting: a
             // bad name already in a database can still be put right.
-            crate::field_name::check(&field)?;
+            crate::field_name::check_declared(&field)?;
             Ok(SpecCommand::Set(Box::new(out)))
         }
         (true, _, false) => {

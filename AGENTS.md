@@ -97,6 +97,14 @@ cache, local and derived; a migration that rebuilds `entries` refills it
 (`fill_spec_alias_names`), and `datum check aliases` says so where one
 did not, `--fix` refilling it (da-ppkv6). `state_read_scaling.rs` holds both to it in VM
 steps (da-ulu8f).
+A spec may be on a field TEMPLATE (`setup 'issue__%hid:8%' …`, a kit's
+`[[field]]`, da-38obu): it covers every field whose name parses against it
+(`datum_parse::field_template`; `%hid:8%` is eight characters of `[0-9a-z]`),
+which then gets no spec row at its first log. A covered field's own spec
+stores only the keys it sets differently, and they override the template's
+key by key (`setup F` names the template and them). The longer literal text
+wins between two templates, and `setup` refuses one tying another. The
+templates are read by their own index, `entries_spec_templates`.
 
 ### The spool: a write is never lost to the lock
 A command that changes entries (every one but sync's, `db`'s, `config`'s and

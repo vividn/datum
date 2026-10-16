@@ -118,6 +118,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             // `setup F --json`'s reading of the keys, not the spec (`SpecJson`).
             obj.remove("keys");
             obj.remove("keys_by_state");
+            obj.remove("template");
         }
         // da-eciuy: the colours it changes, as `--color` would.
         let old = db.load_spec(&args.field)?.map(serde_json::to_value);
@@ -402,13 +403,15 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     let row = db
         .spec_entry(&spec.field)?
         .context("the spec just saved is not there")?;
-    let action = match old {
+    let action = match before {
         Some(_) => Outcome::Update,
         None => Outcome::Create,
     };
     echo(db, &row, action, args.show)?;
     if args.show != Show::Json {
-        let now = Block::of(&spec, ignored(db, &spec.field)?);
+        // Read back: a covered field's own keys are what was stored.
+        let saved = db.load_spec(&spec.field)?.unwrap_or(spec);
+        let now = Block::of(&saved, ignored(db, &saved.field)?);
         print!("{}", now.render(was.as_ref()));
     }
     warn_alias_conflicts(&report);
@@ -754,6 +757,10 @@ pub struct SpecJson<'a> {
     keys: Vec<JsonValue>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     keys_by_state: BTreeMap<&'a str, Vec<JsonValue>>,
+    /// The template spec a covered field reads through, and the keys its
+    /// own spec sets over it (da-38obu).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    template: Option<&'a datum_core::field_spec::Covered>,
 }
 
 pub fn spec_json(spec: &FieldSpec) -> SpecJson<'_> {
@@ -780,6 +787,7 @@ pub fn spec_json(spec: &FieldSpec) -> SpecJson<'_> {
         spec,
         keys: keys(None),
         keys_by_state: states.map(|s| (s.as_str(), keys(Some(s)))).collect(),
+        template: spec.template.as_ref(),
     }
 }
 
@@ -805,6 +813,15 @@ impl Block {
         let mut line = |label: &str, value: String| lines.push((label.to_string(), value));
         let pres = &spec.presentation;
         let listed = |only: bool| if only { "  only listed" } else { "" };
+        // da-38obu: which keys a covered field's own spec sets; the rest
+        // are the template's.
+        if let Some(c) = &spec.template {
+            let own = match c.own.is_empty() {
+                true => String::new(),
+                false => format!(" (own: {})", c.own.join(" ")),
+            };
+            line("template", format!("{}{own}", c.template));
+        }
         if let Some(d) = &spec.description {
             line("description", d.clone());
         }

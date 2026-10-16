@@ -18,12 +18,13 @@ use crate::action::Action;
 use crate::dur::Dur;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
-use crate::field_spec::{contains_template, verb_from_log, FieldSpec, SpecRegistry};
+use crate::field_spec::{contains_template, verb_from_log, Covered, FieldSpec, SpecRegistry};
 use crate::history::ChangeKind;
 use crate::ids::Slug;
 use crate::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use crate::time::DatumTime;
 use crate::verb::Verb;
+use datum_parse::field_template::{is_template, literal, matches, ties};
 
 use super::alias::ALIAS_FIELD;
 use super::definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, VIEW_FIELD};
@@ -80,6 +81,26 @@ pub(crate) fn spec_slug(field: &str) -> String {
     format!("{SPEC_FIELD}:{field}")
 }
 
+/// The spec rows whose field may be a template (da-38obu), as the partial
+/// index `entries_spec_templates` holds them: two `%` in the slug. A field
+/// whose percents are escaped (`50\%off\%`) is a row here too, and
+/// [`Db::template_specs`] drops it by [`is_template`]; a paired `%off%` is a
+/// placeholder, in a spec's name as in a logged field's.
+const TEMPLATE_SPEC_SQL: &str = "field = 'spec' AND slug GLOB '*%*%*'";
+
+/// A spec entry's data keys that are not the spec's own to set: its field,
+/// and its kit marks.
+const NOT_SET: &[&str] = &["field", SPEC_KIT_KEY, SPEC_DISPLACED_KEY];
+
+/// Of `templates` (best first, as [`Db::template_specs`] gives them), the
+/// one covering `field`. A template covers no template, nor a meta field.
+fn covering<'a>(field: &str, templates: &'a [(String, String)]) -> Option<&'a (String, String)> {
+    if is_template(field) || is_meta_field(field) {
+        return None;
+    }
+    templates.iter().find(|(name, _)| matches(name, field))
+}
+
 /// Every meta entry's occur time: fixed, not the moment it was
 /// written, so two devices writing (or migrating) the same one make the
 /// same doc.
@@ -104,8 +125,9 @@ pub(crate) fn new_spec_entry(field: &str, data: JsonValue, client_id: &str) -> E
         client_id,
     );
     row.slug = Slug::new(spec_slug(field));
-    // A literal template: the slug stays `spec:<field>` through every edit.
-    row.id_structure = Some(field.to_string());
+    // A literal template: the slug stays `spec:<field>` through every edit,
+    // a field template's placeholders too (da-38obu).
+    row.id_structure = Some(field.replace('%', "\\%"));
     row.content_hash = row.expected_content_hash();
     row
 }
@@ -230,20 +252,122 @@ impl Db {
             .optional()?)
     }
 
-    /// Load a field spec by name. None if not defined.
+    /// Load a field spec by name. None if not defined. A field a template
+    /// spec covers reads through it (da-38obu, [`Db::covered_spec`]).
     pub fn load_spec(&self, field: &str) -> Result<Option<FieldSpec>> {
-        let json: Option<String> = self
+        let own = self.own_spec_data(field)?;
+        match covering(field, &self.template_specs()?) {
+            Some((template, data)) => Ok(Some(self.covered_spec(field, template, data, own)?)),
+            None => own.map(|j| self.parse_spec(&j)).transpose(),
+        }
+    }
+
+    /// The data of `field`'s own spec entry, as stored.
+    fn own_spec_data(&self, field: &str) -> Result<Option<String>> {
+        Ok(self
             .conn
             .query_row(
                 &format!("SELECT data FROM entries WHERE slug = ?1 AND field = '{SPEC_FIELD}' AND {LIVE_SQL}"),
                 params![spec_slug(field)],
                 |row| row.get(0),
             )
-            .optional()?;
-        match json {
-            Some(j) => Ok(Some(self.parse_spec(&j)?)),
-            None => Ok(None),
+            .optional()?)
+    }
+
+    /// Every template spec (da-38obu) as its name and stored data, best
+    /// first: the longer literal text, then the first by name, so every
+    /// copy reads a field through the same one. Few, and read by their
+    /// own index.
+    pub(crate) fn template_specs(&self) -> Result<Vec<(String, String)>> {
+        // Named, or the planner takes `field`'s index and reads every spec.
+        let sql = |index: &str| {
+            format!(
+                "SELECT json_extract(data, '$.field'), data FROM entries {index}
+                  WHERE {TEMPLATE_SPEC_SQL} AND {SPEC_DOC_SQL}"
+            )
+        };
+        let mut stmt = match self
+            .conn
+            .prepare_cached(&sql("INDEXED BY entries_spec_templates"))
+        {
+            Ok(stmt) => stmt,
+            // A file a read-only handle opens may predate the index.
+            Err(_) => self.conn.prepare_cached(&sql(""))?,
+        };
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        let mut templates = rows.collect::<rusqlite::Result<Vec<(String, String)>>>()?;
+        templates.retain(|(name, _)| is_template(name));
+        templates.sort_by_cached_key(|(name, _)| {
+            (
+                std::cmp::Reverse(literal(name).chars().count()),
+                name.clone(),
+            )
+        });
+        Ok(templates)
+    }
+
+    /// `field`'s spec read through `template` (da-38obu): the template's
+    /// keys, and over them, key by key, those `own` — the field's own spec
+    /// entry's data — sets. An own spec carrying a verb and nothing chosen
+    /// is the one a first log wrote before the template came, and sets none.
+    fn covered_spec(
+        &self,
+        field: &str,
+        template: &str,
+        data: &str,
+        own: Option<String>,
+    ) -> Result<FieldSpec> {
+        let mut data: JsonValue = serde_json::from_str(data)?;
+        let obj = data
+            .as_object_mut()
+            .ok_or_else(|| DatumError::InvalidFieldSpec(format!("`{template}` is no spec")))?;
+        obj.insert("field".into(), field.into());
+        let mut set = Vec::new();
+        let own: Option<JsonValue> = own.map(|j| serde_json::from_str(&j)).transpose()?;
+        let bare = |own: &JsonValue| {
+            own.get("verb").is_some()
+                && self.parse_spec(&own.to_string()).is_ok_and(|s| s.is_bare())
+        };
+        if let Some(own) = own.filter(|own| !bare(own)) {
+            for (k, v) in own.as_object().into_iter().flatten() {
+                if !NOT_SET.contains(&k.as_str()) {
+                    obj.insert(k.clone(), v.clone());
+                    set.push(k.clone());
+                }
+            }
         }
+        let mut spec = self.parse_spec(&data.to_string())?;
+        spec.template = Some(Covered {
+            template: template.to_string(),
+            own: set,
+        });
+        Ok(spec)
+    }
+
+    /// The data `spec`'s own entry stores (da-38obu): the keys it sets
+    /// differently from the template covering its field, all of them for a
+    /// field none covers. A template's that ties one already stored is
+    /// refused.
+    fn own_spec_json(&self, spec: &FieldSpec, new: bool) -> Result<JsonValue> {
+        let mut data = serde_json::to_value(spec)?;
+        let templates = self.template_specs()?;
+        if new && is_template(&spec.field) {
+            if let Some((other, _)) = templates.iter().find(|(t, _)| ties(t, &spec.field)) {
+                return Err(DatumError::InvalidFieldSpec(format!(
+                    "`{}` ties the template `{other}`: a field could match both, and \
+                     neither has the longer literal text to win",
+                    spec.field
+                )));
+            }
+        }
+        if let Some((template, tdata)) = covering(&spec.field, &templates) {
+            let from =
+                serde_json::to_value(self.covered_spec(&spec.field, template, tdata, None)?)?;
+            if let Some(obj) = data.as_object_mut() {
+                obj.retain(|k, v| k == "field" || from.get(k) != Some(v));
+            }
+        }
+        Ok(data)
     }
 
     /// What a bare press of `field` means: the verb its spec declares,
@@ -331,6 +455,16 @@ impl Db {
         )? {
             out.insert(spec.field.clone(), spec);
         }
+        let templates = self.template_specs()?;
+        for field in fields {
+            if let Some((template, data)) = covering(field, &templates) {
+                let own = self.own_spec_data(field)?;
+                out.insert(
+                    field.to_string(),
+                    self.covered_spec(field, template, data, own)?,
+                );
+            }
+        }
         Ok(out)
     }
 
@@ -367,11 +501,11 @@ impl Db {
         // the same transaction: both or neither (da-2pbvd, da-8i7f0).
         let slug = self.compute_then_write_with(
             |_| {
-                let mut data = serde_json::to_value(spec)?;
                 let existing = self.spec_entry(&spec.field)?;
                 if existing.is_none() {
                     crate::slug::validate_new_field_name(&spec.field)?;
                 }
+                let mut data = self.own_spec_json(spec, existing.is_none())?;
                 let old = existing.as_ref().and_then(|e| e.data.as_ref());
                 let old_kit = old.and_then(|d| d.get(SPEC_KIT_KEY));
                 let (kit, displaced) = match kit_id {

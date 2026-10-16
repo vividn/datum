@@ -211,6 +211,7 @@ fn every_pair_has_a_roundtrip_test() {
         (61, 62),
         (62, 63),
         (63, 64),
+        (64, 65),
     ];
     assert_eq!(
         covered.len(),
@@ -2738,6 +2739,25 @@ fn roundtrip_v63_to_v64_sync_peer_offline() {
     assert!(column_exists(conn, "sync_peers", "last_error_offline"));
     apply_one_down(conn, 64);
     assert!(!column_exists(conn, "sync_peers", "last_error_offline"));
+}
+
+/// da-38obu: the template specs' index comes and goes, and a spec read
+/// without it still finds them.
+#[test]
+fn roundtrip_v64_to_v65_spec_templates_index() {
+    let db = fresh_at(64);
+    let conn = db.conn();
+    apply_one_up(conn, 64);
+    assert!(index_exists(conn, "entries_spec_templates"));
+    apply_one_down(conn, 65);
+    assert!(!index_exists(conn, "entries_spec_templates"));
+    let template = datum_core::field_spec::FieldSpec::new(
+        "issue__%hid:8%",
+        datum_core::action::Action::Switch,
+    );
+    db.save_field_spec(&template).unwrap();
+    let spec = db.load_spec("issue__2qvk0dk4").unwrap().unwrap();
+    assert_eq!(spec.verb, datum_core::action::Action::Switch);
 }
 
 #[test]

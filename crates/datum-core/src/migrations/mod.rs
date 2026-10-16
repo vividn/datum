@@ -60,7 +60,7 @@ use v61_v70::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 64;
+pub const CURRENT_SCHEMA_VERSION: u32 = 65;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -526,5 +526,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_peers.last_error_offline: a member a session never reached reads offline, not error (da-ueb4p)",
         apply: m63_to_64_sync_peer_offline,
         down: down_64_to_63_sync_peer_offline,
+    },
+    Migration {
+        from: 64,
+        to: 65,
+        summary: "entries_spec_templates: the template specs, so a field one covers finds it without reading every spec (da-38obu)",
+        apply: m64_to_65_spec_templates_index,
+        down: down_65_to_64_spec_templates_index,
     },
 ];

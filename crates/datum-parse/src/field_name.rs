@@ -64,6 +64,17 @@ pub fn check(name: &str) -> Result<()> {
     Err(ParseError::InvalidArg(message))
 }
 
+/// [`check`] for a name `setup` declares, which may be a field template
+/// (da-38obu): its placeholders are not its text, so `issue__%hid:8%` keeps
+/// the rule by its [`skeleton`](crate::field_template::skeleton).
+pub fn check_declared(name: &str) -> Result<()> {
+    use crate::field_template::{is_template, skeleton};
+    match is_template(name) && !breaks_the_rule(&skeleton(name)) {
+        true => Ok(()),
+        false => check(name),
+    }
+}
+
 /// The nearest usable name, or `None` when nothing usable is left.
 ///
 /// Every run of forbidden characters becomes a single `_`, and spaces and

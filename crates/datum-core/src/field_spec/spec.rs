@@ -232,6 +232,20 @@ pub struct FieldSpec {
     /// datum names is a field there and never lands here.
     #[serde(default, flatten, deserialize_with = "unknown_keys")]
     pub extra: serde_json::Map<String, JsonValue>,
+
+    /// The template spec this spec is read through, for a field one covers
+    /// (da-38obu). Never stored: [`Db::load_spec`](crate::db::Db::load_spec)
+    /// fills it.
+    #[serde(skip)]
+    pub template: Option<Covered>,
+}
+
+/// Where a covered field's spec comes from (da-38obu): the template spec
+/// covering it, and the keys the field's own spec sets over it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Covered {
+    pub template: String,
+    pub own: Vec<String>,
 }
 
 /// Keys this datum knows and keeps out of [`FieldSpec::extra`]: a spec
@@ -304,6 +318,7 @@ impl FieldSpec {
             tags: Vec::new(),
             presentation: PresentationSpec::default(),
             extra: serde_json::Map::new(),
+            template: None,
         }
     }
 
@@ -584,6 +599,13 @@ impl FieldSpec {
     /// `db::Db::save_field_spec`).
     pub fn regenerate_derived_aliases(&mut self) {
         if self.no_autoalias {
+            return;
+        }
+        // A template derives none, nor a field it covers (da-38obu): its
+        // states would be every issue's, and the field's own word is read
+        // through the template (`Db::lookup_alias`).
+        if self.template.is_some() || datum_parse::field_template::is_template(&self.field) {
+            self.derived_aliases.clear();
             return;
         }
         let mut out: Vec<DerivedAlias> = Vec::new();

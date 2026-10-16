@@ -91,3 +91,21 @@ pub(super) fn down_64_to_63_sync_peer_offline(conn: &Connection) -> Result<()> {
     }
     Ok(())
 }
+
+/// da-38obu: `entries_spec_templates`, the spec rows whose field is a
+/// template, so a field one covers finds it without reading every spec.
+pub(super) fn m64_to_65_spec_templates_index(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "entries")? {
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS entries_spec_templates
+                 ON entries (slug) WHERE field = 'spec' AND slug GLOB '*%*%*';",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v64→v65.
+pub(super) fn down_65_to_64_spec_templates_index(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS entries_spec_templates;")?;
+    Ok(())
+}

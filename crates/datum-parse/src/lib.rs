@@ -54,6 +54,7 @@ pub mod dur;
 pub mod entry_id;
 pub mod error;
 pub mod field_name;
+pub mod field_template;
 pub mod help;
 pub mod input;
 pub mod parse;

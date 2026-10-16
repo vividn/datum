@@ -206,6 +206,13 @@ CREATE INDEX IF NOT EXISTS entries_conflicts
     ON entries (hid)
     WHERE conflicts IS NOT NULL;
 
+-- da-38obu: the spec rows whose field is a template (`spec:issue__%hid:8%`),
+-- which a spec read tries when a field has none of its own: they are few,
+-- and the specs of every other field are not read to find them.
+CREATE INDEX IF NOT EXISTS entries_spec_templates
+    ON entries (slug)
+    WHERE field = 'spec' AND slug GLOB '*%*%*';
+
 -- Field-scoped tail queries: most reads are "last N entries for field F" so
 -- a composite (field, occur_time DESC) index lets them avoid a sort.
 CREATE INDEX IF NOT EXISTS entries_field_occur

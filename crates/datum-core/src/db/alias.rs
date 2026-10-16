@@ -200,8 +200,28 @@ impl Db {
             return Ok(Some(serde_json::from_str(&json)?));
         }
         // Fall through to the spec-derived aliases (da-8y2q.5), by name
-        // (da-ulu8f).
-        self.derived_alias(name)
+        // (da-ulu8f), and then the templates (da-38obu): a field one covers
+        // is its own word, as a specced field's is.
+        match self.derived_alias(name)? {
+            Some(alias) => Ok(Some(alias)),
+            None => self.covered_field_alias(name),
+        }
+    }
+
+    /// `name`'s bare-field alias when a template spec covers the field
+    /// `name` (da-38obu): the one its spec would derive without one.
+    fn covered_field_alias(&self, name: &str) -> Result<Option<Alias>> {
+        let Some(mut spec) = self.load_spec(name)?.filter(|s| s.template.is_some()) else {
+            return Ok(None);
+        };
+        if spec.no_autoalias {
+            return Ok(None);
+        }
+        spec.template = None;
+        spec.regenerate_derived_aliases();
+        Ok(crate::field_spec::SpecAliasIndex::from_specs(&[spec])
+            .entries
+            .remove(name))
     }
 
     /// Delete a user or kit alias: a SOFT delete, as `datum del` makes, so
