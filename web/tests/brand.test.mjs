@@ -505,10 +505,13 @@ describe('the base colour follows the database', () => {
 
 	test('whatever hue a name picks, text is legible on the tinted grounds', async () => {
 		// The guarantee is structural — app.css fixes every colour's
-		// saturation and lightness and moves only the hue, and the pairs
-		// below were measured at all 360 hues — but a tinted GROUND is where
-		// a structural guarantee can quietly stop being one, so this holds
-		// the page to the standard rather than to a colour written down.
+		// saturation and lightness and moves only the hue — but a tinted
+		// GROUND is where a structural guarantee can quietly stop being one,
+		// so this holds the page to the standard at EVERY hue a name can
+		// pick, rather than at the few a handful of names happen to hash to
+		// (da-kni8r). One page: `datum` crosses the name → hue path once,
+		// then the root's `--hue` is turned through all 360 as the shell
+		// itself writes it.
 		const PAIRS = [
 			['--ink', '--page'],
 			['--ink', '--tint'],
@@ -518,14 +521,47 @@ describe('the base colour follows the database', () => {
 			['--accent', '--ground'],
 			['--accent', '--tint']
 		];
-		for (const name of ['datum', 'other', 'work', 'fresh', 'a', 'zzz']) {
-			await withApp(async ({ page }) => {
-				for (const [ink, ground] of PAIRS) {
-					const ratio = contrast(await paintOf(page, ink), await paintOf(page, ground));
-					assert.ok(ratio >= 4.5, `${name}: ${ink} on ${ground} is ${ratio.toFixed(2)}:1`);
+		const tokens = [...new Set(PAIRS.flat())];
+		await plain.solo(async ({ page }) => {
+			const { own, painted } = await page.evaluate((tokens) => {
+				// The tokens resolve `var(--hue)` at the root, so the hue is
+				// turned there; with the page's body out of the styling for the
+				// sweep, a turn restyles the probes and not the whole app. All
+				// in one task, so no frame is drawn and no observer sees it.
+				const html = document.documentElement;
+				const own = html.style.getPropertyValue('--hue');
+				const display = document.body.style.display;
+				const probes = tokens.map((t) => {
+					const probe = document.createElement('span');
+					probe.style.color = `var(${t})`;
+					html.append(probe);
+					return probe;
+				});
+				const read = () => Object.fromEntries(probes.map((p, i) => [tokens[i], getComputedStyle(p).color]));
+				const at = { datum: read() };
+				document.body.style.display = 'none';
+				for (let hue = 0; hue < 360; hue++) {
+					html.style.setProperty('--hue', String(hue));
+					at[hue] = read();
 				}
-			}, { query: `?db=${name}` });
-		}
+				html.style.setProperty('--hue', own);
+				document.body.style.display = display;
+				probes.forEach((p) => p.remove());
+				return { own, painted: at };
+			}, tokens);
+			// The `datum` row is the name → hue path only if the shell wrote
+			// the hue; with none inline it would be the stylesheet's 240.
+			assert.notEqual(own, '', 'the shell wrote no --hue on the root');
+			assert.equal(Object.keys(painted).length, 361);
+			const low = [];
+			for (const [hue, paint] of Object.entries(painted)) {
+				for (const [ink, ground] of PAIRS) {
+					const ratio = contrast(paint[ink], paint[ground]);
+					if (!(ratio >= 4.5)) low.push(`${hue === 'datum' ? hue : `hue ${hue}`}: ${ink} on ${ground} is ${ratio.toFixed(3)}:1`);
+				}
+			}
+			assert.deepEqual(low, [], 'text is under 4.5:1');
+		});
 	});
 });
 
