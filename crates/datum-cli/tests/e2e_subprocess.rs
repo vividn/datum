@@ -273,10 +273,20 @@ fn subprocess_alias_set_builtin_name_warns_on_stderr() {
 /// da-oo6tr: a read of a database that does not exist exits non-zero,
 /// names the path and leaves no file; a write creates it, and then the
 /// read runs and writes no rows. `info` says it is missing and exits 0.
+/// The spec, alias and sync status reads too (da-ov6x5).
 #[test]
 fn subprocess_read_of_a_missing_db_errors_and_a_write_creates_it() {
     let env = Env::new();
-    for read in [&["now"][..], &["fields"], &["tail"]] {
+    for read in [
+        &["now"][..],
+        &["fields"],
+        &["tail"],
+        &["spec"],
+        &["spec", "coffee"],
+        &["sync", "status"],
+        &["alias", "list"],
+        &["alias", "show", "vbp"],
+    ] {
         let out = env.run(read);
         assert!(!out.status.success(), "{read:?} on a missing db succeeded");
         let stderr = String::from_utf8_lossy(&out.stderr);

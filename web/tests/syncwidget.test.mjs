@@ -52,6 +52,8 @@ async function laptop() {
 		assert.equal(r.code, 0, `native ${argv.join(' ')}: ${r.stderr}`);
 		return r.stdout;
 	};
+	// A read creates no database (da-ov6x5): `db setup` makes it.
+	await run(['db', 'setup']);
 	return { run, close: copy.close };
 }
 

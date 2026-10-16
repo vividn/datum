@@ -20,7 +20,10 @@ use anyhow::Result;
 use datum_commands::commands;
 use datum_parse::{help, ParseError};
 
-use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation, KitCommand, SyncCommand};
+use crate::args::{
+    AliasCommand, Cli, Command, DbCommand, InfoArgs, Invocation, KitCommand, SpecCommand,
+    SyncCommand,
+};
 
 /// `datum 3.0.<height>-beta (<sha7>)`, from git at build time (da-5172a,
 /// da-cv118, `build.rs`).
@@ -197,6 +200,9 @@ fn reads(command: &Command) -> bool {
                 | Command::View(_)
                 | Command::Kit(KitCommand::List | KitCommand::Export(_))
                 | Command::Db(DbCommand::Backup(_))
+                | Command::Spec(SpecCommand::List { .. } | SpecCommand::Show { .. })
+                | Command::Alias(AliasCommand::List { .. } | AliasCommand::Show { .. })
+                | Command::Sync(SyncCommand::Status { .. })
         )
 }
 

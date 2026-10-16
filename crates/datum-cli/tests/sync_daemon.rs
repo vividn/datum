@@ -388,6 +388,8 @@ fn an_invite_moves_the_daemon_serving_the_copy_aside() {
 fn status_names_a_missing_daemon_on_a_chained_copy() {
     let h = Home::new();
     let missing = "no sync daemon";
+    // A read creates no database (da-ov6x5): `db setup` makes it.
+    h.ok(&["db", "setup"]);
     assert!(!h.ok(&["sync", "status"]).contains(missing));
     h.invite(&[("DATUM_SYNC_NO_DAEMON", "1")]);
     let status = h.ok(&["sync", "status"]);

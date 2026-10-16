@@ -58,6 +58,8 @@ fn alias_list_json_has_user_and_derived() {
 fn alias_list_json_on_an_empty_db_is_an_empty_array() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("t.db");
+    // A read creates no database (da-ov6x5): `db setup` makes it.
+    ok(&db, &["db", "setup"]);
     assert_eq!(ok(&db, &["alias", "list", "--json"]).trim(), "[]");
 }
 

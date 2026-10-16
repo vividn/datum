@@ -2094,6 +2094,8 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
 #[test]
 fn status_of_a_copy_in_no_chain_is_empty() {
     let a = Copy::new();
+    // A read creates no database (da-ov6x5): `db setup` makes it.
+    a.ok(&["db", "setup"]);
     let all = json(&a.ok(&["sync", "status", "--json"]));
     assert!(all["chain"].is_null(), "{all}");
     assert_eq!(all["members"], serde_json::json!([]));
