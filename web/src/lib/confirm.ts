@@ -28,7 +28,7 @@ export function confirm(text: string, action: string, name = '', cancel = 'cance
 /**
  * Which of `actions` the reader pressed in a dialog saying `text`, or null
  * for Escape or cancel: a CLI question with more answers than yes, as a
- * chained purge's leave or rejoin (da-0hay9). Each answer opens the next
+ * chained purge's leave, rejoin or chain (da-0hay9). Each answer opens the next
  * dialog there, so each wears `open`'s chevron; answers that act at once
  * (layout mode's Accept and Save, da-vvcxc) pass `run`. No answer is the
  * danger, so all are the accent, unless `dangerousCancel`: the cancel throws

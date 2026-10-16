@@ -540,19 +540,25 @@ fn a_purge_between_the_rounds_of_a_piped_session_leaves_the_file_empty() {
     assert!(a.has("juice"));
 }
 
-/// `db purge` on a chained copy leaves its chain or rejoins it (da-qjxfx):
-/// with neither flag and no TTY to ask on it refuses, naming both, and
-/// changes nothing.
+/// `db purge` on a chained copy leaves its chain, purges all of it or
+/// rejoins it (da-qjxfx): with none of the three said it refuses, naming
+/// them, and changes nothing, as `db restore --hard` does (da-n0zx1).
 #[test]
-fn a_chained_purge_without_a_flag_is_refused_naming_both() {
+fn a_chained_purge_without_a_flag_is_refused_naming_all_three() {
     let (a, _b) = chained();
     a.ok(&["occur", "tea"]);
-    let refused = a.fails(&["db", "purge", "--yes"], "");
-    assert!(
-        refused.contains("--leave") && refused.contains("--rejoin"),
-        "{refused}"
-    );
+    let ops = a.query("SELECT COUNT(*) FROM ops");
+    for argv in [&["db", "purge"][..], &["db", "purge", "--yes"]] {
+        let refused = a.fails(argv, "");
+        assert!(
+            ["--leave", "--chain", "--rejoin"]
+                .iter()
+                .all(|f| refused.contains(f)),
+            "{argv:?}: {refused}"
+        );
+    }
     assert!(a.has("tea"));
+    assert_eq!(a.query("SELECT COUNT(*) FROM ops"), ops);
     let unchained = Copy::new();
     unchained.ok(&["occur", "tea"]);
     for flag in ["--leave", "--rejoin"] {

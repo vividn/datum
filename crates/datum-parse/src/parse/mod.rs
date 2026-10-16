@@ -301,15 +301,15 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "view" => Command::View(parse_view_args(rest)?),
 
         "info" => Command::Info(parse_info_args(rest)?),
-        // `db purge --keep-sync-chain` is `sync chain purge --data`, spelled
-        // where a person looks for a purge (da-2bb7z): one command, two names.
-        "db" if rest.first() == Some(&"purge") && rest.contains(&"--keep-sync-chain") => {
+        // `db purge --chain` is `sync chain purge --data`, spelled where a
+        // person looks for a purge (da-2bb7z, da-n0zx1): one command, two names.
+        "db" if rest.first() == Some(&"purge") && rest.contains(&"--chain") => {
             if rest
                 .iter()
                 .any(|t| matches!(*t, "--leave" | "--rejoin" | "--force"))
             {
                 return Err(ParseError::InvalidArg(
-                    "db purge: --keep-sync-chain purges every copy in the chain; \
+                    "db purge: --chain purges every copy in the chain; \
                      --leave and --rejoin purge this copy alone"
                         .into(),
                 ));
@@ -317,7 +317,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
             let argv: Vec<&str> = ["chain", "purge"]
                 .into_iter()
                 .chain(rest[1..].iter().map(|t| match *t {
-                    "--keep-sync-chain" => "--data",
+                    "--chain" => "--data",
                     "-y" => "--yes",
                     t => t,
                 }))
@@ -494,23 +494,26 @@ mod tests {
 
     /// da-2bb7z: the chain-wide purge's other name is the same parse, not a
     /// second command, and refuses the flags that purge this copy alone.
+    /// Its old name, `--keep-sync-chain`, is no flag at all (da-n0zx1).
     #[test]
-    fn db_purge_keep_sync_chain_is_sync_chain_purge_data() {
+    fn db_purge_chain_is_sync_chain_purge_data() {
         let cmd = |w: &[&str]| format!("{:?}", parse_argv(&argv(w)).unwrap().command);
         for tail in [&[][..], &["--yes"], &["--admin-key", "k"]] {
-            let db = [&["db", "purge", "--keep-sync-chain"][..], tail].concat();
+            let db = [&["db", "purge", "--chain"][..], tail].concat();
             let chain = [&["sync", "chain", "purge", "--data"][..], tail].concat();
             assert_eq!(cmd(&db), cmd(&chain));
         }
         // `db purge`'s `-y` is `--yes` here too: a spelling, not a flag.
         assert_eq!(
-            cmd(&["db", "purge", "--keep-sync-chain", "-y"]),
+            cmd(&["db", "purge", "--chain", "-y"]),
             cmd(&["sync", "chain", "purge", "--data", "--yes"])
         );
         for local in ["--leave", "--rejoin"] {
-            let e = parse_argv(&argv(&["db", "purge", "--keep-sync-chain", local])).unwrap_err();
+            let e = parse_argv(&argv(&["db", "purge", "--chain", local])).unwrap_err();
             assert!(e.to_string().contains("purge this copy alone"), "{e}");
         }
+        let e = parse_argv(&argv(&["db", "purge", "--keep-sync-chain"])).unwrap_err();
+        assert!(e.to_string().contains("--keep-sync-chain"), "{e}");
     }
 
     #[test]

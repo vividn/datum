@@ -5,7 +5,7 @@
 	painted and spaced as it printed it. `close` says whether the `action`
 	button was pressed — with `name` typed exactly, when there is one to
 	type. Escape, cancel or a wrong name are all no. A question with more
-	answers than one, a chained purge's leave or rejoin (da-0hay9), puts
+	answers than one, a chained purge's leave, rejoin or chain (da-0hay9), puts
 	the rest in `also`, and `chose` says which was pressed, or null.
 	`danger` names the button that destroys, drawn in `--error`: the action
 	for a confirm, the cancel for a choice whose way out throws work away

@@ -222,7 +222,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
     if cur.starts_with('-') {
         let mut found = flags(all_flags.iter().copied());
         // A subcommand's own flags are named only in its usage lines
-        // (`db purge --keep-sync-chain`, da-8x1vv).
+        // (`db purge --chain`, da-8x1vv).
         if sub.is_some() {
             found.extend(usage_flags(if lines.is_empty() { usage } else { &lines }));
         }

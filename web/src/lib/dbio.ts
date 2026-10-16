@@ -42,10 +42,10 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	const [cmd, sub, ...flags] = argv;
 	if (cmd === 'db' && sub === 'purge') {
 		// `--yes` typed by hand is the CLI's contract: straight through. So is
-		// `--keep-sync-chain`, `sync chain purge --data` by another name
+		// `--chain`, `sync chain purge --data` by another name
 		// (da-2bb7z), which asks nothing and changes nothing without `--yes`.
 		const yes = flags.some((f) => f === '--yes' || f === '-y');
-		if (!yes && flags.includes('--keep-sync-chain')) return null;
+		if (!yes && flags.includes('--chain')) return null;
 		// A purge that ran takes what the page kept of the data with it.
 		return (yes ? runEchoed(asking(run), argv) : purge(flags)).then((r) => {
 			if (r.code === 0) forgetKept();
@@ -302,11 +302,11 @@ export async function saveBackup(): Promise<RunResult> {
 
 /**
  * `db purge --yes`, once the reader has typed the database's name. A copy
- * in a sync chain is asked first whether it leaves the chain or rejoins
- * it, as the CLI asks on a TTY (da-0hay9): off one it refuses naming
- * `--leave` and `--rejoin`, which reached the reader only after they had
- * typed the name for nothing. A typed `--leave` or `--rejoin` is the answer.
- * The third answer, the chain, purges every copy in it (da-3ni5m).
+ * in a sync chain is asked first whether it leaves the chain, rejoins it
+ * or purges every copy in it (da-3ni5m): the CLI refuses naming `--leave`,
+ * `--rejoin` and `--chain` (da-n0zx1), which reached the reader only after
+ * they had typed the name for nothing (da-0hay9). A typed `--leave` or
+ * `--rejoin` is the answer.
  */
 export async function purge(flags: string[] = []): Promise<RunResult> {
 	// The database this will really purge, never the word `datum` written
@@ -378,7 +378,7 @@ const CLEARS = 'On this device it clears the command history and what the widget
 const mismatch = (db: string): RunResult => ({ argv: ['db', 'purge'], code: 1, stdout: '', stderr: `db purge: aborted (input did not match ${db})` });
 
 /**
- * Every copy in the chain purged (da-3ni5m), `db purge --keep-sync-chain`:
+ * Every copy in the chain purged (da-3ni5m), `db purge --chain`:
  * the CLI's own warning naming each copy, then the name, then the signed
  * order — with a passkey's approval when the chain is locked.
  */

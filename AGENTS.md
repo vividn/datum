@@ -290,7 +290,7 @@ refuses every op that endpoint signed and folds its entries again without them �
 are undone — and revokes it. There is no unpurge: a fresh invite brings it
 back (below), though an old chain's `unpurge` record still folds as it did.
 `sync chain purge --data | --all` (da-qzrj9) is the chain-wide hard purge
-(`db purge --keep-sync-chain` is `--data`, parsed to the same command, da-2bb7z), an
+(`db purge --chain` is `--data`, parsed to the same command, da-2bb7z), an
 admin act any member orders in an open chain: a `wipe` record each copy
 carries out as it comes to hold it, offline a year or not — every entry op
 before it scrubbed to a stub (`applied` = 3: its endpoint, seq and HLC, so
@@ -311,11 +311,12 @@ A copy belongs to one chain — its apply refuses another chain's records
 (da-d8ort). `chain leave` leaves it from any chain: its ops, peers and
 notices go, its entries stay — signed again as baselines on the next sync —
 and it takes a new endpoint key, being a new device now. `db purge` on a
-chained copy takes `--leave`, that departure and then the wipe, or `--rejoin`
-(da-qjxfx): the wipe keeps `sync_local`, `sync_peers` and `sync_notices`, the
-relaying members become the copies it is joining through, and `_meta`
-`sync_rejoin` holds the highest seq its key signed, which `own_head` counts as
-signed until its ops are back — so it takes them back and serves a member's
+chained copy takes `--leave`, that departure and then the wipe, `--chain`
+(above), or `--rejoin` (da-qjxfx), and with none is refused naming the three,
+as `restore --hard` is (da-n0zx1). `--rejoin`: the wipe keeps `sync_local`,
+`sync_peers` and `sync_notices`, the relaying members become the copies it is
+joining through, and `_meta` `sync_rejoin` holds the highest seq its key
+signed, which `own_head` counts as signed until its ops are back — so it takes them back and serves a member's
 vector without reading itself as a copy sharing its key, and signs nothing
 meanwhile. Refused while a change made here has reached no member. Redeeming another
 chain's invite leaves on its own only a copy holding nothing but its own data

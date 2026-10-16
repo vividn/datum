@@ -160,8 +160,8 @@ fn a_dash_offers_the_commands_flags() {
 #[test]
 fn a_dash_offers_every_flag_a_subcommands_usage_names() {
     let env = Env::new();
-    let found = env.complete("db purge --k");
-    assert_eq!(found, ["--keep-sync-chain"]);
+    let found = env.complete("db purge --ch");
+    assert_eq!(found, ["--chain"]);
     let found = env.complete("sync chain leave -");
     assert!(
         has(&found, "--force") && !has(&found, "--reader"),

@@ -245,10 +245,10 @@ for (const engine of [chromium, webkit]) {
 						window.datum.layouts.saveLayout({ ...window.datum.layout.current(), name: 'kept' })
 					);
 
-					// `--keep-sync-chain` is `sync chain purge --data` (da-2bb7z): run
+					// `--chain` is `sync chain purge --data` (da-2bb7z): run
 					// as typed, never the local purge's dialog, and in no chain refused.
 					let before = await echoes(page);
-					await type(page, 'db purge --keep-sync-chain');
+					await type(page, 'db purge --chain');
 					await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
 					assert.match((await app.outputs()).at(-1), /in no sync chain/);
 					assert.equal(await page.locator('dialog.confirm[open]').count(), 0);

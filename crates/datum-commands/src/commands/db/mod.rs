@@ -82,8 +82,9 @@ pub fn purge_with_io(
         .path()
         .map(datum_core::migrations::pre_migration_backups)
         .unwrap_or_default();
-    // A chained copy leaves its chain or rejoins it (da-qjxfx): wiped
-    // silently, it would leave the other members dialling it.
+    // A chained copy leaves its chain or rejoins it (da-qjxfx), or purges
+    // the whole chain (`--chain`, parsed as `sync chain purge --data`):
+    // wiped silently, it would leave the other members dialling it.
     // One that will not read (no `ops`: a damaged file) is in none, and so
     // is one a purge dissolved (da-qzrj9): nothing to leave or rejoin.
     let chain = db
@@ -96,10 +97,13 @@ pub fn purge_with_io(
         (false, ..) => anyhow::bail!(
             "db purge: this copy is in no sync chain; --leave and --rejoin are for one that is"
         ),
-        (true, false, false) => match ask_leave_or_rejoin(chain_id, stdin, is_tty)? {
-            true => (true, false),
-            false => (false, true),
-        },
+        // Which it means is said, as `db restore --hard` has it (da-n0zx1).
+        (true, false, false) => anyhow::bail!(
+            "db purge: this copy is in sync chain {chain_id}, whose other copies would keep \
+             dialling it. --leave tells the chain this copy leaves, then wipes it; --chain \
+             purges every copy in the chain (--admin-key in a locked chain); --rejoin wipes it \
+             and refetches everything from the chain, staying a member"
+        ),
         (true, leave, rejoin) => (leave, rejoin),
     };
     let sources = match rejoin {
@@ -185,28 +189,6 @@ fn refetch(db: &Db, sources: &[String]) {
     }
 }
 
-/// Which a chained copy's purge does, asked on a TTY: leave its chain
-/// (`true`) or rejoin it. Off one it refuses, naming the two flags.
-fn ask_leave_or_rejoin(chain: &str, stdin: &mut dyn BufRead, is_tty: bool) -> Result<bool> {
-    let flags = "--leave tells the chain this copy leaves, then wipes it; --rejoin wipes it and \
-                 refetches everything from the chain, staying a member";
-    if !is_tty {
-        anyhow::bail!("db purge: this copy is in sync chain {chain}: {flags}");
-    }
-    let mut stderr = std::io::stderr().lock();
-    writeln!(stderr, "This copy is in sync chain {chain}: {flags}.")?;
-    write!(stderr, "Leave or rejoin? [leave/rejoin] ")?;
-    stderr.flush()?;
-    drop(stderr);
-    let mut line = String::new();
-    stdin.read_line(&mut line)?;
-    match line.trim() {
-        "leave" => Ok(true),
-        "rejoin" => Ok(false),
-        other => anyhow::bail!("db purge: aborted (neither leave nor rejoin: {other:?})"),
-    }
-}
-
 /// What a purge says it will take, before it asks.
 fn purge_headline(path: &str, snapshots: &[std::path::PathBuf]) -> String {
     let mut headline = format!("This will destroy ALL data in {path}.");
@@ -272,22 +254,7 @@ pub(crate) fn current_db_path(db: &Db) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ask_leave_or_rejoin, purge_headline};
-
-    /// da-qjxfx: a chained copy's purge asks which on a TTY, and off one
-    /// refuses naming both flags.
-    #[test]
-    fn a_chained_purge_asks_leave_or_rejoin() {
-        let ask = |line: &str, tty| ask_leave_or_rejoin("c", &mut line.as_bytes(), tty);
-        assert!(ask("leave\n", true).unwrap());
-        assert!(!ask("rejoin\n", true).unwrap());
-        assert!(ask("y\n", true).is_err());
-        let refused = ask("leave\n", false).unwrap_err().to_string();
-        assert!(
-            refused.contains("--leave") && refused.contains("--rejoin"),
-            "{refused}"
-        );
-    }
+    use super::purge_headline;
 
     /// da-nc8i1: the warning names every snapshot the purge removes.
     #[test]
