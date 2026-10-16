@@ -181,13 +181,15 @@ pub trait Store {
     /// redeemer holding any, which a reader's fold would hide (da-tti3w).
     async fn holds(&self) -> Result<u64>;
     /// `met`: the members' addresses `peer` passed on, to keep for each
-    /// member this copy has not itself seen (da-fly3f).
+    /// member this copy has not itself seen (da-fly3f). `offline`: the
+    /// session failed before it reached `peer` (da-ueb4p).
     async fn record_session(
         &self,
         peer: &str,
         vector: Option<&Vector>,
         verify: Option<bool>,
         error: Option<&str>,
+        offline: bool,
         met: &[EndpointAddr],
     ) -> Result<()>;
     /// Where this copy last saw the members of its chain, to pass on.
@@ -692,19 +694,22 @@ fn verdict(label: &str, same: bool, mine: &Vector, theirs: &Vector) -> (Option<b
 }
 
 /// Record how a session with `id` ended. A peer that is neither a member
-/// nor paired (a refused redemption) has no row to record it in.
+/// nor paired (a refused redemption) has no row to record it in. A dial
+/// that reached no one ([`Failure::Unreachable`], all [`connect`] fails
+/// with but another protocol) is offline: the peer is not up.
 async fn record(store: &impl Store, id: &str, rep: &Result<Report>) {
-    let (vector, verify, error, met) = match rep {
-        Ok(r) => (Some(&r.vector), r.verified, None, &r.met[..]),
+    let (vector, verify, error, offline, met) = match rep {
+        Ok(r) => (Some(&r.vector), r.verified, None, false, &r.met[..]),
         Err(e) => (
             e.downcast_ref::<Lost>().map(|Lost(r, _)| &r.vector),
             None,
             Some(format!("{e:#}")),
+            failure(e) == Some(Failure::Unreachable),
             &[][..],
         ),
     };
     let _ = store
-        .record_session(id, vector, verify, error.as_deref(), met)
+        .record_session(id, vector, verify, error.as_deref(), offline, met)
         .await;
 }
 

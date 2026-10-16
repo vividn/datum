@@ -5,7 +5,7 @@
 
 use rusqlite::Connection;
 
-use super::support::table_exists;
+use super::support::{has_column, table_exists};
 
 use crate::error::Result;
 
@@ -70,5 +70,24 @@ pub(super) fn down_63_to_62_spec_alias_names(conn: &Connection) -> Result<()> {
          DROP TRIGGER IF EXISTS spec_alias_names_delete;
          DROP TABLE IF EXISTS spec_alias_names;",
     )?;
+    Ok(())
+}
+
+/// da-ueb4p: whether a session's failure came before it reached the peer,
+/// so `sync status` says a member that is not up is `offline`, not `error`.
+pub(super) fn m63_to_64_sync_peer_offline(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "sync_peers")? && !has_column(conn, "sync_peers", "last_error_offline")? {
+        conn.execute_batch(
+            "ALTER TABLE sync_peers ADD COLUMN last_error_offline INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v63→v64. Local: an offline failure reads as an error again.
+pub(super) fn down_64_to_63_sync_peer_offline(conn: &Connection) -> Result<()> {
+    if has_column(conn, "sync_peers", "last_error_offline")? {
+        conn.execute_batch("ALTER TABLE sync_peers DROP COLUMN last_error_offline;")?;
+    }
     Ok(())
 }

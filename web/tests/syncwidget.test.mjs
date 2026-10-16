@@ -30,6 +30,7 @@ after(stopApp);
 
 const LAPTOP = 'laptop-01';
 const REFUSED = 'connection refused by the relay';
+const UNREACHED = 'could not reach kiosk: timed out';
 const WIDGET = 'section.pane[data-title="sync"]';
 /** Nothing here dials: the copies only pipe ops, so the relay is never asked. */
 const NO_RELAY = { url: 'http://127.0.0.1:9' };
@@ -187,6 +188,29 @@ describe('the sync widget', () => {
 			// A tap on another database switches to it, as the logo does.
 			await page.locator(`${WIDGET} .others li[data-db="work"] a`).click();
 			await page.waitForURL(/[?&]db=work\b/);
+		}, DESKTOP);
+	});
+
+	test('a device its last session never reached is offline: grey, when last seen, no reason, and not an error', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await fixture(app);
+			const kiosk = await member(app, 'work', 'kiosk');
+			await session(app, 'work', kiosk, '--vector', '{}');
+			await session(app, 'work', kiosk, '--error', UNREACHED, '--offline');
+			await app.goto('/sync?db=work');
+			const h = await page.waitForFunction((sel) => document.querySelectorAll(sel).length === 3, `${WIDGET} .devices li`);
+			await h.dispose();
+			const row = line(page, kiosk);
+			assert.equal(await row.getAttribute('data-mark'), 'offline');
+			assert.equal(await row.locator('.state').innerText(), '○ offline');
+			assert.match(await row.locator('.seen').innerText(), /^(now|\d+ min ago|\d+ h ago)$/);
+			assert.equal(await row.locator('.reason').count(), 0);
+			// Why is a hover away, in the tooltip, verbatim.
+			assert.ok((await row.getAttribute('title')).startsWith(`offline: ${UNREACHED}`));
+			// Not up is no fault: the database as a whole is pending, never red.
+			assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), '◔ pending');
+			assert.ok((await page.locator(`${WIDGET} .legend > span`).allInnerTexts()).includes('○ offline'));
 		}, DESKTOP);
 	});
 

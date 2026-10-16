@@ -41,7 +41,8 @@ export interface Member {
 	 * @shallow a reader takes a second device, which no seeded database is.
 	 */
 	filter?: Filter | null;
-	state: 'synced' | 'pending' | 'never' | 'error';
+	/** `offline`: its last session never reached it, which is no fault (da-ueb4p). */
+	state: 'synced' | 'pending' | 'never' | 'offline' | 'error';
 	to_send: number;
 	last_seen?: string | null;
 	error?: string | null;
@@ -237,7 +238,7 @@ export function readSync(dbs: string[]): Promise<DbSync[]> {
 	);
 }
 
-export type Mark = 'synced' | 'syncing' | 'pending' | 'error' | 'none';
+export type Mark = 'synced' | 'syncing' | 'pending' | 'offline' | 'error' | 'none';
 
 export interface Cell {
 	mark: Mark;
@@ -277,6 +278,7 @@ const WORDS: Record<Mark, string> = {
 	synced: 'synced',
 	syncing: 'syncing now',
 	pending: 'pending',
+	offline: 'offline',
 	error: 'error',
 	none: 'not in this chain'
 };
@@ -311,19 +313,26 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 				peer?.reach === 'online' ? 'syncing' : m.state === 'never' ? 'pending' : m.state;
 			const words =
 				mark !== 'pending' ? WORDS[mark] : m.state === 'never' ? 'never synced' : `pending, ${m.to_send} to send`;
+			// Offline, why is the same every time: the words stay in the tooltip,
+			// and the reason under the line is a fault's (da-ueb4p).
 			const title = m.error ? `${words}: ${m.error}` : words;
+			const error = m.state === 'offline' ? undefined : (m.error ?? undefined);
 			row.cells[d.db] = {
 				mark,
 				stale: false,
 				at: mark === 'error' ? ms(m.error_at) : ms(m.last_seen),
 				title: `${title}${m.reader ? ', read-only' : ''}${m.filter ? `, ${filtered(m.filter)}` : ''}`,
-				error: m.error ?? undefined,
+				error,
 				reader: m.reader,
 				filter: m.filter ?? undefined
 			};
 		}
 		if (d.this) {
-			const marks = d.members.filter((m) => !m.revoked).map((m) => rows.get(m.client ?? m.endpoint)?.cells[d.db]?.mark);
+			// A member that is down may not have this copy's changes yet: pending, as a whole.
+			const marks: (Mark | undefined)[] = d.members
+				.filter((m) => !m.revoked)
+				.map((m) => rows.get(m.client ?? m.endpoint)?.cells[d.db]?.mark)
+				.map((m) => (m === 'offline' ? 'pending' : m));
 			const mark = WORST.find((w) => marks.includes(w)) ?? 'synced';
 			const f = d.this.filter ?? undefined;
 			const title = `this copy: ${WORDS[mark]}${d.this.reader ? ', read-only' : ''}${f ? `, ${filtered(f)}` : ''}`;

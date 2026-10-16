@@ -2055,12 +2055,51 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
     a.ok(&["sync", "record-session", &b.id(), "--verify", "mismatch"]);
     a.ok(&["sync", "record-session", &b.id(), "--error", "cut"]);
     assert_eq!(status_of(&a, &b)["last_verify"]["match"], false);
+    // b being down since is no session either: the mismatch stands (da-ueb4p).
+    a.ok(&[
+        "sync",
+        "record-session",
+        &b.id(),
+        "--error",
+        "gone",
+        "--offline",
+    ]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["error"].as_str()),
+        (Some("error"), Some("verify MISMATCH")),
+        "{row}"
+    );
     a.ok(&["sync", "record-session", &b.id()]);
     let row = status_of(&a, &b);
     assert_eq!(
         (row["state"].as_str(), row["last_verify"].is_null()),
         (Some("pending"), true),
         "{row}"
+    );
+    session(&a, &b);
+
+    // One that never reached b, as datum.day's transport says it: offline,
+    // its words in the JSON alone (da-ueb4p).
+    let why = "could not reach b: timed out";
+    a.ok(&[
+        "sync",
+        "record-session",
+        &b.id(),
+        "--error",
+        why,
+        "--offline",
+    ]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["error"].as_str()),
+        (Some("offline"), Some(why)),
+        "{row}"
+    );
+    let table = a.ok(&["sync", "status"]);
+    assert!(
+        table.contains(" offline ") && !table.contains(why),
+        "{table}"
     );
     session(&a, &b);
 

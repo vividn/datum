@@ -961,14 +961,16 @@ pub enum SyncCommand {
     /// leaves out (da-lkh1j).
     Holds,
     /// Hidden: `datum sync record-session <ENDPOINT> [--vector <JSON>]
-    /// [--verify match|mismatch] [--error <TEXT>] [--met <JSON>]` — how a
-    /// session the browser's transport ran ended, and the members' addresses
-    /// the peer passed on (da-fly3f).
+    /// [--verify match|mismatch] [--error <TEXT> [--offline]] [--met <JSON>]`
+    /// — how a session the browser's transport ran ended, `--offline` when
+    /// it failed before reaching the peer (da-ueb4p), and the members'
+    /// addresses the peer passed on (da-fly3f).
     RecordSession {
         endpoint: String,
         vector: Option<String>,
         verify: Option<bool>,
         error: Option<String>,
+        offline: bool,
         met: Option<String>,
     },
     /// Hidden: `datum sync handshake <ENDPOINT> --label <L> --addr <JSON>

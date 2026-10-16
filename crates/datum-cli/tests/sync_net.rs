@@ -337,6 +337,41 @@ fn a_member_not_running_is_named_with_what_runs_it() {
     }
 }
 
+/// A member that never answers reads `offline` in `sync status`, with when
+/// it was last seen and not the words, which are the same each time; one
+/// that answers and then refuses reads `error`, with its words (da-ueb4p).
+#[test]
+fn a_member_that_never_answers_is_offline_and_one_that_refuses_is_an_error() {
+    let (a, mut b) = paired();
+    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "2")];
+    let line = |b: &Copy| {
+        let status = b.ok(&["sync", "status"]);
+        let id = a.id();
+        let line = status.lines().find(|l| l.contains(&id[..10]));
+        line.unwrap_or_else(|| panic!("{status}")).to_string()
+    };
+    b.fails(&["sync"], "");
+    let row = entry_of(&b, "status", &a);
+    assert_eq!(row["state"], "offline", "{row}");
+    let error = row["error"].as_str().unwrap_or_default();
+    assert!(error.contains("could not reach"), "{row}");
+    assert!(row["error_at"].is_string(), "{row}");
+    let seen = row["last_seen"].as_str().unwrap();
+    let said = line(&b);
+    assert!(said.contains(" offline ") && said.contains(seen), "{said}");
+    assert!(!said.contains("could not reach"), "{said}");
+
+    a.ok(&["sync", "chain", "revoke", &b.id()]);
+    let _a_runs = a.serve(&["sync", "run"]);
+    b.fails(&["sync"], "");
+    let row = entry_of(&b, "status", &a);
+    assert_eq!(row["state"], "error", "{row}");
+    let error = row["error"].as_str().unwrap();
+    assert!(error.contains("refused"), "{row}");
+    let said = line(&b);
+    assert!(said.contains(" error ") && said.contains(error), "{said}");
+}
+
 #[test]
 fn an_invite_is_one_time_and_expires() {
     let (a, b) = (Copy::new(), Copy::new());
@@ -1752,12 +1787,13 @@ fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
         assert!(row["last_verify"]["at"].is_string(), "{row}");
     }
 
-    // a gone, b's session fails, and says why in the words bare `sync` printed.
+    // a gone, b's session fails, offline (da-ueb4p), and says why in the
+    // words bare `sync` printed.
     drop(serving);
     b.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
     let failed = b.fails(&["sync"], "");
     let row = entry_of(&b, "status", &a);
-    assert_eq!(row["state"], "error", "{row}");
+    assert_eq!(row["state"], "offline", "{row}");
     let why = row["error"].as_str().unwrap();
     assert!(
         failed.contains(why) && row["error_at"].is_string(),

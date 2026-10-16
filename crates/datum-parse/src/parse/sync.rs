@@ -59,7 +59,12 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         "endpoint-key" => SyncCommand::EndpointKey,
         "holds" => SyncCommand::Holds,
         "record-session" => {
-            let mut o = opts(&mut rest, &["vector", "verify", "error", "met"], &[], 1..=1)?;
+            let mut o = opts(
+                &mut rest,
+                &["vector", "verify", "error", "met"],
+                &["offline"],
+                1..=1,
+            )?;
             let verify = match o.get("verify").as_deref() {
                 None => None,
                 Some("match") => Some(true),
@@ -75,6 +80,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 vector: o.get("vector"),
                 verify,
                 error: o.get("error"),
+                offline: o.on("offline"),
                 met: o.get("met"),
             }
         }

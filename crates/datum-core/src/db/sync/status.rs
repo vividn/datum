@@ -28,7 +28,8 @@ pub struct PeerStatus {
     pub reader: bool,
     /// A filtered reader's filter (da-u81u1).
     pub filter: Option<Filter>,
-    /// `synced`, `pending`, `error` or `never`.
+    /// `synced`, `pending`, `offline`, `error` or `never`: `offline` when
+    /// the last session failed before it reached the member (da-ueb4p).
     pub state: &'static str,
     pub to_send: i64,
     pub last_seen: Option<String>,
@@ -100,6 +101,7 @@ impl std::fmt::Display for ClockWait {
 }
 
 type Session = (
+    bool,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -112,7 +114,8 @@ type Session = (
 impl Db {
     /// Record how a session with `endpoint` ended: the vector it had at the
     /// end, its verify, and the error it failed with (none: it succeeded,
-    /// which clears the last one). What is not given is kept, with one
+    /// which clears the last one), `offline` when it failed before it reached
+    /// the peer. What is not given is kept, with one
     /// exception: a session that succeeded and gave no verify, one copy
     /// being ahead of the other, clears the verify recorded before it,
     /// which says nothing of the two copies now (da-t3ey2). A failed
@@ -129,7 +132,9 @@ impl Db {
         vector: Option<&BTreeMap<String, i64>>,
         verify: Option<bool>,
         error: Option<&str>,
+        offline: bool,
     ) -> Result<()> {
+        let offline = offline && error.is_some();
         if unhex::<32>(endpoint).is_none() {
             return Err(DatumError::Other(format!("not an endpoint id: {endpoint}")));
         }
@@ -142,9 +147,10 @@ impl Db {
             let same: Option<bool> = self
                 .conn
                 .query_row(
-                    "SELECT last_error IS ?2 AND (?3 IS NULL OR last_vector IS ?3)
+                    "SELECT last_error IS ?2 AND last_error_offline = ?4
+                            AND (?3 IS NULL OR last_vector IS ?3)
                      FROM sync_peers WHERE endpoint_id = ?1",
-                    params![endpoint, error, vector],
+                    params![endpoint, error, vector, offline],
                     |r| r.get(0),
                 )
                 .optional()?;
@@ -174,9 +180,10 @@ impl Db {
                                         ELSE COALESCE(?3, last_verify_match) END,
                last_error = ?4,
                last_error_at = CASE WHEN ?4 IS NULL THEN NULL ELSE ?5 END,
+               last_error_offline = ?6,
                last_seen = CASE WHEN ?4 IS NULL THEN ?5 ELSE last_seen END
              WHERE endpoint_id = ?1",
-                    params![endpoint, vector, verify, error, now],
+                    params![endpoint, vector, verify, error, now, offline],
                 )?;
                 if n == 0 {
                     return Err(DatumError::Other(format!(
@@ -261,11 +268,12 @@ impl Db {
                 .conn
                 .query_row(
                     "SELECT last_seen, last_vector, last_verify_at, last_verify_match,
-                            last_error, last_error_at, NULLIF(addrs, '')
+                            last_error, last_error_at, NULLIF(addrs, ''), last_error_offline
                      FROM sync_peers WHERE endpoint_id = ?1",
                     [&m.endpoint],
                     |r| {
                         Ok((
+                            r.get(7)?,
                             r.get(0)?,
                             r.get(1)?,
                             r.get(2)?,
@@ -277,8 +285,16 @@ impl Db {
                     },
                 )
                 .optional()?;
-            let (last_seen, vector, verify_at, verify_match, mut error, mut error_at, addr) =
-                row.unwrap_or_default();
+            let (
+                offline,
+                last_seen,
+                vector,
+                verify_at,
+                verify_match,
+                mut error,
+                mut error_at,
+                addr,
+            ) = row.unwrap_or_default();
             let theirs: BTreeMap<String, i64> = vector
                 .and_then(|v| serde_json::from_str(&v).ok())
                 .unwrap_or_default();
@@ -301,16 +317,19 @@ impl Db {
             };
             let last_verify = verify_at.zip(verify_match);
             let state = match (&error, last_verify.as_ref()) {
-                (Some(_), _) => "error",
-                // No session yet: a row may hold only an address passed on.
-                _ if last_seen.is_none() => "never",
+                (Some(_), _) if !offline => "error",
                 // A mismatch stands until a session says otherwise: a write
-                // since does not make it merely pending.
+                // since does not make it merely pending, nor the member
+                // being down since.
                 (_, Some((at, false))) => {
                     error = Some("verify MISMATCH".into());
                     error_at = Some(at.clone());
                     "error"
                 }
+                // It never answered: not up, which is no fault (da-ueb4p).
+                (Some(_), _) => "offline",
+                // No session yet: a row may hold only an address passed on.
+                _ if last_seen.is_none() => "never",
                 _ if to_send > 0 => "pending",
                 (_, Some((_, true))) => "synced",
                 // Nothing to send, but no verify says the copies agree.

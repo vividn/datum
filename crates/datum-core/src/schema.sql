@@ -399,7 +399,8 @@ CREATE TABLE IF NOT EXISTS sync_local (
 -- unused since.
 -- The last session with it (da-rcb5m, `datum sync status`): the peer's
 -- version vector as it ended (JSON), its verify, and the error it failed
--- with (NULL once one succeeds), each with its time. `addrs` is '' for a
+-- with (NULL once one succeeds), each with its time, and whether it failed
+-- before reaching the peer (`last_error_offline`, da-ueb4p). `addrs` is '' for a
 -- peer only `sync record-session` has named (the browser's transport).
 -- `redeemed_at`: when this copy redeemed an invite with it and was admitted,
 -- where a join cut short resumes (da-38eye).
@@ -417,6 +418,7 @@ CREATE TABLE IF NOT EXISTS sync_peers (
     last_verify_match INTEGER,
     last_error        TEXT,
     last_error_at     TEXT,
+    last_error_offline INTEGER NOT NULL DEFAULT 0,
     redeemed_at       TEXT,
     datum             TEXT,
     schema            INTEGER

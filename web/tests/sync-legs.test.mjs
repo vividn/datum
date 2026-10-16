@@ -1,7 +1,8 @@
 // datum.day and a terminal on one machine (da-shfv4): the page invites, the
 // CLI connects — vividn's direction, sync.test.mjs's `pairWith` being the
 // reverse — and they sync both ways. Then each leg that can be down is taken
-// down, and the Sync widget's reason under the terminal's line says which:
+// down, and the terminal's line in the Sync widget reads offline (da-ueb4p),
+// its tooltip saying which:
 // the other copy not running (no `sync run`, no daemon), or this copy's own
 // relay. «timed out» alone said neither.
 
@@ -51,13 +52,16 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 				await until(async () => [await native.verify(), await verifyOf(app)], ([a, b]) => a === b);
 
 				await app.goto('/sync');
-				const reason = app.page.locator(`${WIDGET} .devices li:not(.here) .reason`);
+				const line = app.page.locator(`${WIDGET} .devices li:not(.here)`);
+				const reason = { innerText: () => line.getAttribute('title').then((t) => t ?? '') };
 
 				// The terminal stops: the page's next push reaches the relay, and nobody there.
 				running.child.kill();
 				await app.run(['occur', 'unheard', '-t', '1200']);
 				const down = await until(() => reason.innerText().catch(() => ''), (t) => t.includes('could not reach'), DIAL);
 				assert.match(down, /is the other copy running\? A terminal syncs while `datum sync run` or its daemon runs/);
+				assert.equal(await line.getAttribute('data-mark'), 'offline');
+				assert.equal(await line.locator('.reason').count(), 0);
 
 				// The relay stops: this copy is the one cut off, and it says so.
 				await relay.stop();

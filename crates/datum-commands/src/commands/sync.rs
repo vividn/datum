@@ -391,13 +391,20 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             vector,
             verify,
             error,
+            offline,
             met,
         } => {
             let vector: Option<BTreeMap<String, i64>> = vector
                 .map(|v| serde_json::from_str(&v))
                 .transpose()
                 .context("--vector is not a version vector")?;
-            db.sync_record_session(&endpoint, vector.as_ref(), verify, error.as_deref())?;
+            db.sync_record_session(
+                &endpoint,
+                vector.as_ref(),
+                verify,
+                error.as_deref(),
+                offline,
+            )?;
             if let Some(met) = met {
                 db.sync_introduce(&met)?;
             }
@@ -602,7 +609,7 @@ fn summary(db: &Db) -> Result<Option<String>> {
         .into_iter()
         .filter(|p| !p.revoked)
         .collect();
-    let states: Vec<String> = ["synced", "pending", "error", "never"]
+    let states: Vec<String> = ["synced", "pending", "offline", "error", "never"]
         .iter()
         .map(|s| (s, peers.iter().filter(|p| p.state == *s).count()))
         .filter(|(_, n)| *n > 0)
@@ -1402,6 +1409,8 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
         let when = match p.state {
             "error" => p.error_at.clone(),
             "never" => None,
+            // When it was last up: why it is not is the same every time.
+            "offline" => p.last_seen.clone(),
             _ => p
                 .last_verify
                 .as_ref()
@@ -1427,6 +1436,7 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 .unwrap_or_default(),
             p.error
                 .clone()
+                .filter(|_| p.state != "offline")
                 .or_else(|| p.no_address(&peers))
                 .map(|e| format!("  {e}"))
                 .unwrap_or_default(),

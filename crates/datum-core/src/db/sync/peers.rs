@@ -317,7 +317,7 @@ mod tests {
         db.force_recreate_schema().unwrap();
         let peer = "ab".repeat(32);
         let hello = db.sync_handshake(&peer, "b", "{}", None, None, 0, None, true);
-        let ended = db.sync_record_session(&peer, None, Some(true), None);
+        let ended = db.sync_record_session(&peer, None, Some(true), None, false);
         let met = db.sync_introduce(&json!([{ "id": peer }]).to_string());
         db.sync_session_as(None);
         for refused in [hello.map(drop), ended, met] {
@@ -346,7 +346,7 @@ mod tests {
         };
         let fail = |why: &str, vector: Option<&BTreeMap<String, i64>>| {
             let changes = a.conn.total_changes();
-            a.sync_record_session(&id(&b), vector, None, Some(why))
+            a.sync_record_session(&id(&b), vector, None, Some(why), true)
                 .unwrap();
             a.conn.total_changes() - changes
         };
@@ -359,8 +359,20 @@ mod tests {
         assert_eq!(fail("could not reach b: timed out", Some(&vector)), 1);
         assert_eq!(fail("could not reach b: timed out", Some(&vector)), 0);
         assert_eq!(fail("could not reach b: refused", None), 1);
-        a.sync_record_session(&id(&b), None, None, None).unwrap();
+        a.sync_record_session(&id(&b), None, None, None, false)
+            .unwrap();
         assert_eq!(fail("could not reach b: refused", None), 1);
+        // The same words, reached this time: a change of phase is written.
+        let changes = a.conn.total_changes();
+        a.sync_record_session(
+            &id(&b),
+            None,
+            None,
+            Some("could not reach b: refused"),
+            false,
+        )
+        .unwrap();
+        assert_eq!(a.conn.total_changes() - changes, 1);
     }
 
     /// `from` sends `to` what it lacks, as a session does.

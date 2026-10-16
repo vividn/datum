@@ -210,6 +210,7 @@ fn every_pair_has_a_roundtrip_test() {
         (60, 61),
         (61, 62),
         (62, 63),
+        (63, 64),
     ];
     assert_eq!(
         covered.len(),
@@ -2726,6 +2727,17 @@ fn roundtrip_v62_to_v63_spec_alias_names() {
     apply_one_down(conn, 63);
     assert!(!table_exists(conn, "spec_alias_names"));
     db.save_field_spec(&spec).unwrap();
+}
+
+/// da-ueb4p: the offline mark of a session's failure comes and goes.
+#[test]
+fn roundtrip_v63_to_v64_sync_peer_offline() {
+    let db = fresh_at(63);
+    let conn = db.conn();
+    apply_one_up(conn, 63);
+    assert!(column_exists(conn, "sync_peers", "last_error_offline"));
+    apply_one_down(conn, 64);
+    assert!(!column_exists(conn, "sync_peers", "last_error_offline"));
 }
 
 #[test]

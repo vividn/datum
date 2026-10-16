@@ -237,6 +237,7 @@ impl Store for Cli {
         vector: Option<&Vector>,
         verify: Option<bool>,
         error: Option<&str>,
+        offline: bool,
         met: &[EndpointAddr],
     ) -> Result<()> {
         let vector = vector.map(serde_json::to_string).transpose()?;
@@ -253,6 +254,9 @@ impl Store for Cli {
         }
         if let Some(e) = error {
             argv.extend(["--error", e]);
+        }
+        if offline {
+            argv.push("--offline");
         }
         self.run(&argv, None).await.map(drop)
     }

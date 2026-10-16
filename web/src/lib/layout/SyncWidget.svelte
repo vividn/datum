@@ -8,7 +8,8 @@
 	from the sync worker's broadcast (`syncStates`), the state as a shape
 	AND a word, and when it was last seen. A device not reachable now shows
 	its last-known state grey: never a green ✓ for it. One in error says
-	why under its line. A reader (da-9yvb6) carries the lock beside its
+	why under its line; one offline, its last session never reaching it, is
+	grey with when it was last seen, and no why (da-ueb4p). A reader (da-9yvb6) carries the lock beside its
 	state, a filtered one (da-u81u1) the filter too. A list, not a table: a
 	table of clients × databases was 459px on a 390px phone.
 
@@ -91,15 +92,15 @@
 
 	export let epoch = 0;
 
-	const SYMBOL: Record<Mark, string> = { synced: '✓', syncing: '↻', pending: '◔', error: '!', none: '—' };
-	const WORD: Record<Mark, string> = { synced: 'synced', syncing: 'syncing', pending: 'pending', error: 'error', none: 'not syncing' };
+	const SYMBOL: Record<Mark, string> = { synced: '✓', syncing: '↻', pending: '◔', offline: '○', error: '!', none: '—' };
+	const WORD: Record<Mark, string> = { synced: 'synced', syncing: 'syncing', pending: 'pending', offline: 'offline', error: 'error', none: 'not syncing' };
 	const DOT = { online: '●', reachable: '◐', offline: '○' };
 	/** Beside the state of a copy that is a reader in its chain (da-9yvb6). */
 	const READER = '🔒︎';
 	/** Beside it too when the reader is sent only some fields (da-u81u1). */
 	const FILTER = '⛛';
 	/** The order a legend and a database's overall state are read in. */
-	const MARKS: Mark[] = ['synced', 'syncing', 'pending', 'error', 'none'];
+	const MARKS: Mark[] = ['synced', 'syncing', 'pending', 'offline', 'error', 'none'];
 	const canShare = browser && typeof navigator.share === 'function';
 
 	/** The page's database: the one this widget is about. */
@@ -681,6 +682,7 @@
 		color: var(--error);
 	}
 	.none,
+	.offline,
 	.stale {
 		color: var(--muted);
 	}

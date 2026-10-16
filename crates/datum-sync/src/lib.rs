@@ -361,9 +361,11 @@ impl Store for DbStore<'_> {
         vector: Option<&Vector>,
         verify: Option<bool>,
         error: Option<&str>,
+        offline: bool,
         met: &[EndpointAddr],
     ) -> Result<()> {
-        self.0.sync_record_session(peer, vector, verify, error)?;
+        self.0
+            .sync_record_session(peer, vector, verify, error, offline)?;
         if met.is_empty() {
             return Ok(());
         }

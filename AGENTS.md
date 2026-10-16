@@ -284,7 +284,12 @@ hidden `sync run` swap vectors and ops until neither moves, with every member
 this copy has an address for. `sync run` tries a member it failed to reach
 again after a minute, the gap doubling to half an hour, dials every member when
 it starts or its address changes, and a failure the peer's row already says
-writes nothing (da-u1ul1). Each side says in its handshake where it last
+writes nothing (da-u1ul1). A session that failed before it reached the
+member (the transport's `Failure::Unreachable`) is recorded as such
+(`sync_peers.last_error_offline`), and `sync status` calls the member
+`offline`, with when it was last seen and none of the words, which `--json`'s
+`error` still carries; one that reached it and then failed is `error`, with
+them (da-ueb4p). Each side says in its handshake where it last
 saw the chain's members (`known` on `Hello` and `Welcome`), and the other
 keeps what it has not itself seen once the session has synced, so two copies
 one inviter admitted dial each other (da-fly3f); a member with no address yet
