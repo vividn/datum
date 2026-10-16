@@ -22,6 +22,7 @@ import { chromium, webkit } from 'playwright';
 import { fileArgv } from '../src/lib/fileargv.ts';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { ONE_PANE } from './support/layout.mjs';
+import { cli, endpointId } from './support/syncactions.mjs';
 
 // The probe is the file's one top-level await, and it comes before any
 // hook or test is registered (da-h9vv0): node:test runs the root `after`
@@ -933,4 +934,39 @@ test('a hard restore asks with what it drops and the database’s name, even wit
 			assert.deepEqual(app.errors, []);
 		}
 	);
+});
+
+// da-t26vv: `--hard --chain` restores every copy in the sync chain to the
+// backup (da-ncmmj), and its confirm said it replaced this database's data.
+test('a hard restore with --chain asks naming the chain whose every copy it restores', async () => {
+	await onSeam(async (app) => {
+		const { page } = app;
+		await app.declare('coffee');
+		await app.submit('occur coffee');
+		const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
+		const saved = await download.path();
+		// This copy in an open chain with a phone beside it, as a session admits one.
+		const { secret } = JSON.parse(await cli(app, ['sync', 'new-invite', '--expires', '1d']));
+		await cli(app, ['sync', 'handshake', endpointId(), '--label', 'phone', '--addr', '{}', '--invite', secret, '--chain', '']);
+		const { chain } = JSON.parse(await cli(app, ['sync', 'chain', 'list', '--json']));
+		assert.ok(chain);
+
+		const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore --hard --chain')]);
+		await chooser.setFiles(saved);
+		const dialog = page.locator('dialog.confirm');
+		await dialog.waitFor();
+		const text = await dialog.locator('p').innerText();
+		assert.ok(text.startsWith(`Every copy in sync chain ${chain} is restored to the backup (`), text);
+		assert.match(text, /made before the restore is dropped as it syncs, offline or not; .* This copy drops \d+ live, /);
+		assert.equal(await dialog.getByRole('button', { name: 'restore every copy', exact: true }).count(), 1);
+
+		// The wrong name restores nothing.
+		const before = await echoes(page);
+		await dialog.locator('input').fill('datu');
+		await dialog.locator('input').press('Enter');
+		await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+		assert.equal((await app.outputs()).at(-1), 'db restore --hard: aborted (input did not match datum)');
+		assert.equal(await count(app), 2);
+		assert.deepEqual(app.errors, []);
+	});
 });

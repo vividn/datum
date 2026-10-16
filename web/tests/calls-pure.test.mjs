@@ -219,7 +219,7 @@ const SAMPLES = {
 	dbPurgeArgv: [[]],
 	dbPurgeProbeArgv: [[], [['--leave', '--force']], [['--rejoin']]],
 	dbPurgeChainArgv: [[], [true]],
-	restorePreviewArgv: [[calls.restoreArgv()], [[...calls.restoreArgv(), '--hard', '--leave']], [calls.restoreStagedArgv(FILE)]],
+	restorePreviewArgv: [[calls.restoreArgv()], [[...calls.restoreArgv(), '--hard', '--leave']], [[...calls.restoreArgv(), '--hard', '--chain']], [calls.restoreStagedArgv(FILE)]],
 	restoreStagedArgv: [[FILE]],
 	savePlanArgv: [[PLAN, false], [PLAN, true]],
 	deletePlanArgv: [[PLAN.name]],

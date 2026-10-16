@@ -153,6 +153,8 @@ export interface RestorePreview {
 	/** The live entries counted, which the run is pinned to; null for an empty backup. */
 	fingerprint: string | null;
 	dropped?: { entries?: number; tombstones?: number; history?: number };
+	/** The sync chain a `--hard --chain` restores every copy of (da-ncmmj). */
+	chain?: string;
 }
 
 /**
@@ -222,17 +224,22 @@ function hard(argv: string[]): Promise<RunResult> {
 		for (let moved = ''; ; moved = '⚠ The database changed since it was counted. ') {
 			const seen = await feed(restorePreviewArgv(argv), backup);
 			if (seen.code !== 0) return seen;
-			const { would_insert, dropped, warnings, fingerprint } = JSON.parse(seen.stdout) as RestorePreview;
+			const { would_insert, dropped, warnings, fingerprint, chain } = JSON.parse(seen.stdout) as RestorePreview;
 			// An empty file is a backup of nothing, and replaces nothing: no fingerprint.
 			const pin = fingerprint ? ['--if-unchanged', fingerprint] : [];
 			const { entries = 0, tombstones = 0, history = 0 } = dropped ?? {};
 			const text =
 				moved +
-				`This replaces ALL data in ${db} with the backup (${would_insert} written); dropped: ` +
+				// `--chain` restores every copy, not this one alone (da-t26vv): the CLI's own words for it.
+				(chain
+					? `Every copy in sync chain ${chain} is restored to the backup (${would_insert} written), its own data dropped: ` +
+						'an entry a copy made before the restore is dropped as it syncs, offline or not; one made after it is kept. ' +
+						'This copy drops '
+					: `This replaces ALL data in ${db} with the backup (${would_insert} written); dropped: `) +
 				`${entries} live, ${tombstones} tombstoned or superseded, ${history} in history. ` +
 				'It cannot be undone: the history `undo` reads goes with it.' +
 				warnings.map((w: string) => ` ⚠ ${w}.`).join('');
-			if (!(await confirm(text, 'restore --hard', db))) {
+			if (!(await confirm(text, chain ? 'restore every copy' : 'restore --hard', db))) {
 				// The CLI's own words for a mismatch at its prompt.
 				return { argv, code: 1, stdout: '', stderr: `db restore --hard: aborted (input did not match ${db})` };
 			}
