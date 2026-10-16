@@ -20,7 +20,7 @@ use datum_core::{
 };
 
 use crate::args::RetimeArgs;
-use crate::commands::helpers::{load_registry_opt, resolve_batch, BatchMode};
+use crate::commands::helpers::{registry_of, resolve_batch, BatchMode};
 use crate::commands::log_core::build_time_anchored;
 use crate::commands::time_bounds::{parse_after, parse_before};
 use crate::render::{show_retime, OutputArgs};
@@ -214,7 +214,7 @@ fn report(db: &Db, moved: &[datum_core::db::Retimed]) -> Result<()> {
         anyhow::bail!("no entries retimed");
     }
     crate::cmd::stamp_batch(db);
-    let registry = load_registry_opt(db);
+    let registry = registry_of(db, moved.iter().map(|r| &r.entry));
     let output = OutputArgs::default();
     for r in moved {
         show_retime(&r.entry, &r.before, registry.as_ref(), &output);

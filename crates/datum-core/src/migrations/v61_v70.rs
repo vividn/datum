@@ -51,3 +51,24 @@ pub(super) fn down_62_to_61_undo_undone_index(conn: &Connection) -> Result<()> {
     conn.execute_batch("DROP INDEX IF EXISTS undo_actions_undone;")?;
     Ok(())
 }
+
+/// da-ulu8f: `spec_alias_names`, every derived alias name by the spec row
+/// carrying it, so the first word of a command is looked up by name and
+/// not by reading every spec. Local: derived from the `spec` rows.
+pub(super) fn m62_to_63_spec_alias_names(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "entries")? {
+        crate::db::fill_spec_alias_names(conn)?;
+    }
+    Ok(())
+}
+
+/// Reverse v62→v63.
+pub(super) fn down_63_to_62_spec_alias_names(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP TRIGGER IF EXISTS spec_alias_names_insert;
+         DROP TRIGGER IF EXISTS spec_alias_names_update;
+         DROP TRIGGER IF EXISTS spec_alias_names_delete;
+         DROP TABLE IF EXISTS spec_alias_names;",
+    )?;
+    Ok(())
+}

@@ -89,7 +89,12 @@ fn echo(db: &Db, entry: &Entry, action: Outcome, show: Show) -> Result<()> {
         show,
         format_string: None,
     };
-    show_action(entry, action, Some(&db.load_registry()?), &args);
+    show_action(
+        entry,
+        action,
+        Some(&db.load_registry_for(&[&entry.field])?),
+        &args,
+    );
     Ok(())
 }
 

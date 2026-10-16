@@ -343,3 +343,42 @@ fn a_write_does_not_grow_with_the_undo_stack() {
          {small} hundred VM steps behind 1k actions, {large} behind 16k",
     );
 }
+
+/// da-ulu8f: a command cost time in the number of FIELDS the database
+/// holds, those it never named too — every log and `tail` parsed every
+/// spec (the whole registry, for the one spec it renders), and a bare field
+/// word read every spec to find the alias it is. Two stores the same but
+/// for ten times the fields, and the writes that made them: the commands
+/// must cost the same.
+#[test]
+fn a_command_does_not_grow_with_the_fields_it_does_not_name() {
+    let stores = [100, 1_000].map(|n| {
+        let db = Db::open_in_memory().unwrap();
+        for i in 0..n {
+            let field = format!("issue__{i}");
+            let argv = ["datum", "add", &field, "--id", "doc", "title=x"];
+            datum_commands::cmd::dispatch_argv(argv.map(String::from).to_vec(), &db).unwrap();
+        }
+        db
+    });
+    let commands: [&[&str]; 9] = [
+        &["occur", "tea"],
+        &["tea"],
+        &["switch", "mood", "calm"],
+        &["mood", "switch", "happy"],
+        &["tail", "-n", "1"],
+        &["get", "_LAST"],
+        &["update", "_LAST", "x=1"],
+        &["delete", "_LAST"],
+        &["setup", "tea", "--color", "red"],
+    ];
+    for argv in commands {
+        let [small, large] = [&stores[0], &stores[1]].map(|db| vm_steps(db, argv));
+        assert!(
+            large <= small + small / 10,
+            "`{}` visits more with more fields: {small} hundred VM steps \
+             with 100 fields, {large} with 1,000",
+            argv.join(" "),
+        );
+    }
+}

@@ -60,7 +60,7 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
         ));
     }
 
-    let registry = crate::commands::helpers::load_registry_opt(db);
+    let registry = crate::commands::helpers::registry_of(db, &entries);
     let output = args.output()?;
     // Stamp the pointer at the resolved hids BEFORE printing, so a reader
     // closing the pipe cannot cut the record short (da-ki5j3). A follow-up
@@ -218,7 +218,7 @@ fn search(field: &str, args: GetArgs, db: &Db) -> Result<()> {
         ));
     }
 
-    let registry = crate::commands::helpers::load_registry_opt(db);
+    let registry = crate::commands::helpers::registry_of(db, &entries);
     let output = args.output()?;
     // Stamped before printing (da-ki5j3).
     let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();

@@ -268,7 +268,7 @@ pub fn update_batch_from_args(
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
     if args.dry_run {
-        let registry = db.load_registry().ok();
+        let registry = crate::commands::helpers::registry_of(db, &entries);
         let now = DatumTime::now();
         let ctxs = crate::commands::render_helpers::build_render_contexts(&entries, db);
         for (i, entry) in entries.iter().enumerate() {
@@ -391,7 +391,7 @@ pub fn update_batch_from_args(
 /// Print the post-mutation confirmation: `UPDATE`, after a `RENAME` when the
 /// slug moved, as v2's `updateDoc` does. The row is the same one either way.
 pub fn render_outcome(outcome: &UpdateOutcome, output: &OutputArgs, db: &Db) {
-    let registry = db.load_registry().ok();
+    let registry = crate::commands::helpers::registry_of(db, [&outcome.entry]);
     match &outcome.old_slug {
         Some(old) => {
             show_rename(old, &outcome.entry.slug, output);

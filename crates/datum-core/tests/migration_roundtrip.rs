@@ -209,6 +209,7 @@ fn every_pair_has_a_roundtrip_test() {
         (59, 60),
         (60, 61),
         (61, 62),
+        (62, 63),
     ];
     assert_eq!(
         covered.len(),
@@ -2696,6 +2697,35 @@ fn roundtrip_v61_to_v62_undo_undone_index() {
     assert!(index_exists(conn, "undo_actions_undone"));
     apply_one_down(conn, 62);
     assert!(!index_exists(conn, "undo_actions_undone"));
+}
+
+/// da-ulu8f: v63 lays down `spec_alias_names`, filled from the specs the
+/// file already holds and kept by its triggers; v62 takes them away.
+#[test]
+fn roundtrip_v62_to_v63_spec_alias_names() {
+    let db = fresh_at(62);
+    let mut spec =
+        datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
+    spec.allowed_states = Some(vec!["calm".into()]);
+    spec.regenerate_derived_aliases();
+    db.save_field_spec(&spec).unwrap();
+    let conn = db.conn();
+    apply_one_up(conn, 62);
+    let names = || -> Vec<String> {
+        let mut stmt = conn
+            .prepare("SELECT name FROM spec_alias_names ORDER BY name")
+            .unwrap();
+        let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+        rows.map(Result::unwrap).collect()
+    };
+    assert_eq!(names(), ["calm", "mood", "moode"], "filled from the specs");
+    let mut tea = datum_core::field_spec::FieldSpec::new("tea", datum_core::action::Action::Occur);
+    tea.regenerate_derived_aliases();
+    db.save_field_spec(&tea).unwrap();
+    assert!(names().contains(&"tea".to_string()), "kept by the triggers");
+    apply_one_down(conn, 63);
+    assert!(!table_exists(conn, "spec_alias_names"));
+    db.save_field_spec(&spec).unwrap();
 }
 
 #[test]

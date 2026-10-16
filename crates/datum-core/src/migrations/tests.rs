@@ -45,6 +45,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "integrity_warnings",
         "last_docs",
         "ops",
+        "spec_alias_names",
         "stats_cache",
         "stats_cache_days",
         "stats_cache_dirty",
@@ -99,6 +100,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "ops_hid",
         "ops_hlc",
         "ops_slug",
+        "spec_alias_names_spec",
         "undo_actions_undone",
     ];
     assert_eq!(indexes, expected_indexes);

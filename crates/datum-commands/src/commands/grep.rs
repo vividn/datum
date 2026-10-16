@@ -17,7 +17,7 @@ use regex_lite::Regex;
 use crate::{
     args::{GrepArgs, OutputFlagsExt},
     commands::{
-        edit::UserEditableEntry, helpers::load_registry_opt, render_helpers::build_table_contexts,
+        edit::UserEditableEntry, helpers::registry_of, render_helpers::build_table_contexts,
     },
     render::{print_table_with, TableArgs, TimeMetricCol},
 };
@@ -31,7 +31,7 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
 
     let matches = grep_entries(db, &regexes, args.field.as_deref())?;
 
-    let registry = load_registry_opt(db);
+    let registry = registry_of(db, &matches);
     let tbl = TableArgs {
         output: args.output()?,
         metric: TimeMetricCol::Hybrid,

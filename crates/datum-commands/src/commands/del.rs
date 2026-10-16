@@ -11,14 +11,13 @@ use datum_core::{
 use crate::{
     args::{DeleteArgs, OutputFlagsExt},
     commands::{
-        helpers::{load_registry_opt, resolve_batch, BatchMode},
+        helpers::{registry_of, resolve_batch, BatchMode},
         render_helpers::build_render_contexts,
     },
     render::{print_entry, show_delete},
 };
 
 pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
-    let registry = load_registry_opt(db);
     let output = args.output()?;
     // da-uzxj: bare `datum delete` defaults to `_LAST`. Nothing guards that
     // default any more (da-s6no) — see the warning below.
@@ -65,6 +64,8 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         }
     }
 
+    // Read before the deletes, which may take a field's spec along.
+    let registry = registry_of(db, &entries);
     if args.dry_run {
         let now = DatumTime::now();
         let ctxs = build_render_contexts(&entries, db);

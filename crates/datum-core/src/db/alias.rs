@@ -199,9 +199,9 @@ impl Db {
         if let Some(json) = json {
             return Ok(Some(serde_json::from_str(&json)?));
         }
-        // Fall through to the spec-alias index (da-8y2q.5).
-        let index = self.spec_alias_index()?;
-        Ok(index.entries.get(name).cloned())
+        // Fall through to the spec-derived aliases (da-8y2q.5), by name
+        // (da-ulu8f).
+        self.derived_alias(name)
     }
 
     /// Delete a user or kit alias: a SOFT delete, as `datum del` makes, so

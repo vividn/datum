@@ -9,7 +9,7 @@ use datum_core::{
 
 use crate::{
     args::{Cli, Command, LogArgs},
-    commands::{helpers::load_registry_opt, render_helpers::build_render_contexts},
+    commands::render_helpers::build_render_contexts,
     render::{show_create_with_context, OutputArgs},
 };
 
@@ -156,7 +156,6 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
     if hids.is_empty() {
         return;
     }
-    let registry = load_registry_opt(db);
     // Pair each entry with its side's OutputArgs *before* dropping
     // failed loads, so a single failure skips both halves instead of
     // shifting every subsequent row onto its neighbor's flags.
@@ -182,6 +181,7 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
     if entries.is_empty() {
         return;
     }
+    let registry = crate::commands::helpers::registry_of(db, &entries);
     let contexts = build_render_contexts(&entries, db);
     for (idx, entry) in entries.iter().enumerate() {
         let output = outputs.get(idx).cloned().unwrap_or_default();

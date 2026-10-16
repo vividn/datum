@@ -116,6 +116,28 @@ pub(crate) fn load_registry_opt(db: &Db) -> Option<datum_core::field_spec::SpecR
     load_registry(db).ok()
 }
 
+/// [`load_registry_opt`] for a renderer that shows only entries of
+/// `fields`: it reads each entry's own field's spec and nothing else, so a
+/// log or a `tail` costs the same whatever else the database tracks
+/// (da-ulu8f).
+pub(crate) fn registry_for(db: &Db, fields: &[&str]) -> Option<SpecRegistry> {
+    db.load_registry_for(fields).ok()
+}
+
+/// [`registry_for`] the fields of `entries`, and `spec`'s for the spec rows
+/// a delete takes along with them.
+pub(crate) fn registry_of<'a>(
+    db: &Db,
+    entries: impl IntoIterator<Item = &'a Entry>,
+) -> Option<SpecRegistry> {
+    let fields: std::collections::BTreeSet<&str> = entries
+        .into_iter()
+        .map(|e| e.field.as_str())
+        .chain([datum_core::db::SPEC_FIELD])
+        .collect();
+    registry_for(db, &fields.into_iter().collect::<Vec<_>>())
+}
+
 /// An edit of a spec entry (`update spec:F`, `edit`) holds the colours it
 /// changes to `setup --color`'s rule (da-eciuy). Here and not in
 /// storage, which takes a synced spec as its copy wrote it.
@@ -138,7 +160,7 @@ pub(crate) fn resolve_spec_colors(updated: &mut Entry, existing: &Entry) -> Resu
 /// Loads the registry on demand (`None` = no specs configured → no-op) so
 /// callers can use the same line at any insert site.
 pub(crate) fn enforce_spec_lists(entry: &Entry, db: &Db) -> Result<()> {
-    let Some(registry) = load_registry_opt(db) else {
+    let Some(registry) = registry_for(db, &[&entry.field]) else {
         return Ok(());
     };
     enforce_spec_lists_against(entry, &registry)
@@ -509,7 +531,7 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
     // Stale: render candidates (production only — tests skip) and
     // prompt with yes-default ([Y/n]).
     if render_candidates && !answered {
-        let registry = load_registry_opt(db);
+        let registry = registry_of(db, entries);
         let now = datum_core::time::DatumTime::now();
         let ctxs = crate::commands::render_helpers::build_render_contexts(entries, db);
         {

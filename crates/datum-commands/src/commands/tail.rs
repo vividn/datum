@@ -10,7 +10,7 @@ use datum_core::{
 };
 
 use crate::args::{OutputFlagsExt, TailArgs};
-use crate::commands::helpers::{load_registry_opt, resolve_prefix_or_tombstone};
+use crate::commands::helpers::{load_registry_opt, registry_of, resolve_prefix_or_tombstone};
 use crate::commands::render_helpers::build_table_contexts;
 use crate::render::tail_rows::{tail_rows, TailDocument};
 use crate::render::term_layout::{detect_cols, detect_rows, given_cols, given_rows, is_stdout_tty};
@@ -67,7 +67,11 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     let auto_count =
         (tty && args.count.is_none()).then(|| auto_fill_rows(given_rows(5).unwrap_or(24)));
     let entries = tail_entries_with_default_count(&args, auto_count, db)?;
-    let registry = load_registry_opt(db);
+    // A watch shows rows of fields it has not read yet.
+    let registry = match args.watch {
+        Some(_) => load_registry_opt(db),
+        None => registry_of(db, &entries),
+    };
     let output = args.output()?;
 
     // Per da-6t0: tail/head always render through the tabular path so the
@@ -120,7 +124,6 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
 /// an event feed instead of the table path's clear-screen escapes.
 fn tail_json(args: &TailArgs, metric: TimeMetricCol, columns: Vec<String>, db: &Db) -> Result<()> {
     let watching = args.watch.is_some();
-    let registry = load_registry_opt(db);
     let tbl = TableArgs {
         output: args.output()?,
         metric,
@@ -133,6 +136,7 @@ fn tail_json(args: &TailArgs, metric: TimeMetricCol, columns: Vec<String>, db: &
         // reports here is the `_n` a row would show there.
         let ctxs = build_table_contexts(entries, db);
         let now = DatumTime::now();
+        let registry = registry_of(db, entries);
         let payload = TailDocument {
             rows: tail_rows(entries, Some(&ctxs), metric, registry.as_ref()),
             columns: table_columns_with(entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl),

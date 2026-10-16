@@ -35,6 +35,7 @@ mod query;
 mod row_mapper;
 pub(crate) mod spec;
 mod spec_alias_index;
+pub(crate) use spec_alias_index::{fill_spec_alias_names, SPEC_ALIAS_NAMES_SQL};
 mod spool;
 mod state;
 mod stats_cache;
@@ -431,6 +432,7 @@ impl Db {
         // databases.
         self.conn.execute_batch(include_str!("../schema.sql"))?;
         self.conn.execute_batch(STATS_CACHE_SQL)?;
+        self.conn.execute_batch(SPEC_ALIAS_NAMES_SQL)?;
         // A kit index is this device's, derived from the definitions the
         // file holds (da-fwwtn). One that will not build is no reason not
         // to open: it is only an index.
@@ -526,6 +528,7 @@ impl Db {
             }
             tx.execute_batch(include_str!("../schema.sql"))?;
             tx.execute_batch(STATS_CACHE_SQL)?;
+            tx.execute_batch(SPEC_ALIAS_NAMES_SQL)?;
             crate::migrations::set_schema_version(tx, crate::migrations::CURRENT_SCHEMA_VERSION)?;
             within(tx)?;
             Ok(tables)

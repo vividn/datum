@@ -70,7 +70,8 @@ pub fn is_meta_field(field: &str) -> bool {
 /// ([`check_spec_entry`]), but sync stores a peer's rows as they arrive,
 /// and a peer from before v38 may hold a plain `occur spec` log. Such a row
 /// is not a spec to read. A malformed spec at its own slug still errors.
-const SPEC_DOC_SQL: &str = "field = 'spec' AND deleted_at IS NULL AND superseded_by IS NULL \
+pub(super) const SPEC_DOC_SQL: &str =
+    "field = 'spec' AND deleted_at IS NULL AND superseded_by IS NULL \
      AND slug = 'spec:' || json_extract(data, '$.field')";
 
 /// `spec:<field>` — a spec's slug, so the same spec is the same doc on
@@ -432,13 +433,11 @@ impl Db {
 
         // Compute the report by inspecting the now-current state of the
         // alias namespace. A derived alias is "saved" iff (a) no user/kit
-        // alias shadows it and (b) the spec-alias index attributes
-        // the name to this field. Otherwise it is shadowed and we attach
-        // the cause.
+        // alias shadows it and (b) the spec that wins the name is this
+        // field's. Otherwise it is shadowed and we attach the cause.
         let mut saved: Vec<String> = Vec::new();
         let mut skipped: Vec<AliasConflict> = Vec::new();
         let user_aliases = self.list_user_aliases()?;
-        let index = self.spec_alias_index()?;
         for d in &spec.derived_aliases {
             // Shadowed by a user/kit alias?
             if user_aliases.iter().any(|a| a.name == d.name) {
@@ -448,26 +447,15 @@ impl Db {
                 });
                 continue;
             }
-            // Cross-spec collision: index points the name at a different field.
-            match index.by_field.get(&spec.field) {
-                Some(names) if names.iter().any(|n| n == &d.name) => {
-                    saved.push(d.name.clone());
-                }
-                _ => {
-                    let owner = index
-                        .collisions
-                        .iter()
-                        .find(|c| c.name == d.name && c.loser == spec.field)
-                        .map(|c| c.winner.clone())
-                        .unwrap_or_else(|| spec.field.clone());
-                    skipped.push(AliasConflict {
-                        name: d.name.clone(),
-                        reason: AliasConflictReason::OwnedByField(owner),
-                    });
-                }
+            // Cross-spec collision: an earlier spec owns the name.
+            match self.derived_alias_owner(&d.name)?.map(|s| s.field) {
+                Some(owner) if owner == spec.field => saved.push(d.name.clone()),
+                owner => skipped.push(AliasConflict {
+                    name: d.name.clone(),
+                    reason: AliasConflictReason::OwnedByField(owner.unwrap_or(spec.field.clone())),
+                }),
             }
         }
-        drop(index);
         Ok(SaveSpecReport {
             saved,
             skipped,
@@ -549,6 +537,17 @@ impl Db {
         }
 
         Ok(registry)
+    }
+
+    /// The registry of `fields`' specs alone, and no aliases: what a
+    /// command rendering entries of those fields reads, by their slugs.
+    /// [`Db::load_registry`] parses every spec twice over, which costs a
+    /// command time in the number of fields it never names (da-ulu8f).
+    pub fn load_registry_for(&self, fields: &[&str]) -> Result<SpecRegistry> {
+        Ok(SpecRegistry {
+            fields: self.batch_load_specs(fields)?,
+            ..Default::default()
+        })
     }
 }
 
