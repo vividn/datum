@@ -45,10 +45,13 @@ describe('filesAtOnce', () => {
 		assert.equal(filesAtOnce(12, 8.5, 6, 3), 3); // CI's 3 on the 12-core box
 	});
 
-	// CI's 3 on the 3-core forge lane was six cores of work on three (da-dwq7g).
-	test('the override is capped by what the cores allow an idle box', () => {
+	// CI's 3 on the 3-core forge lane was six cores of work on three (da-dwq7g);
+	// the 6-core lane measured 1.2 cores a file, so it takes four (da-gimld).
+	test('the override is capped at the cores less two', () => {
 		assert.equal(filesAtOnce(3, 1.9, 6, 3), 1); // the forge lane
 		assert.equal(filesAtOnce(4, 0, 6, 3), 2);
+		assert.equal(filesAtOnce(6, 2.3, 6, 4), 4); // the 6-core CI lane
+		assert.equal(filesAtOnce(6, 0, 6, 6), 4);
 		assert.equal(filesAtOnce(12, 0, 6, 8), 6);
 		assert.equal(filesAtOnce(24, 0, 6, 12), 6);
 	});

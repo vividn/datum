@@ -10,7 +10,7 @@
 // load leaves — see `filesAtOnce`.
 //
 // `DATUM_TEST_CONCURRENCY` overrides the load, but not the cores: it is capped
-// at what the cores allow an idle box (da-dwq7g). The merge queue's
+// at the cores less two (da-dwq7g, da-gimld). The merge queue's
 // `scripts/mq-check.sh` sets it, because the refinery's verdict is the one run
 // that must not yield to the cans'.
 //
@@ -84,8 +84,14 @@
 // names a directory, and every process of the run records into it what it
 // executed (tests/support/coverage.mjs), which `testmap.mjs index` makes the
 // map that choice is read from.
+//
+// WHERE A FILE'S WALL GOES (da-gimld). A file's wall less its top-level
+// tests' durations is what it spends outside them: its process starting, its
+// imports, its `after` hooks and its exit. A root `before` hook — `startApp`
+// — runs inside its first test and counts as that test's. The run prints the
+// files where that is largest, and the lane's memory beside its cores.
 
-import { availableParallelism, loadavg } from 'node:os';
+import { availableParallelism, loadavg, totalmem } from 'node:os';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { run } from 'node:test';
@@ -124,6 +130,9 @@ const max = cgroup('cpu.max');
 const [quota, period] = (max ?? 'max').trim().split(' ');
 const ratio = Number(quota) / Number(period); // NaN for `max`, or a read that is not two numbers
 const lane = Number.isFinite(ratio) ? ratio : undefined;
+const gib = (bytes) => `${(bytes / 2 ** 30).toFixed(1)} GiB`;
+const memMax = Number(cgroup('memory.max')); // NaN for `max` or none
+const memory = `${gib(totalmem())}${Number.isFinite(memMax) ? ` (cgroup memory.max ${gib(memMax)})` : ''}`;
 
 const cores = Math.max(1, Math.min(availableParallelism(), Math.floor(lane ?? Infinity)));
 // Read once: a run's concurrency is fixed at its start.
@@ -131,7 +140,7 @@ const load = loadavg()[0];
 const override = process.env.DATUM_TEST_CONCURRENCY ? Number(process.env.DATUM_TEST_CONCURRENCY) : undefined;
 const concurrency = filesAtOnce(cores, load, 6, override);
 console.log(
-	`test: ${cores} cores${lane ? ` (cgroup cpu.max ${lane})` : ''}, load ${load.toFixed(1)} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ` (override ${override}${concurrency < Math.floor(override) ? ', capped by cores' : ''})` : ''}`
+	`test: ${cores} cores${lane ? ` (cgroup cpu.max ${lane})` : ''}, ${memory}, load ${load.toFixed(1)} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ` (override ${override}${concurrency < Math.floor(override) ? ', capped by cores' : ''})` : ''}`
 );
 
 // The same set the old `tests/**/*.test.mjs` glob matched, listed here so the
@@ -175,6 +184,7 @@ if (shard) {
 const before = cpuStat();
 const t0 = Date.now();
 const took = {};
+const inside = {}; // ms of each file's top-level tests, by absolute path
 process.exitCode = 1; // until the run's own summary says it passed
 const bail = process.env.DATUM_TEST_BAIL === '0' ? Infinity : 3;
 const failed = [];
@@ -206,6 +216,7 @@ const fail = (f) => {
 	}
 };
 stream.on('test:complete', (t) => {
+	if (t.nesting === 0 && t.file && !files.includes(t.name)) inside[t.file] = (inside[t.file] ?? 0) + t.details.duration_ms;
 	if (t.nesting !== 0 || !files.includes(t.name)) return;
 	took[t.name] = hooked.has(t.name) ? { ...t.details, passed: false } : t.details;
 	if (!took[t.name].passed) fail(t.name);
@@ -258,14 +269,29 @@ out.on('end', async () => {
 	const ran = Object.entries(took).sort(([, a], [, b]) => b.duration_ms - a.duration_ms);
 	console.log(`test: ${ran.length} files, slowest first (✗ failed or cut, ↻ failed and then passed its retry):`);
 	for (const [f, d] of ran) console.log(`  ${(d.duration_ms / 1000).toFixed(1).padStart(6)} s ${d.passed ? ' ' : healed.has(f) ? '↻' : '✗'} ${f}`);
+	// A test's `file` is where it was declared, so a file with no top-level test
+	// of its own (act-taps-*, whose tests tests/support/taps.mjs declares) is
+	// left out and named.
+	const counted = ran.filter(([f]) => resolve(f) in inside);
+	const outside = counted.map(([f, d]) => [f, (d.duration_ms - inside[resolve(f)]) / 1000]).sort(([, a], [, b]) => b - a);
+	const total = (xs) => xs.reduce((a, [, s]) => a + s, 0).toFixed(0);
+	console.log(
+		`test: ${total(outside)} s of ${total(counted.map(([f, d]) => [f, d.duration_ms / 1000]))} s of file walls outside top-level tests` +
+			` (process start, imports, after hooks, exit), the largest first` +
+			(counted.length < ran.length ? `; not counted, no top-level test declared in it: ${ran.filter(([f]) => !(resolve(f) in inside)).map(([f]) => f).join(' ')}` : '') +
+			':'
+	);
+	for (const [f, s] of outside.slice(0, 20)) console.log(`  ${s.toFixed(1).padStart(6)} s outside ${f}`);
 	const wall = (Date.now() - t0) / 1000;
 	const after = cpuStat();
+	const peak = cgroup('memory.peak');
 	if (max !== undefined) {
 		const used = (after.usage_usec - before.usage_usec) / 1e6;
 		console.log(
 			`test: ${wall.toFixed(0)} s wall, lane CPU ${used.toFixed(0)} s = ${((100 * used) / wall).toFixed(0)}%` +
 				`, throttled ${after.nr_throttled - before.nr_throttled} of ${after.nr_periods - before.nr_periods} periods` +
-				` for ${((after.throttled_usec - before.throttled_usec) / 1e6).toFixed(1)} s`
+				` for ${((after.throttled_usec - before.throttled_usec) / 1e6).toFixed(1)} s` +
+				(peak ? `, memory peak ${gib(Number(peak))}` : '')
 		);
 	}
 	if (process.env.DATUM_TEST_RECORD && !shard && !notRun && ran.length === all.length) {

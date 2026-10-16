@@ -467,9 +467,10 @@ jobs:
         working-directory: web
         run: pnpm exec playwright install --with-deps --only-shell chromium
 
-      # Last, so the browser peak never overlaps the link peak. THREE files at
-      # a time. History: at 1, run 800's pnpm test was 46:47, green. At 3,
-      # runs 832 and 838 (2026-09-24) were ~35 min and both RED on timing, not
+      # Last, so the browser peak never overlaps the link peak. FOUR files at
+      # a time (da-gimld, below). History: at 1, run 800's pnpm test was 46:47,
+      # green. At 3, runs 832 and 838 (2026-09-24) were ~35 min and both RED on
+      # timing, not
       # code — a TAU throw, a cut tests/shell.test.mjs, four reachable.test.mjs
       # phone sizes — so it went to 2 (vividn 2026-09-24 17:35: «drop to 2, but
       # also harden the timing sensitive tests»). The hardening landed as
@@ -492,9 +493,14 @@ jobs:
       # Read which files a run cuts BY NAME. `availableParallelism()` in the
       # job reports the host's 12 cores and its load the host's, so the
       # scaler cannot pick this.
-      # The override is capped by the host's cores (da-dwq7g), so a job placed
-      # on the 3-core forge lane runs 1 file, and that lane is safe to turn
-      # back on; a timing cut at 3 ON THE CI BOX still means back to 2.
+      # The override is capped at the cores less two (da-dwq7g), so a job
+      # placed on the 3-core forge lane runs 1 file, and that lane is safe to
+      # turn back on; a timing cut at 3 ON THE CI BOX still means back to 2.
+      # FOUR on the 6-core lanes (da-gimld): at 3 the three file slots were
+      # full the whole run (run 5177: 4107 s of file walls / 3 = its 1369 s
+      # wall) while the lane used 359% of its six cores, so the wall moves
+      # only by a fourth file at once. Kept if the wall drops beyond
+      # ci-compare's noise with no new flake over three staging runs.
       - name: pnpm test
         if: ${{ steps.browser.outcome == 'success' }}
         working-directory: web
@@ -513,7 +519,7 @@ jobs:
           fi
           /usr/bin/time -v pnpm test
         env:
-          DATUM_TEST_CONCURRENCY: 3
+          DATUM_TEST_CONCURRENCY: 4
           # Known flakes get ONE retry, logged as `RETRIED web/tests/<file>
           # (<bead>): …`; no other file is ever retried (da-8bmqe). An entry
           # needs evidence that the TEST is at fault, not the diff: a red on a

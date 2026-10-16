@@ -21,12 +21,14 @@
 // line so a red or slow run says what it ran at, and this is the number to
 // doubt first if a small runner gets SLOWER under the load term.
 //
-// An override is a ceiling, not an exact number: it gets no more than the
-// host's CORES allow at no load (da-dwq7g). Load is left out on purpose — the
+// An override is a ceiling, not an exact number: it gets no more files than
+// the cores less two (da-dwq7g, da-gimld). Load is left out on purpose — the
 // override exists because a CI job's load average is the whole host's, not its
 // lane's — but cores are not: CI's 3 on the 3-core forge lane was six cores of
-// work on three, where the cores alone give one.
+// work on three, and gets one. Not half the cores, as with no override: the
+// 6-core CI lane measured 1.2 cores a file at three files (run 5177, lane CPU
+// 4920 s over 4107 s of file walls), so four is ~4.8 cores of its six.
 export function filesAtOnce(cores, load, cap = 6, override) {
-	if (Number.isFinite(override) && override > 0) return Math.max(1, Math.min(Math.floor(override), filesAtOnce(cores, 0, cap)));
+	if (Number.isFinite(override) && override > 0) return Math.max(1, Math.min(Math.floor(override), cap, cores - 2));
 	return Math.max(1, Math.min(cap, Math.floor(cores / 2), Math.floor(cores - 1 - Math.max(0, load) / 2)));
 }
