@@ -12,7 +12,7 @@ datum-core = { path = "../datum-core" }
 datum-parse = { path = "../datum-parse" }
 datum-sync-wire = { path = "../datum-sync-wire" }
 iroh = "1.3"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal", "net", "io-util", "sync"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 qrcode = { version = "0.14", default-features = false }
 anyhow = { workspace = true }

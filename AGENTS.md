@@ -281,7 +281,11 @@ prompt bar all redeem, so a browser can join a chain as well as start one),
 only members are served
 (`sync_peers` is just where they were last seen), and bare `sync` / the
 hidden `sync run` swap vectors and ops until neither moves, with every member
-this copy has an address for. `sync run` tries a member it failed to reach
+this copy has an address for. Bare `sync` on a copy a `sync run` serves dials
+nothing itself: it connects to the run's socket beside the database,
+`<db>.sync`, and the run dials every member at once and answers each
+session's line, so the endpoint key is bound once and the traffic is not
+doubled; with no run listening it dials as before (da-tltjj). `sync run` tries a member it failed to reach
 again after a minute, the gap doubling to half an hour, dials every member when
 it starts or its address changes, and a failure the peer's row already says
 writes nothing (da-u1ul1). A session that failed before it reached the

@@ -1042,6 +1042,87 @@ fn run_serves_members_and_pushes_new_ops() {
     eventually("equal hashes", || a.hash() == b.hash());
 }
 
+/// `datum sync` on a copy a `sync run` serves asks the run to sync
+/// (da-tltjj): it binds nothing of its own — here the copy's one port, which
+/// the run holds, so a bind would fail — and prints each member's session as
+/// the run's, failing when one did. With the run killed, its socket left
+/// beside the database, it dials as it always did.
+#[test]
+fn sync_asks_the_run_serving_its_copy_and_binds_nothing_of_its_own() {
+    let (a, mut b) = paired();
+    b.env.push(("DATUM_SYNC_TIMEOUT_S", "2"));
+    let mut a_runs = a.serve(&["sync", "run"]);
+    let b_runs = b.serve(&["sync", "run"]);
+    let socket = PathBuf::from(format!("{}.sync", b.db().display()));
+    eventually("b's run taking asks", || socket.exists());
+
+    b.ok(&["occur", "walk"]);
+    let out = b.run(&["sync"]);
+    let (said, err) = (
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(out.status.success(), "{said}{err}");
+    assert!(
+        err.contains("this copy's sync daemon is syncing it"),
+        "{err}"
+    );
+    assert!(said.contains("verify ok"), "{said}");
+    assert!(a.has("walk"));
+
+    // A member it cannot reach fails it, named.
+    a_runs.child.kill().unwrap();
+    a_runs.child.wait().unwrap();
+    let said = b.fails(&["sync"], "");
+    assert!(
+        said.contains("this copy's sync daemon is syncing it"),
+        "{said}"
+    );
+    assert!(said.contains("could not reach"), "{said}");
+    assert!(said.contains("1 of 1 peer(s) failed"), "{said}");
+
+    let _a_runs = a.serve(&["sync", "run"]);
+    // Killed and waited for (`Serving`'s drop): SIGKILL runs no destructor,
+    // so the socket stays, as a crashed daemon's would.
+    drop(b_runs);
+    assert!(socket.exists(), "a killed run leaves its socket");
+    b.ok(&["occur", "swim"]);
+    let out = b.run(&["sync"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    assert!(!err.contains("sync daemon"), "{err}");
+    assert!(a.has("swim"));
+}
+
+/// An answer cut short — the run stopped with a session open — fails the
+/// ask rather than reads as done, and one this build cannot read says so.
+#[test]
+fn an_answer_cut_short_or_unreadable_fails_the_ask() {
+    let (_a, b) = paired();
+    let socket = PathBuf::from(format!("{}.sync", b.db().display()));
+    for (answer, says) in [
+        (
+            "2\n{\"ok\":true,\"line\":\"a: verify ok\"}\n",
+            "stopped before it finished",
+        ),
+        ("two\n", "cannot read"),
+        ("1\n{\"ok\":true}\n", "cannot read"),
+    ] {
+        let run = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let answering = std::thread::spawn(move || {
+            run.accept()
+                .unwrap()
+                .0
+                .write_all(answer.as_bytes())
+                .unwrap();
+        });
+        let said = b.fails(&["sync"], "");
+        answering.join().unwrap();
+        assert!(said.contains(says), "{answer:?}: {said}");
+        std::fs::remove_file(&socket).unwrap();
+    }
+}
+
 /// `sync daemon run` (da-vd2sn) finds a chained database datum knows of —
 /// here by the registry — and serves it as `sync run` does.
 #[test]

@@ -649,11 +649,66 @@ fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
     anyhow!("{e:#}. Next: {next}")
 }
 
-/// `datum sync`: sync with every member once.
+/// Where the `sync run` serving a database takes asks to sync now
+/// (da-tltjj): a socket beside it. A database with no file has none.
+fn asks(db: &Db) -> Option<std::path::PathBuf> {
+    let path = db.conn().path().filter(|p| !p.is_empty())?;
+    let mut path = std::fs::canonicalize(path).ok()?.into_os_string();
+    path.push(".sync");
+    Some(path.into())
+}
+
+/// One session's line, as `sync run` answers an ask (after a line of how
+/// many sessions it opened): whether it synced, and what `datum sync`
+/// prints of it.
+fn answer(label: &str, rep: &Result<Report>) -> String {
+    let (ok, line) = match rep {
+        Ok(rep) => (true, rep.to_string()),
+        Err(e) => (false, format!("{label}: {e:#}")),
+    };
+    serde_json::json!({ "ok": ok, "line": line }).to_string() + "\n"
+}
+
+/// After the dials: one of them may have passed its address on.
+fn print_no_address(db: &Db) -> Result<()> {
+    let status = db.sync_status()?;
+    for p in &status {
+        if let Some(why) = p.no_address(&status) {
+            println!("{}: {why}", p.label);
+        }
+    }
+    Ok(())
+}
+
+/// `datum sync`: sync with every member once. While a `sync run` serves this
+/// copy it asks that to, and prints what its sessions did: a second set of
+/// sessions would double the traffic, and bind the endpoint key twice
+/// (da-tltjj).
 pub fn now_all(db: &Db) -> Result<()> {
     let peers = synced_peers(db)?;
     if peers.is_empty() {
         println!("no sync peers: `datum sync chain invite` makes an invite");
+        return Ok(());
+    }
+    if let Some(daemon) = asks(db).and_then(|p| std::os::unix::net::UnixStream::connect(p).ok()) {
+        use std::io::BufRead;
+        eprintln!("this copy's sync daemon is syncing it");
+        let mut lines = std::io::BufReader::new(daemon).lines();
+        let stopped = "this copy's sync daemon stopped before it finished: `datum sync` again";
+        let garbled =
+            "this copy's sync daemon answered what this datum cannot read: is it another build?";
+        let mut next = || lines.next().context(stopped)?.context(stopped);
+        let of: usize = next()?.parse().context(garbled)?;
+        let mut failed = 0;
+        for _ in 0..of {
+            let answer: serde_json::Value = serde_json::from_str(&next()?).context(garbled)?;
+            let (ok, line) = (answer["ok"].as_bool(), answer["line"].as_str());
+            let (ok, line) = ok.zip(line).context(garbled)?;
+            failed += usize::from(!ok);
+            println!("{line}");
+        }
+        print_no_address(db)?;
+        ensure!(failed == 0, "{failed} of {of} peer(s) failed");
         return Ok(());
     }
     runtime()?.block_on(async {
@@ -677,13 +732,7 @@ pub fn now_all(db: &Db) -> Result<()> {
                 }
             }
         }
-        // After the dials: one of them may have passed its address on.
-        let status = db.sync_status()?;
-        for p in &status {
-            if let Some(why) = p.no_address(&status) {
-                println!("{}: {why}", p.label);
-            }
-        }
+        print_no_address(db)?;
         ep.close().await;
         ensure!(failed == 0, "{failed} of {} peer(s) failed", peers.len());
         Ok(())
@@ -726,6 +775,62 @@ fn gap(d: Duration) -> String {
     }
 }
 
+/// A push to `p`: its session, tagged with the peer. `asked`, a `datum sync`
+/// waiting on it, is told its line as it ends.
+fn push<'a>(
+    store: &'a DbStore<'a>,
+    ep: &'a Endpoint,
+    p: Peer,
+    asked: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+) -> Session<'a> {
+    Box::pin(async move {
+        let rep = async { dial(store, ep, addr(&p)?, None).await }.await;
+        if let Some(asked) = asked {
+            let _ = asked.send(answer(&p.label, &rep));
+        }
+        (Some((p.id, p.label)), rep)
+    })
+}
+
+/// `sync run`'s socket for [`asks`], gone with it. One left by a run that
+/// was killed refuses a connection, and is replaced.
+struct Asks(tokio::net::UnixListener, std::path::PathBuf);
+
+impl Asks {
+    /// Where it cannot listen, `datum sync` dials as it would without it.
+    fn listen(db: &Db) -> Option<Self> {
+        let path = asks(db)?;
+        let _ = std::fs::remove_file(&path);
+        match tokio::net::UnixListener::bind(&path) {
+            Ok(listener) => Some(Asks(listener, path)),
+            Err(e) => {
+                eprintln!(
+                    "{} not taking asks to sync at {}: {e}",
+                    now(),
+                    path.display()
+                );
+                None
+            }
+        }
+    }
+}
+
+impl Drop for Asks {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.1);
+    }
+}
+
+/// The next ask, or never without a socket.
+async fn ask(
+    asks: &Option<Asks>,
+) -> std::io::Result<(tokio::net::UnixStream, tokio::net::unix::SocketAddr)> {
+    match asks {
+        Some(asks) => asks.0.accept().await,
+        None => std::future::pending().await,
+    }
+}
+
 /// How long `sync run` waits for a write lock another connection holds,
 /// against every other connection's 5 s (da-lk1s2). Nobody waits on a
 /// background apply, so it is the one that gives way: a person's write
@@ -760,6 +865,7 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
             eprintln!("{} held the write lock {:.1} s: {what}", now(), held.as_secs_f64())
         });
         let store = &DbStore::new(db);
+        let asks = Asks::listen(db);
         eprintln!("datum sync run: {} is up; Ctrl-C to stop", short(&ep.id().to_string()));
         let mut sessions: FuturesUnordered<Session> = FuturesUnordered::new();
         // Per peer, the vector last pushed to it, and when to retry a failed
@@ -785,6 +891,30 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                     // fails again at the gap it had reached.
                     for (at, _) in retry.values_mut() {
                         *at = Instant::now();
+                    }
+                }
+                // `datum sync` asks to sync now: every member, backing off
+                // or not, each session's line answered as it ends.
+                Ok((asked, _)) = ask(&asks) => {
+                    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+                    tokio::spawn(async move {
+                        use tokio::io::AsyncWriteExt;
+                        let mut asked = asked;
+                        while let Some(line) = rx.recv().await {
+                            if asked.write_all(line.as_bytes()).await.is_err() {
+                                return;
+                            }
+                        }
+                    });
+                    let peers = match db.sync_paused()? {
+                        Some(_) => Vec::new(),
+                        None => synced_peers(db)?,
+                    };
+                    let _ = tx.send(format!("{}\n", peers.len()));
+                    let vector = db.sync_vector()?;
+                    for p in peers {
+                        pushed.insert(p.id.clone(), vector.clone());
+                        sessions.push(push(store, &ep, p, Some(tx.clone())));
                     }
                 }
                 Some(incoming) = ep.accept() => {
@@ -867,11 +997,7 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                             continue;
                         }
                         pushed.insert(p.id.clone(), vector.clone());
-                        let ep = &ep;
-                        sessions.push(Box::pin(async move {
-                            let rep = async { dial(store, ep, addr(&p)?, None).await };
-                            (Some((p.id.clone(), p.label.clone())), rep.await)
-                        }));
+                        sessions.push(push(store, &ep, p, None));
                     }
                 }
             }
