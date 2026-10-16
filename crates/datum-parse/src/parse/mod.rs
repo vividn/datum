@@ -202,7 +202,12 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         }
     };
 
-    let sub = tail[sub_idx];
+    // `spec` is `setup`'s alias (da-3ie71): read as `setup` from here on, so
+    // its help, its `--show` renderings and its errors are `setup`'s.
+    let sub = match tail[sub_idx] {
+        "spec" => SETUP,
+        sub => sub,
+    };
 
     // Per-subcommand `--help` / `-h` short-circuit. Walk the tokens once
     // and bail with a HelpRequested if we find either form; this saves

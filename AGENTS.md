@@ -193,6 +193,12 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 - `datum alias set vbp "note word srcLang=pt pos=verb"`
 - Then `datum vbp correr "to run"` expands to `datum note word srcLang=pt pos=verb correr "to run"`
 
+A command's own short names are not these: they sit in its `aliases` in the
+help table (`crates/datum-parse/src/help/commands.rs`) — `rt` for `retime`,
+`del` for `delete`, `end` for `stop`, and `spec` for `setup`, which kept the
+old name as its alias when it was renamed (da-a4ptr, then da-3ie71: «leave
+"spec" as a verb which is aliased to setup»). Do not remove it.
+
 ## Sync architecture
 
 The relay sync is deleted; p2p «Easy Sync» replaced it. Its core is in

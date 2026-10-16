@@ -208,7 +208,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 ## ADMIN
 
-- `setup` — Set up a field: its verb, states and look
+- `setup` — Set up a field: its verb, states and look (alias: spec)
 - `alias` — Manage aliases
 - `check` — Run database consistency checks
 - `db` — DB-lifecycle (purge, backup, restore, migrate, v2import)

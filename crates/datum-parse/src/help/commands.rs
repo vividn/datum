@@ -2338,9 +2338,9 @@ pub const COMMANDS: &[CommandSpec] = &[
     // ----- ADMIN -----
     CommandSpec {
         name: crate::parse::SETUP,
-        aliases: &[],
+        aliases: &["spec"],
         category: Category::Admin,
-        summary: "set up a field: its verb, states and look",
+        summary: "set up a field: its verb, states and look (alias: spec)",
         intro: SPEC_INTRO,
         long_description: None,
         usage: SPEC_USAGE,

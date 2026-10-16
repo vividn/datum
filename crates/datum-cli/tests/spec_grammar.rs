@@ -1,6 +1,6 @@
 //! `setup` has no subcommands (da-ez40f): `setup` lists, `setup F` prints,
 //! `setup F <changes>` changes, `setup F --delete` deletes. It was `spec`
-//! until da-a4ptr, and `spec` is now no command at all.
+//! until da-a4ptr, and `spec` is now its alias (da-3ie71).
 
 use std::process::{Command, Output};
 
@@ -165,20 +165,56 @@ fn a_new_field_needs_a_verb() {
     assert!(ok(&dir, &["setup", "tea", "--verb", "occur"]).starts_with("CREATE "));
 }
 
-/// `spec` was renamed `setup` with no alias left behind (da-a4ptr).
+/// `spec` is `setup`'s alias (da-3ie71), as `rt` is `retime`'s: every form
+/// says and does what `setup`'s does, refusals included, and its help is
+/// `setup`'s page.
 #[test]
-fn spec_is_no_command() {
-    let dir = mood();
-    for argv in [
-        &["spec"][..],
-        &["spec", "mood"],
-        &["spec", "mood", "--color", "red"],
-    ] {
-        let err = refused(&dir, argv);
-        assert!(
-            err.contains("unknown subcommand: 'spec'"),
-            "{argv:?}: {err}"
+fn spec_is_setups_alias() {
+    // Two databases mint two hids: the word after an action tag is masked.
+    let text = |bytes: Vec<u8>| -> Vec<String> {
+        let text = String::from_utf8(bytes).unwrap();
+        text.lines()
+            .map(|l| match l.split_once(' ') {
+                Some((tag, rest)) if tag.chars().all(|c| c.is_ascii_uppercase()) => {
+                    format!(
+                        "{tag} <hid>{}",
+                        &rest[rest.find(' ').unwrap_or(rest.len())..]
+                    )
+                }
+                _ => l.to_string(),
+            })
+            .collect()
+    };
+    let same = |argv: &[&str]| {
+        let (a, b) = (mood(), mood());
+        let spec = datum(&a, &[&["spec"], argv].concat());
+        let setup = datum(&b, &[&["setup"], argv].concat());
+        assert_eq!(spec.status.code(), setup.status.code(), "{argv:?}");
+        assert_eq!(text(spec.stdout), text(setup.stdout), "{argv:?}");
+        assert_eq!(text(spec.stderr), text(setup.stderr), "{argv:?}");
+        assert_eq!(
+            ok(&a, &["setup", "mood", "--json"]),
+            ok(&b, &["setup", "mood", "--json"]),
+            "{argv:?}"
         );
-    }
-    assert_eq!(lines(&ok(&dir, &["setup"])), ["coffee", "mood"]);
+    };
+    same(&[]);
+    same(&["mood"]);
+    same(&["mood", "--json"]);
+    same(&["mood", "--add-state", "meh"]);
+    same(&["mood", "--delete"]);
+    same(&["tea", "--color", "red"]);
+    same(&["mood", "--show", "none"]);
+    same(&["--tag", "mind", "--tag", "drink"]);
+
+    let dir = mood();
+    let help = ok(&dir, &["help", "setup"]);
+    assert!(
+        help.starts_with("datum setup — ") && help.contains("(alias: spec)"),
+        "{help}"
+    );
+    assert_eq!(ok(&dir, &["help", "spec"]), help);
+    assert_eq!(ok(&dir, &["spec", "--help"]), help);
+    // The field `spec` stays the specs' own.
+    assert!(refused(&dir, &["occur", "spec"]).contains("reserved for field specs"));
 }
