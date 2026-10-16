@@ -8,6 +8,7 @@
 use std::collections::HashSet;
 
 use chrono::Utc;
+use datum_parse::combine::{combine, Combine};
 use rand::Rng;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value as JsonValue;
@@ -886,41 +887,23 @@ fn fetch_field_occur_collider(
     Ok(hid)
 }
 
-/// Deep-merge `incoming` into `existing` for use by [`ConflictStrategy::Merge`].
-///
-/// - If either side is `None`, the other is returned.
-/// - Object + object: keys are unioned; nested objects recurse; scalar
-///   conflicts → incoming wins (LWW).
-/// - Any non-object pair: incoming replaces existing.
+/// Merge `incoming` into `existing` for [`ConflictStrategy::Merge`]: datum's
+/// `merge`, as `datum merge` (da-scdm3), so a key both hold differently
+/// collects both values into one list without duplicates (da-l9qwb).
+/// A side that is no object is replaced by the incoming one. Errs, as
+/// `datum merge` does, when a key's values cannot be one list (a bool, an
+/// object against a scalar).
 fn merge_extra_data(
     existing: Option<&JsonValue>,
     incoming: Option<&JsonValue>,
-) -> Option<JsonValue> {
-    match (existing, incoming) {
-        (None, None) => None,
-        (Some(e), None) => Some(e.clone()),
-        (None, Some(n)) => Some(n.clone()),
-        (Some(e), Some(n)) => Some(merge_json(e.clone(), n.clone())),
-    }
-}
-
-fn merge_json(existing: JsonValue, incoming: JsonValue) -> JsonValue {
-    match (existing, incoming) {
-        (JsonValue::Object(mut e_map), JsonValue::Object(n_map)) => {
-            for (k, v) in n_map {
-                match e_map.remove(&k) {
-                    Some(existing_v) => {
-                        e_map.insert(k, merge_json(existing_v, v));
-                    }
-                    None => {
-                        e_map.insert(k, v);
-                    }
-                }
-            }
-            JsonValue::Object(e_map)
+) -> Result<Option<JsonValue>> {
+    Ok(match (existing, incoming) {
+        (Some(JsonValue::Object(e)), Some(JsonValue::Object(n))) => {
+            Some(JsonValue::Object(combine(e, n, Combine::MERGE)?))
         }
-        (_, incoming) => incoming,
-    }
+        (e, None) => e.cloned(),
+        (_, n) => n.cloned(),
+    })
 }
 
 // --- Free-function mutators ---------------------------------------------------
@@ -1123,7 +1106,7 @@ fn write_entry_in_tx(
             let existing_data: Option<JsonValue> = existing_data_json
                 .as_deref()
                 .and_then(|s| serde_json::from_str(s).ok());
-            let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref());
+            let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref())?;
             raw_overwrite_mutables(conn, &hid, &slug, entry, Some(merged))?;
             super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
             (InsertOutcome::Merged { slug }, None)

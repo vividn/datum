@@ -306,8 +306,10 @@ pub enum ConflictStrategy {
     /// Overwrite the existing row's mutable fields with the incoming entry's
     /// values (bumps `modify_time`).
     Update,
-    /// Deep-merge incoming `data` into the existing row's `data`
-    /// and otherwise behave like [`ConflictStrategy::Update`].
+    /// Merge incoming `data` into the existing row's `data` as `datum
+    /// merge` does — a key both hold differently collects both values into
+    /// one list without duplicates — and otherwise behave like
+    /// [`ConflictStrategy::Update`].
     Merge,
     /// Insert the incoming row anyway with its new ULID, leaving the existing
     /// row untouched. Both rows end up with the same `content_hash`.

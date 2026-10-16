@@ -13,9 +13,7 @@
 //!   * datum's `_id` is daydumb's slug. A conflict strategy (`--merge`,
 //!     `--update`, `--conflict`) resolves a slug collision as datum's did
 //!     on `_id` (da-2mn3k), and also a content_hash collision; with no
-//!     strategy a second row at a taken slug errors (TS #14). `--merge`
-//!     deep-merges with the incoming value winning a key, where datum
-//!     collected both values into an array.
+//!     strategy a second row at a taken slug errors (TS #14).
 //!   * daydumb always stores `id_structure` whenever `--id TEMPLATE` is set,
 //!     even for templates with no `%placeholder%`; datum only stored it when
 //!     the template had key references. The TS case is ported with the
@@ -553,6 +551,66 @@ fn merge_flag_merges_into_the_entry_at_the_id() {
     let after = db.get_entry("field:doc-id").unwrap();
     assert_eq!(after.hid, before.hid, "merged in place");
     assert_eq!(after.data, Some(json!({ "foo": "abc", "bar": "def" })));
+}
+
+/// `--merge` is `datum merge`'s merge (da-l9qwb): a key both hold
+/// differently collects both values into one list, and a value it already
+/// holds is not added again. `--conflict merge` is the same.
+#[test]
+fn merge_flag_collects_a_key_both_hold_without_duplicates() {
+    let db = fresh_db();
+    let add = |extra: &[&str]| {
+        let args = [&["add", "field", "--id", "doc-id"][..], extra].concat();
+        run_cli(&args, &db).expect("add");
+        db.get_entry("field:doc-id").unwrap().data
+    };
+    add(&["item=apple"]);
+    assert_eq!(
+        add(&["item=pear", "--merge"]),
+        Some(json!({ "item": ["apple", "pear"] }))
+    );
+    assert_eq!(
+        add(&["item=pear", "--conflict", "merge"]),
+        Some(json!({ "item": ["apple", "pear"] }))
+    );
+    assert_count!(db, "field", 1);
+}
+
+/// A value no list can hold — a bool, as datum's `mergeValues` refused —
+/// fails the `--merge` and writes nothing: the entry and its history are
+/// as they were (da-l9qwb).
+#[test]
+fn merge_flag_refuses_what_cannot_be_one_list_and_writes_nothing() {
+    let db = fresh_db();
+    run_cli(
+        &["add", "field", "--id", "doc-id", "flag=true", "item=apple"],
+        &db,
+    )
+    .expect("seed");
+    let before = db.get_entry("field:doc-id").unwrap();
+    let mark = datum_core::last_docs::history_mark(&db).unwrap();
+
+    let err = run_cli(
+        &[
+            "add",
+            "field",
+            "--id",
+            "doc-id",
+            "flag=false",
+            "item=pear",
+            "--merge",
+        ],
+        &db,
+    )
+    .expect_err("a bool cannot merge");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("cannot merge true with false"), "{msg}");
+
+    let after = db.get_entry("field:doc-id").unwrap();
+    assert_eq!(after.data, before.data, "nothing merged");
+    assert_eq!(after.modify_time, before.modify_time, "nothing written");
+    let mark_after = datum_core::last_docs::history_mark(&db).unwrap();
+    assert_eq!(mark_after, mark, "no history row");
 }
 
 // ─── TS #23: "can update and existing document with --conflict" ──────────────
