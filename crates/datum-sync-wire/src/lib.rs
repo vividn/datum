@@ -49,9 +49,12 @@
 //!   told so in words, [`Failure::Protocol`]. `tests/frames.json` holds one
 //!   frame of each kind as the previous version wrote it: this version must
 //!   read each, and write back every field it carried, or the test fails
-//!   until the ALPN is bumped on purpose. `DATUM_SYNC_RECORD_FRAMES=1 cargo
-//!   test -p datum-sync-wire frames` records them again — with a bump, or to
-//!   add a kind or a field, when the file's diff only adds. The op lines a
+//!   until the ALPN is bumped on purpose. A kind or a field this version
+//!   writes and the file lacks fails as well (da-igio7), so the file holds
+//!   all the deployed version writes and a field is kept from its first
+//!   release. `DATUM_SYNC_RECORD_FRAMES=1 cargo test -p datum-sync-wire
+//!   frames` records them again — with a bump, or for a new kind or field,
+//!   when the file's diff only adds. The op lines a
 //!   round carries and the rows [`Store::held`] returns are datum-core's,
 //!   opaque here.
 
@@ -1114,7 +1117,7 @@ mod tests {
     fn reads<T: Serialize + DeserializeOwned>(old: &Value) -> Result<(), String> {
         let t: T = serde_json::from_value(old.clone()).map_err(|e| format!("unread: {e}"))?;
         let new = serde_json::to_value(t).map_err(|e| e.to_string())?;
-        match lacks(&new, old, "") {
+        match lacks(&new, old, "", true) {
             None => Ok(()),
             Some(at) => Err(format!(
                 "written back without {at} as the previous version has it"
@@ -1122,17 +1125,23 @@ mod tests {
         }
     }
 
-    /// Where `new` lacks something of `old`: a key, or a value it holds.
-    fn lacks(new: &Value, old: &Value, at: &str) -> Option<String> {
+    /// Where `new` lacks something of `old`: a key or an element, or with
+    /// `values` a value it holds.
+    fn lacks(new: &Value, old: &Value, at: &str, values: bool) -> Option<String> {
         match (new, old) {
             (Value::Object(n), Value::Object(o)) => o.iter().find_map(|(k, v)| {
                 let at = format!("{at}/{k}");
-                n.get(k).map_or(Some(at.clone()), |n| lacks(n, v, &at))
+                n.get(k)
+                    .map_or(Some(at.clone()), |n| lacks(n, v, &at, values))
             }),
-            (Value::Array(n), Value::Array(o)) if n.len() == o.len() => (n.iter().zip(o))
-                .enumerate()
-                .find_map(|(i, (n, o))| lacks(n, o, &format!("{at}/{i}"))),
-            _ => (new != old).then(|| format!("{at} = {old}")),
+            (Value::Array(n), Value::Array(o)) if !values || n.len() == o.len() => {
+                o.iter().enumerate().find_map(|(i, o)| {
+                    let at = format!("{at}/{i}");
+                    n.get(i)
+                        .map_or(Some(at.clone()), |n| lacks(n, o, &at, values))
+                })
+            }
+            _ => (values && new != old).then(|| format!("{at} = {old}")),
         }
     }
 
@@ -1219,22 +1228,18 @@ mod tests {
         ]
     }
 
-    /// A copy one version apart reads every frame this one writes, and this
-    /// one every frame it writes (da-2bnr6): the previous version's frames,
-    /// kept in `tests/frames.json`, read here, and come back with every field
-    /// they had. A kind there that this version no longer writes fails too.
-    #[test]
-    fn frames_of_the_previous_version_read_both_ways() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/frames.json");
-        let now = kinds();
-        if std::env::var_os("DATUM_SYNC_RECORD_FRAMES").is_some() {
-            let frames: BTreeMap<_, _> = now.into_iter().map(|(k, v, _)| (k, v)).collect();
-            let text = serde_json::to_string_pretty(&frames).unwrap();
-            std::fs::write(path, text + "\n").unwrap();
-            return;
-        }
-        let old: BTreeMap<String, Value> =
-            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    const FRAMES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/frames.json");
+
+    fn recorded(now: &[(&'static str, Value, Reads)]) -> BTreeMap<String, Value> {
+        now.iter()
+            .map(|(k, v, _)| (k.to_string(), v.clone()))
+            .collect()
+    }
+
+    /// What the recorded frames `old` say of this version's `now`: a kind it
+    /// no longer reads or writes back, or else a kind or a key path it writes
+    /// that `old` lacks, which a later release could drop unseen (da-igio7).
+    fn drift(old: &BTreeMap<String, Value>, now: &[(&str, Value, Reads)]) -> Result<(), String> {
         let broken: Vec<String> = old
             .iter()
             .filter_map(|(name, frame)| match now.iter().find(|k| k.0 == name) {
@@ -1242,13 +1247,82 @@ mod tests {
                 Some((_, _, reads)) => reads(frame).err().map(|e| format!("{name}: {e}")),
             })
             .collect();
-        assert!(
-            broken.is_empty(),
-            "a frame is no longer additive, so a copy one version apart cannot sync with this \
-             one; make it additive, or bump ALPN on purpose and record the frames again \
-             (the crate doc, «Versions»):\n{}",
-            broken.join("\n")
+        if !broken.is_empty() {
+            return Err(format!(
+                "a frame is no longer additive, so a copy one version apart cannot sync with \
+                 this one; make it additive, or bump ALPN on purpose and record the frames \
+                 again (the crate doc, «Versions»):\n{}",
+                broken.join("\n")
+            ));
+        }
+        let gained: Vec<String> = now
+            .iter()
+            .filter_map(|(name, frame, _)| match old.get(*name) {
+                None => Some(format!("{name}: a new kind")),
+                Some(was) => lacks(was, frame, "", false).map(|at| format!("{name}: {at}")),
+            })
+            .collect();
+        if !gained.is_empty() {
+            return Err(format!(
+                "a frame gained a field: record the frames again \
+                 (DATUM_SYNC_RECORD_FRAMES=1; the diff only adds):\n{}",
+                gained.join("\n")
+            ));
+        }
+        Ok(())
+    }
+
+    /// A copy one version apart reads every frame this one writes, and this
+    /// one every frame it writes (da-2bnr6): the previous version's frames,
+    /// kept in `tests/frames.json`, read here, and come back with every field
+    /// they had. A kind there that this version no longer writes fails too,
+    /// and so does a kind or a field it writes that the file lacks.
+    #[test]
+    fn frames_of_the_previous_version_read_both_ways() {
+        let now = kinds();
+        if std::env::var_os("DATUM_SYNC_RECORD_FRAMES").is_some() {
+            let text = serde_json::to_string_pretty(&recorded(&now)).unwrap();
+            std::fs::write(FRAMES, text + "\n").unwrap();
+            return;
+        }
+        let old = serde_json::from_str(&std::fs::read_to_string(FRAMES).unwrap()).unwrap();
+        if let Err(e) = drift(&old, &now) {
+            panic!("{e}");
+        }
+    }
+
+    /// A field this version writes and the recorded frames lack fails until
+    /// they are recorded again, and recording them only adds (da-igio7).
+    #[test]
+    fn a_field_the_frames_lack_fails_until_recorded() {
+        #[derive(Serialize, Deserialize)]
+        struct Gained {
+            #[serde(flatten)]
+            hello: Hello,
+            #[serde(default)]
+            gained: bool,
+        }
+        let old = serde_json::from_str(&std::fs::read_to_string(FRAMES).unwrap()).unwrap();
+        let mut now = kinds();
+        let at = now.iter().position(|k| k.0 == "hello").unwrap();
+        let hello = serde_json::from_value(now[at].1.clone()).unwrap();
+        now[at] = kind(
+            "hello",
+            Gained {
+                hello,
+                gained: true,
+            },
         );
+        let e = drift(&old, &now).unwrap_err();
+        assert!(
+            e.contains("a frame gained a field") && e.contains("hello: /gained"),
+            "{e}"
+        );
+        let again = recorded(&now);
+        for (name, was) in &old {
+            assert_eq!(lacks(&again[name], was, "", true), None, "{name}");
+        }
+        drift(&again, &now).unwrap();
     }
 
     /// Two copies that speak different ALPNs are told so in a sentence, on
