@@ -148,6 +148,50 @@ after(() => {
 	assert.equal(code, 1, out);
 });
 
+// da-schm5: node passes the file whose top-level hook failed, and names the
+// failure by the hook's file, so the runner reads the file's summary instead.
+test('a file whose top-level hook failed is ✗ in the tail, and counts toward the three', () => {
+	const hook = `import { after } from 'node:test';
+export const stop = () => after(() => { throw new Error('stopApp threw'); });
+`;
+	const broke = `import { test } from 'node:test';
+import { stop } from './hook.mjs';
+test('passes', () => {});
+stop();
+`;
+	const files = { 'hook.mjs': hook, 'last.test.mjs': `import test from 'node:test';\ntest('p', () => {});\n` };
+	for (const f of ['a', 'b', 'c']) files[`${f}.test.mjs`] = broke;
+	const { code, out } = suite(files, '');
+	for (const f of ['a', 'b', 'c']) assert.match(out, new RegExp(`^ +[\\d.]+ s ✗ tests/${f}\\.test\\.mjs$`, 'm'), out);
+	assert.match(out, /^test: stopped after 3 failed files \(tests\/a\.test\.mjs tests\/b\.test\.mjs tests\/c\.test\.mjs\); NOT RUN:\n {2}tests\/last\.test\.mjs$/m, out);
+	assert.equal(code, 1, out);
+});
+
+// The claim the attribution rests on: a file's events arrive together, ending
+// with its summary, however many run at once. b and d break while a, started
+// first and slower, still runs, so both their failures wait behind a's events
+// and must each land on their own file. Two at once is enough.
+test('at concurrency 3, the files whose hook failed are ✗ and no other', (t) => {
+	const hook = `import { after } from 'node:test';
+export const stop = () => after(() => { throw new Error('stopApp threw'); });
+`;
+	const clean = (ms) => `import test from 'node:test';\ntest('p', () => new Promise((r) => setTimeout(r, ${ms})));\n`;
+	const broke = `import { test } from 'node:test';
+import { stop } from './hook.mjs';
+test('passes', () => {});
+stop();
+`;
+	const files = { 'hook.mjs': hook, 'a.test.mjs': clean(1500), 'b.test.mjs': broke, 'c.test.mjs': clean(0), 'd.test.mjs': broke, 'e.test.mjs': clean(0) };
+	const { code, out } = suite(files, '', { DATUM_TEST_CONCURRENCY: '3' });
+	// The cores cap the override: a CI lane of three or four runs one or two.
+	const at = Number(out.match(/→ (\d+) files? at once/)?.[1]);
+	if (at === 1) return t.skip('this box runs one file at once');
+	assert.ok(at >= 2, out);
+	for (const f of ['b', 'd']) assert.match(out, new RegExp(`^ +[\\d.]+ s ✗ tests/${f}\\.test\\.mjs$`, 'm'), out);
+	for (const f of ['a', 'c', 'e']) assert.match(out, new RegExp(`^ +[\\d.]+ s {3}tests/${f}\\.test\\.mjs$`, 'm'), out);
+	assert.equal(code, 1, out);
+});
+
 describe('DATUM_TEST_RETRY', () => {
 	const once = `import test from 'node:test';
 import { existsSync, writeFileSync } from 'node:fs';

@@ -54,6 +54,13 @@
 // run waiting on it for six hours (da-cvd7y). `forceExit` ends a file's
 // process once its tests and hooks are done, whatever it still holds.
 //
+// A TOP-LEVEL HOOK that fails (`after(stopApp)` throwing or timing out) is
+// passed by node: its file completes as passed, and the hook is a lone
+// `test:fail` named by the HOOK's file (da-schm5). Each file's events arrive
+// together, ending with its `test:summary`, so the summary after such a
+// failure names the file it belongs to, at any concurrency, and that file is
+// failed here: ✗ in the tail, and one of the three below.
+//
 // FAIL FAST (da-s2g46). Once THREE files have failed the run is aborted: the
 // files in flight are cut, and the ones never started are named under
 // `NOT RUN:`, so a stopped suite cannot read as a pass. `DATUM_TEST_BAIL=0`
@@ -80,7 +87,7 @@
 
 import { availableParallelism, loadavg } from 'node:os';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { run } from 'node:test';
 import { spec as Spec, tap } from 'node:test/reporters';
 import { filesAtOnce } from './concurrency.mjs';
@@ -172,7 +179,11 @@ process.exitCode = 1; // until the run's own summary says it passed
 const bail = process.env.DATUM_TEST_BAIL === '0' ? Infinity : 3;
 const failed = [];
 const healed = new Set();
-const started = new Set();
+// `run()` starts the first `concurrency` files at once, and on node 22 their
+// `test:dequeue` is emitted before it returns, so no listener sees it.
+const started = new Set(files.slice(0, concurrency));
+const hooked = new Set(); // files whose top-level hook failed
+let stray = false; // a hook failure whose file's summary is still to come
 let notRun;
 const stop = new AbortController();
 const stream = run({
@@ -188,16 +199,31 @@ const stream = run({
 stream.on('test:dequeue', (t) => {
 	if (t.nesting === 0 && files.includes(t.name) && !notRun) started.add(t.name);
 });
-stream.on('test:complete', (t) => {
-	if (t.nesting !== 0 || !files.includes(t.name)) return;
-	took[t.name] = t.details;
-	if (!t.details.passed && !notRun && !retry.has(t.name) && failed.push(t.name) >= bail) {
+const fail = (f) => {
+	if (!notRun && !retry.has(f) && failed.push(f) >= bail) {
 		notRun = files.filter((f) => !started.has(f));
 		stop.abort();
 	}
+};
+stream.on('test:complete', (t) => {
+	if (t.nesting !== 0 || !files.includes(t.name)) return;
+	took[t.name] = hooked.has(t.name) ? { ...t.details, passed: false } : t.details;
+	if (!took[t.name].passed) fail(t.name);
+});
+stream.on('test:fail', (t) => {
+	if (t.nesting === 0 && t.details.error?.failureType === 'hookFailed') stray = true;
 });
 stream.on('test:summary', (s) => {
 	if (s.file === undefined && s.success) process.exitCode = 0;
+	const f = s.file && relative(process.cwd(), s.file);
+	if (!stray || !files.includes(f)) return;
+	stray = false;
+	hooked.add(f);
+	// Its `test:complete` may have come first, as passed.
+	if (took[f]?.passed) {
+		took[f] = { ...took[f], passed: false };
+		fail(f);
+	}
 });
 // After the reporter's last line, so the summary is the run's tail.
 const reporter = () => (process.stdout.isTTY ? new Spec() : tap);
