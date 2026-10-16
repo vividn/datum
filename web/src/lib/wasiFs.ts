@@ -58,10 +58,12 @@ export const PRE_MIGRATION = /\.pre-v\d+-to-v\d+-[^/]*\.bak$/;
 
 /**
  * What datum leaves beside a database to be kept: a pre-migration snapshot,
- * and what a chain restore's wipe took from this copy, `<db>.wiped-<stamp>.jsonl`
- * (`keep_what_was_here`, da-uk23v), which `db restore <it> --merge` brings back.
+ * what a chain restore's wipe took from this copy, `<db>.wiped-<stamp>.jsonl`
+ * (`keep_what_was_here`, da-uk23v), which `db restore <it> --merge` brings back,
+ * and the backup a chain purge's ordering copy writes, `<db>.purge-<stamp>.jsonl.gz`
+ * (`wipe_backup`, da-459uh).
  */
-export const KEPT = new RegExp(`${PRE_MIGRATION.source}|\\.wiped-[^/]*\\.jsonl$`);
+export const KEPT = new RegExp(`${PRE_MIGRATION.source}|\\.wiped-[^/]*\\.jsonl$|\\.purge-[^/]*\\.jsonl\\.gz$`);
 
 let upgradeHeard: (() => void) | undefined;
 

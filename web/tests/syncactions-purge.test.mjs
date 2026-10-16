@@ -163,8 +163,12 @@ describe('the purge dialog in a locked chain', () => {
 			await dialog.locator('input').press('Enter');
 			await said;
 			// The preview's lines, then the approval's, each on its own.
-			assert.match((await app.outputs()).at(-1), /beside the database\napproved: wipe/);
+			const [, backup] = /beside the database\napproved: wipe; backup: (\S+)$/.exec((await app.outputs()).at(-1)) ?? [];
+			assert.ok(backup, (await app.outputs()).at(-1));
 			assert.equal((await runIn(app, ['--db', 'home', 'count', 'tea'])).stdout.trim(), '0');
+			// The backup the approval wrote is kept, and restores what went (da-459uh).
+			await cli(app, ['--db', 'other', 'db', 'restore', backup, '--yes']);
+			assert.equal((await runIn(app, ['--db', 'other', 'count', 'tea'])).stdout.trim(), '1');
 		}, AT_DATUM_DAY);
 	});
 });

@@ -307,7 +307,9 @@ chain: the fold takes no record after it, a copy holding it serves only
 records and stubs and says «in no sync chain», and keeps its key and records
 to pass the order on until an invite or connect starts it afresh. The
 ordering copy alone writes a backup, `<db>.purge-<time>.jsonl.gz`, before it
-purges: one on every copy would defeat a remote wipe.
+purges: one on every copy would defeat a remote wipe. A passkey's order is
+written by `sync approve` (datum.day's), which writes the backup then, and
+datum.day keeps it in OPFS (da-459uh).
 `db restore <B> --hard --chain` (da-ncmmj) is that `--data` order and then
 the backup written on the ordering copy as new ops, signed after it, so
 every copy holds exactly the backup once it syncs; plain `--hard` on a

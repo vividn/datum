@@ -225,6 +225,40 @@ fn in_a_locked_chain_a_purge_takes_the_admin_key() {
     assert_eq!(data_of(&a), EMPTY);
 }
 
+/// datum.day's purge in a passkey-locked chain (da-459uh): the order is
+/// refused at its approve link, leaving no backup, and `sync approve`
+/// writes the wipe — after the backup the order would have written.
+#[test]
+fn a_passkey_approved_purge_leaves_its_backup() {
+    let a = Copy::new();
+    a.ok(&["sync", "new-invite"]);
+    a.ok(&["sync", "admin", "add", &passkey_json()]);
+    a.ok(&["occur", "tea"]);
+    let out = a.run(&["db", "purge", "--chain", "--yes"], "");
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    let link = err
+        .split_whitespace()
+        .find(|w| w.contains("/sync/approve#"))
+        .unwrap();
+    let record = BASE64URL_NOPAD
+        .decode(link.rsplit('#').next().unwrap().as_bytes())
+        .unwrap();
+    let said = a.ok_in(
+        &["sync", "approve", link],
+        &approval_code(&Sha256::digest(&record)),
+    );
+    assert!(!a.has("tea"));
+    let backup = said
+        .split("approved: wipe; backup: ")
+        .nth(1)
+        .unwrap()
+        .trim();
+    let fresh = Copy::new();
+    fresh.ok(&["db", "restore", backup, "--yes"]);
+    assert!(fresh.has("tea"));
+}
+
 /// A filtered reader's holes lie below what it holds, by design: a purge
 /// empties it all the same, with no stub sent or waited on, and what is
 /// written afterwards reaches it (da-qzrj9).

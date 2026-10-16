@@ -457,8 +457,23 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             ensure!(!code.trim().is_empty(), "no approval code");
             record["sig"] = code.trim().into();
             let what = record["type"].as_str().unwrap_or("record").to_string();
-            db.sync_chain_write(record, true)?;
-            println!("approved: {what}");
+            // A wipe approved here is ordered by this copy, which writes its
+            // backup first as `order_wipe` does: datum.day's order was
+            // refused for its signature, and removed its own (da-459uh).
+            let backup = match what == "wipe" {
+                true => Some(wipe_backup(db)?),
+                false => None,
+            };
+            if let Err(e) = db.sync_chain_write(record, true) {
+                if let Some(Some(to)) = &backup {
+                    let _ = std::fs::remove_file(to);
+                }
+                return Err(e.into());
+            }
+            match backup {
+                Some(backup) => println!("approved: wipe; backup: {}", backup_words(backup)),
+                None => println!("approved: {what}"),
+            }
         }
         SyncCommand::Qr { text } => {
             let code = qrcode::QrCode::new(text.as_bytes())?;
@@ -830,19 +845,7 @@ pub(crate) fn order_wipe(
     restore: bool,
     admin_key: Option<&str>,
 ) -> Result<String> {
-    // Beside the database, its name as the file system has it.
-    let now = chrono::Utc::now();
-    let backup = db.path().map(|path| {
-        let mut to = path.as_os_str().to_owned();
-        to.push(format!(".purge-{}.jsonl.gz", now.format("%Y%m%dT%H%M%SZ")));
-        (path, std::path::PathBuf::from(to))
-    });
-    if let Some((path, to)) = &backup {
-        let header = super::backup_restore::BackupHeader::new(db, path.display().to_string(), now)?;
-        let file =
-            std::fs::File::create(to).with_context(|| format!("creating {}", to.display()))?;
-        super::backup_restore::write_jsonl_gz(file, db, &header)?;
-    }
+    let backup = wipe_backup(db)?;
     let mut record = json!({
         "type": "wipe", "scope": scope, "chain": chain.id,
         "created": chrono::Utc::now().to_rfc3339(),
@@ -852,16 +855,35 @@ pub(crate) fn order_wipe(
     }
     // Refused, it leaves no backup of a purge that never happened.
     if let Err(e) = sign(db, record, chain, admin_key) {
-        if let Some((_, to)) = &backup {
+        if let Some(to) = &backup {
             let _ = std::fs::remove_file(to);
         }
         return Err(e);
     }
-    Ok(
-        backup.map_or("none: this database has no file".into(), |(_, to)| {
-            to.display().to_string()
-        }),
-    )
+    Ok(backup_words(backup))
+}
+
+/// A backup of this copy's entries beside the database, before a wipe it
+/// orders or approves: where it is, or none for a database with no file.
+fn wipe_backup(db: &Db) -> Result<Option<std::path::PathBuf>> {
+    let Some(path) = db.path() else {
+        return Ok(None);
+    };
+    // Beside the database, its name as the file system has it.
+    let now = chrono::Utc::now();
+    let mut to = path.as_os_str().to_owned();
+    to.push(format!(".purge-{}.jsonl.gz", now.format("%Y%m%dT%H%M%SZ")));
+    let to = std::path::PathBuf::from(to);
+    let header = super::backup_restore::BackupHeader::new(db, path.display().to_string(), now)?;
+    let file = std::fs::File::create(&to).with_context(|| format!("creating {}", to.display()))?;
+    super::backup_restore::write_jsonl_gz(file, db, &header)?;
+    Ok(Some(to))
+}
+
+fn backup_words(backup: Option<std::path::PathBuf>) -> String {
+    backup.map_or("none: this database has no file".into(), |to| {
+        to.display().to_string()
+    })
 }
 
 /// What reverting `who` sets aside, in words (da-ry11c): a verb agrees with
