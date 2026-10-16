@@ -794,8 +794,12 @@ pub struct KitUninstallArgs {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SyncCommand {
-    /// `datum sync` — sync with every member once, then one line of status.
-    Now,
+    /// `datum sync [-v | --verbose]` — sync with every member once, then one
+    /// line of status; `verbose` adds each session's route and time, and an
+    /// offline member's error (da-a4fxr).
+    Now {
+        verbose: bool,
+    },
     /// `datum sync status [--show-revoked] [--json]` — per member, how this copy
     /// stands with it (da-rcb5m). A revoked member only with `--show-revoked` or
     /// `--json` (da-73gyz).

@@ -705,15 +705,45 @@ fn asks(db: &Db) -> Option<std::path::PathBuf> {
     Some(path.into())
 }
 
+/// What `datum sync` says of one session with `p`, which took `took`
+/// (da-a4fxr): whether it failed, its line, and the line `-v` adds. One
+/// it never reached is offline, with when it was last seen, its words in
+/// the `-v` line; a busy one syncs with this copy once done, no failure
+/// (da-h31wt).
+fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String) {
+    let offline = rep
+        .as_ref()
+        .is_err_and(|e| failure(e) == Some(Failure::Unreachable));
+    let line = match rep {
+        Ok(rep) => rep.to_string(),
+        Err(_) if offline => match &p.last_seen {
+            Some(at) => format!("{}: offline, last seen {at}", p.label),
+            None => format!("{}: offline, never seen", p.label),
+        },
+        Err(e) => format!("{}: {e:#}", p.label),
+    };
+    let failed = rep.as_ref().is_err_and(|e| failure(e) != Some(BUSY));
+    // A dial that never connected (offline, or refused at the handshake)
+    // has no route to say.
+    let route = match rep {
+        Ok(rep) => rep.route.clone(),
+        Err(e) => e.downcast_ref::<Lost>().and_then(|l| l.0.route.clone()),
+    };
+    let why = rep.as_ref().err().filter(|_| offline);
+    let more: Vec<String> = route
+        .into_iter()
+        .chain([format!("{took:.1?}")])
+        .chain(why.map(|e| format!("{e:#}")))
+        .collect();
+    (failed, line, format!("  {}", more.join(" · ")))
+}
+
 /// One session's line, as `sync run` answers an ask (after a line of how
 /// many sessions it opened): whether it synced, and what `datum sync`
-/// prints of it.
-fn answer(label: &str, rep: &Result<Report>) -> String {
-    let (ok, line) = match rep {
-        Ok(rep) => (true, rep.to_string()),
-        Err(e) => (false, format!("{label}: {e:#}")),
-    };
-    serde_json::json!({ "ok": ok, "line": line }).to_string() + "\n"
+/// prints of it, `-v`'s line too.
+fn answer(p: &Peer, rep: &Result<Report>, took: Duration) -> String {
+    let (failed, line, verbose) = said(p, rep, took);
+    serde_json::json!({ "ok": !failed, "line": line, "verbose": verbose }).to_string() + "\n"
 }
 
 /// After the dials: one of them may have passed its address on.
@@ -727,16 +757,19 @@ fn print_no_address(db: &Db) -> Result<()> {
     Ok(())
 }
 
-/// `datum sync`: sync with every member once. While a `sync run` serves this
-/// copy it asks that to, and prints what its sessions did: a second set of
-/// sessions would double the traffic, and bind the endpoint key twice
-/// (da-tltjj).
-pub fn now_all(db: &Db) -> Result<()> {
+/// `datum sync`: sync with every member once — whom first, then each as
+/// its session ends ([`said`]); `verbose` adds the route, the time and an
+/// offline one's words. While a `sync run` serves this copy it asks that
+/// to, and prints what its sessions did: a second set of sessions would
+/// double the traffic, and bind the endpoint key twice (da-tltjj).
+pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
     let peers = synced_peers(db)?;
     if peers.is_empty() {
         println!("no sync peers: `datum sync chain invite` makes an invite");
         return Ok(());
     }
+    let names: Vec<&str> = peers.iter().map(|p| p.label.as_str()).collect();
+    println!("syncing with {}", names.join(", "));
     if let Some(daemon) = asks(db).and_then(|p| std::os::unix::net::UnixStream::connect(p).ok()) {
         use std::io::BufRead;
         eprintln!("this copy's sync daemon is syncing it");
@@ -753,6 +786,9 @@ pub fn now_all(db: &Db) -> Result<()> {
             let (ok, line) = ok.zip(line).context(garbled)?;
             failed += usize::from(!ok);
             println!("{line}");
+            if let Some(more) = answer["verbose"].as_str().filter(|_| verbose) {
+                println!("{more}");
+            }
         }
         print_no_address(db)?;
         ensure!(failed == 0, "{failed} of {of} peer(s) failed");
@@ -760,23 +796,25 @@ pub fn now_all(db: &Db) -> Result<()> {
     }
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let store = DbStore::new(db);
-        let dials = peers
+        let store = &DbStore::new(db);
+        let ep = &ep;
+        // Each said as its session ends, not after the slowest (da-a4fxr).
+        let mut dials: FuturesUnordered<_> = peers
             .iter()
-            .map(|p| async { dial(&store, &ep, addr(p)?, None).await });
+            .map(|p| async move {
+                // The whole dial, connecting included.
+                let start = Instant::now();
+                let rep = async { dial(store, ep, addr(p)?, None).await }.await;
+                (p, rep, start.elapsed())
+            })
+            .collect();
         let mut failed = 0;
-        for (p, rep) in peers
-            .iter()
-            .zip(futures_util::future::join_all(dials).await)
-        {
-            match rep {
-                Ok(rep) => println!("{rep}"),
-                // It syncs with this copy once done: no failure (da-h31wt).
-                Err(e) if failure(&e) == Some(BUSY) => println!("{}: {e:#}", p.label),
-                Err(e) => {
-                    failed += 1;
-                    println!("{}: {e:#}", p.label);
-                }
+        while let Some((p, rep, took)) = dials.next().await {
+            let (lost, line, more) = said(p, &rep, took);
+            failed += usize::from(lost);
+            println!("{line}");
+            if verbose {
+                println!("{more}");
             }
         }
         print_no_address(db)?;
@@ -831,9 +869,10 @@ fn push<'a>(
     asked: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 ) -> Session<'a> {
     Box::pin(async move {
+        let start = Instant::now();
         let rep = async { dial(store, ep, addr(&p)?, None).await }.await;
         if let Some(asked) = asked {
-            let _ = asked.send(answer(&p.label, &rep));
+            let _ = asked.send(answer(&p, &rep, start.elapsed()));
         }
         (Some((p.id, p.label)), rep)
     })

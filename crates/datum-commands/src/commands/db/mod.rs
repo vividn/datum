@@ -176,7 +176,7 @@ pub fn purge_with_io(
 fn refetch(db: &Db, sources: &[String]) {
     println!("refetching from {}…", sources.join(", "));
     #[cfg(feature = "net")]
-    let done = datum_sync::now_all(db);
+    let done = datum_sync::now_all(db, false);
     #[cfg(not(feature = "net"))]
     let done: Result<()> = Err(anyhow::anyhow!("no network here"));
     // Its chain is back with the first sync's records, which come last;

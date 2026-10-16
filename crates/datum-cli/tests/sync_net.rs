@@ -321,12 +321,13 @@ fn the_printed_connect_line_pastes_into_a_shell() {
 }
 
 /// A member that is not running is named, with what runs it (da-shfv4):
-/// «timed out» alone said neither which side nor what to do.
+/// «timed out» alone said neither which side nor what to do. Bare `sync`
+/// says it offline; `-v` says the words (da-a4fxr).
 #[test]
 fn a_member_not_running_is_named_with_what_runs_it() {
     let (_a, mut b) = paired();
     b.env = vec![("DATUM_SYNC_TIMEOUT_S", "2")];
-    let said = b.fails(&["sync"], "");
+    let said = b.fails(&["sync", "-v"], "");
     for words in [
         "could not reach",
         "is the other copy running?",
@@ -370,6 +371,72 @@ fn a_member_that_never_answers_is_offline_and_one_that_refuses_is_an_error() {
     assert!(error.contains("refused"), "{row}");
     let said = line(&b);
     assert!(said.contains(" error ") && said.contains(error), "{said}");
+}
+
+/// `datum sync` names whom it syncs with before it dials, says each member
+/// as its session ends — the one up before the other's timeout — and one
+/// it never reached as offline, with when it was last seen; `-v` adds the
+/// route, the time and that one's words (da-a4fxr).
+#[test]
+fn sync_names_its_members_first_and_each_as_it_ends() {
+    let (mut a, b) = paired();
+    let c = Copy::new();
+    let (mut inviting, ticket) = a.invite(&[]);
+    c.ok(&["sync", "chain", "connect", &ticket]);
+    assert!(inviting.finish().0);
+    let (up, down) = (member_label(&a, &b.id()), member_label(&a, &c.id()));
+    let _b_runs = b.serve(&["sync", "run"]);
+    a.env.push(("DATUM_SYNC_TIMEOUT_S", "3"));
+
+    let sync = |args: &[&str]| {
+        let mut run = Killed(a.cmd(args).spawn().unwrap());
+        let out = lines(run.0.stdout.take().unwrap());
+        let said: Vec<(String, Instant)> = out.iter().map(|l| (l, Instant::now())).collect();
+        assert!(!run.0.wait().unwrap().success(), "{said:?}");
+        said
+    };
+    let said = sync(&["sync"]);
+    let text: Vec<&str> = said.iter().map(|(l, _)| l.as_str()).collect();
+    let first = text[0];
+    assert!(first.starts_with("syncing with "), "{text:?}");
+    assert!(first.contains(&up) && first.contains(&down), "{text:?}");
+    let at = |text: &[&str], who: &str| {
+        // A session's own line names the peer as its handshake did.
+        let at = text.iter().position(|l| l.starts_with(who));
+        at.unwrap_or_else(|| panic!("no line of {who}: {text:?}"))
+    };
+    let (i, j) = (at(&text, &up), at(&text, &down));
+    assert!(text[i].contains(": sent "), "{text:?}");
+    let gap = said[j].1 - said[i].1;
+    assert!(
+        gap > Duration::from_secs(1),
+        "{up} said only {gap:?} before {down}: {text:?}"
+    );
+    let seen = entry_of(&a, "status", &c)["last_seen"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        text[j],
+        format!("{down}: offline, last seen {seen}"),
+        "{text:?}"
+    );
+    assert!(
+        text.last().unwrap().contains("synced"),
+        "the summary last: {text:?}"
+    );
+
+    let said = sync(&["sync", "-v"]);
+    let text: Vec<&str> = said.iter().map(|(l, _)| l.as_str()).collect();
+    let (i, j) = (at(&text, &up), at(&text, &down));
+    // `Copy::cmd` binds every copy to 127.0.0.1 (`DATUM_SYNC_BIND`).
+    let route = text[i + 1];
+    assert!(
+        route.starts_with("  direct 127.0.0.1:") && route.ends_with('s'),
+        "{text:?}"
+    );
+    let why = text[j + 1];
+    assert!(why.contains("s · could not reach"), "{text:?}");
 }
 
 #[test]
@@ -1070,15 +1137,17 @@ fn sync_asks_the_run_serving_its_copy_and_binds_nothing_of_its_own() {
     assert!(said.contains("verify ok"), "{said}");
     assert!(a.has("walk"));
 
-    // A member it cannot reach fails it, named.
+    // A member it cannot reach fails it, named offline, its words in `-v`'s
+    // line, which the run sends too (da-a4fxr).
     a_runs.child.kill().unwrap();
     a_runs.child.wait().unwrap();
-    let said = b.fails(&["sync"], "");
+    let said = b.fails(&["sync", "-v"], "");
     assert!(
         said.contains("this copy's sync daemon is syncing it"),
         "{said}"
     );
-    assert!(said.contains("could not reach"), "{said}");
+    assert!(said.contains(": offline, last seen "), "{said}");
+    assert!(said.contains("s · could not reach"), "{said}");
     assert!(said.contains("1 of 1 peer(s) failed"), "{said}");
 
     let _a_runs = a.serve(&["sync", "run"]);
@@ -2198,10 +2267,10 @@ fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
     }
 
     // a gone, b's session fails, offline (da-ueb4p), and says why in the
-    // words bare `sync` printed.
+    // words `sync -v` printed (da-a4fxr).
     drop(serving);
     b.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
-    let failed = b.fails(&["sync"], "");
+    let failed = b.fails(&["sync", "-v"], "");
     let row = entry_of(&b, "status", &a);
     assert_eq!(row["state"], "offline", "{row}");
     let why = row["error"].as_str().unwrap();

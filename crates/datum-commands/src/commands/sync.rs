@@ -116,7 +116,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             db.sync_session_as(Some(&endpoint));
             command(*cmd, db, ask)?
         }
-        SyncCommand::Now => {
+        SyncCommand::Now { verbose } => {
             db.sync_refuse_debug()?;
             if !db.sync_chain()?.exists() && db.sync_joining()?.is_empty() {
                 println!("{NO_CHAIN}");
@@ -126,7 +126,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 bail!("sync is paused on this copy since {at}: `datum sync resume` to sync again");
             }
             #[cfg(feature = "net")]
-            let synced = datum_sync::now_all(db);
+            let synced = datum_sync::now_all(db, verbose);
             #[cfg(not(feature = "net"))]
             let synced: Result<()> = Err(anyhow::anyhow!(NO_NET));
             if let Some(line) = summary(db)? {
@@ -1082,7 +1082,7 @@ fn sign(db: &Db, mut record: Value, chain: &Chain, admin_key: Option<&str>) -> R
                 std::io::stdin().read_line(&mut code)?;
                 if code.trim().is_empty() && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
                     #[cfg(feature = "net")]
-                    datum_sync::now_all(db)?;
+                    datum_sync::now_all(db, false)?;
                     ensure!(
                         db.sync_chain()?.holds(&record),
                         "not approved yet: no approval code, and no sync brought it"
@@ -1286,7 +1286,7 @@ pub(crate) fn depart(db: &Db, chain: &str, again: &str) -> Result<Option<Vec<Str
     #[cfg(feature = "net")]
     let (told, synced) = match told.is_empty() {
         true => {
-            let synced = datum_sync::now_all(db);
+            let synced = datum_sync::now_all(db, false);
             // The sessions bound this thread to the endpoint key they began
             // with (da-otz0d), and the leave mints a new one.
             db.sync_session_as(None);

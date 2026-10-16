@@ -78,7 +78,7 @@ use iroh::endpoint::{
     presets, Connection, ConnectionError, Incoming, RecvStream, SendStream, TransportErrorCode,
 };
 pub use iroh::{Endpoint, EndpointAddr};
-use iroh::{RelayMode, SecretKey, Watcher};
+use iroh::{RelayMode, SecretKey, TransportAddr, Watcher};
 use n0_future::time::{sleep, timeout};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -504,6 +504,9 @@ pub struct Report {
     /// The chain of one this copy left to redeem the invite, and the chain
     /// it joined (da-h7pnc).
     pub left: Option<(String, String)>,
+    /// How the session reached the peer, as `datum sync -v` says it.
+    #[serde(skip)]
+    pub route: Option<String>,
 }
 
 impl Report {
@@ -523,6 +526,7 @@ impl Report {
             vector: BTreeMap::new(),
             left: None,
             round: 0,
+            route: None,
         }
     }
 }
@@ -980,11 +984,23 @@ async fn session(
     if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
         rep.left = Some((old, new));
     }
+    rep.route = route(&conn);
     conn.close(0u32.into(), b"done");
     match done {
         Ok(()) => Ok(rep),
         Err(e) => Err(Lost(rep, e).into()),
     }
+}
+
+/// The path a connection sends on: direct to an address, or relayed.
+fn route(conn: &Connection) -> Option<String> {
+    let paths = conn.paths();
+    let path = paths.iter().find(|p| p.is_selected())?;
+    Some(match path.remote_addr() {
+        TransportAddr::Ip(a) => format!("direct {a}"),
+        TransportAddr::Relay(url) => format!("relayed via {url}"),
+        other => other.to_string(),
+    })
 }
 
 /// What a `sync diff` with one peer found.

@@ -13,8 +13,11 @@ use crate::input::Show;
 
 pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
     let Some((sub, rest)) = tail.split_first() else {
-        return Ok(SyncCommand::Now);
+        return Ok(SyncCommand::Now { verbose: false });
     };
+    if matches!(*sub, "-v" | "--verbose") && rest.is_empty() {
+        return Ok(SyncCommand::Now { verbose: true });
+    }
     let mut rest = rest.iter();
     let cmd = match *sub {
         // `--json` is the swept `--show json`, set by `apply_show`.
@@ -480,7 +483,9 @@ mod tests {
 
     #[test]
     fn parses_each_subcommand() {
-        assert_eq!(p(&[]), SyncCommand::Now);
+        assert_eq!(p(&[]), SyncCommand::Now { verbose: false });
+        assert_eq!(p(&["-v"]), SyncCommand::Now { verbose: true });
+        assert_eq!(p(&["--verbose"]), SyncCommand::Now { verbose: true });
         assert_eq!(
             p(&["status"]),
             SyncCommand::Status {

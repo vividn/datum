@@ -233,8 +233,10 @@ describe('datum.day and a native copy', () => {
 					await app.page.close();
 					// Nobody answers for the page's key now: a dial fails. (Before
 					// `sync run`, which would be a second endpoint on the native key.)
-					const now = await native.run(['sync'], '', { DATUM_SYNC_TIMEOUT_S: '3' });
+					// Offline, its words under `-v` (da-a4fxr).
+					const now = await native.run(['sync', '-v'], '', { DATUM_SYNC_TIMEOUT_S: '3' });
 					assert.notEqual(now.code, 0, now.stdout);
+					assert.match(now.stdout, /: offline, last seen /);
 					assert.match(now.stdout, /could not reach/);
 
 					assert.equal((await native.run(['occur', 'meanwhile', '-t', '1000'])).code, 0);
