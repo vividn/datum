@@ -2,8 +2,8 @@
 // on another origin than the app's, so the browser does real CORS and real
 // preflights against it, and every request's Basic auth is checked.
 //
-// Only what the destination uses: PUT, GET, HEAD and DELETE of a file and MKCOL
-// of a folder, under `/dav/`, which exists. A PUT into a folder that does
+// Only what the destination uses: PUT, GET, HEAD and DELETE of a file, MKCOL
+// of a folder and PROPFIND one level down, under `/dav/`, which exists. A PUT into a folder that does
 // not exist is refused 409, as RFC 4918 has it. A refusal carries the CORS
 // headers too, as a server configured by the widget's note does.
 
@@ -32,8 +32,8 @@ export async function startWebDav() {
 		if (state.cors && req.headers.origin) res.setHeader('access-control-allow-origin', req.headers.origin);
 		if (req.method === 'OPTIONS') {
 			if (!state.cors) return reply(403);
-			res.setHeader('access-control-allow-methods', 'GET, HEAD, PUT, DELETE, MKCOL');
-			res.setHeader('access-control-allow-headers', 'Authorization');
+			res.setHeader('access-control-allow-methods', 'GET, HEAD, PUT, DELETE, MKCOL, PROPFIND');
+			res.setHeader('access-control-allow-headers', 'Authorization, Depth');
 			return reply(200);
 		}
 		const chunks = [];
@@ -46,6 +46,12 @@ export async function startWebDav() {
 			if (!folders.has(parent(path))) return reply(409);
 			folders.add(path.replace(/\/?$/, '/'));
 			return reply(201);
+		}
+		if (req.method === 'PROPFIND') {
+			if (!folders.has(path)) return reply(404);
+			const below = [...folders, ...files.keys()].filter((p) => p === path || parent(p) === path);
+			const hrefs = below.map((p) => `<d:response><d:href>${encodeURI(p)}</d:href></d:response>`).join('');
+			return reply(207, `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">${hrefs}</d:multistatus>`);
 		}
 		if (req.method === 'PUT') {
 			if (!folders.has(parent(path))) return reply(409);

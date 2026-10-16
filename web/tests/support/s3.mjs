@@ -4,7 +4,8 @@
 // with the secret the server holds — the way S3 refuses a wrong secret.
 //
 // Path-style only (`/<bucket>/<key>`), and only what the destination uses:
-// PUT, GET, HEAD and DELETE of an object, and ListObjectsV2 on a bucket. CORS is
+// PUT, GET, HEAD and DELETE of an object, and ListObjectsV2 on a bucket, its
+// delimiter too. CORS is
 // S3's: a preflight is answered by echoing the headers it asks for, which
 // is what makes `AllowedHeaders: ["*"]` cover `authorization`.
 
@@ -87,7 +88,14 @@ export async function startS3(buckets = ['backups']) {
 		if (!key && req.method === 'GET') {
 			const prefix = url.searchParams.get('prefix') ?? '';
 			const keys = [...objects.keys()].filter((k) => k.startsWith(prefix)).sort();
-			return reply(res, 200, `<ListBucketResult>${keys.map((k) => `<Contents><Key>${k}</Key></Contents>`).join('')}</ListBucketResult>`, {
+			// With a delimiter, a key past one is rolled up into its common prefix, as S3 does.
+			const delimiter = url.searchParams.get('delimiter');
+			const cut = (k) => (delimiter && k.indexOf(delimiter, prefix.length) >= 0 ? k.slice(0, k.indexOf(delimiter, prefix.length) + 1) : null);
+			const common = [...new Set(keys.map(cut).filter(Boolean))];
+			const body =
+				keys.filter((k) => !cut(k)).map((k) => `<Contents><Key>${k}</Key></Contents>`).join('') +
+				common.map((p) => `<CommonPrefixes><Prefix>${p}</Prefix></CommonPrefixes>`).join('');
+			return reply(res, 200, `<ListBucketResult><Prefix>${prefix}</Prefix>${body}</ListBucketResult>`, {
 				'content-type': 'application/xml'
 			});
 		}

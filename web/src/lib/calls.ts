@@ -12,7 +12,7 @@
 // store's `_internal`…): it is a global flag, and the database a call names
 // is the caller's to choose.
 
-import type { Backup, BackupRun, Plan, PlanRows, Reach } from './backups.js';
+import type { BackupRun, Listed, Plan, PlanRows, Reach } from './backups.js';
 import type { Alias, GrammarEntry } from './commands.js';
 import type { Conflicted } from './conflicts.js';
 import type { RestorePreview } from './dbio.js';
@@ -349,7 +349,7 @@ export interface Reads {
 	revertArgv: PurgePreview;
 	restorePreviewArgv: RestorePreview;
 	plansArgv: PlanRows;
-	backupListArgv: { backups: Backup[] };
+	backupListArgv: { backups: Listed[] };
 	backupToArgv: BackupRun;
 	planReachArgv: Reach;
 	layoutsArgv: { rows: LayoutRow[] };

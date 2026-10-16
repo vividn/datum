@@ -68,7 +68,7 @@ describe('a WebDAV destination', () => {
 		});
 	});
 
-	test('a plan backs up to the folder: the slot file and the index, found again', async () => {
+	test('a plan backs up to its device’s folder in the folder: the slot file and the index, found again, by another device too', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
@@ -83,9 +83,10 @@ describe('a WebDAV destination', () => {
 			await sheet.locator('button[data-backup="add"]').click();
 			await sheet.locator('section.plan[data-plan="nas"] li[data-slot="0"]').waitFor();
 			const paths = [...dav.files.keys()].filter((p) => p.startsWith('/dav/plan/')).sort();
+			const at = `/dav/plan/client-${await page.evaluate(() => localStorage.getItem('datum-client-id'))}/`;
 			assert.equal(paths.length, 2, paths.join(' '));
-			assert.match(paths[0], /^\/dav\/plan\/datum\.slot0\.\d{8}T\d{6}\.\d{3}Z\.jsonl\.gz$/);
-			assert.equal(paths[1], '/dav/plan/index.json');
+			assert.ok(paths[0].startsWith(at) && /\/datum\.slot0\.\d{8}T\d{6}\.\d{3}Z\.jsonl\.gz$/.test(paths[0]), paths[0]);
+			assert.equal(paths[1], `${at}index.json`);
 
 			// Another plan on the same folder finds it: the form starts over at the first kind.
 			await sheet.locator('select[data-plan-field="kind"]').selectOption('webdav');
@@ -93,6 +94,19 @@ describe('a WebDAV destination', () => {
 			await sheet.getByRole('button', { name: 'Look for backups there', exact: true }).click();
 			await sheet.locator('[data-found]').waitFor();
 			assert.equal(await sheet.locator('[data-found]').innerText(), '1 backup of datum found, newest 0 s ago Add plan continues that rotation.');
+
+			// Another device lists its folder (PROPFIND) and finds it as that device's.
+			await withApp(async (other) => {
+				const sheet = await openSheet(other.page);
+				await fill(sheet, 'plan/');
+				await sheet.getByRole('button', { name: 'Look for backups there', exact: true }).click();
+				await sheet.locator('[data-found]').waitFor();
+				assert.match(
+					await sheet.locator('[data-found]').innerText(),
+					/^1 backup of datum from Chrome on \w+ found, newest 0 s ago Add plan keeps this device's own beside them\.$/
+				);
+				assert.deepEqual(other.errors, []);
+			});
 			assert.deepEqual(app.errors, []);
 		});
 	});

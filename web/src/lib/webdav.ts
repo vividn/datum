@@ -1,7 +1,8 @@
 // A WEBDAV folder as a backup destination (da-bmxbb): Nextcloud, ownCloud,
 // many NAS boxes. A folder URL, a user and an (app) password, sent as HTTP
 // Basic auth; the files are `<folder>/<file>`, and the folder is made
-// (MKCOL) the first time a write finds it missing.
+// (MKCOL) the first time a write finds it missing — a device's own
+// `client-<id>/` in it too (da-help3), which PROPFIND lists.
 //
 // As with S3 the browser talks to the server itself, so the server must
 // allow this page's origin (CORS, `corsHeaders`) — which most WebDAV servers
@@ -62,13 +63,13 @@ function explain(status: number, statusText: string): string {
 }
 
 /** Send one request; a refusal throws a `WebDavError` naming its likely cause. */
-async function send(c: WebDavConfig, method: string, url: string, body?: Uint8Array): Promise<Response> {
+async function send(c: WebDavConfig, method: string, url: string, body?: Uint8Array, headers: Record<string, string> = {}): Promise<Response> {
 	const why = unusable(c.url ?? '', typeof location === 'undefined' ? '' : location.protocol);
 	if (why) throw new WebDavError(0, why);
 	let response: Response;
 	try {
 		// Never the browser's HTTP cache: a run's re-read of the index must see another device's put.
-		response = await fetch(url, { method, body: body as BodyInit | undefined, headers: { authorization: basic(c) }, cache: 'no-store' });
+		response = await fetch(url, { method, body: body as BodyInit | undefined, headers: { ...headers, authorization: basic(c) }, cache: 'no-store' });
 	} catch {
 		// The browser hides WHY a cross-origin request got no response.
 		throw new WebDavError(0, 'CORS: the server does not allow this page — send the headers below — or the folder URL is wrong, or this device is offline');
@@ -77,9 +78,9 @@ async function send(c: WebDavConfig, method: string, url: string, body?: Uint8Ar
 	throw new WebDavError(response.status, explain(response.status, response.statusText));
 }
 
-/** The destination: `get`, `put`, `remove`, `size` on files in the folder. */
+/** The destination: `get`, `put`, `remove`, `size` on files in the folder, and its devices' `folders`. */
 export function webdav(c: WebDavConfig) {
-	const at = (file: string) => folder(c) + encodeURIComponent(file);
+	const at = (file: string) => folder(c) + file.split('/').map(encodeURIComponent).join('/');
 	return {
 		async get(file: string): Promise<Uint8Array | null> {
 			try {
@@ -93,11 +94,13 @@ export function webdav(c: WebDavConfig) {
 			try {
 				await send(c, 'PUT', at(file), bytes);
 			} catch (e) {
-				// 409: the folder is not there yet. Make it (405: it is, after all) and put again.
+				// 409: a folder is not there yet. Make it and any in the file's path (405: it is, after all) and put again.
 				if (!(e instanceof WebDavError && e.status === 409)) throw e;
-				await send(c, 'MKCOL', folder(c)).catch((m) => {
-					if (!(m instanceof WebDavError && m.status === 405)) throw m;
-				});
+				const path = file.split('/').slice(0, -1);
+				for (let i = 0; i <= path.length; i++)
+					await send(c, 'MKCOL', at(path.slice(0, i).map((p) => p + '/').join(''))).catch((m) => {
+						if (!(m instanceof WebDavError && m.status === 405)) throw m;
+					});
 				await send(c, 'PUT', at(file), bytes);
 			}
 		},
@@ -109,6 +112,16 @@ export function webdav(c: WebDavConfig) {
 		async size(file: string): Promise<number | null> {
 			const length = (await send(c, 'HEAD', at(file))).headers.get('content-length');
 			return length === null ? null : Number(length);
+		},
+		/** The devices' folders in it, `client-<id>/`: a PROPFIND one level down. None when it is not there yet. */
+		async folders(): Promise<string[]> {
+			const response = await send(c, 'PROPFIND', folder(c), undefined, { depth: '1' }).catch((e) => {
+				if (e instanceof WebDavError && e.status === 404) return null;
+				throw e;
+			});
+			const xml = (await response?.text()) ?? '';
+			const names = [...xml.matchAll(/<(?:[\w-]+:)?href>([^<]*)<\/(?:[\w-]+:)?href>/g)].map((m) => decodeURIComponent(m[1]).split('/').filter(Boolean).at(-1) ?? '');
+			return names.filter((n) => n.startsWith('client-')).map((n) => n + '/');
 		}
 	};
 }
@@ -120,7 +133,7 @@ export const testConnection = (c: WebDavConfig): Promise<StepResult[]> => probe(
 export const corsHeaders = (origin: string): string =>
 	[
 		`Access-Control-Allow-Origin: ${origin}`,
-		'Access-Control-Allow-Methods: GET, HEAD, PUT, DELETE, MKCOL',
-		'Access-Control-Allow-Headers: Authorization',
+		'Access-Control-Allow-Methods: GET, HEAD, PUT, DELETE, MKCOL, PROPFIND',
+		'Access-Control-Allow-Headers: Authorization, Depth',
 		'Access-Control-Max-Age: 3000'
 	].join('\n');

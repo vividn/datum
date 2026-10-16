@@ -13,7 +13,7 @@ const PREFIX = 'datum-backups/';
 let s3;
 before(async () => {
 	await startApp();
-	s3 = await startS3(['probe', 'plan', 'reread', 'shared', 'tabs']);
+	s3 = await startS3(['probe', 'plan', 'reread', 'shared', 'older', 'tabs']);
 });
 after(async () => {
 	await s3?.close();
@@ -26,6 +26,18 @@ async function openSheet(page) {
 	const sheet = page.locator('section.pane[data-title="backups"]');
 	await sheet.locator('.backups').waitFor();
 	return sheet;
+}
+
+/** This device's folder in the bucket, under the prefix (da-help3). */
+const folderOf = async (page) => `${PREFIX}client-${await page.evaluate(() => localStorage.getItem('datum-client-id'))}/`;
+
+/** Every file `folder`'s index in `bucket` names is there, and nothing else is in it: its slots. */
+function whole(bucket, folder) {
+	const objects = s3.objects(bucket);
+	const backups = JSON.parse(objects.get(`${folder}index.json`)).dbs.datum.backups;
+	const there = [...objects.keys()].filter((k) => k.startsWith(folder)).sort();
+	assert.deepEqual(there, [...backups.map((x) => folder + x.file), `${folder}index.json`].sort());
+	return backups.map((x) => x.slot);
 }
 
 /** Fill the new plan's S3 settings: the fake's, with `fields` over them. */
@@ -75,7 +87,7 @@ describe('an S3-compatible destination', () => {
 		});
 	});
 
-	test('off the DEBUG database a plan backs up to the bucket: the slot file and the index, under the prefix, found again', async () => {
+	test('off the DEBUG database a plan backs up to the bucket: the slot file and the index, in this device’s folder under the prefix, found again', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
@@ -94,9 +106,13 @@ describe('an S3-compatible destination', () => {
 			const plan = await addPlan(sheet, 'cloud', 'plan');
 			await plan.locator('li[data-slot="0"]').waitFor();
 			const keys = [...s3.objects('plan').keys()].sort();
+			const folder = await folderOf(page);
+			assert.match(folder, /^datum-backups\/client-web-\w+\/$/);
 			assert.equal(keys.length, 2, keys.join(' '));
-			assert.match(keys[0], /^datum-backups\/datum\.slot0\.\d{8}T\d{6}\.\d{3}Z\.jsonl\.gz$/);
-			assert.equal(keys[1], `${PREFIX}index.json`);
+			assert.ok(keys[0].startsWith(folder) && /\/datum\.slot0\.\d{8}T\d{6}\.\d{3}Z\.jsonl\.gz$/.test(keys[0]), keys[0]);
+			assert.equal(keys[1], `${folder}index.json`);
+			// The index names its device, for the others to list it by.
+			assert.match(JSON.parse(s3.objects('plan').get(keys[1])).label, /^Chrome on \w+$/);
 
 			// Another plan on the same bucket and prefix finds it.
 			await fillS3(sheet, { bucket: 'plan' });
@@ -109,8 +125,8 @@ describe('an S3-compatible destination', () => {
 
 	// The bucket says when the index was last modified and nothing of how long
 	// to keep it, so a browser's cache would answer every read here but the
-	// last (da-8g7zo) — the re-read before the put among them, which is what
-	// keeps a second device's slot in the test below.
+	// first (da-8g7zo) — the run's own among them, which would rotate an
+	// index that is not the bucket's.
 	test('a run reads the index from the bucket each time, never from the browser’s cache', async () => {
 		await withApp(async (app) => {
 			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
@@ -121,62 +137,99 @@ describe('an S3-compatible destination', () => {
 			await app.clock.forward(HOUR);
 			await plan.locator('button[data-backup="now"]').click();
 			await plan.locator('li[data-slot="1"]').waitFor();
-			const index = `${PREFIX}index.json`;
+			const at = await folderOf(app.page);
+			const listing = [`GET ${at}index.json`, `GET ${PREFIX}index.json`, 'GET '];
 			assert.deepEqual(
 				s3.requests.slice(before).map((r) => r.replace(/\.slot1\..*/, '.slot1')),
-				// The listing, the CLI's index, its slot and its length, the re-read, the put, the listing.
-				[`GET ${index}`, `GET ${index}`, `PUT ${PREFIX}datum.slot1`, `HEAD ${PREFIX}datum.slot1`, `GET ${index}`, `PUT ${index}`, `GET ${index}`]
+				// The listing (this device's, the top's, the devices' folders), the CLI's index, its slot and its length, the put, the listing.
+				[...listing, `GET ${at}index.json`, `PUT ${at}datum.slot1`, `HEAD ${at}datum.slot1`, `PUT ${at}index.json`, ...listing]
 			);
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	// index.json is read, rotated and written back. Device B reads it, and
-	// before B puts its own, device A takes a whole backup: B must merge
-	// into the index as A left it, not write back the one it read — which
-	// would drop A's slot and leave A's file named by nothing.
-	test('two devices backing up one database to one bucket keep each other’s slots', async () => {
+	// index.json is read, rotated and written back, so two devices sharing one
+	// lost a slot whenever one put its index between the other's read and put.
+	// Each writes its own folder now (da-help3): B is held at its index's put,
+	// A takes a whole backup meanwhile, and neither loses anything.
+	test('two devices backing up one database to one bucket each keep their own folder, interleaved, and each lists the other’s', async () => {
 		await withApp(async (a) => {
 			await withApp(async (b) => {
 				for (const app of [a, b]) assert.equal((await app.run(['occur', 'coffee'])).code, 0);
 				const sheetA = await openSheet(a.page);
 				const planA = await addPlan(sheetA, 'a', 'shared');
 				await planA.locator('li[data-slot="0"]').waitFor();
+				const [atA, atB] = [await folderOf(a.page), await folderOf(b.page)];
+				assert.notEqual(atA, atB);
 
-				// A is an hour on (slot 1), B two (slot 2).
+				// A is an hour on (slot 1). B finds A's backups, and keeps its own beside them.
 				await a.clock.forward(HOUR);
 				await b.clock.forward(2 * HOUR);
-				const held = s3.hold((method, key) => method === 'PUT' && /\.slot2\./.test(key));
+				const held = s3.hold((method, key) => method === 'PUT' && key === `${atB}index.json`);
 				const sheetB = await openSheet(b.page);
 				const planB = await addPlan(sheetB, 'b', 'shared');
 				await sheetB.locator('[data-found]').waitFor();
+				assert.match(
+					await sheetB.locator('[data-found]').innerText(),
+					/^1 backup of datum from Chrome on \w+ found, newest 2 h ago Add plan keeps this device's own beside them\.$/
+				);
 				await sheetB.locator('button[data-backup="add"]').click();
 				await held.reached;
 
 				await planA.locator('button[data-backup="now"]').click();
-				await planA.locator('li[data-slot="1"]').waitFor();
+				await planA.locator('li[data-slot="1"]:not([data-from])').waitFor();
 				held.release();
-				await planB.locator('li[data-slot="2"]').waitFor();
+				await planB.locator('li[data-slot="0"]:not([data-from])').waitFor();
 
-				const objects = s3.objects('shared');
-				const backups = JSON.parse(objects.get(`${PREFIX}index.json`)).dbs.datum.backups;
-				assert.deepEqual(
-					backups.map((x) => x.slot),
-					[0, 1, 2]
-				);
-				// Every file the index names is there, and nothing else is.
-				assert.deepEqual([...objects.keys()].sort(), [...backups.map((x) => PREFIX + x.file), `${PREFIX}index.json`].sort());
-				// And B lists A's backup as its own.
-				await planB.locator('li[data-slot="1"]').waitFor();
+				assert.deepEqual(whole('shared', atA), [0, 1]);
+				assert.deepEqual(whole('shared', atB), [0]);
+				assert.deepEqual([...s3.objects('shared').keys()].filter((k) => !k.startsWith(atA) && !k.startsWith(atB)), []);
+				// B lists A's two as A's, and its own; and B's says the last backup is its own.
+				const fromA = planB.locator('li[data-from^="Chrome on "]');
+				assert.deepEqual(await fromA.evaluateAll((li) => li.map((l) => l.dataset.slot)), ['1', '0']);
+				assert.match(await planB.locator('[data-last]').innerText(), /^last backup 0 s ago$/);
 				assert.deepEqual([...a.errors, ...b.errors], []);
 			});
 		});
 	});
 
-	// The re-read covers a writer that finished first, not one that re-read
-	// before this one put: tab A is held at its index put, after its re-read,
-	// and tab B is asked for a backup. Run then, B's slot would be in an index
-	// A's put replaces, its file named by nothing (da-u050c). One run a device.
+	// Backups went to the top of the prefix before each device had a folder:
+	// listed still, under their own name, and restored from.
+	test('backups at the top from before device folders are listed beside this device’s own, and restore', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
+			const sheet = await openSheet(page);
+			const plan = await addPlan(sheet, 'cloud', 'older');
+			await plan.locator('li[data-slot="0"]').waitFor();
+			const backedUp = (await app.allEntries(500)).map((e) => e.hid).sort();
+			// Moved to the top: the bucket as a device left it before da-help3.
+			const objects = s3.objects('older');
+			const at = await folderOf(page);
+			for (const [key, bytes] of [...objects]) objects.delete(key), objects.set(key.replace(at, PREFIX), bytes);
+
+			await app.clock.forward(1000);
+			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
+			await plan.locator('button[data-backup="now"]').click();
+			const older = plan.locator('li[data-slot="0"][data-from="before devices had folders"]');
+			await older.waitFor();
+			await plan.locator('li[data-slot="0"]:not([data-from])').waitFor();
+			assert.deepEqual(whole('older', at), [0]);
+
+			await older.locator('button', { hasText: 'Restore' }).click();
+			const confirm = page.locator('dialog.confirm');
+			await confirm.waitFor();
+			assert.match(await confirm.innerText(), / from before devices had folders \(\d+ entries\): 1 deleted, 0 added, 0 changed\./);
+			await confirm.getByRole('button', { name: 'restore', exact: true }).click();
+			await sheet.locator('[role="status"]', { hasText: 'datum restored' }).waitFor();
+			assert.deepEqual((await app.allEntries(500)).map((e) => e.hid).sort(), backedUp);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// Two tabs of one device write its one folder: tab A is held at its index
+	// put, and tab B is asked for a backup. Run then, B's slot would be in an
+	// index A's put replaces, its file named by nothing (da-u050c). One run a device.
 	//
 	// Past the HTTP cache, because Chromium keeps a tab's request for a URL
 	// behind another's unanswered PUT of it for 20 s (measured: B's four on
@@ -191,16 +244,7 @@ describe('an S3-compatible destination', () => {
 			const planB = (await openSheet(b.page)).locator('section.plan[data-plan="tabs"]');
 			await planB.locator('li[data-slot="0"]').waitFor();
 
-			const objects = s3.objects('tabs');
-			const whole = (slots) => {
-				const backups = JSON.parse(objects.get(`${PREFIX}index.json`)).dbs.datum.backups;
-				// Every file the index names is there, and nothing else is.
-				assert.deepEqual([...objects.keys()].sort(), [...backups.map((x) => PREFIX + x.file), `${PREFIX}index.json`].sort());
-				assert.deepEqual(
-					backups.map((x) => x.slot),
-					slots
-				);
-			};
+			const at = await folderOf(a.page);
 
 			// A is an hour on (slot 1), B two (slot 2).
 			await a.clock.forward(HOUR);
@@ -215,13 +259,13 @@ describe('an S3-compatible destination', () => {
 			await answer.first().waitFor();
 			held.release();
 			await planA.locator('li[data-slot="1"]').waitFor();
-			whole([0, 1]);
+			assert.deepEqual(whole('tabs', at), [0, 1]);
 			assert.deepEqual(await answer.allInnerTexts(), ['Another datum.day tab is backing up. Try again when it is done.']);
 
-			// And B's turn comes: asked again, it merges into the index as A left it.
+			// And B's turn comes: asked again, it rotates the index as A left it.
 			await planB.locator('button[data-backup="now"]').click();
 			await planB.locator('li[data-slot="2"]').waitFor();
-			whole([0, 1, 2]);
+			assert.deepEqual(whole('tabs', at), [0, 1, 2]);
 			assert.equal(await planB.locator('.error').count(), 0);
 			assert.deepEqual([...a.errors, ...b.errors], []);
 		}, { prepare: (context) => context.addInitScript(() => {

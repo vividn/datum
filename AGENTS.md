@@ -436,8 +436,10 @@ start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `ir
   are CLI commands through `run(argv)`. What TypeScript does
   hold is the transport: carrying those files to an S3-compatible bucket
   (`$lib/s3.ts`, SigV4 by aws4fetch, the browser straight to the bucket
-  under its CORS), and merging a run's one slot into the index as the
-  bucket has it now, so two devices keep each other's. A device's tabs take
+  under its CORS), each device under a folder of its own,
+  `client-<client id>/`, with its own index, so no two devices write one;
+  restore lists every device's folder and the older backups at the top
+  (da-help3). A device's tabs take
   backups one run at a time, under the `datum-backups` Web Lock (da-u050c).
   A command a reader runs also carries `--show json` (`echoArgv`
   in `web/src/lib/echo.ts`), so the bottom bar and the REPL PLACE the

@@ -88,7 +88,7 @@ async function send(c: S3Config, method: string, url: string, body?: Uint8Array)
 	throw new S3Error(tag('Code'), explain(c, response.status, tag('Code'), tag('Message')));
 }
 
-/** The destination: `get`, `put`, `remove`, `size` on files under the prefix. */
+/** The destination: `get`, `put`, `remove`, `size` on files under the prefix, and its devices' `folders`. */
 export function s3(c: S3Config) {
 	return {
 		async get(file: string): Promise<Uint8Array | null> {
@@ -110,6 +110,13 @@ export function s3(c: S3Config) {
 			const url = `${base(c)}?list-type=2&prefix=${encodeURIComponent(`${c.prefix ?? ''}${start}`)}`;
 			const xml = await (await send(c, 'GET', url)).text();
 			return [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map((m) => m[1]);
+		},
+		/** The devices' folders under the prefix, `client-<id>/`: the bucket's common prefixes. */
+		async folders(): Promise<string[]> {
+			const prefix = c.prefix ?? '';
+			const url = `${base(c)}?delimiter=%2F&list-type=2&prefix=${encodeURIComponent(`${prefix}client-`)}`;
+			const xml = await (await send(c, 'GET', url)).text();
+			return [...xml.matchAll(/<CommonPrefixes>\s*<Prefix>([^<]*)<\/Prefix>/g)].map((m) => m[1].slice(prefix.length));
 		}
 	};
 }

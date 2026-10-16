@@ -176,11 +176,12 @@ describe('«Backups»', () => {
 			await plan.locator('button[data-backup="now"]').click();
 			await plan.locator('li[data-slot="1"]').waitFor();
 
-			/** The file the bucket's index names for slot 1. */
+			/** The file this device's index in the bucket names for slot 1. */
 			const slotOne = () =>
 				page.evaluate(async () => {
-					const index = await window.datum.backupKinds.memory.open({ bucket: 'b5' }).get('index.json');
-					return JSON.parse(new TextDecoder().decode(index)).dbs.DEBUG.backups.find((b) => b.slot === 1).file;
+					const at = `client-${localStorage.getItem('datum-client-id')}/`;
+					const index = await window.datum.backupKinds.memory.open({ bucket: 'b5' }).get(`${at}index.json`);
+					return at + JSON.parse(new TextDecoder().decode(index)).dbs.DEBUG.backups.find((b) => b.slot === 1).file;
 				});
 			const held = (file) => page.evaluate(async (file) => (await window.datum.backupKinds.memory.open({ bucket: 'b5' }).get(file)) !== null, file);
 			const good = await slotOne();
@@ -191,7 +192,7 @@ describe('«Backups»', () => {
 				const whole = memory.open;
 				memory.open = (config) => {
 					const dest = whole(config);
-					return { ...dest, put: (file, bytes) => dest.put(file, file === 'index.json' ? bytes : bytes.subarray(0, -1)) };
+					return { ...dest, put: (file, bytes) => dest.put(file, file.endsWith('index.json') ? bytes : bytes.subarray(0, -1)) };
 				};
 				memory.open.whole = whole;
 			});

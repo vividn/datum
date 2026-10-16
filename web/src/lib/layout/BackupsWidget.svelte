@@ -125,13 +125,16 @@
 
 	const everyText = (secs: number): string => EVERY.find(([s]) => s === secs)?.[1] ?? `every ${ago(secs)}`;
 
-	/** «12 backups of datum found, newest 2 h ago» — per database the destination holds. */
+	/** «12 backups of datum found, newest 2 h ago» — per database and device the destination holds. */
 	function foundText(backups: Backup[]): string {
 		if (!backups.length) return 'No backups there yet.';
 		const by = new Map<string, Backup[]>();
-		for (const b of backups) by.set(b.source_db, [...(by.get(b.source_db) ?? []), b]);
+		for (const b of backups) {
+			const key = `${b.source_db}${b.mine ? '' : ` from ${b.owner}`}`;
+			by.set(key, [...(by.get(key) ?? []), b]);
+		}
 		return [...by]
-			.map(([db, list]) => `${list.length} backup${list.length === 1 ? '' : 's'} of ${db} found, newest ${ago(list[0].age_secs)} ago`)
+			.map(([what, list]) => `${list.length} backup${list.length === 1 ? '' : 's'} of ${what} found, newest ${ago(list[0].age_secs)} ago`)
 			.join('; ');
 	}
 
@@ -182,7 +185,7 @@
 		void explain(fresh, '');
 	}
 
-	const look = () => perform(async () => (found = await listed(fresh)));
+	const look = () => perform(async () => (found = (await listed(fresh)).backups));
 
 	const testIt = () =>
 		perform(async () => {
@@ -200,7 +203,7 @@
 			// Backups already there are said BEFORE the first write: a first
 			// press that finds some stops at saying so, and the next adds.
 			if (!found) {
-				found = await listed(plan);
+				found = (await listed(plan)).backups;
 				if (found.length) return;
 			}
 			await savePlan(plan);
@@ -271,10 +274,12 @@
 							{#if s?.at && overdue(plan, s, db)}<span class="overdue" data-overdue>overdue</span>{/if}
 						</div>
 						<ul>
-							{#each s?.backups.filter((b) => b.source_db === db) ?? [] as backup (backup.file)}
-								<li data-slot={backup.slot}>
+							{#each s?.backups.filter((b) => b.source_db === db) ?? [] as backup (backup.folder + backup.file)}
+								<li data-slot={backup.slot} data-from={backup.mine ? undefined : backup.owner}>
 									<span class="age">{ago(ageOf(s, backup))} ago</span>
-									<span class="quiet">slot {backup.slot} · {backup.entry_count} entries · {bytes(backup.size)}</span>
+									<span class="quiet"
+										>slot {backup.slot} · {backup.entry_count} entries · {bytes(backup.size)}{backup.mine ? '' : ` · from ${backup.owner}`}</span
+									>
 									<button type="button" use:act={'open'} on:click={() => restoreSlot(plan, db, backup)}>Restore</button>
 								</li>
 							{/each}
@@ -349,7 +354,7 @@
 				>
 				{#if reach['']}<p class="quiet explain">{reachText(fresh, reach[''])}. {spaceText(fresh, reach[''])}</p>{/if}
 				{#if found}<p class="found" data-found
-						>{foundText(found)}{found.length ? ' Add plan continues that rotation.' : ''}</p
+						>{foundText(found)}{found.some((b) => b.mine) ? ' Add plan continues that rotation.' : found.length ? " Add plan keeps this device's own beside them." : ''}</p
 					>{/if}
 				{#if probe}
 					<ul class="probe" data-probe>

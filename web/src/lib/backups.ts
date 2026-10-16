@@ -28,13 +28,15 @@
 // it would look like protection and hold nothing. NOT ENCRYPTED in v1
 // (vividn, 12:03): the widget says so.
 //
-// TWO WRITERS, ONE INDEX. `index.json` is read, rotated and written back,
-// so two devices backing up to one bucket could each write an index that
-// lacks the other's slot — naming a file the other removed. So the index
-// is read AGAIN just before it is put, and this run's slot merged into
-// what is there now (`merged`). That leaves the time between the re-read
-// and the put, which two TABS of one device are kept out of by a Web Lock
-// (`alone`, da-u050c); two devices still share it.
+// ONE WRITER A FOLDER (da-help3). `index.json` is read, rotated and
+// written back, so two devices sharing one could each write an index that
+// lacks the other's slot — naming a file the other removed. So each device
+// writes under a folder of its own, `client-<client id>/` (`mine`): its
+// slot files, and its own index, which carries a label to know it by.
+// Restore lists every device's folder, and the top one too, where backups
+// went before; retention is per folder, on this device's own. Two TABS of
+// one device share its folder, and take turns by a Web Lock (`alone`,
+// da-u050c).
 //
 // Plans are THIS DEVICE'S settings — a plan names a destination and its
 // credentials — so they are entries of field `backup_plan` in `_internal`
@@ -60,8 +62,9 @@ import { cliError, run, type RunResult } from './run.js';
 import type { StepResult } from './probe.js';
 import { corsRules, DEFAULT_PREFIX, s3, testConnection } from './s3.js';
 import { webdav, corsHeaders as webdavCors, testConnection as testWebdav } from './webdav.js';
+import { clientId } from './clientId.js';
 
-/** Where a plan's files go. Names are flat: `index.json` and the slot files. */
+/** Where a plan's files go: `index.json` and the slot files, at the top or in a device's folder (`client-<id>/index.json`). */
 export interface Destination {
 	/** The file's bytes, or null when there is no such file. */
 	get(file: string): Promise<Uint8Array | null>;
@@ -69,6 +72,8 @@ export interface Destination {
 	remove(file: string): Promise<void>;
 	/** The file's length as the destination holds it (a HEAD's `Content-Length`), or null when it does not say. */
 	size(file: string): Promise<number | null>;
+	/** The devices' folders there, `client-<id>/`. */
+	folders(): Promise<string[]>;
 }
 
 /** One setting of a destination, as the widget asks for it. */
@@ -159,7 +164,8 @@ export const KINDS: Record<string, DestinationKind> = {
 				get: async (file) => files.get(file) ?? null,
 				put: async (file, bytes) => void files.set(file, bytes),
 				remove: async (file) => void files.delete(file),
-				size: async (file) => files.get(file)?.length ?? null
+				size: async (file) => files.get(file)?.length ?? null,
+				folders: async () => [...new Set([...files.keys()].filter((f) => f.startsWith('client-')).map((f) => f.split('/')[0] + '/'))]
 			};
 		}
 	}
@@ -194,7 +200,7 @@ export function draft(db: string): Plan {
 }
 
 /** One backup, as `db backup --list --json` reports it. */
-export interface Backup {
+export interface Listed {
 	slot: number;
 	file: string;
 	backup_time: string;
@@ -202,6 +208,16 @@ export interface Backup {
 	entry_count: number;
 	size: number;
 	age_secs: number;
+}
+
+/** One backup as a plan lists it: the CLI's, and whose it is. */
+export interface Backup extends Listed {
+	/** The folder it is in: a device's, or '' for the top one, where backups went before (da-help3). */
+	folder: string;
+	/** Whose it is, as its folder's index names the device. */
+	owner: string;
+	/** This device's own: what its rotation keeps, and the schedule counts. */
+	mine: boolean;
 }
 
 /** What the widget knows about a plan: its backups, newest first, when they were listed, and what it is doing. */
@@ -269,21 +285,50 @@ export async function deletePlan(name: string): Promise<void> {
 
 // ---- what is at a destination ----------------------------------------------
 
-/**
- * The backups at `plan`'s destination, newest first, for any database —
- * `db backup --list` on its index. Empty when nothing is there yet.
- */
-export async function listed(plan: Plan): Promise<Backup[]> {
-	const index = await destination(plan).get('index.json');
+/** This device's folder at a destination: only it writes there. */
+export const mine = (): string => `client-${clientId()}/`;
+
+/** What this device's index calls it: «Firefox on Linux». */
+export function deviceLabel(ua = typeof navigator === 'undefined' ? '' : navigator.userAgent): string {
+	const first = (names: [RegExp, string][]) => names.find(([re]) => re.test(ua))?.[1] ?? '';
+	const browser = first([[/Edg\//, 'Edge'], [/Firefox\//, 'Firefox'], [/Chrome\//, 'Chrome'], [/Safari\//, 'Safari']]) || 'a browser';
+	const os = first([[/Android/, 'Android'], [/iPhone|iPad/, 'iOS'], [/Mac OS X/, 'macOS'], [/Windows/, 'Windows'], [/Linux/, 'Linux']]);
+	return os ? `${browser} on ${os}` : browser;
+}
+
+/** `folder`'s backups — `db backup --list` on its index — each with whose it is. */
+async function inFolder(dest: Destination, folder: string): Promise<Backup[]> {
+	const index = await dest.get(folder + 'index.json');
 	if (!index) return [];
-	return (await json<{ backups: Backup[] }>(backupListArgv(), { 'index.json': index })).backups;
+	const label = (JSON.parse(new TextDecoder().decode(index)) as { label?: string }).label;
+	const owner = folder === mine() ? 'this device' : folder ? (label ?? folder.slice(0, -1)) : 'before devices had folders';
+	const { backups } = await json<{ backups: Listed[] }>(backupListArgv(), { 'index.json': index });
+	return backups.map((b) => ({ ...b, folder, owner, mine: folder === mine() }));
+}
+
+/**
+ * The backups at `plan`'s destination, newest first, for any database and
+ * from every device: this one's folder, the top one, and every other
+ * device's. Other devices' folders that cannot be listed are said in
+ * `error`, and leave this device's own listed, which the schedule counts on.
+ */
+export async function listed(plan: Plan): Promise<{ backups: Backup[]; error: string }> {
+	const dest = destination(plan);
+	const backups = [...(await inFolder(dest, mine())), ...(await inFolder(dest, ''))];
+	let error = '';
+	try {
+		for (const folder of await dest.folders()) if (folder !== mine()) backups.push(...(await inFolder(dest, folder)));
+	} catch (e) {
+		error = `Other devices' backups could not be listed: ${e instanceof Error ? e.message : String(e)}`;
+	}
+	return { backups: backups.sort((a, b) => a.age_secs - b.age_secs), error };
 }
 
 /** Re-read `plan`'s backups into `status`. */
 export async function refresh(plan: Plan): Promise<PlanStatus> {
 	const next = { ...idle(), ...get(status)[plan.name], backups: [] as Backup[], at: Date.now(), error: '' };
 	try {
-		next.backups = await listed(plan);
+		({ backups: next.backups, error: next.error } = await listed(plan));
 	} catch (e) {
 		next.error = e instanceof Error ? e.message : String(e);
 	}
@@ -291,43 +336,19 @@ export async function refresh(plan: Plan): Promise<PlanStatus> {
 	return next;
 }
 
-/** The newest backup of `db` in `status`, if any. */
-export const newest = (s: PlanStatus, db: string): Backup | undefined => s.backups.find((b) => b.source_db === db);
+/** This device's newest backup of `db` in `status`, if any. */
+export const newest = (s: PlanStatus, db: string): Backup | undefined => s.backups.find((b) => b.mine && b.source_db === db);
 
 /** How old `backup` is now, in seconds: its age when listed, plus the time since. */
 export const ageOf = (s: PlanStatus, backup: Backup): number => backup.age_secs + Math.max(0, Date.now() - s.at) / 1000;
 
-/** Whether `db`'s newest backup is a period or more old — or it has none. */
+/** Whether this device's newest backup of `db` is a period or more old — or it has none. */
 export function overdue(plan: Plan, s: PlanStatus, db: string): boolean {
 	const last = newest(s, db);
 	return !last || ageOf(s, last) >= plan.every;
 }
 
 // ---- taking one --------------------------------------------------------------
-
-/** `index.json` as the CLI writes it: per db, the rotation and its backups. */
-interface Index {
-	version?: number;
-	dbs: Record<string, { every_secs: number; slots: number | null; backups: { slot: number; file: string }[] }>;
-}
-
-/**
- * `now`, the index at the destination as it is now, with `ours` — the
- * CLI's — merged in for `db`'s `slot` alone; and the files that merge
- * replaced. Every other db's rotation and every other slot is left as
- * `now` has it, so a writer that raced this run keeps what it wrote.
- */
-export function merged(now: Index | null, ours: Index, db: string, slot: number): { index: Index; replaced: string[] } {
-	const mine = ours.dbs[db];
-	const entry = mine.backups.find((b) => b.slot === slot)!;
-	const index: Index = now ?? { version: ours.version, dbs: {} };
-	const theirs = index.dbs[db]?.backups ?? [];
-	index.dbs[db] = {
-		...mine,
-		backups: [...theirs.filter((b) => b.slot !== slot), entry].sort((a, b) => a.slot - b.slot)
-	};
-	return { index, replaced: theirs.filter((b) => b.slot === slot && b.file !== entry.file).map((b) => b.file) };
-}
 
 /** `db backup --to --json`: the slot written, or null when none was due, and the files it wrote and removed. */
 export interface BackupRun {
@@ -336,10 +357,11 @@ export interface BackupRun {
 	removed: string[];
 }
 
-/** One run of the rotation for `db`: the CLI writes, and the destination is given what it wrote. */
+/** One run of the rotation for `db`, in this device's folder: the CLI writes, and the destination is given what it wrote. */
 async function backupOne(plan: Plan, db: string): Promise<void> {
 	const dest = destination(plan);
-	const index = await dest.get('index.json');
+	const at = mine();
+	const index = await dest.get(at + 'index.json');
 	const out = await json<BackupRun>(
 		['--db', db, ...backupToArgv(plan)],
 		index ? { 'index.json': index } : {}
@@ -349,18 +371,16 @@ async function backupOne(plan: Plan, db: string): Promise<void> {
 	for (const file of out.written) {
 		if (file === 'index.json') continue;
 		const want = out.stage![file].byteLength;
-		await dest.put(file, out.stage![file]);
-		const got = await dest.size(file);
+		await dest.put(at + file, out.stage![file]);
+		const got = await dest.size(at + file);
 		if (got !== want)
 			throw new Error(
 				`${file} reached the destination ${got === null ? 'with no length to check' : `as ${got} of ${want} bytes`}; the backup it would replace is kept`
 			);
 	}
-	const now = await dest.get('index.json');
-	const ours = JSON.parse(new TextDecoder().decode(out.stage!['index.json']));
-	const next = merged(now && JSON.parse(new TextDecoder().decode(now)), ours, db, out.slot);
-	await dest.put('index.json', new TextEncoder().encode(JSON.stringify(next.index, null, 2)));
-	for (const file of new Set([...out.removed, ...next.replaced])) await dest.remove(file);
+	const ours = { ...JSON.parse(new TextDecoder().decode(out.stage!['index.json'])), label: deviceLabel() };
+	await dest.put(at + 'index.json', new TextEncoder().encode(JSON.stringify(ours, null, 2)));
+	for (const file of out.removed) await dest.remove(at + file);
 }
 
 /** One run at a time, across every plan: two runs on one index would lose a slot. */
@@ -371,8 +391,9 @@ const BUSY = 'Another datum.day tab is backing up. Try again when it is done.';
 
 /**
  * `job`, as this DEVICE's one run (da-u050c): `queue` is a tab's, and so is
- * the schedule, and `merged` cannot see a tab that re-read the index before
- * this one put its own — the later put names a file the other removed. The
+ * the schedule, and every tab writes this device's one folder: a tab that
+ * read its index before this one put its own would put an index naming a
+ * file this one removed. The
  * lock is taken only when free and never waited for: a bucket request hung
  * in the tab holding it would hang this one too. False when another tab has
  * it. A browser without Web Locks runs as it did.
@@ -416,14 +437,14 @@ export function backUp(plan: Plan, due = false): Promise<void> {
  * restore REPLACES, so the deletions are the number that matters).
  */
 export async function restoreFrom(plan: Plan, db: string, backup: Backup): Promise<RunResult | null> {
-	const bytes = await destination(plan).get(backup.file);
+	const bytes = await destination(plan).get(backup.folder + backup.file);
 	if (!bytes) throw new Error(`${backup.file} is not at the destination any more`);
 	const stage = { [backup.file]: bytes };
 	const argv = ['--db', db, ...restoreStagedArgv(backup.file)];
 	const seen = await json<RestorePreview>(restorePreviewArgv(argv), stage);
 	// Its warnings too (da-vceux): a header that disagrees with the lines is known before the yes.
 	const text =
-		`Restore ${db} to the backup of ${new Date(backup.backup_time).toLocaleString()} (${backup.entry_count} entries): ` +
+		`Restore ${db} to the backup of ${new Date(backup.backup_time).toLocaleString()}${backup.mine ? '' : ` from ${backup.owner}`} (${backup.entry_count} entries): ` +
 		`${seen.would_delete} deleted, ${seen.would_insert} added, ${seen.would_update} changed. ` +
 		'Undo reverts the whole restore.' +
 		seen.warnings.map((w) => ` ⚠ ${w}.`).join('');
