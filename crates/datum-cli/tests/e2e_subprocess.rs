@@ -309,6 +309,26 @@ fn subprocess_read_of_a_missing_db_errors_and_a_write_creates_it() {
     assert_eq!(env.entry_count(), 1);
 }
 
+/// da-zg5ut: `db migrate run` on a missing database says it made one; on
+/// the second run there is nothing to do.
+#[test]
+fn subprocess_migrate_on_a_missing_db_says_it_created_it() {
+    let env = Env::new();
+    let v = datum_core::migrations::CURRENT_SCHEMA_VERSION;
+    let out = env.run(&["db", "migrate", "run"]);
+    assert_ok(&out, "first migrate");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!("Created {} at schema v{v}.\n", env.db.display())
+    );
+    let out = env.run(&["db", "migrate", "run"]);
+    assert_ok(&out, "second migrate");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!("Schema already at v{v}. No pending migrations.\n")
+    );
+}
+
 /// da-s6no: a stale change no longer stops bare `undo`. It used to prompt
 /// on a tty (and refuse without one) past fifteen minutes; now it proceeds,
 /// says how old the change was on stderr, and exits 0.

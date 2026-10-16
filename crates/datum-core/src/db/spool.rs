@@ -338,6 +338,7 @@ impl Db {
             client_id: Default::default(),
             apply_run: Default::default(),
             last_migration: None,
+            created: false,
             refold_failed: Default::default(),
             path: None,
         };

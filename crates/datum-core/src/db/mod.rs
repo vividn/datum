@@ -122,6 +122,8 @@ pub struct Db {
     /// was already current. datum-core never prints; the CLI reads this
     /// and tells the user (da-ksao).
     last_migration: Option<MigrationReport>,
+    /// This open made the file: nothing was at its path before it.
+    created: bool,
     /// Why this open's refold under a newer fold rule failed, when it did
     /// (da-sqpjt): the open goes on, and the CLI says so.
     refold_failed: RefCell<Option<String>>,
@@ -239,6 +241,7 @@ impl Db {
     /// Open (or create) the database at the given path.
     pub fn open(path: &str) -> Result<Self> {
         Self::choose_vfs();
+        let created = !std::path::Path::new(path).exists();
         let mut conn = Connection::open(path)?;
         Self::configure_connection(&mut conn)?;
         let mut db = Db {
@@ -248,6 +251,7 @@ impl Db {
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
             last_migration: None,
+            created,
             refold_failed: Default::default(),
             path: Some(path.into()),
         };
@@ -272,6 +276,7 @@ impl Db {
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
             last_migration: None,
+            created: false,
             refold_failed: Default::default(),
             path: Some(path.into()),
         })
@@ -315,6 +320,7 @@ impl Db {
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
             last_migration: None,
+            created: false,
             refold_failed: Default::default(),
             path: Some(path.into()),
         })
@@ -330,6 +336,7 @@ impl Db {
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
             last_migration: None,
+            created: false,
             refold_failed: Default::default(),
             path: None,
         };
@@ -348,6 +355,11 @@ impl Db {
         if let Some(holds) = &self.holds {
             holds.on_long_hold(after, Box::new(log));
         }
+    }
+
+    /// Did this open make the file? `db migrate` says so (da-zg5ut).
+    pub fn created(&self) -> bool {
+        self.created
     }
 
     /// What the migration walk during [`Db::open`] did, or `None` if the

@@ -17,7 +17,9 @@ fn migrate_run(db: &Db) -> Result<()> {
     // Db::open already auto-advanced on session start. Re-check and report.
     let applied = datum_core::migrations::migrate_to_current(db.conn())?;
     let current = db.schema_version()?;
-    if applied.is_empty() {
+    if let Some(path) = db.path().filter(|_| db.created()) {
+        println!("Created {} at schema v{current}.", path.display());
+    } else if applied.is_empty() {
         println!("Schema already at v{current}. No pending migrations.");
     } else {
         println!("Advanced schema to v{current}:");
