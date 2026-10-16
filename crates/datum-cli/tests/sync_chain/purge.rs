@@ -454,6 +454,29 @@ fn a_chain_purge_and_a_revert_ask_on_a_tty_and_name_the_command_as_typed() {
         );
         assert!(a.has("tea") && a.has("coffee"), "{words:?} wrote nothing");
     }
+    // da-3aq7i: the hint, pasteable, keeps the global flags typed; the
+    // prompt and its abort line name the command without them.
+    let said = a.ok(&["--db", path, "--color", "never", "db", "purge", "--chain"]);
+    assert!(
+        said.contains(&format!(
+            "nothing changed: `datum --db {path} --color never db purge --chain --yes` does it"
+        )),
+        "{said}"
+    );
+    let raw_argv: Vec<String> = ["--db", "p", "--color=never", "sync", "chain", "revert", "b"]
+        .map(Into::into)
+        .into();
+    datum_commands::args::set_intent_context(datum_commands::args::IntentContext {
+        raw_input: raw_argv.join(" "),
+        raw_argv,
+        alias_chain: Vec::new(),
+    });
+    let e = on_a_tty(&["sync", "chain", "revert", "b"], "nope\n").unwrap_err();
+    assert!(
+        e.to_string().starts_with("sync chain revert b: aborted"),
+        "{e}"
+    );
+    datum_commands::args::take_intent_context();
     on_a_tty(&["sync", "chain", "revert", "b"], &format!("{path}\n")).unwrap();
     assert!(a.has("tea") && !a.has("coffee"));
     on_a_tty(&["db", "purge", "--chain"], &format!("{path}\n")).unwrap();

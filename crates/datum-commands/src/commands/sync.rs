@@ -89,16 +89,24 @@ fn confirmed(
     stdin: &mut dyn BufRead,
     is_tty: bool,
 ) -> Result<bool> {
-    let typed = crate::args::peek_intent_context()
-        .map(|c| c.raw_input)
-        .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| canonical.into());
+    // The hint is pasteable, so keeps the global `--db` / `--color` the
+    // prompt's label, the command itself, leaves out.
+    let (typed, label) =
+        match crate::args::peek_intent_context().filter(|c| !c.raw_input.is_empty()) {
+            Some(c) => {
+                let argv = std::iter::once(String::new()).chain(c.raw_argv).collect();
+                let (argv, _db) = crate::config::split_off_global_db_flag(argv);
+                let (argv, _color) = crate::config::split_off_global_color_flag(argv);
+                (c.raw_input, datum_parse::alias::shell_join(&argv[1..]))
+            }
+            None => (canonical.into(), canonical.into()),
+        };
     if !is_tty {
         println!("nothing changed: `datum {typed} --yes` does it");
         return Ok(false);
     }
     let confirm = super::db::purge_confirmation_token(cli_db, db);
-    super::db::confirm_by_name(&typed, "", stdin, true, &confirm)?;
+    super::db::confirm_by_name(&label, "", stdin, true, &confirm)?;
     Ok(true)
 }
 
