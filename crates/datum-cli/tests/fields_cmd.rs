@@ -267,3 +267,25 @@ fn a_flags_comment_and_a_meta_notes_text_are_not_the_fields_states() {
         serde_json::json!(["good", "tired"])
     );
 }
+
+/// da-jguh2: a template's spec covers fields and is not one, so no field
+/// list carries it — datum.day's chip for it would mint a new field on
+/// every press — and `setup` lists it as what it is.
+#[test]
+fn a_template_spec_is_no_field() {
+    let env = Env::new();
+    env.run(&["setup", "issue__%n%", "--verb", "switch", "--states", "a,b"]);
+    let json: Value = serde_json::from_str(&env.run(&["fields", "--json"])).unwrap();
+    let names: Vec<&str> = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|r| r["field"].as_str())
+        .collect();
+    assert_eq!(names, ["old", "work", "x"]);
+    assert!(!env.run(&["fields"]).contains("issue"));
+    assert!(env
+        .run(&["info"])
+        .contains("fields:   2 tracked, 1 ignored"));
+    assert!(env.run(&["setup"]).contains("  issue__%n%  (template)\n"));
+}

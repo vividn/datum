@@ -18,7 +18,7 @@ use crate::action::Action;
 use crate::dur::Dur;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
-use crate::field_spec::{verb_from_log, FieldSpec, SpecRegistry};
+use crate::field_spec::{contains_template, verb_from_log, FieldSpec, SpecRegistry};
 use crate::history::ChangeKind;
 use crate::ids::Slug;
 use crate::shape::{is_ignored_state, TRACKED_STATE_VALUE};
@@ -293,7 +293,9 @@ impl Db {
     /// with no entry logged against it yet — `fields` has always listed
     /// it (`compute_fields` unions the registry in) and
     /// [`Db::get_tracked_fields`] does the same (da-m1l8).
-    /// A meta field's spec, if one exists, is not a life field to list.
+    /// A meta field's spec, if one exists, is not a life field to list,
+    /// nor is a template's (`issue__%hid:8%`): it covers fields and is not
+    /// one (da-jguh2).
     pub fn spec_fields(&self) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT json_extract(data, '$.field') AS f FROM entries
@@ -302,7 +304,9 @@ impl Db {
              ORDER BY f"
         ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        rows.map(|r| r.map_err(DatumError::Db)).collect()
+        rows.filter(|r| !r.as_ref().is_ok_and(|f| contains_template(f)))
+            .map(|r| r.map_err(DatumError::Db))
+            .collect()
     }
 
     /// Load specs for many fields in a single query. Fields without a

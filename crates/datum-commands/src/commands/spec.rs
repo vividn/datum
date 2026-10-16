@@ -41,7 +41,7 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
                     println!("No field specs tagged '{tag}'.");
                 } else {
                     for spec in &specs {
-                        println!("  {}", spec.field);
+                        println!("  {}", listed(&spec.field));
                     }
                 }
             } else {
@@ -52,7 +52,7 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
                     let mut names: Vec<&String> = reg.fields.keys().collect();
                     names.sort();
                     for name in names {
-                        println!("  {name}");
+                        println!("  {}", listed(name));
                     }
                 }
             }
@@ -69,6 +69,16 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// A spec's line in the listing: a template's says so, since it covers
+/// fields and is not one (da-jguh2).
+fn listed(field: &str) -> String {
+    if datum_core::field_spec::contains_template(field) {
+        format!("{field}  (template)")
+    } else {
+        field.to_string()
+    }
 }
 
 /// Is `field` ignored now? What a spec's block says beside it.
