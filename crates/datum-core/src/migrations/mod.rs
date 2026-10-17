@@ -60,7 +60,7 @@ use v61_v70::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 65;
+pub const CURRENT_SCHEMA_VERSION: u32 = 66;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -533,5 +533,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries_spec_templates: the template specs, so a field one covers finds it without reading every spec (da-38obu)",
         apply: m64_to_65_spec_templates_index,
         down: down_65_to_64_spec_templates_index,
+    },
+    Migration {
+        from: 65,
+        to: 66,
+        summary: "entries_field_blocks: the blocks a state read looks ahead through, so a day in the past costs what today does (da-e853a)",
+        apply: m65_to_66_field_blocks_index,
+        down: down_66_to_65_field_blocks_index,
     },
 ];

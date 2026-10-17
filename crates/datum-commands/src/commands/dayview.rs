@@ -183,9 +183,13 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     // The zones the days were lived in, read from three days before the
     // first date: a day begins up to 14 hours before its date's midnight in
     // UTC, and a block's title reads the clock of a start as far back as
-    // the fetch's two-day buffer before that.
-    let since = day_dates[0].and_time(Default::default()).and_utc() - Duration::days(3);
-    let zones = db.zone_timeline(Zone::host(), Some(since))?;
+    // the fetch's two-day buffer before that. To three days after the last,
+    // the same margin the other way, so a past day does not read on to now
+    // (da-e853a).
+    let midnight = |d: &NaiveDate| d.and_time(Default::default()).and_utc();
+    let since = midnight(&day_dates[0]) - Duration::days(3);
+    let until = midnight(&end_date) + Duration::days(3);
+    let zones = db.zone_timeline_between(Zone::host(), Some(since), Some(until))?;
 
     for date in &day_dates {
         // The day's window is every instant its date was read on a clock.

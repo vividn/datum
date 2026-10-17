@@ -271,6 +271,32 @@ fn a_write_and_the_reads_after_it_do_not_grow_with_the_history() {
     }
 }
 
+/// da-e853a: a state read looks ahead for a block still running at its
+/// instant, and on a field with no later block that walked every later row
+/// to find none, so a day in the past cost by its distance from now. Both
+/// stores hold the same fortnight two months back, without a block; the
+/// larger has six weeks more after it.
+#[test]
+fn a_past_day_does_not_grow_with_the_history_after_it() {
+    let past = anchor() - Duration::days(60);
+    let stores = [0, 6_000].map(|after| {
+        let db = store(0, 8);
+        fill(&db, past, 2_000, 8);
+        fill(&db, anchor(), after, 8);
+        db
+    });
+    let svg = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let svg = svg.path().to_str().unwrap();
+    let day = (past - Duration::days(1)).format("%Y-%m-%d").to_string();
+    let argv = ["dayview", "-d", &day, "--width", "400", "-o", svg];
+    let [small, large] = [&stores[0], &stores[1]].map(|db| vm_steps(db, &argv));
+    assert!(
+        large <= small + small / 10,
+        "a past dayview visits more with more history after it: \
+         {small} hundred VM steps with none, {large} with 6k rows"
+    );
+}
+
 /// da-cwpr1: `stats` with a period read the zone history and every field's
 /// states outside it from the first entry on — `stats --today` was 423 ms
 /// on five years against 11 ms on a day. It costs the period now: the

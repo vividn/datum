@@ -109,3 +109,26 @@ pub(super) fn down_65_to_64_spec_templates_index(conn: &Connection) -> Result<()
     conn.execute_batch("DROP INDEX IF EXISTS entries_spec_templates;")?;
     Ok(())
 }
+
+/// da-e853a: `entries_field_blocks`, the rows a state read looks ahead
+/// through for a block still running at its instant. Without it the
+/// lookahead walked every later row of a field with no later block, so a
+/// past dayview cost by its distance from now.
+pub(super) fn m65_to_66_field_blocks_index(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "entries")? {
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS entries_field_blocks
+                 ON entries (field, occur_time, slug)
+                 WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+                   AND dur IS NOT NULL
+                   AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v65→v66.
+pub(super) fn down_66_to_65_field_blocks_index(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS entries_field_blocks;")?;
+    Ok(())
+}

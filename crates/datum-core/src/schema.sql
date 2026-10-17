@@ -239,6 +239,16 @@ CREATE INDEX IF NOT EXISTS entries_field_state
     WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
       AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));
 
+-- The blocks among those: the rows a state read looks ahead through for a
+-- block still running at its instant (`SPAN_LOOKAHEAD`). On the state index
+-- a field with no later block walked every later row to find none, so a
+-- past day cost by its distance from now (da-e853a).
+CREATE INDEX IF NOT EXISTS entries_field_blocks
+    ON entries (field, occur_time, slug)
+    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+      AND dur IS NOT NULL
+      AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));
+
 -- The states each field has been logged with (`datum fields`): live,
 -- stated, and not a TRACK declaration — `NOT_A_DECLARATION_SQL`, spelled as
 -- the reader spells it. The reader skips from one (field, state) to the

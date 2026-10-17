@@ -631,26 +631,32 @@ mod tests {
     /// tiebreak. `entries_live_field_occur`, which these reads used before
     /// it, sorted each equal-`occur_time` block, and on a field of occur
     /// dots alone walked to the field's first row looking for a state.
+    ///
+    /// The lookahead seeks `entries_field_blocks`, the blocks among them
+    /// (da-e853a): on `entries_field_state` a field with no block after the
+    /// instant walked every later row to find none.
     #[test]
     fn state_reads_stop_at_their_limit() {
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "mood", json!("happy"), 100);
 
-        for (label, sql) in [
-            ("state_rows_sql", state_rows_sql(1)),
+        for (label, sql, index) in [
+            ("state_rows_sql", state_rows_sql(1), "entries_field_state"),
             (
                 "state_rows_sql deep",
                 state_rows_sql(crate::state::RESUME_LOOKBACK),
+                "entries_field_state",
             ),
             (
                 "spanning_blocks_sql",
                 spanning_blocks_sql(crate::state::SPAN_LOOKAHEAD),
+                "entries_field_blocks",
             ),
         ] {
             let plan = plan_of(&db, &sql);
             assert!(
-                plan.contains("SEARCH entries USING INDEX entries_field_state "),
-                "{label}: expected a SEARCH on entries_field_state, got:\n{plan}"
+                plan.contains(&format!("SEARCH entries USING INDEX {index} ")),
+                "{label}: expected a SEARCH on {index}, got:\n{plan}"
             );
             assert!(
                 !plan.contains("SCAN"),

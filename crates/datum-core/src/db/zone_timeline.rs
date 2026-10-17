@@ -43,7 +43,9 @@ use super::Db;
 ///
 /// From `?1` on, plus the newest zoned row before it — the zone in effect
 /// there — so a reader of the recent past reads the recent past, not the
-/// whole history (da-cwpr1). `''` reaches every row.
+/// whole history (da-cwpr1). `''` reaches every row. To `?2` and no
+/// further, so a reader of a past day does not read on to now (da-e853a);
+/// `'~'`, after every timestamp, reaches the newest.
 const ZONE_CHANGES_SQL: &str = "\
     SELECT occur_time, occur_time_tz FROM (
         SELECT occur_time,
@@ -53,6 +55,7 @@ const ZONE_CHANGES_SQL: &str = "\
          WHERE deleted_at IS NULL
            AND superseded_by IS NULL
            AND occur_time >= ?1
+           AND occur_time <= ?2
            AND occur_time_tz IS NOT NULL
            AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
     )
@@ -89,9 +92,22 @@ impl Db {
         fallback: Zone,
         since: Option<DateTime<Utc>>,
     ) -> Result<ZoneTimeline> {
+        self.zone_timeline_between(fallback, since, None)
+    }
+
+    /// [`Self::zone_timeline`] exact up to `until` alone, for a reader of a
+    /// window in the past: after it the timeline holds the zone in effect
+    /// there, whatever moves came later.
+    pub fn zone_timeline_between(
+        &self,
+        fallback: Zone,
+        since: Option<DateTime<Utc>>,
+        until: Option<DateTime<Utc>>,
+    ) -> Result<ZoneTimeline> {
         let since = since.map(|t| t.to_rfc3339()).unwrap_or_default();
+        let until = until.map_or_else(|| "~".to_string(), |t| t.to_rfc3339());
         let mut stmt = self.conn.prepare(ZONE_CHANGES_SQL)?;
-        let rows = stmt.query_map([since], |row| {
+        let rows = stmt.query_map([since, until], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
 
@@ -228,6 +244,19 @@ mod tests {
             .zone_timeline(chicago(), Some(utc("2024-09-01T00:00:00Z")))
             .unwrap();
         assert_eq!(past.zone_at(utc("2024-09-01T00:00:00Z")), &berlin());
+        let until = db
+            .zone_timeline_between(
+                berlin(),
+                Some(utc("2024-01-01T00:00:00Z")),
+                Some(utc("2024-03-01T00:00:00Z")),
+            )
+            .unwrap();
+        assert_eq!(
+            until.segments().len(),
+            2,
+            "Berlin, then Chicago, and no further"
+        );
+        assert_eq!(until.zone_at(utc("2024-08-01T00:00:00Z")), &chicago());
     }
 
     /// A move *back* is a third segment — the timeline is ordered history,
@@ -297,7 +326,7 @@ mod tests {
         let sql = format!("EXPLAIN QUERY PLAN {ZONE_CHANGES_SQL}");
         let mut stmt = db.conn.prepare(&sql).unwrap();
         let plan: Vec<String> = stmt
-            .query_map([""], |row| row.get::<_, String>(3))
+            .query_map(["", "~"], |row| row.get::<_, String>(3))
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
@@ -325,7 +354,7 @@ mod tests {
 
         let mut stmt = db.conn.prepare(ZONE_CHANGES_SQL).unwrap();
         let rows: Vec<(String, String)> = stmt
-            .query_map([""], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map(["", "~"], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()
             .map(|r| r.unwrap())
             .collect();

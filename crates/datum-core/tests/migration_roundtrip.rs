@@ -212,6 +212,7 @@ fn every_pair_has_a_roundtrip_test() {
         (62, 63),
         (63, 64),
         (64, 65),
+        (65, 66),
     ];
     assert_eq!(
         covered.len(),
@@ -2758,6 +2759,17 @@ fn roundtrip_v64_to_v65_spec_templates_index() {
     db.save_field_spec(&template).unwrap();
     let spec = db.load_spec("issue__2qvk0dk4").unwrap().unwrap();
     assert_eq!(spec.verb, datum_core::action::Action::Switch);
+}
+
+/// da-e853a: the blocks' index comes and goes.
+#[test]
+fn roundtrip_v65_to_v66_field_blocks_index() {
+    let db = fresh_at(65);
+    let conn = db.conn();
+    apply_one_up(conn, 65);
+    assert!(index_exists(conn, "entries_field_blocks"));
+    apply_one_down(conn, 66);
+    assert!(!index_exists(conn, "entries_field_blocks"));
 }
 
 #[test]
