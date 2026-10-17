@@ -59,11 +59,24 @@ fn a_data_purge_empties_every_copy_as_it_connects_and_the_chain_syncs_on() {
     c.ok(&["occur", "juice"]);
     let members = members_of(&a);
 
-    // Without --yes: who learns of it when, and nothing changes.
-    let said = a.ok(&["sync", "chain", "purge", "--data"]);
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    // Without --yes: who learns of it when, on the reader's clock, and
+    // nothing changes.
+    a.exec(&format!(
+        "UPDATE sync_peers SET last_seen = '2020-01-02T03:04:05Z' WHERE endpoint_id = '{}'",
+        b.id()
+    ));
+    let out = a
+        .cmd(&["sync", "chain", "purge", "--data"])
+        .env("TZ", "Asia/Kathmandu")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let said = String::from_utf8(out.stdout).unwrap();
     for line in [
-        format!("b ({}) last synced with this copy {today}T", &b.id()[..10]),
+        format!(
+            "b ({}) last synced with this copy at 2020-01-02 08:49: it purges",
+            &b.id()[..10]
+        ),
         format!(
             "c ({}) has not synced with this copy: it purges when it next connects",
             &c.id()[..10]

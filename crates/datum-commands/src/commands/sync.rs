@@ -892,7 +892,7 @@ pub(crate) fn wipe_reach(db: &Db, does: &str) -> Result<String> {
         out += &match (p.revoked, &p.last_seen) {
             (true, _) => format!("  {who} is revoked: it is never told, and keeps what it holds\n"),
             (_, Some(at)) => {
-                format!("  {who} last synced with this copy {at}: it {does} when it next connects\n")
+                format!("  {who} last synced with this copy at {}: it {does} when it next connects\n", local(at))
             }
             (_, None) => format!(
                 "  {who} has not synced with this copy: it {does} when it next connects to a member\n"
