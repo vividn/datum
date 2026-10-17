@@ -3493,6 +3493,7 @@ fn a_copy_whose_only_other_is_a_filtered_reader_never_warns() {
     assert!(!out.contains("reached no other device"), "{out}");
 }
 
+mod list;
 mod purge;
 mod restore;
 mod status;

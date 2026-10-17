@@ -1119,7 +1119,7 @@ fn print_admins(chain: &Chain) {
         println!(
             "  {}  {kind}  {key}…  added {}",
             a.label,
-            chain::hlc_time(&a.added)
+            local(chain::hlc_time(&a.added))
         );
     }
 }
@@ -1231,8 +1231,9 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
         .iter()
         .partition(|m| show_revoked || m.revoked.is_none() || m.endpoint == mine);
     for m in shown {
-        let revoked = m.revoked.as_deref().map(chain::hlc_time);
-        let rejoined = m.rejoined.as_deref().map(chain::hlc_time);
+        let at = |hlc: &str| local(chain::hlc_time(hlc));
+        let revoked = m.revoked.as_deref().map(at);
+        let rejoined = m.rejoined.as_deref().map(at);
         println!(
             "  {}  {}{}  {}{}  admitted {}{} via {}{}{}{}",
             m.label,
@@ -1246,7 +1247,7 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 .as_deref()
                 .map(|c| format!("  {} on {c}", m.kind.as_deref().unwrap_or("?")))
                 .unwrap_or_default(),
-            chain::hlc_time(&m.admitted),
+            at(&m.admitted),
             rejoined.map(|r| format!(", again {r}")).unwrap_or_default(),
             m.via,
             versions
@@ -1254,8 +1255,8 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 .map(|(d, s)| format!("  datum {d} (schema {s})"))
                 .unwrap_or_default(),
             match (m.purged.as_deref(), m.left.as_deref()) {
-                (Some(p), _) => format!("  REVERTED {}", chain::hlc_time(p)),
-                (_, Some(l)) => format!("  LEFT {}", chain::hlc_time(l)),
+                (Some(p), _) => format!("  REVERTED {}", at(p)),
+                (_, Some(l)) => format!("  LEFT {}", at(l)),
                 _ => revoked
                     .map(|r| format!("  REVOKED {r}"))
                     .unwrap_or_default(),
