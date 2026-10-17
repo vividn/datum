@@ -297,6 +297,38 @@ fn a_past_day_does_not_grow_with_the_history_after_it() {
     );
 }
 
+/// da-l8240: `stats` of a past day read the zone history from its window
+/// on to now, so it cost by its distance back. Both stores hold the same
+/// fortnight two years back; the larger has 6k rows a year after it, which
+/// neither the window, its periods line nor the read of the last year
+/// reaches. Each is counted on its second run: the cache's first fill runs
+/// to today by design.
+#[test]
+fn a_past_days_stats_do_not_grow_with_the_history_after_it() {
+    let now = Utc::now();
+    let past = now - Duration::days(800);
+    let stores = [0, 6_000].map(|after| {
+        let db = Db::open_in_memory().unwrap();
+        fill(&db, past, 2_000, 8);
+        fill(&db, past + Duration::days(400), after, 8);
+        db
+    });
+    let day = (past - Duration::days(1)).format("%Y-%m-%d").to_string();
+    let commands: [&[&str]; 2] = [&["stats", "f1", "-d", &day], &["stats", "-d", &day]];
+    for argv in commands {
+        let [small, large] = [&stores[0], &stores[1]].map(|db| {
+            vm_steps(db, argv);
+            vm_steps(db, argv)
+        });
+        assert!(
+            large <= small + small / 10,
+            "`{}` visits more with more history after the day: \
+             {small} hundred VM steps with none, {large} with 6k rows",
+            argv.join(" "),
+        );
+    }
+}
+
 /// da-cwpr1: `stats` with a period read the zone history and every field's
 /// states outside it from the first entry on — `stats --today` was 423 ms
 /// on five years against 11 ms on a day. It costs the period now: the

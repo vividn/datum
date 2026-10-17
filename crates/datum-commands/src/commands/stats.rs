@@ -245,7 +245,7 @@ pub struct AllFieldsStats {
 /// answers for one today.
 pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
     let (start, end, zones) = resolve_window(args, db, Duration::zero())?;
-    let cache = Cache::open(db, args, &zones)?;
+    let cache = Cache::open(db, args)?;
     let registry = db.load_registry()?;
     let mut rows = Vec::new();
     for field in db.distinct_fields()? {
@@ -367,7 +367,7 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     let reach = periods.iter().map(|(_, (p, _))| *p).min();
     let cached = start.is_none_or(|s| reach.is_some_and(|r| s < r));
     let cache = match cached {
-        true => Cache::open(db, args, &zones)?,
+        true => Cache::open(db, args)?,
         false => None,
     };
     let from = match cache {
@@ -820,6 +820,9 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 /// begin before that (da-cwpr1), so `--today` reads days of history and
 /// not years. Two zones read one local time at most 27 hours apart, so a
 /// boundary two days past where the read began is the whole timeline's.
+/// That second read stops three days past the window's end, by the same
+/// margin, so a day in the past does not read on to now (da-l8240); the
+/// flags are composed in the zone of now the first read holds.
 fn resolve_window(
     args: &StatsArgs,
     db: &Db,
@@ -849,20 +852,23 @@ fn resolve_window(
     // Parsed once, up front: `--until` overrides the end of every branch.
     let until = args.until.as_deref().map(parse_until).transpose()?;
 
+    let since = now - reach - Duration::days(4);
+    let mut zones = window_zones(args, db, since, None)?;
+    let here = zones.zone_at(now).clone();
     let window = |zones: &ZoneTimeline| -> Result<(Option<DateTime<Utc>>, DateTime<Utc>)> {
         Ok(if let Some(slice) = &args.slice {
             let (s, e) = parse_slice(slice, zones)?;
             (Some(s), until.unwrap_or(e))
         } else if let Some(period) = args.period {
-            let (s, e) = period_window(period, resolve_week_start()?, zones, through_now)?;
+            let today = here.local_naive(now).date();
+            let (s, e) = period_window(period, resolve_week_start()?, zones, today, through_now)?;
             (Some(s), until.unwrap_or(e))
         } else if names_a_moment(&args.time) {
-            let zone = zones.zone_at(now);
-            let builder = args.time.builder(TimeCtx::at(zone.local_naive(now)))?;
+            let builder = args.time.builder(TimeCtx::at(here.local_naive(now)))?;
             let only_date = builder.is_only_date();
-            let at = builder.build_at(now, zone.clone(), None);
+            let at = builder.build_at(now, here.clone(), None);
             if only_date {
-                let (s, e) = day_window(zone.local_naive(at.utc).date(), zones)?;
+                let (s, e) = day_window(here.local_naive(at.utc).date(), zones)?;
                 (Some(s), until.unwrap_or(e))
             } else {
                 (Some(at.utc), until.unwrap_or(through_now))
@@ -876,11 +882,10 @@ fn resolve_window(
         let anchor = end.min(now);
         start.map_or(anchor, |s| s.min(anchor)) - reach
     };
-    let since = now - reach - Duration::days(4);
-    let mut zones = window_zones(args, db, since)?;
     let mut bounds = window(&zones)?;
     if earliest(bounds) < since + Duration::days(2) {
-        zones = window_zones(args, db, earliest(bounds) - Duration::days(4))?;
+        let until = bounds.1.checked_add_signed(Duration::days(3));
+        zones = window_zones(args, db, earliest(bounds) - Duration::days(4), until)?;
         bounds = window(&zones)?;
     }
     let (start, end) = bounds;
@@ -903,7 +908,7 @@ fn resolve_window(
                 show(end),
                 show(s),
                 zones.zone_at(s).name(),
-                last_clock_hint(&args.time, &zones, now, end)?,
+                last_clock_hint(&args.time, &here, now, end)?,
             );
         }
         if s > now {
@@ -923,11 +928,10 @@ fn resolve_window(
 /// command (da-6qlpi). Empty unless `-t`'s own `-` mark would open the window.
 fn last_clock_hint(
     time: &TimeArgs,
-    zones: &ZoneTimeline,
+    zone: &Zone,
     now: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> Result<String> {
-    let zone = zones.zone_at(now);
     let mut builder = time.builder(TimeCtx::at(zone.local_naive(now)))?;
     let (Some(clock), None, false, Some(typed)) = (
         builder.time_override,
@@ -954,11 +958,17 @@ fn names_a_moment(t: &TimeArgs) -> bool {
 }
 
 /// The zone history local boundaries are read in: whatever an explicit `-z`
-/// named, else the zone the database says the user was in at that instant.
-fn window_zones(args: &StatsArgs, db: &Db, since: DateTime<Utc>) -> Result<ZoneTimeline> {
+/// named, else the zone the database says the user was in at that instant,
+/// exact from `since` to `until` (`None`: now).
+fn window_zones(
+    args: &StatsArgs,
+    db: &Db,
+    since: DateTime<Utc>,
+    until: Option<DateTime<Utc>>,
+) -> Result<ZoneTimeline> {
     match args.time.timezone.as_deref() {
         Some(spec) => Ok(ZoneTimeline::single(Zone::named(&resolve_timezone(spec)?)?)),
-        None => Ok(db.zone_timeline(Zone::host(), Some(since))?),
+        None => Ok(db.zone_timeline_between(Zone::host(), Some(since), until)?),
     }
 }
 
@@ -969,14 +979,16 @@ fn window_zones(args: &StatsArgs, db: &Db, since: DateTime<Utc>) -> Result<ZoneT
 /// `--today` is nine hours, so every ratio in the output is a share of the
 /// day so far rather than of a day mostly unlived. `--last-week` and
 /// `--last-month` are closed at both ends — `--last-month` is *the previous
-/// month*, never "since the start of it".
+/// month*, never "since the start of it". `today` is the date of `end`'s
+/// last instant, which the caller reads: a window's zones may stop short of
+/// now (da-l8240).
 fn period_window(
     period: StatsPeriod,
     week_start: Weekday,
     zones: &ZoneTimeline,
+    today: NaiveDate,
     end: DateTime<Utc>,
 ) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
-    let today = local_date_at(zones, end - TICK);
     Ok(match period {
         StatsPeriod::Today => (midnight(zones, today), end),
         StatsPeriod::Week => (midnight(zones, week_open(today, week_start)), end),
@@ -1023,9 +1035,10 @@ fn named_periods(
     week_start: Weekday,
     zones: &ZoneTimeline,
 ) -> Result<[(&'static str, Span); 8]> {
-    let calendar = |p| period_window(p, week_start, zones, anchor);
+    let today = local_date_at(zones, anchor - TICK);
+    let calendar = |p| period_window(p, week_start, zones, today, anchor);
     let back = |days| (anchor - Duration::days(days), anchor);
-    let year = local_date_at(zones, anchor - TICK).year();
+    let year = today.year();
     Ok([
         ("today", calendar(StatsPeriod::Today)?),
         ("this_week", calendar(StatsPeriod::Week)?),
@@ -1581,7 +1594,8 @@ mod tests {
         zones: &ZoneTimeline,
         now: &str,
     ) -> (DateTime<Utc>, DateTime<Utc>) {
-        period_window(period, week_start, zones, utc(now)).unwrap()
+        let today = local_date_at(zones, utc(now) - TICK);
+        period_window(period, week_start, zones, today, utc(now)).unwrap()
     }
 
     fn hours(span: (DateTime<Utc>, DateTime<Utc>)) -> f64 {

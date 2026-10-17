@@ -852,6 +852,37 @@ fn timing_flags_are_read_in_the_databases_zone_not_the_hosts() {
     }
 }
 
+/// da-l8240: a closed period's window ends days back, and the zones read
+/// for it stop three days after that; today is still the date of now in
+/// the zone of now. It is Sunday 20:00 in New York, after a move from
+/// Kiritimati (+14) on Thursday, where it is Monday: last week is the one
+/// of 10-05 and its hour of work, not the one of 10-12 and its two.
+#[test]
+fn last_week_is_counted_from_today_in_the_zone_of_now() {
+    let _g = freeze_time("2026-10-19T00:00:00Z");
+    let db = fresh_db();
+    seed_zoned(
+        &db,
+        "Pacific/Kiritimati",
+        &[
+            ("2026-10-07T00:00:00Z", "work"),
+            ("2026-10-07T01:00:00Z", "rest"),
+            ("2026-10-13T00:00:00Z", "work"),
+            ("2026-10-13T02:00:00Z", "rest"),
+        ],
+    );
+    seed_zoned(&db, "America/New_York", &[("2026-10-16T00:00:00Z", "rest")]);
+    let r = compute_stats(
+        &StatsArgs {
+            period: Some(StatsPeriod::LastWeek),
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap();
+    assert_eq!(dur(&r, "work"), 3600);
+}
+
 #[test]
 fn closed_periods_stop_where_the_open_ones_start() {
     let _g = freeze_time("2026-06-17T09:00:00Z"); // a Wednesday

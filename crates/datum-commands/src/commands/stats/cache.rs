@@ -26,7 +26,7 @@ pub(super) struct Cache<'a> {
     db: &'a Db,
     /// Today in the database's zone: the first day never cached.
     today: NaiveDate,
-    /// The database's zones, exact from a few days back.
+    /// The database's zones, exact from a few days back to now.
     zones: ZoneTimeline,
     /// The first day each field's writes not accounted for reach (`None`:
     /// all of them), as of opening.
@@ -38,16 +38,20 @@ pub(super) struct Cache<'a> {
 
 impl<'a> Cache<'a> {
     /// The cache for this run, or `None` when it reads around it.
-    pub(super) fn open(db: &'a Db, args: &StatsArgs, zones: &ZoneTimeline) -> Result<Option<Self>> {
+    pub(super) fn open(db: &'a Db, args: &StatsArgs) -> Result<Option<Self>> {
         if args.no_cache || args.time.timezone.is_some() {
             return Ok(None);
         }
-        Ok(Some(Cache::new(db, zones)?))
+        Ok(Some(Cache::new(db)?))
     }
 
-    /// `zones` must be exact from a few days back, as `resolve_window`'s are.
-    fn new(db: &'a Db, zones: &ZoneTimeline) -> Result<Self> {
-        let today = local_date_at(zones, DatumTime::now().utc);
+    /// Its zones are its own, read from a few days back to now: a window's
+    /// stop after its end (da-l8240), and today and a recent write's day
+    /// are read in the zone of now.
+    fn new(db: &'a Db) -> Result<Self> {
+        let now = DatumTime::now().utc;
+        let zones = &db.zone_timeline(Zone::host(), Some(now - Duration::days(4)))?;
+        let today = local_date_at(zones, now);
         let (mut dirty, mut zone) = (BTreeMap::new(), None);
         for row in db.stats_cache_open(&stamp())? {
             let day = reach(zones, &row);
@@ -77,7 +81,9 @@ impl<'a> Cache<'a> {
         zones: &ZoneTimeline,
     ) -> Result<Option<Tally>> {
         let first = first_day(start, zones)?;
-        let last = local_date_at(zones, end.min(midnight(zones, self.today)));
+        // Today's midnight in the cache's zones: a past window's stop
+        // short of now (da-l8240).
+        let last = local_date_at(zones, end.min(midnight(&self.zones, self.today)));
         if first.is_some_and(|f| f >= last) {
             return Ok(None);
         }
@@ -278,8 +284,7 @@ const SAMPLE: usize = 32;
 /// and those after it are dropped from the cache, so the next `stats` fills
 /// them again.
 pub fn check_sample(db: &Db, fix: bool) -> Result<(usize, Vec<(String, String)>)> {
-    let zones = db.zone_timeline(Zone::host(), Some(DatumTime::now().utc - Duration::days(4)))?;
-    let cache = Cache::new(db, &zones)?;
+    let cache = Cache::new(db)?;
     let mut differ = Vec::new();
     let sample = db.stats_cache_sample(SAMPLE)?;
     let recomputed = sample.len();
@@ -288,8 +293,10 @@ pub fn check_sample(db: &Db, fix: bool) -> Result<(usize, Vec<(String, String)>)
         // A day a write has reached since is filled again first.
         cache.fill(&field, Some(date))?;
         let next = date.succ_opt().context("date overflow")?;
+        // The day's zones, to three days after it: not on to now (da-l8240).
         let since = date.and_time(chrono::NaiveTime::MIN).and_utc() - Duration::days(4);
-        let zones = db.zone_timeline(Zone::host(), Some(since))?;
+        let until = next.and_time(chrono::NaiveTime::MIN).and_utc() + Duration::days(3);
+        let zones = db.zone_timeline_between(Zone::host(), Some(since), Some(until))?;
         let edges = [midnight(&zones, date), midnight(&zones, next)];
         let timeline = load_timeline(&field, db, Some(edges[0]), edges[1])?;
         let fresh = cut(&timeline, &edges)
