@@ -218,6 +218,9 @@ pub struct TopicSpec {
 /// `datum-cli` fails if the config layer grows a variable it does not name.
 pub struct EnvVarSpec {
     pub name: &'static str,
+    /// The `datumrc.toml` key this variable overrides, which `datum config
+    /// show` lists and `datum config --help` tables; empty for none.
+    pub key: &'static str,
     pub summary: &'static str,
 }
 

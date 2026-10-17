@@ -346,3 +346,23 @@ fn the_week_flags_read_the_week_start_config() {
     let err = week(StatsPeriod::Week).unwrap_err().to_string();
     assert!(err.contains("week_start"), "{err}");
 }
+
+/// `datum config --help` tables the keys from `ENV_VARS`' `key`s (da-6szdc),
+/// so they have to be the keys `config show` prints, in its order.
+#[test]
+fn config_help_keys_are_the_keys_config_show_prints() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _g = sandbox(tmp.path());
+    let shown: Vec<&str> = Config::load(None)
+        .unwrap()
+        .rows()
+        .into_iter()
+        .map(|(k, _, _)| k)
+        .collect();
+    let documented: Vec<&str> = datum_parse::help::ENV_VARS
+        .iter()
+        .filter(|v| !v.key.is_empty())
+        .map(|v| v.key)
+        .collect();
+    assert_eq!(documented, shown);
+}

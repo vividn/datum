@@ -8,7 +8,7 @@
 //!   roff section of this module for the formatting conventions.
 
 use super::commands::{
-    find_command, find_topic, page_name, starts_with_words, COMMANDS, GLOBAL_FLAGS,
+    find_command, find_topic, page_name, starts_with_words, COMMANDS, ENV_VARS, GLOBAL_FLAGS,
     GLOBAL_FLAGS_COL, TOP_LEVEL_FOOTER, TOP_LEVEL_USAGE,
 };
 use super::spec::{Category, CommandSpec, FlagSpec, TopicSpec};
@@ -359,6 +359,9 @@ fn render_command(spec: &CommandSpec, input_name: &str, was_alias: bool) -> Stri
     } else {
         s.push_str(&render_command_body_structured(spec, displayed_name));
     }
+    if spec.name == "config" {
+        s.push_str(&config_keys());
+    }
     let rows = output_rows(spec.name);
     // The block keeps the command's own summary column where it fits, and
     // widens for a command whose OPTIONS table is narrower than `--show
@@ -379,6 +382,20 @@ fn render_command(spec: &CommandSpec, input_name: &str, was_alias: bool) -> Stri
         s.push_str(&summary);
         s.push('\n');
     }
+    s
+}
+
+/// `datum config --help`'s KEYS: each `datumrc.toml` key, the variable
+/// that overrides it and what it does, from [`ENV_VARS`] (da-6szdc).
+fn config_keys() -> String {
+    let keys: Vec<_> = ENV_VARS.iter().filter(|v| !v.key.is_empty()).collect();
+    let kw = keys.iter().map(|v| v.key.len()).max().unwrap_or(0);
+    let nw = keys.iter().map(|v| v.name.len()).max().unwrap_or(0);
+    let mut s = String::from("KEYS:\n");
+    for v in keys {
+        s.push_str(&format!("  {:kw$}  {:nw$}  {}\n", v.key, v.name, v.summary));
+    }
+    s.push_str("\nEvery variable datum reads: datum help env\n");
     s
 }
 

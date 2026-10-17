@@ -595,6 +595,42 @@ fn the_env_topic_lists_every_variable() {
     }
 }
 
+/// `stats --week` says its week opens on `week_start` and sends the reader
+/// to `datum help config`, which has to say how to set it (da-6szdc): the
+/// file, the precedence, and every key with its variable, from [`ENV_VARS`].
+#[test]
+fn config_help_says_how_to_set_a_key() {
+    let stats = command_help("stats");
+    assert!(
+        stats.contains("`week_start`: `datum help config`"),
+        "{stats}"
+    );
+    let page = command_help("config");
+    for needle in [
+        "datumrc.toml",
+        "its environment variable,\nthe key in datumrc.toml, the default",
+        "week_start = \"sunday\"",
+        "datum help env",
+    ] {
+        assert!(page.contains(needle), "missing {needle:?}:\n{page}");
+    }
+    let keyed: Vec<_> = super::ENV_VARS
+        .iter()
+        .filter(|v| !v.key.is_empty())
+        .collect();
+    assert!(keyed.iter().any(|v| v.key == "week_start"));
+    for v in keyed {
+        assert!(
+            page.lines().any(|l| {
+                let w: Vec<&str> = l.split_whitespace().collect();
+                w.len() > 2 && w[0] == v.key && w[1] == v.name && l.ends_with(v.summary)
+            }),
+            "`datum config --help` is missing {}:\n{page}",
+            v.key
+        );
+    }
+}
+
 /// The fold is a RENDERING choice: the machine readers still get the whole
 /// flag set, so the web's command bar does not lose `-t` on `occur`.
 #[test]

@@ -795,7 +795,7 @@ const STATS_FLAGS: &[FlagSpec] = &[
         takes_value: false,
         value_hint: None,
         value_optional: false,
-        summary: "Since the start of this week (see week_start config)",
+        summary: "Since the start of this week (`week_start`: `datum help config`)",
         long_description: None,
         left_override: None,
     },
@@ -987,7 +987,9 @@ const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n\nARGS:\n  [TARG
 
 const DB_BODY: &str = "USAGE:\n  datum db purge [--leave [--force] | --rejoin] [--yes | -y]\n  datum db purge --chain [--yes | -y] [--admin-key <FILE>]\n  datum db backup <PATH | -> [--overwrite]\n  datum db backup --to DIR --every DUR [--slots N]\n  datum db backup --list DIR\n  datum db backup --plan --every DUR [--slots N] --span DUR\n  datum db restore <PATH | -> [--merge | --hard [--leave]] [--force] [--dry-run] [--yes | -y] [--if-unchanged FP]\n  datum db restore <PATH | -> --hard --chain [--dry-run] [--yes | -y] [--admin-key <FILE> | --approve-link <LINK> --approval-code <CODE>]\n  datum db migrate [run | status | edit]\n  datum db v2import [FILE | - | --from FILE] [--dry-run]\n\nPurge leaves nothing of this copy of the database, as deleting its file\nwould; other copies keep theirs. It drops every table, sync's included: its\nops, its chain and its endpoint key go, so the purged copy is a new one, in\nno chain. A copy in a chain says which it means, or is refused:\n--leave signs its departure and syncs it, as `sync chain leave` does,\nrefusing until a member holds it (--force tells no one); --rejoin keeps its\nendpoint key and where its members were last seen, so it stays a member, and\nrefetches everything from them, its own changes too, writing nothing until\nthey are back. --rejoin is refused while a change made here has reached no\nmember, which the wipe would lose. It rewrites the file, so none of the old\npages are left in it, and removes the pre-migration snapshots beside it,\nnaming each. A backup made with `db backup` is not touched. Without --yes,\nprompts for the database path as confirmation; aborts on mismatch. Non-TTY\nstdin without --yes is rejected.\n\nPurge --chain purges every copy in this copy's sync chain instead,\nand keeps the chain: it is `datum sync chain purge --data` by another name.\nThis copy purges now, after a backup of its entries beside the database,\nand each other member as it next syncs. Without --yes it says when each\nmember last synced, then asks for the database's name on a TTY and\nchanges nothing off one. `datum help sync chain purge` says the rest.\n\nBackup dumps live entries to JSONL (default) or tar.gz when the path ends in\n.tar.gz / .tgz, gzipped JSONL when it ends in .gz, or to stdout as JSONL\nwhen the path is `-`.\n\nBackup --to keeps a Tower of Hanoi rotation in DIR: slot 0 is the first\nbackup taken there and is kept forever; each later one lands, by its\n--every period p since slot 0, in slot 1 + trailing_zeros(p), replacing\nwhat that slot held. --slots caps the rotating slots (default: they grow\nwith time). A run with a different --every counts its periods from slot 0\nat the new rhythm, so the slots already held are read at it. Each slot is a .jsonl.gz, and DIR/index.json lists them per\ndb. --list reads the index, newest first; --plan prints which slots a\nrotation holds after --span and how far back each reaches.\n\nRestore makes the active database's live entries exactly a backup file's\n(or JSONL on stdin, for `-`): entries the backup lacks are deleted as ordinary deletions, so they\nsync and `undo` can bring them back. On a TTY it asks before deleting, unless\n--yes. --merge only adds the backup's entries and deletes nothing; an entry\nchanged since the backup keeps its live version and counts as skipped, and\none whose slug or state's instant a different live entry holds is merged\ninto it as a sync merges two: the later-created wins a key both have (of\ntwo states at one instant the live one is kept), what they give differently\nis a conflict in `datum conflicts`, on every synced copy, and `undo`\nunmerges.\n--hard makes the database exactly the backup: every entry, deletion and\nhistory row is dropped, not tombstoned, and the backup's entries written\nas they are, so nothing before the restore can be undone. Its sync ops go\ntoo, so a copy in a sync chain says which it means. --leave leaves the\nchain as purge --leave does, telling it first (`sync chain leave --force`\nbefore it tells no one); a fresh invite rejoins it. --chain restores EVERY\ncopy in the chain to the backup: it orders a chain purge, as `sync chain\npurge --data` does (an admin act in a locked chain: --admin-key, or the\npasskey's approval of the order `--dry-run --json` names as `approve`,\nwhose link and code --approve-link and --approval-code take), then\nwrites the backup here as new changes, which each other copy takes as it\nnext syncs. An entry any copy made before the restore is dropped when it\nsyncs, an offline copy's too; one made after it is kept. --dry-run names\neach member and when it follows. On a TTY it asks for the database's name,\nas purge does; --yes skips that.\n--dry-run makes the writes and rolls them back, so it counts what would be\ninserted, updated, merged and deleted.\n--if-unchanged takes the fingerprint `--dry-run --json` printed and replaces\nonly if the live entries are still the ones it counted, else exits 12 with\nnothing changed.\n\nMigrate applies any pending schema migrations to the active database, bare\nor as `run`, advancing it to the binary's version; `status` lists applied\nand pending steps, and `edit` is reserved for per-entry data migrations (not\nyet implemented). `datum db purge` drops and recreates the schema instead.\n\nV2import ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`), or\nthat JSON on stdin for `-`, into the active database. Idempotent —\nre-importing the same backup is a no-op. It lists each doc it skips, with\nwhy and its `_id`, and ignores CouchDB design docs (`_design/…`), which\nare views.\n";
 
-const CONFIG_BODY: &str = "USAGE:\n  datum config show\n";
+/// The KEYS table after it is drawn from [`ENV_VARS`]' `key`s
+/// (`render_command`), so it lists what README's table and `datum help env` do.
+const CONFIG_BODY: &str = "USAGE:\n  datum config show\n\nA key's value is the first of these that is set: its environment variable,\nthe key in datumrc.toml, the default. `config show` prints each value with where it\ncame from, and the file's path on its last line (DATUM_CONFIG names another\nfile). To change a key, write it in that file, a line each:\n\n  week_start = \"sunday\"\n\n";
 
 const COMPLETIONS_BODY: &str = "USAGE:\n  datum completions <zsh|bash|fish>\n  datum completions install [--shell zsh|bash|fish]\n  datum completions uninstall [--shell zsh|bash|fish]\n\nTab completion for commands, subcommands, flags, fields, states, keys and\nrecent entries. `scripts/install.sh` installs it with datum.\n\n  install     Write the script where the shell loads it by itself, and say\n              where (default shell: $SHELL). No rc file is edited:\n                fish  ~/.config/fish/completions/datum.fish\n                bash  $XDG_DATA_HOME/bash-completion/completions/datum\n                      (loaded by the bash-completion package)\n                zsh   _datum in the first writable directory on $fpath,\n                      else ~/.local/share/zsh/site-functions, with the one\n                      line to add to ~/.zshrc before compinit\n              Running it again overwrites. When a new shell already\n              completes datum it says so in one line; else start a new\n              shell after.\n  uninstall   Remove that file.\n  <shell>     Print the script, to source (`source <(datum completions zsh)`)\n              or for a packager to place.\n\nThe script only asks datum for its answers, so it never goes stale:\nupgrading datum changes them without reinstalling. An installed script\nasks the datum that installed it, whatever `datum` names in the shell; a\nprinted one, or one whose datum is gone, asks the datum the shell would\nrun, an alias of that name included. Another name for datum, in zsh:\n`compdef _datum dm`.\n\nTAB still offers only files? Delete zsh's completion cache and start a new\nshell.\n";
 
@@ -1653,67 +1655,83 @@ pub fn find_topic(query: &str) -> Option<&'static TopicSpec> {
 pub const ENV_VARS: &[EnvVarSpec] = &[
     EnvVarSpec {
         name: "DATUM_DB",
+        key: "db_path",
         summary: "Path or registry name of the active database (`--db` wins).",
     },
     EnvVarSpec {
         name: "DATUM_HOME",
+        key: "",
         summary: "Override the data directory (default: the OS data dir).",
     },
     EnvVarSpec {
         name: "DATUM_CONFIG",
+        key: "",
         summary: "Path to a specific `datumrc.toml`.",
     },
     EnvVarSpec {
         name: "DATUM_CONFIG_HOME",
+        key: "",
         summary: "Override the directory `datumrc.toml` lives in.",
     },
     EnvVarSpec {
-        name: "DATUM_DEFAULT_FIELD",
-        summary: "Field used when one is omitted from the argv.",
-    },
-    EnvVarSpec {
         name: "DATUM_CLIENT_ID",
+        key: "client_id",
         summary: "Override the per-installation client id stamped on entries.",
     },
     EnvVarSpec {
+        name: "DATUM_DEFAULT_FIELD",
+        key: "default_field",
+        summary: "Field used when one is omitted from the argv.",
+    },
+    EnvVarSpec {
         name: "DATUM_SCRIPT",
+        key: "",
         summary: "Name a scripted run: every change it makes says so in its origin (`datum history`).",
     },
     EnvVarSpec {
         name: "DATUM_EDITOR",
+        key: "editor",
         summary: "Editor for `datum edit`. Read FIRST, before toml `editor`, `$VISUAL`, `$EDITOR`.",
     },
     EnvVarSpec {
         name: "DATUM_ID_DELIMITER",
+        key: "id_delimiter",
         summary:
             "Delimiter that collapses empty `%key%` segments in a slug template (default `:`).",
     },
     EnvVarSpec {
         name: "DATUM_WEEK_START",
+        key: "week_start",
         summary: "Weekday a week opens on (`monday`…`sunday`, or `1`-`7`; default Monday).",
     },
     EnvVarSpec {
         name: "NO_COLOR",
+        key: "",
         summary: "Any non-empty value turns color off (`--color always` wins).",
     },
     EnvVarSpec {
         name: "CLICOLOR_FORCE",
+        key: "",
         summary: "Color even when stdout is not a terminal; `0` or empty does not (`NO_COLOR` wins).",
     },
     EnvVarSpec {
         name: "FORCE_COLOR",
+        key: "",
         summary: "The same as `CLICOLOR_FORCE` (Node's name); `0` or `false` does not force.",
     },
     EnvVarSpec {
         name: "DATUM_SHOW",
+        key: "",
         summary: "`--show` for a command that has the rendering, kept out of `raw_input` (a typed `--show` wins).",
     },
     EnvVarSpec {
         name: "DATUM_NO_TIPS",
+        key: "",
         summary: "Set to `1` to never print the one-time tab-completion tip.",
     },
     EnvVarSpec {
         name: "DATUM_SYNC_NO_DAEMON",
+        key: "",
         summary:
             "Set to `1` so a first `sync chain invite`/`connect` does not install the sync daemon.",
     },
