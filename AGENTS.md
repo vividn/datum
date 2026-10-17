@@ -244,97 +244,301 @@ old name as its alias when it was renamed (da-a4ptr, then da-3ie71: «leave
 ## Sync architecture
 
 The relay sync is deleted; p2p «Easy Sync» replaced it. Its core is in
-`crates/datum-core/src/db/sync.rs`: every
-entry change emits a signed op beside its `history::record` (endpoint key in
-`sync_local`, HLC, the change's own `raw` line, its key-level `effect`, its
-`origin`: user, host, installation, program, version and the `DATUM_SCRIPT`
-name, each where known, which `datum history` shows, da-zjc9w), and
-an entry's row is the FOLD of its ops in HLC order, so the same ops in any
-order give the same row. Its conflicts are part of the fold (da-05rkv): the
-`conflicts` column names each key two ops set without seeing each other's
-(and a delete against an edit made without seeing it), derived from the ops
-alone, so every copy holding them agrees; an edit that saw every side —
-`datum conflicts resolve` — settles it on each copy it reaches. A key's sides
-are lettered A, B, … in the column's order, the fold's, so the letters are
-every copy's (da-07594): `resolve` takes `KEY=a|b|<value>` picks, and for the
-keys not picked one of `--use-a | --use-b | --prefer-a | --prefer-b | --merge`
-(`datum_parse::combine` over A and B, `deleted` a key like any other); with no
-strategy named they keep what the entry shows, so a bare `resolve` settles and
-changes no data. Two copies' creates of one field at one instant are ONE
-entry in every arrival order (da-vkeg0): a create's `deps` name all its copy
-held, so it joins an entry that had its slug for a stretch whose end it never
-saw, and a retime of either row moves the one entry — a conflict only when
-both did. `db restore --merge` is a sync from a copy frozen at the
-backup (da-4ldvb): a backup's entry whose slug or state's instant a live one
-holds gets a row with a hid of its own and a `restore` op, the one kind that
-saw only what its `deps` name and not its endpoint's earlier ops, so the fold
-merges the two and derives their conflict, its side's device `backup`. Two
-rules are a restored row's alone: it takes the identity from no row that was
-not restored, so the live entry keeps its hid, and as a tombstone it is no
-part of the entry it went under — which is `undo` of the restore, exactly,
-on every copy. An entry's
-history is read from the same ops (`db/sync/versions.rs`, da-s4erq): a version
-per op in fold order, a `fork` where a key became contested and a `join` where
-an edit settled it, so `datum history`, `why --full` and `undo --to-version`
-number the same versions on every copy; `entry_history` is this copy's undo
-journal alone. A copy's HLC passes only the ops it has applied, and a received op
-more than five minutes ahead of its clock (`MAX_CLOCK_AHEAD`) is held until
-the clock catches up, its device named by `sync status`. The hidden `datum sync pipe vector / ops / apply /
-verify` move ops as JSON lines over a pipe. The transport is iroh (`crates/datum-sync`,
-behind datum-commands' `net` feature, so the CLI's wasm build has no iroh): the iroh
-endpoint key IS the db's endpoint key, copies join a sync chain with
-one-time invites (`sync chain invite` / `connect`; the invite is a datum.day
-join link, `/sync/join#<ticket>`, which `connect`, a browser and the page's
-prompt bar all redeem, so a browser can join a chain as well as start one),
-only members are served
-(`sync_peers` is just where they were last seen), and bare `sync` / the
+`crates/datum-core/src/db/sync.rs`: every entry change emits a signed op beside
+its `history::record` (endpoint key in `sync_local`, HLC, the change's own `raw`
+line, its key-level `effect`, its `origin`: user, host, installation, program,
+version and the `DATUM_SCRIPT` name, each where known, which `datum history`
+shows, da-zjc9w), and an entry's row is the FOLD of its ops in HLC order, so the
+same ops in any order give the same row.
+
+### Conflicts and restored rows
+
+Its conflicts are part of the fold (da-05rkv): the `conflicts` column names each
+key two ops set without seeing each other's (and a delete against an edit made
+without seeing it), derived from the ops alone, so every copy holding them
+agrees; an edit that saw every side — `datum conflicts resolve` — settles it on
+each copy it reaches. A key's sides are lettered A, B, … in the column's order,
+the fold's, so the letters are every copy's (da-07594): `resolve` takes
+`KEY=a|b|<value>` picks, and for the keys not picked one of `--use-a | --use-b |
+--prefer-a | --prefer-b | --merge` (`datum_parse::combine` over A and B,
+`deleted` a key like any other); with no strategy named they keep what the entry
+shows, so a bare `resolve` settles and changes no data. Two copies' creates of
+one field at one instant are ONE entry in every arrival order (da-vkeg0): a
+create's `deps` name all its copy held, so it joins an entry that had its slug
+for a stretch whose end it never saw, and a retime of either row moves the one
+entry — a conflict only when both did.
+
+`db restore --merge` is a sync from a copy frozen at the backup (da-4ldvb): a
+backup's entry whose slug or state's instant a live one holds gets a row with a
+hid of its own and a `restore` op, the one kind that saw only what its `deps`
+name and not its endpoint's earlier ops, so the fold merges the two and derives
+their conflict, its side's device `backup`. Two rules are a restored row's
+alone: it takes the identity from no row that was not restored, so the live
+entry keeps its hid, and as a tombstone it is no part of the entry it went under
+— which is `undo` of the restore, exactly, on every copy.
+
+### History and the clock
+
+An entry's history is read from the same ops (`db/sync/versions.rs`, da-s4erq):
+a version per op in fold order, a `fork` where a key became contested and a
+`join` where an edit settled it, so `datum history`, `why --full` and `undo
+--to-version` number the same versions on every copy; `entry_history` is this
+copy's undo journal alone. A copy's HLC passes only the ops it has applied, and
+a received op more than five minutes ahead of its clock (`MAX_CLOCK_AHEAD`) is
+held until the clock catches up, its device named by `sync status`.
+
+### The transport
+
+The hidden `datum sync pipe vector / ops / apply / verify` move ops as JSON
+lines over a pipe. The transport is iroh (`crates/datum-sync`, behind
+datum-commands' `net` feature, so the CLI's wasm build has no iroh): the iroh
+endpoint key IS the db's endpoint key, copies join a sync chain with one-time
+invites (`sync chain invite` / `connect`; the invite is a datum.day join link,
+`/sync/join#<ticket>`, which `connect`, a browser and the page's prompt bar all
+redeem, so a browser can join a chain as well as start one), only members are
+served (`sync_peers` is just where they were last seen), and bare `sync` / the
 hidden `sync run` swap vectors and ops until neither moves, with every member
-this copy has an address for. Bare `sync` on a copy a `sync run` serves dials
-nothing itself: it connects to the run's socket beside the database,
-`<db>.sync`, and the run dials every member at once and answers each
-session's line, so the endpoint key is bound once and the traffic is not
-doubled; with no run listening it dials as before (da-tltjj). A round carries at most 8,192 ops, the lowest
-by HLC so each applies whole, and applies before the next is sent; rounds go
-on while full, so a big catch-up finishes in one session and one cut short
-loses a round (da-ymgiv). The first serve after a bulk import signs its
-baselines in chunks sized by the clock, a BUSY after each, so the peer hears
-from it within its idle timeout (da-f7mmn). `sync run` tries a member it failed to reach
-again after a minute, the gap doubling to half an hour, dials every member when
-it starts or its address changes, dials no member it is already in a session
-with unless `datum sync` asks, and a failure the peer's row already says writes nothing (da-u1ul1).
-Two copies that dial each other at once keep one session: the higher
-endpoint id, welcomed by a peer whose own dial it is serving, closes its dial
-as busy, which neither side records, and the lower id's carries both ways
-(da-vj3ly). A
-session that failed before it reached the
-member (the transport's `Failure::Unreachable`) is recorded as such
-(`sync_peers.last_error_offline`), and `sync status` calls the member
-`offline`, with when it was last seen and none of the words, which `--json`'s
-`error` still carries; one that reached it and then failed is `error`, with
-them (da-ueb4p). One session applies into a database at a time, in any
-process (`<db>.applying`, da-h31wt): another waits its turn sending BUSYs, a
-copy applying refuses a new session as busy and pushes to every member once
-done, and neither side counts busy, or giving way to a write, as a failure.
-Each side says in its handshake where it last
-saw the chain's members (`known` on `Hello` and `Welcome`), and the other
-keeps what it has not itself seen once the session has synced, so two copies
-one inviter admitted dial each other (da-fly3f); a member with no address yet
-is named as one by `sync` and `sync status`, with nothing «to send». A session
-ends by comparing state hashes: `verify ok`, `verify MISMATCH` when they
-differ over the same ops, and with one copy ahead of the other — a reader
+this copy has an address for.
+
+`DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
+tests), `DATUM_SYNC_RELAY=<url>` one relay and nothing else.
+
+### A session: handshake, rounds, verify
+
+Each copy says what it runs in the handshake — `datum` (the build) and `schema`
+on `Hello` and `Welcome`, defaulted so a copy one version back still reads them
+— and the other records it (`sync_peers.datum` / `schema`, in `sync chain
+list`). A copy behind a member's schema syncs on and warns to upgrade, once per
+new version on stderr and for as long as it lasts in `sync status` and `datum
+check` (da-3zqyv).
+
+A round carries at most 8,192 ops, the lowest by HLC so each applies whole, and
+applies before the next is sent; rounds go on while full, so a big catch-up
+finishes in one session and one cut short loses a round (da-ymgiv).
+
+A session ends by comparing state hashes: `verify ok`, `verify MISMATCH` when
+they differ over the same ops, and with one copy ahead of the other — a reader
 holding what a member lacks, which it never relays — «not verified: R is N
-changes ahead of this copy», `pending` in `sync status` and no error
-(da-t3ey2); a copy whose vector moved between the last round and its hash (a
-write, another session) sends `moved <hash>`, and both say «not verified: X
-changed as it verified», never a MISMATCH (da-o2arv). The tree:
-`sync`, `status`, `pause | resume`, `diff <WHO>`, `refold`, `chain invite | connect | leave |
-list | rename | revoke | revert | ack | rekey`, `admin list | add | remove`, `daemon
-install | uninstall | status` (a systemd user unit / launchd agent
-running the hidden `sync daemon run`, which is `sync run` for every chained
-db `known_dbs` lists; a copy's first `chain invite` / `connect` keeps a db
-opened by path in the registry under its absolute path, so the daemon finds
-it too (da-zrl7n), and installs it unless `DATUM_SYNC_NO_DAEMON=1`, and
-`scripts/install.sh` restarts it; a `connect`
+changes ahead of this copy», `pending` in `sync status` and no error (da-t3ey2);
+a copy whose vector moved between the last round and its hash (a write, another
+session) sends `moved <hash>`, and both say «not verified: X changed as it
+verified», never a MISMATCH (da-o2arv).
+
+### Who dials whom
+
+Bare `sync` on a copy a `sync run` serves dials nothing itself: it connects to
+the run's socket beside the database, `<db>.sync`, and the run dials every
+member at once and answers each session's line, so the endpoint key is bound
+once and the traffic is not doubled; with no run listening it dials as before
+(da-tltjj).
+
+`sync run` tries a member it failed to reach again after a minute, the gap
+doubling to half an hour, dials every member when it starts or its address
+changes, dials no member it is already in a session with unless `datum sync`
+asks, and a failure the peer's row already says writes nothing (da-u1ul1).
+
+Two copies that dial each other at once keep one session: the higher endpoint
+id, welcomed by a peer whose own dial it is serving, closes its dial as busy,
+which neither side records, and the lower id's carries both ways (da-vj3ly).
+
+Each side says in its handshake where it last saw the chain's members (`known`
+on `Hello` and `Welcome`), and the other keeps what it has not itself seen once
+the session has synced, so two copies one inviter admitted dial each other
+(da-fly3f); a member with no address yet is named as one by `sync` and `sync
+status`, with nothing «to send».
+
+### One at a time: the apply gate, BUSY, the write lock
+
+One session applies into a database at a time, in any process (`<db>.applying`,
+da-h31wt): another waits its turn sending BUSYs, a copy applying refuses a new
+session as busy and pushes to every member once done, and neither side counts
+busy, or giving way to a write, as a failure.
+
+The first serve after a bulk import signs its baselines in chunks sized by the
+clock, a BUSY after each, so the peer hears from it within its idle timeout
+(da-f7mmn).
+
+A transaction datum opens writes who holds the lock — pid, command, since — to
+`<db>.writing` until it lets go, so a write that waits out the lock and does not
+spool (above) names its holder, and `sync run` logs its own holds past a second
+(`DATUM_SYNC_LONG_HOLD_MS`) with the rows each wrote per table (`db/holder.rs`,
+da-hyem1).
+
+### Offline, paused, unsent
+
+A session that failed before it reached the member (the transport's
+`Failure::Unreachable`) is recorded as such (`sync_peers.last_error_offline`),
+and `sync status` calls the member `offline`, with when it was last seen and
+none of the words, which `--json`'s `error` still carries; one that reached it
+and then failed is `error`, with them (da-ueb4p).
+
+`sync pause` is this copy's alone (`sync_local.paused_at`): its handshake and
+pipe refuse, `sync run` and the page's leader push nothing, and datum.day's root
+bar says «sync paused» in every tab until a tap resumes it.
+
+A write warns once a day on stderr (`sync_local.warned_at`) when changes made on
+this copy have reached no other live member for over a day, by each one's last
+known vector (da-u10rl): another device being off is no reason. Only a member
+holding everything counts, so a copy whose only others are filtered readers
+never warns, as a lone member never does.
+
+### Keys, the chain and its notices
+
+A copy of the file at another path mints its own key (`sync_local.path`, v44);
+two copies found signing with one key are refused by name, and `sync chain
+rekey` gives one a new key.
+
+Membership is the signed chain (`db/sync/chain.rs`), and there is one mechanism:
+a chain with no admin is OPEN — any member invites, revokes or renames, and
+`invite` on a copy in no chain starts one — and the first `admin add` LOCKS it,
+after which those acts take an admin key (passkey or key file). A copy starting
+a chain while it holds another endpoint's ops — piped in, or its own old key's —
+starts afresh as `chain leave` does, and signs every entry again as its own
+(da-1flih), so no joiner applies or refuses them by where its apply was cut.
+
+Removing the last admin takes `--allow-unlock` and reopens it; every copy keeps
+a notice of the unlock until `sync chain ack unlock`. A notice — a new device, a
+new admin, an unlock — not yet acknowledged is a ⚠ in datum.day's root bar, in
+every tab, for each database a tab is on: its sync leader reads them with its
+setup and carries them in its state (da-8fucg).
+
+A warning is stored once, shown wherever its question is asked, and cleared in
+one place (da-nq07y): the notices, a member's newer schema and changes no other
+device has for a day (`Db::sync_unsent`) are each read by both `sync status` and
+`datum check`, whose findings carry their `domain` (`entries`, `aliases`,
+`stats`, `sync`) and are grouped by it; one `ack` clears a notice from both.
+
+### Filtered readers
+
+A reader may be FILTERED: its invite's `caps` or a `role` record carries
+`fields` (`--fields a,b`, or `--kit K` resolved to that kit's fields) and `of`.
+Every member serving it sends only the entries that belong to those fields — an
+op's `field`, a spec's being the field it specifies — one line per entry, an
+entry that moved in whole, `{"remove": hid}` for one that moved out, and a
+`caught_up` mark that answers the `since` it was given; the reader applies with
+no gap wait, drops what falls outside, and its vector is its marks
+(`sync_caught_up`, v50). `verify` hashes the filtered set on both sides.
+
+### Revert and purge
+
+`sync chain revert <WHO>` (da-ry11c; `chain purge <WHO>` until da-c9fiy, now
+refused with the new name) previews, and with `--yes` writes a `purge` record:
+every copy refuses every op that endpoint signed and folds its entries again
+without them — what it made goes, its edits and deletes are undone — and revokes
+it. There is no unpurge: a fresh invite brings it back (below), though an old
+chain's `unpurge` record still folds as it did.
+
+`sync chain purge --data | --all` (da-qzrj9) is the chain-wide hard purge (`db
+purge --chain` is `--data`, parsed to the same command, da-2bb7z), an admin act
+any member orders in an open chain: a `wipe` record each copy carries out as it
+comes to hold it, offline a year or not — every entry op before it scrubbed to a
+stub (`applied` = 3: its endpoint, seq and HLC, so no vector waits on a gap and
+no seq is signed twice), every entry, history, undo step, warning and stats
+cache row gone — a change spooled before it too, which its drain drops and says
+so (da-59hwx), or drained before the order came signs again with the HLC it was
+queued at (`queued`), which the wipe compares (da-m6c4j); a build before that
+reads `hlc` alone and keeps such an op, so its rows differ from a newer copy's
+(`verify MISMATCH`, `check sync` clean on both) until the next wipe, updating or
+not (da-371m8) — and a sender's `{"purged": …}` line after the order filling the
+gaps of a copy behind. `--all` dissolves the chain: the fold takes no record
+after it, a copy holding it serves only records and stubs and says «in no sync
+chain», and keeps its key and records to pass the order on until an invite or
+connect starts it afresh.
+
+The ordering copy alone writes a backup, `<db>.purge-<time>.jsonl.gz`, before it
+purges: one on every copy would defeat a remote wipe. A passkey's order is
+written by `sync approve` (datum.day's), which writes the backup then, and
+datum.day keeps it in OPFS (da-459uh). The backup is the approving copy's: an
+approve link opened on another device (`/sync/approve`) backs up what that
+device holds, and the ordering copy's own changes no sync has yet carried are
+wiped and kept in no backup. The CLI's order, approved elsewhere and finished
+with Enter, keeps the backup it wrote before asking (da-xc321).
+
+`db restore <B> --hard --chain` (da-ncmmj) is that `--data` order and then the
+backup written on the ordering copy as new ops, signed after it, so every copy
+holds exactly the backup once it syncs; plain `--hard` on a chained copy is
+refused, naming `--chain` and `--leave` (this copy alone). In a locked chain its
+order is an admin's to sign, and its stdin can be the backup: so `--dry-run
+--json` names the order as `approve`, an approve link, and the run takes it back
+signed (`--approve-link`, `--approval-code`), refusing any but this chain's
+restore order — datum.day's passkey (da-sd7xt).
+
+Its order says `restore`, and every other copy it reaches writes what it held
+first, `<db>.wiped-<the wipe's HLC>.jsonl` beside it (da-uk23v): an entry made
+offline before the restore is dropped as it syncs, and not lost. A `wipe` notice
+names the file and `db restore <it> --merge`, which brings it back, until `sync
+chain ack`; datum.day keeps the file in OPFS. A purge's order still leaves its
+copies none.
+
+### Leaving, joining and rejoining
+
+A copy belongs to one chain — its apply refuses another chain's records
+(da-d8ort). `chain leave` leaves it from any chain: its ops, peers and notices
+go, its entries stay — signed again as baselines on the next sync — and it takes
+a new endpoint key, being a new device now. `db purge` on a chained copy takes
+`--leave`, that departure and then the wipe, `--chain` (above), or `--rejoin`
+(da-qjxfx), and with none is refused naming the three, as `restore --hard` is
+(da-n0zx1). `--rejoin`: the wipe keeps `sync_local`, `sync_peers` and
+`sync_notices`, the relaying members become the copies it is joining through,
+and `_meta` `sync_rejoin` holds the highest seq its key signed, which `own_head`
+counts as signed until its ops are back — so it takes them back and serves a
+member's vector without reading itself as a copy sharing its key, and signs
+nothing meanwhile. Refused while a change made here has reached no member.
+
+Redeeming another chain's invite leaves on its own only a copy holding nothing
+but its own data (no other live member, no other endpoint's op), keeping its
+key.
+
+A revoked device rejoins by a fresh invite to its chain: the `admit` of a listed
+endpoint RE-ADMITS it, clearing the revoke, so what it made while out folds in
+(da-j8c4l) — and a revert too, so a reverted device rejoins as at a first
+connection, every op it made folding back in (da-q4rau).
+
+`chain list` leaves a revoked, reverted or departed member out and counts it,
+and `status` a revoked or reverted one, a departed one having no row there at
+all (`--show-revoked` shows them, `--json` always carries them), as bare `sync`
+and datum.day's sync widget do: the chain's record of it stays (da-73gyz).
+
+A first sync carries the inviter's chain records after its history, so a join
+cut short (a reload, a lost connection) leaves the joiner in no chain holding
+part of it, or none (`sync_peers.redeemed_at`, da-38eye): `sync chain list` /
+`status` then name the copy it is JOINING through, which counts as its peer, and
+bare `sync` or datum.day's leader resumes there (da-idw54).
+
+### Admission by the dialer's records
+
+A member admitted since the serving copy last synced is no member of the chain
+as that copy holds it (da-2u95o). Asked (`Reply::Prove`, to a dialer whose
+`Hello` says it `proves`), the dialer sends its chain's records, and is admitted
+when they make it a member: folded with the server's own (`Chain::load_with`),
+each signed by its endpoint, and two kinds not read: a genesis, and a record of
+an endpoint the server holds as revoked, which only that endpoint's clock dates
+before its revoke. A member's are not kept, since the session brings every op
+the server lacks.
+
+A reader brings none but its own, so its records are kept (da-91wab): they wait
+on whatever entry op of the inviter's the server lacks, and the server serves by
+the chain they make meanwhile (`Chain::served`: the handshake, a reader's filter
+in what it is sent and in the verify, `sync status`), while which ops apply
+stays with the records applied. The waiting records it reads are all of them,
+one held for its clock (`MAX_CLOCK_AHEAD`) as well as one held for a missing op,
+so a member's admission dated far ahead opens a session before it applies and a
+held revoke stops one (da-zo8ak): no hole, since a member is trusted to admit.
+
+A dialer still refused is told so by name, with what fixes it: sync the refusing
+copy with the copy that invited the other. datum.day's store does the same
+through the hidden `sync pipe records` and `sync handshake --records`.
+
+### The command tree
+
+The tree: `sync`, `status`, `pause | resume`, `diff <WHO>`, `refold`, `chain
+invite | connect | leave | list | rename | revoke | revert | ack | rekey`,
+`admin list | add | remove`, `daemon install | uninstall | status` (a systemd
+user unit / launchd agent running the hidden `sync daemon run`, which is `sync
+run` for every chained db `known_dbs` lists; a copy's first `chain invite` /
+`connect` keeps a db opened by path in the registry under its absolute path, so
+the daemon finds it too (da-zrl7n), and installs it unless
+`DATUM_SYNC_NO_DAEMON=1`, and `scripts/install.sh` restarts it; a `connect`
 installs it once admitted and holds `<db>.joining` locked for its life, so the
 daemon leaves that database alone until the `connect` ends or is killed, and
 then finishes a first sync cut short; an `invite` holds the same lock, so a
@@ -342,200 +546,66 @@ joiner is served by the `invite` that shows it and not by the daemon — whose
 thread already serving the database steps aside on its next tick, da-8sah2 — and
 a second `connect` or `invite` on the database is refused while it is held,
 da-apd52; a chained copy with none says so in `sync status`, da-qr7gz).
-`DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
-tests), `DATUM_SYNC_RELAY=<url>` one relay and nothing else. A transaction datum
-opens writes who holds the lock — pid, command, since — to `<db>.writing`
-until it lets go, so a write that waits out the lock and does not spool (above)
-names its holder, and
-`sync run` logs its own holds past a second (`DATUM_SYNC_LONG_HOLD_MS`) with
-the rows each wrote per table (`db/holder.rs`, da-hyem1). A copy of the file at another path mints its own key (`sync_local.path`,
-v44); two copies found signing with one key are refused by name, and
-`sync chain rekey` gives one a new key. Membership is the signed chain
-(`db/sync/chain.rs`), and there is one mechanism: a
-chain with no admin is OPEN — any member invites, revokes or renames, and
-`invite` on a copy in no chain starts one — and the first `admin add`
-LOCKS it, after which those acts take an admin key (passkey or key file).
-A copy starting a chain while it holds another endpoint's ops — piped in,
-or its own old key's — starts afresh as `chain leave` does, and signs every
-entry again as its own (da-1flih), so no joiner applies or refuses them by
-where its apply was cut.
-Removing the last admin takes `--allow-unlock` and reopens it; every copy
-keeps a notice of the unlock until `sync chain ack unlock`. A notice — a new
-device, a new admin, an unlock — not yet acknowledged is a ⚠ in datum.day's
-root bar, in every tab, for each database a tab is on: its sync leader reads
-them with its setup and carries them in its state (da-8fucg).
-A warning is stored once, shown wherever its question is asked, and cleared
-in one place (da-nq07y): the notices, a member's newer schema and changes no
-other device has for a day (`Db::sync_unsent`) are each read by both `sync
-status` and `datum check`, whose findings carry their `domain` (`entries`,
-`aliases`, `stats`, `sync`) and are grouped by it; one `ack` clears a notice
-from both.
-`sync chain revert <WHO>` (da-ry11c; `chain purge <WHO>` until da-c9fiy,
-now refused with the new name) previews, and with `--yes` writes a `purge` record: every copy
-refuses every op that endpoint signed and folds its entries again without them — what it made goes, its edits and deletes
-are undone — and revokes it. There is no unpurge: a fresh invite brings it
-back (below), though an old chain's `unpurge` record still folds as it did.
-`sync chain purge --data | --all` (da-qzrj9) is the chain-wide hard purge
-(`db purge --chain` is `--data`, parsed to the same command, da-2bb7z), an
-admin act any member orders in an open chain: a `wipe` record each copy
-carries out as it comes to hold it, offline a year or not — every entry op
-before it scrubbed to a stub (`applied` = 3: its endpoint, seq and HLC, so
-no vector waits on a gap and no seq is signed twice), every entry, history,
-undo step, warning and stats cache row gone — a change spooled before it too,
-which its drain drops and says so (da-59hwx), or drained before the order
-came signs again with the HLC it was queued at (`queued`), which the wipe
-compares (da-m6c4j); a build before that reads `hlc` alone and keeps
-such an op, so its rows differ from a newer copy's (`verify MISMATCH`,
-`check sync` clean on both) until the next wipe, updating or not (da-371m8)
-— and a sender's `{"purged": …}`
-line after the order filling the gaps of a copy behind. `--all` dissolves the
-chain: the fold takes no record after it, a copy holding it serves only
-records and stubs and says «in no sync chain», and keeps its key and records
-to pass the order on until an invite or connect starts it afresh. The
-ordering copy alone writes a backup, `<db>.purge-<time>.jsonl.gz`, before it
-purges: one on every copy would defeat a remote wipe. A passkey's order is
-written by `sync approve` (datum.day's), which writes the backup then, and
-datum.day keeps it in OPFS (da-459uh). The backup is the approving copy's:
-an approve link opened on another device (`/sync/approve`) backs up what
-that device holds, and the ordering copy's own changes no sync has yet
-carried are wiped and kept in no backup. The CLI's order, approved elsewhere
-and finished with Enter, keeps the backup it wrote before asking (da-xc321).
-`db restore <B> --hard --chain` (da-ncmmj) is that `--data` order and then
-the backup written on the ordering copy as new ops, signed after it, so
-every copy holds exactly the backup once it syncs; plain `--hard` on a
-chained copy is refused, naming `--chain` and `--leave` (this copy alone).
-In a locked chain its order is an admin's to sign, and its stdin can be the
-backup: so `--dry-run --json` names the order as `approve`, an approve link,
-and the run takes it back signed (`--approve-link`, `--approval-code`),
-refusing any but this chain's restore order — datum.day's passkey (da-sd7xt).
-Its order says `restore`, and every other copy it reaches writes what it
-held first, `<db>.wiped-<the wipe's HLC>.jsonl` beside it (da-uk23v): an entry made
-offline before the restore is dropped as it syncs, and not lost. A `wipe`
-notice names the file and `db restore <it> --merge`, which brings it back,
-until `sync chain ack`; datum.day keeps the file in OPFS. A purge's order
-still leaves its copies none.
-A copy belongs to one chain — its apply refuses another chain's records
-(da-d8ort). `chain leave` leaves it from any chain: its ops, peers and
-notices go, its entries stay — signed again as baselines on the next sync —
-and it takes a new endpoint key, being a new device now. `db purge` on a
-chained copy takes `--leave`, that departure and then the wipe, `--chain`
-(above), or `--rejoin` (da-qjxfx), and with none is refused naming the three,
-as `restore --hard` is (da-n0zx1). `--rejoin`: the wipe keeps `sync_local`,
-`sync_peers` and `sync_notices`, the relaying members become the copies it is
-joining through, and `_meta` `sync_rejoin` holds the highest seq its key
-signed, which `own_head` counts as signed until its ops are back — so it takes them back and serves a member's
-vector without reading itself as a copy sharing its key, and signs nothing
-meanwhile. Refused while a change made here has reached no member. Redeeming another
-chain's invite leaves on its own only a copy holding nothing but its own data
-(no other live member, no other endpoint's op), keeping its key. A revoked
-device rejoins by a fresh invite to its chain: the `admit` of a listed
-endpoint RE-ADMITS it, clearing the revoke, so what it made while out folds
-in (da-j8c4l) — and a revert too, so a reverted device rejoins as at a first
-connection, every op it made folding back in (da-q4rau).
-`chain list` leaves a revoked, reverted or departed member out and counts it, and
-`status` a revoked or reverted one, a departed one having no row there at all
-(`--show-revoked` shows them, `--json` always carries them), as bare `sync` and
-datum.day's sync widget do: the chain's record of it stays (da-73gyz).
-A first sync carries the inviter's chain records after its history, so a join
-cut short (a reload, a lost connection) leaves the joiner in no chain holding
-part of it, or none (`sync_peers.redeemed_at`, da-38eye): `sync chain list` /
-`status` then name the copy it is JOINING
-through, which counts as its peer, and bare `sync` or datum.day's leader
-resumes there (da-idw54).
-A reader may be FILTERED: its invite's `caps` or a `role` record
-carries `fields` (`--fields a,b`, or `--kit K` resolved to that kit's fields)
-and `of`. Every member serving it sends only the entries that belong to those
-fields — an op's `field`, a spec's being the field it specifies — one line per
-entry, an entry that moved in whole, `{"remove": hid}` for one that moved out,
-and a `caught_up` mark that answers the `since` it was given; the reader
-applies with no gap wait, drops what falls outside, and its vector is its
-marks (`sync_caught_up`, v50). `verify` hashes the filtered set on both sides.
-`sync pause` is this copy's alone (`sync_local.paused_at`): its
-handshake and pipe refuse, `sync run` and the page's leader push nothing, and
-datum.day's root bar says «sync paused» in every tab until a tap resumes it.
-A write warns once a day on stderr (`sync_local.warned_at`) when changes made
-on this copy have reached no other live member for over a day, by each one's
-last known vector (da-u10rl): another device being off is no reason. Only a
-member holding everything counts, so a copy whose only others are filtered
-readers never warns, as a lone member never does.
-Each copy says what it runs in the handshake — `datum` (the build) and
-`schema` on `Hello` and `Welcome`, defaulted so a copy one version back
-still reads them — and the other records it (`sync_peers.datum` / `schema`,
-in `sync chain list`). A copy behind a member's schema syncs on and warns to
-upgrade, once per new version on stderr and for as long as it lasts in
-`sync status` and `datum check` (da-3zqyv).
-A member admitted since the serving copy last synced is no member of the
-chain as that copy holds it (da-2u95o). Asked (`Reply::Prove`, to a dialer
-whose `Hello` says it `proves`), the dialer sends its chain's records, and is
-admitted when they make it a member: folded with the
-server's own (`Chain::load_with`), each signed by its endpoint, and two kinds
-not read: a genesis, and a record of an endpoint the server holds as revoked,
-which only that endpoint's clock dates before its revoke. A member's are not
-kept, since the session brings every op the server lacks. A reader brings
-none but its own, so its records are kept (da-91wab): they wait on whatever
-entry op of the inviter's the server lacks, and the server serves by the
-chain they make meanwhile (`Chain::served`: the handshake, a reader's filter
-in what it is sent and in the verify, `sync status`), while which ops apply
-stays with the records applied. The waiting records it reads are all of them,
-one held for its clock (`MAX_CLOCK_AHEAD`) as well as one held for a missing
-op, so a member's admission dated far ahead opens a session before it applies
-and a held revoke stops one (da-zo8ak): no hole, since a member is trusted to
-admit. A dialer still refused is told so by name,
-with what fixes it: sync the refusing copy with the copy that
-invited the other. datum.day's store does the same through the hidden `sync
-pipe records` and `sync handshake --records`.
 
-A mismatch is diagnosed natively (da-n0ruf, `db/sync/diagnose.rs`).
-`datum check sync`, in the default battery too, reads every row against its
-ops: an entry whose applied ops fold to a row this copy lacks (`sync_orphan_ops`,
-an error: what `db restore --hard` left before it dropped the ops too, da-95y4o), a row that is not what
-its ops fold to (`sync_stale_row`, an error: `derived` as storage writes it,
-which derives `verb` and `content_hash` itself, and the `conflicts` column),
-each with its columns and both values, an entry whose ops fold to no row
-storage takes (`sync_unfoldable`, an error naming it and why, which the check
-reads on past), and in a chain a row no op covers
-(`sync_no_op`, a warning: the next sync signs it). `datum sync refold` writes
-each stale row again from its ops and signs none, so a correct copy is
-unchanged; orphans it leaves as found. It stays manual, since a row a write
-left without its op holds the newer data and loses it: `--dry-run` names each
-row it would write, every column old → new, and writes nothing (da-g8wj9). A copy does the same as it opens when
-its rows were folded under an older fold rule (da-sqpjt): `FOLD_RULE` in
-`db/sync.rs`, stamped in `_meta` `fold_rule` and bumped by any change to
-what the same ops fold to, schema change or not —
+### Diagnosing a mismatch
+
+A mismatch is diagnosed natively (da-n0ruf, `db/sync/diagnose.rs`). `datum check
+sync`, in the default battery too, reads every row against its ops: an entry
+whose applied ops fold to a row this copy lacks (`sync_orphan_ops`, an error:
+what `db restore --hard` left before it dropped the ops too, da-95y4o), a row
+that is not what its ops fold to (`sync_stale_row`, an error: `derived` as
+storage writes it, which derives `verb` and `content_hash` itself, and the
+`conflicts` column), each with its columns and both values, an entry whose ops
+fold to no row storage takes (`sync_unfoldable`, an error naming it and why,
+which the check reads on past), and in a chain a row no op covers (`sync_no_op`,
+a warning: the next sync signs it). `datum sync refold` writes each stale row
+again from its ops and signs none, so a correct copy is unchanged; orphans it
+leaves as found. It stays manual, since a row a write left without its op holds
+the newer data and loses it: `--dry-run` names each row it would write, every
+column old → new, and writes nothing (da-g8wj9).
+
+A copy does the same as it opens when its rows were folded under an older fold
+rule (da-sqpjt): `FOLD_RULE` in `db/sync.rs`, stamped in `_meta` `fold_rule` and
+bumped by any change to what the same ops fold to, schema change or not —
 `the_fold_rule_is_fingerprinted` fails on a change to that code until it is
-bumped or recorded as none. A copy on the current rule reads one row.
-A build older than the stamp does not fold back as it opens, but each row
-it writes lowers the stamp to its rule (a trigger of its connection's, so a
-daemon or REPL opened before the newer build stamped too), and the newer
-build's next open refolds (da-w13ei).
-`datum sync diff <WHO>` asks one member
-over a second ALPN, `datum/sync-diff/1`, which `serve` answers after the same
-handshake and a copy before it refuses: state hashes, then a hash per row by
-hid, then for each hid that differs the row and the ops each side holds
-(the hidden `sync pipe digest` / `held`, which are datum.day's store too). It
-applies nothing on either side and records no session. The sync tests'
-`converged` asserts `check sync` clean, so every scenario that converges is
-its control.
+bumped or recorded as none. A copy on the current rule reads one row. A build
+older than the stamp does not fold back as it opens, but each row it writes
+lowers the stamp to its rule (a trigger of its connection's, so a daemon or REPL
+opened before the newer build stamped too), and the newer build's next open
+refolds (da-w13ei).
 
-The session itself is `crates/datum-sync-wire`, generic over a `Store`,
-and the handshake's storage side — members, invites, admission — is
-datum-core's, so datum.day syncs too: `web/src/lib/sync.worker.ts` runs the
-wire crate built for wasm32-unknown-unknown (relay-only iroh) with the CLI as
-its store (hidden `sync handshake` / `new-invite` / `endpoint-key` /
-`record-session`), and `$lib/sync.ts` elects ONE tab per database to run the
-endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
-(`onAnyChange`). A session is its copy's only while the file's endpoint key is
-the one it began with (da-otz0d): a `db purge --leave`, `chain leave` or `chain rekey`
-under an open session makes the file another copy, in no chain, which took
-the peer's whole chain at the next round as a copy joining does. So core's
-`endpoint()`, where what a session writes learns who this copy is, inside the
-transaction it writes in, fails and mints nothing once the key is not the one
-the session bound (`Db::sync_session_as`): datum-sync's `bind` binds a native
-session, and datum.day's store runs each command as the hidden `sync --as
-<ENDPOINT> …`. There too a session's file is at the schema its build writes
-(da-1tnup): once a newer datum has migrated it, the session and `sync run`
-stop naming both versions, and `sync daemon run` exits, for its unit to
-start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `iroh-relay`.
+`datum sync diff <WHO>` asks one member over a second ALPN, `datum/sync-diff/1`,
+which `serve` answers after the same handshake and a copy before it refuses:
+state hashes, then a hash per row by hid, then for each hid that differs the row
+and the ops each side holds (the hidden `sync pipe digest` / `held`, which are
+datum.day's store too). It applies nothing on either side and records no
+session. The sync tests' `converged` asserts `check sync` clean, so every
+scenario that converges is its control.
+
+### The wire crate and datum.day
+
+The session itself is `crates/datum-sync-wire`, generic over a `Store`, and the
+handshake's storage side — members, invites, admission — is datum-core's, so
+datum.day syncs too: `web/src/lib/sync.worker.ts` runs the wire crate built for
+wasm32-unknown-unknown (relay-only iroh) with the CLI as its store (hidden `sync
+handshake` / `new-invite` / `endpoint-key` / `record-session`), and
+`$lib/sync.ts` elects ONE tab per database to run the endpoint by a Web Lock
+(`datum-sync:<db>`), which pushes on every tab's writes (`onAnyChange`).
+
+A session is its copy's only while the file's endpoint key is the one it began
+with (da-otz0d): a `db purge --leave`, `chain leave` or `chain rekey` under an
+open session makes the file another copy, in no chain, which took the peer's
+whole chain at the next round as a copy joining does. So core's `endpoint()`,
+where what a session writes learns who this copy is, inside the transaction it
+writes in, fails and mints nothing once the key is not the one the session bound
+(`Db::sync_session_as`): datum-sync's `bind` binds a native session, and
+datum.day's store runs each command as the hidden `sync --as <ENDPOINT> …`.
+There too a session's file is at the schema its build writes (da-1tnup): once a
+newer datum has migrated it, the session and `sync run` stop naming both
+versions, and `sync daemon run` exits, for its unit to start the installed
+binary.
+
+`web/tests/sync*.test.mjs` run on a pinned local `iroh-relay`.
 
 ## Web app (PWA)
 
