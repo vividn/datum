@@ -35,6 +35,8 @@ const TYPES = {
 
 let server;
 let url;
+/** Every visit's browser profile is made in here, removed after the file (da-yqc4v). */
+const profiles = fs.mkdtempSync(path.join(os.tmpdir(), 'datum-coi-'));
 /** While set, the worker's script is not served until it settles — see the last test. */
 let held = null;
 
@@ -56,10 +58,13 @@ before(async () => {
 	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 	url = `http://127.0.0.1:${server.address().port}/`;
 });
-after(() => new Promise((resolve) => server.close(resolve)));
+after(() => {
+	fs.rmSync(profiles, { recursive: true, force: true });
+	return new Promise((resolve) => server.close(resolve));
+});
 
 async function visit(options, where = '') {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'datum-coi-'));
+	const dir = fs.mkdtempSync(path.join(profiles, 'visit-'));
 	const context = await chromium.launchPersistentContext(dir, options);
 	const page = context.pages()[0] ?? (await context.newPage());
 	let loads = 0;

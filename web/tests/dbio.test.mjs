@@ -14,7 +14,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,6 +66,9 @@ assert.ok(
 
 before(startApp);
 after(stopApp);
+/** The files these tests hand the chooser are written in here, removed after the file (da-yqc4v). */
+const scratch = await mkdtemp(join(tmpdir(), 'datum-dbio-'));
+after(() => rm(scratch, { recursive: true, force: true }));
 
 // ONE APP for the two chromium tests below the browser legs (da-6b3dj,
 // sharedApp in support/app.mjs): `solo` empties the database, so each
@@ -390,7 +393,7 @@ test('an import shows its progress while it runs, and the result after', async (
 				data: { field: 'coffee', occurTime: { utc: utc(i), o: 0 } },
 				meta: { createTime: { utc: utc(i), o: 0 } }
 			}));
-			const file = join(await mkdtemp(join(tmpdir(), 'datum-progress-')), 'big.json');
+			const file = join(await mkdtemp(join(scratch, 'progress-')), 'big.json');
 			await writeFile(file, JSON.stringify({ backupTime: '2025-02-01T00:00:00Z', docs }));
 
 			// Every reading the REPL shows, and whether the command had landed by then.
@@ -726,7 +729,7 @@ test('a replacing restore names the dry run’s warnings in its confirm', async 
 			const [head, ...rest] = (await readFile(await download.path(), 'utf8')).split('\n');
 			const header = JSON.parse(head);
 			header.entry_count += 1;
-			const cut = join(await mkdtemp(join(tmpdir(), 'datum-')), 'cut.jsonl');
+			const cut = join(await mkdtemp(join(scratch, 'file-')), 'cut.jsonl');
 			await writeFile(cut, [JSON.stringify(header), ...rest].join('\n'));
 			await app.clock.forward(1000);
 			await app.submit('occur coffee');
@@ -770,7 +773,7 @@ test('a restore whose dry run warns asks first, even when nothing would be delet
 			const [head, ...rest] = (await readFile(clean, 'utf8')).split('\n');
 			const header = JSON.parse(head);
 			header.entry_count += 1;
-			const cut = join(await mkdtemp(join(tmpdir(), 'datum-')), 'cut.jsonl');
+			const cut = join(await mkdtemp(join(scratch, 'file-')), 'cut.jsonl');
 			await writeFile(cut, [JSON.stringify(header), ...rest].join('\n'));
 			await app.empty();
 			assert.equal(await count(app), 0);
@@ -918,7 +921,7 @@ test('a hard restore asks with what it drops and the database’s name, even wit
 			assert.equal(await count(app), 2);
 
 			// An empty file has no fingerprint to pin (kimi-k3 on #458): it runs, unpinned, as the no-op it is.
-			saved = join(await mkdtemp(join(tmpdir(), 'datum-')), 'empty.jsonl');
+			saved = join(await mkdtemp(join(scratch, 'file-')), 'empty.jsonl');
 			await writeFile(saved, '');
 			await restoreHard('db restore --hard');
 			before = await echoes(page);

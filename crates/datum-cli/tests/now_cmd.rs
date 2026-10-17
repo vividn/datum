@@ -575,15 +575,8 @@ fn now_json_emits_versioned_snapshot() {
     use std::path::PathBuf;
     use std::process::Command;
 
-    let mut db = std::env::temp_dir();
-    let pid = std::process::id();
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    db.push(format!("datum-now-json-{pid}-{nonce}.db"));
-    let _ = std::fs::remove_file(&db);
-    let db_arg: PathBuf = db.clone();
+    let db = datum_test_util::TmpDb::new("datum-now-json");
+    let db_arg: PathBuf = db.to_path_buf();
 
     let bin = env!("CARGO_BIN_EXE_datum");
     Command::new(bin)
@@ -633,8 +626,6 @@ fn now_json_emits_versioned_snapshot() {
     assert_eq!(row["field"], json!("activity"));
     assert_eq!(row["state"], json!("writing"));
     assert_eq!(row["verb"], json!("switch"));
-
-    let _ = std::fs::remove_file(&db);
 }
 
 // ─── Gated on A0: per-field spec color ───────────────────────────────────────

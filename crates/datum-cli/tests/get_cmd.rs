@@ -33,6 +33,7 @@ use crate::common;
 use common::run_cli;
 use datum_core::test_util::{entry_builder, fresh_db};
 use datum_core::{assert_count, entry::Verb};
+use datum_test_util::TmpDb;
 use serde_json::json;
 use std::path::PathBuf;
 use std::process::Command;
@@ -97,7 +98,6 @@ fn get_resolves_hid_prefix() {
 #[test]
 fn get_standard_show_emits_exists_marker() {
     let db = tmp_db_path();
-    let _ = std::fs::remove_file(&db);
 
     run_binary(&db, &["occur", "mood", "--id", "somethingElse"]);
     let (stdout, _) = run_binary(&db, &["get", "mood:some"]);
@@ -115,8 +115,6 @@ fn get_standard_show_emits_exists_marker() {
         stdout.contains("mood"),
         "expected field name in get output, got: {stdout:?}",
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// da-d5b / da-l41v: `dm get -A <id>` renders the grouped engineering
@@ -126,7 +124,6 @@ fn get_standard_show_emits_exists_marker() {
 #[test]
 fn get_show_all_dumps_full_metadata() {
     let db = tmp_db_path();
-    let _ = std::fs::remove_file(&db);
 
     run_binary(&db, &["occur", "mood", "--id", "fullDump"]);
     let (stdout, _) = run_binary(&db, &["get", "-A", "mood:fullDump"]);
@@ -159,8 +156,6 @@ fn get_show_all_dumps_full_metadata() {
             "expected schema column {col} in -A output, got: {stdout:?}",
         );
     }
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// da-d5b: `--show-all` is the long form of `-A` (datum-compat). Pin
@@ -168,7 +163,6 @@ fn get_show_all_dumps_full_metadata() {
 #[test]
 fn get_show_all_long_form_works() {
     let db = tmp_db_path();
-    let _ = std::fs::remove_file(&db);
 
     run_binary(&db, &["occur", "mood", "--id", "longForm"]);
     let (stdout, _) = run_binary(&db, &["get", "--show-all", "mood:longForm"]);
@@ -183,8 +177,6 @@ fn get_show_all_long_form_works() {
         stdout.contains("Identity") && stdout.contains("raw_input"),
         "expected grouped -A view (Identity heading + raw_input column), got: {stdout:?}",
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// TS #4 (da-zmpu): "can get multiple documents with a compound quickId"
@@ -238,7 +230,6 @@ fn compound_quickids_resolve_in_one_call() {
 #[test]
 fn get_not_found_exits_nonzero_with_clean_error() {
     let db = tmp_db_path();
-    let _ = std::fs::remove_file(&db);
 
     // Seed a different row so the DB exists but doesn't hold the
     // queried handle — rules out "empty DB" as the failure mode.
@@ -266,8 +257,6 @@ fn get_not_found_exits_nonzero_with_clean_error() {
         stderr.contains("missing:handle"),
         "expected the missing handle echoed back, got: {stderr:?}",
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// Bead scope #2: "Verify `--pretty` (from A2) produces indented JSON."
@@ -320,7 +309,6 @@ fn get_pretty_round_trips_entry_through_cmd_path() {
 #[test]
 fn get_renders_lead_trail_with_state_context() {
     let db = tmp_db_path();
-    let _ = std::fs::remove_file(&db);
 
     run_binary_color(&db, &["switch", "mood", "sad", "-yy"]);
     run_binary_color(&db, &["switch", "mood", "happy"]);
@@ -358,8 +346,6 @@ fn get_renders_lead_trail_with_state_context() {
         !between.contains(ignored_grey),
         "LEAD slot rendered as IGNORED grey instead of {sad_bg:?}:\n{stdout:?}",
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// da-9q9r: `--show format` without `-o <format>` previously fell through to
@@ -369,7 +355,6 @@ fn get_renders_lead_trail_with_state_context() {
 #[test]
 fn show_format_without_output_string_errors() {
     let db = tmp_db_path();
-    let _ = std::fs::remove_file(&db);
 
     run_binary(&db, &["occur", "coffee"]);
 
@@ -394,8 +379,6 @@ fn show_format_without_output_string_errors() {
         "expected no stdout on error, got: {:?}",
         String::from_utf8_lossy(&out.stdout),
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// da-jose: `get <hid> -o FMT` at the DEFAULT show must keep the two main
@@ -407,7 +390,6 @@ fn show_format_without_output_string_errors() {
 #[test]
 fn get_o_at_default_show_keeps_info_lines_plus_format() {
     let db = tmp_db_path();
-    let _ = std::fs::remove_file(&db);
 
     run_binary(&db, &["occur", "fmttest", "reps=10", "comment=hello"]);
 
@@ -457,8 +439,6 @@ fn get_o_at_default_show_keeps_info_lines_plus_format() {
         "FMT[fmttest|reps=10]",
         "`--show format` should emit only the format string, once per doc, got: {stdout:?}"
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// MD5-derived ANSI bg escape — mirrors the renderer's `md5_rgb` derivation
@@ -493,15 +473,8 @@ fn run_binary_color(db: &PathBuf, args: &[&str]) -> (String, String) {
 
 // ─── Binary harness (scoped to stdout-capture cases) ──────────────────────────
 
-fn tmp_db_path() -> PathBuf {
-    let mut p = std::env::temp_dir();
-    let pid = std::process::id();
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    p.push(format!("datum-get-parity-{pid}-{nonce}.db"));
-    p
+fn tmp_db_path() -> TmpDb {
+    TmpDb::new("datum-get-parity")
 }
 
 fn run_binary(db: &PathBuf, args: &[&str]) -> (String, String) {

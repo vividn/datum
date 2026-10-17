@@ -23,8 +23,12 @@
 //! - [`no_color_scope`] / [`color_scope`] and the closure forms
 //!   [`with_no_color`] / [`with_color`] — lock + `NO_COLOR`/`FORCE_COLOR`
 //!   override in one guard, for the very common color-gate toggle.
+//! - [`TmpDb`] — a database path in a directory of its own, removed on drop.
 
 use std::ffi::{OsStr, OsString};
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -117,9 +121,69 @@ pub fn with_color<T>(f: impl FnOnce() -> T) -> T {
     f()
 }
 
+/// A database path in a fresh directory under the temp dir, which is removed
+/// with everything datum wrote beside the file (`-wal`, `-shm`, `.spool`, …)
+/// when the guard drops — on a failing test too. The temp dir is a tmpfs on
+/// the town's host, so a test that leaks fills its RAM and swap (da-yqc4v).
+pub struct TmpDb {
+    dir: PathBuf,
+    path: PathBuf,
+}
+
+impl TmpDb {
+    /// `prefix` names the directory, so a leftover says which test made it.
+    pub fn new(prefix: &str) -> Self {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "{prefix}-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&dir); // a dead run's, with our pid
+        std::fs::create_dir(&dir).expect("create the test's temp dir");
+        let path = dir.join(format!("{prefix}.db"));
+        Self { dir, path }
+    }
+}
+
+impl Deref for TmpDb {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.path
+    }
+}
+
+impl AsRef<Path> for TmpDb {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl AsRef<OsStr> for TmpDb {
+    fn as_ref(&self) -> &OsStr {
+        self.path.as_os_str()
+    }
+}
+
+impl Drop for TmpDb {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tmp_db_removes_its_directory_and_what_is_beside_the_file() {
+        let db = TmpDb::new("datum-test-util-probe");
+        let dir = db.parent().unwrap().to_path_buf();
+        std::fs::write(&*db, "").unwrap();
+        std::fs::write(db.with_extension("db-wal"), "").unwrap();
+        drop(db);
+        assert!(!dir.exists(), "{} survived its guard", dir.display());
+    }
 
     #[test]
     fn scoped_env_restores_prior_value_and_absence() {

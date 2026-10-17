@@ -8,20 +8,14 @@
 //! `parse_invocation` for both binary and tests), these tests verify
 //! the canonical comma-split behavior at the actual binary level.
 
+use datum_test_util::TmpDb;
 use std::path::PathBuf;
 use std::process::Command;
 
 use rusqlite::Connection;
 
-fn tmp_db() -> PathBuf {
-    let mut p = std::env::temp_dir();
-    let pid = std::process::id();
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    p.push(format!("datum-multi-e2e-{pid}-{nonce}.db"));
-    p
+fn tmp_db() -> TmpDb {
+    TmpDb::new("datum-multi-e2e")
 }
 
 fn run(db: &PathBuf, args: &[&str]) -> (bool, String, String) {
@@ -73,7 +67,6 @@ fn live_rows(db: &PathBuf) -> Vec<(String, String, Option<String>, Option<String
 #[test]
 fn binary_same_field_two_switches_merges_to_parallel_state() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let (ok, _stdout, stderr) = run(
         &db,
@@ -101,7 +94,6 @@ fn binary_same_field_two_switches_merges_to_parallel_state() {
 #[test]
 fn binary_two_occurs_different_fields_yields_two_rows() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let (ok, _stdout, stderr) = run(&db, &["occur", "foo", ",", "occur", "bar"]);
     assert!(ok, "binary must succeed; stderr={stderr}");
@@ -119,7 +111,6 @@ fn binary_two_occurs_different_fields_yields_two_rows() {
 #[test]
 fn binary_declared_multi_alias_expands_to_two_sides() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     // Register the alias first.
     let (ok, _, stderr) = run(
@@ -153,7 +144,6 @@ fn binary_declared_multi_alias_expands_to_two_sides() {
 #[test]
 fn binary_glued_comma_does_not_trigger_multi() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let (ok, _, stderr) = run(&db, &["switch", "body", "vertical,sit"]);
     assert!(ok, "binary should succeed on glued comma; stderr={stderr}");
@@ -174,7 +164,6 @@ fn binary_glued_comma_does_not_trigger_multi() {
 #[test]
 fn binary_one_sided_comma_is_refused_naming_both_forms() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let (ok, _, stderr) = run(&db, &["switch", "body", "vertical,sit"]);
     assert!(ok, "glued comma is one parallel state; stderr={stderr}");
@@ -212,7 +201,6 @@ fn binary_one_sided_comma_is_refused_naming_both_forms() {
 #[test]
 fn binary_single_row_switch_unchanged() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let (ok, _, stderr) = run(&db, &["switch", "body", "vertical"]);
     assert!(ok, "single-row switch should succeed; stderr={stderr}");
@@ -230,7 +218,6 @@ fn binary_single_row_switch_unchanged() {
 #[test]
 fn binary_leading_empty_side_errors_and_writes_nothing() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let (ok, _, _stderr) = run(&db, &[",", "switch", "body", "vertical"]);
     assert!(!ok, "leading-empty-side argv should fail");
@@ -250,7 +237,6 @@ fn binary_leading_empty_side_errors_and_writes_nothing() {
 #[test]
 fn binary_per_side_show_flags_attach_to_own_row() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     // Side 1 (body) silenced; side 2 (environment) renders by default.
     let (ok, stdout, stderr) = run(
@@ -282,7 +268,6 @@ fn binary_per_side_show_flags_attach_to_own_row() {
 
     // Mirror image: silence follows the flag, not the position.
     let db2 = tmp_db();
-    let _ = std::fs::remove_file(&db2);
     let (ok, stdout, stderr) = run(
         &db2,
         &[
@@ -321,7 +306,6 @@ fn binary_per_side_show_flags_attach_to_own_row() {
 #[test]
 fn binary_same_field_merge_leftmost_show_flag_wins() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let (ok, stdout, stderr) = run(
         &db,
@@ -355,7 +339,7 @@ fn body_row(db: &PathBuf) -> [Option<String>; 5] {
 
 /// A db with `run` = `switch body run` and `stretch` = `switch body
 /// stretch`, plus `extra` aliases.
-fn aliased_db(extra: &[(&str, &str)]) -> PathBuf {
+fn aliased_db(extra: &[(&str, &str)]) -> TmpDb {
     let db = tmp_db();
     let base = [
         ("run", "switch body run"),

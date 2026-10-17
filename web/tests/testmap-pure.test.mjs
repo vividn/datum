@@ -104,12 +104,13 @@ test('every test that reads src/ or the build as data is one the map always runs
 // The preload writes inside `exit`, which only works because the inspector
 // answers an in-thread `post` before it returns. If a Node ever stops doing
 // that, a run maps nothing; this is where that shows first.
-test('the preload writes what a process ran when it exits, by itself or by process.exit', () => {
+test('the preload writes what a process ran when it exits, by itself or by process.exit', (t) => {
 	const preload = new URL('./support/coverage.mjs', import.meta.url).href;
 	const split = new URL('../src/lib/shellSplit.ts', import.meta.url).href;
 	const until = new URL('./support/until.mjs', import.meta.url).href;
 	for (const end of ['', 'process.exit(0);']) {
 		const dir = mkdtempSync(join(tmpdir(), 'datum-coverage-'));
+		t.after(() => rmSync(dir, { recursive: true, force: true }));
 		const r = spawnSync(
 			process.execPath,
 			['--import', preload, '--input-type=module', '-e', `const { shellSplit } = await import(${JSON.stringify(split)}); await import(${JSON.stringify(until)}); shellSplit('a b'); ${end}`],
@@ -117,7 +118,6 @@ test('the preload writes what a process ran when it exits, by itself or by proce
 		);
 		const written = readdirSync(dir);
 		const out = written.map((f) => JSON.parse(readFileSync(join(dir, f), 'utf8')));
-		rmSync(dir, { recursive: true, force: true });
 		assert.equal(r.status, 0, r.stderr);
 		assert.equal(written.length, 1, `${end || 'natural exit'}: ${r.stderr}`);
 		assert.equal(out[0].test, 'tests/probe.test.mjs');

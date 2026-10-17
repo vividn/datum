@@ -12,18 +12,12 @@
 //! visual_dump_all_fixtures -- --ignored --nocapture`). Keeping the asserts
 //! colour-free here means CI doesn't depend on terminal capabilities.
 
+use datum_test_util::TmpDb;
 use std::path::PathBuf;
 use std::process::Command;
 
-fn tmp_db() -> PathBuf {
-    let mut p = std::env::temp_dir();
-    let pid = std::process::id();
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    p.push(format!("datum-parity-repro-{pid}-{nonce}.db"));
-    p
+fn tmp_db() -> TmpDb {
+    TmpDb::new("datum-parity-repro")
 }
 
 fn run(db: &PathBuf, args: &[&str]) -> String {
@@ -78,7 +72,6 @@ fn after_timestamp(line: &str) -> &str {
 #[test]
 fn switch_switch_tail_reproducer_matches_spec() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     // Per da-25l the state-transition group renders as
     // `[LEAD][state cell][TRAIL]` flush — no inner whitespace. LEAD/TRAIL
@@ -138,8 +131,6 @@ fn switch_switch_tail_reproducer_matches_spec() {
         data[1].contains("abcdefg"),
         "second row state missing:\n{tail}"
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// `datum tail --table` is now equivalent to the default tail path (per
@@ -148,7 +139,6 @@ fn switch_switch_tail_reproducer_matches_spec() {
 #[test]
 fn tail_table_flag_preserves_legacy_columnar_view() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     run(&db, &["switch", "myfield", "abc"]);
     run(&db, &["switch", "myfield", "abcdefg"]);
@@ -165,8 +155,6 @@ fn tail_table_flag_preserves_legacy_columnar_view() {
     }
     // Data rows retain the field value.
     assert!(stdout.contains("myfield"), "{stdout}");
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// Defect 1 direct pin: the first-tracked `∅` marker MUST NOT appear on
@@ -176,7 +164,6 @@ fn tail_table_flag_preserves_legacy_columnar_view() {
 #[test]
 fn first_tracked_marker_is_single_shot_across_mixed_verbs() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     // Sequence: occur (creates spec via ensure_tracked), then switch.
     // Even with a spec present, the second write MUST still suppress ∅.
@@ -191,6 +178,4 @@ fn first_tracked_marker_is_single_shot_across_mixed_verbs() {
         !switch.contains('∅'),
         "subsequent switch on existing field must not re-fire ∅:\n{switch}"
     );
-
-    let _ = std::fs::remove_file(&db);
 }

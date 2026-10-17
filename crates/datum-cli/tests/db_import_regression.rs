@@ -340,14 +340,7 @@ fn db_import_synthetic_is_idempotent() {
 
 #[test]
 fn db_import_synthetic_summary_reports_correct_counts() {
-    let mut db_path = std::env::temp_dir();
-    let pid = std::process::id();
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    db_path.push(format!("datum-db-import-regression-{pid}-{nonce}.db"));
-    let _ = std::fs::remove_file(&db_path);
+    let db_path = datum_test_util::TmpDb::new("datum-db-import-regression");
 
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = std::process::Command::new(bin)
@@ -356,7 +349,6 @@ fn db_import_synthetic_summary_reports_correct_counts() {
         .args(["db", "v2import", FIXTURE])
         .output()
         .expect("run datum binary");
-    let _ = std::fs::remove_file(&db_path);
 
     assert!(
         out.status.success(),

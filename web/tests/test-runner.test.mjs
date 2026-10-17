@@ -243,8 +243,10 @@ test('fails', () => { throw new Error('always'); });
 
 	// da-e0gtq: a PR's selection. Not passed on, or a run THIS file starts
 	// would take the PR's list for its own and run nothing.
-	test('DATUM_TEST_ONLY runs the files it lists alone, and keeps the list to itself', () => {
-		const list = join(mkdtempSync(join(tmpdir(), 'datum-only-')), 'web.tests');
+	test('DATUM_TEST_ONLY runs the files it lists alone, and keeps the list to itself', (t) => {
+		const dir = mkdtempSync(join(tmpdir(), 'datum-only-'));
+		t.after(() => rmSync(dir, { recursive: true, force: true }));
+		const list = join(dir, 'web.tests');
 		writeFileSync(list, 'tests/picked.test.mjs\n');
 		const picked = `import test from 'node:test';
 import assert from 'node:assert/strict';

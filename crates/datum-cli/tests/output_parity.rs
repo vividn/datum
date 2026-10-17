@@ -4,18 +4,12 @@
 //! dispatch → output path. Colors are forced off via `NO_COLOR=1` so the
 //! assertions stay portable across terminals / CI.
 
+use datum_test_util::TmpDb;
 use std::path::PathBuf;
 use std::process::Command;
 
-fn tmp_db() -> PathBuf {
-    let mut p = std::env::temp_dir();
-    let pid = std::process::id();
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    p.push(format!("datum-output-parity-{pid}-{nonce}.db"));
-    p
+fn tmp_db() -> TmpDb {
+    TmpDb::new("datum-output-parity")
 }
 
 fn run(db: &PathBuf, args: &[&str]) -> (String, String) {
@@ -50,7 +44,6 @@ fn entry_echo(stdout: &str) -> Vec<&str> {
 #[test]
 fn occur_emits_two_line_create_with_hid_and_extra() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
     let (stdout, _) = run(&db, &["occur", "coffee", "amount=200"]);
 
     let lines = entry_echo(&stdout);
@@ -73,14 +66,11 @@ fn occur_emits_two_line_create_with_hid_and_extra() {
         stdout.contains("amount: 200"),
         "expected amount in extra data: {stdout:?}",
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 #[test]
 fn tail_table_flag_emits_aligned_table_with_hid_column() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
     run(&db, &["occur", "coffee"]);
     run(&db, &["switch", "mood", "happy"]);
     let (stdout, _) = run(&db, &["tail", "--table"]);
@@ -92,8 +82,6 @@ fn tail_table_flag_emits_aligned_table_with_hid_column() {
     // Data rows present.
     assert!(stdout.contains("coffee"), "{stdout}");
     assert!(stdout.contains("mood"), "{stdout}");
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// Per da-6t0: default `datum tail` always renders through the tabular
@@ -103,7 +91,6 @@ fn tail_table_flag_emits_aligned_table_with_hid_column() {
 #[test]
 fn tail_default_emits_table_with_header_and_hid_column() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
     run(&db, &["occur", "coffee"]);
     run(&db, &["switch", "mood", "happy"]);
     let (stdout, _) = run(&db, &["tail"]);
@@ -118,8 +105,6 @@ fn tail_default_emits_table_with_header_and_hid_column() {
     // Data rows retain the field names in plain text.
     assert!(stdout.contains("coffee"), "{stdout}");
     assert!(stdout.contains("mood"), "{stdout}");
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// Defect 1 (da-vkj): a second `switch` on a field must NOT re-trigger the
@@ -133,7 +118,6 @@ fn tail_default_emits_table_with_header_and_hid_column() {
 #[test]
 fn second_switch_on_same_field_suppresses_first_tracked_marker() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
     let (first, _) = run(&db, &["switch", "myfield", "abc"]);
     let (second, _) = run(&db, &["switch", "myfield", "abcdefg"]);
 
@@ -147,23 +131,18 @@ fn second_switch_on_same_field_suppresses_first_tracked_marker() {
     );
     // Per da-25l the prior-state transition is conveyed via the LEAD slot's
     // bg colour. Both rows must render without `∅`.
-
-    let _ = std::fs::remove_file(&db);
 }
 
 #[test]
 fn show_none_silences_action_output() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
     let (stdout, _) = run(&db, &["occur", "coffee", "--show", "none"]);
     assert_eq!(stdout, "", "expected silent output, got: {stdout:?}");
-    let _ = std::fs::remove_file(&db);
 }
 
 #[test]
 fn show_minimal_emits_header_only() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
     let (stdout, _) = run(&db, &["occur", "coffee", "amount=1", "--show", "minimal"]);
     // `minimal` is one line per document, and a log is one document —
     // the first log of a field declares it in its own columns (da-gvcen).
@@ -174,14 +153,11 @@ fn show_minimal_emits_header_only() {
         "minimal should emit 1 line per doc, got: {stdout:?}"
     );
     assert!(lines[0].contains("CREATE"));
-
-    let _ = std::fs::remove_file(&db);
 }
 
 #[test]
 fn update_emits_update_action_tag() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
     run(&db, &["occur", "coffee", "amount=1", "--id", "pin"]);
     let (stdout, _) = run(&db, &["update", "coffee:pin", "amount=5"]);
     assert!(stdout.contains("UPDATE"), "expected UPDATE: {stdout:?}");
@@ -189,17 +165,14 @@ fn update_emits_update_action_tag() {
         stdout.contains("amount: 5"),
         "expected new value: {stdout:?}"
     );
-    let _ = std::fs::remove_file(&db);
 }
 
 #[test]
 fn delete_emits_delete_action_tag() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
     run(&db, &["occur", "coffee", "--id", "pin"]);
     let (stdout, _) = run(&db, &["del", "coffee:pin"]);
     assert!(stdout.contains("DELETE"), "expected DELETE: {stdout:?}");
-    let _ = std::fs::remove_file(&db);
 }
 
 /// da-jose: at the default show, `-o` appends the format string to the
@@ -208,7 +181,6 @@ fn delete_emits_delete_action_tag() {
 #[test]
 fn format_string_renders_custom_template() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     // Default show: header + info line + format string, and the data block
     // (the `amount: 7` columnar view) is replaced by the format string.
@@ -257,13 +229,11 @@ fn format_string_renders_custom_template() {
         "coffee:7",
         "`--show format` should emit only the format string, got: {stdout:?}"
     );
-    let _ = std::fs::remove_file(&db);
 }
 
 #[test]
 fn header_has_action_hid_and_slug_not_ulid() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
     let (stdout, _) = run(&db, &["occur", "coffee"]);
     // Header layout (colors off, whitespace-collapsed): CREATE <hid> <slug>
     // The slug is datum-compatible `field:YYYY-MM-DDTHH:MMZ`, NOT the raw ULID.
@@ -286,5 +256,4 @@ fn header_has_action_hid_and_slug_not_ulid() {
         !(slug.len() == 26 && slug.starts_with("01")),
         "slug looks like a ULID: {slug:?}"
     );
-    let _ = std::fs::remove_file(&db);
 }

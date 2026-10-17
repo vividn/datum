@@ -28,6 +28,7 @@ use crate::common;
 use common::run_cli;
 use datum_core::test_util::{advance_time, entry_builder, fresh_db, set_time};
 use datum_core::{assert_count, entry::Verb};
+use datum_test_util::TmpDb;
 use serde_json::json;
 use std::path::PathBuf;
 use std::process::Command;
@@ -208,7 +209,6 @@ fn del_alias_dispatches_to_delete_handler() {
 #[test]
 fn delete_emits_delete_tag_on_standard_show() {
     let db = tmp_db_path();
-    let _ = std::fs::remove_file(&db);
 
     // Pinned slug so the subsequent delete can reference it deterministically.
     // da-ivld: id_structure is body-only; `<field>:` prefix is implicit.
@@ -226,8 +226,6 @@ fn delete_emits_delete_tag_on_standard_show() {
         silent, "",
         "--show none must silence the DELETE tag, got: {silent:?}",
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// TS #6: "can delete multiple documents using a compound quickid" (S3).
@@ -469,15 +467,8 @@ fn compound_delete_dry_run_does_not_mutate() {
 
 // ─── Binary harness (scoped to stdout-capture cases) ──────────────────────────
 
-fn tmp_db_path() -> PathBuf {
-    let mut p = std::env::temp_dir();
-    let pid = std::process::id();
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    p.push(format!("datum-delete-parity-{pid}-{nonce}.db"));
-    p
+fn tmp_db_path() -> TmpDb {
+    TmpDb::new("datum-delete-parity")
 }
 
 fn run_binary(db: &PathBuf, args: &[&str]) -> (String, String) {
@@ -607,7 +598,6 @@ fn an_extra_word_is_refused_by_name_and_nothing_is_deleted() {
         db.get_entry(&entry.hid).is_ok(),
         "the entry must still be live"
     );
-    let _ = std::fs::remove_file(&path);
 }
 
 /// The live rows' fields, sorted, every field included.

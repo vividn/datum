@@ -14,18 +14,12 @@
 //! the expected colours rather than hard-coding RGB bytes so a future
 //! palette tweak only affects one place.
 
+use datum_test_util::TmpDb;
 use std::path::PathBuf;
 use std::process::Command;
 
-fn tmp_db() -> PathBuf {
-    let mut p = std::env::temp_dir();
-    let pid = std::process::id();
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    p.push(format!("datum-render-state-group-{pid}-{nonce}.db"));
-    p
+fn tmp_db() -> TmpDb {
+    TmpDb::new("datum-render-state-group")
 }
 
 /// Run `datum <args>` with the colour-on test environment so the rendered
@@ -129,7 +123,6 @@ fn assert_lead_then_state_then_trail_bg(
 #[test]
 fn switch_block_resumes_prior_state() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     // Seed prior state: switch emotion sad. Place it well in the past so
     // the (-5min) block fixture sits cleanly after it.
@@ -149,8 +142,6 @@ fn switch_block_resumes_prior_state() {
         &bg_escape("happy"),
         &bg_escape("sad"),
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 // ─── Worked example 2 — switch point continuing forward ──────────────────────
@@ -158,7 +149,6 @@ fn switch_block_resumes_prior_state() {
 #[test]
 fn switch_point_trail_uses_new_state_color() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     run_color(&db, &["switch", "emotion", "sad", "-yy"]);
 
@@ -174,8 +164,6 @@ fn switch_point_trail_uses_new_state_color() {
         &bg_escape("happy"),
         &bg_escape("happy"),
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 // ─── Worked example 3 — first-ever entry on a field ──────────────────────────
@@ -183,7 +171,6 @@ fn switch_point_trail_uses_new_state_color() {
 #[test]
 fn first_switch_uses_empty_lead_slot() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let out = run_color(&db, &["switch", "mood", "happy"]);
     let line = info_line(&out);
@@ -197,8 +184,6 @@ fn first_switch_uses_empty_lead_slot() {
         &bg_escape("happy"),
         &bg_escape("happy"),
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 // ─── Worked example 4 — block on an IGNORED field ───────────────────────────
@@ -206,7 +191,6 @@ fn first_switch_uses_empty_lead_slot() {
 #[test]
 fn block_on_ignored_field_uses_empty_trail_slot() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     // Mark the field as IGNORED in the past so both lead and trail
     // resolve to the IGNORED sentinel.
@@ -225,8 +209,6 @@ fn block_on_ignored_field_uses_empty_trail_slot() {
         &bg_escape("doing"),
         IGNORED_BG_ESC,
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// da-6fvys: `datum track` writes TRACKED whatever the field's verb, and
@@ -262,7 +244,6 @@ fn a_track_row_is_a_grey_marker_for_every_verb() {
         &bg_escape("happy"),
         &bg_escape("happy"),
     );
-    let _ = std::fs::remove_file(&db);
 }
 
 /// da-ycbyx: the lead lookup reads declarations, so the row after a track
@@ -310,7 +291,6 @@ fn the_row_after_a_track_row_comes_from_tracked() {
     let (previous, row) = last("tea");
     assert_eq!(previous, "IGNORED", "{row:?}");
     assert!(row.contains('∅') && row.contains('●'), "{row:?}");
-    let _ = std::fs::remove_file(&db);
 }
 
 // ─── Cross-cutting: no directional arrow glyphs anywhere ─────────────────────
@@ -318,7 +298,6 @@ fn the_row_after_a_track_row_comes_from_tracked() {
 #[test]
 fn rendered_rows_carry_no_arrow_glyphs() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     // Exercise the verbs that previously emitted arrows.
     run_color(&db, &["switch", "f", "a", "-yy"]);
@@ -337,8 +316,6 @@ fn rendered_rows_carry_no_arrow_glyphs() {
             );
         }
     }
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// da-ck55: a moment-state (`switch <field> <state> --moment`) is a
@@ -350,7 +327,6 @@ fn rendered_rows_carry_no_arrow_glyphs() {
 #[test]
 fn moment_state_renders_state_name_as_fg_text() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let create_out = run_color(&db, &["switch", "mood", "happy", "--moment"]);
     let line = info_line(&create_out);
@@ -377,8 +353,6 @@ fn moment_state_renders_state_name_as_fg_text() {
         tail_out.contains(&format!("{fg}happy")),
         "tail should carry the moment-state name in fg colour; got:\n{tail_out:?}"
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 /// A plain `occur` (no state) keeps the bare dot — adding the moment-state
@@ -386,7 +360,6 @@ fn moment_state_renders_state_name_as_fg_text() {
 #[test]
 fn plain_occur_renders_bare_dot_without_state_name() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     let create_out = run_color(&db, &["occur", "coffee"]);
     let line = info_line(&create_out);
@@ -395,8 +368,6 @@ fn plain_occur_renders_bare_dot_without_state_name() {
         !line.contains("start") && !line.contains("end"),
         "stateless occur must not synthesize a state name:\n{line:?}"
     );
-
-    let _ = std::fs::remove_file(&db);
 }
 
 // ─── Compound switch — the TRAIL is the state it switches TO ─────────────────
@@ -409,7 +380,6 @@ fn plain_occur_renders_bare_dot_without_state_name() {
 #[test]
 fn compound_switch_trail_is_the_state_it_switches_to() {
     let db = tmp_db();
-    let _ = std::fs::remove_file(&db);
 
     run_color(&db, &["switch", "activity", "writing", "-t", "-60"]);
     let echo = info_line(&run_color(
@@ -434,6 +404,4 @@ fn compound_switch_trail_is_the_state_it_switches_to() {
             "{what}: TRAIL must paint researching, not the interrupted writing:\n{line:?}"
         );
     }
-
-    let _ = std::fs::remove_file(&db);
 }
