@@ -184,6 +184,10 @@ pub trait Store {
     /// A session served to `peer` begins (`on`), or ends: a copy serving
     /// one need not dial it as well (da-ymgiv).
     fn serving(&self, _peer: &str, _on: bool) {}
+    /// Whether a session served to `peer` is open now.
+    fn serves(&self, _peer: &str) -> bool {
+        false
+    }
     /// The session's ops are all applied, and its verify begins.
     fn verifying(&self) {}
     /// The state hash, over what a session with `peer` shares. One whose
@@ -934,6 +938,14 @@ async fn session(
             round,
             version,
         } => {
+            // Two copies that dialed each other at once (da-vj3ly): the
+            // lower endpoint id's session carries both ways, and the other
+            // copy closes its own as busy, which neither side records.
+            if invite.is_none() && store.serves(&id) && ep.id().to_string() > id {
+                conn.close(0u32.into(), CLOSED_BUSY);
+                let why = format!("{label} is in a session with this copy already");
+                return Err(Failed(Failure::Refused(Why::Busy), why).into());
+            }
             // Its own handshake may refuse too (a paused copy): only then
             // does it leave. Given the invite, it marks where this copy was
             // admitted, so a join cut short before any op applies resumes

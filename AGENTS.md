@@ -299,7 +299,11 @@ on while full, so a big catch-up finishes in one session and one cut short
 loses a round (da-ymgiv). `sync run` tries a member it failed to reach
 again after a minute, the gap doubling to half an hour, dials every member when
 it starts or its address changes, dials no member it is already in a session
-with unless `datum sync` asks, and a failure the peer's row already says writes nothing (da-u1ul1). A
+with unless `datum sync` asks, and a failure the peer's row already says writes nothing (da-u1ul1).
+Two copies that dial each other at once keep one session: the higher
+endpoint id, welcomed by a peer whose own dial it is serving, closes its dial
+as busy, which neither side records, and the lower id's carries both ways
+(da-vj3ly). A
 session that failed before it reached the
 member (the transport's `Failure::Unreachable`) is recorded as such
 (`sync_peers.last_error_offline`), and `sync status` calls the member

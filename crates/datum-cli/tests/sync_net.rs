@@ -1871,11 +1871,16 @@ fn sent_in(log: &str, to: &str) -> usize {
 /// `n` entries imported into `copy` at once, as vividn's re-import was: no op
 /// covers them until a serve signs their baselines.
 fn import(copy: &Copy, n: usize) {
+    import_as(copy, "step", n)
+}
+
+/// [`import`]'s entries, of `field`.
+fn import_as(copy: &Copy, field: &str, n: usize) {
     let docs: Vec<String> = (0..n)
         .map(|i| {
             let at = format!("2024-01-{:02}T{:02}:{:02}:{:02}.000Z", 1 + i / 86400, i / 3600 % 24, i / 60 % 60, i % 60);
             format!(
-                r#"{{"_id":"step:{i}","data":{{"field":"step","occurTime":{{"utc":"{at}"}},"n":{i}}},"meta":{{"createTime":{{"utc":"{at}"}}}}}}"#
+                r#"{{"_id":"{field}:{i}","data":{{"field":"{field}","occurTime":{{"utc":"{at}"}},"n":{i}}},"meta":{{"createTime":{{"utc":"{at}"}}}}}}"#
             )
         })
         .collect();
@@ -2059,6 +2064,58 @@ fn a_catch_up_cut_short_resumes_from_the_last_round_that_applied() {
         first <= held - before + ROUND,
         "a cut session loses at most a round: sent {first}, applied {}",
         held - before
+    );
+    assert_eq!(a.hash(), b.hash());
+}
+
+/// Two copies that dial each other at once (da-vj3ly): both `sync run`s
+/// start together, each holding 2,000 entries the other lacks, and each
+/// dials the other as it comes up. The lower endpoint id's session carries
+/// both ways and the other copy closes its own, so each op is sent once,
+/// where the two sessions sent each twice.
+#[test]
+fn two_copies_dialing_each_other_at_once_send_each_op_once() {
+    let (mut a, mut b) = paired();
+    import_as(&a, "step", 2000);
+    import_as(&b, "stair", 2000);
+    for copy in [&mut a, &mut b] {
+        // Its baselines signed now, before the runs start.
+        copy.ok(&["sync", "pipe", "ops", "--limit", "1"]);
+        // Each session applies for seconds, so the two overlap.
+        copy.env.push(("DATUM_SYNC_TEST_APPLY_DELAY_MS", "1"));
+    }
+    let lacking = ops(&a) + ops(&b);
+    let runs = [&a, &b].map(|copy| logged(copy, &["sync", "run"], "run.log"));
+    until("both hold every op", Duration::from_secs(120), || {
+        ops(&a) == ops(&b) && ops(&a) * 2 > lacking && a.hash() == b.hash()
+    });
+    let needed = 2 * ops(&a) - lacking;
+    // Each has one peer: every session line is with the other.
+    let sent = || sent_in(&log(&a, "run.log"), "") + sent_in(&log(&b, "run.log"), "");
+    // Until every session has said what it sent, which it does as it ends:
+    // the total unchanged for 6s, past either session's apply of 2,000 ops
+    // at 1ms each, so a second session still open is not missed.
+    let (start, mut seen, mut still) = (Instant::now(), sent(), 0);
+    while still < 3 || seen < needed {
+        std::thread::sleep(Duration::from_secs(2));
+        let now = sent();
+        still = if now == seen { still + 1 } else { 0 };
+        seen = now;
+        assert!(
+            start.elapsed() < Duration::from_secs(60),
+            "the sessions say they sent {needed} within 60s, not {seen}:\n{}\n{}",
+            log(&a, "run.log"),
+            log(&b, "run.log")
+        );
+    }
+    drop(runs);
+    eprintln!("the copies lacked {needed} ops between them and were sent {seen}");
+    // Measured: exactly what was lacked; two sessions send twice that.
+    assert!(
+        seen <= needed + needed / 10,
+        "the copies lacked {needed} ops and were sent {seen}:\n{}\n{}",
+        log(&a, "run.log"),
+        log(&b, "run.log")
     );
     assert_eq!(a.hash(), b.hash());
 }

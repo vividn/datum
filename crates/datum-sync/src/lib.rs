@@ -117,11 +117,6 @@ impl<'a> DbStore<'a> {
             f(&mut told.lock().unwrap());
         }
     }
-
-    /// Whether a session is served to `peer` now ([`Store::serving`]).
-    fn serves(&self, peer: &str) -> bool {
-        self.4.borrow().has(peer)
-    }
 }
 
 /// Per peer, how many sessions with it are open (da-ymgiv): a peer is held
@@ -330,6 +325,10 @@ impl Store for DbStore<'_> {
             true => served.open(peer),
             false => served.close(peer),
         }
+    }
+
+    fn serves(&self, peer: &str) -> bool {
+        self.4.borrow().has(peer)
     }
 
     fn verifying(&self) {
@@ -1040,7 +1039,12 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                         (Err(e), peer) if failure(&e) == Some(BUSY) => {
                             if let Some((id, _)) = peer {
                                 pushed.remove(&id);
-                                busy.insert(id, Instant::now() + backoff(None));
+                                // No wait while a session served to it
+                                // carries this copy's ops: it pushes once
+                                // that ends (da-vj3ly).
+                                if !store.serves(&id) {
+                                    busy.insert(id, Instant::now() + backoff(None));
+                                }
                             }
                         }
                         // A session lost past the handshake names its peer.
