@@ -1588,6 +1588,12 @@ fn said(db: &Db, mut notices: Vec<Notice>) -> Vec<(Notice, String)> {
 
 /// An RFC 3339 instant on this reader's clock: the time alone today.
 fn local(at: &str) -> String {
+    on_readers_clock(at, "%H:%M")
+}
+
+/// An RFC 3339 instant on this reader's clock as `clock`, with its date
+/// before it on any day but today.
+pub(crate) fn on_readers_clock(at: &str, clock: &str) -> String {
     let Ok(t) = chrono::DateTime::parse_from_rfc3339(at) else {
         return at.to_string();
     };
@@ -1597,11 +1603,11 @@ fn local(at: &str) -> String {
         .local_naive(datum_core::time::DatumTime::now().utc)
         .date();
     let format = if t.date() == today {
-        "%H:%M"
+        clock.to_string()
     } else {
-        "%Y-%m-%d %H:%M"
+        format!("%Y-%m-%d {clock}")
     };
-    t.format(format).to_string()
+    t.format(&format).to_string()
 }
 
 /// The ⚠ a notice wears: none for the members found on joining, which are

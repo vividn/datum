@@ -40,8 +40,14 @@ impl Env {
 
     /// Run `datum <args...>` against this env's db. Returns (ok, stdout+stderr).
     fn run(&self, args: &[&str]) -> (bool, String) {
+        self.run_in("UTC", args)
+    }
+
+    /// `run` with the reader's clock at `tz`.
+    fn run_in(&self, tz: &str, args: &[&str]) -> (bool, String) {
         let out = Command::new(env!("CARGO_BIN_EXE_datum"))
             .env("DATUM_DB", &self.path)
+            .env("TZ", tz)
             .env("NO_COLOR", "1")
             // CI sets RUST_BACKTRACE, which puts a stack trace under an error.
             .env_remove("RUST_BACKTRACE")
@@ -241,6 +247,34 @@ fn json_is_each_entrys_column_as_stored() {
         assert_eq!(row["deleted"], row["conflicts"]["deleted"].is_array());
     }
     assert_eq!(env.run(&["conflicts", "list", "--json"]).1, out);
+}
+
+#[test]
+fn a_sides_time_is_on_the_readers_clock_to_the_second() {
+    // da-28egh: a side printed its op's stored UTC instant.
+    let env = Env::new();
+    env.debug_conflicts();
+    let (_, out) = env.run(&["conflicts", "--json"]);
+    let rows: Vec<Value> = serde_json::from_str(&out).unwrap();
+    let (_, list) = env.run_in("Etc/GMT-2", &["conflicts"]);
+    let sides = rows
+        .iter()
+        .flat_map(|r| r["conflicts"].as_object().unwrap().values())
+        .flat_map(|sides| sides.as_array().unwrap());
+    let mut seen = 0;
+    for side in sides {
+        let instant = side["hlc"].as_str().unwrap().split('/').next().unwrap();
+        let t = chrono::DateTime::parse_from_rfc3339(instant).unwrap();
+        let clock = (t + chrono::Duration::hours(2)).format("%H:%M:%S");
+        let shown = list.contains(&format!("{clock}  ")) || list.contains(&format!(", {clock}\n"));
+        assert!(shown, "{instant} is not {clock} at +02:\n{list}");
+        assert!(
+            !list.contains(instant),
+            "{instant} printed as stored:\n{list}"
+        );
+        seen += 1;
+    }
+    assert!(seen >= 4, "{out}");
 }
 
 #[test]
