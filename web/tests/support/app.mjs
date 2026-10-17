@@ -920,17 +920,39 @@ function app(page, errors, query, clean, internal) {
 		 * Type a line into the bottom bar and submit it, as a user does,
 		 * and wait for it in the REPL's scrollback — the bar is the REPL's
 		 * prompt (da-rfs9).
+		 *
+		 * A wait that runs out says what the page held then (da-5378u): one
+		 * did on CI, after 1380 submits here under ten times the load all
+		 * landed inside 1.3 s, so 30 s is a stuck page and not a slow one —
+		 * and which way it is stuck is the next red's to say: the line still
+		 * in the box, the bar's last run, what is in flight, and whether the
+		 * echo was there after all.
 		 */
 		async submit(line) {
 			// An echo not there before, not a higher count: a purge empties
 			// the scrollback (da-3ni5m), and an entry is a new element.
-			await page.locator('.repl .echo').evaluateAll((echoes) => echoes.forEach((e) => (e.dataset.seen = '')));
+			await page.evaluate(() => {
+				document.querySelectorAll('.repl .echo').forEach((e) => (e.dataset.seen = ''));
+				window.__submitLast = window.datum.bar.last();
+			});
 			const input = page.locator('.prompt-bar input');
 			await input.fill(line);
 			await input.press('Enter');
-			await page.waitForFunction(() =>
-				[...document.querySelectorAll('.repl .echo')].some((e) => !('seen' in e.dataset))
-			);
+			const echoed = () => [...document.querySelectorAll('.repl .echo')].some((e) => !('seen' in e.dataset));
+			await page.waitForFunction(echoed).catch(async (e) => {
+				const seen = {
+					echoed: await page.evaluate(echoed),
+					...(await page.evaluate(() => {
+						const last = window.datum.bar.last();
+						return {
+							box: document.querySelector('.prompt-bar input')?.value,
+							inflight: window.__datumInflight,
+							last: last === window.__submitLast ? 'unchanged' : { line: last?.line, code: last?.result.code, stderr: last?.result.stderr }
+						};
+					}))
+				};
+				throw new Error(`\`${line}\` drew no echo: ${JSON.stringify(seen)}`, { cause: e });
+			});
 		},
 
 		/**
