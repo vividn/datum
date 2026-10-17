@@ -17,11 +17,14 @@ pub enum DatumError {
     #[error("Database error: {0}")]
     Db(rusqlite::Error),
 
+    /// Not the error's `source()`: its Display already holds serde_json's
+    /// message, and a `{e:#}` walking the chain said it again (da-te3f2).
     #[error("Serialization error: {0}")]
-    Json(#[from] serde_json::Error),
+    Json(serde_json::Error),
 
+    /// Not the error's `source()`, as `Json` (da-te3f2).
     #[error("{0}")]
-    Io(#[from] std::io::Error),
+    Io(std::io::Error),
 
     #[error("Invalid time: {0}")]
     InvalidTime(String),
@@ -165,6 +168,18 @@ impl From<datum_parse::ParseError> for DatumError {
     }
 }
 
+impl From<serde_json::Error> for DatumError {
+    fn from(e: serde_json::Error) -> Self {
+        DatumError::Json(e)
+    }
+}
+
+impl From<std::io::Error> for DatumError {
+    fn from(e: std::io::Error) -> Self {
+        DatumError::Io(e)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::DatumError;
@@ -196,5 +211,32 @@ mod tests {
             err.to_string(),
             "Missing required key: field — bare `<FIELD>` positional required first; `KEY=VALUE` tokens bind to data keys, not the field slot. Try: `datum <verb> <field> KEY=VALUE`."
         );
+    }
+
+    /// What `{e:#}` says: the error, then each cause down its chain.
+    fn down_its_chain(e: &DatumError) -> String {
+        let mut said = e.to_string();
+        let mut cause = std::error::Error::source(e);
+        while let Some(c) = cause {
+            said += &format!(": {c}");
+            cause = c.source();
+        }
+        said
+    }
+
+    /// `Json`'s and `Io`'s Displays already hold their cause (da-te3f2).
+    #[test]
+    fn a_json_error_says_its_message_once_down_its_chain() {
+        let e = DatumError::from(serde_json::from_str::<serde_json::Value>("{").unwrap_err());
+        assert_eq!(
+            down_its_chain(&e),
+            "Serialization error: EOF while parsing an object at line 1 column 1"
+        );
+    }
+
+    #[test]
+    fn an_io_error_says_its_message_once_down_its_chain() {
+        let e = DatumError::from(std::io::Error::other("no room left"));
+        assert_eq!(down_its_chain(&e), "no room left");
     }
 }
