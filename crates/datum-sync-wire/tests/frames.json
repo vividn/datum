@@ -37,7 +37,8 @@
     "proves": true,
     "round": 8192,
     "schema": 57,
-    "typed": true
+    "typed": true,
+    "waits": true
   },
   "hids": [
     "h"
@@ -106,7 +107,8 @@
       ],
       "label": "phone",
       "round": 8192,
-      "schema": 57
+      "schema": 57,
+      "waits": true
     }
   },
   "why": [

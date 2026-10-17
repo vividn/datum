@@ -2120,6 +2120,52 @@ fn two_copies_dialing_each_other_at_once_send_each_op_once() {
     assert_eq!(a.hash(), b.hash());
 }
 
+/// The first serve after a bulk import signs its baselines (da-f7mmn):
+/// 10,000 here, about 5s in a debug build, on a 2s timeout. a, dialing
+/// b's `sync run`, signs them in chunks of the clock's size with a `BUSY`
+/// after each, unless `keepalive` is off; it sent nothing until all were
+/// signed, and lost b. The sync's output.
+fn first_sync_after_an_import(keepalive: bool) -> (Copy, Copy, Output) {
+    let (mut a, mut b) = paired();
+    import(&a, 10_000);
+    for c in [&mut a, &mut b] {
+        c.env = vec![
+            ("DATUM_SYNC_TIMEOUT_S", "2"),
+            (
+                "DATUM_SYNC_TEST_KEEPALIVE",
+                if keepalive { "1" } else { "0" },
+            ),
+        ];
+    }
+    let _serving = b.serve(&["sync", "run"]);
+    let out = a.run(&["sync"]);
+    (a, b, out)
+}
+
+#[test]
+fn the_first_sync_after_an_import_keeps_its_peer_while_it_signs() {
+    let (a, b, out) = first_sync_after_an_import(true);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{text}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(text.contains("verify ok"), "{text}");
+    assert!(ops(&b) > 10_000);
+    assert_eq!(a.hash(), b.hash());
+}
+
+#[test]
+fn without_keepalives_the_first_sync_after_an_import_loses_its_peer() {
+    let (_a, _b, out) = first_sync_after_an_import(false);
+    assert!(
+        !out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
 // ─── The sync chain (da-odwc7) ──────────────────────────────────────────────
 
 #[test]

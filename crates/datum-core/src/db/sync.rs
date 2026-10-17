@@ -2760,6 +2760,55 @@ impl Db {
         held_vector(&self.conn)
     }
 
+    /// Sign a `baseline` create for at most `limit` of the entries no op
+    /// covers, the lowest by hid, and say how many: a session signs a bulk
+    /// import's in chunks, and its peer hears from it between them
+    /// (da-f7mmn). A reader signs none, which its chain would refuse.
+    pub fn sync_sign_baselines(
+        &self,
+        since: &BTreeMap<String, i64>,
+        limit: Option<usize>,
+    ) -> Result<usize> {
+        pause::refuse_paused(&self.conn)?;
+        debug::refuse(&self.conn)?;
+        // Outside any transaction, where minting or moving its key on first
+        // need waits for the lock as a write.
+        let (mine, signed) = own_head(&self.conn)?;
+        // A vector holding more of this copy's ops than it signed was made
+        // by another copy signing with this key.
+        if since.get(&mine).is_some_and(|s| *s > signed) {
+            return Err(DatumError::Other(SHARED_KEY.into()));
+        }
+        if read_only(&self.conn, &endpoint(&self.conn)?)?.is_some() {
+            return Ok(0);
+        }
+        // The baselines are the one write a serve makes, and take the lock
+        // for themselves alone; what is served is read after, on a snapshot
+        // that holds none (da-8i7f0).
+        const UNCOVERED: &str =
+            "SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid LIMIT ?";
+        let limit = limit.map_or(-1, |n| n as i64);
+        if !self.conn.prepare(UNCOVERED)?.exists([limit])? {
+            return Ok(0);
+        }
+        self.compute_then_write_with(
+            |view| {
+                view.conn()
+                    .prepare(UNCOVERED)?
+                    .query_map([limit], row_to_entry)?
+                    .collect::<rusqlite::Result<Vec<Entry>>>()
+                    .map_err(DatumError::from)
+            },
+            |tx, uncovered| {
+                let ep = endpoint(tx)?;
+                for e in &uncovered {
+                    push_entry(tx, &ep, e, "baseline", create_effect(e))?;
+                }
+                Ok(uncovered.len())
+            },
+        )
+    }
+
     /// Every applied op `since` lacks, as canonical JSON lines in
     /// `(endpoint, seq)` order. First signs a `baseline` create for every
     /// entry no op covers — one older than its ops, or bulk-imported — so a
@@ -2790,42 +2839,11 @@ impl Db {
         peer: Option<&str>,
         limit: Option<usize>,
     ) -> Result<Vec<String>> {
-        pause::refuse_paused(&self.conn)?;
-        debug::refuse(&self.conn)?;
-        // Outside any transaction, where minting or moving its key on first
-        // need waits for the lock as a write.
-        let (mine, signed) = own_head(&self.conn)?;
-        // A vector holding more of this copy's ops than it signed was made
-        // by another copy signing with this key.
-        if since.get(&mine).is_some_and(|s| *s > signed) {
-            return Err(DatumError::Other(SHARED_KEY.into()));
-        }
-        // A reader never relays: it serves its own ops alone, and signs no
-        // baselines, which its chain would refuse.
-        let reader = read_only(&self.conn, &endpoint(&self.conn)?)?.is_some();
-        // The baselines are the one write a serve makes, and take the lock
-        // for themselves alone; what is served is read after, on a snapshot
-        // that holds none (da-8i7f0).
-        const UNCOVERED: &str =
-            "SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid";
-        if !reader && self.conn.prepare(UNCOVERED)?.exists([])? {
-            self.compute_then_write_with(
-                |view| {
-                    view.conn()
-                        .prepare(UNCOVERED)?
-                        .query_map([], row_to_entry)?
-                        .collect::<rusqlite::Result<Vec<Entry>>>()
-                        .map_err(DatumError::from)
-                },
-                |tx, uncovered| {
-                    let ep = endpoint(tx)?;
-                    for e in &uncovered {
-                        push_entry(tx, &ep, e, "baseline", create_effect(e))?;
-                    }
-                    Ok(())
-                },
-            )?;
-        }
+        self.sync_sign_baselines(since, None)?;
+        let mine = endpoint(&self.conn)?;
+        // A reader never relays: it serves its own ops alone.
+        let reader = read_only(&self.conn, &mine)?.is_some();
+        let mine = mine.id;
         self.read(|view| {
             let tx = view.conn();
             let chain = Chain::load(tx)?;

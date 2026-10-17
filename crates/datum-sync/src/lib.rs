@@ -270,6 +270,10 @@ impl Store for DbStore<'_> {
             .sync_ops_round(since, false, Some(peer), Some(limit))?)
     }
 
+    async fn sign(&self, since: &Vector, n: usize) -> Result<usize> {
+        Ok(self.0.sync_sign_baselines(since, Some(n))?)
+    }
+
     async fn apply(&self, ops: &[String]) -> Result<Applied> {
         // Test knob: a slow apply. The delay BLOCKS the thread, as a slow
         // `sync_apply` does: an async sleep would yield, and the test would

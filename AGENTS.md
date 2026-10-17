@@ -296,7 +296,9 @@ session's line, so the endpoint key is bound once and the traffic is not
 doubled; with no run listening it dials as before (da-tltjj). A round carries at most 8,192 ops, the lowest
 by HLC so each applies whole, and applies before the next is sent; rounds go
 on while full, so a big catch-up finishes in one session and one cut short
-loses a round (da-ymgiv). `sync run` tries a member it failed to reach
+loses a round (da-ymgiv). The first serve after a bulk import signs its
+baselines in chunks sized by the clock, a BUSY after each, so the peer hears
+from it within its idle timeout (da-f7mmn). `sync run` tries a member it failed to reach
 again after a minute, the gap doubling to half an hour, dials every member when
 it starts or its address changes, dials no member it is already in a session
 with unless `datum sync` asks, and a failure the peer's row already says writes nothing (da-u1ul1).

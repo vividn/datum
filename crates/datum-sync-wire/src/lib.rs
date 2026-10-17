@@ -40,7 +40,9 @@
 //!   BUSYs while it runs too, and its chunks double (da-89ujs): each is a
 //!   process that commits, and a commit rewrites every index page the chunk
 //!   touched, however few ops it held. So is the side verifying, whose hash
-//!   of a big history takes minutes (da-0mwws).
+//!   of a big history takes minutes (da-0mwws), and the side signing the
+//!   baselines a bulk import left, in chunks sized as an apply's, before a
+//!   round's ops to a peer whose handshake says it `waits` (da-f7mmn).
 //! - **One applies.** Every session of a copy runs on one thread, so a chunk
 //!   that does not yield is sized by the clock and the apply yields between
 //!   chunks; and one session applies at a time ([`Store::apply_gate`]),
@@ -157,6 +159,12 @@ pub trait Store {
     /// At most `limit` of them, the lowest by HLC (da-ymgiv), a round that
     /// applies whole: each op's deps sort before it.
     async fn ops_since(&self, peer: &str, since: &Vector, limit: usize) -> Result<Vec<String>>;
+    /// Sign at most `n` of the entries no op covers as this copy's
+    /// baselines, and say how many (da-f7mmn). One that signs none here
+    /// leaves them to [`ops_since`](Store::ops_since), all at once.
+    async fn sign(&self, _since: &Vector, _n: usize) -> Result<usize> {
+        Ok(0)
+    }
     async fn apply(&self, ops: &[String]) -> Result<Applied>;
     /// Whether [`apply`](Store::apply) awaits work done off this thread,
     /// so that a session can send meanwhile: a browser's CLI process.
@@ -374,6 +382,10 @@ struct Hello {
     /// before da-ymgiv says none, and ends after [`MAX_ROUNDS`] rounds.
     #[serde(default)]
     round: usize,
+    /// The dialer skips a [`BUSY`] ahead of a round's ops, which a copy
+    /// signing baselines sends (da-f7mmn); a copy before it does not.
+    #[serde(default)]
+    waits: bool,
     #[serde(flatten)]
     version: Version,
 }
@@ -389,6 +401,9 @@ enum Reply {
         /// As [`Hello`]'s.
         #[serde(default)]
         round: usize,
+        /// As [`Hello`]'s.
+        #[serde(default)]
+        waits: bool,
         #[serde(flatten)]
         version: Version,
     },
@@ -505,6 +520,9 @@ pub struct Report {
     /// The most ops a round of the peer's carries, as its handshake said.
     #[serde(skip)]
     round: usize,
+    /// The peer skips a BUSY ahead of a round's ops, as its handshake said.
+    #[serde(skip)]
+    waits: bool,
     /// The chain of one this copy left to redeem the invite, and the chain
     /// it joined (da-h7pnc).
     pub left: Option<(String, String)>,
@@ -531,6 +549,7 @@ impl Report {
             left: None,
             round: 0,
             route: None,
+            waits: false,
         }
     }
 }
@@ -680,17 +699,10 @@ async fn apply(
             false => store.apply(chunk).await?,
             true => busy(s, store.apply(chunk)).await?,
         };
-        // A chunk that does not yield holds every session's thread: sized
-        // by the clock, so a slow copy's leave the others room (da-h31wt).
-        let pace = match store.yields() {
-            true => 2 * size,
-            false => {
-                let took = took.elapsed().as_micros().max(1);
-                (size as u128 * (idle() / 16).as_micros() / took).clamp(1, 2 * size as u128)
-                    as usize
-            }
+        size = match store.yields() {
+            true => (2 * size).min(MAX_CHUNK),
+            false => pace(size, took),
         };
-        size = pace.min(MAX_CHUNK);
         done += chunk.len();
         store.progress(done, ops.len());
         for why in &applied.refused {
@@ -700,6 +712,36 @@ async fn apply(
         rep.conflicts += applied.conflicts;
     }
     Ok(())
+}
+
+/// The next chunk after one of `size` that began at `took`. A chunk that
+/// does not yield holds every session's thread: sized by the clock, so a
+/// slow copy's leave the others room (da-h31wt).
+fn pace(size: usize, took: n0_future::time::Instant) -> usize {
+    let took = took.elapsed().as_micros().max(1);
+    let pace = (size as u128 * (idle() / 16).as_micros() / took).clamp(1, 2 * size as u128);
+    (pace as usize).min(MAX_CHUNK)
+}
+
+/// Sign the baselines a round's ops begin with in chunks, as [`apply`]
+/// applies, a [`BUSY`] after each: a bulk import's, signed in one lock,
+/// sent the peer nothing past its idle timeout (da-f7mmn).
+async fn sign(store: &impl Store, s: &mut SendStream, since: &Vector) -> Result<()> {
+    // Test knob: the keepalives off (the mutation control).
+    let keepalive = env::<u8>("DATUM_SYNC_TEST_KEEPALIVE") != Some(0);
+    let mut size = CHUNK;
+    loop {
+        // The round's receiving half reads meanwhile.
+        n0_future::future::yield_now().await;
+        let took = n0_future::time::Instant::now();
+        if store.sign(since, size).await? < size {
+            return Ok(());
+        }
+        size = pace(size, took);
+        if keepalive {
+            put(s, BUSY).await?;
+        }
+    }
 }
 
 /// Swap ops until neither side's vector moves, then compare state hashes.
@@ -720,16 +762,25 @@ async fn exchange(
         if last.as_ref() == Some(&round) {
             break;
         }
-        let ops = store.ops_since(&rep.id, &round.1, self::round()).await?;
         // Counted as each goes, so a session cut short says what it cost.
-        let sent = &mut rep.sent;
+        let (id, waits, sent) = (&rep.id, rep.waits, &mut rep.sent);
         let send = async {
+            // To a peer that waits, the round's baselines are signed first,
+            // a BUSY between their chunks, as the peer's ops are read.
+            let ops = match waits {
+                true => {
+                    sign(store, s, &round.1).await?;
+                    busy(s, store.ops_since(id, &round.1, self::round())).await?
+                }
+                false => store.ops_since(id, &round.1, self::round()).await?,
+            };
             for (i, op) in ops.iter().enumerate() {
                 put(s, op.as_bytes()).await?;
                 *sent += 1;
                 store.sent(i + 1, ops.len());
             }
-            put(s, b"").await
+            put(s, b"").await?;
+            Ok(ops.len())
         };
         let recv = async {
             let mut lines = Vec::new();
@@ -738,15 +789,17 @@ async fn exchange(
                 if f.is_empty() {
                     return Ok::<_, anyhow::Error>(lines);
                 }
-                lines.push(String::from_utf8(f)?);
-                store.got(lines.len());
+                if f != BUSY {
+                    lines.push(String::from_utf8(f)?);
+                    store.got(lines.len());
+                }
             }
         };
-        let ((), lines) = futures_util::future::try_join(send, recv).await?;
+        let (ops, lines) = futures_util::future::try_join(send, recv).await?;
         // Both sides read the same two counts against the same two caps. A
         // copy before da-ymgiv says round 0 and counts every round: so must
         // this side, or the two end the session at different rounds.
-        let full = rep.round > 0 && (ops.len() >= self::round() || lines.len() >= rep.round);
+        let full = rep.round > 0 && (ops >= self::round() || lines.len() >= rep.round);
         apply(store, s, &lines, rep).await?;
         quiet += usize::from(!full);
         last = Some(round);
@@ -922,6 +975,7 @@ async fn session(
             None => known(store).await,
         },
         round: round(),
+        waits: true,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -930,12 +984,13 @@ async fn session(
         put_json(&mut s, &store.records().await?).await?;
         reply = get_json(&mut r, MAX_HELLO).await?;
     }
-    let (label, added, met, round) = match reply {
+    let (label, added, met, round, waits) = match reply {
         Reply::Welcome {
             label,
             addr,
             known,
             round,
+            waits,
             version,
         } => {
             // Two copies that dialed each other at once (da-vj3ly): the
@@ -970,7 +1025,7 @@ async fn session(
                 Ok::<_, anyhow::Error>(added)
             };
             match admitted.await {
-                Ok(added) => (label, added, known, round),
+                Ok(added) => (label, added, known, round, waits),
                 Err(e) => {
                     let busy = e
                         .downcast_ref::<Refusal>()
@@ -992,6 +1047,7 @@ async fn session(
     };
     let mut rep = Report::new(label, id, added, invite.is_some(), met);
     rep.round = round;
+    rep.waits = waits;
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
     if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
         rep.left = Some((old, new));
@@ -1044,6 +1100,7 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
         typed: true,
         busy: true,
         round: 0,
+        waits: false,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -1185,12 +1242,14 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         addr: ep.addr(),
         known: self::known(store).await,
         round: round(),
+        waits: true,
         version: store.version(),
     };
     put_json(&mut s, &welcome).await?;
     let redeemed = hello.invite.is_some() && !diff;
     let mut rep = Report::new(hello.label, id.clone(), !known, redeemed, hello.known);
     rep.round = hello.round;
+    rep.waits = hello.waits;
     if diff {
         let theirs: String = get_json(&mut r, MAX_HELLO).await?;
         let (hash, digest) = store.digest(&id).await?;
@@ -1398,6 +1457,7 @@ mod tests {
                     busy: true,
                     known: vec![addr.clone()],
                     round: ROUND,
+                    waits: true,
                     version: version.clone(),
                 },
             ),
@@ -1408,6 +1468,7 @@ mod tests {
                     addr: addr.clone(),
                     known: vec![addr.clone()],
                     round: ROUND,
+                    waits: true,
                     version,
                 },
             ),
