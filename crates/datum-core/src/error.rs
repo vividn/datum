@@ -12,8 +12,10 @@ pub struct PrefixCandidate {
 
 #[derive(Error, Debug)]
 pub enum DatumError {
+    /// Not the error's `source()`: its Display already holds rusqlite's
+    /// message, and a `{e:#}` walking the chain said it again (da-ls30k).
     #[error("Database error: {0}")]
-    Db(#[from] rusqlite::Error),
+    Db(rusqlite::Error),
 
     #[error("Serialization error: {0}")]
     Json(#[from] serde_json::Error),
@@ -122,6 +124,12 @@ fn format_candidates(candidates: &[PrefixCandidate]) -> String {
 
 pub type Result<T> = std::result::Result<T, DatumError>;
 
+impl From<rusqlite::Error> for DatumError {
+    fn from(e: rusqlite::Error) -> Self {
+        DatumError::Db(e)
+    }
+}
+
 impl From<datum_parse::ParseError> for DatumError {
     fn from(e: datum_parse::ParseError) -> Self {
         match e {
@@ -160,6 +168,25 @@ impl From<datum_parse::ParseError> for DatumError {
 #[cfg(test)]
 mod tests {
     use super::DatumError;
+
+    /// A held write lock is named once however far its chain is walked, as
+    /// `{e:#}` walks it: `Db`'s Display already holds rusqlite's message
+    /// (da-ls30k). `busy` still reads the code under it.
+    #[test]
+    fn a_database_error_says_its_message_once_down_its_chain() {
+        let e = DatumError::from(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            Some("database is locked".into()),
+        ));
+        let mut said = e.to_string();
+        let mut cause = std::error::Error::source(&e);
+        while let Some(c) = cause {
+            said += &format!(": {c}");
+            cause = c.source();
+        }
+        assert_eq!(said, "Database error: database is locked");
+        assert!(crate::db::busy(&e));
+    }
 
     #[test]
     fn parse_missing_required_field_preserves_hint_in_conversion() {
