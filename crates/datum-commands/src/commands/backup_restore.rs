@@ -2325,7 +2325,8 @@ mod tests {
 
     #[test]
     fn restore_replace_failing_midway_changes_nothing() {
-        let (db, _, backed, _) = diverged_from_backup();
+        let (db, backup, backed, _) = diverged_from_backup();
+        std::fs::remove_file(&backup).ok();
         let before = live_set(&all_entries_sorted(&db));
         let tombstones = db.tombstone_ids().unwrap();
         // The backup's entries, then one the db refuses: by then the walks

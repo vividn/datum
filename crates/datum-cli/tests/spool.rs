@@ -310,6 +310,9 @@ fn a_spooled_edit_waiting_on_its_editor_holds_back_no_other_command() {
         .env("DATUM_HOME", &env.home)
         .env("DATUM_CONFIG_HOME", &env.home)
         .env("DATUM_EDITOR", &editor)
+        // Killed below with its editor open, so its tempfile is never
+        // dropped: keep it in the test's own dir, not /tmp (da-psyl3).
+        .env("TMPDIR", &env.home)
         .env("NO_COLOR", "1")
         .args(["edit", &hid])
         .stdin(std::process::Stdio::null())
