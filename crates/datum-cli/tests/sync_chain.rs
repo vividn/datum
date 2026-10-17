@@ -3495,3 +3495,4 @@ fn a_copy_whose_only_other_is_a_filtered_reader_never_warns() {
 
 mod purge;
 mod restore;
+mod status;

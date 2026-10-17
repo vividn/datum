@@ -1484,7 +1484,7 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
             &p.endpoint[..10],
             p.state,
             p.to_send,
-            when.as_deref().unwrap_or("-"),
+            when.as_deref().map_or("-".into(), local),
             match (p.purged, p.revoked) {
                 (true, _) => "  REVERTED",
                 (_, true) => "  REVOKED",

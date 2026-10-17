@@ -344,7 +344,7 @@ fn a_member_not_running_is_named_with_what_runs_it() {
 #[test]
 fn a_member_that_never_answers_is_offline_and_one_that_refuses_is_an_error() {
     let (a, mut b) = paired();
-    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "2")];
+    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "2"), ("TZ", "Etc/GMT-2")];
     let line = |b: &Copy| {
         let status = b.ok(&["sync", "status"]);
         let id = a.id();
@@ -357,9 +357,14 @@ fn a_member_that_never_answers_is_offline_and_one_that_refuses_is_an_error() {
     let error = row["error"].as_str().unwrap_or_default();
     assert!(error.contains("could not reach"), "{row}");
     assert!(row["error_at"].is_string(), "{row}");
-    let seen = row["last_seen"].as_str().unwrap();
+    // On the reader's clock, as the notices are (da-jb4ln).
+    let seen = chrono::DateTime::parse_from_rfc3339(row["last_seen"].as_str().unwrap()).unwrap();
+    let seen = seen.with_timezone(&chrono::FixedOffset::east_opt(2 * 3600).unwrap());
     let said = line(&b);
-    assert!(said.contains(" offline ") && said.contains(seen), "{said}");
+    assert!(
+        said.contains(" offline ") && said.contains(&seen.format("%H:%M").to_string()),
+        "{said}"
+    );
     assert!(!said.contains("could not reach"), "{said}");
 
     a.ok(&["sync", "chain", "revoke", &b.id()]);
