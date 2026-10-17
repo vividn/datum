@@ -238,11 +238,12 @@ impl Store for Cli {
         peer: &str,
         vector: Option<&Vector>,
         verify: Option<bool>,
-        error: Option<&str>,
+        error: Option<&anyhow::Error>,
         offline: bool,
         met: &[EndpointAddr],
     ) -> Result<()> {
         let vector = vector.map(serde_json::to_string).transpose()?;
+        let error = error.map(|e| format!("{e:#}"));
         let said = serde_json::to_string(met)?;
         let mut argv = vec!["sync", "record-session", peer];
         if !met.is_empty() {
@@ -254,7 +255,7 @@ impl Store for Cli {
         if let Some(m) = verify {
             argv.extend(["--verify", if m { "match" } else { "mismatch" }]);
         }
-        if let Some(e) = error {
+        if let Some(e) = &error {
             argv.extend(["--error", e]);
         }
         if offline {

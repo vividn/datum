@@ -431,17 +431,18 @@ impl Store for DbStore<'_> {
         peer: &str,
         vector: Option<&Vector>,
         verify: Option<bool>,
-        error: Option<&str>,
+        error: Option<&anyhow::Error>,
         offline: bool,
         met: &[EndpointAddr],
     ) -> Result<()> {
         // A session that gave way to a write on this file failed nobody:
         // `run` tries again at its next tick (da-h31wt).
-        if error.is_some_and(|e| e.contains("database is locked")) {
+        if error.is_some_and(|e| datum_core::db::busy(e.as_ref())) {
             return Ok(());
         }
+        let error = error.map(|e| format!("{e:#}"));
         self.0
-            .sync_record_session(peer, vector, verify, error, offline)?;
+            .sync_record_session(peer, vector, verify, error.as_deref(), offline)?;
         if met.is_empty() {
             return Ok(());
         }
@@ -465,9 +466,9 @@ fn apply_gate(db: &Db) -> Option<std::path::PathBuf> {
 /// sends (da-b6xh6).
 fn refusal(e: DatumError) -> anyhow::Error {
     // Another process's write held the file past `run`'s YIELD: try again,
-    // no failure (da-h31wt). Matched on the text, as `run` matches it.
-    if e.to_string().contains("database is locked") {
-        return Refusal(Why::Busy, e.to_string()).into();
+    // no failure (da-h31wt). The lock stays its cause, which `run` reads.
+    if datum_core::db::busy(&e) {
+        return anyhow::Error::from(e).context(Refusal(Why::Busy, "a write holds its file".into()));
     }
     let DatumError::Refused(kind, why) = e else {
         return e.into();
@@ -1027,12 +1028,14 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                             retry.remove(&rep.id);
                             println!("{} {rep}", now());
                         }
-                        // A write held this copy's file past YIELD, or the
-                        // peer's: every peer not backing off for being
-                        // unreachable is tried again at the next tick. Matched
-                        // on the text, which sync_net's test pins:
+                        // A write held this copy's file past YIELD: every peer
+                        // not backing off for being unreachable is tried again
+                        // at the next tick. sync_net's
                         // `run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once`.
-                        (Err(e), _) if format!("{e:#}").contains("database is locked") => {
+                        // A peer's file held is its refusal as busy, the next
+                        // arm: the peer gives way in its own `run` and pushes
+                        // (`a_peer_held_by_a_write_comes_back_for_the_change_itself`).
+                        (Err(e), _) if datum_core::db::busy(e.as_ref()) => {
                             eprintln!("{} gave way to a write: {e:#}", now());
                             pushed.clear();
                         }

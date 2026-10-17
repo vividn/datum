@@ -243,7 +243,7 @@ pub trait Store {
         peer: &str,
         vector: Option<&Vector>,
         verify: Option<bool>,
-        error: Option<&str>,
+        error: Option<&anyhow::Error>,
         offline: bool,
         met: &[EndpointAddr],
     ) -> Result<()>;
@@ -883,13 +883,13 @@ async fn record(store: &impl Store, id: &str, rep: &Result<Report>) {
         Err(e) => (
             e.downcast_ref::<Lost>().map(|Lost(r, _)| &r.vector),
             None,
-            Some(format!("{e:#}")),
+            Some(e),
             failure(e) == Some(Failure::Unreachable),
             &[][..],
         ),
     };
     let _ = store
-        .record_session(id, vector, verify, error.as_deref(), offline, met)
+        .record_session(id, vector, verify, error, offline, met)
         .await;
 }
 
@@ -1196,8 +1196,8 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let mut records: Option<Vec<String>> = None;
     let verdict = loop {
         let verdict = match conn.remote_id() == ep.id() {
-            true => Err((Why::Other, COPY.to_string())),
-            false if !diff && store.applying() => Err((Why::Busy, BUSY_WHY.to_string())),
+            true => Err((Why::Other, anyhow!(COPY))),
+            false if !diff && store.applying() => Err((Why::Busy, anyhow!(BUSY_WHY))),
             false => store
                 .handshake(
                     &id,
@@ -1211,12 +1211,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
                     false,
                 )
                 .await
-                .map_err(|e| {
-                    (
-                        e.downcast_ref::<Refusal>().map_or(Why::Other, |r| r.0),
-                        format!("{e:#}"),
-                    )
-                }),
+                .map_err(|e| (e.downcast_ref::<Refusal>().map_or(Why::Other, |r| r.0), e)),
         };
         // A member this copy has not heard of shows that it is one, once.
         match verdict {
@@ -1229,12 +1224,13 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     };
     let known = match verdict {
         Ok(added) => !added,
-        Err((kind, why)) => {
-            let reply = Reply::refusal(&hello, kind, why.clone());
+        Err((kind, e)) => {
+            let reply = Reply::refusal(&hello, kind, format!("{e:#}"));
             put_json(&mut s, &reply).await?;
             let _ = timeout(Duration::from_secs(5), conn.closed()).await;
-            let why = format!("refused {} ({}): {why}", hello.label, short(&id));
-            return Err(Failed(Failure::Refused(kind), why).into());
+            // The store's error stays its cause, for a caller to read.
+            let why = format!("refused {} ({})", hello.label, short(&id));
+            return Err(e.context(Failed(Failure::Refused(kind), why)));
         }
     };
     let welcome = Reply::Welcome {

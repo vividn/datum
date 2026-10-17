@@ -1254,6 +1254,42 @@ fn run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once() {
     eventually("b's walk reaching a", || a.has("walk"));
 }
 
+/// A peer whose file a write holds refuses as busy, and this copy waits the
+/// applying gap, a minute, to push to it again. The peer gives way itself
+/// and pushes once the write ends, which is what brings it the change, well
+/// inside [`eventually`]'s ten seconds.
+#[test]
+fn a_peer_held_by_a_write_comes_back_for_the_change_itself() {
+    let (a, b) = paired();
+    let mut a_runs = a.serve(&["sync", "run"]);
+    let a_err = lines(a_runs.child.stderr.take().unwrap());
+    while !a_err
+        .recv_timeout(Duration::from_secs(10))
+        .expect("a up")
+        .contains("is up")
+    {}
+    // b pushes to a as it starts, so it has pushed all it holds and pushes
+    // again only once it gives way.
+    let mut b_runs = b.serve(&["sync", "run"]);
+    let b_err = lines(b_runs.child.stderr.take().unwrap());
+    b_runs.lines_until(" got ");
+    let until = |needle: &str| loop {
+        let line = b_err.recv_timeout(Duration::from_secs(10)).expect(needle);
+        if line.contains(needle) {
+            break;
+        }
+    };
+    let write = rusqlite::Connection::open(b.db()).unwrap();
+    write.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+    a.ok(&["occur", "walk"]);
+    until("gave way to a write");
+    assert!(!b.has("walk"));
+
+    write.execute_batch("COMMIT").unwrap();
+    eventually("a's walk reaching b", || b.has("walk"));
+}
+
 /// Each line `stream` prints, as it prints it.
 fn lines(stream: impl Read + Send + 'static) -> std::sync::mpsc::Receiver<String> {
     let (tx, rx) = std::sync::mpsc::channel();
