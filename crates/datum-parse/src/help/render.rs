@@ -246,8 +246,27 @@ pub(super) fn heading(line: &str) -> Option<&str> {
 /// topic, a subcommand, an alias or a kit command's too.
 pub fn render_page_json(text: &str) -> String {
     let (title, body) = text.split_once('\n').unwrap_or((text, ""));
+    let (intro, sections) = sections_of(body);
+    let join = |lines: &[&str]| lines.join("\n").trim_matches('\n').to_string();
+    serde_json::json!({
+        "title": title,
+        "intro": join(&intro),
+        "sections": sections.iter().map(|(h, lines)| serde_json::json!({
+            "heading": h,
+            "text": join(lines),
+            "reference": REFERENCE.contains(h),
+        })).collect::<Vec<_>>(),
+    })
+    .to_string()
+        + "\n"
+}
+
+/// A text page's body split as [`render_page_json`] reads it: the lines
+/// before its first heading, then each section's heading and lines.
+type Section<'a> = (&'a str, Vec<&'a str>);
+fn sections_of(body: &str) -> (Vec<&str>, Vec<Section<'_>>) {
     let mut intro: Vec<&str> = Vec::new();
-    let mut sections: Vec<(&str, Vec<&str>)> = Vec::new();
+    let mut sections: Vec<Section> = Vec::new();
     for line in body.lines() {
         match (heading(line), sections.last_mut()) {
             (Some(h), _) => sections.push((h, Vec::new())),
@@ -262,18 +281,7 @@ pub fn render_page_json(text: &str) -> String {
             }
         }
     }
-    let join = |lines: &[&str]| lines.join("\n").trim_matches('\n').to_string();
-    serde_json::json!({
-        "title": title,
-        "intro": join(&intro),
-        "sections": sections.iter().map(|(h, lines)| serde_json::json!({
-            "heading": h,
-            "text": join(lines),
-            "reference": REFERENCE.contains(h),
-        })).collect::<Vec<_>>(),
-    })
-    .to_string()
-        + "\n"
+    (intro, sections)
 }
 
 // ---------------------------------------------------------------------------
@@ -350,18 +358,7 @@ fn render_command(spec: &CommandSpec, input_name: &str, was_alias: bool) -> Stri
     let mut s = format!("datum {} — {}\n", displayed_name, summary);
 
     s.push('\n');
-    if !spec.intro.is_empty() {
-        s.push_str(spec.intro);
-        s.push('\n');
-    }
-    if let Some(body) = spec.body_override {
-        s.push_str(body);
-    } else {
-        s.push_str(&render_command_body_structured(spec, displayed_name));
-    }
-    if spec.name == "config" {
-        s.push_str(&config_keys());
-    }
+    s.push_str(&page_text(spec, displayed_name));
     let rows = output_rows(spec.name);
     // The block keeps the command's own summary column where it fits, and
     // widens for a command whose OPTIONS table is narrower than `--show
@@ -381,6 +378,25 @@ fn render_command(spec: &CommandSpec, input_name: &str, was_alias: bool) -> Stri
         }
         s.push_str(&summary);
         s.push('\n');
+    }
+    s
+}
+
+/// A command's `--help` between its title and OUTPUT, which a
+/// body_override command's man page carries too (da-nvpnh).
+fn page_text(spec: &CommandSpec, displayed_name: &str) -> String {
+    let mut s = String::new();
+    if !spec.intro.is_empty() {
+        s.push_str(spec.intro);
+        s.push('\n');
+    }
+    if let Some(body) = spec.body_override {
+        s.push_str(body);
+    } else {
+        s.push_str(&render_command_body_structured(spec, displayed_name));
+    }
+    if spec.name == "config" {
+        s.push_str(&config_keys());
     }
     s
 }
@@ -696,18 +712,49 @@ fn render_roff_command(spec: &CommandSpec) -> String {
         roff_escape(spec.summary),
     ));
 
+    // A body_override is what `--help` prints, so the page carries all of
+    // it (da-nvpnh): its USAGE is the synopsis, its other headings are
+    // sections, and the prose outside them is the description.
+    let text = match spec.body_override {
+        Some(_) => page_text(spec, spec.name),
+        None => String::new(),
+    };
+    let (intro, sections) = sections_of(&text);
     s.push_str(".SH SYNOPSIS\n");
-    for line in spec.usage {
-        s.push_str(&format!("{}\n.br\n", roff_escape(line)));
+    match sections.iter().find(|(h, _)| *h == "USAGE") {
+        Some((_, lines)) => s.push_str(&roff_block(lines)),
+        None => {
+            for line in spec.usage {
+                s.push_str(&format!("{}\n.br\n", roff_escape(line)));
+            }
+        }
     }
 
+    let mut described = false;
     if let Some(desc) = spec.long_description {
         s.push_str(".SH DESCRIPTION\n");
         s.push_str(&roff_escape(desc));
         s.push('\n');
+        described = true;
+    }
+    let mut prose = vec![("", intro)];
+    prose.extend(sections.into_iter().filter(|(h, _)| *h != "USAGE"));
+    for (h, lines) in &prose {
+        if !h.is_empty() {
+            s.push_str(&format!(".SH {}\n", roff_escape(h)));
+            described = true;
+        } else if lines.iter().any(|l| !l.is_empty()) {
+            s.push_str(if described {
+                ".PP\n"
+            } else {
+                ".SH DESCRIPTION\n"
+            });
+            described = true;
+        }
+        s.push_str(&roff_block(lines));
     }
 
-    if !spec.flags.is_empty() {
+    if spec.body_override.is_none() && !spec.flags.is_empty() {
         s.push_str(".SH OPTIONS\n");
         s.push_str(&render_roff_flag_table(spec.flags));
     }
@@ -749,6 +796,59 @@ fn render_roff_flag_table(flags: &[FlagSpec]) -> String {
     s
 }
 
+/// A text page's lines as roff: prose at the margin is filled, a blank line
+/// starts a paragraph, and an indented run (a table, an example) is set
+/// verbatim, less its common indent, so its columns stay aligned.
+fn roff_block(lines: &[&str]) -> String {
+    let lines: Vec<&str> = {
+        let start = lines
+            .iter()
+            .position(|l| !l.is_empty())
+            .unwrap_or(lines.len());
+        let end = lines
+            .iter()
+            .rposition(|l| !l.is_empty())
+            .map_or(start, |i| i + 1);
+        lines[start..end].to_vec()
+    };
+    let mut s = String::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        if line.is_empty() {
+            s.push_str(".PP\n");
+            i += 1;
+        } else if line.starts_with(' ') {
+            let run = lines[i..]
+                .iter()
+                .take_while(|l| l.starts_with(' ') || l.is_empty())
+                .count();
+            let run = lines[i..i + run]
+                .iter()
+                .rposition(|l| !l.is_empty())
+                .map_or(0, |n| n + 1);
+            let indent = lines[i..i + run]
+                .iter()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.len() - l.trim_start().len())
+                .min()
+                .unwrap_or(0);
+            s.push_str(".nf\n");
+            for l in &lines[i..i + run] {
+                s.push_str(&roff_escape(l.get(indent..).unwrap_or("")));
+                s.push('\n');
+            }
+            s.push_str(".fi\n");
+            i += run;
+        } else {
+            s.push_str(&roff_escape(line));
+            s.push('\n');
+            i += 1;
+        }
+    }
+    s
+}
+
 /// Escape user-supplied text for safe inclusion as roff source.
 ///
 /// - `\` is doubled so groff doesn't interpret it as an escape introducer.
@@ -756,7 +856,7 @@ fn render_roff_flag_table(flags: &[FlagSpec]) -> String {
 ///   ASCII hyphen rather than the Unicode hyphen-minus.
 /// - A leading `.` or `'` would otherwise be interpreted as a request;
 ///   prefix with `\&` to neuter it.
-fn roff_escape(s: &str) -> String {
+pub(super) fn roff_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     if matches!(chars.peek(), Some('.') | Some('\'')) {

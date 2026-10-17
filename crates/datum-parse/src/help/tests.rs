@@ -733,6 +733,29 @@ fn roff_per_command_has_expected_sections() {
     assert!(r.contains("Number of entries (default 10)"));
 }
 
+/// A body_override command's man page carries every line its `--help`
+/// prints above OUTPUT, config's KEYS too: its USAGE as the synopsis, its
+/// other headings as sections (da-nvpnh).
+#[test]
+fn roff_carries_every_line_of_a_body_override() {
+    use super::render::{heading, render_help_text, render_roff, roff_escape};
+    for spec in super::COMMANDS.iter().filter(|c| c.body_override.is_some()) {
+        let help = render_help_text(Some(spec.name));
+        let (_, help) = help.split_once('\n').unwrap();
+        let (help, _) = help.rsplit_once("\nOUTPUT:\n").unwrap();
+        let r = render_roff(Some(spec.name));
+        for line in help.lines() {
+            let want = match heading(line) {
+                Some("USAGE") => ".SH SYNOPSIS\n".to_string(),
+                Some(h) => format!(".SH {}\n", roff_escape(h)),
+                None if line.trim().is_empty() => continue,
+                None => roff_escape(line.trim()),
+            };
+            assert!(r.contains(&want), "datum-{}(1) lacks {line:?}", spec.name);
+        }
+    }
+}
+
 #[test]
 fn roff_unknown_command_falls_back_to_top_level() {
     let r = super::render::render_roff(Some("not-a-real-command"));
