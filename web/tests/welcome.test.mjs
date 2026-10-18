@@ -110,7 +110,7 @@ describe('a first visit', () => {
 			const kinds = await page.locator('.host.welcome .shapes li .head').allInnerTexts();
 			assert.deepEqual(kinds.map((k) => k.replace(/\s+/g, ' ')), [
 				'● occurrence: a single point in time (no state)',
-				'█ on/off: on for a while, then off (state: true/false)',
+				'█ on/off: on for a while, then off (start, end)',
 				'▞ switch: one state until the next (custom states)',
 				'¢ card: keys and values, with no time'
 			]);
