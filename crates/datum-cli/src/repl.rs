@@ -96,6 +96,16 @@ fn run_line(line: &str, db: &Db, path: &str) -> Result<()> {
                 if let Some(result) = crate::render_parse_special(pe, Some(db)) {
                     return result;
                 }
+                // A line copied from `help`'s examples starts with `datum`
+                // (da-5c2lq). Still unknown after alias expansion, so an
+                // alias named `datum` keeps working.
+                if matches!(pe, ParseError::InvalidArg(m) if m == "unknown subcommand: 'datum'") {
+                    let rest = line.strip_prefix("datum").unwrap_or(line).trim_start();
+                    if rest.is_empty() {
+                        anyhow::bail!("you're in the REPL already: type a command, or `help`");
+                    }
+                    anyhow::bail!("inside the REPL, leave off `datum`: `{rest}`");
+                }
             }
             Err(e)
         }

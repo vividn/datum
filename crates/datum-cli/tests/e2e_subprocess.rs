@@ -641,6 +641,32 @@ fn subprocess_db_flag_without_subcommand_enters_repl() {
     }
 }
 
+/// da-5c2lq: a line copied from `help`'s examples, `datum` and all, is
+/// told to leave `datum` off and writes nothing; the same line without it
+/// writes.
+#[test]
+fn subprocess_repl_line_starting_with_datum_says_leave_it_off() {
+    let env = Env::new();
+    let out = env.run_with_stdin(&[], "datum occur coffee\n");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("inside the REPL, leave off `datum`: `occur coffee`"),
+        "stderr={stderr}"
+    );
+    assert_eq!(env.entry_count(), 0, "the copied line must write nothing");
+
+    let out = env.run_with_stdin(&[], "datum\n");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("error: you're in the REPL already: type a command, or `help`"),
+        "stderr={stderr}"
+    );
+
+    let out = env.run_with_stdin(&[], "occur coffee\n");
+    assert_ok(&out, "REPL occur coffee");
+    assert_eq!(env.entry_count(), 1);
+}
+
 /// The counterpart the short-circuit must not weaken: a genuinely empty
 /// side (trailing, doubled, or leading standalone `,`) still errors.
 #[test]
