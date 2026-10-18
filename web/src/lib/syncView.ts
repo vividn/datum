@@ -18,6 +18,7 @@
 
 import { writable } from 'svelte/store';
 import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, revokeArgv, syncStatusArgv } from './calls.js';
+import { dateLabel, localTime } from './clock.js';
 import { cliError, run, type RunResult } from './run.js';
 import { approve, approveLink } from './passkey.js';
 import { syncs, type Invite, type Reach, type SyncState } from './sync.js';
@@ -365,7 +366,7 @@ export interface PurgePreview {
 
 /** The revert's confirm, naming the device and what goes, before anything is done. */
 export function purgeWords(label: string, db: string, p: PurgePreview): string {
-	const day = (t?: string | null) => (t ?? '').slice(0, 10);
+	const day = (t?: string | null) => (t ? dateLabel(localTime(new Date(t))) : '');
 	const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : more}`;
 	// As the CLI's revert preview: a zero count says nothing, and the noun rides the first count.
 	const did = ([[p.created, 'created'], [p.edited, 'edited'], [p.deleted, 'deleted']] as const)

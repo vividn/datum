@@ -963,7 +963,7 @@ fn backup_words(backup: Option<std::path::PathBuf>) -> String {
 /// What reverting `who` sets aside, in words (da-ry11c): a verb agrees with
 /// its count, and a count of zero says nothing (da-sivjb).
 fn revert_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
-    let minute = |t: &Option<String>| t.as_deref().map(|t| t.chars().take(16).collect::<String>());
+    let minute = |t: &Option<String>| t.as_deref().map(local);
     let id = &endpoint[..10];
     let many = |n: usize, one: &str, more: &str| match n {
         1 => format!("1 {one}"),
@@ -1011,7 +1011,7 @@ fn revert_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
         what.push(format!("{defs} it signed {}", go(p.defined)));
     }
     format!(
-        "{who} ({id}) — every op it signed, {first} to {last} UTC: {}; it is revoked",
+        "{who} ({id}) — every op it signed, {first} to {last}: {}; it is revoked",
         what.join(", ")
     )
 }
@@ -1745,7 +1745,7 @@ mod tests {
                 last: at,
             };
             let w = revert_words("b", "0123456789abcdef", &p);
-            w[w.find("UTC: ").unwrap() + 5..].to_string()
+            w.split_once(": ").unwrap().1.to_string()
         };
         let back = "back to the state without it; it is revoked";
         assert_eq!(

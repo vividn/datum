@@ -495,3 +495,31 @@ fn a_chain_purge_and_a_revert_ask_on_a_tty_and_name_the_command_as_typed() {
     on_a_tty(&["db", "purge", "--chain"], &format!("{path}\n")).unwrap();
     assert_eq!(data_of(&a), EMPTY);
 }
+
+/// A revert's preview names the span of what goes on the reader's clock, as
+/// `sync status` does, and --json keeps the instants (da-rzxnr).
+#[test]
+fn a_revert_preview_names_its_span_on_the_readers_clock() {
+    let (a, b) = chained();
+    b.ok(&["occur", "coffee"]);
+    assert!(b.send(&a).0);
+    let p = json(&a.ok(&["sync", "chain", "revert", "b", "--json"]));
+    let kathmandu = |at: &serde_json::Value| {
+        let at = chrono::DateTime::parse_from_rfc3339(at.as_str().unwrap()).unwrap();
+        let east = chrono::FixedOffset::east_opt(5 * 3600 + 45 * 60).unwrap();
+        at.with_timezone(&east).format("%H:%M").to_string()
+    };
+    let out = a
+        .cmd(&["sync", "chain", "revert", "b"])
+        .env("TZ", "Asia/Kathmandu")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let said = String::from_utf8(out.stdout).unwrap();
+    let span = format!(
+        "every op it signed, {} to {}: 1 entry it created goes",
+        kathmandu(&p["first"]),
+        kathmandu(&p["last"])
+    );
+    assert!(said.contains(&span), "{span} in {said}");
+}

@@ -33,3 +33,17 @@ test('a device that changed entries names only the counts it has, definitions to
 	assert.equal(changes(1, 0, 0, 2), '1 entry it created and 2 definitions it signed');
 	assert.equal(changes(0, 2, 1, 1), '2 entries it edited, 1 it deleted and 1 definition it signed');
 });
+
+// da-rzxnr: the span is named in the reader's zone, so a change made just
+// after local midnight east of UTC is that local day, not the UTC one before.
+test('the span is the days on the reader\'s clock', () => {
+	const was = process.env.TZ;
+	process.env.TZ = 'Europe/Berlin';
+	try {
+		const p = { created: 1, edited: 0, deleted: 0, first: '2026-10-17T22:30:00Z', last: '2026-10-18T22:30:00Z' };
+		assert.match(purgeWords('phone', 'home', p), /, 2026-10-18 to 2026-10-19\./);
+	} finally {
+		if (was === undefined) delete process.env.TZ;
+		else process.env.TZ = was;
+	}
+});
