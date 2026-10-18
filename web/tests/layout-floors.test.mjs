@@ -54,12 +54,16 @@ describe('a border', () => {
 				['repl', before.width]
 			);
 			// The picture is re-asked at the narrower box, not squeezed into it.
-			await page.waitForFunction(
-				(was) => document.querySelector('section[data-pane="nowview"] svg.svg')?.width.baseVal.value < was,
-				drawn
-			);
-			const img = pane(page, 'nowview').locator('svg.svg');
-			const shown = await img.evaluate((el) => ({ natural: el.width.baseVal.value, box: el.getBoundingClientRect().width }));
+			// Measured in the step that finds it: a locator's `evaluate` finds
+			// the svg and runs on it in two round trips, and a redraw between
+			// them (the drop's run, the ten-second beat) measured the detached
+			// one — its width attribute, a box of 0 (da-swj3y).
+			const narrower = await page.waitForFunction((was) => {
+				const el = document.querySelector('section[data-pane="nowview"] .picture:not(.behind) svg.svg');
+				const natural = el?.width.baseVal.value;
+				return natural < was && { natural, box: el.getBoundingClientRect().width };
+			}, drawn);
+			const shown = await narrower.jsonValue();
 			assert.ok(Math.abs(shown.natural - shown.box) <= 1, `scaled: ${JSON.stringify(shown)}`);
 		});
 	});
