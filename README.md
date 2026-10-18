@@ -168,6 +168,15 @@ titled with; there is one field behind both.
 datum [--db NAME_OR_PATH] <command> [args]
 ```
 
+## Examples
+
+```
+  datum occur coffee                  a coffee, now
+  datum switch mood happy             mood is happy from now on
+  datum tail                          the last ten entries
+  datum now                           each field's state now
+```
+
 ## LOGGING
 
 - `add` — Register a keyed timeless record (needs an id)

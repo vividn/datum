@@ -762,6 +762,48 @@ fn roff_carries_every_line_of_a_body_override() {
     }
 }
 
+/// The top-level man page carries every line `datum --help` prints above
+/// the command catalog: USAGE as the synopsis, EXAMPLES as its own section
+/// in one `.nf` run so the two columns stay aligned (da-ztoid).
+#[test]
+fn roff_top_level_carries_every_line_above_the_catalog() {
+    use super::render::{heading, render_help_text, render_roff, roff_escape};
+    let help = render_help_text(None);
+    let (_, help) = help.split_once('\n').unwrap();
+    let catalog = format!("\n{}:\n", super::Category::order()[0].label());
+    let (help, _) = help.split_once(&catalog).unwrap();
+    let r = render_roff(None);
+    let mut section = "";
+    for line in help.lines() {
+        let want = match heading(line) {
+            Some("USAGE") => ".SH SYNOPSIS\n".to_string(),
+            Some(h) => format!(".SH {}\n", roff_escape(h)),
+            None if line.trim().is_empty() => continue,
+            // The synopsis sets `datum` bold on a line of its own.
+            None if section == "USAGE" => roff_escape(line.trim().split_once(' ').unwrap().1),
+            None => roff_escape(line.trim_start()),
+        };
+        if let Some(h) = heading(line) {
+            section = h;
+        }
+        assert!(r.contains(&want), "datum(1) lacks {line:?}");
+    }
+    let examples = super::commands::TOP_LEVEL_EXAMPLES;
+    let block = examples.lines().map(|l| roff_escape(l.trim_start()) + "\n");
+    let block = format!(".SH EXAMPLES\n.nf\n{}.fi\n", block.collect::<String>());
+    assert!(r.contains(&block), "datum(1) lacks {block:?}");
+}
+
+#[test]
+fn markdown_top_level_carries_the_examples() {
+    let md = super::render::render_markdown(None);
+    let block = format!(
+        "## Examples\n\n```\n{}```\n",
+        super::commands::TOP_LEVEL_EXAMPLES
+    );
+    assert!(md.contains(&block));
+}
+
 #[test]
 fn roff_unknown_command_falls_back_to_top_level() {
     let r = super::render::render_roff(Some("not-a-real-command"));

@@ -565,7 +565,9 @@ fn render_markdown_top_level() -> String {
     s.push_str("Personal data tracker.\n\n");
     s.push_str("## Usage\n\n```\n");
     s.push_str(TOP_LEVEL_USAGE);
-    s.push_str("\n```\n");
+    s.push_str("\n```\n\n## Examples\n\n```\n");
+    s.push_str(TOP_LEVEL_EXAMPLES);
+    s.push_str("```\n");
     for cat in Category::order() {
         let in_section: Vec<&CommandSpec> =
             COMMANDS.iter().filter(|c| c.category == *cat).collect();
@@ -673,6 +675,8 @@ fn render_roff_top_level() -> String {
          Entries are logged from the command line and stored in a local \
          SQLite database.\n",
     );
+    s.push_str(".SH EXAMPLES\n");
+    s.push_str(&roff_block(&TOP_LEVEL_EXAMPLES.lines().collect::<Vec<_>>()));
 
     s.push_str(".SH COMMANDS\n");
     for cat in Category::order() {
