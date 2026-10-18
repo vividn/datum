@@ -1954,6 +1954,16 @@ fn sent_in(log: &str, to: &str) -> usize {
     n
 }
 
+/// The sessions with `to` a copy's log says were lost having sent it
+/// something: each «and sent N» with N over 0, whatever ended it.
+fn lost_in(log: &str, to: &str) -> usize {
+    log.lines()
+        .filter(|l| l.contains(to))
+        .filter_map(|l| l.split_once("and sent "))
+        .filter(|(_, rest)| rest.starts_with(|c: char| c.is_ascii_digit() && c != '0'))
+        .count()
+}
+
 /// `n` entries imported into `copy` at once, as vividn's re-import was: no op
 /// covers them until a serve signs their baselines.
 fn import(copy: &Copy, n: usize) {
@@ -2000,7 +2010,11 @@ fn until(what: &str, limit: Duration, f: impl Fn() -> bool) {
 /// applies before the next, so a lost session wastes at most a round from
 /// each sender, where it wasted all it had been sent and not yet applied
 /// (staging: 80,535 sent for 20,003, 7 sessions lost); and no copy dials a
-/// peer it is in a session with. Measured: 21,008 sent, 9 lost.
+/// peer it is in a session with. Measured: 21,008 sent, 9 lost; on a
+/// loaded box (three at once), 22,002 to 25,055 sent, cut 7 or 8 times and
+/// 7 to 8 sessions lost by a, b and c together. Its bound counts the
+/// sessions their logs say they lost, not the cuts: one can also time out
+/// on its own (da-uakw5). With rounds uncapped, the staging shape, 64,333.
 #[test]
 fn a_big_import_reaches_a_slow_copy_without_sending_it_many_times() {
     let (mut a, mut b, mut c, mut d) = (Copy::new(), Copy::new(), Copy::new(), Copy::new());
@@ -2065,14 +2079,20 @@ fn a_big_import_reaches_a_slow_copy_without_sending_it_many_times() {
         seen = now;
     }
     let total: usize = seen.iter().sum();
+    // The sessions each of a, b and c says it lost with d: a kill, or one
+    // that ended on its own, as a loaded box's can (da-uakw5).
+    let losses: Vec<usize> = [&a, &b, &c]
+        .iter()
+        .map(|c| lost_in(&log(c, "run.log"), &to))
+        .collect();
     eprintln!(
-        "d lacked {needed} ops, lost its sessions {lost} times and was sent {total} (a {}, b {}, c {})",
-        seen[0], seen[1], seen[2]
+        "d lacked {needed} ops, was cut {lost} times, lost sessions with a {}, b {}, c {} and was sent {total} (a {}, b {}, c {})",
+        losses[0], losses[1], losses[2], seen[0], seen[1], seen[2]
     );
     assert!(lost > 0, "d's sessions were never cut");
-    // At most a round from each of a, b and c is lost with each session,
-    // and one more at the end: staging's 80,535 is well over it.
-    let bound = needed + (lost as usize + 1) * 3 * 1000;
+    // At most a round from a sender is lost with each session it lost, and
+    // one more at the end: staging's 80,535 is well over it.
+    let bound = needed + losses.iter().map(|l| (l + 1) * 1000).sum::<usize>();
     assert!(
         total <= bound,
         "d lacked {needed} ops and was sent {total}, over {bound}"
