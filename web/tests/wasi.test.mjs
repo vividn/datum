@@ -73,6 +73,18 @@ describe('the wasi CLI', () => {
 		});
 	});
 
+	// Help's examples start with `datum`, and the bar is the CLI after it
+	// (da-lszdo): the example pasted says to leave it off, and writes nothing.
+	test('`datum occur coffee` pasted from Help says to leave off `datum`', async () => {
+		await onSeam(async (app) => {
+			await app.submit('datum occur coffee');
+			const { result } = await app.page.evaluate(() => window.datum.bar.last());
+			assert.equal(result.code, 1);
+			assert.equal(result.stderr, 'Error: leave off `datum`: `occur coffee`');
+			assert.deepEqual(await app.entries(), []);
+		});
+	});
+
 	// @bjorn3/browser_wasi_shim sizes argv in UTF-16 units and writes UTF-8,
 	// so the argument after a non-ASCII one arrived mangled ($lib/cli.ts).
 	test('a non-ASCII argument arrives intact, and so does the next one', async () => {

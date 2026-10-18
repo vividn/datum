@@ -63,6 +63,21 @@ pub fn render_parse_special(e: &ParseError, db: Option<&datum_core::db::Db>) -> 
     Some(Ok(()))
 }
 
+/// A command copied from `help`'s examples starts with `datum`, which in
+/// datum.day's input bar or the REPL, or doubled in a shell, is one too many
+/// (da-5c2lq, da-lszdo). Only when `datum` is still unknown after alias
+/// expansion, so an alias named `datum` keeps working. `rest` is what
+/// follows it.
+pub fn leading_datum(e: &ParseError, rest: &str) -> Option<String> {
+    if !matches!(e, ParseError::InvalidArg(m) if m == "unknown subcommand: 'datum'") {
+        return None;
+    }
+    Some(match rest {
+        "" => "leave off `datum`: type a command, or `help`".to_string(),
+        rest => format!("leave off `datum`: `{rest}`"),
+    })
+}
+
 /// Drive a captured `argv` through the same path the `datum` binary
 /// uses for `datum <subcommand>` invocations. Carved out of `main.rs`
 /// so the bin-smoke E2E gate (`tests/e2e_bin_smoke.rs`, da-1wat) can
@@ -106,6 +121,17 @@ pub fn run(argv: Vec<String>) -> Result<()> {
                             return Ok(());
                         }
                     }
+                }
+                let after = argv
+                    .iter()
+                    .enumerate()
+                    .skip(1)
+                    .find(|(i, w)| {
+                        *w == "datum" && !matches!(argv[i - 1].as_str(), "--db" | "--color")
+                    })
+                    .map_or(&argv[..0], |(i, _)| &argv[i + 1..]);
+                if let Some(hint) = leading_datum(pe, &datum_parse::alias::shell_join(after)) {
+                    anyhow::bail!(hint);
                 }
             }
             return Err(e);

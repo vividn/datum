@@ -658,13 +658,37 @@ fn subprocess_repl_line_starting_with_datum_says_leave_it_off() {
     let out = env.run_with_stdin(&[], "datum\n");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("error: you're in the REPL already: type a command, or `help`"),
+        stderr.contains("error: inside the REPL, leave off `datum`: type a command, or `help`"),
         "stderr={stderr}"
     );
 
     let out = env.run_with_stdin(&[], "occur coffee\n");
     assert_ok(&out, "REPL occur coffee");
     assert_eq!(env.entry_count(), 1);
+}
+
+/// da-lszdo: the same hint one-shot, which is what datum.day's input bar
+/// runs: `datum occur coffee` pasted there is `datum datum occur coffee`.
+#[test]
+fn subprocess_one_shot_leading_datum_says_leave_it_off() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "tea"]), "occur tea");
+    let out = env.run(&["datum", "occur", "coffee", "note=two words"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("leave off `datum`: `occur coffee \"note=two words\"`"),
+        "stderr={stderr}"
+    );
+    assert!(!stderr.contains("inside the REPL"), "stderr={stderr}");
+    assert_eq!(env.entry_count(), 1, "the doubled name must write nothing");
+
+    let out = env.run(&["datum"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("leave off `datum`: type a command, or `help`"),
+        "stderr={stderr}"
+    );
 }
 
 /// The counterpart the short-circuit must not weaken: a genuinely empty
