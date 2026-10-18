@@ -9,7 +9,7 @@
 
 use super::commands::{
     find_command, find_topic, page_name, starts_with_words, COMMANDS, ENV_VARS, GLOBAL_FLAGS,
-    GLOBAL_FLAGS_COL, TOP_LEVEL_FOOTER, TOP_LEVEL_USAGE,
+    GLOBAL_FLAGS_COL, TOP_LEVEL_EXAMPLES, TOP_LEVEL_FOOTER, TOP_LEVEL_USAGE,
 };
 use super::spec::{Category, CommandSpec, FlagSpec, TopicSpec};
 use crate::input::output_args::{shows_for, Show};
@@ -295,6 +295,8 @@ fn render_top_level() -> String {
     s.push_str("  ");
     s.push_str(TOP_LEVEL_USAGE);
     s.push('\n');
+    s.push_str("\nEXAMPLES:\n");
+    s.push_str(TOP_LEVEL_EXAMPLES);
 
     for cat in Category::order() {
         let in_section: Vec<&CommandSpec> =

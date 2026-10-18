@@ -1103,6 +1103,14 @@ pub const GLOBAL_FLAGS_COL: usize = 29;
 /// Top-level USAGE line (single line under `USAGE:`).
 pub const TOP_LEVEL_USAGE: &str = "datum [--db NAME_OR_PATH] <command> [args]";
 
+/// Printed under `EXAMPLES:` after USAGE in `datum --help`: logging a moment
+/// and reading it back, in the per-command intros' own form (da-birce).
+pub const TOP_LEVEL_EXAMPLES: &str = "  datum occur coffee                  a coffee, now
+  datum switch mood happy             mood is happy from now on
+  datum tail                          the last ten entries
+  datum now                           each field's state now
+";
+
 /// Footer printed after `GLOBAL OPTIONS:`.
 pub const TOP_LEVEL_FOOTER: &str = "Run `datum <command> --help` for per-command flag detail.\n\
      Environment variables datum reads: `datum help env`.\n\

@@ -18,6 +18,12 @@ datum — personal data tracker
 USAGE:
   datum [--db NAME_OR_PATH] <command> [args]
 
+EXAMPLES:
+  datum occur coffee                  a coffee, now
+  datum switch mood happy             mood is happy from now on
+  datum tail                          the last ten entries
+  datum now                           each field's state now
+
 LOGGING:
   add      Register a keyed timeless record (needs an id)
   note     Jot a timeless entry (auto create_time id)
@@ -1289,6 +1295,7 @@ fn newcomer_pages_open_with_an_intro() {
 #[test]
 fn every_intro_example_parses() {
     let intros = super::COMMANDS.iter().map(|c| c.intro);
+    let intros = intros.chain([super::commands::TOP_LEVEL_EXAMPLES]);
     let mut n = 0;
     for intro in intros.chain(super::TOPICS.iter().map(|t| t.intro)) {
         for line in intro.lines().filter(|l| l.starts_with("  ")) {
