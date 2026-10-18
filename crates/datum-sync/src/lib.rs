@@ -874,7 +874,20 @@ fn push<'a>(
 ) -> Session<'a> {
     Box::pin(async move {
         let start = Instant::now();
-        let rep = async { dial(store, ep, addr(&p)?, None).await }.await;
+        let rep = loop {
+            let rep = async { dial(store, ep, addr(&p)?, None).await }.await;
+            // Asked, a dial closed for a session this copy serves to the
+            // peer (da-vj3ly) waits that session out and dials again, so
+            // `datum sync` says this one verified, not that one runs
+            // (da-221fe).
+            let busy = rep.as_ref().is_err_and(|e| failure(e) == Some(BUSY));
+            if asked.is_none() || !busy || !store.serves(&p.id) {
+                break rep;
+            }
+            while store.serves(&p.id) {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        };
         if let Some(asked) = asked {
             let _ = asked.send(answer(&p, &rep, start.elapsed()));
         }
