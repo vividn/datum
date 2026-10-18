@@ -17,8 +17,9 @@
 //! from the one it looks like.
 //!
 //! So the rule is enforced where names are chosen — [`check`] runs inside
-//! `setup`'s parser, the one door both the terminal and datum.day go
-//! through. Logging itself stays permissive, so no entry already in a
+//! `setup`'s parser, the door both the terminal and datum.day go through,
+//! and on each `[[field]]` of a kit, the other (`datum kit install`,
+//! da-o6a0d). Logging itself stays permissive, so no entry already in a
 //! database becomes unreachable, and `datum_core::slug::validate_field_name`
 //! — the storage-layer guard, which rejects only an empty name and a `:` —
 //! stays as it is. This rule is the stricter of the two, so a name that may

@@ -216,6 +216,13 @@ fn install_toml(
         anyhow::bail!("kit TOML at {from} is missing [kit].name");
     }
 
+    // A `[[field]]` declares a name as `setup` does, so it keeps the same
+    // rule, or the kit makes a field nothing can log to (da-o6a0d).
+    for entry in &kit.fields {
+        datum_parse::field_name::check_declared(&entry.name)
+            .with_context(|| format!("kit '{}' at {from}", kit.kit.name))?;
+    }
+
     // Trust gate runs BEFORE any DB writes so a "no" answer leaves the
     // DB untouched. Index DDL is also validated up front so the user
     // sees a malformed kit before being asked to approve it — and a dry

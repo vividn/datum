@@ -548,3 +548,27 @@ fn a_kits_strict_installs_as_only_listed_keys() {
     .unwrap();
     assert!(db.load_spec("tea").unwrap().unwrap().only_listed_keys);
 }
+
+/// A `[[field]]` name keeps the rule `setup` keeps (da-o6a0d): one `setup`
+/// refuses is refused by the kit, naming the rule, the file and the field,
+/// and nothing is installed; an inner space is a name like any other.
+#[test]
+fn a_kit_refuses_a_field_name_setup_refuses() {
+    for name in ["i=j", " lead", "-dash"] {
+        let db = fresh_db();
+        let kit =
+            format!("[kit]\nname = \"k\"\n\n[[field]]\nname = \"{name}\"\nverb = \"occur\"\n");
+        let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
+        assert!(err.contains(datum_parse::field_name::RULE), "{err}");
+        assert!(
+            err.contains("k.toml") && err.contains(&format!("'{name}'")),
+            "{err}"
+        );
+        assert!(db.load_spec(name).unwrap().is_none(), "{name:?}");
+        assert!(db.load_specs_by_kit("k").unwrap().is_empty(), "{name:?}");
+    }
+    let db = fresh_db();
+    let kit = "[kit]\nname = \"k\"\n\n[[field]]\nname = \"my coffee\"\nverb = \"occur\"\n";
+    install(&db, kit, &[]).unwrap();
+    assert!(db.load_spec("my coffee").unwrap().is_some());
+}
