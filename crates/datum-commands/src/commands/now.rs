@@ -51,17 +51,20 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
     }
 
     let snapshot = db.current_now(&filter)?;
+    let mut all_ignored = false;
     if snapshot.active.is_empty()
         && snapshot.tracked_false.is_empty()
         && snapshot.ignored.is_empty()
     {
-        // Discriminate "nothing tracked at all" from "tracked but
-        // filter-hidden" — the former is the legacy onboarding hint;
-        // the latter falls through to `render_snapshot`'s sentinel.
-        if db.get_tracked_fields(chrono::Utc::now())?.is_empty() {
+        // Discriminate "nothing tracked at all" and "everything ignored"
+        // — the onboarding hints — from "tracked but holding no state"
+        // (an occur field, da-k1q9o), which is `render_snapshot`'s sentinel.
+        let tracked = db.get_tracked_fields(chrono::Utc::now())?;
+        if tracked.is_empty() {
             println!("No tracked fields. Use `datum track <field>` or log with `occur`/`start`.");
             return Ok(());
         }
+        all_ignored = tracked.iter().all(|f| f.ignored);
     }
 
     let state_colors = db.get_all_state_colors()?;
@@ -92,16 +95,20 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
         }
     }
 
-    print!(
-        "{}",
-        render_snapshot(
-            &snapshot,
-            &state_colors,
-            &overlap_counts,
-            !args.no_color && crate::render::colors::color_enabled(),
-            cols,
-        )
-    );
+    if all_ignored {
+        println!("No tracked (non-ignored) fields. Use `datum track <field>`.");
+    } else {
+        print!(
+            "{}",
+            render_snapshot(
+                &snapshot,
+                &state_colors,
+                &overlap_counts,
+                !args.no_color && crate::render::colors::color_enabled(),
+                cols,
+            )
+        );
+    }
 
     // da-raz: `datum now` also renders a terminal nowview band beneath the
     // active-states list. `--bare` suppresses it (e.g. for piping). The

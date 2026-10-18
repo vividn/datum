@@ -138,13 +138,13 @@ fn switch_entry(field: &str, state: &str) -> Entry {
 
 #[test]
 fn render_empty_tracked_shows_sentinel() {
-    // No tracked fields at all (e.g. brand-new db) → the view prints its
-    // terminal sentinel rather than silently producing nothing.
+    // Nothing to list (e.g. only an occur field, which holds no state) →
+    // the view prints its sentinel rather than silently producing nothing.
     let snap = build_snapshot(&[], &HashMap::new(), false);
     let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
     assert!(
-        plain.contains("No tracked (non-ignored) fields"),
+        plain.contains("No tracked field holds a state now."),
         "expected sentinel, got:\n{plain}"
     );
 }
@@ -222,7 +222,8 @@ fn render_array_state_shows_comma_joined_members() {
 #[test]
 fn render_ignored_field_hidden_by_default() {
     // `ignored=true` specs must NOT appear when `show_ignored=false`, and the
-    // "no (non-ignored)" sentinel should fire because nothing else is tracked.
+    // sentinel should fire because nothing else is listed (`datum now`
+    // itself says to `datum track` there instead: `now_empty_states_…`).
     let tf = [ignored("youtube")];
     let snap = build_snapshot(&tf, &HashMap::new(), false);
     let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
@@ -232,7 +233,7 @@ fn render_ignored_field_hidden_by_default() {
         "ignored field must not render:\n{plain}"
     );
     assert!(
-        plain.contains("No tracked (non-ignored) fields"),
+        plain.contains("No tracked field holds a state now."),
         "sentinel fires when nothing to show:\n{plain}"
     );
 }
@@ -1340,4 +1341,34 @@ fn now_reads_no_flag_as_a_fields_state_or_last_event() {
         120,
         "the end, not the flag an hour after it"
     );
+}
+
+/// da-k1q9o: an occur field is tracked but holds no state, so `now` says
+/// that and not «No tracked fields»; the `datum track` advice is for a
+/// database whose every field is ignored. The band is drawn either way.
+#[test]
+fn now_empty_states_say_which_emptiness() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("now-empty.db");
+    run_datum(&db, &[], &["occur", "coffee"]);
+
+    let out = run_datum(&db, &[], &["now"]);
+    assert!(
+        out.contains("No tracked field holds a state now."),
+        "occur alone:\n{out}"
+    );
+    assert!(!out.contains("datum track"), "occur alone:\n{out}");
+    assert!(out.contains("coffee"), "band drawn:\n{out}");
+
+    run_datum(&db, &[], &["ignore", "coffee"]);
+    let out = run_datum(&db, &[], &["now"]);
+    assert!(
+        out.contains("No tracked (non-ignored) fields. Use `datum track <field>`."),
+        "every field ignored:\n{out}"
+    );
+    assert!(
+        !out.contains("holds a state"),
+        "every field ignored:\n{out}"
+    );
+    assert!(out.contains("coffee"), "band drawn:\n{out}");
 }

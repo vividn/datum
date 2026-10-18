@@ -1904,11 +1904,7 @@ pub fn render_snapshot(
     }
 
     if active.is_empty() && tracked_false.is_empty() && ignored_rows.is_empty() {
-        writeln!(
-            out,
-            "No tracked (non-ignored) fields. Use `datum track <field>`."
-        )
-        .unwrap();
+        writeln!(out, "No tracked field holds a state now.").unwrap();
     }
     if color {
         out
