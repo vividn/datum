@@ -6,6 +6,7 @@
 //! checking a field for drift are both this one read.
 
 use anyhow::Result;
+use datum_core::action::Action;
 use datum_core::db::Db;
 use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use datum_core::time::Zone;
@@ -14,13 +15,19 @@ use serde_json::{json, Value as JsonValue};
 use crate::args::{ShowFlag, StatesArgs};
 use crate::render::colors::state_rgb;
 use crate::render::format_grid;
+use crate::render::state_truncate::state_label;
 
 pub fn states(args: StatesArgs, db: &Db) -> Result<()> {
     let listing = compute_states(db, &args.field)?;
     match args.show {
         ShowFlag::None => {}
         ShowFlag::Json => println!("{}", serde_json::to_string_pretty(&listing)?),
-        _ => print!("{}", format_states(&listing)),
+        _ => {
+            let start = db
+                .load_spec(&args.field)?
+                .is_some_and(|s| s.verb == Action::Start);
+            print!("{}", format_states(&listing, start));
+        }
     }
     Ok(())
 }
@@ -68,7 +75,8 @@ pub fn compute_states(db: &Db, field: &str) -> Result<JsonValue> {
 
 /// The table: `state  entries  last used  colour  description`, an
 /// undeclared state saying so where a declared one has its description.
-pub fn format_states(listing: &JsonValue) -> String {
+/// `start`: the field's verb is start, whose `true` / `false` are its own.
+pub fn format_states(listing: &JsonValue, start: bool) -> String {
     let rows: Vec<Vec<String>> = listing["states"]
         .as_array()
         .into_iter()
@@ -85,16 +93,19 @@ pub fn format_states(listing: &JsonValue) -> String {
                     },
                 ),
             };
-            let description = if r["declared"] == json!(true) {
-                r["description"].as_str().unwrap_or("").to_string()
-            } else {
-                "undeclared".to_string()
-            };
             let state = &r["state"];
+            // A `true` / `false` reads `start` / `end`, as in `tail`, and is
+            // never undeclared: a start/stop field's are the verb's own, a
+            // switch field's what switching it on or off stores (da-tpktb).
+            let description = match (&r["declared"], state) {
+                (JsonValue::Bool(true), _) => r["description"].as_str().unwrap_or("").to_string(),
+                (_, JsonValue::Bool(_)) if start => "the start/stop verb's own".to_string(),
+                (_, JsonValue::Bool(true)) => "the field switched on".to_string(),
+                (_, JsonValue::Bool(false)) => "the field switched off".to_string(),
+                _ => "undeclared".to_string(),
+            };
             vec![
-                state
-                    .as_str()
-                    .map_or_else(|| state.to_string(), str::to_string),
+                state_label(state),
                 r["count"].to_string(),
                 last,
                 r["color"].as_str().unwrap_or("").to_string(),
@@ -168,7 +179,7 @@ mod tests {
         assert_eq!(listing["states"][1]["description"], "joyful");
         assert_eq!(listing["states"][1]["color"], "#00ff00");
 
-        let table = format_states(&listing);
+        let table = format_states(&listing, false);
         let lines: Vec<&str> = table.lines().map(str::trim_end).collect();
         assert!(lines[0].starts_with("state  entries  last used"), "{table}");
         assert!(lines[2].ends_with("#00ff00  joyful"), "{table}");
@@ -196,6 +207,55 @@ mod tests {
             .unwrap()
             .iter()
             .all(|r| r["declared"] == false));
+    }
+
+    /// The table says a start/stop field's states as `tail` does, `start`
+    /// and `end`, the verb's own; the listing keeps `true` / `false`
+    /// (da-tpktb).
+    #[test]
+    fn a_start_stop_field_reads_start_and_end_in_the_table() {
+        let db = fresh_db();
+        db.save_field_spec(&FieldSpec::new("work", Action::Start))
+            .unwrap();
+        // `true` twice, so it lists first: most used first.
+        for state in [true, false, true] {
+            entry_builder("work").state(json!(state)).insert(&db);
+        }
+        let listing = compute_states(&db, "work").unwrap();
+        let states: Vec<_> = listing["states"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| &r["state"])
+            .collect();
+        assert_eq!(states, [&json!(true), &json!(false)]);
+        let table = format_states(&listing, true);
+        let lines: Vec<&str> = table.lines().collect();
+        for (line, word) in lines[1..].iter().zip(["start", "end"]) {
+            assert!(line.starts_with(word), "{table}");
+            assert!(line.ends_with("the start/stop verb's own"), "{table}");
+        }
+        assert!(
+            !table.contains("true") && !table.contains("undeclared"),
+            "{table}"
+        );
+    }
+
+    /// A switch field's `false` reads `end`, as in `tail`, but it is how any
+    /// switch field ends, nothing of the start/stop verb's (da-tpktb).
+    #[test]
+    fn a_switch_field_ended_with_false_reads_switched_off() {
+        let db = fresh_db();
+        db.save_field_spec(&FieldSpec::new("reading", Action::Switch))
+            .unwrap();
+        for state in [json!("Dune"), json!(false)] {
+            entry_builder("reading").state(state).insert(&db);
+        }
+        let listing = compute_states(&db, "reading").unwrap();
+        let table = format_states(&listing, false);
+        let end = table.lines().find(|l| l.starts_with("end ")).unwrap();
+        assert!(end.ends_with("the field switched off"), "{table}");
+        assert!(!table.contains("start/stop"), "{table}");
     }
 
     #[test]

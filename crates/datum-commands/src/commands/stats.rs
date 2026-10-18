@@ -520,6 +520,16 @@ fn label(v: Option<&JsonValue>) -> String {
     state_label(v).unwrap_or_else(|| "(none)".to_string())
 }
 
+/// A label as the text prints it: `true` / `false` read `start` / `end`,
+/// as `tail` says them (da-tpktb). `--json` keeps the label.
+fn shown(label: &str) -> &str {
+    match label {
+        "true" => "start",
+        "false" => "end",
+        other => other,
+    }
+}
+
 /// [`Timeline::seen`]: the readings outside `params`' window that can
 /// change a label's class inside it.
 fn seen_outside(db: &Db, params: &ListParams) -> Result<Vec<(String, StateClass, String)>> {
@@ -1250,7 +1260,7 @@ fn render_text(r: &StatsResult) -> String {
             let w = w.unwrap_or(0);
             out.push('\n');
             for s in &r.states {
-                out.push_str(&format!("  {:>w$}×  {}\n", s.count, s.state));
+                out.push_str(&format!("  {:>w$}×  {}\n", s.count, shown(&s.state)));
             }
         }
         return out;
@@ -1311,7 +1321,7 @@ fn render_text(r: &StatsResult) -> String {
             format_dur(s.duration_seconds),
             percent(s.ratio),
             s.count,
-            s.state,
+            shown(&s.state),
         ));
     }
     out
@@ -2099,5 +2109,42 @@ mod tests {
         };
         assert_eq!(roll(Some(from)), roll(None), "null-switch inside its null");
         uninstall();
+    }
+
+    /// A start/stop field's states read `start` / `end`, as in `tail`, and
+    /// `--json` keeps `true` / `false` (da-tpktb).
+    #[test]
+    fn a_start_stop_field_reads_start_and_end() {
+        use datum_core::entry::Verb;
+        use datum_core::test_util::{entry_builder, freeze_time, fresh_db};
+        let _g = freeze_time("2026-06-15T12:00:00Z");
+        let db = fresh_db();
+        for (t, state) in [
+            ("2026-06-15T10:00:00Z", true),
+            ("2026-06-15T11:30:00Z", false),
+        ] {
+            entry_builder("work")
+                .verb(Verb::Switch)
+                .state(serde_json::json!(state))
+                .time_start_utc(utc(t))
+                .insert(&db);
+        }
+        let args = StatsArgs {
+            selector: Some("work".into()),
+            ..StatsArgs::default()
+        };
+        let r = compute_stats(&args, &db).unwrap();
+        let text = render_text(&r);
+        assert!(text.contains("1×  start\n"), "{text}");
+        assert!(text.contains("1×  end\n"), "{text}");
+        assert!(!text.contains("true") && !text.contains("false"), "{text}");
+        let json: serde_json::Value = serde_json::from_str(&render_json(&r)).unwrap();
+        let states: Vec<_> = json["states"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| &s["state"])
+            .collect();
+        assert_eq!(states, ["true", "false"], "{json}");
     }
 }
