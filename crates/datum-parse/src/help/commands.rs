@@ -1445,7 +1445,7 @@ const TIME_FORMS: &[FormGroup] = &[
         ],
     },
     FormGroup {
-        heading: "DATES (at the current time of day; -t takes them too)",
+        heading: "DATES (alone, a date-only entry, as -D makes; with a -t time, that time on that day)",
         durations: false,
         forms: &[
             FormSpec {
@@ -1462,7 +1462,7 @@ const TIME_FORMS: &[FormGroup] = &[
             },
             FormSpec {
                 example: "-yy",
-                meaning: "two days ago: each y is a day",
+                meaning: "the day before yesterday: each y is a day",
             },
             FormSpec {
                 example: "-d sunday",

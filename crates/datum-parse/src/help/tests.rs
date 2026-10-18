@@ -1157,6 +1157,26 @@ fn every_time_page_example_parses() {
     assert!(crate::time::parse_duration("an hour").is_err());
 }
 
+/// da-6yo9m: the DATES heading says what its forms make — alone, a
+/// date-only entry, as `-D` does (original datum's `timeArgs.test.ts`); with
+/// a `-t` time, that time on that day. It said «at the current time of day».
+#[test]
+fn time_page_dates_are_date_only() {
+    let topic = super::commands::find_topic("time").expect("`datum help time`");
+    let dates = topic
+        .forms
+        .iter()
+        .find(|g| g.heading.starts_with("DATES"))
+        .expect("a DATES group");
+    assert!(dates.heading.contains("date-only"), "{}", dates.heading);
+    for f in dates.forms {
+        let built = build_time_args(f.example).unwrap();
+        assert!(built.only_date, "`{}` is not date-only", f.example);
+        let timed = build_time_args(&format!("{} -t 10:00", f.example)).unwrap();
+        assert!(!timed.only_date, "`{} -t 10:00` is date-only", f.example);
+    }
+}
+
 /// da-2bb7z: a subcommand's `--help` is its own page — its usage lines and
 /// what the parent's page says of it — where it was the parent's whole page,
 /// byte for byte; and each purge names the other.
