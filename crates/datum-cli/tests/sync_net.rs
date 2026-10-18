@@ -281,6 +281,31 @@ fn connect_takes_the_join_link_or_its_bare_ticket() {
     assert_eq!(a.hash(), c.hash());
 }
 
+/// An invite names its expiry on the reader's clock, as `sync status` does,
+/// not the stored instant (da-4cwn8).
+#[test]
+fn an_invite_names_its_expiry_on_the_readers_clock() {
+    let a = Copy::new();
+    // The clock alone: a date before it, on another day, is the helper's
+    // rule, and a midnight between the reads would make it either.
+    let kathmandu = |at: chrono::DateTime<chrono::Utc>| {
+        let east = chrono::FixedOffset::east_opt(5 * 3600 + 45 * 60).unwrap();
+        format!("{}.", at.with_timezone(&east).format("%H:%M"))
+    };
+    let ten = chrono::Duration::minutes(10);
+    let before = kathmandu(chrono::Utc::now() + ten);
+    let mut inviting = Serving::of(
+        a.cmd(&["sync", "chain", "invite", "--expires", "10m"])
+            .env("TZ", "Asia/Kathmandu"),
+    );
+    let line = inviting.lines_until("One-time invite");
+    let after = kathmandu(chrono::Utc::now() + ten);
+    assert!(
+        (line.contains(&before) || line.contains(&after)) && !line.contains('Z'),
+        "{before} or {after} in {line}"
+    );
+}
+
 /// The connect line an invite prints, pasted into a shell, hands `connect` the
 /// whole link as one argument (da-sin5b). Unquoted, zsh with `extendedglob`
 /// refused it — the `#` is a glob there, «no matches found» — and sh took it.

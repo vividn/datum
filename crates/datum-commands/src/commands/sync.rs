@@ -607,7 +607,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             if starts {
                 super::sync_daemon::auto_install(db);
             }
-            datum_sync::offer(db, &secret, expires, &expires_at, qr)?
+            datum_sync::offer(db, &secret, expires, &local(&expires_at), qr)?
         }
         #[cfg(feature = "net")]
         SyncCommand::Connect { ticket, label } => {

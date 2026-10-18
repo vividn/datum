@@ -550,9 +550,9 @@ fn print_added(rep: &Report) {
 // ─── Commands ───────────────────────────────────────────────────────────────
 
 /// Print how to redeem the invite whose secret is `secret`, and serve until
-/// it is redeemed (or expires). `datum sync chain invite` has written the invite
-/// into the chain, so any member can admit its redeemer: the ticket lists
-/// them all.
+/// it is redeemed (or expires). `expires_at` is when, on the reader's clock.
+/// `datum sync chain invite` has written the invite into the chain, so any
+/// member can admit its redeemer: the ticket lists them all.
 pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: bool) -> Result<()> {
     let secret = secret.to_string();
     runtime()?.block_on(async {
