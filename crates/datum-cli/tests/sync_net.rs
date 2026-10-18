@@ -306,6 +306,26 @@ fn an_invite_names_its_expiry_on_the_readers_clock() {
     );
 }
 
+/// `--qr` says what its code is for on the line before it: a newcomer told to
+/// type it sees a scan, not only a browser (da-ju9hy).
+#[test]
+fn an_invites_qr_code_says_to_scan_it() {
+    let a = Copy::new();
+    let mut inviting = a.serve(&["sync", "chain", "invite", "--qr"]);
+    let caption = inviting.lines_until("or open the link in a browser");
+    assert!(
+        caption.contains("scan this code with a phone's camera:"),
+        "{caption}"
+    );
+    // Under it the code's quiet zone, blank, then the code itself.
+    let mut code = String::new();
+    while code.trim().is_empty() {
+        code.clear();
+        inviting.out.read_line(&mut code).unwrap();
+    }
+    assert!(code.contains(['█', '▀', '▄']), "{code:?}");
+}
+
 /// The connect line an invite prints, pasted into a shell, hands `connect` the
 /// whole link as one argument (da-sin5b). Unquoted, zsh with `extendedglob`
 /// refused it — the `#` is a glob there, «no matches found» — and sh took it.

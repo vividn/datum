@@ -580,13 +580,15 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
         // Quoted: zsh's `extendedglob` reads the `#` as a glob (da-sin5b).
         // The link is a fixed prefix and base32, so it holds no `'`.
         println!("  datum sync chain connect '{link}'\n");
-        println!("or open the link in a browser.\n");
         if qr {
+            println!("or open the link in a browser, or scan this code with a phone's camera:");
             let code = qrcode::QrCode::new(link.as_bytes())?;
             println!(
                 "{}",
                 code.render::<qrcode::render::unicode::Dense1x2>().build()
             );
+        } else {
+            println!("or open the link in a browser.\n");
         }
         let deadline = tokio::time::sleep(expires);
         tokio::pin!(deadline);
