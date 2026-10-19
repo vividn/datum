@@ -2811,35 +2811,65 @@ fn rename_moves_every_shape_and_the_spec_on_every_copy_and_undoes() {
 }
 
 /// da-ftls7 (vremya's review): an undo that would put an entry back on a
-/// slug another row took since (the old name logged again after a rename)
-/// is refused with a sentence naming that row, never a raw UNIQUE error. A
-/// deleted row there is refused too (da-8mh8i). Nothing is written, so the
-/// copies still agree.
+/// slug a live row took since (the old name logged again after a rename) is
+/// refused with a sentence naming that row, never a raw UNIQUE error. A
+/// deleted row there has its slug moved aside, and the entry goes back, the
+/// same on every copy (da-bvqhf); redo takes both forward again. So for each
+/// way an entry leaves its slug: a rename, a retime, `update field=`.
 #[test]
-fn undoing_a_rename_onto_a_reused_old_slug_is_refused_naming_the_row() {
-    let (a, b) = (Copy::new(), Copy::new());
+fn undoing_a_move_onto_a_reused_old_slug_refuses_a_live_row_and_moves_a_deleted_one() {
     let at = "2026-10-19T09:00";
-    a.ok(&["switch", "mood", "happy", "-t", at]);
-    let happy = a.hid("mood");
-    a.ok(&["rename", "mood", "feeling"]);
-    a.ok(&["switch", "mood", "calm", "-t", at]);
-    let calm = a.hid("mood");
-    converged(&a, &b);
-    let refused = |args: &[&str], held: &str| {
-        let out = a.run(args, "");
+    for leave in ["rename", "retime", "update"] {
+        let (a, b) = (Copy::new(), Copy::new());
+        a.ok(&["switch", "mood", "happy", "-t", at]);
+        let happy = a.hid("mood");
+        let slug = a.query("SELECT slug FROM entries WHERE hid = ?1", &happy);
+        let args = match leave {
+            "rename" => vec!["rename", "mood", "feeling"],
+            "retime" => vec!["retime", &happy, "-t", "2026-10-19T10:00"],
+            _ => vec!["update", &happy, "field=feeling"],
+        };
+        a.ok(&args);
+        a.ok(&["switch", "mood", "calm", "-t", at]);
+        let calm = a.query("SELECT hid FROM entries WHERE slug = ?1", &slug);
+        assert_ne!(calm, happy, "{args:?}");
+        converged(&a, &b);
+        // Live: the calm entry holds the slug.
+        let out = a.run(&["undo", &happy], "");
         let err = String::from_utf8_lossy(&out.stderr);
-        assert!(!out.status.success(), "{err}");
-        assert!(err.contains(&format!("{held} holds it now")), "{err}");
+        assert!(!out.status.success(), "{args:?}: {err}");
+        assert!(err.contains(&format!("entry {calm} holds it now")), "{err}");
         assert!(!err.contains("UNIQUE"), "{err}");
-    };
-    // Live: the calm entry holds mood:T.
-    refused(&["undo", &happy], &format!("entry {calm}"));
-    // Deleted: the calm entry undone, its tombstone still holds it.
-    a.ok(&["undo"]);
-    refused(&["undo"], &format!("deleted entry {calm}"));
-    assert_eq!(
-        a.query("SELECT field FROM entries WHERE hid = ?1", &happy),
-        "feeling"
-    );
-    converged(&a, &b);
+        // Deleted: the calm entry undone on a, its delete synced to b, then
+        // the move undone.
+        a.ok(&["undo"]);
+        converged(&a, &b);
+        a.ok(&["undo"]);
+        converged(&a, &b);
+        let row = "SELECT slug || ' ' || field || ' ' || ifnull(deleted_at, 'live') || ' '
+                          || ifnull(superseded_by, '-') FROM entries WHERE hid = ?1";
+        for copy in [&a, &b] {
+            assert_eq!(
+                copy.query(row, &happy),
+                format!("{slug} mood live -"),
+                "{args:?}"
+            );
+            let aside = copy.query(row, &calm);
+            assert!(
+                aside.starts_with(&format!("{slug}~{calm} mood 20")),
+                "{args:?}: {aside}"
+            );
+            assert!(aside.ends_with(" -"), "{args:?}: {aside}");
+        }
+        a.ok(&["redo"]);
+        a.ok(&["redo"]);
+        converged(&a, &b);
+        for copy in [&a, &b] {
+            assert_eq!(
+                copy.query(row, &calm),
+                format!("{slug} mood live -"),
+                "{args:?}"
+            );
+        }
+    }
 }
