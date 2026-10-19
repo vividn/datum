@@ -6,7 +6,7 @@ use crate::input::Show;
 pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing alias subcommand (show|set|list|remove)".into(),
+            "missing alias subcommand (show|set|list|remove|shell|install|uninstall)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
@@ -40,6 +40,19 @@ pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
         "remove" => {
             let name = require_pos(&positionals(rest)?, "<NAME>")?;
             Ok(AliasCommand::Remove { name })
+        }
+        "shell" | "install" | "uninstall" => {
+            let shell = require_pos(&positionals(rest)?, "<zsh|bash>")?;
+            if !matches!(shell.as_str(), "zsh" | "bash") {
+                return Err(ParseError::InvalidArg(format!(
+                    "alias {sub}: unknown shell '{shell}' (zsh|bash)"
+                )));
+            }
+            Ok(match *sub {
+                "shell" => AliasCommand::Shell { shell },
+                "install" => AliasCommand::Install { shell },
+                _ => AliasCommand::Uninstall { shell },
+            })
         }
         other => Err(ParseError::InvalidArg(format!(
             "unknown alias subcommand: '{other}'"

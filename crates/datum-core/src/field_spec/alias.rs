@@ -339,6 +339,10 @@ pub fn alias_effect(
             }
             AliasEffect::Refuse(format!("no user alias '{name}'"))
         }
+        // The shell's side: no rows to decide on (`commands/alias.rs`).
+        AliasCommand::Shell { .. } | AliasCommand::Install { .. } | AliasCommand::Uninstall { .. } => {
+            AliasEffect::Nothing
+        }
     }
 }
 

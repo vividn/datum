@@ -735,12 +735,18 @@ pub struct SpecSetArgs {
     pub glyph_aspect: Option<f64>,
 }
 
+/// `Shell` prints what the line `Install` puts in a shell's rc file evals
+/// (a shell alias for every datum alias no command already has);
+/// `Uninstall` removes exactly that line.
 #[derive(Debug)]
 pub enum AliasCommand {
     Show { name: String },
     Set { name: String, expansion: String },
     List { show: Show },
     Remove { name: String },
+    Shell { shell: String },
+    Install { shell: String },
+    Uninstall { shell: String },
 }
 
 // ─── Kit (da-d4t.1) ────────────────────────────────────────────────────────

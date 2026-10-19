@@ -343,7 +343,7 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::History(args) => commands::history::history(args, db),
         Command::Why(args) => commands::why::why(args, db),
         Command::Spec(sub) => commands::spec::spec(sub, db),
-        Command::Alias(sub) => commands::alias::alias(sub, db),
+        Command::Alias(sub) => commands::alias::alias(sub, cli.db.as_deref(), db),
         Command::Kit(sub) => commands::kit::kit(sub, db),
         Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
         Command::Debug(sub) => commands::debug::debug(sub, db),

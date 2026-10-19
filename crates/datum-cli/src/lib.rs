@@ -253,7 +253,11 @@ fn reads(command: &Command) -> bool {
                 | Command::Kit(KitCommand::List | KitCommand::Export(_) | KitCommand::Show { .. })
                 | Command::Db(DbCommand::Backup(_))
                 | Command::Spec(SpecCommand::List { .. } | SpecCommand::Show { .. })
-                | Command::Alias(AliasCommand::List { .. } | AliasCommand::Show { .. })
+                | Command::Alias(
+                    AliasCommand::List { .. }
+                        | AliasCommand::Show { .. }
+                        | AliasCommand::Shell { .. }
+                )
                 | Command::Sync(SyncCommand::Status { .. })
         )
 }
@@ -456,12 +460,16 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         anyhow::bail!("repl is unavailable in this build");
     }
 
-    // `datum config show`, `datum completions` and `datum sync daemon` run
-    // against an in-memory placeholder: they do not read the entry db (the
-    // daemon opens each chained db itself, and must not create the default).
+    // `datum config show`, `datum completions`, `datum sync daemon` and
+    // `alias install | uninstall` run against an in-memory placeholder: they
+    // do not read the entry db (the daemon opens each chained db itself, and
+    // must not create the default).
     if matches!(
         &cli.command,
-        Command::Config(_) | Command::Completions(_) | Command::Sync(SyncCommand::Daemon(_))
+        Command::Config(_)
+            | Command::Completions(_)
+            | Command::Sync(SyncCommand::Daemon(_))
+            | Command::Alias(AliasCommand::Install { .. } | AliasCommand::Uninstall { .. })
     ) {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);

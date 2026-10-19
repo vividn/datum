@@ -1,4 +1,5 @@
-//! `datum alias` — CLI alias management (set, list, delete).
+//! `datum alias` — CLI alias management (set, list, delete), and the line
+//! in a shell's rc file that lets the shell run them by bare name.
 //!
 //! Aliases are stored in the database and resolved in the CLI pre-pass
 //! before the parser sees argv (see `crate::args::expand_argv`).
@@ -20,7 +21,19 @@ use datum_parse::alias::shell_join;
 
 use crate::args::AliasCommand;
 
-pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
+pub fn alias(sub: AliasCommand, db_name: Option<&str>, db: &Db) -> Result<()> {
+    match &sub {
+        AliasCommand::Shell { .. } => {
+            let user = db.list_user_aliases()?;
+            let derived = db.spec_alias_index()?;
+            let names = derived.entries.keys().chain(user.iter().map(|a| &a.name));
+            print!("{}", shell_aliases(db_name, names));
+            return Ok(());
+        }
+        AliasCommand::Install { shell } => return rc_line(shell, db_name, true),
+        AliasCommand::Uninstall { shell } => return rc_line(shell, db_name, false),
+        _ => {}
+    }
     let user = db.list_user_aliases()?;
     let effect = {
         let derived = db.spec_alias_index()?;
@@ -49,6 +62,101 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
         AliasEffect::Nothing => {}
     }
     Ok(())
+}
+
+/// `alias shell`: a shell alias `NAME='datum NAME'` for each alias name a
+/// shell can take, unless the shell already finds something by that name
+/// (`find` stays `/usr/bin/find`). datum expands the name when it runs.
+fn shell_aliases<'a>(db_name: Option<&str>, names: impl Iterator<Item = &'a String>) -> String {
+    let mut names: Vec<&str> = names
+        .map(String::as_str)
+        .filter(|n| {
+            !n.is_empty()
+                && !n.starts_with('-')
+                && n.chars()
+                    .all(|c| c.is_alphanumeric() || "_-.+@:".contains(c))
+        })
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    if names.is_empty() {
+        return String::new();
+    }
+    let datum = match db_name {
+        Some(name) => format!("datum --db {} ", sh_quote(name)),
+        None => "datum ".to_string(),
+    };
+    format!(
+        "for __datum_a in {}; do command -v \"$__datum_a\" >/dev/null 2>&1 || \
+         alias \"$__datum_a=\"{}\"$__datum_a\"; done; unset __datum_a\n",
+        names.join(" "),
+        sh_quote(&datum),
+    )
+}
+
+/// Add (`install`) or remove the one line in `shell`'s rc file that evals
+/// `alias shell` at each start. Adding it twice leaves one line.
+fn rc_line(shell: &str, db_name: Option<&str>, install: bool) -> Result<()> {
+    use std::io::Write;
+    let home = |var| std::env::var_os(var).filter(|v| !v.is_empty());
+    let dir = match shell {
+        "zsh" => home("ZDOTDIR").or_else(|| home("HOME")),
+        _ => home("HOME"),
+    };
+    let Some(dir) = dir else {
+        bail!("HOME is not set: no rc file to change");
+    };
+    let path = std::path::Path::new(&dir).join(format!(".{shell}rc"));
+    let db = db_name
+        .map(|name| format!("--db {} ", sh_quote(name)))
+        .unwrap_or_default();
+    let line = format!("eval \"$(datum {db}alias shell {shell} 2>/dev/null)\" # datum aliases");
+    let rc = match std::fs::read_to_string(&path) {
+        Ok(rc) => rc,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e.into()),
+    };
+    let held = rc.lines().any(|l| l == line);
+    let shown = path.display();
+    if install {
+        if held {
+            println!("already in {shown}");
+            return Ok(());
+        }
+        // Appended, never rewritten: an rc file is often a symlink.
+        let sep = if rc.is_empty() || rc.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        };
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)?;
+        writeln!(file, "{sep}{line}")?;
+        println!("✓ added to {shown}: a new shell runs your aliases by name");
+    } else if held {
+        let kept: String = rc
+            .split_inclusive('\n')
+            .filter(|l| l.trim_end_matches('\n') != line)
+            .collect();
+        std::fs::write(&path, kept)?;
+        println!("✓ removed from {shown}");
+    } else {
+        println!("not in {shown}");
+    }
+    Ok(())
+}
+
+/// `s` as one shell word: bare when it is plainly one, else single-quoted.
+fn sh_quote(s: &str) -> String {
+    if !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_-.+@:/".contains(c))
+    {
+        return s.to_string();
+    }
+    format!("'{}'", s.replace('\'', r"'\''"))
 }
 
 /// Write `alias` as this device's entry.
