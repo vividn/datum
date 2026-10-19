@@ -96,7 +96,7 @@ pub fn fold_issues(db: &Db) -> Result<(FoldCheck, Vec<Issue>)> {
             .map(|o| {
                 let fix = match &o.shares {
                     None => "--fix deletes it".to_string(),
-                    Some(live) => format!("left: the live {live} holds its identity"),
+                    Some(live) => format!("--fix merges it with the live {live}"),
                 };
                 format!(
                     "  {} ({}): {}; {fix}",
@@ -119,9 +119,9 @@ pub fn fold_issues(db: &Db) -> Result<(FoldCheck, Vec<Issue>)> {
             "this copy holds the sync ops of {} it has no row for: every copy it syncs with \
              makes {} again from those ops, so their verify never agrees. `datum check --fix` \
              deletes each as `datum delete` does: the delete syncs, and every copy, one \
-             holding the row included, ends with the entry deleted. It leaves one whose \
-             identity a live entry holds: every copy holding both holds them as one entry, \
-             so its delete would take the live entry too.\n{}",
+             holding the row included, ends with the entry deleted. One whose identity a \
+             live entry holds it writes again from its ops, merged with that entry \
+             as every copy holding both holds them, and signs nothing.\n{}",
             n(of.len(), "entry", "entries"),
             if of.len() == 1 { "it" } else { "them" },
             lines.join("\n"),

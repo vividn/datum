@@ -573,9 +573,10 @@ again from its ops and signs none, so a correct copy is unchanged; orphans it
 leaves as found, and `datum check --fix` deletes each (da-53whj): its row
 written again from its ops and deleted as `datum delete` does, so the signed
 `delete` syncs and every copy, one holding the row included, folds the entry
-to the same tombstone. It leaves, and `check sync` names, one whose identity a
-live entry holds (a slug logged again, as a re-import does): every copy holding
-both holds them merged, so the delete would take the live entry too. A refold
+to the same tombstone. One whose identity a live entry holds (a slug logged
+again, as a re-import does) it writes again from its ops and signs nothing
+(da-t5kxx): merged with that entry, as every copy holding both holds them, since
+a delete would take the live entry too. A refold
 stays manual, since a row a write left without its op holds
 the newer data and loses it: `--dry-run` names each row it would write, every
 column old → new, and writes nothing (da-g8wj9).

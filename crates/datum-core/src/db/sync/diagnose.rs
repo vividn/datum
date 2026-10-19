@@ -1,10 +1,10 @@
 //! Sync's diagnostics (da-n0ruf): what one copy can tell of a sync problem
 //! from its own ops and rows ([`Db::sync_fold_check`]), the repair that
 //! needs no peer — a row written again from its ops ([`Db::sync_refold`]) —
-//! the removal of an entry whose ops have no row ([`Db::sync_drop_orphans`]),
+//! the repair of an entry whose ops have no row ([`Db::sync_fix_orphans`]),
 //! and what a copy holds of an entry, for two copies to compare
 //! ([`Db::sync_digest`], [`Db::sync_held`]). Nothing here sends an op, and
-//! only the removal signs one: an ordinary `delete`.
+//! only that repair signs one: an ordinary `delete`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -40,8 +40,8 @@ pub struct Orphan {
     /// Its ops, as [`Db::sync_held`] names them.
     pub ops: Vec<Value>,
     /// The slug of a live entry holding an identity its row needs: a row
-    /// written again from its ops would merge with it, so its delete would
-    /// take that entry too, and [`Db::sync_drop_orphans`] leaves it.
+    /// written again from its ops merges with it, as on every copy holding
+    /// both, so [`Db::sync_fix_orphans`] writes it and deletes nothing.
     pub shares: Option<String>,
 }
 
@@ -243,7 +243,8 @@ impl Db {
     /// `conflicts` with it: what a correct copy holds is unchanged, and no
     /// op is signed, the ops being what every copy already agrees on. The
     /// row as it stood goes to `entry_history`, as a sync's merge does.
-    /// Orphans are left as found: [`Db::sync_drop_orphans`] removes them. What was found, and what still differs.
+    /// Orphans are left as found: [`Db::sync_fix_orphans`] repairs them.
+    /// What was found, and what still differs.
     /// The whole database is read before the write lock and after it, and
     /// the lock is held for the stale rows alone (da-8i7f0).
     pub fn sync_refold(&self) -> Result<(FoldCheck, Vec<Stale>)> {
@@ -265,34 +266,28 @@ impl Db {
         })
     }
 
-    /// Remove every entry whose ops this copy holds and has no row for
-    /// (da-53whj): its row is written again from its ops, as a sync would,
-    /// and deleted as `datum delete` deletes, so the `delete` op signed
-    /// syncs and every copy, one that applied those ops included, folds the
-    /// entry to the same tombstone. One whose ops fold to a tombstone
-    /// already needs only its row. One a live entry [`Orphan::shares`] an
-    /// identity with is left: every copy holding both holds them merged, so
-    /// its delete would take the live entry too. How many it found to
-    /// delete.
-    pub fn sync_drop_orphans(&self) -> Result<usize> {
-        let found: Vec<Orphan> = self
-            .read(|view| fold_check(view.conn()))?
-            .orphans
-            .into_iter()
-            .filter(|o| o.shares.is_none())
-            .collect();
+    /// Repair every entry whose ops this copy holds and has no row for
+    /// (da-53whj): its row is written again from its ops, as a sync would.
+    /// One a live entry [`Orphan::shares`] an identity with is then merged
+    /// with it, as every copy holding both holds them, and no op is signed
+    /// (da-t5kxx). Any other is deleted as `datum delete` deletes, so the
+    /// `delete` op signed syncs and every copy, one that applied those ops
+    /// included, folds the entry to the same tombstone; one whose ops fold
+    /// to a tombstone already needs only its row. How many it found.
+    pub fn sync_fix_orphans(&self) -> Result<usize> {
+        let found = self.read(|view| fold_check(view.conn()))?.orphans;
         self.in_chunks(&found, |tx, o| {
-            // A row that came back since it was found is no orphan, and one
-            // a live entry took the identity of since is left.
-            let left = match fold(&ops_of(tx, &o.hid)?, None) {
+            // A row that came back since it was found is no orphan; whether
+            // a live entry holds its identity is read again under the lock.
+            let shared = match fold(&ops_of(tx, &o.hid)?, None) {
                 Some(r) => shares(tx, r)?.is_some(),
-                None => true,
+                None => return Ok(()),
             };
-            if left || fetch_by_hid(tx, &o.hid)?.is_some() {
+            if fetch_by_hid(tx, &o.hid)?.is_some() {
                 return Ok(());
             }
             refold(tx, &o.hid, ChangeKind::SyncMerge)?;
-            if fetch_by_hid(tx, &o.hid)?.is_some_and(|e| e.deleted_at.is_none()) {
+            if !shared && fetch_by_hid(tx, &o.hid)?.is_some_and(|e| e.deleted_at.is_none()) {
                 soft_delete_in_tx(tx, &o.hid, ChangeKind::UserEdit, None)?;
             }
             Ok(())

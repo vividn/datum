@@ -2251,52 +2251,67 @@ fn check_fix_deletes_the_entries_whose_ops_have_no_row() {
     assert_eq!(x.hash(), a.hash());
 }
 
-/// An orphan whose entry was logged again, as a re-import does, is left
-/// and named (da-53whj): every copy holding both holds them as one entry,
-/// so a delete of the orphan would take the live entry with it.
+/// An orphan whose entry was logged again, as a re-import does, is written
+/// again from its ops and so merged with the live entry (da-t5kxx), as
+/// every copy holding both already holds them: no op is signed for it, a
+/// delete of it would take the live entry too, and nothing is left for
+/// `check sync` to name.
 #[test]
-fn check_fix_leaves_an_orphan_a_live_entry_shares_an_identity_with() {
+fn check_fix_merges_an_orphan_a_live_entry_shares_an_identity_with() {
     let a = Copy::new();
     a.ok(&["occur", "coffee", "-t", "10:00", "cups=2"]);
     a.ok(&["occur", "tea", "-t", "11:00"]);
     let old = a.hid("coffee");
     a.sql("DELETE FROM entries");
-    a.ok(&["occur", "coffee", "-t", "10:00", "cups=2"]);
+    a.ok(&["occur", "coffee", "-t", "10:00", "cups=2", "milk=oat"]);
     let new = a.hid("coffee");
     let (_, said) = check_sync(&a, false);
     assert!(said.contains("[ERROR] sync_orphan_ops (x4)"), "{said}");
     let coffee = format!(
-        "left: the live {} holds its identity",
+        "--fix merges it with the live {}",
         a.query("SELECT slug FROM entries WHERE hid = ?1", &new,)
     );
     assert!(said.contains(&coffee), "{coffee:?} in {said}");
     assert!(
-        said.contains("left: the live spec:coffee holds its identity"),
+        said.contains("--fix merges it with the live spec:coffee"),
         "{said}"
     );
     assert!(said.contains("\n  tea:"), "{said}");
 
-    let out = a.run(&["check", "--fix"], "");
-    let fixed = String::from_utf8_lossy(&out.stdout);
-    assert!(!out.status.success(), "what it leaves is still an error");
+    let ops = a.ops().len();
+    let fixed = a.ok(&["check", "--fix"]);
     assert!(
-        fixed.contains("✓ sync_orphan_ops repaired: 2 entries (2 detected, 0 still mismatched)"),
-        "tea and spec:tea deleted: {fixed}"
+        fixed.contains("✓ sync_orphan_ops repaired: 4 entries (4 detected, 0 still mismatched)"),
+        "{fixed}"
     );
-    let (_, said) = check_sync(&a, false);
-    assert!(said.contains("[ERROR] sync_orphan_ops (x2)"), "{said}");
-    assert!(!said.contains("tea"), "{said}");
-    let live = "SELECT COUNT(*) FROM entries WHERE hid = ?1 AND deleted_at IS NULL
-                  AND superseded_by IS NULL";
+    let (ok, said) = check_sync(&a, false);
+    assert!(ok && !said.contains("sync_orphan_ops"), "{said}");
+    let signed: Vec<Value> = a.ops().into_iter().skip(ops).collect();
     assert_eq!(
-        a.query(live, &new),
-        "1",
-        "the coffee logged again stays as it was"
+        signed.len(),
+        2,
+        "tea and spec:tea's deletes alone: {signed:?}"
+    );
+    assert!(signed.iter().all(|o| o["kind"] == "delete"), "{signed:?}");
+    // The coffee shows once, merged, the live entry's data in it.
+    let live = "SELECT hid FROM entries WHERE field = ?1 AND deleted_at IS NULL
+                  AND superseded_by IS NULL";
+    let shown = a.query(live, "coffee");
+    assert!([&old, &new].contains(&&shown), "{shown}");
+    assert_eq!(
+        a.data(&shown),
+        serde_json::json!({"cups": 2, "milk": "oat"})
     );
     assert_eq!(
         a.query("SELECT COUNT(*) FROM entries WHERE hid = ?1", &old),
-        "0"
+        "1",
+        "the orphan has its row again"
     );
+    // A copy that applied both sets of ops holds the same.
+    let b = Copy::new();
+    a.send(&b);
+    assert_eq!(a.hash(), b.hash());
+    converged(&a, &b);
 }
 
 /// A row that is not what its ops fold to (da-yrtk6, da-z3y0o) is named
