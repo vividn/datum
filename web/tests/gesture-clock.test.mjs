@@ -30,7 +30,9 @@ const slowPhone = async (page, type, ms) => {
 		([type, ms]) => {
 			const seen = (e) => {
 				const age = performance.now() - e.timeStamp;
-				window.__gesture = { at: Date.now() - age, age };
+				// Rounded as the app's stamp is (`gesture` in engine.ts): two
+				// readings under 1 ms apart then round at most 1 apart (da-ku6zc).
+				window.__gesture = { at: Math.round(Date.now() - age), age };
 			};
 			window.addEventListener(type, seen, { capture: true, once: true });
 			setTimeout(() => {
