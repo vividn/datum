@@ -400,7 +400,7 @@ fn compound_switch_trail_is_the_state_it_switches_to() {
 
     for (what, line) in [("echo", echo.as_str()), ("tail", tail)] {
         assert!(
-            line.contains(&format!("end{}", bg_escape("researching"))),
+            line.contains(&format!("off{}", bg_escape("researching"))),
             "{what}: TRAIL must paint researching, not the interrupted writing:\n{line:?}"
         );
     }

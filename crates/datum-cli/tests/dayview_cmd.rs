@@ -687,7 +687,7 @@ fn a_false_dur_block_is_a_hole_cut_out_of_the_enclosing_block() {
         .collect();
     assert_eq!(
         states,
-        vec!["start", "start"],
+        vec!["on", "on"],
         "two halves of the `work` block and nothing else"
     );
 
@@ -700,7 +700,7 @@ fn a_false_dur_block_is_a_hole_cut_out_of_the_enclosing_block() {
         .collect();
     assert_eq!(
         titles,
-        vec!["work: start 09:00–09:55", "work: start 10:00–12:00"],
+        vec!["work: on 09:00–09:55", "work: on 10:00–12:00"],
         "the hole runs [occur − dur, occur] and both halves keep the region's label"
     );
 }

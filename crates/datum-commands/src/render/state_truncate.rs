@@ -121,9 +121,9 @@ fn truncate_state_body(
     match value {
         None => String::new(),
         Some(JsonValue::Bool(true)) => {
-            paint_bg(field_rgb(field, spec), &right_truncate("start", budget))
+            paint_bg(field_rgb(field, spec), &right_truncate("on", budget))
         }
-        Some(JsonValue::Bool(false)) => right_truncate("end", budget),
+        Some(JsonValue::Bool(false)) => right_truncate("off", budget),
         Some(JsonValue::Null) => paint_bg_fg(
             Rgb::GREY,
             Rgb::DARK_GREY,
@@ -302,8 +302,8 @@ fn paint_chip(item: &JsonValue, body: &str, field: &str, spec: Option<&FieldSpec
 /// the chip body before painting.
 pub(crate) fn state_label(item: &JsonValue) -> String {
     match item {
-        JsonValue::Bool(true) => "start".to_string(),
-        JsonValue::Bool(false) => "end".to_string(),
+        JsonValue::Bool(true) => "on".to_string(),
+        JsonValue::Bool(false) => "off".to_string(),
         JsonValue::Null => NULL_STATE.to_string(),
         JsonValue::String(s) => s.clone(),
         JsonValue::Object(obj) => match obj.get("id").and_then(JsonValue::as_str) {

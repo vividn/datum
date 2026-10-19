@@ -157,10 +157,10 @@ fn a_dash_t_note_leaves_the_state_it_names_untouched() {
 // ─── Test 3: booleans, structured and parallel states ───────────────────────
 
 #[test]
-fn boolean_states_render_start_and_end_in_the_field_colour() {
+fn boolean_states_render_on_and_off_in_the_field_colour() {
     let (_dir, db) = tmp_db();
     let work = fg("work");
-    for (verb, label, state) in [("start", "start", true), ("end", "end", false)] {
+    for (verb, label, state) in [("start", "on", true), ("end", "off", false)] {
         let out = ok(&db, &[verb, "work", "-T"]);
         assert_eq!(
             state_part(&out, "work"),

@@ -1,7 +1,7 @@
 -                 time  field  state      hid
-+_n            time ⟨fg=90⟩(+1)⟨⟩  field  state    hid
++_n            time ⟨fg=90⟩(+1)⟨⟩  field  state  hid
 -2024-01-14 23:00:00⟨fg=90⟩+1⟨⟩  ⟨fg=#ffffff bg=#142878⟩sleep⟨⟩  ⟨fg=#666666 bg=#888888⟩∅⟨fg=#ffffff bg=#142878⟩start ⟨⟩    <HID>
-+⟨fg=90⟩_2⟨⟩  ⟨fg=90⟩2024-01-14⟨⟩ 23:00:00  ⟨fg=#ffffff bg=#142878⟩sleep⟨⟩  ⟨fg=#000000 bg=#888888⟩ ⟨fg=#ffffff bg=#142878⟩start ⟨⟩  <HID>
++⟨fg=90⟩_2⟨⟩  ⟨fg=90⟩2024-01-14⟨⟩ 23:00:00  ⟨fg=#ffffff bg=#142878⟩sleep⟨⟩  ⟨fg=#000000 bg=#888888⟩ ⟨fg=#ffffff bg=#142878⟩on ⟨⟩   <HID>
 -2024-01-15 07:00:00⟨fg=90⟩+1⟨⟩  ⟨fg=#ffffff bg=#142878⟩sleep⟨⟩  ⟨fg=#ffffff bg=#142878⟩ ⟨⟩end       <HID>
-+⟨fg=90⟩_1⟨⟩  ⟨fg=90⟩2024-01-15⟨⟩ 07:00:00  ⟨fg=#ffffff bg=#142878⟩sleep⟨⟩  ⟨fg=#ffffff bg=#142878⟩ ⟨⟩end     <HID>
++⟨fg=90⟩_1⟨⟩  ⟨fg=90⟩2024-01-15⟨⟩ 07:00:00  ⟨fg=#ffffff bg=#142878⟩sleep⟨⟩  ⟨fg=#ffffff bg=#142878⟩ ⟨⟩off   <HID>
 -

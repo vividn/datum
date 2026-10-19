@@ -222,10 +222,10 @@
               },
               "id": "<hid>",
               "start_ms": 1768464000000,
-              "state_label": "start",
+              "state_label": "on",
               "time_extent": 79.83333333333337,
               "time_offset": 638.6666666666666,
-              "title": "workout: start 08:00–09:00"
+              "title": "workout: on 08:00–09:00"
             }
           ],
           "cross_extent": 12.0,

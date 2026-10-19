@@ -590,7 +590,7 @@ fn dayview_fill_colors_match_md5_for_unspecced_fields() {
             );
             // Color resolution per `state_value_rgb` in
             // datum-commands/src/render/colors.rs:
-            // * Bool(true) (state_label = "start", the tail's word for
+            // * Bool(true) (state_label = "on", the tail's word for
             //   it — da-s5da) → md5(field) — the implicit-on case
             //   (binary field).
             // * String(s)                          → md5(s).
@@ -599,7 +599,7 @@ fn dayview_fill_colors_match_md5_for_unspecced_fields() {
             // with HSL-from-md5 instead of leaving the renderer to derive
             // md5(name)[:3]. Either path's corruption shows up here.
             let key = match state {
-                None | Some("start") => field_name.to_string(),
+                None | Some("on") => field_name.to_string(),
                 Some(s) => s.to_string(),
             };
             let expected = md5_hex_color(&key);

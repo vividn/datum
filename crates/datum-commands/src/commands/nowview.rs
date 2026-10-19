@@ -736,10 +736,9 @@ fn build_current_states(
                 (None, vec![rgb_to_hex(field_rgb(&f.field, spec.as_ref()))])
             }
             Some(v) => {
-                let label = match v {
-                    JsonValue::String(s) => s.clone(),
-                    other => other.to_string(),
-                };
+                // The gutter says a state as `tail` does: a boolean
+                // `on` / `off` (da-251lt, da-66c3l).
+                let label = crate::render::state_truncate::state_label(v);
                 // Per da-9vop: parallel state sets keep every member's
                 // colour so the swatch can render as a checkerboard.
                 let rgbs = state_value_colors(v, &f.field, spec.as_ref());

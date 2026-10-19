@@ -94,7 +94,7 @@ pub fn format_states(listing: &JsonValue, start: bool) -> String {
                 ),
             };
             let state = &r["state"];
-            // A `true` / `false` reads `start` / `end`, as in `tail`, and is
+            // A `true` / `false` reads `on` / `off`, as in `tail`, and is
             // never undeclared: a start/stop field's are the verb's own, a
             // switch field's what switching it on or off stores (da-tpktb).
             let description = match (&r["declared"], state) {
@@ -209,11 +209,11 @@ mod tests {
             .all(|r| r["declared"] == false));
     }
 
-    /// The table says a start/stop field's states as `tail` does, `start`
-    /// and `end`, the verb's own; the listing keeps `true` / `false`
+    /// The table says a start/stop field's states as `tail` does, `on`
+    /// and `off`, the verb's own; the listing keeps `true` / `false`
     /// (da-tpktb).
     #[test]
-    fn a_start_stop_field_reads_start_and_end_in_the_table() {
+    fn a_start_stop_field_reads_on_and_off_in_the_table() {
         let db = fresh_db();
         db.save_field_spec(&FieldSpec::new("work", Action::Start))
             .unwrap();
@@ -231,7 +231,7 @@ mod tests {
         assert_eq!(states, [&json!(true), &json!(false)]);
         let table = format_states(&listing, true);
         let lines: Vec<&str> = table.lines().collect();
-        for (line, word) in lines[1..].iter().zip(["start", "end"]) {
+        for (line, word) in lines[1..].iter().zip(["on", "off"]) {
             assert!(line.starts_with(word), "{table}");
             assert!(line.ends_with("the start/stop verb's own"), "{table}");
         }
@@ -241,10 +241,10 @@ mod tests {
         );
     }
 
-    /// A switch field's `false` reads `end`, as in `tail`, but it is how any
+    /// A switch field's `false` reads `off`, as in `tail`, but it is how any
     /// switch field ends, nothing of the start/stop verb's (da-tpktb).
     #[test]
-    fn a_switch_field_ended_with_false_reads_switched_off() {
+    fn a_switch_field_ended_with_false_reads_off() {
         let db = fresh_db();
         db.save_field_spec(&FieldSpec::new("reading", Action::Switch))
             .unwrap();
@@ -253,7 +253,7 @@ mod tests {
         }
         let listing = compute_states(&db, "reading").unwrap();
         let table = format_states(&listing, false);
-        let end = table.lines().find(|l| l.starts_with("end ")).unwrap();
+        let end = table.lines().find(|l| l.starts_with("off ")).unwrap();
         assert!(end.ends_with("the field switched off"), "{table}");
         assert!(!table.contains("start/stop"), "{table}");
     }

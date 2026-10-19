@@ -71,6 +71,12 @@ status = "open"
 what = "`get` prints an object data value as one line of JSON (`{\"o\":1,\"tz\":…,\"utc\":…}`, keys sorted); v2 pretty-prints it over several lines, keys as stored (`utc`, `o`, `tz`)"
 why = "No recorded reason found."
 
+[[rule]]
+id = "on-off-states"
+status = "open"
+what = "a boolean state reads `on` / `off`; v2 says `start` / `end`"
+why = "vividn, 2026-10-19 (da-66c3l): «I'm leaning towards on/off for these binary fields», «yes go ahead»: start/end name what you do, on/off what the field is. The verbs stay start/end."
+
 # ─── SVG: dayview ───────────────────────────────────────────────────────────
 
 [[rule]]
@@ -103,7 +109,7 @@ rules = ["grey-date", "get-field-gap", "null-lead-glyph"]
 
 [[fixture]]
 name = "get_start_block"
-rules = ["grey-date", "get-field-gap", "null-lead-glyph"]
+rules = ["grey-date", "get-field-gap", "null-lead-glyph", "on-off-states"]
 
 [[fixture]]
 name = "get_with_extra_data"
@@ -139,15 +145,15 @@ rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-pad
 
 [[fixture]]
 name = "tail_block_pair"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph", "on-off-states"]
 
 [[fixture]]
 name = "tail_mixed_fields"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point", "null-lead-glyph"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point", "null-lead-glyph", "on-off-states"]
 
 [[fixture]]
 name = "tail_spec_field_color"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph", "on-off-states"]
 
 [[fixture]]
 name = "dayview_single_day_svg"

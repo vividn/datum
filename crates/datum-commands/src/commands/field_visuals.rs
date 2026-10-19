@@ -449,7 +449,7 @@ pub(crate) fn state_label(v: Option<&JsonValue>) -> Option<String> {
     })
 }
 
-/// A mark's state as the tail prints it — `start` / `end` for a bool,
+/// A mark's state as the tail prints it — `on` / `off` for a bool,
 /// `null` for null — so the mark and the row it came from say the same word
 /// (da-s5da). [`state_label`] stays the raw value: `stats` keys on it.
 fn mark_state(v: Option<&JsonValue>) -> Option<String> {
@@ -1035,7 +1035,7 @@ mod tests {
         );
         // Both halves keep the region's own label and colour.
         for b in &blocks {
-            assert_eq!(b.state_label.as_deref(), Some("start"));
+            assert_eq!(b.state_label.as_deref(), Some("on"));
         }
         match (&blocks[0].fill, &blocks[1].fill) {
             (BlockFill::Single(a), BlockFill::Single(b)) => assert_eq!(a, b),
@@ -1045,7 +1045,7 @@ mod tests {
         assert!(
             !blocks
                 .iter()
-                .any(|b| b.state_label.as_deref() == Some("end")),
+                .any(|b| b.state_label.as_deref() == Some("off")),
             "a hole is not a mark"
         );
     }

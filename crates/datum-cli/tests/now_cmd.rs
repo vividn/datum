@@ -1373,10 +1373,10 @@ fn now_empty_states_say_which_emptiness() {
     assert!(out.contains("coffee"), "band drawn:\n{out}");
 }
 
-/// da-hxxv8: a running start/stop field reads «start» in `now`, as in
-/// `tail`, where it printed the stored «true»; `--json` keeps the value.
+/// da-hxxv8, da-66c3l: a running start/stop field reads «on» in `now`, as
+/// in `tail`, where it printed the stored «true»; `--json` keeps the value.
 #[test]
-fn now_names_a_running_start_field_start() {
+fn now_names_a_running_start_field_on() {
     let dir = tempfile::tempdir().expect("tempdir");
     let db = dir.path().join("now-start.db");
     run_datum(&db, &[], &["start", "work"]);
@@ -1385,7 +1385,7 @@ fn now_names_a_running_start_field_start() {
         let out = run_datum(&db, &[], args);
         let line = out.lines().find(|l| l.contains("work")).expect("work row");
         let words: Vec<&str> = line.split_whitespace().collect();
-        assert_eq!(words[..3], ["●", "work", "start"], "{args:?}:\n{out}");
+        assert_eq!(words[..3], ["●", "work", "on"], "{args:?}:\n{out}");
     }
     let json: serde_json::Value =
         serde_json::from_str(&run_datum(&db, &[], &["now", "--show", "json"])).expect("json");

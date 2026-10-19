@@ -370,7 +370,7 @@ mod tests {
     }
 
     /// The case that broke `activity-guard.py`: the row's state must be
-    /// readable as "end" without knowing which column it landed in.
+    /// readable as "off" without knowing which column it landed in.
     #[test]
     fn bool_states_carry_the_table_labels() {
         let rows = tail_rows(
@@ -385,10 +385,7 @@ mod tests {
             None,
         );
         let labels: Vec<Option<&str>> = rows.iter().map(|r| r.state_label.as_deref()).collect();
-        assert_eq!(
-            labels,
-            vec![Some("start"), Some("end"), Some("writing"), None]
-        );
+        assert_eq!(labels, vec![Some("on"), Some("off"), Some("writing"), None]);
         // The raw value is there too, for a consumer that would rather
         // match on `false` than on the word.
         assert_eq!(rows[1].state, json!(false));

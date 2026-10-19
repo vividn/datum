@@ -855,7 +855,7 @@ const STATS_FLAGS: &[FlagSpec] = &[
         takes_value: false,
         value_hint: None,
         value_optional: false,
-        summary: "Count the end, or switched-off, state in the ratio denominator",
+        summary: "Count the off state in the ratio denominator",
         long_description: None,
         left_override: None,
     },
@@ -952,7 +952,7 @@ then the last hour drawn as a band below it.
   datum now --bare                    the states alone
   datum now -A                        ignored fields too, dimmed
 
-A switch field shows its state, a running start/stop field «start». An
+A switch field shows its state, a started field «on». An
 occur field holds no state, so it shows in the band alone. With nothing to
 list, now says which emptiness it is: no tracked field, every field
 ignored, or no tracked field holding a state now.
@@ -1804,7 +1804,8 @@ Words after the field need a key: `datum occur coffee 2` is refused,
 
 const START_INTRO: &str = "\
 Start begins something that lasts, such as work, sleep or a run. It stays
-open until a `stop` (or `end`) of the same field closes it.
+open until a `stop` (or `end`) of the same field closes it. The field
+reads on while it is open and off once it ends.
 
   datum start work                    work, from now on
   datum start work 25m                work for the last 25 minutes

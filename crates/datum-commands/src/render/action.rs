@@ -555,8 +555,8 @@ pub fn slot_hex(
 /// than a state transition.
 fn render_point_state_label(state: &JsonValue, field: &str, spec: Option<&FieldSpec>) -> String {
     match state {
-        JsonValue::Bool(true) => paint(&field_rgb(field, spec).fg(), "start"),
-        JsonValue::Bool(false) => paint(&field_rgb(field, spec).fg(), "end"),
+        JsonValue::Bool(true) => paint(&field_rgb(field, spec).fg(), "on"),
+        JsonValue::Bool(false) => paint(&field_rgb(field, spec).fg(), "off"),
         JsonValue::Null => paint(&Rgb::GREY.fg(), NULL_STATE),
         JsonValue::String(s) if s == IGNORED_STATE => paint(&Rgb::GREY.fg(), s),
         JsonValue::String(s) => paint(&state_rgb(s, spec).fg(), s),
@@ -792,9 +792,9 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
         None => String::new(),
         Some(JsonValue::Bool(true)) => {
             let fc = field_rgb(field, spec);
-            paint_bg(fc, "start")
+            paint_bg(fc, "on")
         }
-        Some(JsonValue::Bool(false)) => "end".to_string(),
+        Some(JsonValue::Bool(false)) => "off".to_string(),
         Some(JsonValue::Null) => paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, NULL_STATE),
         Some(JsonValue::String(s)) if s == IGNORED_STATE => {
             paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, s)

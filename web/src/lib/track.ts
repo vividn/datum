@@ -42,7 +42,7 @@ export interface VerbChoice {
  */
 export const VERBS: VerbChoice[] = [
 	{ verb: 'occur', glyph: '●', what: 'occurrence', line: 'a single point in time (no state)' },
-	{ verb: 'start', glyph: '█', what: 'on/off', line: 'on for a while, then off (start, end)' },
+	{ verb: 'start', glyph: '█', what: 'on/off', line: 'on for a while, then off' },
 	{ verb: 'switch', glyph: '▞', what: 'switch', line: 'one state until the next (custom states)' },
 	{ verb: 'add', glyph: '¢', what: 'card', line: 'keys and values, with no time' }
 ];

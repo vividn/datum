@@ -1013,7 +1013,7 @@ describe('in the app', () => {
 			await app.clock.forward(60_000);
 			const zz = await app.run(['zz']);
 			assert.equal(zz.code, 0, zz.stderr);
-			assert.match(stripAnsi(zz.stdout), /sleep\s+start/, 'zz ran `start sleep`');
+			assert.match(stripAnsi(zz.stdout), /sleep\s+on/, 'zz ran `start sleep`');
 			const bare = await app.run(['sleep']);
 			assert.notEqual(bare.code, 0, 'the removed alias still resolves');
 

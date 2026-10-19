@@ -94,7 +94,7 @@ describe('the field widget', () => {
 			);
 			assert.deepEqual(said, [
 				['●', 'occurrence', 'a single point in time (no state)'],
-				['█', 'on/off', 'on for a while, then off (start, end)'],
+				['█', 'on/off', 'on for a while, then off'],
 				['▞', 'switch', 'one state until the next (custom states)'],
 				['¢', 'card', 'keys and values, with no time']
 			]);

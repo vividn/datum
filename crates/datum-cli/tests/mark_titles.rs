@@ -166,7 +166,7 @@ fn dayview_marks_read_as_the_tail_rows_they_came_from() {
             // Still running when the day ends: an open span.
             "project: writing 14:30 →",
             // `start run 30m` ENDS at 16:00 — the span precedes it.
-            "run: start 15:30–16:00",
+            "run: on 15:30–16:00",
         ]
     );
     // The day says which span its axis covers, for a viewer mapping a
@@ -190,7 +190,7 @@ fn nowview_marks_read_as_the_tail_rows_they_came_from() {
     assert_eq!(titles.len(), 3, "{titles:?}");
     assert_eq!(titles[0], "coffee");
     assert!(titles[1].starts_with("mood: happy ") && titles[1].ends_with(" →"));
-    assert!(titles[2].starts_with("run: start ") && titles[2].contains('–'));
+    assert!(titles[2].starts_with("run: on ") && titles[2].contains('–'));
 }
 
 /// The `.html` output is the SVG in a page: a mark's `<title>` is its

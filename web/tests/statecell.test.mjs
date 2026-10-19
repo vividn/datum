@@ -324,7 +324,7 @@ describe('a state transition is three values, and the page draws them', () => {
 			await settled(page, 2);
 			const rows = (await cells(page)).filter((r) => r.field === 'activity');
 			const compound = rows.at(-1);
-			assert.equal(compound.body, 'end', `the chip: ${JSON.stringify(compound)}`);
+			assert.equal(compound.body, 'off', `the chip: ${JSON.stringify(compound)}`);
 			assert.deepEqual(
 				compound.edges.map((e) => [e.where, e.title]),
 				[

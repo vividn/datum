@@ -22,7 +22,7 @@ const BAND = '.band[data-days-ago="0"]';
 const DOT = `${BAND} circle[data-field="coffee"]`;
 const BLOCK = `${BAND} rect[data-field="work"]`;
 const TIP = `${BAND} .tip`;
-const LABELS = { coffee: '14:05 coffee', work: '14:00 work: start 14:00–14:30' };
+const LABELS = { coffee: '14:05 coffee', work: '14:00 work: on 14:00–14:30' };
 
 // ONE app for the tests on the default screen (sharedApp in support/app.mjs),
 // each in a room of its own so no test meets the widgets the last one moved.
@@ -90,7 +90,7 @@ describe('hovering the day strip', () => {
 			]) {
 				await block.hover({ position: { x: width * f, y: height / 2 } });
 				const shown = await tip(page);
-				assert.equal(shown.rest, 'work: start 14:00–14:30');
+				assert.equal(shown.rest, 'work: on 14:00–14:30');
 				assert.ok(Math.abs(shown.minutes - want) <= 1, `${f}: ${JSON.stringify(shown)}`);
 			}
 
@@ -142,7 +142,7 @@ describe('hovering the day strip', () => {
 				await block.hover({ position: { x: width - 1, y: height / 2 } });
 				const box = await page.locator(TIP).boundingBox();
 				assert.ok(box.x >= 0 && box.x + box.width <= 390, JSON.stringify(box));
-				assert.match(await page.locator(TIP).innerText(), /work: start 14:00–14:30$/);
+				assert.match(await page.locator(TIP).innerText(), /work: on 14:00–14:30$/);
 			},
 			{ viewport: { width: 390, height: 844 } }
 		);
@@ -177,7 +177,7 @@ describe('hovering the day strip', () => {
 				}
 			}
 			const names = pictures.flatMap((p) => p.marks.map(([title]) => title));
-			assert.ok(names.includes('work: start 14:00–14:30'), JSON.stringify(names));
+			assert.ok(names.includes('work: on 14:00–14:30'), JSON.stringify(names));
 		});
 	});
 
@@ -207,7 +207,7 @@ describe('the SVG alone', () => {
 			await page.setContent(`<!DOCTYPE html><html><body>${drawn.stdout}</body></html>`);
 			for (const [selector, name] of [
 				['circle[data-field="coffee"]', 'coffee'],
-				['rect[data-field="work"]', 'work: start 14:00–14:30']
+				['rect[data-field="work"]', 'work: on 14:00–14:30']
 			]) {
 				const client = await page.context().newCDPSession(page);
 				const { nodeId } = await client.send('DOM.querySelector', {

@@ -196,16 +196,16 @@ fn tail_state_cell_for_start_uses_bg_slots() {
     let ctx = RenderContext::default();
     let group = format_state_group(&e, None, &ctx).expect("state group");
     let stripped = strip_ansi(&group);
-    assert!(stripped.contains("start"), "start label: {stripped:?}");
+    assert!(stripped.contains("on"), "on label: {stripped:?}");
     assert!(
         !stripped.contains("→"),
         "no arrows in new layout: {stripped:?}"
     );
     // Default ctx → both slots are empty → two IGNORED-bg single-space
     // cells flanking the state body, flush against it (da-25l). Stripped
-    // form is exactly " start " — single space on each side.
+    // form is exactly " on " — single space on each side.
     assert_eq!(
-        stripped, " start ",
+        stripped, " on ",
         "two IGNORED slots flank the state cell flush: {stripped:?}"
     );
     assert!(

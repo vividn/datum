@@ -902,6 +902,29 @@ fn nowview_svg_default_is_the_snapshot() {
     );
 }
 
+/// The gutter says a running start field «on», as `tail` does, where it
+/// said the stored «true»; a switch field's state reads as it is
+/// (da-251lt, da-66c3l).
+#[test]
+fn nowview_labels_say_a_running_start_field_on() {
+    let db = fresh_db();
+    entry_builder("work")
+        .verb(Verb::Switch)
+        .state(serde_json::json!(true))
+        .time_start_utc(Utc::now() - Duration::minutes(10))
+        .insert(&db);
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .state(serde_json::json!("focused"))
+        .time_start_utc(Utc::now() - Duration::minutes(10))
+        .insert(&db);
+
+    let svg = nowview_out(&db, &["--labels"], ".svg");
+    assert!(svg.contains(">work: on</text>"), "no «work: on» in: {svg}");
+    assert!(svg.contains(">mood: focused</text>"), "{svg}");
+    assert!(!svg.contains("work: true"), "{svg}");
+}
+
 /// `--labels` names each field's state in a gutter PAST the picture's
 /// right edge — vividn, «there can be a --labels flag, which then puts
 /// labels (but off to the right)». Before the bead they were drawn over

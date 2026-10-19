@@ -170,7 +170,7 @@ fn fx04_start_first() {
         !out.contains("∅"),
         "no ∅ glyph in LEAD slot post-da-25l: {out:?}"
     );
-    assert!(out.contains("start"), "state label 'start': {out:?}");
+    assert!(out.contains(" on "), "state label 'on': {out:?}");
     assert!(!out.contains("→"), "no right-arrow: {out:?}");
     assert!(!out.contains("←"), "no left-arrow: {out:?}");
 }
@@ -190,7 +190,7 @@ fn fx05_end() {
     // Prior state = true (active block); trail = false (stopped).
     let ctx = ctx_with(Some(json!(true)), Some(json!(false)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(out.contains("end"), "state label 'end': {out:?}");
+    assert!(out.contains("off"), "state label 'off': {out:?}");
     assert!(!out.contains("→"), "no arrows: {out:?}");
     assert!(!out.contains("←"), "no arrows: {out:?}");
 }
@@ -213,7 +213,7 @@ fn fx06_start_after_end() {
         "no first-marker (Bool(false) is a state): {out:?}"
     );
     assert!(!out.contains("!"), "no warning glyph: {out:?}");
-    assert!(out.contains("start"), "'start' label: {out:?}");
+    assert!(out.contains(" on "), "'on' label: {out:?}");
     assert!(!out.contains("→"), "no arrows: {out:?}");
 }
 
@@ -321,7 +321,7 @@ fn fx12_end_switch() {
     );
     let ctx = ctx_with(Some(json!("repeat")), Some(json!(false)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(out.contains("end"));
+    assert!(out.contains("off"));
     assert!(!out.contains("←"));
 }
 
@@ -342,7 +342,9 @@ fn fx13_start_already_active() {
         !out.contains("!"),
         "no warning glyph in new layout: {out:?}"
     );
-    assert!(out.contains("start"));
+    // The entry holds no state of its own, so its cell names none: the
+    // golden pins it (an assertion on "start" here only ever matched the
+    // field's name).
 }
 
 #[test]
@@ -475,7 +477,7 @@ fn fx19_track_false_state() {
     let ctx = ctx_with(None, Some(json!(false)), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains(" foo "), "field badge: {out:?}");
-    assert!(out.contains("end"), "false renders as 'end' label: {out:?}");
+    assert!(out.contains("off"), "false renders as 'off' label: {out:?}");
 }
 
 #[test]

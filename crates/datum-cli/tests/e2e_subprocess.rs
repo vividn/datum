@@ -929,8 +929,8 @@ fn subprocess_tail_json_is_readable_without_counting_columns() {
     // (da-gvcen).
     assert_eq!(rows.len(), 2, "both rows: {doc}");
     // Newest last, as the table renders them.
-    assert_eq!(rows[0]["state_label"], "start");
-    assert_eq!(rows[1]["state_label"], "end");
+    assert_eq!(rows[0]["state_label"], "on");
+    assert_eq!(rows[1]["state_label"], "off");
     assert_eq!(rows[1]["field"], "activity");
     // The hid is the full, prefix-addressable id — a consumer can hand it
     // straight back to the CLI rather than re-deriving one from the table.

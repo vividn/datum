@@ -1673,7 +1673,7 @@ fn render_now_state_scalar(
 ) -> String {
     let text = scalar_text(v);
     let ansi = state_ansi(field, &text, field_stored_color, state_colors);
-    // A boolean reads `start` / `end`, as in `tail`; its colour stays the
+    // A boolean reads `on` / `off`, as in `tail`; its colour stays the
     // stored value's, and `--json` carries the value (da-hxxv8).
     let label = match v {
         JsonValue::Bool(_) => state_truncate::state_label(v),
@@ -2169,13 +2169,13 @@ mod tests {
 
     #[test]
     fn state_cell_for_switch_true_false() {
-        // `true` → padded "start" block + arrow; `false` renders as " end ".
+        // `true` → padded "on" block + arrow; `false` renders as " off ".
         let entry_on = sample_entry("mood", Verb::Switch, Some(JsonValue::Bool(true)));
         let entry_off = sample_entry("mood", Verb::Switch, Some(JsonValue::Bool(false)));
         let on = strip_ansi(&extract(&entry_on, None, None).state.unwrap());
         let off = strip_ansi(&extract(&entry_off, None, None).state.unwrap());
-        assert!(on.contains("start"), "switch true → start label: {on:?}");
-        assert!(off.contains("end"), "switch false → end label: {off:?}");
+        assert!(on.contains("on"), "switch true → on label: {on:?}");
+        assert!(off.contains("off"), "switch false → off label: {off:?}");
     }
 
     #[test]
