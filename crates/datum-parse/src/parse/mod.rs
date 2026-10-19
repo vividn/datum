@@ -287,6 +287,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "rekey" => Command::Rekey(parse_update_args(rest)?),
 
         "retime" | "rt" => Command::Retime(parse_retime_args(rest)?),
+        "rename" => Command::Rename(parse_rename_args(rest)?),
 
         SETUP => Command::Spec(parse_spec_cmd(rest)?),
         "alias" => Command::Alias(parse_alias_cmd(rest)?),
@@ -1040,6 +1041,28 @@ mod tests {
     }
 
     // ─── da-rorg: retime parser surface ─────────────────────────────────
+
+    /// `rename OLD NEW`: `--dry-run` anywhere, any other flag refused,
+    /// exactly two fields.
+    #[test]
+    fn rename_takes_two_fields_and_dry_run() {
+        for args in [
+            &["rename", "mood", "feeling", "--dry-run"][..],
+            &["rename", "--dry-run", "mood", "feeling"],
+        ] {
+            let Command::Rename(a) = parse_argv(&argv(args)).unwrap().command else {
+                panic!("expected Rename")
+            };
+            let want = RenameArgs {
+                old: "mood".into(),
+                new: "feeling".into(),
+                dry_run: true,
+            };
+            assert_eq!(a, want);
+        }
+        assert!(parse_argv(&argv(&["rename", "mood"])).is_err());
+        assert!(parse_argv(&argv(&["rename", "mood", "feeling", "--force"])).is_err());
+    }
 
     #[test]
     fn retime_bare_invocation_has_no_slug_no_offset() {

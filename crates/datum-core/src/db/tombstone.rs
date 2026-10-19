@@ -173,6 +173,7 @@ fn revert_to(
     target: &Entry,
     kind: ChangeKind,
 ) -> Result<Entry> {
+    check_room(conn, current, target)?;
     // Record the pre-revert state as the new history row, tagged with the
     // step that is about to happen.
     history::record(conn, current, kind)?;
@@ -185,6 +186,31 @@ fn revert_to(
     super::sync::emit(conn, Some(current), &current.hid, kind)?;
 
     fetch_entry_any(conn, &target.hid)
+}
+
+/// Refuse a step that puts `target` back on an identity another row took
+/// since, naming that row, where the write met the UNIQUE index raw: an old
+/// name logged again after a rename, a retime or `update field=` moved the
+/// entry off it (da-ftls7). A deleted row there is in the way too. Moving
+/// its slug aside is an edit the fold reads as the two rows having met
+/// (`met` in `sync.rs`), so every other copy would merge them.
+/// A row merged into another (`superseded_by`) shares its slug by design,
+/// outside the UNIQUE index, and is never refused.
+fn check_room(conn: &Connection, current: &Entry, target: &Entry) -> Result<()> {
+    if current.superseded_by.is_some() {
+        return Ok(());
+    }
+    let Some(held) = super::sync::blockers(conn, target)?.into_iter().next() else {
+        return Ok(());
+    };
+    let (who, then) = match held.deleted_at {
+        Some(_) => ("deleted entry", "; it can't be moved yet (da-8mh8i)"),
+        None => ("entry", "; delete or retime that one first"),
+    };
+    Err(DatumError::Duplicate(format!(
+        "cannot put {} back at {}: {who} {} holds it now{then}",
+        target.hid, target.slug, held.hid
+    )))
 }
 
 /// Transaction-free body of [`Db::soft_delete_entry_as`]: tombstones inside

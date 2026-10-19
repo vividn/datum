@@ -2668,3 +2668,137 @@ fn stating_the_zone_drops_the_neighbours_marker_on_every_copy() {
         );
     }
 }
+
+/// da-ftls7: `rename` moves a field's entries of every shape and its spec,
+/// each an edit op, so a second copy folds to the same rows; one `undo`
+/// takes it all back on both, and renaming onto a field that exists is
+/// refused.
+#[test]
+fn rename_moves_every_shape_and_the_spec_on_every_copy_and_undoes() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["setup", "mood", "--verb", "switch", "--add-state", "happy"]);
+    for line in [
+        &["occur", "mood", "-t", "-60"][..],
+        &["switch", "mood", "happy", "-t", "-50"],
+        &["end", "mood", "-t", "-40"],
+        &["start", "mood", "10", "-t", "-20"],
+        &["start", "mood", "-t", "-5"],
+        &["note", "mood", "a", "jot"],
+        &["add", "mood", "--id", "one", "x=1"],
+        &["occur", "coffee"],
+    ] {
+        a.ok(line);
+    }
+    converged(&a, &b);
+    let rows = |copy: &Copy, field: &str| -> Vec<(String, String)> {
+        let conn = rusqlite::Connection::open(copy.db()).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT hid, slug FROM entries WHERE field = ?1 ORDER BY hid")
+            .unwrap();
+        let rows = stmt.query_map([field], |r| Ok((r.get(0)?, r.get(1)?)));
+        rows.unwrap().map(Result::unwrap).collect()
+    };
+    let mood = rows(&a, "mood");
+    assert_eq!(mood.len(), 7);
+
+    let said = a.ok(&["rename", "mood", "feeling", "--dry-run"]);
+    assert!(
+        said.contains("would rename mood → feeling: 7 entries"),
+        "{said}"
+    );
+    assert_eq!(rows(&a, "mood"), mood, "a dry run moves nothing");
+
+    let said = a.ok(&["rename", "mood", "feeling"]);
+    assert!(
+        said.contains("aliases now: feeling, feelinge, happy"),
+        "{said}"
+    );
+    let moved: Vec<_> = mood
+        .iter()
+        .map(|(hid, slug)| (hid.clone(), slug.replacen("mood:", "feeling:", 1)))
+        .collect();
+    assert_eq!(
+        rows(&a, "feeling"),
+        moved,
+        "each keeps its hid, its slug follows"
+    );
+    assert_eq!(a.ok(&["tail", "mood"]).trim(), "[No data]");
+    assert_eq!(
+        a.ok(&["tail", "feeling"]).lines().count(),
+        8,
+        "a header and 7 rows"
+    );
+    let spec = a.query(
+        "SELECT json_extract(data, '$.field') FROM entries WHERE slug = ?1",
+        "spec:feeling",
+    );
+    assert_eq!(spec, "feeling");
+    converged(&a, &b);
+    assert_eq!(rows(&b, "feeling"), moved);
+    assert!(rows(&b, "mood").is_empty());
+
+    let out = a.run(&["rename", "feeling", "coffee"], "");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && err.contains("`coffee` already has entries"),
+        "{err}"
+    );
+
+    a.ok(&["undo"]);
+    assert_eq!(rows(&a, "mood"), mood, "one undo restores every row");
+    assert!(rows(&a, "feeling").is_empty());
+    assert!(a.ok(&["setup", "mood"]).contains("happy"));
+    converged(&a, &b);
+    assert_eq!(rows(&b, "mood"), mood);
+
+    // An OLD entry logged after the rename, at a renamed one's instant, is
+    // an entry of its own on every copy, not a join into the renamed row.
+    a.ok(&["rename", "mood", "feeling"]);
+    converged(&a, &b);
+    let at = a.query(
+        "SELECT occur_time FROM entries WHERE field = ?1 AND state = '\"happy\"'",
+        "feeling",
+    );
+    b.ok(&["switch", "mood", "happy", "-t", &at]);
+    let mood_at = "SELECT occur_time FROM entries WHERE field = ?1";
+    assert_eq!(b.query(mood_at, "mood"), at, "at the renamed row's instant");
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert_eq!(rows(copy, "feeling"), moved);
+        assert_eq!(rows(copy, "mood").len(), 1);
+    }
+}
+
+/// da-ftls7 (vremya's review): an undo that would put an entry back on a
+/// slug another row took since (the old name logged again after a rename)
+/// is refused with a sentence naming that row, never a raw UNIQUE error. A
+/// deleted row there is refused too (da-8mh8i). Nothing is written, so the
+/// copies still agree.
+#[test]
+fn undoing_a_rename_onto_a_reused_old_slug_is_refused_naming_the_row() {
+    let (a, b) = (Copy::new(), Copy::new());
+    let at = "2026-10-19T09:00";
+    a.ok(&["switch", "mood", "happy", "-t", at]);
+    let happy = a.hid("mood");
+    a.ok(&["rename", "mood", "feeling"]);
+    a.ok(&["switch", "mood", "calm", "-t", at]);
+    let calm = a.hid("mood");
+    converged(&a, &b);
+    let refused = |args: &[&str], held: &str| {
+        let out = a.run(args, "");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{err}");
+        assert!(err.contains(&format!("{held} holds it now")), "{err}");
+        assert!(!err.contains("UNIQUE"), "{err}");
+    };
+    // Live: the calm entry holds mood:T.
+    refused(&["undo", &happy], &format!("entry {calm}"));
+    // Deleted: the calm entry undone, its tombstone still holds it.
+    a.ok(&["undo"]);
+    refused(&["undo"], &format!("deleted entry {calm}"));
+    assert_eq!(
+        a.query("SELECT field FROM entries WHERE hid = ?1", &happy),
+        "feeling"
+    );
+    converged(&a, &b);
+}

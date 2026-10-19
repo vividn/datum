@@ -16,6 +16,7 @@ use chrono::Duration;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 use crate::field_spec::DEFAULT_ID_DELIMITER;
+use crate::ids::Slug;
 
 use super::row_mapper::row_to_entry;
 use super::types::{RetimeFilter, Retimed};
@@ -93,49 +94,64 @@ impl Db {
     /// Apply `change` to every row the filter selects, in one transaction
     /// (da-sunq: a mid-batch failure — rekey collision, disk error — rolls
     /// back every row already changed, so a partial retime is never
-    /// visible). Each row is saved through
-    /// [`Db::save_existing_entry_with_auto_reinterp`], so a templated slug
-    /// is re-derived.
+    /// visible), through [`Db::save_edits`].
     fn retime_with(
         &self,
         filter: &RetimeFilter,
         mut change: impl FnMut(&mut Entry) -> Result<()>,
     ) -> Result<Vec<Retimed>> {
-        // The targets are found and changed before the lock, and saved on
-        // the database they were read from (da-8i7f0).
-        self.compute_then_write_with(
+        let (saved, befores) = self.save_edits(
             |_| {
-                let mut changed = Vec::new();
+                let (mut rows, mut befores) = (Vec::new(), Vec::new());
                 for mut e in select_retime_targets(self, filter)? {
-                    let old_slug = e.slug.clone();
                     // Targets always carry an occur_time (the selector
                     // excludes timeless rows), so the `before` half of the
                     // pair is always there to render.
-                    let before = e.occur_time.clone();
+                    befores.push(e.occur_time.clone());
+                    let old_slug = e.slug.clone();
                     change(&mut e)?;
-                    changed.push((old_slug, before, e));
+                    rows.push((old_slug, e));
                 }
-                Ok(changed)
+                Ok((rows, befores))
             },
-            |_, changed| {
-                let mut moved = Vec::with_capacity(changed.len());
-                for (old_slug, before, e) in changed {
-                    let (saved, _) = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
-                        &old_slug,
-                        e,
-                        DEFAULT_ID_DELIMITER,
-                        crate::history::ChangeKind::Retime,
-                    )?;
-                    if let Some(before) = before {
-                        moved.push(Retimed {
-                            before,
-                            entry: saved,
-                        });
-                    }
-                }
-                Ok(moved)
-            },
-        )
+            crate::history::ChangeKind::Retime,
+        )?;
+        Ok(saved
+            .into_iter()
+            .zip(befores)
+            .filter_map(|(entry, before)| {
+                Some(Retimed {
+                    before: before?,
+                    entry,
+                })
+            })
+            .collect())
+    }
+
+    /// Save each row `compute` edits, by the slug it had, as `kind`, in one
+    /// transaction. The rows are found and changed before the lock, and
+    /// saved on the database they were read from (da-8i7f0), each through
+    /// [`Db::save_existing_entry_with_auto_reinterp_kind_in_tx`], so a
+    /// templated slug is re-derived. Returns the saved rows and what else
+    /// `compute` gave.
+    pub(super) fn save_edits<P>(
+        &self,
+        compute: impl FnMut(&super::View) -> Result<(Vec<(Slug, Entry)>, P)>,
+        kind: crate::history::ChangeKind,
+    ) -> Result<(Vec<Entry>, P)> {
+        self.compute_then_write_with(compute, |_, (rows, more)| {
+            let mut saved = Vec::with_capacity(rows.len());
+            for (slug, e) in rows {
+                let (e, _) = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
+                    &slug,
+                    e,
+                    DEFAULT_ID_DELIMITER,
+                    kind,
+                )?;
+                saved.push(e);
+            }
+            Ok((saved, more))
+        })
     }
 }
 

@@ -196,6 +196,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `merge` — Merge values into an entry, collecting a key's into a list
 - `rekey` — Rename an entry's data keys, in place
 - `retime` — Move an entry's occur_time (alias: rt)
+- `rename` — Give a field another name, its entries and spec with it
 - `delete` — Delete an entry (alias: del)
 - `undo` — Undo the last command, or one entry's last change
 - `redo` — Redo the last undone change (the inverse of undo)

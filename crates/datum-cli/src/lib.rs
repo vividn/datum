@@ -193,6 +193,7 @@ fn spools(command: &Command) -> bool {
                 | Command::Merge(_)
                 | Command::Rekey(_)
                 | Command::Retime(_)
+                | Command::Rename(_)
                 | Command::Spec(_)
                 | Command::Alias(_)
                 | Command::Conflicts(_)

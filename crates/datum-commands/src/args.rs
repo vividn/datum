@@ -41,6 +41,7 @@ pub use pcli::{
     UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
 };
 // Apart from the list above, which every added name reflows.
+pub use pcli::RenameArgs;
 pub use pcli::StatesArgs;
 pub use pcli::UpdateStrategyArg;
 

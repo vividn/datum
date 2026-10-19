@@ -43,6 +43,7 @@ pub mod now;
 pub mod nowview;
 pub mod occur;
 pub mod rekey;
+pub mod rename;
 pub mod render_helpers;
 pub mod reparse;
 pub mod retime;

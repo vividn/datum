@@ -303,6 +303,7 @@ fn writes_a_batch(command: &Command) -> bool {
         Command::Db(DbCommand::Restore(_))
             | Command::Kit(KitCommand::Install(_) | KitCommand::Uninstall(_))
             | Command::Retime(_)
+            | Command::Rename(_)
             | Command::Reparse(_)
     )
 }
@@ -338,6 +339,7 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Merge(args) => commands::merge::merge(args, db),
         Command::Rekey(args) => commands::rekey::rekey(args, db),
         Command::Retime(args) => commands::retime::retime(args, db),
+        Command::Rename(args) => commands::rename::rename(args, db),
         Command::Undo(args) => commands::undo::undo(args, db),
         Command::Redo(args) => commands::undo::redo(args, db),
         Command::History(args) => commands::history::history(args, db),

@@ -117,6 +117,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "edit",
     "retime",
     "rt",
+    "rename",
     "dayview",
     "info",
     "db",

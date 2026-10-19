@@ -57,6 +57,9 @@ pub enum Command {
     Rekey(UpdateArgs),
 
     Retime(RetimeArgs),
+    /// `datum rename OLD NEW` — a field's entries, spec and derived aliases
+    /// under another name (da-ftls7).
+    Rename(RenameArgs),
 
     Spec(SpecCommand),
     Alias(AliasCommand),
@@ -503,6 +506,14 @@ pub struct UpdateArgs {
     pub all_or_nothing: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct RenameArgs {
+    pub old: String,
+    pub new: String,
+    /// `--dry-run`: say what would move, and move nothing.
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Default)]

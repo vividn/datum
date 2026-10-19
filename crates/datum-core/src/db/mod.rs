@@ -32,6 +32,7 @@ mod lookup;
 mod multi;
 mod now;
 mod query;
+mod rename;
 mod row_mapper;
 pub(crate) mod spec;
 mod spec_alias_index;
@@ -70,6 +71,7 @@ pub use now::{
     NowFieldActive, NowFieldIgnored, NowFieldTrackedFalse, NowFilter, NowSnapshot,
     SCHEMA_ID as NOW_SCHEMA_ID,
 };
+pub use rename::FieldRenamed;
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
 pub use spool::{busy, Drained, Spool};
