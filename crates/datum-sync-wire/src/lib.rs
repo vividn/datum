@@ -120,6 +120,10 @@ fn round() -> usize {
 
 /// Ops per apply — the first, where a store [`yields`](Store::yields).
 const CHUNK: usize = 64;
+/// Ops in a session's first apply where the store does not yield: that
+/// chunk holds every session's thread before anything has timed one, so it
+/// is small, and [`pace`] sizes the rest (da-10nno).
+const FIRST: usize = 8;
 /// The most ops a doubling chunk grows to: one CLI process applying 8,192
 /// ops peaked at 108 MiB, and a command typed meanwhile waits for it.
 const MAX_CHUNK: usize = 8192;
@@ -712,13 +716,13 @@ async fn busy<T>(s: &mut SendStream, work: impl Future<Output = Result<T>>) -> R
 }
 
 /// Apply `ops` under the store's [`apply_gate`](Store::apply_gate), in
-/// chunks, and between chunks send a [`BUSY`]: a [`CHUNK`] first, then
-/// where the store [`yields`](Store::yields) twice the last, each run
-/// [`busy`], and otherwise as many as take [`idle`]`/16`, at most twice the
-/// last — never over [`MAX_CHUNK`]. `size` is the session's: a round
-/// goes on at the size the last ended at, where each began at a [`CHUNK`]
-/// again, and a big catch-up paid a process a chunk eight times a round
-/// (da-dwm2y). Its [`progress`](Store::progress) is the session's too:
+/// chunks, and between chunks send a [`BUSY`]: where the store
+/// [`yields`](Store::yields) a [`CHUNK`] first and then twice the last, each
+/// run [`busy`], and otherwise a [`FIRST`] and then as many as take
+/// [`idle`]`/16`, at most twice the last — never over [`MAX_CHUNK`]. `size`
+/// is the session's: a round goes on at the size the last ended at, where
+/// each began at its first again, and a big catch-up paid a process a chunk
+/// eight times a round (da-dwm2y). Its [`progress`](Store::progress) is the session's too:
 /// `before` applied in its earlier rounds, of `of` in all.
 async fn apply(
     store: &impl Store,
@@ -808,7 +812,8 @@ async fn exchange(
     dialer: bool,
     rep: &mut Report,
 ) -> Result<()> {
-    let (mut last, mut quiet, mut before, mut size, mut ends) = (None, 0, 0, CHUNK, false);
+    let size = if store.yields() { CHUNK } else { FIRST };
+    let (mut last, mut quiet, mut before, mut size, mut ends) = (None, 0, 0, size, false);
     while quiet < MAX_ROUNDS {
         let mine = store.vector().await?;
         match ends {

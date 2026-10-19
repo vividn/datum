@@ -1664,9 +1664,9 @@ fn a_new_member_is_announced_once() {
 }
 
 /// A first sync whose apply outlasts the progress timeout (da-039jx): b applies
-/// a's 300-odd ops at 20ms each, 6s, on a 3s timeout, sending a `BUSY` every
-/// 64 ops (1.3s) unless `keepalive` is off. The connect's output, and whether
-/// the invite exited 0 and what it printed.
+/// a's 300-odd ops at 20ms each, 6s, on a 3s timeout, sending a `BUSY`
+/// between chunks paced to a sixteenth of it unless `keepalive` is off. The
+/// connect's output, and whether the invite exited 0 and what it printed.
 fn slow_first_sync(keepalive: bool) -> (Copy, Copy, Output, (bool, String)) {
     let (mut a, mut b) = (Copy::new(), Copy::new());
     for i in 0..300 {
@@ -1793,7 +1793,7 @@ fn without_keepalives_a_slow_verify_times_out() {
 /// A first sync says how far it is on both sides (da-nyg6u): vividn's joiner
 /// went silent for a minute and then printed ten lines that all said «87s»,
 /// and his inviter said nothing until it was done. b applies a's 300-odd ops
-/// at 40ms each: 12s, in chunks that each hold its thread for 2.5s.
+/// at 40ms each: 12s, in chunks paced to hold its thread for 3.75s.
 #[test]
 fn a_first_sync_says_how_far_it_is_on_both_sides() {
     let (a, mut b) = (Copy::new(), Copy::new());
