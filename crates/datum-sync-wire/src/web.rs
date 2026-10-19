@@ -40,6 +40,9 @@ struct Cli {
     open: Rc<Cell<usize>>,
 }
 
+/// How long a join refused as busy goes on trying ([`Node::connect`]).
+const JOIN_WAITS: Duration = Duration::from_secs(30);
+
 /// A dialed session's turn, held: the next may begin once it drops.
 struct Turn(Rc<Cell<usize>>);
 
@@ -181,6 +184,12 @@ impl Store for Cli {
     /// busy, no failure, as natively while a copy applies (da-h31wt).
     fn applying(&self) -> bool {
         self.open.get() > 1
+    }
+
+    /// A page's dial has waited its turn ([`Node::turn`]): a session served
+    /// since is the one refused, never the dial (da-tqg19).
+    fn dial_busy(&self) -> bool {
+        false
     }
 
     fn serving(&self, _peer: &str, on: bool) {
@@ -399,8 +408,24 @@ impl Node {
         if let Some(label) = label {
             self.cli.label.replace(label);
         }
-        let _turn = self.turn().await;
-        report(redeem(&self.cli, &self.ep, &ticket).await)
+        // A join refused as busy gives up its turn and tries again, for
+        // [`JOIN_WAITS`] (da-tqg19): two pages each holding a turn refuse
+        // each other's session, and a member's sync met in passing is no
+        // reason a join fails. The wait is jittered, so two pages that met
+        // do not meet again in step.
+        let began = n0_future::time::Instant::now();
+        loop {
+            let rep = {
+                let _turn = self.turn().await;
+                redeem(&self.cli, &self.ep, &ticket).await
+            };
+            let busy = rep.as_ref().err().and_then(failure) == Some(Failure::Refused(Why::Busy));
+            if !busy || began.elapsed() > JOIN_WAITS {
+                return report(rep);
+            }
+            let ms = 250.0 + 750.0 * js_sys::Math::random();
+            n0_future::time::sleep(Duration::from_millis(ms as u64)).await;
+        }
     }
 
     /// Wait until no session is open, and open one: a dial waits its turn

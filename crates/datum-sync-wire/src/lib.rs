@@ -181,6 +181,12 @@ pub trait Store {
     fn applying(&self) -> bool {
         false
     }
+    /// Whether a dial is refused as busy before it connects: while this copy
+    /// is [`applying`](Store::applying), unless its dials wait a turn of
+    /// their own first.
+    fn dial_busy(&self) -> bool {
+        self.applying()
+    }
     /// Wait until no other session applies into this copy, and hold it
     /// until what this returns drops: one applies at a time, and its writes
     /// wait out no other's.
@@ -976,7 +982,7 @@ pub async fn dial(
     invite: Option<&Redeem<'_>>,
 ) -> Result<Report> {
     let id = addr.id.to_string();
-    if store.applying() {
+    if store.dial_busy() {
         return Err(Failed(Failure::Refused(Why::Busy), format!("this copy {BUSY_WHY}")).into());
     }
     let rep = session(store, ep, addr, invite).await;
@@ -1373,7 +1379,8 @@ pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Resul
         leaves,
     };
     let mut rep = Err(anyhow!("the ticket names no address"));
-    for addr in &ticket.addrs {
+    // A member rejoining is named among its chain's members (da-j8c4l).
+    for addr in ticket.addrs.iter().filter(|a| a.id != ep.id()) {
         rep = dial(store, ep, addr.clone(), Some(&invite)).await;
         // Unreachable, or a member not yet holding the invite: the next
         // address may admit. Any other refusal stops here, a paused inviter

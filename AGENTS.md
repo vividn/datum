@@ -365,7 +365,9 @@ busy, or giving way to a write, as a failure. datum.day runs one session at a
 time, applying or not (da-dwm2y): its CLI runs one process at a time, so a
 second session's handshake waited behind the first's verify with nothing sent.
 Its dials wait their turn, and a session served while another is open is
-refused as busy.
+refused as busy, never the dial holding the turn; a join refused as busy (two
+pages each holding a turn refuse each other) gives up its turn and tries
+again, jittered, for 30 s (da-tqg19).
 
 A round's apply goes on at the chunk size the session's last round ended at, and
 says how far the session is in all, of what the peer's vector holds past this

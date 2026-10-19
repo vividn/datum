@@ -122,3 +122,102 @@ test('a page pushing to two members runs one session at a time (da-dwm2y)', asyn
 		await b.close();
 	}
 });
+
+/**
+ * An init script: while `window.__hold.on`, the sync worker's `sync status`
+ * runs wait for `window.__release()` — the first process of a page's join
+ * once it holds its turn, and of a dial once it has reached its peer.
+ */
+function holdStatus() {
+	const hold = (window.__hold = { on: false, held: [] });
+	window.__release = () => {
+		hold.on = false;
+		hold.held.splice(0).forEach((f) => f());
+	};
+	const d = Object.getOwnPropertyDescriptor(Worker.prototype, 'onmessage');
+	Object.defineProperty(Worker.prototype, 'onmessage', {
+		...d,
+		set(fn) {
+			d.set.call(this, function (e) {
+				if (hold.on && 'run' in Object(e.data) && e.data.argv.includes('status')) hold.held.push(() => fn.call(this, e));
+				else fn.call(this, e);
+			});
+		}
+	});
+}
+
+const offer = (app) => app.page.evaluate(() => window.datum.sync.offer('datum'));
+const join = (app, t) =>
+	app.page.evaluate((t) => window.datum.sync.connect('datum', t).then(() => 'joined', (e) => e.message), t);
+const holding = (app) => app.page.evaluate(() => window.__hold.held.length);
+/** Neither page has a session in flight, for a second: what the first join set going has ended. */
+async function quiet(...apps) {
+	const online = () =>
+		Promise.all(apps.map((app) => app.page.evaluate(() => Object.values(window.datum.sync.states().datum?.peers ?? {}).some((p) => p.reach === 'online'))));
+	for (let calm = 0; calm < 4; ) {
+		calm = (await online()).some(Boolean) ? 0 : calm + 1;
+		await new Promise((r) => setTimeout(r, 250));
+	}
+}
+
+// b rejoins a's chain as a's push reaches it (da-tqg19): b holds its turn
+// for the join, a holds its own for the push, and each refuses the other's
+// session as busy. b refused its own dial for the session it was refusing,
+// and with that gone a refused b's: the join failed either way. A join
+// refused as busy gives up its turn and tries again.
+test('a join that meets a member pushing to it, each page holding its turn, joins (da-tqg19)', async () => {
+	const prepare = async (context) => (await relayed(relay)(context), context.addInitScript(holdStatus));
+	await withWallClock(
+		(a) =>
+			withWallClock(
+				async (b) => {
+					await a.run(['occur', 'left', '-t', '0800']);
+					assert.equal(await join(b, await offer(a)), 'joined');
+					await until(() => countOf(b, 'left'), (n) => n === 1);
+					const ticket = await offer(a);
+					await quiet(a, b);
+					await b.page.evaluate(() => (window.__hold.on = true));
+					const again = join(b, ticket);
+					await until(() => holding(b), (n) => n > 0);
+					await a.page.evaluate(() => (window.__hold.on = true));
+					await a.run(['occur', 'later', '-t', '1000']);
+					await until(() => holding(a), (n) => n > 0);
+					// b has a's connection in hand.
+					await new Promise((r) => setTimeout(r, 1000));
+					await b.page.evaluate(() => window.__release());
+					const early = await Promise.race([again, new Promise((r) => setTimeout(() => r(null), 3000))]);
+					await a.page.evaluate(() => window.__release());
+					assert.equal(early ?? (await again), 'joined');
+					await until(() => countOf(b, 'later'), (n) => n === 1);
+				},
+				{ prepare }
+			),
+		{ prepare }
+	);
+});
+
+// The inviter serves one at a time, so it refuses one join as busy, or both
+// when their handshakes cross: each tries again, at a jittered wait.
+test('two pages joining one chain at once both join (da-tqg19)', async () => {
+	const prepare = relayed(relay);
+	await withWallClock(
+		(a) =>
+			withWallClock(
+				(b) =>
+					withWallClock(
+						async (c) => {
+							await a.run(['occur', 'left', '-t', '0800']);
+							const [t1, t2] = [await offer(a), await offer(a)];
+							assert.deepEqual(await Promise.all([join(b, t1), join(c, t2)]), ['joined', 'joined']);
+							await until(
+								() => Promise.all([countOf(b, 'left'), countOf(c, 'left')]),
+								([x, y]) => x === 1 && y === 1
+							);
+						},
+						{ prepare }
+					),
+				{ prepare }
+			),
+		{ prepare }
+	);
+});
