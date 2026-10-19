@@ -223,7 +223,7 @@ describe('the field widget', () => {
 			await page.locator(`${SHEET} [data-example="environment"]`).click();
 			await page.locator(SHEET).waitFor({ state: 'detached' });
 			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'environment');
-			assert.equal(await page.locator(`${FIELD_FORM} .tile[aria-label^="the field's glyph:"]`).getAttribute('data-glyph'), '🌳');
+			assert.equal(await page.locator(`${FIELD_FORM} .tile[aria-label^="the field's symbol:"]`).getAttribute('data-glyph'), '🌳');
 			assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(environment.states));
 			await page.locator(`${FIELD_FORM} button.commit`).click();
 			const { line, spec } = declared(shellJoin((await saved).argv));

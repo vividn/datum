@@ -8,7 +8,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, cancelField, openField } from './support/field.mjs';
+import { FIELD_FORM, cancelField, openField, pickImage } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -100,8 +100,7 @@ describe('a refused save', () => {
 			const { saved } = await openField(page, 'tea');
 			await page.locator(`${FIELD_FORM} input.description`).fill('green');
 			const big = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="${'M0 0'.repeat(1200)}"/></svg>`;
-			await page.locator(`${FIELD_FORM} .drop input[type="file"]`).setInputFiles({ name: 'big.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(big) });
-			await page.locator(`${FIELD_FORM} .drop`, { hasText: 'big.svg' }).waitFor();
+			await pickImage(page, 'big.svg', big);
 			await page.locator(`${FIELD_FORM} button.commit`).click();
 			const result = await saved;
 			assert.notEqual(result.code, 0);

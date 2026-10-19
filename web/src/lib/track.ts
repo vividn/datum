@@ -362,9 +362,6 @@ export const stateRows = (spec: Spec): StateRow[] =>
 		glyph: spec.state_glyphs?.[name] ?? ''
 	}));
 
-/** The data keys `spec` declares (`keys`, parsed by the CLI), which `glyph_by` may read. */
-export const specKeys = (spec: Spec): string[] => keyRows(spec).map((k) => k.name);
-
 /**
  * Where the key rows are saved — a key lives in ONE place (da-ulc0v): an
  * assign in `assign`, `id_assign` in the slug; any other key a slot, spelt
@@ -415,8 +412,9 @@ function placed(rows: KeyRow[]): Partial<Spec> {
  * never did — or a row that carries an empty one; a renamed row carries
  * its glyph to the new name.
  *
- * `glyph_by` is null for «one glyph»; its map rows with no value or no
- * glyph are dropped.
+ * `glyph_by` null removes it, and left out carries it (the setup form
+ * never edits it, da-rpfws); its map rows with no value or no glyph are
+ * dropped.
  *
  * An `icon` given replaces the spec's and an empty one clears it; one
  * not given is carried (da-45wgz).

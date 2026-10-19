@@ -40,3 +40,15 @@ export async function openField(page, field, verb) {
 
 /** Leave the place running nothing: its Cancel. */
 export const cancelField = (page) => page.locator(`${FIELD_FORM} button.cancel`).click();
+
+/**
+ * Give the open form's field the image `svg` as its symbol (da-rpfws): its
+ * symbol tile opens the picker, whose «image (svg)» takes the file, and the
+ * tile shows it once read.
+ */
+export async function pickImage(page, name, svg) {
+	const tile = page.locator(`${FIELD_FORM} .tile[aria-expanded][aria-label^="the field's symbol:"]`);
+	await tile.click();
+	await page.locator(`${FIELD_FORM} .picker input[type="file"]`).setInputFiles({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
+	await page.locator(`${FIELD_FORM} .tile[aria-label="the field's symbol: image"][data-icon] img`).waitFor();
+}

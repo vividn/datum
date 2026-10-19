@@ -18,7 +18,7 @@
 	names it, and on a new field has an «ex.» part to the side that opens
 	its examples in a sheet (`EXAMPLES`, less the ones there is already a
 	field for, da-yqx0t), each with its icon: one tap fills the form — never the
-	database — with a field of that shape, its colour, glyph, keys and
+	database — with a field of that shape, its colour, symbol, keys and
 	states, to be read, changed and saved or not. Neither a shape nor an
 	example takes the focus (da-zz9rn), vividn, 2026-10-19: «after selecting
 	an example don't enter text edit mode and open the keyboard, that is
@@ -27,9 +27,13 @@
 	there too.
 
 	Every field, a new one too, has the five segments — Basics · States ·
-	Data · Aliases · Placement — none of them required, and picks the
-	GLYPH its dots draw (da-ogyxa): one for the field, or one by a data
-	key's value, and one per state beside the state's colour. The data keys
+	Data · Aliases · Placement — none of them required. Its colour and the
+	SYMBOL its dots draw (da-ogyxa) stand on one line, the symbol in the
+	colour, each a popup (da-rpfws); the symbol is a character or an .svg
+	(the spec's `icon`), and each state has one beside its colour. A
+	`glyph_by` (a symbol by a data key's value) is not edited here and a
+	save leaves it as it was. A field with no name yet has no colour to
+	show: its swatch is empty, not the pink an empty name hashes to. The data keys
 	are `DataKeys.svelte`'s rows, on Basics and, with each key's type, on
 	Data (da-zqnt3). Aliases are made by datum from
 	the verb and the states until that is switched off (`no_autoalias`).
@@ -64,7 +68,6 @@
 		moved,
 		placeOf,
 		specArgv,
-		specKeys,
 		stateRows,
 		VERBS,
 		type DerivedAlias,
@@ -98,19 +101,12 @@
 	let description = spec?.description ?? '';
 	let states: StateRow[] = spec ? stateRows(spec) : [];
 	let glyph = spec?.glyph ?? '';
-	let byKey = !!spec?.glyph_by;
-	let glyphKey = spec?.glyph_by?.key ?? '';
-	let glyphMap = Object.entries(spec?.glyph_by?.map ?? {}).map(([value, glyph]) => ({ value, glyph }));
-	/** The data keys the saved spec names, which «by a key» suggests. */
-	const keyNames = spec ? specKeys(spec) : [];
 	let keys: KeyRow[] = spec ? keyRows(spec) : [];
 	let autoalias = !spec?.no_autoalias;
 	let neverFalse = !!spec?.never_false;
 	let aliases: DerivedAlias[] = (spec?.derived_aliases ?? []).map((a) => ({ ...a }));
 	let place: Place = spec ? placeOf(spec) : {};
 	let icon = spec?.icon ?? '';
-	/** The file the icon came from, while this form is open; a stored icon has none. */
-	let iconName = '';
 	/** The field a bare state names an entry of (`state_lookup_field`), or none. */
 	let lookup = spec?.state_lookup_field ?? '';
 	/** The shape whose examples are open, if any. */
@@ -127,9 +123,6 @@
 	// an expression mentions, so a preview built inside a function would sit
 	// at the first argv while the form said otherwise — and a preview that
 	// disagrees with the command teaches a lie.
-	$: glyph_by = byKey
-		? { key: glyphKey, map: Object.fromEntries(glyphMap.map((r) => [r.value, r.glyph])) }
-		: null;
 	$: edits = {
 		verb: verb ?? spec?.verb ?? 'occur',
 		color,
@@ -140,7 +133,6 @@
 		aliases,
 		neverFalse,
 		glyph,
-		glyph_by,
 		place,
 		icon,
 		lookup
@@ -152,6 +144,8 @@
 		opened ??= now;
 		dirty = now !== opened;
 	}
+	// What `auto` paints: the name's colour, and none while there is no name.
+	$: auto = field.trim() ? defaultColor(field.trim()) : 'transparent';
 	$: examples = EXAMPLES.filter((e) => e.verb === catalog && !taken.includes(e.field));
 	const offers = (shape: Verb) => !spec && EXAMPLES.some((e) => e.verb === shape && !taken.includes(e.field));
 
@@ -165,24 +159,13 @@
 		color = example.color;
 		description = '';
 		glyph = example.glyph ?? '';
-		[byKey, glyphKey, glyphMap] = [false, '', []];
-		[icon, iconName] = ['', ''];
+		icon = '';
 		[autoalias, aliases, place] = [true, [], {}];
 		states = Object.entries(example.states ?? {}).map(([name, color]) => ({ name, color, description: '', glyph: '' }));
 		keys = (example.keys ?? []).map((k) => ({ ...k, value: '', value_type: 'any' }));
 		lookup = example.lookup ?? '';
 		neverFalse = !!example.neverFalse;
 		catalog = null;
-	}
-
-	// da-45wgz: the file is read as it is; whether it is an icon — SVG,
-	// under the cap, nothing that runs — is the CLI's to say on Done, in
-	// the one refusal every surface gets.
-	async function pickIcon(e: Event) {
-		const file = (e.currentTarget as HTMLInputElement).files?.[0];
-		if (!file) return;
-		icon = await file.text();
-		iconName = file.name;
 	}
 
 	/** Hand `next` up to run, or null to run nothing. */
@@ -285,81 +268,16 @@
 					<span class="label">description</span>
 					<input class="description" bind:value={description} />
 				</label>
-				<div class="row top early">
+				<!-- vividn, 2026-10-19: «move color and symbol (not glyph) to one line, next to each other. make
+				     the symbol take on the color of color». -->
+				<div class="row early">
 					<span class="label">color</span>
-					<Swatch bind:value={color} fallback={defaultColor(field.trim())} label="the field's color" />
+					<Swatch bind:value={color} fallback={auto} label="the field's color" />
+					<span class="label near">symbol</span>
+					<Glyph bind:value={glyph} bind:icon color={color || (field.trim() && auto)} label="the field's symbol" />
 				</div>
 				<span class="label">data</span>
 				<DataKeys bind:keys card={verb === 'add'} />
-				<div class="row">
-					<span class="label">glyph</span>
-					<div class="glyph-by" role="radiogroup" aria-label="the field's glyph">
-						<button type="button" role="radio" aria-checked={!byKey} on:click={() => (byKey = false)}
-							>one glyph</button
-						>
-						<button type="button" role="radio" aria-checked={byKey} on:click={() => (byKey = true)}
-							>by a key</button
-						>
-					</div>
-				</div>
-				{#if byKey}
-					<label class="row">
-						<span class="label">key</span>
-						<input class="glyph-key" list="spec-keys" bind:value={glyphKey} spellcheck="false" autocapitalize="none" />
-						<datalist id="spec-keys">
-							{#each keyNames as key (key)}<option value={key}></option>{/each}
-						</datalist>
-					</label>
-				{/if}
-				<ul class="glyphs">
-					{#if byKey}
-						{#each glyphMap as row, i (row)}
-							<li>
-								<input
-									class="value"
-									bind:value={row.value}
-									placeholder="value"
-									aria-label="a value of {glyphKey || 'the key'}"
-									spellcheck="false"
-									autocapitalize="none"
-								/>
-								<Glyph bind:value={row.glyph} {color} label="the glyph for {row.value || 'this value'}" />
-								<button
-									type="button"
-									class="remove"
-									aria-label="remove {row.value}"
-									on:click={() => (glyphMap = glyphMap.filter((_, j) => j !== i))}>✕</button
-								>
-							</li>
-						{/each}
-					{/if}
-					<li class="default">
-						{#if byKey}<span class="value">(other)</span>{/if}
-						<Glyph bind:value={glyph} {color} label="the field's glyph" />
-					</li>
-				</ul>
-				{#if byKey}
-					<button type="button" class="add" on:click={() => (glyphMap = [...glyphMap, { value: '', glyph: '' }])}
-						>+ value</button
-					>
-				{/if}
-				<!-- da-45wgz: an .svg dropped or picked; the input covers the box, so a drop lands on it. -->
-				<div class="row">
-					<span class="label">icon</span>
-					<label class="drop">
-						<input type="file" class="icon" accept=".svg,image/svg+xml" aria-label="the field's icon" on:change={pickIcon} />
-						{#if icon}
-							▸ {iconName || 'icon'} &nbsp;{(new Blob([icon]).size / 1024).toFixed(1)} kB
-						{:else}
-							drop an .svg here
-						{/if}
-					</label>
-					{#if icon}
-						<button type="button" class="remove" aria-label="remove the icon" on:click={() => ((icon = ''), (iconName = ''))}
-							>✕</button
-						>
-					{/if}
-				</div>
 			{/if}
 			<!-- A new field's states are a switch's, asked under its kind as well: its Save sends them for no other verb. -->
 			{#if !spec && verb === 'switch' && tab === 'basics'}<span class="label late">states</span>{/if}
@@ -376,7 +294,7 @@
 								<Glyph
 									bind:value={state.glyph}
 									color={state.color || color}
-									label="the glyph of {state.name || 'this state'}"
+									label="the symbol of {state.name || 'this state'}"
 								/>
 							{/if}
 							<input
@@ -738,35 +656,9 @@
 	}
 
 	/* The swatch's set opens under it: the label stays level with the swatch. */
-	.row.top {
-		align-items: flex-start;
-	}
-
-	.row.top .label {
-		line-height: 28px;
-	}
-
 	.row input {
 		flex: 1;
 		min-inline-size: 0;
-	}
-
-	.drop {
-		position: relative;
-		flex: 1;
-		min-inline-size: 0;
-		border: 1px dashed var(--rule);
-		border-radius: 4px;
-		padding: 0.25rem 0.4rem;
-		color: var(--muted);
-		overflow-wrap: anywhere;
-	}
-
-	.drop input {
-		position: absolute;
-		inset: 0;
-		opacity: 0;
-		cursor: pointer;
 	}
 
 	.label {
@@ -780,6 +672,12 @@
 	/* `field:`, the name, and the widget's buttons at its end; over the shapes on a field that is. */
 	.name-line .label {
 		inline-size: auto;
+	}
+
+	/* The second label of a line: as wide as its word, a gap before it. */
+	.label.near {
+		inline-size: auto;
+		margin-inline-start: 1rem;
 	}
 
 	.name-line h2 {
@@ -819,62 +717,9 @@
 		grid-template-columns: auto auto 1fr auto auto auto;
 	}
 
-	/* After a glyph's set, which opens under the row it was tapped in. */
+	/* Under the row, the whole width of it. */
 	.state .description {
 		grid-column: 1 / -1;
-		order: 2;
-	}
-
-	/* The glyph, or the value → glyph table: indented under the label. */
-	.glyphs {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-		margin: 0;
-		padding: 0 0 0 7rem;
-		list-style: none;
-	}
-
-	.glyphs li {
-		display: grid;
-		grid-template-columns: 1fr auto auto;
-		align-items: center;
-		gap: 0.4rem;
-	}
-
-	.glyphs .value {
-		min-inline-size: 0;
-	}
-
-	.glyphs .default .value {
-		color: var(--muted);
-	}
-
-	.glyph-by {
-		display: flex;
-		border: 1px solid var(--rule);
-		border-radius: 4px;
-		overflow: hidden;
-	}
-
-	.glyph-by button {
-		min-block-size: 24px;
-		background: var(--raised);
-		border: 0;
-		border-block-end: 2px solid transparent;
-		padding: 0.2rem 0.6rem;
-		color: var(--muted);
-		font: inherit;
-		cursor: pointer;
-	}
-
-	.glyph-by button[aria-checked='true'] {
-		color: var(--ink-bright);
-		border-block-end-color: var(--accent);
-	}
-
-	.glyphs + .add {
-		margin-inline-start: 7rem;
 	}
 
 	.aliases {

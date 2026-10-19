@@ -21,10 +21,10 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
-	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, specKeys, stateRows, trackLabel, VERBS, verbAsked, wide
+	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, stateRows, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
-import { FIELD_FORM as MODAL, cancelField, declared, openField } from './support/field.mjs';
+import { FIELD_FORM as MODAL, cancelField, declared, openField, pickImage } from './support/field.mjs';
 
 const PHONE = { width: 320, height: 480 };
 
@@ -183,8 +183,6 @@ describe('the argv it composes', () => {
 			keys: [{ name: 'cup', kind: 'default', value: 'mug', in_slug: false }, { name: 'size', kind: 'optional', in_slug: false }]
 		};
 		const base = { verb: 'occur', color: '', description: '', states: [] };
-		// The CLI's parsed list (da-p3hxn): no spelling is split here.
-		assert.deepEqual(specKeys(spec), ['cup', 'size']);
 		// Not edited: carried as it was.
 		assert.deepEqual(editedSpec(spec, base).glyph_by, spec.glyph_by);
 		assert.equal(editedSpec(spec, base).glyph, '●');
@@ -601,14 +599,16 @@ describe('in the app', () => {
 		});
 	});
 
-	// da-45wgz: an .svg picked on Basics is saved with the spec, and the
-	// dayview draws it; a field given an icon and nothing else SAVES, its
-	// band fallback left the standard dot. What the file must be is the
-	// CLI's to say, and it says it here too.
-	test('an .svg picked on Basics is the field\'s icon, and a bad one is the CLI\'s refusal', async () => {
+	// da-45wgz, da-rpfws: an .svg is a symbol — «image (svg)» in the symbol's
+	// picker — saved as the spec's icon, which the dayview draws; the CLI's
+	// band is text, and draws the dot: vividn, «if someone chooses this, it can
+	// just be a dot glyph or something in the cli». So the image takes the
+	// place of a glyph the field had. What the file must be is the CLI's to
+	// say, and it says it here too.
+	test('an .svg picked as the symbol is the field\'s icon, drawn by the dayview and as the dot in `now`; a bad one is the CLI\'s refusal', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await app.run(['track', 'coffee', '--verb', 'occur']);
+			await app.run(['track', 'coffee', '--verb', 'occur', '--glyph', '▲']);
 			// The clock is held (da-ydao): a second on, or the dot lands on the TRACK and is not written.
 			await app.clock.forward(1000);
 			await app.run(['occur', 'coffee']);
@@ -616,8 +616,8 @@ describe('in the app', () => {
 			const pick = async (name, svg) => {
 				const { saved } = await openField(page, 'coffee');
 				await page.locator(MODAL).waitFor();
-				await page.locator(`${MODAL} .drop input[type="file"]`).setInputFiles({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
-				await page.locator(`${MODAL} .drop`, { hasText: name }).waitFor();
+				await pickImage(page, name, svg);
+				assert.equal(await page.locator(`${MODAL} .picker`).count(), 0, 'the pick closed the picker');
 				await page.locator(`${MODAL} button.commit`).click();
 				return saved;
 			};
@@ -626,10 +626,12 @@ describe('in the app', () => {
 			assert.equal(ok.code, 0, ok.stderr);
 			const shown = JSON.parse((await app.run(['setup', 'coffee', '--json'])).stdout);
 			assert.equal(shown.icon, beans);
-			assert.equal('glyph' in shown, false, 'no fallback named: the standard dot');
+			assert.equal('glyph' in shown, false, 'the image took the glyph\'s place: the standard dot');
 			const svg = (await app.run(['dayview'])).stdout;
 			assert.equal(svg.match(/<svg id="icon-coffee"/g)?.length, 1);
 			assert.match(svg, /href="#icon-coffee"/);
+			assert.match(await band(app, 'coffee'), /●/);
+			assert.doesNotMatch(await band(app, 'coffee'), /▲/);
 
 			const big = await pick('big.svg', `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="${'M0 0'.repeat(1200)}"/></svg>`);
 			assert.notEqual(big.code, 0);
@@ -694,6 +696,60 @@ describe('in the app', () => {
 			assert.equal(await page.locator(`${MODAL} .state .swatch[aria-expanded]`).getAttribute('data-color'), '#00ff00');
 			await cancelField(page);
 			assert.equal(await shut, null);
+		});
+	});
+
+	// da-rpfws, vividn, 2026-10-19: «let's move color and symbol (not glyph) to one line, next to each other.
+	// make the symbol take on the color of color», and «open up a color picker popup, rather than moving
+	// everything down»; the symbol picker «also should pop up rather than push down».
+	test('colour and symbol share a line, the symbol in the colour, and each opens a popup that moves nothing', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'tea', '--verb', 'occur', '--glyph', '▲']);
+			const [listed] = JSON.parse((await app.run(['fields', '--json'])).stdout).filter((f) => f.field === 'tea');
+			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+			const { saved: shut } = await openField(page, 'tea');
+			await page.locator(MODAL).waitFor();
+			const swatch = page.locator(`${MODAL} .row .swatch[aria-expanded]`);
+			const symbol = page.locator(`${MODAL} .tile[aria-expanded][aria-label^="the field's symbol:"]`);
+			const ink = (el) => el.evaluate((e) => getComputedStyle(e).color);
+			const [a, b] = [await swatch.boundingBox(), await symbol.boundingBox()];
+			assert.ok(Math.abs(a.y + a.height / 2 - (b.y + b.height / 2)) < 2, `not one line: ${JSON.stringify([a, b])}`);
+			assert.ok(b.x > a.x + a.width, 'the symbol stands after the colour');
+			assert.equal(await ink(symbol), rgb(listed.color), 'at auto, the colour datum paints it');
+
+			const data = page.locator(`${MODAL} .panel > .label`, { hasText: 'data' });
+			const at = (await data.boundingBox()).y;
+			for (const [opener, set] of [[swatch, '.set'], [symbol, '.picker']]) {
+				await opener.click();
+				await page.locator(`${MODAL} dialog[open] ${set}`).waitFor();
+				assert.equal((await data.boundingBox()).y, at, `${set} pushed the form down`);
+				await page.locator(`${MODAL} dialog[open] button.close`).click();
+				await page.locator(`${MODAL} ${set}`).waitFor({ state: 'detached' });
+			}
+
+			await swatch.click();
+			const pick = page.locator(`${MODAL} .set .swatch`).nth(5);
+			const color = await pick.getAttribute('data-color');
+			await pick.click();
+			assert.equal(await ink(symbol), rgb(color), 'the symbol takes the colour picked');
+			await cancelField(page);
+			assert.equal(await shut, null);
+		});
+	});
+
+	// vividn, 2026-10-19: «when field is blank, have the color just be nothing (transparent) rather than the pink by default».
+	test('a field with no name yet has no colour: the swatch is transparent until it is named', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await openIt(page);
+			const swatch = page.locator(`${MODAL} .row .swatch[aria-expanded]`);
+			const fill = () => swatch.evaluate((el) => getComputedStyle(el).backgroundColor);
+			assert.equal(await fill(), 'rgba(0, 0, 0, 0)');
+			assert.match(await swatch.getAttribute('aria-label'), /auto, transparent$/);
+			await page.locator(`${MODAL} input.field`).fill('tea');
+			assert.notEqual(await fill(), 'rgba(0, 0, 0, 0)');
+			await leave(page);
 		});
 	});
 
@@ -1065,15 +1121,13 @@ describe('in the app', () => {
 			const before = (await app.echoes()).length;
 			const { saved } = await openField(page, 'tea');
 			await page.locator(MODAL).waitFor();
-			const field = tile(page, "the field's glyph");
+			const field = tile(page, "the field's symbol");
 			assert.equal(await field.getAttribute('data-glyph'), '', 'no glyph yet: the circle');
 			await field.click();
-			// Two columns wide is said where it is picked: ☕ is marked, ▲ is not.
+			// vividn, 2026-10-19: «remove the two columns wide line, that makes no sense». A tile's title still says it.
 			const picker = page.locator(`${MODAL} .picker`);
-			assert.equal(await picker.locator('[data-glyph="☕"]').getAttribute('data-wide'), 'true');
+			assert.doesNotMatch(await picker.innerText(), /two columns/);
 			assert.match(await picker.locator('[data-glyph="☕"]').getAttribute('title'), /the band draws it ●/);
-			assert.equal(await picker.locator('[data-glyph="▲"]').getAttribute('data-wide'), null);
-			assert.match(await picker.locator('.legend').innerText(), /two columns wide: .*draws it as ●/);
 			await picker.locator('[data-glyph="▲"]').click();
 			assert.equal(await picker.count(), 0, 'a pick folds the set away');
 			assert.equal(await field.getAttribute('data-glyph'), '▲');
@@ -1099,10 +1153,12 @@ describe('in the app', () => {
 			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
 			await page.locator(`${MODAL} [data-tab="states"]`).click();
-			await tile(page, 'the glyph of up').click();
+			await tile(page, 'the symbol of up').click();
+			// A state's symbol is a character: the image is the field's alone.
+			assert.equal(await page.locator(`${MODAL} .picker input[type="file"]`).count(), 0);
 			// Any one character: the first of whatever is typed.
 			await page.locator(`${MODAL} .picker input.any`).fill('✺✺');
-			assert.equal(await tile(page, 'the glyph of up').getAttribute('data-glyph'), '✺');
+			assert.equal(await tile(page, 'the symbol of up').getAttribute('data-glyph'), '✺');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await saved).code, 0);
 			assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).state_glyphs, { up: '✺' });
@@ -1134,38 +1190,24 @@ describe('in the app', () => {
 		});
 	});
 
-	test('a glyph by a key: a value → glyph table, the field\'s glyph for any other value', async () => {
+	// vividn, 2026-10-19: «completely get rid of the "by a key" here … Even when there is by a key symbols,
+	// there can still be … a top-level symbol». The form neither shows a `glyph_by` nor loses it.
+	test('a glyph by a key is not offered, survives a save, and the field\'s own symbol is still set', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
+			await app.run(['setup', 'tea', '--glyph-by', 'size', '--glyph-map', 'large=☕']);
 			const { saved } = await openField(page, 'tea');
 			await page.locator(MODAL).waitFor();
-			await page.locator(`${MODAL} .glyph-by [role="radio"]`, { hasText: 'by a key' }).click();
-			await page.locator(`${MODAL} input.glyph-key`).fill('size');
-			await page.locator(`${MODAL} .glyphs + button.add`).click();
-			await page.locator(`${MODAL} .glyphs input.value`).fill('large');
-			await tile(page, 'the glyph for large').click();
-			await page.locator(`${MODAL} .picker [data-glyph="☕"]`).click();
-			assert.equal(await tile(page, 'the glyph for large').getAttribute('data-wide'), 'true', 'the tile keeps the mark');
-			assert.equal((await page.locator(`${MODAL} .glyphs .default .value`).innerText()).trim(), '(other)');
-			assert.equal(await tile(page, "the field's glyph").getAttribute('data-glyph'), '', 'the default is the circle until picked');
-			await tile(page, "the field's glyph").click();
+			assert.doesNotMatch(await page.locator(MODAL).innerText(), /by a key/);
+			await tile(page, "the field's symbol").click();
+			assert.doesNotMatch(await page.locator(`${MODAL} .picker`).innerText(), /by a key/);
 			await page.locator(`${MODAL} .picker [data-glyph="○"]`).click();
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await saved).code, 0);
 			const shown = (await app.run(['setup', 'tea', '--json'])).stdout;
 			assert.deepEqual(JSON.parse(shown).glyph_by, { key: 'size', map: { large: '☕' } });
 			assert.equal(JSON.parse(shown).glyph, '○');
-
-			await app.run(['occur', 'tea', 'size=large', '-t', '-20']);
-			await app.clock.forward(1000);
-			const logged = await app.run(['occur', 'tea', 'size=small']);
-			assert.equal(logged.code, 0, logged.stderr);
-			assert.deepEqual(await drawn(app), ['☕', '○']);
-			// Two columns wide, so the band draws the mapped ☕ as ●.
-			const row = await band(app, 'tea');
-			assert.match(row, /●.*○/);
-			assert.doesNotMatch(row, /☕/);
 
 			// Opened and saved untouched, the glyphs read back byte for byte.
 			const { saved: again } = await openField(page, 'tea');

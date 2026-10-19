@@ -1,8 +1,10 @@
 <!--
 	The colour control (da-ci85o): the swatch IS it. vividn, 2026-09-23 —
 	«I would show the color swatch, and then if the user taps on it, they
-	can easily select a new one». No hex box: a tap opens the set below it,
-	a tap on one of those sets it and folds the set away.
+	can easily select a new one». No hex box: a tap opens the set, a tap on
+	one of those sets it and closes the set. The set is a sheet over the
+	form, not a band that pushes it down (da-rpfws), vividn, 2026-10-19:
+	«open up a color picker popup, rather than moving everything down».
 
 	One component for the field's colour and every state's, so both are
 	picked the same way and from the same set. The set is the CLI's twelve
@@ -34,11 +36,14 @@
 </script>
 
 <script lang="ts">
+	import { act } from './act.js';
+	import Sheet from './Sheet.svelte';
+
 	/** The colour, `#rrggbb`; empty for `auto`. */
 	export let value = '';
 	/** What it is the colour of, for a reader that cannot see it. */
 	export let label: string;
-	/** What `auto` paints: `defaultColor` of the field's or the state's name. */
+	/** What `auto` paints: `defaultColor` of the field's or the state's name, `transparent` for no name. */
 	export let fallback: string;
 
 	let open = false;
@@ -49,53 +54,46 @@
 	}
 </script>
 
-<span class="swatch-control">
-	<button
-		type="button"
-		class="swatch"
-		class:auto={!value}
-		style:background={value || fallback}
-		aria-label="{label}: {value || `auto, ${fallback}`}"
-		aria-expanded={open}
-		data-color={value}
-		on:click={() => (open = !open)}
-	></button>
-	{#if open}
-		<span class="set" role="listbox" aria-label="{label}, choose">
+<button
+	type="button"
+	class="swatch"
+	class:auto={!value}
+	style:background={value || fallback}
+	aria-label="{label}: {value || `auto, ${fallback}`}"
+	aria-expanded={open}
+	aria-haspopup="dialog"
+	data-color={value}
+	use:act={'open'}
+	on:click={() => (open = true)}
+></button>
+<Sheet title={label} bind:open>
+	<span class="set" role="listbox" aria-label="{label}, choose">
+		<button
+			type="button"
+			class="swatch auto"
+			role="option"
+			aria-selected={!value}
+			aria-label="auto, {fallback}"
+			data-color=""
+			style:background={fallback}
+			on:click={() => pick('')}
+		></button>
+		{#each SWATCHES as color (color)}
 			<button
 				type="button"
-				class="swatch auto"
+				class="swatch"
 				role="option"
-				aria-selected={!value}
-				aria-label="auto, {fallback}"
-				data-color=""
-				style:background={fallback}
-				on:click={() => pick('')}
+				aria-selected={value === color}
+				aria-label={color}
+				data-color={color}
+				style:background={color}
+				on:click={() => pick(color)}
 			></button>
-			{#each SWATCHES as color (color)}
-				<button
-					type="button"
-					class="swatch"
-					role="option"
-					aria-selected={value === color}
-					aria-label={color}
-					data-color={color}
-					style:background={color}
-					on:click={() => pick(color)}
-				></button>
-			{/each}
-		</span>
-	{/if}
-</span>
+		{/each}
+	</span>
+</Sheet>
 
 <style>
-	.swatch-control {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.4rem;
-	}
-
 	.swatch {
 		box-sizing: border-box;
 		inline-size: 28px;
@@ -111,6 +109,23 @@
 		border: 2px dashed var(--ink-bright);
 	}
 
+	/* The `›` app.css draws on an opener, beside the box rather than in it. */
+	.swatch:global([data-act='open']) {
+		position: relative;
+		margin-inline-end: 0.6em;
+	}
+
+	.swatch:global([data-act='open'])::after {
+		position: absolute;
+		inset-block-start: 50%;
+		inset-inline-start: 100%;
+		margin-inline-start: 0.15em;
+		transform: translateY(-50%);
+		color: var(--muted);
+		font-size: 1rem;
+		line-height: 1;
+	}
+
 	.swatch:focus-visible,
 	.swatch[aria-selected='true'] {
 		outline: 2px solid var(--accent);
@@ -121,6 +136,5 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.25rem;
-		inline-size: 100%;
 	}
 </style>
