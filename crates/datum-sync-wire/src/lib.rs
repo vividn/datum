@@ -665,12 +665,18 @@ async fn busy<T>(s: &mut SendStream, work: impl Future<Output = Result<T>>) -> R
 /// chunks, and between chunks send a [`BUSY`]: a [`CHUNK`] first, then
 /// where the store [`yields`](Store::yields) twice the last, each run
 /// [`busy`], and otherwise as many as take [`idle`]`/16`, at most twice the
-/// last — never over [`MAX_CHUNK`].
+/// last — never over [`MAX_CHUNK`]. `size` is the session's: a round
+/// goes on at the size the last ended at, where each began at a [`CHUNK`]
+/// again, and a big catch-up paid a process a chunk eight times a round
+/// (da-dwm2y). Its [`progress`](Store::progress) is the session's too:
+/// `before` applied in its earlier rounds, of `of` in all.
 async fn apply(
     store: &impl Store,
     s: &mut SendStream,
     ops: &[String],
     rep: &mut Report,
+    size: &mut usize,
+    (before, of): (usize, usize),
 ) -> Result<()> {
     if ops.is_empty() {
         return Ok(());
@@ -683,7 +689,7 @@ async fn apply(
         put(s, BUSY).await?;
     }
     let _gate = busy(s, store.apply_gate()).await?;
-    let (mut done, mut size) = (0, CHUNK);
+    let mut done = 0;
     while done < ops.len() {
         if done > 0 && keepalive {
             put(s, BUSY).await?;
@@ -693,18 +699,18 @@ async fn apply(
         // to the end, and every other session's peer heard nothing
         // (da-h31wt).
         n0_future::future::yield_now().await;
-        let chunk = &ops[done..ops.len().min(done + size)];
+        let chunk = &ops[done..ops.len().min(done + *size)];
         let took = n0_future::time::Instant::now();
         let applied = match store.yields() {
             false => store.apply(chunk).await?,
             true => busy(s, store.apply(chunk)).await?,
         };
-        size = match store.yields() {
-            true => (2 * size).min(MAX_CHUNK),
-            false => pace(size, took),
+        *size = match store.yields() {
+            true => (2 * *size).min(MAX_CHUNK),
+            false => pace(*size, took),
         };
         done += chunk.len();
-        store.progress(done, ops.len());
+        store.progress(before + done, of);
         for why in &applied.refused {
             eprintln!("refused from {}: {why}", rep.label);
         }
@@ -752,7 +758,7 @@ async fn exchange(
     dialer: bool,
     rep: &mut Report,
 ) -> Result<()> {
-    let (mut last, mut quiet) = (None, 0);
+    let (mut last, mut quiet, mut before, mut size) = (None, 0, 0, CHUNK);
     while quiet < MAX_ROUNDS {
         let mine = store.vector().await?;
         put_json(s, &mine).await?;
@@ -800,7 +806,18 @@ async fn exchange(
         // copy before da-ymgiv says round 0 and counts every round: so must
         // this side, or the two end the session at different rounds.
         let full = rep.round > 0 && (ops >= self::round() || lines.len() >= rep.round);
-        apply(store, s, &lines, rep).await?;
+        // A round the peer filled has more behind it, as many as its vector
+        // holds past this copy's (da-dwm2y): a big catch-up says how far it
+        // is in all, not in this round. Never fewer than the round brought:
+        // a peer signing an import's baselines as the rounds go sends ops
+        // its vector did not yet hold.
+        let more = rep.round > 0 && lines.len() >= rep.round;
+        let left = match more {
+            true => lines.len().max(ahead(&round.1, &round.0) as usize),
+            false => lines.len(),
+        };
+        apply(store, s, &lines, rep, &mut size, (before, before + left)).await?;
+        before += lines.len();
         quiet += usize::from(!full);
         last = Some(round);
     }
@@ -837,6 +854,13 @@ async fn exchange(
     Ok(())
 }
 
+/// How many ops `a` holds past `of`, by their vectors.
+fn ahead(a: &Vector, of: &Vector) -> i64 {
+    a.iter()
+        .map(|(e, s)| (s - of.get(e).copied().unwrap_or(0)).max(0))
+        .sum()
+}
+
 /// A session's verify, and its words. Hashes that differ are a MISMATCH only
 /// over the same ops: with one copy ahead of the other they could not agree,
 /// and it says who is ahead by how many ops instead. A reader ahead of a
@@ -849,11 +873,6 @@ fn verdict(
     theirs: &Vector,
     moved: Option<&str>,
 ) -> (Option<bool>, String) {
-    let ahead = |a: &Vector, of: &Vector| -> i64 {
-        a.iter()
-            .map(|(e, s)| (s - of.get(e).copied().unwrap_or(0)).max(0))
-            .sum()
-    };
     let says = |who: &str, n: i64, of: &str| {
         let s = if n == 1 { "" } else { "s" };
         (n > 0).then(|| format!("{who} is {n} change{s} ahead of {of}"))

@@ -1838,6 +1838,83 @@ fn a_first_sync_says_how_far_it_is_on_both_sides() {
     );
 }
 
+/// An invite serves every member while its joiner joins (da-dwm2y): the
+/// daemon steps aside for it, so its endpoint is the copy's, and it served
+/// the joiner alone: a member dialing it through a long join reached no
+/// one, and said it was offline. c applies a's 300-odd ops at 50ms each.
+#[test]
+fn an_invite_serves_the_other_members_while_its_joiner_joins() {
+    let (a, mut b) = paired();
+    let mut c = Copy::new();
+    import(&a, 300);
+    b.env.push(("DATUM_SYNC_TIMEOUT_S", "5"));
+    c.env.push(("DATUM_SYNC_TEST_APPLY_DELAY_MS", "50"));
+    let (mut inviting, ticket) = a.invite(&[]);
+    let mut joining = c
+        .cmd(&["sync", "chain", "connect", &ticket])
+        .spawn()
+        .unwrap();
+    until("c applies a's first ops", Duration::from_secs(60), || {
+        // Read as c writes: a lock or a table not there yet is «not yet».
+        rusqlite::Connection::open(c.db())
+            .and_then(|db| {
+                db.query_row("SELECT COUNT(*) FROM ops WHERE applied > 0", [], |r| {
+                    r.get::<_, i64>(0)
+                })
+            })
+            .is_ok_and(|n| n > 0)
+    });
+    let synced = b.run(&["sync"]);
+    let said = String::from_utf8_lossy(&synced.stdout);
+    assert!(
+        joining.try_wait().unwrap().is_none(),
+        "the join had ended: {said}"
+    );
+    assert!(
+        said.contains("verify ok"),
+        "{said}{}",
+        String::from_utf8_lossy(&synced.stderr)
+    );
+    assert!(joining.wait().unwrap().success());
+    assert!(inviting.finish().0);
+}
+
+/// A first sync of many rounds says how far it is in all, not in the round
+/// (da-dwm2y): vividn's phone, joining 287k entries in rounds of 8,192, said
+/// «of 8,192» some 35 times over. Here a round is 100 ops of a's 600-odd,
+/// applied at 40ms each: four of its five-second lines at least. An
+/// import's baselines are signed as the rounds go, so a line in the first
+/// may know of fewer; none goes back, and the last knows them all.
+#[test]
+fn a_first_sync_of_many_rounds_counts_every_round() {
+    let (mut a, mut b) = (Copy::new(), Copy::new());
+    import(&a, 600);
+    a.env = vec![("DATUM_SYNC_TEST_ROUND", "100")];
+    b.env = vec![
+        ("DATUM_SYNC_TEST_ROUND", "100"),
+        ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "40"),
+    ];
+    let (mut inviting, ticket) = a.invite(&[]);
+    let joined = b
+        .cmd(&["sync", "chain", "connect", &ticket])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&joined.stderr);
+    assert!(joined.status.success(), "{err}");
+    assert!(inviting.finish().0);
+    let said: Vec<(usize, usize)> = err
+        .lines()
+        .filter_map(|l| {
+            let (done, rest) = l.split_once(": ")?.1.split_once(" of ")?;
+            let (of, _) = rest.split_once(" ops applied")?;
+            Some((done.parse().ok()?, of.parse().ok()?))
+        })
+        .collect();
+    assert!(said.last().is_some_and(|&(_, of)| of >= 600), "{err}");
+    let on = |w: &[(usize, usize)]| w[0].0 <= w[1].0 && w[0].1 <= w[1].1;
+    assert!(said.windows(2).all(on), "{err}");
+}
+
 /// A slow copy catching up from three members at once (da-h31wt): vividn's,
 /// after a purge, lost every session but one to «connection lost: timed
 /// out» or «database is locked». x applies at 20 ms an op, on a 3 s

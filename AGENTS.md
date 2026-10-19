@@ -357,7 +357,15 @@ status`, with nothing «to send».
 One session applies into a database at a time, in any process (`<db>.applying`,
 da-h31wt): another waits its turn sending BUSYs, a copy applying refuses a new
 session as busy and pushes to every member once done, and neither side counts
-busy, or giving way to a write, as a failure.
+busy, or giving way to a write, as a failure. datum.day runs one session at a
+time, applying or not (da-dwm2y): its CLI runs one process at a time, so a
+second session's handshake waited behind the first's verify with nothing sent.
+Its dials wait their turn, and a session served while another is open is
+refused as busy.
+
+A round's apply goes on at the chunk size the session's last round ended at, and
+says how far the session is in all, of what the peer's vector holds past this
+copy's (da-dwm2y): each round began at 64 ops again, and counted only itself.
 
 The first serve after a bulk import signs its baselines in chunks sized by the
 clock, a BUSY after each, so the peer hears from it within its idle timeout
@@ -556,7 +564,8 @@ installs it once admitted and holds `<db>.joining` locked for its life, so the
 daemon leaves that database alone until the `connect` ends or is killed, and
 then finishes a first sync cut short; an `invite` holds the same lock, so a
 joiner is served by the `invite` that shows it and not by the daemon — whose
-thread already serving the database steps aside on its next tick, da-8sah2 — and
+thread already serving the database steps aside on its next tick, da-8sah2; the
+`invite` serves every member meanwhile, as the daemon would, da-dwm2y — and
 a second `connect` or `invite` on the database is refused while it is held,
 da-apd52; a chained copy with none says so in `sync status`, da-qr7gz).
 

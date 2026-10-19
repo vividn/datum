@@ -61,6 +61,9 @@ const FAIL_KEY = 'datum.syncFailRefresh';
 /** While set, the worker's `sync pipe apply` is never answered: a test's
  * lever for a join cut short before any op applies (da-38eye). */
 const HOLD_KEY = 'datum.syncHoldApply';
+/** How many `sync pipe apply` runs go through before the rest are held as
+ * `HOLD_KEY` holds them: a join cut short once its count shows (da-dwm2y). */
+const HOLD_AFTER_KEY = 'datum.syncHoldApplyAfter';
 const REACHABLE_MS = 60_000;
 const CHANNEL = 'datum-sync';
 
@@ -174,7 +177,14 @@ function ask<T>(db: string, op: Op): Promise<T> {
 
 function held(): boolean {
 	try {
-		return localStorage.getItem(HOLD_KEY) !== null;
+		if (localStorage.getItem(HOLD_KEY) !== null) return true;
+		const after = localStorage.getItem(HOLD_AFTER_KEY);
+		// No lever: nothing held. A lever spent to 0: everything from here.
+		if (after === null) return false;
+		const n = Number(after);
+		if (n <= 0) return true;
+		localStorage.setItem(HOLD_AFTER_KEY, String(n - 1));
+		return false;
 	} catch {
 		return false;
 	}
@@ -375,11 +385,15 @@ class Leader {
 	served(e: Extract<SyncEvent, { served: string }>): void {
 		// A `sync diff` this copy answered moved nothing, and is no session (da-n0ruf).
 		if ('report' in e && e.report.diffed) return;
-		if ('report' in e) this.done(e.report.id, e.report);
+		if ('report' in e) {
+			this.done(e.report.id, e.report);
+			this.applying = undefined;
+		}
 		// One that failed may have admitted its peer all the same: a join
-		// whose first sync was cut short (da-idw54).
+		// whose first sync was cut short (da-idw54). It leaves another
+		// session's apply shown: a member refused as busy, mid-join, blanked
+		// the join's count until its next chunk (da-dwm2y).
 		else void this.refresh().catch(() => {});
-		this.applying = undefined;
 		this.post();
 	}
 

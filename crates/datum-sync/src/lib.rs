@@ -557,8 +557,6 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
     let secret = secret.to_string();
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let told = Told::new(String::new());
-        let store = DbStore(db, Some(&told), Cell::new(None), None, Default::default());
         let mut addrs = vec![ep.addr()];
         addrs.extend(known(db)?);
         let chain = db.sync_chain()?;
@@ -592,24 +590,42 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
         }
         let deadline = tokio::time::sleep(expires);
         tokio::pin!(deadline);
+        // Every session at once, each saying how far it is: the daemon steps
+        // aside for the invite, so this endpoint is the copy's, and served
+        // only the redeemer, every other member dialing it through a long
+        // join reached no one (da-dwm2y). It expires with none open.
+        let mut sessions = FuturesUnordered::new();
         let result = loop {
             tokio::select! {
-                _ = &mut deadline => break Err(anyhow!("the invite expired unredeemed")),
+                _ = &mut deadline, if sessions.is_empty() => break Err(anyhow!("the invite expired unredeemed")),
                 incoming = ep.accept() => {
                     let Some(incoming) = incoming else { break Ok(()) };
-                    match telling(&told, serve(&store, &ep, incoming)).await {
-                        Ok(rep) => {
-                            print_added(&rep);
-                            if rep.redeemed { break Ok(()) }
-                        }
-                        Err(e) => {
-                            eprintln!("{e:#}");
-                            if paired_unfinished(&e, UNFINISHED) { break Ok(()) }
-                        }
+                    let ep = &ep;
+                    sessions.push(async move {
+                        let told = Told::new(String::new());
+                        let store = DbStore(db, Some(&told), Cell::new(None), None, Default::default());
+                        telling(&told, serve(&store, ep, incoming)).await
+                    });
+                }
+                Some(served) = sessions.next() => match served {
+                    Ok(rep) => {
+                        print_added(&rep);
+                        if rep.redeemed { break Ok(()) }
+                    }
+                    Err(e) => {
+                        eprintln!("{e:#}");
+                        if paired_unfinished(&e, UNFINISHED) { break Ok(()) }
                     }
                 }
             }
         };
+        // The others still open end as they would have.
+        while let Some(served) = sessions.next().await {
+            match served {
+                Ok(rep) => print_added(&rep),
+                Err(e) => eprintln!("{e:#}"),
+            }
+        }
         ep.close().await;
         result
     })

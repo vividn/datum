@@ -3,6 +3,9 @@
 //! sync …` command the worker runs through the page's database runner, so
 //! no storage logic exists in the browser apart from the CLI's own.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use anyhow::Result;
 use js_sys::{Array, Function, Promise, Reflect};
 use serde::Deserialize;
@@ -33,6 +36,17 @@ struct Cli {
     /// What its Hello says it is: a join's name from then on (da-uyyyg).
     label: std::cell::RefCell<String>,
     version: Version,
+    /// The sessions open, dialed and served: one at a time ([`Node::turn`]).
+    open: Rc<Cell<usize>>,
+}
+
+/// A dialed session's turn, held: the next may begin once it drops.
+struct Turn(Rc<Cell<usize>>);
+
+impl Drop for Turn {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() - 1);
+    }
 }
 
 impl Cli {
@@ -157,6 +171,21 @@ impl Store for Cli {
 
     fn yields(&self) -> bool {
         true
+    }
+
+    /// A page runs one session at a time (da-dwm2y): its CLI runs one
+    /// process at a time, so a second session's handshake and vector waited
+    /// behind the first's apply or verify — minutes on a big history — with
+    /// nothing sent, and after a big join every member but one timed out on
+    /// it. One served while another is open, itself counted, is refused as
+    /// busy, no failure, as natively while a copy applies (da-h31wt).
+    fn applying(&self) -> bool {
+        self.open.get() > 1
+    }
+
+    fn serving(&self, _peer: &str, on: bool) {
+        let open = self.open.get();
+        self.open.set(if on { open + 1 } else { open - 1 });
     }
 
     fn progress(&self, done: usize, of: usize) {
@@ -330,6 +359,7 @@ impl Node {
                 id: ep.id().to_string(),
                 label: label.into(),
                 version: Version { datum, schema },
+                open: Rc::default(),
             },
             ep,
         })
@@ -358,6 +388,7 @@ impl Node {
     /// report, as JSON.
     pub async fn dial(&self, addr: String) -> Result<String, JsError> {
         let addr: EndpointAddr = serde_json::from_str(&addr).map_err(js)?;
+        let _turn = self.turn().await;
         report(dial(&self.cli, &self.ep, addr, None).await)
     }
 
@@ -368,7 +399,19 @@ impl Node {
         if let Some(label) = label {
             self.cli.label.replace(label);
         }
+        let _turn = self.turn().await;
         report(redeem(&self.cli, &self.ep, &ticket).await)
+    }
+
+    /// Wait until no session is open, and open one: a dial waits its turn
+    /// before it reaches the peer, so the peer waits on nothing
+    /// ([`Cli::applying`]).
+    async fn turn(&self) -> Turn {
+        while self.cli.open.get() > 0 {
+            n0_future::time::sleep(Duration::from_millis(100)).await;
+        }
+        self.cli.open.set(self.cli.open.get() + 1);
+        Turn(self.cli.open.clone())
     }
 
     /// The ticket for an invite whose secret is `secret` — this endpoint's
