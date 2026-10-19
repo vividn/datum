@@ -315,6 +315,10 @@ check` (da-3zqyv).
 A round carries at most 8,192 ops, the lowest by HLC so each applies whole, and
 applies before the next is sent; rounds go on while full, so a big catch-up
 finishes in one session and one cut short loses a round (da-ymgiv).
+Two members in a session with one copy at once read its vector before either
+applies, and send it the same round: a copy that applied a full round it mostly
+held already sends `end` for its next vector, and that session ends there, the
+other carrying the catch-up (da-3l8ay, a handshake's `ends` says a copy reads it).
 
 A session ends by comparing state hashes: `verify ok`, `verify MISMATCH` when
 they differ over the same ops, and with one copy ahead of the other — a reader

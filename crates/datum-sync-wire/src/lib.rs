@@ -18,8 +18,10 @@
 //!   the other lacks, one frame each, and an empty frame, and applies what
 //!   came — until a round in which neither vector moved. A round carries at
 //!   most a [`ROUND`] of ops, the lowest by HLC, so a big catch-up moves in
-//!   rounds that each apply before the next is sent (da-ymgiv). Last the verify
-//!   hashes, the dialer's first, and the dialer closes.
+//!   rounds that each apply before the next is sent (da-ymgiv). A copy that
+//!   applied a full round it mostly held already, another session's, sends
+//!   [`END`] for its next vector, and both sides end there (da-3l8ay). Last
+//!   the verify hashes, the dialer's first, and the dialer closes.
 //! - **Diff.** ALPN `datum/sync-diff/1` (da-n0ruf), which a copy before it
 //!   refuses: after the same handshake the dialer sends its state hash and
 //!   the acceptor its [`Digest`], or null when the hashes agree; then the
@@ -386,6 +388,10 @@ struct Hello {
     /// signing baselines sends (da-f7mmn); a copy before it does not.
     #[serde(default)]
     waits: bool,
+    /// The dialer reads an [`END`] for a round's vector (da-3l8ay); a copy
+    /// before it does not, and is never sent one.
+    #[serde(default)]
+    ends: bool,
     #[serde(flatten)]
     version: Version,
 }
@@ -404,6 +410,9 @@ enum Reply {
         /// As [`Hello`]'s.
         #[serde(default)]
         waits: bool,
+        /// As [`Hello`]'s.
+        #[serde(default)]
+        ends: bool,
         #[serde(flatten)]
         version: Version,
     },
@@ -454,6 +463,12 @@ fn refused(why: String, kind: Option<Why>) -> anyhow::Error {
 /// Sent between the chunks of a long apply; progress, and otherwise ignored.
 /// No JSON frame and no op line is a NUL byte, and it is not the empty frame.
 const BUSY: &[u8] = &[0];
+/// Sent for a round's vector by a copy that applied a full round it mostly
+/// held already: two members sending one copy a catch-up at once read its
+/// vector before either applied, and send it the same ops, round after round.
+/// The session ends there, and the other carries the catch-up (da-3l8ay).
+/// No vector is it.
+const END: &[u8] = b"end";
 
 async fn put(s: &mut SendStream, b: &[u8]) -> Result<()> {
     within(async {
@@ -523,6 +538,9 @@ pub struct Report {
     /// The peer skips a BUSY ahead of a round's ops, as its handshake said.
     #[serde(skip)]
     waits: bool,
+    /// The peer reads an [`END`], as its handshake said.
+    #[serde(skip)]
+    ends: bool,
     /// The chain of one this copy left to redeem the invite, and the chain
     /// it joined (da-h7pnc).
     pub left: Option<(String, String)>,
@@ -550,6 +568,7 @@ impl Report {
             round: 0,
             route: None,
             waits: false,
+            ends: false,
         }
     }
 }
@@ -758,11 +777,24 @@ async fn exchange(
     dialer: bool,
     rep: &mut Report,
 ) -> Result<()> {
-    let (mut last, mut quiet, mut before, mut size) = (None, 0, 0, CHUNK);
+    let (mut last, mut quiet, mut before, mut size, mut ends) = (None, 0, 0, CHUNK, false);
     while quiet < MAX_ROUNDS {
         let mine = store.vector().await?;
-        put_json(s, &mine).await?;
-        let theirs: Vector = get_json(r, MAX_FRAME).await?;
+        match ends {
+            true => put(s, END).await?,
+            false => put_json(s, &mine).await?,
+        }
+        let f = loop {
+            let f = get(r, MAX_FRAME).await?;
+            if f != BUSY {
+                break f;
+            }
+        };
+        // Both sides have sent this round's vector or END: both end here.
+        if ends || f == END {
+            break;
+        }
+        let theirs: Vector = serde_json::from_slice(&f)?;
         rep.vector = theirs.clone();
         let round = (mine, theirs);
         if last.as_ref() == Some(&round) {
@@ -816,7 +848,13 @@ async fn exchange(
             true => lines.len().max(ahead(&round.1, &round.0) as usize),
             false => lines.len(),
         };
+        let got = rep.got;
         apply(store, s, &lines, rep, &mut size, (before, before + left)).await?;
+        // Test knob: no end (the mutation control).
+        let end = env::<u8>("DATUM_SYNC_TEST_END") != Some(0);
+        // The peer filled its round, and under half of it was new to this
+        // copy (`rep.got` counts what applied, the whole round by now).
+        ends = end && rep.ends && more && 2 * (rep.got - got) < lines.len();
         before += lines.len();
         quiet += usize::from(!full);
         last = Some(round);
@@ -995,6 +1033,7 @@ async fn session(
         },
         round: round(),
         waits: true,
+        ends: true,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -1003,13 +1042,14 @@ async fn session(
         put_json(&mut s, &store.records().await?).await?;
         reply = get_json(&mut r, MAX_HELLO).await?;
     }
-    let (label, added, met, round, waits) = match reply {
+    let (label, added, met, round, waits, ends) = match reply {
         Reply::Welcome {
             label,
             addr,
             known,
             round,
             waits,
+            ends,
             version,
         } => {
             // Two copies that dialed each other at once (da-vj3ly): the
@@ -1044,7 +1084,7 @@ async fn session(
                 Ok::<_, anyhow::Error>(added)
             };
             match admitted.await {
-                Ok(added) => (label, added, known, round, waits),
+                Ok(added) => (label, added, known, round, waits, ends),
                 Err(e) => {
                     let busy = e
                         .downcast_ref::<Refusal>()
@@ -1067,6 +1107,7 @@ async fn session(
     let mut rep = Report::new(label, id, added, invite.is_some(), met);
     rep.round = round;
     rep.waits = waits;
+    rep.ends = ends;
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
     if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
         rep.left = Some((old, new));
@@ -1120,6 +1161,7 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
         busy: true,
         round: 0,
         waits: false,
+        ends: false,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -1258,6 +1300,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         known: self::known(store).await,
         round: round(),
         waits: true,
+        ends: true,
         version: store.version(),
     };
     put_json(&mut s, &welcome).await?;
@@ -1265,6 +1308,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let mut rep = Report::new(hello.label, id.clone(), !known, redeemed, hello.known);
     rep.round = hello.round;
     rep.waits = hello.waits;
+    rep.ends = hello.ends;
     if diff {
         let theirs: String = get_json(&mut r, MAX_HELLO).await?;
         let (hash, digest) = store.digest(&id).await?;
@@ -1473,6 +1517,7 @@ mod tests {
                     known: vec![addr.clone()],
                     round: ROUND,
                     waits: true,
+                    ends: true,
                     version: version.clone(),
                 },
             ),
@@ -1484,6 +1529,7 @@ mod tests {
                     known: vec![addr.clone()],
                     round: ROUND,
                     waits: true,
+                    ends: true,
                     version,
                 },
             ),

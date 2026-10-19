@@ -2042,14 +2042,39 @@ fn sent_in(log: &str, to: &str) -> usize {
     n
 }
 
-/// The sessions with `to` a copy's log says were lost having sent it
-/// something: each «and sent N» with N over 0, whatever ended it.
-fn lost_in(log: &str, to: &str) -> usize {
-    log.lines()
-        .filter(|l| l.contains(to))
-        .filter_map(|l| l.split_once("and sent "))
-        .filter(|(_, rest)| rest.starts_with(|c: char| c.is_ascii_digit() && c != '0'))
-        .count()
+/// The sessions with `to` a copy's log says sent it something, finished or
+/// lost: each line [`sent_in`] reads over 0.
+fn sessions_in(log: &str, to: &str) -> usize {
+    log.lines().filter(|l| sent_in(l, to) > 0).count()
+}
+
+/// What `senders`' logs say of `to`, and all of `copy`'s.
+fn about(senders: &[&Copy], to: &str, copy: &Copy) -> String {
+    let mut all: String = senders
+        .iter()
+        .flat_map(|c| {
+            log(c, "run.log")
+                .lines()
+                .filter(|l| l.contains(to))
+                .map(String::from)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    all += &log(copy, "run.log");
+    all
+}
+
+/// Once `said` has not changed for 20s: every session it logs has ended,
+/// where one a slow copy's apply gate holds says nothing until it does.
+fn settled(said: impl Fn() -> String) {
+    let (mut was, mut since) = (said(), Instant::now());
+    while since.elapsed() < Duration::from_secs(20) {
+        std::thread::sleep(Duration::from_secs(1));
+        let now = said();
+        if now != was {
+            (was, since) = (now, Instant::now());
+        }
+    }
 }
 
 /// `n` entries imported into `copy` at once, as vividn's re-import was: no op
@@ -2098,11 +2123,13 @@ fn until(what: &str, limit: Duration, f: impl Fn() -> bool) {
 /// applies before the next, so a lost session wastes at most a round from
 /// each sender, where it wasted all it had been sent and not yet applied
 /// (staging: 80,535 sent for 20,003, 7 sessions lost); and no copy dials a
-/// peer it is in a session with. Measured: 21,008 sent, 9 lost; on a
-/// loaded box (three at once), 22,002 to 25,055 sent, cut 7 or 8 times and
-/// 7 to 8 sessions lost by a, b and c together. Its bound counts the
-/// sessions their logs say they lost, not the cuts: one can also time out
-/// on its own (da-uakw5). With rounds uncapped, the staging shape, 64,333.
+/// peer it is in a session with. Two members in a session with d at once
+/// read its vector before either applies, and send it the same round: d
+/// ends the session that brought it what it held (da-3l8ay). So a session
+/// that sent d anything wastes at most a round: the one lost with it, or the
+/// one d answered with its end. Counted once every session with d has
+/// ended, not as the total first reaches what d lacked (da-3l8ay). With
+/// rounds uncapped, the staging shape, 64,333.
 #[test]
 fn a_big_import_reaches_a_slow_copy_without_sending_it_many_times() {
     let (mut a, mut b, mut c, mut d) = (Copy::new(), Copy::new(), Copy::new(), Copy::new());
@@ -2157,30 +2184,25 @@ fn a_big_import_reaches_a_slow_copy_without_sending_it_many_times() {
             .map(|c| sent_in(&log(c, "run.log"), &to))
             .collect()
     };
-    let mut seen = sent();
-    loop {
-        std::thread::sleep(Duration::from_secs(5));
-        let now = sent();
-        if now == seen && now.iter().sum::<usize>() >= needed {
-            break;
-        }
-        seen = now;
-    }
+    // Every session with d has ended once nothing about d has been logged
+    // for longer than d takes to apply the rounds queued at its gate.
+    settled(|| about(&[&a, &b, &c], &to, &d));
+    let seen = sent();
     let total: usize = seen.iter().sum();
-    // The sessions each of a, b and c says it lost with d: a kill, or one
-    // that ended on its own, as a loaded box's can (da-uakw5).
-    let losses: Vec<usize> = [&a, &b, &c]
+    // The sessions each of a, b and c says sent d something: finished, ended
+    // by d, cut by a kill, or timed out on a loaded box (da-uakw5).
+    let sessions: Vec<usize> = [&a, &b, &c]
         .iter()
-        .map(|c| lost_in(&log(c, "run.log"), &to))
+        .map(|c| sessions_in(&log(c, "run.log"), &to))
         .collect();
     eprintln!(
-        "d lacked {needed} ops, was cut {lost} times, lost sessions with a {}, b {}, c {} and was sent {total} (a {}, b {}, c {})",
-        losses[0], losses[1], losses[2], seen[0], seen[1], seen[2]
+        "d lacked {needed} ops, was cut {lost} times, had sessions that sent it something with a {}, b {}, c {} and was sent {total} (a {}, b {}, c {})",
+        sessions[0], sessions[1], sessions[2], seen[0], seen[1], seen[2]
     );
     assert!(lost > 0, "d's sessions were never cut");
-    // At most a round from a sender is lost with each session it lost, and
-    // one more at the end: staging's 80,535 is well over it.
-    let bound = needed + losses.iter().map(|l| (l + 1) * 1000).sum::<usize>();
+    // At most a round wasted per session: staging's 80,535 is well over it,
+    // and so, with no end, is two members sending d the same catch-up.
+    let bound = needed + sessions.iter().sum::<usize>() * 1000;
     assert!(
         total <= bound,
         "d lacked {needed} ops and was sent {total}, over {bound}"
@@ -2205,6 +2227,54 @@ fn a_big_import_reaches_a_slow_copy_without_sending_it_many_times() {
     for copy in [&b, &c, &d] {
         assert_eq!(copy.hash(), a.hash());
     }
+}
+
+/// Two members in a session with one copy at once read its vector before
+/// either applies, and send it the same round (da-3l8ay): d, which lacks an
+/// import a and b both hold, ends each session that brought it a round it
+/// held, so it is sent the import about once, where it was sent it twice.
+#[test]
+fn two_members_catching_a_copy_up_at_once_send_it_the_catch_up_once() {
+    let (mut a, mut b, mut d) = (Copy::new(), Copy::new(), Copy::new());
+    for joiner in [&b, &d] {
+        let (mut inviting, ticket) = a.invite(&[]);
+        joiner.ok(&["sync", "chain", "connect", &ticket]);
+        assert!(inviting.finish().0);
+    }
+    for copy in [&mut a, &mut b, &mut d] {
+        copy.env.push(("DATUM_SYNC_TEST_ROUND", "500"));
+    }
+    d.env.push(("DATUM_SYNC_TEST_APPLY_DELAY_MS", "1"));
+    import(&a, 5000);
+    // Its baselines signed now, and b holds them before d is up.
+    a.ok(&["sync", "pipe", "ops", "--limit", "1"]);
+    let all = ops(&a);
+    let runs = [&a, &b].map(|c| logged(c, &["sync", "run"], "run.log"));
+    until("b holds a's import", Duration::from_secs(120), || {
+        ops(&b) >= all
+    });
+    let needed = all - ops(&d);
+    let _d = logged(&d, &["sync", "run"], "run.log");
+    until("d holds every op", Duration::from_secs(300), || {
+        ops(&d) >= all
+    });
+    let to = format!("u{}@", d.port);
+    settled(|| about(&[&a, &b], &to, &d));
+    let [sa, sb] = [&a, &b].map(|c| sent_in(&log(c, "run.log"), &to));
+    let [na, nb] = [&a, &b].map(|c| sessions_in(&log(c, "run.log"), &to));
+    eprintln!(
+        "d lacked {needed} ops and was sent {} (a {sa} in {na} sessions, b {sb} in {nb})",
+        sa + sb
+    );
+    // A round wasted per session at most, the one d ended it on. Measured:
+    // 7,002 in 5 sessions; with no end (DATUM_SYNC_TEST_END=0), 10,004 in 2.
+    let bound = needed + (na + nb) * 500;
+    assert!(
+        sa + sb <= bound,
+        "d lacked {needed} ops and was sent {}, over {bound}",
+        sa + sb
+    );
+    drop(runs);
 }
 
 /// A session cut mid-catch-up (da-ymgiv) loses at most the round it was

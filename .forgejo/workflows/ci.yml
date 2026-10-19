@@ -338,7 +338,6 @@ jobs:
           # bead's fix lands. One `<test> (<bead>)` line each, the test named
           # as nextest names it, module path and all.
           DATUM_CARGO_RETRY: |
-            sync_net::a_big_import_reaches_a_slow_copy_without_sending_it_many_times (da-3l8ay)
         run: |
           set -euo pipefail
           run=(scripts/nextest-retry.sh /usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads 3 --no-tests=pass)
