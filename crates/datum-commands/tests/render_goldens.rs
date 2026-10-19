@@ -619,7 +619,7 @@ fn dayview_scene_empty() -> DayviewLayoutResult {
             label_lines: vec!["Wed".into(), "Apr 22".into(), "2026".into()],
             start_ms: DAY_START_MS,
             end_ms: DAY_START_MS + 24 * HOUR_MS,
-            has_error: false,
+            errors: Vec::new(),
             fields: vec![],
             spans: Vec::new(),
         }],
@@ -644,7 +644,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
         label_lines: vec!["Wed".into(), "Apr 22".into(), "2026".into()],
         start_ms: DAY_START_MS,
         end_ms: DAY_START_MS + 24 * HOUR_MS,
-        has_error: false,
+        errors: Vec::new(),
         fields: vec![DayviewFieldInput {
             field: "mood".into(),
             y_frac: 0.0,
@@ -695,7 +695,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
         label_lines: vec!["Wed".into(), "Apr 22".into(), "2026".into()],
         start_ms: DAY_START_MS,
         end_ms: DAY_START_MS + 24 * HOUR_MS,
-        has_error: false,
+        errors: Vec::new(),
         fields: vec![DayviewFieldInput {
             field: "tasks".into(),
             y_frac: 0.0,
@@ -761,7 +761,7 @@ fn dayview_scene_today_now_line() -> DayviewLayoutResult {
         label_lines: vec!["Wed".into(), "Apr 22".into(), "2026".into()],
         start_ms: DAY_START_MS,
         end_ms: DAY_START_MS + 24 * HOUR_MS,
-        has_error: false,
+        errors: Vec::new(),
         fields: vec![DayviewFieldInput {
             field: "mood".into(),
             y_frac: 0.0,
@@ -819,7 +819,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
         label_lines: vec![],
         start_ms,
         end_ms,
-        has_error: false,
+        errors: Vec::new(),
         fields: vec![DayviewFieldInput {
             field: "mood".into(),
             y_frac: 0.0,
@@ -896,7 +896,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         label_lines: vec![],
         start_ms,
         end_ms,
-        has_error: false,
+        errors: Vec::new(),
         fields: vec![DayviewFieldInput {
             field: "mood".into(),
             y_frac: 0.0,

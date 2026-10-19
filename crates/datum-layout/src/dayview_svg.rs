@@ -18,7 +18,8 @@
 //! - A day the clock jumped in (da-1v9gp): the times that never happened
 //!   hatched grey, the times that happened twice a lane each, and the UTC
 //!   offset written at each end.
-//! - Warning icon next to date labels for days with conflicts.
+//! - Warning icon next to date labels for days with integrity findings,
+//!   and a red dotted line across the day at each one (da-0lful).
 //! - Time-axis strip on the side opposite the date labels (bottom for
 //!   horizontal, left for vertical).
 
@@ -34,6 +35,7 @@ pub(crate) const NOW_LINE_COLOR: &str = "#ffcc00";
 const BG_COLOR: &str = "black";
 const TEXT_COLOR: &str = "white";
 const AXIS_COLOR: &str = "white";
+const ERROR_COLOR: &str = "#ff0000";
 /// Per-stripe width (px) in multi-state diagonal patterns. Matches the
 /// original TS `stripeWidth = 8`.
 const STRIPE_WIDTH_PX: f64 = 8.0;
@@ -316,8 +318,9 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         layout.label_width - 2.0,
                         (layout.day_height - icon_size) / 2.0,
                     ),
+                    // At the column's edge, clear of the centred lines.
                     Orientation::Vertical => (
-                        (layout.day_height - icon_size) / 2.0,
+                        layout.day_height - icon_size,
                         layout.label_width - 2.0 - icon_size,
                     ),
                 };
@@ -562,6 +565,45 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 bg = BG_COLOR,
                 txt = escape_xml(&label.text),
             );
+        }
+
+        // What `check integrity` finds at an instant (da-0lful): a red
+        // dotted line across the whole day, the field's name at its start,
+        // and v2's warning icon on the field's own track.
+        for e in &day.errors {
+            let field = escape_xml(&e.field);
+            let (x1, y1) = to_xy(layout, &geom, e.time_pos, day.day_offset);
+            let (x2, y2) = to_xy(
+                layout,
+                &geom,
+                e.time_pos,
+                day.day_offset + layout.day_height,
+            );
+            let fs = (layout.day_height * 0.12).clamp(7.0, 11.0);
+            let (lx, ly) = match layout.orientation {
+                Orientation::Horizontal => (x1 + 2.0, y1 + fs),
+                Orientation::Vertical => (x1 + 2.0, y1 - 2.0),
+            };
+            let _ = write!(
+                &mut out,
+                r#"<g class="integrity-error" data-field="{field}" data-at="{at}"><title>{field}: {what}</title><line class="error-line" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="{ERROR_COLOR}" stroke-width="1.5" stroke-dasharray="3,3" pointer-events="none"/><text class="error-label" x="{lx}" y="{ly}" font-size="{fs}" fill="{ERROR_COLOR}" stroke="{BG_COLOR}" stroke-width="2" paint-order="stroke" pointer-events="none">{field}</text>"#,
+                at = iso(e.time_ms),
+                what = escape_xml(&e.what),
+            );
+            if let Some((cross, extent)) = e.track {
+                // v2's size: half again the dot the track draws.
+                let size = extent * 1.5;
+                let (cx, cy) = to_xy(layout, &geom, e.time_pos, day.day_offset + cross);
+                let _ = write!(
+                    &mut out,
+                    r#"<g class="error-track" transform="translate({x},{y})">"#,
+                    x = cx - size / 2.0,
+                    y = cy - size / 2.0,
+                );
+                push_warning_icon(&mut out, size);
+                out.push_str("</g>");
+            }
+            out.push_str("</g>");
         }
     }
 
@@ -1250,7 +1292,7 @@ fn escape_xml(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::dayview::{
-        compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
+        compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput, DayviewError,
         DayviewFieldInput, DayviewPoint, DayviewSpan, Orientation,
     };
 
@@ -1264,7 +1306,14 @@ mod tests {
                 label_lines: vec!["Mon".into(), "Apr 27".into(), "2026".into()],
                 start_ms: DAY_START,
                 end_ms: DAY_START + 24 * HOUR,
-                has_error: error,
+                // A double start on mood at 06:30, inside its block.
+                errors: (error.then(|| DayviewError {
+                    time_ms: DAY_START + 6 * HOUR + HOUR / 2,
+                    field: "mood".into(),
+                    what: "opened while already open".into(),
+                }))
+                .into_iter()
+                .collect(),
                 fields: vec![DayviewFieldInput {
                     field: "mood".into(),
                     y_frac: 0.1,
@@ -1365,6 +1414,67 @@ mod tests {
         let layout = compute_dayview(&one_day_with_block(false, Orientation::Horizontal));
         let svg = render_dayview_svg(&layout);
         assert!(!svg.contains("day-error"));
+        assert!(!svg.contains("integrity-error"));
+    }
+
+    /// da-0lful: in either orientation the line crosses the day's whole
+    /// cross axis at the finding's instant, labelled with its field and
+    /// titled with what is wrong, and v2's icon sits on the field's track.
+    #[test]
+    fn an_error_is_a_line_across_the_day_and_an_icon_on_its_track() {
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            let layout = compute_dayview(&one_day_with_block(true, orientation));
+            let svg = render_dayview_svg(&layout);
+            let doc = roxmltree::Document::parse(&svg).unwrap();
+            let class = |c: &str| {
+                doc.descendants()
+                    .find(|n| n.attribute("class") == Some(c))
+                    .unwrap_or_else(|| panic!("{orientation:?}: no .{c} in {svg}"))
+            };
+            let num = |n: roxmltree::Node, a: &str| n.attribute(a).unwrap().parse::<f64>().unwrap();
+            let group = class("integrity-error");
+            assert_eq!(group.attribute("data-field"), Some("mood"));
+            let title = group.children().find(|n| n.has_tag_name("title")).unwrap();
+            assert_eq!(title.text(), Some("mood: opened while already open"));
+            assert_eq!(class("error-label").text(), Some("mood"));
+
+            let line = class("error-line");
+            let geom = PlotGeom::new(&layout);
+            let at = layout.time_axis_extent * 6.5 / 24.0;
+            let (time, cross) = match orientation {
+                Orientation::Horizontal => (("x1", "x2", geom.data_x), ("y1", "y2", geom.data_y)),
+                Orientation::Vertical => (("y1", "y2", geom.data_y), ("x1", "x2", geom.data_x)),
+            };
+            for a in [time.0, time.1] {
+                assert!((num(line, a) - time.2 - at).abs() < 1e-6, "{orientation:?}");
+            }
+            assert_eq!(
+                (num(line, cross.0) - cross.2, num(line, cross.1) - cross.2),
+                (0.0, layout.day_height),
+                "{orientation:?}: the line spans the whole day"
+            );
+
+            // The icon is centred on mood's track: 10% across, 15% wide.
+            let icon = class("error-track");
+            let t = icon.attribute("transform").unwrap();
+            let xy: Vec<f64> = t["translate(".len()..t.len() - 1]
+                .split(',')
+                .map(|v| v.parse().unwrap())
+                .collect();
+            let size = 15.0 * 1.5;
+            let (centre_time, centre_cross) = match orientation {
+                Orientation::Horizontal => (xy[0] - geom.data_x, xy[1] - geom.data_y),
+                Orientation::Vertical => (xy[1] - geom.data_y, xy[0] - geom.data_x),
+            };
+            assert!(
+                (centre_time + size / 2.0 - at).abs() < 1e-6,
+                "{orientation:?}"
+            );
+            assert!(
+                (centre_cross + size / 2.0 - 17.5).abs() < 1e-6,
+                "{orientation:?}"
+            );
+        }
     }
 
     #[test]
@@ -1438,7 +1548,7 @@ mod tests {
                 label_lines: vec!["Mon".into()],
                 start_ms: DAY_START,
                 end_ms: DAY_START + 24 * HOUR,
-                has_error: false,
+                errors: Vec::new(),
                 fields: vec![],
                 spans: Vec::new(),
             }],

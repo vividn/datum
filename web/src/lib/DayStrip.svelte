@@ -162,6 +162,7 @@
 	import { browser } from '$app/environment';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
+	import IntegrityMark from './IntegrityMark.svelte';
 	import Pill from './Pill.svelte';
 	import { pills } from './bar.js';
 	import { minute } from './clock.js';
@@ -799,6 +800,22 @@
 	$: stampLines = Math.max(1, Math.min(3, Math.floor(shownDayHeight / (stampFont + 2))));
 	const stamp = (iso: string | null, back: number, lines: number) =>
 		iso ? stampFor(iso, back).slice(0, lines) : [];
+	/**
+	 * The fields `check integrity` flags on each band's day (da-0lful). datum
+	 * draws each finding into the band itself, a group named for its field,
+	 * and the stamp carries the warning datum puts by its own date label.
+	 * Read as a document, so a name comes back unescaped (`r&d`, not
+	 * `r&amp;d`) whatever order the attributes are written in.
+	 */
+	$: flagged = Object.fromEntries(
+		Object.entries(shown).map(([end, result]) => [end, fieldsFlagged(result.stdout)])
+	) as Record<number, string[]>;
+	function fieldsFlagged(svg: string): string[] {
+		if (!svg.includes('integrity-error')) return [];
+		const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+		const groups = [...doc.querySelectorAll('.integrity-error')];
+		return [...new Set(groups.map((g) => g.getAttribute('data-field') ?? ''))];
+	}
 
 	// ── the hour ruler, drawn once under today ─────────────────────────
 
@@ -1376,6 +1393,7 @@
 				{#each rows as end (end)}
 					<div class="row" class:now={end === 0}>
 						<div class="stamp" style:font-size="{stampFont}px">
+							{#if flagged[end]?.length}<IntegrityMark fields={flagged[end]} />{/if}
 							{#each stamp(geometry?.today ?? null, end, stampLines) as line}<span>{line}</span
 								>{/each}
 						</div>
@@ -1491,6 +1509,7 @@
 		{#if freezeToday}
 			<div class="row now pinned">
 				<div class="stamp" style:font-size="{stampFont}px">
+					{#if flagged[0]?.length}<IntegrityMark fields={flagged[0]} />{/if}
 					{#each stamp(geometry?.today ?? null, 0, stampLines) as line}<span>{line}</span>{/each}
 				</div>
 				<div
@@ -1698,6 +1717,7 @@
 	}
 
 	.stamp {
+		position: relative;
 		flex: 0 0 var(--label);
 		width: var(--label);
 		overflow: hidden;
