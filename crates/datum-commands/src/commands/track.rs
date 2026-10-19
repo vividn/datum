@@ -16,6 +16,16 @@ use datum_core::{
 use crate::args::{SpecCommand, SpecSetArgs};
 use crate::config::client_id;
 
+/// `--verb V` read, or refused naming the four and where they are explained.
+pub(crate) fn parse_verb(raw: &str) -> Result<Action> {
+    raw.parse().map_err(|_| {
+        anyhow::anyhow!(
+            "invalid --verb '{raw}' — must be one of: {VERB_CHOICES_TEXT} \
+             (`datum help logging` says what each is)"
+        )
+    })
+}
+
 /// The verb `field` should be declared with, given an explicit `--verb`
 /// and whatever the database already knows.
 ///
@@ -25,9 +35,7 @@ use crate::config::client_id;
 /// has nothing to infer from, and the user is asked (da-c8mh).
 pub fn resolve_verb(field: &str, requested: Option<&str>, db: &Db) -> Result<Action> {
     if let Some(raw) = requested {
-        let verb: Action = raw.parse().map_err(|_| {
-            anyhow::anyhow!("invalid --verb '{raw}' — must be one of: {VERB_CHOICES_TEXT}")
-        })?;
+        let verb = parse_verb(raw)?;
         let probe = FieldSpec::new(field, verb);
         probe.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
         return Ok(verb);

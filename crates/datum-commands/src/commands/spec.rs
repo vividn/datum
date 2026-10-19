@@ -31,7 +31,10 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&spec_json(&spec))?)
             }
             Some(spec) => print!("{}", Block::of(&spec, ignored(db, &field)?).render(None)),
-            None => println!("No spec defined for field '{field}'"),
+            None => println!(
+                "No spec defined for field '{field}'; set one up: `datum setup {field} --verb occur` \
+                 (or start, switch, add; `datum help logging` says what each is)"
+            ),
         },
         SpecCommand::Set(args) => spec_set(*args, db)?,
         SpecCommand::List { tag } => {
@@ -142,9 +145,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     };
 
     if let Some(v) = &args.verb {
-        spec.verb = v
-            .parse::<Action>()
-            .map_err(|e| anyhow::anyhow!("Invalid --verb: {e}"))?;
+        spec.verb = crate::commands::track::parse_verb(v)?;
     }
     if args.from_json.is_some() {
         for state in spec.allowed_states.iter().flatten() {

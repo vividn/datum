@@ -601,3 +601,15 @@ fn spec_set_track_declares_in_one_and_undoes_in_one() {
         "the TRACK row and ONE IGNORED row: a second `--ignore` wrote another"
     );
 }
+
+/// `setup F` on a field with no spec names the next step (da-jjzwj).
+#[test]
+fn setup_of_a_field_with_no_spec_says_how_to_set_one_up() {
+    let env = Env::new();
+    env.run(&["occur", "coffee"]);
+    assert_eq!(
+        env.run(&["setup", "tea"]),
+        "No spec defined for field 'tea'; set one up: `datum setup tea --verb occur` \
+         (or start, switch, add; `datum help logging` says what each is)\n"
+    );
+}

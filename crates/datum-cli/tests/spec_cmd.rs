@@ -434,3 +434,40 @@ fn a_key_this_datum_does_not_know_survives_a_save() {
     assert!(stored["color"].is_string());
     assert!(stored.get("keys").is_none(), "{stored}");
 }
+
+/// `help setup` says what `--verb` chooses between (da-jjzwj): the four
+/// shapes, each with `help logging`'s line for it, and its example runs.
+/// A wrong verb points at `help logging` too.
+#[test]
+fn the_spec_help_names_the_four_verbs_and_a_wrong_one_points_at_them() {
+    let page = datum_parse::help::command_help("setup");
+    let logging = datum_parse::help::command_help("logging");
+    assert!(page.contains("\nVERB: "), "{page}");
+    for line in [
+        "  occur    a moment                  datum occur coffee",
+        "  start    something that lasts      datum start work",
+        "  switch   a change of state         datum switch mood happy",
+        "  add      a record with a key       datum add book -K title Dune",
+    ] {
+        assert!(page.contains(line), "setup lacks {line:?}:\n{page}");
+        assert!(logging.contains(line), "logging lacks {line:?}");
+    }
+    let example = page
+        .lines()
+        .find(|l| l.trim().starts_with("datum setup tea --verb"))
+        .expect("no `datum setup tea --verb` example on setup --help");
+    let argv: Vec<&str> = example.split_whitespace().skip(1).collect();
+    let db = fresh_db();
+    run_cli(&argv, &db).unwrap();
+    assert!(db.load_spec("tea").unwrap().is_some());
+
+    // A field with a spec and one without say the same.
+    for field in ["tea", "chai"] {
+        let err = run_cli(&["setup", field, "--verb", "event"], &db).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid --verb 'event' — must be one of: occur|start|switch|add \
+             (`datum help logging` says what each is)"
+        );
+    }
+}
