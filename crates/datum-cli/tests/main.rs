@@ -43,6 +43,7 @@ mod data_args_coercion;
 mod data_refs;
 mod date_vocabulary;
 mod dayview_cmd;
+mod dayview_integrity;
 mod db_cmd;
 mod db_import;
 mod db_import_regression;
