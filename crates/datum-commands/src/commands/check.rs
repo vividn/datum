@@ -24,6 +24,8 @@ use aliases::collect_alias_drift;
 mod mistyped;
 mod source;
 pub use source::Source;
+mod sync;
+use sync::collect_sync;
 mod tz;
 use tz::collect_tz_drift;
 
@@ -156,13 +158,10 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     }
     if run_sync {
         examined.checkers.push("sync");
-        let (found, of) = crate::commands::sync_diagnose::fold_issues(db)?;
-        examined.sync = Some(SyncExamined {
-            rows: found.entries,
-            ops: found.ops,
-        });
+        let (sync, of, fixed) = collect_sync(db, args.fix)?;
+        examined.sync = Some(sync);
         issues.extend(of);
-        issues.extend(crate::commands::sync::notice_issues(db)?);
+        fix_reports.extend(fixed);
     }
     if run_spool {
         examined.checkers.push("spool");

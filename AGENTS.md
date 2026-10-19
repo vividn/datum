@@ -568,7 +568,13 @@ fold to no row storage takes (`sync_unfoldable`, an error naming it and why,
 which the check reads on past), and in a chain a row no op covers (`sync_no_op`,
 a warning: the next sync signs it). `datum sync refold` writes each stale row
 again from its ops and signs none, so a correct copy is unchanged; orphans it
-leaves as found. It stays manual, since a row a write left without its op holds
+leaves as found, and `datum check --fix` deletes each (da-53whj): its row
+written again from its ops and deleted as `datum delete` does, so the signed
+`delete` syncs and every copy, one holding the row included, folds the entry
+to the same tombstone. It leaves, and `check sync` names, one whose identity a
+live entry holds (a slug logged again, as a re-import does): every copy holding
+both holds them merged, so the delete would take the live entry too. A refold
+stays manual, since a row a write left without its op holds
 the newer data and loses it: `--dry-run` names each row it would write, every
 column old → new, and writes nothing (da-g8wj9).
 

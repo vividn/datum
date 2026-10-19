@@ -1,9 +1,10 @@
 //! Sync's diagnostics (da-n0ruf): what one copy can tell of a sync problem
 //! from its own ops and rows ([`Db::sync_fold_check`]), the repair that
 //! needs no peer — a row written again from its ops ([`Db::sync_refold`]) —
+//! the removal of an entry whose ops have no row ([`Db::sync_drop_orphans`]),
 //! and what a copy holds of an entry, for two copies to compare
-//! ([`Db::sync_digest`], [`Db::sync_held`]). Nothing here signs or sends an
-//! op.
+//! ([`Db::sync_digest`], [`Db::sync_held`]). Nothing here sends an op, and
+//! only the removal signs one: an ordinary `delete`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,11 +13,13 @@ use serde_json::{json, Map, Value};
 
 use super::chain::{Chain, CHAIN_HID};
 use super::{
-    canonical_json, conflicts_of, derived, device, endpoint, fold, has_ops, ops_of, read_only,
-    rederive, refresh_conflicts, row, sha256_hex, shared_rows, Op, FOLD_RULE,
+    blockers, canonical_json, conflicts_of, derived, device, endpoint, entry_from, fetch_by_hid,
+    fold, has_ops, met, ops_of, read_only, rederive, refold, refresh_conflicts, row, sha256_hex,
+    shared_rows, Op, FOLD_RULE,
 };
 use crate::db::insert::as_stored;
 use crate::db::row_mapper::row_to_entry;
+use crate::db::tombstone::soft_delete_in_tx;
 use crate::db::{busy, Db, WriteBatch};
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
@@ -36,6 +39,10 @@ pub struct Orphan {
     pub field: String,
     /// Its ops, as [`Db::sync_held`] names them.
     pub ops: Vec<Value>,
+    /// The slug of a live entry holding an identity its row needs: a row
+    /// written again from its ops would merge with it, so its delete would
+    /// take that entry too, and [`Db::sync_drop_orphans`] leaves it.
+    pub shares: Option<String>,
 }
 
 /// A row that is not what its ops fold to: per key that differs
@@ -132,6 +139,17 @@ fn op_lines(conn: &Connection, chain: &Chain, hid: &str) -> Result<Vec<Value>> {
         .collect())
 }
 
+/// The slug of a live entry holding an identity the row `r` needs, as the
+/// fold would find it ([`blockers`], [`met`]).
+fn shares(conn: &Connection, r: Map<String, Value>) -> Result<Option<String>> {
+    let Ok(e) = entry_from(r) else {
+        return Ok(None);
+    };
+    let mut found = blockers(conn, &e)?;
+    found.extend(met(conn, &e)?);
+    Ok(found.into_iter().next().map(|b| b.slug.0))
+}
+
 fn fold_check(conn: &Connection) -> Result<FoldCheck> {
     let chain = Chain::load(conn)?;
     let mut out = FoldCheck {
@@ -204,6 +222,7 @@ fn fold_check(conn: &Connection) -> Result<FoldCheck> {
                 slug: r["slug"].as_str().unwrap_or_default().into(),
                 field: r["field"].as_str().unwrap_or_default().into(),
                 ops: op_lines(conn, &chain, &hid)?,
+                shares: shares(conn, r)?,
                 hid,
             });
         }
@@ -224,7 +243,7 @@ impl Db {
     /// `conflicts` with it: what a correct copy holds is unchanged, and no
     /// op is signed, the ops being what every copy already agrees on. The
     /// row as it stood goes to `entry_history`, as a sync's merge does.
-    /// Orphans are left as found. What was found, and what still differs.
+    /// Orphans are left as found: [`Db::sync_drop_orphans`] removes them. What was found, and what still differs.
     /// The whole database is read before the write lock and after it, and
     /// the lock is held for the stale rows alone (da-8i7f0).
     pub fn sync_refold(&self) -> Result<(FoldCheck, Vec<Stale>)> {
@@ -239,16 +258,57 @@ impl Db {
     /// it was found is written as its ops fold now, and one right by then
     /// is left as it is.
     fn refold_rows(&self, stale: &[Stale]) -> Result<()> {
-        for chunk in stale.chunks(REFOLD_CHUNK) {
-            self.write_with(|tx| {
-                chunk.iter().try_for_each(|s| {
-                    rederive(tx, &s.hid, ChangeKind::SyncMerge)
-                        .and_then(|()| refresh_conflicts(tx, &s.hid).map(drop))
-                        .map_err(|e| {
-                            DatumError::Other(format!("refolding {} ({}): {e}", s.slug, s.hid))
-                        })
-                })
-            })?;
+        self.in_chunks(stale, |tx, s| {
+            rederive(tx, &s.hid, ChangeKind::SyncMerge)
+                .and_then(|()| refresh_conflicts(tx, &s.hid).map(drop))
+                .map_err(|e| DatumError::Other(format!("refolding {} ({}): {e}", s.slug, s.hid)))
+        })
+    }
+
+    /// Remove every entry whose ops this copy holds and has no row for
+    /// (da-53whj): its row is written again from its ops, as a sync would,
+    /// and deleted as `datum delete` deletes, so the `delete` op signed
+    /// syncs and every copy, one that applied those ops included, folds the
+    /// entry to the same tombstone. One whose ops fold to a tombstone
+    /// already needs only its row. One a live entry [`Orphan::shares`] an
+    /// identity with is left: every copy holding both holds them merged, so
+    /// its delete would take the live entry too. How many it found to
+    /// delete.
+    pub fn sync_drop_orphans(&self) -> Result<usize> {
+        let found: Vec<Orphan> = self
+            .read(|view| fold_check(view.conn()))?
+            .orphans
+            .into_iter()
+            .filter(|o| o.shares.is_none())
+            .collect();
+        self.in_chunks(&found, |tx, o| {
+            // A row that came back since it was found is no orphan, and one
+            // a live entry took the identity of since is left.
+            let left = match fold(&ops_of(tx, &o.hid)?, None) {
+                Some(r) => shares(tx, r)?.is_some(),
+                None => true,
+            };
+            if left || fetch_by_hid(tx, &o.hid)?.is_some() {
+                return Ok(());
+            }
+            refold(tx, &o.hid, ChangeKind::SyncMerge)?;
+            if fetch_by_hid(tx, &o.hid)?.is_some_and(|e| e.deleted_at.is_none()) {
+                soft_delete_in_tx(tx, &o.hid, ChangeKind::UserEdit, None)?;
+            }
+            Ok(())
+        })?;
+        Ok(found.len())
+    }
+
+    /// `each` of `items` under the write lock, [`REFOLD_CHUNK`] a
+    /// transaction, so the lock is another's between them (da-8i7f0).
+    fn in_chunks<T>(
+        &self,
+        items: &[T],
+        each: impl Fn(&Connection, &T) -> Result<()>,
+    ) -> Result<()> {
+        for chunk in items.chunks(REFOLD_CHUNK) {
+            self.write_with(|tx| chunk.iter().try_for_each(|i| each(tx, i)))?;
         }
         Ok(())
     }

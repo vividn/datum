@@ -2206,6 +2206,99 @@ fn check_names_the_entries_whose_ops_have_no_row() {
     assert_eq!(a.query(orphans, "create"), "2");
 }
 
+/// Entries whose rows were dropped under their ops, as a purge before
+/// #491 left them (da-53whj): `check --fix` deletes each as `datum delete`
+/// does, signing the delete, so `check sync` is clean after it and every
+/// copy ends with the entry deleted, one that held its row included and
+/// whichever copy a new one hears from first.
+#[test]
+fn check_fix_deletes_the_entries_whose_ops_have_no_row() {
+    let (a, applied) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "tea", "-t", "10:00"]);
+    a.ok(&["occur", "juice", "-t", "12:00"]);
+    converged(&a, &applied);
+    let juice = a.hid("juice");
+    a.sql("DELETE FROM entries WHERE field = 'juice' OR slug = 'spec:juice'");
+    let (ok, said) = check_sync(&a, false);
+    assert!(
+        !ok && said.contains("[ERROR] sync_orphan_ops (x2)"),
+        "{said}"
+    );
+    assert!(said.contains("`datum check --fix` deletes each"), "{said}");
+
+    let fixed = a.ok(&["check", "--fix"]);
+    assert!(
+        fixed.contains("✓ sync_orphan_ops repaired: 2 entries (2 detected, 0 still mismatched)"),
+        "{fixed}"
+    );
+    let (ok, said) = check_sync(&a, false);
+    assert!(ok && !said.contains("sync_orphan_ops"), "{said}");
+    assert!(a.deleted(&juice));
+    let deletes = "SELECT COUNT(*) FROM ops WHERE kind = ?1 AND body LIKE '%check --fix%'";
+    assert_eq!(a.query(deletes, "delete"), "2", "a delete signed for each");
+
+    // The copy that applied the ops deletes the entry too.
+    converged(&a, &applied);
+    assert!(applied.deleted(&juice));
+    // A new copy ends the same whichever copy it hears from first.
+    let (x, y) = (Copy::new(), Copy::new());
+    a.send(&x);
+    applied.send(&x);
+    applied.send(&y);
+    a.send(&y);
+    assert!(x.deleted(&juice) && y.deleted(&juice));
+    assert_eq!(x.hash(), y.hash());
+    assert_eq!(x.hash(), a.hash());
+}
+
+/// An orphan whose entry was logged again, as a re-import does, is left
+/// and named (da-53whj): every copy holding both holds them as one entry,
+/// so a delete of the orphan would take the live entry with it.
+#[test]
+fn check_fix_leaves_an_orphan_a_live_entry_shares_an_identity_with() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee", "-t", "10:00", "cups=2"]);
+    a.ok(&["occur", "tea", "-t", "11:00"]);
+    let old = a.hid("coffee");
+    a.sql("DELETE FROM entries");
+    a.ok(&["occur", "coffee", "-t", "10:00", "cups=2"]);
+    let new = a.hid("coffee");
+    let (_, said) = check_sync(&a, false);
+    assert!(said.contains("[ERROR] sync_orphan_ops (x4)"), "{said}");
+    let coffee = format!(
+        "left: the live {} holds its identity",
+        a.query("SELECT slug FROM entries WHERE hid = ?1", &new,)
+    );
+    assert!(said.contains(&coffee), "{coffee:?} in {said}");
+    assert!(
+        said.contains("left: the live spec:coffee holds its identity"),
+        "{said}"
+    );
+    assert!(said.contains("\n  tea:"), "{said}");
+
+    let out = a.run(&["check", "--fix"], "");
+    let fixed = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "what it leaves is still an error");
+    assert!(
+        fixed.contains("✓ sync_orphan_ops repaired: 2 entries (2 detected, 0 still mismatched)"),
+        "tea and spec:tea deleted: {fixed}"
+    );
+    let (_, said) = check_sync(&a, false);
+    assert!(said.contains("[ERROR] sync_orphan_ops (x2)"), "{said}");
+    assert!(!said.contains("tea"), "{said}");
+    let live = "SELECT COUNT(*) FROM entries WHERE hid = ?1 AND deleted_at IS NULL
+                  AND superseded_by IS NULL";
+    assert_eq!(
+        a.query(live, &new),
+        "1",
+        "the coffee logged again stays as it was"
+    );
+    assert_eq!(
+        a.query("SELECT COUNT(*) FROM entries WHERE hid = ?1", &old),
+        "0"
+    );
+}
+
 /// A row that is not what its ops fold to (da-yrtk6, da-z3y0o) is named
 /// with its column and both values, and `sync refold` writes it again from
 /// the ops: the copies verify again, and no op was signed for it.
