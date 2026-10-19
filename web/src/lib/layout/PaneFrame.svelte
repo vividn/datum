@@ -169,7 +169,7 @@
 	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
 	import { CLOSE, arranged, menuItems, named } from './menu.js';
-	import { widgetOptions } from './options.js';
+	import { offers, widgetOptions } from './options.js';
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 
@@ -271,7 +271,7 @@
 	 * declarations and changed in the menu, and — with something held —
 	 * ending in «Save options with layout».
 	 */
-	$: options = widgetOptions(active, held, sessionOf);
+	$: options = widgetOptions(active, held, sessionOf, $offers);
 
 	/**
 	 * Whether this pane is the one filling the root (da-00am) — which is

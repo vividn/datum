@@ -188,6 +188,7 @@ describe('the menu the title opens', () => {
 				'custom',
 				'command',
 				'stats',
+				'chart',
 				'fields',
 				'aliases',
 				'sync',

@@ -314,6 +314,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	custom: () => only('custom', 'custom'),
 	command: () => only('command', 'command'),
 	stats: () => only('stats', 'stats'),
+	chart: () => only('chart', 'chart'),
 	fields: () => only('fields', 'widgetbar'),
 	aliases: () => only('aliases', 'aliases'),
 	sync: () => only('sync', 'sync'),

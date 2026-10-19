@@ -131,7 +131,7 @@
 	import { apply, editing, layout, loaded } from './current.js';
 	import { CHANGE, CLOSE, aimed, layoutActs, type Item } from './menu.js';
 	import { accept, discard, enter, isAsking, leave, save as saveMode } from './mode.js';
-	import { widgetOptions } from './options.js';
+	import { offers, widgetOptions } from './options.js';
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
@@ -184,7 +184,7 @@
 	 */
 	$: sessionOf = keyOf($layout, id ?? '');
 	$: held = $session[sessionOf] ?? {};
-	$: options = widgetOptions(active, held, sessionOf);
+	$: options = widgetOptions(active, held, sessionOf, $offers);
 	/** Loaded, and no act in flight: what a test waits for before pressing. */
 	$: ready = $loaded && !busy && active !== undefined;
 

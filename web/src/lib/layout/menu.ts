@@ -59,7 +59,14 @@ import type { Toward } from './tree.js';
  * `<select>` was. `title` names it in full where the label is a value on
  * its own («now», «45m»).
  */
-export type Pick = { label: string; title?: string; checked: boolean; run: () => void };
+export type Pick = {
+	label: string;
+	title?: string;
+	checked: boolean;
+	/** One of a SET (an `offered` option with `many`): a switch, which leaves the submenu open. */
+	toggled?: boolean;
+	run: () => void;
+};
 /** A row's button: `text` is what it shows, `title` its name. */
 export type Short = { text: string; title: string; run: () => void };
 /**

@@ -62,7 +62,9 @@ import {
 import { REACH_PX } from '$lib/lanes.js';
 import { DEBUG_DB } from './defaults.js';
 import { DEFAULT_STATS, type StatsRange } from '$lib/stats.js';
+import { BUCKETS, DEFAULT_CHART, FIELDS_OFFER, RANGES, SHOWS, chartSettings, keysOffer } from '$lib/chart.js';
 import AliasesWidget from './AliasesWidget.svelte';
+import ChartWidget from './ChartWidget.svelte';
 import BackupsWidget from './BackupsWidget.svelte';
 import ConflictsWidget from './ConflictsWidget.svelte';
 import DayviewWidget from './DayviewWidget.svelte';
@@ -396,6 +398,43 @@ export const KINDS: Record<string, WidgetKind> = {
 		props: ({ range }) => ({ settings: { range: (range ?? DEFAULT_STATS.range) as StatsRange } }),
 		onChange: (_, settings) => settings as Record<string, unknown>,
 		legible: { width: 240, height: 140 }
+	},
+	// The chart widget (da-xv7ti): one key of some fields' entries over time,
+	// a number key's points and means as a series a field, any other key's
+	// values counted and stacked. The fields and the keys are OFFERED: the
+	// widget has read them, the registry cannot list them. Legible at its
+	// head, a legend line and a plot of about four ticks' height.
+	chart: {
+		meta: meta('chart', 'chart', { ...DEFAULT_CHART }, [
+			{
+				key: 'fields',
+				label: 'fields',
+				type: 'offered',
+				many: true,
+				choices: (_, offers) => offers[FIELDS_OFFER] ?? []
+			},
+			{
+				key: 'key',
+				label: 'key',
+				type: 'offered',
+				choices: (shown, offers) => offers[keysOffer(chartSettings(shown).fields)] ?? []
+			},
+			{ key: 'bucket', label: 'per', type: 'choice', choices: BUCKETS.map((value) => ({ value, label: value })) },
+			{ key: 'range', label: 'window', type: 'choice', choices: RANGES.map((value) => ({ value, label: value })) },
+			{
+				key: 'show',
+				label: 'show',
+				type: 'choice',
+				choices: SHOWS.map((value) => ({ value, label: { both: 'points and means', points: 'points', average: 'means' }[value] }))
+			}
+		]),
+		component: ChartWidget,
+		help: [
+			'One key of the fields you choose, over time: a number as points and a line of its mean per day, week or month, a field each; anything else counted per bucket, stacked.',
+			'Its name opens the choices: fields, key, per, window, show.'
+		].join('\n'),
+		props: (settings) => ({ settings: chartSettings(settings) }),
+		legible: { width: 200, height: 120 }
 	},
 	// The fields widget (da-c7u8), titled `fields`. The id `widgetbar` is the
 	// saved-layout key — every stored layout and draft names it, so it stays;

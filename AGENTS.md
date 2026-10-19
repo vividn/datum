@@ -873,6 +873,15 @@ binary.
   load-bearing: the CLI's slot is a painted SPACE, and a lone space in a
   `<td>` collapses to zero width with its background set and nothing drawn.
   `web/tests/statecell.test.mjs`.
+- The chart widget (`layout/ChartWidget.svelte`, `$lib/chart.ts`, da-xv7ti)
+  draws one key of the fields chosen over time, from `tail F --json` a
+  field: a number key as a series a field, points and a line of their mean
+  per day, week or month; any other key its values counted per bucket,
+  stacked, a bar a field. Its fields and keys are `offered` options
+  (`layout/types.ts`): choices read as the menu is built from what the
+  widget has read (`offers`, `layout/options.ts`), a field set's words
+  switches that keep the submenu open. Time is the lived wall clock, as
+  below.
 - A day is drawn in LOCAL TIME AS IT WAS LIVED (da-1v9gp), the author's
   rule: "if you see 10am somewhere it actually meant it was 10am when it
   was experienced regardless if your timezone, location, or dst has changed

@@ -152,8 +152,20 @@ export interface WidgetKindMeta {
 /** `glyph`: a character drawn before the label, as a menu item's (PaneMenu.svelte). */
 export type WidgetOption = { key: string; label: string; glyph?: string } & (
 	| { type: 'boolean' }
-	| { type: 'choice'; choices: { value: string; label: string }[] }
+	| { type: 'choice'; choices: Choice[] }
+	/**
+	 * Choices no registry can list — the fields there are, the keys their
+	 * entries carry — read as the menu is built, from the settings shown and
+	 * what the widgets on the page `offers` now (options.ts, da-xv7ti).
+	 * `many`: the value is a LIST of them, each a switch in the submenu.
+	 */
+	| { type: 'offered'; many?: boolean; choices: (shown: Record<string, unknown>, offers: Offers) => Choice[] }
 );
+
+export type Choice = { value: string; label: string };
+
+/** What the widgets on the page offer their menus now, by a name of each kind's own. */
+export type Offers = Record<string, Choice[]>;
 
 /** Type guards, so a tab's content can be told apart without a `kind` tag. */
 export const isSplit = (content: Widget | Split): content is Split => 'children' in content;

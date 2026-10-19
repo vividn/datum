@@ -23,18 +23,27 @@
 // Every change is the SESSION's (`session.ts`). `saveOptions` is the one
 // writer to the tree, and only when the reader asks.
 
+import { writable } from 'svelte/store';
 import { apply } from './current.js';
 import type { Item } from './menu.js';
 import { KINDS, optionsOfKind } from './registry.js';
 import { clearSession, setSession, withSession } from './session.js';
 import { findTab, setWidget } from './tree.js';
-import type { Tab, WidgetOption } from './types.js';
+import type { Offers, Tab, WidgetOption } from './types.js';
 import { isWidget } from './types.js';
 
 /** What «Save options with layout» is called, in one place: the menu and its tests. */
 export const SAVE_OPTIONS = 'Save options with layout';
 
 type Settings = Record<string, unknown>;
+
+/**
+ * What the widgets on the page offer the menus now: an `offered` option's
+ * choices are read from here (da-xv7ti). The widget that has them — the
+ * chart, which knows the fields and the keys their entries carry — writes
+ * them; the menu is built again whenever they change.
+ */
+export const offers = writable<Offers>({});
 
 /**
  * The option items for the tab's widget, and the act that writes what this
@@ -47,7 +56,7 @@ type Settings = Record<string, unknown>;
  * setting of its own without declaring it an option — the day strip's
  * height, the stats widget's range chips — still has something to save.
  */
-export function widgetOptions(tab: Tab | undefined, held: Settings, key: string): Item[] {
+export function widgetOptions(tab: Tab | undefined, held: Settings, key: string, offered: Offers = {}): Item[] {
 	if (!tab || !isWidget(tab.content)) return [];
 	const widget = tab.content;
 	const defaults = KINDS[widget.kind]?.meta.defaultSettings ?? {};
@@ -56,24 +65,41 @@ export function widgetOptions(tab: Tab | undefined, held: Settings, key: string)
 	const set = (option: WidgetOption, value: unknown) =>
 		setSession(key, widget.settings, { ...shown, [option.key]: value });
 
-	const rows = (optionsOfKind(widget.kind) ?? []).map((option): Item =>
-		option.type === 'boolean'
-			? {
-					label: option.label,
-					glyph: option.glyph,
-					toggled: valueOf(option) === true,
-					run: () => set(option, valueOf(option) !== true)
-				}
-			: {
-					label: option.label,
-					list: option.choices.map((choice) => ({
-						label: choice.label + (choice.value === defaults[option.key] ? ' · default' : ''),
-						title: `${option.label}: ${choice.label}`,
-						checked: valueOf(option) === choice.value,
-						run: () => set(option, choice.value)
-					}))
-				}
-	);
+	const rows = (optionsOfKind(widget.kind) ?? []).map((option): Item => {
+		if (option.type === 'boolean')
+			return {
+				label: option.label,
+				glyph: option.glyph,
+				toggled: valueOf(option) === true,
+				run: () => set(option, valueOf(option) !== true)
+			};
+		const choices = option.type === 'offered' ? option.choices(shown, offered) : option.choices;
+		if (choices.length === 0) return { label: option.label, disabled: true };
+		if (option.type === 'offered' && option.many) {
+			// A set: each choice a switch in the submenu, which stays open.
+			const on = Array.isArray(valueOf(option)) ? (valueOf(option) as string[]) : [];
+			return {
+				label: option.label,
+				list: choices.map((choice) => ({
+					label: choice.label,
+					title: `${option.label}: ${choice.label}`,
+					checked: on.includes(choice.value),
+					toggled: on.includes(choice.value),
+					run: () =>
+						set(option, on.includes(choice.value) ? on.filter((v) => v !== choice.value) : [...on, choice.value])
+				}))
+			};
+		}
+		return {
+			label: option.label,
+			list: choices.map((choice) => ({
+				label: choice.label + (choice.value === defaults[option.key] ? ' · default' : ''),
+				title: `${option.label}: ${choice.label}`,
+				checked: valueOf(option) === choice.value,
+				run: () => set(option, choice.value)
+			}))
+		};
+	});
 
 	const savable = Object.keys(held).length > 0;
 	return [

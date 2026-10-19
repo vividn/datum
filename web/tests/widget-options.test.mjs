@@ -99,7 +99,11 @@ describe('widget options', () => {
 			// KIND rather than a number written into a layout, so it is here
 			// and its default must be one of its choices like any other.
 			// `command` since da-u79wl: its «scrolling sections» prototype.
+			// `chart` since da-xv7ti: its fields and key are OFFERED, read off
+			// the widget as the menu is built, so only their defaults' shape is
+			// the registry's to hold.
 			assert.deepEqual(declared.map((k) => k.kind).sort(), [
+				'chart',
 				'command',
 				'daystrip',
 				'input',
@@ -113,6 +117,7 @@ describe('widget options', () => {
 					assert.ok(o.key in defaultSettings, `${kind}.${o.key} has no default`);
 					const d = defaultSettings[o.key];
 					if (o.type === 'boolean') assert.equal(typeof d, 'boolean', `${kind}.${o.key}`);
+					else if (o.type === 'offered') assert.ok(o.many ? Array.isArray(d) : typeof d === 'string', `${kind}.${o.key}`);
 					else assert.ok(o.choices.some((c) => c.value === d), `${kind}.${o.key}: ${d} is not a choice`);
 				}
 			}

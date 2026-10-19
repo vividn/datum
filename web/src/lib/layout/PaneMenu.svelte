@@ -24,6 +24,9 @@
 	ArrowLeft goes back to the item that opened it, the pointer entering
 	any other item closes it, and choosing closes both.
 
+	A word with `toggled` is one of a SET (da-xv7ti): a `menuitemcheckbox`
+	that turns over in place and leaves the submenu open, as a switch does.
+
 	An item with `toggled` is a SWITCH: a `menuitemcheckbox` that says
 	whether it is on and turns over when it is pressed — a widget option of
 	type `boolean`. It is the one item that does NOT close the menu, because
@@ -97,7 +100,11 @@
 	let button: HTMLButtonElement;
 	let menu: HTMLDivElement | undefined;
 	let at = { top: 0, left: 0 };
-	/** The open submenu: its item, and the button that opened it. */
+	/**
+	 * The open submenu: its item, and the button that opened it. An item is
+	 * known by its LABEL here, as in `within` and the items' `{#each}` key,
+	 * so the labels of one menu must be distinct.
+	 */
 	let sub: { item: (typeof items)[number]; opener: HTMLButtonElement } | null = null;
 	/** Whether an item opens a submenu beside it: its `list` of words. */
 	const opens = (item?: (typeof items)[number]) => !!item?.list;
@@ -109,6 +116,11 @@
 	 */
 	let within: string | null = null;
 	$: shown = (within !== null && items.find((item) => item.label === within)?.items) || items;
+	/**
+	 * The open submenu's words, read from the caller's fresh list by label,
+	 * as `within` is: a switch in a set turned over redraws it in place.
+	 */
+	$: picks = sub ? (shown.find((item) => item.label === sub?.item.label) ?? sub.item).list ?? [] : [];
 
 	/** One step in, or back out with null: the menu's first item takes the focus. */
 	async function step(to: string | null) {
@@ -194,7 +206,7 @@
 	function hover(event: PointerEvent, item?: (typeof items)[number]) {
 		if (event.pointerType === 'touch') return;
 		if (opens(item)) {
-			if (sub?.item !== item) showSub(item!, event.currentTarget as HTMLButtonElement, false);
+			if (sub?.item.label !== item?.label) showSub(item!, event.currentTarget as HTMLButtonElement, false);
 		} else if (sub) closeSub(!!subMenu?.contains(document.activeElement));
 	}
 
@@ -383,7 +395,7 @@
 					disabled={item.disabled}
 					use:act={item.act}
 					aria-haspopup={opens(item) || item.items ? 'menu' : undefined}
-					aria-expanded={opens(item) ? sub?.item === item : undefined}
+					aria-expanded={opens(item) ? sub?.item.label === item.label : undefined}
 					on:pointerenter={(e) => hover(e, item)}
 					on:click={(e) =>
 						item.items
@@ -413,14 +425,14 @@
 		style:left="{subAt.left}px"
 		on:keydown={onSubKey}
 	>
-		{#each sub.item.list ?? [] as pick (pick.label)}
+		{#each picks as pick (pick.label)}
 			<button
 				type="button"
 				class="ticked"
-				role="menuitemradio"
-				aria-checked={pick.checked}
+				role={pick.toggled === undefined ? 'menuitemradio' : 'menuitemcheckbox'}
+				aria-checked={pick.toggled ?? pick.checked}
 				title={pick.title}
-				on:click={() => choose(pick)}>{pick.label}</button
+				on:click={() => (pick.toggled === undefined ? choose(pick) : pick.run())}>{pick.label}</button
 			>
 		{/each}
 	</div>
