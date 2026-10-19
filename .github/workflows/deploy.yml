@@ -60,7 +60,7 @@ jobs:
       # which a full-depth checkout fetches along with every other branch.
       # And the gear's `3.0.<height>-beta` counts every commit, which a shallow
       # checkout would cut short (it says `3.0.0-beta` there, da-5172a).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -81,11 +81,11 @@ jobs:
       # path, and an action's inputs are never reached by a working-directory
       # default. Identical to ci.yml's web job on purpose — if the two drift,
       # the thing CI tested is not the thing this uploads.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           package_json_file: web/package.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -107,7 +107,7 @@ jobs:
 
       # For `just verify` below. install-action is already how this repo
       # installs cargo-nextest, so it is not a new dependency to trust.
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2
         with:
           tool: just
 

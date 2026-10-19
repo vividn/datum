@@ -35,16 +35,16 @@ jobs:
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install --no-self-update
 
       - name: Cache cargo registry + target
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2
         with:
           tool: cargo-nextest
 
@@ -59,7 +59,7 @@ jobs:
 
       # web/scripts/capture-cli-fixtures.mjs imports only node builtins and
       # the suite's own support module, so this needs no `pnpm install`.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
@@ -100,16 +100,16 @@ jobs:
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install --no-self-update
 
       - name: Cache cargo registry + target
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2
         with:
           tool: cargo-nextest
 
@@ -132,13 +132,13 @@ jobs:
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install --no-self-update
 
       - name: Cache cargo registry + target
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: cargo fmt --all -- --check
         run: cargo fmt --all -- --check
@@ -158,7 +158,7 @@ jobs:
     # GitHub's 6-hour default; now it fails here.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install --no-self-update
@@ -167,21 +167,21 @@ jobs:
         run: rustup target add wasm32-unknown-unknown wasm32-wasip1
 
       - name: Cache cargo registry + target
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       # The real CLI for wasm32-wasip1 — datum.day's only runner (da-g8o8).
       # It needs a C compiler targeting wasm: the script fetches a PINNED
       # wasi-sdk and binaryen into target/toolchains/, sha256-checked, and
       # nothing else in CI or on a contributor's machine ever needs them.
       - name: Cache the pinned wasi-sdk and binaryen
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: target/toolchains
           key: wasi-toolchains-${{ hashFiles('web/scripts/build-cli-wasm.mjs') }}
 
       # build-cli-wasm.mjs imports only node builtins, so this needs no
       # `pnpm install` — just an interpreter.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
@@ -191,7 +191,7 @@ jobs:
       - name: Build the CLI module
         run: node web/scripts/ensure-wasm.mjs
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: datum-cli-wasm
           path: web/src/lib/wasm/
@@ -208,13 +208,13 @@ jobs:
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install --no-self-update
 
       - name: Cache cargo registry + target
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       # Runs the repo-hygiene gates — the four pre-v1 honesty gates and
       # no-slug-keyed-writes (da-anmaz):
@@ -275,11 +275,11 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # With its SOURCE, which is this commit, so `pretest`'s ensure-wasm.mjs
       # keeps it rather than building.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: datum-cli-wasm
           path: web/src/lib/wasm/
@@ -292,11 +292,11 @@ jobs:
       # to an action's inputs, so without it the action looks for packageManager
       # in a root package.json that does not exist and fails with
       # "No pnpm version is specified".
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           package_json_file: web/package.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
