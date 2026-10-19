@@ -51,8 +51,8 @@ async function make(page, field, verb) {
 
 describe('the first field\'s tour', () => {
 	for (const [what, options, field, verb, tap, pulse] of [
-		['a phone', PHONE, 'coffee', 'occur', 'Tap to log coffee.', true],
-		['a desktop', DESKTOP, 'sleep', 'start', 'Tap to turn sleep on, and again to turn it off.', false]
+		['a phone', PHONE, 'coffee', 'occur', 'A tap on coffee logs it.', true],
+		['a desktop', DESKTOP, 'sleep', 'start', 'A tap on sleep turns it on, and a second tap turns it off.', false]
 	])
 		test(`${what}: the first field's Save tours its button on collect, the nowview and the dayview; the second's shows nothing`, async () => {
 			await withApp(async (app) => {
@@ -68,9 +68,17 @@ describe('the first field\'s tour', () => {
 				const animation = await page.locator('.tour .ring').evaluate((el) => getComputedStyle(el, '::after').animationName);
 				assert.equal(animation.includes('pulse'), pulse, animation);
 
-				// 2. A tap anywhere: the nowview.
-				await page.mouse.click(8, 400);
+				// 2. A tap on the ringed button itself: the nowview, and nothing logged.
+				const rows = async () => JSON.parse((await app.run(['tail', field, '--json'])).stdout).rows;
+				const saved = await rows();
+				const at = await page.locator(button).evaluate((el) => {
+					const r = el.getBoundingClientRect();
+					return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+				});
+				await page.mouse.click(at.x, at.y);
 				await until(() => stop(page, '[data-widget="nowview"] > section'), (s) => s.round && s.say === NOWVIEW);
+				await app.idle();
+				assert.deepEqual(await rows(), saved);
 
 				// 3. «next»: the dayview, and «done» or Escape ends it.
 				await page.locator('.tour button.next').click();
@@ -100,7 +108,7 @@ describe('the first field\'s tour', () => {
 			await page.locator('.bar button[data-track]').click();
 			await page.locator(FIELD_FORM).waitFor();
 			await make(page, 'coffee', 'occur');
-			await until(() => stop(page, '[data-widget="widgetbar"] button[data-field="coffee"]'), (s) => s.round && s.say === 'Tap to log coffee.');
+			await until(() => stop(page, '[data-widget="widgetbar"] button[data-field="coffee"]'), (s) => s.round && s.say === 'A tap on coffee logs it.');
 			assert.equal(await front(page), 'main');
 			assert.equal(await page.locator('dialog[data-place="setup"]').count(), 0);
 			await page.keyboard.press('Escape');

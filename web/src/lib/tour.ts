@@ -31,12 +31,15 @@ export const tour = writable<Stop[]>([]);
 
 const KEY = 'datum.tour';
 
-/** What a tap on the button does, for each shape of field. */
+/**
+ * What a tap on the button does, for each shape of field: said, not asked
+ * for, since a tap in the tour only moves it on (da-q8koz).
+ */
 const TAP: Record<FieldButton['shape']['kind'], (f: string) => string> = {
-	point: (f) => `Tap to log ${f}.`,
-	state: (f) => `Tap to turn ${f} on, and again to turn it off.`,
-	states: (f) => `Tap to choose what ${f} is now.`,
-	record: (f) => `Tap to write a ${f} entry in the bar below.`
+	point: (f) => `A tap on ${f} logs it.`,
+	state: (f) => `A tap on ${f} turns it on, and a second tap turns it off.`,
+	states: (f) => `A tap on ${f} chooses what it is now.`,
+	record: (f) => `A tap on ${f} starts a ${f} entry in the bar below.`
 };
 
 // The section and not its host: the host is `display: contents`, never drawn.
