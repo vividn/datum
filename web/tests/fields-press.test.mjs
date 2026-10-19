@@ -76,11 +76,11 @@ describe('a press', () => {
 			assert.equal(await modal.locator('.verb[aria-checked="true"]').count(), 0, 'a verb was chosen for them');
 
 			await modal.locator('button[data-verb="start"]').click();
-			const { line, spec } = declared(await modal.locator('code.preview').getAttribute('title'));
-			assert.equal(line, 'setup sleep --from-json --track');
-			assert.equal(spec.verb, 'start');
 			await modal.locator('button.commit').click();
 			await page.locator('.bar button[data-field="sleep"]').waitFor();
+			const { line, spec } = declared((await app.echoes()).at(-1));
+			assert.equal(line, 'setup sleep --from-json --track');
+			assert.equal(spec.verb, 'start');
 			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).verb, 'start');
 		});
 	});

@@ -515,7 +515,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// is made and changed — the Track dialog and the spec widget (da-hbrfg,
 	// kinds `spec` and `field`: `RETIRED_KINDS` in shell.ts) as one. Which field it is on is `editing`
 	// ($lib/fieldWidget.ts), every copy's, so it has no setting. Legible at
-	// its sentence, a row of chips, the form's name and its Done row, with
+	// its sentence, the form's name line and its Done row, with
 	// their gaps and padding — about 180px, estimated from the 28px controls
 	// rather than measured; a pane shorter scrolls the widget.
 	setup: {

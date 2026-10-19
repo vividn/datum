@@ -146,7 +146,7 @@ describe('the spec place, on a desktop', () => {
 describe('the field widget in a pane', () => {
 	const desktop = sharedApp(DESKTOP);
 
-	test('a chip picks the field, which is edited where it stands', async () => {
+	test('«fields» picks the field, which is edited where it stands', async () => {
 		await desktop.solo(async (app) => {
 			const { page } = app;
 			// Through the bar, as a person would, so the fields it offers have it.
@@ -156,7 +156,9 @@ describe('the field widget in a pane', () => {
 			await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'setup'), tab);
 			const pane = page.locator('section.pane[data-title="setup"]');
 
-			await pane.locator('button[data-chip="tea"]').click();
+			await pane.locator('button.pick').click();
+			await page.locator('dialog.sheet[data-picker] button[data-chip="tea"]').click();
+			await pane.locator(`${FIELD_FORM} h2`).waitFor();
 			assert.equal((await pane.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
 			await pane.locator(`${FIELD_FORM} input.description`).fill('green');
 			await pane.locator(`${FIELD_FORM} button.commit`).click();

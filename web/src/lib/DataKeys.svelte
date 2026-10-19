@@ -13,7 +13,9 @@
 	bind in. One row takes the rest of the line (`cycle`). On a card a new
 	key starts as `-K`: a card needs an id. The Data tab's rows (`detail`)
 	also carry each key's type, and whether its value is fixed — an assign,
-	which takes no word.
+	which takes no word. The paragraph that explained them is gone
+	(da-zz9rn, vividn: «the data explanation is too long, maybe just get rid
+	of it? put hints next to pickers»): `+ key` says it in its hint.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -77,10 +79,6 @@
 	}
 </script>
 
-<p class="about">
-	what each entry carries besides its time: when logging, the values are typed after the field, one word per key, in
-	this order
-</p>
 <ul class="data" bind:this={list}>
 	{#if keys.length}<li class="head" aria-hidden="true"><span>optional?</span></li>{/if}
 	{#each keys as key, i (key)}
@@ -152,15 +150,11 @@
 		</li>
 	{/each}
 </ul>
-<button type="button" class="add" on:click={add}>+ key</button>
+<button type="button" class="add" title="a value each entry carries, typed after the field, one word per key" on:click={add}
+	>+ key</button
+>
 
 <style>
-	.about {
-		margin: 0;
-		color: var(--muted);
-		font-size: 0.75rem;
-	}
-
 	.data {
 		display: flex;
 		flex-direction: column;

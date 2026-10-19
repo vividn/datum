@@ -378,7 +378,9 @@ describe('in the app', () => {
 			assert.equal(await page.locator(`${MODAL} .states`).count(), 0);
 			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
 			await addStates(page, ['good', 'bad']);
-			const { line, spec } = declared(await page.locator(`${MODAL} code.preview`).getAttribute('title'));
+			await commit.click();
+			await page.locator('.bar button[data-field="mood"]').waitFor();
+			const { line, spec } = declared((await app.echoes()).at(-1));
 			assert.equal(line, 'setup mood --from-json --track');
 			assert.deepEqual([spec.verb, spec.allowed_states], ['switch', ['good', 'bad']]);
 			assert.deepEqual(app.errors, []);
@@ -494,7 +496,8 @@ describe('in the app', () => {
 	// da-ci85o: declaring is the spec's form on Basics, and it must stay as
 	// quick as the modal it absorbed — the (+), a shape, Save: three taps,
 	// the name typed into the box the shape gave the focus (da-uipyt).
-	test('declaring a field is three taps, as it was before the tabs', async () => {
+	// Four since a shape stopped opening the keyboard (da-zz9rn): the name box is a tap of its own.
+	test('declaring a field is four taps: the (+), a shape, the name, Save', async () => {
 		await withApp(async (app) => { // a listener of its own, which `solo` would keep
 			const { page } = app;
 			await page.evaluate(() => {
@@ -503,10 +506,11 @@ describe('in the app', () => {
 			});
 			await openIt(page);
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
+			await page.locator(`${MODAL} input.field`).click();
 			await page.keyboard.type('coffee');
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
-			assert.equal(await page.evaluate(() => window.__taps), 3);
+			assert.equal(await page.evaluate(() => window.__taps), 4);
 		});
 	});
 
@@ -760,12 +764,11 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} ul.data + button.add`).click();
 			const row = page.locator(`${MODAL} ul.data li.key`).last();
 			await row.locator('input.name').fill('cups');
-			assert.deepEqual((declared(await page.locator(`${MODAL} .preview`).getAttribute('title')).spec).data_keys, ['cups'], 'a new key is required, as `-k cups` is');
+			assert.equal(await row.locator('button.eq').getAttribute('aria-pressed'), 'false', 'a new key is required, as `-k cups` is');
 			assert.equal(await row.locator('input.value').count(), 0, 'no default box before the =');
 			await row.locator('button.eq').click();
-			assert.deepEqual((declared(await page.locator(`${MODAL} .preview`).getAttribute('title')).spec).data_keys, ['cups=']);
+			assert.equal(await row.locator('button.eq').getAttribute('aria-pressed'), 'true');
 			await row.locator('input.value').fill('2');
-			assert.deepEqual((declared(await page.locator(`${MODAL} .preview`).getAttribute('title')).spec).data_keys, ['cups=2']);
 			const before = (await app.echoes()).length;
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
@@ -773,6 +776,7 @@ describe('in the app', () => {
 			const echoes = (await app.echoes()).slice(before);
 			assert.equal(echoes.length, 1, `one command: ${echoes.join(' | ')}`);
 			assert.match(echoes[0], /^setup coffee --from-json .* --track$/);
+			assert.deepEqual(declared(echoes[0]).spec.data_keys, ['cups=2']);
 			const shown = JSON.parse((await app.run(['setup', 'coffee', '--json'])).stdout);
 			assert.deepEqual(shown.keys, [{ name: 'cups', kind: 'default', value: '2', in_slug: false }]);
 
@@ -905,11 +909,6 @@ describe('in the app', () => {
 				await rows.last().locator('input.name').fill(name);
 			}
 			const modes = () => rows.locator('.mode').allInnerTexts();
-			/** Where the preview's spec puts the keys and the rest of the line. */
-			const routes = async () => {
-				const spec = declared(await page.locator(`${MODAL} .preview`).getAttribute('title')).spec;
-				return [spec.id_keys, spec.data_keys, spec.remainder, spec.string_remainder, spec.comment_remainder];
-			};
 			assert.deepEqual(await modes(), ['-K', '-K', '-K']);
 			assert.match(await rows.first().locator('.line').innerText(), /id/);
 			await rows.nth(1).locator('.mode').click(); // -R
@@ -917,14 +916,19 @@ describe('in the app', () => {
 			assert.match(await rows.nth(1).locator('.line').innerText(), /rest of the line, as a list/);
 			assert.equal(await rows.nth(1).locator('button.eq').count(), 0, 'the rest of the line has no default');
 			await rows.nth(1).locator('.mode').click(); // -SR
-			assert.deepEqual(await routes(), [['id', 'notes'], [], 'title', true, undefined]);
+			assert.deepEqual(await modes(), ['-K', '-SR', '-K']);
 			for (let i = 0; i < 3; i++) await rows.nth(2).locator('.mode').click(); // -K → -C, which -SR gives up
 			assert.deepEqual(await modes(), ['-K', '-k', '-C']);
 			assert.equal(await rows.nth(1).locator('.line').count(), 0, 'plain -k has no line');
 			assert.equal(await rows.nth(2).locator('input.name').inputValue(), 'comment');
-			assert.deepEqual(await routes(), [['id'], ['title'], undefined, undefined, true]);
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator(`${MODAL} h2`).waitFor();
+			// Where the saved spec puts the keys and the rest of the line.
+			const sent = declared((await app.echoes()).at(-1)).spec;
+			assert.deepEqual(
+				[sent.id_keys, sent.data_keys, sent.remainder, sent.string_remainder, sent.comment_remainder],
+				[['id'], ['title'], undefined, undefined, true]
+			);
 			const spec = JSON.parse((await app.run(['setup', 'book', '--json'])).stdout);
 			assert.equal(spec.comment_remainder, true);
 			assert.equal((await app.run(['add', 'book', 'dune', 'Dune', 'a', 'great', 'read'])).code, 0);

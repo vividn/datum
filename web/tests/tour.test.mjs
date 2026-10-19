@@ -83,9 +83,10 @@ describe('the first field\'s tour', () => {
 
 				// A second field: saved, and no tour.
 				await page.evaluate(() => window.datum.shell.activate(1));
-				await page.locator('[data-widget="setup"] .chips button.new').click();
+				await page.locator('[data-widget="setup"] button.pick').click();
+				await page.locator('dialog.sheet[data-picker] button.new').click();
 				await make(page, 'tea', 'occur');
-				await page.locator('[data-widget="setup"] .chips [data-chip="tea"][aria-current="true"]').waitFor();
+				await page.locator('[data-widget="setup"] h2', { hasText: 'tea' }).waitFor();
 				await app.idle();
 				assert.equal(await page.locator('.tour').count(), 0);
 				assert.equal(await front(page), 'setup');

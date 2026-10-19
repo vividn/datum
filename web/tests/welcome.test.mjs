@@ -73,7 +73,7 @@ describe('a first visit', () => {
 				await until(() => front(page), ([name]) => name === 'setup');
 				assert.deepEqual(await front(page), ['setup', 'setup']);
 				// The setup widget, on a new field.
-				await page.locator('.host.setup button.new[aria-current="true"]').waitFor();
+				await page.locator('.host.setup .field-form input.field').waitFor();
 				assert.deepEqual(await rootNames(page), FIRST);
 
 				await page.locator('.root-bar [role="tab"]', { hasText: exactly('collect') }).click();
@@ -302,7 +302,7 @@ describe('a device that has been here', () => {
 			await page.evaluate(() => window.datum.shell.open('welcome'));
 			await page.getByRole('button', { name: 'Setup', exact: true }).click();
 			// A desktop's place is a modal (da-jozgv); the tabs do not move.
-			await page.locator('dialog.sheet[data-place="setup"] button.new[aria-current="true"]').waitFor();
+			await page.locator('dialog.sheet[data-place="setup"] .field-form input.field').waitFor();
 			assert.deepEqual(await rootNames(page), ['main', 'welcome']);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);

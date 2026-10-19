@@ -7,18 +7,22 @@
 	can switch the field you're editing inside of it more easy and
 	intuitive … It should also be clearer what "field" actually is».
 
-	So, top to bottom: what a field IS, in one sentence, always; a row of
-	chips, «+ new field» first and then every tracked field in its own
-	colour and glyph, the one being edited marked, narrowed by typing once
-	there are more than a glance takes in; and the form
-	($lib/FieldForm.svelte) for whichever is chosen. With no fields the row
-	is «+ new field» alone and the form is its name box and the examples.
+	So, top to bottom: what a field IS, in one sentence, always; and the form
+	($lib/FieldForm.svelte) for whichever is chosen. Beside its `field:` line,
+	once there is a field, «fields» opens a sheet of every tracked field in
+	its own colour and glyph, the one being edited marked, narrowed by typing
+	once there are more than a glance takes in. One word, vividn on #944:
+	«"edit existing field" takes up an enormous amount of space. maybe just
+	have it be "fields"». There is no «+ new field» line (da-zz9rn), vividn, 2026-10-19: «The (+ new field)
+	button at the top is confusing, especially when this is the very first
+	field being added»: on a field, the sheet's first entry is the way back
+	to a new one, since a setup tab has no (+) of its own.
 
 	Which field is `editing` ($lib/fieldWidget.ts), one store for every copy
 	of the widget, so anything that opens it on a field has one place to
 	say so. A field pill minted while this is on the page says so too: a
-	hold on a field in the fields widget brings that field here. A chip
-	asks first where the form in hand has edits nobody saved.
+	hold on a field in the fields widget brings that field here. A field
+	picked asks first where the form in hand has edits nobody saved.
 
 	Save on a new field runs its one command (da-2pbvd) and STAYS, on the
 	field it made — but for the person's first, which goes on to the tour of
@@ -30,12 +34,14 @@
 	import { browser } from '$app/environment';
 	import FieldForm from '$lib/FieldForm.svelte';
 	import Pane from '$lib/Pane.svelte';
+	import { act } from '$lib/act.js';
 	import { fieldPill } from '$lib/bar.js';
 	import { specShowArgv } from '$lib/calls.js';
 	import { confirm } from '$lib/confirm.js';
 	import type { FieldButton } from '$lib/fields.js';
 	import { answerField, editing } from '$lib/fieldWidget.js';
 	import { run } from '$lib/run.js';
+	import Sheet from '$lib/Sheet.svelte';
 	import { begin } from '$lib/tour.js';
 	import { VERBS, type Save, type Spec, type Verb } from '$lib/track.js';
 	import { fields, press } from './engine.js';
@@ -49,7 +55,8 @@
 	let spec: Spec | null | undefined;
 	/** Bumped by every read, so the form is drawn afresh from it. */
 	let read = 0;
-	/** What the chips are narrowed to. */
+	/** Whether the sheet of fields is open, and what it is narrowed to. */
+	let picking = false;
 	let find = '';
 	/** Whether the form holds edits nobody saved (`dirty`, FieldForm.svelte). */
 	let dirty = false;
@@ -75,9 +82,10 @@
 		read++;
 	}
 
-	/** A chip's press: to `field`, once the reader agrees to lose what the form holds unsaved. */
+	/** A field picked: to `field`, once the reader agrees to lose what the form holds unsaved; the sheet stays open on a no. */
 	async function go(field: string): Promise<void> {
 		if (dirty && !(await confirm(`Leave ${$editing.field || 'the new field'} without saving what you changed?`, 'leave'))) return;
+		picking = false;
 		$editing = { field };
 	}
 
@@ -104,10 +112,35 @@
 <Pane title="setup">
 	<div class="field">
 		<p class="what">A field is one thing you track: mood, coffee, sleep. Each time you log it, that's an entry.</p>
+		{#if spec !== undefined}
+			{#key read}
+				<FieldForm
+					field={$editing.field}
+					verb={$editing.verb ?? null}
+					{spec}
+					ignored={$fields.filter((f) => f.ignored).map((f) => f.field)}
+					taken={$fields.map((f) => f.field)}
+					bind:dirty
+					on:close={(e) => close(e.detail)}
+				>
+					<svelte:fragment slot="pick">
+						{#if $editing.field !== '' || tracked.length > 0}
+							<button type="button" class="pick" use:act={'open'} aria-haspopup="dialog" on:click={() => ((find = ''), (picking = true))}
+								>fields</button
+							>
+						{/if}
+					</svelte:fragment>
+				</FieldForm>
+			{/key}
+		{/if}
+	</div>
+	<Sheet title="fields" open={picking} onclose={() => (picking = false)} data-picker>
+		{#if tracked.length > 6}
+			<input class="find" bind:value={find} placeholder="find" aria-label="find a field" spellcheck="false" autocapitalize="none" />
+		{/if}
 		<div class="chips" role="group" aria-label="fields">
-			<button type="button" class="new" aria-current={$editing.field === ''} on:click={() => go('')}>+ new field</button>
-			{#if tracked.length > 6}
-				<input class="find" bind:value={find} placeholder="find" aria-label="find a field" spellcheck="false" autocapitalize="none" />
+			{#if $editing.field !== ''}
+				<button type="button" class="new" on:click={() => go('')}>+ new field</button>
 			{/if}
 			{#each tracked.filter((f) => f.field.toLowerCase().includes(find.trim().toLowerCase())) as f (f.field)}
 				<button
@@ -119,20 +152,7 @@
 				>
 			{/each}
 		</div>
-		{#if spec !== undefined}
-			{#key read}
-				<FieldForm
-					field={$editing.field}
-					verb={$editing.verb ?? null}
-					{spec}
-					ignored={$fields.filter((f) => f.ignored).map((f) => f.field)}
-					taken={$fields.map((f) => f.field)}
-					bind:dirty
-					on:close={(e) => close(e.detail)}
-				/>
-			{/key}
-		{/if}
-	</div>
+	</Sheet>
 </Pane>
 
 <style>
@@ -148,16 +168,13 @@
 		color: var(--quiet);
 	}
 
-	/* Three rows of chips at most, then the row scrolls: the form keeps its room however many fields there are. */
 	.chips {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.3rem;
-		flex: none;
-		max-block-size: 6rem;
-		overflow: auto;
 	}
 
+	.pick,
 	.chips button,
 	.find {
 		box-sizing: border-box;
@@ -170,8 +187,15 @@
 		font: inherit;
 	}
 
+	.pick,
 	.chips button {
 		cursor: pointer;
+	}
+
+	.pick {
+		flex: none;
+		border-color: var(--rule);
+		font-size: 0.75rem;
 	}
 
 	.chips span {
@@ -189,6 +213,8 @@
 	}
 
 	.find {
-		inline-size: 6rem;
+		inline-size: 100%;
+		margin-block-end: 0.5rem;
+		border-radius: 4px;
 	}
 </style>
