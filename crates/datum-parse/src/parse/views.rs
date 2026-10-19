@@ -215,6 +215,15 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
                 out.surround = Some(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("ahead") => {
+                let (v, ni) = take_value(tail, i, None, "--ahead")?;
+                out.ahead = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("ahead", v) => {
+                out.ahead = Some(v.to_string());
+                i += 1;
+            }
             FlagSplit::Long("width") => {
                 let (v, ni) = take_value(tail, i, None, "--width")?;
                 out.width = Some(parse_f64(v, "--width")?);

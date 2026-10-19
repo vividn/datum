@@ -105,7 +105,9 @@ export function stampLabel(date: Date, now: Date): string {
 /**
  * Ten seconds, counted — one tick on each wall-clock ten-second boundary.
  *
- * What nowview hangs off (da-fprk0), and the one timer under `minute`.
+ * What nowview hung off (da-fprk0) — its snapshot still does; a window is
+ * slid along with the clock by its widget since da-hklaz — and the one
+ * timer under `minute`.
  * vividn wanted to «watch time pass smoothly in the nowview without needing
  * to enter in more data», and its default 30 minutes across a pane is a
  * pixel every couple of seconds, so a minute's step is a jump. A run of

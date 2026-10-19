@@ -21,7 +21,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
-import { PHONE, activeTab, inRoom, maximizeButton, pane, pickOption, settled, swipe } from './support/layout.mjs';
+import { PHONE, activeTab, inRoom, maximizeButton, pane, pickOption, settled, swipe, toggleOption } from './support/layout.mjs';
 import { drag, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
@@ -93,9 +93,13 @@ const geometry = (page, scope = NOWVIEW) =>
 		const [drawnLo, drawnHi] = [px(num('data-lo')), px(num('data-hi'))];
 		const at = (x) => from + ((x - drawnLo) / (drawnHi - drawnLo)) * (to - from);
 		// The WINDOW: the picture is drawn past its box either side
-		// (`--surround`, da-61nm8), and slid when a pan stays inside it.
+		// (`--surround`, da-61nm8), and slid when a pan stays inside it. A
+		// picture drawn AHEAD of now (`--ahead`, da-hklaz) draws on past its
+		// now-line, behind it, so on now the window ends at that line.
 		const frame = svg.parentElement.getBoundingClientRect();
-		const [lo, hi] = [Math.max(drawnLo, frame.left), Math.min(drawnHi, frame.right)];
+		const ahead = svg.querySelector('.flow') && svg.querySelector('.current-time-line')?.getAttribute('data-now');
+		const end = ahead ? px(Number(ahead)) : Infinity;
+		const [lo, hi] = [Math.max(drawnLo, frame.left), Math.min(drawnHi, end, frame.right)];
 		const mid = (el) => {
 			const r = el.getBoundingClientRect();
 			return r.left + r.width / 2;
@@ -744,18 +748,13 @@ describe('a selection the window has left behind', () => {
 
 // ── the snapshot ───────────────────────────────────────────────────────
 
-/** `30m` down to `0` on NOWVIEW_STEPS — 30 → 20 → 15 → 10 → 5 → 0. */
-const STEPS_TO_SNAPSHOT = 5;
-
 describe('the snapshot says «a selected time, not now»', () => {
 	test('a selection crosses its chips with the white dotted line; with none, nothing is drawn', async () => {
-		await withBand(async (app) => {
+		await withBand(async (app, room) => {
 			const { page } = app;
-			const shorter = page.locator(`${NOWVIEW} button[aria-label="shorter window"]`);
-			for (let i = 0; i < STEPS_TO_SNAPSHOT; i++) {
-				await shorter.click();
-				await app.idle();
-			}
+			// The snapshot is «show history» turned off (da-hklaz).
+			await toggleOption(page, inRoom(room, 'nowview'), 'show history');
+			await app.idle();
 			await until(
 				() => page.locator(`${NOWVIEW} svg.svg .now-chunk`).count(),
 				(n) => n > 0
@@ -967,7 +966,9 @@ const vgeometry = (page) =>
 		const at = (y) => from + ((y - drawnLo) / (drawnHi - drawnLo)) * (to - from);
 		// The window, as `geometry` reads it.
 		const frame = svg.parentElement.getBoundingClientRect();
-		const [lo, hi] = [Math.max(drawnLo, frame.top), Math.min(drawnHi, frame.bottom)];
+		const ahead = svg.querySelector('.flow') && svg.querySelector('.current-time-line')?.getAttribute('data-now');
+		const end = ahead ? px(Number(ahead)) : Infinity;
+		const [lo, hi] = [Math.max(drawnLo, frame.top), Math.min(drawnHi, end, frame.bottom)];
 		const mid = (el) => {
 			const r = el.getBoundingClientRect();
 			return r.top + r.height / 2;

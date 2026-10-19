@@ -261,7 +261,9 @@ describe('the visual views', () => {
 	/** Each field's current-state chunk colour, past the now-line. */
 	const nowChunks = (svg) =>
 		Object.fromEntries(
-			[...svg.matchAll(/<g class="field" data-field="([^"]*)">(.*?)<\/g>/g)]
+			// To the next lane: a picture drawn ahead nests the lane's marks a
+			// group deeper, with the chunk after them (da-hklaz).
+			[...svg.matchAll(/<g class="field" data-field="([^"]*)">((?:(?!<g class="field").)*)/g)]
 				.map(([, field, group]) => [
 					field,
 					/<rect class="now-chunk"[^>]*fill="([^"]*)"/.exec(group)?.[1]

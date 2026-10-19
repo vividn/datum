@@ -93,6 +93,12 @@ export function wantsBox(argv: string[]): boolean {
  * the flag alone, not its value, so `--end-date 0` — today, spelled the long
  * way, which nothing in the app writes — is pinned too; nowview's `-t` only
  * when its value is not an offset (`-t -7` moves with the clock, da-5flt).
+ *
+ * And unless it is drawn AHEAD (`--ahead`, da-hklaz): that picture already
+ * holds what the next minutes look like, and its viewer slides it along
+ * with the clock and asks again only when what it drew runs out
+ * (NowviewWidget.svelte) — a run per tick would be the jump it is drawn
+ * to do away with.
  */
 const NOW_COMMANDS = new Set(['now', 'nowview', 'dayview']);
 const PINNED = /^--end-date(=|$)/;
@@ -100,6 +106,7 @@ const PINNED = /^--end-date(=|$)/;
 export function dependsOnNow(argv: string[]): boolean {
 	return (
 		NOW_COMMANDS.has(argv[0]) &&
+		!argv.includes('--ahead') &&
 		!argv.some(
 			(word, i) =>
 				PINNED.test(word) ||
@@ -470,16 +477,23 @@ export const NOWVIEW: PaneSpec = {
 
 /**
  * How far back the nowview widget reaches, as its − / + step it (vividn,
- * 2026-09-11): `0` is the snapshot, each field's state now and no time.
+ * 2026-09-11).
+ *
+ * There is no `0` on it any more (da-hklaz) — vividn: «don't let - go all the
+ * way to 0 on the nowview. Just keep halving the time window. Instead have
+ * a widget option that can be toggled: show history, on by default». So
+ * below 5m it halves, through the 2m and 1m «that a game requires», and the
+ * snapshot, each field's state now and no time, is the widget's `showHistory`
+ * turned off (`'0'` is still how datum is asked for it).
  */
-export const NOWVIEW_STEPS = ['0', '5m', '10m', '15m', '20m', '30m', '45m', '60m', '90m', '2h', '3h', '6h', '12h'];
+export const NOWVIEW_STEPS = ['30s', '1m', '2m', '5m', '10m', '15m', '20m', '30m', '45m', '60m', '90m', '2h', '3h', '6h', '12h'];
 export const NOWVIEW_HISTORY = '30m';
 
 /** A step of the ladder as minutes. It reads the ladder's own spellings, no more. */
 function stepMinutes(step: string): number {
-	const m = /^(\d+(?:\.\d+)?)\s*([mh])?$/.exec(step);
+	const m = /^(\d+(?:\.\d+)?)\s*([smh])?$/.exec(step);
 	if (!m) return NaN;
-	return Number(m[1]) * (m[2] === 'h' ? 60 : 1);
+	return Number(m[1]) * (m[2] === 'h' ? 60 : m[2] === 's' ? 1 / 60 : 1);
 }
 
 /**
@@ -495,18 +509,16 @@ function stepMinutes(step: string): number {
  * step it started from — a zoom is not a ratchet, and the re-ask a
  * quarter-turn of the fingers would cost is not made.
  *
- * The snapshot has no span to divide, so it stands in at half the shortest
- * window: one pinch out off `0` reaches 5m, and one pinch in off 5m
- * reaches `0`.
+ * Past either end it stays at that end: there is no snapshot on the ladder
+ * to pinch into (da-hklaz).
  */
 export function zoomHistory(history: string, scale: number): string {
 	const minutes = NOWVIEW_STEPS.map(stepMinutes);
 	const from = stepMinutes(NOWVIEW_STEPS.includes(history) ? history : NOWVIEW_HISTORY);
-	const target = (from || minutes[1] / 2) / Math.max(scale, 0.001);
-	if (target < minutes[1] / 2) return NOWVIEW_STEPS[0];
-	let best = 1;
+	const target = from / Math.max(scale, 0.001);
+	let best = 0;
 	const off = (i: number) => Math.abs(Math.log(minutes[i] / target));
-	for (let i = 2; i < minutes.length; i++) if (off(i) < off(best)) best = i;
+	for (let i = 1; i < minutes.length; i++) if (off(i) < off(best)) best = i;
 	return NOWVIEW_STEPS[best];
 }
 
@@ -518,7 +530,10 @@ export function zoomHistory(history: string, scale: number): string {
  *
  * With a window's worth more drawn either side of it, past the picture's
  * box (`--surround`): a pan of a whole width or a zoom out a step shows
- * what is there before datum is asked again (da-61nm8).
+ * what is there before datum is asked again (da-61nm8). And on now, a
+ * window's worth more drawn AHEAD of it, behind the now line (`--ahead`),
+ * which the widget slides along with the clock (da-hklaz). `0` is the
+ * snapshot, which has no time to draw past.
  */
 export const nowviewSpec = (history: string, at?: string, vertical = false): PaneSpec => ({
 	...NOWVIEW,
@@ -529,7 +544,7 @@ export const nowviewSpec = (history: string, at?: string, vertical = false): Pan
 		history,
 		'--surround',
 		history,
-		...(at ? ['-t', at] : []),
+		...(at ? ['-t', at] : history === '0' ? [] : ['--ahead', history]),
 		...(vertical ? ['--orientation', 'vertical'] : [])
 	]
 });

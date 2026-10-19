@@ -131,6 +131,16 @@ fn drawn_extent(layout: &DayviewLayout) -> f64 {
         .fold(layout.time_axis_extent, f64::max)
 }
 
+/// Where the axis strip's baseline and labels end: what is drawn, but not
+/// what a flowing picture draws ahead behind its now-line.
+fn axis_end(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>) -> f64 {
+    if opts.flow {
+        layout.time_axis_extent
+    } else {
+        drawn_extent(layout)
+    }
+}
+
 /// `day`'s now chunk, or `None` when it draws no now strip. The snapshot,
 /// with no time axis, is all strip and no gap.
 pub(crate) fn now_chunk(layout: &DayviewLayout, day: &RenderedDay) -> Option<NowChunk> {
@@ -177,6 +187,39 @@ pub struct DayviewSvgOpts<'a> {
     /// name. Only the day carrying the now-line gets them; a field absent
     /// from the slice leaves its strip empty.
     pub right_panel_fills: &'a [RightPanelFill],
+    /// The picture is slid along with the clock by its viewer (nowview's
+    /// `--ahead`, da-hklaz): each lane's blocks and dots are drawn in a
+    /// `.flow` group, clipped at the now-line so what is drawn ahead of now
+    /// waits behind it, and the now strip outside it, where it stays.
+    pub flow: bool,
+    /// Instants marked as they flow past (`flow` only): a dim dashed line
+    /// across the bands and its label on the axis, in a `.flow` group too.
+    pub flow_marks: &'a [FlowMark],
+}
+
+/// An instant a flowing picture marks: nowview's whole minutes, `12:25`.
+#[derive(Debug, Clone)]
+pub struct FlowMark {
+    pub ms: i64,
+    pub label: String,
+}
+
+/// The clip a flowing picture's `.flow` groups are drawn under, and its id:
+/// everything before the now-line, which the clip does not move with.
+///
+/// The id is the clip's own geometry, so two pictures inlined in one page
+/// that share an id share the clip too.
+fn flow_clip(layout: &DayviewLayout, geom: &PlotGeom, now: f64) -> (String, String) {
+    const FAR: f64 = 1e5;
+    let (tag, x, y, w, h) = match layout.orientation {
+        Orientation::Horizontal => ('x', -FAR, -FAR, FAR + geom.data_x + now, 2.0 * FAR),
+        Orientation::Vertical => ('y', -FAR, -FAR, 2.0 * FAR, FAR + geom.data_y + now),
+    };
+    let id = format!("flow-past-{tag}{}", (now * 100.0).round() as i64);
+    let clip = format!(
+        r#"<clipPath id="{id}"><rect x="{x}" y="{y}" width="{w}" height="{h}"/></clipPath>"#
+    );
+    (id, clip)
 }
 
 /// SVG (x, y) origin of the data-area within the plot, plus the cross-axis
@@ -239,6 +282,16 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
     let mut icons: HashSet<&str> = HashSet::new();
     let mut hatched = false;
     let geom = PlotGeom::new(layout);
+    let flow_now = (layout.days.iter().find_map(|d| d.now_time_pos)).filter(|_| opts.flow);
+    let flow_open = match flow_now {
+        Some(now) => {
+            let (id, clip) = flow_clip(layout, &geom, now);
+            defs.push_str(&clip);
+            format!(r#"<g clip-path="url(#{id})"><g class="flow">"#)
+        }
+        None => String::new(),
+    };
+    let flow_close = if flow_now.is_some() { "</g></g>" } else { "" };
 
     // The picture is pressed and tapped, not copied: none of its text — a
     // point's symbol least of all — is selectable, and a long press raises
@@ -375,6 +428,44 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     r#"<g class="field" data-field="{f}">"#,
                     f = escape_xml(&field.field),
                 );
+                // The reserved strip beyond the now-line: the lane running on
+                // in whatever state it is in now (da-nk84). Painted with the
+                // field's blocks so gridlines and the now-line still sit over
+                // it, and positioned through `block_rect` so it follows the
+                // orientation like any other block.
+                // A flowing picture draws it after the lane's dots, outside
+                // the group that moves.
+                let mut strip = String::new();
+                let chunk = now_chunk(layout, day).filter(|c| {
+                    (span.time_offset..=span.time_offset + span.time_extent).contains(&c.now)
+                });
+                if let Some(c) = chunk {
+                    if let Some(pf) = opts
+                        .right_panel_fills
+                        .iter()
+                        .find(|r| r.field == field.field)
+                    {
+                        push_fill(
+                            &mut strip,
+                            &mut defs,
+                            &mut patterns,
+                            "now-chunk",
+                            &pf.fill,
+                            "rect",
+                            &block_rect(
+                                layout,
+                                &geom,
+                                day.day_offset + field.cross_offset,
+                                field.cross_extent,
+                                c.from,
+                                c.to - c.from,
+                            ),
+                            field.cross_extent,
+                            &now_chunk_close(pf.id.as_deref()),
+                        );
+                    }
+                }
+                out.push_str(&flow_open);
                 for b in field.blocks.iter().filter(|b| b.span == si) {
                     let (tag, shape) = block_shape(layout, &geom, day, field, span, b);
                     push_fill(
@@ -396,39 +487,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         ),
                     );
                 }
-                // The reserved strip beyond the now-line: the lane running on
-                // in whatever state it is in now (da-nk84). Painted with the
-                // field's blocks so gridlines and the now-line still sit over
-                // it, and positioned through `block_rect` so it follows the
-                // orientation like any other block.
-                let chunk = now_chunk(layout, day).filter(|c| {
-                    (span.time_offset..=span.time_offset + span.time_extent).contains(&c.now)
-                });
-                if let Some(c) = chunk {
-                    if let Some(pf) = opts
-                        .right_panel_fills
-                        .iter()
-                        .find(|r| r.field == field.field)
-                    {
-                        push_fill(
-                            &mut out,
-                            &mut defs,
-                            &mut patterns,
-                            "now-chunk",
-                            &pf.fill,
-                            "rect",
-                            &block_rect(
-                                layout,
-                                &geom,
-                                day.day_offset + field.cross_offset,
-                                field.cross_extent,
-                                c.from,
-                                c.to - c.from,
-                            ),
-                            field.cross_extent,
-                            &now_chunk_close(pf.id.as_deref()),
-                        );
-                    }
+                if flow_now.is_none() {
+                    out.push_str(&std::mem::take(&mut strip));
                 }
                 for p in field.points.iter().filter(|p| p.span == si) {
                     // A dot in a lane is the lane's size (da-1v9gp).
@@ -514,6 +574,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         ),
                     };
                 }
+                out.push_str(flow_close);
+                out.push_str(&strip);
                 out.push_str("</g>");
             }
             out.push_str("</g>");
@@ -633,6 +695,10 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             r#"<line class="gridline" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="white" stroke-opacity="{op}"/>"#,
             op = opacity,
         );
+    }
+
+    if flow_now.is_some() {
+        emit_flow_marks(&mut out, layout, &geom, opts.flow_marks, &flow_open);
     }
 
     // Per-day now-lines. Emitted last so they sit above gridlines and data.
@@ -1085,6 +1151,79 @@ fn greedy_place(candidates: &[usize], slots: &[LabelSlot], lo: f64, hi: f64) -> 
     out
 }
 
+/// A flowing picture's marks (da-hklaz): a dim dashed line across the bands
+/// at each, and its label on the axis strip as the ticks' are, all in one
+/// `.flow` group under the clip, so they move with the data and wait behind
+/// the now-line.
+fn emit_flow_marks(
+    out: &mut String,
+    layout: &DayviewLayout,
+    geom: &PlotGeom,
+    marks: &[FlowMark],
+    open: &str,
+) {
+    let Some(day) = layout.days.iter().find(|d| d.now_time_pos.is_some()) else {
+        return;
+    };
+    if marks.is_empty() {
+        return;
+    }
+    let pos = |ms: i64| {
+        let s = day
+            .spans
+            .iter()
+            .find(|s| s.start_ms <= ms && ms <= s.end_ms)?;
+        let f = (ms - s.start_ms) as f64 / (s.end_ms - s.start_ms).max(1) as f64;
+        Some(s.time_offset + f * s.time_extent)
+    };
+    let size = axis_label_size(layout.orientation, layout.time_axis_height);
+    out.push_str(&open.replace(r#"class="flow""#, r#"class="flow minute-marks""#));
+    for (mark, t) in marks.iter().filter_map(|m| Some((m, pos(m.ms)?))) {
+        let (x1, y1, x2, y2, lx, ly, anchor) = match layout.orientation {
+            Orientation::Horizontal => {
+                let x = geom.data_x + t;
+                let axis = geom.data_y + geom.cross_total;
+                (
+                    x,
+                    geom.data_y,
+                    x,
+                    axis,
+                    x,
+                    axis + layout.time_axis_height,
+                    r#"text-anchor="middle""#,
+                )
+            }
+            Orientation::Vertical => {
+                let y = geom.data_y + t;
+                let x = geom.data_x;
+                (
+                    x,
+                    y,
+                    x + geom.cross_total,
+                    y,
+                    x - VERTICAL_AXIS_LABEL_INSET,
+                    y,
+                    r#"text-anchor="end" dy="0.35em""#,
+                )
+            }
+        };
+        let _ = write!(
+            out,
+            r#"<line class="minute-mark" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="white" stroke-opacity="0.35" stroke-dasharray="2,3" data-at="{at}"/>"#,
+            at = iso(mark.ms),
+        );
+        if size > 0.0 {
+            let _ = write!(
+                out,
+                r#"<text class="minute-label" x="{lx}" y="{ly}" {anchor} fill="{c}" fill-opacity="0.6" font-size="{size}" font-family="{AXIS_LABEL_FONT}">{label}</text>"#,
+                c = TEXT_COLOR,
+                label = escape_xml(&mark.label),
+            );
+        }
+    }
+    out.push_str("</g></g>");
+}
+
 fn emit_time_axis(
     out: &mut String,
     layout: &DayviewLayout,
@@ -1128,7 +1267,7 @@ fn emit_time_axis(
     let placed = fit_axis_labels(
         &slots,
         0.0,
-        axis_origin + drawn_extent(layout) - opts.axis_end_reserved.max(0.0),
+        axis_origin + axis_end(layout, opts) - opts.axis_end_reserved.max(0.0),
     );
 
     match layout.orientation {
@@ -1141,7 +1280,7 @@ fn emit_time_axis(
                 x = geom.data_x,
                 y = axis_y,
                 t = TICK_LENGTH,
-                end = drawn_extent(layout) + 0.5,
+                end = axis_end(layout, opts) + 0.5,
                 c = AXIS_COLOR,
             );
             let mut placed = placed.iter().peekable();
@@ -1178,7 +1317,7 @@ fn emit_time_axis(
                 x = axis_x,
                 y = geom.data_y,
                 t = TICK_LENGTH,
-                end = drawn_extent(layout) + 0.5,
+                end = axis_end(layout, opts) + 0.5,
                 c = AXIS_COLOR,
             );
             let mut placed = placed.iter().peekable();
@@ -1634,6 +1773,7 @@ mod tests {
                     fill: BlockFill::Single("#abcdef".into()),
                     id: Some("d9plbzg641as".into()),
                 }],
+                ..Default::default()
             },
         );
         let chunk = named
@@ -1653,6 +1793,7 @@ mod tests {
                     fill: BlockFill::Single("#abcdef".into()),
                     id: None,
                 }],
+                ..Default::default()
             },
         );
         assert!(unnamed.contains(r#"class="now-chunk""#), "{unnamed}");

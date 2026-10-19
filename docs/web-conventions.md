@@ -73,8 +73,9 @@ writing it down.
    epoch: a pane folds the tick into its own request only when `dependsOnNow(argv)`
    (`$lib/panes.ts`) says the command reads the clock — `now`, `nowview`, `dayview`, unless pinned
    with an absolute `-t` or `--end-date` — and the day strip re-draws today's band and the geometry beside
-   it. nowview alone runs on `tenSeconds` instead, the same timer at ten seconds, so its now-line
-   can be watched moving (da-fprk0). The tail is not re-run and the fields widget is not rebuilt. A test that counts a drawn
+   it. nowview's snapshot alone runs on `tenSeconds` instead, the same timer at ten seconds (da-fprk0);
+   a nowview with a window is drawn `--ahead` of now and slid along with the clock by its widget, and
+   is not re-run by any tick (da-hklaz). The tail is not re-run and the fields widget is not rebuilt. A test that counts a drawn
    pane's runs over a stretch of real time therefore pins the clock (`clock:` in `withApp`): a
    fixed `Date.now()` never turns a minute, or ten seconds.
 4. **The argv that runs is the argv that is echoed.** A widget composes an argv and dispatches it;

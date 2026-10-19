@@ -28,12 +28,13 @@ use datum_core::shape::{
 use datum_core::state::FieldStateRows;
 use datum_core::time::{Zone, ZoneTimeline};
 use datum_layout::dayview::{compute_dayview, DayviewFieldInput, Orientation};
+use datum_layout::dayview_svg::FlowMark;
 use datum_layout::nowview::{
-    crop_to_window, nowview_config, surround, NowviewBlock, NowviewCurrentState, NowviewField,
-    NowviewGeometry, NowviewPoint,
+    ahead, crop_to_window, nowview_config, surround, NowviewBlock, NowviewCurrentState,
+    NowviewField, NowviewGeometry, NowviewPoint,
 };
 use datum_layout::nowview_svg::{
-    render_nowview_at_svg, render_nowview_svg, with_xml_declaration, wrap_svg_in_html,
+    render_nowview_at_svg, render_nowview_svg_with, with_xml_declaration, wrap_svg_in_html,
 };
 use datum_parse::cli::DayviewOrientation;
 use datum_parse::time::dur::parse_duration;
@@ -52,6 +53,12 @@ use crate::render::term_layout;
 /// The SVG's height when `--height` is not given: the band's cross extent,
 /// which is its width when time runs down the page (da-78evn).
 const DEFAULT_HEIGHT: f64 = 300.0;
+
+/// The longest window a picture drawn `--ahead` marks the whole minutes of
+/// (da-hklaz): vividn's «for the 1 and 2 minute nowviews, let's show the
+/// actual whole minute marks as they are flowing past», and up to the 5m
+/// beside them, where five marks still stand apart.
+const FLOW_MARKS_MINUTES: f64 = 5.0;
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
@@ -227,6 +234,9 @@ struct NowComputed {
     history_minutes: f64,
     /// The window's two ends, in ms.
     window: (i64, i64),
+    /// The whole minutes a picture drawn `--ahead` marks as they flow past,
+    /// or `None` for one that is not drawn ahead (da-hklaz).
+    flow: Option<Vec<FlowMark>>,
     geometry: NowviewGeometry,
     layout: datum_layout::dayview::DayviewLayout,
     current_states: Vec<NowviewCurrentState>,
@@ -278,21 +288,29 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
             Some(s) => duration_minutes(s).with_context(|| format!("invalid --surround: '{s}'"))?,
             None => 0.0,
         },
+        ahead_minutes: match &args.ahead {
+            Some(s) => duration_minutes(s).with_context(|| format!("invalid --ahead: '{s}'"))?,
+            None => 0.0,
+        },
     };
     // A centred window reaches half the history past the instant, and its
-    // surroundings on past that.
+    // surroundings on past that; one ending at now, what `--ahead` draws.
     let after = if geometry.centred {
         history_minutes / 2.0
     } else {
         0.0
     };
     let (pad, pad_after) = surround(&geometry);
+    let ahead = ahead(&geometry);
     let minutes = |m: f64| chrono::Duration::milliseconds((m * 60_000.0) as i64);
-    let window_end = anchor + minutes(after + pad_after);
+    let window_end = anchor + minutes(after + pad_after + ahead);
     // The snapshot's window is an instant; a minute of lookback still
     // gives every field in a state a band for its state to be read from.
-    let lookback = history_minutes + pad + pad_after;
-    let fields = build_dayview_fields(db, window_end, lookback.max(1.0))?;
+    let lookback = history_minutes + pad + pad_after + ahead;
+    // Drawn ahead, what is open now is drawn open to the picture's end: the
+    // picture is of now for as long as nothing is logged, and a write asks
+    // for another.
+    let fields = build_dayview_fields(db, window_end, lookback.max(1.0), ahead > 0.0)?;
     let config = nowview_config(
         fields,
         anchor.timestamp_millis(),
@@ -301,8 +319,23 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     );
     let window = (
         config.days[0].start_ms + minutes(pad).num_milliseconds(),
-        config.days[0].end_ms - minutes(pad_after).num_milliseconds(),
+        config.days[0].end_ms - minutes(pad_after + ahead).num_milliseconds(),
     );
+    // Its whole minutes, in a window short enough to tell them apart.
+    let flow = (ahead > 0.0).then(|| {
+        let day = &config.days[0];
+        let marked = history_minutes <= FLOW_MARKS_MINUTES;
+        let first = day.start_ms.div_euclid(60_000) + 1;
+        let last = day.end_ms.div_euclid(60_000);
+        (first..=last)
+            .filter(|_| marked)
+            .filter_map(|m| Utc.timestamp_millis_opt(m * 60_000).single())
+            .map(|t| FlowMark {
+                ms: t.timestamp_millis(),
+                label: format_local_hh_mm(t),
+            })
+            .collect()
+    });
 
     let layout = compute_dayview(&config);
     let current_states = build_current_states(db, anchor, &layout);
@@ -313,6 +346,7 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         at,
         history_minutes,
         window,
+        flow,
         geometry,
         layout,
         current_states,
@@ -350,12 +384,13 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             args.now_label,
         )
     } else {
-        render_nowview_svg(
+        render_nowview_svg_with(
             &c.layout,
             &clock,
             &c.current_states,
             args.labels,
             args.now_label,
+            c.flow.as_deref(),
         )
     };
     let svg = crop_to_window(&svg, &c.geometry, &c.layout);
@@ -493,12 +528,19 @@ pub(crate) fn build_dayview_fields(
     db: &Db,
     end: DateTime<Utc>,
     history_minutes: f64,
+    open_to_end: bool,
 ) -> Result<Vec<DayviewFieldInput>> {
     let day_end_ms = end.timestamp_millis();
     let day_start_ms = day_end_ms - (history_minutes * 60_000.0) as i64;
     // da-pcis: a window centred on an instant can reach past now, and the
     // record holds nothing there — a state still open runs up to now.
-    let open_end_ms = day_end_ms.min(DatumTime::now().utc.timestamp_millis());
+    // Unless `open_to_end`: a picture drawn ahead of now (`--ahead`) is
+    // slid along with the clock, and what is open runs on under it.
+    let open_end_ms = if open_to_end {
+        day_end_ms
+    } else {
+        day_end_ms.min(DatumTime::now().utc.timestamp_millis())
+    };
 
     let day_start_utc = Utc
         .timestamp_millis_opt(day_start_ms)
@@ -951,6 +993,48 @@ mod tests {
         assert_eq!(second.now_ms - a.timestamp_millis(), 6 * 60_000);
     }
 
+    /// da-hklaz: `--ahead` draws a window ending at now on past it — what
+    /// is open runs to the picture's end, under the now line — and marks
+    /// the whole minutes of a short one; the JSON's window still ends at now.
+    #[test]
+    fn ahead_runs_open_states_on_and_marks_the_minutes() {
+        use datum_core::entry::{Entry, Verb};
+        use datum_parse::time::clock::{install, uninstall, MockClock};
+        let start = DatumTime::now();
+        let clock = std::sync::Arc::new(MockClock::new(start.clone()));
+        install(clock.clone());
+        let db = Db::open_in_memory().unwrap();
+        db.insert_entry(&Entry::new(
+            "focus",
+            Verb::Switch,
+            Some(JsonValue::String("deep".into())),
+            None,
+            Some(start),
+            None,
+            "test",
+        ))
+        .unwrap();
+        clock.advance(chrono::Duration::seconds(30));
+        let args = |history: &str| NowviewArgs {
+            history: Some(history.into()),
+            ahead: Some(history.into()),
+            ..NowviewArgs::default()
+        };
+        let c = compute_now(&args("1m"), &db).unwrap();
+        let wide = compute_now(&args("30m"), &db).unwrap();
+        uninstall();
+        let day = &c.layout.days[0];
+        assert_eq!(day.end_ms, c.now_ms + 60_000);
+        let focus = day.fields.iter().find(|f| f.field == "focus").unwrap();
+        assert_eq!(focus.blocks[0].end_ms, day.end_ms);
+        assert_eq!(c.window.1, c.now_ms);
+        let marks = c.flow.unwrap();
+        assert_eq!(marks.len(), 2, "two whole minutes in two minutes");
+        assert!(marks.iter().all(|m| m.ms % 60_000 == 0));
+        assert!(marks.iter().all(|m| m.label.len() == 5));
+        assert_eq!(wide.flow.map(|m| m.len()), Some(0));
+    }
+
     /// Without the `png` feature, requesting a `.png` output path must
     /// return a friendly error pointing at the missing feature, not panic.
     #[cfg(not(feature = "png"))]
@@ -1056,7 +1140,7 @@ mod tests {
             .unwrap();
         }
 
-        let fields = build_dayview_fields(&db, now, 60.0).unwrap();
+        let fields = build_dayview_fields(&db, now, 60.0, false).unwrap();
         let names: Vec<&str> = fields.iter().map(|f| f.field.as_str()).collect();
         assert!(names.contains(&"visible"), "names = {names:?}");
         assert!(
@@ -1096,7 +1180,7 @@ mod tests {
         ))
         .unwrap();
 
-        let fields = build_dayview_fields(&db, now, 30.0).unwrap();
+        let fields = build_dayview_fields(&db, now, 30.0, false).unwrap();
         let focus = fields.iter().find(|f| f.field == "focus").unwrap();
         assert!((focus.y_frac - 0.4).abs() < 1e-9);
         assert!((focus.height_frac - 0.25).abs() < 1e-9);
@@ -1131,7 +1215,7 @@ mod tests {
         ))
         .unwrap();
 
-        let fields = build_dayview_fields(&db, now, 30.0).unwrap();
+        let fields = build_dayview_fields(&db, now, 30.0, false).unwrap();
         let c = fields.iter().find(|f| f.field == "caffeine").unwrap();
         assert_eq!(c.points.len(), 1);
         assert_eq!(c.points[0].fg_color, "#643200");
@@ -1387,7 +1471,7 @@ mod tests {
         .unwrap();
 
         // history 60 min → fetch buffer 4h; the entry is at -10h.
-        let fields = build_dayview_fields(&db, now, 60.0).unwrap();
+        let fields = build_dayview_fields(&db, now, 60.0, false).unwrap();
         let mood = fields
             .iter()
             .find(|f| f.field == "mood")

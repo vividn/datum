@@ -1,12 +1,15 @@
-// The minute tick (da-r61i), and nowview's ten-second one (da-fprk0): nowview
-// and dayview are pictures of NOW.
+// The minute tick (da-r61i): dayview is a picture of NOW, and so is nowview.
 //
-// Both read the clock inside the wasm process and draw what it says — the
-// elapsed duration of an open block, the now-line — so run once by their
-// pane they show the minute they were run in and then stand still. One
-// shared minute clock ($lib/clock.ts) re-runs them on each wall-clock
-// minute, and nothing else: the tail is not a view of now and neither is
-// the widget bar.
+// dayview reads the clock inside the wasm process and draws what it says —
+// the now-line — so run once by its pane it shows the minute it was run in
+// and then stands still. One shared minute clock ($lib/clock.ts) re-runs it
+// on each wall-clock minute, and nothing else: the tail is not a view of
+// now and neither is the widget bar.
+//
+// nowview ticked too — every ten seconds (da-fprk0) — until da-hklaz drew
+// it AHEAD of now (`--ahead`) and had the widget slide it along with the
+// clock: so a tick runs no nowview at all, and what the clock does to it is
+// held to here as a slide.
 //
 // Delta-blind on purpose: what moved is read off the CLI's own attributes
 // (`data-from` / `data-to`, the now-line's x) and the runs are counted at
@@ -70,6 +73,21 @@ async function visibility(page) {
 		}, hidden);
 }
 
+/**
+ * The instant the nowview shows under its now line: the instant the CLI drew
+ * there (its day's axis read at the line's `data-now`), and as far on as
+ * the widget has slid the picture's `.flow` groups since (da-hklaz).
+ */
+const underNow = (page) =>
+	page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => {
+		const day = svg.querySelector('[data-lo]');
+		const [from, to] = [Date.parse(day.dataset.from), Date.parse(day.dataset.to)];
+		const msPerUnit = (to - from) / (Number(day.dataset.hi) - Number(day.dataset.lo));
+		const drawn = from + (Number(svg.querySelector('.current-time-line').dataset.now) - Number(day.dataset.lo)) * msPerUnit;
+		const flow = svg.querySelector('.flow');
+		return drawn - (flow ? new DOMMatrixReadOnly(getComputedStyle(flow).transform).e : 0) * msPerUnit;
+	});
+
 /** An open block's ends, as the CLI stamped them on its rect. */
 const span0 = (block) => block.evaluate((r) => [r.dataset.from, r.dataset.to]);
 
@@ -80,7 +98,7 @@ const ranOf = async (seen, name) => (await seen()).filter((argv) => argv[0] === 
 // clock in the page and the worker and moves it, which a shared app would
 // hand on to the next test already moved.
 describe('the minute tick', () => {
-	test("nowview's open block grows by a minute, with nothing written", async () => {
+	test("nowview's open block runs on under the now line: a minute slides it a minute along, and runs nothing", async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -89,35 +107,28 @@ describe('the minute tick', () => {
 				const block = page.locator(`${NOWVIEW} svg.svg rect.block[data-field="work"]`);
 				await block.waitFor();
 				// Settled first, and SEEN to be settled: a pane still finding
-				// its box re-runs on the box, and a test that read the
-				// picture that came back would be holding the tick to a run
-				// it did not start. A held clock does not settle by itself —
-				// the box arrives through a 150ms timer
+				// its box re-runs on the box. A held clock does not settle by
+				// itself — the box arrives through a 150ms timer
 				// ($lib/layout/resizing.ts) — so the clock is run out to it,
-				// well short of the minute. From here the seam is watched,
-				// and the tick's own run is the one counted below.
+				// well short of the minute.
 				await page.clock.runFor(SETTLE);
 				await app.idle();
 				const seen = await app.spyOnRunner();
 				const [from, to] = await span0(block);
-				assert.equal(Date.parse(to), AT, 'the block does not reach to now');
+				// Drawn ahead: open a window's worth past now, behind the line.
+				assert.equal(Date.parse(to), AT + 30 * MINUTE, 'the block is not drawn on past now');
+				const before = await underNow(page);
 				await app.clock.forward(MINUTE);
+				await app.idle();
 
-				const [grown, later] = await until(
-					() => span0(block),
-					([, t]) => Date.parse(t) !== Date.parse(to)
-				);
-				assert.equal(
-					(await ranOf(seen, 'nowview')).length,
-					1,
-					'the picture came from something other than the one tick'
-				);
-				assert.equal(grown, from, 'the block moved its start rather than growing');
-				assert.equal(
-					Date.parse(later) - Date.parse(to),
-					MINUTE,
-					'the open block did not grow by exactly the minute that passed'
-				);
+				// A 30-minute window is slid once a second, a fraction of a
+				// pixel each time, so `before` may be up to a second behind the
+				// clock; after the minute it is the clock's to the millisecond.
+				const after = await underNow(page);
+				assert.ok(Math.abs(after - (await page.evaluate(() => Date.now()))) < 50, 'the picture is not slid to the clock');
+				assert.ok(after - before >= MINUTE && after - before <= MINUTE + 1000, `the picture slid ${after - before}ms in a minute`);
+				assert.deepEqual(await span0(block), [from, to], 'the block was drawn again');
+				assert.equal((await ranOf(seen, 'nowview')).length, 0, 'nowview was run by the clock');
 				assert.deepEqual(app.errors, []);
 			},
 			HELD
@@ -155,27 +166,26 @@ describe('the minute tick', () => {
 		);
 	});
 
-	test("nowview's open block grows every ten seconds, with nothing written (da-fprk0)", async () => {
+	test("nowview moves on every ten seconds and more, with nothing written (da-fprk0)", async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				assert.equal((await app.run(['start', 'work', '-t', '14:50'])).code, 0);
 				await app.reload();
-				const block = page.locator(`${NOWVIEW} svg.svg rect.block[data-field="work"]`);
-				await block.waitFor();
+				await page.locator(`${NOWVIEW} svg.svg rect.block[data-field="work"]`).waitFor();
 				await page.clock.runFor(SETTLE);
 				await app.idle();
 				const seen = await app.spyOnRunner();
-				const [, to] = await span0(block);
-
-				await app.clock.forward(TEN_SECONDS);
-				const [, later] = await until(
-					() => span0(block),
-					([, t]) => Date.parse(t) !== Date.parse(to)
-				);
-				await app.idle();
-				assert.equal(Date.parse(later) - Date.parse(to), TEN_SECONDS, 'the open block did not grow by ten seconds');
-				assert.equal((await ranOf(seen, 'nowview')).length, 1, 'nowview did not run exactly once');
+				const before = await underNow(page);
+				// The beat da-fprk0 asked for, and finer: a second of clock is
+				// a second's worth of slide.
+				for (const ms of [TEN_SECONDS, 1000]) {
+					const was = await underNow(page);
+					await page.clock.runFor(ms);
+					assert.ok(Math.abs((await underNow(page)) - was - ms) < 50, `${ms}ms of clock did not slide ${ms}ms`);
+				}
+				assert.ok((await underNow(page)) > before);
+				assert.equal((await ranOf(seen, 'nowview')).length, 0, 'nowview was run by the clock');
 				// The minute has not turned: the strip keeps its picture.
 				assert.equal((await ranOf(seen, 'dayview')).length, 0, 'the strip re-drew on the beat');
 				assert.deepEqual(app.errors, []);
@@ -192,14 +202,15 @@ describe('the minute tick', () => {
 				await app.idle();
 
 				await app.clock.forward(MINUTE);
-				await until(() => ranOf(seen, 'nowview'), (ran) => ran.length > 0);
+				await until(() => ranOf(seen, 'dayview'), (ran) => ran.length > 0);
 				await app.idle();
 
-				// nowview once; dayview twice, which is today's band and the
-				// geometry beside it — the strip's other bands are finished
-				// days and keep the pictures they have, however deep the
-				// stack is. Whatever the depth, and whatever is in the tail.
-				assert.equal((await ranOf(seen, 'nowview')).length, 1, 'nowview did not run exactly once');
+				// dayview twice, which is today's band and the geometry beside
+				// it — the strip's other bands are finished days and keep the
+				// pictures they have, however deep the stack is. Whatever the
+				// depth, and whatever is in the tail. nowview not at all: it
+				// slides (da-hklaz).
+				assert.equal((await ranOf(seen, 'nowview')).length, 0, 'nowview was run by the clock');
 				assert.equal((await ranOf(seen, 'dayview')).length, 2, 'the strip re-drew more than today');
 				// The tick is not the frame's epoch: a pane whose render does
 				// not depend on now is not re-run, and the widget bar — one
@@ -226,17 +237,18 @@ describe('the minute tick', () => {
 				await app.clock.forward(MINUTE);
 				await app.idle();
 				assert.equal(
-					(await ranOf(seen, 'nowview')).length,
+					(await ranOf(seen, 'dayview')).length,
 					0,
 					'a backgrounded tab woke up to redraw a picture nobody can see'
 				);
 
 				await show(false);
-				await until(() => ranOf(seen, 'nowview'), (ran) => ran.length > 0);
+				await until(() => ranOf(seen, 'dayview'), (ran) => ran.length > 0);
 				await app.idle();
+				// Today's band and its geometry, once: one tick's worth.
 				assert.equal(
-					(await ranOf(seen, 'nowview')).length,
-					1,
+					(await ranOf(seen, 'dayview')).length,
+					2,
 					'coming back cost one run per minute away, not one run'
 				);
 				assert.deepEqual(app.errors, []);
@@ -298,12 +310,10 @@ describe('the minute tick', () => {
 				const ran = await ranOf(seen, 'nowview');
 				assert.ok(ran.length >= 1, 'neither the write nor the tick re-drew nowview');
 				assert.ok(ran.length <= 2, `${ran.length} nowview processes for a write and a tick`);
-				// And what is on screen is of the minute the tick asked for,
-				// not of the one the write was in.
-				const to = await page
-					.locator(`${NOWVIEW} svg.svg .day-data`)
-					.evaluate((g) => g.dataset.to);
-				assert.equal(Date.parse(to), AT + MINUTE, 'the picture on screen is a minute behind');
+				// And what is on screen is of the minute the clock is in, not
+				// of the one the write was in: slid there, if not drawn there.
+				await page.clock.runFor(100);
+				assert.ok(Math.abs((await underNow(page)) - (AT + MINUTE + 100)) < 1000, 'the picture on screen is a minute behind');
 				assert.deepEqual(app.errors, []);
 			},
 			HELD

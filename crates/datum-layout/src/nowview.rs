@@ -25,7 +25,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::dayview::{
-    DayviewAxisTick, DayviewConfig, DayviewDayInput, DayviewFieldInput, DayviewLayout, Orientation,
+    DayviewAxisTick, DayviewConfig, DayviewDayInput, DayviewFieldInput, DayviewLayout, DayviewSpan,
+    Orientation,
 };
 use crate::dayview_svg::{text_width, VERTICAL_AXIS_LABEL_INSET, VERTICAL_AXIS_LABEL_MAX};
 
@@ -149,7 +150,15 @@ pub struct TickConfig {
 }
 
 pub fn tick_config(history_minutes: f64) -> TickConfig {
-    if history_minutes <= 15.0 {
+    // A window of two minutes or less is ruled at its own length alone, so
+    // its far end is labelled and its whole minutes, flowing past
+    // (`--ahead`), have the axis to themselves (da-hklaz).
+    if history_minutes <= 2.0 {
+        TickConfig {
+            major_minutes: history_minutes,
+            minor_minutes: None,
+        }
+    } else if history_minutes <= 15.0 {
         TickConfig {
             major_minutes: 5.0,
             minor_minutes: None,
@@ -169,6 +178,16 @@ pub fn tick_config(history_minutes: f64) -> TickConfig {
             major_minutes: 60.0,
             minor_minutes: Some(15.0),
         }
+    }
+}
+
+/// `m` minutes as a tick spells it: whole minutes as `5m`, anything else
+/// in seconds, `30s`.
+fn relative_label(m: f64) -> String {
+    if (m - m.round()).abs() < 1e-6 {
+        format!("{}m", m.round() as i64)
+    } else {
+        format!("{}s", (m * 60.0).round() as i64)
     }
 }
 
@@ -232,7 +251,7 @@ fn ticks_spaced_for(
             ticks.push(DayviewAxisTick {
                 time_pos: pos(if sign == '-' { -m } else { m }),
                 hour: 0,
-                label: format!("{sign}{}m", m as i64),
+                label: format!("{sign}{}", relative_label(m)),
                 is_major,
             });
             m += minor;
@@ -315,6 +334,29 @@ mod tests {
         assert!((ticks.last().unwrap().time_pos - 600.0).abs() < 1e-6);
     }
 
+    /// da-hklaz: two minutes or less is ruled at its own length, a part of
+    /// a minute spelled in seconds, so the far end is labelled and the
+    /// window's whole minutes have the axis to themselves.
+    #[test]
+    fn a_short_window_rules_its_own_length() {
+        assert_eq!(
+            tick_config(2.0),
+            TickConfig {
+                major_minutes: 2.0,
+                minor_minutes: None
+            }
+        );
+        let labels = |history: f64| -> Vec<String> {
+            nowview_axis_ticks(600.0, history)
+                .into_iter()
+                .map(|t| t.label)
+                .collect()
+        };
+        assert_eq!(labels(1.0), vec!["-1m", ""]);
+        assert_eq!(labels(0.5), vec!["-30s", ""]);
+        assert_eq!(labels(5.0), vec!["-5m", ""]);
+    }
+
     #[test]
     fn axis_ticks_empty_for_zero_history() {
         assert!(nowview_axis_ticks(600.0, 0.0).is_empty());
@@ -368,6 +410,14 @@ pub struct NowviewGeometry {
     /// to the window and leaves the rest drawn outside it.
     #[serde(default)]
     pub surround_minutes: f64,
+    /// How much time to draw on past now, behind the now line, in a window
+    /// ending at now (da-hklaz): the day reaches this far, at the window's
+    /// scale, as ONE stretch running on under the now strip, so a viewer
+    /// sliding the picture along with the clock has what comes next to
+    /// reveal. Neither the canvas nor the ticks grow by it. Nothing for a
+    /// centred window or the snapshot.
+    #[serde(default)]
+    pub ahead_minutes: f64,
 }
 
 impl Default for NowviewGeometry {
@@ -381,6 +431,7 @@ impl Default for NowviewGeometry {
             centred: false,
             orientation: Orientation::Horizontal,
             surround_minutes: 0.0,
+            ahead_minutes: 0.0,
         }
     }
 }
@@ -424,19 +475,34 @@ pub fn nowview_config(
     };
     let before = history_minutes - after;
     let (pad_before, pad_after) = surround(geom);
+    let ahead = ahead(geom);
 
     // da-34w: nowview drops the date label — it's timestamp-focused, not
     // date-focused. The HH:MM clock overlay near the now-line takes its
     // place.
-    let day = DayviewDayInput {
+    let mut day = DayviewDayInput {
         date: None,
         label_lines: Vec::new(),
         start_ms: at_ms - ((before + pad_before) * 60_000.0) as i64,
-        end_ms: at_ms + ((after + pad_after) * 60_000.0) as i64,
+        end_ms: at_ms + ((after + pad_after + ahead) * 60_000.0) as i64,
         errors: Vec::new(),
         fields,
         spans: Vec::new(),
     };
+    // What is drawn ahead runs on past the axis's end at its scale: one
+    // stretch whose far end is past 1, under the now strip and beyond it,
+    // where a window holding now otherwise draws the future past the strip.
+    if ahead > 0.0 {
+        let hi = (day.end_ms - day.start_ms) as f64 / (at_ms - day.start_ms).max(1) as f64;
+        day.spans = vec![DayviewSpan {
+            start_ms: day.start_ms,
+            end_ms: day.end_ms,
+            lo: 0.0,
+            hi,
+            label: String::new(),
+            offset_s: None,
+        }];
+    }
 
     // The yellow line is now, and only now: absent when now is outside.
     // The snapshot has no axis to draw it on, and its chips — the panel
@@ -472,7 +538,10 @@ pub fn nowview_config(
         history_minutes,
     );
     // The ticks past now are drawn past the strip, as the future is.
-    let now_pos = (now_ms - day.start_ms) as f64 / (day.end_ms - day.start_ms).max(1) as f64
+    // The ticks' axis ends where the window and its surroundings do, short
+    // of what is drawn ahead.
+    let axis_end_ms = day.end_ms - (ahead * 60_000.0) as i64;
+    let now_pos = (now_ms - day.start_ms) as f64 / (axis_end_ms - day.start_ms).max(1) as f64
         * time_axis_extent_for_ticks;
     for t in ticks.iter_mut().filter(|t| t.time_pos > now_pos + 1e-9) {
         t.time_pos += now_width;
@@ -523,6 +592,16 @@ pub fn surround(geom: &NowviewGeometry) -> (f64, f64) {
         (s, s)
     } else {
         (s, 0.0)
+    }
+}
+
+/// The minutes [`NowviewGeometry::ahead_minutes`] draws past now: none for
+/// a centred window or the snapshot.
+pub fn ahead(geom: &NowviewGeometry) -> f64 {
+    if geom.centred || geom.history_minutes <= 0.0 {
+        0.0
+    } else {
+        geom.ahead_minutes.max(0.0)
     }
 }
 
@@ -689,6 +768,48 @@ mod config_tests {
             vec!["-15m", "-10m", "-5m", "", "+5m", "+10m", "+15m"]
         );
         assert!((ticks[3].time_pos - 200.0).abs() < 1e-9);
+    }
+
+    /// da-hklaz: drawn ahead, a window ending at now reaches on past it as
+    /// ONE stretch at the window's scale — its far end past the axis's, under
+    /// the strip — and neither the canvas nor the ticks move. A centred
+    /// window draws nothing ahead.
+    #[test]
+    fn ahead_is_one_stretch_on_past_now() {
+        let now = 10_000_000_i64;
+        let plain = NowviewGeometry {
+            width: Some(404.0),
+            history_minutes: 1.0,
+            surround_minutes: 1.0,
+            ..NowviewGeometry::default()
+        };
+        let ahead = NowviewGeometry {
+            ahead_minutes: 1.0,
+            ..plain
+        };
+        let before = nowview_config(Vec::new(), now, now, &plain);
+        let cfg = nowview_config(Vec::new(), now, now, &ahead);
+        assert_eq!(cfg.width, before.width);
+        assert_eq!(cfg.right_panel_width, before.right_panel_width);
+        assert_eq!(cfg.days[0].start_ms, now - 120_000);
+        assert_eq!(cfg.days[0].end_ms, now + 60_000);
+        let span = &cfg.days[0].spans[..];
+        assert_eq!(span.len(), 1);
+        assert_eq!((span[0].lo, span[0].hi), (0.0, 1.5));
+        let ticks = |c: &DayviewConfig| -> Vec<(String, f64)> {
+            (c.axis_ticks_override.clone().unwrap().into_iter())
+                .map(|t| (t.label, t.time_pos))
+                .collect()
+        };
+        assert_eq!(ticks(&cfg), ticks(&before));
+
+        let centred = NowviewGeometry {
+            centred: true,
+            ..ahead
+        };
+        let cfg = nowview_config(Vec::new(), now, now, &centred);
+        assert!(cfg.days[0].spans.is_empty());
+        assert_eq!(cfg.days[0].end_ms, now + 90_000);
     }
 
     /// da-9g3bf: a centred window holding now has the now strip at now, and

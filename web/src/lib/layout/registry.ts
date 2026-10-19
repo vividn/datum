@@ -123,7 +123,7 @@ export interface WidgetKind {
 const SVG_MARGIN_PX = 2;
 
 /**
- * How narrow nowview's snapshot (`history: '0'`) stays usable.
+ * How narrow nowview's snapshot (`showHistory: false`) stays usable.
  *
  * It was 90, for reading: «at a 92px body each chip still reads about
  * eleven characters — mood: happ, a field and the head of its state»
@@ -281,15 +281,18 @@ export const KINDS: Record<string, WidgetKind> = {
 	// How far back nowview reaches is its setting, which its − / + step
 	// (da-pcis); `at` centres it on an instant, which the time cursor
 	// overrides while it is set (NowviewWidget.svelte). `orientation` is
-	// the dayview's pivot (da-78evn).
+	// the dayview's pivot (da-78evn). `showHistory` off is the snapshot,
+	// which was the `0` at the foot of the ladder (da-hklaz) — a tree
+	// saved with that `0` is read as it (`migrated`, shell.ts).
 	nowview: {
-		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY, orientation: 'horizontal' }, [
+		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY, showHistory: true, orientation: 'horizontal' }, [
 			{
 				key: 'history',
 				label: 'history',
 				type: 'choice',
-				choices: NOWVIEW_STEPS.map((value) => ({ value, label: value === '0' ? 'now' : value }))
+				choices: NOWVIEW_STEPS.map((value) => ({ value, label: value }))
 			},
+			{ key: 'showHistory', label: 'show history', type: 'boolean' },
 			ORIENTATION
 		]),
 		component: NowviewWidget,
@@ -298,16 +301,19 @@ export const KINDS: Record<string, WidgetKind> = {
 			'Tap for a -t time pill; drag to pan; hold and drag, or drag left from now, for a span.',
 			'Hold still, or double tap, to select the entry under your finger.'
 		].join('\n'),
-		props: ({ history, at, orientation }) => ({
-			history: typeof history === 'string' ? history : NOWVIEW_HISTORY,
+		// `'0'` is read here too, not only by the migration: a session or a
+		// hand-written tree that never went through `inline` may still say it.
+		props: ({ history, showHistory, at, orientation }) => ({
+			history: typeof history === 'string' && history !== '0' ? history : NOWVIEW_HISTORY,
+			showHistory: showHistory !== false && history !== '0',
 			at: typeof at === 'string' ? at : undefined,
 			vertical: orientation === 'vertical'
 		}),
 		onChange: (settings, history) => ({ ...settings, history }),
 		// Turned on its side with the picture: the time axis wants the 160,
 		// the lanes across it the 108.
-		legible: ({ history, orientation }) => {
-			const along = history === '0' ? SNAPSHOT_WIDTH : 160;
+		legible: ({ history, showHistory, orientation }) => {
+			const along = showHistory === false || history === '0' ? SNAPSHOT_WIDTH : 160;
 			return orientation === 'vertical' ? { width: 108, height: along } : { width: along, height: 108 };
 		}
 	},

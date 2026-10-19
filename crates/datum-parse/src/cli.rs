@@ -1543,6 +1543,12 @@ pub struct NowviewArgs {
     /// box, for a viewer that pans or zooms without asking again
     /// (da-61nm8). The SVG path's alone.
     pub surround: Option<String>,
+    /// `--ahead <DUR>` — draw this much time on past now as well, behind
+    /// the now line, for a viewer that slides the picture along with the
+    /// clock instead of asking again (da-hklaz): what is open stays open to
+    /// there, and what is logged for later is drawn. A window ending at
+    /// now only; the SVG path's alone.
+    pub ahead: Option<String>,
     /// `-t/-d/-q/-y`, the shared time flags, centre the window on the instant
     /// they name instead of ending it at now; `-z` only reframes them
     /// (da-5flt). Resolved at each render, so `--watch` follows the clock.
@@ -1595,6 +1601,7 @@ impl Default for NowviewArgs {
             labels: false,
             now_label: false,
             surround: None,
+            ahead: None,
             time: TimeArgs::default(),
             width: None,
             height: None,

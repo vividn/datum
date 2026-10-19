@@ -175,7 +175,9 @@ async function drawn(app, title) {
 		// Which field is in which state now, since da-nk84: not a labelled
 		// panel row but the chunk each lane carries past the now-line, read
 		// as `field → fill`.
-		states: [...svg.matchAll(/<g class="field" data-field="([^"]*)">(.*?)<\/g>/g)]
+		// To the next lane: a picture drawn ahead nests the lane's marks a
+		// group deeper, with the chunk after them (da-hklaz).
+		states: [...svg.matchAll(/<g class="field" data-field="([^"]*)">((?:(?!<g class="field").)*)/g)]
 			.map(([, field, group]) => [
 				field,
 				/<rect class="now-chunk[^"]*"[^>]*fill="([^"]*)"/.exec(group)?.[1]

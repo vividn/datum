@@ -1,5 +1,6 @@
 // The nowview widget's − / + (da-pcis): they step how far back the picture
-// reaches, down to 0 — the snapshot — and the step is the widget's setting,
+// reaches, down to 30s and never to the snapshot (da-hklaz) — that is the
+// widget's «show history» turned off — and the step is the widget's setting,
 // kept in the draft and in a saved layout. They have no label: each one's
 // title names where it goes (da-rex1). They sit, tiny, either side of the
 // axis's far label — + before, − after (da-61nm8) — and the snapshot,
@@ -124,35 +125,36 @@ describe('the nowview widget', () => {
 		);
 	});
 
-	test('steps its window with + and −, through the seam, down to the snapshot and up to 12h', async () => {
+	test('steps its window with + and −, through the seam, halving past 5m to 30s and up to 12h, never to the snapshot', async () => {
 		await shared.room('steps', async (app) => {
 			const { page } = app;
 			assert.deepEqual(await titles(page), ['longer window (45m)', 'shorter window (20m)']);
-			await app.spyOnRunner();
+			const seen = await app.spyOnRunner();
 
 			await longer(page).click();
 			await asked(page, '45m');
 			assert.deepEqual(await titles(page), ['longer window (60m)', 'shorter window (30m)']);
 
-			// 45m → 30m, 20m, 15m, 10m, 5m, 0.
+			// 45m → 30m, 20m, 15m, 10m, 5m, then halving: 2m, 1m, 30s (da-hklaz).
 			for (let i = 0; i < 5; i++) await shorter(page).click();
 			await asked(page, '5m');
-			assert.deepEqual(await titles(page), ['longer window (10m)', 'shorter window (now)']);
-			await shorter(page).click();
-			await asked(page, '0');
-			await app.idle();
-			const snapshot = await app.paneSvg('nowview');
-			assert.ok(!snapshot.includes('tick-label') && !snapshot.includes('class="axis"'), snapshot);
-			// No axis, no steps: the way out of the snapshot is the zoom.
-			await page.locator(`${PANE} .nowview-steps`).waitFor({ state: 'detached' });
-			const box = await pictureBox(page);
-			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-			await page.keyboard.down('Control');
-			await page.mouse.wheel(0, 100);
-			await page.keyboard.up('Control');
-			await asked(page, '5m');
+			assert.deepEqual(await titles(page), ['longer window (10m)', 'shorter window (2m)']);
+			for (const [to, titled] of [
+				['2m', ['longer window (5m)', 'shorter window (1m)']],
+				['1m', ['longer window (2m)', 'shorter window (30s)']],
+				['30s', ['longer window (1m)', 'shorter window']]
+			]) {
+				await shorter(page).click();
+				await asked(page, to);
+				assert.deepEqual(await titles(page), titled);
+			}
+			assert.ok(await shorter(page).isDisabled(), '− is live at 30s');
+			assert.ok(
+				!(await seen()).some((a) => a[0] === 'nowview' && a[a.indexOf('--history') + 1] === '0'),
+				'− reached the snapshot'
+			);
 
-			for (let i = 0; i < 11; i++) await longer(page).click();
+			for (let i = 0; i < 14; i++) await longer(page).click();
 			await asked(page, '12h');
 			assert.ok(await longer(page).isDisabled(), '+ is live at 12h');
 			assert.deepEqual(await titles(page), ['longer window', 'shorter window (6h)']);

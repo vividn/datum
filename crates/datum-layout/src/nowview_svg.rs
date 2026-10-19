@@ -14,7 +14,7 @@ use std::fmt::Write;
 
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
 use crate::dayview_svg::{
-    axis_label_size, now_chunk, render_dayview_svg_with, text_width, DayviewSvgOpts,
+    axis_label_size, now_chunk, render_dayview_svg_with, text_width, DayviewSvgOpts, FlowMark,
     RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR,
 };
 use crate::nowview::NowviewCurrentState;
@@ -41,6 +41,27 @@ pub fn render_nowview_svg(
     labels: bool,
     now_label: bool,
 ) -> String {
+    render_nowview_svg_with(
+        layout,
+        current_time_label,
+        current_states,
+        labels,
+        now_label,
+        None,
+    )
+}
+
+/// [`render_nowview_svg`], drawn to be slid along with the clock when
+/// `flow` is given (`--ahead`, da-hklaz): the instants it marks as they
+/// flow past, none for a window too long to mark its minutes.
+pub fn render_nowview_svg_with(
+    layout: &DayviewLayout,
+    current_time_label: &str,
+    current_states: &[NowviewCurrentState],
+    labels: bool,
+    now_label: bool,
+    flow: Option<&[FlowMark]>,
+) -> String {
     let current_time_label = if now_label { "" } else { current_time_label };
     let fills = now_strip_fills(current_states);
     // The clock sits in the now strip; it only steals room from the tick
@@ -48,6 +69,8 @@ pub fn render_nowview_svg(
     let opts = DayviewSvgOpts {
         axis_end_reserved: clock_reserved_px(layout, current_time_label),
         right_panel_fills: &fills,
+        flow: flow.is_some(),
+        flow_marks: flow.unwrap_or_default(),
     };
     let (gutter, label_group) = label_gutter(layout, current_states, labels);
     let widened = widen_for(layout, gutter);
@@ -89,6 +112,7 @@ pub fn render_nowview_at_svg(
     let opts = DayviewSvgOpts {
         axis_end_reserved: 0.0,
         right_panel_fills: &fills,
+        ..Default::default()
     };
     let mut svg = render_dayview_svg_with(&layout, opts);
     if now_label {
@@ -1121,5 +1145,98 @@ mod tests {
         }
         // Not asked for, there is none.
         assert!(!gap_picture(false, false).1.contains("now-label"));
+    }
+
+    /// da-hklaz: drawn ahead (`--ahead`), a lane's marks are a `.flow` group
+    /// under a clip ending at the now-line — the future at the past's own
+    /// scale on past it, waiting there — and the now strip is outside the
+    /// group, where it stays as a viewer slides the group along with the
+    /// clock. The whole minutes are marked in a `.flow` group of their own,
+    /// and the axis still stops at the now-line.
+    #[test]
+    fn a_picture_drawn_ahead_flows_behind_the_now_line() {
+        use crate::dayview_svg::FlowMark;
+        use crate::nowview::{nowview_config, NowviewGeometry};
+        let now = 1_700_000_000_000_i64;
+        let min = 60_000;
+        let block = |from: i64, to: i64, c: &str| DayviewBlock {
+            start_ms: now + from * min,
+            end_ms: now + to * min,
+            fill: BlockFill::Single(c.into()),
+            state_label: Some(c.into()),
+            id: None,
+            title: None,
+        };
+        let fields = vec![DayviewFieldInput {
+            field: "mood".into(),
+            y_frac: 0.0,
+            height_frac: 1.0,
+            z_index: 0.0,
+            blocks: vec![block(-20, 0, "#abcdef"), block(2, 4, "#123456")],
+            points: vec![],
+            icon: None,
+            glyph_size: Default::default(),
+        }];
+        let geom = NowviewGeometry {
+            width: Some(404.0),
+            ahead_minutes: 5.0,
+            ..NowviewGeometry::default()
+        };
+        let layout = compute_dayview(&nowview_config(fields, now, now, &geom));
+        let states = [NowviewCurrentState {
+            field: "mood".into(),
+            state_label: Some("calm".into()),
+            colors: vec!["#abcdef".into()],
+            id: None,
+        }];
+        let marks = [FlowMark {
+            ms: now + 3 * min,
+            label: "12:03".into(),
+        }];
+        let svg = render_nowview_svg_with(&layout, "12:00", &states, false, false, Some(&marks));
+        let extent = layout.time_axis_extent;
+        let per_min = extent / 30.0;
+
+        let band = field_group(&svg, "mood");
+        assert!(
+            band.starts_with(r#"<g clip-path="url(#flow-past-"#),
+            "{band}"
+        );
+        assert!(band.contains(r#"<g class="flow">"#), "{band}");
+        let blocks = rects(&band, "block");
+        assert_eq!(blocks[0].x + blocks[0].w, extent, "{band}");
+        assert!(
+            (blocks[1].x - (extent + 2.0 * per_min)).abs() < 1e-6,
+            "{band}"
+        );
+        let after = svg.split(band.as_str()).nth(1).unwrap();
+        assert!(
+            after.starts_with(r#"</g></g><rect class="now-chunk""#),
+            "{after}"
+        );
+
+        // The clip is everything before the now-line.
+        let clip = svg.split("<clipPath").nth(1).expect("a clip");
+        let width: f64 = clip
+            .split(r#"width=""#)
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(width - 1e5, extent, "{clip}");
+
+        let marked = svg
+            .split(r#"<g class="flow minute-marks">"#)
+            .nth(1)
+            .expect("the marks");
+        assert!((num(marked, "line", "minute-mark", "x1") - (extent + 3.0 * per_min)).abs() < 1e-6);
+        assert!(marked.contains(">12:03</text>"), "{marked}");
+        assert!(svg.contains(&format!("H{}V", extent + 0.5)), "{svg}");
+
+        // Not drawn ahead, nothing flows.
+        assert!(!gap_picture(false, false).1.contains("flow"));
     }
 }

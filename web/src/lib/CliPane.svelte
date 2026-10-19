@@ -112,8 +112,9 @@
 	// until this they stood still between writes. The clock is the app's
 	// one timer ($lib/clock.ts) and every such pane shares it; a pane
 	// running anything else — the tail, a `get` — folds in a constant and
-	// so is not invalidated by the tick at all. nowview's now-line moves
-	// on a ten-second beat instead (da-fprk0), so it can be watched moving.
+	// so is not invalidated by the tick at all. nowview's snapshot moves
+	// on a ten-second beat instead (da-fprk0); a nowview with a window is
+	// drawn `--ahead` and slid by its widget, and ticks not at all (da-hklaz).
 	$: ticks = !dependsOnNow(spec.argv) ? 0 : spec.argv[0] === 'nowview' ? $tenSeconds : $minute;
 	$: request = { argv: table ? null : paneArgv(JSON.parse(words) as string[], sized), epoch, ticks };
 	$: manual = guard && writer === spec;

@@ -1,7 +1,9 @@
 <!--
 	The nowview widget (da-pcis): datum's nowview picture through a CliPane,
 	and a tiny − / + beside the axis's far label (da-ndzl) stepping how far
-	back the picture reaches — down to 0, the snapshot of each field's state.
+	back the picture reaches — down to 30s, halving past 5m through the 2m
+	and 1m a game needs, and never to the snapshot of each field's state,
+	which is `showHistory` turned off in the widget's menu (da-hklaz).
 	The window's size is written nowhere: each button's title names the step
 	it goes to (da-rex1). The step is the widget's setting, handed out with
 	`change` — and since da-vhwq that lands in THIS SESSION, not the tree:
@@ -11,7 +13,19 @@
 	layout, and only when the reader chooses it.
 
 	The snapshot draws no axis, so it has no steps: nothing lies over its
-	chips, and the way out of it is the zoom below.
+	chips, and the way out of it is the menu's «show history».
+
+	THE PICTURE FLOWS (da-hklaz). vividn: «it should already have all future
+	and past data loaded, so it's just a matter of shifting it over (could
+	this even be done in realtime without second jitters)?» So on now the
+	picture is drawn a window's worth AHEAD of now as well (`--ahead`), its
+	lanes and its whole-minute marks in `.flow` groups clipped at the now
+	line, and this slides those groups along with the clock (`flow`) — every
+	frame where a frame moves them a pixel's worth, less often where it does
+	not. datum is asked again on a write, as ever, and once half of what it
+	drew ahead is spent; never per tick (`dependsOnNow`, $lib/panes.ts).
+	Every instant read off the band below is read as the picture is drawn
+	NOW, slid by `slid`.
 
 	THE BAND IS A PLACE YOU POINT INTO (da-rskp). Four gestures live on it,
 	over a pane that swipes between tabs and a page that scrolls, so the
@@ -110,6 +124,8 @@
 	 */
 	export let vertical = false;
 	export let epoch = 0;
+	/** Whether the window reaches back at all: off is the snapshot (da-hklaz). */
+	export let showHistory = true;
 
 	const dispatch = createEventDispatcher<{ change: string }>();
 
@@ -146,7 +162,7 @@
 	 * datum for nothing. Everything else that moves the window asks.
 	 */
 	let askedFor = instant;
-	$: spec = nowviewSpec(history, askedFor, vertical);
+	$: spec = nowviewSpec(showHistory ? history : '0', askedFor, vertical);
 
 	function ask(..._because: unknown[]): void {
 		askedFor = centre?.arg;
@@ -155,7 +171,7 @@
 	}
 
 	// A new step or orientation is a new picture, of where the window is.
-	$: ask(history, vertical);
+	$: ask(history, vertical, showHistory);
 	/** The axis a drag along the band travels, for the pane's tab swipe. */
 	$: pans = vertical ? 'y' : 'x';
 	/** Whether the window has left now — and so whether a tap makes an absolute pill. */
@@ -257,11 +273,81 @@
 	/** How far the picture is slid along its axis at rest, in px: see `askedFor`. */
 	let rest = 0;
 
-	/** The instant a point on screen is, by the picture's own geometry. */
-	const instantAt = (x: number, y: number) => (axis ? instantOn(axis, along(x, y)) : NaN);
+	/** The instant a point on screen is, by the picture's own geometry, as it is slid now. */
+	const instantAt = (x: number, y: number) => (axis ? instantOn(axis, along(x, y)) + slid : NaN);
 
-	/** The window's own idea of NOW: where its span ends while it is on now. */
-	const nowMs = () => (offNow || !axis ? Date.now() : axis.to);
+	/**
+	 * The window's own idea of NOW: where its span ends while it is on now —
+	 * the now-line's instant, as far on as the picture has flowed.
+	 */
+	const nowMs = () => (offNow || !axis ? Date.now() : (drawn ? drawn.now + slid : axis.to));
+
+	/** The instant the picture on screen stops drawing what is known: its now, drawn ahead. */
+	const drawnTo = () => drawn?.now ?? axis?.to ?? NaN;
+
+	// ── the flow ───────────────────────────────────────────────────────
+
+	/**
+	 * The picture on screen, when it is drawn ahead to be slid: the instant
+	 * its now-line is, how many ms one of its user units is worth, and how
+	 * far ahead of its now it draws. Read off its own attributes — the
+	 * day's axis (`data-from` … `data-hi`) and the now-line's `data-now`.
+	 */
+	let drawn: { now: number; msPerUnit: number; ahead: number } | null = null;
+	/** How far the `.flow` groups are slid, in ms of the picture's time: 0 whenever `drawn` is null. */
+	let slid = 0;
+	/** The picture `refills` last asked to be replaced, by its now. */
+	let refilled = NaN;
+	/** Bumped to ask datum for the picture again: what it drew ahead is half spent. */
+	let refills = 0;
+	let raf: number | undefined;
+	let wait: ReturnType<typeof setTimeout> | undefined;
+
+	function readDrawn(svg: SVGSVGElement | null): typeof drawn {
+		const day = svg?.querySelector('.flow') && svg.querySelector('[data-lo]');
+		const line = svg?.querySelector('.current-time-line');
+		if (!day || !line) return null;
+		const num = (el: Element, name: string) => Number(el.getAttribute(name));
+		const [from, to] = ['data-from', 'data-to'].map((a) => Date.parse(day.getAttribute(a) ?? ''));
+		const [lo, hi, at] = [num(day, 'data-lo'), num(day, 'data-hi'), num(line, 'data-now')];
+		const msPerUnit = (to - from) / (hi - lo);
+		if (!(msPerUnit > 0) || !Number.isFinite(at)) return null;
+		const now = from + (at - lo) * msPerUnit;
+		return { now, msPerUnit, ahead: to - now };
+	}
+
+	/**
+	 * Slide the `.flow` groups to the clock, and come back when the clock
+	 * has moved them again: the next frame where a second moves them a
+	 * unit or more, a quarter of a unit's worth later where it does not — a
+	 * 12h window moves a pixel in a couple of minutes. Off now, or on a
+	 * picture not drawn ahead, nothing slides.
+	 */
+	function flow(): void {
+		if (raf !== undefined) cancelAnimationFrame(raf);
+		clearTimeout(wait);
+		raf = undefined;
+		const band = el?.querySelector<HTMLElement>('.nowview-band');
+		if (!drawn || offNow) {
+			slid = 0;
+			band?.style.removeProperty('--flow');
+			return;
+		}
+		slid = Math.max(0, Date.now() - drawn.now);
+		band?.style.setProperty('--flow', `${-slid / drawn.msPerUnit}px`);
+		if (slid > drawn.ahead / 2 && refilled !== drawn.now) {
+			refilled = drawn.now;
+			refills += 1;
+		}
+		if (drawn.msPerUnit < 1000) raf = requestAnimationFrame(flow);
+		else wait = setTimeout(flow, Math.min(drawn.msPerUnit / 4, 1000));
+	}
+
+	// Leaving now stops the slide, and the window is placed on the picture
+	// as any pan's is (`restFor`); coming back starts it. A trigger on
+	// `offNow` alone: `place` starts the loop on each picture it reads, and
+	// the loop then schedules itself for as long as there is one to slide.
+	$: offNow, flow();
 
 	/**
 	 * The gridlines' positions along the axis, as the CLI ruled them.
@@ -404,7 +490,7 @@
 
 	/** A tap: the selection lands where it fell, and the window is left alone. */
 	function tap(x: number, y: number): void {
-		const at = axis ? instantOn(axis, snapTo(along(x, y), gridlines())) : null;
+		const at = axis ? instantOn(axis, snapTo(along(x, y), gridlines())) + slid : null;
 		if (at !== null) pointAt(selection(at));
 		// The lanes the press crossed, for the fields widget to answer
 		// (da-qu16, $lib/lanes.ts): the band takes the pointer itself, so
@@ -427,11 +513,11 @@
 	 */
 	function commitPan(): void {
 		if (!axis) return drop();
-		const [lo, hi] = ends().map((p) => instantOn(axis!, p - panned));
+		const [lo, hi] = ends().map((p) => instantOn(axis!, p - panned) + slid);
 		centre = { arg: new Date((lo + hi) / 2).toISOString(), by: 'pan' };
 		rest += panned;
 		panned = 0;
-		if (lo < axis.from || hi > axis.to) ask();
+		if (lo < axis.from || hi > drawnTo()) ask();
 		else void tick().then(place);
 	}
 
@@ -680,19 +766,21 @@
 		// Read unmoved, then slid by `rest` alone: a redraw mid-gesture must
 		// not cache the gesture's own offset, which `commitPan` adds again.
 		const unmoved = svg && unmovedAxis(svg);
-		const slid = unmoved ? restFor(unmoved) : rest;
-		axis = unmoved && { ...unmoved, lo: unmoved.lo + slid, hi: unmoved.hi + slid };
+		const moved = unmoved ? restFor(unmoved) : rest;
+		axis = unmoved && { ...unmoved, lo: unmoved.lo + moved, hi: unmoved.hi + moved };
 		// What is read off the picture below is read where it will be drawn.
-		if (Math.abs(slid - rest) >= 0.5) {
-			rest = slid;
+		if (Math.abs(moved - rest) >= 0.5) {
+			rest = moved;
 			return void tick().then(place);
 		}
-		view = axis ? (ends().map((p) => instantOn(axis!, p)) as [number, number]) : null;
+		drawn = readDrawn(svg);
+		flow();
+		view = axis ? (ends().map((p) => instantOn(axis!, p) + slid) as [number, number]) : null;
 		// The window has left what the picture drew — the clock moved an
 		// on-now picture out from under it: a picture of the window, then.
 		// Asked once: `ask` makes `askedFor` the window's, and from then on
 		// this `place` and every one after it has nothing left to ask for.
-		if (view && axis && instant !== askedFor && (view[0] < axis.from - EDGE_MS || view[1] > axis.to + EDGE_MS)) ask();
+		if (view && axis && instant !== askedFor && (view[0] < axis.from - EDGE_MS || view[1] > drawnTo() + EDGE_MS)) ask();
 		// Before the early returns below: a snapshot draws no tick labels
 		// and leaves by the first of them, and a selection is drawn there
 		// too.
@@ -833,6 +921,8 @@
 	});
 
 	onDestroy(() => {
+		if (raf !== undefined) cancelAnimationFrame(raf);
+		clearTimeout(wait);
 		clearTimeout(settle);
 		clearTimeout(held);
 		listen(false);
@@ -868,7 +958,9 @@
 		on:touchmove|nonpassive={onTouchMove}
 		on:wheel|nonpassive={onWheel}
 	>
-		<CliPane {spec} {epoch} />
+		<!-- `refills` rides on the epoch: a bump re-runs the command, as a
+		     write's does, once half of what was drawn ahead is spent. -->
+		<CliPane {spec} epoch={epoch + refills} />
 	</div>
 
 	<!-- The wait's mark: a ring that closes over LONG_MS, and a dashed stem
@@ -909,7 +1001,7 @@
 				type="button"
 				class="step"
 				aria-label="shorter window"
-				title={down ? `shorter window (${down === '0' ? 'now' : down})` : 'shorter window'}
+				title={down ? `shorter window (${down})` : 'shorter window'}
 				disabled={!down}
 				on:click={() => dispatch('change', down)}>−</button
 			>
@@ -1011,6 +1103,16 @@
 	.vertical .nowview-band :global(svg.svg) {
 		transform: translateY(var(--pan)) scaleY(var(--zoom));
 		transform-origin: center var(--zoom-x);
+	}
+
+	/* The flow (da-hklaz): the lanes and the minute marks slid along with
+	   the clock, in the picture's own user units, under the clip datum put
+	   them in, which does not move. */
+	.nowview-band :global(svg.svg .flow) {
+		transform: translateX(var(--flow, 0px));
+	}
+	.vertical .nowview-band :global(svg.svg .flow) {
+		transform: translateY(var(--flow, 0px));
 	}
 	.vertical .hold-mark.held .stem {
 		left: -50vw;

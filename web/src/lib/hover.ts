@@ -156,6 +156,17 @@ function placeOf(svg: SVGSVGElement, c: Cursor) {
 		const day = at(ending);
 		return { ...day, along: day.hi - (c.rel ?? 0) * 60_000 * day.perMs };
 	}
+	// A picture drawn AHEAD of now (nowview's `--ahead`, da-hklaz) runs its
+	// day on past the line, so the line is INSIDE the day and not at its
+	// end; it stays put while the picture slides under it, and a relative
+	// selection is measured back from it all the same.
+	if (now !== null && svg.querySelector('.flow')) {
+		const ahead = days.findIndex((d) => d.hi > d.lo && d.lo <= now && now < d.hi);
+		if (ahead >= 0) {
+			const day = at(ahead);
+			return { ...day, along: now - (c.rel ?? 0) * 60_000 * day.perMs };
+		}
+	}
 	const i = days.findIndex((d) => d.from <= +c.at && +c.at < d.to && d.hi > d.lo);
 	if (i < 0) return null;
 	const day = at(i);
@@ -464,6 +475,20 @@ function bringOut(svg: SVGSVGElement | null, hids: string[]): void {
 }
 
 /**
+ * A mark's box as it is SEEN: one that flows (nowview's `--ahead`, da-hklaz)
+ * is drawn on past the now-line, where its clip hides it, and its box would
+ * take the tooltip there — so it stops at the line.
+ */
+function shownBox(mark: Element): DOMRect {
+	const box = mark.getBoundingClientRect();
+	const line = mark.closest('.flow') && mark.closest('svg')?.querySelector('.current-time-line')?.getBoundingClientRect();
+	if (!line) return box;
+	if (mark.closest('[data-axis]')?.getAttribute('data-axis') === 'y')
+		return new DOMRect(box.x, box.y, box.width, Math.max(0, Math.min(box.bottom, line.top) - box.y));
+	return new DOMRect(box.x, box.y, Math.max(0, Math.min(box.right, line.left) - box.x), box.height);
+}
+
+/**
  * The tip for the entries selected in `root`, and the box their marks
  * cover on screen; `null` when none of them is drawn here.
  *
@@ -487,7 +512,7 @@ export function selectedTip(root: ParentNode, hids: string[]): { tip: Tip; box: 
 		}))
 	);
 	if (!tip) return null;
-	const boxes = marks.map((m) => m.getBoundingClientRect());
+	const boxes = marks.map(shownBox);
 	const [left, right] = [Math.min(...boxes.map((b) => b.left)), Math.max(...boxes.map((b) => b.right))];
 	const [top, bottom] = [Math.min(...boxes.map((b) => b.top)), Math.max(...boxes.map((b) => b.bottom))];
 	return { tip, box: new DOMRect(left, top, right - left, bottom - top) };

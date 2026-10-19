@@ -310,15 +310,31 @@ const RETIRED_SETTINGS: Record<string, Record<string, unknown>> = {
 	daystrip: { dayHeight: 85 }
 };
 
+/**
+ * A setting a saved layout may carry in a form no widget reads any more,
+ * as the form it became.
+ *
+ * nowview's `history: '0'` is the one entry: the snapshot was the foot of
+ * its ladder, and is its `showHistory` turned off since da-hklaz (vividn:
+ * «don't let - go all the way to 0 on the nowview … Instead have a widget
+ * option that can be toggled: show history, on by default»). So a layout
+ * saved on `0` opens with history off, and steps from the default window
+ * when it is turned back on.
+ */
+const REWRITTEN_SETTINGS: Record<string, (settings: Record<string, unknown>) => Record<string, unknown> | null> = {
+	nowview: ({ history, ...rest }) => (history === '0' ? { ...rest, showHistory: false } : null)
+};
+
 /** A tab whose widget is a retired kind, as the kind it became — and without a retired setting. */
 const migrated = (tab: Tab): Tab => {
 	if (isSplit(tab.content)) return tab;
 	const kind = RETIRED_KINDS[tab.content.kind];
-	const content = kind === undefined ? tab.content : { ...tab.content, kind };
-	const retired = RETIRED_SETTINGS[content.kind];
-	if (!retired) return kind === undefined ? tab : { ...tab, content };
+	const named = kind === undefined ? tab.content : { ...tab.content, kind };
+	const rewritten = REWRITTEN_SETTINGS[named.kind]?.(named.settings ?? {});
+	const content = rewritten ? { ...named, settings: rewritten } : named;
+	const retired = RETIRED_SETTINGS[content.kind] ?? {};
 	const drop = Object.keys(retired).filter((key) => content.settings?.[key] === retired[key]);
-	if (drop.length === 0) return kind === undefined ? tab : { ...tab, content };
+	if (drop.length === 0) return content === tab.content ? tab : { ...tab, content };
 	const settings = { ...content.settings };
 	for (const key of drop) delete settings[key];
 	return { ...tab, content: { ...content, settings } };

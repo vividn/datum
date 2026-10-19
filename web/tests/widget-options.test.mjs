@@ -30,6 +30,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { DESK } from './support/desk.mjs';
 import { FIELD_FORM } from './support/field.mjs';
 import {
 	DESKTOP,
@@ -129,7 +130,7 @@ describe('widget options', () => {
 	test('the options are items of the name’s menu; a kind with none has none', async () => {
 		await shared.solo(async ({ page }) => {
 			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST]);
-			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history', 'orientation']);
+			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history', 'show history', 'orientation']);
 			assert.deepEqual(await linesOf(page, 'bar'), [
 				'Reset widget',
 				'the buttons stand',
@@ -181,8 +182,8 @@ describe('widget options', () => {
 		await shared.solo(async ({ page }) => {
 			assert.deepEqual(await choiceLines(page, 'bar', 'a switch is labelled with its'), ['✓ field · default', 'state']);
 			const windows = await choiceLines(page, 'nowview', 'history');
-			assert.equal(windows.length, 13, windows.join(' | '));
-			assert.equal(windows[0], 'now');
+			assert.equal(windows.length, 15, windows.join(' | '));
+			assert.deepEqual(windows.slice(0, 4), ['30s', '1m', '2m', '5m']);
 			assert.ok(windows.includes('✓ 30m · default'), windows.join(' | '));
 		});
 	});
@@ -396,6 +397,64 @@ describe('widget options', () => {
 			assert.ok(!(await tree(page)).includes('"history":"60m"'), 'the widget’s own + reached the tree');
 			assert.deepEqual(app.errors, []);
 		});
+	});
+
+	// da-hklaz: the snapshot left the foot of the ladder for a switch — vividn:
+	// «have a widget option that can be toggled: show history, on by
+	// default». Off is the snapshot, the window kept for when it comes back.
+	test('nowview: show history is a switch, on by default; off is the snapshot, on is the window again', async () => {
+		await shared.room('wo-show-history', async (app, room) => {
+			const { page } = app;
+			const nowview = inRoom(room, 'nowview');
+			const last = () =>
+				page.evaluate(() => {
+					const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
+					return argv && { history: argv[argv.indexOf('--history') + 1], ahead: argv.includes('--ahead') };
+				});
+			await app.spyOnRunner();
+			assert.equal(await optionChecked(page, nowview, 'show history'), true, 'show history is off in a fresh layout');
+			await toggleOption(page, nowview, 'show history');
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'nowview'));
+			assert.deepEqual(await last(), { history: '0', ahead: false });
+			await page.locator(`section.pane[data-pane="${nowview}"] .nowview-steps`).waitFor({ state: 'detached' });
+			await toggleOption(page, nowview, 'show history');
+			await page.waitForFunction(() => {
+				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
+				return argv?.[argv.indexOf('--history') + 1] === '30m';
+			});
+			assert.deepEqual(await last(), { history: '30m', ahead: true });
+			assert.equal(await dotted(page, room), false, 'a session setting dirtied the layout');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// A layout saved before da-hklaz on the foot of the old ladder, `0`,
+	// opens with history off — not on a window datum cannot read, and not
+	// with the switch saying on over a snapshot.
+	test('nowview: a layout saved on the old `0` opens with show history off', async () => {
+		const desk = structuredClone(DESK);
+		const visit = (node) => {
+			if (node?.kind === 'nowview') node.settings = { history: '0' };
+			for (const child of [...(node?.tabs ?? []), ...(node?.children ?? [])]) visit(child.content ?? child);
+		};
+		visit(desk.root);
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.idle();
+				assert.equal(await optionChecked(page, 'nowview', 'show history'), false);
+				assert.ok((await choiceLines(page, 'nowview', 'history')).includes('✓ 30m · default'));
+				await app.spyOnRunner();
+				await toggleOption(page, 'nowview', 'show history');
+				await page.waitForFunction(() => {
+					const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
+					return argv?.[argv.indexOf('--history') + 1] === '30m';
+				});
+				assert.equal(await dotted(page, 'main'), false, 'the migration dirtied the layout');
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...DESKTOP, desk }
+		);
 	});
 
 	// ⚠ THE DEFECT da-vhwq NAMED, driven rather than read: before it,
