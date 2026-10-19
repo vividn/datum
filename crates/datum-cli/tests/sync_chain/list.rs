@@ -53,3 +53,30 @@ fn chain_list_prints_its_instants_on_the_readers_clock() {
         "{admins}"
     );
 }
+
+/// This copy's departure is LEAVING in its own row while no member holds
+/// it, as `leave` and `status` say, and LEFT once one does (da-9bxhr).
+#[test]
+fn chain_list_says_a_departure_no_member_holds_is_pending() {
+    let (a, b) = chained();
+    b.ok(&["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"]);
+    b.fails(&["sync", "chain", "leave"], "");
+    let own_row = || {
+        let list = b.ok(&["sync", "chain", "list"]);
+        list.lines()
+            .find(|l| l.contains("(this copy)"))
+            .unwrap()
+            .to_string()
+    };
+    let row = own_row();
+    assert!(
+        row.contains("  LEAVING: signed ") && row.contains(", finishes once a member holds it"),
+        "{row}"
+    );
+    assert!(!row.contains("LEFT"), "{row}");
+    assert!(b.send(&a).0);
+    let vector = a.ok(&["sync", "pipe", "vector"]);
+    b.ok(&["sync", "record-session", &a.id(), "--vector", vector.trim()]);
+    let row = own_row();
+    assert!(row.contains("  LEFT ") && !row.contains("LEAVING"), "{row}");
+}

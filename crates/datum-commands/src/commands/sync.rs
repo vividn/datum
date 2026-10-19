@@ -1225,6 +1225,12 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     println!("sync chain {}\nadmins:", chain.id);
     print_admins(&chain);
     println!("endpoints:");
+    // This copy's own departure is pending until a member holds it, as
+    // `leave` and `status` say (da-9bxhr); another's is held here already.
+    let pending = match chain.member(&mine).is_some_and(|m| m.left.is_some()) {
+        true => db.sync_depart()?.is_some_and(|told| told.is_empty()),
+        false => false,
+    };
     // This copy's own row stays even when revoked: it says why it is out.
     let (shown, hidden): (Vec<_>, Vec<_>) = chain
         .members
@@ -1256,6 +1262,12 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 .unwrap_or_default(),
             match (m.purged.as_deref(), m.left.as_deref()) {
                 (Some(p), _) => format!("  REVERTED {}", at(p)),
+                (_, Some(l)) if pending && m.endpoint == mine => {
+                    format!(
+                        "  LEAVING: signed {}, finishes once a member holds it",
+                        at(l)
+                    )
+                }
                 (_, Some(l)) => format!("  LEFT {}", at(l)),
                 _ => revoked
                     .map(|r| format!("  REVOKED {r}"))
