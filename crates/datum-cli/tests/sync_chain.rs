@@ -3463,6 +3463,7 @@ fn a_copy_whose_only_other_is_a_filtered_reader_never_warns() {
 }
 
 mod list;
+mod orphans;
 mod purge;
 mod refused;
 mod restore;
