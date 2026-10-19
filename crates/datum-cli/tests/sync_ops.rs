@@ -1277,6 +1277,47 @@ fn a_log_where_a_seen_entry_was_moved_from_is_an_entry_of_its_own() {
     }
 }
 
+/// That coffee moved off the instant in turn, and the first moved back to
+/// it, are still two coffees on every copy (da-8mh8i): its stretch there
+/// began knowing the first, so its leaving is no meeting.
+#[test]
+fn a_log_where_a_seen_entry_was_moved_from_stays_its_own_when_both_move_again() {
+    let (x, y) = (Copy::new(), Copy::new());
+    x.ok(&["occur", "coffee", "-t", "2026-10-04 08:00", "a=1"]);
+    let first = x.hid("coffee");
+    x.ok(&["retime", &first, "-t", "2026-10-04 09:00"]);
+    x.send(&y);
+    y.ok(&["occur", "coffee", "-t", "2026-10-04 08:00", "b=2"]);
+    y.ok(&["retime", &y.hid("coffee"), "-t", "2026-10-04 10:00"]);
+    y.send(&x);
+    x.ok(&["retime", &first, "-t", "2026-10-04 08:00"]);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 2, "{}", holds(copy, "coffee"));
+    }
+}
+
+/// The same when the second coffee comes to the instant by a retime (vremya
+/// on #976): a slug's move signs all its copy held, as a create does.
+#[test]
+fn a_row_retimed_where_a_seen_entry_was_moved_from_stays_its_own() {
+    let (x, y) = (Copy::new(), Copy::new());
+    x.ok(&["occur", "coffee", "-t", "2026-10-04 08:00", "a=1"]);
+    let first = x.hid("coffee");
+    x.ok(&["retime", &first, "-t", "2026-10-04 09:00"]);
+    x.send(&y);
+    y.ok(&["occur", "coffee", "-t", "2026-10-04 07:00", "b=2"]);
+    let second = y.hid("coffee");
+    y.ok(&["retime", &second, "-t", "2026-10-04 08:00"]);
+    y.ok(&["retime", &second, "-t", "2026-10-04 10:00"]);
+    y.send(&x);
+    x.ok(&["retime", &first, "-t", "2026-10-04 08:00"]);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 2, "{}", holds(copy, "coffee"));
+    }
+}
+
 #[test]
 fn a_survivor_superseded_in_turn_hands_its_rows_to_the_new_one() {
     let (x, y, z) = (Copy::new(), Copy::new(), Copy::new());

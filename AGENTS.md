@@ -264,9 +264,10 @@ the fold's, so the letters are every copy's (da-07594): `resolve` takes
 `deleted` a key like any other); with no strategy named they keep what the entry
 shows, so a bare `resolve` settles and changes no data. Two copies' creates of
 one field at one instant are ONE entry in every arrival order (da-vkeg0): a
-create's `deps` name all its copy held, so it joins an entry that had its slug
-for a stretch whose end it never saw, and a retime of either row moves the one
-entry — a conflict only when both did.
+create's `deps` name all its copy held, as a slug's move's do, so it joins an
+entry that had its slug for a stretch whose end it never saw, begun by an op
+that never saw it (da-8mh8i), and a retime of either row moves the one entry —
+a conflict only when both did.
 
 `db restore --merge` is a sync from a copy frozen at the backup (da-4ldvb): a
 backup's entry whose slug or state's instant a live one holds gets a row with a

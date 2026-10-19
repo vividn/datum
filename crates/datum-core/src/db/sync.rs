@@ -799,10 +799,10 @@ fn push(
 ) -> Result<i64> {
     let (raw, alias_chain) =
         INVOCATION.with(|i| (i.borrow().raw.clone(), i.borrow().alias_chain.clone()));
-    // A create saw everything this copy holds: where another entry had
-    // been, and whether it had left (da-vkeg0, [`met`]). Its own endpoint is
-    // always named, so such a create is told from one signed before.
-    let of = (kind != "create").then_some(head.0);
+    // A create or a slug's move saw everything this copy holds: where another
+    // entry had been, and whether it had left ([`met`], da-vkeg0, da-8mh8i).
+    // A create always names its own endpoint, told so from one signed before.
+    let of = (kind != "create" && effect["set"].get("slug").is_none()).then_some(head.0);
     let mut deps = vector_where(conn, of)?;
     if of.is_none() {
         deps.entry(ep.id.clone()).or_insert(0);
@@ -1044,7 +1044,8 @@ fn ops_of(conn: &Connection, hid: &str) -> Result<Vec<Op>> {
 /// it, perhaps before da-m82n0 merged a kit's spec with an automatic one.
 /// 2: da-vkeg0. Two creates' agreeing value is settled by an op that saw
 /// either, and a merged entry's slug is its fold's, not its survivor's.
-pub(crate) const FOLD_RULE: u32 = 2;
+/// 3: da-8mh8i. A row that came to a create's slug having seen it is not met by it.
+pub(crate) const FOLD_RULE: u32 = 3;
 
 /// The row an entry's ops make, folded in [`Op::order`]. `base` is
 /// the row to start from when the first op is not a create.
@@ -1323,8 +1324,8 @@ pub(super) fn blockers(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
 /// own create's, then whatever its edits and those of the rows merged into
 /// it set, in fold order. A create's `deps` are all its copy held, and it
 /// waits for them, so what it saw is here before it: a merge this finds is
-/// never undone by an op arriving later. A create at an instant an entry
-/// it saw had left is an entry of its own.
+/// never undone by an op arriving later. A create where an entry it saw had
+/// left is an entry of its own, as is a row arriving having seen the create.
 fn met(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
     let ops = ops_of(conn, e.hid.as_str())?;
     // A create signed before da-vkeg0 names nothing it saw: it meets only
@@ -1357,18 +1358,17 @@ fn met(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
             );
         }
         timeline.sort_by(|a, b| a.order().cmp(&b.order()));
-        let mut at = None;
-        let mut overlap = false;
+        let (mut came, mut overlap) = (None::<&Op>, false);
         for o in &timeline {
             if o.effect.get("create").is_none() && o.effect["set"].get("slug").is_none() {
                 continue;
             }
-            if at == Some(&create.slug) && o.slug != create.slug && !create.saw(o) {
-                overlap = true;
+            if let Some(c) = came.filter(|c| c.slug == create.slug && o.slug != c.slug) {
+                overlap |= !create.saw(o) && !c.saw(create);
             }
-            at = Some(&o.slug);
+            came = came.filter(|c| c.slug == o.slug).or(Some(o));
         }
-        if overlap || at == Some(&create.slug) {
+        if overlap || came.is_some_and(|c| c.slug == create.slug) {
             out.push(r);
         }
     }
@@ -3150,8 +3150,8 @@ mod tests {
     #[test]
     fn the_fold_rule_is_fingerprinted() {
         const RECORDED: (u32, &str) = (
-            2,
-            "7e922000c35dd79549ea1a978d32963a56899978e91755b31d65a5e2ff91e1e4",
+            3,
+            "14354a4eff02e6bd173257b165f9e83484c5002253dacd6f0e14bca7277c3ae1",
         );
         const ITEMS: &[&str] = &[
             "fn fold_into",
