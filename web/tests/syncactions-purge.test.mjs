@@ -40,16 +40,19 @@ describe('`db purge --leave` in the bar', () => {
 					native.spawn(['sync', 'run']);
 					const me = JSON.parse(await cli(app, ['sync', 'status', '--json'])).this.endpoint;
 					const dialog = page.locator('dialog.confirm');
-					const said = app.submit('db purge --leave');
+					// Its echo waits on a sync that can take longer than `submit` waits (da-go39y): the output is waited on instead.
+					void app.submit('db purge --leave').catch(() => {});
 					await dialog.locator('input').fill('datum');
 					await dialog.locator('input').press('Enter');
-					await said;
-					assert.match((await app.outputs()).at(-1), /left sync chain \S+\n\s+its departure is with: /);
+					const out = await until(() => app.outputs(), (o) => /left sync chain/.test(o.at(-1) ?? ''), 90_000);
+					assert.match(out.at(-1), /left sync chain \S+\n\s+its departure is with: /);
 					assert.equal(await dialog.count(), 0);
 					const { members } = JSON.parse((await native.run(['sync', 'chain', 'list', '--json'])).stdout);
 					assert.ok(members.find((m) => m.endpoint === me).left);
 				},
-				{ prepare: relayed(relay), viewport: DESKTOP }
+				// Production's 20 s to deliver the departure, not 5: past it the page asks «purge anyway»,
+				// which a session slowed by CI's load reached (da-go39y). Nothing here waits a timeout out.
+				{ prepare: relayed(relay), viewport: DESKTOP, syncTimeout: 20 }
 			);
 		} finally {
 			await native.close();
