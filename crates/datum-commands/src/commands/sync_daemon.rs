@@ -311,7 +311,7 @@ const ASIDE: &str = "a `datum sync chain connect` or `invite` is at work on it: 
      stepping aside until it ends";
 
 /// Whether a `connect` or an `invite` holds `db`'s [`FirstSync`].
-fn in_first_sync(db: &Path) -> bool {
+pub(super) fn in_first_sync(db: &Path) -> bool {
     File::open(first_sync_lock(db))
         .is_ok_and(|f| matches!(f.try_lock_shared(), Err(TryLockError::WouldBlock)))
 }

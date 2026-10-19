@@ -1182,6 +1182,51 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
     })
 }
 
+/// What [`run_aside`]'s stop says: step aside.
+#[derive(Debug)]
+struct Aside;
+
+impl std::fmt::Display for Aside {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("stepping aside")
+    }
+}
+
+impl std::error::Error for Aside {}
+
+/// [`run`] in the foreground, stepping aside while `aside`: a `connect` or
+/// an `invite` at work on the database, which the daemon's run stops for
+/// (da-x5ynh). It unbinds, waits for it to end and binds again, so no two
+/// processes hold one endpoint key. Ctrl-C ends it waiting too.
+pub fn run_aside(db: &Db, aside: impl Fn() -> bool) -> Result<()> {
+    loop {
+        if aside() {
+            eprintln!(
+                "{} a `datum sync chain connect` or `invite` is at work on this database: stepping aside until it ends",
+                now()
+            );
+            let ended = runtime()?.block_on(async {
+                let ctrl_c = tokio::signal::ctrl_c();
+                tokio::pin!(ctrl_c);
+                let mut tick = tokio::time::interval(Duration::from_millis(500));
+                loop {
+                    tokio::select! {
+                        _ = &mut ctrl_c => return true,
+                        _ = tick.tick() => if !aside() { return false },
+                    }
+                }
+            });
+            if ended {
+                return Ok(());
+            }
+        }
+        match run(db, || if aside() { Err(Aside.into()) } else { Ok(()) }) {
+            Err(e) if e.is::<Aside>() => {}
+            done => return done,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

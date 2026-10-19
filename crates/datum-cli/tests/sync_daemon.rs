@@ -384,6 +384,44 @@ fn an_invite_moves_the_daemon_serving_the_copy_aside() {
     );
 }
 
+/// A foreground `sync run` steps aside for an invite as the daemon does
+/// (da-x5ynh), unbound until the join ends, and is up again after it.
+#[test]
+fn an_invite_moves_a_foreground_run_aside_until_it_ends() {
+    let (a, b) = (Home::new(), Home::new());
+    a.invite(&[("DATUM_SYNC_NO_DAEMON", "1")]);
+    let (port, _claim) = claim_port();
+    let bind = format!("127.0.0.1:{port}");
+    let mut run = a.spawn(&["sync", "run"], &[("DATUM_SYNC_BIND", &bind)]);
+    let err = BufReader::new(run.0.stderr.take().unwrap());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        err.lines()
+            .map_while(Result::ok)
+            .try_for_each(|l| tx.send(l))
+    });
+    let says = |what: &str| {
+        while !rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap_or_else(|_| panic!("the run saying {what:?} within 10s"))
+            .contains(what)
+        {}
+    };
+    says("is up");
+
+    let (mut inviting, out, ticket) = a.inviting(&[]);
+    says("stepping aside until it ends");
+    b.ok(&["sync", "chain", "connect", &ticket]);
+    let said: Vec<String> = out.lines().map_while(Result::ok).collect();
+    assert!(inviting.0.wait().unwrap().success(), "{said:?}");
+    assert!(
+        said.iter().any(|l| l.starts_with("added sync peer")),
+        "{said:?}"
+    );
+    says("is up");
+    assert!(run.0.try_wait().unwrap().is_none(), "the run ended");
+}
+
 #[test]
 fn status_names_a_missing_daemon_on_a_chained_copy() {
     let h = Home::new();

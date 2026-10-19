@@ -647,7 +647,15 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         #[cfg(feature = "net")]
         SyncCommand::Run => {
             db.sync_refuse_debug()?;
-            datum_sync::run(db, || Ok(()))?
+            let path = db
+                .conn()
+                .path()
+                .filter(|p| !p.is_empty())
+                .map(std::path::PathBuf::from);
+            datum_sync::run_aside(db, || {
+                path.as_deref()
+                    .is_some_and(super::sync_daemon::in_first_sync)
+            })?
         }
         #[cfg(feature = "net")]
         SyncCommand::Daemon(act) => super::sync_daemon::daemon(act)?,
