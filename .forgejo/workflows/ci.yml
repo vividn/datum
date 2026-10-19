@@ -520,6 +520,11 @@ jobs:
           /usr/bin/time -v pnpm test
         env:
           DATUM_TEST_CONCURRENCY: 4
+          # A PR skips the staging-only tests, which name the reason in its
+          # log; every push and dispatch runs them (da-v7y8x, vividn
+          # 2026-10-19: «staging only»). Today that is the double-outline
+          # sweep, `support/taps.mjs`: 151 s over the six act-taps files.
+          DATUM_TEST_PR: ${{ github.event_name == 'pull_request' && '1' || '' }}
           # Known flakes get ONE retry, logged as `RETRIED web/tests/<file>
           # (<bead>): …`; no other file is ever retried (da-8bmqe). An entry
           # needs evidence that the TEST is at fault, not the diff: a red on a

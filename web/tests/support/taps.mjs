@@ -28,12 +28,20 @@
 // Except a `+` face (da-pmmgm): it says `open` and wears none, the `+`
 // saying it already. Read here off the FACE, not off app.css's `.add`, so
 // a `+` that lost the class is named as well as a chevron that came back.
+//
+// The sweeps run on staging and main pushes, NOT on a PR (da-v7y8x, vividn
+// 2026-10-19): 151 s over the six act-taps files, and a red on staging is
+// caught within the hour and reverted. ci.yml sets `DATUM_TEST_PR=1` on a
+// pull_request run, which skips them by name, map selection or not; the
+// rest of each file (a reset's restore) runs there too.
 
 import { before, after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { changeCounter, ready, settled, sharedApp, startApp, stopApp } from './app.mjs';
 import { toggleOption } from './layout.mjs';
 import { FIXTURE, MOOD } from './fields.mjs';
+
+const sweep = process.env.DATUM_TEST_PR === '1' && 'staging-only: the double-outline sweep runs on staging and main pushes, not on a PR (da-v7y8x)';
 
 /** Every shape of field, one of them ignored (`run`, a point). */
 const SEED = [...FIXTURE, ...MOOD, 'occur run -t 0800', 'ignore run'];
@@ -303,7 +311,7 @@ export function everyButton(screen, options, must) {
 	describe(`every button at the ${screen} size`, () => {
 		const shared = sharedApp(options);
 
-		test('idle: a double outline is exactly a tap that wrote or ran, a › one that opened a modal', async () => {
+		test('idle: a double outline is exactly a tap that wrote or ran, a › one that opened a modal', { skip: sweep }, async () => {
 			const { keys, acted, wrong } = await tapAll(await shared());
 			console.log(`# ${keys.length} buttons tapped, ${acted.length} acted`);
 			assert.deepEqual(wrong, []);
@@ -313,7 +321,7 @@ export function everyButton(screen, options, must) {
 			}
 		});
 
-		test('with `occur ` on the line: the bar and the widgets it changes', async () => {
+		test('with `occur ` on the line: the bar and the widgets it changes', { skip: sweep }, async () => {
 			const within = '.prompt-bar, section.pane[data-title="fields"], section.pane[data-title="command"]';
 			const { keys, acted, wrong } = await tapAll(await shared(), 'occur ', within);
 			console.log(`# ${keys.length} buttons tapped, ${acted.length} acted`);
@@ -532,10 +540,11 @@ async function walk(app, share, depth = 3) {
  * the wrong reason.
  */
 export function everyLayer(screen, options, share, must) {
-	before(startApp);
-	after(stopApp);
-	describe(`every button in a layer at the ${screen} size, ${share} openers`, () => {
+	// The hooks inside: a skipped walk launches no browser.
+	describe(`every button in a layer at the ${screen} size, ${share} openers`, { skip: sweep }, () => {
+		before(startApp);
 		const shared = sharedApp(options);
+		after(stopApp);
 
 		test('a double outline is exactly a tap that wrote or ran, a › one that opened a modal, in every sheet, dialog and menu', async () => {
 			const app = await shared();

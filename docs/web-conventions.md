@@ -214,6 +214,12 @@ writing it down.
    "they are not important in userland". With `CI` set, `web/scripts/test.mjs` leaves those files
    out and names them (`test: skipped under CI (DEBUG widgets): …`), so a skip never reads as a
    pass; locally, or with `DATUM_TEST_DEBUG=1`, they run.
+   **The double-outline sweep is staging-only** (da-v7y8x, vividn 2026-10-19: «staging only»): the
+   tests in `tests/support/taps.mjs` that tap every button and every layer, 151 s over the six
+   `act-taps-*` files. `ci.yml` sets `DATUM_TEST_PR=1` on a pull_request run, and they are skipped
+   there by name (`# SKIP staging-only: …`), whatever the test map selects; a push to staging or
+   main, a dispatch and a `ci/**` bisect run them, and so does a local run. A red on staging is
+   reverted within the hour, as for anything else there. The rest of each file runs on a PR.
 
 ## Looks
 
