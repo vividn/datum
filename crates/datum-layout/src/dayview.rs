@@ -71,11 +71,9 @@ pub struct DayviewDayInput {
     pub start_ms: i64,
     /// Day window end (exclusive) in UTC ms.
     pub end_ms: i64,
-    /// What `datum check integrity` finds in this day (da-0lful): the
-    /// warning icon next to the date label, and a line across the day at
-    /// each instant.
-    #[serde(default)]
-    pub errors: Vec<DayviewError>,
+    /// True if this day has any unresolved conflicts (drives the warning
+    /// icon next to the date label). Source: the conflicts queue.
+    pub has_error: bool,
     /// Per-field data for this day, with positioning and colors already
     /// resolved.
     pub fields: Vec<DayviewFieldInput>,
@@ -83,30 +81,6 @@ pub struct DayviewDayInput {
     /// whole window across the whole axis.
     #[serde(default)]
     pub spans: Vec<DayviewSpan>,
-}
-
-/// An integrity finding at an instant of the day (da-0lful).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DayviewError {
-    pub time_ms: i64,
-    pub field: String,
-    /// What is wrong, in check's words: `opened while already open`.
-    pub what: String,
-}
-
-/// A [`DayviewError`] placed: where along the time axis, in which of
-/// [`RenderedDay::spans`], and where across the band the field's own
-/// track is centred — `None` when the field draws no track that day.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RenderedError {
-    pub time_ms: i64,
-    pub field: String,
-    pub what: String,
-    pub time_pos: f64,
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub span: usize,
-    /// Cross-axis pixel position within the band, and the track's extent.
-    pub track: Option<(f64, f64)>,
 }
 
 /// One stretch of a day lived at a single UTC offset (da-1v9gp).
@@ -373,9 +347,6 @@ pub struct RenderedDay {
     /// relative to the data-area origin.
     pub day_offset: f64,
     pub has_error: bool,
-    /// [`DayviewDayInput::errors`], placed.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub errors: Vec<RenderedError>,
     pub fields: Vec<RenderedField>,
     /// Time-axis pixel position of the now-line within the data area. Some
     /// only on the day whose window contains `now_ms`.
@@ -947,22 +918,6 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             });
         }
 
-        let errors = (day.errors.iter())
-            .filter_map(|e| {
-                let (span, within) = span_of(e.time_ms)?;
-                let track = (fields.iter().find(|f| f.field == e.field))
-                    .map(|f| (f.cross_offset + f.cross_extent / 2.0, f.cross_extent));
-                Some(RenderedError {
-                    time_ms: e.time_ms,
-                    field: e.field.clone(),
-                    what: e.what.clone(),
-                    time_pos: time_to_pos(within, e.time_ms),
-                    span,
-                    track,
-                })
-            })
-            .collect();
-
         // Now-line: only on the day whose window contains now_ms.
         let now = span_of(config.now_ms).map(|(i, s)| (i, time_to_pos(s, config.now_ms)));
         let now_time_pos = now.map(|(_, pos)| pos);
@@ -988,8 +943,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                 Orientation::Vertical => data_y,
             },
             day_offset,
-            has_error: !day.errors.is_empty(),
-            errors,
+            has_error: day.has_error,
             fields,
             now_time_pos,
             now_extent_far,
@@ -1056,7 +1010,7 @@ mod tests {
             label_lines: label.iter().map(|s| s.to_string()).collect(),
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![],
             spans: Vec::new(),
         }
@@ -1157,7 +1111,7 @@ mod tests {
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![],
             spans: Vec::new(),
         };
@@ -1166,7 +1120,7 @@ mod tests {
             label_lines: vec!["Tue".into()],
             start_ms: DAY_START + 24 * HOUR,
             end_ms: DAY_START + 48 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![],
             spans: Vec::new(),
         };
@@ -1196,7 +1150,7 @@ mod tests {
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![],
             spans: Vec::new(),
         };
@@ -1205,7 +1159,7 @@ mod tests {
             label_lines: vec!["Tue".into()],
             start_ms: DAY_START + 24 * HOUR,
             end_ms: DAY_START + 48 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![],
             spans: Vec::new(),
         };
@@ -1235,7 +1189,7 @@ mod tests {
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![
                 DayviewFieldInput {
                     field: "empty".into(),
@@ -1308,7 +1262,7 @@ mod tests {
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![mk_field("c", 0.9), mk_field("a", 0.1), mk_field("b", 0.5)],
             spans: Vec::new(),
         };
@@ -1335,7 +1289,7 @@ mod tests {
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![DayviewFieldInput {
                 field: "long".into(),
                 y_frac: 0.0,
@@ -1407,7 +1361,7 @@ mod tests {
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![DayviewFieldInput {
                 field: "mood".into(),
                 y_frac: 0.0,
@@ -1456,55 +1410,18 @@ mod tests {
     }
 
     #[test]
-    fn errors_are_placed_on_the_day_and_on_their_field_track() {
-        // da-0lful: a finding is placed at its instant, on its field's track
-        // when the field has one that day; one outside the day is not drawn.
+    fn has_error_propagates_to_rendered_day() {
         let mut day = empty_day(&["Mon", "Apr 27", "2026"]);
-        day.fields = vec![DayviewFieldInput {
-            field: "mood".into(),
-            y_frac: 0.5,
-            height_frac: 0.2,
-            z_index: 0.5,
-            blocks: vec![],
-            points: vec![DayviewPoint {
-                time_ms: DAY_START + 6 * HOUR,
-                fg_color: "#fff".into(),
-                state_label: None,
-                id: None,
-                title: None,
-                glyph: None,
-                icon: false,
-            }],
-            icon: None,
-            glyph_size: Default::default(),
-        }];
-        let error = |field: &str, time_ms| DayviewError {
-            time_ms,
-            field: field.into(),
-            what: "opened while already open".into(),
-        };
-        day.errors = vec![
-            error("mood", DAY_START + 6 * HOUR),
-            error("work", DAY_START + 18 * HOUR),
-            error("mood", DAY_START + 30 * HOUR),
-        ];
-        let layout = compute_dayview(&horizontal(DayviewConfig {
-            days: vec![day, empty_day(&["Tue"])],
+        day.has_error = true;
+        let cfg = horizontal(DayviewConfig {
+            days: vec![day],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
             day_height: 100.0,
             ..Default::default()
-        }));
-        let (marked, clean) = (&layout.days[0], &layout.days[1]);
-        assert!(marked.has_error && !clean.has_error);
-        let extent = layout.time_axis_extent;
-        let placed: Vec<_> = (marked.errors.iter())
-            .map(|e| (e.field.as_str(), e.time_pos / extent, e.track))
-            .collect();
-        assert_eq!(
-            placed,
-            [("mood", 0.25, Some((60.0, 20.0))), ("work", 0.75, None)]
-        );
+        });
+        let layout = compute_dayview(&cfg);
+        assert!(layout.days[0].has_error);
     }
 
     #[test]
@@ -1585,7 +1502,7 @@ mod tests {
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![DayviewFieldInput {
                 field: "long".into(),
                 y_frac: 0.0,
@@ -1653,7 +1570,7 @@ mod tests {
             label_lines: vec![],
             start_ms: DAY_START,
             end_ms: spans[spans.len() - 1].end_ms,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![DayviewFieldInput {
                 field: "sleep".into(),
                 y_frac: 0.0,

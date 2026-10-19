@@ -481,14 +481,28 @@ pub fn list_repeats(conn: &Connection) -> Result<Vec<Repeat>> {
         let rows = crate::state::FieldStateRows::from_entries(field);
         let mut changes = None;
         for entry in field {
-            let Some(new_norm) = repeated(&rows, entry) else {
+            let (Some(new_state), Some(edge)) = (entry.state.as_ref(), entry.leading_edge_utc())
+            else {
                 continue;
             };
+            // A moment of the state in force carries data, not a repeat:
+            // «ran 10k» at the end of a run (vividn, 2026-10-12, da-0sjt8).
+            if entry.dur.as_ref().is_some_and(|d| d.is_instant()) {
+                continue;
+            }
+            let probe = edge - chrono::Duration::microseconds(1);
+            let Some(prior) = rows.at(probe, Some(entry.hid.as_str())) else {
+                continue;
+            };
+            let new_norm = crate::state::normalize_state(new_state).to_json();
+            let prior_norm = crate::state::normalize_state(&prior).to_json();
+            if !states_equal_set_aware(&new_norm, &prior_norm) {
+                continue;
+            }
+            if is_open_state(&new_norm) && is_open_state(&prior_norm) {
+                continue;
+            }
             let span = (!is_close_state(&new_norm)).then(|| {
-                let edge = entry
-                    .leading_edge_utc()
-                    .expect("a repeat has a leading edge");
-                let probe = edge - chrono::Duration::microseconds(1);
                 let changes = changes.get_or_insert_with(|| rows.changes());
                 let same = |c: &&crate::state::StateChange| {
                     let state = crate::state::normalize_state(&c.state).to_json();
@@ -511,172 +525,6 @@ pub fn list_repeats(conn: &Connection) -> Result<Vec<Repeat>> {
         (e.occur_time.as_ref().map(|t| t.utc), e.slug.to_string())
     });
     Ok(hits)
-}
-
-/// The state `entry` repeats, normalized, or `None` when it is no repeat:
-/// the state its field was in just before it, `rows` being the field's.
-fn repeated(rows: &crate::state::FieldStateRows, entry: &Entry) -> Option<serde_json::Value> {
-    let (new_state, edge) = (entry.state.as_ref()?, entry.leading_edge_utc()?);
-    // A moment of the state in force carries data, not a repeat:
-    // «ran 10k» at the end of a run (vividn, 2026-10-12, da-0sjt8).
-    if entry.dur.as_ref().is_some_and(|d| d.is_instant()) {
-        return None;
-    }
-    let probe = edge - chrono::Duration::microseconds(1);
-    let prior = rows.at(probe, Some(entry.hid.as_str()))?;
-    let new_norm = crate::state::normalize_state(new_state).to_json();
-    let prior_norm = crate::state::normalize_state(&prior).to_json();
-    let both_open = is_open_state(&new_norm) && is_open_state(&prior_norm);
-    (states_equal_set_aware(&new_norm, &prior_norm) && !both_open).then_some(new_norm)
-}
-
-/// How far past a window [`findings_between`] reads for a block that
-/// begins in it: a block's `occur_time` is its END, its leading edge
-/// `occur_time - dur`. The dayview's own buffer, so a block longer than it
-/// is not found from a window holding only its start.
-const BLOCK_REACH: chrono::Duration = chrono::Duration::days(2);
-
-/// [`list_repeats`] of the entries whose leading edge is in `[from,
-/// until)`, at the cost of the window rather than the history: each
-/// field's rows are [`crate::state::FieldStateRows::load_transitions_between`],
-/// which answers there as the whole history does. The SQL reads
-/// `occur_time`, the filter the leading edge, which is `occur_time` for
-/// every shape but a block, and up to [`BLOCK_REACH`] before it for one.
-/// A span says only whether the repeat opens, not how long.
-fn repeats_between(
-    conn: &Connection,
-    from: DateTime<Utc>,
-    until: DateTime<Utc>,
-) -> Result<Vec<Repeat>> {
-    let sql = format!(
-        "SELECT * FROM entries
-         WHERE {participation}
-           AND {transitions}
-           AND occur_time >= ?1 AND occur_time <= ?2
-         ORDER BY field, {order}",
-        participation = crate::db::STATE_PARTICIPATION_SQL,
-        transitions = crate::track::NOT_A_DECLARATION_SQL,
-        order = crate::db::STATE_ORDER_OLDEST_FIRST,
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let reach = until + BLOCK_REACH;
-    let entries = stmt
-        .query_map(
-            params![from.to_rfc3339(), reach.to_rfc3339()],
-            crate::db::row_to_entry_public,
-        )?
-        .collect::<rusqlite::Result<Vec<Entry>>>()
-        .map_err(DatumError::Db)?;
-    let mut hits = Vec::new();
-    for field in entries.chunk_by(|a, b| a.field == b.field) {
-        let rows = crate::state::FieldStateRows::load_transitions_between(
-            conn,
-            &field[0].field,
-            from - chrono::Duration::seconds(1),
-            reach,
-        )?;
-        for entry in field {
-            let edge = entry.leading_edge_utc();
-            if !edge.is_some_and(|t| (from..until).contains(&t)) {
-                continue;
-            }
-            if let Some(state) = repeated(&rows, entry) {
-                hits.push(Repeat {
-                    entry: entry.clone(),
-                    // A placeholder: `findings` reads only whether it is
-                    // there, and `from` is the window's, not the repeat's.
-                    span: (!is_close_state(&state)).then_some((from, None)),
-                });
-            }
-        }
-    }
-    Ok(hits)
-}
-
-/// What `datum check integrity` reports, and so what the dayview marks
-/// (da-0lful): the pending stored warnings but a same_state_repeat, which
-/// is computed live since da-acft, and those live [`Repeat`]s.
-pub struct Pending {
-    /// A row that does not decode is its id and why, for `check` to name.
-    pub stored: Vec<std::result::Result<IntegrityWarning, (String, rusqlite::Error)>>,
-    pub repeats: Vec<Repeat>,
-}
-
-/// One of [`Pending`]'s rows where it happened: its entry's own instant
-/// (the leading edge, where a repeat is found), its field, and what is
-/// wrong in check's words.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Finding {
-    pub at: DateTime<Utc>,
-    pub field: String,
-    pub what: &'static str,
-}
-
-/// [`Pending`], read.
-pub fn pending(conn: &Connection) -> Result<Pending> {
-    Ok(Pending {
-        stored: pending_stored(conn)?,
-        repeats: list_repeats(conn)?,
-    })
-}
-
-/// [`Pending::findings`] in `[from, until)`, read at the cost of the
-/// window: the dayview asks it of every picture.
-pub fn findings_between(
-    conn: &Connection,
-    from: DateTime<Utc>,
-    until: DateTime<Utc>,
-) -> Result<Vec<Finding>> {
-    let found = Pending {
-        stored: pending_stored(conn)?,
-        repeats: repeats_between(conn, from, until)?,
-    };
-    let mut findings = found.findings();
-    findings.retain(|f| (from..until).contains(&f.at));
-    Ok(findings)
-}
-
-fn pending_stored(
-    conn: &Connection,
-) -> Result<Vec<std::result::Result<IntegrityWarning, (String, rusqlite::Error)>>> {
-    let filter = ListFilter {
-        kind: None,
-        pending: Some(true),
-    };
-    let mut stored = list_rows(conn, &filter)?;
-    stored.retain(|r| !matches!(r, Ok(w) if w.kind == IntegrityKind::SameStateRepeat));
-    Ok(stored)
-}
-
-impl Pending {
-    /// Each row's [`Finding`], none for a refused sync op: its entry is on
-    /// no timeline. A timeless entry is at no instant, and has none either.
-    pub fn findings(&self) -> Vec<Finding> {
-        let stored = (self.stored.iter().flatten()).filter_map(|w| {
-            let what = match w.kind {
-                IntegrityKind::DoubleOpen => "opened while already open",
-                IntegrityKind::OrphanEnd => "closed with nothing open",
-                IntegrityKind::Overlap => "overlaps another block on its field",
-                IntegrityKind::LastStateMismatch => "its --last-state disagrees with history",
-                // [`pending`] keeps no stored repeat.
-                IntegrityKind::SameStateRepeat | IntegrityKind::SyncUnauthorised => return None,
-            };
-            Some((&w.local_entry, what))
-        });
-        let repeats = self.repeats.iter().map(|r| match r.span {
-            Some(_) => (&r.entry, "switched into the state it was already in"),
-            None => (&r.entry, "closed while already closed"),
-        });
-        (stored.chain(repeats))
-            .filter_map(|(e, what)| {
-                Some(Finding {
-                    at: e.leading_edge_utc()?,
-                    field: e.field.clone(),
-                    what,
-                })
-            })
-            .collect()
-    }
 }
 
 /// State value indicating "field is open" — the canonical shorthand
@@ -1326,58 +1174,6 @@ mod tests {
         assert_eq!(workout, 2, "both double-opens land");
         assert_eq!(cooking, 1, "orphan stop lands");
         assert_eq!(meeting, 2, "both overlapping blocks land");
-    }
-
-    /// da-0lful: a day's [`findings_between`], read off the window, are
-    /// the whole history's [`Pending::findings`] in that day — over
-    /// switches, starts and ends, and blocks crossing midnight, some longer
-    /// than a day.
-    #[test]
-    fn findings_between_is_pending_findings_in_the_window() {
-        let db = Db::open_in_memory().unwrap();
-        let t0 = Utc::now() - Duration::days(12);
-        let utc = |minutes: i64| t0 + Duration::minutes(minutes);
-        let mut seed = 7u64;
-        let mut next = |n: u64| {
-            seed = seed
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            (seed >> 33) % n
-        };
-        let mut at = 0;
-        while at < 10 * 24 * 60 {
-            at += 20 + next(200) as i64;
-            let field = ["mood", "work", "room"][next(3) as usize];
-            let state =
-                [json!("a"), json!("b"), json!(true), json!(false)][next(4) as usize].clone();
-            let entry = entry_builder(field).state(state).time_start_utc(utc(at));
-            match next(4) {
-                // A block, up to a day and a half long.
-                0 => entry.time_end_utc(utc(at + 30 + next(2160) as i64)),
-                _ => entry,
-            }
-            .insert(&db);
-        }
-        let all = pending(db.conn()).unwrap().findings();
-        assert!(
-            all.len() > 20,
-            "the fixture finds enough to compare: {}",
-            all.len()
-        );
-        for day in 0..11 {
-            let (from, until) = (t0 + Duration::days(day), t0 + Duration::days(day + 1));
-            let key = |f: &Finding| (f.at, f.field.clone(), f.what);
-            let mut whole: Vec<_> = (all.iter())
-                .filter(|f| (from..until).contains(&f.at))
-                .map(key)
-                .collect();
-            let mut window: Vec<_> = (findings_between(db.conn(), from, until).unwrap().iter())
-                .map(key)
-                .collect();
-            whole.sort();
-            window.sort();
-            assert_eq!(window, whole, "day {day}");
-        }
     }
 
     /// Writing an overlapping block files exactly one `overlap`

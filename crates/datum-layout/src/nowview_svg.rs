@@ -485,7 +485,7 @@ mod tests {
             label_lines: vec!["Mon".into()],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![DayviewFieldInput {
                 field: "mood".into(),
                 y_frac: 0.1,
@@ -574,7 +574,7 @@ mod tests {
             label_lines: vec![],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![
                 DayviewFieldInput {
                     field: "mood".into(),
@@ -683,7 +683,7 @@ mod tests {
             label_lines: vec![],
             start_ms: now_ms - 60_000,
             end_ms: now_ms,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![DayviewFieldInput {
                 field: "mood".into(),
                 y_frac: 0.1,
@@ -768,7 +768,7 @@ mod tests {
             label_lines: vec![],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![DayviewFieldInput {
                 field: "mood".into(),
                 y_frac: 0.1,
@@ -839,7 +839,7 @@ mod tests {
             label_lines: vec![],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![DayviewFieldInput {
                 field: "body".into(),
                 y_frac: 0.1,
@@ -904,7 +904,7 @@ mod tests {
             label_lines: vec![],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
-            errors: Vec::new(),
+            has_error: false,
             fields: vec![DayviewFieldInput {
                 field: "mood".into(),
                 y_frac: 0.1,

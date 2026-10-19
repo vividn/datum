@@ -5,8 +5,8 @@
 //! Layout math + SVG emit live in `datum_layout::dayview` so the SvelteKit
 //! PWA can render the same view client-side via WASM. This file is the
 //! thin CLI wrapper: it resolves date windows, pulls entries from SQLite,
-//! resolves colors through `crate::render::colors`, reads what `check integrity`
-//! finds for per-day error overlays, and writes the chosen output format.
+//! resolves colors through `crate::render::colors`, queries the integrity warnings
+//! queue for per-day error overlays, and writes the chosen output format.
 //!
 //! A day is drawn in local time as it was lived (da-1v9gp): on the wall
 //! clock of the zone the record was kept in then (`Db::zone_timeline`),
@@ -19,10 +19,11 @@ use anyhow::{Context, Result};
 use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
+use datum_core::integrity::ListFilter;
 use datum_core::time::{DatumTime, Zone, ZoneTimeline};
 use datum_layout::dayview::{
-    compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewError,
-    DayviewFieldInput, DayviewSpan, GlyphSize, Orientation,
+    compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewFieldInput,
+    DayviewSpan, GlyphSize, Orientation,
 };
 use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
 use datum_parse::cli::DayviewOrientation;
@@ -167,7 +168,16 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         .map(|i| end_date - chrono::Duration::days((n_days - 1 - i) as i64))
         .collect();
 
-    // 3. For each day, build the field input list.
+    // 3. Pull integrity warnings (one global query, then bucket by day window).
+    //    Empty result is fine; just no error icons.
+    let warnings = db
+        .list_integrity_warnings(&ListFilter {
+            kind: None,
+            pending: Some(true),
+        })
+        .unwrap_or_default();
+
+    // 4. For each day, build the field input list.
     let mut days_input: Vec<DayviewDayInput> = Vec::with_capacity(day_dates.len());
     let now_ms = now.utc.timestamp_millis();
     // The zones the days were lived in, read from three days before the
@@ -180,11 +190,6 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     let since = midnight(&day_dates[0]) - Duration::days(3);
     let until = midnight(&end_date) + Duration::days(3);
     let zones = db.zone_timeline_between(Zone::host(), Some(since), Some(until))?;
-    // What `check integrity` finds in the window, bucketed below by the day
-    // each flagged entry happened on (da-0lful). Empty result is fine; just
-    // no error marks.
-    let findings =
-        datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default();
 
     for date in &day_dates {
         // The day's window is every instant its date was read on a clock.
@@ -194,15 +199,12 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         let day_end_ms = spans.iter().map(|s| s.end_ms).max().unwrap_or_default();
         let label_lines = format_day_label(*date);
 
-        let errors = (findings.iter())
-            .map(|f| (f, f.at.timestamp_millis()))
-            .filter(|(_, t)| (day_start_ms..day_end_ms).contains(t))
-            .map(|(f, time_ms)| DayviewError {
-                time_ms,
-                field: f.field.clone(),
-                what: f.what.to_string(),
-            })
-            .collect();
+        // Bucket pending integrity warnings whose detected_at falls in this
+        // day's local window.
+        let has_error = warnings.iter().any(|w| {
+            let t = w.detected_at.timestamp_millis();
+            t >= day_start_ms && t < day_end_ms
+        });
 
         let fields = build_day_fields(db, &zones, day_start_ms, day_end_ms, now_ms)?;
 
@@ -211,13 +213,13 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
             label_lines,
             start_ms: day_start_ms,
             end_ms: day_end_ms,
-            errors,
+            has_error,
             fields,
             spans,
         });
     }
 
-    // 4. Resolve sizing per dayview.ts §44–78. Defaults: width=2000,
+    // 5. Resolve sizing per dayview.ts §44–78. Defaults: width=2000,
     //    day_height=100, time_axis_height=15, interday_margin=15, margin=2.
     //    Orientation flips which dim `--day-height` derives from: in
     //    horizontal mode days stack along y (use --height); in vertical

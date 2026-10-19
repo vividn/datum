@@ -813,14 +813,16 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<FixReport
 /// the warning vanishes on the next `datum check` — there's no
 /// stored row left behind.
 fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
-    use datum_core::integrity::{IntegrityKind, IntegrityWarning};
-    // da-0lful: what the dayview marks, read once for both.
-    let found = datum_core::integrity::pending(db.conn())?;
+    use datum_core::integrity::{IntegrityKind, IntegrityWarning, ListFilter};
+    let filter = ListFilter {
+        kind: None,
+        pending: Some(true),
+    };
     // da-m34q7: a row that does not decode is a finding of its own, and the
     // rows that do are still checked.
     let mut pending = Vec::new();
     let mut unreadable = Vec::new();
-    for row in found.stored {
+    for row in datum_core::integrity::list_rows(db.conn(), &filter)? {
         match row {
             Ok(warning) => pending.push(warning),
             Err((id, e)) => {
@@ -832,15 +834,17 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     }
 
     // Group pending warnings by kind; preserve insertion order within each
-    // group so per-entry render output matches the queue order. A stored
-    // SameStateRepeat is not among them — it's computed live below
-    // (da-acft), and `pending` leaves out any row that slipped past the
-    // cleanup migration.
+    // group so per-entry render output matches the queue order. SameStateRepeat
+    // is intentionally skipped — it's computed live below (da-acft); any rows
+    // that slipped past the cleanup migration are ignored here.
     let mut by_kind: std::collections::BTreeMap<
         (&'static str, &'static str),
         Vec<&IntegrityWarning>,
     > = std::collections::BTreeMap::new();
     for w in &pending {
+        if matches!(w.kind, IntegrityKind::SameStateRepeat) {
+            continue;
+        }
         by_kind
             .entry((w.kind.as_str(), w.detected_by.as_str()))
             .or_default()
@@ -960,7 +964,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     // missing transition (or deleting the duplicate) makes the
     // warning disappear on the next run — there's no stored row to
     // mark resolved.
-    issues.extend(collect_repeated_state_live(db, found.repeats)?);
+    issues.extend(collect_repeated_state_live(db)?);
     issues.extend(collect_sync_conflicts(db)?);
     Ok(issues)
 }
@@ -1163,14 +1167,13 @@ pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
 /// repeated switch with the span it sits in, longest first, so a block left
 /// open for days stands above a double switch seconds apart (da-vwymi), then
 /// each repeated end, which is usually a duplicate.
-fn collect_repeated_state_live(
-    db: &Db,
-    repeats: Vec<datum_core::integrity::Repeat>,
-) -> Result<Option<Issue>> {
+fn collect_repeated_state_live(db: &Db) -> Result<Option<Issue>> {
     use datum_core::integrity::Repeat;
     use datum_parse::time::{format_human_duration, DurationPrecision};
     let (mut opens, closes): (Vec<Repeat>, Vec<Repeat>) =
-        repeats.into_iter().partition(|r| r.span.is_some());
+        datum_core::integrity::list_repeats(db.conn())?
+            .into_iter()
+            .partition(|r| r.span.is_some());
     let now = DatumTime::now().utc;
     type Span = (
         chrono::DateTime<chrono::Utc>,

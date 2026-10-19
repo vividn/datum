@@ -512,29 +512,6 @@ describe('the day strip', () => {
 		});
 	});
 
-	// da-0lful: the band draws `check integrity`'s finding itself, and the
-	// strip's stamp carries the warning datum puts by its own date label —
-	// on the day the entry happened, which is not the day it was logged.
-	test('a day with an integrity finding carries the warning by its stamp', async () => {
-		await clocked.solo(async (app) => {
-			await setBox(app, 300);
-			// `solo` keeps the strip's scroll, and the test before left it on
-			// day 10: yesterday on screen, so the write re-draws it.
-			await scrollToDay(app, 1);
-			// A name with `&` in it, which the band's SVG writes escaped.
-			await app.submit("start 'r&d' -y -t 10:00");
-			await app.submit("start 'r&d' -y -t 11:00");
-			const mark = (ago) =>
-				app.page.locator(`.row:has(> .band[data-days-ago="${ago}"]) > .stamp > .integrity-mark`);
-			await mark(1).waitFor({ state: 'attached' });
-			await app.idle();
-			assert.equal(await mark(1).getAttribute('aria-label'), 'integrity: r&d');
-			assert.equal(await mark(0).count(), 0, 'today was marked for a finding yesterday');
-			assert.match(await band(app, 1), /class="integrity-error" data-field="r&amp;d"/);
-			assert.doesNotMatch(await band(app, 0), /integrity-error/);
-		});
-	});
-
 	test('a scroll over bands already at this epoch asks for nothing', async () => {
 		await settledRoom(clocked, 'epoch', async (app) => {
 			// The stack drawn whole HERE, at a day height of its own (da-qs6re):

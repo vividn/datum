@@ -247,7 +247,7 @@ fn dayview_at(width: f64, orientation: Orientation) -> String {
                 label_lines: vec!["Mon".into(), "04-27".into()],
                 start_ms: s,
                 end_ms: e,
-                errors: Vec::new(),
+                has_error: false,
                 fields: day_fields(s, e),
                 spans: Vec::new(),
             }

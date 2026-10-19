@@ -433,7 +433,7 @@ pub fn nowview_config(
         label_lines: Vec::new(),
         start_ms: at_ms - ((before + pad_before) * 60_000.0) as i64,
         end_ms: at_ms + ((after + pad_after) * 60_000.0) as i64,
-        errors: Vec::new(),
+        has_error: false,
         fields,
         spans: Vec::new(),
     };
