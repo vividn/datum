@@ -435,7 +435,7 @@ describe('the seam under review', () => {
 			await button('chain').click();
 			await name.waitFor();
 			const warned = await dialog.locator('p').innerText();
-			assert.match(warned, /^every copy in sync chain \S+ drops every entry, op and history; its members stay:\n/);
+			assert.match(warned, /^every copy in sync chain \S+ drops every entry, op and history, each keeping a backup of its entries beside its database; its members stay:\n/);
 			assert.match(warned, /\n {2}this copy purges now, after a backup of its entries beside the database\nOn this device it clears/);
 			await name.fill('datum');
 			await name.press('Enter');

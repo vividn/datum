@@ -851,10 +851,9 @@ fn names(who: &str, label: &str, id: &str) -> bool {
 }
 
 /// `datum sync chain purge --data | --all` (da-qzrj9): a signed order every
-/// copy carries out as it comes to hold it, this one first, after a backup
-/// beside the database — on this copy alone: one on every copy would keep
-/// what a remote wipe is for. Without `--yes`, who learns of it when, and
-/// then it asks.
+/// copy carries out as it comes to hold it, this one first, each after a
+/// backup of its entries beside its database (da-acwey, vividn: «every member
+/// keeps one»). Without `--yes`, who learns of it when, and then it asks.
 fn purge(
     db: &Db,
     all: bool,
@@ -873,7 +872,8 @@ fn purge(
         ),
     };
     println!(
-        "every copy in sync chain {} drops every entry, op and history; {what}:",
+        "every copy in sync chain {} drops every entry, op and history, each keeping a backup \
+         of its entries beside its database; {what}:",
         chain.id
     );
     print!("{}", wipe_reach(db, "purges")?);
@@ -906,10 +906,12 @@ pub(crate) fn wipe_reach(db: &Db, does: &str) -> Result<String> {
     Ok(out)
 }
 
-/// A `wipe {scope}` order of `chain`. A `restore`'s order says so, and every
-/// copy it reaches keeps a backup of its own too (da-uk23v). `created` is
-/// when it was made, which a signature covers: one a passkey approved keeps
-/// its dry run's (da-sd7xt), and the HLC it is written at orders it.
+/// A `wipe {scope}` order of `chain`. A `restore`'s order says so; every
+/// copy an order of either kind reaches keeps a backup of its own
+/// (da-uk23v, da-acwey).
+/// `created` is when it was made, which a signature covers: one a passkey
+/// approved keeps its dry run's (da-sd7xt), and the HLC it is written at
+/// orders it.
 pub(crate) fn wipe_record(chain: &chain::Chain, scope: &str, restore: bool) -> Value {
     let mut record = json!({
         "type": "wipe", "scope": scope, "chain": chain.id,
@@ -1573,9 +1575,15 @@ fn said(db: &Db, mut notices: Vec<Notice>) -> Vec<(Notice, String)> {
                 "unlock" => format!("sync chain unlocked by {} at {at}", n.label),
                 "refused" => format!("changes from {} refused ({}), since {at}", n.label, n.via),
                 "wipe" => format!(
-                    "sync chain restored to a backup by {} at {at}: what this copy held is in {} \
+                    "sync chain {} by {} at {at}: what this copy held is in {} \
                      — `datum db restore {} --merge` brings it back",
-                    n.label, n.via, n.via
+                    match n.subject.starts_with("purge:") {
+                        true => "purged",
+                        false => "restored to a backup",
+                    },
+                    n.label,
+                    n.via,
+                    n.via
                 ),
                 kind => format!("sync notice ({kind}): {}, at {at}", n.label),
             };
@@ -1648,7 +1656,8 @@ const UNLOCK_HINT: &str =
     "other devices may have relied on the lock; `datum sync chain ack unlock` to acknowledge";
 
 /// The sync chain's new endpoints and admins (da-odwc7), and its unlocks
-/// (da-aam46), and the backups a chain restore left here (da-uk23v), until
+/// (da-aam46), and the backups a chain restore or purge left here (da-uk23v,
+/// da-acwey), until
 /// `datum sync chain ack` says they are known; a member's newer schema; and
 /// changes no other device has. `sync status` shows each from the same
 /// source (da-nq07y).
@@ -1668,8 +1677,8 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
         let head = match notices[0].0.kind.as_str() {
             "member" => "this copy joined a sync chain".into(),
             "unlock" => format!("the sync chain was unlocked: {UNLOCK_HINT}"),
-            "wipe" => "a restore of the sync chain dropped what this copy held, which a backup \
-                       keeps; `datum sync chain ack` once it is back or not wanted"
+            "wipe" => "a restore or purge of the sync chain dropped what this copy held, which \
+                       a backup keeps; `datum sync chain ack` once it is back or not wanted"
                 .into(),
             "refused" => format!(
                 "changes from {} device(s) outside the sync chain were refused; \

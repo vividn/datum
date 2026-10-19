@@ -532,8 +532,9 @@ pub struct Wipe {
     pub all: bool,
     /// The endpoint that ordered it.
     pub by: String,
-    /// A `db restore --hard --chain`'s (da-uk23v): each copy it reaches
-    /// keeps what it held in a backup beside it ([`super::wipe`]).
+    /// A `db restore --hard --chain`'s (da-uk23v). Each copy a wipe of
+    /// either kind reaches keeps what it held in a backup beside it
+    /// ([`super::wipe`], da-acwey).
     pub restore: bool,
 }
 

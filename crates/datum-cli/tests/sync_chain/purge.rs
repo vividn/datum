@@ -116,9 +116,10 @@ fn a_data_purge_empties_every_copy_as_it_connects_and_the_chain_syncs_on() {
         assert_eq!(members_of(copy), members);
         assert_eq!(data_of(copy), EMPTY);
     }
-    // A purge erases: unlike a restore's (da-uk23v), its order leaves the
-    // copies it reaches no backup.
-    assert!(kept(&b).is_empty() && kept(&c).is_empty());
+    // Each copy the order reached kept what it held, as a restore's does
+    // (da-acwey); a, which ordered it, its own backup alone.
+    assert!(kept(&a).is_empty(), "{:?}", kept(&a));
+    assert_eq!((kept(&b).len(), kept(&c).len()), (1, 1));
 
     // Afterwards a new entry on any copy syncs to the others.
     c.ok(&["occur", "later"]);
@@ -139,6 +140,65 @@ fn a_data_purge_empties_every_copy_as_it_connects_and_the_chain_syncs_on() {
     let fresh = Copy::new();
     fresh.ok(&["db", "restore", backup, "--yes"]);
     assert!(fresh.has("tea") && fresh.has("coffee") && !fresh.has("juice"));
+}
+
+/// da-acwey, vividn: «every member keeps one». c, offline, logs before a
+/// chain purge it learns of later: what it held goes into a backup beside
+/// it, which the next command, `check` and `sync status` name, saying
+/// purged, until acknowledged, and `db restore --merge` of it brings the
+/// entry back. The ordering copy keeps only its own, and a second purge
+/// leaves the first one's backup.
+#[test]
+fn a_chain_purge_leaves_an_offline_copy_a_backup_of_what_it_drops() {
+    let (a, c) = chained();
+    a.ok(&["occur", "tea"]);
+    assert!(a.send(&c).0);
+    c.ok(&["occur", "before"]);
+    a.ok(&["sync", "chain", "purge", "--data", "--yes"]);
+    assert!(kept(&a).is_empty(), "{:?}", kept(&a));
+
+    assert!(a.send(&c).0);
+    assert_eq!(data_of(&c), EMPTY);
+    let [file] = kept(&c).try_into().unwrap();
+    let file = file.display().to_string();
+    let lines = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        lines.lines().next().unwrap().contains("daydumb_backup"),
+        "{lines}"
+    );
+    assert!(lines.contains(r#""field":"before""#), "{lines}");
+    assert!(lines.contains(r#""field":"tea""#), "{lines}");
+
+    let next = c.run(&["tail"], "");
+    let said = String::from_utf8_lossy(&next.stderr);
+    let merge = format!("what this copy held is in {file} — `datum db restore {file} --merge`");
+    assert!(
+        said.contains("sync chain purged by ") && said.contains(&merge),
+        "{said}"
+    );
+    assert!(c.ok(&["sync", "status"]).contains(&merge));
+    let check = c.run(&["check"], "");
+    let check = String::from_utf8_lossy(&check.stdout);
+    assert!(
+        check.contains("a restore or purge of the sync chain") && check.contains(&merge),
+        "{check}"
+    );
+
+    c.ok(&["db", "restore", &file, "--merge"]);
+    assert!(c.has("before") && c.has("tea"));
+    c.ok(&["sync", "chain", "ack", "--all"]);
+    assert!(!c.ok(&["sync", "status"]).contains(&merge));
+
+    // A second purge: its own file, the first one's left in place.
+    a.ok(&["sync", "chain", "purge", "--data", "--yes"]);
+    assert!(a.send(&c).0);
+    assert_eq!(data_of(&c), EMPTY);
+    let both = kept(&c);
+    assert!(
+        both.len() == 2 && both.iter().any(|f| f.display().to_string() == file),
+        "{both:?}"
+    );
+    assert!(kept(&a).is_empty(), "{:?}", kept(&a));
 }
 
 /// `sync chain purge --all` (da-qzrj9): the data goes and the chain

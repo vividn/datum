@@ -453,14 +453,15 @@ after it, a copy holding it serves only records and stubs and says «in no sync
 chain», and keeps its key and records to pass the order on until an invite or
 connect starts it afresh.
 
-The ordering copy alone writes a backup, `<db>.purge-<time>.jsonl.gz`, before it
-purges: one on every copy would defeat a remote wipe. A passkey's order is
+The ordering copy writes a backup, `<db>.purge-<time>.jsonl.gz`, before it
+purges, and every other copy it reaches one of its own, as a restore's does
+(below; da-acwey, vividn: «every member keeps one»). A passkey's order is
 written by `sync approve` (datum.day's), which writes the backup then, and
-datum.day keeps it in OPFS (da-459uh). The backup is the approving copy's: an
+datum.day keeps it in OPFS (da-459uh). The order is the approving copy's: an
 approve link opened on another device (`/sync/approve`) backs up what that
-device holds, and the ordering copy's own changes no sync has yet carried are
-wiped and kept in no backup. The CLI's order, approved elsewhere and finished
-with Enter, keeps the backup it wrote before asking (da-xc321).
+device holds, and the copy that asked keeps its own as it receives the order.
+The CLI's order, approved elsewhere and finished with Enter, keeps the backup
+it wrote before asking (da-xc321).
 
 `db restore <B> --hard --chain` (da-ncmmj) is that `--data` order and then the
 backup written on the ordering copy as new ops, signed after it, so every copy
@@ -471,12 +472,13 @@ order is an admin's to sign, and its stdin can be the backup: so `--dry-run
 signed (`--approve-link`, `--approval-code`), refusing any but this chain's
 restore order — datum.day's passkey (da-sd7xt).
 
-Its order says `restore`, and every other copy it reaches writes what it held
-first, `<db>.wiped-<the wipe's HLC>.jsonl` beside it (da-uk23v): an entry made
-offline before the restore is dropped as it syncs, and not lost. A `wipe` notice
-names the file and `db restore <it> --merge`, which brings it back, until `sync
-chain ack`; datum.day keeps the file in OPFS. A purge's order still leaves its
-copies none.
+Its order says `restore`. Every other copy a restore's or a purge's order
+reaches writes what it held first, `<db>.wiped-<the wipe's HLC>.jsonl` beside it
+(`keep_what_was_here`, da-uk23v, da-acwey): an entry made offline before the
+wipe is dropped as it syncs, and not lost. A `wipe` notice names the file and
+`db restore <it> --merge`, which brings it back, until `sync chain ack`, saying
+«purged» or «restored to a backup»; datum.day keeps the file in OPFS. A later
+wipe leaves an earlier one's file.
 
 ### Leaving, joining and rejoining
 

@@ -2035,7 +2035,9 @@ fn scrub(conn: &Connection, endpoint: &str, seq: i64) -> Result<()> {
 /// Carry out the chain's newest purge order, once (da-qzrj9): every entry op
 /// made before it is scrubbed — in a dissolved chain, every op of another
 /// copy's — and every entry, its history, the undo stack, the warnings and
-/// the stats cache go. What is left, the ops made after it, folds again.
+/// the stats cache go, a copy that did not order it keeping a backup of its
+/// entries first ([`keep_what_was_here`]). What is left, the ops made after
+/// it, folds again.
 fn wipe(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
     let Some(w) = chain.wipes.last() else {
         return Ok(());
@@ -2051,7 +2053,7 @@ fn wipe(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
         return Ok(());
     }
     let mine = endpoint(conn)?.id;
-    if w.restore && w.by != mine {
+    if w.by != mine {
         keep_what_was_here(conn, chain, w)?;
     }
     // What it frees is overwritten, not left in the file's free pages.
@@ -2089,11 +2091,13 @@ fn wipe(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
     Ok(())
 }
 
-/// A chain restore's wipe reaching a copy that did not order it (da-uk23v):
-/// its live entries first, as a `db backup` writes them, beside the
-/// database, so one made offline before the restore is not lost with it —
-/// `db restore <it> --merge` brings it back — and a notice of where. The
-/// ordering copy wrote its own; a copy with no file or no entry writes none.
+/// A chain restore's or purge's wipe reaching a copy that did not order it
+/// (da-uk23v, da-acwey): its live entries first, as a `db backup` writes
+/// them, beside the database, so one made offline before the wipe is not
+/// lost with it — `db restore <it> --merge` brings it back — and a notice
+/// of where, `purge:<hlc>` for a purge's and `wipe:<hlc>` for a restore's.
+/// The ordering copy wrote its own; a copy with no file or no entry writes
+/// none.
 fn keep_what_was_here(conn: &Connection, chain: &Chain, w: &chain::Wipe) -> Result<()> {
     use std::io::Write;
     let Some(path) = conn.path().filter(|p| !p.is_empty()) else {
@@ -2133,10 +2137,11 @@ fn keep_what_was_here(conn: &Connection, chain: &Chain, w: &chain::Wipe) -> Resu
         return Err(e);
     }
     let by = chain.member(&w.by).map_or(&w.by[..10], |m| &m.label);
+    let what = if w.restore { "wipe" } else { "purge" };
     conn.execute(
         "INSERT OR IGNORE INTO sync_notices (subject, kind, label, at, via)
          VALUES (?1, 'wipe', ?2, ?3, ?4)",
-        params![format!("wipe:{}", w.hlc), by, chain::hlc_time(&w.hlc), to],
+        params![format!("{what}:{}", w.hlc), by, chain::hlc_time(&w.hlc), to],
     )?;
     Ok(())
 }
