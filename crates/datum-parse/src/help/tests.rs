@@ -488,6 +488,13 @@ fn alias_help_documents_f_trichotomy() {
 }
 
 #[test]
+fn alias_help_documents_name_only_keys() {
+    let s = command_help("alias");
+    assert!(s.contains("NAME-ONLY KEYS (%-key%)"));
+    assert!(s.contains("leaves\n  `key` out of the data"));
+}
+
+#[test]
 fn alias_help_documents_double_dash_semantics() {
     let s = command_help("alias");
     assert!(

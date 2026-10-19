@@ -666,11 +666,22 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `field_structure` on every mutation, so a later `dm update
     // <hid> srcLang=es` cascades into both `field` and `slug`.
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
+    // da-n1rcs: a `%-key%` fills the name only — its key leaves the data,
+    // and the template keeps its value as text.
     if field_spec::contains_template(&entry.field) {
-        let template = entry.field.clone();
         let ctx = InterpolationContext::from_entry(&entry);
-        entry.field = field_spec::interpolate_field(&template, &ctx, &delim)?;
-        entry.field_structure = Some(template);
+        let field = field_spec::interpolate_field(&entry.field, &ctx, &delim)?;
+        let (template, name_only) = field_spec::fill_name_only(&entry.field, &ctx);
+        entry.field = field;
+        entry.field_structure = template;
+        if let Some(JsonValue::Object(data)) = entry.data.as_mut() {
+            for key in &name_only {
+                data.remove(key);
+            }
+            if data.is_empty() && !name_only.is_empty() {
+                entry.data = None;
+            }
+        }
     }
     datum_core::slug::validate_new_field_name(&entry.field)?;
 

@@ -16,6 +16,11 @@
 //! ([`interpolate_field`]) refuses a plain `%key%` that expands to nothing,
 //! since that lands the entry in another field; the `?` is how a field
 //! template says the key may be absent.
+//!
+//! A leading `-` (`%-key%`, `%-?key%`) in a FIELD template fills the name
+//! only ([`fill_name_only`], da-n1rcs): the key leaves the data, its value
+//! already being in the field's name. In an id template it is read and
+//! ignored: `%-key%` renders as `%key%` does.
 
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
@@ -162,7 +167,7 @@ pub fn interpolate_field(
         .iter()
         .skip(1)
         .step_by(2)
-        .filter(|k| !k.is_empty() && !k.starts_with('?') && lookup_field(k, ctx).is_empty())
+        .filter(|k| !k.is_empty() && !is_optional(k) && lookup_field(k, ctx).is_empty())
         .map(String::as_str)
         .collect();
     if !empty.is_empty() {
@@ -175,6 +180,35 @@ pub fn interpolate_field(
         )));
     }
     Ok(interpolate(template, ctx, delimiter))
+}
+
+/// da-n1rcs: `template` with each `%-key%` its value as literal text, and
+/// those keys, which the entry is to store no longer: the name holds them.
+/// The template is `None` once no placeholder is left in it, the field
+/// then being a plain name that no `update` re-derives.
+pub fn fill_name_only(template: &str, ctx: &InterpolationContext) -> (Option<String>, Vec<String>) {
+    let escape = |s: &str| s.replace('%', "\\%");
+    let (mut out, mut keys) = (String::new(), Vec::new());
+    for (i, part) in split_raw_and_fields(template).iter().enumerate() {
+        if i % 2 == 0 {
+            out.push_str(&escape(part));
+        } else if markers(part).contains('-') {
+            out.push_str(&escape(&lookup_field(part, ctx)));
+            keys.push(canonical_key(part).to_string());
+        } else {
+            out.push_str(&format!("%{part}%"));
+        }
+    }
+    (contains_template(&out).then_some(out), keys)
+}
+
+/// A placeholder's leading markers: `?` optional, `-` name only.
+fn markers(key: &str) -> &str {
+    &key[..key.len() - key.trim_start_matches(['?', '-']).len()]
+}
+
+fn is_optional(key: &str) -> bool {
+    markers(key).contains('?')
 }
 
 fn split_raw_and_fields(template: &str) -> Vec<String> {
@@ -194,10 +228,10 @@ fn split_raw_and_fields(template: &str) -> Vec<String> {
     buf.split('\x00').map(String::from).collect()
 }
 
-/// The name a placeholder's key resolves by: the optional `?` stripped,
-/// and a legacy camelCase time name mapped to its snake_case form.
+/// The name a placeholder's key resolves by: its markers stripped, and a
+/// legacy camelCase time name mapped to its snake_case form.
 fn canonical_key(key: &str) -> &str {
-    let key = key.strip_prefix('?').unwrap_or(key);
+    let key = key.trim_start_matches(['?', '-']);
     // da-k2xv: legacy camelCase time metadata names (occurTime / createTime
     // / modifyTime) resolve to their snake_case counterparts so id-templates
     // ported verbatim from the original datum (which used camelCase) keep
