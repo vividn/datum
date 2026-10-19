@@ -17,6 +17,7 @@ mod common;
 mod add_cmd;
 mod alias_cmd;
 mod alias_entries;
+mod alias_entry_template;
 mod alias_install;
 mod alias_list_json;
 mod alias_show_json;

@@ -162,21 +162,13 @@ pub fn interpolate_field(
     ctx: &InterpolationContext,
     delimiter: &str,
 ) -> Result<String> {
-    let parts = split_raw_and_fields(template);
-    let empty: Vec<&str> = parts
-        .iter()
-        .skip(1)
-        .step_by(2)
-        .filter(|k| !k.is_empty() && !is_optional(k) && lookup_field(k, ctx).is_empty())
-        .map(String::as_str)
-        .collect();
+    let empty = unfilled(template, ctx);
     if !empty.is_empty() {
-        let names = empty.iter().map(|k| format!("%{k}%")).collect::<Vec<_>>();
         return Err(DatumError::Other(format!(
             "field template '{template}': {} expands to nothing, which would \
              put the entry in another field. Give the key a value, or mark it \
              optional with %?key%.",
-            names.join(", ")
+            empty.join(", ")
         )));
     }
     Ok(interpolate(template, ctx, delimiter))
@@ -209,6 +201,18 @@ fn markers(key: &str) -> &str {
 
 fn is_optional(key: &str) -> bool {
     markers(key).contains('?')
+}
+
+/// `template`'s plain placeholders that expand to nothing in `ctx`, each as
+/// `%key%`: what a template that must fill refuses (`%?key%` may be empty).
+pub fn unfilled(template: &str, ctx: &InterpolationContext) -> Vec<String> {
+    split_raw_and_fields(template)
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .filter(|k| !k.is_empty() && !is_optional(k) && lookup_field(k, ctx).is_empty())
+        .map(|k| format!("%{k}%"))
+        .collect()
 }
 
 fn split_raw_and_fields(template: &str) -> Vec<String> {

@@ -823,17 +823,65 @@ pub(crate) fn parse_update_payload(
         }
     }
 
-    let extra_data = if datum_data.is_empty() {
+    let mut extra_data = if datum_data.is_empty() {
         None
     } else {
         Some(JsonValue::Object(datum_data))
     };
+    let (resolved_id, name_only) =
+        fill_entry_template(&resolved_id, extra_data.as_ref(), value.as_ref())?;
+    if let Some(JsonValue::Object(data)) = extra_data.as_mut() {
+        for key in &name_only {
+            data.remove(key);
+        }
+        if data.is_empty() {
+            extra_data = None;
+        }
+    }
     Ok(UpdatePayload {
         pattern: resolved_id,
         default_last,
         value,
         extra: extra_data,
     })
+}
+
+/// da-61cne: the entry argument's `%key%` placeholders filled from the
+/// payload, as a log fills its field's — so an alias's `update
+/// issue__%issue_id%:doc -k issue_id` names the entry its positional fills.
+/// A plain `%key%` with no value refuses by name; `%?key%` may be empty.
+/// The keys of its `%-key%`s come back too: they fill the name only, and the
+/// payload stores them no longer (da-n1rcs).
+fn fill_entry_template(
+    pattern: &str,
+    data: Option<&JsonValue>,
+    state: Option<&JsonValue>,
+) -> Result<(String, Vec<String>)> {
+    use datum_core::field_spec::{contains_template, fill_name_only, interpolate, unfilled};
+    if !contains_template(pattern) {
+        return Ok((pattern.to_string(), Vec::new()));
+    }
+    let ctx = datum_core::field_spec::InterpolationContext {
+        field: "",
+        extra_data: data,
+        hid: "",
+        state,
+        dur: None,
+        following_state: None,
+        occur_time: None,
+        occur_time_precision: None,
+        create_time: None,
+        modify_time: None,
+        client_id: "",
+    };
+    let empty = unfilled(pattern, &ctx);
+    if !empty.is_empty() {
+        anyhow::bail!("{pattern}: {} has no value", empty.join(", "));
+    }
+    Ok((
+        interpolate(pattern, &ctx, ""),
+        fill_name_only(pattern, &ctx).1,
+    ))
 }
 
 #[cfg(test)]

@@ -44,7 +44,7 @@ pub use alias::{
 };
 pub use interpolation::{
     contains_template, fill_name_only, interpolate, interpolate_field, names_time,
-    strip_field_prefix, InterpolationContext, DEFAULT_ID_DELIMITER,
+    strip_field_prefix, unfilled, InterpolationContext, DEFAULT_ID_DELIMITER,
 };
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};
 pub use presentation::{GlyphBy, PresentationSpec, Render, ResolvedPosition, DEFAULT_FIELD_HEIGHT};
