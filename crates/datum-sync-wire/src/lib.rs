@@ -204,6 +204,13 @@ pub trait Store {
     fn serves(&self, _peer: &str) -> bool {
         false
     }
+    /// A session this copy dialed to `peer` passed its handshake (`on`), or
+    /// ended: a dial from the peer meanwhile is refused as busy (da-mghh3).
+    fn carrying(&self, _peer: &str, _on: bool) {}
+    /// Whether a session this copy dialed to `peer` is past its handshake.
+    fn carries(&self, _peer: &str) -> bool {
+        false
+    }
     /// The session's ops are all applied, and its verify begins.
     fn verifying(&self) {}
     /// The state hash, over what a session with `peer` shares. One whose
@@ -669,6 +676,24 @@ pub fn failure(e: &anyhow::Error) -> Option<Failure> {
     e.downcast_ref::<Failed>().map(|f| f.0)
 }
 
+/// A dial this copy closed for the peer's session with it (da-vj3ly).
+fn closed_carried(label: &str) -> anyhow::Error {
+    Failed(
+        Failure::Refused(Why::Busy),
+        format!("{label} {CARRIED_WHY}"),
+    )
+    .into()
+}
+
+/// Whether `e` is a dial given way to a session between the two copies
+/// already: closed by this copy, or refused by the peer (da-mghh3). The
+/// refusal says so only in its words: a [`Why`] of its own would be one a
+/// copy a version back cannot read.
+pub fn gave_way(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<Failed>()
+        .is_some_and(|f| f.0 == Failure::Refused(Why::Busy) && f.1.ends_with(CARRIED_WHY))
+}
+
 /// Await `work`, sending a [`BUSY`] every quarter of [`idle`] until it ends.
 /// Only work that awaits something done off this thread lets one out.
 async fn busy<T>(s: &mut SendStream, work: impl Future<Output = Result<T>>) -> Result<T> {
@@ -1009,6 +1034,9 @@ fn closed_busy(e: &anyhow::Error) -> bool {
 /// Why a copy applying another session's ops refuses one more.
 const BUSY_WHY: &str = "is busy applying another sync's changes; it syncs again once done";
 
+/// Why one of two sessions between the same copies at once gives way.
+const CARRIED_WHY: &str = "is in a session with this copy already";
+
 async fn session(
     store: &impl Store,
     ep: &Endpoint,
@@ -1048,6 +1076,7 @@ async fn session(
         put_json(&mut s, &store.records().await?).await?;
         reply = get_json(&mut r, MAX_HELLO).await?;
     }
+    let carried;
     let (label, added, met, round, waits, ends) = match reply {
         Reply::Welcome {
             label,
@@ -1061,11 +1090,13 @@ async fn session(
             // Two copies that dialed each other at once (da-vj3ly): the
             // lower endpoint id's session carries both ways, and the other
             // copy closes its own as busy, which neither side records.
+            // Past here this one carries, and the peer's dial, if it comes
+            // only now, is refused as busy (da-mghh3).
             if invite.is_none() && store.serves(&id) && ep.id().to_string() > id {
                 conn.close(0u32.into(), CLOSED_BUSY);
-                let why = format!("{label} is in a session with this copy already");
-                return Err(Failed(Failure::Refused(Why::Busy), why).into());
+                return Err(closed_carried(&label));
             }
+            carried = Served::new(store, &id, true);
             // Its own handshake may refuse too (a paused copy): only then
             // does it leave. Given the invite, it marks where this copy was
             // admitted, so a join cut short before any op applies resumes
@@ -1115,6 +1146,7 @@ async fn session(
     rep.waits = waits;
     rep.ends = ends;
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
+    drop(carried);
     if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
         rep.left = Some((old, new));
     }
@@ -1254,7 +1286,10 @@ async fn accepted(incoming: Incoming) -> Result<Connection> {
 pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
     let conn = accepted(incoming).await?;
     let id = conn.remote_id().to_string();
-    let _served = Served::new(store, &id);
+    // Taken with the mark, so the peer's own dial past its handshake
+    // (`carries`) and this session (`serves`) never both go on (da-mghh3).
+    let carried = store.carries(&id);
+    let _served = Served::new(store, &id, false);
     let (mut s, mut r) = within(async { Ok(conn.accept_bi().await?) }).await?;
     let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
     // A diff admits no one: it answers a member this copy holds, redeems
@@ -1265,6 +1300,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         let verdict = match conn.remote_id() == ep.id() {
             true => Err((Why::Other, anyhow!(COPY))),
             false if !diff && store.applying() => Err((Why::Busy, anyhow!(BUSY_WHY))),
+            false if !diff && carried && hello.busy => Err((Why::Busy, anyhow!(CARRIED_WHY))),
             false => store
                 .handshake(
                     &id,
@@ -1340,19 +1376,28 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     done
 }
 
-/// A session [`serve`] is serving, said to its store as it begins and ends.
-struct Served<'a, S: Store>(&'a S, String);
+/// A session [`serve`] is serving, or one [`session`] dialed past its
+/// handshake (`dialed`), said to its store as it begins and ends.
+struct Served<'a, S: Store>(&'a S, String, bool);
 
 impl<'a, S: Store> Served<'a, S> {
-    fn new(store: &'a S, peer: &str) -> Self {
-        store.serving(peer, true);
-        Served(store, peer.to_string())
+    fn new(store: &'a S, peer: &str, dialed: bool) -> Self {
+        let served = Served(store, peer.to_string(), dialed);
+        served.mark(true);
+        served
+    }
+
+    fn mark(&self, on: bool) {
+        match self.2 {
+            true => self.0.carrying(&self.1, on),
+            false => self.0.serving(&self.1, on),
+        }
     }
 }
 
 impl<S: Store> Drop for Served<'_, S> {
     fn drop(&mut self) {
-        self.0.serving(&self.1, false);
+        self.mark(false);
     }
 }
 
@@ -1832,6 +1877,18 @@ mod tests {
             verdict("B", true, &mine, &mine, Some("this copy")),
             (Some(true), "verify ok".into())
         );
+    }
+
+    /// A dial gave way to a session between the two copies whether it
+    /// closed itself or the peer refused it, by the words the peer sends;
+    /// a refusal as busy applying is no such dial (da-mghh3).
+    #[test]
+    fn a_dial_gave_way_closed_or_refused_and_not_when_busy_applying() {
+        assert!(gave_way(&closed_carried("phone")));
+        let sent = |why: &str| format!("{:#}", anyhow!(why.to_string()));
+        assert!(gave_way(&refused(sent(CARRIED_WHY), Some(Why::Busy))));
+        assert!(!gave_way(&refused(sent(BUSY_WHY), Some(Why::Busy))));
+        assert!(!gave_way(&refused(sent(CARRIED_WHY), Some(Why::Other))));
     }
 
     /// A session waits 60 s on a silent peer, and only a test says less:

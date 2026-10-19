@@ -347,6 +347,8 @@ asks, and a failure the peer's row already says writes nothing (da-u1ul1).
 Two copies that dial each other at once keep one session: the higher endpoint
 id, welcomed by a peer whose own dial it is serving, closes its dial as busy,
 which neither side records, and the lower id's carries both ways (da-vj3ly).
+A dial past its handshake carries either way, and the peer's dial reaching it
+only then is refused as busy (da-mghh3).
 A dial a `datum sync` asked for, closed so, waits the served session out and
 dials again, so what it prints is its own verify (da-221fe).
 

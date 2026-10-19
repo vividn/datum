@@ -31,8 +31,8 @@ use datum_core::error::{DatumError, Refusal as CoreRefusal};
 use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use datum_parse::time::Zone;
 use datum_sync_wire::{
-    dial, failure, redeem, serve, unix_now, About, Applied, Diffed, Digest, Endpoint, EndpointAddr,
-    Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector, Version, Why,
+    dial, failure, gave_way, redeem, serve, unix_now, About, Applied, Diffed, Digest, Endpoint,
+    EndpointAddr, Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector, Version, Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use iroh::Watcher;
@@ -103,8 +103,9 @@ struct DbStore<'a>(
     Option<&'a Mutex<Told>>,
     Cell<Option<&'a dyn Fn()>>,
     Option<&'a str>,
-    /// The sessions served now (da-ymgiv).
-    RefCell<Open>,
+    /// The sessions served now (da-ymgiv), and those it dialed past their
+    /// handshake (da-mghh3).
+    RefCell<(Open, Open)>,
 );
 
 impl<'a> DbStore<'a> {
@@ -324,7 +325,7 @@ impl Store for DbStore<'_> {
     }
 
     fn serving(&self, peer: &str, on: bool) {
-        let mut served = self.4.borrow_mut();
+        let served = &mut self.4.borrow_mut().0;
         match on {
             true => served.open(peer),
             false => served.close(peer),
@@ -332,7 +333,19 @@ impl Store for DbStore<'_> {
     }
 
     fn serves(&self, peer: &str) -> bool {
-        self.4.borrow().has(peer)
+        self.4.borrow().0.has(peer)
+    }
+
+    fn carrying(&self, peer: &str, on: bool) {
+        let carried = &mut self.4.borrow_mut().1;
+        match on {
+            true => carried.open(peer),
+            false => carried.close(peer),
+        }
+    }
+
+    fn carries(&self, peer: &str) -> bool {
+        self.4.borrow().1.has(peer)
     }
 
     fn verifying(&self) {
@@ -912,12 +925,13 @@ fn push<'a>(
         let start = Instant::now();
         let rep = loop {
             let rep = async { dial(store, ep, addr(&p)?, None).await }.await;
-            // Asked, a dial closed for a session this copy serves to the
-            // peer (da-vj3ly) waits that session out and dials again, so
-            // `datum sync` says this one verified, not that one runs
-            // (da-221fe).
+            // Asked, a dial given way to a session between the two copies
+            // (da-vj3ly, da-mghh3) waits that session out and dials again,
+            // so `datum sync` says this one verified, not that one runs
+            // (da-221fe). Refused, that session may be over by now.
             let busy = rep.as_ref().is_err_and(|e| failure(e) == Some(BUSY));
-            if asked.is_none() || !busy || !store.serves(&p.id) {
+            let gave = rep.as_ref().is_err_and(gave_way);
+            if asked.is_none() || !busy || !(gave || store.serves(&p.id)) {
                 break rep;
             }
             while store.serves(&p.id) {

@@ -2341,7 +2341,8 @@ fn a_catch_up_cut_short_resumes_from_the_last_round_that_applied() {
 /// start together, each holding 2,000 entries the other lacks, and each
 /// dials the other as it comes up. The lower endpoint id's session carries
 /// both ways and the other copy closes its own, so each op is sent once,
-/// where the two sessions sent each twice.
+/// where the two sessions sent each twice. The higher id's dial welcomed
+/// before the lower id's reached it carries, and refuses that one (da-mghh3).
 #[test]
 fn two_copies_dialing_each_other_at_once_send_each_op_once() {
     let (mut a, mut b) = paired();
