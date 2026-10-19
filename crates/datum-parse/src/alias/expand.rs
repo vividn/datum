@@ -134,8 +134,9 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
 /// state string. `switch <field> end|stop|start` is rewritten to
 /// `end|stop|start <field>` so the user's intent ("end the switch
 /// block") routes through the correct verb body. `off` is `end` (vividn's
-/// B9, da-9e02u): a literal «off» is `'"off"'` or `str://off`.
-pub const SWITCH_PROMOTE_VERBS: &[&str] = &["end", "stop", "start", "off"];
+/// B9, da-9e02u) and `on` is `start` (N14, da-j1qfc): a literal «off» is
+/// `'"off"'` or `str://off`, «on» `'"on"'` or `str://on`.
+pub const SWITCH_PROMOTE_VERBS: &[&str] = &["end", "stop", "start", "off", "on"];
 
 /// A single alias-expansion event. Rendered onto the entry's
 /// `alias_chain` column at write time.
@@ -187,7 +188,7 @@ pub fn expand_argv(
 
 /// Rewrite `datum switch <field> <verb> [args...]` → `datum <verb> <field>
 /// [args...]` where `<verb>` ∈ [`SWITCH_PROMOTE_VERBS`] (currently
-/// `end`/`stop`/`start`, and `off` as `end`) and `<field>` is not itself a known subcommand.
+/// `end`/`stop`/`start`, `off` as `end` and `on` as `start`) and `<field>` is not itself a known subcommand.
 /// Without this rewrite, the switch parser would seal `end`/`stop`/`start`
 /// as a literal state string rather than routing through the verb body.
 pub fn apply_switch_promote_override(argv: Vec<String>) -> Vec<String> {
@@ -218,10 +219,10 @@ pub fn apply_switch_promote_override(argv: Vec<String>) -> Vec<String> {
     let _switch = iter.next();
     let field = iter.next().expect("argv[2]");
     let verb = iter.next().expect("argv[3]");
-    let verb = if verb == "off" {
-        "end".to_string()
-    } else {
-        verb
+    let verb = match verb.as_str() {
+        "off" => "end".to_string(),
+        "on" => "start".to_string(),
+        _ => verb,
     };
     let mut out = Vec::with_capacity(iter.size_hint().0 + 3);
     out.push(bin);
@@ -1353,6 +1354,23 @@ mod tests {
             let (argv, _) = expand_argv(v(&words), &NoResolver).unwrap();
             assert_eq!(argv, v(&words));
         }
+    }
+
+    /// N14 (da-j1qfc): `on` is `start`, through an alias's expansion too;
+    /// a quoted `"on"` or `str://on` is the literal state.
+    #[test]
+    fn switch_promote_on_is_start() {
+        let (argv, _) = expand_argv(v(&["datum", "switch", "light", "on"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "start", "light"]));
+        for literal in [r#""on""#, "str://on"] {
+            let words = ["datum", "switch", "light", literal];
+            let (argv, _) = expand_argv(v(&words), &NoResolver).unwrap();
+            assert_eq!(argv, v(&words));
+        }
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("lit".to_string(), alias("switch $1 on"));
+        let (argv, _) = expand_argv(v(&["datum", "lit", "light"]), &MapResolver(&aliases)).unwrap();
+        assert_eq!(argv, v(&["datum", "start", "light"]));
     }
 
     #[test]

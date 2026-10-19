@@ -1406,15 +1406,17 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     }
     let following_state = post_bare.into_iter().next().unwrap();
     // `end`/`stop`/`off` after the comma is the field off, as before it
-    // (vividn's B9, da-9e02u); under `-I` every word is the literal state.
+    // (vividn's B9, da-9e02u), and `on` is it on (N14, da-j1qfc); under `-I`
+    // every word is the literal state.
     let following_state = match following_state.as_str() {
         "end" | "stop" | "off" if !args.string_state => "false".to_string(),
+        "on" if !args.string_state => "true".to_string(),
         _ => following_state,
     };
     args.rest.push(format!("following_state={following_state}"));
-    // da-b4k5: in chain context the `end`/`stop`/`off`/`start` keywords
+    // da-b4k5: in chain context the `end`/`stop`/`off`/`start`/`on` keywords
     // mean the same thing they do as a standalone verb — `false` for the
-    // first three, `true`. The non-chain path achieves this by rewriting `switch f
+    // first three, `true` for the last two. The non-chain path achieves this by rewriting `switch f
     // end` to `end f` so `Action::Stop` runs (which then sets
     // `state=false`). The chain path can't go through that rewrite
     // without losing the chain, so translate the keyword to the
@@ -1434,11 +1436,16 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
         .iter()
         .position(|t| !t.contains('='))
         .filter(|_| !args.string_state)
-        .filter(|&i| matches!(args.rest[i].as_str(), "end" | "stop" | "off" | "start"));
+        .filter(|&i| {
+            matches!(
+                args.rest[i].as_str(),
+                "end" | "stop" | "off" | "start" | "on"
+            )
+        });
     if let Some(idx) = leading_keyword_idx {
         let keyword = args.rest.remove(idx);
         let state_kv = match keyword.as_str() {
-            "start" => "state=true",
+            "start" | "on" => "state=true",
             _ => "state=false",
         };
         args.rest.push(state_kv.to_string());
@@ -2374,6 +2381,26 @@ mod tests {
                 args.rest
             );
         }
+    }
+
+    /// N14 (da-j1qfc): `on` is `start` on either side of the comma.
+    #[test]
+    fn then_chain_translates_on_to_true_on_both_sides() {
+        let mut args = switch_args(&["on", "14m", ",", "Y"]);
+        extract_switch_then_chain(&mut args).unwrap();
+        assert!(
+            args.rest.iter().any(|t| t == "state=true"),
+            "{:?}",
+            args.rest
+        );
+        assert_eq!(args.duration.duration.as_deref(), Some("14m"));
+        let mut args = switch_args(&["X", "14m", ",", "on"]);
+        extract_switch_then_chain(&mut args).unwrap();
+        assert!(
+            args.rest.iter().any(|t| t == "following_state=true"),
+            "{:?}",
+            args.rest
+        );
     }
 
     /// da-b4k5: `start` maps to `state=true`, mirroring the non-chain

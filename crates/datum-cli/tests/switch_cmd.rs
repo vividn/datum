@@ -1056,7 +1056,7 @@ fn switch_chain_with_non_keyword_state_unchanged() {
 fn switch_off_is_false_and_the_literal_is_quoted_or_str_marked() {
     for words in [&["switch", "light", "off"][..], &["light", "off"]] {
         let db = fresh_db();
-        run_cli(&["switch", "light", "on", "-t=-2"], &db).expect("on");
+        run_cli(&["switch", "light", "dim", "-t=-2"], &db).expect("dim");
         run_cli(words, &db).expect("off");
         let entries = datum_core::test_util::logged_entries(&db, "light");
         let off = entries
@@ -1073,4 +1073,39 @@ fn switch_off_is_false_and_the_literal_is_quoted_or_str_marked() {
         let entry = &datum_core::test_util::logged_entries(&db, "light")[0];
         assert_entry_matches!(entry, field: "light", verb: "switch", state: "off");
     }
+}
+
+/// N14 (da-j1qfc): `switch work on` is `start work`, stored `true`, typed
+/// or through the field's own alias, as `switch work off` is `end work`.
+/// `-I` keeps the word, as `'"on"'` and `str://on` do, and a chain ends on
+/// `true` after `, switch a on`.
+#[test]
+fn switch_on_is_true_and_the_literal_is_quoted_str_marked_or_string_state() {
+    for words in [&["switch", "work", "on"][..], &["work", "on"]] {
+        let db = fresh_db();
+        run_cli(&["switch", "work", "idle", "-t=-2"], &db).expect("idle");
+        run_cli(words, &db).expect("on");
+        let entries = datum_core::test_util::logged_entries(&db, "work");
+        let on = entries
+            .iter()
+            .max_by_key(|e| e.occur_time.as_ref().map(|t| t.utc))
+            .unwrap();
+        assert_eq!(on.state, Some(json!(true)), "{words:?}");
+        assert_eq!(on.verb, Verb::Switch, "{words:?}");
+    }
+    for words in [
+        &["switch", "work", r#""on""#][..],
+        &["switch", "work", "str://on"],
+        &["switch", "work", "-I", "on"],
+    ] {
+        let db = fresh_db();
+        run_cli(words, &db).expect("literal");
+        let entry = &datum_core::test_util::logged_entries(&db, "work")[0];
+        assert_entry_matches!(entry, field: "work", verb: "switch", state: "on");
+    }
+    let db = fresh_db();
+    run_cli(&["switch", "a", "x", "5m", ",", "switch", "a", "on"], &db).expect("chain");
+    let e = &datum_core::test_util::logged_entries(&db, "a")[0];
+    assert_eq!(e.state, Some(json!("x")));
+    assert_eq!(e.following_state, Some(json!(true)));
 }

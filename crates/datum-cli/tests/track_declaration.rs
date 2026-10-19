@@ -220,7 +220,7 @@ fn a_first_log_brings_an_ignored_field_back() {
         vec!["occur", "zap"],
         vec!["end", "zap", "30m"],
         vec!["start", "zap"],
-        vec!["switch", "zap", "on"],
+        vec!["switch", "zap", "happy"],
     ] {
         let env = Env::new();
         env.run(&["ignore", "zap"]);

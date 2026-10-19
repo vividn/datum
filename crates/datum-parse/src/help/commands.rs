@@ -2056,8 +2056,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         intro: SWITCH_INTRO,
         long_description: Some(
             "`datum switch light off` (or `end`, `stop`) turns the field off, \
-             as `datum end light` does; a state named off is `'\"off\"'` or \
-             `str://off`.\n\n\
+             as `datum end light` does, and `datum switch light on` turns it \
+             on, as `datum start light` does; a state named off is \
+             `'\"off\"'` or `str://off`, one named on `'\"on\"'` or \
+             `str://on`, and `-I` keeps either word as typed.\n\n\
              A `:` inside a state is reserved: the state is then a full slug \
              `field:id` naming another entry, whatever field it is logged on \
              — `datum switch media book:great_gatsby` refers to the entry \

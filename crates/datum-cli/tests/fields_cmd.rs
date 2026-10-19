@@ -234,7 +234,7 @@ fn a_meta_note_on_a_never_seen_field_notes_it() {
 #[test]
 fn what_begins_a_field_has_no_note() {
     let env = Env::new();
-    for argv in [&["occur", "a"][..], &["start", "b"], &["switch", "c", "on"]] {
+    for argv in [&["occur", "a"][..], &["start", "b"], &["switch", "c", "up"]] {
         assert_eq!(env.run_both(argv).1, "", "{argv:?}");
     }
 }

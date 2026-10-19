@@ -269,6 +269,11 @@ following are deliberate divergences and **not** regressions:
   value (datum stores `str://off` as typed). `str://ref://…` keeps its
   mark, which is how a literal reference is stored (da-s5k2s).
 
+* **`switch F on`** (da-j1qfc, vividn's N14, 10-19). Datum stores a running
+  state named «on»; daydumb starts the field, `true`, as `switch F start`
+  does, after the `,` of a chain too. A literal «on» is `'"on"'`,
+  `str://on` or `-I on`.
+
 [`GOLDEN_TZ`]: src/lib.rs
 
 ## Adding fixtures

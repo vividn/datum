@@ -27,7 +27,7 @@ fn a_first_log_and_its_spec_go_together() {
     let firsts: [&[&str]; 5] = [
         &["occur", "x"],
         &["start", "x"],
-        &["switch", "x", "on"],
+        &["switch", "x", "happy"],
         &["note", "x", "-T", "hi"],
         &["occur", "x", ",", "occur", "y"],
     ];
