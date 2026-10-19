@@ -1015,6 +1015,40 @@ describe('the day strip zooms onto an hour range', () => {
 		});
 	});
 
+	// vividn, 2026-10-19: «it looks blank when scrolling to the right when
+	// already at now» (da-og8a2). The grid and the ruler ran on past now;
+	// what was missing was a state recorded there, cut at the now-line.
+	test('zoomed past now, the grid runs on and a recorded meeting is drawn; a running state stops at now', async () => {
+		await settledRoom(phone, 'future', async (app) => {
+			const { page } = app;
+			await app.clock.set(todayAt(12));
+			await seedLines(app, ['start work -t 09:00', 'start meeting -t 14:00', 'end meeting -t 15:00']);
+			await say(app, { hourFrom: 11, hourTo: 16 });
+			await untilWindow(app, 'w[0] === 11');
+			await page.locator(`${TODAY} rect.block[data-field="meeting"]`).waitFor();
+			await app.idle();
+
+			const box = await bandBox(app);
+			const right = box.x + box.width;
+			const now = (await page.locator(`${TODAY} line.current-time-line`).boundingBox()).x;
+			const block = (field) => page.locator(`${TODAY} rect.block[data-field="${field}"]`).boundingBox();
+			const meeting = await block('meeting');
+			const work = await block('work');
+			assert.ok(now > box.x && now < right, `now is off the band: ${now} in ${box.x}–${right}`);
+			assert.ok(
+				meeting.x > now && meeting.x + meeting.width < right,
+				`the meeting is not past now on the band: ${JSON.stringify(meeting)}, now ${now}`
+			);
+			assert.ok(Math.abs(work.x + work.width - now) < 1.5, `work runs past now: ${JSON.stringify(work)}, now ${now}`);
+			const hoursPastNow = await page
+				.locator('.strip .gridlines .gridline')
+				.evaluateAll((lines, [from, to]) =>
+					lines.map((l) => l.getBoundingClientRect().x).filter((x) => x > from + 1 && x < to)
+				, [now, right]);
+			assert.ok(hoursPastNow.length >= 3, `the grid past now: ${hoursPastNow}`);
+		});
+	});
+
 	test('the ⊖ is a fingertip, in the one column no picture is drawn in', async () => {
 		await settledRoom(phone, 'fingertip', async (app) => {
 			const { page } = app;

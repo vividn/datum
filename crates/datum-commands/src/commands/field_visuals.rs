@@ -81,10 +81,12 @@ pub(crate) struct SwitchRegion {
     pub id: Option<String>,
 }
 
-/// The field's switch regions from `from` until `open_end_ms`: its state
-/// changes in `[from, until]` as the one oracle reads them
+/// The field's switch regions from `from`: its state changes in
+/// `[from, until]` as the one oracle reads them
 /// ([`FieldStateRows::changes_between`], da-795cy), one region per run of
-/// one state, the last left open. Only the geometry is decided here. A
+/// one state, the last left open until `open_end_ms`. A region a later
+/// change closes is drawn wherever it lies, past `open_end_ms` too: a
+/// meeting recorded for this afternoon is a block there (da-og8a2). Only the geometry is decided here. A
 /// block's own span is the block's to draw ([`render_field_visuals`]), so
 /// the region it interrupted runs on under it up to its trailing edge, and
 /// what holds past that edge (a resumed state continuing the same region)
@@ -98,10 +100,10 @@ pub(crate) fn switch_regions(
     let mut out: Vec<SwitchRegion> = Vec::new();
     for (i, c) in changes.iter().enumerate() {
         let mut start_ms = c.at.timestamp_millis();
-        if start_ms > open_end_ms {
+        let next_ms = changes.get(i + 1).map(|next| next.at.timestamp_millis());
+        if next_ms.is_none() && start_ms > open_end_ms {
             break;
         }
-        let next_ms = changes.get(i + 1).map(|next| next.at.timestamp_millis());
         let end_ms = next_ms.unwrap_or(open_end_ms);
         if let Some(trailing) = c
             .row
@@ -116,7 +118,7 @@ pub(crate) fn switch_regions(
         }
         // Empty, except the state left open: switched to at the open end
         // itself, it still holds (a held clock renders at that instant).
-        if start_ms > open_end_ms || (start_ms >= end_ms && next_ms.is_some()) {
+        if start_ms > end_ms || (start_ms == end_ms && next_ms.is_some()) {
             continue;
         }
         match out.last_mut() {

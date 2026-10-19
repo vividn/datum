@@ -972,6 +972,48 @@ mod tests {
         );
     }
 
+    /// da-og8a2: a meeting recorded for 15:00–16:00 is a block there on a
+    /// day whose now is 14:00, and a state still running stops at now.
+    #[test]
+    fn recorded_future_block_drawn_running_state_stops_at_now() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let at = |h| Utc.with_ymd_and_hms(2026, 4, 27, h, 0, 0).unwrap();
+        for (field, h, state) in [
+            ("work", 8, true),
+            ("meeting", 15, true),
+            ("meeting", 16, false),
+        ] {
+            let dt = DatumTime::from_utc_and_tz(at(h), "UTC").unwrap();
+            let entry = Entry::new(
+                field,
+                Verb::Switch,
+                Some(state.into()),
+                None,
+                Some(dt),
+                None,
+                "t",
+            );
+            db.insert_entry(&entry).unwrap();
+        }
+        let ms = |h| at(h).timestamp_millis();
+        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap();
+
+        let fields =
+            build_day_fields(&db, &utc_zone(), ms(0), day_end.timestamp_millis(), ms(14)).unwrap();
+        let spans = |f: &str| {
+            let field = fields.iter().find(|x| x.field == f).unwrap();
+            (field.blocks.iter())
+                .map(|b| (b.start_ms, b.end_ms))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(spans("meeting"), [(ms(15), ms(16))]);
+        assert_eq!(spans("work"), [(ms(8), ms(14))]);
+    }
+
     /// da-zxs: a day entirely before `now_ms` is unaffected — the open
     /// switch region for that past day still extends to its own day_end.
     #[test]
