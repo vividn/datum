@@ -572,3 +572,23 @@ fn a_kit_refuses_a_field_name_setup_refuses() {
     install(&db, kit, &[]).unwrap();
     assert!(db.load_spec("my coffee").unwrap().is_some());
 }
+
+/// A kit command named after a built-in or its short name is refused at
+/// install, and an alias of the name never runs in the built-in's place:
+/// `datum stats` read and never logged `y` (da-00llj).
+#[test]
+fn a_built_in_name_is_no_kit_command_and_no_alias_runs_in_its_place() {
+    for name in ["stats", "rt", "kit"] {
+        let db = fresh_db();
+        let kit = format!(
+            "[kit]\nname = \"k\"\n\n[[command]]\nname = \"{name}\"\nexpands_to = \"occur y\"\n"
+        );
+        let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
+        assert!(err.contains(&format!("'{name}' is a built-in")), "{err}");
+        assert!(db.load_commands_by_kit("k").unwrap().is_empty(), "{name}");
+    }
+    let db = fresh_db();
+    run_cli(&["alias", "set", "stats", "occur y"], &db).unwrap();
+    run_cli(&["stats"], &db).unwrap();
+    assert!(logged_entries(&db, "y").is_empty());
+}

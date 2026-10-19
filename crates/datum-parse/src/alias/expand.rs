@@ -79,8 +79,10 @@ impl<'a> Resolver for MapResolver<'a> {
     }
 }
 
-/// Known subcommand names we stop expanding at. Kept in one place so
-/// both datum-parse and datum-commands agree.
+/// Known subcommand names we stop expanding at, so a built-in always wins
+/// over an alias or a kit command of its name (da-00llj). Kept in one place
+/// so both datum-parse and datum-commands agree; every name and short name
+/// in the help table is here (`known_subcommands_cover_the_help_table`).
 pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur",
     "start",
@@ -119,6 +121,12 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "rt",
     "rename",
     "dayview",
+    "nowview",
+    "view",
+    "stats",
+    "flag",
+    "meta",
+    "kit",
     "info",
     "db",
     "config",
@@ -991,6 +999,31 @@ mod tests {
 
     fn v(s: &[&str]) -> Vec<String> {
         s.iter().map(|x| x.to_string()).collect()
+    }
+
+    /// A name missing here is one an alias or a kit command can take from
+    /// the built-in: `stats` was, and a kit's `stats` logged (da-00llj).
+    #[test]
+    fn known_subcommands_cover_the_help_table() {
+        for cmd in crate::help::commands::COMMANDS {
+            for name in std::iter::once(&cmd.name).chain(cmd.aliases) {
+                assert!(KNOWN_SUBCOMMANDS.contains(name), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_alias_named_after_a_built_in_does_not_expand() {
+        let map = std::collections::HashMap::from([("stats".to_string(), {
+            let tokens = shell_split("occur y");
+            ResolvedAlias {
+                expands_to: "occur y".to_string(),
+                tokens,
+            }
+        })]);
+        let (argv, chain) = try_expand_alias(v(&["datum", "stats"]), &MapResolver(&map)).unwrap();
+        assert_eq!(argv, v(&["datum", "stats"]));
+        assert!(chain.is_empty());
     }
 
     // ─── da-a2o8 switch-chain collapse ───────────────────────────────────

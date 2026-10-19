@@ -82,6 +82,14 @@ pub fn validate_command(c: &CommandEntry) -> Result<()> {
             "kit command: missing or empty `name`".to_string(),
         ));
     }
+    // A built-in always wins over a kit command of its name, so the command
+    // could never run: refuse it rather than install it dead (da-00llj).
+    if datum_parse::alias::KNOWN_SUBCOMMANDS.contains(&c.name.as_str()) {
+        return Err(DatumError::Other(format!(
+            "kit command '{}': '{}' is a built-in command; give it another name",
+            c.name, c.name
+        )));
+    }
     if c.script.is_some() {
         return Err(DatumError::Other(format!(
             "kit command '{}': scripted commands not yet supported (Level 3 deferred)",
