@@ -26,6 +26,7 @@ import { syncCommand } from '$lib/sync.js';
 import { parseEcho, runEchoed } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
+import { FROZEN_AT } from '$lib/dbProtocol.js';
 import { conflictsArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '$lib/calls.js';
 import { listsConflicts, type Conflicted } from '$lib/conflicts.js';
 import { verbAsked } from '$lib/track.js';
@@ -87,7 +88,7 @@ export async function resort(): Promise<void> {
 }
 
 export interface ReplLike {
-	runArgv(argv: string[], line?: string, stdin?: string): Promise<RunResult>;
+	runArgv(argv: string[], line?: string, stdin?: string, env?: string[]): Promise<RunResult>;
 }
 
 let repl: ReplLike | null = null;
@@ -234,6 +235,10 @@ function guess(result: RunResult): void {
  * `echo` is what to SAY ran, when that is not the whole argv: the bar's
  * pills go into the argv as words but are shown beside the ghost as pills
  * (da-xfa4), so saying them twice would be saying them twice.
+ *
+ * Pressed by a person — a tap, Enter, a Save, whose event is still being
+ * dispatched — the command runs on a clock frozen at that event's stamp
+ * (`gesture`), so what it logs is when they acted.
  */
 export async function press(
 	argv: string[],
@@ -252,11 +257,12 @@ export async function press(
 	// a slow command's ghost is gone before its result is; vividn chose that:
 	// «the output section shows the command that was run again, so it is
 	// okay for it to fade before then».
+	const env = gesture();
 	if (!typed) showGhost(echo ?? line ?? shellJoin(argv));
 	// Typed before the tree is filled, the REPL it is for may not be
 	// mounted yet: wait for the tree, and for that REPL to announce itself.
 	if (!repl) await settledTree().then(tick);
-	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
+	const result = await (repl ? repl.runArgv(argv, line, stdin, env) : alone(argv, line, stdin, env));
 	// The listing, typed, opens the widget they are resolved in (da-6cutb).
 	if (result.code === 0 && listsConflicts(argv)) void openPlace('conflicts');
 	// So do `setup` and `setup F` the field widget, on F (da-ez40f).
@@ -283,10 +289,46 @@ async function answerVerb(argv: string[], result: RunResult): Promise<RunResult 
 	return field === null ? null : openField(field);
 }
 
+/**
+ * The keydown being handled, until the next task. Enter submits a form
+ * after its keydown, and the `submit` is stamped then, past whatever kept a
+ * busy page from handling the key: the person pressed it at the keydown.
+ * A tap is its own: a busy page runs a waiting tap ahead of that timer, so
+ * its `pointerdown` lets go of the key first.
+ */
+let key: Event | undefined;
+globalThis.addEventListener?.(
+	'keydown',
+	(e) => {
+		key = e;
+		setTimeout(() => (key = undefined));
+	},
+	true
+);
+globalThis.addEventListener?.('pointerdown', () => (key = undefined), true);
+
+/**
+ * The CLI's clock frozen at the gesture being dispatched, if one is
+ * (da-szzgy): the person's tap or keypress, by the event's own stamp, so
+ * neither a busy page nor the worker's queue makes the entry later. `[]`
+ * from a console or a timer. On the page's `Date`, which the tests hold.
+ *
+ * The event is `window.event`, the DOM's current event: legacy, but in the
+ * standard and in every engine, and set only while it is dispatched. So a
+ * press freezes only when called in its handler, before any await; a caller
+ * that awaits first runs on the wall clock, as before (da-szzgy).
+ */
+function gesture(): string[] {
+	const event = (globalThis as { event?: Event }).event;
+	if (!event?.isTrusted) return [];
+	const age = Math.max(0, performance.now() - (key ?? event).timeStamp);
+	return [`${FROZEN_AT}${Math.round(Date.now() - age)}`];
+}
+
 /** With no REPL mounted: run it, record it, and bump the epoch here. */
-async function alone(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
+async function alone(argv: string[], line?: string, stdin?: string, env?: string[]): Promise<RunResult> {
 	const ranAt = Date.now();
-	const result = await ((stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ?? runEchoed(asking(run), argv, stdin));
+	const result = await ((stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ?? runEchoed(asking(run), argv, stdin, env));
 	record(line ?? shellJoin(argv), ranAt, result);
 	await ran(result);
 	return result;

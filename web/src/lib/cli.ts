@@ -37,12 +37,12 @@
 // going back for the file: when it gets it, what was typed meanwhile moves
 // across through the CLI's own `db backup -` and `db restore -`.
 
-import { File as MemFile, OpenFile, WASI, type Fd, type PreopenDirectory } from '@bjorn3/browser_wasi_shim';
+import { File as MemFile, OpenFile, WASI, wasi as defs, type Fd, type PreopenDirectory } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
 import { cached, DATABASES, dbFiles, forgetCached, KEPT, MemoryHandle, opfsDirectory, Sink, staged, unkept, type Handle } from './wasiFs.js';
 import { backupArgv, mergeArgv } from './calls.js';
 import { OPFS_DIR } from './databases.js';
-import type { CliResult, Stage, StorageKind } from './dbProtocol.js';
+import { FROZEN_AT, type CliResult, type Stage, type StorageKind } from './dbProtocol.js';
 
 /**
  * How long a command waits for the files before failing.
@@ -445,7 +445,8 @@ async function exec(
 	env: string[],
 	stdin = '',
 	onStderr?: (text: string) => void,
-	stage?: Stage
+	stage?: Stage,
+	at?: number
 ) {
 	const stdout = new Sink();
 	const stderr = new Sink(onStderr);
@@ -481,6 +482,17 @@ async function exec(
 		view.setUint32(size, argvBytes, true);
 		return 0;
 	};
+	// The gesture's instant is the process's wall clock (`FROZEN_AT`): its
+	// entry's time and its create time are when the person acted, not when
+	// the process got to run. MONOTONIC stays real, so what times itself works.
+	if (at !== undefined) {
+		const clock = wasi.wasiImport.clock_time_get;
+		wasi.wasiImport.clock_time_get = (id: number, precision: bigint, time: number) => {
+			if (id !== defs.CLOCKID_REALTIME) return clock(id, precision, time);
+			new DataView(wasi.inst.exports.memory.buffer).setBigUint64(time, BigInt(at) * 1_000_000n, true);
+			return 0;
+		};
+	}
 	const instance = await WebAssembly.instantiate(module, {
 		wasi_snapshot_preview1: wasi.wasiImport
 	});
@@ -650,6 +662,10 @@ export function runCli(
 	stage?: Stage,
 	pane = false
 ): Promise<CliResult | null> {
+	// The gesture's instant is this command's alone, not the handover's.
+	const frozen = env.find((v) => v.startsWith(FROZEN_AT));
+	const at = frozen ? Number(frozen.slice(FROZEN_AT.length)) : undefined;
+	env = env.filter((v) => v !== frozen);
 	lastEnv = env;
 	useDatabase(argv, env);
 	return enqueue(async () => {
@@ -658,7 +674,7 @@ export function runCli(
 		const t1 = performance.now();
 		const runIn = async (handles: Map<string, Handle>, tries: number): Promise<CliResult> => {
 			const t2 = performance.now();
-			const run = await exec(module, handles, argv, env, stdin, onStderr, stage);
+			const run = await exec(module, handles, argv, env, stdin, onStderr, stage, at);
 			return {
 				argv,
 				code: run.code,

@@ -211,6 +211,10 @@ function holdDate(context, at, pin = true) {
 			let fixed = fromPage.heldAt;
 			// First in line, ahead of the app's listener and the import's buffer.
 			self.addEventListener('message', (e) => {
+				// A held clock is the CLI's clock, a tap's too: the instant a
+				// gesture froze it at (da-szzgy) is the page's \`Date\`, which
+				// Playwright's timers move apart from this one.
+				if (Array.isArray(e.data?.env)) e.data.env = e.data.env.filter((v) => !v.startsWith('DATUM_WEB_FROZEN_AT='));
 				if (e.data?.datumTestClock === undefined) return;
 				fixed = e.data.datumTestClock;
 				e.stopImmediatePropagation();

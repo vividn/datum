@@ -153,12 +153,14 @@
 	 * await: its dialog needs the keypress — unless the caller brought
 	 * `stdin` itself, which is a file already chosen (`engine.press`). So
 	 * does `sync chain connect`, to the sync worker ($lib/sync.ts).
+	 *
+	 * `env` is the press's own: its frozen clock (`gesture` in engine.ts).
 	 */
-	export async function runArgv(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
+	export async function runArgv(argv: string[], line?: string, stdin?: string, env: string[] = []): Promise<RunResult> {
 		const ranAt = Date.now();
 		const result = await (
 			(stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ??
-			measuring.then(() => runEchoed(asking(run), fitArgv(argv, width), stdin, helpEnv(argv, characters())))
+			measuring.then(() => runEchoed(asking(run), fitArgv(argv, width), stdin, [...helpEnv(argv, characters()), ...env]))
 		);
 		await land(line ?? shellJoin(argv), result, ranAt);
 		return result;
