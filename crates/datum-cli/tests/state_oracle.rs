@@ -57,7 +57,7 @@ fn a_switch_after_a_finished_block_is_not_a_repeat() {
     assert!(out.contains("CREATE"), "{out}");
     assert!(!out.contains("!state2"), "state1 had resumed:\n{out}");
     let check = env.ok(&["check"]);
-    assert!(!check.contains("repeated_open"), "{check}");
+    assert!(!check.contains("repeated_state"), "{check}");
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn an_occur_leaves_the_state_so_a_switch_back_is_a_repeat() {
     let out = env.ok(&["switch", "coffee", "drinking", "-q"]);
     assert!(out.contains("!drinking"), "{out}");
     let check = env.ok(&["check"]);
-    assert!(check.contains("repeated_open"), "{check}");
+    assert!(check.contains("repeated_state"), "{check}");
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn a_genuine_repeat_is_still_marked_and_flagged() {
     let out = env.ok(&["switch", "field", "state2", "-q"]);
     assert!(out.contains("!state2"), "{out}");
     let check = env.ok(&["check"]);
-    assert!(check.contains("repeated_open"), "{check}");
+    assert!(check.contains("repeated_state"), "{check}");
 }
 
 /// da-22750, vividn's report: a moment (dur MOMENT, or zero) names a state
@@ -171,10 +171,12 @@ fn a_moment_state_resumes_the_state_before_it() {
 }
 
 /// da-vwymi, volya's db: 131 harmless double closes hid 7 repeated opens
-/// that held most of her recorded hours. The check names the two kinds
-/// apart, and lists a repeated open by the span it sits in, longest first.
+/// that held most of her recorded hours. The check lists a repeated open
+/// by the span it sits in, longest first, then a repeated close, all one
+/// `repeated_state` (da-wdfsw), whose message says the close is usually a
+/// duplicate.
 #[test]
-fn check_splits_repeated_closes_from_repeated_opens_longest_span_first() {
+fn check_lists_repeated_opens_by_longest_span_then_repeated_closes() {
     let env = Env::new();
     let at = |day: &str, t: &str| ["-d", day, "-t", t].map(String::from);
     let log = |args: &[&str], day: &str, t: &str| {
@@ -201,16 +203,21 @@ fn check_splits_repeated_closes_from_repeated_opens_longest_span_first() {
     log(&["end", "activity"], "2025-08-08", "14:00");
     log(&["end", "activity"], "2025-08-08", "14:05");
     let check = env.ok(&["check"]);
-    assert!(check.contains("[WARN ] repeated_open (x2)"), "{check}");
-    assert!(check.contains("[WARN ] repeated_close (x1)"), "{check}");
+    assert!(check.contains("[WARN ] repeated_state (x3)"), "{check}");
+    assert_eq!(check.matches("repeated_state").count(), 1, "{check}");
     assert!(check.contains("MISSING"), "{check}");
+    assert!(check.contains("usually a duplicate"), "{check}");
+    assert!(check.contains("`datum del <hid>`"), "{check}");
     let long = "talking for 73h: 2025-08-05 13:00 → 2025-08-08 14:00";
     let short = "researching for 1h: 2025-08-05 12:00 → 2025-08-05 13:00";
     let (Some(long_at), Some(short_at)) = (check.find(long), check.find(short)) else {
         panic!("both spans named:\n{check}");
     };
     assert!(long_at < short_at, "the long span first:\n{check}");
-    assert!(short_at < check.find("repeated_close").unwrap(), "{check}");
+    let end_row = check.rfind("14:05").expect("the double end listed");
+    assert!(short_at < end_row, "the end after the spans:\n{check}");
+    let json = env.ok(&["check", "--json"]);
+    assert_eq!(json.matches("\"repeated_state\"").count(), 1, "{json}");
 }
 
 /// da-vwymi review: a state with a newline in it renders as two table

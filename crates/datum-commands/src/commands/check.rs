@@ -1187,12 +1187,11 @@ pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
         .collect())
 }
 
-/// The live `repeated_state` rows (da-acft), as two issues of their own
-/// (da-vwymi): `repeated_open`, each with the span it sits in, longest
-/// first, so a block left open for days stands above a double switch
-/// seconds apart; and `repeated_close`, which is usually a duplicate and
-/// changes nothing.
-fn collect_repeated_state_live(db: &Db) -> Result<Vec<Issue>> {
+/// The live `repeated_state` rows (da-acft) as one issue (da-wdfsw): each
+/// repeated switch with the span it sits in, longest first, so a block left
+/// open for days stands above a double switch seconds apart (da-vwymi), then
+/// each repeated end, which is usually a duplicate.
+fn collect_repeated_state_live(db: &Db) -> Result<Option<Issue>> {
     use datum_core::integrity::Repeat;
     use datum_parse::time::{format_human_duration, DurationPrecision};
     let (mut opens, closes): (Vec<Repeat>, Vec<Repeat>) =
@@ -1285,30 +1284,19 @@ fn collect_repeated_state_live(db: &Db) -> Result<Vec<Issue>> {
         })
     };
     let one = |count: usize| count == 1;
-    Ok([
-        issue(opens, "repeated_open", &|count| {
-            format!(
-                "{count} entr{} switch{} into the state {} field was already in, each with the span \
-                 it sits in, longest first. Usually a close or switch is MISSING before it, and \
-                 `stats` counts the whole span as that state until it is backfilled \
-                 (`datum end <field> -t <when>`, or `datum switch <field> <state> -t <when>`).",
-                if one(count) { "y" } else { "ies" },
-                if one(count) { "es" } else { "" },
-                if one(count) { "its" } else { "their" },
-            )
-        }),
-        issue(closes, "repeated_close", &|count| {
-            format!(
-                "{count} entr{} close{} a field already closed. Usually a true duplicate, which \
-                 changes no state or `stats`; `datum del <hid>` clears one.",
-                if one(count) { "y" } else { "ies" },
-                if one(count) { "s" } else { "" },
-            )
-        }),
-    ]
-    .into_iter()
-    .flatten()
-    .collect())
+    opens.extend(closes);
+    Ok(issue(opens, "repeated_state", &|count| {
+        format!(
+            "{count} entr{} repeat{} the state {} field was already in: each switch with the \
+             span it sits in, longest first, then each end. Before a repeated switch a close or \
+             switch is usually MISSING, and `stats` counts the whole span as that state until it \
+             is backfilled (`datum end <field> -t <when>`, or `datum switch <field> <state> -t \
+             <when>`). A repeated end is usually a duplicate, which changes no state or `stats`; `datum del <hid>` clears one.",
+            if one(count) { "y" } else { "ies" },
+            if one(count) { "s" } else { "" },
+            if one(count) { "its" } else { "their" },
+        )
+    }))
 }
 
 /// da-n7tp2: a sample of `stats`' cached days, each recomputed from the
@@ -2810,8 +2798,8 @@ mod tests {
         let issues = collect_integrity_warnings(&db).unwrap();
         let issue = issues
             .iter()
-            .find(|i| i.category == "repeated_open")
-            .expect("repeated_open must be reported");
+            .find(|i| i.category == "repeated_state")
+            .expect("repeated_state must be reported");
         assert_eq!(issue.severity, Severity::Warning);
         assert_eq!(issue.count, 1);
         assert_eq!(
@@ -2953,8 +2941,8 @@ mod tests {
             collect_integrity_warnings(&db)
                 .unwrap()
                 .iter()
-                .any(|i| i.category == "repeated_open"),
-            "repeated_open should fire on consecutive `happy` switches",
+                .any(|i| i.category == "repeated_state"),
+            "repeated_state should fire on consecutive `happy` switches",
         );
 
         // User remembers the intermediate transition and backfills it.
@@ -2971,8 +2959,8 @@ mod tests {
 
         let issues = collect_integrity_warnings(&db).unwrap();
         assert!(
-            issues.iter().all(|i| i.category != "repeated_open"),
-            "repeated_open must disappear once the missing transition is backfilled, got: {issues:?}",
+            issues.iter().all(|i| i.category != "repeated_state"),
+            "repeated_state must disappear once the missing transition is backfilled, got: {issues:?}",
         );
     }
 
