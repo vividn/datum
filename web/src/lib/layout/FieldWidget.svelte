@@ -16,7 +16,11 @@
 	have it be "fields"». There is no «+ new field» line (da-zz9rn), vividn, 2026-10-19: «The (+ new field)
 	button at the top is confusing, especially when this is the very first
 	field being added»: on a field, the sheet's first entry is the way back
-	to a new one, since a setup tab has no (+) of its own.
+	to a new one, since a setup tab has no (+) of its own. Beside it on a
+	field with a spec, «rename» (da-qimwi), vividn: «there should probably be an
+	explicit rename button though»: it asks for the new name, shows `rename
+	OLD NEW --dry-run`'s counts (a refusal asks again, saying why), runs
+	`rename OLD NEW` and reopens the form on NEW.
 
 	Which field is `editing` ($lib/fieldWidget.ts), one store for every copy
 	of the widget, so anything that opens it on a field has one place to
@@ -36,8 +40,9 @@
 	import Pane from '$lib/Pane.svelte';
 	import { act } from '$lib/act.js';
 	import { fieldPill } from '$lib/bar.js';
-	import { specShowArgv } from '$lib/calls.js';
-	import { confirm } from '$lib/confirm.js';
+	import { renameFieldArgv, specShowArgv } from '$lib/calls.js';
+	import { stripAnsi } from '$lib/ansi.js';
+	import { ask, choose, confirm } from '$lib/confirm.js';
 	import type { FieldButton } from '$lib/fields.js';
 	import { answerField, editing } from '$lib/fieldWidget.js';
 	import { run } from '$lib/run.js';
@@ -89,6 +94,25 @@
 		$editing = { field };
 	}
 
+	/** The field renamed: asked, its dry run shown, run, and the form on the new name. */
+	async function rename(): Promise<void> {
+		const old = $editing.field;
+		if (dirty && !(await confirm(`Rename ${old} without saving what you changed?`, 'rename'))) return;
+		let [to, said]: [string | null, string] = [old, `rename ${old} to:`];
+		for (;;) {
+			to = await ask(said, 'rename', to ?? old);
+			if (to === null || to === old) return;
+			const dry = await run(renameFieldArgv(old, to, true));
+			if (dry.code === 0) {
+				if ((await choose(dry.stdout.trim(), ['rename'], 'cancel', 'run')) === null) return;
+				break;
+			}
+			said = `${stripAnsi(dry.stderr).trim()} — rename ${old} to:`;
+		}
+		const result = await press(renameFieldArgv(old, to));
+		if (result.code === 0 && $editing.field === old) $editing = { field: to };
+	}
+
 	async function close(save: Save | null): Promise<void> {
 		// The field a new one's `track F` or `setup F` names.
 		const [asked, made] = [$editing, spec === null && save && save.argv[1]];
@@ -128,6 +152,9 @@
 							<button type="button" class="pick" use:act={'open'} aria-haspopup="dialog" on:click={() => ((find = ''), (picking = true))}
 								>fields</button
 							>
+						{/if}
+						{#if spec}
+							<button type="button" class="rename" use:act={'open'} aria-haspopup="dialog" on:click={rename}>rename</button>
 						{/if}
 					</svelte:fragment>
 				</FieldForm>
@@ -175,6 +202,7 @@
 	}
 
 	.pick,
+	.rename,
 	.chips button,
 	.find {
 		box-sizing: border-box;
@@ -188,11 +216,13 @@
 	}
 
 	.pick,
+	.rename,
 	.chips button {
 		cursor: pointer;
 	}
 
-	.pick {
+	.pick,
+	.rename {
 		flex: none;
 		border-color: var(--rule);
 		font-size: 0.75rem;

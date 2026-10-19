@@ -88,6 +88,11 @@ export function specShowArgv(field: string): string[] {
 	return ['setup', field, '--json'];
 }
 
+/** The field renamed, or with `dry` what it would move (da-qimwi). */
+export function renameFieldArgv(old: string, to: string, dry = false): string[] {
+	return ['rename', old, to, ...(dry ? ['--dry-run'] : [])];
+}
+
 export function redoArgv(): string[] {
 	return ['redo', '--dry-run'];
 }

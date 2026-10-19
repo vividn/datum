@@ -23,8 +23,9 @@
 	example takes the focus (da-zz9rn), vividn, 2026-10-19: «after selecting
 	an example don't enter text edit mode and open the keyboard, that is
 	jarring». The name line reads `field:` with «fields» beside it, the
-	widget's (`pick` slot), which goes to another field; a rename will stand
-	there too.
+	widget's (`pick` slot), which goes to another field, and on a field
+	«rename». The box keeps its placeholder whole: the buttons wrap under it
+	first (da-qimwi).
 
 	Every field, a new one too, has the five segments — Basics · States ·
 	Data · Aliases · Placement — none of them required. Its colour and the
@@ -678,6 +679,15 @@
 	.label.near {
 		inline-size: auto;
 		margin-inline-start: 1rem;
+	}
+
+	.name-line {
+		flex-wrap: wrap;
+	}
+
+	/* As wide as «what do you want to track?», or the buttons beside it wrap under it. */
+	.name-line .field {
+		flex: 1 1 27ch;
 	}
 
 	.name-line h2 {

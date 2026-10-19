@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { EXAMPLES, VERBS } from '../src/lib/track.ts';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, declared, openField } from './support/field.mjs';
+import { FIELD_FORM, cancelField, declared, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 import { shellJoin } from '../src/lib/shellSplit.ts';
 
@@ -160,8 +160,9 @@ describe('the field widget', () => {
 			await page.locator(`${FIELD_FORM} input.field`).waitFor();
 			const button = pick(page);
 			assert.equal((await button.innerText()).trim(), 'fields');
+			// At 390 px the box's placeholder takes the line, and «fields» wraps under it (da-qimwi).
 			const [box, name] = [await button.boundingBox(), await page.locator(`${FIELD_FORM} input.field`).boundingBox()];
-			assert.ok(Math.abs(box.y + box.height / 2 - (name.y + name.height / 2)) < 2, 'the button is not beside the name');
+			assert.ok(box.y >= name.y + name.height && box.x < name.x, 'the button is not under the name');
 			await button.click();
 			await page.locator(PICKER).waitFor();
 			assert.deepEqual([...(await chipTexts(page))].sort(), ['● tea', '█ nap'].sort());
@@ -502,6 +503,91 @@ describe('the field widget', () => {
 			assert.equal(await page.locator('dialog[open]').count(), 0);
 			assert.deepEqual(app.errors, []);
 		});
+	});
+
+	// vividn, 2026-10-19: «there should probably be an explicit rename button though» (da-qimwi).
+	test('«rename» on a field asks the new name, shows the dry run, runs `rename`, and the panes show the new name', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'mood', '--verb', 'switch', '--add-state', 'good']);
+			await app.run(['track', 'tea', '--verb', 'occur']);
+			// Not at the TRACK row's instant, whose slug it would share.
+			await app.clock.forward(60_000);
+			await app.run(['switch', 'mood', 'good']);
+			await app.clock.forward(60_000);
+			await app.run(['switch', 'mood', 'bad']);
+			await app.redraw();
+			const tail = page.locator('section.pane[data-title="tail"] tbody');
+			await until(() => tail.innerText(), (t) => t.includes('mood'));
+			// No rename on a new field: nothing to rename yet.
+			await openField(page);
+			await page.locator(`${FIELD_FORM} input.field`).waitFor();
+			assert.equal(await page.locator(`${FIELD_FORM} button.rename`).count(), 0);
+			await cancelField(page);
+			await openField(page, 'mood');
+			await page.locator(`${FIELD_FORM} h2`).waitFor();
+			const button = page.locator(`${FIELD_FORM} button.rename`);
+			assert.equal((await button.innerText()).trim(), 'rename');
+			const [box, name] = [await button.boundingBox(), await page.locator(`${FIELD_FORM} h2`).boundingBox()];
+			assert.ok(Math.abs(box.y + box.height / 2 - (name.y + name.height / 2)) < 4, 'rename is not beside the name');
+
+			// A name that is taken is refused by the dry run, and asked again saying why.
+			const ask = page.locator('dialog.ask');
+			await button.click();
+			assert.equal(await ask.locator('input').inputValue(), 'mood');
+			await ask.locator('input').fill('tea');
+			await ask.locator('button[value]').click();
+			await until(() => ask.locator('span').innerText(), (t) => t.includes('tea') && t.endsWith('rename mood to:') && t !== 'rename mood to:');
+			assert.equal(await ask.locator('input').inputValue(), 'tea');
+			await ask.locator('input').fill('feeling');
+			await ask.locator('button[value]').click();
+			// The dry run's counts — the two switches and the TRACK row — and nothing moved yet.
+			const confirm = page.locator('dialog.confirm');
+			await confirm.waitFor();
+			assert.match(await confirm.locator('p').innerText(), /would rename mood → feeling: 3 entries/);
+			assert.equal((await app.entries()).filter((e) => e.field === 'mood').length, 2);
+			await confirm.locator('button[value="rename"]').click();
+
+			// The form is on the new name, and the panes show it with its entries.
+			await until(() => heading(page), (t) => t === 'feeling');
+			assert.deepEqual((await app.entries()).map((e) => e.field).sort(), ['feeling', 'feeling']);
+			await until(() => tail.innerText(), (t) => t.includes('feeling') && !t.includes('mood'));
+			await page.locator('.bar button[data-field="feeling"]').waitFor();
+			assert.equal(await page.locator('.bar button[data-field="mood"]').count(), 0);
+			// One undo takes it all back.
+			assert.equal((await app.run(['undo'])).code, 0);
+			assert.deepEqual((await app.entries()).map((e) => e.field), ['mood', 'mood']);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// jasper on #944: at 390 px the placeholder was cut beside «fields» (da-qimwi).
+	test('on a phone the name line keeps its placeholder whole, and a field\'s rename stands beside «fields»', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'tea', '--verb', 'occur']);
+			await app.redraw();
+			await openField(page);
+			const input = page.locator(`${FIELD_FORM} input.field`);
+			await input.waitFor();
+			await pick(page).waitFor();
+			const [needs, has] = await input.evaluate((el) => {
+				const cs = getComputedStyle(el);
+				const ctx = document.createElement('canvas').getContext('2d');
+				ctx.font = cs.font;
+				return [ctx.measureText(el.placeholder).width, el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)];
+			});
+			assert.ok(needs <= has, `the placeholder needs ${needs}px and has ${has}px`);
+			await page.screenshot({ path: process.env.DATUM_SHOT ? `${process.env.DATUM_SHOT}/new.png` : undefined });
+			await cancelField(page);
+
+			await openField(page, 'tea');
+			await page.locator(`${FIELD_FORM} h2`).waitFor();
+			const [fields, rename] = [await pick(page).boundingBox(), await page.locator(`${FIELD_FORM} button.rename`).boundingBox()];
+			assert.ok(Math.abs(fields.y - rename.y) < 2 && rename.x > fields.x, 'rename does not stand next to «fields»');
+			await page.screenshot({ path: process.env.DATUM_SHOT ? `${process.env.DATUM_SHOT}/field.png` : undefined });
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
 	});
 });
 
