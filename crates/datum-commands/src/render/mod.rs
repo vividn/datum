@@ -1673,7 +1673,13 @@ fn render_now_state_scalar(
 ) -> String {
     let text = scalar_text(v);
     let ansi = state_ansi(field, &text, field_stored_color, state_colors);
-    format!("{ansi}{text}{RESET}")
+    // A boolean reads `start` / `end`, as in `tail`; its colour stays the
+    // stored value's, and `--json` carries the value (da-hxxv8).
+    let label = match v {
+        JsonValue::Bool(_) => state_truncate::state_label(v),
+        _ => text,
+    };
+    format!("{ansi}{label}{RESET}")
 }
 
 // da-adoi: `render_now_view` / `print_now_view` retired. Their last
