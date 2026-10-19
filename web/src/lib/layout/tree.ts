@@ -584,10 +584,10 @@ export function setTitle(layout: Layout, tabId: NodeId, title?: string): Layout 
  * parentheses — `tail | (nowview / custom)`. Derived on every read, so it
  * is always true; it is a label and never an identity.
  */
-export function nameOf(tab: Tab, kindTitle: (kind: string) => string): string {
+export function nameOf(tab: Tab, kindTitle: (kind: string, settings?: Record<string, unknown>) => string): string {
 	if (tab.layout !== undefined) return tab.layout;
 	if (tab.title !== undefined) return tab.title;
-	if (!isSplit(tab.content)) return kindTitle(tab.content.kind);
+	if (!isSplit(tab.content)) return kindTitle(tab.content.kind, tab.content.settings);
 	const { children, direction } = tab.content;
 	return children
 		.map(({ tabs, active }) => {

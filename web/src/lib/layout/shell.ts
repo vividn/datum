@@ -121,7 +121,7 @@ import {
 	kitLayout,
 	listLayouts,
 	loadLayout,
-	refreshKitLayouts,
+	refreshKits,
 	restore as restoreSaved,
 	saveAs as saveAsSaved,
 	saveLayout,
@@ -625,7 +625,7 @@ async function shipDebugLayout(): Promise<void> {
 		// failed. Either way there is nothing here to put right.
 		return;
 	}
-	await refreshKitLayouts();
+	await refreshKits();
 }
 
 /**
@@ -678,7 +678,7 @@ export function boot(): Promise<void> {
 		await initDb().catch(() => {});
 		// Before the first `resolve`: a kit's layout is one of the trees a
 		// name may mean, and `shippedTree` reads the cache synchronously.
-		await refreshKitLayouts();
+		await refreshKits();
 		await shipDebugLayout();
 		await fillRoot(withDebug(stored ?? fresh()));
 		booted = true;
@@ -692,7 +692,7 @@ export function boot(): Promise<void> {
 		// A kit installed in another tab — into the data db — changes what
 		// the names mean here too. This page's data db (da-vk1x): under
 		// `?db=other` the kit layouts are `other`'s.
-		onExternalChange(refreshKitLayouts, currentDb());
+		onExternalChange(refreshKits, currentDb());
 		// Every tab takes part; one per database leads it (da-6kpj5).
 		void import('$lib/sync.js').then(({ startSync }) => startSync(currentDb()));
 		void offerDefaults(stored === null);
@@ -1327,7 +1327,7 @@ export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
  * neither still sheds, and then it is a root tab like any other nameless
  * one: it lives as long as the page does.
  */
-export async function widgetInto(tabId: NodeId, kind: string): Promise<void> {
+export async function widgetInto(tabId: NodeId, kind: string, settings?: Record<string, unknown>): Promise<void> {
 	const name = findTab(get(layout), tabId)?.layout;
 	const builtin = canonicalName(kind);
 	if (
@@ -1335,7 +1335,7 @@ export async function widgetInto(tabId: NodeId, kind: string): Promise<void> {
 		(BUILTIN_NAMES.includes(builtin) || !!kitLayout(builtin))
 	)
 		return inlineInto(tabId, builtin);
-	apply((l) => shedLayout(setWidget(l, tabId, newWidget(kind)), tabId));
+	apply((l) => shedLayout(setWidget(l, tabId, newWidget(kind, settings)), tabId));
 	if (name !== undefined && !tabOf(name)) baselines.update(({ [name]: _gone, ...rest }) => rest);
 }
 

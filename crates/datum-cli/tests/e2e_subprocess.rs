@@ -1025,7 +1025,7 @@ fn subprocess_kit_install_from_stdin_and_dry_run() {
     assert_ok(&seen, "kit install - --dry-run");
     assert_eq!(
         out(&seen).trim(),
-        "Would install kit 'rest': 2 field(s), 1 alias(es), 1 view(s), 1 command(s), 0 layout(s), 0 index/indices"
+        "Would install kit 'rest': 2 field(s), 1 alias(es), 1 view(s), 1 command(s), 0 layout(s), 0 widget(s), 0 index/indices"
     );
     assert_eq!(out(&env.run(&["kit", "list"])).trim(), "No kits installed.");
 

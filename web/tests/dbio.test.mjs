@@ -331,7 +331,7 @@ for (const engine of [chromium, webkit]) {
 				async (app) => {
 					const { page } = app;
 					const said = await (await kitConfirm(page)).locator('p').innerText();
-					assert.match(said, /^Would install kit 'rest': 2 field\(s\), 1 alias\(es\), 1 view\(s\), 1 command\(s\), 0 layout\(s\), 0 index\/indices$/m);
+					assert.match(said, /^Would install kit 'rest': 2 field\(s\), 1 alias\(es\), 1 view\(s\), 1 command\(s\), 0 layout\(s\), 0 widget\(s\), 0 index\/indices$/m);
 					assert.match(said, /install only kits you trust/);
 					await answer(page, 'cancel');
 					assert.equal((await app.outputs()).at(-1), 'kit not installed — nothing ran');

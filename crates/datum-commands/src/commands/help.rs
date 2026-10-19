@@ -58,7 +58,7 @@ pub fn page(name: &str, db: &Db) -> Result<Option<String>> {
         for flag in c.switches.iter().chain(&c.flags) {
             usage.push_str(&format!(" [--{flag}]"));
         }
-        s.push_str(&format!("\nusage: {usage} [--sort [-]COLUMN]\n"));
+        s.push_str(&format!("\nusage: {usage} [--sort [-]COLUMN] [--json]\n"));
         if let Some(view) = &c.view_name {
             s.push_str(&format!("shows the view '{view}'\n"));
         }

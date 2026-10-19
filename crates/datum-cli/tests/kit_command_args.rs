@@ -165,15 +165,33 @@ fn sort_takes_a_shown_column_and_a_minus_reverses_it() {
     );
 }
 
+/// Each row is the shown columns, its cells as the table prints them, and
+/// the colour its rule paints, as hex (da-gh37k); `--json` is `--show json`.
 #[test]
 fn show_json_is_the_shown_rows_and_no_rows_is_an_empty_array() {
     let env = Env::new();
     let rows = env.json(&["nums"]);
     assert_eq!(
-        rows[0],
-        serde_json::json!({ "n": 2 }),
+        rows,
+        serde_json::json!([
+            { "n": 2, "row_cells": ["2"], "row_color": "#e5a50a" },
+            { "n": 1, "row_cells": ["1"] },
+            { "n": 3, "row_cells": ["3"] },
+        ]),
         "hidden `s` stays out"
     );
+    assert_eq!(
+        env.ok(&["nums", "--json"]),
+        env.ok(&["nums", "--show", "json"])
+    );
+    let table: Vec<String> = env
+        .ok(&["nums"])
+        .lines()
+        .skip(2)
+        .take(3)
+        .map(|l| l.trim_end().into())
+        .collect();
+    assert_eq!(table, ["2", "1", "3"], "control: the table's rows");
     assert_eq!(env.ok(&["nums", "--none", "--show", "json"]), "[]\n");
     // Control: a person gets the command's `empty` words.
     assert_eq!(env.ok(&["nums", "--none"]), "nothing\n");

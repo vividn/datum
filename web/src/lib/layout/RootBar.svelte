@@ -196,7 +196,7 @@
 	 */
 	async function add(): Promise<void> {
 		await leave();
-		const picked = await choose();
+		const picked = await choose([], false);
 		if (picked) await attempt(() => open('layout' in picked ? picked.layout : titleOf(picked.kind)));
 	}
 

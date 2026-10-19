@@ -48,6 +48,10 @@ pub struct KitToml {
     /// (da-gg0v).
     #[serde(default, rename = "layout", skip_serializing_if = "Vec::is_empty")]
     pub layouts: Vec<LayoutEntry>,
+    /// `[[widget]]` declarations: datum.day widgets the kit offers in the
+    /// database it installs into — see [`WidgetEntry`] (da-gh37k).
+    #[serde(default, rename = "widget", skip_serializing_if = "Vec::is_empty")]
+    pub widgets: Vec<WidgetEntry>,
     /// `[[index]]` declarations. Each becomes a `CREATE INDEX` against
     /// `entries`, its definition the entry `index:<kit>/<name>`. Trust-gated at install time;
     /// see slice 5 (da-d4t.5).
@@ -297,6 +301,107 @@ pub fn validate_layout_entry(entry: &LayoutEntry) -> Result<serde_json::Value> {
     Ok(root)
 }
 
+/// A `[[widget]]` entry — a datum.day widget the kit ships (da-gh37k).
+///
+/// Declarative, so no code ships in a kit: a kit is shared text, and code in
+/// it would run in the reader's page. The widget runs `command` with
+/// `--json` again whenever something changes, as the `custom` widget runs
+/// its line, draws each row it answers in the row's colour, and on a tap
+/// runs `row_action` with each `{column}` replaced by that row's value.
+///
+/// Stored in the kit's own `kit:<name>` entry, beside its `[kit]` table
+/// (`Db::install_kit_meta`), so it is offered in that database alone and
+/// goes with the kit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WidgetEntry {
+    pub name: String,
+    /// The pane's title; the name when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// A kit command or any datum command line, e.g. `chorelist`.
+    pub command: String,
+    /// A command line run on a tap of a row, e.g. `occur {field}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row_action: Option<String>,
+}
+
+/// The commands a widget's `command` may start with besides a kit command
+/// that runs a view: the ones that only read. It runs on every change, so
+/// a command that writes would run itself again. `stats` is one though it
+/// fills its per-day cache, a write, once a day: datum.day stops a widget's
+/// command only on its second write in a row (`KitWidget.svelte`), which
+/// is what lets a read that writes once stay in this list.
+pub const WIDGET_READS: [&str; 15] = [
+    "tail", "head", "now", "get", "history", "why", "grep", "count", "stats", "ids", "fields",
+    "states", "dayview", "nowview", "view",
+];
+
+/// The verbs a widget's `row_action` may start with: a tap logs, and does
+/// nothing else a kit, which is shared text, could ask of it.
+pub const WIDGET_ACTIONS: [&str; 7] = ["occur", "start", "end", "stop", "switch", "add", "note"];
+
+/// Screen a `[[widget]]` block: a name; a command that only reads — one of
+/// [`WIDGET_READS`], or a kit command that runs a view, and never
+/// `--watch`, which would not return; a `row_action` that
+/// logs ([`WIDGET_ACTIONS`]); and placeholders in it that are column names,
+/// each closed. Every `{` opens a placeholder: there is no escape for a
+/// literal brace.
+///
+/// `kit_commands` is every kit command the widget could name, the kit's own
+/// and those installed, each with whether it runs a view. A built-in's name
+/// is the built-in, as it always runs in place of a kit command of its name
+/// (da-00llj), so a kit command is asked of every other word.
+pub fn validate_widget_entry(entry: &WidgetEntry, kit_commands: &[(&str, bool)]) -> Result<()> {
+    let refuse = |why: String| {
+        Err(DatumError::Other(format!(
+            "kit widget '{}': {why}",
+            entry.name
+        )))
+    };
+    if entry.name.trim().is_empty() {
+        return Err(DatumError::Other("kit widget: missing name".into()));
+    }
+    let mut words = entry.command.split_whitespace();
+    let Some(first) = words.next() else {
+        return refuse("missing command".into());
+    };
+    let reads = WIDGET_READS.contains(&first)
+        || kit_commands
+            .iter()
+            .any(|&(name, view)| name == first && view);
+    if !reads {
+        return refuse(format!(
+            "command «{}» may write, and a widget's command runs on every change: start it with a command that reads ({}, or a kit command that runs a view)",
+            entry.command,
+            WIDGET_READS.join(", ")
+        ));
+    }
+    if let Some(w) = words.find(|w| ["-w", "--watch"].contains(&w.split('=').next().unwrap_or(w))) {
+        return refuse(format!("command «{}»: {w} never returns", entry.command));
+    }
+    if let Some(action) = &entry.row_action {
+        let verb = action.split_whitespace().next().unwrap_or_default();
+        if !WIDGET_ACTIONS.contains(&verb) {
+            return refuse(format!(
+                "row_action «{action}» runs `{verb}`; a tap may only log: {}",
+                WIDGET_ACTIONS.join(", ")
+            ));
+        }
+    }
+    let mut rest = entry.row_action.as_deref().unwrap_or_default();
+    while let Some(open) = rest.find('{') {
+        let Some(len) = rest[open..].find('}') else {
+            return refuse(format!("row_action has an unclosed «{{»: {rest}"));
+        };
+        let column = &rest[open + 1..open + len];
+        if !crate::kit_color_rule::is_column_name(column) {
+            return refuse(format!("row_action's «{{{column}}}» is not a column name"));
+        }
+        rest = &rest[open + len + 1..];
+    }
+    Ok(())
+}
+
 /// A `[[alias]]` entry — a named expansion of a `datum` invocation.
 ///
 /// Slice 3: round-trips byte-for-byte with the stored [`Alias`]; install
@@ -474,6 +579,7 @@ impl KitToml {
             views: Vec::new(),
             aliases: Vec::new(),
             layouts: Vec::new(),
+            widgets: Vec::new(),
             indices: indices.to_vec(),
             commands: Vec::new(),
         }
@@ -494,6 +600,7 @@ impl KitToml {
         indices: &[IndexEntry],
         commands: Vec<CommandEntry>,
         layouts: Vec<LayoutEntry>,
+        widgets: Vec<WidgetEntry>,
     ) -> Self {
         let mut kit = Self::from_field_specs(&meta.name, None, specs, indices);
         kit.kit = meta;
@@ -501,6 +608,7 @@ impl KitToml {
         kit.aliases = aliases.iter().map(AliasEntry::from_alias).collect();
         kit.commands = commands;
         kit.layouts = layouts;
+        kit.widgets = widgets;
         kit
     }
 }
@@ -1549,6 +1657,7 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
             views: vec![],
             aliases: vec![],
             layouts: vec![],
+            widgets: vec![],
             indices: vec![IndexEntry {
                 name: "by_field".into(),
                 on: "entries".into(),

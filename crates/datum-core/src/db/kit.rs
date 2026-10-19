@@ -24,12 +24,15 @@ use serde_json::Value as JsonValue;
 use crate::action::Action;
 use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
-use crate::kit::{IndexEntry, KitMeta};
+use crate::kit::{IndexEntry, KitMeta, WidgetEntry};
 
 use super::definition::{definition_data, INDEX_FIELD, KIT_FIELD, KIT_KEY};
 use super::spec::{SPEC_DISPLACED_KEY, SPEC_KIT_KEY};
 use super::types::LIVE_SQL;
 use super::Db;
+
+/// The key of a kit's `kit:<name>` entry that holds its widgets.
+const WIDGETS_KEY: &str = "widgets";
 
 /// The kit a spec entry's data names, if any.
 fn spec_kit(data: &JsonValue) -> Option<&str> {
@@ -278,17 +281,58 @@ impl Db {
     }
 
     /// Store a kit's `[kit]` table as the entry `kit:<name>` (da-xnzc7), so
-    /// it syncs with the kit's rows. An installed one is kept unless `force`,
-    /// as the kit's other rows are.
-    pub fn install_kit_meta(&self, meta: &KitMeta, force: bool) -> Result<()> {
-        let data = definition_data(meta, None)?;
-        self.install_definitions(
-            KIT_FIELD,
-            &meta.name,
-            vec![(meta.name.clone(), data)],
-            force,
-        )?;
-        Ok(())
+    /// it syncs with the kit's rows, and its `[[widget]]`s in it under
+    /// `widgets` (da-gh37k). An installed one is kept unless `force`, as the
+    /// kit's other rows are — and its widgets by name, as each of those is
+    /// its own row: a widget of a name it lacks is added to it. Returns the
+    /// names of the widgets written.
+    pub fn install_kit_meta(
+        &self,
+        meta: &KitMeta,
+        widgets: &[WidgetEntry],
+        force: bool,
+    ) -> Result<Vec<String>> {
+        let kept = match force {
+            true => None,
+            false => self
+                .definitions(KIT_FIELD, Some(&meta.name))?
+                .into_iter()
+                .next(),
+        };
+        let have: Vec<WidgetEntry> = match kept.as_ref().and_then(|d| d.get(WIDGETS_KEY)) {
+            Some(w) => serde_json::from_value(w.clone())?,
+            None => Vec::new(),
+        };
+        let new: Vec<&WidgetEntry> = widgets
+            .iter()
+            .filter(|w| !have.iter().any(|h| h.name == w.name))
+            .collect();
+        if kept.is_some() && new.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut data = match kept {
+            Some(data) => data,
+            None => definition_data(meta, Some(&meta.name))?,
+        };
+        let all: Vec<&WidgetEntry> = have.iter().chain(new.iter().copied()).collect();
+        if !all.is_empty() {
+            data[WIDGETS_KEY] = serde_json::to_value(all)?;
+        }
+        self.write_definition(KIT_FIELD, data)?;
+        Ok(new.iter().map(|w| w.name.clone()).collect())
+    }
+
+    /// The widgets the installed kit `kit_id` declared.
+    pub fn load_kit_widgets(&self, kit_id: &str) -> Result<Vec<WidgetEntry>> {
+        match self
+            .definitions(KIT_FIELD, Some(kit_id))?
+            .into_iter()
+            .next()
+            .and_then(|mut data| data.get_mut(WIDGETS_KEY).map(JsonValue::take))
+        {
+            Some(widgets) => Ok(serde_json::from_value(widgets)?),
+            None => Ok(Vec::new()),
+        }
     }
 
     /// The `[kit]` table stored for `kit_id`, if its install stored one.

@@ -15,7 +15,10 @@
 	device, less what is open above the tab), and then every kind this
 	DATABASE offers by its title, in the registry's order — `pickableIn`,
 	which is every kind but the ones another database gates (da-o2wm8:
-	"The DEBUG widget is only available from the DEBUG db").
+	"The DEBUG widget is only available from the DEBUG db"). After them,
+	the widgets this database's kits ship (da-gh37k), each wearing its kit's
+	name as a kit's layout does — none from the root bar's `+`, which opens
+	a named tab, and a kit's widget is named there by its kit's layout.
 
 	A layout says where it came from (da-gg0v): `data-source` is
 	`builtin`, `user` or `kit:<name>`, and a kit's layout wears the kit's
@@ -33,9 +36,12 @@
 	import { currentDb } from '$lib/database.js';
 	import { pickableIn, titleOf } from './registry.js';
 	import type { Choice, Offer } from './chooser.js';
+	import type { KitWidget } from './store.js';
 
 	/** The layouts this tab could hold, in order (chooser.ts). */
 	export let layouts: Offer[] = [];
+	/** The widgets this database's kits ship (da-gh37k), each the `kit` kind. */
+	export let widgets: (KitWidget & { kit: string })[] = [];
 
 	const dispatch = createEventDispatcher<{ close: Choice | null }>();
 
@@ -85,6 +91,15 @@
 	<div class="group" role="group" aria-label="Widgets">
 		{#each pickableIn(currentDb()) as kind (kind)}
 			<button type="button" class="widget" on:click={() => pick({ kind })}>{titleOf(kind)}</button>
+		{/each}
+		{#each widgets as { kit, name, title } (`${kit}/${name}`)}
+			<button
+				type="button"
+				class="widget"
+				data-source="kit:{kit}"
+				on:click={() => pick({ kind: 'kit', settings: { kit, widget: name, ...(title ? { title } : {}) } })}
+				><span class="name">{title ?? name}</span><span class="from">{kit}</span></button
+			>
 		{/each}
 	</div>
 </dialog>

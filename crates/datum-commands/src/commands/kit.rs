@@ -21,7 +21,8 @@
 //! a table of their own: each becomes an ordinary entry of field `layout`
 //! in THIS database, which is how a layout syncs with the data it belongs
 //! to and how the web reads it beside the person's own — see
-//! `datum_core::db::kit_layout`.
+//! `datum_core::db::kit_layout`. Its `[[widget]]` blocks (da-gh37k) go in
+//! the kit's own `kit:<name>` entry, beside its `[kit]` table.
 //! - `uninstall <name>` — drop every row tagged with this kit's id and
 //!   `DROP INDEX` every kit-owned index.
 
@@ -34,7 +35,9 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use datum_core::db::{validate_command, Db};
 use datum_core::field_spec::{detect_anchor_cycles, format_cycle};
-use datum_core::kit::{validate_layout_entry, FieldEntry, IndexEntry, KitMeta, KitToml};
+use datum_core::kit::{
+    validate_layout_entry, validate_widget_entry, FieldEntry, IndexEntry, KitMeta, KitToml,
+};
 use datum_core::kit_color::resolve_color;
 
 use crate::args::{KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs};
@@ -236,6 +239,22 @@ fn install_toml(
     for layout in &kit.layouts {
         let _ = validate_layout_entry(layout)?;
     }
+    // A widget's command reads: a kit command it names, the kit's own or
+    // one installed here, runs a view.
+    let installed = db.list_kit_commands()?;
+    let kit_commands: Vec<(&str, bool)> = kit
+        .commands
+        .iter()
+        .map(|c| (c.name.as_str(), c.view.is_some()))
+        .chain(
+            installed
+                .iter()
+                .map(|c| (c.name.as_str(), c.view_name.is_some())),
+        )
+        .collect();
+    for widget in &kit.widgets {
+        validate_widget_entry(widget, &kit_commands)?;
+    }
     // Views and commands too: each installer screens its own, but only
     // after the sections before it have written, which left a kit with a
     // bad colour rule half-installed and a dry run blind to it (da-45amw).
@@ -319,13 +338,14 @@ fn install_toml(
 
     if args.dry_run {
         println!(
-            "Would install kit '{}': {} field(s), {} alias(es), {} view(s), {} command(s), {} layout(s), {} index/indices",
+            "Would install kit '{}': {} field(s), {} alias(es), {} view(s), {} command(s), {} layout(s), {} widget(s), {} index/indices",
             kit.kit.name,
             specs.len(),
             kit.aliases.len(),
             kit.views.len(),
             kit.commands.len(),
             kit.layouts.len(),
+            kit.widgets.len(),
             kit.indices.len()
         );
         return Ok(());
@@ -349,16 +369,26 @@ fn install_toml(
         db.install_kit_layouts(&kit.kit.name, &kit.layouts, &client_id()?, args.force)?;
     // The `[kit]` table itself, so export writes it back and list names the
     // version installed (da-xnzc7) — once the kit owns a row: a kit whose
-    // every row was skipped installed nothing.
-    if report.installed().next().is_some()
+    // every row was skipped installed nothing. Its widgets go in it
+    // (da-gh37k), so a kit of widgets alone owns that row.
+    let widgets_installed = if report.installed().next().is_some()
         || !report.indices_installed.is_empty()
         || view_report.installed().next().is_some()
         || alias_report.installed().next().is_some()
         || cmd_report.installed().next().is_some()
         || layout_report.installed().next().is_some()
+        || !kit.widgets.is_empty()
     {
-        db.install_kit_meta(&kit.kit, args.force)?;
-    }
+        db.install_kit_meta(&kit.kit, &kit.widgets, args.force)?
+    } else {
+        Vec::new()
+    };
+    let widgets_skipped: Vec<&str> = kit
+        .widgets
+        .iter()
+        .map(|w| w.name.as_str())
+        .filter(|w| !widgets_installed.iter().any(|i| i == w))
+        .collect();
     crate::cmd::stamp_batch(db);
 
     let installed: Vec<&str> = report.installed().collect();
@@ -474,6 +504,21 @@ fn install_toml(
             println!("  - {l}");
         }
     }
+    if !widgets_installed.is_empty() {
+        println!("Installed {} widget(s):", widgets_installed.len());
+        for w in &widgets_installed {
+            println!("  + {w}");
+        }
+    }
+    if !widgets_skipped.is_empty() {
+        println!(
+            "Skipped {} widget(s) (existing widgets kept; use --force to overwrite):",
+            widgets_skipped.len()
+        );
+        for w in &widgets_skipped {
+            println!("  - {w}");
+        }
+    }
     Ok(())
 }
 
@@ -484,6 +529,7 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
     let installed_indices = db.load_indices_by_kit(&args.name)?;
     let commands = db.load_commands_by_kit(&args.name)?;
     let layouts = db.load_layouts_by_kit(&args.name)?;
+    let widgets = db.load_kit_widgets(&args.name)?;
     let meta = db.load_kit_meta(&args.name)?;
     if meta.is_none()
         && specs.is_empty()
@@ -506,7 +552,9 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
         name: args.name.clone(),
         ..KitMeta::default()
     });
-    let kit = KitToml::from_kit_rows(meta, &specs, views, &aliases, &indices, commands, layouts);
+    let kit = KitToml::from_kit_rows(
+        meta, &specs, views, &aliases, &indices, commands, layouts, widgets,
+    );
     let toml = kit.to_toml()?;
 
     match args.path.as_deref() {
@@ -560,6 +608,7 @@ fn show(name: &str, db: &Db) -> Result<()> {
     let views = db.load_views_by_kit(name)?;
     let commands = db.load_commands_by_kit(name)?;
     let layouts = db.load_layouts_by_kit(name)?;
+    let widgets = db.load_kit_widgets(name)?;
     let indices = db.kit_index_status(name)?;
     let meta = db.load_kit_meta(name)?;
     if meta.is_none()
@@ -604,6 +653,12 @@ fn show(name: &str, db: &Db) -> Result<()> {
             .map(|c| format!("{:<16} {}", c.name, c.help.as_deref().unwrap_or(""))),
     );
     section("layouts", layouts.iter().map(|l| l.name.clone()));
+    section(
+        "widgets",
+        widgets
+            .iter()
+            .map(|w| format!("{:<16} {}", w.name, w.command)),
+    );
     section(
         "indices",
         indices.iter().map(|(ix, err)| {

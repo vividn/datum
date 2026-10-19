@@ -14,12 +14,15 @@
 import Chooser from './Chooser.svelte';
 import { BUILTIN_NAMES } from './defaults.js';
 import { ancestorsOf, device, inlineInto, widgetInto } from './shell.js';
-import { listLayouts, refreshKitLayouts } from './store.js';
+import { kitWidgets, listLayouts, refreshKits } from './store.js';
 import type { LayoutSource } from './store.js';
 import type { NodeId } from './types.js';
 
-/** What the modal came back with: a layout to inline, or a widget kind to fill with. */
-export type Choice = { layout: string } | { kind: string };
+/**
+ * What the modal came back with: a layout to inline, or a widget kind to
+ * fill with — a kit's widget with the settings that name it (da-gh37k).
+ */
+export type Choice = { layout: string } | { kind: string; settings?: Record<string, unknown> };
 
 /** One line of the modal's layout list: the name, and where it came from. */
 export interface Offer {
@@ -48,7 +51,7 @@ export interface Offer {
  * installed at the prompt a moment ago is in the list.
  */
 async function layoutsFor(ancestors: string[]): Promise<Offer[]> {
-	await refreshKitLayouts();
+	await refreshKits();
 	const listed = (await listLayouts().catch(() => [])).filter(
 		(l) => !BUILTIN_NAMES.includes(l.name)
 	);
@@ -60,11 +63,17 @@ async function layoutsFor(ancestors: string[]): Promise<Offer[]> {
 		.filter((o) => !ancestors.includes(o.name));
 }
 
-/** Open the chooser; `ancestors` are the layout names it must not offer. */
-export async function choose(ancestors: string[] = []): Promise<Choice | null> {
+/**
+ * Open the chooser; `ancestors` are the layout names it must not offer.
+ * The kits' widgets are offered unless `kits` is false: the root bar's `+`
+ * opens a NAMED tab, and a kit's widget has no name there but its kit's
+ * layout's, which the layouts above already offer.
+ */
+export async function choose(ancestors: string[] = [], kits = true): Promise<Choice | null> {
 	const layouts = await layoutsFor(ancestors);
+	const widgets = kits ? kitWidgets() : [];
 	return new Promise((resolve) => {
-		const modal = new Chooser({ target: document.body, props: { layouts } });
+		const modal = new Chooser({ target: document.body, props: { layouts, widgets } });
 		modal.$on('close', ({ detail }) => {
 			modal.$destroy();
 			resolve(detail);
@@ -84,7 +93,7 @@ export async function choose(ancestors: string[] = []): Promise<Choice | null> {
  */
 export async function put(tabId: NodeId, picked: Choice): Promise<void> {
 	if ('layout' in picked) await inlineInto(tabId, picked.layout);
-	else await widgetInto(tabId, picked.kind);
+	else await widgetInto(tabId, picked.kind, picked.settings);
 }
 
 /**

@@ -21,12 +21,16 @@
 //
 // The kit half is CACHED rather than read on demand, because `shippedTree`
 // (shell.ts, the reset's target) has to answer synchronously while a menu
-// is being built. `refreshKitLayouts` is what fills it: at boot, when
+// is being built. `refreshKits` is what fills it: at boot, when
 // another tab writes to the data db, and whenever the chooser is opened —
-// so a kit installed at the prompt is offered without a reload.
+// so a kit installed at the prompt is offered without a reload. It fills
+// the kits' WIDGETS beside their layouts (da-gh37k), read from each kit's
+// own `kit:<name>` entry in the same database, so a database offers the
+// widgets of the kits installed in it, and no other's.
 
 import {
 	deleteLayoutArgv,
+	kitsArgv,
 	layoutHistoryArgv,
 	layoutsArgv,
 	layoutUndoArgv,
@@ -106,8 +110,32 @@ const layoutOf = ({ data: d }: LayoutRow): Layout => ({
 
 // ---- the kit half (da-gg0v) -------------------------------------------
 
-/** What a kit shipped, by name; filled by `refreshKitLayouts`. */
+/** What a kit shipped, by name; filled by `refreshKits`. */
 let kits = new Map<string, { layout: Layout; kit: string }>();
+
+/** A kit's `[[widget]]` (`crates/datum-core/src/kit.rs`, `WidgetEntry`). */
+export interface KitWidget {
+	name: string;
+	title?: string;
+	/** Run with `--json` on every epoch: its rows are what the widget draws. */
+	command: string;
+	/** Run on a tap of a row, each `{column}` its value. */
+	row_action?: string;
+}
+
+/** One row of `tail kit --json`: a kit's `[kit]` table, and its widgets. */
+export interface KitRow {
+	data: { name: string; kit_id: string; widgets?: KitWidget[] } | null;
+}
+
+/** The widgets the kits installed in this database ship, by `kit/name`. */
+let widgets = new Map<string, KitWidget & { kit: string }>();
+
+/** Every kit widget this database offers. Synchronous. */
+export const kitWidgets = (): (KitWidget & { kit: string })[] => [...widgets.values()];
+
+/** Kit `kit`'s widget `name`, if it is installed here. Synchronous. */
+export const kitWidget = (kit: string, name: string): KitWidget | null => widgets.get(`${kit}/${name}`) ?? null;
 
 /** The layout kit `name` shipped into this database, if any. Synchronous. */
 export const kitLayout = (name: string): Layout | null => kits.get(name)?.layout ?? null;
@@ -123,13 +151,18 @@ export const kitOf = (name: string): string | null => kits.get(name)?.kit ?? nul
  * anyone. A database that cannot be read (a fresh profile, a failed
  * process) leaves the cache as it was rather than emptying it.
  */
-export async function refreshKitLayouts(): Promise<void> {
-	let listed: LayoutRow[];
-	try {
-		listed = JSON.parse(await data(...layoutsArgv())).rows;
-	} catch {
-		return;
-	}
+export async function refreshKits(): Promise<void> {
+	// Each read on its own: one that fails leaves its half as it was.
+	const rowsOf = (argv: string[]) =>
+		data(...argv)
+			.then((out) => JSON.parse(out).rows)
+			.catch(() => null);
+	const [listed, kitRows] = (await Promise.all([rowsOf(layoutsArgv()), rowsOf(kitsArgv())])) as [LayoutRow[] | null, KitRow[] | null];
+	if (kitRows)
+		widgets = new Map(
+			kitRows.flatMap(({ data: d }) => (d ? (d.widgets ?? []).map((w) => [`${d.kit_id}/${w.name}`, { ...w, kit: d.kit_id }]) : []))
+		);
+	if (!listed) return;
 	const next = new Map<string, { layout: Layout; kit: string }>();
 	for (const row of listed) {
 		// `row.data` may be NULL: a field's first log writes the TRACK
@@ -149,7 +182,7 @@ export async function refreshKitLayouts(): Promise<void> {
  *
  * The same row `crates/datum-core/src/db/kit_layout.rs` writes — field
  * `layout`, slug `layout:<name>`, the tree in its data and a `kit_id`
- * naming the kit — because `refreshKitLayouts` above reads exactly that
+ * naming the kit — because `refreshKits` above reads exactly that
  * and a kit layout is how a DATABASE carries a layout of its own. It is
  * how the app ships the DEBUG database its debug layout without there
  * being a kit file to install.

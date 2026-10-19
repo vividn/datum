@@ -17,10 +17,11 @@ import type { Alias, GrammarEntry } from './commands.js';
 import type { Conflicted } from './conflicts.js';
 import type { RestorePreview } from './dbio.js';
 import type { FieldListing, NowListing } from './fields.js';
-import type { LayoutRow, LayoutVersion } from './layout/store.js';
+import type { KitRow, LayoutRow, LayoutVersion } from './layout/store.js';
 import type { Layout } from './layout/types.js';
 import type { DayviewJson, PaneSpec } from './panes.js';
 import type { AllFieldsStats, FieldStats } from './stats.js';
+import { shellSplit } from './shellSplit.js';
 import type { Invite } from './sync.js';
 import type { Admins, ChainList, PurgePreview, SyncStatus } from './syncView.js';
 import type { TailListing, TailPage } from './tail.js';
@@ -301,6 +302,18 @@ export function deleteLayoutArgv(hid: string): string[] {
 	return ['del', hid];
 }
 
+// ---- a kit's widgets (da-gh37k) -----------------------------------------------------
+
+/** Every installed kit's `[kit]` table, its widgets in it. */
+export function kitsArgv(): string[] {
+	return ['tail', 'kit', '--json', '-n', '100000'];
+}
+
+/** A kit widget's `command`, asked for its rows. */
+export function kitWidgetArgv(command: string): string[] {
+	return [...shellSplit(command), '--json'];
+}
+
 // ---- the sample week -------------------------------------------------------------
 
 export function sampleTaggedArgv(): string[] {
@@ -331,6 +344,13 @@ export function kitUninstallArgv(): string[] {
  * property tagged `@shallow` and nothing under it: what the page wrote
  * itself, or what no seeded database can hold.
  */
+/**
+ * One row of a kit command's `--json` (da-gh37k): the shown columns, which
+ * a `row_action`'s `{column}` reads, the cells as the table prints them,
+ * and the colour its rule paints the row, where one does.
+ */
+export type KitWidgetRow = Record<string, unknown> & { row_cells: string[]; row_color?: string };
+
 export interface Reads {
 	/** `frecency` comes with `--sort frecency` alone. */
 	fieldsArgv: Omit<FieldListing, 'frecency'>[];
@@ -358,5 +378,7 @@ export interface Reads {
 	backupToArgv: BackupRun;
 	planReachArgv: Reach;
 	layoutsArgv: { rows: LayoutRow[] };
+	kitsArgv: { rows: KitRow[] };
+	kitWidgetArgv: KitWidgetRow[];
 	layoutHistoryArgv: LayoutVersion[];
 }

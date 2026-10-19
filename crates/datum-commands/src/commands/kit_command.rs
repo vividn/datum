@@ -7,7 +7,10 @@
 //!
 //! Output goes through the same `render_pretty` style as `datum view`,
 //! plus optional ANSI colour applied per row when `color_rules` matches,
-//! or is the shown rows as JSON under `--show json`.
+//! or is the shown rows as JSON under `--json` (or `--show json`): each an
+//! object keyed by the shown columns, plus `row_cells`, the row's cells as
+//! the table prints them, and `row_color`, the matched rule's colour as hex
+//! (da-gh37k) — what a datum.day kit widget draws.
 //!
 //! The words after the name fill the command's declared `args` the way an
 //! alias's slots are filled (da-7ramf) — positionals in order, `.` skips
@@ -91,6 +94,7 @@ impl Call {
             };
             match flag {
                 "--watch" => call.watch = true,
+                "--json" if inline.is_none() => call.json = true,
                 "--sort" | "--show" => {
                     let v = inline
                         .or_else(|| words.next().cloned())
@@ -238,26 +242,48 @@ fn render(
         });
     }
     let now = DatumTime::now().utc;
-    let colors: Vec<Option<&str>> = view
+    let painted: Vec<Option<(&str, &str)>> = view
         .rows
         .iter()
-        .map(|row| {
-            color
-                .then(|| row_color(&rules, &view.columns, row, now))
-                .flatten()
-        })
+        .map(|row| row_color(&rules, &view.columns, row, now))
         .collect();
     let projected = project(&cmd.name, &view, &cmd.columns)?;
+    let formatted = format_cells(&projected, &cmd.formats, now);
     // JSON is the shown rows, unformatted, keyed by column — `[]` for none:
-    // `empty` is words for a person.
+    // `empty` is words for a person. Beside them each row's cells as the
+    // table prints them and the colour it paints the row, so a surface that
+    // is not a terminal draws the table's row without formatting it again.
     if call.json {
+        if let Some(c) = ["row_cells", "row_color"]
+            .iter()
+            .find(|k| projected.columns.iter().any(|c| c == *k))
+        {
+            anyhow::bail!(
+                "kit command '{}': a shown column is named '{c}', which --json reserves; rename it in the view or the command's columns",
+                cmd.name
+            );
+        }
         let rows: Vec<Map<String, JsonValue>> = projected
             .rows
             .into_iter()
-            .map(|row| projected.columns.iter().cloned().zip(row).collect())
+            .zip(formatted)
+            .zip(&painted)
+            .map(|((row, cells), paint)| {
+                let mut obj: Map<String, JsonValue> =
+                    projected.columns.iter().cloned().zip(row).collect();
+                obj.insert("row_cells".into(), cells.into());
+                if let Some((_, hex)) = paint {
+                    obj.insert("row_color".into(), (*hex).into());
+                }
+                obj
+            })
             .collect();
         return Ok(format!("{}\n", serde_json::to_string(&rows)?));
     }
+    let colors: Vec<Option<&str>> = painted
+        .iter()
+        .map(|p| p.filter(|_| color).map(|(ansi, _)| ansi))
+        .collect();
     // A view with no rows prints the command's `empty` text, if it has
     // one, instead of an empty table (da-x3369) — after every column the
     // command names has been checked, so a typo still shows.
@@ -265,7 +291,6 @@ fn render(
         return Ok(format!("{text}\n"));
     }
     let headers = header_labels(&projected.columns, &cmd.labels);
-    let formatted = format_cells(&projected, &cmd.formats, now);
     Ok(render_pretty(&headers, &formatted, &colors))
 }
 
@@ -406,20 +431,21 @@ fn format_duration(v: &JsonValue) -> String {
     format_human_duration(secs, DurationPrecision::Seconds)
 }
 
-/// Resolve a colour name or hex into the closest ANSI sequence. Used
-/// only for terminal output — the colour rules round-trip the literal
-/// string in TOML so the kit author's intent survives export.
-fn ansi_for(color: &str) -> &'static str {
+/// Resolve a colour name or hex into the closest ANSI sequence, and the
+/// representative hex of that ANSI colour — `Outcome::hex`'s, so `--json`
+/// carries the colour the terminal paints (da-gh37k). The colour rules
+/// round-trip the literal string in TOML so the kit author's intent
+/// survives export.
+fn ansi_for(color: &str) -> (&'static str, &'static str) {
     match color.to_ascii_lowercase().as_str() {
-        "red" => "\x1b[31m",
-        "green" => "\x1b[32m",
-        "yellow" => "\x1b[33m",
-        "blue" => "\x1b[34m",
-        "magenta" | "purple" => "\x1b[35m",
-        "cyan" => "\x1b[36m",
-        "white" => "\x1b[37m",
-        "gray" | "grey" => "\x1b[90m",
-        _ => "\x1b[37m",
+        "red" => ("\x1b[31m", "#e01b24"),
+        "green" => ("\x1b[32m", "#26a269"),
+        "yellow" => ("\x1b[33m", "#e5a50a"),
+        "blue" => ("\x1b[34m", "#3584e4"),
+        "magenta" | "purple" => ("\x1b[35m", "#c061cb"),
+        "cyan" => ("\x1b[36m", "#2aa1b3"),
+        "gray" | "grey" => ("\x1b[90m", "#888888"),
+        _ => ("\x1b[37m", "#d0d0d0"),
     }
 }
 
@@ -478,7 +504,7 @@ fn row_color(
     columns: &[String],
     raw: &[JsonValue],
     now: chrono::DateTime<Utc>,
-) -> Option<&'static str> {
+) -> Option<(&'static str, &'static str)> {
     let mut map: HashMap<&str, &JsonValue> = HashMap::new();
     for (i, c) in columns.iter().enumerate() {
         map.insert(c.as_str(), &raw[i]);

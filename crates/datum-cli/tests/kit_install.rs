@@ -592,3 +592,159 @@ fn a_built_in_name_is_no_kit_command_and_no_alias_runs_in_its_place() {
     run_cli(&["stats"], &db).unwrap();
     assert!(logged_entries(&db, "y").is_empty());
 }
+
+/// A `[[widget]]` is stored in the kit's own `kit:<name>` entry, so it goes
+/// with the kit, and export writes it back as it was declared (da-gh37k). A
+/// row action whose placeholder is no column refuses the kit before any
+/// write, dry run or not.
+#[test]
+fn a_kit_widget_installs_into_its_kit_and_round_trips() {
+    let widget = "[[widget]]\nname = \"due\"\ntitle = \"Due now\"\ncommand = \"tail -n 5\"\nrow_action = \"occur {field} -k \\\"note={iti days}\\\"\"\n";
+    let kit = format!("[kit]\nname = \"k\"\n\n{widget}");
+    let db = fresh_db();
+    for extra in [&[][..], &["--dry-run"]] {
+        let err = format!("{:#}", install(&db, &kit, extra).unwrap_err());
+        assert!(
+            err.contains("kit widget 'due': row_action's «{iti days}» is not a column name"),
+            "{err}"
+        );
+    }
+    assert!(
+        db.load_kit_meta("k").unwrap().is_none(),
+        "nothing installed"
+    );
+
+    let kit = kit.replace("{iti days}", "{iti_days}");
+    install(&db, &kit, &[]).unwrap();
+    let widgets = db.load_kit_widgets("k").unwrap();
+    assert_eq!(widgets.len(), 1);
+    assert_eq!(
+        widgets[0].row_action.as_deref(),
+        Some("occur {field} -k \"note={iti_days}\"")
+    );
+    assert!(
+        db.load_kit_meta("k").unwrap().is_some(),
+        "a kit of widgets alone owns its row"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.toml");
+    run_cli(&["kit", "export", "k", &out.to_string_lossy()], &db).unwrap();
+    let exported =
+        datum_core::kit::KitToml::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(exported.widgets, widgets);
+
+    run_cli(&["kit", "uninstall", "k"], &db).unwrap();
+    assert!(
+        db.load_kit_widgets("k").unwrap().is_empty(),
+        "uninstalled with its kit"
+    );
+}
+
+/// A widget is kept by name, as each of the kit's other rows is: a
+/// reinstall without --force adds a widget of a new name and keeps an
+/// installed one as it was; --force writes the kit's (da-gh37k).
+#[test]
+fn a_reinstall_adds_a_new_widget_and_keeps_an_installed_one() {
+    let w = |name: &str, command: &str| {
+        format!("\n[[widget]]\nname = \"{name}\"\ncommand = \"{command}\"\n")
+    };
+    let kit = |widgets: &str| format!("[kit]\nname = \"k\"\n{widgets}");
+    let commands = |db: &Db| -> Vec<(String, String)> {
+        db.load_kit_widgets("k")
+            .unwrap()
+            .into_iter()
+            .map(|w| (w.name, w.command))
+            .collect()
+    };
+    let db = fresh_db();
+    install(&db, &kit(&w("a", "now")), &[]).unwrap();
+    install(&db, &kit(&(w("a", "tail") + &w("b", "tail"))), &[]).unwrap();
+    assert_eq!(
+        commands(&db),
+        [("a".into(), "now".into()), ("b".into(), "tail".into())]
+    );
+    install(&db, &kit(&w("a", "tail")), &["--force"]).unwrap();
+    assert_eq!(commands(&db), [("a".into(), "tail".into())]);
+}
+
+/// A widget's command runs on every change, so it may only read: a reading
+/// command, or a kit command that runs a view, never `--watch`; and a tap
+/// may only log. Each is refused by name, before any write (da-gh37k).
+#[test]
+fn a_kit_widget_reads_and_its_tap_only_logs() {
+    let kit = |command: &str, action: &str| {
+        format!(
+            "[kit]\nname = \"k\"\n\n[[view]]\nname = \"v\"\nsql = \"SELECT 1 AS n\"\n\n[[command]]\nname = \"list\"\nview = \"v\"\n\n[[widget]]\nname = \"w\"\ncommand = \"{command}\"\nrow_action = \"{action}\"\n"
+        )
+    };
+    for (command, action, refused) in [
+        ("occur x", "occur {n}", "command «occur x» may write"),
+        (
+            "newchore x 3",
+            "occur {n}",
+            "command «newchore x 3» may write",
+        ),
+        ("list --watch", "occur {n}", "--watch never returns"),
+        ("tail -w", "occur {n}", "-w never returns"),
+        (
+            "list",
+            "delete {n}",
+            "row_action «delete {n}» runs `delete`; a tap may only log",
+        ),
+        ("list", "update {n} x=1", "runs `update`"),
+    ] {
+        let db = fresh_db();
+        let err = format!(
+            "{:#}",
+            install(&db, &kit(command, action), &[]).unwrap_err()
+        );
+        assert!(err.contains(refused), "{command} / {action}: {err}");
+        assert!(
+            db.load_kit_meta("k").unwrap().is_none(),
+            "nothing installed"
+        );
+    }
+    // Control: the kit's own view command, a reading one, and each logging verb.
+    for (command, action) in [
+        ("list", "occur {n}"),
+        ("tail -n 5", "switch mood {n}"),
+        ("list --all", "end {n}"),
+    ] {
+        let db = fresh_db();
+        install(&db, &kit(command, action), &[]).unwrap();
+        assert_eq!(
+            db.load_kit_widgets("k").unwrap().len(),
+            1,
+            "{command} / {action}"
+        );
+    }
+}
+
+/// A widget's command naming a kit command is that command: one that
+/// expands may write, and is refused, whether the same kit declares it or
+/// one installed before. A built-in's name is the built-in (da-00llj), so
+/// `stats` stays the read it is (da-gh37k).
+#[test]
+fn a_widget_naming_a_kit_command_that_expands_is_refused() {
+    let expands = "[[command]]\nname = \"mine\"\nexpands_to = \"occur y\"\n";
+    let widget = |command: &str| format!("[[widget]]\nname = \"w\"\ncommand = \"{command}\"\n");
+    let db = fresh_db();
+    let kit = format!("[kit]\nname = \"k\"\n\n{expands}\n{}", widget("mine"));
+    let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
+    assert!(err.contains("command «mine» may write"), "{err}");
+
+    let db = fresh_db();
+    install(&db, &format!("[kit]\nname = \"first\"\n\n{expands}"), &[]).unwrap();
+    let kit = format!("[kit]\nname = \"k\"\n\n{}", widget("mine"));
+    let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
+    assert!(err.contains("command «mine» may write"), "{err}");
+
+    // Control: `stats` is the built-in read, beside that kit command too.
+    install(
+        &db,
+        &format!("[kit]\nname = \"k\"\n\n{}", widget("stats")),
+        &[],
+    )
+    .unwrap();
+}

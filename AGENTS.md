@@ -845,6 +845,14 @@ binary.
   on, and kept in `localStorage` (`device` in `shell.ts`, da-lsjs9): a
   phone turned on its side keeps its trees, and «Reset default layouts»
   decides again.
+  A KIT SHIPS WIDGETS TOO (da-gh37k): a `[[widget]]` is a `command` that
+  only reads (`WIDGET_READS`, or a kit command that runs a view) and a
+  `row_action` that only logs (`WIDGET_ACTIONS`), refused at install
+  otherwise, and no code; kept in the kit's own `kit:<name>` entry, so
+  only the database it is installed in offers it (Change Widget, the `kit`
+  kind, `KitWidget.svelte`). It draws the command's `--json` rows from
+  their `row_cells` in their `row_color`, and a tap runs the row action,
+  each `{column}` that row's value.
   A NEW DEFAULT IS OFFERED, ONCE (da-cr0w2): a change to what a first
   visit opens is a sentence appended to `NEW_DEFAULTS` (`defaults.ts`), and
   a device that started before it is asked at boot (`offerDefaults`,

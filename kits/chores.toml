@@ -1,6 +1,6 @@
 [kit]
 name = "chores"
-version = "0.8"
+version = "0.9"
 description = "Chores as datum v2 kept them: a chore is any entry whose data says when it is next due (next_date / next_time, or v2's nextDate / nextTime). Log it done with `datum occur <chore> next_date=+7`; shirk it — move the date without claiming it — with `-T`. `datum newchore vacuum 4` declares a chore done every 4 days, so every `datum vacuum` then logs it due four days on; a first due date other than that is a shirk, `datum occur vacuum -T next_date=<date>`. `datum chorelist` shows what is due or was done today, `datum chorelist <chore>` one chore, and `datum chorelist --all` every chore; `--sort due` (or `-due`) sorts by a shown column."
 
 # Every chore query scans only the entries that say when they are next due.
@@ -174,3 +174,17 @@ color = "yellow"
 name = "newchore"
 expands_to = "track $1 --verb occur -k next_date=+$2"
 description = "track a new chore: newchore NAME DAYS"
+
+# datum.day's chorelist widget (da-gh37k): what `chorelist` shows, each row
+# in its colour. A tap logs that chore done — a chore `newchore` declared
+# logs its next due date with it — and the row moves on to that date.
+[[widget]]
+name = "chorelist"
+title = "chore list"
+command = "chorelist"
+row_action = "occur {field}"
+
+# A page of it, so the chooser offers the chores as a layout of their own.
+[[layout]]
+name = "chores"
+root = '{"id":"chores","tabs":[{"id":"chores-tab","content":{"id":"chores-w","kind":"kit","settings":{"kit":"chores","widget":"chorelist","title":"chore list"}}}],"active":0,"bar":{"edge":"top","align":"start"}}'

@@ -75,6 +75,7 @@ import Notice from './Notice.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
 import ReplWidget from './ReplWidget.svelte';
 import FieldWidget from './FieldWidget.svelte';
+import KitWidget from './KitWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
 import WelcomeWidget from './WelcomeWidget.svelte';
 
@@ -100,6 +101,8 @@ export interface WidgetKind {
 	 * without one; `tree.test.mjs` asks the same of every kind.
 	 */
 	help: string;
+	/** The pane's title from the settings, where it is not the kind's own. */
+	title?: (settings: Record<string, unknown>) => string | undefined;
 	/** Content-box sizes a border drag snaps to, from the settings: see the note above. */
 	snap?: (settings: Record<string, unknown>) => { width?: number[]; height?: number[] };
 	/** Not offered by the chooser: a kind the app puts in a tab itself. */
@@ -608,6 +611,23 @@ export const KINDS: Record<string, WidgetKind> = {
 		{ width: 200, height: 60 },
 		'Seeds a plausible week of sample data into this database. Only in the DEBUG database.'
 	),
+	// A widget a KIT shipped (da-gh37k): `settings` name the kit and its
+	// widget, whose command and row action are in the kit's own entry in
+	// this database (store.ts), and carry the title it was chosen under.
+	// The chooser offers each one the open database's kits ship, and no
+	// other, so the kind is not listed itself. Legible, as the tail is, at
+	// three rows.
+	kit: {
+		meta: meta('kit', 'kit widget'),
+		component: KitWidget,
+		hidden: true,
+		help: [
+			'A widget a kit installed in this database: what its command shows, each row in its colour.',
+			'Tap a row to run what the kit says a tap does — the chores kit logs that chore.'
+		].join('\n'),
+		title: ({ title, widget }) => [title, widget].find((t): t is string => typeof t === 'string'),
+		legible: { width: 160, height: 102 }
+	},
 	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
 	notice: {
 		meta: meta('notice', 'notice'),
@@ -635,7 +655,8 @@ export const pickableIn = (db: string): string[] =>
  */
 export const PICKABLE = Object.keys(KINDS).filter((kind) => !KINDS[kind].hidden && !KINDS[kind].db);
 
-export const titleOf = (kind: string): string => KINDS[kind]?.meta.title ?? kind;
+export const titleOf = (kind: string, settings: Record<string, unknown> = {}): string =>
+	KINDS[kind]?.title?.(settings) ?? KINDS[kind]?.meta.title ?? kind;
 
 /**
  * What a tab is CALLED, wherever it is shown: the root bar's tabs, a pane
