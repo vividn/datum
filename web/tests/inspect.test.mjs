@@ -403,14 +403,15 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 			// width, and the tooltip has to land on the mark's new place.
 			await page.setViewportSize({ width: 900, height: 900 });
 			await app.idle();
-			const moved = await until(where, (x) => x !== null && x !== first);
-			const box = await page
-				.locator(`${NOWVIEW} svg.svg [data-id="${mark.id}"]`)
-				.first()
-				.boundingBox();
-			assert.ok(
-				Math.abs(moved - (box.x + box.width / 2)) <= box.width / 2 + 8,
-				`the tooltip at ${moved}, its mark at ${box.x}–${box.x + box.width}`
+			// The tooltip and its mark are read in ONE poll: a redraw landing
+			// between two separate reads replaced the mark, and its box read
+			// null (da-alyue). A tooltip that never lands on the mark still
+			// fails, with both last seen.
+			const drawn = page.locator(`${NOWVIEW} svg.svg [data-id="${mark.id}"]`).first();
+			await until(
+				async () => ({ tip: await where(), box: await drawn.boundingBox() }),
+				({ tip, box }) =>
+					tip !== null && tip !== first && box !== null && Math.abs(tip - (box.x + box.width / 2)) <= box.width / 2 + 8
 			);
 
 			// And a window PANNED off the entry draws none of its marks, so
