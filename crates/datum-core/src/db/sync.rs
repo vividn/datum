@@ -85,7 +85,7 @@ use crate::migrations::{peek_schema_version, CURRENT_SCHEMA_VERSION};
 use super::insert::{apply_entry_state, try_insert};
 use super::row_mapper::row_to_entry;
 use super::spec::{SPEC_FIELD, SPEC_KIT_KEY};
-use super::Db;
+use super::{Db, WriteBatch};
 
 pub mod chain;
 mod debug;
@@ -2548,10 +2548,22 @@ fn shared_rows(
     me: Option<&str>,
     peer: Option<&str>,
 ) -> Result<(Vec<Map<String, Value>>, bool)> {
+    match shared_filters(conn, me, peer)? {
+        Some(filters) => Ok((rows_passing(conn, &filters)?, !filters.is_empty())),
+        None => Ok((Vec::new(), false)),
+    }
+}
+
+/// The filters of this copy and of `peer` that [`shared_rows`] reads by;
+/// none at all in a dissolved chain, whose copies share nothing (da-qzrj9).
+fn shared_filters(
+    conn: &Connection,
+    me: Option<&str>,
+    peer: Option<&str>,
+) -> Result<Option<Vec<Filter>>> {
     let chain = Chain::load(conn)?;
-    // Copies of a dissolved chain share nothing (da-qzrj9).
     if chain.dissolved().is_some() {
-        return Ok((Vec::new(), false));
+        return Ok(None);
     }
     let mine = match (chain.exists(), me) {
         (false, _) => None,
@@ -2561,13 +2573,20 @@ fn shared_rows(
     // The peer's filter is read from the chain this copy serves it by, with
     // the records still waiting (da-91wab).
     let served = Chain::served(conn)?;
-    let filters: Vec<&Filter> = [
-        mine.as_deref().and_then(|e| chain.filter(e)),
-        peer.and_then(|e| served.filter(e)),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+    Ok(Some(
+        [
+            mine.as_deref().and_then(|e| chain.filter(e)),
+            peer.and_then(|e| served.filter(e)),
+        ]
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect(),
+    ))
+}
+
+/// Every entry row that passes each of `filters`, as [`shared_rows`].
+fn rows_passing(conn: &Connection, filters: &[Filter]) -> Result<Vec<Map<String, Value>>> {
     let rows = conn
         .prepare("SELECT * FROM entries ORDER BY slug, hid")?
         .query_map([], |r| {
@@ -2590,7 +2609,7 @@ fn shared_rows(
             })
         })
         .collect::<rusqlite::Result<_>>()?;
-    Ok((rows, !filters.is_empty()))
+    Ok(rows)
 }
 
 impl Db {
@@ -3031,6 +3050,11 @@ impl Db {
     /// to narrow a mismatch down. With a filtered reader on either side —
     /// this copy, or `peer` — only the entries that pass both filters count
     /// (da-u81u1), which both sides compute alike.
+    ///
+    /// Kept until an entry changes (`sync_state_hashes`, da-4be5x), so the
+    /// sessions after the first that brought nothing hash nothing. A hash
+    /// computed while another connection wrote, or on a read-only one, is
+    /// not kept.
     pub fn sync_state_hash(
         &self,
         peer: Option<&str>,
@@ -3047,24 +3071,65 @@ impl Db {
         me: Option<&str>,
         peer: Option<&str>,
     ) -> Result<(String, BTreeMap<String, String>)> {
-        let (rows, _) = shared_rows(&self.conn, me, peer)?;
-        let keys: BTreeSet<&String> = rows.iter().flat_map(|r| r.keys()).collect();
-        let per_key = keys
-            .into_iter()
-            .map(|k| {
-                let column: Vec<Value> = rows
-                    .iter()
-                    .map(|r| r.get(k).cloned().unwrap_or(Value::Null))
-                    .collect();
-                (
-                    k.clone(),
-                    sha256_hex(&canonical_json(&Value::Array(column))),
+        let Some(filters) = shared_filters(&self.conn, me, peer)? else {
+            return Ok(state_hash(Vec::new()));
+        };
+        // A build may serialize a row differently: it reads its own.
+        let key = json!([
+            crate::build(),
+            filters.iter().map(|f| &f.fields).collect::<Vec<_>>()
+        ])
+        .to_string();
+        let (hashed, keep) = self.read(|view| {
+            let kept = view
+                .conn()
+                .query_row(
+                    "SELECT hash, per_key FROM sync_state_hashes WHERE key = ?1",
+                    [&key],
+                    |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
                 )
-            })
-            .collect();
-        let all = Value::Array(rows.into_iter().map(Value::Object).collect());
-        Ok((sha256_hex(&canonical_json(&all)), per_key))
+                .optional()?
+                .and_then(|(hash, per_key)| Some((hash, serde_json::from_str(&per_key).ok()?)));
+            if let Some(kept) = kept {
+                return Ok((kept, None));
+            }
+            let (hash, per_key) = state_hash(rows_passing(view.conn(), &filters)?);
+            let mut keep = WriteBatch::on(view.seen());
+            keep.push(
+                "INSERT OR REPLACE INTO sync_state_hashes (key, hash, per_key) VALUES (?1, ?2, ?3)",
+                vec![
+                    key.clone().into(),
+                    hash.clone().into(),
+                    json!(per_key).to_string().into(),
+                ],
+            );
+            Ok::<_, DatumError>(((hash, per_key), Some(keep)))
+        })?;
+        if let Some(keep) = keep {
+            let _ = self.write(&keep);
+        }
+        Ok(hashed)
     }
+}
+
+/// SHA-256 over the canonical JSON of `rows`, and the same per column.
+fn state_hash(rows: Vec<Map<String, Value>>) -> (String, BTreeMap<String, String>) {
+    let keys: BTreeSet<&String> = rows.iter().flat_map(|r| r.keys()).collect();
+    let per_key = keys
+        .into_iter()
+        .map(|k| {
+            let column: Vec<Value> = rows
+                .iter()
+                .map(|r| r.get(k).cloned().unwrap_or(Value::Null))
+                .collect();
+            (
+                k.clone(),
+                sha256_hex(&canonical_json(&Value::Array(column))),
+            )
+        })
+        .collect();
+    let all = Value::Array(rows.into_iter().map(Value::Object).collect());
+    (sha256_hex(&canonical_json(&all)), per_key)
 }
 
 #[cfg(test)]
@@ -3309,6 +3374,35 @@ mod tests {
         assert_eq!(
             b.sync_state_hash(None).unwrap().0,
             c.sync_state_hash(None).unwrap().0
+        );
+    }
+
+    /// The state hash is kept until an entry changes (da-4be5x): a verify
+    /// after one reads the kept hash, and an insert, an update or a delete
+    /// of any entry row forgets it.
+    #[test]
+    fn the_state_hash_is_kept_until_an_entry_changes() {
+        let db = Db::open_in_memory().unwrap();
+        log_at(&db, 0, "coffee");
+        let plant = |db: &Db| {
+            db.sync_state_hash(None).unwrap();
+            db.conn
+                .execute("UPDATE sync_state_hashes SET hash = 'kept'", [])
+                .unwrap();
+            assert_eq!(db.sync_state_hash(None).unwrap().0, "kept");
+        };
+        for change in ["UPDATE entries SET state = '\"x\"'", "DELETE FROM entries"] {
+            plant(&db);
+            db.conn.execute(change, []).unwrap();
+            let fresh = state_hash(shared_rows(&db.conn, None, None).unwrap().0);
+            assert_eq!(db.sync_state_hash(None).unwrap(), fresh, "after {change}");
+        }
+        plant(&db);
+        log_at(&db, 0, "tea");
+        assert_ne!(
+            db.sync_state_hash(None).unwrap().0,
+            "kept",
+            "after an insert"
         );
     }
 

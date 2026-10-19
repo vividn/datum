@@ -322,7 +322,10 @@ holding what a member lacks, which it never relays — «not verified: R is N
 changes ahead of this copy», `pending` in `sync status` and no error (da-t3ey2);
 a copy whose vector moved between the last round and its hash (a write, another
 session) sends `moved <hash>`, and both say «not verified: X changed as it
-verified», never a MISMATCH (da-o2arv).
+verified», never a MISMATCH (da-o2arv). The hash is kept until an entry
+changes (`sync_state_hashes` in `schema.sql`, per build and filter, forgotten
+by triggers on `entries`), so a page, which runs its sessions one at a time,
+hashes every row once a change and not once a member (da-4be5x).
 
 ### Who dials whom
 

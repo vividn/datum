@@ -170,3 +170,38 @@ pub(super) fn m66_to_67_refusals_are_notices(conn: &Connection) -> Result<()> {
 pub(super) fn down_67_to_66_refusals_are_notices(_conn: &Connection) -> Result<()> {
     Ok(())
 }
+
+/// da-4be5x: `sync_state_hashes`, the verify's state hash kept until an
+/// entry changes, and the triggers on `entries` that forget it.
+pub(super) fn m67_to_68_sync_state_hashes(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "entries")? {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS sync_state_hashes (
+                 key     TEXT NOT NULL PRIMARY KEY,
+                 hash    TEXT NOT NULL,
+                 per_key TEXT NOT NULL
+             );
+             CREATE TRIGGER IF NOT EXISTS sync_state_hashes_insert AFTER INSERT ON entries BEGIN
+                 DELETE FROM sync_state_hashes;
+             END;
+             CREATE TRIGGER IF NOT EXISTS sync_state_hashes_update AFTER UPDATE ON entries BEGIN
+                 DELETE FROM sync_state_hashes;
+             END;
+             CREATE TRIGGER IF NOT EXISTS sync_state_hashes_delete AFTER DELETE ON entries BEGIN
+                 DELETE FROM sync_state_hashes;
+             END;",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v67→v68.
+pub(super) fn down_68_to_67_sync_state_hashes(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP TRIGGER IF EXISTS sync_state_hashes_insert;
+         DROP TRIGGER IF EXISTS sync_state_hashes_update;
+         DROP TRIGGER IF EXISTS sync_state_hashes_delete;
+         DROP TABLE IF EXISTS sync_state_hashes;",
+    )?;
+    Ok(())
+}

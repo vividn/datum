@@ -527,3 +527,25 @@ CREATE TABLE IF NOT EXISTS _meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 );
+
+-- da-4be5x: the state hash a sync's verify sends (`Db::sync_state_hash`),
+-- kept until an entry changes, per build and filter (`key`): a page runs
+-- its sessions one at a time, and hashing every row cost ~80 s a member at
+-- 100k. LOCAL and derived, never synced. Any write to `entries` forgets
+-- every hash, whichever path and build writes it; a migration that rebuilds
+-- `entries` drops the triggers with it, and runs only under a new build,
+-- which reads none of the old build's keys.
+CREATE TABLE IF NOT EXISTS sync_state_hashes (
+    key     TEXT NOT NULL PRIMARY KEY,
+    hash    TEXT NOT NULL,
+    per_key TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS sync_state_hashes_insert AFTER INSERT ON entries BEGIN
+    DELETE FROM sync_state_hashes;
+END;
+CREATE TRIGGER IF NOT EXISTS sync_state_hashes_update AFTER UPDATE ON entries BEGIN
+    DELETE FROM sync_state_hashes;
+END;
+CREATE TRIGGER IF NOT EXISTS sync_state_hashes_delete AFTER DELETE ON entries BEGIN
+    DELETE FROM sync_state_hashes;
+END;

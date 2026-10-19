@@ -214,6 +214,7 @@ fn every_pair_has_a_roundtrip_test() {
         (64, 65),
         (65, 66),
         (66, 67),
+        (67, 68),
     ];
     assert_eq!(
         covered.len(),
@@ -2797,6 +2798,25 @@ fn roundtrip_v66_to_v67_refusals_are_notices() {
     assert_eq!(count(notice), 1);
     apply_one_down(conn, 67);
     assert_eq!(count(notice), 1);
+}
+
+/// da-4be5x: the kept state hash and its triggers come and go.
+#[test]
+fn roundtrip_v67_to_v68_sync_state_hashes() {
+    let db = fresh_at(67);
+    let conn = db.conn();
+    apply_one_up(conn, 67);
+    let objects = || {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'sync_state_hashes%'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(objects(), 4, "the table and its three triggers");
+    apply_one_down(conn, 68);
+    assert_eq!(objects(), 0);
 }
 
 #[test]

@@ -54,6 +54,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "sync_local",
         "sync_notices",
         "sync_peers",
+        "sync_state_hashes",
         "undo_actions",
     ];
     assert_eq!(tables, expected_tables);
