@@ -410,6 +410,12 @@ device has for a day (`Db::sync_unsent`) are each read by both `sync status` and
 `datum check`, whose findings carry their `domain` (`entries`, `aliases`,
 `stats`, `sync`) and are grouped by it; one `ack` clears a notice from both.
 
+An op the chain refuses is a notice too, never an integrity warning (da-0c2ne):
+one `refused:<endpoint>` per device however many ops, gone once the chain admits
+it. `integrity_warnings` holds timeline problems alone, and `check` derives each
+finding's domain and category from its source (`Source` in `check.rs`), so a
+sync finding cannot print as `integrity_*`.
+
 ### Filtered readers
 
 A reader may be FILTERED: its invite's `caps` or a `role` record carries

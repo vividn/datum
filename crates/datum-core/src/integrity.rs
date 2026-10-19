@@ -37,7 +37,8 @@
 //! - `resolution`: NULL while pending; filled on resolve (auto or manual).
 //! - `detected_by`: `local_validator` | `sync_pull`.
 //! - `kind`: `double_open` | `orphan_end` | `overlap`
-//!   | `same_state_repeat` | `last_state_mismatch` | `sync_unauthorised`.
+//!   | `same_state_repeat` | `last_state_mismatch`. Timeline problems only: an
+//!   op refused by the sync chain is a sync notice (da-0c2ne).
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -95,12 +96,6 @@ pub enum IntegrityKind {
     /// An entry carried an explicit `--last-state=<v>` assertion whose
     /// normalized value differs from the state computed from history (S6).
     LastStateMismatch,
-    /// An op refused because its endpoint is not an admitted member of the
-    /// sync chain, or made it after its revoke (da-odwc7). Filed once per
-    /// endpoint while pending: `local_entry` is the entry as the op would
-    /// have left it, its `extra_metadata.sync_op` naming the op and why.
-    /// `datum sync chain ack <endpoint>` settles it. Only ever `sync_pull`.
-    SyncUnauthorised,
 }
 
 impl IntegrityKind {
@@ -111,7 +106,6 @@ impl IntegrityKind {
             IntegrityKind::Overlap => "overlap",
             IntegrityKind::SameStateRepeat => "same_state_repeat",
             IntegrityKind::LastStateMismatch => "last_state_mismatch",
-            IntegrityKind::SyncUnauthorised => "sync_unauthorised",
         }
     }
 }
@@ -131,7 +125,6 @@ impl std::str::FromStr for IntegrityKind {
             "overlap" => Ok(IntegrityKind::Overlap),
             "same_state_repeat" => Ok(IntegrityKind::SameStateRepeat),
             "last_state_mismatch" => Ok(IntegrityKind::LastStateMismatch),
-            "sync_unauthorised" => Ok(IntegrityKind::SyncUnauthorised),
             other => Err(format!("unknown kind: '{other}'")),
         }
     }
@@ -798,18 +791,6 @@ fn file_warning(
         detected_by,
         kind,
     })
-}
-
-/// File an [`IntegrityKind::SyncUnauthorised`] warning for `refused`, the
-/// entry as a refused op would have left it.
-pub fn file_sync_unauthorised(conn: &Connection, refused: &Entry) -> Result<IntegrityWarning> {
-    file_warning(
-        conn,
-        refused,
-        None,
-        DetectedBy::SyncPull,
-        IntegrityKind::SyncUnauthorised,
-    )
 }
 
 /// Filter for [`list`]. `None` matches any row of that axis.

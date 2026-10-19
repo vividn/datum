@@ -18,7 +18,7 @@ use datum_core::time::on_readers_clock;
 use serde_json::{json, Value};
 
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
-use crate::commands::check::{Domain, Issue, Severity};
+use crate::commands::check::{Domain, Issue, Severity, Source};
 
 const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain connect <TICKET>` joins one with a ticket from another";
 
@@ -1571,6 +1571,7 @@ fn said(db: &Db, mut notices: Vec<Notice>) -> Vec<(Notice, String)> {
                 "rejoin" => format!("{} joined again, at {at}", n.label),
                 "admin" => format!("new sync admin {} ({}) added {at}", n.label, n.who()),
                 "unlock" => format!("sync chain unlocked by {} at {at}", n.label),
+                "refused" => format!("changes from {} refused ({}), since {at}", n.label, n.via),
                 "wipe" => format!(
                     "sync chain restored to a backup by {} at {at}: what this copy held is in {} \
                      — `datum db restore {} --merge` brings it back",
@@ -1632,6 +1633,10 @@ fn notice_line(n: &Notice, text: &str) -> String {
             "⚠ {text} — not yours? `datum sync chain revoke {who}`; \
              `datum sync chain ack {who}` to acknowledge"
         ),
+        "refused" => format!(
+            "⚠ {text} — yours? `datum sync chain invite` admits it; \
+             `datum sync chain ack {who}` to acknowledge"
+        ),
         _ => format!(
             "{warn}{text} — `datum sync chain list` to review, `datum sync chain ack {who}` to acknowledge"
         ),
@@ -1648,52 +1653,49 @@ const UNLOCK_HINT: &str =
 /// changes no other device has. `sync status` shows each from the same
 /// source (da-nq07y).
 pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
-    let (wipes, rest): (Vec<_>, Vec<_>) = said(db, db.sync_notices_unacked()?)
-        .into_iter()
-        .partition(|(n, _)| n.kind == "wipe");
-    let (unlocks, rest): (Vec<_>, Vec<_>) = rest.into_iter().partition(|(n, _)| n.kind == "unlock");
-    let (found, new): (Vec<_>, Vec<_>) = rest.into_iter().partition(|(n, _)| n.kind == "member");
-    // A device's line is `sync status`'s, with what acknowledges or revokes it.
-    let issue = |category, head: String, notices: &[(Notice, String)]| Issue {
-        domain: Domain::Sync,
-        severity: Severity::Warning,
-        category,
-        message: format!(
-            "{head}:\n{}",
-            notices
-                .iter()
-                .map(|(n, text)| match n.kind.as_str() {
-                    "unlock" | "wipe" => format!("  ⚠ {text}"),
-                    _ => format!("  {}", notice_line(n, text)),
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        ),
-        count: notices.len(),
-        example: None,
-        entries: Vec::new(),
-        rendered_block: String::new(),
-    };
+    // One finding per section its notices' source names (da-0c2ne).
+    let mut groups: Vec<Vec<(Notice, String)>> = Vec::new();
+    let section = |n: &Notice| Source::Notice(&n.kind).section();
+    for (n, text) in said(db, db.sync_notices_unacked()?) {
+        match groups.iter_mut().find(|g| section(&g[0].0) == section(&n)) {
+            Some(g) => g.push((n, text)),
+            None => groups.push(vec![(n, text)]),
+        }
+    }
     let mut out = Vec::new();
-    if !new.is_empty() {
-        let head = format!("{} new to the sync chain", new.len());
-        out.push(issue("sync_new_member", head, &new));
-    }
-    if !found.is_empty() {
-        out.push(issue(
-            "sync_joined",
-            "this copy joined a sync chain".into(),
-            &found,
-        ));
-    }
-    if !unlocks.is_empty() {
-        let head = format!("the sync chain was unlocked: {UNLOCK_HINT}");
-        out.push(issue("sync_unlocked", head, &unlocks));
-    }
-    if !wipes.is_empty() {
-        let head = "a restore of the sync chain dropped what this copy held, which a backup \
-                    keeps; `datum sync chain ack` once it is back or not wanted";
-        out.push(issue("sync_wiped", head.into(), &wipes));
+    for notices in groups {
+        let (domain, category) = section(&notices[0].0);
+        let head = match notices[0].0.kind.as_str() {
+            "member" => "this copy joined a sync chain".into(),
+            "unlock" => format!("the sync chain was unlocked: {UNLOCK_HINT}"),
+            "wipe" => "a restore of the sync chain dropped what this copy held, which a backup \
+                       keeps; `datum sync chain ack` once it is back or not wanted"
+                .into(),
+            "refused" => format!(
+                "changes from {} device(s) outside the sync chain were refused; \
+                 they apply once the chain admits the device",
+                notices.len()
+            ),
+            _ => format!("{} new to the sync chain", notices.len()),
+        };
+        // A device's line is `sync status`'s, with what acknowledges or revokes it.
+        let lines: Vec<_> = notices
+            .iter()
+            .map(|(n, text)| match n.kind.as_str() {
+                "unlock" | "wipe" => format!("  ⚠ {text}"),
+                _ => format!("  {}", notice_line(n, text)),
+            })
+            .collect();
+        out.push(Issue {
+            domain,
+            severity: Severity::Warning,
+            category,
+            message: format!("{head}:\n{}", lines.join("\n")),
+            count: notices.len(),
+            example: None,
+            entries: Vec::new(),
+            rendered_block: String::new(),
+        });
     }
     // A member runs a newer schema than this copy (da-3zqyv), and changes
     // made here no other device has (da-u10rl).

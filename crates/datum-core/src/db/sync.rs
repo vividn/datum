@@ -1060,25 +1060,6 @@ fn entry_from(row: Map<String, Value>) -> Result<Entry> {
     Ok(serde_json::from_value(Value::Object(row))?)
 }
 
-/// A snapshot for a conflict row: the entry as `op` left it, with the op
-/// named under `extra_metadata.sync_op`.
-fn conflict_side(entry: &Entry, op: &Op, apply_it: bool) -> Result<Entry> {
-    let mut r = Some(row(entry));
-    if apply_it {
-        fold_into(&mut r, &op.effect);
-    }
-    let mut side = entry_from(r.unwrap_or_default())?;
-    let mut meta = side.extra_metadata.take().unwrap_or_else(|| json!({}));
-    if let Some(m) = meta.as_object_mut() {
-        m.insert(
-            "sync_op".into(),
-            json!({ "op": format!("{}/{}", op.endpoint, op.seq), "hlc": op.hlc, "raw": op.raw }),
-        );
-    }
-    side.extra_metadata = Some(meta);
-    Ok(side)
-}
-
 // ─── Conflicts (da-05rkv) ───────────────────────────────────────────────────
 
 /// Keys that say where a row came from rather than what it says: two rows
@@ -1918,9 +1899,9 @@ fn waiting_ops(conn: &Connection) -> Result<Vec<Op>> {
 
 /// Refuse an op the chain does not allow: it is kept, applied = 2, so it is
 /// not asked for again, and a membership that later allows it lets it wait
-/// again ([`reconsider`]). The first refused of an endpoint files a
-/// `sync_unauthorised` warning, which `datum sync chain ack` settles — but
-/// for a purged endpoint's, set aside on purpose (da-ry11c).
+/// again ([`reconsider`]). The first refused of an endpoint files its
+/// `refused` sync notice (da-0c2ne), which `datum sync chain ack` settles —
+/// but for a purged endpoint's, set aside on purpose (da-ry11c).
 fn refuse(
     conn: &Connection,
     chain: &Chain,
@@ -1933,26 +1914,24 @@ fn refuse(
         params![op.endpoint, op.seq],
     )?;
     s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
-    let tag = format!("\"op\":\"{}/", op.endpoint);
+    let member = chain.member(&op.endpoint);
     // A purged endpoint's refusals are on purpose, and warn of nothing.
-    let quiet = chain
-        .member(&op.endpoint)
-        .is_some_and(|m| m.purged.is_some())
-        || conn
-            .prepare_cached(
-                "SELECT 1 FROM integrity_warnings WHERE kind = 'sync_unauthorised'
-               AND resolution IS NULL AND instr(local_entry, ?1) > 0",
-            )?
-            .exists(params![tag])?;
-    let mut r = fetch_by_hid(conn, &op.hid)?.map(|e| row(&e));
-    fold_into(&mut r, &op.effect);
-    if let (false, Some(r)) = (quiet, r) {
-        let mut side = conflict_side(&entry_from(r)?, op, false)?;
-        if let Some(m) = side.extra_metadata.as_mut() {
-            m["sync_op"]["refused"] = why.into();
-        }
-        crate::integrity::file_sync_unauthorised(conn, &side)?;
+    if member.is_some_and(|m| m.purged.is_some()) {
+        return Ok(());
     }
+    // A device outside the chain has no label in it: the host it says it is.
+    let host = op.origin.as_ref().and_then(|o| o["host"].as_str());
+    let label = member.map_or(host.unwrap_or(&op.endpoint[..10]), |m| &m.label);
+    conn.prepare_cached(
+        "INSERT OR IGNORE INTO sync_notices (subject, kind, label, at, via)
+         VALUES (?1, 'refused', ?2, ?3, ?4)",
+    )?
+    .execute(params![
+        format!("refused:{}", op.endpoint),
+        label,
+        chain::hlc_time(&op.hlc),
+        why
+    ])?;
     Ok(())
 }
 
@@ -2031,6 +2010,12 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
     for hid in touched {
         refresh_conflicts(conn, &hid)?;
     }
+    // An endpoint the chain now allows has nothing left to warn of.
+    conn.execute(
+        "DELETE FROM sync_notices WHERE kind = 'refused' AND NOT EXISTS
+           (SELECT 1 FROM ops WHERE endpoint = substr(subject, 9) AND applied = 2)",
+        [],
+    )?;
     Ok(())
 }
 

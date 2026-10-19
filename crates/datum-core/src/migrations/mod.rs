@@ -60,7 +60,7 @@ use v61_v70::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 66;
+pub const CURRENT_SCHEMA_VERSION: u32 = 67;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -540,5 +540,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries_field_blocks: the blocks a state read looks ahead through, so a day in the past costs what today does (da-e853a)",
         apply: m65_to_66_field_blocks_index,
         down: down_66_to_65_field_blocks_index,
+    },
+    Migration {
+        from: 66,
+        to: 67,
+        summary: "sync_notices: a refused endpoint's integrity_warnings rows become its `refused` notice (da-0c2ne)",
+        apply: m66_to_67_refusals_are_notices,
+        down: down_67_to_66_refusals_are_notices,
     },
 ];

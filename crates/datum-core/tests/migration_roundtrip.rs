@@ -213,6 +213,7 @@ fn every_pair_has_a_roundtrip_test() {
         (63, 64),
         (64, 65),
         (65, 66),
+        (66, 67),
     ];
     assert_eq!(
         covered.len(),
@@ -2770,6 +2771,32 @@ fn roundtrip_v65_to_v66_field_blocks_index() {
     assert!(index_exists(conn, "entries_field_blocks"));
     apply_one_down(conn, 66);
     assert!(!index_exists(conn, "entries_field_blocks"));
+}
+
+/// da-0c2ne: a refusal's integrity row becomes its endpoint's notice, and
+/// the way down leaves it one.
+#[test]
+fn roundtrip_v66_to_v67_refusals_are_notices() {
+    let db = fresh_at(66);
+    let conn = db.conn();
+    let ep = "a".repeat(64);
+    conn.execute(
+        "INSERT INTO integrity_warnings
+             (id, hid, entry_slug, local_entry, detected_at, detected_by, kind)
+         VALUES ('w1', 'w1', 'x', json_object('extra_metadata', json_object('sync_op',
+                 json_object('op', ?1 || '/1', 'hlc', '2026-10-01T08:00:00.000Z/0000',
+                             'refused', 'not a member of the sync chain'))),
+                 '2026-10-01T09:00:00Z', 'sync_pull', 'sync_unauthorised')",
+        [&ep],
+    )
+    .unwrap();
+    apply_one_up(conn, 66);
+    let count = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+    assert_eq!(count("SELECT COUNT(*) FROM integrity_warnings"), 0);
+    let notice = "SELECT COUNT(*) FROM sync_notices WHERE kind = 'refused' AND acked = 0";
+    assert_eq!(count(notice), 1);
+    apply_one_down(conn, 67);
+    assert_eq!(count(notice), 1);
 }
 
 #[test]

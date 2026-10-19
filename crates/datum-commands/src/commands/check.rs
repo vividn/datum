@@ -22,6 +22,8 @@ use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
 mod aliases;
 use aliases::collect_alias_drift;
 mod mistyped;
+mod source;
+pub use source::Source;
 mod tz;
 use tz::collect_tz_drift;
 
@@ -895,34 +897,8 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                 "{count} entr{y} carried a --last-state assertion that disagrees with history",
                 y = if count == 1 { "y" } else { "ies" },
             ),
-            IntegrityKind::SyncUnauthorised => {
-                let lines: Vec<String> = group
-                    .iter()
-                    .map(|w| {
-                        let op = &w.local_entry.extra_metadata.as_ref().unwrap_or(&JsonValue::Null)["sync_op"];
-                        format!(
-                            "  {}: {}",
-                            op["op"].as_str().unwrap_or("?"),
-                            op["refused"].as_str().unwrap_or("?")
-                        )
-                    })
-                    .collect();
-                format!(
-                    "ops from {count} endpoint{s} outside the sync chain were refused; \
-                     `datum sync chain ack <endpoint>` once you know why:\n{}",
-                    lines.join("\n"),
-                    s = if count == 1 { "" } else { "s" },
-                )
-            }
         };
-        let category: &'static str = match kind {
-            IntegrityKind::SameStateRepeat => "repeated_state",
-            IntegrityKind::DoubleOpen => "integrity_double_open",
-            IntegrityKind::OrphanEnd => "integrity_orphan_end",
-            IntegrityKind::Overlap => "integrity_overlap",
-            IntegrityKind::LastStateMismatch => "integrity_last_state_mismatch",
-            IntegrityKind::SyncUnauthorised => "integrity_sync_unauthorised",
-        };
+        let (domain, category) = Source::Integrity(kind).section();
         // da-mkes: collect one FlaggedEntry per warning. The state column
         // gets a leading `!` for `repeated_state` rows so the human render
         // shares the same marker the live renderer uses for repeated
@@ -966,7 +942,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
             .collect();
         let rendered_block = render_flagged_block(db, &full_entries);
         issues.push(Issue {
-            domain: Domain::Entries,
+            domain,
             severity: Severity::Warning,
             category,
             message,
@@ -1069,15 +1045,16 @@ fn collect_sync_conflicts(db: &Db) -> Result<Option<Issue>> {
         return Ok(None);
     };
     let count = conflicted.len();
+    let (domain, category) = Source::Conflicts.section();
     let keys = |e: &Entry| {
         let c = e.conflicts.as_ref().and_then(JsonValue::as_object);
         let keys: Vec<&str> = c.into_iter().flatten().map(|(k, _)| k.as_str()).collect();
         keys.join(", ")
     };
     Ok(Some(Issue {
-        domain: Domain::Sync,
+        domain,
         severity: Severity::Warning,
-        category: "sync_conflict",
+        category,
         message: format!(
             "{count} entr{y} hold{s} values two copies set without seeing each other's; \
              `datum conflicts` lists each side and resolves them.",

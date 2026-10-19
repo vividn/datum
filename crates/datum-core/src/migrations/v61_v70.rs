@@ -132,3 +132,41 @@ pub(super) fn down_66_to_65_field_blocks_index(conn: &Connection) -> Result<()> 
     conn.execute_batch("DROP INDEX IF EXISTS entries_field_blocks;")?;
     Ok(())
 }
+
+/// da-0c2ne: a refusal is a sync notice, not an integrity warning. Each
+/// endpoint's `sync_unauthorised` rows become its one `refused` notice —
+/// pending if one was, acked if all were settled — and leave
+/// `integrity_warnings`, which holds timeline problems alone. Announced:
+/// `check` showed them already. The label is the id's head; `sync status`
+/// names a member by its own.
+pub(super) fn m66_to_67_refusals_are_notices(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "integrity_warnings")? {
+        return Ok(());
+    }
+    if table_exists(conn, "sync_notices")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO sync_notices (subject, kind, label, at, via, announced, acked)
+             SELECT 'refused:' || ep, 'refused', substr(ep, 1, 10),
+                    coalesce(substr(hlc, 1, instr(hlc || '/', '/') - 1), detected_at),
+                    coalesce(why, ''), 1, settled
+             FROM (SELECT substr(op, 1, instr(op, '/') - 1) AS ep, hlc, why, detected_at,
+                          resolution IS NOT NULL AS settled
+                   FROM (SELECT json_extract(local_entry, '$.extra_metadata.sync_op.op') AS op,
+                                json_extract(local_entry, '$.extra_metadata.sync_op.hlc') AS hlc,
+                                json_extract(local_entry, '$.extra_metadata.sync_op.refused') AS why,
+                                detected_at, resolution
+                         FROM integrity_warnings WHERE kind = 'sync_unauthorised'))
+             WHERE ep != ''
+             ORDER BY settled, hlc;",
+        )?;
+    }
+    conn.execute_batch("DELETE FROM integrity_warnings WHERE kind = 'sync_unauthorised';")?;
+    Ok(())
+}
+
+/// Reverse v66→v67. The notices stay notices: a build before it reads
+/// them as notices of a kind it does not know, and files a new warning at
+/// the endpoint's next refused op.
+pub(super) fn down_67_to_66_refusals_are_notices(_conn: &Connection) -> Result<()> {
+    Ok(())
+}

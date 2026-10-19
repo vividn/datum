@@ -1170,7 +1170,9 @@ pub struct PurgePreview {
 pub struct Notice {
     pub subject: String,
     /// `endpoint`, `member` (one found on joining), `rejoin`, `admin`,
-    /// `unlock` or `wipe`.
+    /// `unlock`, `wipe` or `refused` (an endpoint whose ops the chain
+    /// refused, `refused:<endpoint>`, `via` saying why; gone once it allows
+    /// them, da-0c2ne).
     pub kind: String,
     pub label: String,
     pub at: String,
@@ -1197,6 +1199,7 @@ impl Notice {
         match self.kind.as_str() {
             "endpoint" | "member" => Some(&self.subject),
             "rejoin" => self.subject.split(':').nth(1),
+            "refused" => self.subject.strip_prefix("refused:"),
             _ => None,
         }
     }
@@ -1547,9 +1550,7 @@ impl Db {
     /// `datum sync chain ack <who>`: acknowledge the notices of an endpoint
     /// or an admin key — by label, or by at least [`MIN_PREFIX`] characters
     /// of its id (`ed25519:ab…` or `ab…`), naming one subject — or every
-    /// unlock (`unlock`), and settle the
-    /// `sync_unauthorised` warnings of that endpoint (a refused endpoint has
-    /// no notice: name it by its whole id). How many rows it settled.
+    /// unlock (`unlock`). How many notices it settled.
     pub fn sync_ack(&self, who: &str) -> Result<usize> {
         let prefix = |id: &str| who.len() >= MIN_PREFIX && id.starts_with(who);
         // `unlock` and `joined` are words of their own: neither names a
@@ -1568,10 +1569,12 @@ impl Db {
                             || n.subject.split_once(':').is_some_and(|(_, k)| prefix(k)))
             })
             .collect();
-        let mut subjects: BTreeSet<&str> = hits.iter().map(|n| n.subject.as_str()).collect();
-        // An endpoint's rejoins (`rejoin:<id>:<hlc>`) are that endpoint's.
+        let subjects: BTreeSet<&str> = hits.iter().map(|n| n.subject.as_str()).collect();
+        // An endpoint's rejoins (`rejoin:<id>:<hlc>`) and refusals
+        // (`refused:<id>`) are that endpoint's.
         fn whose(s: &str) -> &str {
             s.strip_prefix("rejoin:")
+                .or_else(|| s.strip_prefix("refused:"))
                 .map_or(s, |r| r.split(':').next().unwrap_or(r))
         }
         let named_ids: BTreeSet<&str> = subjects.iter().map(|s| whose(s)).collect();
@@ -1581,23 +1584,11 @@ impl Db {
                 named_ids.len()
             )));
         }
-        if unhex::<32>(who).is_some() {
-            subjects.insert(who);
-        }
         let mut settled = 0;
         for subject in subjects {
             settled += self.conn.execute(
                 "UPDATE sync_notices SET acked = 1, announced = 1 WHERE subject = ?1",
                 params![subject],
-            )?;
-            settled += self.conn.execute(
-                "UPDATE integrity_warnings SET resolution = 'keep_both', resolved_at = ?2
-                 WHERE kind = 'sync_unauthorised' AND resolution IS NULL
-                   AND instr(local_entry, ?1) > 0",
-                params![
-                    format!("\"op\":\"{}/", whose(subject)),
-                    Utc::now().to_rfc3339()
-                ],
             )?;
         }
         Ok(settled)

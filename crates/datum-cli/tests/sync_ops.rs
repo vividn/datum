@@ -873,8 +873,8 @@ fn the_upgrade_moves_filed_conflicts_into_the_entries() {
     a.ok(&["conflicts"]);
     assert_eq!(a.conflicts(&hid), want);
     let filed = a.query(
-        "SELECT COUNT(*) FROM integrity_warnings WHERE kind != ?1",
-        "sync_unauthorised",
+        "SELECT COUNT(*) FROM integrity_warnings WHERE ?1 != ''",
+        "x",
     );
     assert_eq!(filed, "0");
     assert_eq!(a.hash(), b.hash());

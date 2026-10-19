@@ -89,12 +89,13 @@ export interface Listed {
 }
 
 /**
- * A new member or admin, or an unlock, not yet acknowledged (`sync chain ack`).
- * `member` is every member a copy found on joining, as one (da-o9xdd).
+ * A new member or admin, an unlock, or a device whose ops were refused, not
+ * yet acknowledged (`sync chain ack`). `member` is every member a copy found
+ * on joining, as one (da-o9xdd); `refused` goes once the device is admitted.
  */
 export interface Notice {
 	subject: string;
-	kind: 'endpoint' | 'member' | 'rejoin' | 'admin' | 'unlock' | 'wipe';
+	kind: 'endpoint' | 'member' | 'rejoin' | 'admin' | 'unlock' | 'wipe' | 'refused';
 	label: string;
 	/** What `sync chain ack` takes for it. */
 	who: string;

@@ -765,36 +765,6 @@ fn two_copies_with_no_admin_join_by_invite_and_connect() {
     assert_eq!(a.hash(), b.hash());
 }
 
-#[test]
-fn a_non_members_ops_are_refused_until_it_is_admitted() {
-    let a = Copy::new();
-    a.ok(&["sync", "new-invite"]);
-    let stranger = Copy::new();
-    stranger.ok(&["occur", "intrusion"]);
-
-    let (ok, text) = stranger.send(&a);
-    assert!(!ok, "{text}");
-    assert!(text.contains("not a member of the sync chain"), "{text}");
-    assert!(!a.has("intrusion"));
-    let check = a.ok(&["check"]);
-    assert!(check.contains("outside the sync chain"), "{check}");
-
-    // Held, they count as received: not asked for again (the pipe's one
-    // overlap op aside), and no second warning.
-    let (_, again) = stranger.send(&a);
-    assert!(again.contains("applied 0 · already had 1"), "{again}");
-    assert_eq!(
-        a.query("SELECT COUNT(*) FROM integrity_warnings WHERE kind = 'sync_unauthorised'"),
-        "1"
-    );
-
-    // Admitted, what it had sent applies without being sent again.
-    admit(&a, &stranger, "s", None);
-    assert!(a.has("intrusion"));
-    a.ok(&["sync", "chain", "ack", &stranger.id()]);
-    assert!(!a.ok(&["check"]).contains("outside the sync chain"));
-}
-
 /// A copy that starts a chain holding a non-member's ops signs every entry
 /// again as its own (da-1flih), so the chain never meets that endpoint's
 /// ops: a joiner gets the founder's rows however its applies are cut, each
@@ -3494,5 +3464,6 @@ fn a_copy_whose_only_other_is_a_filtered_reader_never_warns() {
 
 mod list;
 mod purge;
+mod refused;
 mod restore;
 mod status;
