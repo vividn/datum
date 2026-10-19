@@ -437,6 +437,8 @@ fn sync_names_its_members_first_and_each_as_it_ends() {
     let (up, down) = (member_label(&a, &b.id()), member_label(&a, &c.id()));
     let _b_runs = b.serve(&["sync", "run"]);
     a.env.push(("DATUM_SYNC_TIMEOUT_S", "3"));
+    // The last seen on the reader's clock, not the stored instant (da-49tq4).
+    a.env.push(("TZ", "Asia/Kathmandu"));
 
     let sync = |args: &[&str]| {
         let mut run = Killed(a.cmd(args).spawn().unwrap());
@@ -462,9 +464,18 @@ fn sync_names_its_members_first_and_each_as_it_ends() {
         gap > Duration::from_secs(1),
         "{up} said only {gap:?} before {down}: {text:?}"
     );
-    let seen = entry_of(&a, "status", &c)["last_seen"]
-        .as_str()
+    let seen = entry_of(&a, "status", &c);
+    let east = chrono::FixedOffset::east_opt(5 * 3600 + 45 * 60).unwrap();
+    let seen = chrono::DateTime::parse_from_rfc3339(seen["last_seen"].as_str().unwrap())
         .unwrap()
+        .with_timezone(&east);
+    let today = chrono::Utc::now().with_timezone(&east).date_naive();
+    let seen = seen
+        .format(if seen.date_naive() == today {
+            "%H:%M"
+        } else {
+            "%Y-%m-%d %H:%M"
+        })
         .to_string();
     assert_eq!(
         text[j],

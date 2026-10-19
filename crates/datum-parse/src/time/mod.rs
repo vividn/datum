@@ -45,6 +45,8 @@ pub use self::dur::{
     format_human_duration, format_iso_duration, is_whole_days, parse_duration, parse_iso_duration,
     quick_uncertainty_for_count, DurationPrecision,
 };
+#[cfg(feature = "native")]
+pub use self::resolve::on_readers_clock;
 pub use self::resolve::{fixed_offset_minutes, Resolved, Zone, ZoneSegment, ZoneTimeline};
 pub use self::time::{count_stacked_flag, parse_time, TimeArg};
 pub use self::uncertainty::{

@@ -14,6 +14,7 @@ use datum_core::db::chain::{self, Chain, Notice};
 use datum_core::db::Db;
 use datum_core::error::DatumError;
 use datum_core::migrations::CURRENT_SCHEMA_VERSION;
+use datum_core::time::on_readers_clock;
 use serde_json::{json, Value};
 
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
@@ -123,7 +124,10 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 return Ok(());
             }
             if let Some(at) = db.sync_paused()? {
-                bail!("sync is paused on this copy since {at}: `datum sync resume` to sync again");
+                bail!(
+                    "sync is paused on this copy since {}: `datum sync resume` to sync again",
+                    local(&at)
+                );
             }
             #[cfg(feature = "net")]
             let synced = datum_sync::now_all(db, verbose);
@@ -137,14 +141,14 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         SyncCommand::Pause => {
             ensure!(db.sync_chain()?.exists(), NO_CHAIN);
             match db.sync_set_paused(true)? {
-                Some(at) => println!("sync was already paused, since {at}"),
+                Some(at) => println!("sync was already paused, since {}", local(&at)),
                 None => println!(
                     "sync paused: this copy neither sends nor receives until `datum sync resume`"
                 ),
             }
         }
         SyncCommand::Resume => match db.sync_set_paused(false)? {
-            Some(at) => println!("sync resumed (paused since {at})"),
+            Some(at) => println!("sync resumed (paused since {})", local(&at)),
             None => println!("sync was not paused"),
         },
         SyncCommand::Vector => {
@@ -1431,7 +1435,10 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
         return Ok(());
     }
     if let Some(at) = &paused {
-        println!("⚠ paused since {at}: this copy neither sends nor receives — `datum sync resume`");
+        println!(
+            "⚠ paused since {}: this copy neither sends nor receives — `datum sync resume`",
+            local(at)
+        );
     }
     println!(
         "sync chain {} · this copy {label} ({})",
@@ -1447,12 +1454,12 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
         Some((Some(at), _)) => println!(
             "⚠ this copy signed its departure at {}: `datum sync chain leave` finishes once a \
              member holds it",
-            chain::hlc_time(at)
+            local(chain::hlc_time(at))
         ),
         Some((_, Some(at))) => println!(
             "⚠ this copy was revoked at {}: it syncs again once a member's invite admits it, \
              or `datum sync chain leave` keeps every entry and starts afresh",
-            chain::hlc_time(at)
+            local(chain::hlc_time(at))
         ),
         _ => {}
     }
@@ -1602,25 +1609,6 @@ fn said(db: &Db, mut notices: Vec<Notice>) -> Vec<(Notice, String)> {
 /// An RFC 3339 instant on this reader's clock: the time alone today.
 fn local(at: &str) -> String {
     on_readers_clock(at, "%H:%M")
-}
-
-/// An RFC 3339 instant on this reader's clock as `clock`, with its date
-/// before it on any day but today.
-pub(crate) fn on_readers_clock(at: &str, clock: &str) -> String {
-    let Ok(t) = chrono::DateTime::parse_from_rfc3339(at) else {
-        return at.to_string();
-    };
-    let zone = datum_core::time::Zone::host();
-    let t = zone.local_naive(t.to_utc());
-    let today = zone
-        .local_naive(datum_core::time::DatumTime::now().utc)
-        .date();
-    let format = if t.date() == today {
-        clock.to_string()
-    } else {
-        format!("%Y-%m-%d {clock}")
-    };
-    t.format(&format).to_string()
 }
 
 /// The ⚠ a notice wears: none for the members found on joining, which are

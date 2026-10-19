@@ -141,7 +141,10 @@ impl Db {
             return Ok(None);
         };
         let cause = match (paused, peers.iter().find_map(|(_, _, e)| e.as_ref())) {
-            (Some(at), _) => format!(" (paused since {at})"),
+            (Some(at), _) => format!(
+                " (paused since {})",
+                crate::time::on_readers_clock(&at, "%H:%M")
+            ),
             (None, Some(e)) => format!(" (last error: {e})"),
             (None, None) => String::new(),
         };

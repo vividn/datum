@@ -152,6 +152,25 @@ impl Zone {
     }
 }
 
+/// An RFC 3339 instant on this reader's clock as `clock` (a chrono format),
+/// with its date before it on any day but today. Not an instant is printed
+/// as it is.
+#[cfg(feature = "native")]
+pub fn on_readers_clock(at: &str, clock: &str) -> String {
+    let Ok(t) = chrono::DateTime::parse_from_rfc3339(at) else {
+        return at.to_string();
+    };
+    let zone = Zone::host();
+    let t = zone.local_naive(t.to_utc());
+    let today = zone.local_naive(DatumTime::now().utc).date();
+    let format = if t.date() == today {
+        clock.to_string()
+    } else {
+        format!("%Y-%m-%d {clock}")
+    };
+    t.format(&format).to_string()
+}
+
 /// The result of reading a local wall-clock time in a zone.
 ///
 /// Modelled on `chrono::LocalResult`, but carrying the one fact chrono

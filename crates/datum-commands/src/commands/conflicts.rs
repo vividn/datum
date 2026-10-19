@@ -68,7 +68,7 @@ fn list(db: &Db, json: bool) -> Result<()> {
                 let device = side["device"].as_str().unwrap_or("?");
                 let at = datum_core::db::chain::hlc_time(side["hlc"].as_str().unwrap_or(""));
                 // Two sides often land within a minute, so to the second.
-                let at = crate::commands::sync::on_readers_clock(at, "%H:%M:%S");
+                let at = datum_core::time::on_readers_clock(at, "%H:%M:%S");
                 // `deleted`'s sides are a delete and what would keep the
                 // entry: an edit made without seeing it, or an undelete.
                 let said = match (key.as_str(), side["value"].as_bool()) {

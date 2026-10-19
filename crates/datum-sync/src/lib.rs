@@ -723,7 +723,11 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
     let line = match rep {
         Ok(rep) => rep.to_string(),
         Err(_) if offline => match &p.last_seen {
-            Some(at) => format!("{}: offline, last seen {at}", p.label),
+            Some(at) => format!(
+                "{}: offline, last seen {}",
+                p.label,
+                datum_core::time::on_readers_clock(at, "%H:%M")
+            ),
             None => format!("{}: offline, never seen", p.label),
         },
         Err(e) => format!("{}: {e:#}", p.label),

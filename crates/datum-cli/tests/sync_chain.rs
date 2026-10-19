@@ -2613,7 +2613,6 @@ fn pause_stops_the_pipe_and_resume_lets_it_through() {
             &["sync", "handshake", &b_id, "--label", "b", "--addr", "{}"],
             "",
         ),
-        a.fails(&["sync"], ""),
     ] {
         assert!(
             why.contains(&refusal) && why.contains("`datum sync resume`"),
@@ -2621,18 +2620,18 @@ fn pause_stops_the_pipe_and_resume_lets_it_through() {
         );
     }
     let status = a.ok(&["sync", "status"]);
+    let named = a.fails(&["sync"], "");
     assert!(
-        status.starts_with(&format!("⚠ paused since {at}")),
-        "{status}"
+        named.contains("sync is paused on this copy since "),
+        "{named}"
     );
+    assert!(status.starts_with("⚠ paused since "), "{status}");
     assert_eq!(
         json(&a.ok(&["sync", "status", "--json"]))["paused"],
         at.as_str()
     );
     assert!(json(&b.ok(&["sync", "status", "--json"]))["paused"].is_null());
-    assert!(a
-        .ok(&["sync", "pause"])
-        .contains(&format!("already paused, since {at}")));
+    assert!(a.ok(&["sync", "pause"]).contains("already paused, since "));
 
     assert!(a.ok(&["sync", "resume"]).contains("sync resumed"));
     assert!(a.send(&b).0);
@@ -2705,7 +2704,7 @@ fn a_write_warns_once_a_day_of_changes_no_other_device_has() {
     // A day later it warns again, and names the pause.
     a.ok(&["sync", "pause"]);
     a.exec("UPDATE sync_local SET warned_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-25 hours')");
-    let at = a.query("SELECT paused_at FROM sync_local");
+    let at = a.query("SELECT strftime('%H:%M', paused_at, 'localtime') FROM sync_local");
     let warned = a.stderr_of(&["occur", "tea"]);
     assert!(
         warned.contains(&format!(
