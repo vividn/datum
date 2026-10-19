@@ -852,7 +852,7 @@ const STATS_FLAGS: &[FlagSpec] = &[
         takes_value: false,
         value_hint: None,
         value_optional: false,
-        summary: "Count the closed (false) state in the ratio denominator",
+        summary: "Count the end, or switched-off, state in the ratio denominator",
         long_description: None,
         left_override: None,
     },
@@ -940,6 +940,20 @@ const IDS_FLAGS: &[FlagSpec] = &[
 // hand-authored strings. These guarantee byte-identical output for the
 // transition; structured render coverage will expand in follow-up PRs.
 // ---------------------------------------------------------------------------
+
+const NOW_INTRO: &str = "\
+Now says where things stand: each tracked field's state at this moment,
+then the last hour drawn as a band below it.
+
+  datum now                           the states, then the band
+  datum now --bare                    the states alone
+  datum now -A                        ignored fields too, dimmed
+
+A switch field shows its state, a running start/stop field «start». An
+occur field holds no state, so it shows in the band alone. With nothing to
+list, now says which emptiness it is: no tracked field, every field
+ignored, or no tracked field holding a state now.
+";
 
 const NOW_BODY: &str = "USAGE:\n  datum now [-A] [--bare] [--no-color] [--cols N]\n\n  -A           Show ignored fields too (dim)\n      --bare   Suppress the terminal nowview band; only show the state list\n      --no-color   Disable ANSI color in the nowview band\n      --cols N Override terminal width in cells (auto-detected from $COLUMNS)\n";
 
@@ -2173,7 +2187,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Render,
         summary: "show the current state of tracked fields + terminal nowview band",
-        intro: "",
+        intro: NOW_INTRO,
         long_description: None,
         usage: &["datum now [-A] [--bare]"],
         args: NO_ARGS,

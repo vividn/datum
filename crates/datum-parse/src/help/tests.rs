@@ -1317,7 +1317,7 @@ fn no_help_page_says_colour() {
 /// verbs and the commands met next.
 const NEWCOMER_PAGES: &[&str] = &[
     "logging", "time", "setup", "alias", "sync", "db", "stats", "track", "occur", "start", "stop",
-    "switch", "tail", "undo",
+    "now", "switch", "tail", "undo",
 ];
 
 fn page_json(name: &str) -> serde_json::Value {
