@@ -730,8 +730,9 @@ fn asks(db: &Db) -> Option<std::path::PathBuf> {
 /// What `datum sync` says of one session with `p`, which took `took`
 /// (da-a4fxr): whether it failed, its line, and the line `-v` adds. One
 /// it never reached is offline, with when it was last seen, its words in
-/// the `-v` line; a busy one syncs with this copy once done, no failure
-/// (da-h31wt).
+/// the `-v` line, and no failure (da-9d6uy, vividn: «offline isn't a
+/// failure»); nor is a busy one, which syncs with this copy once done
+/// (da-h31wt). Neither synced, which [`ended`] counts.
 fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String) {
     let offline = rep
         .as_ref()
@@ -748,7 +749,7 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
         },
         Err(e) => format!("{}: {e:#}", p.label),
     };
-    let failed = rep.as_ref().is_err_and(|e| failure(e) != Some(BUSY));
+    let failed = !offline && rep.as_ref().is_err_and(|e| failure(e) != Some(BUSY));
     // A dial that never connected (offline, or refused at the handshake)
     // has no route to say.
     let route = match rep {
@@ -769,7 +770,19 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
 /// prints of it, `-v`'s line too.
 fn answer(p: &Peer, rep: &Result<Report>, took: Duration) -> String {
     let (failed, line, verbose) = said(p, rep, took);
-    serde_json::json!({ "ok": !failed, "line": line, "verbose": verbose }).to_string() + "\n"
+    let synced = rep.is_ok();
+    serde_json::json!({ "ok": !failed, "synced": synced, "line": line, "verbose": verbose })
+        .to_string()
+        + "\n"
+}
+
+/// How `datum sync` ends, of `of` sessions: an error when one failed, or
+/// when none synced — every member offline or busy (da-9d6uy, vividn: «a bare
+/// `datum sync` should fail if no sync is successful»).
+fn ended(failed: usize, synced: usize, of: usize) -> Result<()> {
+    ensure!(failed == 0, "{failed} of {of} peer(s) failed");
+    ensure!(synced > 0, "none of {of} peer(s) synced");
+    Ok(())
 }
 
 /// After the dials: one of them may have passed its address on.
@@ -805,20 +818,21 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
             "this copy's sync daemon answered what this datum cannot read: is it another build?";
         let mut next = || lines.next().context(stopped)?.context(stopped);
         let of: usize = next()?.parse().context(garbled)?;
-        let mut failed = 0;
+        let (mut failed, mut synced) = (0, 0);
         for _ in 0..of {
             let answer: serde_json::Value = serde_json::from_str(&next()?).context(garbled)?;
             let (ok, line) = (answer["ok"].as_bool(), answer["line"].as_str());
             let (ok, line) = ok.zip(line).context(garbled)?;
             failed += usize::from(!ok);
+            // A daemon of a build before da-9d6uy says only `ok`.
+            synced += usize::from(answer["synced"].as_bool().unwrap_or(ok));
             println!("{line}");
             if let Some(more) = answer["verbose"].as_str().filter(|_| verbose) {
                 println!("{more}");
             }
         }
         print_no_address(db)?;
-        ensure!(failed == 0, "{failed} of {of} peer(s) failed");
-        return Ok(());
+        return ended(failed, synced, of);
     }
     runtime()?.block_on(async {
         let ep = bind(db).await?;
@@ -834,10 +848,11 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
                 (p, rep, start.elapsed())
             })
             .collect();
-        let mut failed = 0;
+        let (mut failed, mut synced) = (0, 0);
         while let Some((p, rep, took)) = dials.next().await {
             let (lost, line, more) = said(p, &rep, took);
             failed += usize::from(lost);
+            synced += usize::from(rep.is_ok());
             println!("{line}");
             if verbose {
                 println!("{more}");
@@ -845,8 +860,7 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
         }
         print_no_address(db)?;
         ep.close().await;
-        ensure!(failed == 0, "{failed} of {} peer(s) failed", peers.len());
-        Ok(())
+        ended(failed, synced, peers.len())
     })
 }
 

@@ -367,12 +367,14 @@ fn the_printed_connect_line_pastes_into_a_shell() {
 
 /// A member that is not running is named, with what runs it (da-shfv4):
 /// «timed out» alone said neither which side nor what to do. Bare `sync`
-/// says it offline; `-v` says the words (da-a4fxr).
+/// says it offline; `-v` says the words (da-a4fxr). Its only member, it
+/// synced with none, which fails (da-9d6uy).
 #[test]
 fn a_member_not_running_is_named_with_what_runs_it() {
     let (_a, mut b) = paired();
     b.env = vec![("DATUM_SYNC_TIMEOUT_S", "2")];
     let said = b.fails(&["sync", "-v"], "");
+    assert!(said.contains("none of 1 peer(s) synced"), "{said}");
     for words in [
         "could not reach",
         "is the other copy running?",
@@ -444,7 +446,7 @@ fn sync_names_its_members_first_and_each_as_it_ends() {
         let mut run = Killed(a.cmd(args).spawn().unwrap());
         let out = lines(run.0.stdout.take().unwrap());
         let said: Vec<(String, Instant)> = out.iter().map(|l| (l, Instant::now())).collect();
-        assert!(!run.0.wait().unwrap().success(), "{said:?}");
+        assert!(run.0.wait().unwrap().success(), "{said:?}");
         said
     };
     let said = sync(&["sync"]);
@@ -924,7 +926,9 @@ fn a_purged_copy_serves_the_old_chain_nothing() {
     let _b_runs = b.serve(&["sync", "run"]);
     a.ok(&["occur", "walk"]);
     let entries = a.query("SELECT COUNT(*) FROM entries");
-    assert!(!a.run(&["sync"]).status.success());
+    // The old key answers nowhere: offline, and nothing synced (da-9d6uy).
+    let synced = a.fails(&["sync"], "");
+    assert!(synced.contains(": offline, last seen "), "{synced}");
     assert!(!b.has("tea") && !b.has("walk"));
     assert_eq!(b.query("SELECT COUNT(*) FROM ops"), "0");
     assert_eq!(a.query("SELECT COUNT(*) FROM entries"), entries);
@@ -1198,8 +1202,9 @@ fn sync_asks_the_run_serving_its_copy_and_binds_nothing_of_its_own() {
     assert!(said.contains("verify ok"), "{said}");
     assert!(a.has("walk"));
 
-    // A member it cannot reach fails it, named offline, its words in `-v`'s
-    // line, which the run sends too (da-a4fxr).
+    // A member it cannot reach is named offline, its words in `-v`'s line,
+    // which the run sends too (da-a4fxr); the only one, it fails the sync
+    // as none synced (da-9d6uy).
     a_runs.child.kill().unwrap();
     a_runs.child.wait().unwrap();
     let said = b.fails(&["sync", "-v"], "");
@@ -1209,7 +1214,7 @@ fn sync_asks_the_run_serving_its_copy_and_binds_nothing_of_its_own() {
     );
     assert!(said.contains(": offline, last seen "), "{said}");
     assert!(said.contains("s · could not reach"), "{said}");
-    assert!(said.contains("1 of 1 peer(s) failed"), "{said}");
+    assert!(said.contains("none of 1 peer(s) synced"), "{said}");
 
     let _a_runs = a.serve(&["sync", "run"]);
     // Killed and waited for (`Serving`'s drop): SIGKILL runs no destructor,
@@ -2467,7 +2472,7 @@ fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
     // not up: d, told where b is (da-fly3f), dials it too and reaches no one.
     let (inviting, ticket) = a.invite(&[]);
     d.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
-    let synced = d.fails(&["sync"], "");
+    let synced = d.ok(&["sync"]);
     assert!(synced.contains("verify ok"), "{synced}");
     drop(inviting);
     let (_b_runs, _d_runs) = (b.serve(&["sync", "run"]), d.serve(&["sync", "run"]));
@@ -2513,9 +2518,9 @@ fn two_members_one_inviter_admitted_sync_with_each_other_directly() {
     // Each dials the other in turn; an invite being offered serves members.
     for (x, y) in [(&b, &c), (&c, &b)] {
         let (_serving, _) = x.invite(&[]);
-        let out = y.fails(&["sync"], "");
+        let out = y.ok(&["sync"]);
         assert!(out.contains("verify ok"), "{out}");
-        assert!(out.contains("1 of 2 peer(s) failed"), "a is gone: {out}");
+        assert!(out.contains(": offline, last seen "), "a is gone: {out}");
     }
     assert!(b.has("from-c") && c.has("from-b") && !a.has("from-b"));
     assert_eq!(b.hash(), c.hash());
@@ -2882,9 +2887,9 @@ fn a_member_only_its_inviter_heard_of_shows_its_admission_and_syncs() {
     b.ok(&["occur", "from-b"]);
     c.ok(&["occur", "from-c"]);
     let mut b_runs = b.serve(&["sync", "run"]);
-    let out = c.fails(&["sync"], "");
+    let out = c.ok(&["sync"]);
     assert!(out.contains("verify ok"), "{out}");
-    assert!(out.contains("1 of 2 peer(s) failed"), "a is gone: {out}");
+    assert!(out.contains(": offline, last seen "), "a is gone: {out}");
     let served = b_runs.lines_until(" got ");
     assert!(served.contains("verify ok"), "{served}");
     assert!(heard(&c) && b.has("from-a") && b.has("from-c") && c.has("from-b"));
@@ -2919,11 +2924,11 @@ fn one_admitted_by_a_copy_held_as_revoked_is_refused_with_what_would_fix_it() {
 
 /// `r` syncs with `b` serving, which had not heard of it; what each said,
 /// and `r` as `b`'s `sync status` lists it after. The inviter is gone, so
-/// `r`'s sync fails on that one.
+/// `r`'s sync says that one offline.
 fn reader_syncs_unheard(b: &Copy, r: &Copy) -> (String, String, serde_json::Value) {
     let mut b_runs = b.serve(&["sync", "run"]);
-    let out = r.fails(&["sync"], "");
-    assert!(out.contains("1 of 2 peer(s) failed"), "a is gone: {out}");
+    let out = r.ok(&["sync"]);
+    assert!(out.contains(": offline, last seen "), "a is gone: {out}");
     let served = b_runs.lines_until(" got ");
     let status = b.ok(&["sync", "status", "--json"]);
     (out, served, member_of_list(&status, &r.id()))
@@ -3134,8 +3139,8 @@ fn a_diff_from_a_member_not_heard_of_is_refused_and_admits_no_one() {
     );
     assert!(!heard(), "a diff admitted its dialer");
 
-    // The inviter is gone, so the sync as a whole fails; the one with b verifies.
-    let synced = c.fails(&["sync"], "");
+    // The inviter is gone, offline; the session with b verifies.
+    let synced = c.ok(&["sync"]);
     assert!(synced.contains("verify ok"), "{synced}");
     assert!(heard());
     let same = c.ok(&["sync", "diff", who]);
