@@ -235,6 +235,43 @@ describe('the day strip', () => {
 		);
 	});
 
+	// da-8kryw: each band is its own SVG inlined in one page, where `url(#id)`
+	// resolves to the PAGE's first element of that id. Numbered per picture,
+	// yesterday's stripes took today's colours.
+	test("a band's stripes are its own colours, whatever band defines the same id first", async () => {
+		await clocked.solo(async (app) => {
+			await seedLines(app, [
+				'switch posture vertical,ochair -d -1 -t 9:00',
+				'switch posture standing -d -1 -t 11:00',
+				'switch posture vertical,sit,ground,bed -t 9:00',
+				'switch posture standing -t 11:00'
+			]);
+			await sizeWhole(app, 1);
+			const fills = await app.page.evaluate(() =>
+				[...document.querySelectorAll('.band')].flatMap((band) =>
+					[...band.querySelectorAll('rect.multi-state')].map((rect) => {
+						const id = rect.getAttribute('fill').slice('url(#'.length, -1);
+						const own = band.querySelector(`pattern[id="${id}"]`);
+						return {
+							day: band.dataset.daysAgo,
+							own: own?.outerHTML,
+							page: document.getElementById(id)?.outerHTML
+						};
+					})
+				)
+			);
+			assert.deepEqual(
+				fills.map((f) => f.day).sort(),
+				['0', '1'],
+				`one striped block each, today and yesterday: ${JSON.stringify(fills)}`
+			);
+			for (const { day, own, page } of fills) {
+				assert.ok(own, `${day} days ago: a stripe with no pattern of its own`);
+				assert.equal(page, own, `${day} days ago: the page resolves its stripes to another band's`);
+			}
+		});
+	});
+
 	test('the strip draws the date column and the ruler, and its gridlines run through every band', async () => {
 		await shared.solo(async (app) => {
 			await sizeWhole(app, 5);

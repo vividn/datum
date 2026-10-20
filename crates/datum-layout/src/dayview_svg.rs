@@ -1395,7 +1395,14 @@ fn stripe_pattern_id(
     if let Some(id) = patterns.get(&key) {
         return id.clone();
     }
-    let id = format!("ds-{}", patterns.len());
+    // The id is the key's FNV-1a hash (da-8kryw): inlined in one page, every
+    // day's SVG resolves `url(#…)` to the page's first element of that id, so
+    // a counter gave one day's stripes another day's colours. Hashed, an id
+    // names one pattern wherever it is defined.
+    let hash = key.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    let id = format!("ds-{hash:016x}");
     let tile_w = STRIPE_WIDTH_PX * colors.len() as f64;
     let _ = write!(
         defs,
@@ -1657,6 +1664,32 @@ mod tests {
         let svg = render_dayview_svg(&layout);
         assert_eq!(svg.matches("<pattern ").count(), 1, "one shared def: {svg}");
         assert_eq!(svg.matches(r#"class="block multi-state""#).count(), 2);
+    }
+
+    #[test]
+    fn stripe_pattern_ids_name_their_colours_across_renders() {
+        // da-8kryw: dayview strip days are separate SVGs inlined in one page,
+        // where `url(#id)` resolves to the page's first element of that id.
+        let render = |colors: &[&str]| {
+            let mut cfg = one_day_with_block(false, Orientation::Horizontal);
+            cfg.days[0].fields[0].blocks[0].fill =
+                BlockFill::MultiState(colors.iter().map(|c| c.to_string()).collect());
+            render_dayview_svg(&compute_dayview(&cfg))
+        };
+        let def = |svg: &str| {
+            let start = svg.find("<pattern ").expect("a pattern def");
+            let end = start + svg[start..].find("</pattern>").unwrap();
+            svg[start..end].to_string()
+        };
+        let a = def(&render(&["#aa3333", "#33aa33"]));
+        let b = def(&render(&["#662741", "#3366aa", "#aaaa33"]));
+        let id = |d: &str| d.split('"').nth(1).unwrap().to_string();
+        assert_ne!(id(&a), id(&b), "different stripes, different ids");
+        assert_eq!(
+            a,
+            def(&render(&["#aa3333", "#33aa33"])),
+            "same stripes, same def"
+        );
     }
 
     #[test]
