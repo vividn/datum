@@ -56,10 +56,8 @@ async function fill(page, field, verb) {
 	if (verb) await page.locator(`${MODAL} button[data-verb="${verb}"]`).click();
 }
 
-/** Add one state row per name: on a spec's States tab, or under a new switch field's kind. */
+/** Add one state row per name, on a switch's Basics (da-i9upr). */
 async function addStates(page, names) {
-	const tab = page.locator(`${MODAL} [data-tab="states"]`);
-	if ((await tab.count()) > 0) await tab.click();
 	for (const name of names) {
 		await page.locator(`${MODAL} .states + button.add`).click();
 		await page.locator(`${MODAL} .state input.name`).last().fill(name);
@@ -541,7 +539,7 @@ describe('in the app', () => {
 			const statePick = page.locator(`${MODAL} .state .set .swatch`).nth(8);
 			const stateColor = await statePick.getAttribute('data-color');
 			await statePick.click();
-			await page.locator(`${MODAL} .state input.description`).first().fill('up');
+			await page.locator(`${MODAL} .state input.meaning`).first().fill('up');
 			await page.locator(`${MODAL} button.commit`).click();
 
 			const result = await saved;
@@ -670,9 +668,9 @@ describe('in the app', () => {
 			const noHex = async (where) => {
 				for (const [type, value, placeholder, cls] of await inputs()) {
 					// The icon's picker (da-45wgz) takes a file, and no typing at all;
-					// «never false» (da-cwieh) is a box to tick.
+					// whether off is a state (da-cwieh, da-i9upr) is a box to tick.
 					assert.ok(
-						type === 'text' || (type === 'file' && cls.includes('icon')) || (type === 'checkbox' && cls.includes('never-false')),
+						type === 'text' || (type === 'file' && cls.includes('icon')) || (type === 'checkbox' && cls.includes('off-state')),
 						`${where}: input.${cls} is a ${type}`
 					);
 					assert.doesNotMatch(`${value} ${placeholder}`, /#|hex|rgb/i, `${where}: input.${cls} takes a colour`);
@@ -691,8 +689,6 @@ describe('in the app', () => {
 			await page.locator(MODAL).waitFor();
 			await noHex('spec, basics');
 			assert.equal(await page.locator(`${MODAL} .row .swatch[aria-expanded]`).getAttribute('data-color'), '#123456');
-			await page.locator(`${MODAL} [data-tab="states"]`).click();
-			await noHex('spec, states');
 			assert.equal(await page.locator(`${MODAL} .state .swatch[aria-expanded]`).getAttribute('data-color'), '#00ff00');
 			await cancelField(page);
 			assert.equal(await shut, null);
@@ -718,7 +714,8 @@ describe('in the app', () => {
 			assert.ok(b.x > a.x + a.width, 'the symbol stands after the colour');
 			assert.equal(await ink(symbol), rgb(listed.color), 'at auto, the colour datum paints it');
 
-			const data = page.locator(`${MODAL} .panel > .label`, { hasText: 'data' });
+			// What stands under the line: the shape's sample (da-i9upr).
+			const data = page.locator(`${MODAL} .panel .sample`);
 			const at = (await data.boundingBox()).y;
 			for (const [opener, set] of [[swatch, '.set'], [symbol, '.picker']]) {
 				await opener.click();
@@ -785,7 +782,6 @@ describe('in the app', () => {
 			assert.deepEqual(await looks(swatch), { fill: rgb(color), border: 'solid', color });
 
 			// A state falls back to its OWN name's colour, not the field's.
-			await page.locator(`${MODAL} [data-tab="states"]`).click();
 			const state = page.locator(`${MODAL} .state .swatch[aria-expanded]`);
 			assert.notEqual(listed.state_colors.calm, listed.color);
 			assert.deepEqual(await looks(state), { fill: rgb(listed.state_colors.calm), border: 'dashed', color: '' });
@@ -809,14 +805,19 @@ describe('in the app', () => {
 
 	// da-h119q: vividn, «when tracking something new something users
 	// immediately want to do is to add in keys they care about». So Basics
-	// asks for them, in place of the field-level unit nothing read, and a
-	// field being declared carries them in its one `setup F --track` (da-2pbvd).
+	// asks for them, in place of the field-level unit nothing read — a line
+	// that goes to the Data tab (da-i9upr) — and a field being declared
+	// carries them in its one `setup F --track` (da-2pbvd).
 	test('Basics asks for keys and not a unit, and a new field\'s keys are saved in its one `setup F --track`', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
 			await fill(page, 'coffee', 'occur');
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a new field');
+			assert.equal(await page.locator(`${MODAL} ul.data`).count(), 0, 'the keys are on Basics');
+			assert.equal((await page.locator(`${MODAL} .data-line .ask`).innerText()).trim(), 'want to record extra data with each entry?');
+			await page.locator(`${MODAL} button[data-to-tab="data"]`).click();
+			assert.equal(await page.locator(`${MODAL} [data-panel]`).getAttribute('data-panel'), 'data');
 			await page.locator(`${MODAL} ul.data + button.add`).click();
 			const row = page.locator(`${MODAL} ul.data li.key`).last();
 			await row.locator('input.name').fill('cups');
@@ -836,13 +837,14 @@ describe('in the app', () => {
 			const shown = JSON.parse((await app.run(['setup', 'coffee', '--json'])).stdout);
 			assert.deepEqual(shown.keys, [{ name: 'cups', kind: 'default', value: '2', in_slug: false }]);
 
-			// Saved, it is on Basics with its keys there, and still no unit; and so it opens again.
+			// Saved, Basics names its keys, and there is still no unit; and so it opens again.
 			await page.locator(`${MODAL} h2`).waitFor();
-			assert.deepEqual(await page.locator(`${MODAL} ul.data input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
+			assert.equal((await page.locator(`${MODAL} .data-line .ask`).innerText()).trim(), 'each entry records cups');
 			await leave(page);
 			const { saved: shut } = await openField(page, 'coffee');
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a spec');
+			await page.locator(`${MODAL} button[data-to-tab="data"]`).click();
 			assert.deepEqual(await page.locator(`${MODAL} ul.data input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
 			await cancelField(page);
 			assert.equal(await shut, null);
@@ -850,17 +852,17 @@ describe('in the app', () => {
 	});
 
 	// vividn, 2026-10-14: «Display the full widget even in + new field mode» (da-uipyt), none of it required.
-	test('every tab from the start: a field being declared has all five, and so does a saved one', async () => {
+	test('every tab from the start: a field being declared has all three, and so does a saved one', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const tabs = async () => (await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase());
 			await openIt(page);
-			assert.deepEqual(await tabs(), ['basics', 'states', 'data', 'aliases', 'placement']);
+			assert.deepEqual(await tabs(), ['basics', 'data', 'aliases']);
 			await fill(page, 'coffee', 'occur');
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator(`${MODAL} h2`).waitFor();
-			assert.deepEqual(await tabs(), ['basics', 'states', 'data', 'aliases', 'placement']);
-			// Five words across a 320px phone, none of them cut.
+			assert.deepEqual(await tabs(), ['basics', 'data', 'aliases']);
+			// Three words across a 320px phone, none of them cut.
 			await page.setViewportSize({ width: 320, height: 640 });
 			const cut = await page.locator(`${MODAL} [role="tab"]`).evaluateAll((tabs) =>
 				tabs.filter((t) => {
@@ -1152,7 +1154,6 @@ describe('in the app', () => {
 			await app.run(['track', 'mood', '--verb', 'switch', '--states', 'up,down']);
 			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
-			await page.locator(`${MODAL} [data-tab="states"]`).click();
 			await tile(page, 'the symbol of up').click();
 			// A state's symbol is a character: the image is the field's alone.
 			assert.equal(await page.locator(`${MODAL} .picker input[type="file"]`).count(), 0);
@@ -1178,7 +1179,6 @@ describe('in the app', () => {
 			await app.run(['setup', 'mood', '--state-glyph', 'up=▲', '--state-glyph', 'down=▼', '--state-glyph', 'flat=■']);
 			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
-			await page.locator(`${MODAL} [data-tab="states"]`).click();
 			await page.locator(`${MODAL} button.remove[aria-label="remove down"]`).click();
 			// A rename is the same row under a new name, and its glyph comes along.
 			await page.locator(`${MODAL} .state input.name`).nth(1).fill('level');

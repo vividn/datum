@@ -65,11 +65,11 @@ describe('the Placement tab', () => {
 		assert.equal(r.code, 0, r.stderr);
 	};
 
-	/** Open `field`'s spec on Placement; resolves to `{ saved }`, the pending save — boxed, or awaiting this would await the save. */
+	/** Open `field`'s spec, its placement on Basics in view (da-i9upr); resolves to `{ saved }`, the pending save — boxed, or awaiting this would await the save. */
 	async function openPlacement(page, field) {
 		const { saved } = await openField(page, field);
-		await page.locator(`${MODAL} [data-tab="placement"]`).click();
 		await page.locator(`${MODAL} .placement .band svg`).waitFor();
+		await page.locator(`${MODAL} .placement .band`).evaluate((el) => el.scrollIntoView({ block: 'center' }));
 		return { saved };
 	}
 

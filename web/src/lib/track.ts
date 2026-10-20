@@ -127,7 +127,7 @@ export const EXAMPLES: Example[] = [
 export const trackLabel = (verb: Verb): string =>
 	`TRACK${VERBS.find((v) => v.verb === verb)?.glyph ?? ''}`;
 
-/** One row of the States tab: a state, its colour, what it means and its glyph (empty for none). */
+/** One state row of the setup form: a state, its colour, what it means and its glyph (empty for none). */
 export interface StateRow {
 	name: string;
 	color: string;
@@ -353,7 +353,7 @@ const PLACE_KEYS = [
 export const placeOf = (spec: Spec): Place =>
 	Object.fromEntries(PLACE_KEYS.filter((k) => spec[k] != null).map((k) => [k, spec[k]]));
 
-/** The States tab's rows for `spec`: its allowed states, each with its colour and description. */
+/** The state rows for `spec`: its allowed states, each with its colour and description. */
 export const stateRows = (spec: Spec): StateRow[] =>
 	(spec.allowed_states ?? []).map((name) => ({
 		name,
@@ -472,7 +472,7 @@ export function editedSpec(
 	// The key rows are the whole answer: every place a key can live is written from them.
 	if (edit.keys)
 		for (const k of ['id_keys', 'data_keys', 'assign', 'id_assign', 'remainder', 'string_remainder', 'comment_remainder']) delete rest[k];
-	// The placement is the Placement tab's whole answer: free drops the anchor, tied drops y/height.
+	// The placement is the form's whole answer: free drops the anchor, tied drops y/height.
 	if (edit.place) for (const k of PLACE_KEYS) delete rest[k];
 	return {
 		...rest,

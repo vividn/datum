@@ -531,7 +531,7 @@ export interface Room {
  * A switch field's states RADIALLY around the tap (da-7q3ka), RANKED BY
  * DISTANCE — vividn: «make sure that the top ranked states are radially
  * close to the center». The rank is the spec's `allowed_states` order,
- * set in the States tab and never by use, so a state is always the same
+ * set among its states in the setup widget and never by use, so a state is always the same
  * place relative to the thumb, like a pie menu.
  *
  * The centre is the tapped field's own position, and it is `end`'s on

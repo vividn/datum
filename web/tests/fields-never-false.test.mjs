@@ -83,18 +83,19 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					assert.ok(Math.abs(env.back.y - env.centre.y) <= 1, '< Back is off the gap’s line');
 					assert.ok(Math.abs(env.centre.right - env.centre.left - (mood.centre.right - mood.centre.left)) <= 1, 'the gap is not end’s width');
 
-					// The States tab says so, and turns it off.
+					// Basics says so, off first among its states and not one of them, and turns it back on (da-i9upr).
 					const { saved } = await openField(page, 'env');
-					await page.locator(`${FIELD_FORM} [data-tab="states"]`).click();
-					const box = page.locator(`${FIELD_FORM} input.never-false`);
-					assert.equal(await box.isChecked(), true);
+					const box = page.locator(`${FIELD_FORM} .states li.off input.off-state`);
+					assert.equal(await box.isChecked(), false);
+					assert.deepEqual(await page.locator(`${FIELD_FORM} .sample .block`).evaluateAll((all) => [...new Set(all.map((b) => b.dataset.state))]), ['home', 'office', 'cafe'], 'off is drawn');
 					// A field that lists `false` keeps its `end`, so the box cannot say otherwise.
-					await page.locator(`${FIELD_FORM} button.add`).click();
+					await page.locator(`${FIELD_FORM} .states + button.add`).click();
 					await page.locator(`${FIELD_FORM} .state input.name`).last().fill('false');
-					assert.equal(await box.isDisabled(), true, 'a listed `false` leaves «never false» to tick');
+					assert.equal(await box.isDisabled(), true, 'a listed `false` leaves off to untick');
 					await page.locator(`${FIELD_FORM} [aria-label="remove false"]`).click();
 					assert.equal(await box.isDisabled(), false);
-					await box.uncheck();
+					await box.check();
+					assert.equal(await page.locator(`${FIELD_FORM} .sample .block[data-state="off"]`).count() > 0, true, 'off is not drawn');
 					await page.locator(`${FIELD_FORM} .commit`).click();
 					await saved;
 					assert.equal(JSON.parse((await app.run(['setup', 'env', '--json'])).stdout).never_false, undefined);
@@ -106,8 +107,8 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 
 					// Only a switch has a ring, so only a switch is offered it.
 					const { saved: left } = await openField(page, 'alfa');
-					await page.locator(`${FIELD_FORM} [data-tab="states"]`).click();
-					assert.equal(await page.locator(`${FIELD_FORM} input.never-false`).count(), 0, 'an occur field offers «never false»');
+					await page.locator(`${FIELD_FORM} .sample`).waitFor();
+					assert.equal(await page.locator(`${FIELD_FORM} input.off-state`).count(), 0, 'an occur field offers off');
 					await cancelField(page);
 					await left;
 				},

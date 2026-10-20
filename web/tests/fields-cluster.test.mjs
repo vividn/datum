@@ -7,7 +7,7 @@
 //
 // The spec's order is a rank by distance (`ringOf` in fields.ts);
 // near an edge the ring is capped, not shifted, so `end` stays on the tap
-// (da-8mk9p); the States tab's ↑ / ↓ is what reorders it, and logging
+// (da-8mk9p); the setup widget's ↑ / ↓ beside each state is what reorders it, and logging
 // never does. The list's other behaviour — Back,
 // `+`, Escape, the colours — is `fields-states.test.mjs`.
 
@@ -241,7 +241,7 @@ describe('a switch field’s states around the tap', () => {
 	before(startApp);
 	after(stopApp);
 
-	test('`end` on the tap, at the left edge too, `< Back` on another row there, reordered by the States tab alone', async () => {
+	test('`end` on the tap, at the left edge too, `< Back` on another row there, reordered by the setup widget alone', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -296,7 +296,7 @@ describe('a switch field’s states around the tap', () => {
 					for (const b of [back, add]) assert.ok(middle.states.every((s) => s.fill !== b.fill), `${b.name} is filled like a state`);
 				}
 
-				// Logging does not reorder; the States tab does.
+				// Logging does not reorder; the setup widget does.
 				// Timed apart: the app's clock is held, and two switches of one
 				// field at one minute collide.
 				for (const [s, t] of [['d', '1400'], ['d', '1410'], ['c', '1420'], ['d', '1430']])
@@ -305,7 +305,6 @@ describe('a switch field’s states around the tap', () => {
 				assert.deepEqual(logged.buttons.map((b) => b.name), RING, 'logging reordered the states');
 
 				const { saved: saved } = await openField(page, 'mood');
-				await page.locator(`${FIELD_FORM} [data-tab="states"]`).click();
 				for (let i = 0; i < 3; i++) await page.locator(`${FIELD_FORM} [aria-label="move d up"]`).click();
 				await page.locator(`${FIELD_FORM} .commit`).click();
 				await saved;

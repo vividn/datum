@@ -146,6 +146,7 @@
 					taken={$fields.map((f) => f.field)}
 					bind:dirty
 					on:close={(e) => close(e.detail)}
+					on:run={(e) => press(e.detail.argv)}
 				>
 					<svelte:fragment slot="pick">
 						{#if $editing.field !== '' || tracked.length > 0}

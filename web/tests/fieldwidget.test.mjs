@@ -36,7 +36,7 @@ const marked = async (page) => (await page.locator(`${PICKER} .chips [aria-curre
 /** The field the form is on: its name line's h2. */
 const heading = async (page) => (await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim();
 
-const TABS = ['basics', 'states', 'data', 'aliases', 'placement'];
+const TABS = ['basics', 'data', 'aliases'];
 /** The shape's «ex.» part, which opens its examples. */
 const more = (page, verb) => page.locator(`${FIELD_FORM} [data-examples="${verb}"]`);
 const SHEET = 'dialog.sheet[data-catalog]';
@@ -258,6 +258,13 @@ describe('the field widget', () => {
 				assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), '', 'what was typed before stayed');
 				assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.verb);
 				assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(example.states ?? {}));
+				// A card's keys are on Basics; any other shape's a line says, which goes to the Data tab (da-i9upr).
+				if (example.verb !== 'add') {
+					const said = (await page.locator(`${FIELD_FORM} .data-line .ask`).innerText()).trim();
+					const names = (example.keys ?? []).map((k) => k.name);
+					assert.equal(said, names.length ? `each entry records ${names.join(', ')}` : 'want to record extra data with each entry?');
+					await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
+				}
 				assert.deepEqual(
 					await page
 						.locator(`${FIELD_FORM} ul.data li.key`)
@@ -387,11 +394,9 @@ describe('the field widget', () => {
 			const { saved } = await openField(page);
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
 			await page.locator(`${FIELD_FORM} input.field`).fill('mood');
-			await page.locator(`${FIELD_FORM} [data-tab="states"]`).click();
 			await page.locator(`${FIELD_FORM} .states + button.add`).click();
 			await page.locator(`${FIELD_FORM} .state input.name`).fill('good');
-			await page.locator(`${FIELD_FORM} .state input.description`).fill('a good day');
-			await page.locator(`${FIELD_FORM} [data-tab="basics"]`).click();
+			await page.locator(`${FIELD_FORM} .state input.meaning`).fill('a good day');
 			await page.locator(`${FIELD_FORM} input.description`).fill('how it feels');
 			const before = (await app.echoes()).length;
 			await page.locator(`${FIELD_FORM} button.commit`).click();
@@ -451,6 +456,7 @@ describe('the field widget', () => {
 				[() => row.locator('.remove').click(), [undefined, undefined]]
 			]) {
 				const { saved } = await openField(page, 'emotion');
+				await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
 				assert.equal(await row.locator('input.name').inputValue(), (await route())[0]);
 				await change();
 				await page.locator(`${FIELD_FORM} button.commit`).click();
@@ -466,6 +472,95 @@ describe('the field widget', () => {
 		await page.evaluate(([tab, kind]) => window.datum.shell.widgetInto(tab, kind), [tab, kind]);
 		return page.locator(`section.pane[data-title="${kind}"]`);
 	};
+
+	// da-i9upr, vividn, 2026-10-19: «move the placement to the basics tab and show what the data looks like
+	// displayed … completely remove the states tab … for card, embed the data widget directly on the basics».
+	test('Basics draws each shape as it is logged, with its placement; a switch\'s states start at off; a card\'s keys are there', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const { saved } = await openField(page);
+			const at = (sel) => page.locator(`${FIELD_FORM} [data-panel="basics"] ${sel}`);
+			const blocks = () => at('.sample .block').evaluateAll((all) => all.map((b) => b.dataset.state));
+			const off = at('.states li.off input.off-state');
+			await page.locator(`${FIELD_FORM} input.field`).fill('thing');
+			// No shape yet, nothing to draw.
+			assert.equal(await at('.sample').count(), 0);
+			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
+
+			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
+			assert.ok((await at('.sample[data-sample="occur"] .dot').count()) > 1, 'no dots');
+			await at('.placement .band svg').waitFor();
+			assert.equal(await at('.placement .dot').count(), 1, 'an occur field places its dot');
+
+			await page.locator(`${FIELD_FORM} button[data-verb="start"]`).click();
+			assert.deepEqual([...new Set(await blocks())], ['off', 'on']);
+			await at('.placement .lane').waitFor();
+
+			// A switch starts with off alone, which cannot go until there is another state.
+			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
+			assert.deepEqual([...new Set(await blocks())], ['off']);
+			assert.deepEqual([await off.isChecked(), await off.isDisabled()], [true, true]);
+			await at('.states + button.add').click();
+			await at('.state input.name').fill('calm');
+			assert.deepEqual([...new Set(await blocks())], ['calm', 'off']);
+			assert.equal(await off.isDisabled(), false);
+			await off.uncheck();
+			assert.deepEqual([...new Set(await blocks())], ['calm'], 'off disabled is still drawn');
+			// The line names the keys and goes to the Data tab.
+			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
+			assert.equal(await page.locator(`${FIELD_FORM} [data-panel]`).getAttribute('data-panel'), 'data');
+			await page.locator(`${FIELD_FORM} [data-tab="basics"]`).click();
+
+			// A card has no time: no sample and no placement, and the Data tab's rows, typed, on Basics.
+			await page.locator(`${FIELD_FORM} button[data-verb="add"]`).click();
+			for (const gone of ['.sample', '.placement', '.data-line', '.states']) assert.equal(await at(gone).count(), 0, gone);
+			await at('ul.data + button.add').click();
+			assert.equal(await at('ul.data li.key select.type').count(), 1, 'not the Data tab\'s rows');
+
+			// Saved as a switch, off disabled is `never_false`.
+			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
+			await page.locator(`${FIELD_FORM} button.commit`).click();
+			assert.equal((await saved).code, 0);
+			const shown = JSON.parse((await app.run(['setup', 'thing', '--json'])).stdout);
+			assert.deepEqual([shown.allowed_states, shown.never_false], [['calm'], true]);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// vremya, for vividn, 2026-10-19: «put them back at the very bottom of the basics tab» (da-i9upr).
+	test('a field\'s Basics ends with tracked or ignored, whose button runs `ignore F` or `track F` and stays', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'tea', '--verb', 'occur']);
+			await app.redraw();
+			await openField(page, 'tea');
+			const tracking = page.locator(`${FIELD_FORM} [data-tracking]`);
+			const said = async () => [await tracking.getAttribute('data-tracking'), (await tracking.innerText()).replace(/\s+/g, ' ').trim()];
+			assert.deepEqual(await said(), ['tracked', 'tracked a button in the fields widget ignore']);
+			assert.equal(
+				await page.locator(`${FIELD_FORM} [data-panel="basics"]`).evaluate((el) => el.lastElementChild?.dataset.tracking),
+				'tracked',
+				'not at the very bottom'
+			);
+			await page.locator(`${FIELD_FORM} input.description`).fill('kept');
+			for (const [verb, now] of [
+				['ignore', ['ignored', 'ignored no button and not in now; its entries stay track']],
+				['track', ['tracked', 'tracked a button in the fields widget ignore']]
+			]) {
+				// The app's clock is held, and two rows of one field at one instant collide.
+				await app.clock.forward(1000);
+				const before = (await app.echoes()).length;
+				await tracking.locator('button').click();
+				await until(said, (seen) => seen[0] === now[0]);
+				assert.deepEqual(await said(), now);
+				assert.deepEqual((await app.echoes()).slice(before), [`${verb} tea`]);
+			}
+			// The form stayed, with what was typed in it.
+			assert.equal(await heading(page), 'tea');
+			assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), 'kept');
+			assert.deepEqual(app.errors, []);
+		});
+	});
 
 	test('`track` in the commands widget opens it on a new field, and writes no line', async () => {
 		await shared.solo(async (app) => {

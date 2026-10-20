@@ -1,5 +1,5 @@
 <!--
-	The field form's Placement tab (da-btyvj): where a field's lane sits in
+	The field form's placement, on its Basics (da-btyvj, da-i9upr): where a field's lane sits in
 	the day, chosen by dragging it on today's REAL band — the CLI's own
 	`dayview`, so the field is placed against its actual neighbours.
 
@@ -95,7 +95,8 @@
 				sample = day;
 			}
 		}
-		if (!svg) return;
+		// Gone while it read: the shape changed, or the tab did.
+		if (!svg || !band) return;
 		band.prepend(svg);
 		const disc = [...svg.querySelectorAll(`g.field[data-field="${CSS.escape(field)}"] .point-bg`)].at(-1);
 		dotX = disc ? Number(disc.getAttribute('cx')) : band.clientWidth / 2;
