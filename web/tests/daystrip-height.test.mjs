@@ -437,6 +437,9 @@ describe("the day strip's day height and its pin", () => {
 			await app.page.mouse.move(line.x + line.width / 2, cy - 5, { steps: 4 });
 			await app.page.mouse.up();
 			assert.equal(await valueOf(app), tall + 25, 'a press beside the line missed it');
+			// Measured once the line is where the new height draws it: a box
+			// read sooner is its old place, 5px off a hit area of 4 (da-ruodd).
+			await waitForHeights(app, tall + 25);
 
 			// Held past the long press and then moved, which on the picture
 			// is a range (da-pzzoz): on a line it is still only the height.
