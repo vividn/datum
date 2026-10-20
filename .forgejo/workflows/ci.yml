@@ -223,6 +223,25 @@ jobs:
           fi
           echo "$files"
 
+      # Words listed in the secret NAME_GUARD never reach a PR (da-r6o39): not
+      # in a line it adds, a commit's message, author or committer, nor its
+      # title or body, read from the API as it is now. The script prints only
+      # an entry's number and where, since CI logs become public with the
+      # repo, and fails on an unset secret, which examined nothing. Before the
+      # merge below, so HEAD is the PR's own head.
+      - name: Name guard
+        if: env.TRAIN != '1' && github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+          NAME_GUARD: ${{ secrets.NAME_GUARD }}
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          printf 'header = "Authorization: token %s"\n' "$TOKEN" |
+            curl -sSf -K - "${SERVER%/}/api/v1/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" > "$RUNNER_TEMP/pr.json"
+          python3 scripts/name-guard.py "origin/$BASE" "$RUNNER_TEMP/pr.json"
+
       # A PR run tests the PR as it would LAND (da-kz73u): its head merged with
       # its base's tip as fetched just above, not on the old base it was cut
       # from. Two PRs each green on their own base and textually clean together
