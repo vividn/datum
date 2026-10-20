@@ -28,7 +28,8 @@
 	first (da-qimwi).
 
 	Every field, a new one too, has the three segments — Basics · Data ·
-	Aliases — none of them required (da-i9upr). Basics shows what its entries
+	Aliases — none of them required (da-i9upr), and a swipe left or right
+	across the form goes to the next or the one before (da-kmr29). Basics shows what its entries
 	will look like drawn (`ShapeSample.svelte`), a switch's states under it,
 	off first and disabled (`never_false`) only once there is another, and
 	where its lane sits in the day (`Placement.svelte`); a line that goes to
@@ -179,10 +180,59 @@
 
 	/** Hand `next` up to run, or null to run nothing. */
 	const finish = (next: Save | null) => dispatch('close', next);
+
+	// ---- swipe (da-kmr29) ---------------------------------------------------
+	// vividn, 2026-10-19: «you should be able to switch between tabs in the setup widget by swiping left and right».
+	// The pane's frame rule, one level in (PaneFrame.svelte, da-kcmp): the first move past COMMIT_PX decides
+	// whose the gesture is. A horizontal one with a tab that way is the form's and stops there; on the last
+	// tab it goes on to the frame. A vertical one stays a scroll, and one begun on a box, a popup or the
+	// placement (which drags itself) is never the form's.
+	const COMMIT_PX = 10;
+	const SWIPE_PX = 40;
+	const KEEPS = 'input, textarea, select, dialog, [role="listbox"], [role="slider"], .placement, [data-pans]';
+	let swipe: { x: number; y: number; state: 'pending' | 'ours' | 'theirs' } | null = null;
+	/** The tab a swipe by `dx` brings on, if there is one that way. */
+	const toward = (dx: number) => TABS[TABS.indexOf(tab) + (dx < 0 ? 1 : -1)];
+
+	function swipeStart(event: TouchEvent) {
+		const t = event.touches[0];
+		const kept = (event.target as Element).closest(KEEPS);
+		const theirs = event.touches.length > 1 || (kept && (event.currentTarget as Element).contains(kept));
+		swipe = { x: t.clientX, y: t.clientY, state: theirs ? 'theirs' : 'pending' };
+	}
+
+	function swipeMove(event: TouchEvent) {
+		if (!swipe || swipe.state === 'theirs') return;
+		if (event.touches.length > 1) return void (swipe.state = 'theirs');
+		const dx = event.touches[0].clientX - swipe.x;
+		const dy = event.touches[0].clientY - swipe.y;
+		if (swipe.state === 'pending') {
+			if (Math.max(Math.abs(dx), Math.abs(dy)) < COMMIT_PX) return;
+			swipe.state = Math.abs(dx) > Math.abs(dy) && toward(dx) ? 'ours' : 'theirs';
+			if (swipe.state === 'theirs') return;
+		}
+		event.stopPropagation();
+		event.preventDefault();
+	}
+
+	function swipeEnd(event: TouchEvent) {
+		const was = swipe;
+		swipe = null;
+		if (was?.state !== 'ours') return;
+		event.stopPropagation();
+		const dx = event.changedTouches[0].clientX - was.x;
+		if (Math.abs(dx) >= SWIPE_PX) tab = toward(dx) ?? tab;
+	}
 </script>
 
 <div class="field-form" role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
-	<form on:submit|preventDefault={() => ready && finish(save)}>
+	<form
+		on:submit|preventDefault={() => ready && finish(save)}
+		on:touchstart={swipeStart}
+		on:touchmove|nonpassive={swipeMove}
+		on:touchend={swipeEnd}
+		on:touchcancel={() => (swipe = null)}
+	>
 		<div class="verbs" role="radiogroup" aria-label="what a press logs">
 			{#each VERBS as choice (choice.verb)}
 				<div class="shape" class:split={offers(choice.verb)}>
