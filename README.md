@@ -521,4 +521,4 @@ xtask/                workspace task runner (`cargo xtask <task>`)
 
 ## License
 
-MIT — see `LICENSE`.
+AGPL-3.0-or-later — see `LICENSE`.

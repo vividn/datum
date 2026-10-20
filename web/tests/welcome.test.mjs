@@ -269,7 +269,7 @@ describe('a device that has been here', () => {
 
 	// Against datum's OWN list of new defaults (layout/defaults.ts), which
 	// the harness otherwise empties for a device with a stored list: this
-	// is the sentence that tells vividn's and an early user's devices.
+	// is the sentence that tells the early users' devices.
 	test('is offered the new tabs once, in words that name them, and «Use the new layout» opens them', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
