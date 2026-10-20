@@ -702,6 +702,37 @@ describe('widget options', () => {
 		});
 	});
 
+	// Two tabs on one device keep ONE copy (da-btdu5): a write changes its own
+	// key in the map as stored now, so neither tab erases what the other set.
+	const heldKeys = (page) => page.evaluate(() => Object.keys(window.datum.layout.session()).length);
+
+	test('an option set in one tab survives an option set in another, and a reload', async () => {
+		await withApp(async (app) => { // a second tab, and reloads
+			const { page } = app;
+			const other = await app.newTab();
+			await toggleOption(page, 'repl', NEWEST);
+			await toggleOption(other.page, 'bar', 'show ignored fields');
+			await app.reload();
+			assert.equal(await optionChecked(page, 'repl', NEWEST), true, 'the other tab’s write erased this one’s');
+			assert.equal(await optionChecked(page, 'bar', 'show ignored fields'), true);
+			assert.equal(await heldKeys(page), 2);
+			assert.deepEqual([...app.errors, ...other.errors], []);
+		}, DESKTOP);
+	});
+
+	test('an option set in one tab shows in another without a reload', async () => {
+		await withApp(async (app) => { // a second tab
+			const { page, submit } = app;
+			for (const line of ['occur coffee', 'occur water']) await submit(line);
+			const other = await app.newTab();
+			await toggleOption(other.page, 'repl', NEWEST);
+			await page.waitForFunction(() => Object.keys(window.datum.layout.session()).length === 1);
+			assert.equal(await optionChecked(page, 'repl', NEWEST), true, 'the other tab’s write did not reach this one');
+			assert.deepEqual(await replEchoes(page), ['occur water', 'occur coffee']);
+			assert.deepEqual([...app.errors, ...other.errors], []);
+		}, DESKTOP);
+	});
+
 	test('a phone, 360×640: the menu whole on the screen, rows tappable, Escape closes it and focus goes back', async () => {
 		await withApp( // a fresh phone at 360x640
 			async ({ page }) => {

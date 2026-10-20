@@ -42,23 +42,46 @@ type Settings = Record<string, unknown>;
 /** This device's copy between visits. A browser that refuses storage keeps the visit's alone. */
 const KEPT = 'datum.layout.session.v1';
 
-function kept(): Record<string, Settings> {
+/** The map as this device holds it NOW, other tabs' writes included; `null` when storage is refused. */
+function stored(): Record<string, Settings> | null {
+	let raw: string | null;
 	try {
-		return JSON.parse(localStorage.getItem(KEPT) ?? '{}') ?? {};
+		raw = localStorage.getItem(KEPT);
+	} catch {
+		return null;
+	}
+	try {
+		return JSON.parse(raw ?? '{}') ?? {};
 	} catch {
 		return {};
 	}
 }
 
-const store = writable<Record<string, Settings>>(kept());
-store.subscribe((all) => {
-	try {
-		if (Object.keys(all).length > 0) localStorage.setItem(KEPT, JSON.stringify(all));
-		else localStorage.removeItem(KEPT);
-	} catch {
-		// Refused or full: the setting holds for the visit, as it always did.
-	}
-});
+const store = writable<Record<string, Settings>>(stored() ?? {});
+
+/**
+ * Every write is ONE edit, made to the map as stored now and not to what
+ * this tab read when it loaded: two tabs each write, and a whole map written
+ * back from either erased every key the other set since (da-btdu5).
+ */
+function change(edit: (all: Record<string, Settings>) => Record<string, Settings>): void {
+	store.update((mine) => {
+		const all = edit(stored() ?? mine);
+		try {
+			if (Object.keys(all).length > 0) localStorage.setItem(KEPT, JSON.stringify(all));
+			else localStorage.removeItem(KEPT);
+		} catch {
+			// Refused or full: the setting holds for the visit, as it always did.
+		}
+		return all;
+	});
+}
+
+// And what another tab writes is shown here too, without a reload.
+if (typeof window !== 'undefined')
+	window.addEventListener('storage', (event) => {
+		if (event.key === KEPT || event.key === null) store.set(stored() ?? {});
+	});
 
 /** What this session has set, key by key: read by the renderer and the menu. */
 export const session = { subscribe: store.subscribe };
@@ -103,7 +126,7 @@ export const overlay = (base: Settings, next: Settings): Settings =>
  */
 export function setSession(key: string, base: Settings, next: Settings): void {
 	const over = overlay(base, next);
-	store.update(({ [key]: _was, ...rest }) =>
+	change(({ [key]: _was, ...rest }) =>
 		Object.keys(over).length > 0 ? { ...rest, [key]: over } : rest
 	);
 }
@@ -119,13 +142,13 @@ export const inProgress = new Map<string, Record<string, unknown>>();
 /** Forget everything this session set against `key`: `Reset widget`'s half of the act. */
 export function clearSession(key: string): void {
 	inProgress.delete(key);
-	store.update(({ [key]: _dropped, ...rest }) => rest);
+	change(({ [key]: _dropped, ...rest }) => rest);
 }
 
 /** Forget everything this session set, here and on this device: a test's way back to the layout (da-juku7). */
 export function forgetSession(): void {
 	inProgress.clear();
-	store.set({});
+	change(() => ({}));
 }
 
 /**
@@ -157,7 +180,7 @@ export function pruneSession(layout: Layout): void {
 	shown = live;
 	if (gone.length === 0) return;
 	for (const key of gone) inProgress.delete(key);
-	store.update((all) => {
+	change((all) => {
 		const kept = Object.keys(all).filter((key) => !gone.includes(key));
 		return kept.length === Object.keys(all).length ? all : Object.fromEntries(kept.map((key) => [key, all[key]]));
 	});
