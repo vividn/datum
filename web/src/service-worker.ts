@@ -118,6 +118,36 @@ async function cacheFirst(request: Request): Promise<Response> {
 	return response;
 }
 
+/**
+ * How long a navigation waits for the origin before the cached shell answers.
+ *
+ * A failing origin does not always fail fast: on 2026-10-20 datum.day's gave
+ * no first byte for 25-40 s and then a 500 (da-n8w0e), and a fetch that
+ * hangs never rejects, so the page waited as long as the network did. The
+ * shell is the same build's HTML that every path of this static app serves,
+ * so answering from it loses nothing a slow network would have brought; 3 s
+ * is well past a healthy origin's first byte, even on a slow phone, and short
+ * enough that a person is still looking at the screen.
+ */
+const NAVIGATION_TIMEOUT_MS = 3000;
+
+/** Network-first for a navigation, the cached shell when it fails, hangs or answers 5xx. */
+async function navigate(request: Request): Promise<Response> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<undefined>((resolve) => {
+		timer = setTimeout(resolve, NAVIGATION_TIMEOUT_MS);
+	});
+	const response = await Promise.race([fetch(request).catch(() => undefined), late]);
+	clearTimeout(timer);
+	if (response && response.status < 500) return response;
+	return (
+		(await caches.match(request)) ??
+		(await caches.match(SHELL)) ??
+		response ??
+		new Response('Offline', { status: 503 })
+	);
+}
+
 self.addEventListener('fetch', (event: FetchEvent) => {
 	if (event.request.method !== 'GET') return;
 
@@ -133,18 +163,18 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 		return;
 	}
 
-	// Network-first for navigation, falling back to the cached shell. Only
-	// for navigation: answering a script or wasm request with HTML is worse
-	// than answering it with an error, because the failure it produces
+	if (event.request.mode === 'navigate') {
+		event.respondWith(navigate(event.request).then(isolated));
+		return;
+	}
+
+	// Network-first for anything else, falling back to its cached copy and
+	// never to the shell: answering a script or wasm request with HTML is
+	// worse than answering it with an error, because the failure it produces
 	// names the wrong thing.
 	event.respondWith(
 		fetch(event.request)
-			.catch(async () => {
-				const cached = await caches.match(event.request);
-				if (cached) return cached;
-				if (event.request.mode !== 'navigate') return new Response('Offline', { status: 503 });
-				return (await caches.match(SHELL)) ?? new Response('Offline', { status: 503 });
-			})
+			.catch(async () => (await caches.match(event.request)) ?? new Response('Offline', { status: 503 }))
 			.then(isolated)
 	);
 });

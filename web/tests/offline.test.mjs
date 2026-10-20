@@ -92,3 +92,46 @@ describe('with no network', () => {
 		);
 	});
 });
+
+// An origin that fails slowly (da-n8w0e): datum.day's gave no first byte for
+// 25-40 s and then a 500. A hanging fetch never rejects, so a navigation the
+// service worker sent to the network waited as long as the network did.
+// The routes below stand in for that origin, for the service worker's own
+// fetches as much as the page's.
+describe('with an origin that hangs or answers 500', () => {
+	const hang = () => new Promise(() => {});
+	const fail = (route) => route.fulfill({ status: 500, body: 'origin error' });
+
+	test('a navigation gets the cached shell, and an asset what the origin sent', async () => {
+		await withApp(async ({ page }) => {
+			await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+			const shell = await page.evaluate(async () => (await caches.match('/')).text());
+			const context = page.context();
+			await context.route('**/hangs', hang);
+			await context.route('**/fails', fail);
+			await context.route('**/hangs.js', hang);
+			await context.route('**/fails.js', fail);
+
+			// Not a precached path, so the service worker asks the network.
+			for (const path of ['/hangs', '/fails']) {
+				const started = Date.now();
+				const response = await page.goto(new URL(path, page.url()).href, { waitUntil: 'commit' });
+				assert.equal(response.status(), 200, path);
+				assert.equal(await response.text(), shell, path);
+				assert.ok(Date.now() - started < 10_000, `${path} took ${Date.now() - started} ms`);
+			}
+
+			// An asset is never answered with HTML: its 500 is passed on, and
+			// a hang still hangs past the navigation's timeout.
+			const asked = await page.evaluate(async () => {
+				const fails = (await fetch('/fails.js')).status;
+				const hangs = await Promise.race([
+					fetch('/hangs.js').then((r) => r.status),
+					new Promise((done) => setTimeout(() => done('pending'), 5000))
+				]);
+				return { fails, hangs };
+			});
+			assert.deepEqual(asked, { fails: 500, hangs: 'pending' });
+		});
+	});
+});
