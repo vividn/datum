@@ -335,6 +335,7 @@
 		}
 		slid = Math.max(0, Date.now() - drawn.now);
 		band?.style.setProperty('--flow', `${-slid / drawn.msPerUnit}px`);
+		clearFar();
 		if (slid > drawn.ahead / 2 && refilled !== drawn.now) {
 			refilled = drawn.now;
 			refills += 1;
@@ -717,6 +718,25 @@
 	 * is not drawn: the far one says the window.
 	 */
 	let far: { x: number; y: number; length: number } | null = null;
+
+	/**
+	 * Hide each clock time (`.minute-label`) within a step of the far label,
+	 * as `place` hides a nearer tick label; it is never the far label. They
+	 * slide with the flow, so this runs at each slide too (da-to5n4).
+	 */
+	function clearFar(): void {
+		const home = el?.getBoundingClientRect();
+		const y = axis?.y;
+		const step = y ? STEP_PX.y : STEP_PX.x;
+		const from = far && home ? (y ? far.y + home.y : far.x + home.x) : NaN;
+		const to = from + (far?.length ?? 0);
+		for (const l of el?.querySelectorAll<SVGElement>('svg.svg .minute-label') ?? []) {
+			const r = l.getBoundingClientRect();
+			const [a, b] = y ? [r.top, r.bottom] : [r.left, r.right];
+			l.style.visibility = a < to + step && b > from - step ? 'hidden' : '';
+		}
+	}
+	$: far, clearFar();
 
 	/** The instants at the window's two ends, as the picture on screen draws them. */
 	let view: [number, number] | null = null;

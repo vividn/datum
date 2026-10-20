@@ -140,6 +140,39 @@ describe('the nowview flows', () => {
 		);
 	});
 
+	test('a clock time slid under the far label is hidden, and drawn again clear of it (da-to5n4)', async () => {
+		/** Whether each clock time on the window is drawn, and the far label's words. */
+		const shown = (page) =>
+			page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => {
+				const frame = svg.parentElement.getBoundingClientRect();
+				const on = (l) => l.getBoundingClientRect().left < frame.right && l.getBoundingClientRect().right > frame.left;
+				const ticks = [...svg.querySelectorAll('.tick-label')].filter(on);
+				const far = ticks.reduce((a, b) => (b.getBoundingClientRect().left < a.getBoundingClientRect().left ? b : a));
+				const labels = [...svg.querySelectorAll('.minute-label')].filter(on);
+				return {
+					far: far.textContent,
+					drawn: Object.fromEntries(labels.map((l) => [l.textContent, getComputedStyle(l).visibility !== 'hidden']))
+				};
+			});
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await page.locator(`${NOWVIEW} .nowview-steps button`).first().waitFor();
+				await page.clock.runFor(SETTLE);
+				await app.idle();
+				// 14:59:10: 14:58 is 70 s back on a 2-minute window, well clear of «-2m».
+				assert.deepEqual(await shown(page), { far: '-2m', drawn: { '14:58': true, '14:59': true } });
+				const seen = await app.spyOnRunner();
+				// 50 s on it has slid to the window's far end, under «-2m», with no new picture.
+				await app.clock.forward(50_000);
+				assert.deepEqual((await seen()).filter((a) => a[0] === 'nowview'), [], 'datum was asked for a new picture');
+				assert.deepEqual(await shown(page), { far: '-2m', drawn: { '14:58': false, '14:59': true, '15:00': true } });
+				assert.deepEqual(app.errors, []);
+			},
+			{ clock: todayAt(14, 59) + 10_000, holdTimers: true, desk: deskWith({ history: '2m' }) }
+		);
+	});
+
 	test('half of what was drawn ahead spent, datum is asked again, once', async () => {
 		await withApp(
 			async (app) => {
