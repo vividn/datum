@@ -1886,20 +1886,23 @@ fn an_invite_serves_the_other_members_while_its_joiner_joins() {
 
 /// A first sync of many rounds says how far it is in all, not in the round
 /// (da-dwm2y): vividn's phone, joining 287k entries in rounds of 8,192, said
-/// «of 8,192» some 35 times over. Here a round is 100 ops of a's 600-odd,
-/// applied at 40ms each: four of its five-second lines at least. An
-/// import's baselines are signed as the rounds go, so a line in the first
-/// may know of fewer; none goes back, and the last knows them all. The
-/// inviter says the same of what it sends (da-ija0z): vividn's said «3418 of
-/// 8192 ops sent», then «1057 of 8192», a round's ops read as the whole.
+/// «of 8,192» some 35 times over. Here a round is 200 ops of a's 600-odd,
+/// applied at 30ms each: six seconds a round, so a five-second line lands in
+/// the first. The inviter says the same of what it sends (da-ija0z):
+/// vividn's said «3418 of 8192 ops sent», then «1057 of 8192», a round's ops
+/// read as the whole. An import's baselines are signed in the first round,
+/// after the vectors are swapped, so the joiner's first lines know of one
+/// round's ops alone and name it, and the inviter's know them all
+/// (da-y8yde): its first said «8192 ops sent» and no round. Between rounds
+/// the joiner says what it applied, or has received, of the next.
 #[test]
 fn a_first_sync_of_many_rounds_counts_every_round() {
     let (mut a, mut b) = (Copy::new(), Copy::new());
     import(&a, 600);
-    a.env = vec![("DATUM_SYNC_TEST_ROUND", "100")];
+    a.env = vec![("DATUM_SYNC_TEST_ROUND", "200")];
     b.env = vec![
-        ("DATUM_SYNC_TEST_ROUND", "100"),
-        ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "40"),
+        ("DATUM_SYNC_TEST_ROUND", "200"),
+        ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "30"),
     ];
     let (mut inviting, ticket) = a.invite(&[]);
     let joined = b
@@ -1913,30 +1916,44 @@ fn a_first_sync_of_many_rounds_counts_every_round() {
     let mut e = inviting.child.stderr.take().unwrap();
     e.read_to_string(&mut sent).unwrap();
     // Its round, and how many it has sent in all, never go back.
-    let rounds: Vec<(usize, usize)> = sent
+    let rounds: Vec<(usize, usize, usize)> = sent
         .lines()
         .filter_map(|l| {
             let (round, rest) = l.split_once(": round ")?.1.split_once(": ")?;
             let (_, rest) = rest.split_once(" ops sent, ")?;
-            let (all, _) = rest.split_once(" of about ")?;
-            Some((round.parse().ok()?, all.parse().ok()?))
+            let (all, rest) = rest.split_once(" of about ")?;
+            let (total, _) = rest.split_once(" in all")?;
+            Some((round.parse().ok()?, all.parse().ok()?, total.parse().ok()?))
         })
         .collect();
     assert!(rounds.len() > 1 && rounds.last().unwrap().0 > 1, "{sent}");
-    let on = |w: &[(usize, usize)]| w[0].0 <= w[1].0 && w[0].1 <= w[1].1;
+    let on = |w: &[(usize, usize, usize)]| w[0].0 <= w[1].0 && w[0].1 <= w[1].1;
     assert!(rounds.windows(2).all(on), "{sent}");
-    // In all, not a round's: a count of the round alone never passes 100.
-    assert!(rounds.iter().any(|r| r.1 > 100), "{sent}");
-    assert!(!sent.contains(" of 100 ops sent ("), "{sent}");
-    let said: Vec<(usize, usize)> = err
+    // In all, not a round's: a count of the round alone never passes 200.
+    assert!(rounds.iter().any(|r| r.1 > 200), "{sent}");
+    assert!(!sent.contains(" of 200 ops sent ("), "{sent}");
+    // Every line says so from the first round, with the whole of it.
+    let first = sent.lines().find(|l| l.contains(" ops sent")).unwrap_or("");
+    assert!(first.contains(": round 1: "), "{sent}");
+    assert!(rounds.iter().all(|r| r.2 >= 600), "{sent}");
+    let said: Vec<(usize, usize, usize)> = err
         .lines()
         .filter_map(|l| {
-            let (done, rest) = l.split_once(": ")?.1.split_once(" of ")?;
+            let (round, rest) = l.split_once(": round ")?.1.split_once(": ")?;
+            let (done, rest) = rest.split_once(" of ")?;
             let (of, _) = rest.split_once(" ops applied")?;
-            Some((done.parse().ok()?, of.parse().ok()?))
+            Some((round.parse().ok()?, done.parse().ok()?, of.parse().ok()?))
         })
         .collect();
-    assert!(said.last().is_some_and(|&(_, of)| of >= 600), "{err}");
+    // The joiner names its round from the first, where it knows of no more.
+    assert!(said.first().is_some_and(|r| r.0 == 1), "{err}");
+    let applied = err.lines().filter(|l| l.contains(" ops applied")).count();
+    assert_eq!(applied, said.len(), "{err}");
+    // Nor is a line between its rounds a bare «syncing cantown» (da-impts).
+    let bare = |l: &&str| l.starts_with("syncing ") && !l.contains(": ");
+    assert!(!err.lines().any(|l| bare(&l)), "{err}");
+    assert!(said.last().is_some_and(|r| r.2 >= 600), "{err}");
+    let on = |w: &[(usize, usize, usize)]| w[0].0 <= w[1].0 && w[0].1 <= w[1].1;
     assert!(said.windows(2).all(on), "{err}");
 }
 

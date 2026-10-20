@@ -179,6 +179,10 @@ pub trait Store {
     }
     /// `done` of a session's `of` received ops are applied.
     fn progress(&self, _done: usize, _of: usize) {}
+    /// The peer filled the round received: the session has more rounds,
+    /// though its vector, swapped before an import's baselines are signed,
+    /// may not say how many ops (da-y8yde).
+    fn more(&self) {}
     /// Whether a session holds this copy's [`apply_gate`](Store::apply_gate),
     /// in this process or another: a session begun meanwhile is refused as
     /// [`Why::Busy`], and would only bring the same ops again (da-h31wt).
@@ -739,6 +743,8 @@ async fn apply(
     if ops.is_empty() {
         return Ok(());
     }
+    // Applying from the first chunk, which may be the whole round.
+    store.progress(before, of);
     // Test knob: the keepalives off (the mutation control).
     let keepalive = env::<u8>("DATUM_SYNC_TEST_KEEPALIVE") != Some(0);
     // The peer has read this round's last frame, and skips a BUSY: one as
@@ -854,13 +860,15 @@ async fn exchange(
                 }
                 false => store.ops_since(id, &round.1, self::round()).await?,
             };
-            store.round(
-                n,
-                match ops.len() >= self::round() {
-                    true => ops.len().max(ahead(&round.0, &round.1) as usize),
-                    false => ops.len(),
-                },
-            );
+            // Read again: an import's baselines, signed just now, are in
+            // no vector swapped before them (da-y8yde).
+            let left = match ops.len() >= self::round() {
+                true => ops
+                    .len()
+                    .max(ahead(&store.vector().await?, &round.1) as usize),
+                false => ops.len(),
+            };
+            store.round(n, left);
             for (i, op) in ops.iter().enumerate() {
                 put(s, op.as_bytes()).await?;
                 *sent += 1;
@@ -897,6 +905,9 @@ async fn exchange(
             true => lines.len().max(ahead(&round.1, &round.0) as usize),
             false => lines.len(),
         };
+        if more {
+            store.more();
+        }
         let got = rep.got;
         apply(store, s, &lines, rep, &mut size, (before, before + left)).await?;
         // Test knob: no end (the mutation control).

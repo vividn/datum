@@ -162,6 +162,9 @@ struct Told {
     round: (usize, usize, usize),
     got: usize,
     applied: (usize, usize),
+    /// A round received was full: the ops applied are one of several
+    /// rounds', and their line names which (da-y8yde).
+    more: bool,
     /// Every op is applied, and the two copies hash what they hold.
     verifying: bool,
 }
@@ -177,6 +180,7 @@ impl Told {
             round: (0, 0, 0),
             got: 0,
             applied: (0, 0),
+            more: false,
             verifying: false,
         }))
     }
@@ -196,6 +200,7 @@ impl Told {
             self.round,
             self.got,
             self.applied,
+            self.more,
             self.verifying,
         ) = Default::default();
     }
@@ -216,14 +221,21 @@ impl Told {
             ),
             false => Default::default(),
         };
+        // What it receives names the round once the peer filled one.
+        let taking = match n > 1 || self.more {
+            true => format!("round {n}: "),
+            false => String::new(),
+        };
+        // A copy sending nothing says what it applied till the next round's
+        // ops come, not a bare «syncing X» (da-impts).
         let how = if self.verifying {
             ": verifying that both copies agree".into()
-        } else if done < all {
-            format!(": {done} of {all} ops applied")
+        } else if done < all || (all > 0 && of == 0) {
+            format!(": {taking}{done} of {all} ops applied")
         } else if sent < of {
             format!(": {round}{sent} of {of} ops sent{in_all}")
         } else if all == 0 && self.got > 0 {
-            format!(": {} ops received", self.got)
+            format!(": {taking}{} ops received", self.got)
         } else if of > 0 {
             format!(": {round}{of} ops sent{in_all}, waiting for it to apply them")
         } else {
@@ -339,8 +351,13 @@ impl Store for DbStore<'_> {
         self.tell(|t| {
             let before = t.round.1 + t.sent.1;
             t.round = (n, before, t.round.2.max(before + left));
-            t.sent = (0, 0);
+            // The round's received ops count from none (da-impts).
+            (t.sent, t.got, t.applied) = Default::default();
         });
+    }
+
+    fn more(&self) {
+        self.tell(|t| t.more = true);
     }
 
     fn sent(&self, done: usize, of: usize) {
