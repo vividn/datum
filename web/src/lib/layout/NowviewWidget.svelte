@@ -20,10 +20,11 @@
 	this even be done in realtime without second jitters)?» So on now the
 	picture is drawn a window's worth AHEAD of now as well (`--ahead`), its
 	lanes and its whole-minute marks in `.flow` groups clipped at the now
-	line, and this slides those groups along with the clock (`flow`) — every
-	frame where a frame moves them a pixel's worth, less often where it does
-	not. datum is asked again on a write, as ever, and once half of what it
-	drew ahead is spent; never per tick (`dependsOnNow`, $lib/panes.ts).
+	line, and this slides those groups along with the clock (`flow`) — a
+	device pixel at a time where a second moves them a unit or more, less
+	often where it does not. datum is asked again on a write, as ever, and
+	once half of what it drew ahead is spent; never per tick
+	(`dependsOnNow`, $lib/panes.ts).
 	Every instant read off the band below is read as the picture is drawn
 	NOW, slid by `slid`.
 
@@ -289,18 +290,18 @@
 
 	/**
 	 * The picture on screen, when it is drawn ahead to be slid: the instant
-	 * its now-line is, how many ms one of its user units is worth, and how
-	 * far ahead of its now it draws. Read off its own attributes — the
-	 * day's axis (`data-from` … `data-hi`) and the now-line's `data-now`.
+	 * its now-line is, how many ms one of its user units is worth, how many
+	 * CSS px a unit is on screen, and how far ahead of its now it draws.
+	 * Read off its own attributes — the day's axis (`data-from` … `data-hi`)
+	 * and the now-line's `data-now` — and its screen scale.
 	 */
-	let drawn: { now: number; msPerUnit: number; ahead: number } | null = null;
+	let drawn: { now: number; msPerUnit: number; pxPerUnit: number; ahead: number } | null = null;
 	/** How far the `.flow` groups are slid, in ms of the picture's time: 0 whenever `drawn` is null. */
 	let slid = 0;
 	/** The picture `refills` last asked to be replaced, by its now. */
 	let refilled = NaN;
 	/** Bumped to ask datum for the picture again: what it drew ahead is half spent. */
 	let refills = 0;
-	let raf: number | undefined;
 	let wait: ReturnType<typeof setTimeout> | undefined;
 
 	function readDrawn(svg: SVGSVGElement | null): typeof drawn {
@@ -313,35 +314,40 @@
 		const msPerUnit = (to - from) / (hi - lo);
 		if (!(msPerUnit > 0) || !Number.isFinite(at)) return null;
 		const now = from + (at - lo) * msPerUnit;
-		return { now, msPerUnit, ahead: to - now };
+		const ctm = svg!.getScreenCTM();
+		const pxPerUnit = Math.abs((vertical ? ctm?.d : ctm?.a) ?? 0) || 1;
+		return { now, msPerUnit, pxPerUnit, ahead: to - now };
 	}
 
 	/**
 	 * Slide the `.flow` groups to the clock, and come back when the clock
-	 * has moved them again: the next frame where a second moves them a
-	 * unit or more, a quarter of a unit's worth later where it does not — a
-	 * 12h window moves a pixel in a couple of minutes. Off now, or on a
-	 * picture not drawn ahead, nothing slides.
+	 * has moved them again: where a second moves them a unit or more, once
+	 * they have moved a device pixel, and never sooner than a frame
+	 * (da-k2088: on every frame, a 2m window on a phone moved an eighth of
+	 * one and restyled 60 times a second); a quarter of a unit's worth later
+	 * where it does not — a 12h window moves a pixel in a couple of minutes.
+	 * Off now, or on a picture not drawn ahead, nothing slides. The
+	 * transform is set on the groups themselves: a custom property on the
+	 * band restyled everything under it.
 	 */
 	function flow(): void {
-		if (raf !== undefined) cancelAnimationFrame(raf);
 		clearTimeout(wait);
-		raf = undefined;
-		const band = el?.querySelector<HTMLElement>('.nowview-band');
+		const groups = el?.querySelectorAll<SVGElement>('.nowview-band svg.svg .flow') ?? [];
 		if (!drawn || offNow) {
 			slid = 0;
-			band?.style.removeProperty('--flow');
+			for (const g of groups) g.style.removeProperty('transform');
 			return;
 		}
 		slid = Math.max(0, Date.now() - drawn.now);
-		band?.style.setProperty('--flow', `${-slid / drawn.msPerUnit}px`);
+		const by = `${vertical ? 'translateY' : 'translateX'}(${-slid / drawn.msPerUnit}px)`;
+		for (const g of groups) g.style.transform = by;
 		clearFar();
 		if (slid > drawn.ahead / 2 && refilled !== drawn.now) {
 			refilled = drawn.now;
 			refills += 1;
 		}
-		if (drawn.msPerUnit < 1000) raf = requestAnimationFrame(flow);
-		else wait = setTimeout(flow, Math.min(drawn.msPerUnit / 4, 1000));
+		const pixel = drawn.msPerUnit / (drawn.pxPerUnit * devicePixelRatio);
+		wait = setTimeout(flow, drawn.msPerUnit < 1000 ? Math.max(pixel, 1000 / 60) : Math.min(drawn.msPerUnit / 4, 1000));
 	}
 
 	// Leaving now stops the slide, and the window is placed on the picture
@@ -941,7 +947,6 @@
 	});
 
 	onDestroy(() => {
-		if (raf !== undefined) cancelAnimationFrame(raf);
 		clearTimeout(wait);
 		clearTimeout(settle);
 		clearTimeout(held);
@@ -1125,15 +1130,6 @@
 		transform-origin: center var(--zoom-x);
 	}
 
-	/* The flow (da-hklaz): the lanes and the minute marks slid along with
-	   the clock, in the picture's own user units, under the clip datum put
-	   them in, which does not move. */
-	.nowview-band :global(svg.svg .flow) {
-		transform: translateX(var(--flow, 0px));
-	}
-	.vertical .nowview-band :global(svg.svg .flow) {
-		transform: translateY(var(--flow, 0px));
-	}
 	.vertical .hold-mark.held .stem {
 		left: -50vw;
 		top: -0.75px;

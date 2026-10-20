@@ -8,10 +8,9 @@
 // and whole-minute marks in `.flow` groups clipped at the now line, and the
 // widget slides them along with the clock — no CLI run per tick.
 //
-// The page's timers are held (`holdTimers`), animation frames with them, so
-// a second of clock is a second of frames and nothing else runs: what moved
-// is read off the flow group's own transform, and the runs are counted at
-// the seam.
+// The page's timers are held (`holdTimers`), so a second of clock is a
+// second of the slide's timer and nothing else runs: what moved is read off
+// the flow group's own transform, and the runs are counted at the seam.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,9 +38,10 @@ function deskWith(settings) {
 }
 
 /**
- * How far the lanes' flow group is slid along x, in screen px; where now is
- * on screen, by the now-line's own `data-now`; and how many screen px a
- * second of the picture is, by its day's axis.
+ * How far the lanes' flow group is slid along x, in user units; where now is
+ * on screen, by the now-line's own `data-now`; how many screen px a second
+ * of the picture is, by its day's axis; and how many user units a second
+ * and a device pixel are.
  */
 const reading = (page) =>
 	page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => {
@@ -53,7 +53,9 @@ const reading = (page) =>
 		return {
 			x: new DOMMatrixReadOnly(getComputedStyle(svg.querySelector('.flow')).transform).e,
 			now: new DOMPoint(Number(line.dataset.now), 0).matrixTransform(ctm).x,
-			pxPerSecond: ((1000 * units) / ms) * ctm.a
+			pxPerSecond: ((1000 * units) / ms) * ctm.a,
+			unitsPerSecond: (1000 * units) / ms,
+			unitsPerPixel: 1 / (ctm.a * devicePixelRatio)
 		};
 	});
 
@@ -70,7 +72,7 @@ const minute = (page, iso, label) =>
 	);
 
 describe('the nowview flows', () => {
-	test('a 1-minute window slides with the clock, frame by frame, and asks datum for nothing', async () => {
+	test('a 1-minute window slides with the clock, a device pixel at a time, and asks datum for nothing', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -81,19 +83,22 @@ describe('the nowview flows', () => {
 				await app.idle();
 				const seen = await app.spyOnRunner();
 				const start = await reading(page);
-				const { pxPerSecond } = start;
+				const { unitsPerSecond, unitsPerPixel } = start;
 				const xs = [start.x];
-				for (let i = 0; i < 10; i++) {
-					await page.clock.runFor(100);
+				for (let i = 0; i < 20; i++) {
+					await page.clock.runFor(50);
 					xs.push((await reading(page)).x);
 				}
-				// Several distinct positions a second, each further left, a
-				// tenth of a second's worth apart: a slide, not a jump a second.
-				assert.equal(new Set(xs.map((x) => x.toFixed(3))).size, xs.length, `positions ${xs.join(', ')}`);
-				for (let i = 1; i < xs.length; i++) {
-					const step = xs[i - 1] - xs[i];
-					assert.ok(Math.abs(step - pxPerSecond / 10) < pxPerSecond / 40, `step ${i} was ${step}px, a tenth of a second is ${pxPerSecond / 10}px`);
-				}
+				// Several moves a second, each further left by a device pixel:
+				// a slide, neither a jump a second nor a restyle every frame
+				// for a fraction of a pixel (da-k2088).
+				const moves = xs.slice(1).map((x, i) => xs[i] - x).filter((d) => d !== 0);
+				assert.ok(moves.length >= 5, `${moves.length} moves in a second: positions ${xs.join(', ')}`);
+				for (const d of moves)
+					assert.ok(d > unitsPerPixel * 0.99 && d < unitsPerPixel * 1.5, `a move of ${d} units, a device pixel is ${unitsPerPixel}`);
+				// And a second of them is a second of the clock, to a pixel or two.
+				const ran = xs[0] - xs.at(-1);
+				assert.ok(Math.abs(ran - unitsPerSecond) < 2 * unitsPerPixel, `slid ${ran} units in a second of ${unitsPerSecond}`);
 				// The now line stays where it is; the lanes move under it.
 				const end = await reading(page);
 				assert.ok(Math.abs(end.now - start.now) < 0.01, `the now line moved ${end.now - start.now}px`);
