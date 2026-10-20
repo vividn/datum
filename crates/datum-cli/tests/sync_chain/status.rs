@@ -46,7 +46,9 @@ fn a_pause_is_named_on_the_readers_clock() {
         let out = a.cmd(args).env("TZ", "Etc/GMT-2").output().unwrap();
         let said = [out.stdout, out.stderr].concat();
         let said = String::from_utf8(said).unwrap();
-        assert!(!said.contains("23:30"), "{said}");
+        // The date, not the bare 23:30: a notice of the real join prints
+        // today's clock, which is 23:30 at 21:30 UTC (da-g04cj).
+        assert!(!said.contains("2020-01-02"), "{said}");
         said
     };
     let status = at(&["sync", "status"]);
