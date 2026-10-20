@@ -157,6 +157,9 @@ struct Told {
     whom: String,
     /// Ops sent and of how many, ops received, ops applied and of how many.
     sent: (usize, usize),
+    /// The round sending, the ops sent in those before it, and about how
+    /// many it sends in all (da-ija0z): a round's alone read as the whole.
+    round: (usize, usize, usize),
     got: usize,
     applied: (usize, usize),
     /// Every op is applied, and the two copies hash what they hold.
@@ -171,6 +174,7 @@ impl Told {
             said: now,
             whom,
             sent: (0, 0),
+            round: (0, 0, 0),
             got: 0,
             applied: (0, 0),
             verifying: false,
@@ -187,7 +191,13 @@ impl Told {
             eprintln!("{label} is joining: sending…");
         }
         self.whom = format!("syncing {label}");
-        (self.sent, self.got, self.applied, self.verifying) = Default::default();
+        (
+            self.sent,
+            self.round,
+            self.got,
+            self.applied,
+            self.verifying,
+        ) = Default::default();
     }
 
     /// Say what the session is doing, if it last did [`WAITING`] ago.
@@ -197,16 +207,25 @@ impl Told {
         }
         self.said = Instant::now();
         let ((sent, of), (done, all)) = (self.sent, self.applied);
+        // A session of more than one round says which, and how far in all.
+        let (n, before, total) = self.round;
+        let (round, in_all) = match n > 1 || total > of {
+            true => (
+                format!("round {n}: "),
+                format!(", {} of about {total} in all", before + sent),
+            ),
+            false => Default::default(),
+        };
         let how = if self.verifying {
             ": verifying that both copies agree".into()
         } else if done < all {
             format!(": {done} of {all} ops applied")
         } else if sent < of {
-            format!(": {sent} of {of} ops sent")
+            format!(": {round}{sent} of {of} ops sent{in_all}")
         } else if all == 0 && self.got > 0 {
             format!(": {} ops received", self.got)
         } else if of > 0 {
-            format!(": {of} ops sent, waiting for it to apply them")
+            format!(": {round}{of} ops sent{in_all}, waiting for it to apply them")
         } else {
             String::new()
         };
@@ -314,6 +333,14 @@ impl Store for DbStore<'_> {
                 Err(TryLockError::Error(_)) => return Ok(None),
             }
         }
+    }
+
+    fn round(&self, n: usize, left: usize) {
+        self.tell(|t| {
+            let before = t.round.1 + t.sent.1;
+            t.round = (n, before, t.round.2.max(before + left));
+            t.sent = (0, 0);
+        });
     }
 
     fn sent(&self, done: usize, of: usize) {

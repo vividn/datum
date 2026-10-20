@@ -197,6 +197,10 @@ pub trait Store {
     fn apply_gate(&self) -> impl Future<Output = Result<impl Sized>> {
         async { Ok(()) }
     }
+    /// Round `n` of a session sends ops, `left` of them from here in all:
+    /// exact in a round short of [`ROUND`], the last, and in a full one as
+    /// many as this copy's vector holds past the peer's (da-ija0z).
+    fn round(&self, _n: usize, _left: usize) {}
     /// `done` of the `of` ops a round sends are on the wire.
     fn sent(&self, _done: usize, _of: usize) {}
     /// `n` of the ops a round receives have come.
@@ -814,6 +818,7 @@ async fn exchange(
 ) -> Result<()> {
     let size = if store.yields() { CHUNK } else { FIRST };
     let (mut last, mut quiet, mut before, mut size, mut ends) = (None, 0, 0, size, false);
+    let mut n = 0;
     while quiet < MAX_ROUNDS {
         let mine = store.vector().await?;
         match ends {
@@ -836,6 +841,7 @@ async fn exchange(
         if last.as_ref() == Some(&round) {
             break;
         }
+        n += 1;
         // Counted as each goes, so a session cut short says what it cost.
         let (id, waits, sent) = (&rep.id, rep.waits, &mut rep.sent);
         let send = async {
@@ -848,6 +854,13 @@ async fn exchange(
                 }
                 false => store.ops_since(id, &round.1, self::round()).await?,
             };
+            store.round(
+                n,
+                match ops.len() >= self::round() {
+                    true => ops.len().max(ahead(&round.0, &round.1) as usize),
+                    false => ops.len(),
+                },
+            );
             for (i, op) in ops.iter().enumerate() {
                 put(s, op.as_bytes()).await?;
                 *sent += 1;

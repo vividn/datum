@@ -1889,7 +1889,9 @@ fn an_invite_serves_the_other_members_while_its_joiner_joins() {
 /// «of 8,192» some 35 times over. Here a round is 100 ops of a's 600-odd,
 /// applied at 40ms each: four of its five-second lines at least. An
 /// import's baselines are signed as the rounds go, so a line in the first
-/// may know of fewer; none goes back, and the last knows them all.
+/// may know of fewer; none goes back, and the last knows them all. The
+/// inviter says the same of what it sends (da-ija0z): vividn's said «3418 of
+/// 8192 ops sent», then «1057 of 8192», a round's ops read as the whole.
 #[test]
 fn a_first_sync_of_many_rounds_counts_every_round() {
     let (mut a, mut b) = (Copy::new(), Copy::new());
@@ -1907,6 +1909,25 @@ fn a_first_sync_of_many_rounds_counts_every_round() {
     let err = String::from_utf8_lossy(&joined.stderr);
     assert!(joined.status.success(), "{err}");
     assert!(inviting.finish().0);
+    let mut sent = String::new();
+    let mut e = inviting.child.stderr.take().unwrap();
+    e.read_to_string(&mut sent).unwrap();
+    // Its round, and how many it has sent in all, never go back.
+    let rounds: Vec<(usize, usize)> = sent
+        .lines()
+        .filter_map(|l| {
+            let (round, rest) = l.split_once(": round ")?.1.split_once(": ")?;
+            let (_, rest) = rest.split_once(" ops sent, ")?;
+            let (all, _) = rest.split_once(" of about ")?;
+            Some((round.parse().ok()?, all.parse().ok()?))
+        })
+        .collect();
+    assert!(rounds.len() > 1 && rounds.last().unwrap().0 > 1, "{sent}");
+    let on = |w: &[(usize, usize)]| w[0].0 <= w[1].0 && w[0].1 <= w[1].1;
+    assert!(rounds.windows(2).all(on), "{sent}");
+    // In all, not a round's: a count of the round alone never passes 100.
+    assert!(rounds.iter().any(|r| r.1 > 100), "{sent}");
+    assert!(!sent.contains(" of 100 ops sent ("), "{sent}");
     let said: Vec<(usize, usize)> = err
         .lines()
         .filter_map(|l| {
@@ -1916,7 +1937,6 @@ fn a_first_sync_of_many_rounds_counts_every_round() {
         })
         .collect();
     assert!(said.last().is_some_and(|&(_, of)| of >= 600), "{err}");
-    let on = |w: &[(usize, usize)]| w[0].0 <= w[1].0 && w[0].1 <= w[1].1;
     assert!(said.windows(2).all(on), "{err}");
 }
 
