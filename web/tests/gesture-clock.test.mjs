@@ -21,29 +21,39 @@ const stamped = async (app, field) => {
 };
 
 /**
- * Keep the page busy for `ms`, as a slow phone's main thread is, so the next
- * input waits for it; and keep when the `type` event happened, on the page's
- * clock, and how long it waited.
+ * Keep the page busy for `ms`, as a slow phone's main thread is, in the
+ * dispatch of the next `busy` event, so the handler that runs the command
+ * waits for it; and keep when the next `type` event happened, on the page's
+ * clock, and how long it waited. In the dispatch and not on a page timer: a
+ * timer raced the input on a loaded runner, fired after it, and the input
+ * did not wait at all (da-zibfx).
  */
-const slowPhone = async (page, type, ms) => {
-	await page.evaluate(
-		([type, ms]) => {
-			const seen = (e) => {
-				const age = performance.now() - e.timeStamp;
-				// Rounded as the app's stamp is (`gesture` in engine.ts): two
-				// readings under 1 ms apart then round at most 1 apart (da-ku6zc).
-				window.__gesture = { at: Math.round(Date.now() - age), age };
-			};
-			window.addEventListener(type, seen, { capture: true, once: true });
-			setTimeout(() => {
+const slowPhone = (page, type, ms, busy = type) =>
+	page.evaluate(
+		([type, ms, busy]) => {
+			const stall = () => {
 				const until = performance.now() + ms;
 				while (performance.now() < until);
-			}, 50);
+			};
+			const seen = (e) => {
+				const age = performance.now() - e.timeStamp;
+				// Rounded as the app's stamp is (`gesture` in engine.ts, da-ku6zc).
+				window.__gesture = { at: Math.round(Date.now() - age), age };
+			};
+			// The stall first: on one event, `seen` reads the wait it made.
+			window.addEventListener(busy, stall, { capture: true, once: true });
+			window.addEventListener(type, seen, { capture: true, once: true });
 		},
-		[type, ms]
+		[type, ms, busy]
 	);
-	await new Promise((resolve) => setTimeout(resolve, 100));
-};
+
+/**
+ * The app's stamp against the test's: each is `Date.now() - age` read at its
+ * own moment, and `Date.now()` is whole milliseconds, so the two differ by
+ * about 1 ms and once rounded were seen 2 apart (da-zibfx). A stamp taken
+ * when the process ran instead is `LATE` off.
+ */
+const near = (a, b) => Math.abs(a - b) <= 2;
 
 /** Wait for the REPL's `n`th echo. */
 const echoed = (page, n) => page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length >= n, n);
@@ -80,7 +90,7 @@ describe('the clock frozen at the gesture', () => {
 				const typed = await page.evaluate(() => window.__gesture);
 				assert.ok(typed.age > LATE / 2, `the Enter waited ${typed.age} ms`);
 				const water = await stamped(app, 'water');
-				assert.ok(Math.abs(water.create - typed.at) <= 1, `Enter at ${typed.at}, stamped ${water.create}`);
+				assert.ok(near(water.create, typed.at), `Enter at ${typed.at}, stamped ${water.create}`);
 				assert.equal(water.occur, water.create);
 
 				const box = await page.locator('.bar button.widget', { hasText: 'water' }).first().boundingBox();
@@ -90,12 +100,13 @@ describe('the clock frozen at the gesture', () => {
 				const tapped = await page.evaluate(() => window.__gesture);
 				assert.ok(tapped.age > LATE / 2, `the tap waited ${tapped.age} ms`);
 				const again = await stamped(app, 'water');
-				assert.ok(Math.abs(again.create - tapped.at) <= 1, `tap at ${tapped.at}, stamped ${again.create}`);
+				assert.ok(near(again.create, tapped.at), `tap at ${tapped.at}, stamped ${again.create}`);
 				assert.equal(again.occur, again.create);
 
-				// A key and then a tap, both waiting on the busy page: the browser
-				// runs the tap before the keydown's timer, and the tap is its own.
-				await slowPhone(page, 'click', LATE);
+				// A key and then a tap, the tap waiting on the key's busy handler:
+				// the browser runs the tap before the keydown's timer, and the tap
+				// is its own.
+				await slowPhone(page, 'click', LATE, 'keydown');
 				const key = page.keyboard.press('ArrowRight');
 				await new Promise((resolve) => setTimeout(resolve, 100));
 				await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -103,7 +114,7 @@ describe('the clock frozen at the gesture', () => {
 				await echoed(page, 3);
 				const after = await page.evaluate(() => window.__gesture);
 				const third = await stamped(app, 'water');
-				assert.ok(Math.abs(third.create - after.at) <= 1, `tap at ${after.at}, stamped ${third.create}`);
+				assert.ok(near(third.create, after.at), `tap at ${after.at}, stamped ${third.create}`);
 			},
 			{ clock: null }
 		);
