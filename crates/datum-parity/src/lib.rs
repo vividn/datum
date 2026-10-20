@@ -15,9 +15,9 @@
 //!   against datum's source. **No runtime needed**: the algorithms are
 //!   small enough that comparing implementations is more reliable than
 //!   shelling out to node.
-//! * [`myspec`] — a port of datum's `src/field/mySpecs.ts` to daydumb's
-//!   kit format (`specs/myspec.toml`), so parity tests can install it
-//!   into a daydumb DB and have spec overrides line up.
+//! * [`specs`] — `specs/my_specs.toml`, the field specs both runtimes
+//!   load: v2 as `$DATUM_SPECS`, daydumb as a kit. Every other field takes
+//!   each runtime's default.
 //! * `runtime` (feature `parity-runtime`) — the `DatumRuntime` wrapper
 //!   that spawns the TS process. Off by default; CI must opt in.
 //!
@@ -28,7 +28,7 @@
 //!   Cargo.toml          # workspace member, feature `parity-runtime`
 //!   README.md           # setup, run, update goldens
 //!   specs/
-//!     myspec.toml       # ported from datum's src/field/mySpecs.ts
+//!     my_specs.toml     # v2's my_specs.example.toml, loaded by both
 //!   goldens/
 //!     colors/           # field/state name → expected hex (md5-derived)
 //!     text/             # CLI output snapshots
@@ -38,7 +38,7 @@
 //!   src/
 //!     lib.rs            # this file
 //!     colors.rs         # md5 color algebra
-//!     myspec.rs         # ported FIELD_SPECS
+//!     specs.rs          # reads specs/my_specs.toml
 //!     runtime.rs        # DatumRuntime (feature-gated)
 //! ```
 //!
@@ -51,7 +51,7 @@
 #![deny(missing_docs)]
 
 pub mod colors;
-pub mod myspec;
+pub mod specs;
 
 #[cfg(feature = "parity-runtime")]
 pub mod runtime;
@@ -59,7 +59,7 @@ pub mod runtime;
 /// The vividn/datum commit goldens were captured against. Bump in lockstep
 /// with `scripts/setup_datum.sh` and regenerate goldens via
 /// `PARITY_REGEN=1 cargo test --features parity-runtime -p datum-parity`.
-pub const DATUM_PINNED_SHA: &str = "f5e7c1b82da18fb6f02d21efea67d40f9cf26f1d";
+pub const DATUM_PINNED_SHA: &str = "d866811f3438f82b3c8c5887a3b0454b659e946c";
 
 /// The IANA zone the text goldens were captured in, forced into every
 /// process that renders one — v2 under `parity-runtime`, daydumb in the

@@ -3,7 +3,7 @@
 //! rust-cache restored `target/parity-cache/datum/.git` as a directory git
 //! does not recognise, the script took it for a clone, and `git -C` walked up
 //! to the enclosing workspace. This builds that shape: a workspace repository
-//! holding a copy of the script whose `REPO_URL` and `PINNED_SHA` name a local
+//! holding a copy of the script whose `REPO_URL`, `REPO_BRANCH` and `PINNED_SHA` name a local
 //! stand-in for vividn/datum, and a `.git` with no HEAD where the clone goes.
 
 use std::fs;
@@ -64,6 +64,7 @@ fn a_git_dir_that_is_not_a_repository_is_recloned_not_walked_past() {
     let upstream = root.join("upstream");
     let shas = repo_with_commits(&upstream, 2);
     let pinned = &shas[0];
+    let branch = git(&upstream, &["rev-parse", "--abbrev-ref", "HEAD"]);
 
     let workspace = root.join("workspace");
     let workspace_head = &repo_with_commits(&workspace, 1)[0];
@@ -78,6 +79,8 @@ fn a_git_dir_that_is_not_a_repository_is_recloned_not_walked_past() {
                 format!("PINNED_SHA=\"{pinned}\"")
             } else if l.starts_with("REPO_URL=") {
                 format!("REPO_URL=\"{}\"", upstream.display())
+            } else if l.starts_with("REPO_BRANCH=") {
+                format!("REPO_BRANCH=\"{branch}\"")
             } else {
                 l.to_string()
             }

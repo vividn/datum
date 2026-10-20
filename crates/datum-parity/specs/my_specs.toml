@@ -1,0 +1,69 @@
+# The field specs both runtimes load in the parity tests: v2 reads this file as
+# $DATUM_SPECS, daydumb installs it as a kit. It is v2's own
+# my_specs.example.toml at the pinned SHA (scripts/setup_datum.sh). A field
+# outside it takes each runtime's default, which must agree.
+
+[kit]
+name = "my_specs"
+version = "0.1"
+description = "An example of the field specs datum v2's dayview reads from ~/.config/datum/my_specs.toml: the fields its tests use. It installs in datum v3 as a kit too."
+
+[[field]]
+name = "environment"
+verb = "switch"
+pos = 0.05
+size = 0.55
+states.home = { color = "#141414" }
+states.inside = { color = "#5a5a5a" }
+states.outside = { color = "#87a366" }
+
+[[field]]
+name = "body"
+verb = "switch"
+pos = 0.6
+size = 0.4
+zIndex = 0.1
+states.stretch = { color = "#d93494" }
+states.run = { color = "#ff6e19" }
+
+[[field]]
+name = "sleep"
+verb = "start"
+pos = 0.25
+size = 0.55
+color = "#142878"
+
+[[field]]
+name = "project"
+verb = "switch"
+pos = 0.15
+size = 0.3
+states.german = { color = "#ffce00" }
+states.data = { color = "#791d8c" }
+states.datum = { color = "#650e78" }
+states.cello = { color = "#7a4300" }
+states.linux = { color = "#3c8497" }
+states.household = { color = "#6e0000" }
+states.tasks = { color = "#7fa0a0" }
+states.meeting = { color = "#000000" }
+states.backend = { color = "#84f0bd" }
+states.frontend = { color = "#c04ec2" }
+
+[[field]]
+name = "consume"
+verb = "switch"
+pos = 0.35
+size = 0.1
+states.fiction = { color = "#467013" }
+
+[[field]]
+name = "caffeine"
+verb = "occur"
+color = "#643200"
+pos = 0.75
+
+[[field]]
+name = "alcohol"
+verb = "occur"  # v2 had no kind for this field; v3 needs one
+color = "#00ffff"
+pos = 0.75

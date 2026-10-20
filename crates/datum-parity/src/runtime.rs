@@ -129,6 +129,8 @@ impl DatumRuntime {
             .args(args)
             .current_dir(&self.repo)
             .env("DATUM_HOST", host_dir)
+            // The field specs daydumb installs too, never the machine's own.
+            .env("DATUM_SPECS", crate::specs::my_specs_path())
             // Suppress pnpm's "Run X" preamble — keep stdout pure datum output.
             .env("npm_config_silent", "1")
             // Pin the zone datum renders offsets in — see GOLDEN_TZ.

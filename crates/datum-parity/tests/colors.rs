@@ -1,12 +1,12 @@
 //! Color goldens — verify daydumb produces datum-byte-equal hex strings
-//! across mySpec overrides and md5 fallbacks.
+//! across `specs/my_specs.toml` overrides and md5 fallbacks.
 //!
 //! These tests don't need the `parity-runtime` feature: the algorithms
 //! (md5, YIQ contrast) are small enough to reimplement and check
 //! directly. The `colors.tsv` fixture is the source of truth.
 
 use datum_parity::colors;
-use datum_parity::myspec;
+use datum_parity::specs;
 
 const FIXTURE: &str = include_str!("../goldens/colors/colors.tsv");
 
@@ -86,7 +86,7 @@ fn fixture_has_minimum_coverage() {
     let md5_rows = rows.iter().filter(|r| r.source == "md5").count();
     assert!(
         spec_rows >= 5,
-        "need ≥5 spec-override fixtures to lock mySpec loading; got {spec_rows}"
+        "need ≥5 spec-override fixtures to lock my_specs.toml loading; got {spec_rows}"
     );
     assert!(
         md5_rows >= 5,
@@ -99,10 +99,12 @@ fn color_goldens_match_datum_algorithm() {
     let rows = parse_rows(FIXTURE);
     for row in &rows {
         // Look up spec overrides for this fixture.
-        let field_spec_color: Option<&str> =
-            row.field.and_then(myspec::field_spec).and_then(|s| s.color);
+        let field_spec_color: Option<&str> = row
+            .field
+            .and_then(specs::field_spec)
+            .and_then(|s| s.color.as_deref());
         let state_spec_color: Option<&str> = match (row.field, row.state) {
-            (Some(f), Some(s)) => myspec::state_spec(f, s).and_then(|ss| ss.color),
+            (Some(f), Some(s)) => specs::state_spec(f, s).and_then(|ss| ss.color.as_deref()),
             _ => None,
         };
 
@@ -125,7 +127,7 @@ fn color_goldens_match_datum_algorithm() {
         match row.source {
             "spec" => assert!(
                 any_spec,
-                "line {} ({}): row is tagged `spec` but neither field nor state has a mySpec override",
+                "line {} ({}): row is tagged `spec` but neither field nor state has a my_specs.toml override",
                 row.lineno, row.note,
             ),
             "md5" => assert!(

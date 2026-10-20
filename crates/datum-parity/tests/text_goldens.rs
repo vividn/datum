@@ -307,13 +307,13 @@ mod daydumb_tests {
     }
 
     /// A fixture's setup and query through daydumb, on a fresh database
-    /// carrying v2's mySpec (compiled into v2; a kit here). Returns what the
+    /// carrying `specs/my_specs.toml` (v2's `$DATUM_SPECS`; a kit here). Returns what the
     /// query printed, or the SVG it wrote to `OUTPUT_FILE`.
     fn run_fixture(f: &Fixture) -> Result<String, String> {
         let temp = tempfile::TempDir::new().map_err(|e| format!("tempdir: {e}"))?;
         let dir = temp.path();
         let install = ["kit", "install", "-", "--yes"].map(String::from);
-        daydumb(dir, &install, &datum_parity::myspec::emit_kit_toml())?;
+        daydumb(dir, &install, datum_parity::specs::MY_SPECS)?;
         for cmd in &f.setup {
             daydumb(dir, cmd, "")?;
         }

@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# setup_datum.sh — clone vividn/datum at the pinned SHA and install deps.
+# setup_datum.sh — clone vividn/datum's v2 at the pinned SHA and install deps.
+#
+# The pin is the first v2 commit that reads its field specs from
+# $DATUM_SPECS (`runtime` points it at specs/my_specs.toml). It is on the
+# forge's v2 branch, which is private: CI clones it with the job's token
+# (parity.yml), a developer with their own access. Once v2 is on GitHub,
+# REPO_URL can be GitHub's.
 #
 # Used by `--features parity-runtime` tests in this crate. CI must run
 # this once before invoking the gated test suite.
@@ -10,8 +16,9 @@
 
 set -euo pipefail
 
-PINNED_SHA="f5e7c1b82da18fb6f02d21efea67d40f9cf26f1d"
-REPO_URL="https://github.com/vividn/datum.git"
+PINNED_SHA="d866811f3438f82b3c8c5887a3b0454b659e946c"
+REPO_URL="https://git.vividn.dev/vividn/datum.git"
+REPO_BRANCH="v2"
 # The pnpm major that wrote the lockfile at PINNED_SHA. `--frozen-lockfile`
 # compares the lockfile against what the *running* pnpm believes the config
 # should be, so this pin is half of the SHA pin, not a nicety.
@@ -35,11 +42,13 @@ mkdir -p "$CACHE_DIR"
 if [ "$(git -C "$DATUM_DIR" rev-parse --show-toplevel 2>/dev/null)" != "$DATUM_DIR" ]; then
     echo "[setup_datum] cloning $REPO_URL → $DATUM_DIR"
     rm -rf "$DATUM_DIR"
-    git clone "$REPO_URL" "$DATUM_DIR"
+    git clone --single-branch --branch "$REPO_BRANCH" "$REPO_URL" "$DATUM_DIR"
 fi
 
-echo "[setup_datum] fetching origin"
-git -C "$DATUM_DIR" fetch --quiet origin
+# A cache cloned from an earlier REPO_URL fetches from this one.
+git -C "$DATUM_DIR" remote set-url origin "$REPO_URL"
+echo "[setup_datum] fetching origin $REPO_BRANCH"
+git -C "$DATUM_DIR" fetch --quiet origin "$REPO_BRANCH"
 
 CURRENT_SHA="$(git -C "$DATUM_DIR" rev-parse HEAD)"
 if [ "$CURRENT_SHA" != "$PINNED_SHA" ]; then
@@ -51,6 +60,9 @@ if [ "$CURRENT_SHA" != "$PINNED_SHA" ]; then
     echo "[setup_datum] ERROR: $DATUM_DIR is at $CURRENT_SHA after checkout, not $PINNED_SHA" >&2
     exit 1
 fi
+# The last git command is above. CI hands it the forge token through these
+# (parity.yml); no install script below needs them, so none inherits them.
+unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 
 if ! command -v pnpm >/dev/null 2>&1; then
     echo "[setup_datum] ERROR: pnpm not on PATH. Install it: npm install --global pnpm@$PNPM_MAJOR" >&2

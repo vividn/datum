@@ -7,12 +7,12 @@
 //!
 //! These tests don't need the `parity-runtime` feature — they pin the
 //! algorithmic surface that the original bug exposed, using the
-//! reimplemented helpers in `crate::colors` and `crate::myspec`. If
+//! reimplemented helpers in `crate::colors` and `crate::specs`. If
 //! daydumb's renderer drifts from the algorithm here, this whole
 //! module fails fast.
 
 use datum_parity::colors::{contrast_text_color, field_color, md5_color, state_color};
-use datum_parity::myspec;
+use datum_parity::specs;
 
 /// **da-438y** — `kit_color::resolve_color` returned an HSL-from-12-md5-bytes
 /// hex for the missing-color case, which kit-install then stored on
@@ -27,7 +27,7 @@ use datum_parity::myspec;
 #[test]
 fn da_438y_missing_color_falls_through_to_md5() {
     // No spec override on `mood`.
-    assert!(myspec::field_spec("mood").is_none());
+    assert!(specs::field_spec("mood").is_none());
 
     let want = md5_color("mood");
     let got = field_color(Some("mood"), None);
@@ -44,7 +44,7 @@ fn da_438y_missing_color_falls_through_to_md5() {
 /// **da-438y** — same root cause, exercised through a state name.
 ///
 /// `getStateColor("happy", undefined)` should fall through to
-/// `md5("happy")` when neither field nor state has a mySpec override.
+/// `md5("happy")` when neither field nor state has a spec override.
 /// If a HSL-derivation crept back in, this test would fail.
 #[test]
 fn da_438y_state_without_field_uses_md5() {
@@ -70,7 +70,7 @@ fn da_438y_state_without_field_uses_md5() {
 fn da_luc8_coffee_color_unaffected_by_slug_path() {
     // `coffee` has no spec → md5 fallback. This holds whether the entry
     // arrived via a `_N` quickId or an absolute time.
-    assert!(myspec::field_spec("coffee").is_none());
+    assert!(specs::field_spec("coffee").is_none());
     assert_eq!(field_color(Some("coffee"), None), "#24eb05");
     // Contrast: bright green → black foreground.
     assert_eq!(contrast_text_color("#24eb05"), "#000000");
@@ -92,7 +92,7 @@ fn da_ffp6_scalar_state_picks_md5_color() {
     // Scalar `ai` state on `project` field: project HAS a spec override
     // for "datum"/"meeting"/etc but NOT for "ai", so `ai` falls through
     // to md5.
-    assert!(myspec::state_spec("project", "ai").is_none());
+    assert!(specs::state_spec("project", "ai").is_none());
     let got = state_color(Some("ai"), Some("project"), None, None);
     assert_eq!(got, md5_color("ai"));
 }
@@ -105,12 +105,12 @@ fn da_ffp6_scalar_state_picks_md5_color() {
 ///
 /// What we lock here: the canonical `state_color` for a switch entry
 /// (which both nowview and dayview should consult). For `body=run`,
-/// mySpec overrides → `#ff6e19`, NOT `md5("run")`.
+/// `specs/my_specs.toml` overrides → `#ff6e19`, NOT `md5("run")`.
 #[test]
 fn da_aw2o_canonical_state_color_for_specced_state() {
-    let spec = myspec::state_spec("body", "run").expect("body.run is in mySpec");
-    assert_eq!(spec.color, Some("#ff6e19"));
-    let got = state_color(Some("run"), Some("body"), None, spec.color);
+    let spec = specs::state_spec("body", "run").expect("body.run is in my_specs.toml");
+    assert_eq!(spec.color.as_deref(), Some("#ff6e19"));
+    let got = state_color(Some("run"), Some("body"), None, spec.color.as_deref());
     assert_eq!(got, "#ff6e19");
     // And the contrast pick: bright orange → black.
     assert_eq!(contrast_text_color("#ff6e19"), "#000000");

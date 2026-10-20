@@ -89,12 +89,12 @@ query = ["get", "wake:2024-01-15T08:00:00.000Z"]
 
 [[fixture]]
 name = "get_specced_state"
-description = "`get` on a `country=germany` entry — exercises mySpec state override"
+description = "`get` on a `body=run` entry — exercises a my_specs.toml state override"
 surface = "get"
 setup = [
-  ["switch", "country", "germany", "-d", "2024-01-15", "-t", "0800"],
+  ["switch", "body", "run", "-d", "2024-01-15", "-t", "0800"],
 ]
-query = ["get", "country:2024-01-15T07:00:00.000Z"]
+query = ["get", "body:2024-01-15T07:00:00.000Z"]
 
 # ─── tail: multi-record reads ────────────────────────────────────────────────
 
@@ -168,7 +168,7 @@ query = ["tail"]
 
 [[fixture]]
 name = "tail_spec_field_color"
-description = "`tail` on a mySpec-overridden field (sleep) — locks color path"
+description = "`tail` on a my_specs.toml-overridden field (sleep) — locks color path"
 surface = "tail"
 setup = [
   ["start", "sleep", "-d", "2024-01-14", "-t", "2300"],
@@ -254,7 +254,7 @@ query = ["dayview", "-d", "2024-01-15"]
 
 [[fixture]]
 name = "dayview_spec_color_svg"
-description = "`dayview` SVG exercises a mySpec-overridden field (sleep) → spec color"
+description = "`dayview` SVG exercises a my_specs.toml-overridden field (sleep) → spec color"
 surface = "dayview"
 setup = [
   ["start", "sleep", "-d", "2024-01-14", "-t", "2300"],

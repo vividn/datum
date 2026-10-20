@@ -14,7 +14,7 @@ This crate exists to be that reference.
 | Surface | Fixture set | Runtime needed? |
 |---|---|---|
 | md5 color algebra | `goldens/colors/colors.tsv` (19 rows) | no |
-| mySpec field/state map | `src/myspec.rs` (23 fields, 100+ states) | no |
+| field specs both runtimes load | `specs/my_specs.toml` (7 fields, 16 states) | no |
 | `get` text output | `goldens/text/fixtures.toml` (7 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
 | `tail` text output | `goldens/text/fixtures.toml` (7 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
 | `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures, all `uncapturable` — see da-t5f5) | skipped, with the reason |
@@ -45,11 +45,24 @@ bash crates/datum-parity/scripts/setup_datum.sh
 cargo test --features parity-runtime -p datum-parity
 ```
 
-The setup script clones vividn/datum at the pinned SHA into
-`target/parity-cache/datum`, runs `pnpm install --frozen-lockfile`, and
-exits successfully when the clone is ready. The CLI is invoked via
+The setup script clones vividn/datum's `v2` branch at the pinned SHA into
+`target/parity-cache/datum`. That branch is on the forge
+(`git.vividn.dev/vividn/datum`) and private: the CI job clones it with its
+own token, a developer with their own access. It runs
+`pnpm install --frozen-lockfile`, and exits successfully when the clone is
+ready. The CLI is invoked via
 `pnpm dev …` against an isolated PouchDB host directory per fixture
 (managed by `tempfile::TempDir`).
+
+### The field specs
+
+Both runtimes load one spec file, `specs/my_specs.toml`: v2 reads it as
+`$DATUM_SPECS` (`src/runtime.rs`), daydumb installs it as a kit before
+each fixture (`tests/text_goldens.rs`), and `tests/colors.rs` reads its
+spec colors from it (`src/specs.rs`). It is v2's own
+`my_specs.example.toml` at the pinned SHA, the seven fields v2's tests
+use. A field it does not name takes each runtime's default (md5 colour and
+position), and the snapshots hold those defaults to agree.
 
 The `parity-runtime` feature is intentionally off by default: a Rust
 build shouldn't pull a node toolchain into CI unless the parity tests
@@ -168,12 +181,10 @@ regenerates its lockfile.
 To bump:
 
 1. Update both files to the new SHA.
-2. Re-read `target/parity-cache/datum/src/field/mySpecs.ts` and patch
-   `src/myspec.rs::FIELD_SPECS` to match.
-3. Run `PARITY_REGEN=1 cargo test --features parity-runtime` to refresh
+2. Run `PARITY_REGEN=1 cargo test --features parity-runtime` to refresh
    text goldens.
-4. Commit all four (lib.rs, setup_datum.sh, myspec.rs, expected/*.txt)
-   in one commit so the pin is atomic.
+3. Commit them together (lib.rs, setup_datum.sh, expected/*.txt) so the
+   pin is atomic.
 
 ## Layout
 
@@ -193,6 +204,8 @@ crates/datum-parity/
 │       ├── expected/<name>.txt    # v2's captured stdout/SVG, one per fixture
 │       ├── divergences.toml       # where daydumb differs, and why (for vividn's walk)
 │       └── divergences/<name>.diff  # each one's exact difference
+├── specs/
+│   └── my_specs.toml   # the field specs both runtimes load
 ├── scripts/
 │   ├── setup_datum.sh  # clone + install pinned datum
 │   └── check_approvals_signed.sh  # APPROVED changes signed by vividn
@@ -200,7 +213,7 @@ crates/datum-parity/
 │   ├── bin/daydumb.rs  # daydumb's `datum`, for the text goldens to spawn
 │   ├── lib.rs          # re-exports + DATUM_PINNED_SHA + GOLDEN_TZ + datum_clone_path
 │   ├── colors.rs       # md5_color, contrast_text_color, state_color (algorithm port)
-│   ├── myspec.rs       # FIELD_SPECS port + emit_kit_toml
+│   ├── specs.rs        # reads specs/my_specs.toml
 │   └── runtime.rs      # DatumRuntime (gated)
 └── tests/
     ├── approvals.rs        # goldens vs APPROVED; the signature check
@@ -287,8 +300,7 @@ Append a row in the format:
 ```
 
 Compute `expected_hex`:
-* For `source = spec`: read the value from
-  `target/parity-cache/datum/src/field/mySpecs.ts`.
+* For `source = spec`: read the value from `specs/my_specs.toml`.
 * For `source = md5`: run
   `node -e "const c=require('crypto'); console.log('#'+c.createHash('md5').update('NAME').digest('hex').slice(0,6))"`.
 

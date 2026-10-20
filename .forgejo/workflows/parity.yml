@@ -30,7 +30,7 @@ on:
   workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [main]
+    branches: [main, staging]
     paths:
       - "crates/datum-parity/**"
       - ".forgejo/workflows/parity.yml"
@@ -87,8 +87,20 @@ jobs:
       - name: Install the pinned pnpm
         run: npm install --global pnpm@11
 
+      # The pin is on this repository's v2 branch, which is private: the job's
+      # token reads it, as actions/checkout does, through git's environment
+      # rather than an argv anyone on the box can read.
       - name: Clone + install vividn/datum at the pinned SHA
-        run: bash crates/datum-parity/scripts/setup_datum.sh
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.${SERVER%/}/.extraheader"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          bash crates/datum-parity/scripts/setup_datum.sh
 
       - name: cargo test -p datum-parity --features parity-runtime
         run: cargo test -p datum-parity --features parity-runtime -- --nocapture

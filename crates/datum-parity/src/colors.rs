@@ -62,7 +62,7 @@ pub fn contrast_text_color(bg_hex: &str) -> &'static str {
 
 /// Datum's `getFieldColor`: spec override or md5(field).
 ///
-/// `spec_color` is what `mySpec.color` would return for the named field; if
+/// `spec_color` is what the field's spec `color` would return for the named field; if
 /// `None`, falls back to md5. Matches `field/fieldColor.ts:getFieldColor`.
 pub fn field_color(field: Option<&str>, spec_color: Option<&str>) -> String {
     match field {
