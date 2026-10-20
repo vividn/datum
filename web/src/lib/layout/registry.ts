@@ -445,7 +445,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// a state is labelled is one setting (`SwitchLabel` in fields.ts);
 	// `showIgnored` (da-xhio) is the other, and it is the SESSION's — a way
 	// to see the ignored fields the bar leaves out, alongside the (+) and
-	// not in place of it, that a reload starts back at off.
+	// not in place of it, which a reload keeps on this device (da-ray91).
 	widgetbar: {
 		meta: meta('widgetbar', 'fields', { align: 'rows', switchLabel: 'field', showIgnored: false }, [
 			// Where the buttons stand (da-omw4n): today's rows, or each at the

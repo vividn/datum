@@ -18,8 +18,9 @@
 //  - a switch is an item that carries its own state and turns over in
 //    place; a choice is a submenu of words. No modal.
 //  - EVERY change is THIS SESSION'S — it changes what this tab shows, it
-//    leaves the layout's dot alone, and a reload starts back at what the
-//    layout says. A widget moving a setting of its own (nowview's − / +)
+//    leaves the layout's dot alone, and a reload keeps it on this device
+//    (vividn, 2026-10-20, da-ray91: «widget options should survive reloads
+//    in general»). A widget moving a setting of its own (nowview's − / +)
 //    goes down that same path, which is why
 //  - a layout in normal mode (da-vvcxc; a LOCKED one, then) is modified
 //    by nothing the reader did not ask for, the widget's own in-body
@@ -265,13 +266,14 @@ describe('widget options', () => {
 					parseFloat(getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height')) < 0.5
 			);
 
-			// A reload starts back at what the LAYOUT says — the session is
-			// memory, and nothing was asked of the draft.
+			// A reload keeps it, on this device and not in the layout: the
+			// dot stays dark and the tree never hears of it (da-ray91).
 			await app.reload();
-			assert.deepEqual(await replEchoes(page), oldestFirst, 'a session setting survived a reload');
+			assert.deepEqual(await replEchoes(page), [...oldestFirst].reverse(), 'a reload lost a session setting');
+			assert.equal(await dotted(page, 'main'), false, 'a kept session setting dirtied the layout');
+			assert.ok(!(await tree(page)).includes('"reversed":true'), 'a kept session setting reached the tree');
 
 			// Asked, it becomes the layout's: the dot lights, and a save keeps it.
-			await toggleOption(page, 'repl', NEWEST);
 			await choose(page, 'repl', SAVE);
 			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 			assert.ok((await tree(page)).includes('"reversed":true'), 'the save did not reach the tree');
@@ -538,7 +540,8 @@ describe('widget options', () => {
 	// the exception. What is held to is the whole contract, not just the
 	// filter: the button comes back, it is visibly still ignored, the (+)
 	// still offers it, the layout is not dirtied, «defaults» puts it back,
-	// and a reload starts it off again.
+	// and a reload keeps it on this device (da-ray91, vividn, 2026-10-20:
+	// «widget options should survive reloads in general»).
 	test('fields: «show ignored fields» is this session’s — marked, composing, and never the layout’s', async () => {
 		await withApp(async (app) => { // reloads
 			const { page } = app;
@@ -613,12 +616,13 @@ describe('widget options', () => {
 			await button.waitFor({ state: 'detached' });
 			assert.equal(await optionChecked(page, 'bar', 'show ignored fields'), false);
 
-			// And a reload starts it off, however the draft was left.
+			// And a reload keeps it, however the draft was left (`Reset
+			// widget` above lit its dot), and still not in the layout.
 			await toggleOption(page, 'bar', 'show ignored fields');
 			await button.waitFor();
 			await app.reload();
-			await page.locator('.bar [data-track]').waitFor();
-			assert.equal(await button.count(), 0, 'the toggle survived a reload');
+			await button.waitFor();
+			assert.equal((await tree(page)).includes('"showIgnored":true'), false, 'a kept session setting reached the tree');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

@@ -116,8 +116,8 @@
 	the `picture` action with the double tap, because every drawn picture
 	has that action on it and only these two views have a recogniser.
 
-	A press that starts on the `+` handle, the `⊖` or the jagged line is
-	THEIRS, and one that starts off a band — the date
+	A press that starts on the `+` handle, a line (below), the `⊖` or the
+	jagged line is THEIRS, and one that starts off a band — the date
 	column, the ruler, the room around them — is the pane's, so a swipe there still
 	changes tabs. The bands say so themselves with `data-pans="x"`.
 
@@ -146,6 +146,14 @@
 	`hourFrom`/`hourTo` — is a prop in and a `change` out; the dashboard
 	keeps them in the widget's settings, and the strip itself writes
 	nothing down.
+
+	THE TWO SIZES HAVE THREE HANDLES (da-ray91). The `+` where the date
+	column meets today moves both, and is the keyboard's (one step an
+	arrow). Every line between two days, the divider included, is a
+	ns-resize handle a few pixels either side of it that moves the day
+	height alone; the spine, the whole length of the strip, an ew-resize
+	one that moves the label width alone. Up is taller and right is wider
+	on all three.
 
 	THE DAY HEIGHT IS THE ONE THAT MAY BE ABSENT (da-r0ydu). No day height
 	means ONE DAY FILLS THE WIDGET — `dayFilling(height)`, re-derived every
@@ -853,7 +861,7 @@
 			});
 	})();
 
-	// ── the handle: the day height and the label width together ────────
+	// ── the handles: the `+` moves both sizes, the lines one each ──────
 
 	/**
 	 * FOLLOW UNTIL TOUCHED, THEN HOLD — and back onto the derived value
@@ -886,8 +894,15 @@
 		dispatch('change', { dayHeight, labelWidth });
 	}
 
+	/**
+	 * Which sizes a drag moves: `xy` the `+`, `y` a line between two days
+	 * (the day height), `x` the spine (the label width) — da-ray91, vividn:
+	 * «allow scaling the days from anywhere in the line dividing the days».
+	 */
+	type Axes = 'xy' | 'y' | 'x';
+
 	/** Where a drag started, what the values were when it did, and the preview. */
-	let sizing: { x: number; y: number; height: number; width: number } | null = null;
+	let sizing: { x: number; y: number; height: number; width: number; axes: Axes } | null = null;
 	let from0 = { height: 0, width: 0 };
 
 	/**
@@ -901,36 +916,46 @@
 	 * handle is a slider, and a slider the keyboard cannot reach after
 	 * being clicked is half a control.
 	 */
-	function grab(event: PointerEvent): void {
+	function grab(event: PointerEvent, axes: Axes): void {
 		event.preventDefault();
 		const handle = event.currentTarget as HTMLElement;
 		handle.setPointerCapture(event.pointerId);
 		handle.focus();
 		from0 = { height: day, width: labelWidth };
-		sizing = { x: event.clientX, y: event.clientY, height: day, width: labelWidth };
+		sizing = { x: event.clientX, y: event.clientY, height: day, width: labelWidth, axes };
 	}
 	function sizeTo(event: PointerEvent): void {
 		if (!sizing) return;
 		// Up is taller (da-hsba) and right is a wider column, which is the
 		// direction the `+` is being pushed in each case. The bands follow
-		// as scaled pictures; they are re-asked on the drop.
+		// as scaled pictures; they are re-asked on the drop. A line moves
+		// its own size alone, so a day line nudged sideways keeps the column.
+		const { axes } = sizing;
 		sizing = {
 			...sizing,
-			height: clamp(
-				Math.round(from0.height + (sizing.y - event.clientY)),
-				MIN_DAY_HEIGHT,
-				MAX_DAY_HEIGHT
-			),
-			width: clamp(
-				Math.round(from0.width + (event.clientX - sizing.x)),
-				MIN_LABEL_WIDTH,
-				MAX_LABEL_WIDTH
-			)
+			height: axes.includes('y')
+				? clamp(Math.round(from0.height + (sizing.y - event.clientY)), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT)
+				: from0.height,
+			width: axes.includes('x')
+				? clamp(Math.round(from0.width + (event.clientX - sizing.x)), MIN_LABEL_WIDTH, MAX_LABEL_WIDTH)
+				: from0.width
 		};
 	}
 	function drop(): void {
 		if (sizing) setSizes(sizing.height, sizing.width);
 		sizing = null;
+	}
+
+	/** Make `node` a handle for `axes`: the `+`, every day line, the spine. */
+	function resizes(node: HTMLElement, axes: Axes) {
+		const on: [string, EventListener][] = [
+			['pointerdown', (event) => grab(event as PointerEvent, axes)],
+			['pointermove', sizeTo as EventListener],
+			['pointerup', drop],
+			['pointercancel', drop]
+		];
+		for (const [type, handler] of on) node.addEventListener(type, handler);
+		return { destroy: () => on.forEach(([type, handler]) => node.removeEventListener(type, handler)) };
 	}
 
 	function onHandleKey(event: KeyboardEvent): void {
@@ -1022,9 +1047,9 @@
 
 	function onPointerDown(event: PointerEvent): void {
 		// The strip's own controls are not the picture: the `+` handle, the
-		// `⊖` and the jagged line have the pointer when it is on them, and a
-		// press on one is not the start of a gesture.
-		if ((event.target as HTMLElement).closest('button')) return;
+		// lines, the `⊖` and the jagged line have the pointer when it is on
+		// them, and a press on one is not the start of a gesture.
+		if ((event.target as HTMLElement).closest('button, .sizer')) return;
 		if (event.pointerType === 'mouse') {
 			// The mouse has no finger to register, but its drag still needs
 			// the window's listeners: it may leave the strip mid-gesture.
@@ -1390,8 +1415,9 @@
 		{#if rows.length > 0}
 			<div class="stack" bind:this={stackEl} on:scroll={onScroll}>
 				{#if ended && first?.date}<p class="quiet first">first entry · {first.date}</p>{/if}
-				{#each rows as end (end)}
+				{#each rows as end, i (end)}
 					<div class="row" class:now={end === 0}>
+						{#if i > 0}<div class="sizer day-line" data-pans="xy" use:resizes={'y'}></div>{/if}
 						<div class="stamp" style:font-size="{stampFont}px">
 							{#if flagged[end]?.length}<IntegrityMark fields={flagged[end]} />{/if}
 							{#each stamp(geometry?.today ?? null, end, stampLines) as line}<span>{line}</span
@@ -1421,8 +1447,10 @@
 			bar»): the divider between two dates, and the spine between the
 			date column and the bands, which is the 00 mark.
 		-->
-		<div class="divider" class:seam={freezeToday}></div>
-		<div class="spine"></div>
+		<div class="divider" class:seam={freezeToday}>
+			<div class="sizer day-line" data-pans="xy" use:resizes={'y'}></div>
+		</div>
+		<div class="sizer spine" data-pans="xy" use:resizes={'x'}></div>
 
 		<!--
 			The strip's own control, at the top of today: the `+` at the 00
@@ -1440,10 +1468,7 @@
 			aria-valuenow={shownDayHeight}
 			aria-valuetext="{shownDayHeight} pixels per day, {shownLabelWidth} pixels of date label"
 			data-label-width={shownLabelWidth}
-			on:pointerdown={grab}
-			on:pointermove={sizeTo}
-			on:pointerup={drop}
-			on:pointercancel={drop}
+			use:resizes={'xy'}
 			on:keydown={onHandleKey}
 		>
 			<svg viewBox="0 0 13 13" width="13" height="13" aria-hidden="true">
@@ -1680,6 +1705,8 @@
 	   the first row carries a transparent one so every day costs the same
 	   pitch wherever it falls. */
 	.row {
+		position: relative;
+		--line: var(--divider);
 		display: flex;
 		align-items: stretch;
 		height: var(--band);
@@ -1695,7 +1722,8 @@
 	}
 	/* Over today, pinned or not, the seam: thicker than a day's divider. */
 	.row.now {
-		border-top-width: var(--seam-line);
+		--line: var(--seam-line);
+		border-top-width: var(--line);
 	}
 	/* Today's band is the strip's bottom edge. In a strip too short for it
 	   and the stack's sliver it gives way, clipped from the TOP: the picture
@@ -1793,13 +1821,41 @@
 		left: var(--label);
 		width: var(--divider);
 		background: var(--rule);
-		pointer-events: none;
 		z-index: 2;
+		cursor: ew-resize;
+	}
+
+	/* The lines are handles too (da-ray91): a few pixels either side of
+	   each, the spine's the label width and a day line's the day height —
+	   the line over each day past the first in the stack, the row's top
+	   border, and the divider. Nothing is drawn: the line already is. */
+	.sizer {
+		touch-action: none;
+	}
+	.spine::before {
+		content: '';
+		position: absolute;
+		inset: 0 -4px;
+	}
+	.day-line {
+		position: absolute;
+		left: 0;
+		right: 0;
+		/* The border is above the row's padding box: centre on it. */
+		top: calc(-4px - var(--line));
+		height: calc(8px + var(--line));
+		z-index: 1;
+		cursor: ns-resize;
+	}
+	.divider > .day-line {
+		top: -4px;
+		height: calc(100% + 8px);
 	}
 
 	/* Full width, and nothing else: the line itself — the seam's over a
 	   pinned today, a day's under one that scrolls. */
 	.divider {
+		position: relative;
 		flex: none;
 		height: var(--divider);
 		background: var(--rule);

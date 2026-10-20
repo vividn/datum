@@ -82,7 +82,7 @@ export interface DatumConsole {
 		apply(op: (layout: Layout) => Layout): void;
 		kinds(): WidgetKindMeta[];
 		session(): Record<string, Record<string, unknown>>;
-		/** Everything this session set, forgotten, as a reload forgets it. */
+		/** Everything this session set, forgotten, the copy this device keeps included. */
 		forgetSession(): void;
 		/** What the widget in tab `tabId` is DRAWN from: the tree's settings with this session's over them. */
 		settings(tabId: string): Record<string, unknown> | undefined;

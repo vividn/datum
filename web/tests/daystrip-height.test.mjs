@@ -377,6 +377,115 @@ describe("the day strip's day height and its pin", () => {
 		});
 	});
 
+	// THE LINES ARE HANDLES (da-ray91). vividn, 2026-10-20: «allow scaling
+	// the days from anywhere in the line dividing the days, not just at the
+	// intersection … a <up/down> handle on the lines between the days, and
+	// then a <left/right> handle every where on the vertical line
+	// seperating the date label and the day». Each moves its own size and
+	// never the other, and a press on one is not a gesture on the picture:
+	// no time cursor, no range, no pan.
+	test('a day line drags the height alone, the spine the label width alone', async () => {
+		await settledRoom(shared, 'lines', async (app) => {
+			// Room for the two lowest lines at the taller day as well.
+			await sizeFor(app, 6);
+			const pills = () => app.page.evaluate(() => window.datum.bar.pills().length);
+			const hours = async () => [await heard(app, 'hourFrom'), await heard(app, 'hourTo')];
+			const [tall, wide, marks, window0] = [await valueOf(app), await widthOf(app), await pills(), await hours()];
+
+			// A line between two days, pushed up and sideways: taller, the
+			// column untouched. Up is taller, as on the `+` (da-hsba).
+			// The lowest line in the stack: over today, or over yesterday
+			// while today is pinned under the divider.
+			const lowest = '.stack .row > .day-line >> nth=-1';
+			const lines = await app.page.locator('.stack .row > .day-line').count();
+			assert.ok(lines >= 2, `only ${lines} day lines`);
+			await dragBy(app, lowest, 30, -20);
+			assert.equal(await valueOf(app), tall + 20, 'the day line did not move the day height');
+			await heardIs(app, tall + 20);
+			assert.equal(await widthOf(app), wide, 'the day line moved the label width');
+			// The stack re-pins its newest day as the bands land: the lines
+			// are where they are drawn only after that.
+			await waitForHeights(app, tall + 20);
+
+			// One higher in the stack, and the divider.
+			await dragBy(app, '.stack .row > .day-line >> nth=-2', 0, -10);
+			assert.equal(await valueOf(app), tall + 30, 'a line higher in the stack is no handle');
+			await waitForHeights(app, tall + 30);
+			await dragBy(app, '.divider > .day-line', 0, 10);
+			assert.equal(await valueOf(app), tall + 20, 'the divider is no handle');
+			await waitForHeights(app, tall + 20);
+
+			// The spine, low down and pushed up and right: wider, the day
+			// height untouched.
+			const spine = await app.page.locator('.spine').boundingBox();
+			const x = spine.x + spine.width / 2;
+			const y = spine.y + spine.height - 30;
+			await app.page.mouse.move(x, y);
+			await app.page.mouse.down();
+			await app.page.mouse.move(x + 25, y - 40, { steps: 8 });
+			await app.page.mouse.up();
+			assert.equal(await widthOf(app), wide + 25, 'the spine did not move the label width');
+			await heardIs(app, wide + 25, 'labelWidth');
+			assert.equal(await valueOf(app), tall + 20, 'the spine moved the day height');
+			await waitForHeights(app, tall + 20);
+
+			// Three pixels off a line still hit it: a few px either side.
+			const line = await app.page.locator(lowest).boundingBox();
+			const cy = line.y + line.height / 2 + 3;
+			await app.page.mouse.move(line.x + line.width / 2, cy);
+			await app.page.mouse.down();
+			await app.page.mouse.move(line.x + line.width / 2, cy - 5, { steps: 4 });
+			await app.page.mouse.up();
+			assert.equal(await valueOf(app), tall + 25, 'a press beside the line missed it');
+
+			// Held past the long press and then moved, which on the picture
+			// is a range (da-pzzoz): on a line it is still only the height.
+			const held = await app.page.locator(lowest).boundingBox();
+			const hx = held.x + held.width / 2;
+			const hy = held.y + held.height / 2;
+			await app.page.mouse.move(hx, hy);
+			await app.page.mouse.down();
+			await app.page.waitForTimeout(600);
+			await app.page.mouse.move(hx + 120, hy + 5, { steps: 8 });
+			await app.page.mouse.up();
+			assert.equal(await valueOf(app), tall + 20, 'a held drag on a line missed it');
+
+			// None of it was a press on the picture.
+			assert.equal(await pills(), marks, 'a drag on a line made a selection');
+			assert.deepEqual(await hours(), window0, 'a drag on a line panned the hours');
+			assert.equal(await app.page.evaluate(() => String(getSelection())), '', 'a drag on a line selected text');
+		});
+	});
+
+	// Both survive a reload, on this device and not in the layout: vividn,
+	// 2026-10-20 (da-ray91): «these settings should persist between
+	// refreshes too somehow … but not synced between devices, like saved
+	// layouts». They are the session's (layout/session.ts), which this
+	// device keeps in `localStorage`; the tree, which a save would sync,
+	// never hears of them.
+	test('the day height and the label width a line set survive a reload, and stay out of the layout', async () => {
+		await withApp(async (app) => { // own app: it reloads
+			await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
+			await sizeFor(app, 6);
+			const [tall, wide] = [await valueOf(app), await widthOf(app)];
+			await dragBy(app, '.stack .row > .day-line >> nth=-1', 0, -20);
+			await heardIs(app, tall + 20);
+			await dragBy(app, '.spine', 25, 0);
+			await heardIs(app, wide + 25, 'labelWidth');
+
+			const tree = () => app.page.evaluate(() => JSON.stringify(window.datum.layout.current()));
+			const inTree = (t) => [`"dayHeight":${tall + 20}`, `"labelWidth":${wide + 25}`].filter((k) => t.includes(k));
+			assert.deepEqual(inTree(await tree()), [], 'a line wrote its size into the layout');
+
+			await app.reload();
+			await waitForHeights(app, tall + 20);
+			assert.equal(await valueOf(app), tall + 20, 'a reload lost the day height');
+			assert.equal(await widthOf(app), wide + 25, 'a reload lost the label width');
+			assert.deepEqual(inTree(await tree()), [], 'the kept sizes reached the layout');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	// The «better preview rendering» (vividn, 2026-09-15): the bands follow
 	// the finger as scaled pictures, and datum is asked again only once the
 	// handle is let go.

@@ -164,7 +164,7 @@ describe('the nowview widget', () => {
 
 	// da-vhwq: the step is a setting the widget moves ITSELF, so it is THIS
 	// SESSION'S — it changes what this tab shows, the layout is not dirtied,
-	// and a reload starts back at what the layout says. «Save options with
+	// and a reload keeps it on this device (da-ray91). «Save options with
 	// layout» is what hands it over; only then is it a draft edit, and only
 	// then does `Save layout` write it down.
 	test('the step is this session’s, and the draft and a save take it only when asked', async () => {
@@ -182,14 +182,15 @@ describe('the nowview widget', () => {
 			await app.reload();
 			assert.deepEqual(
 				await titles(page),
-				['longer window (45m)', 'shorter window (20m)'],
-				'a session setting survived a reload'
+				['longer window (60m)', 'shorter window (30m)'],
+				'a reload lost a session setting'
+			);
+			assert.equal(
+				await page.locator('.root-bar [role="tab"].modified').count(),
+				0,
+				'a kept session setting dirtied the layout'
 			);
 
-			// The spy is a page hook, so the reload took it: arm it again.
-			await app.spyOnRunner();
-			await longer(page).click();
-			await asked(page, '45m');
 			await choose(page, 'nowview', 'Save options with layout');
 			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 

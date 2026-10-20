@@ -322,10 +322,11 @@ describe('/stats', () => {
 
 	// da-vhwq: the range chips move a setting of the widget's OWN, so what
 	// they pick is THIS SESSION'S — it changes what this tab shows and the
-	// layout does not hear of it. A reload therefore starts back at what the
-	// layout says, and «Save options with layout» is what hands the window
-	// over. Since da-ptuwr the window is the whole of what there is to hand.
-	test('a reload goes back to what the layout says; the save is what keeps the window', async () => {
+	// layout does not hear of it. A reload keeps it on this device (da-ray91,
+	// vividn: «widget options should survive reloads in general»), and «Save
+	// options with layout» is what hands the window to the layout. Since
+	// da-ptuwr the window is the whole of what there is to hand.
+	test('a reload keeps the window on this device; the save is what hands it to the layout', async () => {
 		await withApp(async (app) => {
 			const pick = async () => {
 				await app.page.locator('.stats .range button', { hasText: 'week' }).click();
@@ -344,13 +345,14 @@ describe('/stats', () => {
 			await pick();
 
 			await reloaded();
-			// Back at what the LAYOUT says, which is this month over every field.
-			await expectStats(app, MONTH);
+			// Still the week, and still not the layout's: the root tab is clean.
+			await expectStats(app, ['stats', '--week']);
+			assert.equal(await app.page.locator('.root-bar [role="tab"].modified').count(), 0, 'a kept window dirtied the layout');
 
 			// `/stats` is one widget, so the acts are on the ROOT tab's menu
 			// (da-ze1x).
-			await pick();
 			await chooseRoot(app.page, 'Save options with layout');
+			await app.page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 			await reloaded();
 			await expectStats(app, ['stats', '--week']);
 		});

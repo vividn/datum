@@ -31,6 +31,7 @@ import {
 	DESKTOP,
 	chooseRoot,
 	menuLines,
+	optionChecked,
 	choiceLines,
 	pickOption,
 	enterLayoutMode,
@@ -135,13 +136,14 @@ describe('a root tab whose layout is one widget', () => {
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 
-			// A reload starts back at what the layout says.
+			// A reload keeps it on this device, and the layout still has not
+			// heard of it (da-ray91).
 			await app.reload();
-			await until(() => rootSettings(page), (s) => s.reversed !== true);
+			assert.equal(await optionChecked(page, null, NEWEST), true, 'a reload lost a session setting');
+			assert.equal((await rootSettings(page)).reversed, undefined, 'a kept session setting reached the tree');
 
 			// Asked for, it is a draft edit of the layout the tab names, so
 			// the dot lights and it survives a reload.
-			await toggleOption(page, null, NEWEST);
 			await chooseRoot(page, SAVE);
 			await until(() => rootSettings(page), (s) => s.reversed === true);
 			assert.equal(await dotted(page, 'repl'), true, 'the save left the layout unmodified');

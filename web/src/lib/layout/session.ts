@@ -24,12 +24,14 @@
 // setting moved and moved back leaves nothing behind, and «Save options
 // with layout» is offered exactly when there is something to save.
 //
-// The lifetime, at the edges vividn did not have to say: a reload starts
-// every tab back at what the layout says (this store is memory alone);
-// leaving a root tab and coming back keeps what was set, since the page
-// never unmounted; closing a tab forgets it (`pruneSession`); and
-// restoring a saved layout keeps it, since the tab the setting is against
-// comes back with the same id.
+// The lifetime: a reload keeps what was set — vividn, 2026-10-20 (da-ray91):
+// «widget options should survive reloads in general» — so the store is
+// mirrored to this device's `localStorage` (`KEPT`), never synced, as a
+// draft is; closing a tab forgets it (`pruneSession`); and restoring a
+// saved layout keeps it, since the tab the setting is against comes back
+// with the same id. «Save options with layout» still moves it into the
+// LAYOUT, which is what every device opening that layout starts from;
+// what is kept here is only this device's tweaks over it.
 
 import { writable } from 'svelte/store';
 import type { Layout, NodeId } from './types.js';
@@ -37,7 +39,26 @@ import { scopes } from './tree.js';
 
 type Settings = Record<string, unknown>;
 
-const store = writable<Record<string, Settings>>({});
+/** This device's copy between visits. A browser that refuses storage keeps the visit's alone. */
+const KEPT = 'datum.layout.session.v1';
+
+function kept(): Record<string, Settings> {
+	try {
+		return JSON.parse(localStorage.getItem(KEPT) ?? '{}') ?? {};
+	} catch {
+		return {};
+	}
+}
+
+const store = writable<Record<string, Settings>>(kept());
+store.subscribe((all) => {
+	try {
+		if (Object.keys(all).length > 0) localStorage.setItem(KEPT, JSON.stringify(all));
+		else localStorage.removeItem(KEPT);
+	} catch {
+		// Refused or full: the setting holds for the visit, as it always did.
+	}
+});
 
 /** What this session has set, key by key: read by the renderer and the menu. */
 export const session = { subscribe: store.subscribe };
@@ -101,7 +122,7 @@ export function clearSession(key: string): void {
 	store.update(({ [key]: _dropped, ...rest }) => rest);
 }
 
-/** Forget everything this session set, as a reload does: a test's way back to the layout (da-juku7). */
+/** Forget everything this session set, here and on this device: a test's way back to the layout (da-juku7). */
 export function forgetSession(): void {
 	inProgress.clear();
 	store.set({});
@@ -115,7 +136,7 @@ export const withSession = (settings: Settings, over: Settings | undefined): Set
 	over ? { ...settings, ...over } : settings;
 
 /**
- * Drop what is held against a tab that is no longer in the tree.
+ * Drop what is held against a tab that has left the tree.
  *
  * Called on every change of the layout (`current.ts`), which is the only
  * thing that can close a tab or change what one holds. Restoring a saved
@@ -123,14 +144,21 @@ export const withSession = (settings: Settings, over: Settings | undefined): Set
  * change, so it keeps what they hold; closing a tab or changing its widget
  * does not, so neither a later tab minted with the same literal id nor a
  * freshly chosen widget inherits it.
+ *
+ * Only a tab the PREVIOUS tree had is dropped, never one this tree merely
+ * lacks: the page boots through a placeholder tree and the one last drawn
+ * before the reader's own arrives, and what this device kept (`KEPT`) is
+ * against that one.
  */
+let shown: Set<string> | null = null;
 export function pruneSession(layout: Layout): void {
 	const live = new Set([...scopes(layout)].map(([tabId, { scope, content }]) => sessionKey(scope, tabId, content)));
-	for (const key of inProgress.keys()) if (!live.has(key)) inProgress.delete(key);
+	const gone = [...(shown ?? [])].filter((key) => !live.has(key));
+	shown = live;
+	if (gone.length === 0) return;
+	for (const key of gone) inProgress.delete(key);
 	store.update((all) => {
-		const keys = Object.keys(all);
-		if (keys.length === 0) return all;
-		const kept = keys.filter((key) => live.has(key));
-		return kept.length === keys.length ? all : Object.fromEntries(kept.map((key) => [key, all[key]]));
+		const kept = Object.keys(all).filter((key) => !gone.includes(key));
+		return kept.length === Object.keys(all).length ? all : Object.fromEntries(kept.map((key) => [key, all[key]]));
 	});
 }

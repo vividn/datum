@@ -819,7 +819,8 @@ binary.
   controls never modify the layout» is true by construction rather than
   by a guard. The
   overlay is the DIFFERENCE from the tree, keyed by layout + tab + widget,
-  pruned when a tab closes or its widget is changed, and gone on a reload;
+  pruned when a tab closes or its widget is changed, and kept across a
+  reload on this device's `localStorage`, never synced (da-ray91);
   `Reset widget` drops it along with writing the kind's defaults.
   The contract is `types.ts`; the pure operations and the canon (no
   single-child split, no empty pane, ratios sum to 1) are `tree.ts` (`tests/tree.test.mjs`, node); the
