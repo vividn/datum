@@ -1894,12 +1894,17 @@ fn an_invite_serves_the_other_members_while_its_joiner_joins() {
 /// after the vectors are swapped, so the joiner's first lines know of one
 /// round's ops alone and name it, and the inviter's know them all
 /// (da-y8yde): its first said «8192 ops sent» and no round. Between rounds
-/// the joiner says what it applied, or has received, of the next.
+/// the joiner says what it applied, or has received, of the next: a reads
+/// each round's ops as slowly as b applies them, so a line lands there too
+/// (da-impts), which a loaded runner alone had found.
 #[test]
 fn a_first_sync_of_many_rounds_counts_every_round() {
     let (mut a, mut b) = (Copy::new(), Copy::new());
     import(&a, 600);
-    a.env = vec![("DATUM_SYNC_TEST_ROUND", "200")];
+    a.env = vec![
+        ("DATUM_SYNC_TEST_ROUND", "200"),
+        ("DATUM_SYNC_TEST_SEND_DELAY_MS", "30"),
+    ];
     b.env = vec![
         ("DATUM_SYNC_TEST_ROUND", "200"),
         ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "30"),
@@ -1952,6 +1957,8 @@ fn a_first_sync_of_many_rounds_counts_every_round() {
     // Nor is a line between its rounds a bare «syncing cantown» (da-impts).
     let bare = |l: &&str| l.starts_with("syncing ") && !l.contains(": ");
     assert!(!err.lines().any(|l| bare(&l)), "{err}");
+    let waits = |l: &str| l.contains(": round 2: 0 ops received (");
+    assert!(err.lines().any(waits), "{err}");
     assert!(said.last().is_some_and(|r| r.2 >= 600), "{err}");
     let on = |w: &[(usize, usize, usize)]| w[0].0 <= w[1].0 && w[0].1 <= w[1].1;
     assert!(said.windows(2).all(on), "{err}");

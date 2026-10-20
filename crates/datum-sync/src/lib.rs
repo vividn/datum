@@ -227,14 +227,15 @@ impl Told {
             false => String::new(),
         };
         // A copy sending nothing says what it applied till the next round's
-        // ops come, not a bare «syncing X» (da-impts).
+        // ops come, and then what it has of them, from none: never a bare
+        // «syncing X» (da-impts).
         let how = if self.verifying {
             ": verifying that both copies agree".into()
         } else if done < all || (all > 0 && of == 0) {
             format!(": {taking}{done} of {all} ops applied")
         } else if sent < of {
             format!(": {round}{sent} of {of} ops sent{in_all}")
-        } else if all == 0 && self.got > 0 {
+        } else if all == 0 && (self.got > 0 || n > 0 && of == 0) {
             format!(": {taking}{} ops received", self.got)
         } else if of > 0 {
             format!(": {round}{of} ops sent{in_all}, waiting for it to apply them")
@@ -297,9 +298,13 @@ impl Store for DbStore<'_> {
     }
 
     async fn ops_since(&self, peer: &str, since: &Vector, limit: usize) -> Result<Vec<String>> {
-        Ok(self
+        let ops = self
             .0
-            .sync_ops_round(since, false, Some(peer), Some(limit))?)
+            .sync_ops_round(since, false, Some(peer), Some(limit))?;
+        // Test knob: a slow read, which the peer waits out between rounds.
+        let delay = Duration::from_millis(env("DATUM_SYNC_TEST_SEND_DELAY_MS").unwrap_or(0));
+        std::thread::sleep(delay * ops.len() as u32);
+        Ok(ops)
     }
 
     async fn sign(&self, since: &Vector, n: usize) -> Result<usize> {
