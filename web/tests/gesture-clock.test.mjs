@@ -115,6 +115,30 @@ describe('the clock frozen at the gesture', () => {
 				const after = await page.evaluate(() => window.__gesture);
 				const third = await stamped(app, 'water');
 				assert.ok(near(third.create, after.at), `tap at ${after.at}, stamped ${third.create}`);
+
+				// The key between the tap's down and up, as a loaded runner
+				// delivered them (da-j0l7r): the pointerdown went before the key
+				// was kept, and the tap is still its own.
+				await slowPhone(page, 'click', LATE, 'keydown');
+				await page.mouse.down();
+				const mid = page.keyboard.press('ArrowRight');
+				await new Promise((resolve) => setTimeout(resolve, 100));
+				await page.mouse.up();
+				await mid;
+				await echoed(page, 4);
+				const up = await page.evaluate(() => window.__gesture);
+				const fourth = await stamped(app, 'water');
+				assert.ok(near(fourth.create, up.at), `tap at ${up.at}, stamped ${fourth.create}`);
+
+				// Enter on the focused button: its click is the key's, made after
+				// the busy handler, and the entry is stamped at the keydown.
+				await page.locator('.bar button.widget', { hasText: 'water' }).first().focus();
+				await slowPhone(page, 'keydown', LATE);
+				await page.keyboard.press('Enter');
+				await echoed(page, 5);
+				const entered = await page.evaluate(() => window.__gesture);
+				const fifth = await stamped(app, 'water');
+				assert.ok(near(fifth.create, entered.at), `Enter at ${entered.at}, stamped ${fifth.create}`);
 			},
 			{ clock: null }
 		);

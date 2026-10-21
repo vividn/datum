@@ -294,7 +294,9 @@ async function answerVerb(argv: string[], result: RunResult): Promise<RunResult 
  * after its keydown, and the `submit` is stamped then, past whatever kept a
  * busy page from handling the key: the person pressed it at the keydown.
  * A tap is its own: a busy page runs a waiting tap ahead of that timer, so
- * its `pointerdown` lets go of the key first.
+ * its `pointerdown` lets go of the key first, and a key pressed between a
+ * tap's down and up, after its `pointerdown`, is not the tap's (da-j0l7r).
+ * A click the key made (`detail` 0, Enter on a button) is the key's.
  */
 let key: Event | undefined;
 globalThis.addEventListener?.(
@@ -321,7 +323,7 @@ globalThis.addEventListener?.('pointerdown', () => (key = undefined), true);
 function gesture(): string[] {
 	const event = (globalThis as { event?: Event }).event;
 	if (!event?.isTrusted) return [];
-	const age = Math.max(0, performance.now() - (key ?? event).timeStamp);
+	const age = Math.max(0, performance.now() - (event instanceof MouseEvent && event.detail > 0 ? event : (key ?? event)).timeStamp);
 	return [`${FROZEN_AT}${Math.round(Date.now() - age)}`];
 }
 
