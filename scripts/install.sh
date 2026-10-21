@@ -29,7 +29,18 @@ for arg in "$@"; do
   esac
 done
 
-cargo install --path "$repo_root/crates/datum-cli" --locked
+# Build with the toolchain rust-toolchain.toml pins, named on the command
+# line: rustup picks it from the file anyway, but then warns «default
+# toolchain implicitly overridden» on every machine whose default differs.
+# It is installed first when missing, since rustup's auto-install can be
+# off. A cargo without rustup takes no `+toolchain` and builds as it is.
+cargo=(cargo)
+if command -v rustup >/dev/null; then
+  channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$repo_root/rust-toolchain.toml")"
+  rustup toolchain list | grep -q "^$channel-" || rustup toolchain install --no-self-update "$channel"
+  cargo=(cargo "+$channel")
+fi
+"${cargo[@]}" install --path "$repo_root/crates/datum-cli" --locked
 
 # An installed sync daemon (`datum sync daemon install`) still runs the old
 # binary: restart it on the new one.
