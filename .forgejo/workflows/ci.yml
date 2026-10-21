@@ -314,7 +314,8 @@ jobs:
       # A PR runs only the Rust tests its change can reach (da-fnt3v): those
       # whose coverage, in the `testmap` branch's map of a staging commit
       # (testmap.yml), holds a function around a changed line, every test it
-      # adds or edits by name, and the tests that read the tree. The whole
+      # adds or edits by name, the tests that read the tree, and for
+      # README.md or a docs/*.md the tests that read the docs. The whole
       # suite instead, each reason printed, for a manifest, a build script,
       # CI, a non-Rust file under crates/, a migration, test support, a map
       # missing or over ten commits behind, or a selection that fails. A

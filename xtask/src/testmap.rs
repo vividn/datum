@@ -24,6 +24,14 @@ use serde::{Deserialize, Serialize};
 const MAX_BEHIND: usize = 10;
 /// The cohorts: ci.yml's two nextest steps.
 const COHORTS: [&str; 2] = ["workspace", "e2e-full"];
+/// The tests that read README.md and docs/ as data, which coverage cannot
+/// see: a change to a doc runs them (seconds) where it would run none, so a
+/// drift between the docs and the binary is caught on the PR (da-1nqv4).
+const DOC_READERS: [&str; 3] = [
+    "readme_anti_drift::readme_autogen_sections_in_sync",
+    "readme_anti_drift::every_generated_block_has_markers_in_its_file",
+    "readme_snippets::markdown_bash_snippets_run_against_datum_binary",
+];
 
 #[derive(Serialize, Deserialize)]
 struct Map {
@@ -412,6 +420,11 @@ fn select(map_path: &Path, base: &str, out: &Path) -> Result<()> {
             // reaches tests no coverage of it names; a test file's own tests
             // are found by name below.
             reasons.push(format!("{path}: no function of it is in the map"));
+        } else if is_doc(path) && doc_readers(&map).len() < DOC_READERS.len() {
+            reasons.push(format!(
+                "{path}: a test that reads the docs is not in the map (one of {})",
+                DOC_READERS.join(", ")
+            ));
         }
     }
     if !reasons.is_empty() {
@@ -419,15 +432,22 @@ fn select(map_path: &Path, base: &str, out: &Path) -> Result<()> {
     }
 
     let rust: Vec<&String> = changed.iter().filter(|p| p.ends_with(".rs")).collect();
-    for p in changed.iter().filter(|p| !p.ends_with(".rs")) {
-        println!("{p}: no Rust test reads it");
-    }
     let mut picked: BTreeSet<u32> = BTreeSet::new();
     let mut take = |why: String, tests: &mut dyn Iterator<Item = u32>| {
         let n = picked.len();
         picked.extend(tests);
         println!("{why}: +{} tests", picked.len() - n);
     };
+    for p in changed.iter().filter(|p| !p.ends_with(".rs")) {
+        if is_doc(p) {
+            take(
+                format!("{p}: the tests that read the docs"),
+                &mut doc_readers(&map).into_iter(),
+            );
+        } else {
+            println!("{p}: no Rust test reads it");
+        }
+    }
     let whole = |file: &str| -> Vec<u32> {
         let fns = map.files.get(file).map(Vec::as_slice).unwrap_or_default();
         fns.iter()
@@ -591,6 +611,18 @@ fn trigger(path: &str) -> Option<&'static str> {
         || path.ends_with(".md")
         || path == ".gitignore";
     (!unread).then_some("a file outside crates/ that a test may read (kits/, tests/, scripts/)")
+}
+
+/// README.md or a Markdown file under docs/: what [`DOC_READERS`] read.
+fn is_doc(path: &str) -> bool {
+    path == "README.md" || (path.starts_with("docs/") && path.ends_with(".md"))
+}
+
+/// The map's indices of [`DOC_READERS`].
+fn doc_readers(map: &Map) -> Vec<u32> {
+    (0..map.tests.len() as u32)
+        .filter(|&i| DOC_READERS.contains(&map.tests[i as usize][2].as_str()))
+        .collect()
 }
 
 #[derive(Clone, Copy)]
@@ -770,6 +802,34 @@ mod tests {
         let long =
             "#[test]\n#[should_panic]\n/// a\n/// b\n/// c\n/// d\n/// e\n/// f\nfn far<T>() {}\n";
         assert_eq!(tests_touched(long, &[9]), ["far"]);
+    }
+
+    #[test]
+    fn a_doc_selects_the_tests_that_read_the_docs_and_no_other() {
+        let test = |name: &str| ["workspace".into(), "datum-cli::main".into(), name.into()];
+        let mut tests = vec![
+            test("readme_snippets::parser_tests::tokenize_strips_inline_comments"),
+            test("readme_anti_drift::render_adapters_round_trip_command_names"),
+        ];
+        tests.extend(DOC_READERS.map(test));
+        let map = Map {
+            commit: String::new(),
+            tests,
+            sets: Vec::new(),
+            files: BTreeMap::new(),
+            always: Vec::new(),
+        };
+        for p in ["README.md", "docs/grammar-tokens.md"] {
+            assert!(trigger(p).is_none() && is_doc(p), "{p}");
+            let names: Vec<&str> = doc_readers(&map)
+                .iter()
+                .map(|&i| map.tests[i as usize][2].as_str())
+                .collect();
+            assert_eq!(names, DOC_READERS, "{p}");
+        }
+        for p in ["AGENTS.md", "web/README.md", "docs/parity-audit/notes.txt"] {
+            assert!(!is_doc(p), "{p}");
+        }
     }
 
     #[test]
