@@ -1290,6 +1290,9 @@ The verb says what kind of thing happened:
   note     a timeless jot            datum note coffee too strong
   add      a record with a key       datum add book -K title Dune
 
+datum.day names a field's kind occurrence, on/off, switch or card:
+`setup --verb` takes those (and `on`) for occur, start, switch and add.
+
 An entry is at now unless -t, -d, -q or -y say otherwise. Words after
 the field need a key (`size=large`) unless the field's spec gives them
 one; a note takes them as its text.

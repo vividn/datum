@@ -4,6 +4,7 @@
 use crate::common;
 
 use common::run_cli;
+use datum_core::action::Action;
 use datum_core::field_spec::DEFAULT_FIELD_HEIGHT;
 use datum_core::test_util::fresh_db;
 
@@ -466,8 +467,34 @@ fn the_spec_help_names_the_four_verbs_and_a_wrong_one_points_at_them() {
         let err = run_cli(&["setup", field, "--verb", "event"], &db).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "invalid --verb 'event' — must be one of: occur|start|switch|add \
-             (`datum help logging` says what each is)"
+            "invalid --verb 'event' — must be one of: occur|start|switch|add, \
+             or datum.day's occurrence|on|on/off|card (`datum help logging` says what each is)"
         );
     }
+}
+
+/// `--verb` takes datum.day's names for the four kinds (da-qk4jo), and the
+/// spec stores the canonical verb, so sync and older copies see no change.
+#[test]
+fn setup_verb_takes_the_web_kind_names_and_stores_the_canonical_verb() {
+    let db = fresh_db();
+    for (name, verb) in [
+        ("occurrence", Action::Occur),
+        ("on", Action::Start),
+        ("on/off", Action::Start),
+        ("card", Action::Add),
+    ] {
+        let field = format!("f_{}", name.replace('/', "_"));
+        run_cli(&["setup", &field, "--verb", name], &db).unwrap();
+        assert_eq!(db.load_spec(&field).unwrap().unwrap().verb, verb, "{name}");
+        let stored = db
+            .get_entry(&format!("spec:{field}"))
+            .unwrap()
+            .data
+            .unwrap();
+        assert_eq!(stored["verb"], verb.to_string(), "{name}");
+    }
+    assert!(
+        datum_parse::help::command_help("logging").contains("occurrence, on/off, switch or card")
+    );
 }

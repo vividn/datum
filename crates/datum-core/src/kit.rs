@@ -22,7 +22,6 @@ use std::collections::BTreeMap;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::action::Action;
 use crate::error::{DatumError, Result};
 use crate::field_spec::{Alias, FieldSpec, GlyphBy, Render, SubfieldSpec, DEFAULT_FIELD_HEIGHT};
 
@@ -641,19 +640,13 @@ impl FieldEntry {
     /// resolution. Per-state colors get the same treatment, in
     /// [`StateSpec::color`].
     pub fn into_spec(self, color_resolved: Option<String>) -> Result<FieldSpec> {
-        let action = match self.verb.as_str() {
-            "occur" => Action::Occur,
-            "start" => Action::Start,
-            "switch" => Action::Switch,
-            "add" => Action::Add,
-            other => {
-                return Err(DatumError::Other(format!(
-                    "kit field '{}': invalid verb '{}' (must be {})",
-                    self.name,
-                    other,
-                    crate::field_spec::VERB_CHOICES_TEXT
-                )));
-            }
+        let Some(action) = crate::field_spec::verb_choice(&self.verb) else {
+            return Err(DatumError::Other(format!(
+                "kit field '{}': invalid verb '{}' (must be {})",
+                self.name,
+                self.verb,
+                crate::field_spec::VERB_NAMES_TEXT
+            )));
         };
 
         if self.string_remainder && self.remainder.is_none() {
@@ -1101,6 +1094,7 @@ fn contains_word(upper_haystack: &str, upper_needle: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action::Action;
 
     #[test]
     fn parses_minimal_kit() {
@@ -1126,6 +1120,22 @@ color = "#1a3d6e"
         assert_eq!(f.pos, Some(0.10));
         assert_eq!(f.size, Some(0.30));
         assert_eq!(f.color.as_deref(), Some("#1a3d6e"));
+    }
+
+    /// A kit's `verb =` takes datum.day's kind names too, stored canonical (da-qk4jo).
+    #[test]
+    fn kit_verb_takes_the_web_kind_names() {
+        for (name, verb) in [
+            ("occurrence", Action::Occur),
+            ("on", Action::Start),
+            ("on/off", Action::Start),
+            ("card", Action::Add),
+        ] {
+            let src =
+                format!("[kit]\nname = \"k\"\n\n[[field]]\nname = \"f\"\nverb = \"{name}\"\n");
+            let f = KitToml::from_str(&src).unwrap().fields.remove(0);
+            assert_eq!(f.into_spec(None).unwrap().verb, verb, "{name}");
+        }
     }
 
     #[test]

@@ -7,7 +7,7 @@ use datum_core::{
     action::Action,
     db::{Db, IGNORED_STATE_VALUE},
     entry::{Entry, Verb},
-    field_spec::{FieldSpec, VERB_CHOICES_TEXT},
+    field_spec::{verb_choice, VERB_CHOICES_TEXT, VERB_NAMES_TEXT},
     shape::is_ignored_state,
     time::DatumTime,
     track::track_entry,
@@ -18,9 +18,9 @@ use crate::config::client_id;
 
 /// `--verb V` read, or refused naming the four and where they are explained.
 pub(crate) fn parse_verb(raw: &str) -> Result<Action> {
-    raw.parse().map_err(|_| {
+    verb_choice(raw).ok_or_else(|| {
         anyhow::anyhow!(
-            "invalid --verb '{raw}' — must be one of: {VERB_CHOICES_TEXT} \
+            "invalid --verb '{raw}' — must be one of: {VERB_NAMES_TEXT} \
              (`datum help logging` says what each is)"
         )
     })
@@ -35,10 +35,7 @@ pub(crate) fn parse_verb(raw: &str) -> Result<Action> {
 /// has nothing to infer from, and the user is asked (da-c8mh).
 pub fn resolve_verb(field: &str, requested: Option<&str>, db: &Db) -> Result<Action> {
     if let Some(raw) = requested {
-        let verb = parse_verb(raw)?;
-        let probe = FieldSpec::new(field, verb);
-        probe.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
-        return Ok(verb);
+        return parse_verb(raw);
     }
     if let Some(spec) = db.load_spec(field)? {
         return Ok(spec.verb);

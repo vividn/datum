@@ -49,6 +49,6 @@ pub use interpolation::{
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};
 pub use presentation::{GlyphBy, PresentationSpec, Render, ResolvedPosition, DEFAULT_FIELD_HEIGHT};
 pub use spec::{
-    parse_key_decl, verb_from_log, Covered, DeclaredKey, FieldSpec, KeyKind, SubfieldSpec,
-    SubfieldType, VERB_CHOICES, VERB_CHOICES_TEXT,
+    parse_key_decl, verb_choice, verb_from_log, Covered, DeclaredKey, FieldSpec, KeyKind,
+    SubfieldSpec, SubfieldType, VERB_CHOICES, VERB_CHOICES_TEXT, VERB_NAMES_TEXT,
 };
