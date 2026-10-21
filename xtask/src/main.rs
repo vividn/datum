@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 use datum_parse::help::{render_roff, COMMANDS};
-use xtask::{autogen_section, splice_autogen, README_BLOCKS};
+use xtask::{autogen_section, splice_autogen, AUTOGEN_BLOCKS};
 
 mod testmap;
 
@@ -38,7 +38,7 @@ fn print_usage() {
     eprintln!();
     eprintln!("tasks:");
     eprintln!("  manpages [DIR]      write `man/datum.1` and `man/datum-NAME.1` files");
-    eprintln!("  readme              rewrite the autogen Commands section in README.md");
+    eprintln!("  readme              rewrite the autogen sections of docs/ (commands, aliases, configuration)");
     eprintln!("  check <which>       run a check battery, or one gate by name");
     eprintln!("                        all   full CI-parity battery: the lint gates,");
     eprintln!("                              then fmt, clippy, build, tests, doc tests");
@@ -52,20 +52,18 @@ fn print_usage() {
 
 fn readme() -> Result<()> {
     let root = workspace_root()?;
-    let readme_path = root.join("README.md");
-    let original = fs::read_to_string(&readme_path)
-        .with_context(|| format!("reading {}", readme_path.display()))?;
-    let mut updated = original.clone();
-    for block in README_BLOCKS {
-        updated = splice_autogen(&updated, block, &autogen_section(block)?)?;
+    for (file, block) in AUTOGEN_BLOCKS {
+        let path = root.join(file);
+        let original =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let updated = splice_autogen(&original, block, &autogen_section(block)?)?;
+        if updated == original {
+            eprintln!("{file} ({block}) already in sync");
+            continue;
+        }
+        fs::write(&path, updated).with_context(|| format!("writing {}", path.display()))?;
+        eprintln!("wrote {} ({block})", path.display());
     }
-    if updated == original {
-        eprintln!("README.md already in sync");
-        return Ok(());
-    }
-    fs::write(&readme_path, updated)
-        .with_context(|| format!("writing {}", readme_path.display()))?;
-    eprintln!("wrote {}", readme_path.display());
     Ok(())
 }
 

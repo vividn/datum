@@ -10,15 +10,22 @@ use anyhow::{bail, Context, Result};
 
 use datum_parse::help::{render_markdown, ENV_VARS};
 
-/// The regions of `README.md` that are generated rather than written.
-/// Kept in sync with `crates/datum-cli/tests/readme_anti_drift.rs`, which
-/// fails CI when the file and the generator disagree.
+/// The regions of the docs that are generated rather than written, each with
+/// the file it lives in (relative to the workspace root). Kept in sync with
+/// `crates/datum-cli/tests/readme_anti_drift.rs`, which fails CI when a file
+/// and the generator disagree.
 ///
 /// `COMMANDS` was the only one for a while, and everything outside it went
 /// on drifting: the README's 80-line alias section and `datum help alias`
 /// reached the same false claim from opposite directions, and its env-var
-/// table never learned about `DATUM_ID_DELIMITER` (da-ce7n3).
-pub const README_BLOCKS: &[&str] = &["COMMANDS", "ALIASES", "ENV"];
+/// table never learned about `DATUM_ID_DELIMITER` (da-ce7n3). All three lived
+/// in `README.md` until the README became a short front page (2026-10-20);
+/// each now sits in the docs page about its subject.
+pub const AUTOGEN_BLOCKS: &[(&str, &str)] = &[
+    ("docs/commands.md", "COMMANDS"),
+    ("docs/aliases.md", "ALIASES"),
+    ("docs/configuration.md", "ENV"),
+];
 
 fn begin_marker(block: &str) -> String {
     format!("<!-- BEGIN AUTOGEN: {block} -->")

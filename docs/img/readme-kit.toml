@@ -1,0 +1,22 @@
+[kit]
+name = "readme-pictures"
+version = "0.1"
+description = "What the README's pictures change on top of kits/sample.toml (docs/img/make-images.sh): where you are behind each day, and sleep across its middle."
+
+# The full height of the lane, so it reads as the ground the day happens on; muted, so the fields drawn over it stay clear.
+[[field]]
+name = "environment"
+verb = "switch"
+pos = 0.0
+size = 1.0
+states.home = { color = "#1d2742" }
+states.office = { color = "#3a2e1c" }
+states.outside = { color = "#1d3b26" }
+
+# Installed before the sample kit, whose own `sleep` (a thin band at the top) is then left aside.
+[[field]]
+name = "sleep"
+verb = "start"
+color = "#3c4aa0"
+pos = 0.2
+size = 0.6
