@@ -16,6 +16,7 @@
 # install`), which `cargo install` has no hook for. `--no-completions`
 # skips that, and a failure there only warns: the binary is what matters.
 # A sync daemon already installed is restarted onto the new binary.
+# `scripts/uninstall.sh` undoes all of it and keeps the record.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

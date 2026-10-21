@@ -64,6 +64,7 @@ scripts/install.sh
 `scripts/install.sh` builds the CLI with the dependency versions CI tested, adds tab completion for your shell, and
 restarts the sync daemon if one runs. Run it again after `git pull` to upgrade. Details:
 [docs/install.md](docs/install.md).
+`scripts/uninstall.sh` takes it all out again and keeps your record ([Uninstall](docs/install.md#uninstall)).
 
 ## Typing less
 
