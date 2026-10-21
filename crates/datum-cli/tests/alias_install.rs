@@ -152,12 +152,27 @@ fn list_names_leaves_out_unsayable_names() {
             .output()
             .expect("spawn datum")
     };
-    for name in ["tea1", "two words", "x;touch pwned", "chai"] {
+    for name in ["tea1", "chai"] {
         assert!(datum(&["alias", "set", name, "occur tea"]).status.success());
     }
+    // `alias set` refuses a name like these (da-uqv4r); a state derives one.
+    let states = [
+        "setup",
+        "mood",
+        "--verb",
+        "switch",
+        "--states",
+        "two words,x;touch pwned",
+    ];
+    assert!(datum(&states).status.success());
+    let all = String::from_utf8(datum(&["alias", "list"]).stdout).unwrap();
+    assert!(all.contains("x;touch pwned →"), "{all}");
     let out = datum(&["alias", "list", "--names"]);
     assert!(out.status.success(), "{out:?}");
-    assert_eq!(String::from_utf8(out.stdout).unwrap(), "chai\ntea1\n");
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "chai\nmood\nmoode\ntea1\n"
+    );
     // A typed `--show` it has no rendering for is refused, not ignored.
     let out = datum(&["alias", "list", "--names", "--show", "json"]);
     let stderr = String::from_utf8(out.stderr).unwrap();

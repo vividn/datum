@@ -24,3 +24,26 @@ pub use expand::{
 pub use scope::{
     expand_into_sides, expand_wrapped, verb_is_time_relevant, ExpandedSides, TimeFlags,
 };
+
+/// Whether `name` is a plain word, the only kind an alias may be named
+/// (da-uqv4r): what a shell takes as a first word and runs by name, so
+/// `alias list --names` offers every one. Letters, digits and `_-.+@:`, not
+/// starting with `-`.
+pub fn is_plain_alias_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('-')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || "_-.+@:".contains(c))
+}
+
+/// `Err` saying what an alias name may hold, unless it is a plain word.
+pub fn check_alias_name(name: &str) -> Result<(), String> {
+    match is_plain_alias_name(name) {
+        true => Ok(()),
+        false => Err(format!(
+            "alias name '{name}' is not a plain word: use letters, digits and _ - . + @ :, \
+             not starting with -"
+        )),
+    }
+}

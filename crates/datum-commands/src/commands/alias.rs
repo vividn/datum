@@ -71,12 +71,7 @@ pub fn alias(sub: AliasCommand, db_name: Option<&str>, db: &Db) -> Result<()> {
 fn shell_names<'a>(names: impl Iterator<Item = &'a String>) -> Vec<&'a str> {
     let mut names: Vec<&str> = names
         .map(String::as_str)
-        .filter(|n| {
-            !n.is_empty()
-                && !n.starts_with('-')
-                && n.chars()
-                    .all(|c| c.is_alphanumeric() || "_-.+@:".contains(c))
-        })
+        .filter(|n| datum_parse::alias::is_plain_alias_name(n))
         .collect();
     names.sort_unstable();
     names.dedup();

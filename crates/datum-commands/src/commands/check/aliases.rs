@@ -176,6 +176,43 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
     // aliases never need this walk — their `expands_to` always begins with
     // a KNOWN_SUBCOMMAND.
     let user_aliases = db.list_user_aliases()?;
+
+    // 1d. A name `alias set` and `kit install` now refuse, stored before
+    // they did (da-uqv4r): nothing can type it as a first word.
+    let unplain: Vec<&str> = user_aliases
+        .iter()
+        .map(|a| a.name.as_str())
+        .filter(|n| !datum_parse::alias::is_plain_alias_name(n))
+        .collect();
+    if let Some(first) = unplain.first() {
+        issues.push(Issue {
+            domain: Domain::Aliases,
+            severity: Severity::Warning,
+            category: "alias_name_not_plain",
+            message: format!(
+                "{n} alias name{s} not a plain word; `datum alias remove` {it} \
+                 and set {it} again under one",
+                n = unplain.len(),
+                s = if unplain.len() == 1 { " is" } else { "s are" },
+                it = if unplain.len() == 1 { "it" } else { "them" },
+            ),
+            count: unplain.len(),
+            example: Some(IssueExample {
+                id: None,
+                field: Some(first.to_string()),
+                detail: Some(
+                    unplain
+                        .iter()
+                        .map(|n| format!("'{n}'"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+            }),
+            entries: Vec::new(),
+            rendered_block: String::new(),
+        });
+    }
+
     let mut orphan_count: usize = 0;
     let mut orphan_example: Option<IssueExample> = None;
     let mut cycle_count: usize = 0;

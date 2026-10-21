@@ -225,6 +225,12 @@ fn install_toml(
         datum_parse::field_name::check_declared(&entry.name)
             .with_context(|| format!("kit '{}' at {from}", kit.kit.name))?;
     }
+    // An `[[alias]]` is named as `alias set` would take it (da-uqv4r).
+    for a in &kit.aliases {
+        if let Err(e) = datum_parse::alias::check_alias_name(&a.name) {
+            anyhow::bail!("kit '{}' at {from}: {e}", kit.kit.name);
+        }
+    }
 
     // Trust gate runs BEFORE any DB writes so a "no" answer leaves the
     // DB untouched. Index DDL is also validated up front so the user

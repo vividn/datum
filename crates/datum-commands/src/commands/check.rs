@@ -2297,6 +2297,31 @@ mod tests {
         );
     }
 
+    /// An alias stored under a name that is not a plain word, from before
+    /// `alias set` refused one, is listed by name (da-uqv4r).
+    #[test]
+    fn alias_name_not_plain_is_listed() {
+        let db = Db::open_in_memory().unwrap();
+        for name in ["x;rm", "ok", "x;touch pwned"] {
+            db.save_alias(&Alias {
+                name: name.to_string(),
+                expands_to: "occur coffee".to_string(),
+                description: None,
+            })
+            .unwrap();
+        }
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "alias_name_not_plain")
+            .expect("unplain names must be reported");
+        assert_eq!(issue.count, 2);
+        let detail = issue.example.as_ref().unwrap().detail.as_deref().unwrap();
+        assert_eq!(detail, "'x;rm', 'x;touch pwned'");
+    }
+
     /// A self-referential alias (`a → a`) forms a one-step cycle and is
     /// flagged as `alias_cycle`.
     #[test]

@@ -186,7 +186,8 @@ pub enum AliasEffect {
 }
 
 /// The guards every user-alias write goes through, and the alias it
-/// produces: an empty name is refused, and a name that shadows a built-in
+/// produces: an empty name is refused, and so is one that is not a plain
+/// word (da-uqv4r), and a name that shadows a built-in
 /// subcommand is saved but warned about (da-0b4 — the alias exists, it
 /// just will not fire where a verb is expected).
 pub fn user_alias_to_save(
@@ -196,6 +197,7 @@ pub fn user_alias_to_save(
     if name.is_empty() {
         return Err("alias name must be non-empty".to_string());
     }
+    datum_parse::alias::check_alias_name(name)?;
     let alias = Alias {
         name: name.to_string(),
         expands_to,

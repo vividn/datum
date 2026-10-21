@@ -20,6 +20,7 @@ mod alias_entries;
 mod alias_entry_template;
 mod alias_install;
 mod alias_list_json;
+mod alias_plain_name;
 mod alias_show_json;
 mod alias_time_compose;
 mod batch_undo;
