@@ -96,7 +96,7 @@
     "lodash.unset": "^4.5.2",
     "luxon": "^3.5.0",
     "md5": "^2.3.0",
-    "parse-duration": "1.1.0",
+    "parse-duration": "2.1.9",
     "picocolors": "^1.1.0",
     "pluralize": "^8.0.0",
     "pouchdb": "^9.0.0",
