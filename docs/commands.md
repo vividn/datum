@@ -27,11 +27,11 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 ## LOGGING
 
-- `add` — Register a keyed timeless record (needs an id)
+- `add` — Register a keyed timeless record, by an id (alias: card)
 - `note` — Jot a timeless entry (auto create_time id)
 - `occur` — Record a point-in-time event
-- `start` — Begin a duration-tracked activity
-- `stop` — End a duration-tracked activity (alias: end)
+- `start` — Begin a duration-tracked activity (alias: on)
+- `stop` — End a duration-tracked activity (alias: end, off)
 - `switch` — Transition a field to a new state
 - `track` — Track a field in the now view
 - `ignore` — Ignore a field in the now view

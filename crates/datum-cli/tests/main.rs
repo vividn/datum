@@ -154,6 +154,7 @@ mod update_cmd;
 mod update_refield_cmd;
 mod version;
 mod view_cmd;
+mod web_command_names;
 
 #[test]
 fn every_test_file_is_declared() {

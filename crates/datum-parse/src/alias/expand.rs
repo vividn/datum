@@ -86,10 +86,13 @@ impl<'a> Resolver for MapResolver<'a> {
 pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur",
     "start",
+    "on",
     "stop",
     "end",
+    "off",
     "switch",
     "add",
+    "card",
     "note",
     "tail",
     "head",
@@ -136,6 +139,20 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "reparse",
     "completions",
 ];
+
+/// datum.day's names for three commands (`web/src/lib/track.ts`), each the
+/// command it names (da-zz6en). A side's lead word is read as that command
+/// as aliases expand, so everything after reads `start`, `stop` or `add`;
+/// only a help page keeps the word it was asked by.
+const COMMAND_SYNONYMS: &[(&str, &str)] = &[("on", "start"), ("off", "stop"), ("card", "add")];
+
+/// The command `word` names: itself, or the one a synonym stands for.
+fn command_named(word: &str) -> &str {
+    COMMAND_SYNONYMS
+        .iter()
+        .find(|(s, _)| *s == word)
+        .map_or(word, |(_, c)| c)
+}
 
 /// Verbs that, when supplied as the state argument to `switch`, promote
 /// the entire entry to that verb instead of being recorded as a literal
@@ -263,6 +280,10 @@ pub fn try_expand_alias(
             .count();
         let name_idx = 1 + lead;
         if argv.len() <= name_idx || KNOWN_SUBCOMMANDS.contains(&argv[name_idx].as_str()) {
+            let help = argv.iter().any(|t| t == "--help" || t == "-h");
+            if let Some(word) = argv.get_mut(name_idx).filter(|_| !help) {
+                *word = command_named(word).to_string();
+            }
             return Ok((argv, chain));
         }
         let name = argv[name_idx].clone();
@@ -389,7 +410,8 @@ fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Res
         out.extend(side.iter().cloned());
         let Some(verb) = side
             .first()
-            .filter(|v| matches!(v.as_str(), "occur" | "start" | "switch" | "add"))
+            .map(|v| command_named(v))
+            .filter(|v| matches!(*v, "occur" | "start" | "switch" | "add"))
         else {
             continue;
         };
@@ -1024,6 +1046,18 @@ mod tests {
         let (argv, chain) = try_expand_alias(v(&["datum", "stats"]), &MapResolver(&map)).unwrap();
         assert_eq!(argv, v(&["datum", "stats"]));
         assert!(chain.is_empty());
+    }
+
+    #[test]
+    fn a_line_with_no_command_word_comes_back_as_it_was() {
+        // The branch a missing word takes reads `on` as `start` only where
+        // there is a word (da-zz6en).
+        let map = std::collections::HashMap::new();
+        for line in [&["datum"][..], &["datum", "("]] {
+            let (argv, chain) = try_expand_alias(v(line), &MapResolver(&map)).unwrap();
+            assert_eq!(argv, v(line));
+            assert!(chain.is_empty());
+        }
     }
 
     // ─── da-a2o8 switch-chain collapse ───────────────────────────────────

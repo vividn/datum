@@ -347,14 +347,18 @@ fn render_command(spec: &CommandSpec, input_name: &str, was_alias: bool) -> Stri
         spec.name
     };
 
-    // Under its alias the summary's «(alias: end)» would name the page
-    // itself, so it names the canonical command instead.
+    // Under its alias the summary's «(alias: end, off)» would name the page
+    // itself, so it names the other names instead: «(also: stop, off)».
     let summary = if displayed_name == spec.name {
         spec.summary.to_string()
     } else {
+        let also: Vec<&str> = std::iter::once(spec.name)
+            .chain(spec.aliases.iter().copied())
+            .filter(|n| *n != displayed_name)
+            .collect();
         spec.summary.replace(
-            &format!("(alias: {displayed_name})"),
-            &format!("(also: {})", spec.name),
+            &format!("(alias: {})", spec.aliases.join(", ")),
+            &format!("(also: {})", also.join(", ")),
         )
     };
     let mut s = format!("datum {} — {}\n", displayed_name, summary);

@@ -256,10 +256,10 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
 
     let command = match sub {
         "occur" => Command::Occur(parse_log_args(rest)?),
-        "start" => Command::Start(parse_log_args(rest)?),
-        "stop" | "end" => Command::Stop(parse_log_args(rest)?),
+        "start" | "on" => Command::Start(parse_log_args(rest)?),
+        "stop" | "end" | "off" => Command::Stop(parse_log_args(rest)?),
         "switch" => Command::Switch(parse_log_args(rest)?),
-        "add" => Command::Add(parse_log_args(rest)?),
+        "add" | "card" => Command::Add(parse_log_args(rest)?),
         "note" => Command::Note(parse_log_args(rest)?),
 
         "tail" => Command::Tail(parse_tail_args(rest)?),

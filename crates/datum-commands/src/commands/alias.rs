@@ -96,7 +96,7 @@ fn rc_loop(db_name: Option<&str>) -> Result<String> {
         None => "datum".to_string(),
     };
     Ok(format!(
-        "for __datum_a in $({datum} alias list --names 2>/dev/null) occur start stop switch; do\n  \
+        "for __datum_a in $({datum} alias list --names 2>/dev/null) occur start stop switch on off card; do\n  \
          command -v \"$__datum_a\" >/dev/null 2>&1 || alias \"$__datum_a={datum} $__datum_a\"\n\
          done\n\
          unset __datum_a\n"

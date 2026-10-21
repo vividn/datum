@@ -25,11 +25,11 @@ EXAMPLES:
   datum now                           each field's state now
 
 LOGGING:
-  add      Register a keyed timeless record (needs an id)
+  add      Register a keyed timeless record, by an id (alias: card)
   note     Jot a timeless entry (auto create_time id)
   occur    Record a point-in-time event
-  start    Begin a duration-tracked activity
-  stop     End a duration-tracked activity (alias: end)
+  start    Begin a duration-tracked activity (alias: on)
+  stop     End a duration-tracked activity (alias: end, off)
   switch   Transition a field to a new state
   track    Track a field in the now view
   ignore   Ignore a field in the now view
@@ -159,7 +159,7 @@ fn snapshot_tail_help() {
 // log verb, exercising LOG_FLAGS through the table renderer. The expected
 // string is byte-identical to the legacy `log_help("add")` output.
 const EXPECTED_ADD: &str = "\
-datum add — register a keyed timeless record (needs an id)
+datum add — register a keyed timeless record, by an id (alias: card)
 
 USAGE:
   datum add <FIELD> -K <KEY> [KEY=VALUE]...
@@ -354,7 +354,7 @@ fn snapshot_end_alias_substitutes_verb() {
     // `-t` is the block's END and the duration is the span that preceded
     // it (da-vq0z fixed the words).
     let expected = "\
-datum end — end a duration-tracked activity (also: stop)
+datum end — end a duration-tracked activity (also: stop, off)
 
 Stop, or end, closes what a `start` of the same field opened.
 
@@ -400,7 +400,7 @@ fn snapshot_sync_help_starts_with_header() {
 fn alias_end_renders_with_input_name() {
     let s = command_help("end");
     assert!(
-        s.starts_with("datum end — end a duration-tracked activity (also: stop)\n"),
+        s.starts_with("datum end — end a duration-tracked activity (also: stop, off)\n"),
         "expected `datum end — …` header, got: {}",
         &s[..s.find('\n').unwrap_or(s.len())]
     );
@@ -411,7 +411,34 @@ fn canonical_stop_names_its_alias() {
     // Under its own name the page names the alias; only under the alias
     // does the suffix turn to name the canonical command (da-5jsqx).
     let s = command_help("stop");
-    assert!(s.starts_with("datum stop — end a duration-tracked activity (alias: end)\n"));
+    assert!(s.starts_with("datum stop — end a duration-tracked activity (alias: end, off)\n"));
+}
+
+#[test]
+fn web_names_page_the_command_they_name() {
+    // datum.day's names (da-zz6en): each is the page of the command it
+    // stands for, under its own name, saying which.
+    for (name, title, usage) in [
+        (
+            "on",
+            "begin a duration-tracked activity (also: start)",
+            "datum on <FIELD>",
+        ),
+        (
+            "off",
+            "end a duration-tracked activity (also: stop, end)",
+            "datum off <FIELD>",
+        ),
+        (
+            "card",
+            "register a keyed timeless record, by an id (also: add)",
+            "datum card <FIELD>",
+        ),
+    ] {
+        let s = command_help(name);
+        assert!(s.starts_with(&format!("datum {name} — {title}\n")), "{s}");
+        assert!(s.contains(&format!("\n  {usage} ")), "{s}");
+    }
 }
 
 #[test]
