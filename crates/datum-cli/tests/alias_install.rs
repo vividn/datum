@@ -238,3 +238,86 @@ fn a_shell_before_the_first_write_starts_quietly() {
         assert!(!p.join("none.db").exists(), "{shell}");
     }
 }
+
+/// `uninstall` takes out a loop whatever verbs the build that printed it
+/// had (#1012's lacked `on off card`), the first build's one-line loop
+/// too, and only its own --db's; a head without its `unset` line three
+/// below is left, with what follows it (da-ik88w).
+#[test]
+fn uninstall_takes_an_older_builds_loop() {
+    let tmp = tempfile::tempdir().expect("create tmpdir");
+    let home = tmp.path();
+    let four = |datum: &str, verbs: &str| {
+        format!(
+            "for __datum_a in $({datum} alias list --names 2>/dev/null) {verbs}; do\n  \
+             command -v \"$__datum_a\" >/dev/null 2>&1 || alias \"$__datum_a={datum} $__datum_a\"\n\
+             done\n\
+             unset __datum_a\n"
+        )
+    };
+    // 6627637cf's, `datum ` quoted as one word.
+    let one = |quoted: &str| {
+        format!(
+            "for __datum_a in asleep find; do command -v \"$__datum_a\" >/dev/null 2>&1 || \
+             alias \"$__datum_a=\"{quoted}\"$__datum_a\"; done; unset __datum_a\n"
+        )
+    };
+    let datum = |db: Option<&str>| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
+        if let Some(db) = db {
+            cmd.args(["--db", db]);
+        }
+        let out = cmd
+            .args(["alias", "uninstall", "zsh"])
+            .env("HOME", home)
+            .env_remove("ZDOTDIR")
+            .env("DATUM_HOME", home.join("data"))
+            .env("DATUM_CONFIG_HOME", home.join("config"))
+            .output()
+            .expect("spawn datum");
+        assert!(out.status.success(), "{out:?}");
+        (
+            String::from_utf8(out.stdout).unwrap(),
+            String::from_utf8(out.stderr).unwrap(),
+        )
+    };
+    let rc = home.join(".zshrc");
+    let read = || std::fs::read_to_string(&rc).unwrap();
+    let (old, new) = (
+        "occur start stop switch",
+        "occur start stop switch on off card",
+    );
+    let other = format!(
+        "{}{}",
+        four("datum --db 'my db'", old),
+        one(r"'datum --db '\''my db'\'' '")
+    );
+    std::fs::write(
+        &rc,
+        format!(
+            "# mine\n{}{other}{}export X=1\n{}",
+            four("datum", old),
+            one("'datum '"),
+            four("datum", new)
+        ),
+    )
+    .unwrap();
+    assert!(datum(None).0.starts_with("✓ removed"));
+    assert_eq!(read(), format!("# mine\n{other}export X=1\n"));
+    assert!(datum(None).0.starts_with("not in"));
+    assert!(datum(Some("my db")).0.starts_with("✓ removed"));
+    assert_eq!(read(), "# mine\nexport X=1\n");
+
+    // Its `unset` edited away: the head stays, and so do the person's
+    // lines and the other database's loop below it.
+    let cut = four("datum", new).replace("unset __datum_a\n", "");
+    let kept = format!(
+        "# mine\n{cut}export X=1\n{}",
+        four("datum --db 'my db'", new)
+    );
+    std::fs::write(&rc, &kept).unwrap();
+    let (stdout, stderr) = datum(None);
+    assert!(stdout.starts_with("not in"), "{stdout}");
+    assert!(stderr.contains(".zshrc:2: "), "{stderr}");
+    assert_eq!(read(), kept);
+}

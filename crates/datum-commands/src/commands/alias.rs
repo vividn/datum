@@ -83,7 +83,63 @@ fn shell_names<'a>(names: impl Iterator<Item = &'a String>) -> Vec<&'a str> {
 /// by that name (`find` stays `/usr/bin/find`). Only names come from
 /// datum at a shell's start, never code (vividn, 2026-10-21).
 fn rc_loop(db_name: Option<&str>) -> Result<String> {
-    let datum = match db_name {
+    let datum = datum_word(db_name)?;
+    Ok(format!(
+        "{} occur start stop switch on off card; do\n  \
+         command -v \"$__datum_a\" >/dev/null 2>&1 || alias \"$__datum_a={datum} $__datum_a\"\n\
+         done\n\
+         {LOOP_END}",
+        loop_head(&datum)
+    ))
+}
+
+/// The loop's last line, which every build has printed.
+const LOOP_END: &str = "unset __datum_a\n";
+
+/// The loop's first line up to its verbs, which every four-line build has
+/// printed for `datum`: the verbs after it change (da-ik88w).
+fn loop_head(datum: &str) -> String {
+    format!("for __datum_a in $({datum} alias list --names 2>/dev/null)")
+}
+
+/// `rc` without the loops `install` printed for `datum` (for any, with
+/// none), and the line number of each head left because its `unset` line
+/// is not three lines below it, where every four-line build put it. The
+/// first build's loop (6627637cf) was one line, its names written out.
+pub(crate) fn without_loops(rc: &str, datum: Option<&str>) -> (String, Vec<usize>) {
+    let head = datum.map_or_else(|| "for __datum_a in $(".to_string(), loop_head);
+    let one_end = match datum {
+        Some(datum) => format!(
+            "alias \"$__datum_a=\"{}\"$__datum_a\"; done; unset __datum_a",
+            sh_quote(&format!("{datum} "))
+        ),
+        None => "\"$__datum_a\"; done; unset __datum_a".to_string(),
+    };
+    let lines: Vec<&str> = rc.split_inclusive('\n').collect();
+    let (mut kept, mut left, mut i) = (String::new(), Vec::new(), 0);
+    while i < lines.len() {
+        let line = lines[i];
+        if line.starts_with("for __datum_a in ") && line.trim_end().ends_with(&one_end) {
+            i += 1;
+            continue;
+        }
+        if line.starts_with(&head) {
+            let end = lines.get(i + 3).map(|l| l.trim_end());
+            if end == Some(LOOP_END.trim_end()) {
+                i += 4;
+                continue;
+            }
+            left.push(i + 1);
+        }
+        kept.push_str(line);
+        i += 1;
+    }
+    (kept, left)
+}
+
+/// `datum`, with `--db NAME` when one is named.
+fn datum_word(db_name: Option<&str>) -> Result<String> {
+    Ok(match db_name {
         // Inside the loop's double quotes, where these would expand, and
         // in the alias's text, where a newline would end its command.
         Some(name) if name.chars().any(|c| c.is_control() || "\"$`\\".contains(c)) => {
@@ -94,13 +150,7 @@ fn rc_loop(db_name: Option<&str>) -> Result<String> {
         }
         Some(name) => format!("datum --db {}", sh_quote(name)),
         None => "datum".to_string(),
-    };
-    Ok(format!(
-        "for __datum_a in $({datum} alias list --names 2>/dev/null) occur start stop switch on off card; do\n  \
-         command -v \"$__datum_a\" >/dev/null 2>&1 || alias \"$__datum_a={datum} $__datum_a\"\n\
-         done\n\
-         unset __datum_a\n"
-    ))
+    })
 }
 
 /// `alias install`: the loop on stdout and nothing else, so `datum alias
@@ -119,8 +169,9 @@ fn install(shell: &str, db_name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// `alias uninstall`: take the loop `install` printed out of `shell`'s rc
-/// file, every copy of it.
+/// `alias uninstall`: take the loops `install` printed for this database
+/// out of `shell`'s rc file, every copy, whatever verbs the build that
+/// printed them had.
 fn uninstall(shell: &str, db_name: Option<&str>) -> Result<()> {
     let home = |var| std::env::var_os(var).filter(|v| !v.is_empty());
     let dir = match shell {
@@ -131,18 +182,25 @@ fn uninstall(shell: &str, db_name: Option<&str>) -> Result<()> {
         bail!("HOME is not set: no rc file to change");
     };
     let path = std::path::Path::new(&dir).join(format!(".{shell}rc"));
-    let block = rc_loop(db_name)?;
+    let datum = datum_word(db_name)?;
     let rc = match std::fs::read_to_string(&path) {
         Ok(rc) => rc,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e.into()),
     };
     let shown = path.display();
-    if rc.contains(&block) {
-        std::fs::write(&path, rc.replace(&block, ""))?;
-        println!("✓ removed from {shown}");
-    } else {
+    let (kept, left) = without_loops(&rc, Some(&datum));
+    for line in left {
+        eprintln!(
+            "{shown}:{line}: a datum alias loop whose `unset __datum_a` is not three \
+             lines below its first: left as it is"
+        );
+    }
+    if kept == rc {
         println!("not in {shown}");
+    } else {
+        std::fs::write(&path, kept)?;
+        println!("✓ removed from {shown}");
     }
     Ok(())
 }
