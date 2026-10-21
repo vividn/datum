@@ -70,6 +70,13 @@
 	dashed in the quiet line. A space in an empty frame skips it, but not
 	inside quotes; Enter takes an empty `key=` off, and the CLI fills the
 	defaults.
+
+	A PASTE OF SEVERAL LINES runs them (da-jxfdw): an agent that cannot run
+	commands writes its person a setup to paste here, and a one-line box
+	would join it into one line that fails. Each line runs in order as if
+	typed and entered, blank lines and `#` lines skipped; the first that
+	fails stops it, and stays in the box with the lines after it held
+	behind it (`+N`), so Enter, once it is fixed, goes on from there.
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
@@ -95,6 +102,8 @@
 	/** Index into the history, or -1 while editing a fresh line. */
 	let cursor = -1;
 	let draft = '';
+	/** A pasted block's lines after the one in the box, which Enter runs next. */
+	let held: string[] = [];
 
 	let box: HTMLInputElement;
 	/** The scrollport: `.field`, which the run is longer than. */
@@ -115,6 +124,7 @@
 	 */
 	const keyboard = () => box?.removeAttribute('inputmode');
 	$: if (!$text) keyboard();
+	$: if (!$text) held = [];
 
 	/**
 	 * The pills by ROLE (da-tu30m): context stands before the box like a
@@ -230,10 +240,34 @@
 	function submit(): void {
 		const line = complete($text, $fields, valued);
 		if (!line.trim()) return;
+		if (held.length) return void runLines([line, ...held]);
 		$text = '';
 		draft = '';
 		cursor = -1;
 		void submitLine(line);
+	}
+
+	/** A paste with a line break in it is a block of commands, put where the caret is. */
+	function paste(event: ClipboardEvent): void {
+		const pasted = event.clipboardData?.getData('text/plain') ?? '';
+		if (!/[\r\n]/.test(pasted)) return;
+		event.preventDefault();
+		const block = $text.slice(0, box.selectionStart ?? $text.length) + pasted + $text.slice(box.selectionEnd ?? $text.length);
+		void runLines(block.split(/\r\n|\r|\n/));
+	}
+
+	/** Run each line in turn; the first that fails stays in the box, the rest held behind it. */
+	async function runLines(lines: string[]): Promise<void> {
+		const todo = lines.filter((l) => l.trim() && !l.trimStart().startsWith('#'));
+		$text = '';
+		draft = '';
+		cursor = -1;
+		for (const [i, line] of todo.entries()) {
+			if ((await submitLine(line)).code === 0) continue;
+			$text = line;
+			held = todo.slice(i + 1);
+			return;
+		}
 	}
 
 	function recall(event: KeyboardEvent): void {
@@ -299,6 +333,7 @@
 			bind:value={$text}
 			on:keydown={recall}
 			on:beforeinput={space}
+			on:paste={paste}
 			on:pointerdown={keyboard}
 			on:blur={keyboard}
 			disabled={!$ready}
@@ -329,6 +364,9 @@
 			<!-- One pill is `Pill.svelte`, which the nowview's margin draws
 			     too (da-rskp): one store, two places to see it, and the same
 			     press in either. -->
+			{#if held.length}
+				<span class="held" title={held.join('\n')}>+{held.length}</span>
+			{/if}
 			{#each waiting as key (key.name)}
 				<span class="key" class:required={key.required} data-key={key.name}
 					>{key.name}{#if key.default !== undefined}<span class="default">{key.default}</span>{/if}</span
@@ -717,6 +755,11 @@
 		.pills {
 			transition: none;
 		}
+	}
+
+	.held {
+		color: var(--quiet);
+		white-space: nowrap;
 	}
 
 	input::placeholder {
