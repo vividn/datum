@@ -32,7 +32,7 @@
     "fmt": "eslint src --fix --max-warnings 0"
   },
   "devDependencies": {
-    "@eslint/compat": "^1.2.8",
+    "@eslint/compat": "^2.1.1",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.23.0",
     "@types/jest": "^29.5.12",
