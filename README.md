@@ -53,18 +53,16 @@ datum is still beta: the storage format and the commands can still change, so ke
 
 ## Install
 
-Prebuilt binaries are coming. Until then, build it with Rust's `cargo` from a checkout (no Rust? datum.day needs
-nothing installed):
+On Linux or macOS, with nothing else installed:
 
 ```bash,no_run
-git clone https://github.com/vividn/datum && cd datum
-scripts/install.sh
+curl -fsSL https://datum.day/install.sh | sh
 ```
 
-`scripts/install.sh` builds the CLI with the dependency versions CI tested, adds tab completion for your shell, and
-restarts the sync daemon if one runs. Run it again after `git pull` to upgrade. Details:
+It downloads the prebuilt `datum` for your machine, built from main, checks it against the release's SHA256SUMS,
+puts it in `~/.local/bin`, adds tab completion for your shell, and restarts the sync daemon if one runs. Run it again
+to upgrade. To build from a checkout instead (`scripts/install.sh`, which needs Rust's `cargo`), and to uninstall:
 [docs/install.md](docs/install.md).
-`scripts/uninstall.sh` takes it all out again and keeps your record ([Uninstall](docs/install.md#uninstall)).
 
 ## Typing less
 

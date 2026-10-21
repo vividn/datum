@@ -1,0 +1,138 @@
+# Prebuilt `datum` binaries (da-vpbg3): on each push to main, the CLI for
+# Linux (static musl, so no glibc version matters) and macOS, x86_64 and
+# aarch64, with a SHA256SUMS, as the assets of one rolling release tagged
+# `latest` (a tag the forge holds, below). https://datum.day/install.sh (web/static/install.sh) installs
+# from it. `datum --version` names the commit, so the tag needs no version.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push cancels the run in progress. The publish replaces assets one at
+# a time, so one cut short can leave a binary and SHA256SUMS of different
+# commits; install.sh refuses that mismatch, and the newer run repairs it.
+concurrency:
+  group: release-latest
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_RELEASE_STRIP: symbols
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset }}
+    # Only the repository on GitHub publishes: not a fork, and not the forge
+    # (git.vividn.dev), whose runner executes .github/workflows too and whose
+    # github.server_url is its own (deploy.yml).
+    if: ${{ github.repository == 'vividn/datum' && github.server_url == 'https://github.com' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { asset: datum-x86_64-linux, target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { asset: datum-aarch64-linux, target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { asset: datum-aarch64-macos, target: aarch64-apple-darwin, os: macos-latest }
+          - { asset: datum-x86_64-macos, target: x86_64-apple-darwin, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Full history: build.rs counts every commit for the version's height,
+      # and says `unknown` from a shallow clone.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      # The arm64 Linux image may come without rustup.
+      - name: Install the pinned Rust toolchain
+        run: |
+          if ! command -v rustup > /dev/null; then
+            curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install --no-self-update
+          rustup target add ${{ matrix.target }}
+
+      # ring and rusqlite's bundled SQLite compile C, which a musl target
+      # needs a musl C compiler for. Each Linux build runs on its own arch.
+      - name: Install musl-gcc
+        if: ${{ endsWith(matrix.target, '-musl') }}
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+          target=${{ matrix.target }}
+          echo "CC_${target//-/_}=musl-gcc" >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p datum-cli --target ${{ matrix.target }}
+
+      # Not the x86_64 macOS build, cross-compiled on an arm64 runner.
+      - name: Check it runs and names this commit
+        if: ${{ matrix.target != 'x86_64-apple-darwin' }}
+        run: |
+          out=$(target/${{ matrix.target }}/release/datum --version)
+          echo "$out"
+          case "$out" in *"(${GITHUB_SHA:0:7})"*) ;; *) echo "::error::--version does not name ${GITHUB_SHA:0:7}"; exit 1 ;; esac
+
+      - name: Name the binary
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/datum dist/${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish the latest release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # The `latest` tag is the forge's: its push mirror pushes every tag with
+      # --mirror, so it deletes one GitHub alone holds, and GitHub drafts the
+      # release (the downloads 404). So this never creates or moves it, and
+      # refuses to publish when the mirror has not brought it. Its commit is
+      # whatever the forge's says; the notes and `datum --version` name the
+      # build's. Binaries first and SHA256SUMS last.
+      - name: Write SHA256SUMS and publish
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/git/ref/tags/latest" > /dev/null || {
+            echo "::error::No 'latest' tag on GitHub. It must come from the forge, whose push mirror deletes a tag only GitHub has: push it there (git push origin <main sha>:refs/tags/latest) and let the mirror sync."
+            exit 1
+          }
+          cd dist
+          sha256sum datum-* > SHA256SUMS
+          cat SHA256SUMS
+          notes="The datum CLI built from ${GITHUB_SHA}. Install: curl -fsSL https://datum.day/install.sh | sh"
+          if gh release view latest > /dev/null 2>&1; then
+            gh release upload latest datum-* --clobber
+            gh release upload latest SHA256SUMS --clobber
+            gh release edit latest --notes "$notes"
+          else
+            gh release create latest datum-* SHA256SUMS --verify-tag --title "datum (latest main)" --notes "$notes" --latest
+          fi

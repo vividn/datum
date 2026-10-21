@@ -1,6 +1,25 @@
 # Installing datum
 
-There are no published binaries yet. From a checkout:
+On Linux or macOS (x86_64 or aarch64), with no Rust:
+
+```bash,no_run
+curl -fsSL https://datum.day/install.sh | sh
+```
+
+It downloads the `datum` built from main's latest commit (the `latest`
+release on GitHub, which each push to main replaces), checks it against
+the release's `SHA256SUMS` and refuses a mismatch, and installs it to
+`~/.local/bin`, or `$DATUM_INSTALL_DIR`, saying so if that is not on
+your `PATH`. Then it installs tab completion and restarts a sync daemon,
+as `scripts/install.sh` does below; `| sh -s -- --no-completions` skips
+the completion. Run it again to upgrade; `datum --version` names the
+commit. To uninstall this one: `datum sync daemon uninstall`, `datum
+completions uninstall`, then remove `datum` from the directory it went
+to (`rm ~/.local/bin/datum` by default).
+
+## From a checkout
+
+For contributors, or another platform, build it with Rust's `cargo`:
 
 ```bash,no_run
 cargo install --path crates/datum-cli --locked

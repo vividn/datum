@@ -30,6 +30,11 @@ check_dist() {
     echo '  Import it from src/ with ?url so Vite hashes the name (da-tvg0).' >&2
     return 1
   fi
+  # Refused before anything uploads, not deployed green with a 404 at the
+  # `curl … | sh` the docs give.
+  for page in install.sh; do
+    [ -f "$dist/$page" ] || { echo "REFUSING: no $dist/$page (from web/static/)." >&2; return 1; }
+  done
 }
 
 # `--check-dist <dir>`: that assertion alone, against an already-built tree.
@@ -119,6 +124,14 @@ done < <(find "$DIST" -name '*.wasm')
 echo "==> syncing entry points (no-cache)"
 "${AWS[@]}" sync "$DIST" "$S3" $DRY \
   --exclude "_app/immutable/*" --exclude "*.wasm" \
+  --cache-control "no-cache,must-revalidate"
+
+# `curl -fsSL https://datum.day/install.sh | sh` (static/install.sh): a guessed
+# type for .sh is application/x-sh, which a browser downloads rather than shows,
+# so the script is read as text before it is piped to a shell.
+echo "==> fixing install.sh's content-type"
+"${AWS[@]}" cp "$DIST/install.sh" "$S3/install.sh" $DRY \
+  --content-type "text/plain; charset=utf-8" \
   --cache-control "no-cache,must-revalidate"
 
 echo
