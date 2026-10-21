@@ -178,6 +178,10 @@ describe('a press', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
+			// The bar draws FIXTURE's last field, `untracked`, a beat after its
+			// echo, and `note` moves 123px right when it does (da-z8fpu): a
+			// click whose down and up straddle that lands on no button.
+			await app.idle();
 			const echoes = (await app.echoes()).length;
 			await page.locator('.bar [data-field="note"]').click();
 			await page.waitForFunction(() => {
