@@ -416,6 +416,17 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         print!("{}", now.render(was.as_ref()));
     }
     warn_alias_conflicts(&report);
+    // da-kba2e: a state's alias a command takes the name of never fires.
+    for state in states_named(&args) {
+        if report.saved.contains(state)
+            && datum_parse::alias::KNOWN_SUBCOMMANDS.contains(&state.as_str())
+        {
+            eprintln!(
+                "  ⚠ alias '{state}' shadowed by the command `datum {state}`, which runs instead; log the state with `datum switch {} {state}`",
+                args.field
+            );
+        }
+    }
     Ok(())
 }
 

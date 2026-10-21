@@ -270,6 +270,38 @@ fn subprocess_alias_set_builtin_name_warns_on_stderr() {
     );
 }
 
+/// A state named after a command derives an alias the command takes:
+/// `setup` warns as `alias set` does, for `--states` and `--add-state`,
+/// and not for a state that is no command's name (da-kba2e).
+#[test]
+fn subprocess_setup_state_named_after_a_command_warns_on_stderr() {
+    let env = Env::new();
+    let out = env.run(&[
+        "setup",
+        "payment",
+        "--verb",
+        "switch",
+        "--states",
+        "cash,check",
+    ]);
+    assert_ok(&out, "setup --states");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("alias 'check' shadowed by the command `datum check`")
+            && stderr.contains("`datum switch payment check`")
+            && !stderr.contains("'cash'"),
+        "expected one shadow warning on stderr, got: {stderr}"
+    );
+    let out = env.run(&["setup", "payment", "--add-state", "merge"]);
+    assert_ok(&out, "setup --add-state");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("alias 'merge' shadowed by the command `datum merge`")
+            && !stderr.contains("'check'"),
+        "expected one shadow warning on stderr, got: {stderr}"
+    );
+}
+
 /// da-oo6tr: a read of a database that does not exist exits non-zero,
 /// names the path and leaves no file; a write creates it, and then the
 /// read runs and writes no rows. `info` says it is missing and exits 0.

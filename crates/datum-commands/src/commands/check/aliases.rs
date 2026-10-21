@@ -31,6 +31,9 @@ pub(super) struct AliasReport {
 /// * `alias_cycle` — expanding a user/kit alias revisits a name in the
 ///   chain. The `expand_argv` pre-pass would bail at
 ///   [`MAX_ALIAS_HOPS`], but the cycle would otherwise go undetected.
+/// * `alias_shadowed_by_command` — a user, kit or derived alias whose name
+///   a command takes, which runs instead (da-kba2e); each is listed with
+///   the full form that still reaches it.
 /// * `spec_alias_names_stale` — an error: `spec_alias_names` lacks a row a
 ///   fill writes, holds one it does not, or a name read by it is not the
 ///   index's (da-ppkv6).
@@ -172,9 +175,6 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
         });
     }
 
-    // 2 + 3. Orphans and cycles in user/kit alias chains. Spec-derived
-    // aliases never need this walk — their `expands_to` always begins with
-    // a KNOWN_SUBCOMMAND.
     let user_aliases = db.list_user_aliases()?;
 
     // 1d. A name `alias set` and `kit install` now refuse, stored before
@@ -213,6 +213,57 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
         });
     }
 
+    // 1e. An alias a command took the name of (da-kba2e): the command runs
+    // instead, so a user's alias saved before the command was, or a
+    // state's, a field's own word, never fires by its name.
+    let shadowed: Vec<datum_core::field_spec::Alias> = {
+        let index = db.spec_alias_index()?;
+        // A user or kit row (both `list_user_aliases`) shadows a derived
+        // one of its name, as lookup does: that derived one is lost to the
+        // row, which `setup` says, not to the command, so it is not listed.
+        // Within a source a name is one alias: a user or kit row's slug is
+        // its name, and `index.entries` is keyed by it (a second spec's is
+        // in `collisions`, `alias_state_collision` above).
+        let named: std::collections::BTreeMap<&str, &datum_core::field_spec::Alias> = index
+            .entries
+            .values()
+            .chain(&user_aliases)
+            .filter(|a| KNOWN_SUBCOMMANDS.contains(&a.name.as_str()))
+            .map(|a| (a.name.as_str(), a))
+            .collect();
+        named.into_values().cloned().collect()
+    };
+    if let Some(first) = shadowed.first() {
+        let line = |a: &datum_core::field_spec::Alias| {
+            format!(
+                "'{name}' → datum {to}: `datum {name}` runs the command; type `datum {to}`",
+                name = a.name,
+                to = a.expands_to,
+            )
+        };
+        issues.push(Issue {
+            domain: Domain::Aliases,
+            severity: Severity::Warning,
+            category: "alias_shadowed_by_command",
+            message: format!(
+                "{n} alias{es} named after a command, which runs instead",
+                n = shadowed.len(),
+                es = if shadowed.len() == 1 { "" } else { "es" },
+            ),
+            count: shadowed.len(),
+            example: Some(IssueExample {
+                id: None,
+                field: Some(first.name.clone()),
+                detail: Some(line(first)),
+            }),
+            entries: Vec::new(),
+            rendered_block: shadowed.iter().map(|a| line(a) + "\n").collect(),
+        });
+    }
+
+    // 2 + 3. Orphans and cycles in user/kit alias chains. Spec-derived
+    // aliases never need this walk — their `expands_to` always begins with
+    // a KNOWN_SUBCOMMAND.
     let mut orphan_count: usize = 0;
     let mut orphan_example: Option<IssueExample> = None;
     let mut cycle_count: usize = 0;
@@ -343,4 +394,44 @@ fn analyze_chain(db: &Db, start: &str) -> Result<ChainOutcome> {
     }
     // Hit the hop budget without resolving — treat as cycle.
     Ok(ChainOutcome::Cycle(visited))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use datum_core::action::Action;
+    use datum_core::field_spec::{Alias, FieldSpec};
+
+    /// A state's alias and a user's stored before a command took its name
+    /// are each listed with the full form that still reaches it (da-kba2e).
+    #[test]
+    fn alias_named_after_a_command_is_listed() {
+        let db = Db::open_in_memory().unwrap();
+        let mut payment = FieldSpec::new("payment", Action::Switch);
+        payment.allowed_states = Some(vec!["cash".into(), "check".into()]);
+        payment.regenerate_derived_aliases();
+        db.save_field_spec(&payment).unwrap();
+        db.save_alias(&Alias {
+            name: "stats".to_string(),
+            expands_to: "occur coffee".to_string(),
+            description: None,
+        })
+        .unwrap();
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "alias_shadowed_by_command")
+            .expect("shadowed aliases must be reported");
+        assert_eq!(issue.severity, Severity::Warning);
+        assert_eq!(issue.count, 2);
+        assert_eq!(
+            issue.rendered_block,
+            "'check' → datum switch payment check: `datum check` runs the command; \
+             type `datum switch payment check`\n\
+             'stats' → datum occur coffee: `datum stats` runs the command; \
+             type `datum occur coffee`\n"
+        );
+    }
 }
