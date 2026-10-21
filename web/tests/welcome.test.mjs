@@ -117,6 +117,27 @@ describe('a first visit', () => {
 		}, FRESH_DESKTOP);
 	});
 
+	// da-s1ek1, vividn, 2026-10-21: «It should be clear on the front page of datum.day that you can point your agent
+	// there to help you get setup with your data.» One line, linking the guide an agent reads, on a phone's first screen.
+	test('it says an AI agent can help you set up, links the guide for agents, and is on a phone\'s first screen', async () => {
+		await withApp(async ({ page }) => {
+			const line = page.locator('.host.welcome p', { hasText: 'Using an AI agent?' });
+			assert.equal(
+				(await line.innerText()).replace(/\s+/g, ' '),
+				'Using an AI agent? Point it at datum.day and it can help you set up what you track.'
+			);
+			assert.equal(await line.getByRole('link', { name: 'datum.day', exact: true }).getAttribute('href'), 'https://datum.day/agents.md');
+			// Read before any scrolling: the line ends inside the pane that scrolls the welcome, which is at its top.
+			const at = await line.evaluate((p) => {
+				let el = p.parentElement;
+				while (el && getComputedStyle(el).overflowY === 'visible') el = el.parentElement;
+				return { bottom: p.getBoundingClientRect().bottom, within: el.getBoundingClientRect().bottom, scrolled: el.scrollTop };
+			});
+			assert.equal(at.scrolled, 0);
+			assert.ok(at.bottom <= at.within, `the line ends at ${at.bottom}, below the pane's ${at.within}`);
+		}, FRESH_PHONE);
+	});
+
 	// It was «fits a phone without scrolling» until 2026-10-14, when the welcome became the Help place's front page,
 	// sections and links and all: vividn, 10-09, «some scrolling and reading rather than all fitting on one page». What
 	// still matters on a phone is that it never scrolls sideways, and that the text past the pane can be scrolled to.

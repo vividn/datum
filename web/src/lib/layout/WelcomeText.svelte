@@ -55,6 +55,13 @@
 			activity). For each field you log <b>entries</b>, timestamped logs documenting the field in your life. Entries can
 			change a field's <b>state</b>, which persists until the next state change.
 		</p>
+		<!-- vividn, 2026-10-21: «It should be clear on the front page of datum.day that you can point your agent there
+		     to help you get setup with your data.» The guide it reads is /agents.md; the public one, since the agent
+		     is not on this device. On the first screen, before the shapes. -->
+		<p>
+			Using an AI agent? Point it at <a href="https://datum.day/agents.md" target="_blank" rel="noopener">datum.day</a>
+			and it can help you set up what you track.
+		</p>
 		<h3>Field shapes</h3>
 		<p>Fields can take different shapes:</p>
 		<ul class="shapes">
@@ -287,5 +294,9 @@ comment: obsessed with time</pre>
 
 	code {
 		color: var(--ink-bright);
+	}
+
+	a {
+		color: var(--accent-bright);
 	}
 </style>
