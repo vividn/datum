@@ -162,6 +162,9 @@ struct Told {
     round: (usize, usize, usize),
     got: usize,
     applied: (usize, usize),
+    /// The round reading what it sends, and the baselines it signed so far,
+    /// until it sends (da-la01w).
+    preparing: Option<(usize, usize)>,
     /// A round received was full: the ops applied are one of several
     /// rounds', and their line names which (da-y8yde).
     more: bool,
@@ -180,6 +183,7 @@ impl Told {
             round: (0, 0, 0),
             got: 0,
             applied: (0, 0),
+            preparing: None,
             more: false,
             verifying: false,
         }))
@@ -200,6 +204,7 @@ impl Told {
             self.round,
             self.got,
             self.applied,
+            self.preparing,
             self.more,
             self.verifying,
         ) = Default::default();
@@ -231,6 +236,12 @@ impl Told {
         // «syncing X» (da-impts).
         let how = if self.verifying {
             ": verifying that both copies agree".into()
+        } else if let Some((n, signed)) = self.preparing {
+            let signed = match signed {
+                0 => String::new(),
+                _ => format!(", {signed} baselines signed"),
+            };
+            format!(": preparing round {n}: reading what to send{signed}")
         } else if done < all || (all > 0 && of == 0) {
             format!(": {taking}{done} of {all} ops applied")
         } else if sent < of {
@@ -357,8 +368,12 @@ impl Store for DbStore<'_> {
             let before = t.round.1 + t.sent.1;
             t.round = (n, before, t.round.2.max(before + left));
             // The round's received ops count from none (da-impts).
-            (t.sent, t.got, t.applied) = Default::default();
+            (t.sent, t.got, t.applied, t.preparing) = Default::default();
         });
+    }
+
+    fn preparing(&self, n: usize, signed: usize) {
+        self.tell(|t| t.preparing = Some((n, signed)));
     }
 
     fn more(&self) {

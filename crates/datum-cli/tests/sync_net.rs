@@ -1896,7 +1896,9 @@ fn an_invite_serves_the_other_members_while_its_joiner_joins() {
 /// (da-y8yde): its first said «8192 ops sent» and no round. Between rounds
 /// the joiner says what it applied, or has received, of the next: a reads
 /// each round's ops as slowly as b applies them, so a line lands there too
-/// (da-impts), which a loaded runner alone had found.
+/// (da-impts), which a loaded runner alone had found. The inviter, reading
+/// them and signing the import's baselines, says it is preparing the round
+/// (da-la01w).
 #[test]
 fn a_first_sync_of_many_rounds_counts_every_round() {
     let (mut a, mut b) = (Copy::new(), Copy::new());
@@ -1941,6 +1943,12 @@ fn a_first_sync_of_many_rounds_counts_every_round() {
     let first = sent.lines().find(|l| l.contains(" ops sent")).unwrap_or("");
     assert!(first.contains(": round 1: "), "{sent}");
     assert!(rounds.iter().all(|r| r.2 >= 600), "{sent}");
+    // Nor is a line before its first round's ops a bare «syncing cantown»:
+    // it reads them for six seconds (da-la01w).
+    let bare = |l: &&str| l.starts_with("syncing ") && !l.contains(": ");
+    assert!(!sent.lines().any(|l| bare(&l)), "{sent}");
+    let signs = ": preparing round 1: reading what to send, 600 baselines signed (";
+    assert!(sent.contains(signs), "{sent}");
     let said: Vec<(usize, usize, usize)> = err
         .lines()
         .filter_map(|l| {
@@ -1955,7 +1963,6 @@ fn a_first_sync_of_many_rounds_counts_every_round() {
     let applied = err.lines().filter(|l| l.contains(" ops applied")).count();
     assert_eq!(applied, said.len(), "{err}");
     // Nor is a line between its rounds a bare «syncing cantown» (da-impts).
-    let bare = |l: &&str| l.starts_with("syncing ") && !l.contains(": ");
     assert!(!err.lines().any(|l| bare(&l)), "{err}");
     let waits = |l: &str| l.contains(": round 2: 0 ops received (");
     assert!(err.lines().any(waits), "{err}");

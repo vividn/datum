@@ -205,6 +205,9 @@ pub trait Store {
     /// exact in a round short of [`ROUND`], the last, and in a full one as
     /// many as this copy's vector holds past the peer's (da-ija0z).
     fn round(&self, _n: usize, _left: usize) {}
+    /// Round `n` reads what it sends, `signed` of an import's baselines
+    /// signed so far: the slow part of a first round (da-la01w).
+    fn preparing(&self, _n: usize, _signed: usize) {}
     /// `done` of the `of` ops a round sends are on the wire.
     fn sent(&self, _done: usize, _of: usize) {}
     /// `n` of the ops a round receives have come.
@@ -796,15 +799,18 @@ fn pace(size: usize, took: n0_future::time::Instant) -> usize {
 /// Sign the baselines a round's ops begin with in chunks, as [`apply`]
 /// applies, a [`BUSY`] after each: a bulk import's, signed in one lock,
 /// sent the peer nothing past its idle timeout (da-f7mmn).
-async fn sign(store: &impl Store, s: &mut SendStream, since: &Vector) -> Result<()> {
+async fn sign(store: &impl Store, s: &mut SendStream, since: &Vector, n: usize) -> Result<()> {
     // Test knob: the keepalives off (the mutation control).
     let keepalive = env::<u8>("DATUM_SYNC_TEST_KEEPALIVE") != Some(0);
-    let mut size = CHUNK;
+    let (mut size, mut signed) = (CHUNK, 0);
     loop {
         // The round's receiving half reads meanwhile.
         n0_future::future::yield_now().await;
         let took = n0_future::time::Instant::now();
-        if store.sign(since, size).await? < size {
+        let chunk = store.sign(since, size).await?;
+        signed += chunk;
+        store.preparing(n, signed);
+        if chunk < size {
             return Ok(());
         }
         size = pace(size, took);
@@ -851,11 +857,12 @@ async fn exchange(
         // Counted as each goes, so a session cut short says what it cost.
         let (id, waits, sent) = (&rep.id, rep.waits, &mut rep.sent);
         let send = async {
+            store.preparing(n, 0);
             // To a peer that waits, the round's baselines are signed first,
             // a BUSY between their chunks, as the peer's ops are read.
             let ops = match waits {
                 true => {
-                    sign(store, s, &round.1).await?;
+                    sign(store, s, &round.1, n).await?;
                     busy(s, store.ops_since(id, &round.1, self::round())).await?
                 }
                 false => store.ops_since(id, &round.1, self::round()).await?,
