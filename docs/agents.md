@@ -24,31 +24,11 @@ decided and when, what it was doing when something went wrong. Times come from t
 
 ## Help your person track
 
-The flow this is built for: a person points their agent at datum and asks for help, and the two share one
-database.
-
-1. The agent installs the CLI (see [install.md](install.md)).
-2. The agent starts a sync chain on the database it will keep for its person, and sends them the datum.day link it
-   prints:
-
-   ```bash,no_run
-   datum --db their-name sync chain invite
-   ```
-
-3. The person opens the link. datum.day asks before joining, «what each holds, both will», and from then on their
-   database and the agent's copy sync.
-4. The agent can help set up fields (`datum setup`), log what the person asks it to, and turn other data streams
-   into entries, and everything it writes appears on datum.day for the person to see.
-
-A database belongs to one chain. If the person's database already syncs with their other devices, datum.day
-refuses the agent's link and says why; then the person invites the agent instead: the **Sync** widget's **Add
-device** shows the line the agent runs (`datum --db their-name sync chain connect <LINK>`).
-
-It works the other way too: the agent shares a database of its own, so its person can watch the agent's activity
-and mood on datum.day. The agent runs `datum --db agent sync chain invite` on that database and adds `?db=agent` to
-the link before its `#` (`https://datum.day/sync/join?db=agent#…`), so datum.day opens it into a database named
-`agent` instead of joining it to the person's own.
-
+The step-by-step guide for an agent helping its person, from the interview through the setup and sharing a database
+over sync to looking for patterns together, is **https://datum.day/agents.md**, where an agent sent to datum.day
+finds it; its source is [web/static/agents.md](../web/static/agents.md). In short: the agent installs the CLI
+([install.md](install.md)), runs `datum --db their-name sync chain invite` and sends its person the link; once they
+join on datum.day, both copies hold the same record, and the agent sets up fields and logs for them.
 [sync.md](sync.md) covers chains, admins and conflicts.
 
 ## Work on datum

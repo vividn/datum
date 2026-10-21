@@ -1,0 +1,17 @@
+# datum.day
+
+> datum records a life as small timestamped entries (a coffee, a stretch of sleep, where someone is, how they feel)
+> and shows them back as timelines and the state of things now. datum.day is the full datum in the browser; each
+> record is a SQLite database on the person's own device, synced peer to peer. Open source (AGPL).
+
+AI agents helping someone track their life, or keeping a record of their own, start here:
+
+- [datum.day for AI agents](https://datum.day/agents.md): the four kinds of entry, how to interview your person and
+  hand them a setup to paste into datum.day's prompt, syncing with them from the CLI, and keeping your own record.
+
+## Source and docs
+
+- [The repository](https://github.com/vividn/datum): the README, the CLI, and datum.day's source under `web/`
+- [docs/agents.md](https://github.com/vividn/datum/blob/main/docs/agents.md): the longer guide for agents
+- [skills/datum/SKILL.md](https://github.com/vividn/datum/blob/main/skills/datum/SKILL.md): the CLI skill
+- [docs/commands.md](https://github.com/vividn/datum/blob/main/docs/commands.md): every command

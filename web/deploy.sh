@@ -30,9 +30,10 @@ check_dist() {
     echo '  Import it from src/ with ?url so Vite hashes the name (da-tvg0).' >&2
     return 1
   fi
-  # Refused before anything uploads, not deployed green with a 404 at the
-  # `curl … | sh` the docs give.
-  for page in install.sh; do
+  # The pages for AI agents, and the installer the docs pipe to a shell: a
+  # build that lost one is refused here, before anything uploads, rather than
+  # deployed green with a 404 (canary-inkling on #1023; #1026).
+  for page in agents.md llms.txt install.sh; do
     [ -f "$dist/$page" ] || { echo "REFUSING: no $dist/$page (from web/static/)." >&2; return 1; }
   done
 }
@@ -126,13 +127,19 @@ echo "==> syncing entry points (no-cache)"
   --exclude "_app/immutable/*" --exclude "*.wasm" \
   --cache-control "no-cache,must-revalidate"
 
-# `curl -fsSL https://datum.day/install.sh | sh` (static/install.sh): a guessed
-# type for .sh is application/x-sh, which a browser downloads rather than shows,
-# so the script is read as text before it is piped to a shell.
-echo "==> fixing install.sh's content-type"
-"${AWS[@]}" cp "$DIST/install.sh" "$S3/install.sh" $DRY \
-  --content-type "text/plain; charset=utf-8" \
-  --cache-control "no-cache,must-revalidate"
+# The pages for AI agents (static/agents.md, static/llms.txt) are UTF-8 with
+# «» and the kind glyphs; a guessed type carries no charset, and a reader that
+# assumes Latin-1 garbles them. install.sh's guessed type, application/x-sh,
+# makes a browser download it rather than show it, so it goes as text before it
+# is piped to a shell (`curl -fsSL https://datum.day/install.sh | sh`). So each
+# type is set, as the wasm's is.
+echo "==> fixing the agent pages' and install.sh's content-type"
+for page in agents.md:text/markdown llms.txt:text/plain install.sh:text/plain; do
+  name="${page%%:*}"
+  "${AWS[@]}" cp "$DIST/$name" "$S3/$name" $DRY \
+    --content-type "${page#*:}; charset=utf-8" \
+    --cache-control "no-cache,must-revalidate"
+done
 
 echo
 if [ -n "$DRY" ]; then

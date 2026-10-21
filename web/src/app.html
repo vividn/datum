@@ -16,6 +16,15 @@
 			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
 		/>
 		<title>datum</title>
+		<!-- What an agent fetching this page reads before any script runs: the
+		     page itself is drawn by JavaScript, so without these an agent sees
+		     the one word above. agents.md is the guide for AI agents, llms.txt
+		     the convention that points to it. -->
+		<meta
+			name="description"
+			content="datum records a life as small timestamped entries and shows them back. AI agents: read https://datum.day/agents.md to help your person set up their tracking."
+		/>
+		<link rel="alternate" type="text/markdown" href="/agents.md" title="datum.day for AI agents" />
 		<!-- The browser's own chrome around the page. A literal because a
 		     meta tag is read before any stylesheet, so no token can reach it. -->
 		<meta name="theme-color" content="#1a1a2e" />
@@ -23,6 +32,13 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<!-- Shown only without scripts, which is how most agents fetch a page. -->
+		<noscript>
+			<p>
+				datum records a life as small timestamped entries. AI agents: the guide to helping your
+				person set up their tracking is at <a href="/agents.md">datum.day/agents.md</a>.
+			</p>
+		</noscript>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

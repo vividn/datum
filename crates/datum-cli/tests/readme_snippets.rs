@@ -48,8 +48,15 @@ fn workspace_root() -> PathBuf {
 /// (da-yc4n8) documents the punctuation of the grammar, and every example on
 /// it is a transcript of a real run — this is what keeps it that way.
 /// The docs pages that took the README's runnable examples on 2026-10-20 are
-/// here for the same reason.
-const SNIPPET_DOCS: &[&str] = &["README.md", "docs/grammar-tokens.md", "docs/agents.md"];
+/// here for the same reason, and so is datum.day's guide for AI agents, whose
+/// setup block an agent runs as written (it once set `mood` up with one key and
+/// then gave it two values).
+const SNIPPET_DOCS: &[&str] = &[
+    "README.md",
+    "docs/grammar-tokens.md",
+    "docs/agents.md",
+    "web/static/agents.md",
+];
 
 #[derive(Debug)]
 struct Block {
