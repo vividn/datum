@@ -24,8 +24,11 @@
 //! ## Isolation
 //!
 //! Each block runs against its own `tempfile::TempDir`, exported as
-//! `DATUM_HOME` / `DATUM_DB` / `DATUM_CONFIG_HOME`. Commands inside one
-//! block share state; blocks do not bleed into each other.
+//! `DATUM_HOME` / `DATUM_DB` / `DATUM_CONFIG_HOME`, and as `HOME` /
+//! `XDG_CONFIG_HOME` / `XDG_DATA_HOME` too, so a command that writes under
+//! the home (`completions install`, an rc file) never writes the caller's
+//! (da-95o6k). Commands inside one block share state; blocks do not bleed
+//! into each other.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -223,6 +226,7 @@ fn tokenize(line: &str) -> Vec<String> {
 }
 
 struct TestEnv {
+    root: PathBuf,
     home: PathBuf,
     config_home: PathBuf,
     db: PathBuf,
@@ -238,24 +242,59 @@ impl TestEnv {
         std::fs::create_dir_all(&config_home).expect("mkdir DATUM_CONFIG_HOME");
         let db = home.join("readme.db");
         Self {
+            root: tmp.path().to_path_buf(),
             home,
             config_home,
             db,
             _tmp: tmp,
         }
     }
+
+    fn apply<'c>(&self, cmd: &'c mut Command) -> &'c mut Command {
+        cmd.env("DATUM_DB", &self.db)
+            .env("DATUM_HOME", &self.home)
+            .env("DATUM_CONFIG_HOME", &self.config_home)
+            .env("HOME", &self.root)
+            .env("XDG_CONFIG_HOME", self.root.join(".config"))
+            .env("XDG_DATA_HOME", self.root.join(".local/share"))
+            .env_remove("ZDOTDIR")
+            .env("NO_COLOR", "1")
+    }
 }
 
 fn run_command(args: &[String], env: &TestEnv) -> std::process::Output {
-    let bin = env!("CARGO_BIN_EXE_datum");
-    Command::new(bin)
-        .env("DATUM_DB", &env.db)
-        .env("DATUM_HOME", &env.home)
-        .env("DATUM_CONFIG_HOME", &env.config_home)
-        .env("NO_COLOR", "1")
+    env.apply(&mut Command::new(env!("CARGO_BIN_EXE_datum")))
         .args(args)
         .output()
         .expect("spawn datum")
+}
+
+/// A block's command that writes under the home writes the block's temp
+/// dir, not the home of whoever runs the test (da-95o6k).
+#[test]
+fn a_block_writes_nothing_in_the_callers_home() {
+    let caller = tempfile::tempdir().expect("tempdir for the caller's home");
+    let env = TestEnv::new();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
+    for var in ["HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "ZDOTDIR"] {
+        cmd.env(var, caller.path());
+    }
+    let out = env
+        .apply(&mut cmd)
+        .args(["completions", "install", "--shell", "fish"])
+        .output()
+        .expect("spawn datum");
+    assert!(
+        out.status.success(),
+        "completions install failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let written: Vec<_> = std::fs::read_dir(caller.path()).unwrap().collect();
+    assert!(written.is_empty(), "wrote the caller's home: {written:?}");
+    assert!(env
+        .root
+        .join(".config/fish/completions/datum.fish")
+        .is_file());
 }
 
 #[test]
