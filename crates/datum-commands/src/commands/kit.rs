@@ -351,6 +351,40 @@ fn install_toml(
         return Ok(());
     }
 
+    // An alias and a command are both a word typed first, and the alias
+    // takes it, expanded before a command is looked up: so a name taken in
+    // the other kind is skipped as one taken in its own, and `--force`
+    // installs it and says what is hidden (da-jp6ji).
+    let alias_kits = db.alias_kits()?;
+    let alias_owners: HashMap<String, Option<String>> = db
+        .list_user_aliases()?
+        .into_iter()
+        .map(|a| {
+            let kit = alias_kits.get(&a.name).cloned();
+            (a.name, kit)
+        })
+        .collect();
+    let command_owners: HashMap<String, Option<String>> = installed
+        .iter()
+        .map(|c| (c.name.clone(), c.kit_id.clone()))
+        .collect();
+    let (aliases, alias_clashes, alias_notes) = clashes(
+        kit.aliases,
+        |a| &a.name,
+        &command_owners,
+        "command",
+        "hides",
+        args.force,
+    );
+    let (commands, cmd_clashes, cmd_notes) = clashes(
+        kit.commands,
+        |c| &c.name,
+        &alias_owners,
+        "alias",
+        "hidden by",
+        args.force,
+    );
+
     // Everything below was screened above; what can still fail is an index
     // that will not build on this data, which install_kit tries first and
     // undoes, and the database itself (da-45amw).
@@ -359,9 +393,9 @@ fn install_toml(
     let view_report = db.install_kit_views(&kit.kit.name, &kit.views, args.force)?;
     // Aliases (slice 3): same pattern. Tagged with the kit's id so
     // uninstall removes only what this kit owns.
-    let alias_report = db.install_kit_aliases(&kit.kit.name, &kit.aliases, args.force)?;
+    let alias_report = db.install_kit_aliases(&kit.kit.name, &aliases, args.force)?;
     // Slice 6: kit-defined commands.
-    let cmd_report = db.install_kit_commands(&kit.kit.name, &kit.commands, args.force)?;
+    let cmd_report = db.install_kit_commands(&kit.kit.name, &commands, args.force)?;
     // Layouts (da-gg0v) land as ENTRIES in this very database, not in a
     // table of their own — so they sync with the data, and the web reads
     // them beside the person's own layouts in `_internal`.
@@ -396,9 +430,17 @@ fn install_toml(
     let views_installed: Vec<&str> = view_report.installed().collect();
     let views_skipped: Vec<&str> = view_report.skipped().collect();
     let aliases_installed: Vec<&str> = alias_report.installed().collect();
-    let aliases_skipped: Vec<&str> = alias_report.skipped().collect();
+    let aliases_skipped: Vec<String> = alias_report
+        .skipped()
+        .map(String::from)
+        .chain(alias_clashes)
+        .collect();
     let cmds_installed: Vec<&str> = cmd_report.installed().collect();
-    let cmds_skipped: Vec<&str> = cmd_report.skipped().collect();
+    let cmds_skipped: Vec<String> = cmd_report
+        .skipped()
+        .map(String::from)
+        .chain(cmd_clashes)
+        .collect();
     let layouts_installed: Vec<&str> = layout_report.installed().collect();
     let layouts_skipped: Vec<&str> = layout_report.skipped().collect();
 
@@ -446,7 +488,7 @@ fn install_toml(
     if !aliases_installed.is_empty() {
         println!("Installed {} alias(es):", aliases_installed.len());
         for a in &aliases_installed {
-            println!("  + {a}");
+            println!("  + {a}{}", alias_notes.get(*a).map_or("", String::as_str));
         }
     }
     if !aliases_skipped.is_empty() {
@@ -477,7 +519,7 @@ fn install_toml(
     if !cmds_installed.is_empty() {
         println!("Installed {} command(s):", cmds_installed.len());
         for c in &cmds_installed {
-            println!("  + {c}");
+            println!("  + {c}{}", cmd_notes.get(*c).map_or("", String::as_str));
         }
     }
     if !cmds_skipped.is_empty() {
@@ -520,6 +562,38 @@ fn install_toml(
         }
     }
     Ok(())
+}
+
+/// Split a kit's `items` by whether each name is taken in the other kind,
+/// `owners` (the kit owning each, `None` for the person's own): what to
+/// install, a skip line for each taken one, and under `force` instead the
+/// note its installed line carries, `: <verb> the <kind> of kit <k>`.
+fn clashes<T>(
+    items: Vec<T>,
+    name: impl Fn(&T) -> &String,
+    owners: &HashMap<String, Option<String>>,
+    kind: &str,
+    verb: &str,
+    force: bool,
+) -> (Vec<T>, Vec<String>, HashMap<String, String>) {
+    let (mut keep, mut skipped, mut notes) = (Vec::new(), Vec::new(), HashMap::new());
+    for item in items {
+        let Some(owner) = owners.get(name(&item)) else {
+            keep.push(item);
+            continue;
+        };
+        let what = match owner {
+            Some(kit) => format!("the {kind} of kit {kit}"),
+            None => format!("your own {kind}"),
+        };
+        if force {
+            notes.insert(name(&item).clone(), format!(": {verb} {what}"));
+            keep.push(item);
+        } else {
+            skipped.push(format!("{}: {what}", name(&item)));
+        }
+    }
+    (keep, skipped, notes)
 }
 
 fn export(args: KitExportArgs, db: &Db) -> Result<()> {
