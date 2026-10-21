@@ -135,3 +135,42 @@ describe('with an origin that hangs or answers 500', () => {
 		});
 	});
 });
+
+// A deploy (da-v1wqf): `/` is precached, and was answered cache-first, so the
+// page showed the build the current worker cached until a new worker
+// installed, and a deploy took several reloads to arrive. A route stands in
+// for the deploy: the origin's `/` from then on carries a mark the cached
+// shell does not.
+describe('after a deploy', () => {
+	test('a navigation to / gets the new shell at once, and the cached one offline', async () => {
+		await withApp(async ({ page }) => {
+			await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+			assert.equal(
+				await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).updateViaCache),
+				'none'
+			);
+			const shell = await page.evaluate(async () => (await caches.match('/')).text());
+			const root = new URL('/', page.url()).href;
+			const deployed = (url) => url.href === root;
+			const mark = '<meta name="deploy" content="next">';
+			await page.context().route(deployed, async (route) => {
+				const response = await route.fetch();
+				await route.fulfill({ response, body: (await response.text()).replace('<head>', `<head>${mark}`) });
+			});
+			assert.ok(!shell.includes(mark));
+
+			const online = await page.goto(root, { waitUntil: 'commit' });
+			assert.ok((await online.text()).includes(mark), 'the deploy is not the page');
+
+			await page.context().unroute(deployed);
+			await page.context().setOffline(true);
+			try {
+				const offline = await page.goto(root, { waitUntil: 'commit' });
+				assert.equal(offline.status(), 200);
+				assert.equal(await offline.text(), shell);
+			} finally {
+				await page.context().setOffline(false);
+			}
+		});
+	});
+});

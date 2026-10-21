@@ -7,7 +7,10 @@ const config = {
 	kit: {
 		adapter: adapter({
 			fallback: 'index.html'
-		})
+		}),
+		// The browser's HTTP cache never answers for the worker script or its
+		// imports, so a deploy is seen at the next update check (da-v1wqf).
+		serviceWorker: { register: true, options: { updateViaCache: 'none' } }
 	}
 };
 

@@ -154,17 +154,19 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 	const url = new URL(event.request.url);
 	if (url.origin !== location.origin) return;
 
-	// Cache-first for the shell and every precached asset, and for anything
-	// else the build put under the immutable directory — a hashed name never
-	// means two things. The cache is per build (`version`), so a deploy
-	// installs a new service worker and the shell refreshes with it.
-	if (ASSETS.includes(url.pathname) || url.pathname.startsWith(IMMUTABLE)) {
-		event.respondWith(cacheFirst(event.request).then(isolated));
+	// Network-first for every navigation, `/` included: `/` is in ASSETS, and
+	// answered cache-first it showed the build this worker cached until a new
+	// worker installed, so a deploy took several reloads to arrive (da-v1wqf).
+	if (event.request.mode === 'navigate') {
+		event.respondWith(navigate(event.request).then(isolated));
 		return;
 	}
 
-	if (event.request.mode === 'navigate') {
-		event.respondWith(navigate(event.request).then(isolated));
+	// Cache-first for the shell and every precached asset, and for anything
+	// else the build put under the immutable directory — a hashed name never
+	// means two things.
+	if (ASSETS.includes(url.pathname) || url.pathname.startsWith(IMMUTABLE)) {
+		event.respondWith(cacheFirst(event.request).then(isolated));
 		return;
 	}
 
