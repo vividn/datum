@@ -22,9 +22,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
 use datum_core::field_spec::FieldSpec;
-use datum_core::shape::{
-    dot_fg_uses_state, is_block_verb, is_unrendered_switch_value, render_shape, RenderShape,
-};
+use datum_core::shape::{is_block_verb, is_unrendered_switch_value, render_shape, RenderShape};
 use datum_core::state::FieldStateRows;
 use datum_core::time::{Zone, ZoneTimeline};
 use datum_layout::dayview::{compute_dayview, DayviewFieldInput, Orientation};
@@ -838,9 +836,7 @@ fn render_field_visuals_terminal(
         let occur_ms = occur_dt.utc.timestamp_millis();
 
         let verb = canonical_verb(entry);
-        // Same dispatch shape as the SVG path. The terminal `Verb::Point` fg
-        // differs (md5_rgb fallback when state lookup yields nothing, rather
-        // than the field rgb) — preserved via the `else` branch below.
+        // Same dispatch shape as the SVG path.
         let shape = render_shape(verb, entry.shape(), &entry.state);
         match shape {
             RenderShape::Hidden | RenderShape::Marker => {}
@@ -856,20 +852,14 @@ fn render_field_visuals_terminal(
             // A switch's region is one of `regions`.
             RenderShape::Region => {}
             RenderShape::Dot => {
-                let fg = if dot_fg_uses_state(verb) {
-                    entry
-                        .state
-                        .as_ref()
-                        .and_then(|v| state_value_rgb(v, field, spec))
-                        .unwrap_or_else(|| field_rgb(field, spec))
-                } else {
-                    state_value_rgb(
-                        entry.state.as_ref().unwrap_or(&JsonValue::Null),
-                        field,
-                        spec,
-                    )
-                    .unwrap_or_else(|| md5_rgb(field))
-                };
+                // The SVG's colour (da-22750): a moment's dot is its
+                // state's, an occur's, with no state or `true`, the field's
+                // (da-ebjb9: a stateless occur was read as `null`, grey).
+                let fg = entry
+                    .state
+                    .as_ref()
+                    .and_then(|v| state_value_rgb(v, field, spec))
+                    .unwrap_or_else(|| field_rgb(field, spec));
                 points.push(NowviewPoint {
                     time_ms: occur_ms,
                     fg_color: rgb_to_hex(fg),
@@ -1514,6 +1504,56 @@ mod tests {
         assert!(
             fields.iter().all(|f| f.field != "screen"),
             "off-state field must stay hidden",
+        );
+    }
+
+    /// da-ebjb9, vividn: «the dots aren't colored at all (in the terminal)
+    /// only states are». A stateless occur's dot in `datum now`'s band is
+    /// its field's colour, as in the SVGs, and not the grey of `null`.
+    #[test]
+    fn an_occur_dot_in_the_band_is_its_fields_colour() {
+        use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
+
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("coffee", Action::Occur);
+        spec.color = Some("#8d5524".into());
+        db.save_field_spec(&spec).unwrap();
+        let now = chrono::Utc::now();
+        let occur = datum_core::time::DatumTime::from_utc_and_tz(
+            now - chrono::Duration::minutes(25),
+            "UTC",
+        )
+        .unwrap();
+        db.insert_entry(&datum_core::entry::Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(occur),
+            None,
+            "d1",
+        ))
+        .unwrap();
+
+        let fields = build_fields(&db, now, 60.0, false).unwrap();
+        let band = render_nowview_terminal(
+            &fields,
+            &TerminalConfig {
+                end_ms: now.timestamp_millis(),
+                now_ms: now.timestamp_millis(),
+                history_minutes: 60.0,
+                now_width_minutes: 5.0,
+                after_minutes: 0.0,
+                cols: 80,
+                rows: 0,
+                use_color: true,
+                current_time_label: "12:00".into(),
+                mode: RenderMode::InlineBand,
+            },
+        );
+        assert!(
+            band.contains("\x1b[38;2;141;85;36m●"),
+            "coffee's dot in #8d5524:\n{band:?}"
         );
     }
 
