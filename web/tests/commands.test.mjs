@@ -321,9 +321,10 @@ describe('holding a command fills it and shows its flags', () => {
 		const box = await commands(page).locator(`button[data-command="${name}"]`).boundingBox();
 		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 		await page.mouse.down();
-		await page.waitForTimeout(600);
-		await page.mouse.up();
+		// Lifted once the hold has fired, by what it drew: a lift timed on
+		// Node's clock can beat the page's own timer to it (da-mtsgy).
 		await back(page).waitFor();
+		await page.mouse.up();
 	}
 
 	/** What the line holds, whether the caret is in it, and whether a phone's keyboard would be up. */

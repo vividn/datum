@@ -379,7 +379,10 @@ describe('the bar is the way in', () => {
 			// leaves the bar shut.
 			const before = await where(page);
 			await wheelOver(page, 'section.pane', 400);
-			await page.waitForTimeout(250);
+			// Read once the bar holds still over the page's own frames: a
+			// fixed wait on Node's clock could end before a late page had
+			// handled the wheel, and read «nothing moved» for that reason.
+			await settled(page);
 			const after = await where(page);
 			assert.deepEqual(
 				[after.shown, after.height],
@@ -388,6 +391,10 @@ describe('the bar is the way in', () => {
 			);
 
 			// A notch per wheel — from a desktop's open output, one opens the log.
+			// Sent past `INERTIA_MS` (150, $lib/grip.ts) after the pane's, or
+			// the bar takes it for that wheel's inertia: a gap between the
+			// events' timestamps, stamped as they are sent, so Node's clock.
+			await page.waitForTimeout(200);
 			await wheelOver(page, BAR, 120);
 			await settled(page);
 			assert.ok((await where(page)).height > 0, 'a wheel over the bar opened no log');
@@ -494,7 +501,7 @@ describe('the bar is the way in', () => {
 
 			const before = await where(page);
 			await dragBy(page, 'section.pane', -240);
-			await page.waitForTimeout(250);
+			await settled(page);
 			const after = await where(page);
 			assert.deepEqual(
 				[after.shown, after.height],

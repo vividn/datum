@@ -27,7 +27,9 @@ import {
 	rootMenuButton,
 	titles
 } from './support/layout.mjs';
+import { pageWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
+import { HOLD_MS } from '../src/lib/hold.ts';
 
 before(startApp);
 after(stopApp);
@@ -56,7 +58,8 @@ async function fingerHold(page, locator, dx = 0, back = false) {
 	const cdp = await page.context().newCDPSession(page);
 	try {
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
-		await page.waitForTimeout(700);
+		// Held until the hold has fired, which picks a finger's tab up.
+		await page.waitForFunction(() => !!document.querySelector('.root-bar [data-dragging]'));
 		for (let i = 1; dx && i <= 8; i++)
 			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + (dx * i) / 8, y }] });
 		for (let i = 7; back && i >= 0; i--)
@@ -161,7 +164,9 @@ describe('the ways in', () => {
 			const box = await rootMenuButton(page).boundingBox();
 			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 			await page.mouse.down();
-			await page.waitForTimeout(700);
+			// A mouse's hold draws nothing until the lift: so held on the
+			// page's clock, which a timer set after `HOLD_MS`'s fires behind it.
+			await pageWait(page, HOLD_MS);
 			await page.mouse.up();
 			await mode(page).waitFor();
 			assert.equal(await page.locator('[role="menu"]').count(), 0, 'the hold also opened the menu');

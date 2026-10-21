@@ -519,7 +519,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			const g = await geometry(page);
 			// −5m back to −30m: twenty-five minutes inside a thirty-minute
 			// window, ending on the `-q` mark.
-			await drag(page, at(g, 5), at(g, 30), { hold: 600 });
+			await drag(page, at(g, 5), at(g, 30), { hold: true });
 
 			await saysPills(page, ['time:-q', 'dur:dur=25m']);
 			const marks = await drawn(page, NOWVIEW);
@@ -1015,7 +1015,7 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 
 			// From −10m: well clear of the 24px the now region reaches back.
 			assert.ok(10 * perMinute(g) > 24 + 6, `ten minutes is ${10 * perMinute(g)}px`);
-			await drag(page, vat(g, 10), vat(g, 30), { hold: 600 });
+			await drag(page, vat(g, 10), vat(g, 30), { hold: true });
 			await saysPills(page, ['time:-qq', 'dur:dur=20m']);
 		});
 	});

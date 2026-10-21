@@ -26,6 +26,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, sharedApp, todayAt } from './support/app.mjs';
+import { longPressed } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -38,8 +39,6 @@ const NOWVIEW = 'section.pane[data-title="nowview"]';
 const BAND = `${NOWVIEW} .nowview-band`;
 const TAIL = 'section.pane[data-title="tail"]';
 const TODAY = '.band[data-days-ago="0"]';
-/** Past `$lib/nowpoint.ts`'s 400ms wait, with room to spare. */
-const HOLD = 650;
 
 /**
  * The app with two entries the pictures both draw: a CLOSED block on
@@ -159,19 +158,19 @@ const tipText = async (page) => {
  */
 const apart = (page) => page.waitForTimeout(420);
 
-/** A press that stays where it fell for `ms`, then lifts. */
-async function hold(page, at, ms = HOLD) {
+/** A press that stays where it fell past the long press, then lifts. */
+async function hold(page, at) {
 	await page.mouse.move(at.x, at.y);
 	await page.mouse.down();
-	await page.waitForTimeout(ms);
+	await longPressed(page);
 	await page.mouse.up();
 }
 
 /** A press, a wait, a drag and a lift — the RANGE gesture. */
-async function holdDrag(page, from, to, ms = HOLD) {
+async function holdDrag(page, from, to) {
 	await page.mouse.move(from.x, from.y);
 	await page.mouse.down();
-	await page.waitForTimeout(ms);
+	await longPressed(page);
 	await page.mouse.move(to.x, to.y, { steps: 8 });
 	await page.mouse.up();
 }
@@ -271,7 +270,7 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 			const from = early(mark);
 			await page.mouse.move(from.x, from.y);
 			await page.mouse.down();
-			await page.waitForTimeout(HOLD);
+			await longPressed(page);
 			await page.mouse.move(from.x, from.y + 60, { steps: 6 });
 			await page.mouse.up();
 			await page.waitForTimeout(200);

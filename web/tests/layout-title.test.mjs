@@ -108,15 +108,17 @@ const menusSeen = (page) => page.evaluate(() => window.__menus);
  * `fieldpill.test.mjs`'s instrument and its reason: Playwright's
  * touchscreen only taps, and `page.mouse` on a touch-capable context is
  * still a mouse, so a coarse arm driven by the mouse would be the fine arm
- * under another name. 450 ms is `HOLD_MS`; 700 clears it without racing it.
+ * under another name. Held until `opened`, what the hold shows, is there:
+ * a lift timed on Node's clock can beat `HOLD_MS`'s timer on the page's
+ * (da-mtsgy).
  */
-async function longPress(page, locator) {
+async function longPress(page, locator, opened) {
 	const box = await locator.boundingBox();
 	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
 	const cdp = await page.context().newCDPSession(page);
 	try {
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
-		await page.waitForTimeout(700);
+		await opened.waitFor();
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 	} finally {
 		await cdp.detach();
@@ -235,8 +237,7 @@ describe('the hold on the widget title', () => {
 		await withApp(
 			async ({ page }) => {
 				await enterLayoutMode(page);
-				await longPress(page, titleBox(page, 'repl'));
-				await chooser(page).waitFor();
+				await longPress(page, titleBox(page, 'repl'), chooser(page));
 				assert.match(await chooser(page).innerText(), /Change Widget/);
 				// The press that held is not also the press that opens the
 				// title's own menu ($lib/hold.ts swallows the click behind it).

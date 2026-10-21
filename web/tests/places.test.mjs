@@ -434,7 +434,7 @@ describe('a place on a phone', () => {
 				const box = await commands(page).locator('button[data-command="occur"]').boundingBox();
 				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 				await page.mouse.down();
-				await page.waitForTimeout(600);
+				await back(page).waitFor();
 				await page.mouse.up();
 				await commands(page).locator('button[data-flag="occur -q"]').click();
 				await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');

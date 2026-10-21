@@ -22,7 +22,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp, todayAt } from './support/app.mjs';
 import { PHONE, settled, swipe, titles } from './support/layout.mjs';
-import { drag, swipeNoWait } from './support/press.mjs';
+import { drag, longPressed, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 import { listed } from './support/rows.mjs';
 
@@ -465,7 +465,6 @@ describe('zoomed in, a drag pans and a long press selects', () => {
 
 			await page.mouse.move(a.x, a.y);
 			await page.mouse.down();
-			await page.waitForTimeout(HOLD);
 			// The wait's own mark is down before the finger has moved at all:
 			// how a finger knows it has stopped panning. Nothing is selected
 			// yet — the gesture is still undecided.
@@ -501,7 +500,7 @@ describe('zoomed in, a drag pans and a long press selects', () => {
 			const a = { x: Math.round(g.left + g.width * 0.3), y: g.y };
 			await page.mouse.move(a.x, a.y);
 			await page.mouse.down();
-			await page.waitForTimeout(HOLD);
+			await longPressed(page);
 			await page.mouse.up();
 			await saysPills(page, [`time:-t ${hhmm(instantOf(g, a.x))}`]);
 			assert.equal((await drawn(page, TODAY)).lines, 1, 'a still long press made a range');

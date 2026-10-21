@@ -16,6 +16,8 @@ import {
 	withApp,
 	todayAt
 } from './support/app.mjs';
+import { pageWait } from './support/press.mjs';
+import { LONG_MS } from '../src/lib/nowpoint.ts';
 import {
 	NOWVIEW,
 	NARROW,
@@ -448,7 +450,9 @@ describe("the day strip's day height and its pin", () => {
 			const hy = held.y + held.height / 2;
 			await app.page.mouse.move(hx, hy);
 			await app.page.mouse.down();
-			await app.page.waitForTimeout(600);
+			// A line arms no long press, so nothing shows the hold: held on
+			// the page's clock, which a band's `LONG_MS` would fire ahead of.
+			await pageWait(app.page, LONG_MS);
 			await app.page.mouse.move(hx + 120, hy + 5, { steps: 8 });
 			await app.page.mouse.up();
 			assert.equal(await valueOf(app), tall + 20, 'a held drag on a line missed it');
