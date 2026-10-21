@@ -261,7 +261,7 @@ pub fn alias_effect(
         // One object per name in the namespace: a user row as `user`, with
         // its `kit` and `description` when it has them, a derived one as
         // `derived` with the field and kind it came from.
-        AliasCommand::List { show: Show::Json } => AliasEffect::Say(
+        AliasCommand::List { show: Show::Json, .. } => AliasEffect::Say(
             serde_json::Value::Array(
                 namespace(user, derived)
                     .into_iter()
@@ -291,7 +291,7 @@ pub fn alias_effect(
             .to_string(),
         ),
         // `--show none` asks for silence, and an empty `Say` is it.
-        AliasCommand::List { show: Show::None } => AliasEffect::Nothing,
+        AliasCommand::List { show: Show::None, .. } => AliasEffect::Nothing,
         // A derived alias's description only names its spec, which a list
         // of every state would repeat on each; `alias show` gives it.
         AliasCommand::List { .. } => {
@@ -340,9 +340,7 @@ pub fn alias_effect(
             AliasEffect::Refuse(format!("no user alias '{name}'"))
         }
         // The shell's side: no rows to decide on (`commands/alias.rs`).
-        AliasCommand::Shell { .. } | AliasCommand::Install { .. } | AliasCommand::Uninstall { .. } => {
-            AliasEffect::Nothing
-        }
+        AliasCommand::Install { .. } | AliasCommand::Uninstall { .. } => AliasEffect::Nothing,
     }
 }
 

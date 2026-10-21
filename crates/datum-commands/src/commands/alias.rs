@@ -23,15 +23,17 @@ use crate::args::AliasCommand;
 
 pub fn alias(sub: AliasCommand, db_name: Option<&str>, db: &Db) -> Result<()> {
     match &sub {
-        AliasCommand::Shell { .. } => {
+        AliasCommand::List { names: true, .. } => {
             let user = db.list_user_aliases()?;
             let derived = db.spec_alias_index()?;
             let names = derived.entries.keys().chain(user.iter().map(|a| &a.name));
-            print!("{}", shell_aliases(db_name, names));
+            for name in shell_names(names) {
+                println!("{name}");
+            }
             return Ok(());
         }
-        AliasCommand::Install { shell } => return rc_line(shell, db_name, true),
-        AliasCommand::Uninstall { shell } => return rc_line(shell, db_name, false),
+        AliasCommand::Install { shell } => return install(shell, db_name),
+        AliasCommand::Uninstall { shell } => return uninstall(shell, db_name),
         _ => {}
     }
     let user = db.list_user_aliases()?;
@@ -64,10 +66,9 @@ pub fn alias(sub: AliasCommand, db_name: Option<&str>, db: &Db) -> Result<()> {
     Ok(())
 }
 
-/// `alias shell`: a shell alias `NAME='datum NAME'` for each alias name a
-/// shell can take, unless the shell already finds something by that name
-/// (`find` stays `/usr/bin/find`). datum expands the name when it runs.
-fn shell_aliases<'a>(db_name: Option<&str>, names: impl Iterator<Item = &'a String>) -> String {
+/// `alias list --names`: each alias name a shell alias can take, sorted.
+/// A name like `x;rm` is left out.
+fn shell_names<'a>(names: impl Iterator<Item = &'a String>) -> Vec<&'a str> {
     let mut names: Vec<&str> = names
         .map(String::as_str)
         .filter(|n| {
@@ -79,25 +80,53 @@ fn shell_aliases<'a>(db_name: Option<&str>, names: impl Iterator<Item = &'a Stri
         .collect();
     names.sort_unstable();
     names.dedup();
-    if names.is_empty() {
-        return String::new();
-    }
-    let datum = match db_name {
-        Some(name) => format!("datum --db {} ", sh_quote(name)),
-        None => "datum ".to_string(),
-    };
-    format!(
-        "for __datum_a in {}; do command -v \"$__datum_a\" >/dev/null 2>&1 || \
-         alias \"$__datum_a=\"{}\"$__datum_a\"; done; unset __datum_a\n",
-        names.join(" "),
-        sh_quote(&datum),
-    )
+    names
 }
 
-/// Add (`install`) or remove the one line in `shell`'s rc file that evals
-/// `alias shell` at each start. Adding it twice leaves one line.
-fn rc_line(shell: &str, db_name: Option<&str>, install: bool) -> Result<()> {
-    use std::io::Write;
+/// The loop for `shell`'s rc file: a shell alias `NAME='datum NAME'` for
+/// each alias name and log verb, unless the shell already finds something
+/// by that name (`find` stays `/usr/bin/find`). Only names come from
+/// datum at a shell's start, never code (vividn, 2026-10-21).
+fn rc_loop(db_name: Option<&str>) -> Result<String> {
+    let datum = match db_name {
+        // Inside the loop's double quotes, where these would expand, and
+        // in the alias's text, where a newline would end its command.
+        Some(name) if name.chars().any(|c| c.is_control() || "\"$`\\".contains(c)) => {
+            bail!(
+                "alias install: a --db name with a control character or \", $, ` or \\ \
+                 cannot go in the loop"
+            )
+        }
+        Some(name) => format!("datum --db {}", sh_quote(name)),
+        None => "datum".to_string(),
+    };
+    Ok(format!(
+        "for __datum_a in $({datum} alias list --names 2>/dev/null) occur start stop switch; do\n  \
+         command -v \"$__datum_a\" >/dev/null 2>&1 || alias \"$__datum_a={datum} $__datum_a\"\n\
+         done\n\
+         unset __datum_a\n"
+    ))
+}
+
+/// `alias install`: the loop on stdout and nothing else, so `datum alias
+/// install zsh >> ~/.zshrc` adds it; what it is for goes to stderr. It
+/// writes no file (vividn, 2026-10-21: «have the user do them manually»).
+fn install(shell: &str, db_name: Option<&str>) -> Result<()> {
+    print!("{}", rc_loop(db_name)?);
+    let rc = match shell {
+        "zsh" => "${ZDOTDIR:-$HOME}/.zshrc",
+        _ => "~/.bashrc",
+    };
+    eprintln!(
+        "add it to your rc file with `>> {rc}` after this command: \
+         a new shell then runs your aliases by name"
+    );
+    Ok(())
+}
+
+/// `alias uninstall`: take the loop `install` printed out of `shell`'s rc
+/// file, every copy of it.
+fn uninstall(shell: &str, db_name: Option<&str>) -> Result<()> {
     let home = |var| std::env::var_os(var).filter(|v| !v.is_empty());
     let dir = match shell {
         "zsh" => home("ZDOTDIR").or_else(|| home("HOME")),
@@ -107,40 +136,15 @@ fn rc_line(shell: &str, db_name: Option<&str>, install: bool) -> Result<()> {
         bail!("HOME is not set: no rc file to change");
     };
     let path = std::path::Path::new(&dir).join(format!(".{shell}rc"));
-    let db = db_name
-        .map(|name| format!("--db {} ", sh_quote(name)))
-        .unwrap_or_default();
-    let line = format!("eval \"$(datum {db}alias shell {shell} 2>/dev/null)\" # datum aliases");
+    let block = rc_loop(db_name)?;
     let rc = match std::fs::read_to_string(&path) {
         Ok(rc) => rc,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e.into()),
     };
-    let held = rc.lines().any(|l| l == line);
     let shown = path.display();
-    if install {
-        if held {
-            println!("already in {shown}");
-            return Ok(());
-        }
-        // Appended, never rewritten: an rc file is often a symlink.
-        let sep = if rc.is_empty() || rc.ends_with('\n') {
-            ""
-        } else {
-            "\n"
-        };
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
-        writeln!(file, "{sep}{line}")?;
-        println!("✓ added to {shown}: a new shell runs your aliases by name");
-    } else if held {
-        let kept: String = rc
-            .split_inclusive('\n')
-            .filter(|l| l.trim_end_matches('\n') != line)
-            .collect();
-        std::fs::write(&path, kept)?;
+    if rc.contains(&block) {
+        std::fs::write(&path, rc.replace(&block, ""))?;
         println!("✓ removed from {shown}");
     } else {
         println!("not in {shown}");

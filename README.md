@@ -284,18 +284,17 @@ After a multi-entry write, `_LAST` refers to every entry written by the most rec
 
 After an alias's slots are filled, a word naming a command runs that command on the alias's field: a log verb logs (`bed end`, with `bed` = `start sleep`, ends sleep), and any other takes the field as its first word, with the state the alias names as its filter where it takes one (`outside tail`, with `outside` = `switch environment outside`, is `tail environment:outside`) and ignoring its other data. An alias of several fields passes them all. Slots fill first, so a state wins over a command: `envi tail`, with `envi` = `switch environment`, switches to «tail», and `envi . tail` is `tail environment`. `.` takes a slot's default (a switch's state is true, a start's duration none, a key its default or nothing, a required key refuses it), and `...` is a `.` for every slot left: `practice ... tail` is `tail session` when `practice` = `occur session -k skill -k dur`.
 
-`datum alias install zsh` (or `bash`) adds one line to `~/.zshrc` (`$ZDOTDIR`'s, or `~/.bashrc`) so a new shell runs each alias by its bare name, making a shell alias only of a name that is not already a command (`find` stays `/usr/bin/find`); `datum alias uninstall zsh` takes the line out.
+`datum alias install zsh >> ~/.zshrc` (or `bash >> ~/.bashrc`) adds a loop to the rc file, which `install` prints and does not write, so a new shell runs each alias, and `occur`, `start`, `stop` and `switch`, by its bare name, making a shell alias only of a name that is not already a command (`find` stays `/usr/bin/find`). The loop reads the names from `datum alias list --names`, so only names, never code, come from datum as a shell starts; `datum alias uninstall zsh` takes the loop out.
 
 #### Usage
 
 ```
 datum alias show <NAME>
 datum alias set <NAME> <EXPANSION>
-datum alias list
+datum alias list [--names]
 datum alias remove <NAME>
 datum alias install <zsh|bash>
 datum alias uninstall <zsh|bash>
-datum alias shell <zsh|bash>
 ```
 
 #### Output

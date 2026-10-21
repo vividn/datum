@@ -746,16 +746,16 @@ pub struct SpecSetArgs {
     pub glyph_aspect: Option<f64>,
 }
 
-/// `Shell` prints what the line `Install` puts in a shell's rc file evals
-/// (a shell alias for every datum alias no command already has);
-/// `Uninstall` removes exactly that line.
+/// `List { names }` prints each alias name a shell alias can take, one a
+/// line; `Install` prints the rc-file loop that reads them (a shell alias
+/// for every name no command already has); `Uninstall` removes exactly
+/// that loop from the rc file.
 #[derive(Debug)]
 pub enum AliasCommand {
     Show { name: String },
     Set { name: String, expansion: String },
-    List { show: Show },
+    List { show: Show, names: bool },
     Remove { name: String },
-    Shell { shell: String },
     Install { shell: String },
     Uninstall { shell: String },
 }

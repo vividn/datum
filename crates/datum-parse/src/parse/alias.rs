@@ -6,7 +6,7 @@ use crate::input::Show;
 pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing alias subcommand (show|set|list|remove|shell|install|uninstall)".into(),
+            "missing alias subcommand (show|set|list|remove|install|uninstall)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
@@ -30,18 +30,20 @@ pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
             Ok(AliasCommand::Set { name, expansion })
         }
         "list" => {
-            if let Some(tok) = rest.first() {
+            let names = rest.first() == Some(&"--names");
+            if let Some(tok) = rest.get(usize::from(names)) {
                 return Err(unknown_flag(split_flag(tok)));
             }
             Ok(AliasCommand::List {
                 show: Show::default(),
+                names,
             })
         }
         "remove" => {
             let name = require_pos(&positionals(rest)?, "<NAME>")?;
             Ok(AliasCommand::Remove { name })
         }
-        "shell" | "install" | "uninstall" => {
+        "install" | "uninstall" => {
             let shell = require_pos(&positionals(rest)?, "<zsh|bash>")?;
             if !matches!(shell.as_str(), "zsh" | "bash") {
                 return Err(ParseError::InvalidArg(format!(
@@ -49,7 +51,6 @@ pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
                 )));
             }
             Ok(match *sub {
-                "shell" => AliasCommand::Shell { shell },
                 "install" => AliasCommand::Install { shell },
                 _ => AliasCommand::Uninstall { shell },
             })

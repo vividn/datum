@@ -254,11 +254,7 @@ fn reads(command: &Command) -> bool {
                 | Command::Kit(KitCommand::List | KitCommand::Export(_) | KitCommand::Show { .. })
                 | Command::Db(DbCommand::Backup(_))
                 | Command::Spec(SpecCommand::List { .. } | SpecCommand::Show { .. })
-                | Command::Alias(
-                    AliasCommand::List { .. }
-                        | AliasCommand::Show { .. }
-                        | AliasCommand::Shell { .. }
-                )
+                | Command::Alias(AliasCommand::List { .. } | AliasCommand::Show { .. })
                 | Command::Sync(SyncCommand::Status { .. })
         )
 }

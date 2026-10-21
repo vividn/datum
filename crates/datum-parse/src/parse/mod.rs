@@ -399,6 +399,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
             let words = match (sub, rest.first()) {
                 ("sync", Some(&("chain" | "admin" | "daemon" | "pipe")))
                 | ("db", Some(&"migrate")) => 2,
+                ("alias", Some(&"list")) if rest.get(1) == Some(&"--names") => 2,
                 ("sync" | "alias" | "config" | "conflicts" | "db", _) => 1,
                 _ => 0,
             };
@@ -495,7 +496,10 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
             *s = show
         }
         Command::Spec(SpecCommand::Set(a)) => a.show = show,
-        Command::Alias(AliasCommand::List { show: s }) => *s = show,
+        Command::Alias(AliasCommand::List {
+            show: s,
+            names: false,
+        }) => *s = show,
         Command::Conflicts(ConflictsCommand::List(a)) => a.show = show,
         Command::Sync(c) => {
             // `sync --as` carries the level its command does.
