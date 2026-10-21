@@ -49,14 +49,24 @@ test('a change to the suite itself, its fixtures or config runs everything', () 
 	}
 });
 
-test('a Rust change that reaches the CLI module runs everything', () => {
-	for (const path of ['crates/datum-core/src/db.rs', 'crates/datum-cli/src/help.md', 'crates/datum-cli/tests/fixtures/x.json', 'Cargo.lock', 'kits/sample.toml', '.forgejo/workflows/ci.yml']) {
+test("the web's build, a fixture it reads, a kit or CI runs everything", () => {
+	for (const path of ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/datum-cli/tests/fixtures/x.json', 'kits/sample.toml', '.forgejo/workflows/ci.yml']) {
 		assert.match(run(['web/src/lib/fields.ts', path]).full?.join() ?? '', /can reach the web/, path);
 	}
 	// What cannot reach it is passed over.
 	const r = run(['web/src/lib/fields.ts', 'crates/datum-core/tests/x.rs', 'crates/datum-cli/tests/sync/a.rs', 'docs/a.md', 'README.md', 'xtask/src/testmap.rs']);
 	assert.deepEqual(picked(r), ['tests/bar.test.mjs', 'tests/strip.test.mjs']);
 	assert.equal(r.notes.length, 5);
+});
+
+test("a crate's source beside a web/src change is a note, and the web change keeps its selection (da-q587o)", () => {
+	const crates = ['crates/datum-core/src/db.rs', 'crates/datum-cli/src/help.md', 'crates/datum-cli/Cargo.toml', 'crates/datum-cli/tests/fixtures.rs'];
+	const r = run(['web/src/lib/DayStrip.svelte', ...crates]);
+	assert.deepEqual(picked(r), ['tests/strip.test.mjs']);
+	assert.deepEqual(
+		r.notes,
+		crates.map((p) => `${p}: a crate; staging's full web run tests it`)
+	);
 });
 
 test('a web/src file no test reached runs everything', () => {

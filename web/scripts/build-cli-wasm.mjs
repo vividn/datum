@@ -24,6 +24,7 @@
 // reproducible for the same reason the CLI's are.
 //
 // Usage:  pnpm run build:cli-wasm
+//         node scripts/build-cli-wasm.mjs --check   (compiles, writes nothing)
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -94,36 +95,35 @@ async function tool({ url, sha256, dir }) {
 }
 
 const sdk = await tool(TOOLS.wasiSdk);
+const cli = ['-p', 'datum-cli', '--bin', 'datum', '--no-default-features', '--target', 'wasm32-wasip1', '--profile', 'wasm-release'];
+const cliEnv = {
+	CC_wasm32_wasip1: `${sdk}/bin/clang`,
+	AR_wasm32_wasip1: `${sdk}/bin/ar`,
+	// The C half gets the same treatment as the Rust half: no
+	// absolute path of this machine may reach the bytes.
+	CFLAGS_wasm32_wasip1: `--sysroot=${sdk}/share/wasi-sysroot -ffile-prefix-map=${cargoHome}=/cargo`
+};
+const wire = ['-p', 'datum-sync-wire', '--lib', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm-release'];
+const wireEnv = {
+	CC_wasm32_unknown_unknown: `${sdk}/bin/clang`,
+	AR_wasm32_unknown_unknown: `${sdk}/bin/ar`,
+	CFLAGS_wasm32_unknown_unknown: `-ffile-prefix-map=${cargoHome}=/cargo`
+};
+const cargo = (args, extra) => execFileSync('cargo', args, { cwd: repoRoot, env: { ...env, ...extra }, stdio: 'inherit' });
+
+// `--check`: does this tree still compile for datum.day? `cargo check` of both
+// modules' crates, no module written: what a PR that changes crates/ runs in
+// place of the web suite (da-q587o).
+if (process.argv.includes('--check')) {
+	cargo(['check', ...cli], cliEnv);
+	cargo(['check', ...wire], wireEnv);
+	process.exit(0);
+}
+
 const binaryen = await tool(TOOLS.binaryen);
 const wasmBindgen = await tool(TOOLS.wasmBindgen);
 
-execFileSync(
-	'cargo',
-	[
-		'build',
-		'-p',
-		'datum-cli',
-		'--bin',
-		'datum',
-		'--no-default-features',
-		'--target',
-		'wasm32-wasip1',
-		'--profile',
-		'wasm-release'
-	],
-	{
-		cwd: repoRoot,
-		env: {
-			...env,
-			CC_wasm32_wasip1: `${sdk}/bin/clang`,
-			AR_wasm32_wasip1: `${sdk}/bin/ar`,
-			// The C half gets the same treatment as the Rust half: no
-			// absolute path of this machine may reach the bytes.
-			CFLAGS_wasm32_wasip1: `--sysroot=${sdk}/share/wasi-sysroot -ffile-prefix-map=${cargoHome}=/cargo`
-		},
-		stdio: 'inherit'
-	}
-);
+cargo(['build', ...cli], cliEnv);
 
 mkdirSync(resolve(out, '..'), { recursive: true });
 // ensure-wasm.mjs's record of what the module was built from; it writes it
@@ -165,20 +165,7 @@ console.log(`wrote ${out} (${bytes} bytes, ${gz} gzipped)`);
 // The sync worker's module: the wire crate and its wasm-bindgen glue, named
 // `datum-sync.js` (typed by `datum-sync.d.ts`) and `datum-sync_bg.wasm`
 // beside the CLI's.
-execFileSync(
-	'cargo',
-	['build', '-p', 'datum-sync-wire', '--lib', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm-release'],
-	{
-		cwd: repoRoot,
-		env: {
-			...env,
-			CC_wasm32_unknown_unknown: `${sdk}/bin/clang`,
-			AR_wasm32_unknown_unknown: `${sdk}/bin/ar`,
-			CFLAGS_wasm32_unknown_unknown: `-ffile-prefix-map=${cargoHome}=/cargo`
-		},
-		stdio: 'inherit'
-	}
-);
+cargo(['build', ...wire], wireEnv);
 const wasmDir = resolve(out, '..');
 execFileSync(
 	`${wasmBindgen}/wasm-bindgen`,

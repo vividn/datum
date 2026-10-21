@@ -22,9 +22,10 @@
 // files to run, one per line, to OUT_DIR/web.tests, or OUT_DIR/FULL with
 // why everything runs. A `web/src/` or `web/tests/support/` file selects the
 // tests whose set has it, and a test file added or edited selects itself;
-// every test the map does not know runs. Everything runs for any other change
-// that can reach the web, a `web/src/` or support file no set holds, or a map
-// missing or more than MAX_BEHIND commits behind the base.
+// every test the map does not know runs. A crate's file selects nothing:
+// staging's full run tests what it does to the web. Everything runs for any
+// other change that can reach the web, a `web/src/` or support file no set
+// holds, or a map missing or more than MAX_BEHIND commits behind the base.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -33,8 +34,14 @@ import { fileURLToPath } from 'node:url';
 
 export const MAX_BEHIND = 10;
 
-/** Changed paths no web test reads: the docs, xtask, the repo's own scripts, Rust test sources. */
-const NOT_WEB = /^(docs|xtask|scripts)\/|^crates\/[^/]+\/tests\/.*\.rs$|^(?!crates\/[^/]+\/src\/).*\.md$/;
+/** Changed paths no web test reads: the docs, xtask, the repo's own scripts, markdown. */
+const NOT_WEB = /^(docs|xtask|scripts)\/|\.md$/;
+/**
+ * A crate's file but the CLI fixtures dbio.test.mjs reads: the CLI module is
+ * built from it, and a PR's web run leaves what that changes to staging's full
+ * run, as a PR changing crates/ alone runs no web suite (da-q587o).
+ */
+const CRATE = /^crates\/(?!datum-cli\/tests\/fixtures\/)/;
 /**
  * A test that reads `src/` or the build as data: a `readFile`/`readdir`, sync
  * or not, naming one of them on its line. A test that reads the tree any other
@@ -67,8 +74,9 @@ export function choose({ map, behind, changed, tests }) {
 			if (!by.length) full.push(`${path}: no test's coverage reaches it (new, unreached, or a worker's)`);
 			for (const t of by) pick(t, path);
 		} else if (path.startsWith('web/')) full.push(`${path}: the web suite reads it (fixtures, config, static, scripts)`);
+		else if (CRATE.test(path)) notes.push(`${path}: a crate; staging's full web run tests it`);
 		else if (NOT_WEB.test(path)) notes.push(`${path}: no web test reads it`);
-		else full.push(`${path}: can reach the web (the CLI's wasm, a kit, CI)`);
+		else full.push(`${path}: can reach the web (the CLI's build, a fixture, a kit, CI)`);
 	}
 	if (full.length) return { full };
 	for (const t of map.always) pick(t, 'reads src/ or the build as data');

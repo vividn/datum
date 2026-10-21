@@ -191,18 +191,20 @@ jobs:
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: env.TRAIN != '1'
 
-      # A PR whose every changed file is Rust test SOURCE (crates/*/tests/*.rs),
-      # docs, markdown or scripts/mq-check.sh cannot change what the web runs,
-      # so it skips the wasm build and the ~40-minute web suite (da-waghz).
-      # Anything else runs everything: crates/*/src (the wasm is built from
-      # it), web/, Cargo.*, .forgejo/, and the rest of crates/*/tests/ —
-      # web/tests/dbio.test.mjs reads crates/datum-cli/tests/fixtures/. Markdown
-      # under web/ or crates/*/src/ runs too (web/static/ is served), and so
-      # does an empty diff. Every push runs everything — to main, and to
-      # staging, whose green commit is what main is promoted to (ct-yesk). WEB
-      # is always set and the web steps test `== '1'`: an expression compares
-      # loosely, so an UNSET env.WEB equals '0' and `!= '0'` would skip them on
-      # a push.
+      # A PR whose every changed file is under crates/, docs, markdown or
+      # scripts/mq-check.sh skips the wasm build and the ~40-minute web suite
+      # (da-waghz, da-q587o). A crate is what the CLI module is built from, and
+      # staging's full run is what tests what a crate change does to datum.day
+      # (vividn, 2026-10-21: «that should speed things up»); the PR checks only
+      # that the crates still compile for it (CRATES, the wasm step below).
+      # Anything else runs the web: web/, Cargo.toml, Cargo.lock,
+      # rust-toolchain.toml, .forgejo/, kits/, tests/fixtures/, and
+      # crates/datum-cli/tests/fixtures/, which web/tests/dbio.test.mjs reads.
+      # Markdown under web/ runs too (web/static/ is served), and so does an
+      # empty diff. Every push runs everything — to main, and to staging, whose
+      # green commit is what main is promoted to (ct-yesk). WEB is always set
+      # and the web steps test `== '1'`: an expression compares loosely, so an
+      # UNSET env.WEB equals '0' and `!= '0'` would skip them on a push.
       - name: Can this change reach the web?
         if: env.TRAIN != '1'
         env:
@@ -213,10 +215,15 @@ jobs:
           if [ "$EVENT" != pull_request ]; then echo "WEB=1" >> "$GITHUB_ENV"; exit 0; fi
           git fetch -q --no-tags --unshallow origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
           files=$(git diff --name-only "origin/$BASE...HEAD")
-          if [ -n "$files" ] && ! grep -qvE '^crates/[^/]+/tests/.*\.rs$|^docs/|\.md$|^scripts/mq-check\.sh$' <<<"$files" \
-            && ! grep -qE '^(web|crates/[^/]+/src)/' <<<"$files"; then
+          if [ -n "$files" ] && ! grep -qvE '^crates/|^docs/|\.md$|^scripts/mq-check\.sh$' <<<"$files" \
+            && ! grep -qE '^web/|^crates/datum-cli/tests/fixtures/' <<<"$files"; then
             echo "WEB=0" >> "$GITHUB_ENV"
-            echo "web suite skipped: $(wc -l <<<"$files") changed files, none can reach the web"
+            if grep -vE '^crates/[^/]+/tests/' <<<"$files" | grep -qE '^crates/'; then
+              echo "CRATES=1" >> "$GITHUB_ENV"
+              echo "web suite skipped: $(wc -l <<<"$files") changed files, crates/ and nothing the web reads; staging's full run tests datum.day, and this run checks the CLI still compiles for it"
+            else
+              echo "web suite skipped: $(wc -l <<<"$files") changed files, none can reach the web"
+            fi
           else
             echo "WEB=1" >> "$GITHUB_ENV"
             echo "web suite runs: a changed file can reach the web"
@@ -415,10 +422,11 @@ jobs:
       # (da-icb7g), every test file the PR adds or edits or the map does not
       # know, and those that read src/ or the build as data. The whole suite
       # instead, each reason printed, for any other change that can reach the
-      # web (fixtures, config, static, a crate the CLI module is built from, a
-      # kit, CI), a web/src or support file no test reached, a map missing or
-      # over ten commits behind, or a selection that fails. A push runs
-      # everything.
+      # web (fixtures, config, static, the CLI's build, a kit, CI), a web/src
+      # or support file no test reached, a map missing or over ten commits
+      # behind, or a selection that fails. A crate's file selects nothing
+      # (da-q587o): the module the selection runs on is built from it, and
+      # staging's full run tests the rest. A push runs everything.
       - name: Which web tests can this change reach?
         if: env.WEB == '1' && github.event_name == 'pull_request'
         env:
@@ -464,6 +472,14 @@ jobs:
       - name: Build the CLI module (or fetch it, for a PR whose crates are main's)
         if: ${{ env.WEB == '1' }}
         run: /usr/bin/time -v node web/scripts/ensure-wasm.mjs
+
+      # A PR that changes crates/ and nothing the web reads runs no web suite
+      # (WEB above), but still fails here, not on staging, when its crates no
+      # longer compile for datum.day: `cargo check` of what the step above
+      # builds, with the same pinned wasi-sdk, and no codegen or wasm-opt.
+      - name: The crates still compile for datum.day (cargo check, wasm)
+        if: ${{ env.WEB == '0' && env.CRATES == '1' }}
+        run: /usr/bin/time -v node web/scripts/build-cli-wasm.mjs --check
 
       # ── web ───────────────────────────────────────────────────────────────
       # Here, not before setup-node: the fixture compare and the wasm steps
