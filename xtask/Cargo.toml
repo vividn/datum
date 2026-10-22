@@ -17,3 +17,8 @@ datum-parse = { path = "../crates/datum-parse" }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# `cargo xtask health` parses the source; all three are already in Cargo.lock
+# through other crates. `span-locations` gives a parsed span its line.
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"

@@ -5313,8 +5313,11 @@ version = "3.0.0-beta"
 dependencies = [
  "anyhow",
  "datum-parse",
+ "proc-macro2",
+ "quote",
  "serde",
  "serde_json",
+ "syn 2.0.117",
 ]
 
 [[package]]

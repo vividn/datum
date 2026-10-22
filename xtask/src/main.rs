@@ -12,6 +12,7 @@ use anyhow::{bail, Context, Result};
 use datum_parse::help::{render_roff, COMMANDS};
 use xtask::{autogen_section, splice_autogen, AUTOGEN_BLOCKS};
 
+mod health;
 mod testmap;
 
 fn main() -> Result<()> {
@@ -22,6 +23,7 @@ fn main() -> Result<()> {
         "readme" => readme(),
         "check" => check(args.collect()),
         "testmap" => testmap::run(args.collect()),
+        "health" => health::run(args.collect(), &workspace_root()?),
         "" => {
             print_usage();
             bail!("missing task name");
@@ -48,6 +50,10 @@ fn print_usage() {
     eprintln!("                                  no-legacy-verbs | max-file-size |");
     eprintln!("                                  toolchain-pin");
     eprintln!("  testmap index|select  per-test coverage map, and the PR tests it selects");
+    eprintln!("  health [--json] [<dir>]");
+    eprintln!(
+        "                      complexity, cohesion, duplication and coupling of crates/*/src"
+    );
 }
 
 fn readme() -> Result<()> {
