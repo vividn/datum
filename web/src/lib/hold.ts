@@ -23,7 +23,13 @@
 // swallow is a one-shot capture listener on the window, taken down by that
 // click or by the next press, whichever comes first.
 
-/** How long a press has to last before it counts as a long press. */
+/**
+ * How long a press has to last before it counts as a long press — this
+ * action's, the tail's and a root tab's, and the dayview's and nowview's,
+ * whose `LONG_MS` ($lib/nowpoint.ts) is this one under its old name
+ * (da-0gxd7: it was 400 there, so a 420 ms press was long on a band and a
+ * tap on a field).
+ */
 export const HOLD_MS = 450;
 
 export interface Holding {

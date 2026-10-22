@@ -39,12 +39,12 @@
 	  touch the time axis     → SCRUB: the time under the finger, following it
 	    and drag                to the lift — not snapped, and no pan
 	  drag sideways           → PAN in time; the selection does not move
-	  press 400 ms, then drag → a RANGE
-	  press 400 ms, then LIFT → the same SELECTION, a mark or not
+	  long press, then drag   → a RANGE
+	  long press, then LIFT   → the same SELECTION, a mark or not
 	  right click             → the same selection, on a desk
 	  shift+drag (desktop)    → the same range; a long press with a mouse is
 	                            nobody's habit (MY reading, not vividn's words)
-	  press 400 ms in the NOW → a duration ending NOW — the sentence «I have been
+	  long press in the NOW   → a duration ending NOW — the sentence «I have been
 	    region, then drag left  doing this for the last N minutes»
 	  two fingers / ctrl+wheel→ the window's LENGTH (da-5goc), untouched here
 
@@ -54,7 +54,7 @@
 	them down» — which is what let a plain tap on a mark mean the ENTRY,
 	where until da-xg1vi it meant time and the inspect was a double tap.
 
-	The 400ms does not COMMIT (da-pzzoz): the `.hold-mark` below — a ring
+	The long press does not COMMIT (da-pzzoz): the `.hold-mark` below — a ring
 	closing over the wait, and a dashed stem through the band once it is up
 	— is the sign a thumb gets that the press registered. The feedback is
 	owed, not optional.
@@ -420,7 +420,7 @@
 	 * Where the wait is DRAWN, in px across the widget's box, while a press
 	 * is still undecided.
 	 *
-	 * The 400ms used to commit to a range, and the bar dropping at that
+	 * The long press used to commit to a range, and the bar dropping at that
 	 * moment was how a thumb learned the press had registered (da-rskp). It
 	 * does not commit any more — a still long press is a time and a
 	 * travelling one a range — so the feedback it took with it is owed back,
@@ -1288,8 +1288,8 @@
 		right: 62px;
 	}
 
-	/* THE WAIT'S MARK (da-pzzoz): what the bar dropping at 400ms used to
-	   say, now that the 400ms commits to nothing.
+	/* THE WAIT'S MARK (da-pzzoz): what the bar dropping at the long press used
+	   to say, now that it commits to nothing.
 
 	   A ring that closes over exactly `--long` — it is drawn the instant
 	   the finger lands and finishes as the press becomes a HOLD, so the

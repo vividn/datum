@@ -27,7 +27,7 @@
 //     │
 //     └─ one finger, mode `press`
 //          ├─ shift held, |dx| > 6px ─────────────────────► RANGE  (the desk's, no long press)
-//          ├─ down for 400 ms, still ─────────────────────► HOLD   (undecided: see below)
+//          ├─ down for LONG_MS, still ────────────────────► HOLD   (undecided: see below)
 //          ├─ |dx| > 6px and |dx| ≥ |dy| ─────────────────► PAN    (the window moves, or the
 //          │                                                        container's, at an edge)
 //          └─ up, still `press` ──────────────────────────► TAP    (the mark under it, or the time)
@@ -40,7 +40,7 @@
 // What a lift MEANS — a mark's entry or a time — is the widget's, which has
 // the picture; the machine only says which of the two kinds of lift it was.
 //
-// THE 400 MS DOES NOT COMMIT (da-pzzoz): a still long press stays
+// THE LONG PRESS DOES NOT COMMIT (da-pzzoz): a still long press stays
 // undecided in `hold`, and the finger decides it by moving or lifting. The
 // price is FEEDBACK — a mode that commits to nothing has none — so the two
 // widgets draw a mark of their own for the wait (`.hold-mark`). It is owed,
@@ -82,8 +82,11 @@ export interface Press {
 	atOnce: boolean;
 }
 
-/** How long a still press takes to become a range. */
-export const LONG_MS = 400;
+/**
+ * How long a still press takes to become a range: the app's one hold,
+ * `HOLD_MS` ($lib/hold.ts), so a press long on a band is long everywhere.
+ */
+export { HOLD_MS as LONG_MS } from './hold.js';
 
 /**
  * How far a press may travel and still be still, in px.

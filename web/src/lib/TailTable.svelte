@@ -781,6 +781,10 @@
 	 * finger's alone: a mouse held on a row is selecting its text, and
 	 * ctrl/cmd+click toggles. A press that traveled — a scroll — holds
 	 * nothing, and taps nothing either (da-xg1vi).
+	 *
+	 * Its own timer and not the `holds` action ($lib/hold.ts), whose length
+	 * it shares: that action also takes a right click and shift+click, where
+	 * a row's mouse belongs to its text, and knows no `pressTraveled`.
 	 */
 	let holding: ReturnType<typeof setTimeout> | undefined;
 	let held = false;

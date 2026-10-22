@@ -23,6 +23,7 @@ registerHooks({
 const { LONG_MS, SLOP_PX, SNAP_PX, advance, relArg, snapTo, tapStep, undecided } = await import(
 	'../src/lib/nowpoint.ts'
 );
+const { HOLD_MS } = await import('../src/lib/hold.ts');
 
 /** A press at (100, 50), with whatever it landed on. */
 const press = (extra = {}) => ({ x: 100, y: 50, inNow: false, atOnce: false, ...extra });
@@ -33,13 +34,14 @@ describe('a press on the band becomes one gesture', () => {
 		assert.equal(advance('press', p, 100, 50, false), 'press');
 		assert.equal(advance('press', p, 100 + SLOP_PX, 50, false), 'press', 'inside the slop is still still');
 		assert.ok(LONG_MS >= 300, `${LONG_MS}ms is what the timer waits, and a tap must not reach it`);
+		assert.equal(LONG_MS, HOLD_MS, "the band's long press is the app's one hold (da-0gxd7)");
 	});
 
 	// da-pzzoz. The 400ms used to return `range` outright, which is why
 	// «long press to select, as long as it's not a long press drag» could
 	// not be said at all: the range had already taken the press. Now the
 	// wait says only that the press is OLD ENOUGH, and the finger decides.
-	test('the 400ms makes a press HELD, not a range: the finger decides which', () => {
+	test('the long press makes a press HELD, not a range: the finger decides which', () => {
 		const p = press();
 		assert.equal(advance('press', p, 100, 50, true), 'hold', 'the wait alone commits to nothing');
 		assert.ok(undecided('hold'), 'a hold is still open to becoming something else');
