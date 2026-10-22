@@ -16,10 +16,11 @@
 	An occur field's lane is its dot (da-c1b6m): the box is drawn round the
 	dot instead, centred on the lane. Its body moves the lane like any
 	other; an edge or corner sizes the dot about its centre, writing
-	`glyph_scale` (the dot's height over the lane's, so a field tied to this
-	one stays put) and `glyph_aspect`. «lock aspect» keeps width over height,
-	«reset» puts back a round dot as tall as its lane — which is how tall
-	every view draws it, as a fraction of the day. A day with none of the
+	`glyph_scale` (the dot's height over the standard dot's, so a field tied
+	to this one stays put) and `glyph_aspect`. «lock aspect» keeps width over
+	height, «reset» puts back a round dot of the standard size, or the lane's
+	where the lane is thinner (da-rjf34) — which is how tall every view draws
+	it, as a fraction of the day. A day with none of the
 	field's dots has nothing to size, so the band is then the day of its
 	latest one.
 -->
@@ -41,6 +42,10 @@
 	const H = 160;
 	/** The thinnest lane a drag leaves. */
 	const MIN = 0.02;
+	/** A dot's standard height, the CLI's `STANDARD_DOT`: a lane with no height. */
+	const STANDARD_DOT = 0.12;
+	/** What a scale of 1 draws in a lane `h` tall: the standard, or the lane where thinner. */
+	const unit = (h: number) => Math.min(h, STANDARD_DOT);
 
 	let band: HTMLDivElement;
 	let svg: SVGSVGElement | null = null;
@@ -158,8 +163,8 @@
 	const factor = (n: number) => (round(n) === 1 ? undefined : round(n));
 	$: scale = place.glyph_scale ?? 1;
 	$: aspect = place.glyph_aspect ?? 1;
-	/** The dot's box in px: as tall as its lane times its scale, about the lane's centre. */
-	$: dotH = lane.h * scale * H;
+	/** The dot's box in px: its unit times its scale, about the lane's centre. */
+	$: dotH = unit(lane.h) * scale * H;
 	$: dotW = dotH * aspect;
 
 	function grab(mode: 'move' | 'top' | 'bottom', e: PointerEvent) {
@@ -189,7 +194,7 @@
 			}
 			tall = clamp(tall, MIN * H, H);
 			wide = clamp(wide, MIN * H, band.clientWidth);
-			if (h > 0) place = { ...place, glyph_scale: factor(tall / (h * H)), glyph_aspect: locked ? place.glyph_aspect : factor(wide / tall) };
+			if (h > 0) place = { ...place, glyph_scale: factor(tall / (unit(h) * H)), glyph_aspect: locked ? place.glyph_aspect : factor(wide / tall) };
 		} else if (drag.mode === 'move') put(clamp(y + d, 0, 1 - h), h);
 		else if (drag.mode === 'bottom') put(y, clamp(h + d, MIN, 1 - y));
 		else {
@@ -207,17 +212,20 @@
 	}
 
 	// The dots follow the box: each mark is scaled about its own centre
-	// from the size the band drew it at, its height already carried by the
-	// group. A CSS transform replaces the mark's own stretch, so the width
-	// is scaled from an unstretched one. Only this field's marks: the
+	// from the size the band drew it at, undoing the group's stretch of
+	// the lane, `k`. A CSS transform replaces the mark's own stretch, so the
+	// width is scaled from an unstretched one. Only this field's marks: the
 	// origin would move another's stretch.
-	$: if (own && occur && drawn && drawn.height > 0)
+	$: if (own && occur && drawn && drawn.height > 0) {
+		const grow = (unit(lane.h) * scale) / (unit(drawn.height) * saved.scale);
+		const k = lane.h / drawn.height;
 		for (const mark of own.querySelectorAll<SVGElement>('.point-fg'))
 			Object.assign(mark.style, {
 				transformBox: 'fill-box',
 				transformOrigin: 'center',
-				transform: `scale(${(lane.h / drawn.height) * ((scale * aspect) / saved.scale)}, ${scale / saved.scale})`
+				transform: `scale(${grow * aspect}, ${grow / k})`
 			});
+	}
 
 	$: relation = !anchor
 		? ''

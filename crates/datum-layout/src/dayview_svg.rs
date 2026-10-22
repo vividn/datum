@@ -1972,12 +1972,12 @@ mod tests {
         assert!(svg.contains(r#"text-anchor="start" font-size="11" fill="white" stroke="black" stroke-width="2" paint-order="stroke" pointer-events="none">UTC+1</text>"#));
         assert!(svg.contains(r#"text-anchor="end" font-size="11" fill="white" stroke="black" stroke-width="2" paint-order="stroke" pointer-events="none">UTC+2</text>"#));
         // The dot an hour after the jump is at 09:00, and nothing forks.
-        assert!(groups[1].contains(r#"<circle class="point-bg" cx="900" cy="17.5" r="7.5""#));
+        assert!(groups[1].contains(r#"<circle class="point-bg" cx="900" cy="17.5" r="6""#));
         assert!(!svg.contains(r#"<path class="block""#));
     }
 
     /// The clock went from 07:00 back to 06:00: each stretch has a lane,
-    /// outlined, and a mark is drawn at its lane's size.
+    /// outlined, and a mark is drawn at half its size, as its lane is.
     #[test]
     fn a_backward_jump_draws_each_stretch_in_its_own_lane() {
         let svg = jumped(&[(0, 0, 7, "UTC+2"), (7, 6, 24, "UTC+1")]);
@@ -1998,7 +1998,7 @@ mod tests {
             r#"<path class="lane" d="M789,0L739,50L600,50L600,100L739,100L789,100" fill="none""#
         ));
         // An hour after the jump is 07:00 again, in the far half.
-        assert!(groups[1].contains(r#"<circle class="point-bg" cx="700" cy="58.75" r="3.75""#));
+        assert!(groups[1].contains(r#"<circle class="point-bg" cx="700" cy="58.75" r="3""#));
         assert!(!svg.contains("dead-zone"));
     }
 }

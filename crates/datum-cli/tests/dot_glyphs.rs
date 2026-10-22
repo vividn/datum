@@ -392,21 +392,29 @@ fn a_glyph_factor_of_one_from_json_is_stored_unset() {
     );
 }
 
-/// da-c1b6m: a dot is as tall as its lane times its scale, a fraction of
-/// the day and not pixels — the same in the dayview and the nowview, at a
-/// short band and a tall one. It was five minutes' width in the dayview,
-/// so a narrow day shrank it, and the nowview ignored the scale.
+/// da-rjf34: a dot is one standard size, the height of a lane with no
+/// `--height` (0.12 of the day), however tall its own lane; a thinner lane
+/// caps it at the lane, and `--glyph-scale` multiplies the standard — a
+/// fraction of the day and not pixels (da-c1b6m), the same in the dayview
+/// and the nowview, at a short band and a tall one.
 #[test]
-fn a_dot_is_its_lane_times_its_scale_in_every_view_at_any_height() {
+fn a_dot_is_the_standard_size_capped_by_a_thinner_lane_and_scaled() {
     let env = Env::new();
-    env.run(&["occur", "coffee", "-t", "2026-04-27T12:00+00:00"]);
-    let (y, height, scale) = ("0.3", "0.2", "0.5");
-    env.run(&["setup", "coffee", "--y", y, "--height", height]);
-    env.run(&["setup", "coffee", "--glyph-scale", scale]);
-    let r = |svg: &str| -> f64 {
-        let fg = svg.split(r#"<circle class="point-fg""#).nth(1).unwrap();
+    let at = "2026-04-27T12:00+00:00";
+    for f in ["tall", "plain", "thin", "double"] {
+        env.run(&["occur", f, "-t", at]);
+    }
+    env.run(&["setup", "tall", "--y", "0.5", "--height", "0.4"]);
+    env.run(&["setup", "thin", "--y", "0.1", "--height", "0.05"]);
+    env.run(&["setup", "double", "--glyph-scale", "2"]);
+    let tall = |svg: &str, field: &str| -> f64 {
+        let group = svg
+            .split(&format!(r#"<g class="field" data-field="{field}">"#))
+            .nth(1)
+            .unwrap_or_else(|| panic!("no {field} in {svg}"));
+        let fg = group.split(r#"<circle class="point-fg""#).nth(1).unwrap();
         let r = fg.split(r#" r=""#).nth(1).unwrap();
-        r.split('"').next().unwrap().parse().unwrap()
+        2.0 * r.split('"').next().unwrap().parse::<f64>().unwrap()
     };
     let bare = ["--margin", "0", "--time-axis-height", "0"];
     for h in ["60", "200"] {
@@ -422,17 +430,24 @@ fn a_dot_is_its_lane_times_its_scale_in_every_view_at_any_height() {
             &[
                 &["nowview", "--height", h],
                 &bare[..],
-                &["--context", "1h", "-t", "2026-04-27T12:00+00:00", "-o", "-"],
+                &["--context", "1h", "-t", at, "-o", "-"],
             ]
             .concat(),
         );
         let h: f64 = h.parse().unwrap();
         for (view, svg) in [("dayview", &dayview), ("nowview", &nowview)] {
-            let tall = 2.0 * r(svg);
-            assert!(
-                (tall - 0.2 * 0.5 * h).abs() < 1.0,
-                "{view} at {h}px draws the dot {tall}px tall, not a tenth of the band"
-            );
+            for (field, frac) in [
+                ("plain", 0.12),
+                ("tall", 0.12),
+                ("thin", 0.05),
+                ("double", 0.24),
+            ] {
+                let got = tall(svg, field);
+                assert!(
+                    (got - frac * h).abs() < 0.5,
+                    "{view} at {h}px draws {field}'s dot {got}px tall, not {frac} of the band"
+                );
+            }
         }
     }
 }

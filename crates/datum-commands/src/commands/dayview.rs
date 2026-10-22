@@ -1211,6 +1211,16 @@ mod tests {
         assert_eq!(states, [Some("idle")], "the day is idle, as `now` says");
     }
 
+    /// da-rjf34: a dot's standard is the lane a field with no height gets,
+    /// so a dot in an ordinary occur lane fills it.
+    #[test]
+    fn the_standard_dot_is_the_default_lane() {
+        assert_eq!(
+            datum_layout::dayview::STANDARD_DOT,
+            datum_core::field_spec::DEFAULT_FIELD_HEIGHT
+        );
+    }
+
     /// da-c05v1 review: a spec saved without `setup`'s checks (sync, a
     /// hand edit) may carry a factor that is not above 0; it draws as unset
     /// rather than as `r="NaN"`, and a good one still reaches the layout.

@@ -190,7 +190,8 @@ describe('the Placement tab', () => {
 
 	// da-c1b6m: an occur field's box is drawn round its dot. Its body moves
 	// the lane, a handle sizes the dot about its centre, and the CLI draws
-	// the dot exactly as tall as the box — here, and in every view.
+	// the dot exactly as tall as the box — here, and in every view. The lane
+	// is taller than the standard dot (da-rjf34), so the dot is the standard.
 	test("an occur field's box moves and sizes its dot; lock aspect keeps its shape and reset makes it round again", async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
@@ -231,15 +232,17 @@ describe('the Placement tab', () => {
 				await page.mouse.move(x + dx, y + dy);
 				await page.mouse.up();
 			}
-			// The lane is 0.2 of the 160px day: a round dot 32px tall.
-			await fits(32, 32, 'as saved');
+			// The lane is 0.2 of the 160px day; the dot the standard 0.12 of it.
+			const D = 0.12 * 160;
+			await fits(D, D, 'as saved');
 
 			await pull(0, 1, 0, 8);
-			await fits(32, 48, 'the bottom edge grows it about its centre, its width alone');
+			await fits(D, D + 16, 'the bottom edge grows it about its centre, its width alone');
 
 			await page.locator(`${MODAL} input[name="lock_aspect"]`).check();
 			await pull(1, 0, 8, 0);
-			await fits(48, 72, 'locked, the right edge grows both');
+			const [w, h] = [D + 16, ((D + 16) * (D + 16)) / D];
+			await fits(w, h, 'locked, the right edge grows both');
 
 			const before = (await read()).box.y;
 			await drag(page, 'dot', -16);
@@ -248,14 +251,14 @@ describe('the Placement tab', () => {
 			await done(page, saved);
 			let shown = await spec(app, 'coffee');
 			assert.deepEqual([shown.y, shown.height], [0.2, 0.2], 'moving writes the lane; sizing leaves its height');
-			assert.ok(Math.abs(shown.glyph_scale - 2.25) < 0.01, `scale ${shown.glyph_scale}`);
-			assert.ok(Math.abs(shown.glyph_aspect - 2 / 3) < 0.01, `aspect ${shown.glyph_aspect}`);
+			assert.ok(Math.abs(shown.glyph_scale - h / D) < 0.01, `scale ${shown.glyph_scale}`);
+			assert.ok(Math.abs(shown.glyph_aspect - w / h) < 0.01, `aspect ${shown.glyph_aspect}`);
 
 			// Opened again, the CLI draws it at the saved size: what the box showed.
 			({ saved } = await openPlacement(page, 'coffee'));
-			await fits(48, 72, 'drawn by the CLI');
+			await fits(w, h, 'drawn by the CLI');
 			await page.locator(`${MODAL} button.reset`).click();
-			await fits(32, 32, 'reset');
+			await fits(D, D, 'reset');
 			await done(page, saved);
 			shown = await spec(app, 'coffee');
 			assert.equal('glyph_scale' in shown || 'glyph_aspect' in shown, false, JSON.stringify(shown));
