@@ -352,14 +352,6 @@ pub fn logged_all(db: &Db) -> Vec<Entry> {
         .collect()
 }
 
-/// The TRACK document a field was declared by, if it has one.
-pub fn track_row(db: &Db, field: &str) -> Option<Entry> {
-    db.entries_for_field(field, None)
-        .expect("entries_for_field failed")
-        .into_iter()
-        .find(|e| crate::track::track_verb(e).is_some())
-}
-
 #[doc(hidden)]
 pub fn _assert_entry_field(entry: &Entry, field_name: &str, expected: &JsonValue) {
     let actual = match field_name {
@@ -447,13 +439,6 @@ pub fn advance_time(s: &str) {
         ..cur
     };
     clock::install(Arc::new(MockClock::new(new)));
-}
-
-/// Manually drop the mock clock. The [`TimeGuard`] returned by [`set_time`]
-/// also does this on drop; call this directly only when the guard pattern
-/// doesn't fit (e.g. mid-test reset before installing a different fake).
-pub fn reset_time() {
-    clock::uninstall();
 }
 
 fn parse_test_time(s: &str) -> DatumTime {

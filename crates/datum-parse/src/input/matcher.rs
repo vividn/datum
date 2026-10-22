@@ -33,22 +33,6 @@ pub enum MatcherOp {
     Regex,
 }
 
-impl MatcherOp {
-    /// Canonical symbol form (the one we print back in error messages
-    /// and reuse in tests).
-    pub fn as_symbol(self) -> &'static str {
-        match self {
-            Self::Eq => "=",
-            Self::Ne => "!=",
-            Self::Gt => ">",
-            Self::Lt => "<",
-            Self::Gte => ">=",
-            Self::Lte => "<=",
-            Self::Regex => "~",
-        }
-    }
-}
-
 /// A single `key OP value` predicate to apply over an entry's columns
 /// or extra_data.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -187,13 +187,6 @@ pub struct IntegrityWarning {
     pub kind: IntegrityKind,
 }
 
-impl IntegrityWarning {
-    /// True when `resolution IS NULL` — the row still needs attention.
-    pub fn is_pending(&self) -> bool {
-        self.resolution.is_none()
-    }
-}
-
 /// Detect overlap-style problems caused by `trigger`. Runs inside the
 /// caller's transaction so detection rows land atomically with the insert
 /// that produced the triggering entry. Returns the filed conflicts (if

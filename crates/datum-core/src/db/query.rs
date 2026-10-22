@@ -33,24 +33,6 @@ impl Db {
         Ok(n as usize)
     }
 
-    /// Count live entries for `field` strictly before `t` (ordered by
-    /// `start_time`, falling back to `create_time`). Used by the renderer to
-    /// decide whether a given entry is the first-ever write for its field
-    /// (triggers the `∅` / sparkle first-tracked markers).
-    pub fn count_entries_before(&self, field: &str, t: DateTime<Utc>) -> Result<usize> {
-        let sql = format!(
-            "SELECT COUNT(*) FROM entries
-             WHERE field = ?1
-               AND {LIVE_SQL}
-               AND {} < ?2",
-            time_expr_endbound(),
-        );
-        let n: i64 = self
-            .conn
-            .query_row(&sql, params![field, t.to_rfc3339()], |row| row.get(0))?;
-        Ok(n as usize)
-    }
-
     /// Count live entries, optionally filtered by `field` and/or a lower
     /// bound on occur-time (falling back to `create_time` when unset).
     /// Flag markers and meta notes are left out, as `tail` leaves them

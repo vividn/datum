@@ -24,22 +24,6 @@ const BY_SLUG_OR_HID_SQL: &str =
 use super::Db;
 
 impl Db {
-    /// Read the `extra_metadata` JSON for a row, addressed by slug or hid.
-    /// Returns `None` for live rows that carry no provenance and for rows
-    /// that don't exist (callers wanting NotFound should compose with
-    /// [`Db::get_entry`]). System provenance — never user-visible payload.
-    pub fn get_metadata(&self, slug_or_hid: &str) -> Result<Option<JsonValue>> {
-        let raw: Option<Option<String>> = self
-            .conn
-            .query_row(
-                &format!("SELECT extra_metadata FROM entries WHERE {BY_SLUG_OR_HID_SQL} LIMIT 1"),
-                params![slug_or_hid],
-                |row| row.get::<_, Option<String>>(0),
-            )
-            .optional()?;
-        Ok(raw.flatten().and_then(|s| serde_json::from_str(&s).ok()))
-    }
-
     /// Fetch a live entry by slug or hid. Tombstoned rows are hidden — use
     /// [`Db::list_including_deleted`] or [`Db::get_entry_including_deleted`]
     /// if you need to see them.

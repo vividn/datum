@@ -605,9 +605,6 @@ pub fn show_nodiff(entry: &Entry, registry: Option<&SpecRegistry>, args: &Output
 pub fn show_islast(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
     show_action(entry, Outcome::IsLast, registry, args);
 }
-pub fn show_failed(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
-    show_action(entry, Outcome::Failed, registry, args);
-}
 
 /// Context-aware write renderer. Convenience entry point for command-layer
 /// callers that have prior-state and/or first-time-tracked info to hand.
@@ -1590,11 +1587,6 @@ fn resolve_template_key(key: &str, entry: &Entry) -> String {
             })
             .unwrap_or_default(),
     }
-}
-
-/// Convenience: apply [`short_hid`] to an `hid` string for external callers.
-pub fn short_hid_of(hid: &str) -> String {
-    short_hid(hid)
 }
 
 // ─── Now view (preserved) ────────────────────────────────────────────────────
