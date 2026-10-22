@@ -349,6 +349,13 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
 
         "completions" => Command::Completions(parse_completions_cmd(rest)?),
 
+        "install" => Command::Install(parse_install_args(rest)?),
+        "uninstall" => match rest {
+            [] => Command::Uninstall,
+            [tok, ..] => return Err(unknown_flag(split_flag(tok))),
+        },
+        "upgrade" => parse_upgrade_args(rest)?,
+
         "help" => {
             // `datum help <cmd> [<sub>…]` → help request with that page.
             if let Some(e) = rest

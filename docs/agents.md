@@ -27,8 +27,9 @@ decided and when, what it was doing when something went wrong. Times come from t
 The step-by-step guide for an agent helping its person, from the interview through the setup and sharing a database
 over sync to looking for patterns together, is **https://datum.day/agents.md**, where an agent sent to datum.day
 finds it; its source is [web/static/agents.md](../web/static/agents.md). In short: the agent installs the CLI
-([install.md](install.md)), runs `datum --db their-name sync chain invite` and sends its person the link; once they
-join on datum.day, both copies hold the same record, and the agent sets up fields and logs for them.
+(`curl -fsSL https://datum.day/install.sh | sh`, [install.md](install.md)), runs `datum --db their-name sync chain
+invite` and sends its person the link; once they join on datum.day, both copies hold the same record, and the agent
+sets up fields and logs for them.
 [sync.md](sync.md) covers chains, admins and conflicts.
 
 ## Work on datum

@@ -245,6 +245,111 @@ fn status(manager: Option<Manager>) -> Result<()> {
     Ok(())
 }
 
+/// `datum install`'s part (da-uphgn): install the daemon again onto this
+/// binary when one is installed; install it when a database syncs, unless
+/// `DATUM_SYNC_NO_DAEMON`, or when `force`. What it did, if anything.
+pub fn ensure(force: bool) -> Result<Option<String>> {
+    let Some(m) = Manager::here() else {
+        return match force {
+            true => Err(anyhow::anyhow!(AT_LOGIN)),
+            false => Ok(None),
+        };
+    };
+    if !force && !m.path()?.exists() && (opted_out() || chained().is_empty()) {
+        return Ok(None);
+    }
+    let path = m.install()?;
+    Ok(Some(format!(
+        "sync daemon: the {} ({}) runs this datum",
+        m.name(),
+        path.display()
+    )))
+}
+
+/// Restart an installed daemon, so it runs the binary now at its path:
+/// whether there was one.
+pub fn restart() -> Result<bool> {
+    let Some(m) = Manager::here() else {
+        return Ok(false);
+    };
+    let path = m.path()?;
+    if !path.exists() {
+        return Ok(false);
+    }
+    match m {
+        Manager::Systemd => ctl("systemctl", &["--user", "restart", UNIT])?,
+        Manager::Launchd => {
+            let p = path.to_string_lossy();
+            let _ = ctl("launchctl", &["unload", &p]);
+            ctl("launchctl", &["load", "-w", &p])?
+        }
+    }
+    Ok(true)
+}
+
+/// What `datum check` says of the daemon for the binary `exe` (da-uphgn):
+/// none installed while the database `syncs`, one set to run another
+/// binary, or one running an older binary than the one now at `exe`,
+/// which a replace leaves until it restarts. That last is read while the
+/// daemon runs, and on systemd alone: a stopped daemon starts on what is
+/// at `exe`. Each is a category and its message.
+pub fn findings(exe: &Path, syncs: bool) -> Vec<(&'static str, String)> {
+    let Some(m) = Manager::here() else {
+        return Vec::new();
+    };
+    let Some(body) = m.path().ok().and_then(|p| std::fs::read_to_string(p).ok()) else {
+        return match syncs && !opted_out() {
+            true => vec![(
+                "install_daemon_missing",
+                "this database syncs, and no sync daemon is installed: `datum install` installs it"
+                    .into(),
+            )],
+            false => Vec::new(),
+        };
+    };
+    let shown = exe.display().to_string();
+    let names = match m {
+        Manager::Systemd => format!("ExecStart=\"{}\"", quoted(&shown)),
+        Manager::Launchd => format!("<string>{}</string>", xml(&shown)),
+    };
+    if !body.contains(&names) {
+        return vec![(
+            "install_daemon_binary",
+            format!(
+                "the sync daemon runs another datum than {shown}: `datum install` points it here"
+            ),
+        )];
+    }
+    match running_exe(m) {
+        Some(running) if running != exe => vec![(
+            "install_daemon_stale",
+            format!(
+                "the sync daemon runs an older datum than the one at {shown}: `datum install` restarts it"
+            ),
+        )],
+        _ => Vec::new(),
+    }
+}
+
+/// The binary the running daemon was started from, where the system says:
+/// a replaced one reads as `<path> (deleted)`.
+fn running_exe(m: Manager) -> Option<PathBuf> {
+    let Manager::Systemd = m else {
+        return None;
+    };
+    let out = Command::new("systemctl")
+        .args(["--user", "show", "--property=MainPID", "--value", UNIT])
+        .output()
+        .ok()?;
+    // 0: not running.
+    let pid = String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|&pid| pid > 0)?;
+    std::fs::read_link(format!("/proc/{pid}/exe")).ok()
+}
+
 fn opted_out() -> bool {
     std::env::var(NO_DAEMON).is_ok_and(|v| !v.is_empty() && v != "0")
 }

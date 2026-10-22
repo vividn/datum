@@ -138,6 +138,9 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "debug",
     "reparse",
     "completions",
+    "install",
+    "uninstall",
+    "upgrade",
 ];
 
 /// datum.day's names for three commands (`web/src/lib/track.ts`), each the

@@ -129,6 +129,25 @@ pub enum Command {
     /// `datum completions <shell | install | uninstall>` — shell tab
     /// completion (da-bu09u).
     Completions(CompletionsCommand),
+
+    /// `datum install`, `uninstall` and `upgrade`: the binary sets itself
+    /// up, takes itself down, and replaces itself with the newest release
+    /// (da-uphgn).
+    Install(InstallArgs),
+    Uninstall,
+    Upgrade {
+        /// `--check`: only say whether a newer release exists.
+        check: bool,
+    },
+}
+
+#[derive(Debug, Default)]
+pub struct InstallArgs {
+    /// `--shell`: the shell to complete for; `None` reads `$SHELL`.
+    pub shell: Option<Shell>,
+    /// `--daemon`: install the sync daemon even with no database syncing.
+    pub daemon: bool,
+    pub no_completions: bool,
 }
 
 // ─── Completions ──────────────────────────────────────────────────────────
@@ -1437,6 +1456,7 @@ pub const KNOWN_CHECKERS: &[&str] = &[
     "stats",
     "sync",
     "spool",
+    "install",
 ];
 
 /// Render orientation for `datum dayview` and `datum nowview`, named by

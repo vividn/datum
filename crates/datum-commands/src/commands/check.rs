@@ -24,6 +24,8 @@ use aliases::collect_alias_drift;
 mod mistyped;
 mod source;
 pub use source::Source;
+mod install;
+use install::collect_install;
 mod sync;
 use sync::collect_sync;
 mod tz;
@@ -69,6 +71,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_stats = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "stats");
     let run_sync = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "sync");
     let run_spool = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "spool");
+    let run_install = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "install");
     let run_default_battery = args.checkers.is_empty();
 
     // One walk of the entries, shared by every checker that reads them, so
@@ -166,6 +169,10 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     if run_spool {
         examined.checkers.push("spool");
         issues.extend(spool_issues(db, args.fix)?);
+    }
+    if let Some(found) = run_install.then(|| collect_install(db)).flatten() {
+        examined.checkers.push("install");
+        issues.extend(found);
     }
     issues.sort_by_key(|i| i.domain);
     // Counted from the slice the last checkers walked, after any `--fix`
@@ -370,6 +377,8 @@ pub enum Domain {
     Aliases,
     Stats,
     Sync,
+    /// What `datum install` set up (da-uphgn).
+    Install,
 }
 
 #[derive(Debug, Clone, Serialize)]

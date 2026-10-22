@@ -135,11 +135,7 @@ pub fn run(cmd: &CompletionsCommand) -> Result<()> {
     let env = || ShellEnv::from_process().context("HOME is not set");
     match *cmd {
         CompletionsCommand::Script(shell) => print!("{}", script(shell, None)),
-        CompletionsCommand::Install(shell) => {
-            let env = env()?;
-            let shell = pick(shell, &env)?;
-            print!("{}", install(shell, &env.with_fpath().with_exe())?);
-        }
+        CompletionsCommand::Install(shell) => print!("{}", install_for(shell)?),
         CompletionsCommand::Uninstall(shell) => {
             let env = env()?;
             let shell = pick(shell, &env)?;
@@ -147,6 +143,33 @@ pub fn run(cmd: &CompletionsCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// [`install`] for the shell named, else `$SHELL`'s, asking this binary.
+pub fn install_for(shell: Option<Shell>) -> Result<String> {
+    let env = ShellEnv::from_process().context("HOME is not set")?;
+    let shell = pick(shell, &env)?;
+    install(shell, &env.with_fpath().with_exe())
+}
+
+/// [`uninstall`] for every shell, as `datum uninstall` does.
+pub fn uninstall_all() -> Result<String> {
+    let env = ShellEnv::from_process()
+        .context("HOME is not set")?
+        .with_fpath();
+    Shell::ALL.iter().map(|&s| uninstall(s, &env)).collect()
+}
+
+/// Whether no script of ours is installed for `shell`.
+pub fn missing(shell: Shell) -> bool {
+    let Some(env) = ShellEnv::from_process() else {
+        return false;
+    };
+    let env = match shell {
+        Shell::Zsh => env.with_fpath(),
+        _ => env,
+    };
+    installed(shell, &env).is_none()
 }
 
 fn pick(shell: Option<Shell>, env: &ShellEnv) -> Result<Shell> {

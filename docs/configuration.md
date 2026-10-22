@@ -35,6 +35,12 @@ which weekday opens a week for `datum stats --week` / `--last-week`. A
 weekday name is canonical; an ISO number (`1` = Monday … `7` = Sunday) is
 also accepted. The default is Monday.
 
+`update_check = true` (toml only) lets `datum check` ask the release
+whether a newer datum is out, and say so; `datum upgrade` installs it.
+Each `datum check` asks once.
+It is off by default: datum makes no network call of its own unless you
+sync, upgrade, or turn this on.
+
 The default database lives at `$DATUM_HOME/default.db` (creating the
 directory if needed). The active DB can also be overridden per-invocation
 with `--db <name-or-path>`. Named databases are tracked in

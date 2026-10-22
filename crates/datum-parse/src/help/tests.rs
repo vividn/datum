@@ -67,6 +67,9 @@ ADMIN:
   info         Show health/metadata for DB(s)
   config       Show or manage user configuration
   completions  Shell tab completion: print, install or remove the script
+  install      Set datum up: tab completion, the sync daemon
+  uninstall    Undo `datum install`, remove the binary, keep your record
+  upgrade      Replace this datum with the newest release
   meta         Attach or list protocol-change notes on a field
   kit          Install / export / list field-spec kits (TOML bundles)
   reparse      Replay an entry's stored raw_input through the current parser

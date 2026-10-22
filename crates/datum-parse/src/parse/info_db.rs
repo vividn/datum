@@ -115,6 +115,38 @@ pub(crate) fn parse_completions_cmd(tail: &[&str]) -> Result<CompletionsCommand>
     }
 }
 
+pub(crate) fn parse_install_args(tail: &[&str]) -> Result<InstallArgs> {
+    let mut args = InstallArgs::default();
+    let mut words = tail.iter();
+    while let Some(&tok) = words.next() {
+        let name = match split_flag(tok) {
+            FlagSplit::Long("daemon") => {
+                args.daemon = true;
+                continue;
+            }
+            FlagSplit::Long("no-completions") => {
+                args.no_completions = true;
+                continue;
+            }
+            FlagSplit::Long("shell") => words.next().copied().unwrap_or(""),
+            FlagSplit::LongAttached("shell", name) => name,
+            other => return Err(unknown_flag(other)),
+        };
+        args.shell = Some(Shell::from_name(name).ok_or_else(|| {
+            ParseError::InvalidArg(format!("unknown shell '{name}' (zsh|bash|fish)"))
+        })?);
+    }
+    Ok(args)
+}
+
+pub(crate) fn parse_upgrade_args(tail: &[&str]) -> Result<Command> {
+    match tail {
+        [] => Ok(Command::Upgrade { check: false }),
+        ["--check"] => Ok(Command::Upgrade { check: true }),
+        [tok, ..] => Err(unknown_flag(split_flag(tok))),
+    }
+}
+
 pub(crate) fn parse_config_cmd(tail: &[&str]) -> Result<ConfigCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(

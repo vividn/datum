@@ -9,10 +9,11 @@
 # release.yml publishes on every push to main, and refuses a binary whose
 # checksum does not match. It installs to ~/.local/bin, or
 # $DATUM_INSTALL_DIR, and says if that is not on your PATH. Then, as
-# scripts/install.sh does after its build, it restarts a sync daemon onto
-# the new binary and installs tab completion (`--no-completions` skips it:
-# `curl -fsSL https://datum.day/install.sh | sh -s -- --no-completions`).
-# `datum --version` names the commit it was built from.
+# scripts/install.sh does after its build, the binary sets itself up:
+# `datum install`, which takes this script's arguments (`curl -fsSL
+# https://datum.day/install.sh | sh -s -- --no-completions`). Once it is
+# installed, `datum upgrade` upgrades it. `datum --version` names the
+# commit it was built from.
 #
 # To build from a checkout instead: docs/install.md.
 set -eu
@@ -24,14 +25,6 @@ fail() {
   echo "datum install: $*" >&2
   exit 1
 }
-
-completions=1
-for arg in "$@"; do
-  case "$arg" in
-    --no-completions) completions=0 ;;
-    *) fail "usage: install.sh [--no-completions]" ;;
-  esac
-done
 
 case "$(uname -s)" in
   Linux) os=linux ;;
@@ -68,21 +61,8 @@ mkdir -p "$dir"
 chmod +x "$tmp/$asset"
 mv -f "$tmp/$asset" "$dir/datum"
 echo "installed $("$dir/datum" --version) at $dir/datum"
-
-# An installed sync daemon (`datum sync daemon install`) still runs the old
-# binary: restart it on the new one.
-if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/datum-sync.service" ]; then
-  systemctl --user restart datum-sync.service ||
-    echo "warning: the sync daemon was not restarted; retry with: systemctl --user restart datum-sync" >&2
-elif [ -f "$HOME/Library/LaunchAgents/day.datum.sync.plist" ]; then
-  launchctl kickstart -k "gui/$(id -u)/day.datum.sync" ||
-    echo "warning: the sync daemon was not restarted; retry with: launchctl kickstart -k gui/$(id -u)/day.datum.sync" >&2
-fi
-
-if [ "$completions" = 1 ]; then
-  "$dir/datum" completions install ||
-    echo "warning: tab completion not installed (datum is); retry with: datum completions install" >&2
-fi
+"$dir/datum" install "$@" ||
+  echo "warning: datum is installed, but did not set itself up; retry with: $dir/datum install" >&2
 
 case ":$PATH:" in
   *":$dir:"*) ;;

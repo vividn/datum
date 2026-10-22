@@ -426,7 +426,7 @@ impl Db {
 fn upgrade(label: &str, datum: &str, schema: u32) -> String {
     let how = match cfg!(target_family = "wasm") {
         true => "reload datum.day to update this copy",
-        false => "to upgrade this copy, `git pull && scripts/install.sh`",
+        false => "to upgrade this copy, `datum upgrade` (from a checkout, `git pull && scripts/install.sh`)",
     };
     format!(
         "{label} runs datum {datum} (schema {schema}), newer than this copy's {} \

@@ -17,8 +17,10 @@ const script = fileURLToPath(new URL('../static/install.sh', import.meta.url));
 const ASSETS = ['datum-x86_64-linux', 'datum-aarch64-linux', 'datum-x86_64-macos', 'datum-aarch64-macos'];
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 
-// A binary that says which asset it is when asked for its version.
-const binary = (asset) => `#!/bin/sh\necho "datum 3.0.1-beta (${asset})"\n`;
+// A binary that says which asset it is when asked for its version, and
+// what else it was asked.
+const binary = (asset) =>
+	`#!/bin/sh\ncase "$1" in --version) echo "datum 3.0.1-beta (${asset})" ;; *) echo "datum ran: $*" ;; esac\n`;
 
 function scratch({ sums = (asset) => sha256(binary(asset)) } = {}) {
 	const root = mkdtempSync(join(tmpdir(), 'datum-install-'));
@@ -68,6 +70,12 @@ describe('install.sh picks the binary for the machine', () => {
 			assert.match(run.stdout, /\.local\/bin is not on your PATH/);
 		});
 	}
+
+	test('the binary then sets itself up, with the arguments install.sh was given', () => {
+		const run = install(scratch(), 'Linux', 'x86_64');
+		assert.equal(run.status, 0, run.stderr);
+		assert.match(run.stdout, /^datum ran: install --no-completions$/m);
+	});
 
 	test('$DATUM_INSTALL_DIR is where it goes, and on PATH it says nothing of PATH', () => {
 		const box = scratch();

@@ -173,6 +173,17 @@ fn install(shell: &str, db_name: Option<&str>) -> Result<()> {
 /// out of `shell`'s rc file, every copy, whatever verbs the build that
 /// printed them had.
 fn uninstall(shell: &str, db_name: Option<&str>) -> Result<()> {
+    remove_loops(shell, Some(&datum_word(db_name)?))
+}
+
+/// `datum uninstall`'s (da-uphgn): every loop `install` printed, for any
+/// database, out of `shell`'s rc file.
+pub(crate) fn uninstall_every(shell: &str) -> Result<()> {
+    remove_loops(shell, None)
+}
+
+/// The loops for `datum` (for any, with none) out of `shell`'s rc file.
+fn remove_loops(shell: &str, datum: Option<&str>) -> Result<()> {
     let home = |var| std::env::var_os(var).filter(|v| !v.is_empty());
     let dir = match shell {
         "zsh" => home("ZDOTDIR").or_else(|| home("HOME")),
@@ -182,14 +193,13 @@ fn uninstall(shell: &str, db_name: Option<&str>) -> Result<()> {
         bail!("HOME is not set: no rc file to change");
     };
     let path = std::path::Path::new(&dir).join(format!(".{shell}rc"));
-    let datum = datum_word(db_name)?;
     let rc = match std::fs::read_to_string(&path) {
         Ok(rc) => rc,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e.into()),
     };
     let shown = path.display();
-    let (kept, left) = without_loops(&rc, Some(&datum));
+    let (kept, left) = without_loops(&rc, datum);
     for line in left {
         eprintln!(
             "{shown}:{line}: a datum alias loop whose `unset __datum_a` is not three \

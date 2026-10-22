@@ -568,7 +568,7 @@ user unit / launchd agent running the hidden `sync daemon run`, which is `sync
 run` for every chained db `known_dbs` lists; a copy's first `chain invite` /
 `connect` keeps a db opened by path in the registry under its absolute path, so
 the daemon finds it too (da-zrl7n), and installs it unless
-`DATUM_SYNC_NO_DAEMON=1`, and `scripts/install.sh` restarts it; a `connect`
+`DATUM_SYNC_NO_DAEMON=1`, and `datum install` and `datum upgrade` restart it onto a new binary; a `connect`
 installs it once admitted and holds `<db>.joining` locked for its life, so the
 daemon leaves that database alone until the `connect` ends or is killed, and
 then finishes a first sync cut short; an `invite` holds the same lock, so a

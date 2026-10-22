@@ -51,11 +51,15 @@ Then set it up (below) and say in one sentence per field what it will do.
 
 ## With a shell
 
-**Install** (it builds from source, so it needs Rust's `cargo`; https://rustup.rs if it is missing):
+**Install** (Linux or macOS: the prebuilt binary, checked against the release's SHA256SUMS, then `datum install` sets
+up tab completion; `datum upgrade` upgrades it later):
 
 ```bash,no_run
-git clone https://github.com/vividn/datum && cd datum && scripts/install.sh
+curl -fsSL https://datum.day/install.sh | sh
 ```
+
+Elsewhere, build it from a checkout with Rust's `cargo`: `git clone https://github.com/vividn/datum && cd datum &&
+scripts/install.sh`.
 
 **Share a database with your person.** Keep their record in a database named for them, and send them the link
 `sync chain invite` prints; they open it on datum.day and agree, and from then on what either side writes, both hold:

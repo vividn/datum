@@ -43,6 +43,7 @@ datum-parse = { path = "../datum-parse" }
 datum-sync = { path = "../datum-sync", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }

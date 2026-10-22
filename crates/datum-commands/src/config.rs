@@ -466,6 +466,11 @@ pub struct RawConfig {
     /// built-in default is Monday.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub week_start: Option<String>,
+    /// `true`: `datum check` asks the release whether a newer datum is out
+    /// (da-uphgn). Off by default: datum makes no network call of its own
+    /// unless you sync, upgrade, or turn this on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_check: Option<bool>,
 }
 
 /// Effective resolved config with per-key source provenance.

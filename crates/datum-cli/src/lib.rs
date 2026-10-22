@@ -457,14 +457,17 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         anyhow::bail!("repl is unavailable in this build");
     }
 
-    // `datum config show`, `datum completions`, `datum sync daemon` and
-    // `alias install | uninstall` run against an in-memory placeholder: they
+    // `datum config show`, `datum completions`, `datum sync daemon`,
+    // `install | uninstall | upgrade` and `alias install | uninstall` run against an in-memory placeholder: they
     // do not read the entry db (the daemon opens each chained db itself, and
     // must not create the default).
     if matches!(
         &cli.command,
         Command::Config(_)
             | Command::Completions(_)
+            | Command::Install(_)
+            | Command::Uninstall
+            | Command::Upgrade { .. }
             | Command::Sync(SyncCommand::Daemon(_))
             | Command::Alias(AliasCommand::Install { .. } | AliasCommand::Uninstall { .. })
     ) {

@@ -369,6 +369,16 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Sync(sub) => commands::sync::sync(sub, cli.db.as_deref(), db),
         Command::Reparse(args) => commands::reparse::reparse(args, db),
         Command::Completions(sub) => commands::completions::run(&sub),
+        #[cfg(feature = "net")]
+        Command::Install(args) => commands::install::install(args),
+        #[cfg(feature = "net")]
+        Command::Uninstall => commands::install::uninstall(),
+        #[cfg(feature = "net")]
+        Command::Upgrade { check } => commands::install::upgrade(check),
+        #[cfg(not(feature = "net"))]
+        Command::Install(_) | Command::Uninstall | Command::Upgrade { .. } => {
+            anyhow::bail!("install, uninstall and upgrade are the native datum's")
+        }
     }
 }
 

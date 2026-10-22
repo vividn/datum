@@ -45,7 +45,8 @@ Invented days on the [sample kit](kits/sample.toml): sleep is the blue band acro
 with its project just under it, walks lime, reading pink, ☕ coffee and ◆ water, all on a ground of where you were
 (home, office, outside). [`docs/img/make-images.sh`](docs/img/make-images.sh) draws them again.
 
-Each entry is one row in the SQLite database on your device, and the CLI makes no network calls unless you sync. `datum help` documents
+Each entry is one row in the SQLite database on your device, and the CLI makes no network calls unless you sync, upgrade, or turn on update checks (`update_check = true` in
+`datumrc.toml`). `datum help` documents
 every command and `datum help <command>` each one; logging and reading commands take `--json` for output as JSON.
 
 datum is still beta: the storage format and the commands can still change, so keep backups of what matters
@@ -59,10 +60,10 @@ On Linux or macOS, with nothing else installed:
 curl -fsSL https://datum.day/install.sh | sh
 ```
 
-It downloads the prebuilt `datum` for your machine, built from main, checks it against the release's SHA256SUMS,
-puts it in `~/.local/bin`, adds tab completion for your shell, and restarts the sync daemon if one runs. Run it again
-to upgrade. To build from a checkout instead (`scripts/install.sh`, which needs Rust's `cargo`), and to uninstall:
-[docs/install.md](docs/install.md).
+It downloads the prebuilt `datum` for your machine, built from main, checks it against the release's SHA256SUMS and
+puts it in `~/.local/bin`; then `datum install` sets it up: tab completion for your shell, and the sync daemon once a
+database syncs. `datum upgrade` upgrades it and `datum uninstall` removes it, keeping your record. To build from a
+checkout instead (`scripts/install.sh`, which needs Rust's `cargo`): [docs/install.md](docs/install.md).
 
 ## Typing less
 
