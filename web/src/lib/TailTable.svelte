@@ -68,6 +68,21 @@
 	last replaced it, so a page landing never takes a column away
 	(da-gtk48: an older row too wide for the box took `hid` mid-scroll).
 	The widths the table lays out then are held (`hold`) while rows land.
+
+	And it FOLLOWS THE SELECTION (da-lqz3j, vividn: "if you have a piece of
+	data selected, the tail should jump to that piece of data to show
+	surrounding data, similarly, if you select a time, the tail should jump
+	to that time, show a white dotted line where the selected time is in the
+	data. if you select a range of times, then only show the data that
+	appears within that range in the tail"). An entry or an instant not held
+	is listed around — a page above it (`tail --above` / `-t`) and a page
+	below (`head --below`) — and scrolled to the middle of the pane; one held
+	is scrolled to only when it is off screen, so a tap on a row moves
+	nothing. The instant is a white dotted line over the first row after it.
+	Below a listing that does not reach the live end, scrolling down pages
+	in the rows under it as scrolling up does those above. A range is a
+	filter like the field pill's, `--since` and `-t`. Cleared, a tail the
+	selection moved goes back to the live end.
 -->
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
@@ -75,7 +90,8 @@
 	import AnsiText from './AnsiText.svelte';
 	import StateCell from './StateCell.svelte';
 	import { fieldPill, select, selected } from './bar.js';
-	import { isSelected } from './selection.js';
+	import { cursor, timeArg, type Cursor } from './cursor.js';
+	import { isSelected, same } from './selection.js';
 	import { tapped } from './tap.js';
 	import type { PaneBox } from './panes.js';
 	import { runKey } from './run.js';
@@ -162,6 +178,16 @@
 	 * the screen and the pages above it are of the same field.
 	 */
 	let field: string | null = null;
+	/** The range selected (da-lqz3j), which narrows the listing as the field does. */
+	let range: { since: string; until?: string } | null = null;
+	/** Every listing's bounds: the field and the range. */
+	const bounds = () => ({ ...(field ? { field } : {}), ...range });
+	/** The newest row held is the listing's newest: false below a jump, until paging down reaches it. */
+	let live = true;
+	/** The selection moved the tail, so clearing it gives the live end back. */
+	let jumped = false;
+	/** What the tail last followed: a hid, `@<ms>` for an instant, or '' for nothing. */
+	let followed = '';
 
 	/** Rows landed below the reader's view (or the live end was let go). */
 	let unseen = false;
@@ -212,6 +238,14 @@
 	// width rewraps — but asks the CLI only if the count changed (da-4glsf).
 	$: if (n !== null && box) void refresh(Math.max(1, n), epoch);
 	$: visible = n === 0 ? [] : rows;
+	/** The row the selected instant's line is over (da-lqz3j); past the last, under it; -1 for none. */
+	$: line = $cursor && !$cursor.span ? lineOver(visible, +$cursor.at, exhausted, live) : -1;
+
+	/** Where `t` falls among `shown`, or -1 when it is past an end that is not the listing's. */
+	function lineOver(shown: Shown[], t: number, first: boolean, last: boolean): number {
+		const k = shown.filter((row) => at(row) <= t).length;
+		return (k === 0 && !first) || (k === shown.length && !last) ? -1 : k;
+	}
 
 	/**
 	 * A new field is a new listing: the rows held are another field's, so
@@ -219,11 +253,25 @@
 	 * afresh. The counts that were settled against the old rows go with
 	 * them — a narrowed listing wraps differently and is measured again.
 	 */
-	$: narrow($fieldPill);
+	$: narrow($fieldPill, rangeOf($cursor));
 
-	function narrow(next: string | null): void {
-		if (next === field) return;
+	/**
+	 * A selection with a length, as the CLI's bounds: dated, so `--since`
+	 * never reads a clock time as a duration ago, and open at the top when
+	 * it ends at now, so what is logged meanwhile is in it.
+	 */
+	function rangeOf(c: Cursor | null): typeof range {
+		if (!c?.span) return null;
+		const dated = (at: Date) => timeArg(at, new Date(0));
+		return { since: dated(new Date(+c.at - c.span * 60_000)), ...(c.rel === 0 ? {} : { until: dated(c.at) }) };
+	}
+
+	function narrow(next: string | null, within: typeof range): void {
+		if (next === field && JSON.stringify(within) === JSON.stringify(range)) return;
 		field = next;
+		range = within;
+		live = true;
+		jumped = false;
 		rows = [];
 		probed = [];
 		exhausted = false;
@@ -452,10 +500,10 @@
 
 	async function refresh(count: number, _epoch: number, force = false): Promise<void> {
 		const started_at = ++started;
-		const ask = JSON.stringify([count, _epoch, field]);
+		const ask = JSON.stringify([count, _epoch, bounds()]);
 		// The screen and a page above it (da-gtk48): the first scroll up moves at once.
 		if (force || asked?.with !== ask)
-			asked = { with: ask, listing: tailListing({ count: count + pageSize(count), ...(field ? { field } : {}) }, key) };
+			asked = { with: ask, listing: tailListing({ count: count + pageSize(count), ...bounds() }, key) };
 		const mine = asked;
 		let table: { rows: TailRow[]; columns: TailColumn[] };
 		try {
@@ -485,7 +533,8 @@
 		if (force || rows.length === 0 || (!paging && !away && nearBottom())) {
 			// Pinned: the screen is the CLI's newest page and nothing else.
 			generation++;
-			away = false;
+			away = jumped = false;
+			live = true;
 			extra = 0;
 			rows = page;
 			probed = page.slice(-count);
@@ -516,41 +565,58 @@
 				if (rows.length > CAP) rows = rows.slice(rows.length - CAP);
 				adopt(table.columns, false);
 			}
-			if (fresh) unseen = true;
+			// Under a listing short of the live end, the rows below page in.
+			if (fresh && live) unseen = true;
 			await decide();
 			await hold(false);
 			await keep(a);
 		}
 	}
 
-	/** The page above the oldest row on screen, prepended with the place kept. */
-	async function page(): Promise<void> {
-		if (paging || exhausted || !n || rows.length === 0) return;
+	/**
+	 * The page above the oldest row on screen, prepended with the place
+	 * kept — or, `down`, the page below the newest, under a listing that
+	 * does not reach the live end (da-lqz3j).
+	 */
+	async function page(down = false): Promise<void> {
+		if (paging || (down ? live : exhausted) || !n || rows.length === 0) return;
 		paging = true;
 		const of = generation;
+		const size = pageSize(n);
 		try {
-			const table = await tailListing({ count: pageSize(n), above: rows[0].hid, ...(field ? { field } : {}) });
+			const table = await tailListing({
+				count: size,
+				...(down ? { head: true, below: rows[rows.length - 1].hid } : { above: rows[0].hid }),
+				...bounds()
+			});
 			if (of !== generation) return;
+			if (down && table.rows.length < size) live = true;
 			// A row retimed since it was listed can come back above itself.
 			const held = new Set(rows.map((row) => row.hid));
 			const fresh = toShown(table).filter((row) => !held.has(row.hid));
-			if (fresh.length === 0) return void (exhausted = true);
+			if (fresh.length === 0) return void (down || (exhausted = true));
 			away = true;
 			adopt(table.columns, false);
-			// Drawn `DRAW` rows a task, the newest first, so no one frame
+			// Drawn `DRAW` rows a task, the nearest first, so no one frame
 			// waits on a whole page (da-j6frl); the place is the one before
 			// the first, so a scroll offset's rounding is not carried on.
 			const a = anchor();
-			for (let end = fresh.length; end > 0; end -= DRAW) {
+			for (let done = 0; done < fresh.length; done += DRAW) {
 				if (of !== generation) return;
-				rows = [...fresh.slice(Math.max(0, end - DRAW), end), ...rows];
-				if (rows.length > CAP) {
+				const end = fresh.length - done;
+				rows = down
+					? [...rows, ...fresh.slice(done, done + DRAW)]
+					: [...fresh.slice(Math.max(0, end - DRAW), end), ...rows];
+				if (rows.length > CAP && down) {
+					rows = rows.slice(rows.length - CAP);
+					exhausted = false;
+				} else if (rows.length > CAP) {
 					rows = rows.slice(0, CAP);
 					unseen = true;
 				}
 				await hold(false);
 				await keep(a);
-				if (end > DRAW) await new Promise((resolve) => setTimeout(resolve));
+				if (done + DRAW < fresh.length) await new Promise((resolve) => setTimeout(resolve));
 			}
 		} catch {
 			// A page that failed is a page not shown; the table stands.
@@ -562,6 +628,87 @@
 	/** `↓ new`: back to the live end, fresh. */
 	function jump(): void {
 		if (n !== null) void refresh(Math.max(1, n), epoch, true);
+	}
+
+	/**
+	 * Follow the selection (da-lqz3j): an instant with no length, or the
+	 * entry selected last. A range is `narrow`'s, and leaves both alone.
+	 */
+	$: if (n !== null) follow($cursor, $selected);
+
+	function follow(c: Cursor | null, hids: string[]): void {
+		const to = c ? (c.span ? '' : `@${+c.at}`) : (hids.at(-1) ?? '');
+		if (to === followed) return;
+		followed = to;
+		if (to) void goTo(to);
+		else if (jumped && !c?.span) jump();
+	}
+
+	async function goTo(to: string): Promise<void> {
+		const t = to.startsWith('@') ? +to.slice(1) : null;
+		const newest = rows[rows.length - 1];
+		// An instant is held when it falls among the rows held: after the
+		// oldest, and before the newest — or anywhere after it, when the
+		// newest held is the listing's newest. Then its line is between two
+		// held rows (or under the last), whatever field they are.
+		const held =
+			t === null
+				? rows.some((row) => same(row.hid, to))
+				: !!newest && at(rows[0]) <= t && (live || t <= at(newest));
+		if (!held && n) {
+			// A listing or page in flight is for the screen this replaces.
+			const mine = (shown = ++started);
+			const of = ++generation;
+			const size = pageSize(n);
+			try {
+				const above = await tailListing({
+					count: size,
+					...(t === null ? { above: to } : { until: timeArg(new Date(t), new Date(0)) }),
+					...bounds()
+				});
+				const last = above.rows.at(-1)?.hid;
+				// For an entry, itself and a page under it.
+				const count = size + (t === null ? 1 : 0);
+				const below = await tailListing({ count, head: true, ...(last ? { below: last } : {}), ...bounds() });
+				if (of !== generation || mine !== shown) return;
+				error = '';
+				rows = [...toShown(above), ...toShown(below)];
+				probed = rows;
+				live = below.rows.length < count;
+				away = !live;
+				exhausted = above.rows.length < size;
+				unseen = false;
+				extra = 0;
+				adopt(above.columns, true);
+				adopt(below.columns, false);
+				await decide();
+				await hold(true);
+			} catch {
+				// A selection the CLI cannot list around moves nothing.
+				return;
+			}
+		}
+		await tick();
+		// An instant is the two rows either side of its line.
+		const i = t === null ? rows.findIndex((row) => same(row.hid, to)) : lineOver(rows, t, true, true);
+		if (reveal(t === null ? i : i - 1, i, !held) || !held) jumped = true;
+	}
+
+	/**
+	 * Scroll rows `from` to `to` to the middle of the pane — unless they are
+	 * on screen already and it is not `fresh` — and say whether it did.
+	 */
+	function reveal(from: number, to: number, fresh: boolean): boolean {
+		const trs = tbody?.rows;
+		const a = trs?.[Math.max(0, from)];
+		const b = trs?.[Math.min(to, trs.length - 1)];
+		if (!a || !b || !scroller) return false;
+		const box = scroller.getBoundingClientRect();
+		const [y0, y1] = [a.getBoundingClientRect().top, b.getBoundingClientRect().bottom];
+		const top = box.top + (thead?.getBoundingClientRect().height ?? 0);
+		if (!fresh && y0 >= top - 0.5 && y1 <= box.bottom + 0.5) return false;
+		scrollTo(scroller.scrollTop + y0 - top - (box.bottom - top - (y1 - y0)) / 2);
+		return true;
 	}
 
 	// The reader's scrolling, on the pane's body. Up to within a page of
@@ -603,9 +750,10 @@
 		const mine = own !== null && top === own;
 		own = null;
 		if (mine) return;
-		if (nearBottom()) unseen = away = false;
+		if (nearBottom() && live) unseen = away = false;
 		const lead = n && fit ? (pageSize(n) - n) * fit.row : 0;
 		if (up && top <= lead && scroller.scrollHeight > scroller.clientHeight + 1) void page();
+		if (!up && !live && scroller.scrollHeight - top - scroller.clientHeight <= lead) void page(true);
 	}
 
 	function onWheel(e: WheelEvent): void {
@@ -687,6 +835,8 @@
 				<tr
 					data-hid={row.hid}
 					class:selected={isSelected($selected, row.hid)}
+					class:line={i === line}
+					class:line-under={line === visible.length && i === line - 1}
 					on:mousedown={(e) => e.shiftKey && e.preventDefault()}
 					on:click={(e) => tapped(e) && select(row.hid, e, visible.map((r) => r.hid))}
 					class:start={exhausted && i === 0}
@@ -843,6 +993,16 @@
 	   background so the row's height, and the count, are untouched. */
 	.start td {
 		background: linear-gradient(to right, var(--quiet) 50%, transparent 0) top / 6px 1px repeat-x;
+	}
+
+	/* The selected instant (da-lqz3j): the pictures' white dotted line,
+	   drawn as a background like `.start`'s, so no row grows. */
+	.line td {
+		background: linear-gradient(to right, #fff 50%, transparent 0) top / 6px 2px repeat-x;
+	}
+
+	.line-under td {
+		background: linear-gradient(to right, #fff 50%, transparent 0) bottom / 6px 2px repeat-x;
 	}
 
 	/* What the count leaves under the last row: under a page, it is the room

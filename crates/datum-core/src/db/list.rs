@@ -233,12 +233,15 @@ pub(super) fn list_entries_sql(columns: &str, params: &ListParams) -> (String, V
     // da-mhcla: the rows before a cursor row in that order, spelled as a
     // range: SQLite seeks an expression index on `<=` and not on a row
     // value `(metric, slug) < (?, ?)`, which walked from the live end.
-    if let Some((time, slug)) = &params.before {
-        let time = time.to_rfc3339();
-        sql.push_str(&format!(
-            " AND {metric_expr} <= ? AND ({metric_expr} < ? OR slug < ?)"
-        ));
-        bindings.extend([time.clone(), time, slug.clone()]);
+    // And the rows after one (da-lqz3j), the same range the other way.
+    for (cursor, op) in [(&params.before, '<'), (&params.after, '>')] {
+        if let Some((time, slug)) = cursor {
+            let time = time.to_rfc3339();
+            sql.push_str(&format!(
+                " AND {metric_expr} {op}= ? AND ({metric_expr} {op} ? OR slug {op} ?)"
+            ));
+            bindings.extend([time.clone(), time, slug.clone()]);
+        }
     }
     sql.push_str(&order);
 
@@ -377,6 +380,12 @@ mod tests {
                 },
                 ListParams {
                     before: before.clone(),
+                    ..listing.clone()
+                },
+                // da-lqz3j: and a page below one, toward the live end.
+                ListParams {
+                    after: before.clone(),
+                    head: true,
                     ..listing
                 },
             ];
@@ -388,7 +397,7 @@ mod tests {
                 );
                 // A bound is a seek, not a walk from the live end down to it.
                 assert!(
-                    i == 0 || plan.contains("<expr><?)"),
+                    i == 0 || plan.contains("<expr><?)") || plan.contains("<expr>>?)"),
                     "expected a seek to the bound for {params:?}, got:\n{plan}"
                 );
                 assert!(

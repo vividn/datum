@@ -12,6 +12,7 @@ use datum_core::{
 use crate::args::{OutputFlagsExt, TailArgs};
 use crate::commands::helpers::{load_registry_opt, registry_of, resolve_prefix_or_tombstone};
 use crate::commands::render_helpers::build_table_contexts;
+use crate::commands::time_bounds::parse_since;
 use crate::render::tail_rows::{tail_rows, TailDocument};
 use crate::render::term_layout::{detect_cols, detect_rows, given_cols, given_rows, is_stdout_tty};
 use crate::render::{print_table_with, table_columns_with, TableArgs, TimeMetricCol};
@@ -384,7 +385,8 @@ pub fn tail_entries_with_default_count(
             params.limit = Some(n);
         }
     }
-    if let Some(id) = &args.above {
+    // A row's place in the listing's order: its metric stamp, then its slug.
+    let place = |id: &String| -> Result<_> {
         let row = resolve_prefix_or_tombstone(db, id)?;
         let time = match params.metric {
             TimeMetric::Hybrid | TimeMetric::Occur => {
@@ -393,8 +395,10 @@ pub fn tail_entries_with_default_count(
             TimeMetric::Create => row.create_time,
             TimeMetric::Modify => row.modify_time,
         };
-        params.before = Some((time, row.slug.as_str().to_string()));
-    }
+        Ok((time, row.slug.as_str().to_string()))
+    };
+    params.before = args.above.as_ref().map(place).transpose()?;
+    params.after = args.below.as_ref().map(place).transpose()?;
     Ok(db.list_entries(&params)?)
 }
 
@@ -439,6 +443,10 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
         }
     };
 
+    // `--since`: a lower bound with any of these, the later of two.
+    let since = args.since.as_deref().map(parse_since).transpose()?;
+    let start_utc = start_utc.max(since);
+
     // Default limit: 10 for "tail", unlimited when date-only (matches datum).
     let limit = args.count.or(if is_date_only { None } else { Some(10) });
 
@@ -456,8 +464,10 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
         // the newest row tail shows (vividn's B9, da-9e02u).
         include_meta: args.show_meta || args.output()?.show == crate::render::Show::All,
         include_notes: true,
-        // `--above` names a row, which `tail_entries_with_default_count` reads.
+        // `--above` and `--below` name a row, which
+        // `tail_entries_with_default_count` reads.
         before: None,
+        after: None,
     })
 }
 

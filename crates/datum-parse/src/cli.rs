@@ -445,6 +445,12 @@ pub struct TailArgs {
     /// page that listed it (da-mhcla). Unlike `-t` it tells two rows at one
     /// instant apart.
     pub above: Option<String>,
+    /// `--below <ID>`: only the rows listed below that entry (da-lqz3j),
+    /// `--above`'s other side; with `head`, the nearest of them.
+    pub below: Option<String>,
+    /// `--since <TIME>`: only the rows at or after it, `count`'s grammar
+    /// (da-lqz3j). With `-t`, the rows between the two.
+    pub since: Option<String>,
     /// `-A/--show-all` / `-o/--format-string`, plus the swept `--show`.
     ///
     /// `--show json` (da-c7uw's `--json`) emits one named object per row
@@ -470,6 +476,8 @@ impl Default for TailArgs {
             table: false,
             show_meta: false,
             above: None,
+            below: None,
+            since: None,
             output: OutputArgs::default(),
         }
     }

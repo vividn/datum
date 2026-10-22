@@ -24,6 +24,8 @@ pub(crate) struct TailExtras {
     watch: Option<f64>,
     show_meta: bool,
     above: Option<String>,
+    below: Option<String>,
+    since: Option<String>,
 }
 
 pub(crate) fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
@@ -84,6 +86,14 @@ pub(crate) fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
         p.extras.above = Some(v.to_string());
         Ok(())
     }));
+    r.push(local_value(None, Some("below"), |p, v| {
+        p.extras.below = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(None, Some("since"), |p, v| {
+        p.extras.since = Some(v.to_string());
+        Ok(())
+    }));
     // `-w/--watch` is special — bare or attached or detached non-flag value.
     // The detached-peek form is handled by the caller after the registry walker.
     r.push(local_optional(Some('w'), Some("watch"), |p, v| {
@@ -141,6 +151,8 @@ pub(crate) fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
         table: composed.extras.table,
         show_meta: composed.extras.show_meta,
         above: composed.extras.above,
+        below: composed.extras.below,
+        since: composed.extras.since,
         output: composed.output,
     })
 }

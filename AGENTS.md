@@ -875,6 +875,13 @@ binary.
   capped at 300 rows) with the
   reader's row anchored, and a write while scrolled up keeps the place
   and shows `↓ new`. `web/tests/tailwatch.test.mjs` holds it to that.
+  It follows the page's selection (da-lqz3j): an entry or an instant not
+  held is listed around (`tail --above` / `-t`, then `head --below`) and
+  centered, an instant with a white dotted line over the first row after
+  it, and the rows under a listing short of the live end page in as the
+  reader scrolls down; a range narrows it, `--since` and `-t`, as the field
+  pill does; cleared, it goes back to the live end
+  (`web/tests/tailfollow.test.mjs`).
   Its STATE cell is the one cell not taken whole from `columns` (`web/src/lib/StateCell.svelte`), and the reason is NOT that the page
   renders it differently — it renders it the SAME. A state transition is
   THREE values in the row — `previous_state`, `state`, `following_state` —

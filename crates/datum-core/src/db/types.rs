@@ -248,6 +248,9 @@ pub struct ListParams {
     /// with, since `end_utc` cannot tell two rows at one instant apart
     /// (da-mhcla).
     pub before: Option<(DateTime<Utc>, String)>,
+    /// Only the rows listed after a cursor row: `before`'s other side
+    /// (da-lqz3j), what a pager moving down toward the live end asks with.
+    pub after: Option<(DateTime<Utc>, String)>,
 }
 
 /// A row of [`super::Db::list_timeline`]: what `stats` reads of an entry.

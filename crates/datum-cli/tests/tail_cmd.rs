@@ -144,6 +144,46 @@ fn tail_above_pages_the_whole_listing_timeless_rows_included() {
         ..tail_args()
     });
     assert_eq!(hids(&first), hids(&all[..5]));
+
+    // da-lqz3j: `--below` pages the same rows down, `head` taking the
+    // nearest below — both of two rows at one instant, timeless rows too.
+    let mut down: Vec<Entry> = list(TailArgs {
+        count: Some(2),
+        oldest_first: true,
+        ..tail_args()
+    });
+    loop {
+        let page = list(TailArgs {
+            count: Some(2),
+            below: down.last().map(|e| e.hid.0.clone()),
+            oldest_first: true,
+            ..tail_args()
+        });
+        if page.is_empty() {
+            break;
+        }
+        down.extend(page);
+    }
+    assert_eq!(hids(&down), hids(&all));
+}
+
+/// da-lqz3j: `--since` is a lower bound, inclusive, and with `-t` the
+/// listing is the rows between the two.
+#[test]
+fn tail_since_bounds_the_listing_from_below() {
+    let db = fresh_db();
+    let rows: Vec<Entry> = (1..=6)
+        .map(|m| insert(&db, "walk", Verb::Point, m))
+        .collect();
+    let hids = |rows: &[Entry]| -> Vec<String> { rows.iter().map(|e| e.hid.0.clone()).collect() };
+    let iso = |m: i64| (anchor() + Duration::minutes(m)).to_rfc3339();
+    let mut range = tail_args();
+    range.since = Some(iso(2));
+    range.time.time = Some(iso(4));
+    assert_eq!(hids(&tail_entries(&range, &db).unwrap()), hids(&rows[1..4]));
+    let mut since = tail_args();
+    since.since = Some(iso(5));
+    assert_eq!(hids(&tail_entries(&since, &db).unwrap()), hids(&rows[4..]));
 }
 
 /// da-2vgj1 (vividn's B3): the listing orders by its metric, `occur_time ??

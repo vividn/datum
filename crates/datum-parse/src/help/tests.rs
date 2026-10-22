@@ -142,6 +142,8 @@ OPTIONS:
       --table           Legacy columnar view (default: info-line)
       --show-meta       (alias: --show-all-metadata)  Include spec/layout/alias/view/command/index entries (hidden by default)
       --above <ID>      Only the entries listed above this one
+      --below <ID>      Only the entries listed below this one
+      --since <TIME>    Lower-bound time (as `datum count --since`)
 
 OUTPUT:
       --show <MODE>     default|none|format|json

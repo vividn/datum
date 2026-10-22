@@ -89,6 +89,13 @@ export interface TailListing {
 export interface TailPage {
 	count?: number;
 	above?: string;
+	/** The rows below this one's place instead (da-lqz3j); with `head`, the nearest of them. */
+	below?: string;
+	/** `head`: the oldest `count` rows, not the newest. */
+	head?: boolean;
+	/** Only the rows at or after this time (`--since`), and at or before this one (`-t`). */
+	since?: string;
+	until?: string;
 	/**
 	 * Only this field's rows — `datum tail [FIELD]`, its first positional
 	 * (da-8810n). What the bar's field pill narrows the pane to; absent is

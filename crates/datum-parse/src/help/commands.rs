@@ -674,6 +674,26 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
+    FlagSpec {
+        short: None,
+        long: "below",
+        takes_value: true,
+        value_hint: Some("ID"),
+        value_optional: false,
+        summary: "Only the entries listed below this one",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "since",
+        takes_value: true,
+        value_hint: Some("TIME"),
+        value_optional: false,
+        summary: "Lower-bound time (as `datum count --since`)",
+        long_description: None,
+        left_override: None,
+    },
 ];
 
 // ---------------------------------------------------------------------------

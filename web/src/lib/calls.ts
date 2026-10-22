@@ -71,11 +71,14 @@ export function aliasesArgv(): string[] {
 /** The field before any flag: it is the command's positional, and a flag between `tail` and it would make it the flag's value. */
 export function tailArgv(page: TailPage = {}): string[] {
 	return [
-		'tail',
+		page.head ? 'head' : 'tail',
 		...(page.field ? [page.field] : []),
 		'--json',
 		...(page.count !== undefined ? ['-n', String(page.count)] : []),
-		...(page.above !== undefined ? ['--above', page.above] : [])
+		...(page.above !== undefined ? ['--above', page.above] : []),
+		...(page.below !== undefined ? ['--below', page.below] : []),
+		...(page.since !== undefined ? ['--since', page.since] : []),
+		...(page.until !== undefined ? ['-t', page.until] : [])
 	];
 }
 
