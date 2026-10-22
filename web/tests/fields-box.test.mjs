@@ -8,8 +8,8 @@
 // file with it. What more than one of them needs is
 // `./support/fields.mjs`; a helper one file uses stays in that file.
 //
-// Budget (da-lt0k): node's `--test-timeout` is per TEST and a FILE is a
-// test, so 120 s is this file's whole budget — `before(startApp)`, the
+// Budget (da-lt0k): on node 22 a FILE was the test `run()` timed
+// (da-l5k9e: CI now runs node 24), so 120 s was this file's whole budget — `before(startApp)`, the
 // Chromium it launches, and every test in it. One file held all of this,
 // reached 32 tests, and `test timed out after 120000ms` took main's Web
 // job red on four of five pushes; a cancelled file hides every other

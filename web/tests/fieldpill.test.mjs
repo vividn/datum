@@ -12,8 +12,8 @@
 // narrowed, a stats widget, a tail pane, a day strip, and a REPL for the
 // echoes.
 //
-// Budget (da-lt0k, da-buqa): node's `--test-timeout` is per TEST and a FILE
-// is a test, so the runner's 300 s is this file's whole budget —
+// Budget (da-lt0k, da-buqa): on node 22 a FILE was the test `run()` timed
+// (da-l5k9e: CI now runs node 24), so the runner's 300 s was this file's whole budget —
 // `before(startApp)`, the Chromium it launches, and every test in it.
 // Measured alone on the 24-core build box (da-h1pi9, loaded, median of 3
 // interleaved): 68.5 s for the 24 before `seeded` and the one reloading

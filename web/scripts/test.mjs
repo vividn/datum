@@ -54,6 +54,12 @@
 // run waiting on it for six hours (da-cvd7y). `forceExit` ends a file's
 // process once its tests and hooks are done, whatever it still holds.
 //
+// That is node 24's `run()`. Node 22's never hands the budget on, and its
+// file process ignores `--test-timeout` without `--test`, so there the 300 s
+// is the FILE's whole wall: `tailwatch.test.mjs`, 130 s on its own, was cut
+// under load 25 with every test it had reached green (da-l5k9e). So CI runs
+// the suite on node 24, and on an older node the run says so at its start.
+//
 // A TOP-LEVEL HOOK that fails (`after(stopApp)` throwing or timing out) is
 // passed by node: its file completes as passed, and the hook is a lone
 // `test:fail` named by the HOOK's file (da-schm5). Each file's events arrive
@@ -142,6 +148,8 @@ const concurrency = filesAtOnce(cores, load, 6, override);
 console.log(
 	`test: ${cores} cores${lane ? ` (cgroup cpu.max ${lane})` : ''}, ${memory}, load ${load.toFixed(1)} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ` (override ${override}${concurrency < Math.floor(override) ? ', capped by cores' : ''})` : ''}`
 );
+if (Number(process.versions.node.split('.')[0]) < 24)
+	console.log(`test: node ${process.versions.node} cuts each FILE at 300 s, not each test; node 24 budgets the test (da-l5k9e)`);
 
 // The same set the old `tests/**/*.test.mjs` glob matched, listed here so the
 // shard can be taken from it — and so the run SAYS what it ran.

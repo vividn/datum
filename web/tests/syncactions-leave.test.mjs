@@ -2,8 +2,8 @@
 // departure the page's own sync delivers, and «leave anyway» when no member
 // is reached, syncing once more if one has come up (da-48g3o).
 //
-// Budget (da-lt0k): node's `--test-timeout` is per TEST and a FILE is a
-// test, so 300 s is this file's whole budget — `before(startApp)`, the
+// Budget (da-lt0k): on node 22 a FILE was the test `run()` timed
+// (da-l5k9e: CI now runs node 24), so 300 s was this file's whole budget — `before(startApp)`, the
 // Chromium it launches, and every test in it. `syncactions`, `-leave` and
 // `-purge` were one file, its six leave and purge tests waiting out real
 // 20 s budgets and idle timeouts: 189 s alone, 243 s in a whole run, and cut

@@ -406,14 +406,16 @@ jobs:
       # steps still test the step before them because a SKIPPED step (WEB=0)
       # is not a failure, and `success()` alone would run them.
       #
-      # node 22 for the two capture scripts and the web suite. GitHub's job
+      # node 24 for the two capture scripts and the web suite: node 22's
+      # `run()` cuts a whole FILE at test.mjs's 300 s budget, node 24's each
+      # test, as test.mjs says (da-l5k9e). GitHub's job
       # uses setup-node's pnpm cache; there is no cache service here, so no
       # `cache:` — a cache that fails must not fail the gate.
       - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         id: node
         if: env.TRAIN != '1'
         with:
-          node-version: 22
+          node-version: 24
 
       # A PR runs only the web test files whose coverage reaches its change
       # (da-e0gtq): `testmap-web.json` on the `testmap` branch (testmap.yml),
