@@ -77,8 +77,8 @@ const desktop = sharedApp({ clock: NOW, ...DESKTOP });
  * ⚑ SINCE da-r0ydu A DAY FOLLOWS THE WIDGET until the reader sets one, so
  * a strip nobody has touched draws exactly ONE day and there is no band
  * but today's — and half this file points into YESTERDAY's. Nothing here
- * is about how tall a day is: this is how a reader gets a stack (the `+`
- * handle, whose value then holds), and 40 is `MIN_DAY_HEIGHT`, the most
+ * is about how tall a day is: this is how a reader gets a stack (the day
+ * line over the ruler, whose value then holds), and 40 is `MIN_DAY_HEIGHT`, the most
  * past a strip's own box can show. Only the SETTING is touched, never a
  * pane's size: a strip given a bigger cell is a different layout, and two
  * of the tests below are about what a swipe does to the layout.
@@ -89,14 +89,14 @@ const stackOfDays = async (page) => {
 	// the tree instead lights the layout's modified dot, and two of the
 	// tests below read the root tab's name. Down is shorter (da-hsba), and
 	// 300px of it clamps at `MIN_DAY_HEIGHT`.
-	const box = await page.locator('button.day-grip').boundingBox();
+	const box = await page.locator('.today-line').boundingBox();
 	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
 	await page.mouse.move(x, y);
 	await page.mouse.down();
 	await page.mouse.move(x, y + 300, { steps: 8 });
 	await page.mouse.up();
 	await page.waitForFunction(
-		() => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === 40
+		() => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === 40
 	);
 	await page.locator('.band[data-days-ago="1"] svg.svg').waitFor();
 };
@@ -866,7 +866,7 @@ describe('what the bands take, and what they leave', () => {
 		await withStrip(
 			async (app) => {
 				const { page } = app;
-				const height = async () => Number(await page.locator('button.day-grip').getAttribute('aria-valuenow'));
+				const height = async () => Number(await page.locator('.today-line').getAttribute('aria-valuenow'));
 				const at = () => page.locator('.stack').evaluate((el) => el.scrollTop);
 				// The divider's line, over today: the stack's own lines lie under
 				// the pane's title on this screen, which a finger's touch
@@ -886,7 +886,7 @@ describe('what the bands take, and what they leave', () => {
 				// handle reached across the whole width until da-xg1vi, is the
 				// band of the day above, and a finger down it is the stack's scroll.
 				await page.waitForFunction(
-					(want) => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === want,
+					(want) => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === want,
 					was + 20
 				);
 				const band = await page.locator('.stack .band').last().boundingBox();
@@ -1055,20 +1055,20 @@ describe('what the bands take, and what they leave', () => {
 			await page.locator('.strip button.unzoom').click();
 			await untilWindow(app, 'w[0] === 0 && w[1] === 24');
 
-			// A press that begins on the `+` handle is the handle's: it sizes
+			// A press that begins on a day line is the line's: it sizes
 			// the day and selects nothing. (Whatever the gestures above left
 			// on the page — a click on a day points it at that time, da-wnt2
 			// — the slate is wiped first.)
 			await page.evaluate(() => window.datum.cursor.set(null));
 			await saysPills(page, []);
-			const grip = await page.locator('button.day-grip').boundingBox();
-			const was = Number(await page.locator('button.day-grip').getAttribute('aria-valuenow'));
+			const grip = await page.locator('.today-line').boundingBox();
+			const was = Number(await page.locator('.today-line').getAttribute('aria-valuenow'));
 			await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
 			await page.mouse.down();
 			await page.mouse.move(grip.x + grip.width / 2, grip.y - 20, { steps: 5 });
 			await page.mouse.up();
 			await until(
-				() => page.locator('button.day-grip').getAttribute('aria-valuenow'),
+				() => page.locator('.today-line').getAttribute('aria-valuenow'),
 				(now) => Number(now) > was
 			);
 			assert.deepEqual(await pillsOf(page), [], 'the handle made a selection');

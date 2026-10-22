@@ -294,8 +294,8 @@ describe('the time cursor', () => {
 	// A drag ACROSS a band used to belong here too — it set no cursor,
 	// because nothing on the strip took a drag. Since da-ku7y it is a
 	// RANGE (`tests/daypoint.test.mjs`), so what this test still holds is
-	// the two gestures that are somebody else's: the `+` handle's own
-	// drag, and the stack scrolling back through the days.
+	// the two gestures that are somebody else's: a day line's own drag,
+	// and the stack scrolling back through the days.
 	test('a drag on the notch and a scroll of the stack set no cursor', async () => {
 		await withDay(async ({ page }) => {
 			await tallStrip(page);
@@ -305,7 +305,7 @@ describe('the time cursor', () => {
 			await page.mouse.wheel(0, -200);
 
 			// Last: a taller day is less past.
-			const grip = await page.locator('.day-grip').boundingBox();
+			const grip = await page.locator('.today-line').boundingBox();
 			await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
 			await page.mouse.down();
 			await page.mouse.move(grip.x + grip.width / 2, grip.y - 20, { steps: 4 });

@@ -44,13 +44,13 @@ async function linesOf(page, id) {
 /** The strip's day-height handle says the setting; `aria-valuenow` is it. */
 const dayHeight = (page) =>
 	pane(page, 'strip')
-		.locator('button.day-grip')
+		.locator('.today-line')
 		.getAttribute('aria-valuenow')
 		.then(Number);
 
 const dayHeightIs = (page, want) =>
 	page.waitForFunction(
-		(want) => Number(document.querySelector('.dayview button.day-grip')?.getAttribute('aria-valuenow')) === want,
+		(want) => Number(document.querySelector('.dayview .today-line')?.getAttribute('aria-valuenow')) === want,
 		want
 	);
 
@@ -75,7 +75,7 @@ describe('Reset widget', () => {
 	// starts in rather than restated here.
 	test('the strip: dragged taller, saved, reset to the default, and restored to the save', async () => {
 		await withApp(async ({ page }) => {
-			const grip = '.dayview button.day-grip';
+			const grip = '.dayview .today-line';
 			await page.locator(grip).waitFor();
 			const fallback = await dayHeight(page);
 			const grow = 40;

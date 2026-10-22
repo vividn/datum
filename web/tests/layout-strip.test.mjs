@@ -77,7 +77,7 @@ const shownDays = (page) =>
  * sliver of yesterday a pinned today leaves (da-2hd21). The
  * tests below are about the box: what a drag shows as it goes, and what
  * the notch lands on. So they enter the second state first, the way a
- * reader does with the `+` handle. The drafts further down set
+ * reader does with a day line. The drafts further down set
  * `dayHeight` in the tree for the same reason.
  */
 const holdDay = (page, px) =>

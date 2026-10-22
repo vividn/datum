@@ -1005,7 +1005,7 @@ describe('a layout saved with the day height the defaults used to write', () => 
 	});
 	/** What the strip's handle says — the height actually drawn. */
 	const drawn = (page) =>
-		page.locator('.dayview button.day-grip').getAttribute('aria-valuenow').then(Number);
+		page.locator('.dayview .today-line').getAttribute('aria-valuenow').then(Number);
 
 	test('the OLD DEFAULT is dropped, so the day follows the widget again', async () => {
 		await shared.solo(async (app) => {
@@ -1013,7 +1013,7 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			await layouts(app, 'saveLayout', stripLayout({ dayHeight: 85, freezeToday: true }));
 			await pick(page, 'old');
 			await until(() => rootTabs(page), (t) => t.includes('old'));
-			await page.locator('.dayview button.day-grip').waitFor();
+			await page.locator('.dayview .today-line').waitFor();
 
 			// One widget filling the root: the box is far taller than 85, so
 			// a day that followed it cannot be mistaken for the saved number.
@@ -1055,7 +1055,7 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			await layouts(app, 'saveLayout', stripLayout({ freezeToday: true, labelWidth: 54 }));
 			await pick(page, 'old');
 			await until(() => rootTabs(page), (t) => t.includes('old'));
-			const grip = page.locator('.dayview button.day-grip');
+			const grip = page.locator('.dayview .today-line');
 			await grip.waitFor();
 			const box = await page.locator('section.pane[data-title="dayview"] .strip').evaluate((el) => el.clientHeight);
 			const follows = Math.min(240, Math.max(40, box - 15));
@@ -1093,7 +1093,7 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			// dot that genuinely lit — so the two assertions below are a
 			// save landing and a dot CLEARING, not a pair that would read
 			// the same if nothing had happened at all.
-			await grip.focus();
+			await page.locator('.dayview .spine').focus();
 			await page.keyboard.press('ArrowRight');
 			await chooseRoot(page, 'Save options with layout');
 			await until(() => dotted(page), (d) => d.length === 1);
@@ -1126,7 +1126,7 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			await layouts(app, 'saveLayout', stripLayout({ dayHeight: 120, freezeToday: true }));
 			await pick(page, 'old');
 			await until(() => rootTabs(page), (t) => t.includes('old'));
-			await page.locator('.dayview button.day-grip').waitFor();
+			await page.locator('.dayview .today-line').waitFor();
 			await until(() => drawn(page), (n) => n === 120);
 			// Held, not derived: the box is nothing like 120 + its ruler.
 			const box = await page.locator('section.pane[data-title="dayview"] .strip').evaluate((el) => el.clientHeight);

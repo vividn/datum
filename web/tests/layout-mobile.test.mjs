@@ -167,14 +167,16 @@ const bands = (page) =>
 	});
 
 /**
- * Whether the `+` sits on the top of today's band — its middle within the
- * seam over it (da-2hd21), frozen or not.
+ * Whether the keyboard's day line (da-5wa91), the divider, is an edge of
+ * today's band: the seam over a pinned today (da-2hd21), the line under
+ * one that scrolls.
  */
-const gripOnToday = (page) =>
+const lineOnToday = (page) =>
 	pane(page, 'strip').evaluate((p) => {
-		const grip = p.querySelector('button.day-grip').getBoundingClientRect();
+		const line = p.querySelector('.today-line').getBoundingClientRect();
 		const today = p.querySelector('[data-days-ago="0"]').getBoundingClientRect();
-		return Math.abs((grip.top + grip.bottom) / 2 - today.top) <= 3;
+		const mid = (line.top + line.bottom) / 2;
+		return Math.min(Math.abs(mid - today.top), Math.abs(mid - today.bottom)) <= 3;
 	});
 
 /** A pane's body type size, in px — what the tail's `type` option sets. */
@@ -269,7 +271,7 @@ describe('a fresh phone', () => {
 			}, phone(width, height));
 		});
 
-	test('at 390×844, the + on top of today, frozen or not', async () => {
+	test('at 390×844, the day line on today, frozen or not', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.run(['occur', 'coffee', '-y']));
@@ -277,10 +279,10 @@ describe('a fresh phone', () => {
 			await strip.locator('[data-days-ago="1"] svg').waitFor({ state: 'attached' });
 			const b = await bands(page);
 			assert.equal(b.today.of, Math.round((b.inner - AXIS - SEAM) / 1.25), `a ${b.today.of}px today in a ${b.inner}px box`);
-			assert.equal(await gripOnToday(page), true, 'the + is not on the top of today');
+			assert.equal(await lineOnToday(page), true, 'the day line is not on today');
 
 			// The freeze is the widget's option now, and pinned the same
-			// holds: yesterday over today, the + on the seam between them.
+			// holds: yesterday over today, the day line the seam between them.
 			await toggleFreeze(app);
 			await strip.locator('.row.pinned').waitFor();
 			await page.waitForFunction(() => {
@@ -289,7 +291,7 @@ describe('a fresh phone', () => {
 			});
 			const pinned = await bands(page);
 			assert.ok(pinned.yesterday?.seen > 0, `pinned, none of yesterday shows: ${JSON.stringify(pinned)}`);
-			assert.equal(await gripOnToday(page), true, 'pinned, the + is not on the top of today');
+			assert.equal(await lineOnToday(page), true, 'pinned, the day line is not on today');
 		}, phone());
 	});
 

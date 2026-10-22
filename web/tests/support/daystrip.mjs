@@ -29,7 +29,7 @@ export const settledRoom = (on, name, fn) =>
 		await app.page.waitForFunction(([min, max, sliver]) => {
 			const strip = document.querySelector('.strip');
 			const body = strip?.closest('.body');
-			const grip = strip?.querySelector('button.day-grip');
+			const grip = strip?.querySelector('.today-line');
 			if (!body || !grip) return false;
 			const s = getComputedStyle(body);
 			const px = (name) => parseFloat(s.getPropertyValue(name));
@@ -187,9 +187,9 @@ export async function setBox(app, px) {
  *
  * Returns once the strip has HEARD the box, a settle after the cell has it
  * (layout/resizing.ts). What the strip draws from its height moves only
- * then — the `+` among it, 93px on a box grown from shorter than a day — so
- * a press aimed at the grip before it lands on the band under where the
- * grip was, and a drag reads as nothing on a loaded runner (da-s6395).
+ * then — the divider among it, 93px on a box grown from shorter than a day —
+ * so a press aimed at the line before it lands on the band under where the
+ * line was, and a drag reads as nothing on a loaded runner (da-s6395).
  */
 export async function boxTo({ page }, px) {
 	await page.evaluate((h) => {
@@ -239,7 +239,7 @@ export const SLIVER = 1 / 4;
 /** Wait until the handle says `want` — the strip has heard its new box. */
 export const settledAt = ({ page }, want) =>
 	page.waitForFunction(
-		(want) => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === want,
+		(want) => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === want,
 		want
 	);
 
@@ -349,12 +349,12 @@ export const waitForDays = ({ page }, depth) =>
 		);
 	}, depth);
 
-/** What the `+` handle currently says the day height is. */
+/** What the day line's slider currently says the day height is. */
 export const valueOf = async ({ page }) =>
-	Number(await page.locator('button.day-grip').getAttribute('aria-valuenow'));
-/** And the width of the date column, its other axis. */
+	Number(await page.locator('.today-line').getAttribute('aria-valuenow'));
+/** And the width of the date column, the spine's slider. */
 export const widthOf = async ({ page }) =>
-	Number(await page.locator('button.day-grip').getAttribute('data-label-width'));
+	Number(await page.locator('.strip .spine').getAttribute('aria-valuenow'));
 
 /**
  * In the page: the settings the strip widget is DRAWN from — what the

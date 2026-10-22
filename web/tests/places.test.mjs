@@ -147,7 +147,7 @@ describe('a place on a desktop', () => {
 		await desktop.solo(async ({ page }) => {
 			await page.evaluate(() => window.datum.shell.openPlace('dayview'));
 			const dayview = modal(page, 'dayview');
-			await dayview.locator('.strip button.day-grip').waitFor();
+			await dayview.locator('.strip .today-line').waitFor();
 			assert.equal((await dayview.locator('.sheet-head > span').innerText()).trim(), 'dayview');
 			await dayview.locator('.sheet-head .close').click();
 			await dayview.waitFor({ state: 'detached' });
@@ -177,7 +177,7 @@ describe('a place on a desktop', () => {
 				settings
 			);
 			await page.evaluate(() => window.datum.shell.openPlace('dayview'));
-			const grip = modal(page, 'dayview').locator('button.day-grip');
+			const grip = modal(page, 'dayview').locator('.today-line');
 			await grip.waitFor();
 			await until(() => grip.getAttribute('aria-valuenow').then(Number), (n) => n !== 85);
 		});

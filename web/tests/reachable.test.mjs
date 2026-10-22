@@ -90,8 +90,8 @@ function boxOf(page, selector) {
 	return page.evaluate((s) => {
 		const el = document.querySelector(s);
 		if (!el) return null;
-		const { top, bottom } = el.getBoundingClientRect();
-		return { top, bottom, screen: document.documentElement.clientHeight };
+		const { top, bottom, left, right } = el.getBoundingClientRect();
+		return { top, bottom, left, right, screen: document.documentElement.clientHeight };
 	}, selector);
 }
 
@@ -163,25 +163,26 @@ describe('on a phone-sized screen', () => {
 		});
 	});
 
-	// The day strip's own two controls (da-iu9i): the `+` on the divider,
-	// which drags the day height and the date column, and the freeze-today
-	// toggle at the far left of the same line. Both are drawn INSIDE the
-	// strip, so a phone that leaves the strip a few dozen pixels is the
-	// case that puts them off the screen — and both are fingertips.
-	// The freeze-today toggle left the pane for the widget's options (da-2hd21).
-	test("the strip's + handle is a fingertip on screen", async (t) => {
+	// The day strip's own handles, drawn INSIDE the strip, so a phone that
+	// leaves the strip a few dozen pixels is the case that puts them off
+	// the screen. The `+` on the divider was the one the keyboard had; it is
+	// gone (da-5wa91), and the divider's line and the spine are the
+	// keyboard's now: the line on screen whole and a fingertip long, the
+	// spine a fingertip of it on screen at least, both inside the width.
+	test("the strip's day line and spine are on screen", async (t) => {
 		await phone.solo(async ({ page }) => {
 			await atEachScreen(t, page, [PHONE, SHORT], async () => {
-				for (const [selector, what] of [['.strip button.day-grip', "the strip's + handle"]]) {
-					await assertOnScreen(page, selector, what);
-					const box = await page.locator(selector).boundingBox();
-					const width = await page.evaluate(() => document.documentElement.clientWidth);
-					assert.ok(box.width >= 24 && box.height >= 24, `${what} is ${box.width}x${box.height}`);
-					assert.ok(
-						box.x >= 0 && box.x + box.width <= width + 1,
-						`${what} is ${box.x}–${box.x + box.width} on a ${width}px screen`
-					);
-				}
+				await assertOnScreen(page, '.strip .today-line', "the strip's day line");
+				const width = await page.evaluate(() => document.documentElement.clientWidth);
+				const line = await boxOf(page, '.strip .today-line');
+				const spine = await boxOf(page, '.strip .spine');
+				assert.ok(line.right - line.left >= 24, `the day line is ${line.right - line.left}px long`);
+				assert.ok(
+					Math.min(spine.bottom, spine.screen) - Math.max(spine.top, 0) >= 24,
+					`the spine shows ${spine.top}–${spine.bottom} on a ${spine.screen}px screen`
+				);
+				for (const [box, what] of [[line, 'the day line'], [spine, 'the spine']])
+					assert.ok(box.left >= 0 && box.right <= width + 1, `${what} is ${box.left}–${box.right} on a ${width}px screen`);
 			});
 		});
 	});

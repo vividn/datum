@@ -97,7 +97,7 @@ describe("the day strip's day height and its pin", () => {
 			// hears it — up is taller (da-hsba).
 			const grow = 30;
 			const mine = (await valueOf(app)) + grow;
-			await dragBy(app, 'button.day-grip', 0, -grow);
+			await dragBy(app, '.today-line', 0, -grow);
 			assert.equal(await valueOf(app), mine);
 			await heardIs(app, mine);
 
@@ -115,7 +115,7 @@ describe("the day strip's day height and its pin", () => {
 
 			// RE-ARMS: dragged onto the height the box would have chosen,
 			// nothing is held — the same absence a fresh strip has.
-			await dragBy(app, 'button.day-grip', 0, -(wouldBe - mine));
+			await dragBy(app, '.today-line', 0, -(wouldBe - mine));
 			assert.equal(await valueOf(app), wouldBe);
 			await heardIs(app, undefined);
 
@@ -170,7 +170,7 @@ describe("the day strip's day height and its pin", () => {
 
 			// SIDEWAYS ONLY: the label column widens, the height is not touched.
 			const wide = await widthOf(app);
-			await dragBy(app, 'button.day-grip', 40, 0);
+			await dragBy(app, '.strip .spine', 40, 0);
 			assert.ok((await widthOf(app)) > wide, 'the sideways drag moved nothing');
 
 			// The height is still the reader's, and the box still says so.
@@ -212,7 +212,7 @@ describe("the day strip's day height and its pin", () => {
 			await settledAt(app, tall);
 
 			// Dragged to the floor: down is shorter, and far enough to clamp.
-			await dragBy(app, 'button.day-grip', 0, 400);
+			await dragBy(app, '.today-line', 0, 400);
 			assert.equal(await valueOf(app), 40, 'the drag did not reach the floor');
 			await heardIs(app, 40);
 
@@ -276,7 +276,7 @@ describe("the day strip's day height and its pin", () => {
 			// height gives it.
 			await say(app, { dayHeight: 120 });
 			await app.page.waitForFunction(
-				() => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === 120
+				() => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === 120
 			);
 			assert.equal(await valueOf(app), 120);
 			await sizeFor(app, 2);
@@ -287,7 +287,7 @@ describe("the day strip's day height and its pin", () => {
 			// The handle moves it — up is taller (da-hsba) — and the owner
 			// hears the new value: the strip does not keep it to itself.
 			const grow = 30;
-			await dragBy(app, 'button.day-grip', 0, -grow);
+			await dragBy(app, '.today-line', 0, -grow);
 			assert.equal(await valueOf(app), 120 + grow);
 			await heardIs(app, 120 + grow);
 			// And the bands are re-drawn, not stretched: the picture datum
@@ -314,7 +314,7 @@ describe("the day strip's day height and its pin", () => {
 
 			// UP is taller (da-hsba): the pointer moves 40px up, and every
 			// day is drawn 40px taller — today's, and each of the past's.
-			await dragBy(app, 'button.day-grip', 0, -grow);
+			await dragBy(app, '.today-line', 0, -grow);
 			assert.equal(await valueOf(app), was + grow);
 			const up = grown(m, grow);
 			assert.equal(owedAt(up), 2, 'the taller days do not leave two in the box');
@@ -329,10 +329,10 @@ describe("the day strip's day height and its pin", () => {
 
 			// And DOWN is shorter, by the same 40, from the same start —
 			// and more days fit.
-			await dragBy(app, 'button.day-grip', 0, grow);
+			await dragBy(app, '.today-line', 0, grow);
 			assert.equal(await valueOf(app), was);
 			await waitForHeights(app, m.band);
-			await dragBy(app, 'button.day-grip', 0, grow);
+			await dragBy(app, '.today-line', 0, grow);
 			assert.equal(await valueOf(app), was - grow);
 			const down = grown(m, -grow);
 			await waitForHeights(app, down.band);
@@ -340,10 +340,10 @@ describe("the day strip's day height and its pin", () => {
 		});
 	});
 
-	// The second axis of the same handle (da-iu9i): the date column is the
-	// strip's own now, so how wide it is is a setting, and the `+` at the
-	// 00 mark drags it sideways.
-	test('the handle dragged sideways widens the date column, and the bands give up the room', async () => {
+	// The second size (da-iu9i): the date column is the strip's own now,
+	// so how wide it is is a setting, and the spine at the 00 mark drags it
+	// sideways.
+	test('the spine dragged sideways widens the date column, and the bands give up the room', async () => {
 		await settledRoom(shared, 'widen', async (app) => {
 			await sizeFor(app, 3);
 			const was = await widthOf(app);
@@ -353,7 +353,7 @@ describe("the day strip's day height and its pin", () => {
 				.evaluate((el) => el.getBoundingClientRect().width);
 
 			const wider = 30;
-			await dragBy(app, 'button.day-grip', wider, 0);
+			await dragBy(app, '.strip .spine', wider, 0);
 			assert.equal(await widthOf(app), was + wider);
 			await heardIs(app, was + wider, 'labelWidth');
 
@@ -395,7 +395,7 @@ describe("the day strip's day height and its pin", () => {
 			const [tall, wide, marks, window0] = [await valueOf(app), await widthOf(app), await pills(), await hours()];
 
 			// A line between two days, pushed up and sideways: taller, the
-			// column untouched. Up is taller, as on the `+` (da-hsba).
+			// column untouched. Up is taller (da-hsba).
 			// The lowest line in the stack: over today, or over yesterday
 			// while today is pinned under the divider.
 			const lowest = '.stack .row > .day-line >> nth=-1';
@@ -505,7 +505,7 @@ describe("the day strip's day height and its pin", () => {
 				.evaluate((el) => el.getBoundingClientRect().height);
 			const seen = await app.spyOnRunner();
 
-			const box = await app.page.locator('button.day-grip').boundingBox();
+			const box = await app.page.locator('.today-line').boundingBox();
 			const x = box.x + box.width / 2;
 			const y = box.y + box.height / 2;
 			await app.page.mouse.move(x, y);
@@ -539,15 +539,17 @@ describe("the day strip's day height and its pin", () => {
 		});
 	});
 
-	test('the keyboard works both axes of the handle', async () => {
+	// da-5wa91: the `+` was the keyboard's only handle; the divider's line
+	// and the spine are its sliders now, each its own axis.
+	test('the keyboard works both sizes, the day line one and the spine the other', async () => {
 		await settledRoom(shared, 'keys', async (app) => {
 			const tall = await valueOf(app);
 			const wide = await widthOf(app);
 
-			await app.page.locator('button.day-grip').focus();
+			await app.page.locator('.today-line').focus();
 			assert.ok(
-				await app.page.evaluate(() => document.activeElement.classList.contains('day-grip')),
-				'the handle does not take focus'
+				await app.page.evaluate(() => document.activeElement.classList.contains('today-line')),
+				'the day line does not take focus'
 			);
 			// Up is taller, as it is for the pointer — the two paths are one
 			// convention.
@@ -559,7 +561,23 @@ describe("the day strip's day height and its pin", () => {
 			assert.equal(await valueOf(app), 2 * tall - taller);
 			assert.equal(await heard(app), 2 * tall - taller);
 
-			// And right is a wider column, left a narrower one.
+			// Sideways on the day line is nothing: the width is the spine's.
+			await app.page.keyboard.press('ArrowRight');
+			assert.equal(await widthOf(app), wide, 'the day line moved the date column');
+
+			// And on the spine right is a wider column, left a narrower one,
+			// and up and down are nothing.
+			await app.page.locator('.strip .spine').focus();
+			// Its own 1px is no focus ring: the ring is round the hit area.
+			assert.equal(
+				await app.page
+					.locator('.strip .spine')
+					.evaluate((el) => (el.matches(':focus-visible') ? getComputedStyle(el, '::before').outlineStyle : 'unfocused')),
+				'solid',
+				'the focused spine draws no ring a reader sees'
+			);
+			await app.page.keyboard.press('ArrowUp');
+			assert.equal(await valueOf(app), 2 * tall - taller, 'the spine moved the day height');
 			await app.page.keyboard.press('ArrowRight');
 			const wider = await widthOf(app);
 			assert.ok(wider > wide, `right did not widen the date column: ${wider}`);
@@ -617,6 +635,25 @@ describe("the day strip's day height and its pin", () => {
 
 	// da-iu9i: «the ↻ goes» — resetting the widget's settings is the pane
 	// menu's `Reset widget` (da-7ymx), not a button of the strip's own.
+	// da-5wa91, vividn, 2026-10-22: «on dayview, remove the old + handle,
+	// it is not connected to anything and just floats around weirdly». The
+	// strip's sliders are its two lines, and nothing else.
+	test('the strip has no + grip; its sliders are the day line and the spine', async () => {
+		await shared.solo(async (app) => {
+			await app.page.locator('.strip .today-line').waitFor();
+			assert.equal(await app.page.locator('.strip .grip, .strip .day-grip').count(), 0, 'the + is still drawn');
+			const sliders = await app.page
+				.locator('.strip [role="slider"]')
+				.evaluateAll((els) =>
+					els.map((el) => [el.classList.contains('today-line') ? 'today-line' : el.classList.contains('spine') ? 'spine' : el.className, el.getAttribute('aria-label')])
+				);
+			assert.deepEqual(sliders, [
+				['today-line', 'day height'],
+				['spine', 'date-label width']
+			]);
+		});
+	});
+
 	test('the strip has no reset button', async () => {
 		await shared.solo(async (app) => {
 			assert.equal(await app.page.locator('.strip button.reset').count(), 0);
@@ -663,8 +700,8 @@ describe("the day strip's day height and its pin", () => {
 			await sizeFor(app, 2);
 			const before = await storeKeys(app);
 
-			await dragBy(app, 'button.day-grip', 0, -20);
-			await app.page.locator('button.day-grip').focus();
+			await dragBy(app, '.today-line', 0, -20);
+			await app.page.locator('.today-line').focus();
 			await app.page.keyboard.press('ArrowUp');
 			await toggleFreeze(app);
 			await heardIs(app, false, 'freezeToday');
@@ -684,7 +721,7 @@ describe("the day strip's day height and its pin", () => {
 				await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
 				assert.equal(await valueOf(app), fallback);
 				await sizeFor(app, 1);
-				await app.page.locator('button.day-grip').focus();
+				await app.page.locator('.today-line').focus();
 				await app.page.keyboard.press('ArrowUp');
 				assert.ok((await valueOf(app)) > fallback);
 				assert.deepEqual(app.errors, [], 'the page threw with storage blocked');

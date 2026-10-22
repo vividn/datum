@@ -33,16 +33,11 @@
 	setting (vividn: "the date labels should probably be rendered separately
 	as well as the axis labels").
 
-	The controls are all on the divider above today, which is the one line
-	in the strip that belongs to no day:
-
-	- the `+` where the label column meets the bands — the 00 mark. Drag
-	  it up and down for the day height, left and right for the label
-	  width, arrows for both. During the drag the bands are SCALED to the
-	  size being previewed and re-asked only on release: one `dayview` per
-	  band per frame is a render loop, and this is the "better preview
-	  rendering when changing the day height/label width".
-	- no freeze-today toggle (da-2hd21): vividn, 2026-10-15, «Move the
+	The strip's sizes are moved by its LINES (below). During a drag the
+	bands are SCALED to the size being previewed and re-asked only on
+	release: one `dayview` per band per frame is a render loop, and this is
+	the "better preview rendering when changing the day height/label width".
+	And there is no freeze-today toggle (da-2hd21): vividn, 2026-10-15, «Move the
 	  freeze today thing into the widget options menu, icon with words. So
 	  no button in the main view, only widget menu». `freezeToday` is that
 	  option. On, today is pinned under the scroller and never scrolls
@@ -132,7 +127,7 @@
 	only a travelling one is a range. `.hold-mark` — a ring closing over
 	the wait, the nowview's own — is the feedback that it registered.
 
-	A press that starts on the `+` handle, a line (below), the `⊖` or the
+	A press that starts on a line (below), the `⊖` or the
 	jagged line is THEIRS, and one that starts off a band and the ruler —
 	the date column, the room around them — is the pane's, so a swipe there
 	still changes tabs. The bands say so themselves with `data-pans="x"`,
@@ -164,16 +159,21 @@
 	keeps them in the widget's settings, and the strip itself writes
 	nothing down.
 
-	THE TWO SIZES HAVE THREE HANDLES (da-ray91). The `+` where the date
-	column meets today moves both, and is the keyboard's (one step an
-	arrow). Every line between two days, the divider included, is a
-	ns-resize handle a few pixels either side of it that moves the day
-	height alone — but only where it crosses the DATE column (da-xg1vi):
-	vividn, 2026-10-22, «it's way too easy to accidentally resize days on
-	mobile when you're just trying to scroll», so over the bands a line is
-	no handle and a finger down it scrolls, always. The spine, the whole
-	length of the strip, is an ew-resize one that moves the label width
-	alone. Up is taller and right is wider on all three.
+	THE TWO SIZES ARE MOVED BY THE LINES (da-ray91). Every line between two
+	days, the divider included, is a ns-resize handle a few pixels either
+	side of it that moves the day height — but only where it crosses the
+	DATE column (da-xg1vi): vividn, 2026-10-22, «it's way too easy to
+	accidentally resize days on mobile when you're just trying to scroll»,
+	so over the bands a line is no handle and a finger down it scrolls,
+	always. The spine, the whole length of the strip, is an ew-resize one
+	that moves the label width. Up is taller and right is wider.
+
+	There was a `+` where the two met, which moved both and was the
+	keyboard's; it is gone (da-5wa91), vividn, 2026-10-22: «it is not
+	connected to anything and just floats around weirdly». The keyboard has
+	the lines instead: the divider's, which is always on screen, is a
+	slider for the day height (up and down), and the spine one for the
+	label width (left and right), a `STEP` an arrow.
 
 	A PAN NEVER SELECTS AND NEVER LABELS (da-xg1vi). A press that traveled
 	— the stack's scroll, a pan of the hours, a pinch — selects nothing
@@ -406,16 +406,13 @@
 	/** What the stack keeps of the box however short it is: a sliver of a day. */
 	$: sliver = Math.round(bandBox(shownDayHeight) * SLIVER);
 	/**
-	 * The middle of the line over today, which the `+` sits on pinned or not
-	 * (da-2hd21): today's band and its ruler, less what the sliver took —
-	 * and, unpinned, the divider under today, the line being today's own
-	 * top border.
+	 * The middle of the seam over a pinned today (da-2hd21), where the tear
+	 * sits: today's band and its ruler, less what the sliver took.
 	 */
 	$: seamAt =
 		Math.min(bandBox(shownDayHeight), Math.max(0, height - AXIS_HEIGHT - SEAM - sliver)) +
 		AXIS_HEIGHT +
-		SEAM / 2 +
-		(freezeToday ? 0 : DIVIDER);
+		SEAM / 2;
 
 	/** The days in the scroller, oldest first — today among them when it is not frozen. */
 	$: rows = [
@@ -896,7 +893,7 @@
 			});
 	})();
 
-	// ── the handles: the `+` moves both sizes, the lines one each ──────
+	// ── the handles: the day lines the day height, the spine the label width ──
 
 	/**
 	 * FOLLOW UNTIL TOUCHED, THEN HOLD — and back onto the derived value
@@ -910,17 +907,17 @@
 	 * nothing held, exactly as every other setting does, and «is it
 	 * following?» is a property of the data.
 	 *
-	 * ⚑ ONLY A MOVE ALONG THE HEIGHT AXIS DECIDES IT. The handle carries
-	 * BOTH sizes on every drop and every arrow key, so a purely SIDEWAYS
-	 * drag arrives here with the height it already had — and on a box that
-	 * happens to derive exactly the held value that would read as «dragged
-	 * back onto the derived value» and quietly re-arm the follow, losing a
-	 * height the reader set without touching that axis. Nothing would look
-	 * wrong at the time (the pixels are identical by construction); it
-	 * would surface later, as a pane resize moving a day they had chosen.
-	 * The same goes for an arrow key at a clamp, which is a no-op that
-	 * must not mean anything either. So an unmoved height leaves the hold
-	 * exactly as it found it.
+	 * ⚑ ONLY A MOVE ALONG THE HEIGHT AXIS DECIDES IT. A handle moves its
+	 * own size and hands the other on unchanged, on every drop and every
+	 * arrow key, so the spine's drag arrives here with the height it
+	 * already had — and on a box that happens to derive exactly the held
+	 * value that would read as «dragged back onto the derived value» and
+	 * quietly re-arm the follow, losing a height the reader set without
+	 * touching that axis. Nothing would look wrong at the time (the
+	 * pixels are identical by construction); it would surface later, as a
+	 * pane resize moving a day they had chosen. The same goes for an arrow
+	 * key at a clamp, which is a no-op that must not mean anything either.
+	 * So an unmoved height leaves the hold exactly as it found it.
 	 */
 	function setSizes(px: number, wide: number): void {
 		const next = clamp(Math.round(px), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
@@ -930,11 +927,11 @@
 	}
 
 	/**
-	 * Which sizes a drag moves: `xy` the `+`, `y` a line between two days
-	 * (the day height), `x` the spine (the label width) — da-ray91, vividn:
-	 * «allow scaling the days from anywhere in the line dividing the days».
+	 * Which size a handle moves: `y` a line between two days (the day
+	 * height), `x` the spine (the label width) — da-ray91, vividn: «allow
+	 * scaling the days from anywhere in the line dividing the days».
 	 */
-	type Axes = 'xy' | 'y' | 'x';
+	type Axes = 'y' | 'x';
 
 	/** Where a drag started, what the values were when it did, and the preview. */
 	let sizing: { x: number; y: number; height: number; width: number; axes: Axes } | null = null;
@@ -961,17 +958,17 @@
 	}
 	function sizeTo(event: PointerEvent): void {
 		if (!sizing) return;
-		// Up is taller (da-hsba) and right is a wider column, which is the
-		// direction the `+` is being pushed in each case. The bands follow
-		// as scaled pictures; they are re-asked on the drop. A line moves
-		// its own size alone, so a day line nudged sideways keeps the column.
+		// Up is taller (da-hsba) and right is a wider column. The bands
+		// follow as scaled pictures; they are re-asked on the drop. A line
+		// moves its own size alone, so a day line nudged sideways keeps the
+		// column.
 		const { axes } = sizing;
 		sizing = {
 			...sizing,
-			height: axes.includes('y')
+			height: axes === 'y'
 				? clamp(Math.round(from0.height + (sizing.y - event.clientY)), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT)
 				: from0.height,
-			width: axes.includes('x')
+			width: axes === 'x'
 				? clamp(Math.round(from0.width + (event.clientX - sizing.x)), MIN_LABEL_WIDTH, MAX_LABEL_WIDTH)
 				: from0.width
 		};
@@ -981,21 +978,24 @@
 		sizing = null;
 	}
 
-	/** Make `node` a handle for `axes`: the `+`, every day line, the spine. */
+	/** Make `node` a handle for `axes`: every day line, the spine. */
 	function resizes(node: HTMLElement, axes: Axes) {
 		const on: [string, EventListener][] = [
 			['pointerdown', (event) => grab(event as PointerEvent, axes)],
 			['pointermove', sizeTo as EventListener],
 			['pointerup', drop],
-			['pointercancel', drop]
+			['pointercancel', drop],
+			['keydown', (event) => onHandleKey(event as KeyboardEvent, axes)]
 		];
 		for (const [type, handler] of on) node.addEventListener(type, handler);
 		return { destroy: () => on.forEach(([type, handler]) => node.removeEventListener(type, handler)) };
 	}
 
-	function onHandleKey(event: KeyboardEvent): void {
-		const up = event.key === 'ArrowUp' ? 1 : event.key === 'ArrowDown' ? -1 : 0;
-		const right = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+	/** A focused line's arrows, its own axis alone: up/down the day height, left/right the label width. */
+	function onHandleKey(event: KeyboardEvent, axes: Axes): void {
+		const key = (more: string, less: string) => (event.key === more ? 1 : event.key === less ? -1 : 0);
+		const up = axes === 'y' ? key('ArrowUp', 'ArrowDown') : 0;
+		const right = axes === 'x' ? key('ArrowRight', 'ArrowLeft') : 0;
 		if (!up && !right) return;
 		event.preventDefault();
 		setSizes(day + up * STEP, labelWidth + right * STEP);
@@ -1097,8 +1097,7 @@
 	}
 
 	function onPointerDown(event: PointerEvent): void {
-		// The strip's own controls are not the picture: the `+` handle, the
-		// lines, the `⊖` and the jagged line have the pointer when it is on
+		// The strip's own controls are not the picture: the lines, the `⊖` and the jagged line have the pointer when it is on
 		// them, and a press on one is not the start of a gesture.
 		if ((event.target as HTMLElement).closest('button, .sizer')) return;
 		if (event.pointerType === 'mouse') {
@@ -1525,7 +1524,6 @@
 		style:--label="{shownLabelWidth}px"
 		style:--axis="{AXIS_HEIGHT}px"
 		style:--divider="{DIVIDER}px"
-		style:--seam="{seamAt}px"
 		style:--tear="{freezeToday ? seamAt : AXIS_HEIGHT}px"
 		style:--seam-line="{SEAM}px"
 		style:--sliver="{sliver}px"
@@ -1563,40 +1561,39 @@
 		{/if}
 
 		<!--
-			The two lines the `+` is the intersection of (vividn: «a little +
-			intersection at the 00 marker dividing the day labels from the
-			bar»): the divider between two dates, and the spine between the
-			date column and the bands, which is the 00 mark.
+			The two lines that are the keyboard's sliders (da-5wa91): the
+			divider, over a pinned today or under one that scrolls and never
+			scrolled away, for the day height; and the spine between the date
+			column and the bands, the 00 mark, for the label width.
 		-->
 		<div class="divider" class:seam={freezeToday}>
-			<div class="sizer day-line" data-pans="xy" use:resizes={'y'}></div>
+			<div
+				class="sizer day-line today-line"
+				data-pans="xy"
+				role="slider"
+				tabindex="0"
+				aria-label="day height"
+				aria-orientation="vertical"
+				aria-valuemin={MIN_DAY_HEIGHT}
+				aria-valuemax={MAX_DAY_HEIGHT}
+				aria-valuenow={shownDayHeight}
+				aria-valuetext="{shownDayHeight} pixels per day"
+				use:resizes={'y'}
+			></div>
 		</div>
-		<div class="sizer spine" data-pans="xy" use:resizes={'x'}></div>
-
-		<!--
-			The strip's own control, at the top of today: the `+` at the 00
-			mark where the stamp column meets the bands. Placed against the
-			strip rather than inside the divider, and clamped into it, so a
-			strip too short to hold a whole day — which clips today's band from
-			the TOP (da-zh2o) — still has it on screen.
-		-->
-		<button
-			class="grip day-grip"
+		<div
+			class="sizer spine"
+			data-pans="xy"
 			role="slider"
-			aria-label="day height and date-label width"
-			aria-valuemin={MIN_DAY_HEIGHT}
-			aria-valuemax={MAX_DAY_HEIGHT}
-			aria-valuenow={shownDayHeight}
-			aria-valuetext="{shownDayHeight} pixels per day, {shownLabelWidth} pixels of date label"
-			data-label-width={shownLabelWidth}
-			use:resizes={'xy'}
-			on:keydown={onHandleKey}
-		>
-			<svg viewBox="0 0 13 13" width="13" height="13" aria-hidden="true">
-				<line x1="6.5" x2="6.5" y1="0.5" y2="12.5" />
-				<line x1="0.5" x2="12.5" y1="6.5" y2="6.5" />
-			</svg>
-		</button>
+			tabindex="0"
+			aria-label="date-label width"
+			aria-orientation="horizontal"
+			aria-valuemin={MIN_LABEL_WIDTH}
+			aria-valuemax={MAX_LABEL_WIDTH}
+			aria-valuenow={shownLabelWidth}
+			aria-valuetext="{shownLabelWidth} pixels of date label"
+			use:resizes={'x'}
+		></div>
 
 		{#if zoomed}
 			<!--
@@ -1956,6 +1953,16 @@
 	.sizer {
 		touch-action: none;
 	}
+	/* Focused, the ring is round the hit area: the spine's own 1px is no
+	   ring a reader sees. */
+	.day-line:focus-visible,
+	.spine:focus-visible::before {
+		outline: 1px solid var(--accent);
+	}
+	.spine:focus-visible {
+		outline: none;
+		background: var(--accent);
+	}
 	.spine::before {
 		content: '';
 		position: absolute;
@@ -1989,52 +1996,10 @@
 		height: var(--seam-line);
 	}
 
-	/* The controls that sit ON that line. Absolute against the strip, at
-	   the height the seam is — `--seam` is what the flow below the divider
-	   costs — and clamped into the box, so a strip shorter than one day
-	   still has them (the old notch's rule, da-zh2o). */
-	.grip,
-	.jagged {
-		position: absolute;
-		bottom: min(var(--seam), calc(100% - 13px));
-		transform: translateY(50%);
-		z-index: 3;
-	}
-	.grip {
-		padding: 0;
-		border: 0;
-		background: none;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: var(--quiet);
-		/* A fingertip, on the phone as on the desk. */
-		width: 26px;
-		height: 26px;
-		left: var(--label);
-		margin-left: -13px;
-		cursor: move;
-		/* The browser must not read a drag on a handle as a scroll of the
-		   page behind it — the pointer events below are the whole gesture. */
-		touch-action: none;
-	}
-	.grip:hover,
-	.grip:focus-visible {
-		color: var(--accent);
-	}
-	.grip:focus-visible {
-		outline: 1px solid var(--accent);
-	}
-	.grip line {
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-	}
-
 	/* The zoom reset, in the bottom corner of the date column (da-8rqb9).
-	   Right-aligned inside that column, under the `+` at its right edge.
+	   Right-aligned inside that column.
 
-	   A fingertip's 26px, the grip's own, over a 16px
+	   A fingertip's 26px over a 16px
 	   glyph: §12's box is not the drawing (the old beta ⓘ's pattern). */
 	.unzoom {
 		position: absolute;
@@ -2071,9 +2036,14 @@
 		stroke: none;
 	}
 
-	/* Over the divider, clear of the `+`: the tear, and the way back — over
-	   the ruler when today scrolls with the rest, the `+` being on today. */
+	/* Over the divider, clear of the date column: the tear, and the way
+	   back — over the ruler when today scrolls with the rest. Absolute
+	   against the strip and clamped into the box, so a strip shorter than
+	   one day still has it (the old notch's rule, da-zh2o). */
 	.jagged {
+		position: absolute;
+		transform: translateY(50%);
+		z-index: 3;
 		bottom: min(var(--tear), calc(100% - 13px));
 		left: calc(var(--label) + 16px);
 		right: 0;

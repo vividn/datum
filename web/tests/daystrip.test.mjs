@@ -194,7 +194,7 @@ describe('the day strip', () => {
 				await say(app, { dayHeight: was + 7 });
 				await app.page.waitForFunction(
 					(want) =>
-						Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === want,
+						Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === want,
 					was + 7
 				);
 				await waitForDays(app, heldFor(5));
@@ -304,7 +304,7 @@ describe('the day strip', () => {
 			// The stitching. The strip's own gridlines sit at the x the CLI
 			// reports for them, and land on each band's own 12:00 line.
 			const geometry = await app.page.evaluate(async () => {
-				const grip = document.querySelector('button.day-grip');
+				const grip = document.querySelector('.today-line');
 				const width = Math.round(document.querySelector('.band').getBoundingClientRect().width);
 				const result = await window.datum.runQuiet([
 					'dayview', '--width', String(width),
@@ -476,7 +476,7 @@ describe('the day strip', () => {
 			async (app) => {
 				await say(app, { dayHeight: 40 });
 				await app.page.waitForFunction(
-					() => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === 40
+					() => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === 40
 				);
 				await sizeFor(app, 15);
 				await app.idle();
@@ -581,7 +581,7 @@ describe('the day strip', () => {
 			const was = await valueOf(app);
 			await say(app, { dayHeight: was + 7 });
 			await app.page.waitForFunction(
-				(want) => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === want,
+				(want) => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === want,
 				was + 7
 			);
 			await sizeWhole(app, 2);
@@ -1194,14 +1194,13 @@ describe('the day strip zooms onto an hour range', () => {
 			assert.ok(seen.inside, 'the ⊖ hangs off the strip');
 			assert.ok(seen.clearOfThePictures, 'the ⊖ is over a picture');
 
-			// And clear of the control over that column's edge: the `+`, at
-			// the top of today (da-2hd21).
-			const boxOf = (sel) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().toJSON());
-			const [reset, grip] = [await boxOf(UNZOOM), await boxOf('.strip button.day-grip')];
-			assert.ok(
-				reset.right <= grip.left + 0.5 || reset.top >= grip.bottom - 0.5,
-				`the ⊖ (${reset.top}–${reset.bottom}) sits under the + (${grip.top}–${grip.bottom})`
-			);
+			// And the day line the keyboard has (da-5wa91) is still pressed
+			// beside it: the ⊖ covers the column's right end of it at most.
+			const hit = await page.locator('.strip .today-line').evaluate((el) => {
+				const r = el.getBoundingClientRect();
+				return document.elementFromPoint(r.left + 4, (r.top + r.bottom) / 2) === el;
+			});
+			assert.ok(hit, 'the ⊖ covers the whole day line');
 			assert.deepEqual(app.errors, []);
 		});
 	});
