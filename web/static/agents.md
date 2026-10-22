@@ -42,9 +42,12 @@ twenty they won't.
    event, like a book (card)?
 3. **What details belong on each entry?** A rating and its scale (say the scale out loud, «1 to 10»), an amount and
    its unit, a name. These are keys. A key is required unless set up with `=` (`-k note=`); a required key left
-   out is refused.
-4. **How will they log, and how often?** On a phone, short is everything: the field's name alone logs it, a state's
-   name alone switches to it, and a word of their own can stand for a longer line (`alias set c "occur coffee"`).
+   out is refused. **Several words at once**, like the feelings of an evening, go to a remainder key: with
+   `-R words`, `mood 6 tired anxious` keeps the rating and both words. Each entry can hold as many as they name. One
+   word is stored as a string, several as a list. `-S` joins them into one string instead, for a phrase.
+4. **How will they log, and how often?** On datum.day, mostly by tapping (*Logging on datum.day*, below). For
+   typing, short is everything: the field's name alone logs it, a state's name alone switches to it, and a word of
+   their own can stand for a longer line (`alias set c "occur coffee"`).
 5. **Anything from before today?** Any entry can take a time in the past.
 
 Then set it up (below) and say in one sentence per field what it will do.
@@ -83,12 +86,12 @@ datum.day as a database of its own instead of joining theirs.
 ```bash
 datum --db alex setup coffee --verb occur
 datum --db alex setup sleep --verb on
-datum --db alex setup mood --verb occur -k rating -k note=
+datum --db alex setup mood --verb occur -k rating -R words
 datum --db alex setup place --verb switch --states home,office,café
 datum --db alex on sleep -y -t 23:40      # they went to bed at 23:40 yesterday
 datum --db alex off sleep -t 07:15        # and got up at 07:15
 datum --db alex on sleep -d 2026-10-14 -t 00:30   # older notes: -d names the day, -t the time on it
-datum --db alex mood 6 tired -d 2026-10-14 -t 21:00   # values fill the keys in order: rating=6, note=tired
+datum --db alex mood 6 tired anxious -d 2026-10-14 -t 21:00   # rating=6, then every word left to words
 ```
 
 Importing a person's notes is one command per entry. `-t` is read in the timezone of the machine running datum;
@@ -115,7 +118,8 @@ nights, the sleep after late coffee). Say how many days you had; a week is a hin
 
 ## Without a shell
 
-Your person pastes commands into the prompt at the bottom of datum.day. **Leave off the word `datum`** there:
+Your person sets up their fields by pasting commands into the prompt at the bottom of datum.day; after that, most
+of their logging is a tap (*Logging on datum.day*, below). **Leave off the word `datum`** there:
 datum.day's prompt is datum's own command line, and it refuses a line starting with `datum`. A block pasted at once
 runs line by line, in order, skipping blank lines and lines starting with `#`, and what each wrote appears on the
 page. A line that fails stops the run: it stays in the prompt with the lines after it held (shown as `+2`, say), and
@@ -124,15 +128,30 @@ once it is fixed, Enter runs it and then the rest.
 ```
 setup coffee --verb occur
 setup sleep --verb on
-setup mood --verb occur -k rating -k note=
+setup mood --verb occur -k rating -R words
 setup place --verb switch --states home,office,café
 on sleep -y -t 23:40
 off sleep -t 07:15
 ```
 
-From then on: `coffee` for each cup, `mood 6` (it fills the field's first key, so `rating=6`), `office` when they
-arrive. To see the data, ask them to type a command and paste you what it prints: `tail mood -n 50 --json`,
+To see the data, ask them to type a command and paste you what it prints: `tail mood -n 50 --json`,
 `stats coffee --since 2026-10-14`; then analyse it as above.
+
+## Logging on datum.day
+
+Whichever way you set it up, your person logs on datum.day. Teach them the taps first, and typing as the
+alternative. The **collect** tab has what they need: a **fields** pane with a button for each field, the **dayview**
+(the day as a strip) and the **nowview** (the minutes around now).
+
+- **Now:** tap the field's button. An occurrence is logged at once. An on/off field turns on, and the next tap turns
+  it off. A switch field shows its states (home, office, café), and a tap on one switches to it.
+- **With values:** a field with a required key puts it in the prompt instead (`occur mood `), waiting for its
+  values: they type `6 tired anxious` and press Enter.
+- **At another time:** tap that time on the dayview or the nowview first. A time pill appears in the bar (`08:55`
+  from the dayview, `-t -45` from the nowview), and the next entry is logged at that time. Locked (the pill's
+  lock), it stays for several entries at that time.
+- **Typing instead:** the prompt takes the same as a command: `coffee`, `mood 6 tired anxious`, `office`, and
+  `-t 07:10` or `-t -20` for another time.
 
 ## Times, mistakes, help
 
