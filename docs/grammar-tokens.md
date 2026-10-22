@@ -533,12 +533,12 @@ datum get coffee -A
 
 ```
 CREATE 6r55f coffee:2026-09-22T12:00:00.000Z
-14:00 ± +2  coffee ∅●
+14:00:± +2  coffee ∅●
 ```
 
-A gray `±` takes the seconds' place, false precision on a time known to
-fifteen minutes, so the stamp is as wide as an exact one and no column
-shifts. The amount is not printed there; `get -A` shows it stored beside the
+A gray `±` takes the seconds' place after the colon, false precision on a
+time known to fifteen minutes, and a space follows it, so the stamp is as wide
+as an exact one and no column shifts. The amount is not printed there; `get -A` shows it stored beside the
 instant, in a column of its own, as `--json` carries it:
 
 ```
@@ -568,8 +568,8 @@ precisely it is known are separate columns:
 ```
 
 Wherever the duration is printed — the echo, `get`, `tail`'s dur column —
-a gray `±` follows it, without its amount as a time's:
-`21:17:33+2  task  start  1h30m±`.
+a gray `±` and its amount follow it:
+`21:17:33+2  task  start  1h30m±5m`.
 
 Uncertainty is deliberately outside the content hash — `coffee ±5m` and
 `coffee ±1m` at the same instant are one coffee, and hashing the

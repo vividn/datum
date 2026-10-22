@@ -55,8 +55,9 @@ describe('the time an entry is rendered with', () => {
 			assert.equal(tail.code, 0, tail.stderr);
 			// These are the CLI's own table rows (the wasm renderer): a P1D
 			// row degrades to its bare date, a clock keeps its clock, and
-			// an uncertain one keeps its minute, a gray `±` in its seconds'
-			// place and no amount (da-dj8v0), which the record above keeps.
+			// an uncertain one keeps its minute and colon, a gray `±` in its
+			// seconds' place and no amount (da-dj8v0, da-d4xhl), which the
+			// record above keeps.
 			// The listing's shared UTC offset rides in the header (da-lkji).
 			//
 			// EVERY ROW IS AN ENTRY: nothing is filtered, and the quick ids
@@ -74,7 +75,7 @@ describe('the time an entry is rendered with', () => {
 			assert.deepEqual(rowTexts(tail.stdout).slice(1), [
 				`_3 ${yesterday} coffee ∅● <hid>`,
 				'_2 09:15:00 tea ∅● <hid>',
-				'_1 10:00 ± water ∅● <hid>'
+				'_1 10:00:± water ∅● <hid>'
 			]);
 
 			// And on the screen, which is where the invented midnight was
@@ -86,7 +87,7 @@ describe('the time an entry is rendered with', () => {
 			const times = table.rows.map((cells) => cells[table.keys.indexOf('time')]);
 			// The date the coffee owns, the clocks the other two own — and
 			// no midnight invented for the day-precision row.
-			assert.deepEqual(times, [yesterday, '09:15:00', '10:00 ± ']);
+			assert.deepEqual(times, [yesterday, '09:15:00', '10:00:± ']);
 
 			// As wide as a clock with seconds, so the minutes stand in one
 			// column: the space after the ± is drawn, not collapsed away.

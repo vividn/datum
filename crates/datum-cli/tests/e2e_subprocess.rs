@@ -127,8 +127,8 @@ fn subprocess_switch_writes_row() {
 }
 
 /// da-avqf4: a duration's ± is printed wherever the duration is — the write
-/// echo, `get`, and tail's dur column — as a time's is, without its amount
-/// (da-dj8v0); a duration with none prints as it did.
+/// echo, `get`, and tail's dur column — as a time's is, with its amount
+/// (da-d4xhl); a duration with none prints as it did.
 #[test]
 fn subprocess_dur_uncertainty_is_printed_with_the_dur() {
     let env = Env::new();
@@ -138,12 +138,12 @@ fn subprocess_dur_uncertainty_is_printed_with_the_dur() {
         String::from_utf8(out.stdout).unwrap()
     };
     let echo = text(&["occur", "run", "dur=30m±5m"]);
-    assert!(echo.contains(" 30m±\n"), "echo: {echo}");
+    assert!(echo.contains(" 30m±5m\n"), "echo: {echo}");
     let get = text(&["get", "run"]);
-    assert!(get.contains(" 30m±\n"), "get: {get}");
+    assert!(get.contains(" 30m±5m\n"), "get: {get}");
     // A duration's P1D is a day's doubt, not a time's date-only marker.
     let day = text(&["occur", "nap", "dur=3d+-1d"]);
-    assert!(day.contains(" 72h±\n"), "echo: {day}");
+    assert!(day.contains(" 72h±1d\n"), "echo: {day}");
     let plain = text(&["occur", "jog", "dur=20m"]);
     assert!(plain.ends_with(" 20m\n"), "echo: {plain}");
     let tail = text(&["tail", "-A"]);
@@ -152,13 +152,14 @@ fn subprocess_dur_uncertainty_is_printed_with_the_dur() {
         let mut cells = row.split_whitespace().rev();
         cells.nth(1).unwrap().to_string()
     };
-    assert_eq!(dur_of(" run "), "30m±", "{tail}");
-    assert_eq!(dur_of(" nap "), "72h±", "{tail}");
+    assert_eq!(dur_of(" run "), "30m±5m", "{tail}");
+    assert_eq!(dur_of(" nap "), "72h±1d", "{tail}");
     assert_eq!(dur_of(" jog "), "20m", "{tail}");
 }
 
-/// da-dj8v0: an uncertain time prints a `±` in its seconds' place, as wide
-/// as them and without the amount, which `--json` still carries.
+/// da-dj8v0, da-d4xhl: an uncertain time prints a `±` in its seconds' place,
+/// after the colon, as wide as them and without the amount, which `--json`
+/// still carries.
 #[test]
 fn subprocess_time_uncertainty_takes_the_seconds_place() {
     let env = Env::new();
@@ -172,7 +173,7 @@ fn subprocess_time_uncertainty_takes_the_seconds_place() {
     assert_ok(&out, "tail");
     let tail = String::from_utf8(out.stdout).unwrap();
     let row = |field: &str| tail.lines().find(|l| l.contains(field)).expect(field);
-    assert!(row(" water ").contains(" 10:00 ±   water "), "{tail}");
+    assert!(row(" water ").contains(" 10:00:±   water "), "{tail}");
     assert!(!row(" water ").contains("5m"), "{tail}");
     let col = |line: &str, word: &str| line[..line.find(word).unwrap()].chars().count();
     assert_eq!(

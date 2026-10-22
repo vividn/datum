@@ -826,7 +826,7 @@
 		text-align: right;
 	}
 
-	/* An uncertain time is `HH:MM ± `, the ± in its seconds' place, and the
+	/* An uncertain time is `HH:MM:± `, the ± in its seconds' place, and the
 	   space after it is what keeps its clock over the others (da-dj8v0). */
 	.time {
 		white-space: pre;

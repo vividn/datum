@@ -710,7 +710,7 @@ fn dt_off(y: i32, mo: u32, d: u32, h: u32, m: u32, offset_minutes: i32, tz: &str
 
 /// Mixed-offset batch: the most common UTC offset moves to the header;
 /// only the off-offset row carries a `(±off)` prefix; only the uncertain
-/// row carries a `±N<unit>` suffix; plain rows are bare `HH:MM:SS`.
+/// row carries a `±` in its seconds' place; plain rows are bare `HH:MM:SS`.
 #[test]
 fn tail_table_offset_in_header_prefix_only_when_differing() {
     let _g = no_color_scope();
@@ -758,7 +758,7 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
 
     let uncertain_line = lines[2];
     assert!(
-        uncertain_line.contains("21:00 ±") && !uncertain_line.contains("3m"),
+        uncertain_line.contains("21:00:± ") && !uncertain_line.contains("3m"),
         "uncertain row: ± in its seconds' place, no amount: {uncertain_line:?}"
     );
     assert!(
@@ -777,7 +777,8 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
     );
 
     // HH:MM columns stay aligned: every clock ends at the same column,
-    // prefixes hanging left and the ± as wide as the seconds (da-dj8v0).
+    // prefixes hanging left and the ± as wide as the seconds (da-dj8v0,
+    // da-d4xhl).
     let clock_end = |line: &str, clock: &str| line.find(clock).map(|i| i + clock.len());
     let e1 = clock_end(plain_line, "22:55");
     let e2 = clock_end(uncertain_line, "21:00");
@@ -826,7 +827,7 @@ fn tail_table_offset_prefix_and_uncertainty_suffix_are_grey() {
     };
     let table = format_table_with(&entries, None, Some(&now), None, &args).unwrap();
     assert!(
-        table.contains(&format!("21:00 {GREY}±{RESET} ")),
+        table.contains(&format!("21:00:{GREY}±{RESET} ")),
         "± grey in the seconds' place, clock unpainted: {table:?}"
     );
     assert!(

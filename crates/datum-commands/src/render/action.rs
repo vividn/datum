@@ -877,9 +877,9 @@ pub(crate) fn format_field_badge(field: &str, spec: Option<&FieldSpec>) -> Strin
 /// the row is a date-only entry (per da-fc0l) and the stamp degrades to the
 /// bare local date `YYYY-MM-DD` — no clock, no offset, no relative-day
 /// prefix. Any other value is a `±N` uncertainty (da-lkji): the seconds,
-/// false precision then, give their place to a gray `±` and the amount is
-/// left to `--json` and `-A` — `HH:MM ± ` is as wide as `HH:MM:SS`, so no
-/// column shifts (da-dj8v0).
+/// false precision then, give their place to a gray `±` after the colon and
+/// the amount is left to `--json` and `-A` — `HH:MM:± ` is as wide as
+/// `HH:MM:SS`, so no column shifts (da-dj8v0, da-d4xhl).
 pub(crate) fn format_timestamp(
     t: &DatumTime,
     now: &DatumTime,
@@ -913,7 +913,7 @@ pub(crate) fn format_timestamp_ref(
         local.format("%Y-%m-%d").to_string()
     } else {
         let seconds = match uncertainty {
-            Some(_) => format!(" {} ", paint(GREY_FG, "±")),
+            Some(_) => format!(":{} ", paint(GREY_FG, "±")),
             None => format!(":{:02}", local.second()),
         };
         let base = format!("{}{seconds}", clock_label(&local));
@@ -970,14 +970,48 @@ pub(crate) fn compress_offset_minutes(minutes: i32) -> String {
     }
 }
 
-/// An entry's duration as every surface prints it — `30m`, and `30m±`
-/// when its uncertainty is stated, the `±` gray and without its amount as a
-/// time's is (da-avqf4, da-dj8v0).
+/// Render a duration's stored uncertainty (ISO-8601, as written by
+/// `Uncertainty::to_iso`) as its display suffix — `PT3M` → `±3m`, `PT90S`
+/// → `±90s`, `P1D` → `±1d` (da-lkji). Unparseable or compound forms return
+/// `None`. A time's prints no amount (da-dj8v0); a duration keeps it
+/// (da-d4xhl).
+fn format_uncertainty_suffix(uncertainty: Option<&str>) -> Option<String> {
+    let iso = uncertainty?;
+    let rest = iso.strip_prefix('P')?;
+    let (num, unit) = match rest.strip_prefix('T') {
+        Some(t) => {
+            let (n, u) = t.split_at(t.len().checked_sub(1)?);
+            let u = match u {
+                "S" => "s",
+                "M" => "m",
+                "H" => "h",
+                _ => return None,
+            };
+            (n, u)
+        }
+        None => {
+            let (n, u) = rest.split_at(rest.len().checked_sub(1)?);
+            let u = match u {
+                "D" => "d",
+                "M" => "mo",
+                "Y" => "y",
+                _ => return None,
+            };
+            (n, u)
+        }
+    };
+    if num.is_empty() || !num.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!("±{num}{unit}"))
+}
+
+/// An entry's duration as every surface prints it — `30m`, and `30m±5m`
+/// when its uncertainty is stated, the `±` gray as a time's is (da-avqf4).
 pub(crate) fn format_dur(entry: &Entry) -> Option<String> {
     let dur = format_human_duration(entry.duration_seconds()?, DurationPrecision::Seconds);
-    let suffix = entry
-        .dur_uncertainty()
-        .map(|_| paint(GREY_FG, "±"))
+    let suffix = format_uncertainty_suffix(entry.dur_uncertainty())
+        .map(|u| paint(GREY_FG, &u))
         .unwrap_or_default();
     Some(format!("{dur}{suffix}"))
 }
@@ -1055,6 +1089,33 @@ mod tests {
         assert_eq!(compress_offset_minutes(90), "+1:30");
         assert_eq!(compress_offset_minutes(0), "+0");
         assert_eq!(compress_offset_minutes(-30), "-0:30");
+    }
+
+    #[test]
+    fn uncertainty_suffix_renders_stored_iso_forms() {
+        assert_eq!(format_uncertainty_suffix(None), None);
+        assert_eq!(
+            format_uncertainty_suffix(Some("P1D")).as_deref(),
+            Some("±1d")
+        );
+        assert_eq!(
+            format_uncertainty_suffix(Some("PT3M")).as_deref(),
+            Some("±3m")
+        );
+        assert_eq!(
+            format_uncertainty_suffix(Some("PT90S")).as_deref(),
+            Some("±90s")
+        );
+        assert_eq!(
+            format_uncertainty_suffix(Some("P1M")).as_deref(),
+            Some("±1mo")
+        );
+        assert_eq!(format_uncertainty_suffix(Some("bogus")), None);
+        assert_eq!(
+            format_uncertainty_suffix(Some("PT1H30M")),
+            None,
+            "compound never stored"
+        );
     }
 
     fn dt(y: i32, mo: u32, d: u32) -> DatumTime {
@@ -1232,10 +1293,11 @@ mod tests {
         };
         let out_none = format_timestamp(&target, &now, None);
         assert!(out_none.starts_with("09:15:30"), "got {out_none:?}");
-        // da-dj8v0: a non-P1D uncertainty keeps the hour and minute, and a
-        // `±` takes the seconds' place, as wide as they were; no amount.
+        // da-dj8v0, da-d4xhl: a non-P1D uncertainty keeps the hour, the
+        // minute and the colon, and a `±` takes the seconds' place, as wide
+        // as they were; no amount.
         let out_sec = format_timestamp(&target, &now, Some("PT1S"));
-        assert_eq!(out_sec, "09:15 ± +0", "PT1S: ± in the seconds' place");
+        assert_eq!(out_sec, "09:15:± +0", "PT1S: ± in the seconds' place");
         assert_eq!(out_sec.chars().count(), out_none.chars().count());
         assert_eq!(format_timestamp(&target, &now, Some("PT2H")), out_sec);
         std::env::remove_var("NO_COLOR");
@@ -1271,11 +1333,11 @@ mod tests {
         // Uncertainty composes independently of the offset prefix.
         assert_eq!(
             format_timestamp_ref(&same, &now, Some("PT3M"), Some(120)),
-            "22:55 ± "
+            "22:55:± "
         );
         assert_eq!(
             format_timestamp_ref(&other, &now, Some("PT3M"), Some(120)),
-            "(+1)09:15 ± "
+            "(+1)09:15:± "
         );
         std::env::remove_var("NO_COLOR");
     }
