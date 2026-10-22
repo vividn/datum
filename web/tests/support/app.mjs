@@ -806,8 +806,10 @@ export async function ready(page) {
 	await page.locator('.root-bar [role="tab"]').first().waitFor();
 	await page.waitForFunction(() => typeof window.datum?.run === 'function');
 	// And the tree is the reader's own, not the one drawn before the CLI
-	// answered (da-bhudz): the shell's boot is over.
-	await page.evaluate(() => window.datum.shell.boot());
+	// answered (da-bhudz): the shell's boot is over, and so is a `/<name>`
+	// door's, which mounts the tree only as it goes home — until then there
+	// is no pane for the waits below to wait on (da-z6nsq).
+	await page.evaluate(() => window.datum.shell.settledTree());
 	// Every pane is a command that runs on mount ($lib/panes.ts) and shows
 	// `…` until it answers. Waiting them out means a command a test runs
 	// next is the next command the runner sees, not a race with the frame
