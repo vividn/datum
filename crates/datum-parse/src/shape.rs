@@ -333,17 +333,6 @@ pub fn hands_field_back(verb: Verb) -> bool {
     }
 }
 
-/// True for verbs whose primary-dot fg color is sourced from
-/// `entry.state` (the dot itself carries the state color). Only
-/// [`Verb::PointSwitch`] qualifies — plain [`Verb::Point`] paints its
-/// dot in the field color so a stateless occur reads as the field.
-pub fn dot_fg_uses_state(verb: Verb) -> bool {
-    match verb {
-        Verb::PointSwitch => true,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::Point => false,
-    }
-}
-
 /// True for entries whose action-line rendering shows a state badge
 /// (`[LEAD][state cell][TRAIL]`). Every state-bearing verb qualifies
 /// (switching family + [`Verb::Block`]); [`Verb::Point`] is the lone
@@ -589,14 +578,6 @@ mod tests {
             Verb::PointSwitch,
         ] {
             assert!(!hands_field_back(v));
-        }
-    }
-
-    #[test]
-    fn dot_color_helpers_only_for_point_switch() {
-        assert!(dot_fg_uses_state(Verb::PointSwitch));
-        for v in [Verb::Point, Verb::Switch, Verb::Block, Verb::BlockSwitch] {
-            assert!(!dot_fg_uses_state(v));
         }
     }
 
