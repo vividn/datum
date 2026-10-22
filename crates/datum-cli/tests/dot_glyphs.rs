@@ -436,3 +436,66 @@ fn a_dot_is_its_lane_times_its_scale_in_every_view_at_any_height() {
         }
     }
 }
+
+/// da-lqo7x: a state change at an instant (`switch … -m`) in a tall lane
+/// is a dotted line the lane's height, in the dayview and the nowview, its
+/// mark titled as a dot's is; an occur in the same picture is still a dot.
+#[test]
+fn a_moment_is_a_dotted_line_its_lane_tall_and_an_occur_is_a_dot() {
+    let env = Env::new();
+    let at = "2026-04-27T12:00+00:00";
+    env.run(&["switch", "body", "run", "-m", "distanceKm=5", "-t", at]);
+    env.run(&["occur", "coffee", "-t", at]);
+    env.run(&["setup", "body", "--y", "0.6", "--height", "0.4"]);
+    let bare = ["--margin", "0", "--time-axis-height", "0"];
+    let dayview = env.run(
+        &[
+            &["dayview", "--width", "300", "--day-height", "200"],
+            &bare[..],
+            &["--label-width", "0", "--end-date", "2026-04-27"],
+        ]
+        .concat(),
+    );
+    let nowview = env.run(
+        &[
+            &["nowview", "--height", "200"],
+            &bare[..],
+            &["--context", "1h", "-t", at, "-o", "-"],
+        ]
+        .concat(),
+    );
+    let num = |tag: &str, k: &str| -> f64 {
+        let v = tag.split(&format!(r#" {k}=""#)).nth(1).unwrap();
+        v[..v.find('"').unwrap()].parse().unwrap()
+    };
+    for (view, svg) in [("dayview", &dayview), ("nowview", &nowview)] {
+        let body = svg
+            .split(r#"<g class="field" data-field="body">"#)
+            .nth(1)
+            .unwrap_or_else(|| panic!("{view}: no body lane\n{svg}"));
+        let body = &body[..body.find("</g>").unwrap()];
+        assert!(!body.contains("<circle"), "{view}: {body}");
+        assert!(body.contains("<title>body: run</title>"), "{view}: {body}");
+        let line = body
+            .split(r#"<line class="point-fg moment""#)
+            .nth(1)
+            .unwrap_or_else(|| panic!("{view}: no dotted line\n{body}"));
+        assert!(line.contains("stroke-dasharray"), "{view}: {line}");
+        let tall = (num(line, "y2") - num(line, "y1")).abs();
+        assert!(
+            (tall - 80.0).abs() < 1.0,
+            "{view}: the line is {tall}px, not 80"
+        );
+
+        let coffee = svg
+            .split(r#"<g class="field" data-field="coffee">"#)
+            .nth(1)
+            .unwrap_or_else(|| panic!("{view}: no coffee lane\n{svg}"));
+        let coffee = &coffee[..coffee.find("</g>").unwrap()];
+        assert!(
+            coffee.contains(r#"<circle class="point-fg""#),
+            "{view}: {coffee}"
+        );
+        assert!(!coffee.contains("moment"), "{view}: {coffee}");
+    }
+}

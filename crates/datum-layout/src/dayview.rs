@@ -238,6 +238,10 @@ pub struct DayviewPoint {
     /// (da-45wgz). Resolved by the caller, as `glyph` is.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub icon: bool,
+    /// A state change at an instant (`switch run -m`), not an occurrence
+    /// (da-lqo7x): drawn as a dotted line across its lane, not a dot.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub moment: bool,
 }
 
 /// Top-level dayview knobs. Per-day data is in `days`. The `now_ms` field
@@ -531,6 +535,9 @@ pub struct RenderedPoint {
     /// As [`DayviewPoint::icon`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub icon: bool,
+    /// As [`DayviewPoint::moment`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub moment: bool,
     /// As [`RenderedBlock::span`].
     #[serde(default, skip_serializing_if = "is_zero")]
     pub span: usize,
@@ -931,6 +938,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     title: p.title.clone(),
                     glyph: p.glyph.clone(),
                     icon: p.icon,
+                    moment: p.moment,
                     span,
                 });
             }
@@ -1261,6 +1269,7 @@ mod tests {
                         title: None,
                         glyph: None,
                         icon: false,
+                        moment: false,
                     }],
                     icon: None,
                     glyph_size: Default::default(),
@@ -1474,6 +1483,7 @@ mod tests {
                 title: None,
                 glyph: None,
                 icon: false,
+                moment: false,
             }],
             icon: None,
             glyph_size: Default::default(),
@@ -1675,6 +1685,7 @@ mod tests {
                     title: None,
                     glyph: None,
                     icon: false,
+                    moment: false,
                 }],
                 icon: None,
                 glyph_size: Default::default(),

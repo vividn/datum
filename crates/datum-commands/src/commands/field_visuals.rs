@@ -270,6 +270,8 @@ pub(crate) fn render_field_visuals(
                                 .icon_for(entry.state.as_ref(), entry.data.as_ref())
                                 .is_some()
                         }),
+                        // An occur carries no state; a moment does.
+                        moment: entry.state.as_ref().is_some_and(|v| !v.is_null()),
                     });
                 }
             }

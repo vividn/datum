@@ -39,6 +39,10 @@ const ERROR_COLOR: &str = "#ff0000";
 /// Per-stripe width (px) in multi-state diagonal patterns. Matches the
 /// original TS `stripeWidth = 8`.
 const STRIPE_WIDTH_PX: f64 = 8.0;
+/// A moment's dotted line (da-lqo7x), and the width of the strip under it
+/// that takes the pointer.
+const MOMENT_STROKE_PX: f64 = 2.0;
+const MOMENT_HIT_PX: f64 = 8.0;
 
 /// Advance width of one character as a fraction of the font size. The
 /// renderer has no font engine, so axis-label placement (and the geometry
@@ -496,12 +500,47 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     let cross = near * layout.day_height + (far - near) * p.cross_pos;
                     let (cx, cy) = to_xy(layout, &geom, p.time_pos, day.day_offset + cross);
                     let outer_r = p.r * (far - near);
+                    let icon =
+                        (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
+                    // A state change at an instant is a dotted line across its
+                    // lane (da-lqo7x), and the mark under it a strip wider than
+                    // the line, as the disc is a dot's. A glyph or icon the
+                    // person chose for it is still drawn as the dot it is.
+                    if p.moment && p.glyph.is_none() && icon.is_none() {
+                        let half = field.cross_extent / 2.0 * (far - near);
+                        let at = |t: f64, c: f64| to_xy(layout, &geom, t, day.day_offset + c);
+                        let (x1, y1) = at(p.time_pos - MOMENT_HIT_PX / 2.0, cross - half);
+                        let (x2, y2) = at(p.time_pos + MOMENT_HIT_PX / 2.0, cross + half);
+                        let _ = write!(
+                            &mut out,
+                            r#"<rect class="point-bg" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}" fill-opacity="0"{close}"#,
+                            x = x1.min(x2),
+                            y = y1.min(y2),
+                            w = (x2 - x1).abs(),
+                            h = (y2 - y1).abs(),
+                            c = p.fg_color,
+                            close = mark_close(
+                                "rect",
+                                &field.field,
+                                p.state_label.as_deref(),
+                                p.id.as_deref(),
+                                &[("at", p.time_ms)],
+                                p.title.as_deref(),
+                            ),
+                        );
+                        let (x1, y1) = at(p.time_pos, cross - half);
+                        let (x2, y2) = at(p.time_pos, cross + half);
+                        let _ = write!(
+                            &mut out,
+                            r#"<line class="point-fg moment" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{c}" stroke-width="{MOMENT_STROKE_PX}" stroke-dasharray="3 2" pointer-events="none"/>"#,
+                            c = p.fg_color,
+                        );
+                        continue;
+                    }
                     // The disc is the mark — the pointer target, the title, the
                     // data attributes — but it is never painted: a dot is its
                     // symbol alone, in its own colour (da-qietq). The symbol
                     // lets the pointer through to it.
-                    let icon =
-                        (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
                     // da-c05v1: a mark wider or narrower than it is tall is
                     // stretched along x about its own centre; the disc under it,
                     // the pointer target, is not.
@@ -1481,6 +1520,7 @@ mod tests {
                         title: None,
                         glyph: None,
                         icon: false,
+                        moment: false,
                     }],
                     icon: None,
                     glyph_size: Default::default(),
@@ -1787,6 +1827,46 @@ mod tests {
         assert!(fg.starts_with(r##"<circle class="point-fg""##), "{fg}");
         assert!(fg.contains(r##"fill="#ff0000""##), "{fg}");
         assert_eq!(r(fg), r(disc));
+    }
+
+    /// da-lqo7x: a state change at an instant, in a tall lane, is a dotted
+    /// line the lane's height, not a dot the lane's size; the mark under it
+    /// is a strip wider than the line, named and titled as a dot's disc is.
+    #[test]
+    fn a_moment_is_a_dotted_line_across_its_lane() {
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            let mut cfg = one_day_with_block(false, orientation);
+            let field = &mut cfg.days[0].fields[0];
+            field.height_frac = 0.4;
+            field.points[0].moment = true;
+            field.points[0].title = Some("body: run".into());
+            let svg = render_dayview_svg(&compute_dayview(&cfg));
+            assert!(!svg.contains("<circle class=\"point"), "{svg}");
+            let mark = svg
+                .split(r#"<rect class="point-bg""#)
+                .nth(1)
+                .expect("a moment's mark");
+            let (strip, rest) = mark.split_once("</rect>").expect("a titled mark");
+            let num = |tag: &str, k: &str| -> f64 {
+                let v = tag.split(&format!(r#" {k}=""#)).nth(1).unwrap();
+                v[..v.find('"').unwrap()].parse().unwrap()
+            };
+            let (along, across) = match orientation {
+                Orientation::Horizontal => (num(strip, "width"), num(strip, "height")),
+                Orientation::Vertical => (num(strip, "height"), num(strip, "width")),
+            };
+            assert_eq!((along, across), (MOMENT_HIT_PX, 40.0), "{strip}");
+            assert!(strip.contains(r#"fill-opacity="0""#), "{strip}");
+            assert!(strip.contains(r#"data-at="#), "{strip}");
+            assert!(strip.contains("<title>body: run</title>"), "{strip}");
+            let line = rest.strip_prefix(r#"<line class="point-fg moment""#);
+            let line = &line.expect(rest)[..rest.find("/>").unwrap()];
+            assert!(line.contains(r#"stroke-dasharray="#), "{line}");
+            assert!(line.contains(r##"stroke="#ff0000""##), "{line}");
+            let length = (num(line, "x2") - num(line, "x1")).abs()
+                + (num(line, "y2") - num(line, "y1")).abs();
+            assert_eq!(length, 40.0, "{line}");
+        }
     }
 
     /// da-6hg6v: the now-chunk is the open block of the state a field is
