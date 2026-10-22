@@ -848,82 +848,14 @@ fn resolve_window(
     reach: Duration,
 ) -> Result<(Option<DateTime<Utc>>, DateTime<Utc>, ZoneTimeline)> {
     let now = DatumTime::now().utc;
-    let through_now = now + TICK;
-
     let order = window_order(args);
-    if args.slice.is_some() {
-        let mut named = vec!["a time-slice positional"];
-        for flag in &order {
-            let label = match flag {
-                StatsWindowFlag::Period => "a period flag",
-                StatsWindowFlag::Time => "the timing flags (-t/-d/-q/-y)",
-                StatsWindowFlag::Since => "--since",
-                StatsWindowFlag::AllTime => "--all-time",
-                StatsWindowFlag::Until => continue,
-            };
-            if !named.contains(&label) {
-                named.push(label);
-            }
-        }
-        if named.len() > 1 {
-            bail!(
-                "stats takes one window start, but got {}",
-                named.join(" and ")
-            );
-        }
-    }
+    refuse_two_starts(args, &order)?;
 
     let since = now - reach - Duration::days(4);
     let mut zones = window_zones(args, db, since, None)?;
     let here = zones.zone_at(now).clone();
-    // The flags from the last back, each setting the ends no later one did.
-    let window = |zones: &ZoneTimeline| -> Result<(Option<DateTime<Utc>>, DateTime<Utc>)> {
-        let mut start: Option<Option<DateTime<Utc>>> = None;
-        let mut end: Option<DateTime<Utc>> = None;
-        if let Some(slice) = &args.slice {
-            let (s, e) = parse_slice(slice, zones)?;
-            start = Some(Some(s));
-            end = (!order.contains(&StatsWindowFlag::Until)).then_some(e);
-        }
-        for flag in order.iter().rev() {
-            if start.is_some() && end.is_some() {
-                break;
-            }
-            let (s, e) = match flag {
-                StatsWindowFlag::Period => {
-                    let period = args.period.expect("a period flag sets the period");
-                    let today = here.local_naive(now).date();
-                    let (s, e) =
-                        period_window(period, resolve_week_start()?, zones, today, through_now)?;
-                    (Some(Some(s)), Some(e))
-                }
-                StatsWindowFlag::AllTime => (Some(None), Some(through_now)),
-                StatsWindowFlag::Since => {
-                    let since = (args.since.as_deref()).map(|s| bound(s, zones, false));
-                    (Some(since.transpose()?), None)
-                }
-                StatsWindowFlag::Until => {
-                    let until = (args.until.as_deref()).map(|s| bound(s, zones, true));
-                    (None, until.transpose()?)
-                }
-                StatsWindowFlag::Time => {
-                    let builder = args.time.builder(TimeCtx::at(here.local_naive(now)))?;
-                    let only_date = builder.is_only_date();
-                    let at = builder.build_at(now, here.clone(), None);
-                    if only_date {
-                        let (s, e) = day_window(here.local_naive(at.utc).date(), zones)?;
-                        (Some(Some(s)), Some(e))
-                    } else {
-                        (Some(Some(at.utc)), None)
-                    }
-                }
-            };
-            start = start.or(s);
-            end = end.or(e);
-        }
-        Ok((start.flatten(), end.unwrap_or(through_now)))
-    };
-    let earliest = |(start, end): (Option<DateTime<Utc>>, DateTime<Utc>)| {
+    let window = |zones: &ZoneTimeline| fold_window(args, &order, zones, &here, now);
+    let earliest = |(start, end): Bounds| {
         let anchor = end.min(now);
         start.map_or(anchor, |s| s.min(anchor)) - reach
     };
@@ -933,39 +865,151 @@ fn resolve_window(
         zones = window_zones(args, db, earliest(bounds) - Duration::days(4), until)?;
         bounds = window(&zones)?;
     }
+    refuse_empty_window(bounds, &zones, &args.time, &here, now)?;
     let (start, end) = bounds;
+    Ok((start, end, zones))
+}
 
-    // An inverted or empty window reports zero, which is indistinguishable
-    // from "you did nothing" — the one reading a life-review tool must never
-    // hand back by accident. Say so instead. So does a window that has not
-    // begun yet (da-bb059): nothing in it has happened.
-    if let Some(s) = start {
-        let show = |t: DateTime<Utc>| {
-            zones
-                .zone_at(t)
-                .local_naive(t)
-                .format("%Y-%m-%d %H:%M")
-                .to_string()
+/// A window's `(start, end)`: `start = None` is unbounded below.
+type Bounds = (Option<DateTime<Utc>>, DateTime<Utc>);
+
+/// The `SLICE` positional is a window start of its own, so it refuses every
+/// other flag that names one; `--until` it takes.
+fn refuse_two_starts(args: &StatsArgs, order: &[StatsWindowFlag]) -> Result<()> {
+    if args.slice.is_none() {
+        return Ok(());
+    }
+    let mut named = vec!["a time-slice positional"];
+    for flag in order {
+        let label = match flag {
+            StatsWindowFlag::Period => "a period flag",
+            StatsWindowFlag::Time => "the timing flags (-t/-d/-q/-y)",
+            StatsWindowFlag::Since => "--since",
+            StatsWindowFlag::AllTime => "--all-time",
+            StatsWindowFlag::Until => continue,
         };
-        if end <= s {
-            bail!(
-                "empty window: the end ({}) is not after the start ({}), local time in {}{}",
-                show(end),
-                show(s),
-                zones.zone_at(s).name(),
-                last_clock_hint(&args.time, &here, now, end)?,
-            );
-        }
-        if s > now {
-            bail!(
-                "the window has not begun: it starts {}, after now ({}), local time in {}",
-                show(s),
-                show(now),
-                zones.zone_at(s).name(),
-            );
+        if !named.contains(&label) {
+            named.push(label);
         }
     }
-    Ok((start, end, zones))
+    if named.len() > 1 {
+        bail!(
+            "stats takes one window start, but got {}",
+            named.join(" and ")
+        );
+    }
+    Ok(())
+}
+
+/// The window the flags in `order` name, read in `zones`, with `here` the
+/// zone at `now`: the slice positional first, then the flags.
+fn fold_window(
+    args: &StatsArgs,
+    order: &[StatsWindowFlag],
+    zones: &ZoneTimeline,
+    here: &Zone,
+    now: DateTime<Utc>,
+) -> Result<Bounds> {
+    // The flags from the last back, each setting the ends no later one did.
+    let (mut start, mut end): Ends = (None, None);
+    if let Some(slice) = &args.slice {
+        let (s, e) = parse_slice(slice, zones)?;
+        start = Some(Some(s));
+        end = (!order.contains(&StatsWindowFlag::Until)).then_some(e);
+    }
+    for flag in order.iter().rev() {
+        if start.is_some() && end.is_some() {
+            break;
+        }
+        let (s, e) = flag_ends(*flag, args, zones, here, now)?;
+        start = start.or(s);
+        end = end.or(e);
+    }
+    Ok((start.flatten(), end.unwrap_or(now + TICK)))
+}
+
+/// A start and an end as [`fold_window`] holds them while it walks: `None`
+/// is one no flag has set yet, and a start of `Some(None)` is unbounded below.
+type Ends = (Option<Option<DateTime<Utc>>>, Option<DateTime<Utc>>);
+
+/// The ends one window flag sets, `None` for one it leaves to an earlier flag.
+fn flag_ends(
+    flag: StatsWindowFlag,
+    args: &StatsArgs,
+    zones: &ZoneTimeline,
+    here: &Zone,
+    now: DateTime<Utc>,
+) -> Result<Ends> {
+    let through_now = now + TICK;
+    Ok(match flag {
+        StatsWindowFlag::Period => {
+            let period = args.period.expect("a period flag sets the period");
+            let today = here.local_naive(now).date();
+            let (s, e) = period_window(period, resolve_week_start()?, zones, today, through_now)?;
+            (Some(Some(s)), Some(e))
+        }
+        StatsWindowFlag::AllTime => (Some(None), Some(through_now)),
+        StatsWindowFlag::Since => {
+            let since = (args.since.as_deref()).map(|s| bound(s, zones, false));
+            (Some(since.transpose()?), None)
+        }
+        StatsWindowFlag::Until => {
+            let until = (args.until.as_deref()).map(|s| bound(s, zones, true));
+            (None, until.transpose()?)
+        }
+        StatsWindowFlag::Time => {
+            let builder = args.time.builder(TimeCtx::at(here.local_naive(now)))?;
+            let only_date = builder.is_only_date();
+            let at = builder.build_at(now, here.clone(), None);
+            if only_date {
+                let (s, e) = day_window(here.local_naive(at.utc).date(), zones)?;
+                (Some(Some(s)), Some(e))
+            } else {
+                (Some(Some(at.utc)), None)
+            }
+        }
+    })
+}
+
+/// An inverted or empty window reports zero, which is indistinguishable
+/// from "you did nothing" — the one reading a life-review tool must never
+/// hand back by accident. Say so instead. So does a window that has not
+/// begun yet (da-bb059): nothing in it has happened.
+fn refuse_empty_window(
+    (start, end): Bounds,
+    zones: &ZoneTimeline,
+    time: &TimeArgs,
+    here: &Zone,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let Some(s) = start else {
+        return Ok(());
+    };
+    let show = |t: DateTime<Utc>| {
+        zones
+            .zone_at(t)
+            .local_naive(t)
+            .format("%Y-%m-%d %H:%M")
+            .to_string()
+    };
+    if end <= s {
+        bail!(
+            "empty window: the end ({}) is not after the start ({}), local time in {}{}",
+            show(end),
+            show(s),
+            zones.zone_at(s).name(),
+            last_clock_hint(time, here, now, end)?,
+        );
+    }
+    if s > now {
+        bail!(
+            "the window has not begun: it starts {}, after now ({}), local time in {}",
+            show(s),
+            show(now),
+            zones.zone_at(s).name(),
+        );
+    }
+    Ok(())
 }
 
 /// What to type for the last such clock, when a window is empty because a
