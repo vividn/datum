@@ -143,6 +143,9 @@ pub(crate) fn parse_upgrade_args(tail: &[&str]) -> Result<Command> {
     match tail {
         [] => Ok(Command::Upgrade { check: false }),
         ["--check"] => Ok(Command::Upgrade { check: true }),
+        ["--check", extra, ..] => Err(ParseError::InvalidArg(format!(
+            "unexpected argument: '{extra}'"
+        ))),
         [tok, ..] => Err(unknown_flag(split_flag(tok))),
     }
 }

@@ -572,6 +572,18 @@ mod tests {
         assert!(e.to_string().contains("--keep-sync-chain"), "{e}");
     }
 
+    /// da-y8pvg: a word after `upgrade --check` is named, not the flag.
+    #[test]
+    fn upgrade_check_names_an_extra_word() {
+        let e = |w: &[&str]| parse_argv(&argv(w)).unwrap_err().to_string();
+        assert!(matches!(
+            parse_argv(&argv(&["upgrade", "--check"])).unwrap().command,
+            Command::Upgrade { check: true }
+        ));
+        assert!(e(&["upgrade", "--check", "x"]).contains("unexpected argument: 'x'"));
+        assert!(e(&["upgrade", "--nope"]).contains("unexpected flag: --nope"));
+    }
+
     #[test]
     fn occur_minimal() {
         let cli = parse_argv(&argv(&["occur", "coffee"])).unwrap();
