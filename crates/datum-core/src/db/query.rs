@@ -11,7 +11,8 @@ use crate::ids::Hid;
 
 use super::spec::NOT_META_FIELD_SQL;
 use super::types::{
-    filtered_where, time_expr_endbound, GroupColumn, TimeOrderIssue, LIVE_SQL, NOT_FLAG_OR_META_SQL,
+    filtered_where, time_expr, GroupColumn, TimeMetric, TimeOrderIssue, LIVE_SQL,
+    NOT_FLAG_OR_META_SQL,
 };
 use super::Db;
 
@@ -92,6 +93,8 @@ impl Db {
     /// List live-entry identifiers (hid or slug, per `as_slug`) in
     /// occur-time order. Accepts optional field / `--since` filters and a
     /// cap. Ties broken by slug in the same direction as the primary sort.
+    /// A timeless row (`occur_time IS NULL`) sorts as the oldest, first
+    /// ascending and last descending, and `--since` leaves it out.
     pub fn list_entry_ids(
         &self,
         field: Option<&str>,
@@ -106,7 +109,7 @@ impl Db {
         let mut sql = format!(
             "SELECT {select_col} FROM entries WHERE {where_clause} \
              ORDER BY {expr} {dir}, slug {dir}",
-            expr = time_expr_endbound(),
+            expr = time_expr(TimeMetric::Occur),
         );
         if let Some(n) = limit {
             sql.push_str(&format!(" LIMIT {n}"));

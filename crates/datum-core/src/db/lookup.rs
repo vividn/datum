@@ -11,7 +11,7 @@ use crate::error::{DatumError, PrefixCandidate, Result};
 
 use super::row_mapper::row_to_entry;
 use super::types::{
-    like_prefix_pattern, time_expr_endbound, AMBIGUOUS_PREFIX_CANDIDATE_CAP, LIVE_SQL,
+    like_prefix_pattern, time_expr, TimeMetric, AMBIGUOUS_PREFIX_CANDIDATE_CAP, LIVE_SQL,
     STATE_ORDER_NEWEST_FIRST, STATE_ORDER_OLDEST_FIRST, STATE_PARTICIPATION_SQL,
 };
 
@@ -248,7 +248,7 @@ impl Db {
         limit: usize,
         skip_dots: bool,
     ) -> Result<Vec<Entry>> {
-        let expr = time_expr_endbound();
+        let expr = time_expr(TimeMetric::Occur);
         let (bound, cutoff) = match snapshot_time {
             None => (String::new(), None),
             Some(t) => (format!("AND {expr} <= ?2"), Some(t.to_rfc3339())),
@@ -288,7 +288,7 @@ impl Db {
     /// leading edge is re-derived in Rust because `dur` is an ISO-8601
     /// string SQL cannot subtract from a time.
     fn blocks_spanning(&self, field: &str, t: chrono::DateTime<chrono::Utc>) -> Result<Vec<Entry>> {
-        let expr = time_expr_endbound();
+        let expr = time_expr(TimeMetric::Occur);
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}

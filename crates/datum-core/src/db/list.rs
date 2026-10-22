@@ -11,19 +11,20 @@ use crate::error::{DatumError, Result};
 use super::row_mapper::{build_datum_time, row_to_entry};
 use super::spec::NOT_META_FIELD_SQL;
 use super::types::{
-    time_expr, time_expr_endbound, ListParams, TimeMetric, TimelineEntry, LIVE_SQL,
-    NOT_FLAG_OR_META_SQL,
+    time_expr, ListParams, TimeMetric, TimelineEntry, LIVE_SQL, NOT_FLAG_OR_META_SQL,
 };
 use super::Db;
 
 impl Db {
-    /// Query live entries for a field, ordered by start_time descending.
+    /// Query live entries for a field, newest `occur_time` first. A timeless
+    /// row (`occur_time IS NULL`) sorts last, as older than every timed row
+    /// (SQLite puts NULL last descending).
     pub fn entries_for_field(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND {LIVE_SQL}
              ORDER BY {} DESC{}",
-            time_expr_endbound(),
+            time_expr(TimeMetric::Occur),
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -31,13 +32,14 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
-    /// Query live entries for a field, ordered by start_time ascending (oldest first).
+    /// Query live entries for a field, oldest `occur_time` first. A timeless
+    /// row sorts first, the mirror of [`Self::entries_for_field`].
     pub fn entries_for_field_asc(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND {LIVE_SQL}
              ORDER BY {} ASC{}",
-            time_expr_endbound(),
+            time_expr(TimeMetric::Occur),
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
         );
         let mut stmt = self.conn.prepare(&sql)?;

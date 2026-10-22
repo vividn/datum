@@ -8,7 +8,7 @@ use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 
 use super::types::{
-    time_expr_endbound, TrackedField, STATE_ORDER_NEWEST_FIRST, STATE_ORDER_OLDEST_FIRST,
+    time_expr, TimeMetric, TrackedField, STATE_ORDER_NEWEST_FIRST, STATE_ORDER_OLDEST_FIRST,
     STATE_PARTICIPATION_SQL,
 };
 use super::Db;
@@ -442,14 +442,14 @@ pub(super) fn state_rows_sql(depth: usize) -> String {
     // da-2i8g: each row's verb / occur_time / dur / following_state come
     // along so the trailing-edge rules can be applied in Rust — `dur` is
     // an ISO-8601 string, which SQL cannot add to a time.
-    let endbound = time_expr_endbound();
+    let occur = time_expr(TimeMetric::Occur);
     format!(
         "SELECT field, state, verb, occur_time, dur, following_state, hid
            FROM entries
           WHERE field = ?1
             AND {STATE_PARTICIPATION_SQL}
             AND NOT {OCCUR_DOT_SQL}
-            AND {endbound} <= ?2
+            AND {occur} <= ?2
           ORDER BY {STATE_ORDER_NEWEST_FIRST}
           LIMIT {depth}"
     )
@@ -460,7 +460,7 @@ pub(super) fn state_rows_sql(depth: usize) -> String {
 /// early exit as [`state_rows_sql`], walked the other way.
 pub(super) fn spanning_blocks_sql(limit: usize) -> String {
     use crate::state::OCCUR_DOT_SQL;
-    let endbound = time_expr_endbound();
+    let occur = time_expr(TimeMetric::Occur);
     format!(
         "SELECT field, state, verb, occur_time, dur, following_state, hid
            FROM entries
@@ -468,7 +468,7 @@ pub(super) fn spanning_blocks_sql(limit: usize) -> String {
             AND {STATE_PARTICIPATION_SQL}
             AND NOT {OCCUR_DOT_SQL}
             AND dur IS NOT NULL
-            AND {endbound} > ?2
+            AND {occur} > ?2
           ORDER BY {STATE_ORDER_OLDEST_FIRST}
           LIMIT {limit}"
     )

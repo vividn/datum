@@ -130,13 +130,6 @@ pub(super) fn time_expr(metric: TimeMetric) -> &'static str {
     }
 }
 
-/// SQL expression for an entry's "endbound" time — the canonical occurrence
-/// sort key used when no explicit metric is selected. Post-pivot,
-/// `occur_time` is NOT NULL so the v=19 COALESCE chain collapses.
-pub(super) fn time_expr_endbound() -> &'static str {
-    "occur_time"
-}
-
 /// Canonical state-participation predicate (da-ylet): a row contributes
 /// to a field's state timeline iff it is live AND not a deliberately
 /// timeless row (`occur_time IS NULL`, written by `add` / `note` /
@@ -203,7 +196,8 @@ pub(super) fn filtered_where(
         None => parts.push(super::spec::NOT_META_FIELD_SQL.to_string()),
     }
     if let Some(since_utc) = since {
-        parts.push(format!("{} >= ?", time_expr_endbound()));
+        // A timeless row has no occur_time to compare, and this leaves it out.
+        parts.push(format!("{} >= ?", time_expr(TimeMetric::Occur)));
         bindings.push(since_utc.to_rfc3339());
     }
     (parts.join(" AND "), bindings)
