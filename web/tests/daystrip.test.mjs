@@ -922,7 +922,8 @@ describe('the day strip zooms onto an hour range', () => {
 			const windowed = await windowHeard(app);
 
 			// The gesture that used to mean this (da-ukcf) means nothing to
-			// the window now: it is the inspect's, everywhere (da-8rqb9).
+			// the window now: two taps are an entry and its time (da-8rqb9,
+			// da-xg1vi).
 			await doubleTap(app.page, box);
 			await app.idle();
 			assert.deepEqual(await windowHeard(app), windowed, 'a double tap still resets the zoom');
@@ -952,7 +953,7 @@ describe('the day strip zooms onto an hour range', () => {
 	// INSPECTS, which is asserted below; the way back has to be somewhere
 	// a picture is not, and the `⊖` is in the date column, which no
 	// picture is ever drawn in.
-	test('on a day whose lanes are full, a double tap inspects — and the ⊖ still gives the day back', async () => {
+	test('on a day whose lanes are full, a tap inspects and a second is the time — and the ⊖ still gives the day back', async () => {
 		await settledRoom(phone, 'dense', async (app) => {
 			const { page } = app;
 			// Late in the day, so the last switch has five hours to run: the
@@ -1001,10 +1002,12 @@ describe('the day strip zooms onto an hour range', () => {
 			await app.idle();
 			const windowed = await windowHeard(app);
 
-			// So the double tap the reset used to share is spoken for: aimed
-			// at the picture it finds a mark and inspects it. The entry is
-			// read at the point the tap will land, on the ZOOMED picture,
-			// rather than assumed from the one before it.
+			// So the taps the reset used to share are spoken for: aimed at
+			// the picture the first finds a mark and inspects it, and the
+			// second on it is the time there instead (da-xg1vi, vividn: «first
+			// tap selects the piece of data, second tap then selects time
+			// instead»). The entry is read at the point the tap will land, on
+			// the ZOOMED picture, rather than assumed from the one before it.
 			const mark = await page.locator(TODAY).evaluate((band) => {
 				const b = band.getBoundingClientRect();
 				const at = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
@@ -1012,11 +1015,17 @@ describe('the day strip zooms onto an hour range', () => {
 			});
 			assert.ok(mark, 'the middle of a full day is still ground');
 
-			await doubleTap(page, box);
+			const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+			await page.touchscreen.tap(middle.x, middle.y);
 			await page.waitForFunction(
 				`window.datum.bar.pills().some((p) => p.text === ${JSON.stringify(mark)})`
 			);
-			assert.deepEqual(await windowHeard(app), windowed, 'the double tap threw the window away');
+			await page.touchscreen.tap(middle.x, middle.y);
+			await page.waitForFunction(() => {
+				const kinds = window.datum.bar.pills().map((p) => p.kind);
+				return kinds.includes('time') && !kinds.includes('hid');
+			});
+			assert.deepEqual(await windowHeard(app), windowed, 'the taps threw the window away');
 
 			// And the way back is reachable from exactly there — asked the
 			// way a finger asks. Every point of the button's box hit-tests

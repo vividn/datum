@@ -87,39 +87,43 @@
 	  down on a band
 	    ├─ two fingers ────────────────────► PINCH: the hour window (da-ukcf)
 	    └─ one finger or the mouse
-	         ├─ mostly DOWNWARD ───────────► the STACK's scroll, never ours,
-	         │                               and the long-press timer may not
-	         │                               take it back
-	         ├─ the whole day on screen ───► a RANGE at once: there is nowhere
-	         │    and sideways               to pan to, so a drag can be nothing
-	         │                               else (vividn: «if already zoomed out
-	         │                               to the max then just automatically
-	         │                               do a selection»)
-	         ├─ shift held, sideways ──────► the same range on a desk
-	         ├─ down 400 ms, THEN sideways ► a RANGE, as it always was
-	         ├─ down 400 ms, then LIFTING ─► INSPECT: the entry behind the mark
-	         │                               under the finger (da-pzzoz)
-	         ├─ double tap ────────────────► the same inspect, wherever it lands
-	         │                               (da-8rqb9: no position test, because
-	         │                               a dense day has no ground)
-	         ├─ zoomed in, sideways ───────► PAN: the hour window follows the
+	         ├─ mostly DOWNWARD, held or not ► the STACK's scroll, never ours
+	         ├─ sideways, zoomed in ────────► PAN: the hour window follows the
 	         │                               finger, as shift+wheel does
-	         └─ up, still still ───────────► the CLICK the `picture` action has
-	                                         always taken: the time cursor, and
-	                                         the nowview centres on it
+	         ├─ sideways, at an END ────────► the PANE's swipe, to the next tab:
+	         │    (the whole day: both)      nothing to pan to, and a swipe
+	         │                               never selects time
+	         ├─ down 400 ms, THEN sideways ─► a RANGE
+	         ├─ shift held, sideways ───────► the same range on a desk
+	         ├─ down 400 ms, then LIFTING ──► the TIME where it fell, a mark or not
+	         ├─ right click ────────────────► the same time, on a desk
+	         └─ up, still still ────────────► a TAP: the entry under it, or the
+	                                         time where there is none — and
+	                                         on an entry already selected, the
+	                                         time there instead
 
-	The 400ms stopped COMMITTING (da-pzzoz): a still long press is now an
-	inspect and only a travelling one is a range. The bar dropping at 400ms
-	was the feedback that the press had registered, so `.hold-mark` — a
-	ring closing over the wait, the nowview's own — is what replaces it.
-	Shift+click and right click are the inspect on a desk, and they live in
-	the `picture` action with the double tap, because every drawn picture
-	has that action on it and only these two views have a recogniser.
+	  down on the ruler (the time axis) ► SCRUB: the time under the finger at
+	                                      once, following it to the lift
+
+	vividn's table, 2026-10-22 (da-xg1vi), which this is, for both views:
+	«single tap → select a piece of data … single tap where there is no
+	data, or in the time axis → select a time … long tap / right click →
+	select a time … simple swipe or drag → pan; or, if already at the edge,
+	pass the swipe to the container … long tap and drag → select a time
+	period … swiping left/right must not select time», and «for quickly
+	selecting a time, a user can touch in the time axis». The machine is
+	$lib/nowpoint.ts; a tap and a right click are the `picture` action's
+	($lib/hover.ts), because every drawn picture has it.
+
+	The 400ms does not COMMIT (da-pzzoz): a still long press is a time and
+	only a travelling one is a range. `.hold-mark` — a ring closing over
+	the wait, the nowview's own — is the feedback that it registered.
 
 	A press that starts on the `+` handle, a line (below), the `⊖` or the
-	jagged line is THEIRS, and one that starts off a band — the date
-	column, the ruler, the room around them — is the pane's, so a swipe there still
-	changes tabs. The bands say so themselves with `data-pans="x"`.
+	jagged line is THEIRS, and one that starts off a band and the ruler —
+	the date column, the room around them — is the pane's, so a swipe there
+	still changes tabs. The bands say so themselves with `data-pans="x"`,
+	and `data-pan-stop` names the ends the window is at.
 
 	A range made here is the page's one selection ($lib/cursor.ts), marked
 	`from: 'daystrip'`, which is how it comes to spell itself
@@ -151,9 +155,19 @@
 	column meets today moves both, and is the keyboard's (one step an
 	arrow). Every line between two days, the divider included, is a
 	ns-resize handle a few pixels either side of it that moves the day
-	height alone; the spine, the whole length of the strip, an ew-resize
-	one that moves the label width alone. Up is taller and right is wider
-	on all three.
+	height alone — but only where it crosses the DATE column (da-xg1vi):
+	vividn, 2026-10-22, «it's way too easy to accidentally resize days on
+	mobile when you're just trying to scroll», so over the bands a line is
+	no handle and a finger down it scrolls, always. The spine, the whole
+	length of the strip, is an ew-resize one that moves the label width
+	alone. Up is taller and right is wider on all three.
+
+	A PAN NEVER SELECTS AND NEVER LABELS (da-xg1vi). A press that traveled
+	— the stack's scroll, a pan of the hours, a pinch — selects nothing
+	with its click and shows no tooltip; a finger's label waits for its
+	lift (`pressTraveled`, $lib/inspect.ts, which every picture asks, the
+	nowview's too). What selects is what the tree above says: a tap, a
+	long tap, a long tap's drag, the ruler.
 
 	THE DAY HEIGHT IS THE ONE THAT MAY BE ABSENT (da-r0ydu). No day height
 	means ONE DAY FILLS THE WIDGET — `dayFilling(height)`, re-derived every
@@ -174,10 +188,10 @@
 	import Pill from './Pill.svelte';
 	import { pills } from './bar.js';
 	import { minute } from './clock.js';
-	import { pointAt, pointed, SPAN_ID } from './cursor.js';
-	import { inspectMark, timeAt } from './hover.js';
-	import { markOf } from './inspect.js';
-	import { advance, LONG_MS, SLOP_PX, type Mode, type Press } from './nowpoint.js';
+	import { pointAt, pointed, setCursor, SPAN_ID } from './cursor.js';
+	import { timeAt } from './hover.js';
+	import { spendPress } from './inspect.js';
+	import { advance, LONG_MS, SLOP_PX, undecided, type Mode, type Press } from './nowpoint.js';
 	import { run, runKey, type RunResult } from './run.js';
 	import { firstEntryArgv } from './calls.js';
 	import type { TailListing } from './tail.js';
@@ -341,6 +355,14 @@
 	$: bandX = (x: number) => gridMap.offset + gridMap.scale * x;
 	/** Is there a window at all, or is the whole day on screen? */
 	$: zoomed = !wholeDay(view);
+	/**
+	 * The ends the hour window is AT, which a finger cannot pan past: there
+	 * the swipe is the pane's, to change tabs (da-xg1vi). `start` is the
+	 * day's first hour, where a finger moving right (dx > 0, the window
+	 * toward earlier) stops, and `end` its last; the whole day is at both
+	 * (`takes`, PaneFrame.svelte).
+	 */
+	$: panStop = [committed[0] <= HOUR_FROM && 'start', committed[1] >= HOUR_TO && 'end'].filter(Boolean).join(' ');
 	/** The transform each band's picture is shown under. */
 	$: bandZoom = (end: number) => mapFor(drawnAt[end]);
 
@@ -1115,16 +1137,18 @@
 	 * same: once it has committed, the move is ours.
 	 */
 	function onTouchMove(event: TouchEvent): void {
-		if (fingers.size >= 2 || mode !== 'press') event.preventDefault();
+		// Also what tells the pane the move is taken (`defaultPrevented`,
+		// PaneFrame.svelte): a range on a band at both ends is no tab swipe.
+		if (fingers.size >= 2 || !undecided(mode)) event.preventDefault();
 	}
 
 	// ── pointing into a band: a range, or a pan (da-ku7y) ──────────────
 	//
 	// The recogniser is the nowview's, whole (`$lib/nowpoint.ts`); the
 	// table it runs here is in this file's header. What is the strip's own
-	// is `atOnce` — the whole day on screen has nowhere to pan to, so a
-	// drag there is a range without waiting — and the vertical guard, the
-	// stack's scroll being a real gesture a band lies over.
+	// is the window's ENDS — a pan pushing past one is the pane's swipe —
+	// and the vertical guard, the stack's scroll being a real gesture a
+	// band lies over.
 
 	/** The press in hand on a band, and what it has become. */
 	let press: Press | null = null;
@@ -1134,8 +1158,6 @@
 	/** Whether the press has lasted long enough to be a range. */
 	let long = false;
 	let longTimer: ReturnType<typeof setTimeout> | undefined;
-	/** What the press went down ON, for the inspect that may end it (da-pzzoz). */
-	let onMark: Element | null = null;
 	/**
 	 * Where the wait is DRAWN, in px across the strip's box, while a press
 	 * is still undecided — the nowview's `.hold-mark`, for the same reason:
@@ -1159,6 +1181,7 @@
 
 	function begin(event: PointerEvent): void {
 		if (event.button > 0) return;
+		if ((event.target as HTMLElement).closest('.axis')) return scrubFrom(event);
 		const day = (event.target as HTMLElement)
 			.closest('.band')
 			?.querySelector('svg.svg [data-lo]');
@@ -1171,11 +1194,10 @@
 			y: event.clientY,
 			// The now region is the nowview's: this axis runs to midnight.
 			inNow: false,
-			atOnce: event.shiftKey || !zoomed
+			atOnce: event.shiftKey
 		};
 		mode = 'press';
 		long = false;
-		onMark = markOf(event.target);
 		last = { x: event.clientX, y: event.clientY };
 		const home = stripEl?.getBoundingClientRect();
 		waiting = home ? { x: event.clientX - home.x, y: event.clientY - home.y } : null;
@@ -1193,7 +1215,6 @@
 		press = null;
 		pressDay = null;
 		panning = null;
-		onMark = null;
 		waiting = null;
 		mode = 'press';
 		long = false;
@@ -1202,12 +1223,13 @@
 	/** Run the machine to where the pointer is now, and do what the mode does. */
 	function step(x: number, y: number): void {
 		if (!press) return;
+		if (mode === 'scrub') return scrubTo(x);
 		const [dx, dy] = [x - press.x, y - press.y];
-		// A mostly-vertical finger is the STACK's scroll. It is dropped
-		// rather than merely ignored, because `advance` gives a long press
-		// a range whichever way it has travelled, and the timer would
-		// otherwise take a slow scroll away from the reader 400ms in.
-		if (mode === 'press' && Math.abs(dy) > SLOP_PX && Math.abs(dy) > Math.abs(dx)) return dropPress();
+		// A mostly-vertical finger is the STACK's scroll, held first or not
+		// (da-xg1vi: «a vertical drag on the data area scrolls, always»). It
+		// is dropped rather than merely ignored, so the timer cannot take a
+		// slow scroll away from the reader 400ms in.
+		if (undecided(mode) && Math.abs(dy) > SLOP_PX && Math.abs(dy) > Math.abs(dx)) return dropPress();
 		const was = mode;
 		mode = advance(mode, press, x, y, long);
 		// The wait's mark belongs to a press that is still undecided.
@@ -1219,6 +1241,9 @@
 			if (at) pointAt({ at, from: 'daystrip' });
 		}
 		if (mode === 'pan' && was !== 'pan') {
+			// At the end it is pushing past, the swipe is the pane's: there is
+			// nothing to pan to, and nothing of this press happens.
+			if (panStop.includes(dx > 0 ? 'start' : 'end')) return dropPress();
 			const box = bandBoxNow();
 			if (!box) return dropPress();
 			panning = { window: committed, box };
@@ -1263,26 +1288,53 @@
 	}
 
 	/**
+	 * The ruler is the TIME AXIS (da-xg1vi, vividn: «if you touch in the
+	 * time axis and drag around, in this case, do not pan but rather be able
+	 * to precisely choose a time»): a press there points the page at the
+	 * time under it at once, and the time follows the finger until the lift.
+	 * On the day the selection is on, where a band draws it — scrubbing
+	 * moves a time along its own day — and today's otherwise.
+	 */
+	function scrubFrom(event: PointerEvent): void {
+		const days = [...(stripEl?.querySelectorAll('.band svg.svg [data-lo]') ?? [])];
+		const at = $pointed ? +$pointed.at : NaN;
+		pressDay =
+			days.find((d) => Date.parse(d.getAttribute('data-from')!) <= at && at < Date.parse(d.getAttribute('data-to')!)) ??
+			stripEl?.querySelector('.band[data-days-ago="0"] svg.svg [data-lo]') ??
+			null;
+		if (!pressDay) return;
+		press = { x: event.clientX, y: event.clientY, inNow: false, atOnce: false };
+		mode = 'scrub';
+		scrubTo(event.clientX);
+	}
+
+	function scrubTo(x: number): void {
+		const box = pressDay?.closest('.band')?.getBoundingClientRect();
+		const at = box && instantAt(x, box.y + box.height / 2);
+		if (at) setCursor(at);
+	}
+
+	/**
 	 * The end of a one-pointer gesture. A press that committed to nothing
-	 * is left alone: it is the CLICK the `picture` action takes, which has
-	 * set the time cursor since da-wnt2 and centres the nowview on it.
+	 * is left alone: it is the CLICK the `picture` action takes — the entry
+	 * under it, or the time where there is none ($lib/hover.ts).
 	 *
-	 * Except a STILL LONG PRESS, which is the inspect (da-pzzoz): it takes
-	 * the entry behind the mark under the finger, and SPENDS the press, so
-	 * the click that follows makes no time pill over the top of it
-	 * (`pressSpent`, $lib/inspect.ts). Over ground that names no entry it
-	 * returns false and the click has the press as it always did.
+	 * Except a STILL LONG TAP, which is a TIME wherever it lands, a mark
+	 * included (da-xg1vi, vividn: «long tap / right click → select a
+	 * time»), and SPENDS the press, so the click that may follow it does
+	 * not take the entry under it instead.
 	 */
 	function finish(event: PointerEvent): void {
 		if (!press) return;
 		const still = Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP_PX;
-		if (mode === 'hold' && still) inspectMark(markOf(event.target) ?? onMark, event, bandSvg());
+		if (mode === 'hold' && still) {
+			const at = instantAt(press.x, press.y);
+			if (at) setCursor(at);
+			spendPress();
+		}
 		if (mode === 'pan') commit();
 		dropPress();
 	}
-
-	/** The picture the press went down in — the `order` a range of marks would run over. */
-	const bandSvg = (): ParentNode | null => pressDay?.closest('svg') ?? null;
 
 	// ── the selection's pills, in the strip's own margin ───────────────
 
@@ -1429,6 +1481,7 @@
 							data-days-ago={end}
 							data-days="1"
 							data-pans="x"
+							data-pan-stop={panStop}
 							style:--zoom-x="{bandZoom(end).offset}px"
 							style:--zoom={bandZoom(end).scale}
 						>
@@ -1542,6 +1595,7 @@
 					data-days-ago="0"
 					data-days="1"
 					data-pans="x"
+					data-pan-stop={panStop}
 					style:--zoom-x="{bandZoom(0).offset}px"
 					style:--zoom={bandZoom(0).scale}
 				>
@@ -1553,7 +1607,7 @@
 		{/if}
 
 		<!-- The ruler, drawn once, under whichever band is at the bottom. -->
-		<div class="axis">
+		<div class="axis" data-pans="xy">
 			{#if geometry && bandWidth > 0}
 				<svg class="ruler" width={bandWidth} height={AXIS_HEIGHT} aria-hidden="true">
 					<line class="baseline" x1="0" x2={bandWidth} y1="0.5" y2="0.5" />
@@ -1828,7 +1882,9 @@
 	/* The lines are handles too (da-ray91): a few pixels either side of
 	   each, the spine's the label width and a day line's the day height —
 	   the line over each day past the first in the stack, the row's top
-	   border, and the divider. Nothing is drawn: the line already is. */
+	   border, and the divider. A day line only across the date column
+	   (da-xg1vi): over the bands a finger down it is the scroll. Nothing
+	   is drawn: the line already is. */
 	.sizer {
 		touch-action: none;
 	}
@@ -1840,7 +1896,7 @@
 	.day-line {
 		position: absolute;
 		left: 0;
-		right: 0;
+		width: var(--label);
 		/* The border is above the row's padding box: centre on it. */
 		top: calc(-4px - var(--line));
 		height: calc(8px + var(--line));
@@ -1982,6 +2038,10 @@
 		height: var(--axis);
 		margin-left: var(--label);
 		overflow: hidden;
+		/* The time axis: a finger on it scrubs the time (da-xg1vi), so the
+		   browser gets no scroll and the pane no swipe out of it. */
+		touch-action: none;
+		cursor: col-resize;
 	}
 	.ruler {
 		display: block;

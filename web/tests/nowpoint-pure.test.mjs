@@ -70,9 +70,8 @@ describe('a press on the band becomes one gesture', () => {
 		assert.equal(advance('press', p, 100 + 10, 50 + 10, false), 'pan', 'exactly diagonal is ours');
 	});
 
-	// Two views say `atOnce` for two reasons — shift on a desk (the
-	// nowview), and a day strip zoomed all the way out, which has nowhere
-	// to pan to (da-ku7y) — and the recogniser knows only the answer.
+	// `atOnce` is shift on a desk, and only that: «swiping left/right must
+	// not select time» (vividn, da-xg1vi), so no view says it for a finger.
 	test('atOnce makes a drag a range with no waiting, and a still press still nothing', () => {
 		const p = press({ atOnce: true });
 		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'range');
@@ -86,17 +85,15 @@ describe('a press on the band becomes one gesture', () => {
 		);
 	});
 
-	test('in the now region a drag LEFT is a duration ending now, and rightward is nothing', () => {
+	// da-xg1vi moved the duration ending now behind the long press, as every
+	// range is: a plain swipe there pans like a swipe anywhere.
+	test('in the now region a HELD drag left is a duration ending now; a swipe is a pan', () => {
 		const p = press({ inNow: true });
-		assert.equal(advance('press', p, 100 - SLOP_PX - 1, 50, false), 'now');
-		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'press', 'nothing lies right of now');
-		// A long press here is not a range — nothing in the now region ever
-		// was one — but it IS held, and a lift on a held press is the
-		// inspect: «if you double tap a color, that color is an open block,
-		// so it should select the datum entry that generated that open
-		// block», and the colour is drawn in this very region.
-		assert.equal(advance('press', p, 100, 50, true), 'hold', 'the now region’s chunk can be inspected too');
-		assert.equal(advance('hold', p, 100 - SLOP_PX - 1, 50, true), 'now', 'and a drag left is still the duration');
+		assert.equal(advance('press', p, 100 - SLOP_PX - 1, 50, false), 'pan', 'a swipe never selects time');
+		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'pan');
+		assert.equal(advance('press', p, 100, 50, true), 'hold');
+		assert.equal(advance('hold', p, 100 - SLOP_PX - 1, 50, true), 'now', 'held, then left: the duration');
+		assert.equal(advance('hold', p, 100 + SLOP_PX + 1, 50, true), 'range', 'held, then right: a range');
 	});
 
 	test('what a COMMITTED gesture became is decided ONCE', () => {
@@ -106,10 +103,12 @@ describe('a press on the band becomes one gesture', () => {
 		assert.equal(undecided('pan'), false);
 		assert.equal(undecided('range'), false);
 		assert.equal(undecided('now'), false);
+		assert.equal(undecided('scrub'), false, 'the time axis decides at the press');
 		assert.equal(undecided('press'), true);
 		// A range whose finger then runs sideways is still a range.
 		assert.equal(advance('range', p, 400, 50, true), 'range');
 		assert.equal(advance('now', p, 400, 50, true), 'now');
+		assert.equal(advance('scrub', p, 400, 50, true), 'scrub', 'a scrub never pans');
 	});
 });
 

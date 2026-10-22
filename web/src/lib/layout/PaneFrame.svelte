@@ -99,7 +99,8 @@
 
 	  - a scroller between the finger and this frame's content box — or an
 	    element declaring the axis its own with `data-pans` (the nowview's
-	    band) — keeps the gesture while it can still go that way. At its
+	    band; a day strip's, but not at an end its `data-pan-stop` names) —
+	    keeps the gesture while it can still go that way. At its
 	    end it yields, which is vividn's rule: "when they reach the end then
 	    allow swiping". Read once, at the start: a scroll that runs out
 	    under the finger stays a scroll, and the NEXT swipe moves the tab.
@@ -537,10 +538,13 @@
 	 * Can `el` still go the way the finger is going, from where it is? A
 	 * finger moving one way drags the content that way, so the scroller
 	 * goes the other. One pixel of slack: a fractional `scrollWidth` never
-	 * quite reaches its end. An element that declares the axis always can.
+	 * quite reaches its end. An element that declares the axis can, but at
+	 * an end it names in `data-pan-stop` — `start`, `end` or both, a day
+	 * strip's hour window (da-xg1vi).
 	 */
 	function takes(el: HTMLElement, axis: 'x' | 'y', along: number): boolean {
-		if ((el.dataset.pans ?? '').includes(axis)) return true;
+		if ((el.dataset.pans ?? '').includes(axis))
+			return !(el.dataset.panStop ?? '').includes(along > 0 ? 'start' : 'end');
 		const at = axis === 'x' ? el.scrollLeft : el.scrollTop;
 		const box = axis === 'x' ? el.clientWidth : el.clientHeight;
 		const whole = axis === 'x' ? el.scrollWidth : el.scrollHeight;
@@ -585,7 +589,11 @@
 		if (was.state === 'pending') {
 			if (Math.max(Math.abs(along), Math.abs(across)) < COMMIT_PX) return;
 			const axis = vertical ? 'y' : 'x';
+			// A widget that has already taken the move for a gesture of its
+			// own — a day strip's long-press range at the whole day, which is
+			// at both ends — keeps it (da-xg1vi).
 			const mine =
+				!event.defaultPrevented &&
 				Math.abs(along) > Math.abs(across) &&
 				!was.panners.some((el) => takes(el, axis, along)) &&
 				inRange(pane.active + (along < 0 ? 1 : -1));

@@ -22,7 +22,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
 import { PHONE, activeTab, inRoom, maximizeButton, pane, pickOption, settled, swipe, toggleOption } from './support/layout.mjs';
-import { drag, swipeNoWait } from './support/press.mjs';
+import { drag, finger, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -456,7 +456,7 @@ describe('a drag along the band pans the window', () => {
 			const g = await geometry(page);
 			const middle = { x: (g.lo + g.hi) / 2, y: g.y };
 			// Rightward: the content follows the finger, so the window looks
-			// EARLIER by the ten minutes of band it travelled.
+			// EARLIER by the ten minutes of band it traveled.
 			await drag(page, middle, { x: middle.x + 10 * perMinute(g), y: g.y });
 
 			const centred = await until(
@@ -731,15 +731,16 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 
 // ── the flow to make easiest ───────────────────────────────────────────
 
-describe('the now region: a drag LEFT is a duration ending NOW', () => {
+describe('the now region: a long press dragged LEFT is a duration ending NOW', () => {
 	test('one `dur=` pill and no time pill; a line logs a block that ends now', async () => {
 		await withBand(async (app) => {
 			const { page } = app;
 			const g = await geometry(page);
 			// The press lands on the now-line — the now panel's own edge —
-			// and runs back twelve minutes. No long press: on now there is
-			// nothing to pan to on that side, so this gesture is free.
-			await drag(page, { x: g.nowLine + 2, y: g.y }, { x: g.nowLine - 12 * perMinute(g), y: g.y });
+			// and runs back twelve minutes, after the long press: «swiping
+			// left/right must not select time» (vividn, da-xg1vi), so a plain
+			// drag here pans like one anywhere.
+			await drag(page, { x: g.nowLine + 2, y: g.y }, { x: g.nowLine - 12 * perMinute(g), y: g.y }, { hold: true });
 
 			await saysPills(page, ['dur:dur=12m']);
 			const marks = await drawn(page, NOWVIEW);
@@ -946,6 +947,84 @@ describe('on a phone', () => {
 		);
 	});
 
+	// vividn's table, 2026-10-22 (da-xg1vi), «let's also do that on the
+	// nowview for consistency»: a tap on data is the entry, the time axis
+	// and a long tap are the time, and a drag along the axis scrubs it.
+	test('a finger, row by row: tap a mark, tap the axis, long tap, long tap and drag', async () => {
+		await withBand(
+			async (app) => {
+				const { page } = app;
+				// A mark's on-screen part, clipped to the band: the picture is
+				// drawn past it either side. Its left end, clear of the now region.
+				const work = await page.locator(BAND).evaluate((band) => {
+					const frame = band.getBoundingClientRect();
+					const hit = [...band.querySelectorAll('svg.svg [data-id]')]
+						.map((m) => ({ m, r: m.getBoundingClientRect() }))
+						.map(({ m, r }) => ({ m, r, left: Math.max(r.left, frame.left), right: Math.min(r.right, frame.right) }))
+						.find(({ left, right }) => right - left > 60);
+					return { id: hit.m.getAttribute('data-id'), x: hit.left + 20, y: hit.r.top + hit.r.height / 2 };
+				});
+				await page.touchscreen.tap(work.x, work.y);
+				await saysPills(page, [`hid:${work.id}`]);
+
+				const axis = await page.locator(`${BAND} svg.svg path.axis`).boundingBox();
+				const y = axis.y + axis.height / 2;
+				// The middle of the band: the − / + steps sit over the axis's far end.
+				const band = await page.locator(BAND).boundingBox();
+				await page.touchscreen.tap(band.x + band.width / 2, y);
+				// The time joins the entry: the two are a `retime`.
+				await until(
+					() => pillsOf(page),
+					(seen) => seen.length === 2 && seen[0] === `hid:${work.id}` && seen[1].startsWith('time:')
+				);
+
+				await page.evaluate(() => {
+					window.datum.cursor.set(null);
+					window.datum.bar.removePill('hid');
+				});
+				await saysPills(page, []);
+				await finger(page, work, work, { hold: true });
+				await until(
+					() => pillsOf(page),
+					(seen) => seen.length === 1 && seen[0].startsWith('time:')
+				);
+
+				await finger(page, work, { x: work.x + 80, y: work.y }, { hold: true });
+				await until(
+					() => pillsOf(page),
+					(seen) => seen.length === 2 && seen.some((p) => p.startsWith('dur:dur='))
+				);
+			},
+			{ ...PHONE, ready: toNowviewTab }
+		);
+	});
+
+	// vividn, 14:40: «if you touch in the time axis and drag around, in this
+	// case, do not pan but rather be able to precisely choose a time».
+	test('a drag along the time axis scrubs the time under the finger, to the minute, and pans nothing', async () => {
+		await withBand(
+			async (app) => {
+				const { page } = app;
+				const g = await geometry(page);
+				const axis = await page.locator(`${BAND} svg.svg path.axis`).boundingBox();
+				const y = axis.y + axis.height / 2;
+				// 7½ and 13 minutes back: off every five-minute gridline, which a
+				// tap on the band would snap to and a scrub does not.
+				const [a, b] = [at(g, 7.5), at(g, 13)];
+				await finger(page, { x: a.x, y }, { x: b.x, y });
+				const want = await instantUnder(page, b.x);
+				const got = await until(
+					() => page.evaluate(() => +(window.datum.cursor.of()?.at ?? NaN)),
+					(t) => Math.abs(t - want) <= MINUTE
+				);
+				assert.ok(Math.abs(got - want) <= MINUTE, 'the time is not where the finger stopped');
+				assert.equal(await page.locator(`${NOWVIEW} .nowview-jump.right`).count(), 0, 'the scrub panned the window off now');
+				assert.equal(await activeTab(page, 'side'), 'nowview', 'the scrub swiped the tab');
+			},
+			{ ...PHONE, ready: toNowviewTab }
+		);
+	});
+
 	test('the MARGIN declares no axis and the band and its controls do; a drag on the band pans', async () => {
 		await withBand(
 			async (app) => {
@@ -1113,13 +1192,13 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 		});
 	});
 
-	test('from the now strip, a drag UP is a duration ending now', async () => {
+	test('from the now strip, a long press dragged UP is a duration ending now', async () => {
 		await withBand(async (app, room) => {
 			const { page } = app;
 			await turn(app, room);
 			const g = await vgeometry(page);
 			assert.ok(12 * perMinute(g) > 24 + 12, `twelve minutes is ${12 * perMinute(g)}px`);
-			await drag(page, { x: g.x, y: g.nowLine + 2 }, { x: g.x, y: g.nowLine - 12 * perMinute(g) });
+			await drag(page, { x: g.x, y: g.nowLine + 2 }, { x: g.x, y: g.nowLine - 12 * perMinute(g) }, { hold: true });
 			await saysPills(page, ['dur:dur=12m']);
 		});
 	});

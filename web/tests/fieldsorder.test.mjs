@@ -165,9 +165,10 @@ describe('a click on the picture puts the fields drawn there first', () => {
 				const row = boxes.filter((b) => b.top <= top + 1).sort((a, b) => a.left - b.left);
 				assert.equal(row[0].field, 'run', `the top row reads ${JSON.stringify(row)}`);
 
-				// The ✕ on the selection's pill. Clearing the selection clears
+				// The ✕ on the selection's pill — the entry's, since a tap on a
+				// mark selects it (da-xg1vi). Clearing the selection clears
 				// the lanes it published, and the bar is as it was.
-				await page.locator('.prompt-bar .pill.time button.remove').last().click();
+				await page.locator('.prompt-bar .pill.hid button.remove').last().click();
 				await until(
 					() => pillsOf(page),
 					(seen) => seen.length === 0
@@ -255,7 +256,7 @@ describe('a duration on the bar leaves the fields it can be spent on', () => {
 // ── the now region: a height and no time at all ────────────────────────
 
 describe('the now region re-orders by height alone, on a phone', () => {
-	test('a press on a chip in the snapshot selects no time and puts that field at the top', async () => {
+	test('a press on a chip in the snapshot selects its entry, no time, and puts that field at the top', async () => {
 		await withFields(
 			async ({ page }) => {
 				// `mobile` draws the snapshot (`history: '0'`) beside the tail
@@ -266,7 +267,9 @@ describe('the now region re-orders by height alone, on a phone', () => {
 
 				await saysFields(page, ['mood', ...USUAL.filter((f) => f !== 'mood')]);
 				assert.deepEqual((await marked(page)).promoted, ['mood']);
-				assert.deepEqual(await pillsOf(page), [], 'the snapshot has no time to select');
+				const pills = await pillsOf(page);
+				assert.equal(pills.length, 1, `the press made ${JSON.stringify(pills)}`);
+				assert.match(pills[0], /^hid:/, 'a tap on a chip is its entry (da-xg1vi), and the snapshot has no time');
 			},
 			{ ...PHONE, home: 'mobile' }
 		);

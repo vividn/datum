@@ -11,17 +11,17 @@
 // (like clicking in tail), then it should be highlighted in the dayview
 // (and nowview if that particular piece of data is represented there)".
 //
-// ⛔ AND THE ONE HE CARES MOST ABOUT: "being able to select time (at least
-// in nowview) is a much more important operation than selecting the data."
-// So the controls here are not decoration — a plain tap and a plain drag
-// still mean TIME, and they are asserted beside every gesture that does
-// not.
+// da-xg1vi turned the tap around. vividn, 2026-10-22: «single tap → select
+// a piece of data; single tap where there is no data, or in the time axis →
+// select a time; long tap / right click → select a time … For quickly
+// selecting a time, a user can touch in the time axis, so that won't slow
+// them down.» So a tap on a mark is the inspect, and the time is the long
+// tap's, the right click's and the axis's — asserted beside it here.
 //
 // Delta-blind, as `nowpoint.test.mjs` is: the entry a gesture is expected
 // to select is read off the mark's OWN `data-id` (da-6hg6v) and compared
 // with the hid the bar's pill says, never with a row the test counted to.
-// The state machine is `nowpoint-pure.test.mjs` and the double tap's own
-// numbers are `inspect-pure.test.mjs`, both in node.
+// The state machine is `nowpoint-pure.test.mjs`, in node.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -147,17 +147,6 @@ const tipText = async (page) => {
 	return (await tip.count()) ? (await tip.innerText()).replace(/\s+/g, ' ').trim() : null;
 };
 
-/**
- * Wait until the next press in the same place is NOT the second half of a
- * double tap ($lib/inspect.ts's 350ms, with room over it).
- *
- * Needed wherever a test presses twice on one spot meaning two gestures:
- * a tap and then a drag from the same pixel inside a third of a second is
- * a double tap, and a double tap INSPECTS — correctly, and not what that
- * test is about.
- */
-const apart = (page) => page.waitForTimeout(420);
-
 /** A press that stays where it fell past the long press, then lifts. */
 async function hold(page, at) {
 	await page.mouse.move(at.x, at.y);
@@ -180,45 +169,45 @@ const windows = (page) => page.evaluate(() => window.__datumSeen.filter((a) => a
 
 // ── the nowview ────────────────────────────────────────────────────────
 
-describe('a deliberate gesture in the nowview selects the entry behind the mark', () => {
-	test('a double tap makes an hid pill — and NOT a time pill, though the first tap made one', async () => {
+describe('a tap in the nowview selects the entry behind the mark', () => {
+	test('a tap on a mark makes an hid pill — and NOT a time pill', async () => {
 		await withMarks(async (app) => {
 			const { page } = app;
 			const mark = await aMark(page, BAND);
 			assert.ok(mark?.id, 'the nowview drew no mark naming an entry');
 
-			await page.mouse.dblclick(early(mark).x, early(mark).y);
+			await page.mouse.click(early(mark).x, early(mark).y);
 
 			// One pill, and it is the entry's. vividn: «creates an hid pill
-			// rather than a time pill» — the single tap inside the double tap
-			// makes a time pill on its way past, and it may not survive.
+			// rather than a time pill».
 			await saysPills(page, [`hid:${mark.id}`]);
 			assert.equal(await page.evaluate(() => window.datum.cursor.of()), null, 'a time cursor outlived the inspect');
 			assert.deepEqual(await litUp(page, NOWVIEW), [mark.id], 'the mark is not brought out');
 		});
 	});
 
-	test('a STILL long press does the same; one that TRAVELS is still the range it always was', async () => {
+	test('a STILL long press on a mark is a TIME; one that TRAVELS is the range', async () => {
 		await withMarks(async (app) => {
 			const { page } = app;
 			const mark = await aMark(page, BAND);
 			const from = early(mark);
 
-			// Still: the inspect. «maybe long press could as well, as long as
-			// it's not a long press drag».
+			// Still: the time where it fell, on a mark or not — «long tap /
+			// right click → select a time».
 			await hold(page, from);
-			await saysPills(page, [`hid:${mark.id}`]);
-
-			// Put the bar back as a reader would, so what the range makes is
-			// all there is to read: the two selections are separate pills and
-			// neither takes the other away.
-			await page.evaluate(() => window.datum.bar.removePill('hid'));
+			const pills = await until(
+				() => pillsOf(page),
+				(seen) => seen.length > 0
+			);
+			assert.equal(pills.length, 1, `a long tap made ${JSON.stringify(pills)}`);
+			assert.match(pills[0], /^time:/, 'a long tap on a mark did not select time');
+			assert.deepEqual(await litUp(page, NOWVIEW), [], 'a long tap brought an entry out');
+			await page.evaluate(() => window.datum.cursor.set(null));
 			await saysPills(page, []);
 
 			// Travelling: the range, untouched by any of this — an instant and
 			// a length, which is the gesture the 400ms used to commit to
 			// outright, and no entry selected.
-			await apart(page);
 			await holdDrag(page, from, { x: from.x + 120, y: from.y });
 			await until(
 				() => pillsOf(page),
@@ -261,7 +250,7 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 	// canary minimax, PR #71: `advance` leaves a HELD press in `hold` when
 	// the finger then travels mostly DOWNWARD — the browser's axis — and
 	// asked whether the lift would then inspect. It does not: `finish`
-	// inspects only a press that is STILL, and a finger that has travelled
+	// inspects only a press that is STILL, and a finger that has traveled
 	// is not.
 	test('a held press that travels off its mark selects nothing at all', async () => {
 		await withMarks(async (app) => {
@@ -279,27 +268,29 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 		});
 	});
 
-	// ⛔ THE CONTROL, and the thing vividn cares most about: "everywhere has
-	// data under it", so a rule that made a plain press select data would
-	// put time selection out of reach. A tap ON A MARK is still a time.
-	test('a plain tap on a mark still selects TIME, and a plain drag still pans', async () => {
+	// «For quickly selecting a time, a user can touch in the time axis, so
+	// that won't slow them down.»
+	test('a tap on the time axis selects TIME, and a plain drag pans', async () => {
 		await withMarks(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
 			const mark = await aMark(page, BAND);
 			const from = early(mark);
+			const axis = await page.locator(`${NOWVIEW} svg.svg path.axis`).boundingBox();
 
-			await page.mouse.click(from.x, from.y);
+			// The middle of the band: the − / + steps sit over the axis's far end.
+			const band = await page.locator(BAND).boundingBox();
+			const on = { x: band.x + band.width / 2, y: axis.y + axis.height / 2 };
+			await page.mouse.click(on.x, on.y);
 			const pills = await pillsOf(page);
 			assert.equal(pills.length, 1, `a tap made ${JSON.stringify(pills)}`);
-			assert.match(pills[0], /^time:/, 'a tap on a mark stopped selecting time');
-			assert.deepEqual(await litUp(page, NOWVIEW), [], 'a tap brought an entry out');
+			assert.match(pills[0], /^time:/, 'a tap on the axis did not select time');
+			assert.deepEqual(await litUp(page, NOWVIEW), [], 'a tap on the axis brought an entry out');
 			assert.deepEqual(await windows(page), [], 'the tap moved the window');
 
 			// And a drag with no wait is the pan it has always been: the
 			// window off now — slid inside what is drawn, so asked of nobody
 			// (da-61nm8) — and no entry selected.
-			await apart(page);
 			await page.mouse.move(from.x, from.y);
 			await page.mouse.down();
 			await page.mouse.move(from.x + 90, from.y, { steps: 8 });
@@ -313,7 +304,7 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 		});
 	});
 
-	test('the desk’s three: hover says what the mark is, and shift+click or the right button take it', async () => {
+	test('the desk’s three: hover says what the mark is, shift+click takes it, and the right button is the time', async () => {
 		await withMarks(async (app) => {
 			const { page } = app;
 			const mark = await aMark(page, BAND);
@@ -342,13 +333,13 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 			await page.keyboard.up('Shift');
 			await saysPills(page, [`hid:${mark.id}`]);
 
-			// The same press again REPLACES a selection of one with nothing
-			// ($lib/selection.ts), so clear it the way a reader would and
-			// come at it with the other button.
-			await page.evaluate(() => window.datum.bar.removePill('hid'));
-			await saysPills(page, []);
+			// The right button is a TIME, as a long tap is (da-xg1vi), and
+			// takes the place of the entry.
 			await page.mouse.click(from.x, from.y, { button: 'right' });
-			await saysPills(page, [`hid:${mark.id}`]);
+			await until(
+				() => pillsOf(page),
+				(seen) => seen.some((p) => p.startsWith('time:'))
+			);
 		});
 	});
 
@@ -358,7 +349,7 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 			const chunk = await aMark(page, BAND, '.now-chunk');
 			assert.ok(chunk?.id, 'the now chunk named no entry');
 
-			await page.mouse.dblclick(chunk.x, chunk.y);
+			await page.mouse.click(chunk.x, chunk.y);
 			await saysPills(page, [`hid:${chunk.id}`]);
 
 			// The chunk carries an id and NOTHING else (da-6hg6v), so the
@@ -382,7 +373,7 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 		await withMarks(async (app) => {
 			const { page } = app;
 			const mark = await aMark(page, BAND);
-			await page.mouse.dblclick(early(mark).x, early(mark).y);
+			await page.mouse.click(early(mark).x, early(mark).y);
 			await saysPills(page, [`hid:${mark.id}`]);
 			const where = async () => {
 				const box = await page.locator(`${NOWVIEW} .nowview-tip`).boundingBox();
@@ -434,7 +425,7 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 		await withMarks(async (app) => {
 			const { page } = app;
 			const work = await aMark(page, BAND);
-			await page.mouse.dblclick(early(work).x, early(work).y);
+			await page.mouse.click(early(work).x, early(work).y);
 			await saysPills(page, [`hid:${work.id}`]);
 
 			// vividn: «locking the hid pill lets you select other pieces of
@@ -447,7 +438,7 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 
 			const mood = await aMark(page, `${NOWVIEW} .field[data-field="mood"]`);
 			assert.ok(mood?.id && mood.id !== work.id, 'no second entry to gather');
-			await page.mouse.dblclick(early(mood).x, early(mood).y);
+			await page.mouse.click(early(mood).x, early(mood).y);
 			await saysPills(page, [`hid:${work.id},${mood.id}`]);
 			assert.deepEqual((await litUp(page, NOWVIEW)).sort(), [work.id, mood.id].sort());
 		});
@@ -457,20 +448,17 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 // ── the day strip ──────────────────────────────────────────────────────
 
 describe('the same gestures on a band of the day strip', () => {
-	// This test was the POSITION SPLIT until da-8rqb9: a double tap on a
-	// mark inspected, one on the picture's ground gave the whole day back.
-	// The split is gone — a dense day has no ground, so the reset it
-	// reached went missing for the readers with the most data, and it is a
-	// button in the strip's corner now (`daystrip.test.mjs`). What is left
-	// for this file to hold is the half that stayed: the double tap is the
-	// inspect's, with no position test, and it does nothing to the window.
-	test('a double tap inspects a mark, and leaves the window alone over ground', async () => {
+	// A tap on a mark is the inspect, and one on the ground is the time — and
+	// neither does anything to the window. (A double tap on the ground gave
+	// the whole day back until da-8rqb9, and the `⊖` in the strip's corner
+	// does now: `daystrip.test.mjs`.)
+	test('a tap inspects a mark; one on the ground is the time, and leaves the window alone', async () => {
 		await withMarks(async (app) => {
 			const { page } = app;
 			const mark = await aMark(page, TODAY);
 			assert.ok(mark?.id, 'today’s band drew no mark naming an entry');
 
-			await page.mouse.dblclick(early(mark).x, early(mark).y);
+			await page.mouse.click(early(mark).x, early(mark).y);
 			await saysPills(page, [`hid:${mark.id}`]);
 			assert.deepEqual(await litUp(page, TODAY), [mark.id]);
 
@@ -485,18 +473,9 @@ describe('the same gestures on a band of the day strip', () => {
 				(w) => w > band.width * 1.5
 			);
 
-			// GROUND: over no mark, and far enough into the band to be a
-			// press the strip takes at all.
-			//
-			// ⚑ NOT the top hairline any more (da-r0ydu). A day is as tall
-			// as the widget that draws it now, so today's band is flush
-			// with the top of the strip — and the topmost few pixels there
-			// are the divider's own row, where a double tap neither
-			// inspects nor gives the day back. Measured on the merge of
-			// this file with da-r0ydu: `top + 1` and `top + 5` did nothing,
-			// the band's middle gave the whole day back. The middle is
-			// still GROUND — the assertion below is what says so, and it
-			// fails loudly if a lane ever grows under it.
+			// GROUND: over no mark, in the band's middle (da-r0ydu: a day is as
+			// tall as its widget, so its top few pixels are the divider's row).
+			// The assertion below fails loudly if a lane ever grows under it.
 			const ground = await page.locator(TODAY).evaluate((el) => {
 				const box = el.getBoundingClientRect();
 				return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) };
@@ -509,26 +488,30 @@ describe('the same gestures on a band of the day strip', () => {
 				false,
 				'the point chosen for “ground” is a mark'
 			);
-			await page.mouse.dblclick(ground.x, ground.y);
-			await new Promise((r) => setTimeout(r, 250));
-			assert.equal(
-				await todayWidth(page),
-				zoomed,
-				'a double tap on the ground still gives the whole day back'
+			await page.mouse.click(ground.x, ground.y);
+			await until(
+				() => pillsOf(page),
+				(seen) => seen.length === 2 && seen[1].startsWith('time:')
 			);
+			assert.equal(await todayWidth(page), zoomed, 'a tap on the ground gave the whole day back');
 		});
 	});
 
-	test('a still long press inspects, and leaves no time pill behind it', async () => {
+	test('a still long press on a mark is the time, and leaves no hid pill behind it', async () => {
 		await withMarks(async (app) => {
 			const { page } = app;
 			const mark = await aMark(page, TODAY);
 			await hold(page, early(mark));
-			// The strip's press is the CLICK the `picture` action takes, and
-			// that click has set the time cursor since da-wnt2 — so an
-			// inspect that did not SPEND the press would leave both pills.
-			await saysPills(page, [`hid:${mark.id}`]);
-			assert.equal(await page.evaluate(() => window.datum.cursor.of()), null);
+			// The strip's press ends in the CLICK the `picture` action takes,
+			// whose answer over a mark is the entry — so a long tap that did
+			// not SPEND the press would leave both pills.
+			const pills = await until(
+				() => pillsOf(page),
+				(seen) => seen.length > 0
+			);
+			assert.equal(pills.length, 1, `a long tap made ${JSON.stringify(pills)}`);
+			assert.match(pills[0], /^time:/);
+			assert.deepEqual(await litUp(page, TODAY), []);
 		});
 	});
 });

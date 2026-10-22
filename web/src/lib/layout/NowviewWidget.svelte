@@ -28,36 +28,36 @@
 	Every instant read off the band below is read as the picture is drawn
 	NOW, slid by `slid`.
 
-	THE BAND IS A PLACE YOU POINT INTO (da-rskp). Four gestures live on it,
-	over a pane that swipes between tabs and a page that scrolls, so the
-	state machine is written down in `$lib/nowpoint.ts` and this component
-	only runs it:
+	THE BAND IS A PLACE YOU POINT INTO (da-rskp). Its gestures live over a
+	pane that swipes between tabs and a page that scrolls, so the state
+	machine is written down in `$lib/nowpoint.ts` and this component only
+	runs it. vividn's table, 2026-10-22 (da-xg1vi), the dayview's too:
 
-	  tap                     → a SELECTION where it fell; the window does not move
+	  tap on a mark           → INSPECT: the entry behind it, as an hid pill
+	  tap it again            → the SELECTION there instead (vividn, 15:04)
+	  tap on ground           → a SELECTION where it fell; the window does not move
+	  touch the time axis     → SCRUB: the time under the finger, following it
+	    and drag                to the lift — not snapped, and no pan
 	  drag sideways           → PAN in time; the selection does not move
-	  press 400 ms, then drag → a RANGE, as it always has been
-	  press 400 ms, then LIFT → INSPECT: the entry behind the mark under the
-	                            finger, as an hid pill (da-pzzoz)
-	  double tap              → the same inspect, without the wait
+	  press 400 ms, then drag → a RANGE
+	  press 400 ms, then LIFT → the same SELECTION, a mark or not
+	  right click             → the same selection, on a desk
 	  shift+drag (desktop)    → the same range; a long press with a mouse is
 	                            nobody's habit (MY reading, not vividn's words)
-	  shift+click, right click→ the same inspect, on a desk
-	  drag left from the NOW  → a duration ending NOW — the sentence «I have been
-	    region                  doing this for the last N minutes», which is most
-	                            of the blocks a person logs, so it needs no long press
+	  press 400 ms in the NOW → a duration ending NOW — the sentence «I have been
+	    region, then drag left  doing this for the last N minutes»
 	  two fingers / ctrl+wheel→ the window's LENGTH (da-5goc), untouched here
 
-	⛔ A PLAIN TAP AND A PLAIN DRAG STILL MEAN TIME. vividn: «When you have
-	enough data, like me, everywhere has data under it, and being able to
-	select time (at least in nowview) is a much more important operation
-	than selecting the data.» Every inspect above is a deliberate gesture,
-	and the tap is not one of them.
+	«Swiping left/right must not select time», so the duration ending now
+	waits for the long press like every other range, and «for quickly
+	selecting a time, a user can touch in the time axis, so that won't slow
+	them down» — which is what let a plain tap on a mark mean the ENTRY,
+	where until da-xg1vi it meant time and the inspect was a double tap.
 
-	The 400ms no longer COMMITS (da-pzzoz): it used to drop the range's bar
-	the moment it was up, and that drop was the only sign a thumb had that
-	the press had registered. What replaces it is the `.hold-mark` below —
-	a ring closing over the wait, and the range's own dashes through the
-	band once it is up. The feedback is owed, not optional.
+	The 400ms does not COMMIT (da-pzzoz): the `.hold-mark` below — a ring
+	closing over the wait, and a dashed stem through the band once it is up
+	— is the sign a thumb gets that the press registered. The feedback is
+	owed, not optional.
 
 	An inspect, wherever it is made, floats a TOOLTIP over the mark: the
 	field, the state and the two instants (vividn's «bare info»). Not the
@@ -111,7 +111,7 @@
 	import { inspectMark, instantOn, msPerPx, selectedTip, timeAxis } from '$lib/hover.js';
 	import { markOf, pressSpent } from '$lib/inspect.js';
 	import { readLanes } from '$lib/lanes.js';
-	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, type Mode, type Press } from '$lib/nowpoint.js';
+	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '$lib/nowpoint.js';
 	import { NOWVIEW_HISTORY, NOWVIEW_STEPS, nowviewSpec, stepMinutes, zoomHistory } from '$lib/panes.js';
 
 	/** How far back the window reaches: one of NOWVIEW_STEPS. */
@@ -410,7 +410,7 @@
 	let panned = 0;
 	let held: ReturnType<typeof setTimeout> | undefined;
 	/**
-	 * What the press went down ON, for the inspect that may end it
+	 * What the press went down ON, for the tap that may inspect it
 	 * (da-pzzoz). The element and not the id: a picture is redrawn under a
 	 * finger by the minute tick, so the id is read at the LIFT — off the
 	 * element under the pointer then, which `finish` is handed.
@@ -422,7 +422,7 @@
 	 *
 	 * The 400ms used to commit to a range, and the bar dropping at that
 	 * moment was how a thumb learned the press had registered (da-rskp). It
-	 * does not commit any more — a still long press is an INSPECT and a
+	 * does not commit any more — a still long press is a time and a
 	 * travelling one a range — so the feedback it took with it is owed back,
 	 * and this is it: a ring that closes over the wait, and a dashed stem
 	 * through the band once the wait is up, which is the shape the range's
@@ -430,6 +430,16 @@
 	 * the finger has been heard.
 	 */
 	let waiting: { x: number; y: number } | null = null;
+
+	/**
+	 * Whether a point is on the TIME AXIS: the axis line and the ticks and
+	 * labels beyond it, below the plot or, when time runs down, left of it.
+	 */
+	function onAxis(x: number, y: number): boolean {
+		const line = svgEl()?.querySelector('path.axis')?.getBoundingClientRect();
+		if (!line || !axis) return false;
+		return axis.y ? x <= line.right + 2 : y >= line.top - 2;
+	}
 
 	function begin(event: PointerEvent): void {
 		if (event.button > 0) return;
@@ -439,6 +449,15 @@
 			inNow: inNowRegion(event.clientX, event.clientY),
 			atOnce: event.shiftKey
 		};
+		// The time axis SCRUBS (da-xg1vi, vividn: «if you touch in the time
+		// axis and drag around, in this case, do not pan but rather be able to
+		// precisely choose a time»): the time under the finger at once, and
+		// wherever it goes until the lift — not snapped, which is the point.
+		if (onAxis(press.x, press.y)) {
+			mode = 'scrub';
+			waiting = null;
+			return pointAt(selection(instantAt(press.x, press.y)));
+		}
 		mode = 'press';
 		long = false;
 		onMark = markOf(event.target);
@@ -466,6 +485,7 @@
 	/** Run the machine to where the pointer is now, and do what the mode does. */
 	function step(x: number, y: number): void {
 		if (!press || !axis) return;
+		if (mode === 'scrub') return pointAt(selection(instantAt(x, y)));
 		const was = mode;
 		// The machine reads «sideways» as «along time»: hand it the axes
 		// turned when time runs down.
@@ -503,6 +523,11 @@
 	function tap(x: number, y: number): void {
 		const at = axis ? instantOn(axis, snapTo(along(x, y), gridlines())) + slid : null;
 		if (at !== null) pointAt(selection(at));
+		lanesAt(x, y, at);
+	}
+
+	/** The fields drawn at this height, for the fields widget to put first. */
+	function lanesAt(x: number, y: number, at: number | null): void {
 		// The lanes the press crossed, for the fields widget to answer
 		// (da-qu16, $lib/lanes.ts): the band takes the pointer itself, so
 		// nothing else on the page would hear the press.
@@ -535,19 +560,24 @@
 	function finish(event: PointerEvent): void {
 		if (!press) return;
 		const still = Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP_PX;
-		// A STILL LONG PRESS INSPECTS (da-pzzoz) — vividn: «maybe long press
-		// could as well, as long as it's not a long press drag, which should
-		// be for selecting a time range». One that travelled is that range
-		// and committed long ago; one that lifts here never did.
-		if (mode === 'hold' && still) inspectMark(markOf(event.target) ?? onMark, event, svgEl());
 		if (mode === 'pan') commitPan();
-		// A press that never committed and never travelled is a tap; one
-		// that travelled is a scroll the browser took, and points nowhere.
-		// A hold over ground that names no entry falls through to the same
-		// tap, so no gesture is ever dead — and TIME stays what a press on
-		// the band is for.
-		else if (!pressSpent() && (mode === 'press' || mode === 'hold') && still) tap(press.x, press.y);
+		// A still lift is a TAP (da-xg1vi): the entry under it, or the time
+		// where there is none. A still LONG one is the time wherever it
+		// lands. One that traveled is a scroll the browser took, and points
+		// nowhere.
+		else if (!pressSpent() && still && undecided(mode)) {
+			const entry = mode === 'press' && inspectMark(markOf(event.target) ?? onMark, event, svgEl());
+			if (entry) lanesAt(press.x, press.y, axis ? instantAt(press.x, press.y) : null);
+			else tap(press.x, press.y);
+		}
 		drop();
+	}
+
+	/** A right click is the time, as a long tap is (da-xg1vi): «long tap / right click → select a time». */
+	function onContextMenu(event: MouseEvent): void {
+		if (pressSpent() || !axis) return;
+		event.preventDefault();
+		tap(event.clientX, event.clientY);
 	}
 
 	// ── the zoom ───────────────────────────────────────────────────────
@@ -876,7 +906,7 @@
 	// surface some bare info about it in a floating tooltip (start and end
 	// time as well as field and state + comment (maybe?)».
 	//
-	// Whatever SELECTED it: a double tap here, a long press, a row tapped
+	// Whatever SELECTED it: a tap here, a row tapped
 	// in the tail. The picture is asked which of its marks name the
 	// selected entries (`selectedTip`, $lib/hover.ts) and the tooltip
 	// floats over them, so a selection this window does not draw shows
@@ -975,6 +1005,8 @@
 		</div>
 	{/if}
 
+	<!-- The band is pointed into, not a control: its marks take the keyboard. -->
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div
 		class="nowview-band"
 		style:--zoom={zoom?.scale ?? 1}
@@ -984,6 +1016,7 @@
 		data-points="own"
 		data-mode={mode}
 		on:pointerdown={onPointerDown}
+		on:contextmenu={onContextMenu}
 		on:touchmove|nonpassive={onTouchMove}
 		on:wheel|nonpassive={onWheel}
 	>

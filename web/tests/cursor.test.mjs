@@ -63,14 +63,16 @@ const spot = (page, picture, f, from) =>
 			const user = num('data-lo') + f * (num('data-hi') - num('data-lo'));
 			const t0 = Date.parse(day.getAttribute('data-from'));
 			const t1 = Date.parse(day.getAttribute('data-to'));
-			return {
-				x: box.left + ((user - view.x) * box.width) / view.width,
-				// Below the title lying over the band's top (da-13bc). Every
-				// band is one day since da-iu9i, so this is that day's slot
-				// whichever band it is.
-				y: box.top + box.height * 0.6,
-				at: t0 + f * (t1 - t0)
-			};
+			const x = box.left + ((user - view.x) * box.width) / view.width;
+			// The day's GROUND at that x: a click on a mark is its entry since
+			// da-xg1vi, and this file is about the time. From 0.6 of the way
+			// down (below the title over the band's top, da-13bc) outward,
+			// the first pixel no mark covers.
+			const ground = (y) => document.elementFromPoint(x, y)?.closest('svg.svg') === svg && !document.elementFromPoint(x, y).closest('[data-id]');
+			const ys = Array.from({ length: Math.ceil(box.height) }, (_, i) => box.top + box.height * 0.6 + (i % 2 ? 1 : -1) * Math.ceil(i / 2));
+			const y = ys.find((y) => y > box.top && y < box.bottom && ground(y));
+			if (y === undefined) throw new Error('no ground on the day at that time');
+			return { x, y, at: t0 + f * (t1 - t0) };
 		},
 		[f, from]
 	);
@@ -227,7 +229,7 @@ describe('the time cursor', () => {
 	});
 
 	// Off UTC, the nowview's centre label is still the pill's time: under WASI
-	// `chrono::Local` is UTC, and a 12:26 cursor was labelled 10:26 (da-y6qj).
+	// `chrono::Local` is UTC, and a 12:26 cursor was labeled 10:26 (da-y6qj).
 	test("Europe/Berlin: the nowview's centre label is the pill's time", async () => {
 		await withDay(
 			async ({ page }) => {

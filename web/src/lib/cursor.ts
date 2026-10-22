@@ -43,7 +43,7 @@
 // DRAWS the range all the same; it does not re-spell it.
 
 import { derived, get, writable } from 'svelte/store';
-import { pills, type Pill, type PillSection } from './bar.js';
+import { pills, selected, type Pill, type PillSection } from './bar.js';
 import { minute } from './clock.js';
 import { lanes } from './lanes.js';
 import { relArg } from './nowpoint.js';
@@ -275,8 +275,15 @@ cursor.subscribe((c) => {
 	// all three pass through here. A press that lands at now clears the
 	// selection and still re-orders — which is why the pictures publish
 	// their lanes AFTER they point.
-	if (!c) lanes.set(null);
+	if (!c && !get(selected).length) lanes.set(null);
 	pills.update((all) => [...all.filter((p) => p.kind !== 'time' && p.id !== SPAN_ID), ...(c ? cursorPills(c) : [])]);
+});
+
+// And an ENTRY selected by a tap publishes them too (da-xg1vi: a tap on a
+// mark is its entry, and its height still orders the fields), so the last
+// of the two selections to go clears them.
+selected.subscribe((hids) => {
+	if (!hids.length && !get(cursor)) lanes.set(null);
 });
 
 // The pills are the selection's other face, and a press on one of them

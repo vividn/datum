@@ -22,7 +22,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp, todayAt } from './support/app.mjs';
 import { PHONE, settled, swipe, titles } from './support/layout.mjs';
-import { drag, longPressed, swipeNoWait } from './support/press.mjs';
+import { drag, finger, longPressed, noWait, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 import { listed } from './support/rows.mjs';
 
@@ -35,6 +35,7 @@ const MINUTE = 60_000;
 const DESKTOP = { viewport: { width: 1280, height: 900 } };
 const STRIP = '.strip';
 const TODAY = '.band[data-days-ago="0"]';
+const YESTERDAY = '.band[data-days-ago="1"]';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 const BAR = 'section.pane[data-title="fields"] .bar';
 /** How long `$lib/nowpoint.ts` waits before a press is a range, with room to spare. */
@@ -150,6 +151,20 @@ const spot = (g, ms) => ({ x: xOf(g, ms), y: g.y });
 /** The pills as `kind:text` — what each PUTS on the command line, which is what it means. */
 const pillsOf = (page) =>
 	page.evaluate(() => window.datum.bar.pills().map((p) => `${p.kind}:${p.text}`));
+
+/**
+ * The middle of the widest mark naming an entry on a band, and its id: a
+ * block where there is one, so a finger cannot miss it.
+ */
+const markAt = (page, band) =>
+	page.locator(`${band} svg.svg`).evaluate((svg) => {
+		const marks = [...svg.querySelectorAll('[data-id]')].map((m) => ({ m, r: m.getBoundingClientRect() }));
+		const { m, r } = marks.sort((a, b) => b.r.width - a.r.width)[0];
+		const [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
+		if (!document.elementFromPoint(x, y)?.closest('[data-id]')) throw new Error('the middle of the mark is not on it');
+		return { id: m.getAttribute('data-id'), x, y };
+	});
+
 
 /** Wait until the pills say exactly `want`, and report what they said if they never do. */
 const saysPills = (page, want) =>
@@ -267,9 +282,26 @@ async function zoomIn(app, g) {
 	await app.idle();
 }
 
-// ── zoomed all the way out: a drag IS a range ──────────────────────────
+// ── a long press and a drag: a period (da-xg1vi) ───────────────────────
 
-describe('the whole day on screen: a drag selects, with no long press', () => {
+describe('a long press and a drag selects a period', () => {
+	// vividn, 2026-10-22: «swiping left/right must not select time». Until
+	// da-xg1vi a strip with the whole day on screen read any sideways drag
+	// as a range, since it had nowhere to pan to; now that drag is the
+	// pane's (the swipe below), and selects nothing.
+	test('with the whole day on screen, a plain drag selects nothing and pans nothing', async () => {
+		await withStrip(async (app) => {
+			const { page } = app;
+			const g = await geom(page);
+			await page.evaluate(() => window.datum.cursor.set(null));
+			await saysPills(page, []);
+			await drag(page, spot(g, msAt(g, 9)), spot(g, msAt(g, 13)));
+			assert.equal(await page.locator(STRIP).getAttribute('data-mode'), 'press');
+			assert.deepEqual(await pillsOf(page), [], 'a swipe selected time');
+			assert.deepEqual(await windowHeard(app), [0, 24], 'the whole day panned');
+		});
+	});
+
 	test('two pills, a white band, and a block that ends where the drag ended', async () => {
 		await withStrip(async (app) => {
 			const { page } = app;
@@ -281,7 +313,7 @@ describe('the whole day on screen: a drag selects, with no long press', () => {
 			const [from, to] = [instantOf(g, a.x), instantOf(g, b.x)];
 			assert.ok(Math.abs(from - msAt(g, 9)) < MINUTE, 'the 09:00 pixel is not within a minute of 09:00');
 
-			await drag(page, a, b);
+			await drag(page, a, b, { hold: true });
 
 			await saysPills(page, rangePills(from, to));
 			const marks = await drawn(page, TODAY);
@@ -308,7 +340,7 @@ describe('the whole day on screen: a drag selects, with no long press', () => {
 		await withStrip(async (app) => {
 			const { page } = app;
 			const g = await geom(page);
-			await drag(page, spot(g, msAt(g, 9)), spot(g, msAt(g, 10, 30)));
+			await drag(page, spot(g, msAt(g, 9)), spot(g, msAt(g, 10, 30)), { hold: true });
 			await saysPills(page, rangePills(instantOf(g, xOf(g, msAt(g, 9))), instantOf(g, xOf(g, msAt(g, 10, 30)))));
 
 			const one = spot(g, msAt(g, 12));
@@ -327,7 +359,7 @@ describe('the whole day on screen: a drag selects, with no long press', () => {
 			const g = await geom(page);
 			const [a, b] = [spot(g, msAt(g, 9)), spot(g, msAt(g, 10, 30))];
 			const want = rangePills(instantOf(g, a.x), instantOf(g, b.x));
-			await drag(page, b, a);
+			await drag(page, b, a, { hold: true });
 			await saysPills(page, want);
 		});
 	});
@@ -340,7 +372,7 @@ describe('the whole day on screen: a drag selects, with no long press', () => {
 		await withStrip(async (app) => {
 			const { page } = app;
 			const g = await geom(page);
-			await drag(page, spot(g, msAt(g, 9)), spot(g, msAt(g, 10, 30)));
+			await drag(page, spot(g, msAt(g, 9)), spot(g, msAt(g, 10, 30)), { hold: true });
 			await until(
 				() => pillsOf(page),
 				(seen) => seen.length === 2
@@ -381,7 +413,7 @@ describe('a range on a day that is not today', () => {
 			const [a, b] = [spot(g, msAt(g, 13)), spot(g, msAt(g, 14, 30))];
 			const [from, to] = [instantOf(g, a.x), instantOf(g, b.x)];
 
-			await drag(page, a, b);
+			await drag(page, a, b, { hold: true });
 			await saysPills(page, rangePills(from, to, dated));
 
 			assert.match(await barRun(page, 'start nap'), /^CREATE /);
@@ -406,7 +438,7 @@ describe('a range on a day that is not today', () => {
 			const today = await geom(page, 0);
 			// Mostly SIDEWAYS: a band is a few dozen pixels tall and the
 			// day is a thousand wide, so a drag that drifts one band down
-			// has travelled far further along than across. A mostly
+			// has traveled far further along than across. A mostly
 			// VERTICAL finger is the stack's scroll and never a range —
 			// which is the test below.
 			const [a, b] = [
@@ -414,7 +446,7 @@ describe('a range on a day that is not today', () => {
 				{ x: xOf(today, msAt(today, 20)), y: today.y }
 			];
 			await saysPills(page, []);
-			await drag(page, a, b);
+			await drag(page, a, b, { hold: true });
 			await saysPills(
 				page,
 				rangePills(instantOf(yesterday, a.x), instantOf(yesterday, b.x), dated)
@@ -485,25 +517,30 @@ describe('zoomed in, a drag pans and a long press selects', () => {
 		});
 	});
 
-	// The other half of vividn's sentence, on the strip: «as long as it's not
-	// a long press drag». The same wait, ended by a LIFT instead of a drag,
-	// selects the entry under the finger — which is `inspect.test.mjs`'s to
-	// prove; here it only has to not be a range.
-	test('a long press that lifts where it fell selects no TIME at all', async () => {
+	// The other half: the same wait, ended by a LIFT instead of a drag, is a
+	// TIME — vividn, da-xg1vi: «long tap / right click → select a time» —
+	// on a mark as much as off one, where a tap would take the entry.
+	test('a long press that lifts where it fell is the time, on a mark too', async () => {
 		await withStrip(async (app) => {
 			const { page } = app;
-			await zoomIn(app, await geom(page));
 			const g = await geom(page);
-			// Above the lanes, on the band's own ground: no entry to inspect,
-			// so the gesture falls through to the click the strip has always
-			// taken, which is one instant and no range.
-			const a = { x: Math.round(g.left + g.width * 0.3), y: g.y };
-			await page.mouse.move(a.x, a.y);
+			const mark = await markAt(page, TODAY);
+			await page.mouse.move(mark.x, mark.y);
 			await page.mouse.down();
 			await longPressed(page);
 			await page.mouse.up();
-			await saysPills(page, [`time:-t ${hhmm(instantOf(g, a.x))}`]);
+			await saysPills(page, [`time:-t ${hhmm(instantOf(g, mark.x))}`]);
 			assert.equal((await drawn(page, TODAY)).lines, 1, 'a still long press made a range');
+		});
+	});
+
+	test('a right click is the time, on a mark too', async () => {
+		await withStrip(async (app) => {
+			const { page } = app;
+			const g = await geom(page);
+			const mark = await markAt(page, TODAY);
+			await page.mouse.click(mark.x, mark.y, { button: 'right' });
+			await saysPills(page, [`time:-t ${hhmm(instantOf(g, mark.x))}`]);
 		});
 	});
 
@@ -533,7 +570,7 @@ describe('a range made in the strip is the page’s one selection', () => {
 			const [a, b] = [spot(g, NOW - 24 * MINUTE), spot(g, NOW - 2 * MINUTE)];
 			const want = rangePills(instantOf(g, a.x), instantOf(g, b.x));
 
-			await drag(page, a, b);
+			await drag(page, a, b, { hold: true });
 			await saysPills(page, want);
 
 			await until(
@@ -549,7 +586,7 @@ describe('a range made in the strip is the page’s one selection', () => {
 		await withStrip(async (app) => {
 			const { page } = app;
 			const g = await geom(page);
-			await drag(page, spot(g, msAt(g, 9)), spot(g, msAt(g, 10, 30)));
+			await drag(page, spot(g, msAt(g, 9)), spot(g, msAt(g, 10, 30)), { hold: true });
 			await until(
 				() => pillsOf(page),
 				(seen) => seen.length === 2
@@ -622,7 +659,7 @@ describe('a strip range is a DURATION to the fields widget (da-qu16)', () => {
 			await saysFields(page, ['coffee', 'mood', 'sleep']);
 
 			const g = await geom(page);
-			await drag(page, spot(g, msAt(g, 11)), spot(g, msAt(g, 12, 30)));
+			await drag(page, spot(g, msAt(g, 11)), spot(g, msAt(g, 12, 30)), { hold: true });
 			await until(
 				() => pillsOf(page),
 				(seen) => seen.length === 2
@@ -635,6 +672,87 @@ describe('a strip range is a DURATION to the fields widget (da-qu16)', () => {
 
 			await page.locator('.prompt-bar .pill.dur button.remove').last().click();
 			await saysFields(page, ['coffee', 'mood', 'sleep']);
+		});
+	});
+});
+
+// ── vividn's table, on a phone (da-xg1vi) ──────────────────────────────
+
+describe('a finger on the strip, row by row', () => {
+	/** The strip on a phone, with a block on today to tap. */
+	const onPhone = (fn) =>
+		withStrip(async (app) => {
+			assert.equal((await app.run(['start', 'walk', '-t', '12:00', '3h'])).code, 0);
+			await app.redraw();
+			await app.page.locator(`${TODAY} svg.svg [data-id]`).first().waitFor();
+			await app.page.evaluate(() => window.datum.cursor.set(null));
+			await fn(app);
+		}, PHONE);
+
+	test('a tap on a mark is its entry; a tap on the ground is the time', async () => {
+		await onPhone(async (app) => {
+			const { page } = app;
+			const mark = await markAt(page, TODAY);
+			await page.touchscreen.tap(mark.x, mark.y);
+			await saysPills(page, [`hid:${mark.id}`]);
+
+			// 13:30: after the walk, before now, and no mark of its own.
+			const g = await geom(page);
+			const ground = spot(g, msAt(g, 13, 30));
+			// The time joins the entry rather than replacing it: an entry and a
+			// time are what a `retime` is spelt with. Only a second tap on the
+			// entry itself takes it back (the next test).
+			await page.touchscreen.tap(ground.x, ground.y);
+			await saysPills(page, [`hid:${mark.id}`, `time:-t ${hhmm(instantOf(g, ground.x))}`]);
+		});
+	});
+
+	// vividn, 15:04: «first tap selects the piece of data, second tap then
+	// selects time instead».
+	test('a second tap on the entry selected is the time there instead', async () => {
+		await onPhone(async (app) => {
+			const { page } = app;
+			const g = await geom(page);
+			const mark = await markAt(page, TODAY);
+			await page.touchscreen.tap(mark.x, mark.y);
+			await saysPills(page, [`hid:${mark.id}`]);
+			await page.touchscreen.tap(mark.x, mark.y);
+			await saysPills(page, [`time:-t ${hhmm(instantOf(g, mark.x))}`]);
+		});
+	});
+
+	test('a long tap is the time, on a mark too; a long tap and a drag is a period', async () => {
+		await onPhone(async (app) => {
+			const { page } = app;
+			const g = await geom(page);
+			const mark = await markAt(page, TODAY);
+			await finger(page, mark, mark, { hold: true });
+			await saysPills(page, [`time:-t ${hhmm(instantOf(g, mark.x))}`]);
+
+			const [a, b] = [spot(g, msAt(g, 14)), spot(g, msAt(g, 17))];
+			await finger(page, a, b, { hold: true });
+			await saysPills(page, rangePills(instantOf(g, a.x), instantOf(g, b.x)));
+		});
+	});
+
+	// vividn, 14:40: «if you touch in the time axis and drag around, in this
+	// case, do not pan but rather be able to precisely choose a time».
+	test('the ruler is the time: a tap there, and a drag along it that follows the finger and pans nothing', async () => {
+		await onPhone(async (app) => {
+			const { page } = app;
+			const g = await geom(page);
+			const ruler = await page.locator(`${STRIP} .axis`).boundingBox();
+			const y = ruler.y + ruler.height / 2;
+			const [a, b] = [xOf(g, msAt(g, 9)), xOf(g, msAt(g, 15))];
+
+			await page.touchscreen.tap(a, y);
+			await saysPills(page, [`time:-t ${hhmm(instantOf(g, a))}`]);
+
+			const titles0 = await titles(page);
+			await finger(page, { x: b, y }, { x: a + 5, y });
+			await saysPills(page, [`time:-t ${hhmm(instantOf(g, a + 5))}`]);
+			assert.deepEqual(await windowHeard(app), [0, 24], 'the scrub panned');
+			assert.deepEqual(await titles(page), titles0, 'the scrub swiped the layout');
 		});
 	});
 });
@@ -740,20 +858,173 @@ describe('what the bands take, and what they leave', () => {
 		);
 	});
 
-	test('a swipe that starts OFF the bands still changes the layout; one on a band does not', async () => {
+	// vividn, 2026-10-22 (da-xg1vi): «on dayview, let's only have the lines
+	// that are between the day labels (not the rest of the day) be handles
+	// for adjusting day height. Right now it's way too easy to accidentally
+	// resize days on mobile when you're just trying to scroll.»
+	test('a finger on the line between two days sizes them across the dates, and scrolls over the bands', async () => {
+		await withStrip(
+			async (app) => {
+				const { page } = app;
+				const height = async () => Number(await page.locator('button.day-grip').getAttribute('aria-valuenow'));
+				const at = () => page.locator('.stack').evaluate((el) => el.scrollTop);
+				// The divider's line, over today: the stack's own lines lie under
+				// the pane's title on this screen, which a finger's touch
+				// adjustment snaps to.
+				const middle = async () => {
+					const box = await page.locator('.divider > .day-line').boundingBox();
+					return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+				};
+
+				// Across the dates, the line is the handle: up is taller.
+				const was = await height();
+				const dates = await middle();
+				await swipe(page, dates.x, dates.y, 0, -20, 6);
+				await until(height, (now) => now === was + 20);
+
+				// Over the bands it is no handle: three pixels above it, where the
+				// handle reached across the whole width until da-xg1vi, is the
+				// band of the day above, and a finger down it is the stack's scroll.
+				await page.waitForFunction(
+					(want) => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === want,
+					was + 20
+				);
+				const band = await page.locator('.stack .band').last().boundingBox();
+				const line = await page.locator('.divider').boundingBox();
+				const [x, y] = [band.x + band.width / 2, line.y - 3];
+				assert.equal(
+					await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.sizer, .band')?.className.split(' ')[0], [x, y]),
+					'band',
+					'the line is a handle over the bands'
+				);
+				const rest = await at();
+				assert.ok(rest > 200, `the phone's strip holds nothing to scroll: ${rest}`);
+				await swipeNoWait(page, x, y, 0, 300, 10);
+				await until(at, (top) => top <= rest - 200);
+				assert.equal(await height(), was + 20, 'a swipe down the line over a band sized the days');
+				assert.deepEqual(await pillsOf(page), [], 'the scroll left a selection behind');
+			},
+			PHONE
+		);
+	});
+
+	// vividn, 2026-10-22 (da-xg1vi): «in general panning around shouldn't
+	// cause data to be selected or any tool tips to pop up».
+	test('a scroll that starts on a mark leaves no label and no selection', async () => {
+		await withStrip(
+			async (app) => {
+				const { page } = app;
+				// Yesterday's: today is pinned under the scroller on a phone.
+				assert.equal((await app.run(['start', 'walk', '-y', '-t', '12:00', '3h'])).code, 0);
+				await app.redraw();
+				await page.locator(`${YESTERDAY} svg.svg [data-id]`).waitFor();
+				const { x, y } = await markAt(page, YESTERDAY);
+				const at = () => page.locator('.stack').evaluate((el) => el.scrollTop);
+				const rest = await at();
+				await swipeNoWait(page, x, y, 0, 200, 10);
+				await until(at, (top) => top <= rest - 100);
+				assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the scroll labeled a mark');
+				assert.deepEqual(await pillsOf(page), [], 'the scroll left a selection behind');
+			},
+			PHONE
+		);
+	});
+
+	test('a pan of the nowview shows no label on the way, and selects nothing', async () => {
+		await withStrip(async (app) => {
+			const { page } = app;
+			assert.equal((await app.run(['start', 'walk', '-t', '-20'])).code, 0);
+			await app.redraw();
+			await page.locator(`${NOWVIEW} svg.svg [data-id]`).first().waitFor();
+			// A mark on screen and clear of the now region, whose left third
+			// the press lands on: the picture is drawn past the band either side.
+			const { x, y } = await page.locator(`${NOWVIEW} .nowview-band`).evaluate((band) => {
+				const frame = band.getBoundingClientRect();
+				const r = [...band.querySelectorAll('svg.svg [data-id]')]
+					.map((m) => m.getBoundingClientRect())
+					.map((r) => ({ r, left: Math.max(r.left, frame.left), right: Math.min(r.right, frame.right) }))
+					.find(({ left, right }) => right - left > 90);
+				return { x: r.left + 30, y: r.r.top + r.r.height / 2 };
+			});
+			assert.ok(
+				await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('[data-id]'), [x, y]),
+				'the press is not on a mark'
+			);
+			await page.evaluate(() => window.datum.cursor.set(null));
+			await saysPills(page, []);
+			await page.mouse.move(x, y);
+			await page.evaluate(noWait);
+			await page.mouse.down();
+			// The picture follows the hand, so the mark stays under it all the way.
+			await page.mouse.move(x - 40, y, { steps: 8 });
+			assert.equal(await page.locator(`${NOWVIEW} .nowview-band`).getAttribute('data-mode'), 'pan');
+			assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the pan labeled a mark');
+			await page.mouse.up();
+			assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the pan labeled a mark');
+			assert.deepEqual(await pillsOf(page), [], 'the pan selected something');
+		});
+	});
+
+	// vividn, da-xg1vi: «simple swipe or drag → pan; or, if already at the
+	// edge, pass the swipe to the container (so it switches tabs)». The
+	// whole day is at both edges.
+	test('a swipe on a zoomed band pans it; across the whole day it is the layout’s, as off the bands', async () => {
 		await withStrip(
 			async (app) => {
 				const { page } = app;
 				assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['main', 'tail']);
 
-				// On a band: the strip's, so the layout stays put — and it
-				// panned or selected instead, which the tests above are about.
+				// Zoomed in, with hours either side: the band's, so the layout
+				// stays put and the window moves.
+				await zoomIn(app, await geom(page));
+				const window0 = await windowHeard(app);
 				const band = await page.locator(TODAY).boundingBox();
 				await swipe(page, band.x + band.width * 0.6, band.y + band.height / 2, -140, 0, 10);
 				await settled(page);
-				assert.ok((await titles(page)).includes('dayview'), 'a drag on a band moved the layout');
+				assert.ok((await titles(page)).includes('dayview'), 'a pan on a band moved the layout');
+				await untilWindow(app, `w[0] > ${window0[0] + 0.25}`);
+				assert.deepEqual(await pillsOf(page), [], 'the pan selected something');
 
-				// The date column beside it is the frame's room, as the
+				// The whole day: nothing to pan to, so the swipe is the root's.
+				await page.locator('.strip button.unzoom').click();
+				await untilWindow(app, 'w[0] === 0 && w[1] === 24');
+				assert.equal(await page.locator(TODAY).getAttribute('data-pan-stop'), 'start end');
+				// Held first, the same drag is a period, and the layout's no more
+				// than it was: the strip took the move before the pane could.
+				// Measured once the whole day is drawn again, not the zoomed one.
+				await app.idle();
+				const g = await geom(page);
+				const [a, b] = [spot(g, msAt(g, 14)), spot(g, msAt(g, 11))];
+				await finger(page, a, b, { hold: true });
+				await saysPills(page, rangePills(instantOf(g, b.x), instantOf(g, a.x)));
+				await settled(page);
+				assert.ok((await titles(page)).includes('dayview'), 'a long-press drag moved the layout');
+				await page.evaluate(() => window.datum.cursor.set(null));
+				await saysPills(page, []);
+
+				await swipe(page, band.x + band.width * 0.6, band.y + band.height / 2, -140, 0, 10);
+				await until(
+					() => titles(page),
+					(seen) => seen.join() === 'tail'
+				);
+				assert.deepEqual(await pillsOf(page), [], 'the swipe selected time');
+			},
+			{
+				...PHONE,
+				prepare: (context) =>
+					context.addInitScript(
+						(json) => localStorage.setItem('datum.layout.root.v1', json),
+						JSON.stringify({ names: ['main', 'tail'], active: 0 })
+					)
+			}
+		);
+	});
+
+	test('a swipe that starts OFF the bands changes the layout', async () => {
+		await withStrip(
+			async (app) => {
+				const { page } = app;
+				// The date column beside the band is the frame's room, as the
 				// nowview's margin is: the swipe there reaches the root.
 				const stamp = await page.locator(`${STRIP} .row.pinned .stamp`).boundingBox();
 				await swipe(page, stamp.x + stamp.width / 2, stamp.y + stamp.height / 2, -140, 0, 10);

@@ -95,13 +95,24 @@ describe('a burst of changes', () => {
 						window.__datumSeen.length = 0;
 
 						const box = document.querySelector(band).getBoundingClientRect();
-						const y = box.top + box.height * 0.6;
+						// The day's GROUND at each x: a click on a mark is its entry
+						// since da-xg1vi, and these are cursor changes.
+						const ground = (x) => {
+							for (let dy = 0; dy < box.height / 2; dy++)
+								for (const y of [box.top + box.height * 0.6 + dy, box.top + box.height * 0.6 - dy]) {
+									const at = document.elementFromPoint(x, y);
+									if (at?.closest('svg.svg') && !at.closest('[data-id]')) return y;
+								}
+							throw new Error(`no ground at ${x}`);
+						};
 						let dimmed = false;
 						for (let i = 0; i < 10; i++) {
 							const x = box.left + box.width * (0.1 + i * 0.08);
+							const y = ground(x);
 							const init = { bubbles: true, clientX: x, clientY: y };
 							const target = document.elementFromPoint(x, y);
 							target.dispatchEvent(new PointerEvent('pointerdown', init));
+							target.dispatchEvent(new PointerEvent('pointerup', init));
 							target.dispatchEvent(new MouseEvent('click', init));
 							nowview.clicks++;
 							// A macrotask: the page reacts to each change on its own.

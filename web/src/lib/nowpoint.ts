@@ -1,39 +1,50 @@
-// Pointing INTO the nowview (da-rskp): which of four gestures a press on
-// the band has become.
+// Pointing INTO the nowview and the dayview (da-rskp, da-xg1vi): which
+// gesture a press on a band has become.
 //
-// THE STATE MACHINE, written down before the code that runs it, because
-// the band carries four gestures of its own — tap, drag, long-press+drag,
-// two-finger pinch — over a pane that swipes between tabs and a page that
-// scrolls:
+// THE TABLE, vividn's, 2026-10-22 (da-xg1vi), for both views:
+//
+//   - single tap → select a piece of data (the mark under the finger), and
+//     a second tap on it the time there instead (15:04);
+//   - single tap where there is no data, or in the time axis → select a time;
+//   - long tap / right click → select a time;
+//   - simple swipe or drag → pan; or, if already at the edge, pass the
+//     swipe to the container (so it switches tabs);
+//   - long tap and drag → select a time period;
+//   - swiping left/right must not select time;
+//   - touch the time axis and drag → no pan: the time follows the finger,
+//     to choose it precisely.
+//
+// «For quickly selecting a time, a user can touch in the time axis, so that
+// won't slow them down.» Which is what retired the rule before it, that a
+// plain tap always meant TIME.
+//
+// The machine below is the part of that table a MOVE decides:
 //
 //   down on the band
 //     │
-//     ├─ two fingers ─────────────────────────► PINCH   (da-5goc, the widget's own)
+//     ├─ two fingers ─────────────────────────► PINCH   (the widget's own)
+//     ├─ on the time axis ────────────────────► SCRUB   (the widget's own: decided at the press)
 //     │
 //     └─ one finger, mode `press`
-//          ├─ in the NOW REGION and |dx| > 6px leftward ──► NOW    (a duration ending now)
-//          ├─ `atOnce` and |dx| > 6px ────────────────────► RANGE  (no long press needed)
+//          ├─ shift held, |dx| > 6px ─────────────────────► RANGE  (the desk's, no long press)
 //          ├─ down for 400 ms, still ─────────────────────► HOLD   (undecided: see below)
-//          ├─ |dx| > 6px and |dx| ≥ |dy| ─────────────────► PAN    (the window moves)
-//          └─ up, still `press` ──────────────────────────► CLICK  (a selection where it fell)
+//          ├─ |dx| > 6px and |dx| ≥ |dy| ─────────────────► PAN    (the window moves, or the
+//          │                                                        container's, at an edge)
+//          └─ up, still `press` ──────────────────────────► TAP    (the mark under it, or the time)
 //
-//   and from HOLD, which is the one mode that is NOT yet committed:
+//   and from HOLD, which is NOT yet committed:
+//          ├─ in the NOW REGION, |dx| > 6px leftward ─────► NOW    (a duration ending now)
 //          ├─ |dx| > 6px and |dx| ≥ |dy| ─────────────────► RANGE  (a long press that TRAVELS)
-//          └─ up, still ──────────────────────────────────► INSPECT (the entry under the finger)
+//          └─ up, still ──────────────────────────────────► the TIME where it fell
 //
-// THE 400 MS DOES NOT COMMIT (da-pzzoz). It used to: `long` returned
-// `range` outright, and vividn's «long press to select, as long as it's not
-// a long press drag» would have been a fifth gesture colliding with it.
-// It is not a new gesture — it is this one letter of the table. A still
-// long press stays UNDECIDED in `hold`; the finger decides it by moving
-// (a RANGE, exactly as before) or by lifting (an INSPECT, which is what
-// is new).
+// What a lift MEANS — a mark's entry or a time — is the widget's, which has
+// the picture; the machine only says which of the two kinds of lift it was.
 //
-// The price is FEEDBACK. The bar dropping at 400 ms was how a thumb
-// learned the press had registered, and a mode that commits to nothing
-// has none — so the two widgets that run this machine draw a mark of
-// their own for the wait instead (`.hold-mark`, NowviewWidget.svelte and
-// DayStrip.svelte). It is owed, not optional.
+// THE 400 MS DOES NOT COMMIT (da-pzzoz): a still long press stays
+// undecided in `hold`, and the finger decides it by moving or lifting. The
+// price is FEEDBACK — a mode that commits to nothing has none — so the two
+// widgets draw a mark of their own for the wait (`.hold-mark`). It is owed,
+// not optional.
 //
 // The other transitions are ONE-WAY: a drag that became a pan never
 // becomes a range, and a range never becomes anything else.
@@ -48,10 +59,11 @@
  * What a press has become.
  *
  * `press` and `hold` are both UNDECIDED — a lift there is a gesture of
- * its own (a click, an inspect) and a move can still turn either into
- * something else. `pan`, `range` and `now` are committed and final.
+ * its own (a tap, a time) and a move can still turn either into something
+ * else. `pan`, `range`, `now` and `scrub` are committed and final; `scrub`
+ * is the time axis's, which the widget decides at the press.
  */
-export type Mode = 'press' | 'hold' | 'pan' | 'range' | 'now';
+export type Mode = 'press' | 'hold' | 'pan' | 'range' | 'now' | 'scrub';
 
 /** Whether a mode is still open to becoming another one. */
 export const undecided = (mode: Mode): boolean => mode === 'press' || mode === 'hold';
@@ -63,13 +75,9 @@ export interface Press {
 	/** In the NOW region — the strip at and right of the now-line. */
 	inNow: boolean;
 	/**
-	 * A drag here is a RANGE with no waiting.
-	 *
-	 * Two views say it for two reasons, and the recogniser needs only the
-	 * answer: shift is held, because a long press with a mouse is nobody's
-	 * habit (the nowview), or the view is zoomed all the way out and has
-	 * nowhere to pan to, so a drag can be nothing else (the day strip,
-	 * da-ku7y).
+	 * A drag here is a RANGE with no waiting: shift is held, because a long
+	 * press with a mouse is nobody's habit. Never a finger's — «swiping
+	 * left/right must not select time» (vividn, da-xg1vi).
 	 */
 	atOnce: boolean;
 }
@@ -80,7 +88,7 @@ export const LONG_MS = 400;
 /**
  * How far a press may travel and still be still, in px.
  *
- * A pixel over `hover.ts`'s CLICK_SLOP of 5, so a press that commits to a
+ * A pixel over `inspect.ts`'s CLICK_SLOP of 5, so a press that commits to a
  * gesture here has already stopped being a click there.
  */
 export const SLOP_PX = 6;
@@ -99,23 +107,18 @@ export const SLOP_PX = 6;
  * once. `hold` is not committed — it is «still down, and long enough» —
  * so it is asked again on every move, and the move is what decides it.
  *
- * A long press that travels is a RANGE wherever it started from; one that
- * has not yet lasted `LONG_MS` and travels is a PAN. That single line is
- * the whole of «long press to select, as long as it's not a long press
- * drag» (da-pzzoz): the same two gestures the recogniser always had, told
- * apart by the ORDER of the wait and the movement rather than by the wait
- * alone.
+ * Travel before the wait is a PAN, travel after it a RANGE — or, from the
+ * now region and leftward, the duration ending now. A pan with nowhere to
+ * go is the widget's to hand on (the table above): the machine does not
+ * know where the edges are.
  */
 export function advance(mode: Mode, p: Press, x: number, y: number, long: boolean): Mode {
 	if (!undecided(mode)) return mode;
 	const [dx, dy] = [x - p.x, y - p.y];
 	const sideways = Math.abs(dx) > SLOP_PX && Math.abs(dx) >= Math.abs(dy);
-	// Nothing has happened yet: `hold` once the wait is up, `press` until.
-	const waiting = long ? 'hold' : 'press';
-	if (p.inNow) return sideways && dx < 0 ? 'now' : waiting;
-	if (p.atOnce) return sideways ? 'range' : waiting;
-	if (sideways) return mode === 'hold' ? 'range' : 'pan';
-	return waiting;
+	if (!sideways) return long ? 'hold' : 'press';
+	if (long || p.atOnce) return p.inNow && dx < 0 ? 'now' : 'range';
+	return 'pan';
 }
 
 /**

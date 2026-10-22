@@ -15,7 +15,7 @@ import { swipe } from './layout.mjs';
  * press armed would be swallowed too. Check which a press arms before using
  * this anywhere else.
  */
-const noWait = () => {
+export const noWait = () => {
 	const real = window.setTimeout;
 	window.setTimeout = (...a) => (window.event?.type === 'pointerdown' ? 0 : real(...a));
 	for (const lift of ['pointerup', 'pointercancel'])
@@ -66,3 +66,24 @@ export async function swipeNoWait(page, ...swipeArgs) {
 	await page.evaluate(noWait);
 	await swipe(page, ...swipeArgs);
 }
+
+/**
+ * One finger, by CDP: down, then moved in `steps`, then up — held until
+ * the view's long press has fired between the down and the first move
+ * when `hold`.
+ */
+export async function finger(page, from, to = from, { hold = false, steps = 8 } = {}) {
+	const moves = to.x !== from.x || to.y !== from.y;
+	// A drag with no hold has no wait to beat, as `drag`'s has not.
+	if (moves && !hold) await page.evaluate(noWait);
+	const cdp = await page.context().newCDPSession(page);
+	const touch = (type, at) =>
+		cdp.send('Input.dispatchTouchEvent', { type, touchPoints: at ? [{ x: at.x, y: at.y }] : [] });
+	await touch('touchStart', from);
+	if (hold) await longPressed(page);
+	for (let i = 1; moves && i <= steps; i++)
+		await touch('touchMove', { x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps });
+	await touch('touchEnd');
+	await cdp.detach();
+}
+

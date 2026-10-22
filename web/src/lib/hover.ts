@@ -10,22 +10,20 @@
 // not come along (da-8jb8): inline, it is the browser's own tooltip, drawn
 // over the page's, so `inlineSvg` moves its text onto the mark.
 
-import { fieldPill, select, selected } from './bar.js';
+import { get } from 'svelte/store';
+import { fieldPill, pills, removePill, select, selected } from './bar.js';
 import { clockLabel } from './clock.js';
 import { pointAt, pointed, setCursor, type Cursor } from './cursor.js';
 import {
-	NO_TAP,
-	doubled,
+	CLICK_SLOP,
 	hidOf,
-	inspectClick,
 	inspectMods,
 	markOf,
 	marksIn,
 	pressSpent,
+	pressTraveled,
 	spendPress,
-	tapOf,
 	tipOf,
-	type Tap,
 	type Tip
 } from './inspect.js';
 import { readLanes } from './lanes.js';
@@ -519,19 +517,20 @@ export function selectedTip(root: ParentNode, hids: string[]): { tip: Tip; box: 
 }
 
 /**
- * Select the entry `mark` names, as a deliberate gesture in a picture
- * does: the hid pill, and the time pill it replaces taken away.
+ * Select the entry `mark` names, as a tap on it in a picture does: the
+ * hid pill, and the time pill it replaces taken away.
  *
- * vividn: «double clicking or tapping in dayview or nowview selects an
- * existing piece of data and creates an hid pill RATHER THAN a time
- * pill». The tap that opened the gesture has usually just made one —
- * every double tap begins with a single tap — so the cursor is cleared
+ * vividn: a tap «in dayview or nowview selects an existing piece of data
+ * and creates an hid pill RATHER THAN a time pill» (da-pzzoz, where it was
+ * a double tap; a single one since da-xg1vi). So the cursor is cleared
  * here, and the press is marked spent so the click and the lift that
  * share this finger do not make another.
  *
- * `false` over ground that names no entry: the caller then does whatever
- * it would have done, which everywhere is «select the time», and no
- * gesture is ever dead.
+ * `false` over ground that names no entry, and on an entry ALREADY
+ * selected: the caller then does whatever it would have done, which
+ * everywhere is «select the time», and no gesture is ever dead. The second
+ * is vividn's, 2026-10-22 (da-xg1vi): «first tap selects the piece of data,
+ * second tap then selects time instead». Not with ctrl or ⌘, which toggle.
  */
 export function inspectMark(
 	mark: Element | null,
@@ -540,6 +539,11 @@ export function inspectMark(
 ): boolean {
 	const hid = hidOf(mark);
 	if (!hid || !mark) return false;
+	if (!e.ctrlKey && !e.metaKey && get(selected).includes(hid)) {
+		// INSTEAD: the entry goes, unless a locked pill is holding it.
+		if (!get(pills).find((p) => p.id === 'hid')?.locked) removePill('hid');
+		return false;
+	}
 	const order = root ? marksIn(root).map(hidOf).filter((h): h is string => !!h) : [hid];
 	pointAt(null);
 	select(hid, inspectMods(e), order);
@@ -548,9 +552,6 @@ export function inspectMark(
 }
 
 let tips = 0;
-
-/** How far a press may travel and still be a click, in pixels: past it, it was a drag or a scroll. */
-const CLICK_SLOP = 5;
 
 /**
  * Whether something ABOVE this picture takes the pointer itself.
@@ -661,63 +662,52 @@ export function picture(node: HTMLElement, text: string) {
 	/** The entries the bar's hid pill names, as the last change left it. */
 	let chosen: string[] = [];
 	let down = { x: NaN, y: NaN };
-	/** The last press on this picture: what a second one is measured against. */
-	let last: Tap = NO_TAP;
+	const press = (e: PointerEvent) => void (down = { x: e.clientX, y: e.clientY });
+
+	/** The instant under a pointer event, on the day it landed in. */
+	const timeOf = (e: MouseEvent) => (e.target instanceof Element ? timeAt(e.target, e.clientX, e.clientY) : null);
 
 	/**
-	 * A press on a picture — and, on the SECOND of two in the same place,
-	 * the inspect gesture (da-pzzoz).
-	 *
-	 * Here and not in the widgets that run the press recogniser, because
-	 * every drawn picture has this action on it: the nowview's band, each
-	 * band of the day strip, and a `dayview` printed into the REPL alike.
-	 * The widgets own the LONG press, which is a state of their recogniser;
-	 * a double tap is not, and would have been written twice.
+	 * The fields drawn at the height of `e` come first in the fields widget
+	 * (da-qu16) — published after the selection, which is what clears them
+	 * again.
 	 */
-	const press = (e: PointerEvent) => {
-		down = { x: e.clientX, y: e.clientY };
-		const on = markOf(e.target);
-		const hid = hidOf(on);
-		const mark = doubled(last, e, hid) ? on : null;
-		last = mark ? NO_TAP : tapOf(e, hid);
-		if (mark) inspectMark(mark, e, node);
-	};
+	function lanesAt(e: MouseEvent, at: Date | null): void {
+		const svg = node.querySelector<SVGSVGElement>('svg');
+		if (svg) readLanes(svg, { x: e.clientX, y: e.clientY, t: at && +at });
+	}
+
+	/** Point the page at the time under `e`. */
+	function pointTime(e: MouseEvent): boolean {
+		const at = timeOf(e);
+		if (!at) return false;
+		setCursor(at);
+		lanesAt(e, at);
+		return true;
+	}
 
 	/**
-	 * The desk's two: shift+click and the right button — «on desktop right
-	 * click or shift click or also long click». Over ground that names no
-	 * entry both fall through to what they always did.
-	 *
-	 * On the LIFT rather than the press, which is what lets a shift+DRAG
-	 * still be the nowview's range: a press that travelled is not a click,
-	 * and the slop below is the same one a click is measured by.
+	 * The right click is a TIME, wherever it lands (da-xg1vi, vividn: «long
+	 * tap / right click → select a time»). On `contextmenu`, the one of a
+	 * right press's events with a default to suppress. A band that takes the
+	 * pointer itself (the nowview's) answers it there.
 	 */
 	const chord = (e: MouseEvent) => {
-		// `pressSpent` FIRST: one right press fires `pointerup` and
-		// `contextmenu`, and a double tap has already inspected by the time
-		// its second lift arrives — so the question «has this finger already
-		// said its piece» comes before «is this the desk's gesture».
-		if (pressSpent() || !inspectClick(e)) return;
+		if (pressSpent() || own()) return;
 		if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_SLOP) return;
-		if (!inspectMark(markOf(e.target), e, node)) return;
-		// A right click's menu is the browser's; a gesture of ours takes it.
+		if (!pointTime(e)) return;
+		spendPress();
 		e.preventDefault();
 	};
 
+	// A tap: the entry under it, or the time where there is none (da-xg1vi,
+	// vividn: «single tap → select a piece of data; single tap where there
+	// is no data … → select a time»). Not a press another listener already
+	// answered, and not one that traveled: that was a pan or a scroll.
 	const click = (e: MouseEvent) => {
-		// A press this gesture already spent says all it has to say: an
-		// inspect makes an hid pill RATHER THAN a time pill.
-		if (pressSpent()) return;
-		if (own()) return;
-		if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_SLOP) return;
-		const when = e.target instanceof Element && timeAt(e.target, e.clientX, e.clientY);
-		if (!when) return;
-		setCursor(when);
-		// And the fields drawn at this height come first in the fields
-		// widget (da-qu16) — published after the selection, which is what
-		// clears them again.
-		const svg = node.querySelector<SVGSVGElement>('svg');
-		if (svg) readLanes(svg, { x: e.clientX, y: e.clientY, t: +when });
+		if (pressSpent() || own() || pressTraveled()) return;
+		if (inspectMark(markOf(e.target), e, node)) return lanesAt(e, timeOf(e));
+		pointTime(e);
 	};
 	// Enter on a focused mark selects the mark's own time — and it does so
 	// even where the POINTER is somebody else's. The nowview's band takes
@@ -733,7 +723,15 @@ export function picture(node: HTMLElement, text: string) {
 		else setCursor(markTime(mark));
 	};
 
-	const point = (e: PointerEvent) => show(markAt(e.target), e.clientX, e.clientY, e.clientX);
+	// A pan never labels what it passes over (da-xg1vi): a drag that
+	// traveled hides the label, and a FINGER's label waits for its lift,
+	// since its press may be the start of a scroll.
+	const point = (e: PointerEvent) =>
+		(e.buttons && pressTraveled()) || (e.type === 'pointerdown' && e.pointerType === 'touch')
+			? show(null)
+			: show(markAt(e.target), e.clientX, e.clientY, e.clientX);
+	const tapped = (e: PointerEvent) =>
+		e.pointerType === 'touch' && !pressTraveled() && show(markAt(e.target), e.clientX, e.clientY, e.clientX);
 	// A finger lifting leaves the element too; its label stays until the
 	// next tap lands somewhere else.
 	const leave = (e: PointerEvent) => e.pointerType !== 'touch' && show(null);
@@ -748,7 +746,10 @@ export function picture(node: HTMLElement, text: string) {
 	draw(text);
 	node.addEventListener('pointermove', point);
 	node.addEventListener('pointerdown', point);
+	node.addEventListener('pointerup', tapped);
 	node.addEventListener('pointerleave', leave);
+	// The wheel scrolls and pans: the label would stay where the mark was.
+	node.addEventListener('wheel', blur, { passive: true });
 	node.addEventListener('focusin', focus);
 	node.addEventListener('focusout', blur);
 	document.addEventListener('pointerdown', away);
@@ -759,7 +760,6 @@ export function picture(node: HTMLElement, text: string) {
 	// And the window losing focus: a button let go over another app never
 	// lifts here. Not in capture, where every element's own blur would be one.
 	window.addEventListener('blur', lift);
-	node.addEventListener('pointerup', chord);
 	node.addEventListener('contextmenu', chord);
 	node.addEventListener('click', click);
 	node.addEventListener('keydown', enter);
