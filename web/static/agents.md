@@ -62,10 +62,12 @@ Elsewhere, build it from a checkout with Rust's `cargo`: `git clone https://gith
 scripts/install.sh`.
 
 **Share a database with your person.** Keep their record in a database named for them, and send them the link
-`sync chain invite` prints; they open it on datum.day and agree, and from then on what either side writes, both hold:
+`sync chain invite` prints; they open it on datum.day and agree, and from then on what either side writes, both hold.
+`--label` names your copy in what they see («Join the sync chain of «Alex's agent»»); without it they see your
+machine's name:
 
 ```bash,no_run
-datum --db alex sync chain invite        # prints https://datum.day/sync/join#…: send it to them
+datum --db alex sync chain invite --label "Alex's agent"   # prints https://datum.day/sync/join#…: send it to them
 ```
 
 If they already use datum.day and their record syncs with their own devices, datum.day refuses your link and says
@@ -73,7 +75,7 @@ why; then they invite you instead: datum.day's **Sync** widget, **Add device**, 
 (`datum --db alex sync chain connect <LINK>`).
 
 **Offer them your own database too**, so they can see what you do (see *Keeping your own record*):
-`datum --db <your-name> sync chain invite`, with `?db=<your-name>` added to the link before its `#`, so it opens on
+`datum --db <your-name> sync chain invite --label <your-name>`, with `?db=<your-name>` added to the link before its `#`, so it opens on
 datum.day as a database of its own instead of joining theirs.
 
 **Set up their fields and log for them:**
