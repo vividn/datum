@@ -620,6 +620,16 @@ export function picture(node: HTMLElement, text: string) {
 		const svg = inlineSvg(text);
 		svg?.classList.add('svg');
 		svg?.setAttribute('role', 'group');
+		// A mark's own transform goes to a group around it, drawn the same:
+		// the day strip scales a mark back about its own middle (da-dqbso),
+		// which a transform on the mark itself would be composed inside.
+		for (const el of svg?.querySelectorAll('.point-fg[transform], .error-track[transform]') ?? []) {
+			const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+			g.setAttribute('transform', el.getAttribute('transform')!);
+			el.removeAttribute('transform');
+			el.replaceWith(g);
+			g.append(el);
+		}
 		node.replaceChildren(...(svg ? [svg] : []), tip);
 		const drawn = marks();
 		for (const mark of drawn) mark.setAttribute('tabindex', '0');

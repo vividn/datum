@@ -49,13 +49,17 @@
 	drag or shift+wheel pans it; the `⊖` in the bottom corner of the date
 	column — or the pane menu's `Reset widget` — gives the whole day back
 	(da-8rqb9; it was a double tap until that bead). Every band at once,
-	because they share the x-axis. `dayview` has no window flag, so a window is a
-	picture drawn for the whole day at the window's SCALE and shown through
-	the band: one offset-and-scale (`windowMap` in $lib/panes.ts) puts the
-	hours in it, and the strip's own gridlines and ruler are drawn from the
-	same map. Under the gesture nothing is asked at all — the pictures on
-	screen are mapped where they are, and the release is what asks datum
-	for the window at its own width, so the lines come back crisp.
+	because they share the x-axis. A band is drawn once, for the whole day at
+	the band's width, and a window is that picture shown through the band:
+	one offset-and-scale (`windowMap` in $lib/panes.ts) puts the hours in
+	it, and the strip's own gridlines and ruler are drawn from the same map.
+	What the map stretches is TIME, so it is undone on every mark that is
+	not a duration (da-dqbso, vividn: «occur dots (and lettering, icons,
+	etc) shouldn't stretch out and get weird when zooming in … All the data
+	is already there, it could be easily transformed to be correct without
+	having to redraw»): a dot, a glyph, a label and a line keep their size,
+	and a block is as long as its hours. So nothing is asked of datum for a
+	zoom or a pan, under the gesture or on its release.
 
 	A pinch DOWN the strip is the day height (da-hm1j7, vividn: «vertical
 	zoom should affect the day height in an appropriate way so you really
@@ -228,7 +232,6 @@
 		dayPitch,
 		dayUnderSliver,
 		geometryArgv,
-		pictureWidth,
 		type DayviewJson,
 		todayBox,
 		wholeDay,
@@ -339,25 +342,21 @@
 
 	/** The window a gesture is previewing, or null when none is in hand. */
 	let live: [number, number] | null = null;
-	/** The window the pictures are asked for: the widget's setting, made sane. */
+	/** The window the widget holds: its setting, made sane. */
 	$: committed = clampWindow(hourFrom, hourTo);
 	/** The window on screen. */
 	$: view = live ?? committed;
-	/** How wide a day has to be drawn for `committed` to fill the band. */
-	$: pictureBox = bandWidth > 0 ? pictureWidth(bandWidth, committed[1] - committed[0]) : 0;
 
 	/**
 	 * Each picture is mapped by the width IT was drawn at, not by the one
 	 * just asked for.
 	 *
-	 * Which matters for the beat after a release: the window has changed,
-	 * every band has been asked again, and what is on screen meanwhile is
-	 * the picture drawn for the window BEFORE. Mapped by the new width it
-	 * would be stretched by the ratio between them and show the wrong
-	 * hours — a jump, and then a jump back as each answer lands, one CLI
-	 * process apart. Mapped by its own, it shows exactly the hours it is
-	 * meant to and merely a little soft, which is the gesture's preview
-	 * carrying on until the crisp answer arrives.
+	 * Which matters for the beat after a resize: the band's width has
+	 * changed, every band has been asked again, and what is on screen
+	 * meanwhile is the picture drawn at the width BEFORE. Mapped by the new
+	 * width it would show the wrong hours — a jump, and then a jump back as
+	 * each answer lands, one CLI process apart. Mapped by its own, it shows
+	 * exactly the hours it is meant to until its answer arrives.
 	 */
 	const IDENTITY = { offset: 0, scale: 1 };
 	$: mapFor = (full: number) =>
@@ -563,10 +562,9 @@
 	let geometry: Geometry | null = null;
 
 	// Not on mount: the static build prerenders this page, and there is no
-	// database (or `run`) outside the browser.
-	// The pictures are asked for at the WINDOW's width, not the band's:
-	// the band is what they are shown through (`pictureBox`).
-	$: request = { width: pictureBox, dayHeight: day, epoch, midnights };
+	// database (or `run`) outside the browser. At the band's width whatever
+	// the window: the window is how the band shows the picture (`mapFor`).
+	$: request = { width: bandWidth, dayHeight: day, epoch, midnights };
 	$: if (browser && request.width > 0) {
 		draw(request, ends);
 		refreshVisible();
@@ -1899,7 +1897,7 @@
 	}
 
 	/* The hour window (da-ukcf): the picture is drawn for the WHOLE day at
-	   the window's scale, and this is the part of it the band shows. The
+	   the band's width, and this is the part of it the band shows. The
 	   same map the gridlines and the ruler are drawn from, so the three
 	   move together; the band clips the rest.
 
@@ -1912,10 +1910,10 @@
 	   the transform included.
 
 	   Always, not only while there is a window: the map is the identity at
-	   the whole day, and a band whose picture is still the PREVIOUS,
-	   wider window's needs mapping until its own answer lands, double-tap
-	   included. The variables are the BAND's for the same reason — the map
-	   is each picture's own (`mapFor`). */
+	   the whole day, and a band whose picture is still from before a
+	   resize needs mapping until its own answer lands. The variables are
+	   the BAND's for the same reason — the map is each picture's own
+	   (`mapFor`). */
 	.band :global(svg.svg) {
 		transform: translateX(var(--zoom-x)) scaleX(var(--zoom));
 		transform-origin: 0 0;
@@ -1930,6 +1928,37 @@
 		   right because the gridlines, the ruler and the hour numbers
 		   over it are the STRIP's own, drawn from the JSON. */
 		max-width: none;
+	}
+
+	/* The map, and a size being previewed (`.shot.previewing`), stretch
+	   TIME and the day; neither may stretch a mark (da-dqbso). A duration
+	   — a block, a lane, the now strip — is as long as its hours and is
+	   left to them; every other mark is scaled back about its own anchor
+	   to the size the picture drawn at the new size gives it: a dot, a
+	   glyph, an icon, the selection's arrow, a label, a warning grows with
+	   the day's height (as datum sizes them) and not with the window, and
+	   a line keeps its stroke. Not inside an icon or a warning, which are
+	   scaled as one. The rules after the first carry its guards: a `:not`
+	   counts what it names, so without them the first one wins. */
+	.band :global(svg.svg circle:not(defs *):not(.error-track *)),
+	.band :global(svg.svg text:not(defs *):not(.error-track *)),
+	.band :global(svg.svg use:not(defs *):not(.error-track *)),
+	.band :global(svg.svg polygon:not(defs *):not(.error-track *)),
+	.band :global(svg.svg rect.point-bg:not(defs *):not(.error-track *)),
+	.band :global(svg.svg .error-track:not(defs *):not(.error-track *)),
+	.band :global(svg.svg line:not(defs *):not(.error-track *)) {
+		transform-box: fill-box;
+		transform-origin: center;
+		scale: calc(var(--sy) / (var(--zoom) * var(--sx))) 1;
+	}
+	.band :global(svg.svg line:not(defs *):not(.error-track *)) {
+		scale: calc(1 / (var(--zoom) * var(--sx))) 1;
+	}
+	.band :global(svg.svg text:not([text-anchor='middle']):not([text-anchor='end'])) {
+		transform-origin: left;
+	}
+	.band :global(svg.svg text[text-anchor='end']:not(defs *):not(.error-track *)) {
+		transform-origin: right;
 	}
 
 	/* The spine: the same 1px rule, the other way, at the 00 mark. */

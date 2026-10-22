@@ -85,6 +85,7 @@ import {
 	todayBand,
 	stackScroll,
 	jagged,
+	pinch,
 	PHONE
 } from './support/daystrip.mjs';
 
@@ -786,41 +787,6 @@ const drawnWidth = ({ page }) =>
 	page.locator('.band[data-days-ago="0"] svg.svg').evaluate((svg) => svg.width.baseVal.value);
 
 /**
- * Two fingers over `box`'s middle, `from` px apart, drawn to `to` px apart:
- * side by side, or one over the other with `axis` 'y'.
- *
- * Through CDP, as every other touch in this suite: Playwright's
- * touchscreen only taps, and a pinch made of mouse events would be a test
- * of the wrong handler. `midway` is called with the fingers still down —
- * the gesture's preview is only on screen until they lift.
- */
-async function pinch(page, box, from, to, midway, axis = 'x') {
-	const y = box.y + box.height / 2;
-	const x = box.x + box.width / 2;
-	const cdp = await page.context().newCDPSession(page);
-	const both = (apart) =>
-		axis === 'x'
-			? [
-					{ id: 1, x: x - apart / 2, y },
-					{ id: 2, x: x + apart / 2, y }
-				]
-			: [
-					{ id: 1, x, y: y - apart / 2 },
-					{ id: 2, x, y: y + apart / 2 }
-				];
-	const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
-	try {
-		await at('touchStart', [both(from)[0]]);
-		await at('touchStart', both(from));
-		for (let i = 1; i <= 6; i++) await at('touchMove', both(from + ((to - from) * i) / 6));
-		await midway?.();
-		await at('touchEnd', []);
-	} finally {
-		await cdp.detach();
-	}
-}
-
-/**
  * Two taps in the same place, quickly.
  *
  * It was the gesture for the whole day back until da-8rqb9, and is kept
@@ -885,16 +851,14 @@ describe('the day strip zooms onto an hour range', () => {
 				assert.equal(await hoursShown(app), 9, 'the pinch did not narrow the window');
 			});
 
-			// The release asks for the window — the same eight hours, drawn
-			// at its own width now, which is three days' worth of pixels.
+			// The release keeps the window — the same eight hours — and asks
+			// datum for nothing: the pictures on screen are the window's,
+			// their marks placed by the map (da-dqbso).
 			await untilWindow(app, 'w[1] - w[0] < 24');
 			assert.deepEqual(await windowHeard(app), [8, 16]);
 			await app.idle();
-			assert.deepEqual(
-				[...new Set(askedWidths(await seen()))],
-				[full * 3],
-				'the bands were not re-drawn at the window’s width'
-			);
+			assert.deepEqual(askedWidths(await seen()), [], 'the release re-drew the bands');
+			assert.equal(await drawnWidth(app), full, 'the picture is not the one drawn at rest');
 
 			// And the whole strip is on those hours: one transform for every
 			// band, nine hours on screen, and a ruler that names them.
@@ -1253,14 +1217,8 @@ describe('the day strip zooms onto an hour range', () => {
 					`the pan changed how much is on screen: ${shown} → ${panShown}`
 				);
 
-				// Every band is still on the one axis — once the strip is at
-				// rest. The zoom re-asked every band at the window's width and
-				// they arrive one CLI process apart; until a band's own answer
-				// lands it is still the pre-zoom picture, stretched by √2 to
-				// show the same hours (`mapFor` in $lib/DayStrip.svelte). That
-				// is the gesture's preview carrying on, not the bands moving
-				// apart, so the one axis is what the SETTLED strip draws
-				// (da-vi1j — the pinch above waits the same way).
+				// Every band is still on the one axis: a zoom re-draws none of
+				// them (da-dqbso), so every picture is mapped by one map.
 				await app.idle();
 				const after = await bandTransforms(app);
 				assert.deepEqual(after, after.map(() => after[0]), 'the bands moved apart');

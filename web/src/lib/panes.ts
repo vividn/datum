@@ -255,15 +255,14 @@ export const AXIS_HEIGHT = 15;
 // setting. Every band draws the same range — they share the x-axis, and a
 // stack whose days were windowed one at a time would not be a stack.
 //
-// `dayview` has no window flag, so the window is a picture WIDER than the
-// band, shown through it: the day is asked for at `pictureWidth`, which is
-// as many pixels as the band would need to hold all 24 hours at the
-// window's scale, and `windowMap` is the offset and scale that puts the
-// window's own hours in the band. The gridlines and the ruler are the
-// strip's own, drawn from the same map, so they follow the picture without
-// a second question. (The flag would be better — one day's data at one
-// width, whatever the zoom — and it is a CLI follow-up, not a reason to
-// keep the strip at 24 hours meanwhile.)
+// `dayview` has no window flag, and needs none: a band is drawn ONCE, at
+// the band's own width, and `windowMap` is the offset and scale that puts
+// the window's hours in the band (da-dqbso). What the map stretches is
+// time, so the strip cancels it on every mark that is not a duration — a
+// dot, a glyph, a label, a line — and they keep their size at every zoom
+// (`.band :global(svg.svg …)` in DayStrip.svelte). A zoom asks datum for
+// nothing, under the gesture or on its release. The gridlines and the
+// ruler are the strip's own, drawn from the same map.
 
 /** The whole day: the window at rest, and what the strip's `⊖` returns to. */
 export const HOUR_FROM = 0;
@@ -275,16 +274,6 @@ const DAY_HOURS = 24;
  * is a minute to the millimetre — finer than anything a person logs.
  */
 const MIN_SPAN = 1;
-
-/**
- * The widest picture a band is asked for, in pixels.
- *
- * The zoom costs width: a 2-hour window is a day drawn twelve times as
- * wide as the band. Past this the picture stops growing and the map
- * stretches it instead — the deepest zooms are a little soft rather than
- * a `dayview` of tens of thousands of pixels per band per day.
- */
-const MAX_PICTURE = 6000;
 
 /** An hour, rounded to the minute — as fine as a window is ever stated. */
 const toMinute = (hour: number) => Math.round(hour * 60) / 60;
@@ -306,21 +295,11 @@ export const wholeDay = (view: [number, number]) =>
 	view[0] <= HOUR_FROM && view[1] >= HOUR_TO;
 
 /**
- * How wide a day must be DRAWN for `span` of its hours to fill `bandWidth`.
- *
- * At the whole day it is the band itself, which is what the strip has
- * always asked for.
- */
-export const pictureWidth = (bandWidth: number, span: number) =>
-	Math.min(MAX_PICTURE, Math.round((bandWidth * DAY_HOURS) / span));
-
-/**
  * The picture's x → the band's x: `x * scale + offset`.
  *
  * One map for the pictures (a CSS transform) and for the strip's own
  * gridlines and ruler (arithmetic), so the three cannot disagree. At the
- * whole day it is the identity, to the pixel the rounding of
- * `pictureWidth` leaves.
+ * whole day it is the identity.
  */
 export function windowMap(
 	view: [number, number],
