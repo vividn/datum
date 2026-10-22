@@ -47,13 +47,21 @@ const slowPhone = (page, type, ms, busy = type) =>
 		[type, ms, busy]
 	);
 
+/** How long a busy handler keeps the page, and so how late a process runs. */
+const LATE = 400;
+
+/** How long after a key the tests tap, so a tap stamped at the key is off by this. */
+const APART = 100;
+
 /**
  * The app's stamp against the test's: each is `Date.now() - age` read at its
- * own moment, and `Date.now()` is whole milliseconds, so the two differ by
- * about 1 ms and once rounded were seen 2 apart (da-zibfx). A stamp taken
- * when the process ran instead is `LATE` off.
+ * own moment, so they differ by what the wall clock moved against
+ * `performance.now()` in between — 2 ms apart once rounded (da-zibfx), 5 on a
+ * loaded runner (da-2wp71). A wrong stamp is off by `APART` at least (the
+ * key's, not the tap's) or `LATE` (the process's), so the tolerance is a
+ * fraction of what it tells apart, and not the last skew seen plus a little.
  */
-const near = (a, b) => Math.abs(a - b) <= 2;
+const near = (a, b) => Math.abs(a - b) <= APART / 4;
 
 /** Wait for the REPL's `n`th echo. */
 const echoed = (page, n) => page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length >= n, n);
@@ -82,7 +90,6 @@ describe('the clock frozen at the gesture', () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				const LATE = 400;
 				await page.locator('.prompt-bar input').fill('occur water');
 				await slowPhone(page, 'keydown', LATE);
 				await page.keyboard.press('Enter');
@@ -108,7 +115,7 @@ describe('the clock frozen at the gesture', () => {
 				// is its own.
 				await slowPhone(page, 'click', LATE, 'keydown');
 				const key = page.keyboard.press('ArrowRight');
-				await new Promise((resolve) => setTimeout(resolve, 100));
+				await new Promise((resolve) => setTimeout(resolve, APART));
 				await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 				await key;
 				await echoed(page, 3);
@@ -122,7 +129,7 @@ describe('the clock frozen at the gesture', () => {
 				await slowPhone(page, 'click', LATE, 'keydown');
 				await page.mouse.down();
 				const mid = page.keyboard.press('ArrowRight');
-				await new Promise((resolve) => setTimeout(resolve, 100));
+				await new Promise((resolve) => setTimeout(resolve, APART));
 				await page.mouse.up();
 				await mid;
 				await echoed(page, 4);
