@@ -20,7 +20,7 @@ does not derail an otherwise-good submission.
   **Action:** verify the output is semantically correct, then regenerate
   the golden; do not revert the code change.
 - **ENV_DEPENDENT** — passes locally but fails in CI (or vice versa).
-  **Action:** check `RUST_TEST_THREADS`, env vars, OS-specific behaviour.
+  **Action:** check `RUST_TEST_THREADS`, env vars, OS-specific behavior.
 - **TIMING_DEPENDENT** — race conditions, timezone boundaries.
   **Action:** pin the clock (`MockClock`), serialise the test, or skip
   in parallel runs.

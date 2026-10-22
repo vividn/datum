@@ -504,7 +504,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		help: [
 			'Every device syncing this database — each CLI install and browser — a line each, this one first, with when it was last seen; then your other databases, a tap each to switch.',
 			'✓ synced, ↻ syncing, ◔ pending, ! error (its reason under it), — not syncing.',
-			'A device not reachable now is drawn grey, as it was when last seen.'
+			'A device not reachable now is drawn gray, as it was when last seen.'
 		].join('\n'),
 		legible: { width: 140, height: 100 }
 	},
@@ -622,7 +622,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		component: KitWidget,
 		hidden: true,
 		help: [
-			'A widget a kit installed in this database: what its command shows, each row in its colour.',
+			'A widget a kit installed in this database: what its command shows, each row in its color.',
 			'Tap a row to run what the kit says a tap does — the chores kit logs that chore.'
 		].join('\n'),
 		title: ({ title, widget }) => [title, widget].find((t): t is string => typeof t === 'string'),

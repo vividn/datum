@@ -153,4 +153,4 @@ selection. Use a throwaway db while experimenting: `datum --db /tmp/scratch.db o
 - A whitespace-bounded `,` token logs **multiple entries atomically** with one shared
   timestamp: `datum switch body vertical , occur caffeine`.
 - `datum --man <command>` prints a man page to stdout; `datum setup <field> …`
-  shapes a field: its keys (above), allowed states, colours, glyphs and id template.
+  shapes a field: its keys (above), allowed states, colors, glyphs and id template.

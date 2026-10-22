@@ -107,10 +107,10 @@ writing it down.
    `engine.alone`). The bottom bar and the REPL then PLACE the CLI's own strings — action, hid,
    id, info, and its `data` items one to a row in a brace beside the two lines (da-f4mw) — and
    compose none of them; `data_inline` is the terminal's own join and the web does not use it. The document carries the CLI's
-   own COLOURS too (da-yu9s): `field` and `state` as logged, `field_color` and `state_color` as
+   own COLORS too (da-yu9s): `field` and `state` as logged, `field_color` and `state_color` as
    `fields --json` resolves them, and `info_segments` — `info` split into `{text, color}` runs,
    which is what `Doc.svelte` paints the line from. The web never looks for the field inside
-   `info` (`switch mood mood` names it twice) and never derives a colour of its own.
+   `info` (`switch mood mood` names it twice) and never derives a color of its own.
    `NO_ECHO` in that file is the
    denylist of commands with no action echo: it is a denylist because an argv whose first word
    is not a command (`mood happy`, `vbp correr`: an alias) is a write under another name and must get
@@ -136,7 +136,7 @@ writing it down.
    let the additions be things a terminal CANNOT do — a hover carrying a value, a selectable box.
    Where the two could differ, the CLI's shape wins. ⛔ That is also why the tail's state cell asks
    for the CLI's painted SLOTS (`previous_state_cell` / `following_state_cell`) rather than a hex
-   and a rule: every shape the terminal has — a parallel set's two-colour `▞`, an ended field's
+   and a rule: every shape the terminal has — a parallel set's two-color `▞`, an ended field's
    unpainted space, the `∅`, the repeated-state `!` — arrives already resolved, so no browser
    re-derives one and none of them can drift.
 
@@ -211,7 +211,7 @@ writing it down.
    registry drawn by `DebugPane.svelte`, which holds the gate once, and a new kind goes into
    `DEBUG_LAYOUT_TREE`. A database carrying an older shipped tree gets the current one at boot.
    **A DEBUG widget's tests live in `tests/debug*.test.mjs`, and CI skips them** (da-s2g46). They
-   are for getting the widget right at first, not for locking its behaviour in — vividn, 2026-09-24:
+   are for getting the widget right at first, not for locking its behavior in — vividn, 2026-09-24:
    "they are not important in userland". With `CI` set, `web/scripts/test.mjs` leaves those files
    out and names them (`test: skipped under CI (DEBUG widgets): …`), so a skip never reads as a
    pass; locally, or with `DATUM_TEST_DEBUG=1`, they run.
@@ -224,13 +224,13 @@ writing it down.
 
 ## Looks
 
-11. **Colours come from the palette, not from a literal** (da-a2xl). `:root` in `app.css` names
+11. **Colors come from the palette, not from a literal** (da-a2xl). `:root` in `app.css` names
     fourteen roles — `--page`, `--ground`, `--tint`, `--rule`, `--accent`, `--accent-bright`,
     `--muted`, `--quiet`, `--ink`, `--ink-bright`, `--alarm`, `--error`, `--warn`, `--track` — each with a
-    line saying what it is FOR, which is the contract: while a colour keeps doing that job,
+    line saying what it is FOR, which is the contract: while a color keeps doing that job,
     changing it is one line. 178 literals across 22 files became those tokens. What is left is
     left on purpose and says so where it stands: a one-off tint no role names (invent a token
-    when a second place wants it, not before), a shadow, the beta mark's amber, a colour handed
+    when a second place wants it, not before), a shadow, the beta mark's amber, a color handed
     to an SVG attribute or parsed as hex from TypeScript — `var()` reaches neither —
     and `ansi.ts`'s sixteen, which are a terminal's slots and not this app's looks.
 12. **A control a finger can hit is at least 24px** (`reachable.test.mjs` holds every button that opens a
@@ -242,7 +242,7 @@ writing it down.
     24px under a coarse pointer, which is what the box round a pane's title is sized by too).
     24 is a FLOOR, not a value (da-kc5cr): the day strip's grip and freeze are 26 on either
     pointer, because a strip control floats inside a drawn picture with no neighbour to reach
-    over. A pane badge cannot follow it: it is centred on its pane's outline and hangs half its
+    over. A pane badge cannot follow it: it is centered on its pane's outline and hangs half its
     box into the 8px gap between panes (`BORDER`), so on a mouse it is `--row`'s 16, the largest
     that reaches the neighbour by nothing, and grows to 24 only where a finger needs it — the
     4px it then reaches over is a box nobody sees. THE BOX AND
@@ -350,7 +350,7 @@ writing it down.
     --shard N/M` (or `DATUM_TEST_SHARD=N/M`) takes the sorted `tests/*.test.mjs` by
     `index % M === N - 1` and prints what it took, and GitHub's Web job runs four of those
     (da-buqa — 60 files at ~26 minutes had outgrown one 4-core runner's 30-minute cap, so main
-    was red-or-cancelled for a day and every push deployed blind). Two things follow: **no file
+    was red-or-canceled for a day and every push deployed blind). Two things follow: **no file
     may depend on another file having run** — shard 3 does not see shard 1's database — and a
     file that grows past the per-file budget (300 s since 2026-09-16, `--test-timeout` in
     `test.mjs`, one number for every workflow) is still its own loud failure, not something a

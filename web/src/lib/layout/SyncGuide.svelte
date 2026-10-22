@@ -53,7 +53,7 @@
 			in the other device's browser.
 		</li>
 		<li>
-			The other device asks <b class="ui">Join a sync chain?</b> Give it a name you will recognise and press
+			The other device asks <b class="ui">Join a sync chain?</b> Give it a name you will recognize and press
 			<b class="ui">Join</b>.
 		</li>
 		<li>Each device now lists the other. Press <b class="ui">Done</b> on the first to put the QR away.</li>

@@ -8,7 +8,7 @@ to. A reader meets these in alias bodies, in error messages (`unbalanced
 nowhere to look them up.
 
 A token lives in one of four places, and that is how this page is
-organised:
+organized:
 
 1. as a **whole argv token** — whitespace on both sides, or it is not that
    token at all;

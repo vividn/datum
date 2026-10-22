@@ -73,7 +73,7 @@ pub fn compute_states(db: &Db, field: &str) -> Result<JsonValue> {
     Ok(json!({ "field": field, "states": rows }))
 }
 
-/// The table: `state  entries  last used  colour  description`, an
+/// The table: `state  entries  last used  color  description`, an
 /// undeclared state saying so where a declared one has its description.
 /// `start`: the field's verb is start, whose `true` / `false` are its own.
 pub fn format_states(listing: &JsonValue, start: bool) -> String {
@@ -114,7 +114,7 @@ pub fn format_states(listing: &JsonValue, start: bool) -> String {
         })
         .collect();
     format_grid(
-        &["state", "entries", "last used", "colour", "description"],
+        &["state", "entries", "last used", "color", "description"],
         &rows,
     )
 }

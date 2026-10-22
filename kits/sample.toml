@@ -1,7 +1,7 @@
 [kit]
 name = "sample"
 version = "0.1"
-description = "Specs, aliases, a view and a command for the fields the web's DEBUG seed writes (da-1mkej): colours, dayview placement and glyphs, so the sample week draws like a configured datum. The DEBUG widget installs it with `kit install - --yes` and removes it with `kit uninstall sample`; neither touches an entry."
+description = "Specs, aliases, a view and a command for the fields the web's DEBUG seed writes (da-1mkej): colors, dayview placement and glyphs, so the sample week draws like a configured datum. The DEBUG widget installs it with `kit install - --yes` and removes it with `kit uninstall sample`; neither touches an entry."
 
 # Top to bottom in the dayview: the night, the mood, the working day and
 # its project just under it, time away from the desk, then the two drinks.

@@ -4,7 +4,7 @@
 > the v=19 schema (`start_time` + `end_time` + `value`). The **da-5ns**
 > time-shape pivot replaced that with `occur_time` + `state` + `dur` +
 > `following_state` and a stored five-verb classifier. Column names and
-> SQL fragments below refer to the pre-pivot shape; the *behaviour* still
+> SQL fragments below refer to the pre-pivot shape; the *behavior* still
 > applies, but the SQL must be re-projected onto the v=20 columns when
 > referencing this doc. A v3-aligned rewrite is filed as follow-up
 > (out-of-scope for sub-bead 8).
@@ -133,7 +133,7 @@ either 1 event (`start`/`switch` with no `end_time`, `stop`, `occur`) or
   verb's intrinsic semantics.
 * datum emits "hole" blocks when `data.dur` is negative (corrective rows
   that flip state back via negative durations). daydumb doesn't synthesise
-  those; R3 keeps the pre-R3 behaviour.
+  those; R3 keeps the pre-R3 behavior.
 * `add` entries never surface (map/reduce framework vs SQL both skip them).
 
 **Tests:** `state_change::tests::state_change_view_emits_transitions`, `state_change_view_skips_tombstoned_and_noteonly`, `state_change_pushes_field_filter`.

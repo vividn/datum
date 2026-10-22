@@ -61,7 +61,7 @@ Both runtimes load one spec file, `specs/my_specs.toml`: v2 reads it as
 each fixture (`tests/text_goldens.rs`), and `tests/colors.rs` reads its
 spec colors from it (`src/specs.rs`). It is v2's own
 `my_specs.example.toml` at the pinned SHA, the seven fields v2's tests
-use. A field it does not name takes each runtime's default (md5 colour and
+use. A field it does not name takes each runtime's default (md5 color and
 position), and the snapshots hold those defaults to agree.
 
 The `parity-runtime` feature is intentionally off by default: a Rust
@@ -134,7 +134,7 @@ runs the same fixture through daydumb and compares what the two DRAW,
 not their bytes:
 
 * **text** (`get`, `tail`) becomes, per row, its characters with a
-  `⟨fg=… bg=…⟩` mark wherever the style changes. v2 resets a colour with
+  `⟨fg=… bg=…⟩` mark wherever the style changes. v2 resets a color with
   `\e[39m`/`\e[49m` and daydumb with `\e[0m`; on screen they are the same.
   daydumb's hids are masked as v2's were at capture.
 * **SVG** (`dayview`) becomes one line per drawn shape — tag, absolute
@@ -238,7 +238,7 @@ following are deliberate divergences and **not** regressions:
   extension. The MD5 fallback path is parity; the named-hue extension
   is documented in `crates/datum-core/src/kit_color.rs` and not
   exercised by parity goldens.
-* **`null` vs `IGNORED`.** Datum's "null" state branch (`#888888` grey)
+* **`null` vs `IGNORED`.** Datum's "null" state branch (`#888888` gray)
   is renamed to `IGNORED` in daydumb (`crates/datum-commands/src/render/colors.rs`).
   The color value (`#888888`) is identical; the *name* differs. Parity
   goldens assert the color, not the name.
@@ -253,7 +253,7 @@ following are deliberate divergences and **not** regressions:
 
 * **`nowview` at an instant.** Datum's nowview always ends at now
   (`nowviewCmd.ts` takes no time argument). Daydumb's takes the shared
-  time flags (`-t -d -q -y -z`, da-5flt) and centres the window on the
+  time flags (`-t -d -q -y -z`, da-5flt) and centers the window on the
   instant they name, its yellow now-line drawn only where now falls
   inside it. With no time flag the two agree.
 

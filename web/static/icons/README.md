@@ -31,10 +31,10 @@ Two things to know about them:
   `icon-512-maskable.png` are enlargements — resampled smoothly, but they
   carry no detail the source did not have. A larger source from vividn would
   need no change other than the copy and the run above.
-- **The maskable pair is padded.** The artwork sits in the centre 80% and the
+- **The maskable pair is padded.** The artwork sits in the center 80% and the
   margin is the manifest's `background_color`, `#0a0a1a`. Android masks the
   full square to a shape of its own choosing, and the padding is what keeps
-  it from cutting into the picture. `build-icons.py` holds the same colour as
+  it from cutting into the picture. `build-icons.py` holds the same color as
   a constant; if the manifest's background changes, change it there too.
 
 There is no `favicon.ico`. Every browser the app supports reads a PNG icon,

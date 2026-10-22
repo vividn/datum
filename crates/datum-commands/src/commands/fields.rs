@@ -378,7 +378,7 @@ mod tests {
         assert_eq!(
             listing[0]["state_colors"]["happy"],
             state_rgb("happy", None).hex(),
-            "a colourless state hashes its own name, not the field's colour"
+            "a colorless state hashes its own name, not the field's color"
         );
         assert_ne!(listing[0]["state_colors"]["happy"], listing[0]["color"]);
     }

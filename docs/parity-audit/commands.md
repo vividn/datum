@@ -294,7 +294,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   content-hash to dedupe.
 - **Tests in datum not in daydumb:** 4 tests. `restore_cmd.rs` covers
   JSONL + tar.gz paths.
-- **Ideas / cleanup:** wire up a `--dry-run` to mirror the behaviour
+- **Ideas / cleanup:** wire up a `--dry-run` to mirror the behavior
   we already give `db v2import`.
 
 ### grep

@@ -46,7 +46,7 @@ One-line summaries of the model:
   `tracked`/`ignored`. `TRACKED` is a different thing wearing the same
   word: the OFF state `datum track` writes on a field of any verb,
   "declared, nothing logged yet", which reads as `false` everywhere but
-  the printed text, where `tail` draws it in grey. It is not what makes
+  the printed text, where `tail` draws it in gray. It is not what makes
   a field tracked, and no row carrying it is ever required.
 - **Slug vs. hid** — `slug` is the human-readable id (`mood:2026-04-29T09:15Z`).
   `hid` is the short hash you see in `datum tail`; both resolve to the

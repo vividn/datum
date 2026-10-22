@@ -100,7 +100,7 @@ pub fn parse_matcher_token(tok: &str) -> Result<Option<Matcher>, String> {
         }
     }
     Err(format!(
-        "unrecognised matcher operator in token '{tok}' — expected one of =, !=, >, <, >=, <=, ~ (or =eq= / =ne= / =gt= / =lt= / =gte= / =lte= / =re=)"
+        "unrecognized matcher operator in token '{tok}' — expected one of =, !=, >, <, >=, <=, ~ (or =eq= / =ne= / =gt= / =lt= / =gte= / =lte= / =re=)"
     ))
 }
 

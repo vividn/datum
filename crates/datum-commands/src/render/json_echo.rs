@@ -310,7 +310,7 @@ mod tests {
             let doc = doc_for(&entry, Some(&registry), &RenderContext::default());
             assert_ne!(
                 doc["field_color"], doc["state_color"],
-                "the state hashes its own name; the field took the spec's colour"
+                "the state hashes its own name; the field took the spec's color"
             );
             let named: Vec<&JsonValue> = doc["info_segments"]
                 .as_array()
@@ -358,7 +358,7 @@ mod tests {
                     .unwrap()
                     .iter()
                     .any(|s| s["text"] == "mood" && s["color"] == "#ff6600"),
-                "the field's segment is painted with the spec's colour: {doc}"
+                "the field's segment is painted with the spec's color: {doc}"
             );
         }
     }

@@ -94,7 +94,7 @@ The workhorse: turns the raw `data` positional list + `-k/-K/-R/-S/-C/-c
 5. **`-b/--base-data`** — a `relaxed-json` object merged at the bottom of
    the result.
 6. **Remainder handling** —
-   - `-R <key>` routes unrecognised positional values to `<key>` (array).
+   - `-R <key>` routes unrecognized positional values to `<key>` (array).
    - `-S/--string-remainder` joins remainder as space-separated string.
      Supplied alone (no `-R`/`-C`/`-l`), it also infers the lenient
      `extra_data` bucket as the destination.
@@ -560,7 +560,7 @@ Deliberately *not* carried forward from datum:
   the generated aliases are addressable via both `datum_parse::alias`
   and the DB.
 - **`onAmbiguous` unification.** Right now daydumb handlers choose
-  their own ambiguity behaviour. Centralising on a single
+  their own ambiguity behavior. Centralizing on a single
   `OnAmbiguous` enum (per `quickIdArg.ts`) simplifies `get`, `del`,
   `edit`, `retime`, `update`, and the new D5 conflict-queue path.
 - **`-b/--base-data` JSON seed.** Low user demand but cheap to add

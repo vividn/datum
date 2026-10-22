@@ -35,6 +35,7 @@ a top-level `migrations/` folder.)
 2. **Local first** — all data stored on device. Network only for sync.
 3. **End-to-end sync** — copies sync peer to peer (Easy Sync, over iroh), and a relay only forwards traffic it cannot read. Never put decryption logic on a relay.
 4. **Flexible data model** — both freeform and schema-defined data must work without friction.
+5. **American spelling** in everything that lands in the repo: user-facing text, docs, help, error messages, commit messages, new code and comments — color, center, gray, behavior, practice (verb and noun), license (noun), canceled, organize, recognize, favorite (vividn, 2026-10-22). Input stays tolerant: `--colour` is read as `--color`, and `grey` is a color name.
 
 ## Data model fundamentals
 
@@ -679,9 +680,9 @@ binary.
   scroll (text and pills are ONE strip in one scrollport, `.field` and
   `.run` in Prompt.svelte); the output is the last command's result as one
   section per document (`+N` opens a modal when they do not fit). The row's
-  items are centred in the whole input section, and folded a command
+  items are centered in the whole input section, and folded a command
   answers with its ACTION words along the bottom of it STARTING AT THE `❯`,
-  in the colour the CLI paints the tag (`Outcome::hex`, carried as
+  in the color the CLI paints the tag (`Outcome::hex`, carried as
   `action_color` on `--show json`), fading, or a red `ERROR` that opens the
   output on a tap. UNDER the bar, below the fold, is the newest-first REPL
   (`$lib/BarLog.svelte`).
@@ -887,7 +888,7 @@ binary.
   rerendering in the web is just for some niceities and being able to
   select." An earlier take drew the edges as WORDS and cost the column its
   alignment (a transitioning row's chip sat 70px right of one that did
-  not); a colour block is ONE CHARACTER WIDE whatever it stands for, so the
+  not); a color block is ONE CHARACTER WIDE whatever it stands for, so the
   raggedness has nowhere to come from. ⛔ `white-space: pre` on the edge is
   load-bearing: the CLI's slot is a painted SPACE, and a lone space in a
   `<td>` collapses to zero width with its background set and nothing drawn.
@@ -953,7 +954,7 @@ cargo test -p datum-core
 cargo test -p datum-cli
 ```
 
-Add tests for new behaviour.
+Add tests for new behavior.
 
 ## Pre-submit
 
