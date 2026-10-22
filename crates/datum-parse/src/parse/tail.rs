@@ -46,7 +46,7 @@ pub(crate) fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
         r.push(lift(|p: &mut TailParsing| &mut p.output, spec));
     }
     // Tail-scoped extras.
-    r.push(local_value(Some('n'), None, |p, v| {
+    r.push(local_value(Some('n'), Some("limit"), |p, v| {
         p.extras.count = Some(parse_usize(v, "-n")?);
         Ok(())
     }));

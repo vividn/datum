@@ -127,7 +127,7 @@ USAGE:
   datum tail [FIELD]
 
 OPTIONS:
-  -n <N>                Number of entries (default 10)
+  -n, --limit <N>       Number of entries (default 10)
   -m, --metric <M>      hybrid|occur|create|modify
   -r, --reverse         Invert ordering
       --column <NAME>   Extra extra_data column (repeatable)
@@ -770,7 +770,7 @@ fn roff_per_command_has_expected_sections() {
     assert!(r.contains(".SH OPTIONS\n"));
     assert!(r.contains(".SH SEE ALSO\n.BR datum (1)\n"));
     // Flag entries render as .TP / .B lines.
-    assert!(r.contains(".TP\n.B \\-n <N>\n"));
+    assert!(r.contains(".TP\n.B \\-n, \\-\\-limit <N>\n"));
     assert!(r.contains("Number of entries (default 10)"));
 }
 
@@ -1541,4 +1541,47 @@ fn help_before_a_command_is_that_commands_page() {
             assert_eq!(format!("{typed:?}"), format!("{help:?}"), "{flag} {page:?}");
         }
     }
+}
+
+/// Every flag a command's page documents by its long name, the parser takes
+/// on that command's line (da-gdhvs: `head`'s page said `-n, --limit`, and
+/// the tail parser it runs had no `--limit`). A subcommand's flags are fed
+/// after the subcommand. Only "unexpected flag" fails: a missing argument or
+/// a bad value means the flag was recognised.
+#[test]
+fn every_documented_flag_is_the_parsers() {
+    use crate::parse::parse_argv;
+
+    let lines = super::COMMANDS.iter().flat_map(|c| {
+        std::iter::once((c.name, None, c.flags)).chain(
+            c.subcommands
+                .iter()
+                .map(|s| (c.name, Some(s.name), s.flags)),
+        )
+    });
+    let (mut tried, mut refused) = (0, vec![]);
+    for (cmd, sub, flags) in lines {
+        for f in flags.iter().filter(|f| !f.long.is_empty()) {
+            let long = format!("--{}", f.long);
+            let mut argv = vec!["datum", cmd];
+            argv.extend(sub);
+            argv.push(&long);
+            if f.takes_value && !f.value_optional {
+                argv.push("1");
+            }
+            argv.push("x");
+            let argv: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
+            tried += 1;
+            if let Err(e) = parse_argv(&argv) {
+                if e.to_string().contains(&format!("unexpected flag: {long}")) {
+                    refused.push(argv.join(" "));
+                }
+            }
+        }
+    }
+    assert!(tried > 200, "only {tried} documented flags tried");
+    assert!(
+        refused.is_empty(),
+        "documented, but the parser refuses: {refused:#?}"
+    );
 }

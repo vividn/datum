@@ -547,7 +547,7 @@ const NOWVIEW_FLAGS: &[FlagSpec] = &[
 const TAIL_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         short: Some('n'),
-        long: "",
+        long: "limit",
         takes_value: true,
         value_hint: Some("N"),
         value_optional: false,
