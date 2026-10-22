@@ -22,6 +22,10 @@ use serde::{Deserialize, Serialize};
 
 /// A map further behind the base than this is too old to trust.
 const MAX_BEHIND: usize = 10;
+/// The branch the map is made on. An integration branch's freshness is
+/// measured at the staging commit it was last synced from, so its own
+/// commits are not staleness (da-47l15).
+const STAGING: &str = "origin/staging";
 /// The cohorts: ci.yml's two nextest steps.
 const COHORTS: [&str; 2] = ["workspace", "e2e-full"];
 /// The tests that read README.md and docs/ as data, which coverage cannot
@@ -382,18 +386,36 @@ fn select(map_path: &Path, base: &str, out: &Path) -> Result<()> {
     println!("test map of {}: {} tests", map.commit, map.tests.len());
 
     let mut reasons = Vec::new();
-    if !git_ok(&["merge-base", "--is-ancestor", &map.commit, "HEAD"]) {
+    let synced = Command::new("git")
+        .args(["merge-base", base, STAGING])
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let at = match synced {
+        Some(sha) if sha != git(&["rev-parse", base])?.trim() => {
+            println!("{base} left {STAGING} at {sha}: the map is measured there");
+            sha
+        }
+        Some(_) => base.to_string(),
+        None => {
+            println!("no merge-base of {base} and {STAGING}: the map is measured at {base}");
+            base.to_string()
+        }
+    };
+    if !git_ok(&["merge-base", "--is-ancestor", &map.commit, &at]) {
         reasons.push(format!(
-            "the map's commit {} is not an ancestor of HEAD",
+            "the map's commit {} is not an ancestor of {at}",
             map.commit
         ));
     } else {
-        let behind: usize = git(&["rev-list", "--count", &format!("{}..{base}", map.commit)])?
+        let behind: usize = git(&["rev-list", "--count", &format!("{}..{at}", map.commit)])?
             .trim()
             .parse()?;
         if behind > MAX_BEHIND {
             reasons.push(format!(
-                "the map is {behind} commits behind {base} (more than {MAX_BEHIND})"
+                "the map is {behind} commits behind {at} (more than {MAX_BEHIND})"
             ));
         }
     }
