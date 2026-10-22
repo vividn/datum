@@ -22,9 +22,12 @@
 	How many rows, and which, is `tail -w`'s answer (da-lan0): the pane's
 	height decides the count — `n = ⌊(box − header) / row⌋`, exactly what
 	fits and nothing else (da-qrc6, overriding da-zfkx's floor of ten), so
-	a taller pane shows more of the past, a short one fewer, and neither a
-	gap nor a scrollbar at rest; a box too short for one row shows the
-	header alone — and the listing is `tail -n <n>`. The header is pinned
+	a taller pane shows more of the past, a short one fewer, and no gap at
+	rest; a box too short for one row shows the header alone. The listing
+	is `tail -n <n + a page>`: the screen, and a page above it already
+	held, so the first scroll up moves at once (da-gtk48, vividn: "tail
+	should already have more loaded from the very beginning and then
+	scrolling should feel completely natural"). The header is pinned
 	(a sticky `thead`) as `tail -w` pins it, so it is there at every scroll
 	position. Scrolling up asks for the page above it long before the
 	reader gets there — while all but a screen of the last page is still
@@ -58,10 +61,13 @@
 	goes first, then `_n` (da-kk0d) — the two a row is also reached by
 	(a tap on it), and the two that broke `field` and `state` mid-word on
 	a phone. Too narrow is measured, not written down: a second hidden
-	probe draws every held row at its narrowest with words whole, and the
-	widest set of columns whose widths the box holds is the one drawn. The
-	probe draws every column whichever are shown, so what it says never
-	depends on the decision.
+	probe draws the screen's rows at their narrowest with words whole, and
+	the widest set of columns whose widths the box holds is the one drawn.
+	The probe draws every column whichever are shown, so what it says never
+	depends on the decision; and only the screen's rows, as the listing
+	last replaced it, so a page landing never takes a column away
+	(da-gtk48: an older row too wide for the box took `hid` mid-scroll).
+	The widths the table lays out then are held (`hold`) while rows land.
 -->
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
@@ -124,6 +130,11 @@
 	let headers: Record<string, string> = {};
 	/** Oldest first, newest at the bottom. */
 	let rows: Shown[] = [];
+	/** The rows of the screen as last replaced: what the width probe decides the columns by (da-gtk48). */
+	let probed: Shown[] = [];
+	/** The columns' widths, held while rows arrive, and the box width they were measured in; null lays them out afresh. */
+	let widths: Record<string, number> | null = null;
+	let widthsIn = 0;
 	let error = '';
 	/** How many reads have been started, and the newest one on screen. */
 	let started = 0;
@@ -214,6 +225,7 @@
 		if (next === field) return;
 		field = next;
 		rows = [];
+		probed = [];
 		exhausted = false;
 		unseen = false;
 		away = false;
@@ -259,10 +271,11 @@
 	 */
 	function redraw(of: number, asked: number): void {
 		if (!box || !fit || !thead || !tbody || of !== drawn.epoch) return;
-		const shown = tbody.rows.length;
+		// The screen is the newest `asked`; the rows above it are history.
+		const shown = Math.min(tbody.rows.length, asked);
 		let room = box.height - thead.getBoundingClientRect().height;
 		let fits = 0;
-		for (const tr of [...tbody.rows].reverse()) {
+		for (const tr of [...tbody.rows].slice(-shown).reverse()) {
 			const h = tr.getBoundingClientRect().height;
 			if (h > room + 0.5) break;
 			room -= h;
@@ -313,6 +326,27 @@
 		if (fits === dropped) return;
 		dropped = fits;
 		drawn = { ...drawn, fits: 0, over: Infinity };
+		await tick();
+	}
+
+	/**
+	 * Hold the columns at the widths the table lays them out at now, so
+	 * rows landing above the reader lay out in them and no column moves
+	 * under them (da-gtk48). Measured `again` when the screen is replaced,
+	 * and when the box's width changed or a cell no longer fits its column. The
+	 * state column takes what the others leave. Read off the drawn header, not
+	 * the width probe: the probe says which columns fit, at their narrowest;
+	 * these are the widths the table gave them.
+	 */
+	async function hold(again: boolean): Promise<void> {
+		const over = () => [...(tbody?.querySelectorAll('td') ?? [])].some((td) => td.scrollWidth > td.clientWidth + 0.5);
+		if (!again && widths && box?.width === widthsIn && !over()) return;
+		widths = null;
+		await tick();
+		const ths = thead?.rows[0]?.cells;
+		if (!ths) return;
+		widths = Object.fromEntries([...ths].map((th) => [th.dataset.key, th.getBoundingClientRect().width]));
+		widthsIn = box?.width ?? 0;
 		await tick();
 	}
 
@@ -419,7 +453,9 @@
 	async function refresh(count: number, _epoch: number, force = false): Promise<void> {
 		const started_at = ++started;
 		const ask = JSON.stringify([count, _epoch, field]);
-		if (force || asked?.with !== ask) asked = { with: ask, listing: tailListing({ count, ...(field ? { field } : {}) }, key) };
+		// The screen and a page above it (da-gtk48): the first scroll up moves at once.
+		if (force || asked?.with !== ask)
+			asked = { with: ask, listing: tailListing({ count: count + pageSize(count), ...(field ? { field } : {}) }, key) };
 		const mine = asked;
 		let table: { rows: TailRow[]; columns: TailColumn[] };
 		try {
@@ -452,9 +488,11 @@
 			away = false;
 			extra = 0;
 			rows = page;
+			probed = page.slice(-count);
 			adopt(table.columns, true);
 			unseen = false;
 			await decide();
+			await hold(true);
 			// The screen as drawn can change the room under it; pinned is
 			// pinned under that room, not the one before it.
 			redraw(_epoch, count);
@@ -480,6 +518,7 @@
 			}
 			if (fresh) unseen = true;
 			await decide();
+			await hold(false);
 			await keep(a);
 		}
 	}
@@ -509,7 +548,7 @@
 					rows = rows.slice(0, CAP);
 					unseen = true;
 				}
-				await decide();
+				await hold(false);
 				await keep(a);
 				if (end > DRAW) await new Promise((resolve) => setTimeout(resolve));
 			}
@@ -607,7 +646,7 @@
 			<div class="cell {key}" data-key={key}><AnsiText spans={ansiSpans(headers[key] ?? key)} /></div>
 		{/each}
 	</div>
-	{#each rows as row (row.hid)}
+	{#each probed as row (row.hid)}
 		<div class="tr">
 			{#each keys as key (key)}
 				<div class="cell {key}">
@@ -626,7 +665,12 @@
 {:else if rows.length === 0}
 	<p class="quiet">{empty}</p>
 {:else}
-	<table>
+	<table class:held={widths !== null}>
+		<colgroup>
+			{#each cols as key (key)}
+				<col style:width={widths && key !== 'state' ? `${widths[key]}px` : null} />
+			{/each}
+		</colgroup>
 		<thead bind:this={thead}>
 			<tr>
 				{#each cols as key (key)}
@@ -685,6 +729,11 @@
 		border-collapse: collapse;
 		font: inherit;
 		text-align: left;
+	}
+
+	/* At the widths `hold` measured: a row landing does not move a column. */
+	table.held {
+		table-layout: fixed;
 	}
 
 	.probe {

@@ -181,29 +181,19 @@ describe('a narrow tail gives up hid, then _n', () => {
 			await paneWidth(page, wide);
 			await drawsKeys(page, ALL);
 
-			// Page the rows above in until three screens are held, then
-			// scroll to the middle: scrolled up, so a resize keeps the
-			// place, not the live end. A gesture, repeated as a reader
-			// would (da-jujxi): the first screen fits its box exactly, so
-			// only the wheel pages it, the place a page keeps IS the live
-			// end, and a refresh landing then drops the page in flight or
-			// pins over it.
-			const screen = await page.locator(`${TAIL} tbody tr`).count();
-			await until(
-				async () => {
-					const b = await page.locator(`${TAIL} .body`).boundingBox();
-					await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
-					await page.evaluate((sel) => (document.querySelector(`${sel} .body`).scrollTop = 0), TAIL);
-					await page.mouse.wheel(0, -120);
-					await page.waitForFunction(() => window.__datumInflight === 0);
-					return page.evaluate((sel) => {
+			// The whole log is held from the first listing, the page above
+			// the screen with it (da-gtk48), and is three screens and more:
+			// scroll to the middle, scrolled up, so a resize keeps the
+			// place, not the live end.
+			const held = await until(
+				() =>
+					page.evaluate((sel) => {
 						const body = document.querySelector(`${sel} .body`);
-						const { scrollTop, scrollHeight, clientHeight } = body;
-						return { rows: body.querySelectorAll('tbody tr').length, scrollTop, scrollHeight, clientHeight };
-					}, TAIL);
-				},
-				(seen) => seen.rows >= 3 * screen
+						return { rows: body.querySelectorAll('tbody tr').length, scrollHeight: body.scrollHeight, clientHeight: body.clientHeight };
+					}, TAIL),
+				(seen) => seen.rows === 60
 			);
+			assert.ok(held.scrollHeight >= 3 * held.clientHeight, `the log is not three screens: ${JSON.stringify(held)}`);
 			// The scroll event lands on a frame: let it, before the resize.
 			await page.evaluate(async (sel) => {
 				document.querySelector(`${sel} .body`).scrollTop = 200;
