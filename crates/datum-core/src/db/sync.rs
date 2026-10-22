@@ -112,6 +112,7 @@ struct Invocation {
 }
 
 thread_local! {
+    /// Each parse sets `raw`; the client and `origin` outlive a REPL's lines.
     static INVOCATION: RefCell<Invocation> = RefCell::new(Invocation::default());
 }
 
@@ -242,10 +243,8 @@ struct Endpoint {
 thread_local! {
     /// The last endpoint read, by its secret: deriving the public key is
     /// the dearest step of signing, and a batch signs thousands of ops.
+    /// Kept across a REPL's lines: a rekey's new secret misses it (da-3f9nl).
     static ENDPOINT: RefCell<Option<(String, Endpoint)>> = const { RefCell::new(None) };
-}
-
-thread_local! {
     /// The file a sync session on this thread works on, and the endpoint id
     /// it began as ([`Db::sync_session_as`]).
     static SESSION: RefCell<Option<(String, String)>> = const { RefCell::new(None) };
@@ -347,7 +346,8 @@ type ReaderKey = (String, i64, Option<String>);
 thread_local! {
     /// Why this copy writes nothing, by its [`ReaderKey`]. Every write
     /// asks, and a batch signs thousands of ops: the fold is dearer than
-    /// the look.
+    /// the look. Kept across a REPL's lines: one changing the key or the
+    /// chain's records misses it (da-3f9nl).
     static READER: RefCell<Option<(ReaderKey, Option<&'static str>)>> = const { RefCell::new(None) };
 }
 

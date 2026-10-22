@@ -706,6 +706,33 @@ fn a_repl_write_under_a_held_lock_is_queued_and_lands_later() {
     env.check_sync_clean(1);
 }
 
+/// A queued line's QUEUED is that line's (da-3f9nl): with the lock let go,
+/// the REPL's next write lands, and says CREATE.
+#[test]
+fn a_repl_write_after_a_queued_one_is_written() {
+    use std::io::Write;
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let holder = env.hold();
+    let mut repl = env.spawn(&[], None);
+    let mut stdin = repl.stdin.take().unwrap();
+    stdin.write_all(b"occur tea\n").unwrap();
+    appears(&env.spool());
+    drop(holder);
+    stdin.write_all(b"occur cake\n").unwrap();
+    drop(stdin);
+    let out = finish(repl, 10, "the REPL");
+    let out = String::from_utf8_lossy(&out.stdout);
+    assert!(out.contains("QUEUED"), "{out}");
+    let cake = out
+        .lines()
+        .find(|l| l.contains("cake:"))
+        .unwrap_or_default();
+    assert!(cake.starts_with("CREATE"), "{out}");
+    let fields: Vec<String> = env.rows().into_iter().map(|r| r.1).collect();
+    assert_eq!(fields, ["coffee", "tea", "cake"]);
+}
+
 /// da-owy96: a change queued before a purge is the old copy's data, so the
 /// purge takes it with the rest and says so, and the next command lands
 /// nothing.

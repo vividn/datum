@@ -57,6 +57,9 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
                 if let Err(e) = run_line(trimmed, &db, &path) {
                     eprintln!("error: {e:#}");
                 }
+                // A dedup is the line's, not the session's: left set, the
+                // REPL exited 11 once any line had deduped (da-3f9nl).
+                datum_commands::args::reset_duplicate_noop();
             }
             Err(ReadlineError::Interrupted) => continue,
             Err(ReadlineError::Eof) => break,

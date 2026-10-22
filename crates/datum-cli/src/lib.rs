@@ -369,10 +369,15 @@ fn ready_to_write(db: &datum_core::db::Db, path: &str, spools: bool) -> Result<(
 /// refuses is [`Locked`], for the caller to [`queue`].
 #[cfg(feature = "native")]
 pub(crate) fn run_on(db: &datum_core::db::Db, path: &str, invocation: Invocation) -> Result<()> {
-    let spools = match &invocation {
-        Invocation::Multi { sides, .. } => sides.iter().any(|c| spools(&c.command)),
-        Invocation::Single(c) => spools(&c.command),
+    let (spools, color) = match &invocation {
+        Invocation::Multi { sides, .. } => (
+            sides.iter().any(|c| spools(&c.command)),
+            sides.first().and_then(|c| c.color),
+        ),
+        Invocation::Single(c) => (spools(&c.command), c.color),
     };
+    // A line's `--color` is that line's, as a run's is the run's (da-3f9nl).
+    let _color = color.map(output::colors::ColorOverride::set);
     let invocation = match invocation {
         Invocation::Single(cli) if spools && asks(&cli.command) => return ask_first(path, cli),
         i => i,
