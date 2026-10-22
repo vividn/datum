@@ -786,21 +786,28 @@ const drawnWidth = ({ page }) =>
 	page.locator('.band[data-days-ago="0"] svg.svg').evaluate((svg) => svg.width.baseVal.value);
 
 /**
- * Two fingers over `box`, `from` px apart, drawn to `to` px apart.
+ * Two fingers over `box`'s middle, `from` px apart, drawn to `to` px apart:
+ * side by side, or one over the other with `axis` 'y'.
  *
  * Through CDP, as every other touch in this suite: Playwright's
  * touchscreen only taps, and a pinch made of mouse events would be a test
  * of the wrong handler. `midway` is called with the fingers still down —
  * the gesture's preview is only on screen until they lift.
  */
-async function pinch(page, box, from, to, midway) {
+async function pinch(page, box, from, to, midway, axis = 'x') {
 	const y = box.y + box.height / 2;
 	const x = box.x + box.width / 2;
 	const cdp = await page.context().newCDPSession(page);
-	const both = (apart) => [
-		{ id: 1, x: x - apart / 2, y },
-		{ id: 2, x: x + apart / 2, y }
-	];
+	const both = (apart) =>
+		axis === 'x'
+			? [
+					{ id: 1, x: x - apart / 2, y },
+					{ id: 2, x: x + apart / 2, y }
+				]
+			: [
+					{ id: 1, x, y: y - apart / 2 },
+					{ id: 2, x, y: y + apart / 2 }
+				];
 	const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
 	try {
 		await at('touchStart', [both(from)[0]]);
@@ -903,6 +910,64 @@ describe('the day strip zooms onto an hour range', () => {
 			// The stamps are beside the pictures, not in them: nothing the
 			// window does moves them.
 			assert.deepEqual(await stampXs(app), stamps, 'the date stamps moved');
+			// And a pinch across the strip is the hours alone (da-hm1j7).
+			assert.equal(await heard(app), 40, 'a sideways pinch moved the day height');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// vividn, 2026-10-22: «vertical zoom should affect the day height in an
+	// appropriate way so you really can just zoom in on data» (da-hm1j7).
+	test('a pinch down the strip makes the days taller, the pinched point staying under the fingers', async () => {
+		await settledRoom(phone, 'tall', async (app) => {
+			const { page } = app;
+			await say(app, { dayHeight: 60 });
+			await settledAt(app, 60);
+			await app.idle();
+			const window = await windowHeard(app);
+			// Over the middle of the stack, across a band: two days' worth
+			// of past and more above and below the fingers.
+			const stack = await page.locator('.stack').boundingBox();
+			const box = { ...(await bandBox(app)), y: stack.y, height: stack.height };
+			const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+			/** The day under the fingers' middle, and how far down it they are. */
+			const under = () =>
+				page.evaluate(({ x, y }) => {
+					const band = document.elementFromPoint(x, y)?.closest('.band');
+					const r = band?.getBoundingClientRect();
+					return band && { day: band.dataset.daysAgo, px: y - r.top, height: r.height };
+				}, mid);
+			const was = await under();
+			assert.ok(was, 'the fingers are not over a band');
+
+			const seen = await app.spyOnRunner();
+			// The fingers drawn twice as far apart down the strip: a day twice as tall.
+			await pinch(
+				page,
+				box,
+				60,
+				120,
+				async () => {
+					assert.deepEqual(askedWidths(await seen()), [], 'the strip re-drew during the pinch');
+					assert.equal(await page.locator('.shot.previewing').count() > 0, true, 'no preview');
+					const now = await under();
+					assert.equal(now.day, was.day, 'another day slid under the fingers');
+					assert.ok(Math.abs(now.height - 120) <= 1, `the preview is ${now.height}px, not 120`);
+					assert.ok(
+						Math.abs(now.px - was.px * 2) <= 2,
+						`${now.px}px down the day, where ${was.px * 2} keeps the point under the fingers`
+					);
+				},
+				'y'
+			);
+
+			// The release writes the height it was previewing, once, and
+			// leaves the hours as they were.
+			await settledAt(app, 120);
+			assert.equal(await heard(app), 120);
+			assert.deepEqual(await windowHeard(app), window, 'a vertical pinch moved the hours');
+			await app.idle();
+			assert.equal((await under()).day, was.day, 'the drawn days moved under the fingers');
 			assert.deepEqual(app.errors, []);
 		});
 	});

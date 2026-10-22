@@ -62,6 +62,18 @@
 	screen are mapped where they are, and the release is what asks datum
 	for the window at its own width, so the lines come back crisp.
 
+	A pinch DOWN the strip is the day height (da-hm1j7, vividn: «vertical
+	zoom should affect the day height in an appropriate way so you really
+	can just zoom in on data»). Each pinch is ONE axis, the DOMINANT one of
+	where the two fingers landed: further apart down the strip than across
+	it is the day height, otherwise the hours — so a sideways pinch never
+	jitters the height, nor a vertical one the window. The height scales
+	with the fingers' vertical spread, clamped to the strip's floor and
+	ceiling, and is previewed exactly as the `+`'s drag is (the bands
+	scaled); the stack scrolls with it so the point of the day the pinch
+	began on stays under the fingers' middle (`keepUnder`), and the height
+	is written once, on the release.
+
 	How many days the box SHOWS: as many as it holds (da-zb0d). The strip
 	fills its container and the pane it sits in is what says how tall it
 	is. How many days the stack HOLDS is a second number (da-bewc): a
@@ -85,7 +97,8 @@
 	belongs to whom is written down before the code:
 
 	  down on a band
-	    ├─ two fingers ────────────────────► PINCH: the hour window (da-ukcf)
+	    ├─ two fingers, side by side ──────► PINCH: the hour window (da-ukcf)
+	    ├─ two fingers, one over the other ► PINCH: the day height (da-hm1j7)
 	    └─ one finger or the mouse
 	         ├─ mostly DOWNWARD, held or not ► the STACK's scroll, never ours
 	         ├─ sideways, zoomed in ────────► PAN: the hour window follows the
@@ -1028,23 +1041,39 @@
 		return box && box.width > 0 ? box : null;
 	}
 
-	/** Let go of the gesture: the window it was previewing becomes the ask. */
+	/**
+	 * Let go of the gesture: the window it was previewing becomes the ask,
+	 * or the day height a vertical pinch was previewing is written.
+	 */
 	function commit(): void {
 		const next = live;
+		const tall = pinching?.axis === 'y';
 		pinching = null;
+		if (tall) return drop();
 		if (next) setWindow(next);
 		live = null;
 	}
 
-	/** The fingers down on the strip, by pointer id, and their x. */
-	const fingers = new Map<number, number>();
-	/** The pinch in hand: where it began, and the band it began over. */
-	let pinching: { window: [number, number]; apart: number; mid: number; box: DOMRect } | null =
-		null;
+	/** The fingers down on the strip, by pointer id, and where they are. */
+	const fingers = new Map<number, { x: number; y: number }>();
+	/**
+	 * The pinch in hand: its axis, where it began, the band it began over,
+	 * and — a vertical one — the band under the fingers and how far down
+	 * it they were, which is the point kept under them (`keepUnder`).
+	 */
+	let pinching: {
+		axis: 'x' | 'y';
+		window: [number, number];
+		apart: number;
+		mid: number;
+		box: DOMRect;
+		under: Element | null;
+		down: number;
+	} | null = null;
 
-	const xs = () => [...fingers.values()];
-	const spread = () => Math.abs(xs()[0] - xs()[1]);
-	const middle = () => (xs()[0] + xs()[1]) / 2;
+	const at = () => [...fingers.values()];
+	const spread = (axis: 'x' | 'y' = 'x') => Math.abs(at()[0][axis] - at()[1][axis]);
+	const middle = (axis: 'x' | 'y' = 'x') => (at()[0][axis] + at()[1][axis]) / 2;
 	/**
 	 * How far apart two fingers must be before their spread is read as a
 	 * zoom. Closer than this, the pair is a two-finger PAN: dividing by a
@@ -1078,7 +1107,7 @@
 			listen(true);
 			return begin(event);
 		}
-		fingers.set(event.pointerId, event.clientX);
+		fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 		if (fingers.size === 1) {
 			listen(true);
 			return begin(event);
@@ -1092,12 +1121,51 @@
 		if (!box) return;
 		// A wheel's pause commits it; the fingers are the gesture now.
 		clearTimeout(settling);
-		pinching = { window: view, apart: spread(), mid: middle(), box };
+		// The axis is the pair's: two fingers further apart down the strip
+		// than across it pinch the day height, and otherwise the hours.
+		const axis = spread('y') > spread('x') ? 'y' : 'x';
+		const found = axis === 'y' ? document.elementFromPoint(middle('x'), middle('y'))?.closest('.band') : null;
+		const under = found && stackEl?.contains(found) ? found : null;
+		const was = under?.getBoundingClientRect();
+		pinching = {
+			axis,
+			window: view,
+			apart: spread(axis),
+			mid: middle(),
+			box,
+			under,
+			down: was ? (middle('y') - was.top) / was.height : 0
+		};
+	}
+
+	/**
+	 * The vertical pinch: the day height scaled by the fingers' spread, as
+	 * the handle's drag previews one (`sizing`), with the day under the
+	 * fingers kept under them.
+	 */
+	function pinchHeight(): void {
+		const { apart } = pinching!;
+		const by = apart >= PINCH_FLOOR ? spread('y') / apart : 1;
+		const height = clamp(Math.round(day * by), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
+		sizing = { x: 0, y: 0, height, width: labelWidth, axes: 'y' };
+		void tick().then(keepUnder);
+	}
+
+	/**
+	 * Scroll the stack so the point the pinch began on is under the
+	 * fingers' middle again, at the height now on screen. A band outside
+	 * the scroller — a pinned today — has nothing to scroll.
+	 */
+	function keepUnder(): void {
+		if (!pinching?.under || !stackEl || fingers.size < 2) return;
+		const band = pinching.under.getBoundingClientRect();
+		stackEl.scrollTop += band.top + pinching.down * band.height - middle('y');
 	}
 
 	function onPointerMove(event: PointerEvent): void {
 		if (fingers.has(event.pointerId)) {
-			fingers.set(event.pointerId, event.clientX);
+			fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+			if (pinching?.axis === 'y' && fingers.size === 2) return pinchHeight();
 			if (pinching && fingers.size === 2) {
 				const { window: was, apart, mid, box } = pinching;
 				const by = apart >= PINCH_FLOOR ? spread() / apart : 1;
