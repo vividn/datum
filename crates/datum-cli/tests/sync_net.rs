@@ -2532,7 +2532,15 @@ fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
     c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
     let joined = c.ok(&["sync", "chain", "connect", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
-    assert!(d.ok(&["sync", "chain", "list"]).contains(&c.id()[..10]));
+    // c joined through b, so d hears of c only from b's `sync run` pushing
+    // to it afterwards.
+    eventually("d's chain list naming c", || {
+        let members = d.ok(&["sync", "chain", "list"]);
+        members.contains(&c.id()[..10]) || {
+            eprintln!("{members}");
+            false
+        }
+    });
 }
 
 // ─── Members one inviter admitted (da-fly3f) ────────────────────────────────
