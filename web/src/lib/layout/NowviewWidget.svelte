@@ -485,12 +485,12 @@
 	 * The selection an instant in this window is: RELATIVE while the window
 	 * is on now — the axis is, so a `-q` stays on its gridline and the entry
 	 * is logged that long before the Enter — and absolute once it is not.
-	 * The relative one is to the window's own step (`tapStep`): seconds on
-	 * a window of a few minutes, whole minutes from 30 up.
+	 * Either is to the window's own step (`tapStep`): seconds on a window
+	 * of a few minutes, whole minutes from 30 up.
 	 */
 	const selection = (ms: number, span?: number) =>
 		offNow
-			? { at: new Date(ms), span, from: 'nowview' as const }
+			? { at: new Date(ms), step: grain, span, from: 'nowview' as const }
 			: { rel: (Math.round((nowMs() - ms) / 1000 / grain) * grain) / 60, span, from: 'nowview' as const };
 
 	/** A range between two instants: it ENDS at the later, because a duration runs back. */

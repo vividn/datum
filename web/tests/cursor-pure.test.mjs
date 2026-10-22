@@ -12,7 +12,8 @@ import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource(import.meta.url);
-const { cursorArg, dateLabel, pillSections, timeArg, timeArgAt } = await import('../src/lib/cursor.ts');
+const { cursor, cursorArg, dateLabel, pillSections, pointAt, timeArg, timeArgAt } = await import('../src/lib/cursor.ts');
+const { get } = await import('svelte/store');
 
 describe('the date a pill says', () => {
 	test('-y and -yy count calendar days, across a new year before the year is spelled', () => {
@@ -48,6 +49,57 @@ describe('the argv a selection puts on the line', () => {
 	test('a range dragged on the strip says its end as end_time=', () => {
 		assert.equal(cursorArg({ at, span: 90, from: 'daystrip' }, now), 'end_time=2026-09-09T09:00');
 		assert.equal(cursorArg({ at, span: 90, from: 'nowview' }, now), '-t 2026-09-09T09:00');
+	});
+});
+
+// da-9f8ne. A nowview window of a few minutes says its taps to five
+// seconds (da-q4z88, `tapStep`), panned off now as much as on it, so the
+// absolute `-t` says seconds the CLI reads: `-t 14:03:20` («datum help
+// time»: «-t 15:13:45  with seconds»), dated and with an offset alike.
+describe('an instant off a whole minute', () => {
+	const now = new Date(2026, 8, 10, 14, 5);
+
+	test('-t says its seconds, today and dated, and reads back as itself', () => {
+		const today = new Date(2026, 8, 10, 14, 3, 20);
+		const before = new Date(2026, 8, 9, 9, 0, 5);
+		assert.equal(timeArg(today, now), '14:03:20');
+		assert.equal(timeArg(before, now), '2026-09-09T09:00:05');
+		assert.equal(timeArg(new Date(2026, 8, 10, 14, 3), now), '14:03', 'a whole minute says none');
+		for (const at of [today, before]) assert.equal(timeArgAt(timeArg(at, now), now)?.getTime(), +at);
+	});
+
+	test('the pill says them, and its date pressed away leaves them', () =>
+		assert.deepEqual(pillSections(new Date(2026, 8, 9, 9, 0, 5), now), [
+			{ text: '-y', rest: { text: '-t 09:00:05', sections: [{ text: '09:00:05' }] } },
+			{ text: '09:00:05' }
+		]));
+
+	test("a selection is to the view's step, and to the minute where it says none", () => {
+		const tapped = new Date(2026, 8, 10, 14, 3, 21, 400);
+		pointAt({ at: tapped, step: 5, from: 'nowview' });
+		assert.equal(cursorArg(get(cursor), now), '-t 14:03:20');
+		pointAt({ at: tapped, step: 60, from: 'nowview' });
+		assert.equal(cursorArg(get(cursor), now), '-t 14:03');
+		pointAt({ at: tapped, from: 'daystrip' });
+		assert.equal(cursorArg(get(cursor), now), '-t 14:03', 'the day strip and the dayview, as before');
+		pointAt(null);
+	});
+
+	// vremya on PR #1048: `back` floored now to the minute, so a `-t -20s`
+	// taken at 14:05:40 was drawn at 14:04:40 — a whole minute is floored
+	// still, since its pill is whole minutes back from whenever it runs.
+	test("a relative selection's instant is that long before now, to the second", () => {
+		const real = Date.now;
+		Date.now = () => +new Date(2026, 8, 10, 14, 5, 40);
+		try {
+			pointAt({ rel: 20 / 60, from: 'nowview' });
+			assert.equal(+get(cursor).at, +new Date(2026, 8, 10, 14, 5, 20));
+			pointAt({ rel: 7, from: 'nowview' });
+			assert.equal(+get(cursor).at, +new Date(2026, 8, 10, 13, 58));
+		} finally {
+			Date.now = real;
+			pointAt(null);
+		}
 	});
 });
 
@@ -107,8 +159,12 @@ describe('a clock time the day reads twice', () => {
 				const now = new Date(Date.parse(night) + 12 * 3_600_000);
 				const said = new Set();
 				for (let t = Date.parse(night) - 3 * 3_600_000; t < Date.parse(night) + 3 * 3_600_000; t += 60_000) {
+					// And 20 s on, which says its seconds before the offset.
+					for (const at of [t, t + 20_000]) {
+						const arg = timeArg(new Date(at), now);
+						assert.equal(timeArgAt(arg, now)?.getTime(), at, `${arg} for ${new Date(at).toISOString()}`);
+					}
 					const arg = timeArg(new Date(t), now);
-					assert.equal(timeArgAt(arg, now)?.getTime(), t, `${arg} for ${new Date(t).toISOString()}`);
 					if (/[+-]\d\d:\d\d$/.test(arg)) said.add(arg.slice(-6));
 				}
 				// And the repeated stretch was in the window: its offset was said.

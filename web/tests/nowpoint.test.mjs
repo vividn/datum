@@ -286,6 +286,65 @@ describe('a tap on a two-minute window is to the nearest five seconds', () => {
 	});
 });
 
+// da-9f8ne: panned OFF now the selection is absolute, and to the same step.
+describe('a tap on a window panned off now is to the same step, said as a clock', () => {
+	/**
+	 * Pan the window back half of itself, tap where `target` is drawn, and
+	 * run `occur coffee` at the pill it made: the pills and the entry's time.
+	 */
+	async function tapPanned(app, room, history, target) {
+		const { page } = app;
+		await pickOption(page, inRoom(room, 'nowview'), 'history', history);
+		await page.waitForFunction(
+			([sel, ms]) => {
+				const day = document.querySelector(sel);
+				return day && Date.parse(day.dataset.to) - Date.parse(day.dataset.from) <= ms;
+			},
+			[`${NOWVIEW} svg.svg [data-lo]`, 4 * stepMs(history)]
+		);
+		await showBand(app);
+		const g = await geometry(page);
+		const middle = { x: (g.lo + g.hi) / 2, y: g.y };
+		await drag(page, middle, { x: middle.x + (g.hi - g.lo) / 2, y: g.y });
+		await page.locator(`${NOWVIEW} .nowview-jump.right`).waitFor();
+		await app.idle();
+		const panned = await until(
+			() => geometry(page),
+			(n) => n.nowLine === null && n.from <= target && target <= n.to
+		);
+		const x = panned.lo + ((target - panned.from) / (panned.to - panned.from)) * (panned.hi - panned.lo);
+		const near = panned.marks.filter((m) => Math.abs(m.x - x) <= 12);
+		assert.deepEqual(near, [], 'a gridline is near enough to snap the tap to it');
+		await page.mouse.click(x, g.y);
+		const pills = await until(
+			() => pillsOf(page),
+			(seen) => seen.length === 1
+		);
+		assert.match(await barRun(page, 'occur coffee'), /^CREATE /);
+		const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
+		return { pills, logged: Date.parse(coffee.occur_time.utc) };
+	}
+
+	/** A window's length as the ladder spells it, in ms. */
+	const stepMs = (step) => Number(step.slice(0, -1)) * MINUTE;
+
+	test('two minutes: 14:58:21 says -t 14:58:20, and the entry lands there', async () => {
+		await withBand(async (app, room) => {
+			const { pills, logged } = await tapPanned(app, room, '2m', NOW - 98_500);
+			assert.deepEqual(pills, ['time:-t 14:58:20']);
+			assert.equal(new Date(logged).toISOString(), new Date(NOW - 100_000).toISOString());
+		});
+	});
+
+	test('thirty minutes: 14:31:20 is still -t 14:31, as it always was', async () => {
+		await withBand(async (app, room) => {
+			const { pills, logged } = await tapPanned(app, room, '30m', NOW - 28 * MINUTE - 40_000);
+			assert.deepEqual(pills, ['time:-t 14:31']);
+			assert.equal(new Date(logged).toISOString(), new Date(NOW - 29 * MINUTE).toISOString());
+		});
+	});
+});
+
 // ── the keyboard ───────────────────────────────────────────────────────
 //
 // vremya on PR #48: main made `-t 14:30` on Enter and the band's first head

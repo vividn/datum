@@ -78,8 +78,9 @@ const DAY = 24 * 60 * 60_000;
 const pad = (n: number) => String(n).padStart(2, '0');
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-/** The clock time `at` reads on the page's wall. */
-const clock = (at: Date) => `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+/** The clock time `at` reads on the page's wall, with its seconds when it has any. */
+const clock = (at: Date) =>
+	`${pad(at.getHours())}:${pad(at.getMinutes())}${at.getSeconds() ? `:${pad(at.getSeconds())}` : ''}`;
 
 /**
  * The UTC offset `at` must say for its clock time to be read as it, or
@@ -95,8 +96,8 @@ function offset(at: Date): string {
 }
 
 /**
- * `-t` as the CLI parses it, in the page's zone: `HH:MM` today, the
- * dated `YYYY-MM-DDTHH:MM` another day (`-t "YYYY-MM-DD HH:MM"` it
+ * `-t` as the CLI parses it, in the page's zone: `HH:MM` today (`HH:MM:SS`
+ * off a whole minute), the dated `YYYY-MM-DDTHH:MM` another day (`-t "YYYY-MM-DD HH:MM"` it
  * does not read), and dated with its offset when the clock time alone
  * would be read as an earlier instant.
  */
@@ -109,11 +110,11 @@ export function timeArg(at: Date, now = new Date()): string {
 /** The instant `-t <arg>` names, as `timeArg` writes it; `null` if it is not one. */
 export function timeArgAt(arg: string, now = new Date()): Date | null {
 	// With its offset it is ISO, which `Date` reads as the CLI does.
-	if (/^\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d$/.test(arg)) return new Date(arg);
-	const m = /^(?:(\d{4})-(\d\d)-(\d\d)T)?(\d\d):(\d\d)$/.exec(arg);
+	if (/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?[+-]\d\d:\d\d$/.test(arg)) return new Date(arg);
+	const m = /^(?:(\d{4})-(\d\d)-(\d\d)T)?(\d\d):(\d\d)(?::(\d\d))?$/.exec(arg);
 	if (!m) return null;
 	const [y, mo, d] = m[1] ? [+m[1], +m[2] - 1, +m[3]] : [now.getFullYear(), now.getMonth(), now.getDate()];
-	return new Date(y, mo, d, +m[4], +m[5]);
+	return new Date(y, mo, d, +m[4], +m[5], +(m[6] ?? 0));
 }
 
 /** Midnight of the day `at` falls in, for counting calendar days. */
@@ -152,11 +153,18 @@ export function pillSections(at: Date, now = new Date()): PillSection[] {
 	return date === null ? [time] : [{ text: date, rest: { text: `-t ${bare.text}`, sections: [bare] } }, time];
 }
 
-/** To the minute a pill can say — every selection is whole minutes. */
-const toMinute = (at: Date) => new Date(Math.round(at.getTime() / MINUTE) * MINUTE);
+/** To the nearest `step` seconds: a whole minute unless the view says finer. */
+const toStep = (at: Date, step = 60) => new Date(Math.round(at.getTime() / (step * 1000)) * step * 1000);
 
-/** The instant `rel` minutes back from now. */
-const back = (rel: number, now = Date.now()) => new Date(Math.floor(now / MINUTE) * MINUTE - Math.round(rel * MINUTE));
+/**
+ * The instant `rel` minutes back from now, from now floored to the unit
+ * `rel` is in: the minute for whole minutes, the second otherwise, so a
+ * `-t -20s` is drawn 20 s before now and not up to 79.
+ */
+const back = (rel: number, now = Date.now()) => {
+	const unit = Number.isInteger(rel) ? MINUTE : 1000;
+	return new Date(Math.floor(now / unit) * unit - Math.round(rel * MINUTE));
+};
 
 /** Whole minutes, never negative, and 0 read as «none» for a span. */
 const whole = (n: number | undefined) => (n === undefined ? undefined : Math.max(0, Math.round(n)));
@@ -221,14 +229,14 @@ function cursorPills(c: Cursor): Pill[] {
  *
  * `rel` minutes back from now makes it RELATIVE, `at` makes it absolute,
  * and `span` gives it a length ending there. `rel` is rounded to the
- * second (the view that made it has snapped it to its own step,
- * `tapStep`) and the rest to whole minutes here, so nothing downstream
- * has to wonder.
+ * second, and `at` to the `step` seconds the view that made it says
+ * (`tapStep`), a whole minute when it says none; `span` is whole minutes.
+ * So nothing downstream has to wonder.
  */
-export function pointAt(sel: (Partial<Cursor> & { at?: Date }) | null): void {
+export function pointAt(sel: (Partial<Cursor> & { at?: Date; step?: number }) | null): void {
 	if (!sel) return void cursor.set(null);
 	const rel = sel.rel === undefined ? undefined : Math.max(0, Math.round(sel.rel * 60)) / 60;
-	const at = rel === undefined ? sel.at && toMinute(sel.at) : back(rel);
+	const at = rel === undefined ? sel.at && toStep(sel.at, sel.step) : back(rel);
 	if (!at) return void cursor.set(null);
 	const span = whole(sel.span) || undefined;
 	// A selection AT now with no length is not a selection: now is the
@@ -237,7 +245,7 @@ export function pointAt(sel: (Partial<Cursor> & { at?: Date }) | null): void {
 	cursor.set({ at, ...(rel === undefined ? {} : { rel }), ...(span ? { span } : {}), ...(sel.from ? { from: sel.from } : {}) });
 }
 
-/** Point the page at `at`, to the minute the pill can say; `null` clears it. */
+/** Point the page at `at`, to the minute; `null` clears it. */
 export const setCursor = (at: Date | null): void => pointAt(at && { at });
 
 /**
@@ -303,6 +311,6 @@ pills.subscribe((all) => {
 	// a press on it is the press that takes it away — already handled
 	// above. Only the absolute pill's date section leaves something behind.
 	const at = c.rel === undefined && pill.text.startsWith('-t ') ? timeArgAt(pill.text.slice(3)) : null;
-	if (at) pointAt({ ...c, at, rel: undefined });
+	if (at) pointAt({ ...c, at, rel: undefined, step: 1 });
 	else cursor.set(null);
 });
