@@ -34,7 +34,7 @@ use serde_json::Value as JsonValue;
 
 use crate::args::{ShowFlag, StatsArgs, StatsPeriod};
 use crate::commands::field_visuals::state_label;
-use crate::commands::time_bounds::{parse_since, parse_until};
+use crate::commands::time_bounds::{bound_date, parse_since, parse_until};
 use crate::config::resolve_week_start;
 use crate::render::colors::{field_hex, paint, parse_hex, Rgb};
 use datum_parse::time::{format_human_duration, DurationPrecision};
@@ -160,8 +160,9 @@ impl std::fmt::Display for Rate {
 }
 
 /// Entries per day / week / month / year over `span_seconds`: from the
-/// first counted entry to the window's end, and never under a day, so one
-/// entry logged a minute ago is not a thousand a day (da-uv7fu).
+/// window's start (with none, the first counted entry) to its end or now,
+/// and never under a day, so one entry logged a minute ago is not a
+/// thousand a day (da-uv7fu).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frequency {
     pub span_seconds: i64,
@@ -434,7 +435,7 @@ fn field_stats(
         .transpose()?)
     .flatten()
     {
-        return Ok(tally.finish(field, selected_state, args, end));
+        return Ok(tally.finish(field, selected_state, args, start, end));
     }
     let timeline = load_timeline(field, db, start, end)?;
     Ok(rollup(field, selected_state, args, &timeline, start, end))
@@ -590,7 +591,7 @@ fn rollup(
 ) -> StatsResult {
     let mut tally = Tally::default();
     tally.add(timeline, start, end);
-    tally.finish(field, selected_state, args, end)
+    tally.finish(field, selected_state, args, start, end)
 }
 
 /// What a rollup adds up before it is read: each state's time and count,
@@ -640,6 +641,7 @@ impl Tally {
         field: &str,
         selected_state: Option<String>,
         args: &StatsArgs,
+        start: Option<DateTime<Utc>>,
         end: DateTime<Utc>,
     ) -> StatsResult {
         let field = field.to_string();
@@ -740,7 +742,11 @@ impl Tally {
         };
         let (count, secs) = r.subject();
         let timed = r.tracked_duration_seconds > 0;
-        let span = earliest.map(|first| (end.min(now) - first.to_utc()).num_seconds());
+        // A window that names its start is divided by all of it, so seven
+        // named days divide by seven whichever hour the first entry fell at
+        // (da-9hori); one with none from its first counted entry.
+        let from = earliest.map(|first| start.unwrap_or(first.to_utc()));
+        let span = from.map(|from| (end.min(now) - from).num_seconds());
         r.frequency = span.filter(|_| !timed).map(|s| Frequency::new(count, s));
         // How often, so a state no entry logged has no row, in the text or the
         // JSON: an occur's TRACKED (da-795cy) holds time and nothing else
@@ -859,13 +865,14 @@ fn resolve_window(
         );
     }
 
-    // Parsed once, up front: `--until` overrides the end of every branch.
-    let until = args.until.as_deref().map(parse_until).transpose()?;
-
     let since = now - reach - Duration::days(4);
     let mut zones = window_zones(args, db, since, None)?;
     let here = zones.zone_at(now).clone();
     let window = |zones: &ZoneTimeline| -> Result<(Option<DateTime<Utc>>, DateTime<Utc>)> {
+        // `--until` overrides the end of every branch.
+        let until = (args.until.as_deref())
+            .map(|s| bound(s, zones, true))
+            .transpose()?;
         Ok(if let Some(slice) = &args.slice {
             let (s, e) = parse_slice(slice, zones)?;
             (Some(s), until.unwrap_or(e))
@@ -884,7 +891,9 @@ fn resolve_window(
                 (Some(at.utc), until.unwrap_or(through_now))
             }
         } else {
-            let start = args.since.as_deref().map(parse_since).transpose()?;
+            let start = (args.since.as_deref())
+                .map(|s| bound(s, zones, false))
+                .transpose()?;
             (start, until.unwrap_or(through_now))
         })
     };
@@ -1116,6 +1125,19 @@ fn first_of_month(year: i32, month: u32) -> Result<NaiveDate> {
 fn day_window(date: NaiveDate, zones: &ZoneTimeline) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
     let next = date.succ_opt().context("date overflow")?;
     Ok((midnight(zones, date), midnight(zones, next)))
+}
+
+/// `--since` (or, `closes`, `--until`): a bare date is the midnight that
+/// opens (closes) that day in the database's zones, as a slice's is, so
+/// `--since D1 --until D7` is the slice of those seven days (da-9hori).
+fn bound(s: &str, zones: &ZoneTimeline, closes: bool) -> Result<DateTime<Utc>> {
+    match bound_date(s) {
+        Some(date) => {
+            day_window(date, zones).map(|(open, close)| if closes { close } else { open })
+        }
+        None if closes => parse_until(s),
+        None => parse_since(s),
+    }
 }
 
 /// The local date `at` falls on, read in the zone that was in effect then.

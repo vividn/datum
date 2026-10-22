@@ -1318,6 +1318,34 @@ fn an_occur_field_shows_how_often_and_no_time() {
     assert!(states.iter().all(|s| s["state"] != "TRACKED"), "{one}");
 }
 
+/// A window that names seven days divides by seven, wherever on the first
+/// one its first entry fell (da-9hori: 14 cups read 2.1/day, the span
+/// measured from the first cup's 09:00).
+#[test]
+fn a_window_of_named_days_is_the_rates_denominator() {
+    let tmp = tempfile::tempdir().unwrap();
+    for d in 14..=20 {
+        for t in ["09:00", "15:00"] {
+            datum(
+                tmp.path(),
+                &["occur", "coffee", "-d", &format!("2026-10-{d}"), "-t", t],
+            );
+        }
+    }
+    let window = ["--since", "2026-10-14", "--until", "2026-10-20"];
+
+    let text = datum(tmp.path(), &[&["stats", "coffee"][..], &window].concat());
+    let head = text.lines().next().unwrap();
+    assert_eq!(head, "coffee  ·  2/day  ·  14 total since 2026-10-14");
+    let json: serde_json::Value = serde_json::from_str(&datum(
+        tmp.path(),
+        &[&["stats", "coffee", "--json"][..], &window].concat(),
+    ))
+    .unwrap();
+    assert_eq!(json["frequency"]["span_seconds"], 7 * 86_400);
+    assert_eq!(json["frequency"]["per_day"], 2.0);
+}
+
 #[test]
 fn a_field_that_takes_time_keeps_its_time_and_has_no_frequency() {
     let tmp = tempfile::tempdir().unwrap();

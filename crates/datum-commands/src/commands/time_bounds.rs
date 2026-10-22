@@ -99,12 +99,21 @@ fn parse_bound(s: &str, edge: Edge) -> Result<DateTime<Utc>> {
             return Ok(DatumTime::now().utc - dur);
         }
     }
-    if let Some(date) = parse_date(s, TimeCtx::now()).ok().and_then(|d| d.absolute) {
+    if let Some(date) = bound_date(s) {
         return day_edge(date, edge);
     }
     let arg =
         parse_time(s, TimeCtx::now()).map_err(|e| anyhow!("invalid {} '{s}': {e}", edge.flag()))?;
     Ok(TimeBuilder::now().with_time_arg(arg).build().utc)
+}
+
+/// The calendar date a bound names, when it names one: tier 2 of
+/// [`parse_bound`]. `stats` reads it in the database's zones (da-9hori).
+pub(crate) fn bound_date(s: &str) -> Option<NaiveDate> {
+    if !s.starts_with(['+', '-']) && parse_duration(s).is_ok() {
+        return None;
+    }
+    parse_date(s, TimeCtx::now()).ok().and_then(|d| d.absolute)
 }
 
 /// The local-midnight instant that opens or closes `date`.

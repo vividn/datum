@@ -1933,7 +1933,23 @@ what share of its time each state took, over a slice of time.
   datum stats work --week             work this week
   datum stats mood:happy --month      how much of the month was happy
 
--t is where the slice STARTS, as --since is; -d names one whole day.
+-t is where the slice STARTS, as --since is; -d names one whole day, as
+does a bare date to --since or --until: `--since 2026-10-14 --until
+2026-10-20` is those seven days, whole.
+
+A field of moments says how often, its first line:
+  coffee  ·  2/day  ·  14 total since 2026-10-14
+The rate is the count over the slice, from its start (with none, the
+first entry) to its end or now, a day at least, per the shortest of day,
+week, month or year that holds one (for time, an hour). A field that
+takes time says how long:
+  sleep  ·  168h over 14 entries  (52h30m tracked)  ·  7h30m/day
+168h is the slice's time in every state; tracked leaves out off, null
+and IGNORED, and the rate is the tracked time over the slice, so a day
+with none logged counts as none. The next line is the same count or
+tracked time over named periods as of the slice's end (7 d: the last
+seven days). Then one row a state: its time, its share of the tracked
+time (— for one left out), how many entries set it, and its name.
 ";
 
 pub const COMMANDS: &[CommandSpec] = &[
