@@ -133,6 +133,10 @@ use the CLI read [`skills/datum/SKILL.md`](skills/datum/SKILL.md), and [docs/age
 datum isn't taking pull requests yet; issues are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the pre-submit check
 and the repository's layout, and [AGENTS.md](AGENTS.md) is for coding agents working on datum itself.
 
+## Special thanks
+
+Special thanks to Prometheia LLC for financing the development of datum with a grant.
+
 ## License
 
 AGPL-3.0-or-later; see [LICENSE](LICENSE).
