@@ -252,6 +252,40 @@ describe('a tap on the band drops a selection where it fell', () => {
 	});
 });
 
+// ── a short window says seconds ────────────────────────────────────────
+//
+// vividn, 2026-10-22, on a two-minute window: «you still can only use
+// -t -[integer] taps, which is not nearly high enough resolution at this
+// level. you should be able to do 5 seconds at this scale». The 30-minute
+// window's whole minutes are the tests above, unchanged.
+
+describe('a tap on a two-minute window is to the nearest five seconds', () => {
+	test('20 s back says -t -20s, and the entry lands 20 s before the run', async () => {
+		await withBand(async (app, room) => {
+			const { page } = app;
+			await pickOption(page, inRoom(room, 'nowview'), 'history', '2m');
+			// The two-minute picture, asked for and drawn: the one before it
+			// is taken down first, so there is a moment with none.
+			await page.waitForFunction((sel) => {
+				const day = document.querySelector(sel);
+				return day && Date.parse(day.dataset.to) - Date.parse(day.dataset.from) <= 15 * 60_000;
+			}, `${NOWVIEW} svg.svg [data-lo]`);
+			await showBand(app);
+			// 21 s back, which no gridline is near and five seconds rounds to 20.
+			const g = await geometry(page);
+			await page.mouse.click(at(g, 21 / 60).x, g.y);
+			await saysPills(page, ['time:-t -20s']);
+
+			assert.match(await barRun(page, 'occur coffee'), /^CREATE /);
+			const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
+			assert.equal(
+				new Date(Date.parse(coffee.occur_time.utc)).toISOString(),
+				new Date(app.clock.at() - 20_000).toISOString()
+			);
+		});
+	});
+});
+
 // ── the keyboard ───────────────────────────────────────────────────────
 //
 // vremya on PR #48: main made `-t 14:30` on Enter and the band's first head

@@ -111,8 +111,8 @@
 	import { inspectMark, instantOn, msPerPx, selectedTip, timeAxis } from '$lib/hover.js';
 	import { markOf, pressSpent } from '$lib/inspect.js';
 	import { readLanes } from '$lib/lanes.js';
-	import { advance, LONG_MS, SLOP_PX, snapTo, type Mode, type Press } from '$lib/nowpoint.js';
-	import { NOWVIEW_HISTORY, NOWVIEW_STEPS, nowviewSpec, zoomHistory } from '$lib/panes.js';
+	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, type Mode, type Press } from '$lib/nowpoint.js';
+	import { NOWVIEW_HISTORY, NOWVIEW_STEPS, nowviewSpec, stepMinutes, zoomHistory } from '$lib/panes.js';
 
 	/** How far back the window reaches: one of NOWVIEW_STEPS. */
 	export let history = NOWVIEW_HISTORY;
@@ -154,6 +154,8 @@
 	$: up = NOWVIEW_STEPS[i + 1];
 	$: down = NOWVIEW_STEPS[i - 1];
 	$: instant = centre?.arg;
+	/** How finely a tap here says its time, in seconds. */
+	$: grain = tapStep(stepMinutes(NOWVIEW_STEPS[i]));
 
 	/**
 	 * The `-t` the picture on screen was asked for, which is the window's
@@ -483,11 +485,13 @@
 	 * The selection an instant in this window is: RELATIVE while the window
 	 * is on now — the axis is, so a `-q` stays on its gridline and the entry
 	 * is logged that long before the Enter — and absolute once it is not.
+	 * The relative one is to the window's own step (`tapStep`): seconds on
+	 * a window of a few minutes, whole minutes from 30 up.
 	 */
 	const selection = (ms: number, span?: number) =>
 		offNow
 			? { at: new Date(ms), span, from: 'nowview' as const }
-			: { rel: (nowMs() - ms) / 60_000, span, from: 'nowview' as const };
+			: { rel: (Math.round((nowMs() - ms) / 1000 / grain) * grain) / 60, span, from: 'nowview' as const };
 
 	/** A range between two instants: it ENDS at the later, because a duration runs back. */
 	function range(a: number, b: number): void {

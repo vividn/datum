@@ -490,7 +490,7 @@ export const NOWVIEW_STEPS = ['30s', '1m', '2m', '5m', '10m', '15m', '20m', '30m
 export const NOWVIEW_HISTORY = '30m';
 
 /** A step of the ladder as minutes. It reads the ladder's own spellings, no more. */
-function stepMinutes(step: string): number {
+export function stepMinutes(step: string): number {
 	const m = /^(\d+(?:\.\d+)?)\s*([smh])?$/.exec(step);
 	if (!m) return NaN;
 	return Number(m[1]) * (m[2] === 'h' ? 60 : m[2] === 's' ? 1 / 60 : 1);

@@ -160,16 +160,42 @@ export function snapTo(x: number, marks: number[]): number {
 const QUANTA = 4;
 
 /**
- * A relative selection's argv: the `-q` ladder on the five-minute marks it
- * reaches, and the relative `-t -N` everywhere else.
+ * The steps a tap's time can snap to, in seconds: a minute is the coarsest,
+ * which is what every window from 30 minutes up has always said.
+ */
+const TAP_STEPS = [1, 5, 10, 15, 30, 60];
+
+/**
+ * How finely a tap on a window `minutes` long says its time, in seconds:
+ * the coarsest step that is still a 24th of the window or less.
  *
- * Both are read by the CLI as «that long before the moment this RUNS»
+ * vividn, on a two-minute window: «you should be able to do 5 seconds at
+ * this scale». A 24th of two minutes is five seconds; of the 30-minute
+ * default it is over a minute, so that window stays in whole minutes, and
+ * a window under two minutes goes to the second.
+ */
+export function tapStep(minutes: number): number {
+	const want = (minutes * 60) / 24;
+	return TAP_STEPS.filter((s) => s <= want).pop() ?? TAP_STEPS[0];
+}
+
+/**
+ * A relative selection's argv: the `-q` ladder on the five-minute marks it
+ * reaches, the relative `-t -N` on any other whole minute, and the CLI's
+ * seconds (`-t -45s`, `-t -1m30s`) when it is not a whole minute.
+ *
+ * All are read by the CLI as «that long before the moment this RUNS»
  * (`-q` is five minutes back and stacks; `-t -7` is seven minutes back),
  * which is exactly what a selection dropped on a relative axis means.
  * vividn: "If the -5 -10 -15 or -20 lines is clicked, use -q, -qq, -qqq,
  * -qqqq as the pill. for other times use relative time as the pill".
+ *
+ * `rel` is minutes back, to the second.
  */
 export function relArg(rel: number): string {
-	const q = rel / 5;
-	return Number.isInteger(q) && q >= 1 && q <= QUANTA ? `-${'q'.repeat(q)}` : `-t -${rel}`;
+	const s = Math.round(rel * 60);
+	const [m, sec] = [Math.floor(s / 60), s % 60];
+	if (sec) return `-t -${m ? `${m}m` : ''}${sec}s`;
+	const q = m / 5;
+	return Number.isInteger(q) && q >= 1 && q <= QUANTA ? `-${'q'.repeat(q)}` : `-t -${m}`;
 }

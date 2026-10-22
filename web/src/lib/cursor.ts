@@ -59,7 +59,7 @@ import { relArg } from './nowpoint.js';
 export interface Cursor {
 	/** The instant pointed at. */
 	at: Date;
-	/** Whole minutes back from NOW, when the selection is relative. */
+	/** Minutes back from NOW, to the second, when the selection is relative. */
 	rel?: number;
 	/** Whole minutes of range ENDING at the selection — the `dur=` pill. */
 	span?: number;
@@ -155,8 +155,8 @@ export function pillSections(at: Date, now = new Date()): PillSection[] {
 /** To the minute a pill can say — every selection is whole minutes. */
 const toMinute = (at: Date) => new Date(Math.round(at.getTime() / MINUTE) * MINUTE);
 
-/** The instant `rel` whole minutes back from now. */
-const back = (rel: number, now = Date.now()) => new Date(Math.floor(now / MINUTE) * MINUTE - rel * MINUTE);
+/** The instant `rel` minutes back from now. */
+const back = (rel: number, now = Date.now()) => new Date(Math.floor(now / MINUTE) * MINUTE - Math.round(rel * MINUTE));
 
 /** Whole minutes, never negative, and 0 read as «none» for a span. */
 const whole = (n: number | undefined) => (n === undefined ? undefined : Math.max(0, Math.round(n)));
@@ -220,12 +220,14 @@ function cursorPills(c: Cursor): Pill[] {
  * Point the page at a selection, or clear it with `null`.
  *
  * `rel` minutes back from now makes it RELATIVE, `at` makes it absolute,
- * and `span` gives it a length ending there. Everything is rounded to
- * whole minutes here, so nothing downstream has to wonder.
+ * and `span` gives it a length ending there. `rel` is rounded to the
+ * second (the view that made it has snapped it to its own step,
+ * `tapStep`) and the rest to whole minutes here, so nothing downstream
+ * has to wonder.
  */
 export function pointAt(sel: (Partial<Cursor> & { at?: Date }) | null): void {
 	if (!sel) return void cursor.set(null);
-	const rel = whole(sel.rel);
+	const rel = sel.rel === undefined ? undefined : Math.max(0, Math.round(sel.rel * 60)) / 60;
 	const at = rel === undefined ? sel.at && toMinute(sel.at) : back(rel);
 	if (!at) return void cursor.set(null);
 	const span = whole(sel.span) || undefined;

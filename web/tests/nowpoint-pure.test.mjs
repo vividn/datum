@@ -20,7 +20,7 @@ registerHooks({
 	}
 });
 
-const { LONG_MS, SLOP_PX, SNAP_PX, advance, relArg, snapTo, undecided } = await import(
+const { LONG_MS, SLOP_PX, SNAP_PX, advance, relArg, snapTo, tapStep, undecided } = await import(
 	'../src/lib/nowpoint.ts'
 );
 
@@ -142,6 +142,21 @@ describe('what a selection puts on the command line', () => {
 		assert.equal(relArg(7), '-t -7', 'the CLI reads -t -7 as seven minutes back');
 		assert.equal(relArg(25), '-t -25', 'past -qqqq there is no letter for it');
 		assert.equal(relArg(1), '-t -1');
+	});
+
+	test('a time between whole minutes says its seconds, as the CLI reads them', () => {
+		assert.equal(relArg(20 / 60), '-t -20s');
+		assert.equal(relArg(1.5), '-t -1m30s');
+		assert.equal(relArg(5 + 5 / 60), '-t -5m5s', 'off the five-minute mark, no -q');
+		assert.equal(relArg(119.6 / 60), '-t -2', 'to the second: 119.6 s is two minutes');
+	});
+});
+
+describe('how finely a tap says its time follows the window', () => {
+	test('five seconds at two minutes, whole minutes from the 30-minute default up', () => {
+		assert.equal(tapStep(2), 5, 'vividn: «you should be able to do 5 seconds at this scale»');
+		assert.deepEqual([0.5, 1, 5, 10, 15, 20].map(tapStep), [1, 1, 10, 15, 30, 30]);
+		assert.deepEqual([30, 45, 60, 720].map(tapStep), [60, 60, 60, 60], 'a minute, as it always was');
 	});
 
 	// What an ABSOLUTE selection says, and the range that says no time at
