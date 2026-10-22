@@ -43,6 +43,7 @@ pub use pcli::{
 // Apart from the list above, which every added name reflows.
 pub use pcli::RenameArgs;
 pub use pcli::StatesArgs;
+pub use pcli::StatsWindowFlag;
 pub use pcli::UpdateStrategyArg;
 
 /// The `--show` level the shared layer swept out of argv (da-qt6z).

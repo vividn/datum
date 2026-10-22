@@ -32,7 +32,7 @@ use datum_parse::input::TimeArgs;
 use datum_parse::time::{resolve_timezone, Direction, TimeCtx, Zone, ZoneTimeline};
 use serde_json::Value as JsonValue;
 
-use crate::args::{ShowFlag, StatsArgs, StatsPeriod};
+use crate::args::{ShowFlag, StatsArgs, StatsPeriod, StatsWindowFlag};
 use crate::commands::field_visuals::state_label;
 use crate::commands::time_bounds::{bound_date, parse_since, parse_until};
 use crate::config::resolve_week_start;
@@ -802,10 +802,13 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 /// `[start, end)`. `start = None` means unbounded below (everything up to
 /// `end`). `end` defaults to just after `now` ([`TICK`]).
 ///
-/// Exactly one thing may name the *start*: the `SLICE` positional, a period
-/// flag, the timing flags, or `--since`. `--until` is not one of them — it
-/// refines whichever end the start-source implies, so `-y --until now` turns
-/// a bounded day back into an open-ended "since" (da-rf57).
+/// The window flags set the ends they name, and a later flag overwrites what
+/// an earlier one set (da-4va65): a period flag, `--all-time` and a date
+/// both ends, `--since` and a moment the start, `--until` the end. So an
+/// alias naming a window (`worked=stats work --today`) is widened at the
+/// prompt (`worked --week`), and `-y --until now` turns a bounded day back
+/// into an open-ended "since" (da-rf57). The `SLICE` positional, whose
+/// place among the flags is not kept, takes `--until` alone.
 ///
 /// The timing flags split on whether the user named a clock time:
 ///
@@ -847,55 +850,78 @@ fn resolve_window(
     let now = DatumTime::now().utc;
     let through_now = now + TICK;
 
-    let sources = [
-        (args.slice.is_some(), "a time-slice positional"),
-        (args.period.is_some(), "a period flag"),
-        (names_a_moment(&args.time), "the timing flags (-t/-d/-q/-y)"),
-        (args.since.is_some(), "--since"),
-    ];
-    let named: Vec<&str> = sources
-        .iter()
-        .filter(|(given, _)| *given)
-        .map(|(_, label)| *label)
-        .collect();
-    if named.len() > 1 {
-        bail!(
-            "stats takes one window start, but got {}",
-            named.join(" and ")
-        );
+    let order = window_order(args);
+    if args.slice.is_some() {
+        let mut named = vec!["a time-slice positional"];
+        for flag in &order {
+            let label = match flag {
+                StatsWindowFlag::Period => "a period flag",
+                StatsWindowFlag::Time => "the timing flags (-t/-d/-q/-y)",
+                StatsWindowFlag::Since => "--since",
+                StatsWindowFlag::AllTime => "--all-time",
+                StatsWindowFlag::Until => continue,
+            };
+            if !named.contains(&label) {
+                named.push(label);
+            }
+        }
+        if named.len() > 1 {
+            bail!(
+                "stats takes one window start, but got {}",
+                named.join(" and ")
+            );
+        }
     }
 
     let since = now - reach - Duration::days(4);
     let mut zones = window_zones(args, db, since, None)?;
     let here = zones.zone_at(now).clone();
+    // The flags from the last back, each setting the ends no later one did.
     let window = |zones: &ZoneTimeline| -> Result<(Option<DateTime<Utc>>, DateTime<Utc>)> {
-        // `--until` overrides the end of every branch.
-        let until = (args.until.as_deref())
-            .map(|s| bound(s, zones, true))
-            .transpose()?;
-        Ok(if let Some(slice) = &args.slice {
+        let mut start: Option<Option<DateTime<Utc>>> = None;
+        let mut end: Option<DateTime<Utc>> = None;
+        if let Some(slice) = &args.slice {
             let (s, e) = parse_slice(slice, zones)?;
-            (Some(s), until.unwrap_or(e))
-        } else if let Some(period) = args.period {
-            let today = here.local_naive(now).date();
-            let (s, e) = period_window(period, resolve_week_start()?, zones, today, through_now)?;
-            (Some(s), until.unwrap_or(e))
-        } else if names_a_moment(&args.time) {
-            let builder = args.time.builder(TimeCtx::at(here.local_naive(now)))?;
-            let only_date = builder.is_only_date();
-            let at = builder.build_at(now, here.clone(), None);
-            if only_date {
-                let (s, e) = day_window(here.local_naive(at.utc).date(), zones)?;
-                (Some(s), until.unwrap_or(e))
-            } else {
-                (Some(at.utc), until.unwrap_or(through_now))
+            start = Some(Some(s));
+            end = (!order.contains(&StatsWindowFlag::Until)).then_some(e);
+        }
+        for flag in order.iter().rev() {
+            if start.is_some() && end.is_some() {
+                break;
             }
-        } else {
-            let start = (args.since.as_deref())
-                .map(|s| bound(s, zones, false))
-                .transpose()?;
-            (start, until.unwrap_or(through_now))
-        })
+            let (s, e) = match flag {
+                StatsWindowFlag::Period => {
+                    let period = args.period.expect("a period flag sets the period");
+                    let today = here.local_naive(now).date();
+                    let (s, e) =
+                        period_window(period, resolve_week_start()?, zones, today, through_now)?;
+                    (Some(Some(s)), Some(e))
+                }
+                StatsWindowFlag::AllTime => (Some(None), Some(through_now)),
+                StatsWindowFlag::Since => {
+                    let since = (args.since.as_deref()).map(|s| bound(s, zones, false));
+                    (Some(since.transpose()?), None)
+                }
+                StatsWindowFlag::Until => {
+                    let until = (args.until.as_deref()).map(|s| bound(s, zones, true));
+                    (None, until.transpose()?)
+                }
+                StatsWindowFlag::Time => {
+                    let builder = args.time.builder(TimeCtx::at(here.local_naive(now)))?;
+                    let only_date = builder.is_only_date();
+                    let at = builder.build_at(now, here.clone(), None);
+                    if only_date {
+                        let (s, e) = day_window(here.local_naive(at.utc).date(), zones)?;
+                        (Some(Some(s)), Some(e))
+                    } else {
+                        (Some(Some(at.utc)), None)
+                    }
+                }
+            };
+            start = start.or(s);
+            end = end.or(e);
+        }
+        Ok((start.flatten(), end.unwrap_or(through_now)))
     };
     let earliest = |(start, end): (Option<DateTime<Utc>>, DateTime<Utc>)| {
         let anchor = end.min(now);
@@ -968,6 +994,23 @@ fn last_clock_hint(
     Ok(format!(
         "\n{clock} is later today: for the last {clock} use `-t {typed}-`, or `-y -t {typed}`"
     ))
+}
+
+/// The window flags in the order typed; for args built in code, which carry
+/// none, the order the old one-start rule read them in.
+fn window_order(args: &StatsArgs) -> Vec<StatsWindowFlag> {
+    if !args.window.is_empty() {
+        return args.window.clone();
+    }
+    [
+        (args.period.is_some(), StatsWindowFlag::Period),
+        (names_a_moment(&args.time), StatsWindowFlag::Time),
+        (args.since.is_some(), StatsWindowFlag::Since),
+        (args.until.is_some(), StatsWindowFlag::Until),
+    ]
+    .into_iter()
+    .filter_map(|(given, flag)| given.then_some(flag))
+    .collect()
 }
 
 /// True when the timing flags name a moment at all. `-z` alone only picks

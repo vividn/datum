@@ -874,7 +874,17 @@ const STATS_FLAGS: &[FlagSpec] = &[
         left_override: None,
     },
     FlagSpec {
-        summary: "A date names that whole day (unless --until)",
+        short: None,
+        long: "all-time",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "The whole record, first entry to now: a stats with no window",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        summary: "A date names that whole day (unless a later --until)",
         ..DATE
     },
     FlagSpec {
@@ -1981,6 +1991,12 @@ what share of its time each state took, over a slice of time.
 does a bare date to --since or --until: `--since 2026-10-14 --until
 2026-10-20` is those seven days, whole.
 
+The last window flag wins, end by end: a period flag, --all-time and -d
+set both ends, --since and -t the start, --until the end. So with the
+alias worked=\"stats work --today\", `datum worked --week` is this week,
+and `--month --until 2026-10-10` stops at the 10th where `--until
+2026-10-10 --month` is the month to now.
+
 A field of moments says how often, its first line:
   coffee  ·  2/day  ·  14 total since 2026-10-14
 The rate is the count over the slice, from its start (with none, the
@@ -2742,7 +2758,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         usage: &[
             "datum stats  (no FIELD: every field, ranked by tracked time)",
             "datum stats <FIELD[:STATE]> [SLICE] [--since TIME] [--until TIME]",
-            "datum stats <FIELD[:STATE]> (--today | --week | --last-week | --month | --last-month)",
+            "datum stats <FIELD[:STATE]> [--today | --week | --last-week | --month | --last-month | --all-time]",
             "datum stats <FIELD[:STATE]> [-d DATE | -y* | -t TIME | -q*] [--until TIME]",
             "datum stats <FIELD[:STATE]> [--include-false] [--include-untracked]",
             "datum stats <FIELD> --group-by client",

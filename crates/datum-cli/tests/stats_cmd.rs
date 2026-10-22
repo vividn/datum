@@ -904,19 +904,106 @@ fn closed_periods_stop_where_the_open_ones_start() {
     );
 }
 
+/// A slice's place among the flags is not kept, so it takes no other start.
 #[test]
-fn one_window_start_at_a_time() {
+fn a_slice_takes_no_other_window_start() {
     let db = fresh_db();
-    let mut both = selector("activity");
-    both.period = Some(StatsPeriod::Today);
-    both.since = Some("1d".to_string());
-    let err = compute_stats(&both, &db).unwrap_err().to_string();
-    assert!(err.contains("one window start"), "{err}");
-
     let mut flags_and_slice = selector("activity");
     flags_and_slice.slice = Some("2026-06".to_string());
     flags_and_slice.time.yesterday = 1;
-    assert!(compute_stats(&flags_and_slice, &db).is_err());
+    let err = compute_stats(&flags_and_slice, &db)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("one window start"), "{err}");
+}
+
+/// The total of `stats activity <words>` as typed, aliases expanded.
+fn typed_total(db: &datum_core::db::Db, words: &[&str]) -> i64 {
+    let argv = std::iter::once("datum")
+        .chain(words.iter().copied())
+        .map(String::from)
+        .collect();
+    let datum_cli::args::Invocation::Single(cli) =
+        datum_cli::args::parse_invocation_with_db(argv, db).unwrap()
+    else {
+        panic!("{words:?}: one command");
+    };
+    let datum_cli::args::Command::Stats(args) = cli.command else {
+        panic!("{words:?}: a stats");
+    };
+    let r = compute_stats(&args, db).unwrap_or_else(|e| panic!("{words:?}: {e}"));
+    r.total_duration_seconds
+}
+
+/// da-4va65: the later window flag wins, end by end. One open block from
+/// May 20 10:00 to now, so each window's total is its own length.
+#[test]
+fn a_later_window_flag_overwrites_the_ends_an_earlier_one_set() {
+    let _g = freeze_time("2026-06-17T09:00:00Z"); // a Wednesday
+    let db = fresh_db();
+    seed_utc_zoned(&db, &[("2026-05-20T10:00:00Z", "coding")]);
+    let total = |words: &[&str]| {
+        let mut argv = vec!["stats", "activity"];
+        argv.extend(words);
+        typed_total(&db, &argv)
+    };
+    let (h, d) = (3600, 86400);
+    let all = 27 * d + 23 * h;
+    let week = total(&["--week"]);
+
+    // Period over period.
+    assert_eq!(total(&["--today", "--week"]), week);
+    assert_eq!(total(&["--week", "--today"]), 9 * h);
+    // Period over --since, and --since over a period's start, keeping its end.
+    assert_eq!(total(&["--since", "2026-06-01", "--today"]), 9 * h);
+    assert_eq!(total(&["--today", "--since", "2026-06-16"]), d + 9 * h);
+    assert_eq!(
+        total(&["--last-month", "--since", "2026-05-25"]),
+        7 * d,
+        "May 25 to the end of May, not to now"
+    );
+    // Period over -d, and -d over a period.
+    assert_eq!(total(&["-d", "2026-06-10", "--today"]), 9 * h);
+    assert_eq!(total(&["--today", "-d", "2026-06-10"]), d);
+    assert_eq!(total(&["--today", "-t", "8:00"]), h);
+    // --until after a period sets its end; a period after --until replaces it.
+    assert_eq!(total(&["--month", "--until", "2026-06-10"]), 10 * d);
+    assert_eq!(total(&["--until", "2026-06-10", "--month"]), 16 * d + 9 * h);
+    // --all-time over a period, and a period over it.
+    assert_eq!(total(&["--today", "--all-time"]), all);
+    assert_eq!(total(&["--until", "2026-06-10", "--all-time"]), all);
+    assert_eq!(
+        total(&["--all-time", "--until", "2026-06-10"]),
+        21 * d + 14 * h
+    );
+    // A slice's place is not kept, so --until refines it on either side.
+    assert_eq!(total(&["2026-06", "--until", "2026-06-10"]), 10 * d);
+    assert_eq!(total(&["--until", "2026-06-10", "2026-06"]), 10 * d);
+    assert_eq!(total(&["--all-time"]), total(&[]));
+    assert_eq!(total(&["--all-time", "--today"]), 9 * h);
+    // -z is no window flag: a period after it is read in its zone.
+    assert_eq!(total(&["-z", "Pacific/Kiritimati", "--today"]), 23 * h);
+}
+
+/// An alias's own flags come first in its expansion, so what is typed
+/// after it wins: `worked=stats activity --today`, then `worked --week`.
+#[test]
+fn a_window_typed_after_an_alias_overrides_the_aliases_own() {
+    let _g = freeze_time("2026-06-17T09:00:00Z");
+    let db = fresh_db();
+    seed_utc_zoned(&db, &[("2026-05-20T10:00:00Z", "coding")]);
+    run_cli(&["alias", "set", "worked", "stats activity --today"], &db).unwrap();
+
+    assert_eq!(typed_total(&db, &["worked"]), 9 * 3600);
+    assert_eq!(
+        typed_total(&db, &["worked", "--week"]),
+        typed_total(&db, &["stats", "activity", "--week"])
+    );
+    assert_eq!(
+        typed_total(&db, &["worked", "--all-time"]),
+        27 * 86400 + 23 * 3600
+    );
+    assert_eq!(typed_total(&db, &["worked", "-d", "2026-06-10"]), 86400);
 }
 
 #[test]
@@ -1034,8 +1121,9 @@ fn period_and_timing_flags_parse_and_dispatch() {
     run_cli(&["stats", "activity", "-t", "8:00", "-z", "UTC"], &db).unwrap();
     run_cli(&["stats", "activity", "-d", "2026-06-14", "-z", "UTC"], &db).unwrap();
 
-    // Two different period flags contradict rather than refine.
-    assert!(run_cli(&["stats", "activity", "--today", "--week"], &db).is_err());
+    // A later window flag overrides an earlier one (da-4va65).
+    run_cli(&["stats", "activity", "--today", "--week"], &db).unwrap();
+    run_cli(&["stats", "activity", "--today", "--all-time"], &db).unwrap();
 }
 
 // ─── Every field, ranked: a bare `stats` (da-ptuwr) ─────────────────────────

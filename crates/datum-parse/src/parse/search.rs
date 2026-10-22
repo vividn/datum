@@ -1,7 +1,7 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
-use crate::input::{self, lift, local_switch, local_value, LiftedSpec, OutputArgs, Show};
+use crate::input::{self, lift, local_switch, local_value, LiftedSpec, OutputArgs, Show, TimeArgs};
 
 pub(crate) fn parse_grep_args(tail: &[&str]) -> Result<GrepArgs> {
     #[derive(Default)]
@@ -103,20 +103,22 @@ pub(crate) fn parse_count_args(tail: &[&str]) -> Result<CountArgs> {
     Ok(out)
 }
 
-/// One period flag at a time: `--today --week` is a contradiction, not a
-/// refinement. Repeating the *same* flag is harmless and stays silent.
-fn set_stats_period(p: &mut StatsArgs, period: StatsPeriod) -> Result<()> {
-    match p.period {
-        Some(existing) if existing != period => Err(ParseError::InvalidArg(format!(
-            "stats takes one period flag; '{}' conflicts with '{}'",
-            period.flag(),
-            existing.flag()
-        ))),
-        _ => {
-            p.period = Some(period);
-            Ok(())
-        }
+/// A flag naming both ends overwrites whatever came before it, the timing
+/// flags' composed moment included (`-z` is no window flag and stays).
+fn set_stats_window(p: &mut StatsArgs, flag: StatsWindowFlag) {
+    if matches!(flag, StatsWindowFlag::Period | StatsWindowFlag::AllTime) {
+        p.time = TimeArgs {
+            timezone: p.time.timezone.take(),
+            ..TimeArgs::default()
+        };
     }
+    p.window.push(flag);
+}
+
+fn set_stats_period(p: &mut StatsArgs, period: StatsPeriod) -> Result<()> {
+    set_stats_window(p, StatsWindowFlag::Period);
+    p.period = Some(period);
+    Ok(())
 }
 
 /// `-y/-q/-d/-t/-z` plus the stats-local flags. `-T`/`-D` are suppressed:
@@ -125,18 +127,32 @@ fn stats_args_registry() -> Vec<LiftedSpec<StatsArgs>> {
     let mut r: Vec<LiftedSpec<StatsArgs>> = Vec::new();
     for spec in input::time_args::FLAG_SPECS {
         match (spec.short, spec.long) {
-            (Some('y'), _) | (Some('q'), _) | (Some('d'), _) | (Some('t'), _) | (Some('z'), _) => {
-                r.push(lift(|p: &mut StatsArgs| &mut p.time, spec));
+            (Some('z'), _) => r.push(lift(|p: &mut StatsArgs| &mut p.time, spec)),
+            (Some('y'), _) | (Some('q'), _) | (Some('d'), _) | (Some('t'), _) => {
+                let mut lifted = lift(|p: &mut StatsArgs| &mut p.time, spec);
+                let apply = lifted.apply;
+                lifted.apply = Box::new(move |p, v| {
+                    apply(p, v)?;
+                    set_stats_window(p, StatsWindowFlag::Time);
+                    Ok(())
+                });
+                r.push(lifted);
             }
             _ => {}
         }
     }
     r.push(local_value(None, Some("since"), |p: &mut StatsArgs, v| {
+        set_stats_window(p, StatsWindowFlag::Since);
         p.since = Some(v.to_string());
         Ok(())
     }));
     r.push(local_value(None, Some("until"), |p: &mut StatsArgs, v| {
+        set_stats_window(p, StatsWindowFlag::Until);
         p.until = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("all-time"), |p: &mut StatsArgs| {
+        set_stats_window(p, StatsWindowFlag::AllTime);
         Ok(())
     }));
     r.push(local_value(

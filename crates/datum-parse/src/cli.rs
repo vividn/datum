@@ -1276,6 +1276,23 @@ impl StatsPeriod {
     }
 }
 
+/// A flag that names an end of `stats`' window, in [`StatsArgs::window`]:
+/// the later flag wins, end by end (da-4va65). The values are the args'
+/// own fields; this is only which of them came last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatsWindowFlag {
+    /// A period flag: both ends.
+    Period,
+    /// `-d/-y/-t/-q`, composed as one: a date both ends, a moment the start.
+    Time,
+    /// `--since`: the start.
+    Since,
+    /// `--until`: the end.
+    Until,
+    /// `--all-time`: both, the first entry to now.
+    AllTime,
+}
+
 /// `datum stats <field[:state]> [SLICE] [PERIOD] [-t/-d/-q/-y] [--since T]
 /// [--until T] [--json]` — count / total-duration / per-state-ratio
 /// rollup over a time slice.
@@ -1306,6 +1323,10 @@ pub struct StatsArgs {
     pub until: Option<String>,
     /// `--today` / `--week` / `--last-week` / `--month` / `--last-month`.
     pub period: Option<StatsPeriod>,
+    /// The window flags in the order typed, each naming the ends it sets;
+    /// a later one overwrites an earlier one's. Empty (args built in code):
+    /// the order is period, timing flags, `--since`, `--until`.
+    pub window: Vec<StatsWindowFlag>,
     /// `-y/-q/-d/-t/-z` — the shared timing flags. A date-only reading
     /// (`-d`, `-y`) names that whole day; anything carrying a clock time
     /// (`-t`, `-q`) is a lower bound, exactly like `--since`.
