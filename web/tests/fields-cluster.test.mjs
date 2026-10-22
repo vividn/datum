@@ -401,4 +401,34 @@ describe('a switch field’s states around the tap', () => {
 			}
 		);
 	});
+
+	// da-bstjx — vividn: «Prioritize using visible space over having to
+	// scroll. Right now in a 8 row high fields widget, the available states
+	// of a field only go into 4 rows». More states than five rows hold on a
+	// phone, fewer than eight do (38 of these fit, measured at 390px): they
+	// fill the bar's rows and none scrolls.
+	test('in an 8-row bar on a phone, the states fill its rows before any scrolls', async () => {
+		const many = Array.from({ length: 34 }, (_, i) => `s${i}`);
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seedLines(app, [...OTHERS.map((f) => `setup ${f} --verb occur`), `setup mood --verb switch --states false,${many.join(',')}`]);
+				await page.locator(`${BAR} [data-field="mood"]`).waitFor();
+				await atRows(page, 'bar', 8, Infinity);
+				const t = await tapAt(page, 0.5);
+				const end = t.find('false');
+				const states = many.map(t.find);
+				const row = end.bottom - end.top + GAP;
+				const rows = (top, bottom) => Math.round((bottom - top + GAP) / row);
+				const used = rows(Math.min(...states.map((s) => s.top)), Math.max(...states.map((s) => s.bottom)));
+				assert.equal(used, rows(t.ring.top, t.ring.bottom), `the states use ${used} of the bar's rows`);
+				for (const s of states) assert.ok(s.left >= t.ring.left - 1 && s.right <= t.ring.right + 1, `${s.name} is scrolled out of the bar`);
+			},
+			{
+				viewport: { width: 390, height: 640 },
+				clock: todayAt(15),
+				prepare: (context) => context.addInitScript(draft, PAGE)
+			}
+		);
+	});
 });

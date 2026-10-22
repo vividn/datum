@@ -610,8 +610,9 @@
 	 * Stand the ring's buttons around the tap (da-7q3ka): `ringOf` gives the
 	 * spots from their measured sizes and the room the box leaves on each
 	 * side of the tap — capped at an edge, never shifted, so `end` stays
-	 * under the thumb (da-8mk9p). The ring reaches two rows either way, and
-	 * a side the box caps gives what it lost to the other; at the left edge
+	 * under the thumb (da-8mk9p). The ring reaches every row the box shows
+	 * before anything scrolls (da-bstjx) — vividn: «Prioritize using visible
+	 * space over having to scroll»; at the left edge
 	 * `< Back` steps onto another row (da-u9nfv). When the
 	 * centre itself cannot fit sideways, or a button runs past the right
 	 * edge, the box scrolls its centre under the tap as far as it can. Two
@@ -632,8 +633,6 @@
 			const [back, add, end] = [one('back')!, one('add')!, one('end')!];
 			const states = spots.filter((s) => s.dataset.role === 'state');
 			const h = Math.max(...spots.map((s) => size(s).height));
-			const reach = 2 * (h + GAP) + h / 2;
-			const [up, down] = [at.y - 2, box.clientHeight - at.y - 2];
 			const ring = ringOf(
 				{
 					back: size(back).width,
@@ -643,8 +642,8 @@
 				},
 				h,
 				{
-					up: Math.min(up, 2 * reach - Math.min(down, reach)),
-					down: Math.min(down, 2 * reach - Math.min(up, reach)),
+					up: at.y - 2,
+					down: box.clientHeight - at.y - 2,
 					left: at.x - 2,
 					right: box.clientWidth - at.x - 2
 				},
