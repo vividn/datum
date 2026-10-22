@@ -777,6 +777,12 @@
 		text-align: right;
 	}
 
+	/* An uncertain time is `HH:MM ± `, the ± in its seconds' place, and the
+	   space after it is what keeps its clock over the others (da-dj8v0). */
+	.time {
+		white-space: pre;
+	}
+
 	/* The two that carry arbitrary text. A long state wraps inside its own
 	   cell rather than pushing the table past the pane. */
 	.field,

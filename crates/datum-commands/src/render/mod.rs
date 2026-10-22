@@ -1111,26 +1111,13 @@ pub fn format_table_with(
     let quick_header = Headers::QUICK;
     let hid_header = Headers::HID;
 
-    // da-lkji: the time column right-aligns on the `HH:MM:SS` core; the
-    // gray `±N<unit>` uncertainty suffix hangs into a shared right margin
-    // (`time_suffix_w`) so uncertain rows don't shift the clock.
-    let time_suffix_w = rows
-        .iter()
-        .map(|r| uncertainty_suffix_width(&r.time))
+    // The time column right-aligns; an uncertain time's `±` stands in its
+    // seconds' place (da-dj8v0), so every clock is as wide as another.
+    let time_core_w = |r: &Row| vw(&r.time) + usize::from(!r.time_metric_prefix.is_empty());
+    let time_w = std::iter::once(vw(&time_header))
+        .chain(rows.iter().map(time_core_w))
         .max()
         .unwrap_or(0);
-    let time_core_w = std::iter::once(vw(&time_header))
-        .chain(rows.iter().map(|r| {
-            vw(&r.time) - uncertainty_suffix_width(&r.time)
-                + if r.time_metric_prefix.is_empty() {
-                    0
-                } else {
-                    1
-                }
-        }))
-        .max()
-        .unwrap_or(0);
-    let time_w = time_core_w + time_suffix_w;
     // da-ftw3: when a width budget is in force, the field column is capped
     // at `FIELD_CAP` (default 10). Long field names like `environment`
     // otherwise compress the state column unhelpfully. Without a budget
@@ -1224,12 +1211,7 @@ pub fn format_table_with(
             push_cell(&mut header, quick_header, quick_w, false);
         }
         if show_time {
-            // Right-align on the core (matching the rows' HH:MM:SS edge),
-            // then pad across the ± suffix margin.
-            header.push_str(&" ".repeat(time_core_w.saturating_sub(vw(&time_header))));
-            header.push_str(&time_header);
-            header.push_str(&" ".repeat(time_suffix_w));
-            header.push_str("  ");
+            push_cell(&mut header, &time_header, time_w, true);
         }
         if show_field {
             push_cell(&mut header, field_header, field_w, false);
@@ -1262,16 +1244,8 @@ pub fn format_table_with(
             } else {
                 format!("{}{}", paint(GREY_FG, r.time_metric_prefix), r.time)
             };
-            let suffix_w = uncertainty_suffix_width(&r.time);
-            let core_w = vw(&r.time) - suffix_w
-                + if r.time_metric_prefix.is_empty() {
-                    0
-                } else {
-                    1
-                };
-            line.push_str(&" ".repeat(time_core_w.saturating_sub(core_w)));
+            line.push_str(&" ".repeat(time_w.saturating_sub(time_core_w(r))));
             line.push_str(&body);
-            line.push_str(&" ".repeat(time_suffix_w.saturating_sub(suffix_w)));
             line.push_str("  ");
         }
         if show_field {
@@ -1416,17 +1390,6 @@ pub fn table_columns_with(
         });
     }
     out
-}
-
-/// Visible width of the trailing gray `±N<unit>` uncertainty suffix
-/// (da-lkji) in a rendered time cell; 0 when absent. `±` only ever
-/// appears in that suffix within a time cell, so a plain scan suffices.
-fn uncertainty_suffix_width(cell: &str) -> usize {
-    let stripped = strip_ansi(cell);
-    stripped
-        .find('±')
-        .map(|i| colors::visible_width(&stripped[i..]))
-        .unwrap_or(0)
 }
 
 /// Push a left- or right-padded cell (ANSI-aware) with a 2-space gap.

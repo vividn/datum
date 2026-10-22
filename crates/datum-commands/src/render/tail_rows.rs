@@ -64,7 +64,8 @@ pub struct TailRow {
     /// table's marker for it is a gray `c` prefix).
     pub time_metric: Option<&'static str>,
     /// ISO-8601 ± radius on the occur time (`PT5M` for `-q`), or `null`
-    /// when unstated. The table renders this as the gray `±5m` suffix.
+    /// when unstated. The table draws a gray `±` in the time's seconds'
+    /// place for it, without the amount, which is here alone (da-dj8v0).
     pub time_uncertainty: Option<String>,
     /// The field's state immediately BEFORE this row — the first of the
     /// three values a transition is made of (da-fknn8). The IGNORED

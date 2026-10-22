@@ -30,7 +30,7 @@ after(stopApp);
 
 describe('the time an entry is rendered with', () => {
 	test('a date-only entry shows its date; entries that have a clock keep it', async () => {
-		await withApp(async ({ run, entries, redraw, paneTable }) => {
+		await withApp(async ({ page, run, entries, redraw, paneTable }) => {
 			for (const argv of [
 				['occur', 'coffee', '-y'],
 				['occur', 'tea', '-t', '0915'],
@@ -55,8 +55,9 @@ describe('the time an entry is rendered with', () => {
 			assert.equal(tail.code, 0, tail.stderr);
 			// These are the CLI's own table rows (the wasm renderer): a P1D
 			// row degrades to its bare date, a clock keeps its clock, and
-			// the `±5m` the CLI paints after a stamp is carried too. The
-			// listing's shared UTC offset rides in the header (da-lkji).
+			// an uncertain one keeps its minute, a gray `±` in its seconds'
+			// place and no amount (da-dj8v0), which the record above keeps.
+			// The listing's shared UTC offset rides in the header (da-lkji).
 			//
 			// EVERY ROW IS AN ENTRY: nothing is filtered, and the quick ids
 			// run straight. da-vug0d filtered the declarations out by their
@@ -73,7 +74,7 @@ describe('the time an entry is rendered with', () => {
 			assert.deepEqual(rowTexts(tail.stdout).slice(1), [
 				`_3 ${yesterday} coffee ∅● <hid>`,
 				'_2 09:15:00 tea ∅● <hid>',
-				'_1 10:00:00±5m water ∅● <hid>'
+				'_1 10:00 ± water ∅● <hid>'
 			]);
 
 			// And on the screen, which is where the invented midnight was
@@ -85,7 +86,25 @@ describe('the time an entry is rendered with', () => {
 			const times = table.rows.map((cells) => cells[table.keys.indexOf('time')]);
 			// The date the coffee owns, the clocks the other two own — and
 			// no midnight invented for the day-precision row.
-			assert.deepEqual(times, [yesterday, '09:15:00', '10:00:00±5m']);
+			assert.deepEqual(times, [yesterday, '09:15:00', '10:00 ± ']);
+
+			// As wide as a clock with seconds, so the minutes stand in one
+			// column: the space after the ± is drawn, not collapsed away.
+			const cells = page.locator('section.pane[data-title="tail"] tbody td.time');
+			const widths = await cells.evaluateAll((tds) =>
+				tds.map((td) => {
+					const range = document.createRange();
+					range.selectNodeContents(td);
+					return range.getBoundingClientRect().width;
+				})
+			);
+			assert.equal(widths[2], widths[1], `the uncertain clock is as wide as an exact one: ${widths}`);
+			// And the ± gray, the clock not.
+			const colors = await cells.nth(2).evaluate((td) =>
+				[...td.querySelectorAll('span')].map((s) => [s.textContent, getComputedStyle(s).color])
+			);
+			const color = (text) => colors.find(([t]) => t.includes(text))?.[1];
+			assert.ok(color('±') && color('±') !== color('10:00'), `the ± is painted apart: ${JSON.stringify(colors)}`);
 		}, { viewport: { width: 1280, height: 1200 } });
 	});
 });

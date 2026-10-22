@@ -4,7 +4,7 @@ Flags are documented by `datum --help` and the man pages. This page is for
 the *other* half of the surface: the punctuation the parser gives meaning
 to. A reader meets these in alias bodies, in error messages (`unbalanced
 '(' in expanded command (use '\(' for a literal paren)`) and in what
-`datum tail` prints back (`±15m`, `_3`), and until this page there was
+`datum tail` prints back (`±`, `_3`), and until this page there was
 nowhere to look them up.
 
 A token lives in one of four places, and that is how this page is
@@ -533,10 +533,13 @@ datum get coffee -A
 
 ```
 CREATE 6r55f coffee:2026-09-22T12:00:00.000Z
-14:00:00+2±15m  coffee ∅●
+14:00 ± +2  coffee ∅●
 ```
 
-`get -A` shows it stored beside the instant, in a column of its own:
+A gray `±` takes the seconds' place, false precision on a time known to
+fifteen minutes, so the stamp is as wide as an exact one and no column
+shifts. The amount is not printed there; `get -A` shows it stored beside the
+instant, in a column of its own, as `--json` carries it:
 
 ```
   occur_time                2026-09-22T12:00:00+00:00
@@ -565,7 +568,8 @@ precisely it is known are separate columns:
 ```
 
 Wherever the duration is printed — the echo, `get`, `tail`'s dur column —
-its `±` follows it, as a time's does: `21:17:33+2  task  start  1h30m±5m`.
+a gray `±` follows it, without its amount as a time's:
+`21:17:33+2  task  start  1h30m±`.
 
 Uncertainty is deliberately outside the content hash — `coffee ±5m` and
 `coffee ±1m` at the same instant are one coffee, and hashing the

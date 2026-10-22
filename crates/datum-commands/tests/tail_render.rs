@@ -758,8 +758,8 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
 
     let uncertain_line = lines[2];
     assert!(
-        uncertain_line.contains("21:00:00±3m"),
-        "uncertain row gets the ± suffix: {uncertain_line:?}"
+        uncertain_line.contains("21:00 ±") && !uncertain_line.contains("3m"),
+        "uncertain row: ± in its seconds' place, no amount: {uncertain_line:?}"
     );
     assert!(
         !uncertain_line.contains('('),
@@ -776,20 +776,20 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
         "exact row carries no ± suffix: {off_line:?}"
     );
 
-    // HH:MM:SS columns stay aligned: every clock ends at the same column,
-    // prefixes hanging left and the ± suffix hanging right.
+    // HH:MM columns stay aligned: every clock ends at the same column,
+    // prefixes hanging left and the ± as wide as the seconds (da-dj8v0).
     let clock_end = |line: &str, clock: &str| line.find(clock).map(|i| i + clock.len());
-    let e1 = clock_end(plain_line, "22:55:00");
-    let e2 = clock_end(uncertain_line, "21:00:00");
-    let e3 = clock_end(off_line, "09:15:00");
+    let e1 = clock_end(plain_line, "22:55");
+    let e2 = clock_end(uncertain_line, "21:00");
+    let e3 = clock_end(off_line, "09:15");
     assert!(
         e1.is_some() && e1 == e2 && e2 == e3,
         "clock alignment: {table}"
     );
 }
 
-/// The `(±off)` prefix and the `±N<unit>` suffix are grey (GREY_FG);
-/// the `HH:MM:SS` core stays unpainted.
+/// The `(±off)` prefix and an uncertain time's `±` are grey (GREY_FG);
+/// the clock stays unpainted.
 #[test]
 fn tail_table_offset_prefix_and_uncertainty_suffix_are_grey() {
     let _g = color_scope();
@@ -826,8 +826,8 @@ fn tail_table_offset_prefix_and_uncertainty_suffix_are_grey() {
     };
     let table = format_table_with(&entries, None, Some(&now), None, &args).unwrap();
     assert!(
-        table.contains(&format!("21:00:00{GREY}±3m{RESET}")),
-        "± suffix grey, clock unpainted: {table:?}"
+        table.contains(&format!("21:00 {GREY}±{RESET} ")),
+        "± grey in the seconds' place, clock unpainted: {table:?}"
     );
     assert!(
         table.contains(&format!("{GREY}(+1){RESET}09:15:00")),
