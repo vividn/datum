@@ -9,7 +9,7 @@
 use serde_json::{json, Value as JsonValue};
 
 use super::{
-    apply_limit, cmp_json, field_filter_from_params, filter_by_key, group_key, View, ViewParams,
+    apply_limit, cmp_json, field_filter_from_params, filter_by_key, reduce_count, View, ViewParams,
     ViewRow,
 };
 use crate::db::Db;
@@ -76,26 +76,6 @@ impl View for StateChangeView {
         }
         Ok(apply_limit(rows, params))
     }
-}
-
-fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
-    let mut groups: Vec<(JsonValue, i64)> = Vec::new();
-    for r in rows {
-        let gk = group_key(&r.key, params);
-        if let Some(entry) = groups.iter_mut().find(|(k, _)| k == &gk) {
-            entry.1 += 1;
-        } else {
-            groups.push((gk, 1));
-        }
-    }
-    groups
-        .into_iter()
-        .map(|(key, count)| ViewRow {
-            key,
-            value: json!(count),
-            id: None,
-        })
-        .collect()
 }
 
 #[cfg(test)]

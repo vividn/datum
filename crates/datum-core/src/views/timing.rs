@@ -15,7 +15,7 @@ use rusqlite::params_from_iter;
 use serde_json::{json, Value as JsonValue};
 
 use super::{
-    apply_limit, cmp_json, field_filter_from_params, filter_by_key, group_key, View, ViewParams,
+    apply_limit, cmp_json, field_filter_from_params, filter_by_key, reduce_count, View, ViewParams,
     ViewRow,
 };
 use crate::db::Db;
@@ -102,28 +102,6 @@ fn local_date_for(utc: &DateTime<Utc>, offset_minutes: i32) -> String {
     let offset = chrono::FixedOffset::east_opt(offset_minutes * 60)
         .unwrap_or_else(|| chrono::FixedOffset::east_opt(0).unwrap());
     utc.with_timezone(&offset).format("%Y-%m-%d").to_string()
-}
-
-/// Reduce via `_count`: one row per group containing the row count. Groups
-/// come from [`group_key`]; rows are emitted in ascending group-key order.
-fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
-    let mut groups: Vec<(JsonValue, i64)> = Vec::new();
-    for r in rows {
-        let gk = group_key(&r.key, params);
-        if let Some(entry) = groups.iter_mut().find(|(k, _)| k == &gk) {
-            entry.1 += 1;
-        } else {
-            groups.push((gk, 1));
-        }
-    }
-    groups
-        .into_iter()
-        .map(|(key, count)| ViewRow {
-            key,
-            value: json!(count),
-            id: None,
-        })
-        .collect()
 }
 
 #[cfg(test)]

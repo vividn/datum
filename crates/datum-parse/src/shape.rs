@@ -284,19 +284,12 @@ pub fn is_block_verb(verb: Verb) -> bool {
 /// newfield` and `occur nap dur=30m` on a field with no spec are
 /// compound only because they declare their field, and promoting their
 /// leading state would log a `true` nobody typed.
-pub fn state_is_the_switch(verb: Verb) -> bool {
-    match verb {
-        Verb::Switch => true,
-        Verb::Block | Verb::BlockSwitch | Verb::Point | Verb::PointSwitch => false,
-    }
-}
-
-/// True for verbs whose *primary* visual is a switch region (a
+///
+/// It is also the verb whose *primary* visual is a switch region (a
 /// state-prevailing band from `occur_time` to the next switching event,
-/// colored by `entry.state`). Only [`Verb::Switch`] qualifies — the
-/// compound switching verbs render their switch region as the *secondary*
-/// element keyed off `following_state`.
-pub fn is_primary_switch_region_verb(verb: Verb) -> bool {
+/// coloured by `entry.state`); the compound ones draw theirs as the
+/// *secondary* element, keyed off `following_state`.
+pub fn state_is_the_switch(verb: Verb) -> bool {
     match verb {
         Verb::Switch => true,
         Verb::Block | Verb::BlockSwitch | Verb::Point | Verb::PointSwitch => false,
@@ -551,12 +544,12 @@ mod tests {
     }
 
     #[test]
-    fn primary_switch_region_verb_is_plain_switch_only() {
-        assert!(is_primary_switch_region_verb(Verb::Switch));
-        assert!(!is_primary_switch_region_verb(Verb::BlockSwitch));
-        assert!(!is_primary_switch_region_verb(Verb::PointSwitch));
-        assert!(!is_primary_switch_region_verb(Verb::Block));
-        assert!(!is_primary_switch_region_verb(Verb::Point));
+    fn state_is_the_switch_for_a_plain_switch_only() {
+        assert!(state_is_the_switch(Verb::Switch));
+        assert!(!state_is_the_switch(Verb::BlockSwitch));
+        assert!(!state_is_the_switch(Verb::PointSwitch));
+        assert!(!state_is_the_switch(Verb::Block));
+        assert!(!state_is_the_switch(Verb::Point));
     }
 
     #[test]

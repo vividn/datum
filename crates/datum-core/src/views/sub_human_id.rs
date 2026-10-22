@@ -13,9 +13,9 @@
 //! matching entries.
 
 use rusqlite::params_from_iter;
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 
-use super::{apply_limit, cmp_json, filter_by_key, group_key, View, ViewParams, ViewRow};
+use super::{apply_limit, cmp_json, filter_by_key, reduce_count, View, ViewParams, ViewRow};
 use crate::db::Db;
 use crate::entry::SHORT_HID_LEN;
 use crate::error::{DatumError, Result};
@@ -117,26 +117,6 @@ fn escape_like(s: &str) -> String {
         }
     }
     out
-}
-
-fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
-    let mut groups: Vec<(JsonValue, i64)> = Vec::new();
-    for r in rows {
-        let gk = group_key(&r.key, params);
-        if let Some(entry) = groups.iter_mut().find(|(k, _)| k == &gk) {
-            entry.1 += 1;
-        } else {
-            groups.push((gk, 1));
-        }
-    }
-    groups
-        .into_iter()
-        .map(|(key, count)| ViewRow {
-            key,
-            value: json!(count),
-            id: None,
-        })
-        .collect()
 }
 
 #[cfg(test)]

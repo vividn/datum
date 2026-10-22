@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use serde_json::Value as JsonValue;
+use serde_json::{json, Value as JsonValue};
 
 use crate::db::Db;
 use crate::error::{DatumError, Result};
@@ -212,6 +212,29 @@ pub fn group_key(key: &JsonValue, params: &ViewParams) -> JsonValue {
         }
     }
     key.clone()
+}
+
+/// Reduce via `_count`: one row per group containing the row count. Groups
+/// come from [`group_key`], in the order of their first rows, so rows sorted
+/// by key come out in ascending group-key order.
+pub fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
+    let mut groups: Vec<(JsonValue, i64)> = Vec::new();
+    for r in rows {
+        let gk = group_key(&r.key, params);
+        if let Some(entry) = groups.iter_mut().find(|(k, _)| k == &gk) {
+            entry.1 += 1;
+        } else {
+            groups.push((gk, 1));
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(key, count)| ViewRow {
+            key,
+            value: json!(count),
+            id: None,
+        })
+        .collect()
 }
 
 /// Extract a single field name for SQL pushdown when the caller's key

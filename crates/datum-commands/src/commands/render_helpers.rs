@@ -117,6 +117,51 @@ pub(crate) fn build_table_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCont
     ctxs
 }
 
+/// Pure-Rust SVG → PNG via resvg + tiny-skia, for `dayview` and `nowview`.
+/// No system libs needed.
+#[cfg(feature = "png")]
+pub(crate) fn rasterize_to_png(svg_xml: &str) -> anyhow::Result<Vec<u8>> {
+    let mut opts = resvg::usvg::Options::default();
+    // resvg silently drops <text> nodes when its fontdb has no usable face
+    // for the requested font-family — that's why PNG labels disappeared.
+    // Load system fonts, then pin font_family + the generic family aliases
+    // to a face that actually exists so resolution succeeds even when the
+    // dayview SVG omits font-family (default "Times New Roman" is rarely
+    // present on Linux) and even when fontconfig has no serif/sans alias.
+    {
+        let fontdb = opts.fontdb_mut();
+        fontdb.load_system_fonts();
+        let fallback = fontdb.faces().next().and_then(|face| {
+            face.families
+                .iter()
+                .find(|(_, lang)| *lang == resvg::usvg::fontdb::Language::English_UnitedStates)
+                .or_else(|| face.families.first())
+                .map(|(name, _)| name.clone())
+        });
+        if let Some(name) = fallback {
+            fontdb.set_serif_family(name.clone());
+            fontdb.set_sans_serif_family(name.clone());
+            fontdb.set_monospace_family(name.clone());
+            fontdb.set_cursive_family(name.clone());
+            fontdb.set_fantasy_family(name.clone());
+            opts.font_family = name;
+        }
+    }
+    let tree = resvg::usvg::Tree::from_str(svg_xml, &opts)
+        .map_err(|e| anyhow::anyhow!("parse SVG: {e}"))?;
+    let size = tree.size().to_int_size();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())
+        .ok_or_else(|| anyhow::anyhow!("allocate pixmap {}x{}", size.width(), size.height()))?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
+    pixmap
+        .encode_png()
+        .map_err(|e| anyhow::anyhow!("encode PNG: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -498,7 +498,7 @@ fn push_flow_axis_labels(out: &mut String, cols: usize, history_minutes: f64, ti
 
     // `-Nm` ticks. Place from longest-history → shortest so the leftmost
     // (`-30m`) wins ties at the edge.
-    for m in flow_axis_ticks(history_minutes) {
+    for m in pick_ticks(history_minutes) {
         let frac = 1.0 - (m / history_minutes.max(1e-6));
         let x = (frac * last_col as f64).round() as i64;
         if x < 0 || x as usize > last_col {
@@ -516,29 +516,6 @@ fn push_flow_axis_labels(out: &mut String, cols: usize, history_minutes: f64, ti
     for ch in row {
         out.push(ch);
     }
-}
-
-/// Tick positions in minutes-ago (ascending) for Flow's axis labels.
-/// Mirrors `nowview::tick_config`'s major spacing — we only emit majors so
-/// the row stays uncluttered. The right-edge clock anchors `0m`, so the
-/// list starts at the first major.
-fn flow_axis_ticks(history_minutes: f64) -> Vec<f64> {
-    let major = if history_minutes <= 15.0 {
-        5.0
-    } else if history_minutes <= 60.0 {
-        15.0
-    } else if history_minutes <= 180.0 {
-        30.0
-    } else {
-        60.0
-    };
-    let mut out = Vec::new();
-    let mut m = major;
-    while m <= history_minutes + 1e-9 {
-        out.push(m);
-        m += major;
-    }
-    out
 }
 
 fn place_chars_skip_filled(row: &mut [char], start: usize, chars: &[char]) {
@@ -818,19 +795,24 @@ fn place_label(row: &mut [char], at: usize, text: &str, center: bool) {
     row[start..end].copy_from_slice(&chars);
 }
 
-fn pick_ticks(history_minutes: f64) -> Vec<f64> {
-    let major = if history_minutes <= 15.0 {
+/// Major tick positions, in minutes from the instant (ascending), for an
+/// axis spanning `span_minutes` on one side of it. Mirrors
+/// `nowview::tick_config`'s major spacing — only majors, so the row stays
+/// uncluttered. The clock anchors `0m`, so the list starts at the first
+/// major.
+fn pick_ticks(span_minutes: f64) -> Vec<f64> {
+    let major = if span_minutes <= 15.0 {
         5.0
-    } else if history_minutes <= 60.0 {
+    } else if span_minutes <= 60.0 {
         15.0
-    } else if history_minutes <= 180.0 {
+    } else if span_minutes <= 180.0 {
         30.0
     } else {
         60.0
     };
     let mut out = Vec::new();
     let mut m = major;
-    while m <= history_minutes + 1e-9 {
+    while m <= span_minutes + 1e-9 {
         out.push(m);
         m += major;
     }

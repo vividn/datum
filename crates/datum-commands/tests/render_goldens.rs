@@ -520,7 +520,7 @@ fn compare_png_with_tolerance(
 
 /// Bundled font asset used for **all** PNG goldens in this file.
 ///
-/// The production renderer (`commands/{dayview,nowview}::rasterize_to_png`)
+/// The production renderer (`commands::render_helpers::rasterize_to_png`)
 /// still loads the host's system fonts — users get whatever ships on their
 /// machine. The test harness deliberately diverges: it uses an empty fontdb
 /// populated only with this single .ttf so `<text>` rasterization is
@@ -541,7 +541,8 @@ const BUNDLED_FONT_FAMILY: &str = "Hack Nerd Font";
 /// Builds a fresh `fontdb::Database` populated with **only** the bundled
 /// font — `load_system_fonts()` is deliberately not called, since system
 /// font drift was the entire source of pre-bundle PNG-golden flakiness
-/// (da-ky99 → da-c6hk).
+/// (da-ky99 → da-c6hk). It is otherwise the same as the production
+/// `render_helpers::rasterize_to_png`, which loads the system fonts.
 #[cfg(feature = "png")]
 fn rasterize_to_png(svg_xml: &str) -> Vec<u8> {
     let mut opts = resvg::usvg::Options {
