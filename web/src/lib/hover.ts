@@ -614,6 +614,7 @@ export function picture(node: HTMLElement, text: string) {
 
 	function draw(text: string) {
 		const focused = marks().indexOf(document.activeElement as Element);
+		const labeled = !!shown && shown === document.activeElement;
 		show(null);
 		const svg = inlineSvg(text);
 		svg?.classList.add('svg');
@@ -621,8 +622,11 @@ export function picture(node: HTMLElement, text: string) {
 		node.replaceChildren(...(svg ? [svg] : []), tip);
 		const drawn = marks();
 		for (const mark of drawn) mark.setAttribute('tabindex', '0');
-		// A redraw replaces every mark; the keyboard keeps its place.
+		// A redraw replaces every mark; the keyboard keeps its place, and its
+		// label only if it had one: a mark a press focused and a pan then
+		// took the label off stays unlabeled (da-tke7i).
 		(drawn[focused] as SVGElement | undefined)?.focus();
+		if (!labeled) show(null);
 		drawCursor(svg, sel);
 		highlight(svg, pilled);
 		bringOut(svg, chosen);

@@ -961,6 +961,11 @@ describe('what the bands take, and what they leave', () => {
 			assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the pan labeled a mark');
 			await page.mouse.up();
 			assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the pan labeled a mark');
+			// The press focused the mark, and a redraw after the lift keeps
+			// that focus: a loaded runner drew one there by chance (da-tke7i).
+			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
+			await app.idle();
+			assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the redraw after the pan labeled a mark');
 			assert.deepEqual(await pillsOf(page), [], 'the pan selected something');
 		});
 	});
