@@ -10,8 +10,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use datum_parse::cli::{InstallArgs, Shell};
+use minisign_verify::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -22,6 +23,20 @@ use crate::config;
 /// The release `datum.day/install.sh` installs from; `DATUM_RELEASE_URL`
 /// names another, as it does there.
 const RELEASE: &str = "https://github.com/vividn/datum/releases/download/latest";
+
+/// The key a release's SHA256SUMS is signed with (da-0b55k). A binary
+/// trusts this one alone, whatever serves the download.
+const RELEASE_KEY: &str = include_str!("../../../../release/minisign.pub");
+
+fn release_key() -> PublicKey {
+    // A test build signs its releases with a throwaway key; a release build
+    // has no such door.
+    #[cfg(feature = "test-util")]
+    if let Ok(key) = std::env::var("DATUM_TEST_RELEASE_KEY") {
+        return PublicKey::from_base64(&key).expect("DATUM_TEST_RELEASE_KEY is a minisign key");
+    }
+    PublicKey::decode(RELEASE_KEY).expect("release/minisign.pub is a minisign key")
+}
 
 /// What `datum install` set up, kept beside the databases.
 #[derive(Serialize, Deserialize)]
@@ -240,6 +255,13 @@ fn newest() -> Result<(String, String)> {
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| RELEASE.into());
     let sums = curl(&format!("{release}/SHA256SUMS"), None)?;
+    let sig = curl(&format!("{release}/SHA256SUMS.minisig"), None)
+        .context("SHA256SUMS is not signed: the release has no SHA256SUMS.minisig")?;
+    Signature::decode(&String::from_utf8_lossy(&sig))
+        .and_then(|sig| release_key().verify(&sums, &sig, false))
+        .map_err(|e| {
+            anyhow!("SHA256SUMS's signature does not verify with the key this datum was built with: {e}")
+        })?;
     let want = String::from_utf8_lossy(&sums)
         .lines()
         .find_map(|l| match l.split_whitespace().collect::<Vec<_>>()[..] {
@@ -310,4 +332,20 @@ pub fn findings(syncs: bool) -> Option<Vec<(&'static str, String)>> {
         }
     }
     Some(found)
+}
+
+#[cfg(test)]
+mod tests {
+    /// The release key is published beside the release too, and each copy
+    /// is the one built in.
+    #[test]
+    fn the_release_key_is_quoted_where_it_is_published() {
+        super::release_key();
+        let line = super::RELEASE_KEY.lines().nth(1).unwrap();
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        for file in ["README.md", "web/static/install.sh", "web/static/agents.md"] {
+            let text = std::fs::read_to_string(format!("{root}/{file}")).unwrap();
+            assert!(text.contains(line), "{file} does not quote {line}");
+        }
+    }
 }

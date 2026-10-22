@@ -8,9 +8,10 @@ curl -fsSL https://datum.day/install.sh | sh
 
 It downloads the `datum` built from main's latest commit (the `latest`
 release on GitHub, which each push to main replaces), checks it against
-the release's `SHA256SUMS` and refuses a mismatch, and installs it to
-`~/.local/bin`, or `$DATUM_INSTALL_DIR`, saying so if that is not on
-your `PATH`. Then the binary sets itself up with `datum install`, which
+the release's `SHA256SUMS` and refuses a mismatch (with `minisign`
+installed, it first checks that the release key signed `SHA256SUMS`:
+README's «Verify»), and installs it to `~/.local/bin`, or
+`$DATUM_INSTALL_DIR`, saying so if that is not on your `PATH`. Then the binary sets itself up with `datum install`, which
 takes the script's arguments: `| sh -s -- --no-completions`, say.
 `datum --version` names the commit.
 
@@ -35,8 +36,10 @@ missing, or when the daemon runs another or an older `datum`.
 datum upgrade            # or: datum upgrade --check, which only says
 ```
 
-downloads the newest release for your machine, checks it against
-`SHA256SUMS` (a mismatch changes nothing), puts it in place of the
+downloads the newest release for your machine, checks that
+`SHA256SUMS` is signed by the release key built into this datum
+(`release/minisign.pub`) and the binary against it (a missing or bad
+signature, or a mismatch, changes nothing), puts it in place of the
 running binary in one rename, and restarts the sync daemon if one runs.
 It upgrades only the binary `datum install` set up.
 

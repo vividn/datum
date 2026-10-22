@@ -65,6 +65,10 @@ puts it in `~/.local/bin`; then `datum install` sets it up: tab completion for y
 database syncs. `datum upgrade` upgrades it and `datum uninstall` removes it, keeping your record. To build from a
 checkout instead (`scripts/install.sh`, which needs Rust's `cargo`): [docs/install.md](docs/install.md).
 
+**Verify:** each release signs its SHA256SUMS with minisign, by the key `RWRF2CkFpZMRWdty5S4larI59ahqK7RzW+XkOHQ/M+Fzwn8tJKXvgBSp`
+([release/minisign.pub](release/minisign.pub)). `datum upgrade` refuses a release that key did not sign, and
+install.sh checks it too when `minisign` is installed (by hand: `minisign -Vm SHA256SUMS -P RWRF2CkFpZMRWdty5S4larI59ahqK7RzW+XkOHQ/M+Fzwn8tJKXvgBSp`).
+
 ## Typing less
 
 With no command, `datum` opens a prompt where you type commands without `datum`, as on datum.day. To make your aliases

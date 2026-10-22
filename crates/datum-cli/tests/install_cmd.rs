@@ -1,17 +1,50 @@
 //! `datum install | uninstall | upgrade` and `datum check`'s install section
 //! (da-uphgn), in a throwaway home: the binary is a copy of its own,
 //! `systemctl` is faked on PATH, and the release is a directory read by
-//! `file://`. Linux only: the daemon's unit is systemd's.
+//! `file://`, its SHA256SUMS signed by a throwaway key the test build
+//! trusts in place of the release key. Linux only: the daemon's unit is
+//! systemd's.
 #![cfg(target_os = "linux")]
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
+use blake2::Blake2b512;
+use data_encoding::BASE64;
+use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use crate::sync_net::claim_port;
+
+/// The key the test build trusts, and one it does not.
+const TEST_KEY: [u8; 32] = [7; 32];
+const OTHER_KEY: [u8; 32] = [8; 32];
+
+/// `seed`'s key as minisign writes it: `Ed`, its id (here the public key's
+/// first 8 bytes), the public key.
+fn minisign_key(seed: &[u8; 32]) -> String {
+    let public = SigningKey::from_bytes(seed).verifying_key().to_bytes();
+    BASE64.encode(&[b"Ed", &public[..8], &public[..]].concat())
+}
+
+/// `msg` signed by `seed` as `minisign -S` signs: `ED`, Ed25519 over its
+/// BLAKE2b-512, and a global signature over that and the trusted comment.
+fn minisign(seed: &[u8; 32], msg: &[u8]) -> String {
+    let key = SigningKey::from_bytes(seed);
+    let public = key.verifying_key().to_bytes();
+    let sig = key.sign(&Blake2b512::digest(msg)).to_bytes();
+    let comment = "datum test release";
+    let global = key
+        .sign(&[&sig[..], comment.as_bytes()].concat())
+        .to_bytes();
+    format!(
+        "untrusted comment: test\n{}\ntrusted comment: {comment}\n{}\n",
+        BASE64.encode(&[b"ED", &public[..8], &sig[..]].concat()),
+        BASE64.encode(&global)
+    )
+}
 
 struct Home {
     tmp: TempDir,
@@ -89,6 +122,7 @@ impl Home {
                 "DATUM_RELEASE_URL",
                 format!("file://{}", self.path("release").display()),
             )
+            .env("DATUM_TEST_RELEASE_KEY", minisign_key(&TEST_KEY))
             .env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", self.port))
             .env("DATUM_SYNC_NO_DAEMON", "1")
             .env("NO_COLOR", "1")
@@ -136,7 +170,7 @@ impl Home {
     }
 
     /// A release holding `binary` as this platform's, with `sum` its line
-    /// in SHA256SUMS (`None`: its real one).
+    /// in SHA256SUMS (`None`: its real one), signed by the test key.
     fn release(&self, binary: &[u8], sum: Option<&str>) {
         let dir = self.path("release");
         std::fs::create_dir_all(&dir).unwrap();
@@ -144,6 +178,17 @@ impl Home {
         std::fs::write(dir.join(&asset), binary).unwrap();
         let sum = sum.map_or_else(|| format!("{:x}", Sha256::digest(binary)), String::from);
         std::fs::write(dir.join("SHA256SUMS"), format!("{sum}  {asset}\n")).unwrap();
+        self.sign(&TEST_KEY);
+    }
+
+    /// Signs the release's SHA256SUMS with `seed`'s key.
+    fn sign(&self, seed: &[u8; 32]) {
+        let sums = std::fs::read(self.path("release/SHA256SUMS")).unwrap();
+        std::fs::write(
+            self.path("release/SHA256SUMS.minisig"),
+            minisign(seed, &sums),
+        )
+        .unwrap();
     }
 }
 
@@ -338,4 +383,43 @@ fn a_cargo_install_upgrades_from_its_checkout() {
         h.tmp.path().display()
     );
     assert!(h.log().contains(&cargo), "{}", h.log());
+}
+
+/// An upgrade trusts no line of SHA256SUMS its signature by the key this
+/// datum was built with does not cover (da-0b55k), and refuses, changing
+/// nothing, when it is missing, by another key, or over other bytes.
+#[test]
+fn upgrade_refuses_sums_the_release_key_did_not_sign() {
+    let h = Home::new();
+    h.ok(&["install", "--no-completions"]);
+    let before = std::fs::read(h.exe()).unwrap();
+    let stub = b"#!/bin/sh\necho datum 9.9.9\n";
+    let sig = h.path("release/SHA256SUMS.minisig");
+    let refused = |why: &str| {
+        let said = h.err(&["upgrade"]);
+        assert!(said.contains(why), "{said}");
+        assert_eq!(std::fs::read(h.exe()).unwrap(), before);
+        assert!(!h.path("bin/.datum-upgrade").exists());
+    };
+
+    h.release(stub, None);
+    std::fs::remove_file(&sig).unwrap();
+    refused("SHA256SUMS is not signed: the release has no SHA256SUMS.minisig");
+
+    h.sign(&OTHER_KEY);
+    refused("does not verify with the key this datum was built with: The signature was created with a different key");
+
+    // The binary swapped and SHA256SUMS rewritten to match, the old
+    // signature kept.
+    h.release(stub, None);
+    let kept = std::fs::read(&sig).unwrap();
+    h.release(b"#!/bin/sh\necho datum 6.6.6\n", None);
+    std::fs::write(&sig, kept).unwrap();
+    refused(
+        "does not verify with the key this datum was built with: The signature verification failed",
+    );
+
+    h.release(stub, None);
+    assert!(h.ok(&["upgrade"]).contains("datum 9.9.9"));
+    assert_eq!(std::fs::read(h.exe()).unwrap(), stub);
 }

@@ -55,7 +55,8 @@ Then set it up (below) and say in one sentence per field what it will do.
 ## With a shell
 
 **Install** (Linux or macOS: the prebuilt binary, checked against the release's SHA256SUMS, then `datum install` sets
-up tab completion; `datum upgrade` upgrades it later):
+up tab completion; `datum upgrade` upgrades it later, refusing a release whose SHA256SUMS the release key, minisign's
+`RWRF2CkFpZMRWdty5S4larI59ahqK7RzW+XkOHQ/M+Fzwn8tJKXvgBSp`, did not sign; install.sh checks it too when `minisign` is installed):
 
 ```bash,no_run
 curl -fsSL https://datum.day/install.sh | sh

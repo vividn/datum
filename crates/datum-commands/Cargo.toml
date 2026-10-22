@@ -44,6 +44,9 @@ datum-sync = { path = "../datum-sync", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+# `datum upgrade` checks the release's signature over SHA256SUMS (da-0b55k):
+# small, and no dependencies of its own.
+minisign-verify = "0.3.0"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }

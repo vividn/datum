@@ -7,19 +7,22 @@
 # It downloads this machine's binary (Linux or macOS, x86_64 or aarch64)
 # and SHA256SUMS from the `latest` release, which .github/workflows/
 # release.yml publishes on every push to main, and refuses a binary whose
-# checksum does not match. It installs to ~/.local/bin, or
-# $DATUM_INSTALL_DIR, and says if that is not on your PATH. Then, as
-# scripts/install.sh does after its build, the binary sets itself up:
-# `datum install`, which takes this script's arguments (`curl -fsSL
-# https://datum.day/install.sh | sh -s -- --no-completions`). Once it is
-# installed, `datum upgrade` upgrades it. `datum --version` names the
-# commit it was built from.
+# checksum does not match. With minisign on PATH it also checks that
+# SHA256SUMS is signed by the release key below (release/minisign.pub),
+# and refuses it if not; without, it says so and goes on. It installs to
+# ~/.local/bin, or $DATUM_INSTALL_DIR, and says if that is not on your
+# PATH. Then, as scripts/install.sh does after its build, the binary sets
+# itself up: `datum install`, which takes this script's arguments (`curl
+# -fsSL https://datum.day/install.sh | sh -s -- --no-completions`). Once it
+# is installed, `datum upgrade` upgrades it, and checks the signature
+# always. `datum --version` names the commit it was built from.
 #
 # To build from a checkout instead: docs/install.md.
 set -eu
 
 release="${DATUM_RELEASE_URL:-https://github.com/vividn/datum/releases/download/latest}"
 dir="${DATUM_INSTALL_DIR:-$HOME/.local/bin}"
+key=RWRF2CkFpZMRWdty5S4larI59ahqK7RzW+XkOHQ/M+Fzwn8tJKXvgBSp
 
 fail() {
   echo "datum install: $*" >&2
@@ -45,6 +48,15 @@ trap 'rm -rf "$tmp"' EXIT
 for file in "$asset" SHA256SUMS; do
   curl -fsSL -o "$tmp/$file" "$release/$file" || fail "could not download $release/$file"
 done
+
+if command -v minisign > /dev/null; then
+  curl -fsSL -o "$tmp/SHA256SUMS.minisig" "$release/SHA256SUMS.minisig" ||
+    fail "SHA256SUMS is not signed: could not download $release/SHA256SUMS.minisig; nothing installed"
+  minisign -Vq -m "$tmp/SHA256SUMS" -P "$key" ||
+    fail "SHA256SUMS's signature does not verify with the release key; nothing installed"
+else
+  echo "minisign is not installed, so SHA256SUMS's signature was not checked (by hand: minisign -Vm SHA256SUMS -P $key)" >&2
+fi
 
 want=$(awk -v f="$asset" '$2 == f { print $1 }' "$tmp/SHA256SUMS")
 [ -n "$want" ] || fail "SHA256SUMS lists no $asset; nothing installed"

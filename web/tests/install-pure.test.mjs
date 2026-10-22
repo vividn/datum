@@ -2,13 +2,17 @@
 // scratch HOME against a stub release: a `file://` directory holding a
 // script per platform and a SHA256SUMS, and `uname` stubbed on PATH to be
 // the machine asked about. What is checked is which binary it picks and
-// that it installs nothing whose checksum does not match.
+// that it installs nothing whose checksum does not match. `minisign` is
+// stubbed too, on a PATH entry of its own (`signer`): it says what it was
+// asked, and passes a signature unless STUB_BAD_SIGNATURE is set and the
+// .minisig is there, so a test leaving `signer` off PATH is a machine
+// without minisign.
 
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,16 +36,21 @@ function scratch({ sums = (asset) => sha256(binary(asset)) } = {}) {
 	for (const asset of ASSETS) writeFileSync(join(release, asset), binary(asset));
 	const lines = ASSETS.map((asset) => [sums(asset), asset]).filter(([sum]) => sum);
 	writeFileSync(join(release, 'SHA256SUMS'), lines.map(([sum, asset]) => `${sum}  ${asset}\n`).join(''));
+	writeFileSync(join(release, 'SHA256SUMS.minisig'), 'a signature\n');
 	writeFileSync(join(bin, 'uname'), '#!/bin/sh\ncase "$1" in -s) echo "$STUB_S" ;; -m) echo "$STUB_M" ;; esac\n');
 	chmodSync(join(bin, 'uname'), 0o755);
-	return { root, release, bin, home: join(root, 'home') };
+	const signer = join(root, 'signer');
+	mkdirSync(signer);
+	writeFileSync(join(signer, 'minisign'), '#!/bin/sh\necho "minisign $*" >&2\n[ -f "$3.minisig" ] && [ -z "$STUB_BAD_SIGNATURE" ]\n');
+	chmodSync(join(signer, 'minisign'), 0o755);
+	return { root, release, bin, signer, home: join(root, 'home') };
 }
 
 function install(box, s, m, env = {}) {
 	const result = spawnSync('sh', [script, '--no-completions'], {
 		encoding: 'utf8',
 		env: {
-			PATH: `${box.bin}:${process.env.PATH}`,
+			PATH: `${box.bin}:${box.signer}:${process.env.PATH}`,
 			HOME: box.home,
 			XDG_CONFIG_HOME: join(box.home, '.config'),
 			DATUM_RELEASE_URL: `file://${box.release}`,
@@ -80,7 +89,7 @@ describe('install.sh picks the binary for the machine', () => {
 	test('$DATUM_INSTALL_DIR is where it goes, and on PATH it says nothing of PATH', () => {
 		const box = scratch();
 		const dir = join(box.root, 'elsewhere');
-		const run = install(box, 'Linux', 'x86_64', { DATUM_INSTALL_DIR: dir, PATH: `${box.bin}:${dir}:${process.env.PATH}` });
+		const run = install(box, 'Linux', 'x86_64', { DATUM_INSTALL_DIR: dir, PATH: `${box.bin}:${box.signer}:${dir}:${process.env.PATH}` });
 		assert.equal(run.status, 0, run.stderr);
 		assert.equal(run.installed, join(dir, 'datum'));
 		assert.equal(readFileSync(run.installed, 'utf8'), binary('datum-x86_64-linux'));
@@ -119,5 +128,47 @@ describe('install.sh refuses a binary SHA256SUMS does not vouch for', () => {
 		assert.notEqual(run.status, 0);
 		assert.match(run.stderr, /SHA256SUMS lists no datum-aarch64-macos; nothing installed/);
 		assert.equal(existsSync(run.installed), false);
+	});
+});
+
+// The pinned key is release/minisign.pub's; datum-commands' install.rs
+// holds every copy of it to that file.
+const KEY = readFileSync(fileURLToPath(new URL('../../release/minisign.pub', import.meta.url)), 'utf8').split('\n')[1];
+const hostMinisign = spawnSync('sh', ['-c', 'command -v minisign']).status === 0;
+
+describe('install.sh checks SHA256SUMS is signed by the release key, with minisign', () => {
+	test('it asks minisign with the pinned key, and installs on a good signature', () => {
+		const run = install(scratch(), 'Linux', 'x86_64');
+		assert.equal(run.status, 0, run.stderr);
+		assert.match(run.stderr, new RegExp(`^minisign -Vq -m \\S+/SHA256SUMS -P ${KEY.replace(/[+/]/g, '\\$&')}$`, 'm'));
+		assert.equal(existsSync(run.installed), true);
+	});
+
+	test('a signature that does not verify installs nothing and keeps the datum already there', () => {
+		const box = scratch();
+		const old = join(box.home, '.local/bin/datum');
+		mkdirSync(join(box.home, '.local/bin'), { recursive: true });
+		writeFileSync(old, 'the old one');
+		const run = install(box, 'Linux', 'x86_64', { STUB_BAD_SIGNATURE: '1' });
+		assert.notEqual(run.status, 0);
+		assert.match(run.stderr, /SHA256SUMS's signature does not verify with the release key; nothing installed/);
+		assert.equal(readFileSync(old, 'utf8'), 'the old one');
+	});
+
+	test('a release with no signature installs nothing', () => {
+		const box = scratch();
+		rmSync(join(box.release, 'SHA256SUMS.minisig'));
+		const run = install(box, 'Linux', 'x86_64');
+		assert.notEqual(run.status, 0);
+		assert.match(run.stderr, /SHA256SUMS is not signed: could not download \S+\/SHA256SUMS\.minisig; nothing installed/);
+		assert.equal(existsSync(run.installed), false);
+	});
+
+	test('without minisign it says so, and how to check by hand, and installs', { skip: hostMinisign && 'minisign is installed here' }, () => {
+		const box = scratch();
+		const run = install(box, 'Linux', 'x86_64', { PATH: `${box.bin}:${process.env.PATH}` });
+		assert.equal(run.status, 0, run.stderr);
+		assert.ok(run.stderr.includes(`signature was not checked (by hand: minisign -Vm SHA256SUMS -P ${KEY})`), run.stderr);
+		assert.equal(existsSync(run.installed), true);
 	});
 });

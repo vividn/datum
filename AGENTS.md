@@ -998,6 +998,23 @@ it reads the old shape.
 cargo build --release -p datum-cli   # produces target/release/datum
 ```
 
+### Signed releases and rotating the key
+
+Each push to main publishes the prebuilt binaries with a SHA256SUMS signed
+by minisign (`.github/workflows/release.yml`, the secret key in the GitHub
+`release` environment). `release/minisign.pub` is the public half, built
+into every datum by `include_str!`, and `datum upgrade` refuses a release
+that key did not sign, trusting no line of SHA256SUMS before (da-0b55k).
+A binary trusts only the key it was built with, so a new key ships in a
+release still signed by the old one: change `release/minisign.pub` (and
+its copies in `web/static/install.sh`, `README.md` and
+`web/static/agents.md`, which a test holds to it) in one commit while the
+old secret still signs, and switch the secret, made with `minisign -G -W`
+(no password: the job cannot type one), only once that release is out. A binary that skips it refuses every later
+release, and is reinstalled with install.sh. A test build may trust a
+throwaway key (`DATUM_TEST_RELEASE_KEY`, read only under datum-commands'
+`test-util` feature); a release build has no such door.
+
 ## Web app dev
 
 ```bash
