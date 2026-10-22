@@ -333,17 +333,7 @@ describe('on a phone', () => {
 	test('lock the pill, then each tap adds — three sections; a tap on one again takes it out', async () => {
 		await withAnyApp(async (app) => {
 			const { page } = app;
-			// No REPL on `mobile` for `seedLines` to wait on: through the loud door, then idle.
-			await seedApart(app, (line) => page.evaluate((l) => window.datum.runLine(l), line));
-			await app.idle();
-			// The loud door leaves the last line's ghost up for a second of real
-			// time (`GHOST_MS`), the pills standing after it, and they slide 84px
-			// left when it goes: a lock tap whose click came after that hit where
-			// the lock had been, and the pill stayed unlocked (da-hoysk).
-			await page.locator('.prompt-bar .ghost').waitFor({ state: 'detached' });
-			await rows(page).nth(0).waitFor();
-			const count = await rows(page).count();
-			assert.ok(count >= 3, `the mobile tail shows ${count} rows`);
+			const count = await phoneRows(app);
 			await rows(page).nth(count - 1).tap();
 			await hidPill(page).waitFor();
 			await hidPill(page).locator('button.lock').tap();
@@ -356,4 +346,96 @@ describe('on a phone', () => {
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
+
+	// da-x19yo, vividn: «If you long press on piece of data, it locks the
+	// pill, letting you then do multi select».
+	test('a long press selects the row and locks the pill; taps add and remove; unlocked, a tap selects one', async () => {
+		await withAnyApp(async (app) => {
+			const { page } = app;
+			const count = await phoneRows(app);
+			const marked = () => page.evaluate(() => document.querySelectorAll('section[data-title="tail"] tbody tr.selected').length);
+			const held = await rows(page).nth(count - 1).getAttribute('data-hid');
+
+			await press(page, rows(page).nth(count - 1), async () => {
+				await page.locator('.prompt-bar .pill.hid.locked').waitFor();
+			});
+			// The lift's click is the hold's: it did not take the entry out again.
+			await app.idle();
+			assert.deepEqual(await sections(page), [held.slice(0, 5)]);
+			assert.equal(await marked(), 1);
+
+			await rows(page).nth(count - 2).tap();
+			await rows(page).nth(count - 3).tap();
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill.hid button.remove').length === 3);
+			assert.equal(await marked(), 3);
+			await rows(page).nth(count - 2).tap();
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill.hid button.remove').length === 2);
+			assert.equal(await marked(), 2);
+
+			await hidPill(page).locator('button.lock').tap();
+			await page.locator('.prompt-bar .pill.hid.locked').waitFor({ state: 'detached' });
+			const one = await rows(page).nth(count - 2).getAttribute('data-hid');
+			await rows(page).nth(count - 2).tap();
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill.hid button.remove').length === 1);
+			assert.deepEqual(await sections(page), [one.slice(0, 5)]);
+			assert.equal(await marked(), 1);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('a finger that traveled holds nothing: a scroll neither selects nor locks', async () => {
+		await withAnyApp(async (app) => {
+			const { page } = app;
+			const count = await phoneRows(app);
+			// The hold's timer is kept back and run once the finger has moved,
+			// so the order is the test's and not a loaded runner's. The
+			// control: the same press, still, does lock.
+			for (const travel of [24, 0]) {
+				await page.evaluate(() => {
+					const real = window.setTimeout;
+					window.heldBack = undefined;
+					// The hold's wait alone: 450 ms is `HOLD_MS`.
+					window.setTimeout = (fn, ms, ...a) =>
+						window.event?.type === 'pointerdown' && ms === 450 ? ((window.heldBack = fn), 0) : real(fn, ms, ...a);
+					for (const lift of ['pointerup', 'pointercancel'])
+						addEventListener(lift, () => (window.setTimeout = real), { capture: true, once: true });
+				});
+				await press(page, rows(page).nth(count - 2), async (cdp, at) => {
+					if (travel) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: at.x, y: at.y - travel }] });
+					await page.evaluate(() => window.heldBack());
+				});
+				await app.idle();
+				assert.equal(await page.locator('.prompt-bar .pill.hid.locked').count(), travel ? 0 : 1, `travel ${travel}`);
+			}
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
 });
+
+/** The phone seeded, the ghost gone: how many tail rows it shows, at least three. */
+async function phoneRows(app) {
+	const { page } = app;
+	// No REPL on `mobile` for `seedLines` to wait on: through the loud door, then idle.
+	await seedApart(app, (line) => page.evaluate((l) => window.datum.runLine(l), line));
+	await app.idle();
+	// The loud door leaves the last line's ghost up for a second of real
+	// time (`GHOST_MS`), the pills standing after it, and they slide 84px
+	// left when it goes: a lock tap whose click came after that hit where
+	// the lock had been, and the pill stayed unlocked (da-hoysk).
+	await page.locator('.prompt-bar .ghost').waitFor({ state: 'detached' });
+	await rows(page).nth(0).waitFor();
+	const count = await rows(page).count();
+	assert.ok(count >= 3, `the mobile tail shows ${count} rows`);
+	return count;
+}
+
+/** One finger on `row`'s middle, by CDP: down, `meanwhile`, up. */
+async function press(page, row, meanwhile) {
+	const box = await row.boundingBox();
+	const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
+	await meanwhile(cdp, at);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await cdp.detach();
+}

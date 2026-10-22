@@ -389,6 +389,19 @@ export function select(
 	anchor = hid;
 }
 
+/**
+ * A long press on an entry (da-x19yo): it is selected and the pill locked,
+ * so the taps after it add and remove entries. vividn, 2026-10-22: «If you
+ * long press on a piece of data, it locks the pill, letting you then do
+ * multi select». Added to a selection already locked; otherwise alone.
+ */
+export function selectHeld(hid: string): void {
+	const pill = get(pills).find((p) => p.kind === 'hid');
+	const kept = pill?.locked ? get(selected).filter((h) => !same(h, hid)) : [];
+	setHids([...kept, hid], true);
+	anchor = hid;
+}
+
 /** Entries that are gone (a `delete` ran) leave the selection. */
 export const dropHids = (gone: string[]): void => {
 	const pill = get(pills).find((p) => p.kind === 'hid');

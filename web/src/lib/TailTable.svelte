@@ -89,8 +89,10 @@
 	import { ansiSpans, type AnsiSpan } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
 	import StateCell from './StateCell.svelte';
-	import { fieldPill, select, selected } from './bar.js';
+	import { fieldPill, select, selected, selectHeld } from './bar.js';
 	import { cursor, timeArg, type Cursor } from './cursor.js';
+	import { HOLD_MS, swallowTail } from './hold.js';
+	import { pressTraveled } from './inspect.js';
 	import { isSelected, same } from './selection.js';
 	import { tapped } from './tap.js';
 	import type { PaneBox } from './panes.js';
@@ -773,7 +775,30 @@
 		}
 	}
 
+	/**
+	 * A finger held on a row (da-x19yo) selects its entry and locks the hid
+	 * pill (`selectHeld`), and the click its lift leaves is swallowed. A
+	 * finger's alone: a mouse held on a row is selecting its text, and
+	 * ctrl/cmd+click toggles. A press that traveled — a scroll — holds
+	 * nothing, and taps nothing either (da-xg1vi).
+	 */
+	let holding: ReturnType<typeof setTimeout> | undefined;
+	let held = false;
+	const unpress = () => clearTimeout(holding);
+	function press(e: PointerEvent, hid: string): void {
+		unpress();
+		held = false;
+		if (e.pointerType === 'mouse' || !e.isPrimary) return;
+		holding = setTimeout(() => {
+			if (pressTraveled()) return;
+			held = true;
+			swallowTail();
+			selectHeld(hid);
+		}, HOLD_MS);
+	}
+
 	onDestroy(detach);
+	onDestroy(unpress);
 </script>
 
 <!-- The probe: what a header row and a one-line row measure in this pane.
@@ -830,7 +855,8 @@
 		</thead>
 		<tbody bind:this={tbody}>
 			{#each visible as row, i (row.hid)}
-				<!-- A tap selects the entry, as its hid pill (da-r13j). The
+				<!-- A tap selects the entry, as its hid pill (da-r13j), and a
+				     finger held on it locks the pill too (da-x19yo). The
 				     rows are not focusable, so there is no keyboard selection. -->
 				<tr
 					data-hid={row.hid}
@@ -838,7 +864,13 @@
 					class:line={i === line}
 					class:line-under={line === visible.length && i === line - 1}
 					on:mousedown={(e) => e.shiftKey && e.preventDefault()}
-					on:click={(e) => tapped(e) && select(row.hid, e, visible.map((r) => r.hid))}
+					on:click={(e) =>
+						tapped(e) && !pressTraveled() && select(row.hid, e, visible.map((r) => r.hid))}
+					on:pointerdown={(e) => press(e, row.hid)}
+					on:pointerup={unpress}
+					on:pointercancel={unpress}
+					on:pointerleave={unpress}
+					on:contextmenu={(e) => held && e.preventDefault()}
 					class:start={exhausted && i === 0}
 					title={exhausted && i === 0 ? 'the start of the log' : undefined}
 				>
@@ -870,6 +902,17 @@
 
 	tbody tr {
 		cursor: pointer;
+	}
+
+	/* A finger held on a row is the multi-select (da-x19yo), never the
+	   phone's own text selection: one left standing reads as a drag
+	   (`tapped`), and the taps after the hold would add nothing. */
+	@media (pointer: coarse) {
+		tbody tr {
+			-webkit-user-select: none;
+			user-select: none;
+			-webkit-touch-callout: none;
+		}
 	}
 
 	table {
