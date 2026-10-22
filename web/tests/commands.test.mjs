@@ -16,7 +16,6 @@ import { sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines } from '
 import { DESKTOP, along, draft, toggleOption, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { atRows, axes, boxes, gaps, lastReached, listed, packed } from './support/rows.mjs';
-import { FIELD_FORM } from './support/field.mjs';
 
 before(startApp);
 after(stopApp);
@@ -86,20 +85,6 @@ const drawn = async (page) => (await listed(commands(page), 'button[data-command
  * leaves is the claim here — the order they come in is `fields.test.mjs`'s.
  */
 const showing = async (page) => (await listed(fieldsBar(page), '[data-field]')).map((b) => b.field).sort();
-
-/**
- * Where a button sits in the bar's reading order: the line it is on and
- * how far along it.
- *
- * The LINE is the middle of its box, not its top: the bar centres what it
- * lays out, and a record's underlined name is shorter than a chip — so
- * two buttons side by side have different tops and the same centre.
- */
-const place = (locator) =>
-	locator.evaluate((el) => {
-		const box = el.getBoundingClientRect();
-		return { line: Math.round(box.top + box.height / 2), along: Math.round(box.left) };
-	});
 
 /** Run `act` and wait for the REPL to echo the command it started. */
 async function echoed(app, act) {
@@ -433,26 +418,8 @@ describe('a verb fills the line and filters the fields', () => {
 			assert.deepEqual(await line(page), { text: 'occur ', focused: true });
 			assert.deepEqual(await showing(page), ['coffee']);
 
-			// The `+` at the END of the filtered list: after the last field a
-			// reader reads, where the whole list has the (+) before the first.
-			const plus = await place(fieldsBar(page).locator('[data-add-field]'));
-			const coffee = await place(fieldsBar(page).locator('[data-field="coffee"]'));
-			assert.ok(
-				plus.line > coffee.line || (plus.line === coffee.line && plus.along > coffee.along),
-				'the + is not after the fields'
-			);
-			assert.equal(await fieldsBar(page).locator('[data-track]').count(), 0, 'the (+) is still there');
-
-			// And it is the field widget on a new field (da-94q1, da-fu29p)
-			// with the pending verb already chosen — the door that presets one.
-			await fieldsBar(page).locator('[data-add-field]').click();
-			await page.locator(FIELD_FORM).waitFor();
-			assert.equal(
-				await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).getAttribute('aria-checked'),
-				'true'
-			);
-			await page.keyboard.press('Escape');
-			await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
+			// The fields alone: no `+` ends the filtered list (da-myet1).
+			assert.deepEqual(await fieldsBar(page).locator('button').evaluateAll((all) => all.filter((b) => b.textContent.trim() === '+').length), 0);
 
 			await echoed(app, () => fieldsBar(page).locator('[data-field="coffee"]').click());
 			assert.equal((await app.echoes()).at(-1), 'occur coffee');
@@ -483,16 +450,6 @@ describe('a verb fills the line and filters the fields', () => {
 
 			await tap(page, 'add');
 			assert.deepEqual(await showing(page), ['rec']);
-
-			// `end` is not a verb a field can be BORN with, so the `+` under it
-			// opens the form on `start`: a block you are ending is a block.
-			await tap(page, 'end');
-			await fieldsBar(page).locator('[data-add-field]').click();
-			await page.locator(FIELD_FORM).waitFor();
-			assert.equal(
-				await page.locator(`${FIELD_FORM} button[data-verb="start"]`).getAttribute('aria-checked'),
-				'true'
-			);
 		});
 	});
 

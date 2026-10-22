@@ -20,7 +20,6 @@ import {
 	fieldsUnder,
 	grammarOf,
 	pendingVerb,
-	declaredVerb,
 	drills,
 	opensField,
 	fieldVerb,
@@ -284,13 +283,6 @@ describe('what a press under a verb runs', () => {
 	test('switch on a many-stated field, and add on a record, ask first', () => {
 		assert.equal(verbPress('switch', onSwitch), null);
 		assert.equal(verbPress('add', record), null);
-	});
-
-	// The `+` at the end of a filtered list opens the field widget on the
-	// pending verb (da-94q1's four). `end` is not one a field can be BORN
-	// with, and a block you are ending is a block — so it declares `start`.
-	test('the `+` opens the field widget on the pending verb, with end declaring start', () => {
-		assert.deepEqual(VERBS.map(declaredVerb), ['occur', 'start', 'start', 'switch', 'add']);
 	});
 });
 

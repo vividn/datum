@@ -30,7 +30,7 @@ const FIELD = 'setup';
 /**
  * The field the widget is on — `''` is a new one — and the kind a new one
  * opens with. Every set is a new object, which is what draws the form
- * afresh: the (+) pressed twice is an empty form twice.
+ * afresh: a new field opened twice is an empty form twice.
  */
 export const editing = writable<{ field: string; verb?: Verb | null }>({ field: '' });
 

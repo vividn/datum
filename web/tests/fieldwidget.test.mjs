@@ -78,7 +78,7 @@ describe('the field widget', () => {
 	test('with no fields: what a field is, the four shapes first, a name box, and every tab', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await page.locator('.bar button[data-track]').click();
+			await openField(page);
 			await page.locator(FIELD_FORM).waitFor();
 			assert.equal(
 				(await page.locator(`${WIDGET} p.what`).innerText()).trim(),
@@ -588,8 +588,8 @@ describe('the field widget', () => {
 			assert.equal((await pane.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
 			assert.equal(await page.locator('dialog[open]').count(), 0, 'a widget in view opened a place as well');
 
-			// And the fields widget's `+` goes to the pane, not to a place of its own.
-			await page.locator('.bar button[data-track]').click();
+			// And a new field goes to the pane, not to a place of its own.
+			await page.evaluate(() => void window.datum.field());
 			await pane.locator(`${FIELD_FORM} input.field`).fill('nap');
 			await pane.locator(`${FIELD_FORM} button[data-verb="start"]`).click();
 			await pane.locator(`${FIELD_FORM} button.commit`).click();

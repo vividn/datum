@@ -67,7 +67,7 @@ describe('a state field fills the widget with its states', () => {
 			// too until da-e78x6 removed them; the pills are what is left.)
 			assert.equal((await app.echoes()).at(-1), 'switch mood happy');
 			await page.locator('.bar [data-field="mood"]').waitFor();
-			assert.deepEqual(await bar(page), ['+', 'mood:']);
+			assert.deepEqual(await bar(page), ['mood:']);
 		});
 	});
 
@@ -81,7 +81,7 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-back]').click();
 
 			await page.locator('.bar [data-field="mood"]').waitFor();
-			assert.deepEqual(await bar(page), ['+', 'mood:']);
+			assert.deepEqual(await bar(page), ['mood:']);
 			assert.equal((await app.echoes()).length, before, 'Back logged something');
 		});
 	});

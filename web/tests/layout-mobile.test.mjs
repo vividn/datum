@@ -351,7 +351,6 @@ describe('a fresh phone', () => {
 					if (folded)
 						for (const name of ['Undo', '↷', 'occur', 'start', ...(width > 360 ? ['end'] : [])])
 							assert.ok(commands.includes(name), `${name} is not whole: ${commands.join(' · ')}`);
-					assert.ok((await whole(fieldsBar(page))).includes('+'), 'the (+) is not whole');
 				}
 				assert.deepEqual(app.errors, []);
 			}, phone(width, height));

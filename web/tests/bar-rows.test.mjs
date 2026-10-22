@@ -26,7 +26,7 @@ const bar = (page) => page.locator('section[data-pane="bar"] .bar');
 const BUTTONS = 'button:not([tabindex="-1"])';
 
 /** The bar at `want` rows: its shape, nothing clipped, every row packed, every button reached. */
-async function holds(page, want, first) {
+async function holds(page, want) {
 	await atRows(page, 'bar', want);
 	const shape = await axes(bar(page));
 	const drawn = await boxes(bar(page), BUTTONS);
@@ -40,7 +40,7 @@ async function holds(page, want, first) {
 	assert.ok(await lastReached(bar(page), BUTTONS), `${want} rows: the last button is not reached`);
 	// Dealt by index: the first `want` start the rows, top to bottom.
 	const starts = drawn.filter((b) => b.left === drawn[0].left).sort((a, b) => a.line - b.line);
-	assert.equal(starts[0].name, first, 'the first row does not start with the first button');
+	assert.ok(EIGHT.includes(starts[0].name), `the first row starts with ${starts[0].name}, not a field`);
 	assert.equal(starts.length, want, `${want} rows, but ${starts.length} start at the left edge`);
 }
 
@@ -51,7 +51,7 @@ describe('the fields bar and the scroll rule', () => {
 				const { page } = app;
 				await seedLines(app, SEED);
 				await page.locator('.bar [data-field="hotel"]').waitFor();
-				for (const want of [1, 2, 3]) await holds(page, want, '+');
+				for (const want of [1, 2, 3]) await holds(page, want);
 			},
 			{
 				// Narrow enough that nine buttons wrap onto three lines.

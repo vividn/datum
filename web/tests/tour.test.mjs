@@ -12,7 +12,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { FIELD_FORM } from './support/field.mjs';
+import { FIELD_FORM, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -105,7 +105,7 @@ describe('the first field\'s tour', () => {
 	test('a fields widget on the page already: the place shuts and the tour stays on that page', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await page.locator('.bar button[data-track]').click();
+			await openField(page);
 			await page.locator(FIELD_FORM).waitFor();
 			await make(page, 'coffee', 'occur');
 			await until(() => stop(page, '[data-widget="widgetbar"] button[data-field="coffee"]'), (s) => s.round && s.say === 'A tap on coffee logs it.');

@@ -24,7 +24,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, type, untilFieldStyle } from './support/fields.mjs';
-import { FIELD_FORM, declared } from './support/field.mjs';
+import { FIELD_FORM, declared, openField } from './support/field.mjs';
 
 describe('a press', () => {
 	before(startApp);
@@ -65,12 +65,12 @@ describe('a press', () => {
 		});
 	});
 
-	// The form is tests/track.test.mjs's; what belongs here is that the (+)
-	// opens it and that the field it declares is the field the bar then draws.
-	test('Track + asks for the verb and writes it', async () => {
+	// The form is tests/track.test.mjs's; what belongs here is that the field
+	// it declares is the field the bar then draws.
+	test('a new field asks for the verb and writes it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await page.locator('.bar [data-track]').click();
+			await openField(page);
 			const modal = page.locator(FIELD_FORM);
 			await modal.locator('input.field').fill('sleep');
 			assert.equal(await modal.locator('.verb[aria-checked="true"]').count(), 0, 'a verb was chosen for them');

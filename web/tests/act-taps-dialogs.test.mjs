@@ -12,12 +12,11 @@ import { everyLayer } from './support/taps.mjs';
 import { DESKTOP } from './support/layout.mjs';
 
 // The shipped tree, as act-taps-desktop has it. What the walk has to reach:
-// the sheet «Delete plan» slipped through in (#241), its confirm, the Track
-// form, and the root tab's menu, whose «Save layout» writes and so is
+// the sheet «Delete plan» slipped through in (#241), its confirm, and the
+// root tab's menu, whose «Save layout» writes and so is
 // double (da-kk0vr).
 everyLayer('desktop', { ...DESKTOP, desk: null }, 'rest', [
 	'page: main',
 	'page: settings › page: Backups',
-	'page: settings › page: Backups › backups: Delete plan',
-	'fields: track a new field'
+	'page: settings › page: Backups › backups: Delete plan'
 ]);

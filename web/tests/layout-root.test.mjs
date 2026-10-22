@@ -94,14 +94,13 @@ describe('the default layout', () => {
 // «that looks rather ugly, I would make an exception for the + button»),
 // and every other button that opens a modal still does.
 describe('the chevron', () => {
-	test('the root bar\'s +, a pane\'s + and the fields\' + wear none; Change Widget still does', async () => {
+	test('the root bar\'s + and a pane\'s + wear none; Change Widget still does', async () => {
 		await shared.solo(async ({ page }) => {
 			await enterLayoutMode(page);
 			const after = (locator) => locator.evaluate((b) => getComputedStyle(b, '::after').content);
 			for (const plus of [
 				page.locator('button[aria-label="open a layout"]'),
-				page.locator('button[aria-label^="add a tab to the"]').first(),
-				page.locator('button.add-button')
+				page.locator('button[aria-label^="add a tab to the"]').first()
 			]) {
 				assert.equal(await plus.getAttribute('data-act'), 'open', 'the + no longer says open');
 				assert.equal(await after(plus), 'none', `${await plus.textContent()} wears a chevron`);
@@ -171,9 +170,9 @@ describe('on a phone', () => {
 			);
 			assert.equal(new Set(boxes.map((b) => `${b.x}:${b.w}`)).size, 1, `not a column: ${JSON.stringify(boxes)}`);
 			assert.deepEqual(await pane(page, 'side').locator('[role="tab"]').allInnerTexts(), ['tail', 'nowview', 'custom']);
-			const add = await page.locator('.bar button.add-button').boundingBox();
+			const hint = await page.locator('.bar .hint.empty').boundingBox();
 			const screen = await page.evaluate(() => document.documentElement.clientHeight);
-			assert.ok(add.y >= 0 && add.y + add.height <= screen, `the + is off-screen: ${JSON.stringify(add)}`);
+			assert.ok(hint.y >= 0 && hint.y + hint.height <= screen, `the fields' hint is off-screen: ${JSON.stringify(hint)}`);
 		});
 	});
 

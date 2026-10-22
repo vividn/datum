@@ -177,7 +177,7 @@ for (const [name, screen] of [
 // vremya on #494, on her own record: Track + stood first and wide, and every
 // field started right of its column, so on the half-width fields pane of a
 // fresh phone's `mobile` layout the most used field showed as «ac». The
-// fields start at the pane's left edge, and the (+) comes after them.
+// fields start at the pane's left edge.
 test('a fresh phone: the most used field is whole on open, and the fields start at the left edge', async () => {
 	await withApp(
 		async (app) => {
@@ -188,15 +188,6 @@ test('a fresh phone: the most used field is whole on open, and the fields start 
 			const most = fields.crowd7;
 			assert.ok(most.left >= -0.5 && most.right <= bar.width + 0.5, `crowd7 at ${most.left}–${most.right} of ${bar.width}`);
 			assert.ok(Math.min(...Object.values(fields).map((r) => r.left)) <= 0.5, 'no field starts at the left edge');
-			// A `+`, and no `›` drawn after it: app.css's
-			// `[data-act='open']:not(.add-button)…` spares it the opener's mark
-			// (#488), and the check is on what is DRAWN, not on that class.
-			const [plus, after] = await page.$eval(`${BAR} [data-track]`, (el) => [
-				el.textContent.trim(),
-				getComputedStyle(el, '::after').content
-			]);
-			assert.equal(plus, '+');
-			assert.equal(after, 'none', `the + wears ${after}`);
 			assert.deepEqual(app.errors, []);
 		},
 		{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT }

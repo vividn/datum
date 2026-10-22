@@ -38,9 +38,9 @@ async function actionWord(app, field) {
 	return stripAnsi(JSON.parse(stdout).docs[0].action).trim();
 }
 
-/** Open the field widget from the widget bar's (+), on a new field, and wait for its form. */
+/** Open the field widget on a new field, and wait for its form. */
 async function openIt(page) {
-	await page.locator('.bar [data-track]').click();
+	await openField(page);
 	await page.locator(MODAL).waitFor();
 }
 
@@ -351,7 +351,7 @@ describe('in the app', () => {
 		}, { query: 'repl' });
 	});
 
-	test('the (+) opens the form on the four pictograms, Save shut until a name and a verb', async () => {
+	test('a new field opens the form on the four pictograms, Save shut until a name and a verb', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
@@ -490,10 +490,10 @@ describe('in the app', () => {
 	});
 
 	// da-ci85o: declaring is the spec's form on Basics, and it must stay as
-	// quick as the modal it absorbed — the (+), a shape, Save: three taps,
-	// the name typed into the box the shape gave the focus (da-uipyt).
-	// Four since a shape stopped opening the keyboard (da-zz9rn): the name box is a tap of its own.
-	test('declaring a field is four taps: the (+), a shape, the name, Save', async () => {
+	// quick as the modal it absorbed: a shape, the name box (a shape stopped
+	// opening the keyboard, da-zz9rn), Save. The fields widget's (+) that
+	// opened it, the fourth tap, is gone (da-myet1).
+	test('declaring a field in the open form is three taps: a shape, the name, Save', async () => {
 		await withApp(async (app) => { // a listener of its own, which `solo` would keep
 			const { page } = app;
 			await page.evaluate(() => {
@@ -506,7 +506,7 @@ describe('in the app', () => {
 			await page.keyboard.type('coffee');
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
-			assert.equal(await page.evaluate(() => window.__taps), 4);
+			assert.equal(await page.evaluate(() => window.__taps), 3);
 		});
 	});
 
@@ -1093,8 +1093,7 @@ describe('in the app', () => {
 	// no second life.
 	test('the form that used to hang off the bar is gone from the DOM', async () => {
 		await shared.solo(async ({ page }) => {
-			await page.locator('.bar [data-track]').click();
-			await page.locator(MODAL).waitFor();
+			await openIt(page);
 			assert.equal(await page.locator('.bar form.add, .bar .panel.add').count(), 0);
 			assert.equal(await page.locator(`${MODAL} select`).count(), 0, 'the `<select>` came along');
 		});

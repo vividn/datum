@@ -32,7 +32,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESK } from './support/desk.mjs';
-import { FIELD_FORM } from './support/field.mjs';
+import { FIELD_FORM, openField } from './support/field.mjs';
 import {
 	DESKTOP,
 	choiceLines,
@@ -538,8 +538,8 @@ describe('widget options', () => {
 	//
 	// The first option that was this session's, and now the rule rather than
 	// the exception. What is held to is the whole contract, not just the
-	// filter: the button comes back, it is visibly still ignored, the (+)
-	// still offers it, the layout is not dirtied, «defaults» puts it back,
+	// filter: the button comes back, it is visibly still ignored, a new
+	// field's form still offers it, the layout is not dirtied, «defaults» puts it back,
 	// and a reload keeps it on this device (da-ray91, vividn, 2026-10-20:
 	// «widget options should survive reloads in general»).
 	test('fields: «show ignored fields» is this session’s — marked, composing, and never the layout’s', async () => {
@@ -600,8 +600,8 @@ describe('widget options', () => {
 			assert.equal(await tracked.evaluate((b) => parseFloat(getComputedStyle(b).opacity)), 1);
 
 			// It is a SECOND way to see them, not a replacement for the one that
-			// exists: the (+) still offers `run` back.
-			await page.locator('.bar [data-track]').click();
+			// exists: a new field's form still offers `run` back.
+			await openField(page);
 			await page.locator(`${FIELD_FORM} [data-ignored="run"]`).waitFor();
 			await page.keyboard.press('Escape');
 			await page.locator(FIELD_FORM).waitFor({ state: 'detached' });

@@ -18,7 +18,6 @@
 
 import type { Pill } from './bar.js';
 import type { FieldButton } from './fields.js';
-import type { Verb as TrackVerb } from './track.js';
 
 /** A verb the command line can be pending: the five a field is logged with. */
 export type Verb = 'occur' | 'start' | 'end' | 'switch' | 'add';
@@ -298,17 +297,6 @@ export function pressKind(button: FieldButton, verb: Verb | null): PressKind {
  * in its ring and a verb under its pill (`fieldVerb`) all ask this.
  */
 export const typesKeys = (verb: string, button: FieldButton): boolean => verb !== 'end' && button.required.length > 0;
-
-/**
- * The verb a pending one DECLARES a field with, for the `+` at the end of
- * a filtered list (da-94q1's modal takes one of four).
- *
- * Identity but for `end`, which is not a verb a field can be born with —
- * the four are `occur | start | switch | add` (datum-core's
- * `VERB_CHOICES`). A block you are ending is a block, so `end` declares
- * `start`.
- */
-export const declaredVerb = (verb: Verb): TrackVerb => (verb === 'end' ? 'start' : verb);
 
 // ---- the pills a command takes (da-r13j) --------------------------------
 //

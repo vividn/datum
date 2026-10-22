@@ -21,8 +21,7 @@
 // again (da-vyo2). So the cases here run against a POPULATED bar as well as
 // an empty one.
 //
-// The bar is the fields widget now (da-c7u8): the (+) first, then a button
-// per TRACKED field — so the handful here is declared with `setup F`,
+// The bar is the fields widget now (da-c7u8): a button per TRACKED field — so the handful here is declared with `setup F`,
 // which is what gives a field its button.
 //
 // And the count that wraps is not a constant: it is what fits across the
@@ -37,7 +36,7 @@ import { atEachScreen, focusTop, seedLines, sharedApp, startApp, stopApp, withAp
 import { fold, unfold } from './support/bar.mjs';
 import { chooser, enterLayoutMode, inRoom } from './support/layout.mjs';
 import { until } from './support/until.mjs';
-import { FIELD_FORM } from './support/field.mjs';
+import { FIELD_FORM, openField } from './support/field.mjs';
 
 before(startApp);
 after(stopApp);
@@ -106,14 +105,6 @@ async function assertOnScreen(page, selector, what) {
 }
 
 describe('on a phone-sized screen', () => {
-	test("the fields widget's (+) is on screen", async (t) => {
-		await phone.solo(async ({ page }) => {
-			await atEachScreen(t, page, [PHONE, SHORT], async () => {
-				await assertOnScreen(page, '.bar [data-track]', 'the (+)');
-			});
-		});
-	});
-
 	test("a tracked field's button is on screen", async (t) => {
 		await phone.solo(async (app) => {
 			const { page, submit } = app;
@@ -132,7 +123,6 @@ describe('on a phone-sized screen', () => {
 		await phone.solo(async (app) => {
 			await track(app, FIELDS);
 			await atEachScreen(t, app.page, SCREENS, async () => {
-				await assertOnScreen(app.page, '.bar [data-track]', 'the (+)');
 				await assertOnScreen(app.page, '.bar button.widget', "the first field's chip");
 			});
 		});
@@ -324,12 +314,12 @@ describe('on a phone-sized screen', () => {
 		});
 	});
 
-	// The (+) opens the field widget's place (da-94q1, da-fu29p) — a tab on
-	// a phone, rather than a form hanging off the bar's bottom row — so what
-	// its form has to clear is the screen's own box. Its pictograms are measured in tests/track.test.mjs.
-	test('the form the (+) opens is on screen', async () => {
+	// A new field opens the field widget's place (da-94q1, da-fu29p) — a tab
+	// on a phone — so what its form has to clear is the screen's own box. Its
+	// pictograms are measured in tests/track.test.mjs.
+	test("a new field's form is on screen", async () => {
 		await phone.solo(async ({ page }) => {
-			await page.locator('.bar [data-track]').click();
+			await openField(page);
 			await page.locator(FIELD_FORM).waitFor();
 			await assertOnScreen(page, FIELD_FORM, 'the field form');
 			// Left again, as a place is on a phone: back.
@@ -380,11 +370,11 @@ describe('on a phone-sized screen', () => {
 		});
 	});
 
-	test('the form the (+) opens is on screen with a wrapped bar', async () => {
+	test("a new field's form is on screen with a wrapped bar", async () => {
 		await phone.solo(async (app) => {
 			const { page } = app;
 			await track(app, FIELDS);
-			await page.locator('.bar [data-track]').click();
+			await openField(page);
 			await page.locator(FIELD_FORM).waitFor();
 			await assertOnScreen(page, FIELD_FORM, 'the field form');
 			// Left again, as a place is on a phone: back.

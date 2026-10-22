@@ -155,7 +155,7 @@ describe('a click on the picture puts the fields drawn there first', () => {
 
 				// The fields a press reached head the rows, from the top
 				// (da-xtkcp), so the one promoted field is the first on the top
-				// row as DRAWN — after the (+), which starts it.
+				// row as DRAWN.
 				const rows = await page.$eval(BAR, (bar) => Number(bar.dataset.rows));
 				assert.equal(rows, 2, 'this screen was chosen for a two-row bar');
 				const boxes = await page.$$eval(`${BAR} [data-field]`, (els) =>
@@ -243,9 +243,8 @@ describe('a duration on the bar leaves the fields it can be spent on', () => {
 
 			await dragARange(page);
 			// The verb leaves the points; the duration takes them away. Both
-			// apply, so nothing is left but the `+` that tracks a new field.
+			// apply, so nothing is left.
 			await saysFields(page, []);
-			await page.locator(`${BAR} [data-add-field]`).waitFor();
 
 			await page.locator('.prompt-bar .pill.dur button.remove').last().click();
 			await saysFields(page, ['coffee']);

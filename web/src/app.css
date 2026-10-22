@@ -112,8 +112,8 @@
    name, which says what the button is and not where it leads.
    A `+` face wears none (da-pmmgm): the `+` already says something
    opens to add to, and vividn found `+›` «rather ugly». The root bar's and
-   a pane's `+` (`.add`), the fields' `+` and its trailing `+`. */
-[data-act='open']:not(.add):not(.add-button):not(.add-field)::after {
+   a pane's `+` (`.add`). */
+[data-act='open']:not(.add)::after {
 	content: '›' / '';
 	margin-inline-start: 0.35em;
 }

@@ -1,4 +1,4 @@
-// A field the (+) creates has to be a field the app can log to.
+// A field the setup widget creates has to be a field the app can log to.
 //
 // It was not. The form ran `spec <whatever was typed>`, said "✓ Spec
 // saved", and drew a chip. `my coffee` then logged by pressing that chip
@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { along, widgetPane } from './support/layout.mjs';
-import { FIELD_FORM } from './support/field.mjs';
+import { FIELD_FORM, openField } from './support/field.mjs';
 const { cases } = JSON.parse(
 	readFileSync(
 		fileURLToPath(new URL('../../tests/fixtures/field-name.json', import.meta.url)),
@@ -47,7 +47,7 @@ const THE_RULE = /field name has no equals, commas or colons/;
 
 const acceptable = cases.filter((c) => c.ok);
 // The empty name is not a state the form can be typed into — it is what the
-// modal starts as, and the (+) has always refused to submit it. Nor is a
+// modal starts as, and the form has always refused to submit it. Nor is a
 // space at either end: the form trims what is typed, so ` coffee` declares
 // `coffee` there, and only `setup F` sees the name untrimmed.
 const refused = cases.filter((c) => !c.ok && c.field !== '');
@@ -76,7 +76,7 @@ const onBar = (fn) => shared.solo(fn, BAR);
  */
 async function typeIntoTheForm(page, field) {
 	const form = page.locator(FIELD_FORM);
-	if ((await form.count()) === 0) await page.locator('.bar button.add-button').click();
+	if ((await form.count()) === 0) await openField(page);
 	await form.locator('input.field').fill(field);
 	await form.locator('button[data-verb="occur"]').click();
 	const hint = form.locator('p.hint');
@@ -127,12 +127,12 @@ async function pressChip(app, field) {
 	);
 }
 
-describe('a field name the (+) form accepts', () => {
+describe('a field name the new-field form accepts', () => {
 	test('the form refuses the names nothing can log to, and names the rule', async () => {
 		await onBar(async ({ page }) => {
 			for (const testCase of formRefused) {
 				const { submittable, hint } = await typeIntoTheForm(page, testCase.field);
-				assert.equal(submittable, false, `${testCase.name}: (+) still offered to create it`);
+				assert.equal(submittable, false, `${testCase.name}: the form still offered to create it`);
 				assert.ok(hint, `${testCase.name}: refused with no explanation`);
 				assert.match(hint, THE_RULE, testCase.name);
 				if (testCase.suggest !== null) {

@@ -110,8 +110,8 @@ export interface DatumConsole {
 		point(sel: (Partial<Cursor> & { at?: Date }) | null): void;
 	};
 	/**
-	 * Open the setup widget (da-fu29p) on `field` — none is a new one, as
-	 * the fields' (+) opens it, `verb` its kind chosen — resolving with what its
+	 * Open the setup widget (da-fu29p) on `field` — none is a new one,
+	 * `verb` its kind chosen — resolving with what its
 	 * place's next save ran, or null when it is left without one.
 	 */
 	field(field?: string, verb?: Verb | null): Promise<RunResult | null>;

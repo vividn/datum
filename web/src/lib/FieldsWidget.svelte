@@ -2,11 +2,7 @@
 	The fields widget — every field `datum fields` lists, and the primary
 	way anything gets logged without typing (da-nz29, da-c7u8).
 
-	The (+) comes first: the way into the whole app, so it is there on an
-	empty database too — small and unfilled, a field's own height (da-y6jfb,
-	vividn: «let's remove the big "Track +" button in the fields widget, it
-	can just be an unfilled (+) button»). Then every field that is not
-	ignored (`ignored` in
+	Every field that is not ignored (`ignored` in
 	`datum fields --json`, da-d08c), spec or no spec — in ROWS by how high
 	up the pictures they are drawn, top to bottom, and most used first
 	along each row (`fieldRows`, da-xtkcp), an order taken on load and on
@@ -25,7 +21,7 @@
 	removed it.
 	Ignored fields get no button: the setup widget lists them under a new
 	field, and a press runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
-	without going through the (+) — a switch in the menu the pane's NAME
+	without the setup widget — a switch in the menu the pane's NAME
 	opens (da-vhwq), this session's and off by default. It adds them to the
 	list; it does not change what they are, so each is drawn faint and
 	dashed and says «ignored» when a pointer rests on it.
@@ -37,9 +33,7 @@
 	and as tall as the band where that is taller than a button; fields
 	whose bands overlap stand side by side, most used first by the last
 	sort, and a band too crowded for the width runs on to the right, where
-	the bar scrolls (`aligned` in fields.ts). The (+) is placed after
-	them all in the bottom band, so the fields start at the pane's left
-	edge. A pinch — two fingers, or ctrl+wheel, a trackpad's pinch — zooms
+	the bar scrolls (`aligned` in fields.ts). A pinch — two fingers, or ctrl+wheel, a trackpad's pinch — zooms
 	the y axis around itself: the buttons keep their size and glide apart.
 	While zoomed a vertical drag or the wheel pans, a press on a picture
 	pans to the field it landed nearest, and a slim marker down the right
@@ -48,12 +42,8 @@
 
 	A PENDING VERB (`verb`, da-ltux) is the commands widget talking to this
 	one through the command line they share: the list becomes the fields
-	that verb can be spent on, a press MEANS that verb and runs at once,
-	and the (+) stands at the end of the list instead of
-	before its start — the one door on the setup widget that PRESETS a kind,
-	mapped to one a field can be DECLARED with: `end` is not, so it declares
-	the block it would have ended (`declaredVerb`). Which fields, and
-	what a press then runs, are `fieldsUnder` and `verbPress` in commands.ts.
+	that verb can be spent on, and a press MEANS that verb and runs at once.
+	Which fields, and what a press then runs, are `fieldsUnder` and `verbPress` in commands.ts.
 
 	A SELECTION talks to it too (da-qu16). A `dur=` pill on the bar leaves
 	the fields a length can be spent on — the blocks — and composes with a
@@ -64,9 +54,10 @@
 	say why the bar changed. Nothing moves under a finger: while a pointer
 	is over the bar the order is held until it leaves.
 
-	The (+) opens the setup widget on a new field (`openField`,
-	$lib/fieldWidget.ts, da-fu29p) rather than a form hanging off the bar;
-	that widget runs its own save.
+	The widget shows the fields and nothing else: a new field is made in
+	the setup widget or at the prompt (`setup <field> …`), never here — its
+	bare (+) is gone (vividn, 2026-10-22: «let's get rid of + button, it's
+	confusing and looks bad», da-myet1).
 
 	Press to log. HOLD — or right-click, or shift+click, or the menu key —
 	to put the field on the bar as a PILL (da-8810n), which is how the rest
@@ -145,10 +136,8 @@
 	import { holds } from './hold.js';
 	import { fieldPill, setFieldPill } from './bar.js';
 	import { closer, rowsUnder, type Near } from './lanes.js';
-	import { openField } from './fieldWidget.js';
 	import { shellJoin } from './shellSplit.js';
 	import {
-		declaredVerb,
 		fieldsUnder,
 		fieldsWithDuration,
 		lanesOf,
@@ -197,7 +186,7 @@
 	 * Whether the IGNORED fields get a button too (da-xhio).
 	 *
 	 * Off is today's bar: a field whose latest status is IGNORED is not
-	 * drawn, and the (+) is where it is offered back. On adds it to the
+	 * drawn, and the setup widget is where it is offered back. On adds it to the
 	 * list, drawn as an ignored field and not as a tracked one — a second
 	 * way to see it, never a way to stop it being ignored.
 	 *
@@ -280,19 +269,16 @@
 	 * the ring over the whole bar (da-7q3ka): `< Back`, which logs nothing,
 	 * the states around the tap, and `+ Add state`, which is how a state
 	 * never logged gets into the list at all. Otherwise the fields in their rows
-	 * (`arrange`), with the (+) starting the top one — the way into the app
-	 * on an empty database — or, under a pending verb, the `+` ending the
-	 * bottom one (vividn: «There should be a + field at the end of this
-	 * filtered fields view for adding new fields»).
+	 * (`arrange`), and on a bar with none the hint alone.
 	 */
 	type Entry =
-		| { kind: 'track' | 'hint' }
+		| { kind: 'hint' }
 		| { kind: 'ring' }
 		| { kind: 'field'; button: FieldButton; promoted: boolean; edge: boolean };
 	$: entries = ((): Entry[] => {
 		if (picking) return [{ kind: 'ring' }];
 		if (buttons.length > 0) return [];
-		return verb === null ? [{ kind: 'track' }, { kind: 'hint' }] : [{ kind: 'hint' }, { kind: 'track' }];
+		return [{ kind: 'hint' }];
 	})();
 	/**
 	 * The fields' rows (da-xtkcp): by height top to bottom, most used first
@@ -305,8 +291,8 @@
 			? lanesOf
 			: picture
 				? (): Entry[][] => [placing]
-				: (_: Entry[], rows: number): Entry[][] => {
-						const lanes = rowsUnder(buttons, rows, standings, shown).map(({ lead, rest }): Entry[] => [
+				: (_: Entry[], rows: number): Entry[][] =>
+						rowsUnder(buttons, rows, standings, shown).map(({ lead, rest }): Entry[] => [
 							...lead.map(
 								(button, k): Entry => ({
 									kind: 'field',
@@ -317,24 +303,14 @@
 							),
 							...rest.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
 						]);
-						if (verb === null) lanes[0].unshift({ kind: 'track' });
-						else lanes[lanes.length - 1].push({ kind: 'track' });
-						return lanes;
-					};
 	const keyOf = (e: Entry) => (e.kind === 'field' ? `f:${e.button.field}` : e.kind);
 
 	/** Whether the buttons stand where their fields are drawn: the option, on a bar of fields. */
 	$: picture = align === 'picture' && !picking && buttons.length > 0;
 	/** The fields in the order they claim their places: most used at the last sort first. */
-	$: stood = [...buttons]
+	$: placing = [...buttons]
 		.sort((a, b) => (standings.get(b.field)?.frecency ?? -1) - (standings.get(a.field)?.frecency ?? -1))
 		.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }));
-	/**
-	 * And the (+) after them all, in the bottom band (vremya on #494:
-	 * first, it took the left column and pushed every field right of it,
-	 * cutting the most used one off a half-width pane).
-	 */
-	$: placing = [...stood, { kind: 'track' } as Entry];
 	/** The bar's height, and each placed slot's size as drawn, in px. */
 	let tall = 0;
 	let sizes = new Map<string, { w: number; h: number }>();
@@ -806,51 +782,12 @@
 				{/if}
 			</div>
 		</div>
-	{:else if item.kind === 'track'}
-		{@const stand = stands.get('track')}
-		<div
-			class="slot"
-			class:stand={picture}
-			class:glide={glide && !live}
-			style:left={stand ? `${stand.x}px` : null}
-			style:top={stand ? `${stand.top}px` : null}
-			use:sized={'track'}
-		>
-			{#if verb === null}
-				<!-- `add-button` is the class #488's rule in app.css spares
-				     the `›` an opener wears. -->
-				<button
-					class="nav add-button"
-					data-track
-					use:act={'open'}
-					{disabled}
-					aria-label="track a new field"
-					title="track a new field"
-					on:click={() => void openField()}
-				>
-					+
-				</button>
-			{:else}
-				{@const pending = verb}
-				<button
-					class="nav add-field"
-					use:act={'open'}
-					data-add-field
-					{disabled}
-					aria-label="track a new {pending} field"
-					title="track a new {pending} field"
-					on:click={() => void openField('', declaredVerb(pending))}
-				>
-					+
-				</button>
-			{/if}
-		</div>
 	{:else if item.kind === 'hint'}
 		<!-- No direction word here on purpose: this hint said "below" while the
 		     bar was at the top of the page (da-nz29), and da-1x72 moved the
 		     bar to the bottom without the copy following. Name the thing, not
 		     where it is. -->
-		<p class="hint empty">nothing tracked yet — or type a command to log something</p>
+		<p class="hint empty">nothing tracked yet — set a field up in the setup widget, or type a command to log something</p>
 	{:else if item.kind === 'field'}
 		{@const button = item.button}
 		{@const look = lookOf(button, switchLabel)}
@@ -1156,16 +1093,6 @@
 		font-weight: 700;
 	}
 
-	/* The (+) that tracks a new field (da-y6jfb): a circle, a field's
-	   button high. */
-	.add-button,
-	.add-field {
-		inline-size: 1.8rem;
-		block-size: 1.8rem;
-		border-radius: 50%;
-		padding: 0;
-	}
-
 	.record {
 		background: none;
 		border: none;
@@ -1214,16 +1141,9 @@
 		color: var(--quiet);
 		font-size: 0.8rem;
 		font-style: italic;
-		white-space: nowrap;
-	}
-
-	/* On a row of its own, the empty hint is a sentence and wraps to the
-	   widget's width; the rows scroll sideways under it, and on a phone's
-	   half-screen pane cut it at «nothing tracked yet -» (da-dq19n). Beside
-	   the (+), on a bar one row high, wrapping would clip it top and bottom
-	   instead, so there it stays one line and scrolls. */
-	.hint.empty:only-child {
-		white-space: normal;
+		/* A sentence, wrapped to the widget's width: the rows scroll
+		   sideways under it, and on a phone's half-screen pane cut it at
+		   «nothing tracked yet -» (da-dq19n). */
 		max-width: 100cqw;
 	}
 </style>

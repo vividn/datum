@@ -60,7 +60,6 @@ describe('the outline says what a tap does', () => {
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			await app.idle();
 			assert.deepEqual(await outlines(page), {
-				'+': 'solid',
 				coffee: 'double',
 				work: 'double',
 				untracked: 'double',

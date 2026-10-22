@@ -1,8 +1,8 @@
 // What a field name may be.
 //
 // Mirrors `crates/datum-parse/src/field_name.rs`, which is what actually
-// enforces the rule — `setup`'s parser refuses a bad name, and the (+)
-// form's declaration goes through that parser like everything else. This
+// enforces the rule — `setup`'s parser refuses a bad name, and the setup
+// widget's declaration goes through that parser like everything else. This
 // module exists so the form can say *before* the press what the parser
 // would say after it, and offer the nearest name that works: a first-time
 // user typing "cups=2" should not have to read an error to learn what a
@@ -57,7 +57,7 @@ export function suggestFieldName(name: string): string | null {
 }
 
 /**
- * What to tell someone who typed `name` into the (+) form: null when it is
+ * What to tell someone who typed `name` into the setup widget: null when it is
  * fine, otherwise the sentence to show them.
  */
 export function fieldNameHint(name: string): string | null {
