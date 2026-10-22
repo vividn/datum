@@ -1,6 +1,9 @@
 // The time cursor (da-wnt2): the one instant the page is pointed at.
 //
-// A click on a drawn day sets it (the `picture` action, $lib/hover.ts);
+// A tap on a drawn day sets it (the `picture` action, $lib/hover.ts) where
+// it falls on ground or the time axis, or on the entry already selected, or
+// as a long tap or a right click; a tap on a mark selects that entry
+// instead (da-xg1vi, the table at the head of $lib/nowpoint.ts). Then
 // every picture draws a dotted line where it falls, the nowview widget
 // centres on it, and the bar holds it as ONE `time` pill — the argv the
 // CLI reads it as, so a line typed after it is logged at it. The pill is
@@ -16,9 +19,10 @@
 // this year, and a pill must mean the instant it was set to.
 //
 // A selection is not always an absolute instant (da-rskp). Pointed INTO
-// the nowview while its window is on now, it is RELATIVE: `rel` whole
-// minutes back from whenever the command finally runs — `-q` for five,
-// `-t -7` for seven. The axis it was dropped on is relative too, so the
+// the nowview while its window is on now, it is RELATIVE: `rel` minutes,
+// to the second, back from whenever the command finally runs — `-q` for
+// five, `-t -7` for seven, `-t -20s` for twenty seconds (`relArg`). The axis
+// it was dropped on is relative too, so the
 // white line stays on its gridline as the minutes pass, and `occur coffee`
 // typed after it is logged that long before the moment of the Enter, not
 // before the moment of the click. On an ABSOLUTE axis — the dayview's —

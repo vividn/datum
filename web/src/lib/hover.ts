@@ -570,9 +570,10 @@ const ownsPointer = (node: HTMLElement) => !!node.closest('[data-points="own"]')
  * pointer, a tap and the keyboard with a label — the time and what the
  * mark is. Nothing is shown over empty space.
  *
- * And the time cursor (da-wnt2, $lib/cursor.ts): a click anywhere on a
- * day — a mark or its ground — points the page at the time under it,
- * Enter on a mark at the mark's own time, and wherever the cursor falls
+ * And the time cursor (da-wnt2, $lib/cursor.ts): a tap on a day's ground,
+ * a right click, or a tap on the entry already selected points the page at
+ * the time under it — a tap on a mark selects its entry (da-xg1vi) — Enter
+ * on a mark at the mark's own time, and wherever the cursor falls
  * on one of the picture's days a dotted line marks it, redrawn with the
  * picture.
  */
