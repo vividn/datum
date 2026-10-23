@@ -33,7 +33,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { inlineSvg } from './hover.js';
-	import { bandArgv, fieldsArgv } from './calls.js';
+	import { bandArgv, fieldArgv, fieldsArgv } from './calls.js';
 	import { run } from './run.js';
 	import type { FieldListing } from './fields.js';
 	import type { Place, Spec } from './track.js';
@@ -58,6 +58,8 @@
 	let svg: SVGSVGElement | null = null;
 	/** Every field's lane as the pictures resolve it (`fields --json`), anchors included. */
 	let lanes: Record<string, FieldListing> = {};
+	/** The row of a field `lanes` has none for, a new one: its lane is where the pictures will draw it. */
+	let unlisted: FieldListing | undefined;
 	/** The fields today's band draws, whose names label their lanes. */
 	let named: string[] = [];
 	let drag: {
@@ -124,8 +126,16 @@
 	const round = (n: number) => Math.round(n * 1000) / 1000;
 	const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
-	/** The lane the pictures resolve from the stored spec. */
-	$: drawn = lanes[field];
+	/** Ask for the row of `name`, kept only while it is still the field being placed. */
+	async function unknown(name: string) {
+		const r = await run(fieldArgv(name));
+		const row = r.code === 0 ? (JSON.parse(r.stdout) as FieldListing[])[0] : undefined;
+		if (row?.field === field) unlisted = row;
+	}
+	$: if (listed && field && !lanes[field] && unlisted?.field !== field) unknown(field);
+
+	/** The lane as the band drew it, from the stored spec, or where it will for a field nobody placed (da-gq232). */
+	$: drawn = lanes[field] ?? (unlisted?.field === field ? unlisted : undefined);
 	// The resolver holds a field only by an anchor with a spec; without one it draws it free.
 	$: anchor = place.relative_to && lanes[place.relative_to]?.spec ? lanes[place.relative_to] : undefined;
 	/** The lane as it stands now, in fractions of the day. */

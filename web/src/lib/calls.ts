@@ -39,6 +39,11 @@ export function fieldsArgv(): string[] {
 	return ['fields', '--json'];
 }
 
+/** The one field's row, one the database knows nothing of too: where the pictures will draw it (da-gq232). */
+export function fieldArgv(field: string): string[] {
+	return ['fields', field, '--json'];
+}
+
 export function frecencyArgv(): string[] {
 	return ['fields', '--json', '--sort', 'frecency'];
 }
@@ -358,6 +363,7 @@ export type KitWidgetRow = Record<string, unknown> & { row_cells: string[]; row_
 export interface Reads {
 	/** `frecency` comes with `--sort frecency` alone. */
 	fieldsArgv: Omit<FieldListing, 'frecency'>[];
+	fieldArgv: Omit<FieldListing, 'frecency'>[];
 	frecencyArgv: FieldListing[];
 	grammarArgv: GrammarEntry[];
 	nowArgv: NowListing;

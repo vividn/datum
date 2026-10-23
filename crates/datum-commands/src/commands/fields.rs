@@ -10,17 +10,22 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
 use datum_core::db::{is_meta_field, Db};
-use datum_core::field_spec::{contains_template, resolve_positions};
+use datum_core::field_spec::{contains_template, resolve_positions, FieldSpec, ResolvedPosition};
 use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use serde_json::{json, Value as JsonValue};
 
 use crate::args::{FieldsArgs, ShowFlag};
+use crate::commands::render_helpers::field_positions;
 use crate::commands::spec::spec_json;
 use crate::render::colors::{field_hex, state_rgb};
 use crate::render::format_grid;
 
 pub fn fields(args: FieldsArgs, db: &Db) -> Result<()> {
-    let mut listing = compute_fields(db)?;
+    let mut listing = if args.fields.is_empty() {
+        compute_fields(db)?
+    } else {
+        compute_named_fields(db, &args.fields)?
+    };
     if args.by_frecency {
         by_frecency(&mut listing, &db.field_frecency(chrono::Utc::now())?);
     }
@@ -123,9 +128,7 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
         .collect();
     for (field, state) in db.distinct_field_states()? {
         let entry = by_field.entry(field).or_default();
-        // da-5ifp: TRACKED and IGNORED are statuses, not states a field
-        // can be switched to.
-        if state != TRACKED_STATE_VALUE && !is_ignored_state(&state) {
+        if is_a_state(&state) {
             entry.push(state);
         }
     }
@@ -140,18 +143,51 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
     {
         by_field.entry(field.clone()).or_default();
     }
-    let names: Vec<&str> = by_field.keys().map(String::as_str).collect();
-    let latest = db.batch_state_at(&names, chrono::Utc::now())?;
     // Where each field's lane is, anchors honoured (da-btyvj): the web's
     // Placement tab draws a field against these.
-    let positions =
-        resolve_positions(&registry.fields, names.iter().map(|f| f.to_string())).positions;
+    let positions = resolve_positions(&registry.fields, by_field.keys().cloned()).positions;
+    listing(db, &by_field, &registry.fields, &positions)
+}
+
+/// [`compute_fields`]' rows for `names` alone, reading only their specs and
+/// the anchors theirs name. A name the database knows nothing of is a row
+/// too, with no spec or states, its lane where the pictures will draw it —
+/// the field Placement places before it is saved (da-gq232).
+pub fn compute_named_fields(db: &Db, names: &[String]) -> Result<JsonValue> {
+    let mut by_field: BTreeMap<String, Vec<JsonValue>> =
+        names.iter().map(|f| (f.clone(), Vec::new())).collect();
+    for (field, state) in db.distinct_field_states()? {
+        if let Some(entry) = by_field.get_mut(&field).filter(|_| is_a_state(&state)) {
+            entry.push(state);
+        }
+    }
+    let asked: Vec<&str> = by_field.keys().map(String::as_str).collect();
+    let specs = db.load_registry_for(&asked)?.fields;
+    let positions = field_positions(db, &specs, &asked)?;
+    listing(db, &by_field, &specs, &positions)
+}
+
+/// da-5ifp: TRACKED and IGNORED are statuses, not states a field can be
+/// switched to.
+fn is_a_state(state: &JsonValue) -> bool {
+    *state != TRACKED_STATE_VALUE && !is_ignored_state(state)
+}
+
+/// One row a field, in `by_field`'s order.
+fn listing(
+    db: &Db,
+    by_field: &BTreeMap<String, Vec<JsonValue>>,
+    specs: &HashMap<String, FieldSpec>,
+    positions: &HashMap<String, ResolvedPosition>,
+) -> Result<JsonValue> {
+    let names: Vec<&str> = by_field.keys().map(String::as_str).collect();
+    let latest = db.batch_state_at(&names, chrono::Utc::now())?;
     Ok(JsonValue::Array(
         by_field
             .iter()
             .map(|(field, states)| {
                 let ignored = latest.get(field).is_some_and(is_ignored_state);
-                let spec = registry.fields.get(field);
+                let spec = specs.get(field);
                 let color = field_hex(field, spec);
                 let mut state_names: BTreeSet<&str> =
                     states.iter().filter_map(JsonValue::as_str).collect();
@@ -340,6 +376,64 @@ mod tests {
         assert_eq!(listing[0]["height"], json!(0.25));
         assert_eq!(listing[1]["y"], json!(0.25));
         assert_eq!(listing[1]["height"], json!(0.125));
+    }
+
+    /// da-gq232: the fields named are listed alone, each row the full
+    /// listing's, and a name nothing is logged or declared for gets one too,
+    /// at the lane the pictures give it once it is logged.
+    #[test]
+    fn named_fields_are_their_rows_and_a_new_one_its_lane_to_be() {
+        let db = fresh_db();
+        let mut mood = FieldSpec::new("mood", Action::Switch);
+        mood.presentation.y = Some(0.5);
+        mood.presentation.height = Some(0.25);
+        db.save_field_spec(&mood).unwrap();
+        let mut sleep = FieldSpec::new("sleep", Action::Start);
+        sleep.presentation.relative_to = Some("mood".into());
+        sleep.presentation.anchor_pos_ratio = Some(-1.0);
+        sleep.presentation.anchor_size_ratio = Some(0.5);
+        db.save_field_spec(&sleep).unwrap();
+        entry_builder("coffee").state(json!(2)).insert(&db);
+        // Tied to a field with no spec: the resolver draws it free, both ways.
+        let mut nap = FieldSpec::new("nap", Action::Start);
+        nap.presentation.relative_to = Some("coffee".into());
+        nap.presentation.anchor_pos_ratio = Some(1.0);
+        nap.presentation.anchor_size_ratio = Some(1.0);
+        db.save_field_spec(&nap).unwrap();
+
+        let names = ["sleep", "coffee", "nap", "brandnew"].map(String::from);
+        let named = compute_named_fields(&db, &names).unwrap();
+        let full = compute_fields(&db).unwrap();
+        let row = |listing: &JsonValue, f: &str| {
+            listing
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["field"] == f)
+                .cloned()
+        };
+        let fields: Vec<&str> = named
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["field"].as_str().unwrap())
+            .collect();
+        assert_eq!(fields, ["brandnew", "coffee", "nap", "sleep"]);
+        for f in ["sleep", "coffee", "nap"] {
+            assert_eq!(row(&named, f), row(&full, f), "{f}");
+        }
+        assert_eq!(row(&named, "sleep").unwrap()["y"], json!(0.25));
+
+        let new = row(&named, "brandnew").unwrap();
+        assert_eq!(row(&full, "brandnew"), None);
+        assert_eq!(new["spec"], JsonValue::Null);
+        assert_eq!(new["states"], json!([]));
+        entry_builder("brandnew").insert(&db);
+        let logged = row(&compute_fields(&db).unwrap(), "brandnew").unwrap();
+        for key in ["y", "height", "color"] {
+            assert_eq!(new[key], logged[key], "{key}");
+        }
+        assert_ne!(new["y"], json!(0.0));
     }
 
     #[test]

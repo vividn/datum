@@ -178,6 +178,7 @@ const HID = JSON.parse(seed(calls.layoutsArgv()).stdout).rows.find((r) => r.data
 /** Arguments for every call that takes some: one list per run. A call with none is run once, bare. */
 const SAMPLES = {
 	helpArgv: [[], ['db backup']],
+	fieldArgv: [['coffee'], ['mood'], ['never-logged']],
 	tailArgv: [[{}], [{ field: 'mood', count: 5, above: HID }]],
 	showAllArgv: [[statsArgv(DEFAULT_STATS)], [statsArgv(DEFAULT_STATS, 'mood')], [statsArgv({ range: 'all' }, 'coffee')]],
 	statsArgv: [[DEFAULT_STATS], [{ range: 'all' }, 'coffee']],

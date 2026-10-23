@@ -146,6 +146,41 @@ describe('the Placement tab', () => {
 		});
 	});
 
+	// da-gq232: a field the database knows nothing of has no row in `fields
+	// --json`, and its box stood at the top of the day.
+	test('a new field is boxed where its name will put it, and follows the name as it is typed', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			const { saved } = await openField(page, 'brandnew', 'start');
+			await page.locator(`${MODAL} .placement .band svg`).waitFor();
+			/** The lane's box, and the sample drawn in it (da-srrqd), come to stand at `name`'s lane, as `fields NAME` resolves it. */
+			const boxedAt = async (name) => {
+				const [row] = JSON.parse((await app.run(['fields', name, '--json'])).stdout);
+				await page
+					.waitForFunction(
+						([sel, name, px]) => {
+							const blocks = [...document.querySelectorAll(`.placement .band g.field[data-field="${name}"] rect.block`)];
+							const top = Math.min(...blocks.map((b) => Number(b.getAttribute('y'))));
+							return Math.abs(parseFloat(document.querySelector(sel)?.style.top) - px) < 0.5 && Math.abs(top - px) < 1.5;
+						},
+						[LANE, name, row.y * H],
+						{ timeout: 5000 }
+					)
+					.catch(() => assert.fail(`never: ${name}'s box and sample at y ${row.y}`));
+				return row.y;
+			};
+			assert.ok((await boxedAt('brandnew')) > 0.05, 'not the top of the day');
+			await page.locator(`${MODAL} input.field`).fill('walkabout');
+			const y = await boxedAt('walkabout');
+			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /nobody chose this/);
+
+			await done(page, saved);
+			const declared = await lane(app, 'walkabout');
+			assert.equal((await spec(app, 'walkabout')).y, undefined, 'saved with no lane of its own');
+			assert.equal(declared.y, y);
+		});
+	});
+
 	test('tied to a neighbour it writes the ratios, not y/height, and moves with its anchor', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;

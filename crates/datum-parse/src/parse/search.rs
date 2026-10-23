@@ -218,8 +218,8 @@ pub(crate) fn parse_stats_args(tail: &[&str]) -> Result<StatsArgs> {
     Ok(out)
 }
 
-/// `fields [--include-ignored | -A] [--sort frecency]` — no positionals:
-/// it lists every field.
+/// `fields [<FIELD>...] [--include-ignored | -A] [--sort frecency]` — every
+/// field, or the ones named (da-gq232).
 ///
 /// `--json` and `--show` are gone from here: da-qt6z folded the output
 /// family into the shared layer, which sweeps them out of `tail` before
@@ -253,16 +253,12 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
     }));
 
     let mut composed = FieldsParsing::default();
-    let pos = fold_args(tail, &mut composed, &registry)?;
-    if let Some(s) = pos.first() {
-        return Err(ParseError::InvalidArg(format!(
-            "unexpected argument: '{s}'"
-        )));
-    }
+    let fields = fold_args(tail, &mut composed, &registry)?;
     Ok(FieldsArgs {
         show: Show::default(),
         include_ignored: composed.include_ignored || composed.output.show_all,
         by_frecency: composed.by_frecency,
+        fields: fields.into_iter().map(str::to_string).collect(),
     })
 }
 

@@ -69,6 +69,12 @@ const REKEY_ARGS: &[ArgSpec] = &[ArgSpec {
     variadic: true,
     summary: "Move OLD's value to the key NEW. The id template is read again, so the slug follows: a template key renamed away empties its part of the id",
 }];
+const FIELDS_ARGS: &[ArgSpec] = &[ArgSpec {
+    name: "<FIELD>",
+    required: false,
+    variadic: true,
+    summary: "List only these; a name nothing is logged or declared for still gets a row, at the lane the pictures will draw it",
+}];
 const NO_EXAMPLES: &[ExampleSpec] = &[];
 const NO_FLAGS: &[FlagSpec] = &[];
 const NO_SUBCOMMANDS: &[SubcommandSpec] = &[];
@@ -2817,8 +2823,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "list every field: its spec and the states it was logged with",
         intro: "",
         long_description: None,
-        usage: &["datum fields [--include-ignored | -A] [--sort frecency]"],
-        args: NO_ARGS,
+        usage: &["datum fields [<FIELD>...] [--include-ignored | -A] [--sort frecency]"],
+        args: FIELDS_ARGS,
         flags: FIELDS_FLAGS,
         shared_flags: None,
         examples: NO_EXAMPLES,
