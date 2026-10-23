@@ -839,19 +839,14 @@ fn last_state_found(
 /// NOW one: two racing claims each read their time before the lock, and
 /// the later one may land first.
 pub fn ensure_last_state(conn: &Connection, entry: &Entry) -> Result<()> {
-    let name = |v: &serde_json::Value| match v {
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Null => "no state".into(),
-        v => v.to_string(),
-    };
-    let claimed = entry.user_asserted_last_state.as_ref().map(name);
+    let claimed = entry.user_asserted_last_state.as_ref().map(state_name);
     let claimed = claimed.unwrap_or_default();
     let snaps = &mut FieldSnapshots::over(std::slice::from_ref(entry));
     if let Some((_, found)) = last_state_found(conn, entry, snaps)? {
         return Err(DatumError::Other(format!(
             "-L {claimed}: {} is in {}, so nothing is written",
             entry.field,
-            name(&found)
+            state_name(&found)
         )));
     }
     // From the probe on, where the state read above stops: a row between
@@ -886,10 +881,38 @@ pub fn ensure_last_state(conn: &Connection, entry: &Entry) -> Result<()> {
             Err(DatumError::Other(format!(
                 "-L {claimed}: {} has changed since, to {}, so nothing is written",
                 entry.field,
-                name(&state.unwrap_or(serde_json::Value::Null))
+                state_name(&state.unwrap_or(serde_json::Value::Null))
             )))
         }
     }
+}
+
+/// A state as a refusal names it: a string bare, none as `no state`.
+pub fn state_name(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => "no state".into(),
+        v => v.to_string(),
+    }
+}
+
+/// The state `entry`'s field holds just before it, where `-l` reads it:
+/// the set `+=`, `-=` and `_0` change (da-9eh7d). `None` for a timeless
+/// entry, which has no before.
+pub fn state_before(conn: &Connection, entry: &Entry) -> Result<Option<serde_json::Value>> {
+    let Some(probe) = entry
+        .leading_edge_utc()
+        .map(|t| t - chrono::Duration::microseconds(1))
+    else {
+        return Ok(None);
+    };
+    let state = FieldSnapshots::over(std::slice::from_ref(entry)).state_at(
+        conn,
+        &entry.field,
+        probe,
+        entry.hid.as_str(),
+    )?;
+    Ok(Some(state.unwrap_or(serde_json::Value::Null)))
 }
 
 fn file_warning(

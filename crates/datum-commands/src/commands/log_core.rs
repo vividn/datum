@@ -301,6 +301,21 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         reserved.state = resolve_underscore_state(reserved.state, db, &field)?;
     }
 
+    // da-9eh7d: `+=` / `-=` / `_0`, resolved once the entry has its time.
+    let edit = StateEdit::take(
+        action,
+        &mut extra_data,
+        reserved.state.as_ref().or(value.as_ref()),
+        &args,
+    )?;
+    // An edit at now is placed when it lands, after any write that landed
+    // first, so no racer's set is changed under it.
+    let t = &args.time;
+    let edit_at_now = edit.is_some()
+        && reserved.occur_time.is_none()
+        && (t.time.is_none() && t.date.is_none() && t.time_offsets.is_empty())
+        && (t.yesterday == 0 && t.quick == 0 && !t.full_day && !t.omit_timestamp);
+
     // `-u`/`--undo`: instead of inserting, locate the most recent live
     // entry whose (field, state) matches what this command would have
     // produced and soft-delete it. Restores original datum's `uu`-alias
@@ -609,6 +624,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
 
+    if let Some(edit) = &edit {
+        let held = db.read(|view| datum_core::integrity::state_before(view.conn(), &entry))?;
+        edit.apply(held, &mut entry).map_err(anyhow::Error::msg)?;
+    }
+
     // An explicit `occur_time_uncertainty=` key overrides whatever the -q
     // stack or a `±N` suffix put on the time. Same rule as `dur_uncertainty=`
     // above: a timeless entry has no time to qualify.
@@ -895,6 +915,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if args.ensure_last_state && crate::args::in_multi_window() {
         anyhow::bail!("-L claims one write; a multi-entry line is not one: use -l");
     }
+    if let (Some(edit), true) = (&edit, crate::args::in_multi_window()) {
+        let label = &edit.label;
+        anyhow::bail!(
+            "{label} reads the states it changes in its own write; a multi-entry line is not one"
+        );
+    }
     if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
         // The window owns the spec write, once its atomic insert lands.
         if declares_field {
@@ -909,8 +935,32 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         true => crate::commands::helpers::track_spec(db, &entry.field, action)?,
         false => None,
     };
-    let outcome =
-        db.insert_entry_declaring(&entry, strategy, declare.as_ref(), args.ensure_last_state)?;
+    // In the write's transaction: the set an edit changes, at now if it was
+    // made at now, then a `-L` claim.
+    let outcome = db.insert_entry_declaring(
+        &entry,
+        strategy,
+        declare.as_ref(),
+        Some(&|tx, e| {
+            if let (true, Some(t)) = (edit_at_now, e.occur_time.as_mut()) {
+                t.utc = t.utc.max(chrono::Utc::now());
+                if let Some(id) = e.id_structure.clone() {
+                    let body =
+                        field_spec::interpolate(&id, &InterpolationContext::from_entry(e), &delim);
+                    e.slug = datum_core::ids::Slug(format!("{}:{}", e.field, body));
+                }
+            }
+            if let Some(edit) = &edit {
+                let held = datum_core::integrity::state_before(tx, e)?;
+                edit.apply(held, e)
+                    .map_err(datum_core::error::DatumError::Other)?;
+            }
+            match args.ensure_last_state {
+                true => datum_core::integrity::ensure_last_state(tx, e),
+                false => Ok(()),
+            }
+        }),
+    )?;
     // Stamp the last-accessed pointer at the affected entry's hid so a
     // follow-up bare `get` / `delete` / `update` can target it — before
     // anything prints, since a closed pipe ends the process at the print
@@ -1647,6 +1697,162 @@ fn resolve_underscore_state(
             "no state {n} back on field '{field}' — history is too short or \
              only contains the current state"
         )),
+    }
+}
+
+/// `+=S`, `-=S` and `_0` on a switch (da-9eh7d; vividn, 2026-10-23: «yes I
+/// like your +,- shorthand for states», «_0 could refer to current state»):
+/// the state is the set the field is in just before the entry, as `-l`
+/// reads it, with members added or taken out. `_0` stands for that set in
+/// the state (`_0,parked` is `+=parked`). Beside `+` and `-`, which leave
+/// the data, a state is `_0` or holds it; the slot's default `true` reads as
+/// `_0`, so `switch x true +=s` is `switch x +=s`.
+struct StateEdit {
+    /// The state as written, `_0` where the set goes.
+    named: Vec<JsonValue>,
+    add: Vec<JsonValue>,
+    remove: Vec<JsonValue>,
+    /// What was typed, as a refusal names it: `+=late`, `_0,parked`.
+    label: String,
+    /// The set read becomes the entry's `-l`, unless `-L` claims one.
+    records: bool,
+}
+
+/// A state's members: off (none, `false`) has none.
+fn state_members(v: Option<&JsonValue>) -> Vec<JsonValue> {
+    match v {
+        None | Some(JsonValue::Null | JsonValue::Bool(false)) => vec![],
+        Some(JsonValue::Array(items)) => items.clone(),
+        Some(v) => vec![v.clone()],
+    }
+}
+
+impl StateEdit {
+    const CURRENT: &'static str = "_0";
+
+    /// The edit a line asks for, its `+` and `-` keys taken out of `data`;
+    /// `None` when it asks for none. Before anything reads the state, so
+    /// `-u` is refused rather than matching the line's unresolved state.
+    fn take(
+        action: Action,
+        data: &mut Option<JsonValue>,
+        state: Option<&JsonValue>,
+        args: &LogArgs,
+    ) -> Result<Option<Self>> {
+        let edits = matches!(action, Action::Switch | Action::Start | Action::Stop);
+        let mut take = |key| match data.as_mut() {
+            Some(JsonValue::Object(map)) if edits => map.remove(key),
+            _ => None,
+        };
+        let (add, remove) = (take("+"), take("-"));
+        if matches!(data, Some(JsonValue::Object(map)) if map.is_empty()) {
+            *data = None;
+        }
+        let current = json!(Self::CURRENT);
+        let named = state_members(state);
+        let edited = add.is_some() || remove.is_some();
+        if !edited && !(matches!(action, Action::Switch) && named.contains(&current)) {
+            return Ok(None);
+        }
+        let mut label: Vec<String> = Vec::new();
+        if named.contains(&current) {
+            let named = named.iter().map(datum_core::integrity::state_name);
+            label.push(named.collect::<Vec<_>>().join(","));
+        }
+        for (op, v) in [("+=", &add), ("-=", &remove)] {
+            if let Some(v) = v {
+                label.push(format!("{op}{}", datum_core::integrity::state_name(v)));
+            }
+        }
+        let label = label.join(" ");
+        if !matches!(action, Action::Switch) {
+            anyhow::bail!(
+                "{label} changes the states a field is in, which a start or an end \
+                 (`on`, `off`) does not name: `datum switch <field> {label}`"
+            );
+        }
+        let named = match named.as_slice() {
+            [JsonValue::Bool(true)] if edited => vec![current],
+            _ if !edited || named.contains(&current) => named,
+            _ => anyhow::bail!(
+                "{label} changes the states the field is in, so a state beside it \
+                 names them with _0 (`_0,{}`)",
+                named
+                    .iter()
+                    .map(datum_core::integrity::state_name)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        };
+        if args.undo {
+            anyhow::bail!("-u cannot tell which entry {label} wrote: `datum undo` takes it back");
+        }
+        if args.last_state.is_some() && !args.ensure_last_state {
+            anyhow::bail!(
+                "{label} records the states it changes as its -l, so -l cannot \
+                 assert others: drop -l, or claim them with -L"
+            );
+        }
+        Ok(Some(Self {
+            named,
+            add: state_members(add.as_ref()),
+            remove: state_members(remove.as_ref()),
+            label,
+            records: args.last_state.is_none(),
+        }))
+    }
+
+    /// `entry`'s state, from `held`: the set its field is in just before it
+    /// ([`datum_core::integrity::state_before`]). Read once to show and check
+    /// the entry, and again in the transaction that writes it, so the set it
+    /// records is the one it changed however backdated it is. Naming a later
+    /// change it contradicts is `check`'s once da-iu8v1 lands.
+    /// The refusal is its words.
+    fn apply(&self, held: Option<JsonValue>, entry: &mut Entry) -> std::result::Result<(), String> {
+        let label = &self.label;
+        let Some(held) = held else {
+            return Err(format!(
+                "{label} needs a time: a timeless entry has no state to change"
+            ));
+        };
+        let mut set: Vec<JsonValue> = Vec::new();
+        let expanded = self.named.iter().flat_map(|s| match s == Self::CURRENT {
+            true => state_members(Some(&held)),
+            false => vec![s.clone()],
+        });
+        for s in expanded.chain(self.add.iter().cloned()) {
+            if !set.contains(&s) {
+                set.push(s);
+            }
+        }
+        for s in &self.remove {
+            let Some(i) = set.iter().position(|held| held == s) else {
+                return Err(format!(
+                    "{label}: {} is in {}, so nothing is written",
+                    entry.field,
+                    datum_core::integrity::state_name(&held)
+                ));
+            };
+            set.remove(i);
+        }
+        // A field on with no state named is in the states it is given.
+        if set.len() > 1 {
+            set.retain(|s| *s != JsonValue::Bool(true));
+        }
+        entry.state = Some(match set.len() {
+            0 => JsonValue::Bool(false),
+            1 => set.remove(0),
+            _ => JsonValue::Array(set),
+        });
+        // No state is recorded as `-l null` records it: a JSON null is what
+        // every op writes for no assertion, so no copy would read it as one.
+        if self.records {
+            entry.user_asserted_last_state = Some(match held {
+                JsonValue::Null => json!("null"),
+                held => held,
+            });
+        }
+        Ok(())
     }
 }
 

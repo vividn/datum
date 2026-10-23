@@ -123,6 +123,7 @@ mod spec_lists;
 mod spool;
 mod stale_last_gate_removed;
 mod start_cmd;
+mod state_edit;
 mod state_id_normalize;
 mod state_keys;
 mod state_oracle;

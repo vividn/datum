@@ -1937,6 +1937,10 @@ each switch ends the state before it.
 
 `datum end mood` turns the field off. With states in its spec (`datum
 track mood --verb switch --add-state happy`), `datum happy` is enough.
+
+A field can be in several states at once: `datum switch issue +=parked`
+adds parked to those it is in (`+=a,b` adds both), `-=parked` takes it
+out, and `_0` names them in the state switched to.
 ";
 
 const TAIL_INTRO: &str = "\
@@ -2188,6 +2192,15 @@ pub const COMMANDS: &[CommandSpec] = &[
              on, as `datum start light` does; a state named off is \
              `'\"off\"'` or `str://off`, one named on `'\"on\"'` or \
              `str://on`, and `-I` keeps either word as typed.\n\n\
+             A field can be in several states at once: `datum switch issue \
+             queued,parked`. `datum switch issue +=parked` adds parked to \
+             the states it is in (`+=a,b` adds both), `-=parked` takes it \
+             out (refused when it is not in it; none left is off), and `_0` \
+             names them in the state switched to: `_0,parked` is \
+             `+=parked`. A state beside `+=` or `-=` holds `_0`. The states \
+             are those the field is in when the entry lands, a backdated \
+             one's at its time, and the entry records them as its `-l`: the \
+             states it assumed.\n\n\
              A `:` inside a state is reserved: the state is then a full slug \
              `field:id` naming another entry, whatever field it is logged on \
              — `datum switch media book:great_gatsby` refers to the entry \

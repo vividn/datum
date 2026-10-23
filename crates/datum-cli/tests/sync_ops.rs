@@ -2873,3 +2873,26 @@ fn undoing_a_move_onto_a_reused_old_slug_refuses_a_live_row_and_moves_a_deleted_
         }
     }
 }
+
+/// da-9eh7d: an add carries the set it changed as its `-l`, so two copies
+/// adding different members offline each record what they assumed, and the
+/// merged history contradicts the later one's (`check` naming it: da-iu8v1).
+#[test]
+fn offline_adds_each_carry_the_set_they_changed() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["switch", "x", "queued", "-t", "-10"]);
+    a.send(&b);
+    a.ok(&["switch", "x", "+=parked", "-t", "-5"]);
+    b.ok(&["switch", "x", "+=late", "-t", "-3"]);
+    converged(&a, &b);
+    let assumed = |copy: &Copy, state: &str| {
+        copy.query(
+            "SELECT user_asserted_last_state FROM entries WHERE state = ?1",
+            state,
+        )
+    };
+    for copy in [&a, &b] {
+        assert_eq!(assumed(copy, r#"["queued","parked"]"#), r#""queued""#);
+        assert_eq!(assumed(copy, r#"["queued","late"]"#), r#""queued""#);
+    }
+}

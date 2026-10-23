@@ -180,6 +180,10 @@ fn hash_occur_str(entry: &Entry) -> String {
         .unwrap_or_default()
 }
 
+/// What [`Db::insert_entry_declaring`] runs on a copy of its entry in the
+/// write's transaction, before it is written.
+pub type Prepare<'a> = &'a dyn Fn(&Connection, &mut Entry) -> Result<()>;
+
 impl Db {
     /// Insert an entry using the default [`ConflictStrategy::Ignore`].
     /// Returns `Err(Duplicate)` if the content_hash collides with a live row,
@@ -242,21 +246,22 @@ impl Db {
         entry: &Entry,
         strategy: ConflictStrategy,
     ) -> Result<InsertOutcome> {
-        self.insert_entry_declaring(entry, strategy, None, false)
+        self.insert_entry_declaring(entry, strategy, None, None)
     }
 
     /// [`Self::insert_entry_with_strategy`], and — when the entry lands —
     /// `declare` as its field's spec entry, in the SAME transaction
     /// (da-lc26c): a first log and the spec it writes are both-or-neither,
-    /// so a failure (a full disk) leaves the database as it was. With
-    /// `ensure`, nothing lands unless the field holds the state the entry
-    /// asserts, read in that transaction ([`crate::integrity::ensure_last_state`]).
+    /// so a failure (a full disk) leaves the database as it was. `prepare`
+    /// reads and finishes a copy of the entry in that transaction before it
+    /// is written: a `-L` claim ([`crate::integrity::ensure_last_state`]), the
+    /// set a `+=` changes.
     pub fn insert_entry_declaring(
         &self,
         entry: &Entry,
         strategy: ConflictStrategy,
         declare: Option<&crate::field_spec::FieldSpec>,
-        ensure: bool,
+        prepare: Option<Prepare<'_>>,
     ) -> Result<InsertOutcome> {
         let spec = declare
             .map(|spec| -> Result<Entry> {
@@ -268,9 +273,16 @@ impl Db {
             })
             .transpose()?;
         self.write_with(|tx| {
-            if ensure {
-                crate::integrity::ensure_last_state(tx, entry)?;
-            }
+            let prepared;
+            let entry = match prepare {
+                Some(prepare) => {
+                    let mut copy = entry.clone();
+                    prepare(tx, &mut copy)?;
+                    prepared = copy;
+                    &prepared
+                }
+                None => entry,
+            };
             let outcome = insert_entry_in_tx(tx, entry, strategy)?;
             let landed = matches!(
                 outcome,

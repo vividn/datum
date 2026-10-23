@@ -203,9 +203,10 @@ fn spools(command: &Command) -> bool {
         )
 }
 
-/// Is `command` a `-L` claim (da-ovnf9)? It holds only against the database
-/// as it is when it lands, so it is never queued: it waits for the lock, and
-/// refuses while changes queued before it have not landed.
+/// Is `command` a `-L` claim (da-ovnf9), or a switch that edits its field's
+/// states (`+=`, `-=`, `_0`, da-9eh7d)? Either holds only against the
+/// database as it is when it lands, so it is never queued: it waits for the
+/// lock, and refuses while changes queued before it have not landed.
 fn claims(command: &Command) -> bool {
     matches!(
         command,
@@ -215,14 +216,27 @@ fn claims(command: &Command) -> bool {
             | Command::Switch(a)
             | Command::Add(a)
             | Command::Note(a) if a.ensure_last_state
-    )
+    ) || matches!(command, Command::Switch(a) if edits_states(&a.rest))
+}
+
+/// A word of a switch line that edits the states: a `+=` or `-=` key, or a
+/// state holding `_0`. A word it misreads only waits for the lock.
+fn edits_states(rest: &[String]) -> bool {
+    rest.iter().any(|w| {
+        let state = w
+            .strip_prefix("state=")
+            .or((!w.contains('=')).then_some(w.as_str()));
+        w.starts_with("+=")
+            || w.starts_with("-=")
+            || state.is_some_and(|s| s.split(',').any(|p| p == "_0"))
+    })
 }
 
 /// Refuse a [`claims`] command while changes queued before it wait.
 fn claim_behind_queue(db: &datum_core::db::Db, path: &str, command: &Command) -> Result<()> {
     if claims(command) && db.spool_waiting() {
         anyhow::bail!(
-            "-L: changes queued in {path}.spool have not landed, and the claim would be checked without them; try again"
+            "changes queued in {path}.spool have not landed, and this line reads its field's state where it lands; try again"
         );
     }
     Ok(())
