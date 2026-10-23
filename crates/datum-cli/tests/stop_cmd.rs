@@ -6,7 +6,7 @@
 //!     trailing positional (`stop dance 5m`) or as `dur=5m`, da-azqq having
 //!     retired the `--dur` flag. "Moment" semantics are the default for
 //!     stop (no duration ⇒ no `time_end`). `-T` (omit-timestamp) IS supported
-//!     and yields a timeless entry (`occur_time` NULL, slug `field:c<create_time>`);
+//!     and yields a timeless entry (`occur_time` NULL, slug `field:<create_time>c`);
 //!     see `no_timestamp.rs` for the cross-verb coverage.
 //!   * "Required keys" (`-k key`) is datum-specific; daydumb's `-k` always
 //!     takes `KEY=VALUE`.

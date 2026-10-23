@@ -286,9 +286,9 @@ fn bare_note_has_no_occur_time() {
         e.data.as_ref().and_then(|d| d.get("foo")),
         Some(&serde_json::json!("bar"))
     );
-    // A timeless entry slugs as `field:c<create_time>` (da-r17h).
+    // A timeless entry slugs as `field:<create_time>c` (da-r17h).
     assert!(
-        e.slug.as_str().starts_with("thing:c"),
+        e.slug == datum_core::entry::build_slug("thing", None, &e.create_time),
         "timeless note slugs on create_time, got {}",
         e.slug
     );

@@ -1,7 +1,7 @@
 //! da-r17h — timeless-id redesign acceptance tests.
 //!
 //! The redesign splits the timeless logger on the identity axis:
-//!   * `note` = timeless, AUTO create_time id (`field:c<create_time>`) —
+//!   * `note` = timeless, AUTO create_time id (`field:<create_time>c`) —
 //!     "record this moment, won't look it up." Many-per-field works because
 //!     distinct create_times keep slugs apart.
 //!   * `add`  = timeless, REQUIRES an explicit id (`-K` / `--id`; `id=` is data) —
@@ -17,11 +17,11 @@ use crate::common;
 use common::run_cli;
 use datum_core::test_util::fresh_db;
 
-/// A timeless slug is `field:c<create_time>` — the body after the field
-/// delimiter begins with the `c` create-time marker.
+/// A timeless slug is `field:<create_time>c` — the body after the field
+/// delimiter ends with the `c` create-time marker.
 fn slug_is_timeless(slug: &str) -> bool {
     slug.split_once(':')
-        .is_some_and(|(_, body)| body.starts_with('c'))
+        .is_some_and(|(_, body)| body.ends_with('c'))
 }
 
 // ─── note: auto create_time id, many-per-field ──────────────────────────────
@@ -34,7 +34,7 @@ fn note_auto_ids_on_create_time() {
     assert!(e.occur_time.is_none(), "note is timeless");
     assert!(
         slug_is_timeless(e.slug.as_str()),
-        "note slugs on create_time (field:c<create_time>), got {}",
+        "note slugs on create_time (field:<create_time>c), got {}",
         e.slug
     );
     assert_eq!(

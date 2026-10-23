@@ -69,9 +69,9 @@ pub struct InterpolationContext<'a> {
     /// the stored UTC instant is local midnight, so east-of-UTC rows land
     /// on the previous UTC day.
     pub occur_time_precision: Option<&'a str>,
-    /// da-xbjy / da-r17h: `%create_time%` renders this and auto-prepends
-    /// `'c'`, mirroring the display's `c<time>` convention (the slug for a
-    /// timeless entry is `field:c<create_time>`).
+    /// da-xbjy / da-r17h: `%create_time%` renders this and appends `'c'`
+    /// (da-06jxa), so the slug for a timeless entry is
+    /// `field:<create_time>c` and sorts beside the occur ids of its moment.
     pub create_time: Option<&'a DateTime<Utc>>,
     /// da-xbjy / da-r17h: `%modify_time%` renders this and auto-prepends `'m'`.
     pub modify_time: Option<&'a DateTime<Utc>>,
@@ -300,13 +300,16 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
             .occur_time
             .map(|t| entry_id::render_occur_token(t, ctx.occur_time_precision))
             .unwrap_or_default(),
-        // da-xbjy / da-r17h: auto-prefix `c` / `m`, mirroring the display
-        // convention (a timeless entry renders `c18:54:59`, a modify-keyed
-        // one `m…`). The marker is prepended to the rendered value, not the
-        // key, and only when the value is non-empty so missing-key delimiter
-        // collapsing still works. Slug `field:c<create_time>` thus mirrors
-        // the `c<time>` the tail/dayview surfaces show.
-        "create_time" => prefix_when_present(ctx.create_time.map(entry_id::render_stamp), 'c'),
+        // da-xbjy / da-r17h: mark the time `c` / `m`, only when the value is
+        // non-empty so missing-key delimiter collapsing still works. The `c`
+        // goes after the time (da-06jxa, vividn: «the c should go after so
+        // that the -T documents are in chronological order with their occur
+        // counterparts»): `field:<create_time>c` sorts right after
+        // `field:<occur_time>` of the same instant.
+        "create_time" => ctx
+            .create_time
+            .map(|t| format!("{}c", entry_id::render_stamp(t)))
+            .unwrap_or_default(),
         "modify_time" => prefix_when_present(ctx.modify_time.map(entry_id::render_stamp), 'm'),
         _ => match key.strip_prefix("hid:").map(str::parse::<usize>) {
             Some(Ok(n)) if n >= SHORT_HID_LEN => ctx.hid.chars().take(n).collect(),
@@ -622,7 +625,8 @@ mod tests {
         assert_eq!(got, "100% of f");
     }
 
-    // da-xbjy / da-r17h: %create_time% / %modify_time% auto-prepend c / m markers.
+    // da-xbjy / da-r17h: %create_time% / %modify_time% carry c / m markers,
+    // the c after the time (da-06jxa).
     fn ctx_with_times<'a>(
         create: Option<&'a DateTime<Utc>>,
         modify: Option<&'a DateTime<Utc>>,
@@ -643,11 +647,11 @@ mod tests {
     }
 
     #[test]
-    fn interpolate_create_time_auto_prefix_c() {
+    fn interpolate_create_time_auto_suffix_c() {
         let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let ctx = ctx_with_times(Some(&t), None);
         let got = interpolate("%create_time%", &ctx, "__");
-        assert_eq!(got, "c2026-05-13T15:00:00.000Z");
+        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
     }
 
     #[test]
@@ -730,7 +734,7 @@ mod tests {
             client_id: "",
         };
         let got = interpolate("%a%__%create_time%", &ctx, "__");
-        assert_eq!(got, "x__c2026-05-13T15:00:00.000Z");
+        assert_eq!(got, "x__2026-05-13T15:00:00.000Zc");
     }
 
     #[test]
@@ -777,11 +781,11 @@ mod tests {
     }
 
     #[test]
-    fn interpolate_optional_create_time_keeps_c_prefix_when_present() {
+    fn interpolate_optional_create_time_keeps_c_when_present() {
         let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let ctx = ctx_with_times(Some(&t), None);
         let got = interpolate("%?create_time%", &ctx, "__");
-        assert_eq!(got, "c2026-05-13T15:00:00.000Z");
+        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
     }
 
     #[test]
@@ -824,8 +828,8 @@ mod tests {
         let ctx = ctx_with_times(Some(&t), None);
         let got = interpolate("%createTime%", &ctx, "__");
         // camelCase resolves to the snake_case branch — including the
-        // `c` auto-prefix that create_time carries.
-        assert_eq!(got, "c2026-05-13T15:00:00.000Z");
+        // `c` marker that create_time carries.
+        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
     }
 
     #[test]
@@ -885,7 +889,7 @@ mod tests {
         let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let ctx = ctx_with_times(Some(&t), None);
         let got = interpolate("%?createTime%", &ctx, "__");
-        assert_eq!(got, "c2026-05-13T15:00:00.000Z");
+        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
     }
 
     /// da-b5k87: `names_time` reads placeholders as `interpolate` splits

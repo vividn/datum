@@ -39,7 +39,7 @@ pub enum Action {
     /// see [`Note`](Action::Note) for the auto-id sibling.
     Add,
     /// `datum note <field>` — timeless, **auto create_time id** (slug
-    /// `field:c<create_time>`). The easy timeless jot, identified by *when*
+    /// `field:<create_time>c`). The easy timeless jot, identified by *when*
     /// ("record this moment, won't look it up"). da-r17h split it from
     /// [`Add`](Action::Add): both are timeless, but `note` auto-ids on its
     /// create_time while `add` demands an explicit id.

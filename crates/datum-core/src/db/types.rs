@@ -139,7 +139,7 @@ pub(super) fn time_expr(metric: TimeMetric) -> &'static str {
 /// (migration v21 rewrites `add` → `point` unconditionally), so the old
 /// `verb != 'add'` / `verb IN (...)` filters select nothing — "skip
 /// timeless notes" survives via the NULL `occur_time` marker. da-r17h:
-/// the timeless slug is now `field:c<create_time>` (was `field:unset`)
+/// the timeless slug is now `field:<create_time>c` (was `field:unset`)
 /// so the row identifies many-per-field; `occur_time IS NULL` is the
 /// durable timeless predicate (any `occur_time <= ?` bound already
 /// excludes these implicitly — the predicate does real work in the

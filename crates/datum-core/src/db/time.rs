@@ -77,7 +77,7 @@ impl Db {
     /// each the note `-T` logs. A state or a duration leaves a point
     /// (`Dur::moment()`), as `start -T` / `occur -T` store; the span and the
     /// following state, which only a time can place, go. The default `%occur_time%` id becomes
-    /// `%create_time%`, so the slug is `field:c<create_time>` as a timeless
+    /// `%create_time%`, so the slug is `field:<create_time>c` as a timeless
     /// insert's is. Atomic over the batch, same as [`Self::set_start_time`].
     pub fn clear_occur_time(&self, filter: &RetimeFilter) -> Result<Vec<Retimed>> {
         self.retime_with(filter, |e| {
@@ -159,7 +159,7 @@ impl Db {
 /// absolute (`set_start_time`) and offset (`update_times`)
 /// paths so the SQL surface stays in one place.
 ///
-/// Timeless rows (`occur_time IS NULL`, slug `field:c<create_time>`) are
+/// Timeless rows (`occur_time IS NULL`, slug `field:<create_time>c`) are
 /// excluded: retime moves an existing time, and giving a timeless row one
 /// would contradict the `occur_time IS NULL` marker the state/timeline views
 /// key on (da-r17h). Use `datum update` to attach a time to a timeless entry.
@@ -544,7 +544,7 @@ mod tests {
     }
 
     /// da-sunq item 3 / da-r17h: timeless rows (occur_time NULL, slug
-    /// `note:c<create_time>`) are not retime targets — an absolute retime
+    /// `note:<create_time>c`) are not retime targets — an absolute retime
     /// over the field must not hand them an occur_time, since `occur_time
     /// IS NULL` is what the state/timeline views key the timeless row on.
     #[test]
@@ -562,7 +562,7 @@ mod tests {
         );
         let timeless_slug = timeless.slug.clone();
         assert!(
-            timeless_slug.as_str().starts_with("note:c"),
+            timeless_slug == crate::entry::build_slug("note", None, &timeless.create_time),
             "timeless slug is create_time-keyed, got {timeless_slug}"
         );
         db.insert_entry(&timeless).unwrap();
@@ -618,7 +618,7 @@ mod tests {
         assert!(after.dur.as_ref().is_some_and(crate::dur::Dur::is_moment));
         assert!(after.following_state.is_none());
         assert!(
-            after.slug.as_str().starts_with("mood:c"),
+            after.slug == crate::entry::build_slug("mood", None, &after.create_time),
             "got {}",
             after.slug
         );

@@ -217,7 +217,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // Time-specifying flags are rejected so silent discard can't mask a
     // user misconception. A timeless entry stores `occur_time = NULL` (the
     // durable timeless marker) and slugs on `create_time` →
-    // `field:c<create_time>` (da-r17h), so `occur f -T` becomes note-data:
+    // `field:<create_time>c` (da-r17h), so `occur f -T` becomes note-data:
     // the data lands, no occurrence is logged, and many-per-field works.
     // Note-data has no duration, so one on the line — `dur=`, the trailing
     // positional, a `,`-chain's — is dropped with its uncertainty, as
@@ -711,7 +711,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     //      when neither 1 nor 3 names one)
     //   3. spec's `id_template`
     //   4. Default → `%occur_time%` if the entry has an occur_time, else
-    //      (timeless) `%create_time%` → `field:c<create_time>`. da-r17h:
+    //      (timeless) `%create_time%` → `field:<create_time>c`. da-r17h:
     //      this replaced the old `:unset` sentinel, which made the slug
     //      UNIQUE-collide so only one timeless entry per field could exist.
     //      Distinct create_times keep many-per-field timeless notes apart.
@@ -744,7 +744,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         );
     } else {
         // Timeless `note` / `-T` / `--no-timestamp`: identify by create_time.
-        // `%create_time%` auto-prefixes `c` → `field:c<create_time>`.
+        // `%create_time%` marks the time `c` → `field:<create_time>c`.
         "%create_time%".to_string()
     };
     {

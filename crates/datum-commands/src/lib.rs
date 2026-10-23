@@ -42,6 +42,15 @@ pub fn announce_migration(db: &datum_core::db::Db) {
             "⚠ refolding this database's rows under the current fold rule failed: {why} — `datum check sync` names what is left, and `datum sync refold` tries again"
         );
     }
+    let left = db.create_time_ids_left();
+    if let Some(first) = left.first() {
+        eprintln!(
+            "⚠ {} entr{} kept a create-time id with the c before the time, the rewrite of it not saving ({first}{}) — `datum check` names what is left",
+            left.len(),
+            if left.len() == 1 { "y" } else { "ies" },
+            if left.len() > 1 { ", …" } else { "" }
+        );
+    }
     let Some(report) = db.last_migration() else {
         return;
     };

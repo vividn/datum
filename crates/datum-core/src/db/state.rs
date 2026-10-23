@@ -775,11 +775,11 @@ mod tests {
         assert_eq!(db.resolve_state_back("mood", 3, probe()).unwrap(), None);
     }
 
-    /// Timeless row (`note`/`-T`): occur_time NULL, slug `field:c<create_time>`.
+    /// Timeless row (`note`/`-T`): occur_time NULL, slug `field:<create_time>c`.
     fn push_timeless_note(db: &Db, field: &str) {
         let entry = Entry::new(field, Verb::Point, None, None, None, None, "d1");
         assert!(
-            entry.occur_time.is_none() && entry.slug.as_str().contains(":c"),
+            entry.occur_time.is_none() && entry.slug.as_str().ends_with('c'),
             "timeless row: occur_time NULL + create_time-keyed slug, got {}",
             entry.slug
         );

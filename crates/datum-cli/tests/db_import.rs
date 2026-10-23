@@ -1413,9 +1413,9 @@ fn timeless_docs_slug_on_their_own_create_time() {
     assert_eq!(
         slugs(&db),
         [
-            "physicalbackup:c2025-01-01T10:00:00.000Z",
-            "physicalbackup:c2025-01-02T10:00:00.000Z",
-            "physicalbackup:c2025-01-03T10:00:00.000Z",
+            "physicalbackup:2025-01-01T10:00:00.000Zc",
+            "physicalbackup:2025-01-02T10:00:00.000Zc",
+            "physicalbackup:2025-01-03T10:00:00.000Zc",
         ]
     );
     for e in datum_core::test_util::logged_all(&db) {
@@ -1493,7 +1493,7 @@ fn a_slug_held_by_a_deleted_row_says_so() {
         "meta": {"createTime": {"utc": "2025-01-01T10:00:00.000Z"}}
     }]));
     run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
-    run_cli(&["delete", "chore:c2025-01-01T10:00:00.000Z"], &db).unwrap();
+    run_cli(&["delete", "chore:2025-01-01T10:00:00.000Zc"], &db).unwrap();
     assert!(datum_core::test_util::logged_all(&db)[0]
         .deleted_at
         .is_some());
@@ -1501,7 +1501,7 @@ fn a_slug_held_by_a_deleted_row_says_so() {
     let skipped = skip_log_lines(&f, &db);
     assert_eq!(
         skipped,
-        ["slug-collision\tchore:1\tslug chore:c2025-01-01T10:00:00.000Z held by deleted chore:1"]
+        ["slug-collision\tchore:1\tslug chore:2025-01-01T10:00:00.000Zc held by deleted chore:1"]
     );
 }
 

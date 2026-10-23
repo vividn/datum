@@ -2,7 +2,7 @@
 //!
 //! Any log verb (`occur`, `start`, `stop`/`end`, `switch`, `add`/`note`) +
 //! `-T` produces a timeless entry: `occur_time` is NULL and the slug is
-//! `field:c<create_time>` (da-r17h — was `:unset`), and the verb is whatever
+//! `field:<create_time>c` (da-r17h — was `:unset`), and the verb is whatever
 //! derive_verb returns for the action's canonical (state, dur, fs) triple. A
 //! state-bearing verb stamps `dur=MOMENT`, so it is a point naming a state,
 //! not a transition (da-w149). Distinct create_times keep many-per-field
@@ -16,11 +16,11 @@ use datum_core::dur::Dur;
 use datum_core::test_util::fresh_db;
 use datum_core::{assert_count, assert_entry_matches};
 
-/// A timeless entry's slug is `field:c<create_time>` (da-r17h): the body
-/// after the `field:` delimiter begins with the `c` create-time marker.
+/// A timeless entry's slug is `field:<create_time>c` (da-r17h): the body
+/// after the `field:` delimiter ends with the `c` create-time marker.
 fn slug_is_timeless(slug: &str) -> bool {
     slug.split_once(':')
-        .is_some_and(|(_, body)| body.starts_with('c'))
+        .is_some_and(|(_, body)| body.ends_with('c'))
 }
 
 // ─── Happy path: each log verb + -T yields a timeless add-shaped entry ───────
@@ -129,7 +129,7 @@ fn add_minus_t_is_timeless_point() {
 
 /// da-o7iz: `<verb> foo -T` produces a timeless, note-equivalent entry —
 /// `occur_time` reads back as `None` (not a `create_time` stub) and the slug
-/// is `field:c<create_time>` (da-r17h), exactly like a bare `note foo`. Guards
+/// is `field:<create_time>c` (da-r17h), exactly like a bare `note foo`. Guards
 /// against the stale belief that "daydumb always anchors entries to
 /// `time_start`" (the comments formerly in `start_cmd.rs`/`stop_cmd.rs`
 /// claiming `-T` has no equivalent).
@@ -272,4 +272,38 @@ fn identical_timeless_entries_are_two_entries() {
     run_cli(&["add", "book", "--id", "gatsby"], &db).expect("first");
     run_cli(&["add", "book", "--id", "gatsby"], &db).expect("same slug, same content");
     assert_count!(db, "book", 1);
+}
+
+/// da-06jxa: a `-T` id puts its `c` after the time, so a field's ids sorted
+/// as text are in time order, the `-T` entry right after an occur entry of
+/// its own instant and before the next.
+#[test]
+fn a_minus_t_id_sorts_beside_the_occur_ids_of_its_time() {
+    let db = fresh_db();
+    run_cli(&["occur", "y", "-T"], &db).expect("occur y -T");
+    let timeless = datum_core::test_util::logged_entries(&db, "y")[0].clone();
+    let at = |mins: i64| {
+        (timeless.create_time + chrono::Duration::minutes(mins))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    };
+    for t in [at(-1), at(0), at(1)] {
+        run_cli(&["occur", "y", "-t", &t], &db).expect("occur y -t");
+    }
+    let mut slugs: Vec<String> = datum_core::test_util::logged_entries(&db, "y")
+        .into_iter()
+        .map(|e| e.slug.0)
+        .collect();
+    slugs.sort();
+    let stamp = |t: String| format!("y:{t}");
+    assert_eq!(
+        slugs,
+        [
+            stamp(at(-1)),
+            stamp(at(0)),
+            timeless.slug.0.clone(),
+            stamp(at(1))
+        ],
+        "the -T id is {}",
+        timeless.slug
+    );
 }

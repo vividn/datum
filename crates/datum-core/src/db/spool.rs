@@ -385,6 +385,7 @@ impl Db {
             last_migration: None,
             created: false,
             refold_failed: Default::default(),
+            create_time_ids_left: Default::default(),
             path: None,
         };
         db.migrate(None)?;

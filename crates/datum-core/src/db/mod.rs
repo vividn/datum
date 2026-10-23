@@ -20,6 +20,7 @@
 //! historical paths.
 
 mod alias;
+mod create_time_ids;
 mod definition;
 mod holder;
 mod insert;
@@ -130,6 +131,9 @@ pub struct Db {
     /// Why this open's refold under a newer fold rule failed, when it did
     /// (da-sqpjt): the open goes on, and the CLI says so.
     refold_failed: RefCell<Option<String>>,
+    /// The entries this open's rewrite of create-time ids could not save
+    /// (da-06jxa): the open goes on, and the CLI says so.
+    create_time_ids_left: RefCell<Vec<String>>,
     /// The file this handle was opened at, as it was named: what datum
     /// writes beside a database is beside this. `None` in memory.
     path: Option<std::path::PathBuf>,
@@ -256,6 +260,7 @@ impl Db {
             last_migration: None,
             created,
             refold_failed: Default::default(),
+            create_time_ids_left: Default::default(),
             path: Some(path.into()),
         };
         db.last_migration = db.migrate(Some(std::path::Path::new(path)))?;
@@ -281,6 +286,7 @@ impl Db {
             last_migration: None,
             created: false,
             refold_failed: Default::default(),
+            create_time_ids_left: Default::default(),
             path: Some(path.into()),
         })
     }
@@ -325,6 +331,7 @@ impl Db {
             last_migration: None,
             created: false,
             refold_failed: Default::default(),
+            create_time_ids_left: Default::default(),
             path: Some(path.into()),
         })
     }
@@ -341,6 +348,7 @@ impl Db {
             last_migration: None,
             created: false,
             refold_failed: Default::default(),
+            create_time_ids_left: Default::default(),
             path: None,
         };
         db.last_migration = db.migrate(None)?;
@@ -440,6 +448,7 @@ impl Db {
         // to open: it is only an index.
         let _ = self.derive_kit_indices();
         self.refold_for_rule()?;
+        self.rewrite_create_time_ids()?;
 
         if applied.is_empty() {
             return Ok(None);

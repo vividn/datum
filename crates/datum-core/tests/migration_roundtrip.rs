@@ -215,6 +215,7 @@ fn every_pair_has_a_roundtrip_test() {
         (65, 66),
         (66, 67),
         (67, 68),
+        (68, 69),
     ];
     assert_eq!(
         covered.len(),
@@ -3281,4 +3282,24 @@ fn roundtrip_v58_to_v59_warning_client_id() {
     // v58 reads `client_id` too, so the down leaves the rows as they are.
     apply_one_down(conn, 59);
     assert_eq!(read(conn), ["w2 unreadable", "w1 dev-a dev-a"]);
+}
+
+/// da-06jxa: v69 marks a file holding create-time ids from before, for the
+/// open to rewrite; v68 takes the mark away.
+#[test]
+fn roundtrip_v68_to_v69_create_time_ids() {
+    let db = fresh_at(68);
+    let conn = db.conn();
+    let marked = || {
+        conn.query_row(
+            "SELECT COUNT(*) FROM _meta WHERE key = 'create_time_ids'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+    };
+    apply_one_up(conn, 68);
+    assert_eq!(marked(), 1);
+    apply_one_down(conn, 69);
+    assert_eq!(marked(), 0);
 }

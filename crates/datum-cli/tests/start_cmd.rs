@@ -7,7 +7,7 @@
 //!     forces a zero-duration point (`dur=MOMENT`). A bare `start` with
 //!     neither opens an ongoing block (no `time_end`). `-T` (omit timestamp)
 //!     IS supported — it yields a timeless entry (`occur_time` NULL, slug
-//!     `field:c<create_time>`); see `no_timestamp.rs` for the cross-verb coverage.
+//!     `field:<create_time>c`); see `no_timestamp.rs` for the cross-verb coverage.
 //!   * "Required keys" (`-k key`) is also datum-specific; daydumb's `-k`
 //!     always takes `KEY=VALUE`.
 //!

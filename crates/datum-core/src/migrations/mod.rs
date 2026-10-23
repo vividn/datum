@@ -60,7 +60,7 @@ use v61_v70::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 68;
+pub const CURRENT_SCHEMA_VERSION: u32 = 69;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -554,5 +554,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_state_hashes: the verify's state hash, kept until an entry changes (da-4be5x)",
         apply: m67_to_68_sync_state_hashes,
         down: down_68_to_67_sync_state_hashes,
+    },
+    Migration {
+        from: 68,
+        to: 69,
+        summary: "entries: a create-time id puts its c after the time (field:<create_time>c), rewritten as the file next opens (da-06jxa)",
+        apply: m68_to_69_create_time_ids,
+        down: down_69_to_68_create_time_ids,
     },
 ];

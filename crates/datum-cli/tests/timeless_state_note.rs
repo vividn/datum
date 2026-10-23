@@ -100,7 +100,11 @@ fn switch_dash_t_is_a_moment_note_rendered_in_the_states_fg() {
     assert_eq!(row["state"], "outside");
     assert_eq!(row["dur"], "MOMENT");
     assert_eq!(row["time_metric"], "create");
-    assert!(row["slug"].as_str().unwrap().starts_with("environment:c"));
+    let slug = row["slug"].as_str().unwrap();
+    assert!(
+        slug.starts_with("environment:") && slug.ends_with('c'),
+        "{slug}"
+    );
 
     // No state compiles out of it: `now` has nothing to say.
     let now = json_of(&db, &["now", "--json"]);

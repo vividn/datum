@@ -257,7 +257,7 @@ fn list_filter_sql(params: &ListParams) -> (String, Vec<String>) {
 
     // da-5ns / da-r17h: a timeless row (bare `add`/`note`, or any
     // `-T`/--no-timestamp insert) stores `occur_time IS NULL` (its
-    // slug is `field:c<create_time>`, not a stub timestamp). The Occur
+    // slug is `field:<create_time>c`, not a stub timestamp). The Occur
     // metric (chronological "when did this happen") must skip those
     // rows; Modify / Hybrid still see them.
     if params.metric == TimeMetric::Occur {

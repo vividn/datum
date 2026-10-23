@@ -205,3 +205,23 @@ pub(super) fn down_68_to_67_sync_state_hashes(conn: &Connection) -> Result<()> {
     )?;
     Ok(())
 }
+
+/// da-06jxa: a create-time id puts its `c` after the time. The rows are
+/// rewritten by [`crate::db::Db`] as it opens, as signed edits every copy
+/// folds alike, which a migration has no key to sign: this marks the file
+/// as holding ids from before (`_meta` `create_time_ids`).
+pub(super) fn m68_to_69_create_time_ids(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "entries")? {
+        conn.execute_batch(
+            "INSERT OR REPLACE INTO _meta (key, value) VALUES ('create_time_ids', 'c_before');",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v68→v69. An id already rewritten stays so: a build before it
+/// reads it as `datum check`'s slug drift, which `--fix` derives again.
+pub(super) fn down_69_to_68_create_time_ids(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DELETE FROM _meta WHERE key = 'create_time_ids';")?;
+    Ok(())
+}

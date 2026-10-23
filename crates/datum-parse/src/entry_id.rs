@@ -79,9 +79,11 @@ pub fn render_occur_token(t: &DatumTime, precision: Option<&str>) -> String {
 /// an entry with no `id_structure` of its own.
 ///
 /// A time-anchored entry slugs `<field>:<occur_time>`. A timeless entry
-/// (no `occur_time`) slugs `<field>:c<create_time>` (da-r17h / da-xbjy) —
-/// the `c` marker is a *prefix*, mirroring the display convention, and
-/// `create_time` keeps many-per-field timeless entries apart (the old
+/// (no `occur_time`) slugs `<field>:<create_time>c` (da-r17h / da-xbjy) —
+/// the `c` marker goes *after* the time, so a field's ids sort in time
+/// order and a timeless entry sits right after an occur entry of its
+/// instant (da-06jxa) — and `create_time` keeps many-per-field timeless
+/// entries apart (the old
 /// `<field>:unset` made every timeless entry collide on the UNIQUE slug).
 ///
 /// The CLI insert path reaches the same strings through
@@ -96,7 +98,7 @@ pub fn build_slug(
 ) -> String {
     match time {
         Some(t) => format!("{}:{}", field, render_occur_token(t, precision)),
-        None => format!("{}:c{}", field, render_stamp(create_time)),
+        None => format!("{}:{}c", field, render_stamp(create_time)),
     }
 }
 
@@ -221,12 +223,12 @@ mod tests {
         assert_eq!(slug, "coffee:2026-03-16T09:15:00.000Z");
     }
 
-    /// da-r17h / da-xbjy: the timeless marker is a `c` *prefix* on the
-    /// create time, not a suffix and not the retired `:unset`.
+    /// da-r17h / da-xbjy: the timeless marker is a `c` on the create time,
+    /// not the retired `:unset`; after the time, not before it (da-06jxa).
     #[test]
-    fn a_timeless_entry_slugs_on_its_create_time_behind_a_c_marker() {
+    fn a_timeless_entry_slugs_on_its_create_time_and_then_a_c_marker() {
         let slug = build_slug("word", None, None, &at("2026-03-16T11:00:00.125Z"));
-        assert_eq!(slug, "word:c2026-03-16T11:00:00.125Z");
+        assert_eq!(slug, "word:2026-03-16T11:00:00.125Zc");
     }
 
     #[test]

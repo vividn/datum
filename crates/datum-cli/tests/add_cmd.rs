@@ -492,7 +492,7 @@ fn id_structure_always_set_when_id_given() {
     // the default body template is `%occur_time%` when the entry has an
     // occur_time, else `%create_time%`. da-r17h: a timeless `note` is
     // create_time-identified, so it takes the `%create_time%` branch
-    // (the slug renders `other:c<create_time>`).
+    // (the slug renders `other:<create_time>c`).
     run_cli(&["note", "other"], &db).expect("note other");
     let other = &datum_core::test_util::logged_entries(&db, "other")[0];
     assert_eq!(
@@ -837,7 +837,9 @@ fn a_timed_or_remaindered_add_keeps_its_id_and_words() {
     assert!(comments.contains(&json!(["some prose"])), "{comments:?}");
     assert!(comments.contains(&json!(["more prose"])), "{comments:?}");
     assert!(
-        books.iter().any(|e| e.slug.starts_with("book:c")),
+        books
+            .iter()
+            .any(|e| e.slug == datum_core::entry::build_slug("book", None, &e.create_time)),
         "{books:?}"
     );
     assert!(
@@ -849,7 +851,9 @@ fn a_timed_or_remaindered_add_keeps_its_id_and_words() {
     assert!(db.get_entry("book:some").is_err() && db.get_entry("book:more").is_err());
     let memos = datum_core::test_util::logged_entries(&db, "memo");
     assert!(
-        memos.iter().any(|e| e.slug.starts_with("memo:c")),
+        memos
+            .iter()
+            .any(|e| e.slug == datum_core::entry::build_slug("memo", None, &e.create_time)),
         "{memos:?}"
     );
     assert!(db.get_entry("memo:some").is_err());
@@ -904,15 +908,15 @@ fn spec_slots_follow_the_id() {
 }
 
 /// Without `--id` (or `-K`), a timeless `note` falls back to the default
-/// `field:c<create_time>` shape.
+/// `field:<create_time>c` shape.
 #[test]
 fn no_id_falls_back_to_timestamp_slug() {
     let db = fresh_db();
     run_cli(&["note", "book", "title=anon"], &db).expect("note book title=anon");
     let e = &datum_core::test_util::logged_entries(&db, "book")[0];
     assert!(
-        e.slug.starts_with("book:c"),
-        "timeless slug is create_time-derived (field:c<create_time>): {}",
+        e.slug == datum_core::entry::build_slug("book", None, &e.create_time),
+        "timeless slug is create_time-derived (field:<create_time>c): {}",
         e.slug,
     );
     assert!(
