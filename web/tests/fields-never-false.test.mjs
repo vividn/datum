@@ -85,8 +85,9 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 
 					// Basics says so, off first among its states and not one of them, and turns it back on (da-i9upr).
 					const { saved } = await openField(page, 'env');
-					const box = page.locator(`${FIELD_FORM} .states li.off input.off-state`);
-					assert.equal(await box.isChecked(), false);
+					// Off's ✕, pressed: off is struck (da-puzij).
+					const box = page.locator(`${FIELD_FORM} .states li.off button.off-state`);
+					assert.equal(await box.getAttribute('aria-pressed'), 'true');
 					// Its sample on the placement's band (da-srrqd): its states in turn, and off a gap between them.
 					await page.locator(`${FIELD_FORM} .placement .band svg`).waitFor();
 					const drawn = () =>
@@ -101,7 +102,8 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					assert.equal(await box.isDisabled(), true, 'a listed `false` leaves off to untick');
 					await page.locator(`${FIELD_FORM} [aria-label="remove false"]`).click();
 					assert.equal(await box.isDisabled(), false);
-					await box.check();
+					await box.click();
+					assert.equal(await box.getAttribute('aria-pressed'), 'false');
 					for (const end = Date.now() + 5000; (await drawn()).gaps === 0; await page.waitForTimeout(50))
 						assert.ok(Date.now() < end, 'off is not drawn');
 					await page.locator(`${FIELD_FORM} .commit`).click();
@@ -116,7 +118,7 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					// Only a switch has a ring, so only a switch is offered it.
 					const { saved: left } = await openField(page, 'alfa');
 					await page.locator(`${FIELD_FORM} .placement .band svg`).waitFor();
-					assert.equal(await page.locator(`${FIELD_FORM} input.off-state`).count(), 0, 'an occur field offers off');
+					assert.equal(await page.locator(`${FIELD_FORM} .off-state`).count(), 0, 'an occur field offers off');
 					await cancelField(page);
 					await left;
 				},

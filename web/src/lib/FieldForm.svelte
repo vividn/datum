@@ -36,7 +36,8 @@
 	Data, or on a card the Data tab's rows themselves. Its colour and the
 	SYMBOL its dots draw (da-ogyxa) stand on one line, the symbol in the
 	colour, each a popup (da-rpfws); the symbol is a character or an .svg
-	(the spec's `icon`), and each state has one beside its colour. A
+	(the spec's `icon`); a state is told apart by its colour alone, its own
+	symbol kept under its `…` as advanced (da-puzij). A
 	`glyph_by` (a symbol by a data key's value) is not edited here and a
 	save leaves it as it was. A field with no name yet has no colour to
 	show: its swatch is empty, not the pink an empty name hashes to. The data keys
@@ -57,7 +58,7 @@
 	handed up as `run` and leaving the form open.
 -->
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, tick } from 'svelte';
 	import { act } from './act.js';
 	import DataKeys from './DataKeys.svelte';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
@@ -178,6 +179,45 @@
 		lookup = example.lookup ?? '';
 		neverFalse = !!example.neverFalse;
 		catalog = null;
+	}
+
+	// ---- the states' order (da-puzij), as the Data tab's keys are moved (DataKeys.svelte) ----
+	let stateList: HTMLUListElement;
+	/** The state a handle is dragging, and the one whose options are open. */
+	let held: StateRow | null = null;
+	let shown: StateRow | null = null;
+
+	// A drag follows the pointer on the window: the row moves in the DOM as it goes, which would end a capture on the handle.
+	function grab(e: PointerEvent, state: StateRow) {
+		e.preventDefault();
+		held = state;
+		const drop = () => {
+			held = null;
+			removeEventListener('pointermove', drag);
+			removeEventListener('pointerup', drop);
+			removeEventListener('pointercancel', drop);
+		};
+		addEventListener('pointermove', drag);
+		addEventListener('pointerup', drop);
+		addEventListener('pointercancel', drop);
+	}
+
+	function drag(e: PointerEvent) {
+		if (!held) return;
+		const rows = [...stateList.querySelectorAll(':scope > li.state')];
+		const at = rows.findIndex((li) => e.clientY < li.getBoundingClientRect().bottom);
+		const [from, to] = [states.indexOf(held), at < 0 ? rows.length - 1 : at];
+		if (to !== from) states = moved(states, from, to);
+	}
+
+	/** The arrow keys move a row as a drag does, and the handle keeps the focus. */
+	async function nudge(e: KeyboardEvent, i: number) {
+		const to = i + ({ ArrowUp: -1, ArrowDown: 1 }[e.key] ?? 0);
+		if (to === i || to < 0 || to >= states.length) return;
+		e.preventDefault();
+		states = moved(states, i, to);
+		await tick();
+		stateList.querySelectorAll<HTMLElement>(':scope > li.state .handle')[to]?.focus();
 	}
 
 	/** Hand `next` up to run, or null to run nothing. */
@@ -339,35 +379,41 @@
 				</div>
 				{#if verb === 'switch'}
 					<!-- A switch starts with one state, off (da-i9upr): vividn, «that can be disabled as soon as you have
-					     more states». Off disabled is `never_false` (da-cwieh); a field that lists `false` keeps its `end`. -->
+					     more states». Off disabled is `never_false` (da-cwieh); a field that lists `false` keeps its `end`.
+					     Each row is handle · color · name · … · ✕ (da-puzij); a state is told apart by its color, and
+					     what it means and its symbol are under its …. Off is a row like the others, whose ✕ strikes it. -->
 					{@const listsFalse = states.some((s) => s.name.trim() === 'false')}
-					<ul class="states">
+					<ul class="states" bind:this={stateList}>
 						<li class="off" class:disabled={neverFalse}>
-							<span class="name">off</span>
-							<label
-								class="auto"
+							<span class="swatch" aria-hidden="true"></span>
+							<input class="name" value="off" disabled aria-label="off" />
+							<button
+								type="button"
+								class="remove off-state"
+								aria-label="disable off"
+								aria-pressed={neverFalse}
 								title={listsFalse
 									? 'false is one of its states, so the ring keeps end'
 									: !neverFalse && named.length === 0
 										? 'a switch needs another state before off can go'
 										: 'off disabled, the fields widget leaves a gap where end would stand'}
-								><input
-									type="checkbox"
-									class="off-state"
-									checked={!neverFalse}
-									disabled={listsFalse || (!neverFalse && named.length === 0)}
-									on:change={(e) => (neverFalse = !e.currentTarget.checked)}
-								/> a state</label
+								disabled={listsFalse || (!neverFalse && named.length === 0)}
+								on:click={() => (neverFalse = !neverFalse)}>✕</button
 							>
 						</li>
 						{#each states as state, i (state)}
-							<li class="state">
-								<Swatch
-									bind:value={state.color}
-									fallback={defaultColor(state.name.trim())}
-									label="the color of {state.name || 'this state'}"
-								/>
-								<Glyph bind:value={state.glyph} color={state.color || color} label="the symbol of {state.name || 'this state'}" />
+							{@const which = state.name || 'this state'}
+							<li class="state" class:held={held === state}>
+								<!-- The order is where each state stands around the tap in the
+								     fields widget (da-7q3ka): the first nearest the thumb. -->
+								<button
+									type="button"
+									class="handle"
+									aria-label="move {which}: drag, or the arrow keys"
+									on:pointerdown={(e) => grab(e, state)}
+									on:keydown={(e) => nudge(e, i)}>⠿</button
+								>
+								<Swatch bind:value={state.color} fallback={defaultColor(state.name.trim())} label="the color of {which}" />
 								<input
 									class="name"
 									bind:value={state.name}
@@ -376,23 +422,12 @@
 									spellcheck="false"
 									autocapitalize="none"
 								/>
-								<!-- The order is where each state stands around the tap in the
-								     fields widget (da-7q3ka): the first nearest the thumb. -->
 								<button
 									type="button"
-									class="remove"
-									data-up
-									disabled={i === 0}
-									aria-label="move {state.name || 'this state'} up"
-									on:click={() => (states = moved(states, i, i - 1))}>↑</button
-								>
-								<button
-									type="button"
-									class="remove"
-									data-down
-									disabled={i === states.length - 1}
-									aria-label="move {state.name || 'this state'} down"
-									on:click={() => (states = moved(states, i, i + 1))}>↓</button
+									class="remove more"
+									aria-label="the options of {which}"
+									aria-expanded={shown === state}
+									on:click={() => (shown = shown === state ? null : state)}>…</button
 								>
 								<button
 									type="button"
@@ -400,12 +435,16 @@
 									aria-label="remove {state.name}"
 									on:click={() => (states = states.filter((_, j) => j !== i))}>✕</button
 								>
-								<input
-									class="meaning"
-									bind:value={state.description}
-									placeholder="what it means"
-									aria-label="what {state.name || 'this state'} means"
-								/>
+								{#if shown === state}
+									<div class="options">
+										<input class="meaning" bind:value={state.description} placeholder="what it means" aria-label="what {which} means" />
+										<span class="advanced">advanced</span>
+										<span class="row">
+											<span class="label">symbol</span>
+											<Glyph bind:value={state.glyph} color={state.color || color} label="the symbol of {which}" />
+										</span>
+									</div>
+								{/if}
 							</li>
 						{/each}
 					</ul>
@@ -785,8 +824,8 @@
 		order: -1;
 	}
 
-	/* Swatch, name, ✕ on one line; the description, when there is one to
-	   ask for, the whole width under them. */
+	/* Handle, swatch, name, …, ✕ on one line, off's too; a state's options
+	   the width of the row under it. */
 	.states {
 		display: flex;
 		flex-direction: column;
@@ -796,39 +835,80 @@
 		list-style: none;
 	}
 
-	.state {
-		display: grid;
-		grid-template-columns: auto auto 1fr auto auto auto;
-		align-items: start;
-		gap: 0.4rem;
-	}
-
-	/* Off, first: its word and whether it is one of the states. */
+	.state,
 	.off {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.off label {
-		display: flex;
+		position: relative;
+		display: grid;
+		grid-template-columns: 1.4rem 28px minmax(0, 1fr) auto auto;
 		align-items: center;
 		gap: 0.4rem;
 	}
 
-	.off.disabled .name {
-		color: var(--quiet);
-		text-decoration: line-through;
+	.held {
+		outline: 1px dashed var(--accent);
 	}
 
-	/* Or the name's own width pushes ✕ out of the row. */
-	.state .name {
+	/* Off has no handle and no …: its swatch, name and ✕ stay in their columns. */
+	.off .swatch {
+		grid-column: 2;
+		box-sizing: border-box;
+		block-size: 28px;
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+	}
+
+	.off .remove {
+		grid-column: 5;
+	}
+
+	/* Disabled, the whole line struck through. */
+	.off.disabled {
+		opacity: 0.5;
+	}
+
+	.off.disabled::after {
+		content: '';
+		position: absolute;
+		inset-inline: 0;
+		inset-block-start: 50%;
+		border-block-start: 1px solid var(--ink-bright);
+		pointer-events: none;
+	}
+
+	.state .name,
+	.off .name {
 		min-inline-size: 0;
 	}
 
-	/* Under the row, the whole width of it. */
-	.state .meaning {
-		grid-column: 1 / -1;
+	/* The handle takes the touch: the panel would scroll under it. */
+	.handle {
+		box-sizing: border-box;
+		min-block-size: 24px;
+		border: 0;
+		background: none;
+		padding: 0;
+		color: var(--muted);
+		font: inherit;
+		cursor: grab;
+		touch-action: none;
+	}
+
+	.remove[aria-expanded='true'] {
+		border-color: var(--accent);
+	}
+
+	.options {
+		grid-column: 2 / -1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+
+	.advanced {
+		color: var(--muted);
+		font-size: 0.7rem;
+		letter-spacing: 0.06em;
+		border-block-end: 1px solid var(--rule);
 	}
 
 	.aliases {

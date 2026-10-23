@@ -396,6 +396,7 @@ describe('the field widget', () => {
 			await page.locator(`${FIELD_FORM} input.field`).fill('mood');
 			await page.locator(`${FIELD_FORM} .states + button.add`).click();
 			await page.locator(`${FIELD_FORM} .state input.name`).fill('good');
+			await page.locator(`${FIELD_FORM} .state button.more`).click();
 			await page.locator(`${FIELD_FORM} .state input.meaning`).fill('a good day');
 			await page.locator(`${FIELD_FORM} input.description`).fill('how it feels');
 			const before = (await app.echoes()).length;
@@ -493,7 +494,8 @@ describe('the field widget', () => {
 					if (Date.now() > end) assert.fail(`never drawn: ${what}, but ${JSON.stringify(seen)}`);
 				}
 			};
-			const off = at('.states li.off input.off-state');
+			const off = at('.states li.off button.off-state');
+			const struck = async () => [await off.getAttribute('aria-pressed'), await off.isDisabled()];
 			await page.locator(`${FIELD_FORM} input.field`).fill('thing');
 			// No shape yet, nothing to draw.
 			assert.equal(await at('.placement').count(), 0);
@@ -509,12 +511,12 @@ describe('the field widget', () => {
 
 			// A switch starts with off alone, which cannot go until there is another state.
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
-			assert.deepEqual([await off.isChecked(), await off.isDisabled()], [true, true]);
+			assert.deepEqual(await struck(), ['false', true]);
 			await at('.states + button.add').click();
 			await at('.state input.name').fill('calm');
 			await drawn('calm with off between', ({ blocks }) => blocks.length === 4 && blocks.every((s) => s === 'calm'));
 			assert.equal(await off.isDisabled(), false);
-			await off.uncheck();
+			await off.click();
 			await drawn('calm with no off: one stretch', ({ blocks }) => blocks.length === 1 && blocks[0] === 'calm');
 			// The line names the keys and goes to the Data tab.
 			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
@@ -536,6 +538,99 @@ describe('the field widget', () => {
 			assert.deepEqual(app.errors, []);
 		});
 	});
+
+	// da-puzij, vividn, 2026-10-22: «the individual states for switch data don't need individual symbols, just color is
+	// sufficient. also, just put a ... button to the left of x button … remove the up and down arrows, and put reorg handles
+	// like there are on the data tab … have the "off" state at the top look the same as the rest of the states».
+	for (const [name, size] of [['a desktop', DESKTOP], ['a phone', PHONE]])
+		test(`on ${name}, a switch's states are handle · color · name · … · ✕, off's ✕ strikes it, and a save keeps all of it`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await app.run(['track', 'mood', '--verb', 'switch', '--states', 'a,b,c', '--state-description', 'a=first']);
+				const { saved } = await openField(page, 'mood');
+				const rows = page.locator(`${FIELD_FORM} .states li.state`);
+				const names = () => rows.locator('input.name').evaluateAll((all) => all.map((i) => i.value));
+				const off = page.locator(`${FIELD_FORM} .states li.off`);
+				const strike = off.locator('button.off-state');
+				/** The parts of a row, left to right, each its class and the middle of its box. */
+				const parts = (row) =>
+					row.evaluate((li) =>
+						[...li.children].filter((c) => c.getBoundingClientRect().width).map((c) => {
+							const r = c.getBoundingClientRect();
+							return { part: c.className.split(' ')[0], x: r.left, y: r.top + r.height / 2 };
+						})
+					);
+
+				// One line each, in order: no symbol in the row, no description under it.
+				const row = await parts(rows.first());
+				assert.deepEqual(row.map((p) => p.part), ['handle', 'swatch', 'name', 'remove', 'remove']);
+				assert.ok(row.every((p) => p.x >= row[0].x && Math.abs(p.y - row[0].y) <= 2), JSON.stringify(row));
+				assert.deepEqual(await rows.first().locator(':scope > button:not(.handle)').evaluateAll((all) => all.map((b) => b.textContent.trim())), ['', '…', '✕']);
+				for (const gone of ['.tile', 'input.meaning']) assert.equal(await rows.locator(gone).count(), 0, gone);
+				// Off: the same columns, its swatch and ✕ under theirs, «off» not to be edited, no handle and no ….
+				const offRow = await parts(off);
+				assert.deepEqual(offRow.map((p) => p.part), ['swatch', 'name', 'remove']);
+				assert.deepEqual([offRow[0].x, offRow[2].x], [row[1].x, row[4].x]);
+				assert.deepEqual([await off.locator('input.name').inputValue(), await off.locator('input.name').isDisabled()], ['off', true]);
+				assert.equal(await off.locator('.swatch').evaluate((s) => getComputedStyle(s).backgroundColor), 'rgba(0, 0, 0, 0)');
+
+				// … opens the description and, under «advanced», the symbol; pressed again, it shuts.
+				const more = page.locator(`${FIELD_FORM} [aria-label="the options of a"]`);
+				await more.click();
+				assert.equal(await more.getAttribute('aria-expanded'), 'true');
+				assert.equal(await rows.first().locator('input.meaning').inputValue(), 'first');
+				assert.equal((await rows.first().locator('.advanced').innerText()).trim().toLowerCase(), 'advanced');
+				assert.equal(await rows.first().locator('.tile[aria-label^="the symbol of a:"]').count(), 1);
+				await rows.first().locator('input.meaning').fill('the first');
+				await more.click();
+				assert.equal(await rows.locator('input.meaning').count(), 0);
+				await rows.nth(1).locator('.swatch[aria-expanded]').click();
+				const color = await page.locator(`${FIELD_FORM} .state .set .swatch`).nth(3).getAttribute('data-color');
+				await page.locator(`${FIELD_FORM} .state .set .swatch`).nth(3).click();
+
+				// A drag on c's handle to a's row puts c first; the arrow keys move it back down one, keeping the focus.
+				const handle = (s) => page.locator(`${FIELD_FORM} [aria-label="move ${s}: drag, or the arrow keys"]`);
+				const [from, to] = [await handle('c').boundingBox(), await rows.first().boundingBox()];
+				await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+				await page.mouse.down();
+				await page.mouse.move(from.x + from.width / 2, to.y + 2, { steps: 5 });
+				await page.mouse.up();
+				assert.deepEqual(await names(), ['c', 'a', 'b']);
+				await handle('c').focus();
+				await page.keyboard.press('ArrowDown');
+				assert.deepEqual(await names(), ['a', 'c', 'b']);
+				assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'move c: drag, or the arrow keys');
+
+				// Off's ✕ strikes the whole line, and again brings it back.
+				const across = () => off.evaluate((li) => getComputedStyle(li, '::after').borderTopStyle);
+				assert.deepEqual([await strike.getAttribute('aria-pressed'), await across()], ['false', 'none']);
+				await strike.click();
+				assert.deepEqual([await strike.getAttribute('aria-pressed'), await across()], ['true', 'solid']);
+				await strike.click();
+				assert.equal(await strike.getAttribute('aria-pressed'), 'false');
+				await strike.click();
+
+				await page.locator(`${FIELD_FORM} button.commit`).click();
+				assert.equal((await saved).code, 0);
+				const shown = JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout);
+				assert.deepEqual(shown.allowed_states, ['a', 'c', 'b']);
+				assert.deepEqual(shown.state_colors, { b: color });
+				assert.deepEqual(shown.state_descriptions, { a: 'the first' });
+				assert.equal(shown.never_false, true);
+
+				// It cannot strike off while `false` is a state, nor while there is no other.
+				const { saved: left } = await openField(page, 'mood');
+				await strike.click();
+				await page.locator(`${FIELD_FORM} .states + button.add`).click();
+				await rows.last().locator('input.name').fill('false');
+				assert.deepEqual([await strike.isDisabled(), await strike.getAttribute('title')], [true, 'false is one of its states, so the ring keeps end']);
+				for (const s of ['false', 'a', 'c', 'b']) await page.locator(`${FIELD_FORM} [aria-label="remove ${s}"]`).click();
+				assert.deepEqual([await strike.isDisabled(), await strike.getAttribute('title')], [true, 'a switch needs another state before off can go']);
+				await cancelField(page);
+				assert.equal(await left, null);
+				assert.deepEqual(app.errors, []);
+			}, size);
+		});
 
 	// vremya, for vividn, 2026-10-19: «put them back at the very bottom of the basics tab» (da-i9upr).
 	test('a field\'s Basics ends with tracked or ignored, whose button runs `ignore F` or `track F` and stays', async () => {

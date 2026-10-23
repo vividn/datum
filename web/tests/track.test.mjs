@@ -539,6 +539,7 @@ describe('in the app', () => {
 			const statePick = page.locator(`${MODAL} .state .set .swatch`).nth(8);
 			const stateColor = await statePick.getAttribute('data-color');
 			await statePick.click();
+			await page.locator(`${MODAL} .state button.more`).first().click();
 			await page.locator(`${MODAL} .state input.meaning`).first().fill('up');
 			await page.locator(`${MODAL} button.commit`).click();
 
@@ -668,9 +669,9 @@ describe('in the app', () => {
 			const noHex = async (where) => {
 				for (const [type, value, placeholder, cls] of await inputs()) {
 					// The icon's picker (da-45wgz) takes a file, and no typing at all;
-					// whether off is a state (da-cwieh, da-i9upr) is a box to tick.
+					// whether off is a state (da-cwieh, da-puzij) is its row's ✕, a button.
 					assert.ok(
-						type === 'text' || (type === 'file' && cls.includes('icon')) || (type === 'checkbox' && cls.includes('off-state')),
+						type === 'text' || (type === 'file' && cls.includes('icon')),
 						`${where}: input.${cls} is a ${type}`
 					);
 					assert.doesNotMatch(`${value} ${placeholder}`, /#|hex|rgb/i, `${where}: input.${cls} takes a colour`);
@@ -1147,12 +1148,14 @@ describe('in the app', () => {
 		});
 	});
 
-	test('a state glyph is typed beside its swatch and drawn on a `switch -m` dot', async () => {
+	test('a state glyph is typed under its … and drawn on a `switch -m` dot', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch', '--states', 'up,down']);
 			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
+			// Under the state's …, as advanced (da-puzij).
+			await page.locator(`${MODAL} [aria-label="the options of up"]`).click();
 			await tile(page, 'the symbol of up').click();
 			// A state's symbol is a character: the image is the field's alone.
 			assert.equal(await page.locator(`${MODAL} .picker input[type="file"]`).count(), 0);

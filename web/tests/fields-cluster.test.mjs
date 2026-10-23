@@ -305,7 +305,8 @@ describe('a switch field’s states around the tap', () => {
 				assert.deepEqual(logged.buttons.map((b) => b.name), RING, 'logging reordered the states');
 
 				const { saved: saved } = await openField(page, 'mood');
-				for (let i = 0; i < 3; i++) await page.locator(`${FIELD_FORM} [aria-label="move d up"]`).click();
+				await page.locator(`${FIELD_FORM} [aria-label="move d: drag, or the arrow keys"]`).focus();
+				for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowUp');
 				await page.locator(`${FIELD_FORM} .commit`).click();
 				await saved;
 				assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).allowed_states, ['false', 'd', 'a', 'b', 'c']);
