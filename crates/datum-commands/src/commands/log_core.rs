@@ -1271,7 +1271,7 @@ pub(crate) fn change_command(
 /// `slot_value.unwrap_or_default()` behaviour. String values pass through
 /// without their JSON quoting; everything else uses serde's default
 /// representation.
-fn datum_value_to_slug_string(v: Option<&JsonValue>) -> String {
+pub(crate) fn datum_value_to_slug_string(v: Option<&JsonValue>) -> String {
     match v {
         None | Some(JsonValue::Null) => String::new(),
         Some(JsonValue::String(s)) => s.clone(),

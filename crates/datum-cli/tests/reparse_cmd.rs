@@ -608,3 +608,36 @@ fn plain_check_keeps_every_row_when_one_spans_lines() {
         assert_eq!(named[1], detail, "{plain}");
     }
 }
+
+/// da-ahj3k: before #1100 a bare `id=` was the entry's identity, its id
+/// template, and left `data`. A row logged so replays it as identity: `--fix`
+/// writes nothing, a template `%…%` interpolated (`tag:pr`) included. A row
+/// logged since, `id=` stored as data — its id too, so its slug says nothing
+/// of which it was — keeps it.
+#[test]
+fn reparse_reads_an_old_id_key_as_the_identity_it_was() {
+    let db = fresh_db();
+    run_cli(&["add", "book", "--id", "dune", "title=Dune"], &db).unwrap();
+    run_cli(&["add", "tag", "--id", "p%q%r", "a=1"], &db).unwrap();
+    run_cli(&["add", "card", "--id", "dune", "id=dune"], &db).unwrap();
+    db.conn()
+        .execute_batch(
+            "UPDATE entries SET raw_input = 'add book id=dune title=Dune' WHERE field = 'book';
+             UPDATE entries SET raw_input = 'add tag id=p%q%r a=1' WHERE field = 'tag';",
+        )
+        .unwrap();
+
+    for field in ["book", "tag", "card"] {
+        let before = datum_core::test_util::logged_entries(&db, field).remove(0);
+        let hid = before.hid.to_string();
+        run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+        let after = db.get_entry(&hid).unwrap();
+        assert_eq!(
+            (&after.data, after.modify_time),
+            (&before.data, before.modify_time),
+            "{field}"
+        );
+    }
+    let card = db.get_entry("card:dune").unwrap();
+    assert_eq!(card.data, Some(serde_json::json!({"id": "dune"})));
+}

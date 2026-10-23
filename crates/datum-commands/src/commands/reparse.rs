@@ -40,9 +40,9 @@ use serde_json::Value as JsonValue;
 use crate::args::{Command, ReparseArgs};
 use crate::commands::helpers::build_resolver_from_chain;
 use crate::commands::log_core::{
-    bind_spec_words, build_time_from_flags, change_command, expand_array_states,
-    extract_reserved_columns, lift_time_keys, parse_log_args, prepare_log_args,
-    validate_switch_state_token, LiftedTimes,
+    bind_spec_words, build_time_from_flags, change_command, datum_value_to_slug_string,
+    expand_array_states, extract_reserved_columns, lift_time_keys, parse_log_args,
+    prepare_log_args, validate_switch_state_token, LiftedTimes,
 };
 
 /// Parser-derivable Entry shape — what the parser alone determines from
@@ -238,6 +238,28 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
             obj.insert("last_state".to_string(), prior.clone());
             extra_data = Some(JsonValue::Object(obj));
         }
+    }
+
+    // Before da-uf6it a bare `id=<v>` was the entry's identity, its id
+    // template, and left `data` (#1100 made it data). A row it named so —
+    // no stored `id`, `<v>` its template or, interpolated, its slug's body —
+    // replays it as it was meant.
+    let slug_body = entry.slug.strip_prefix(&format!("{}:", entry.field));
+    if let Some(JsonValue::Object(m)) = &mut extra_data {
+        let id = m.get("id").map(|v| datum_value_to_slug_string(Some(v)));
+        if entry.data.as_ref().is_none_or(|d| d.get("id").is_none())
+            && id.is_some()
+            && [entry.id_structure.as_deref(), slug_body].contains(&id.as_deref())
+        {
+            m.remove("id");
+        }
+    }
+    if extra_data
+        .as_ref()
+        .and_then(JsonValue::as_object)
+        .is_some_and(|m| m.is_empty())
+    {
+        extra_data = None;
     }
 
     Ok(Some(ReparsedShape {
