@@ -28,8 +28,9 @@
 	first (da-qimwi).
 
 	Every field, a new one too, has the three segments — Basics · Data ·
-	Aliases — none of them required (da-i9upr), and a swipe left or right
-	across the form goes to the next or the one before (da-kmr29). Basics shows a switch's states,
+	Aliases — none of them required (da-i9upr), their bar under the tabbed
+	region and over Cancel and Save (da-nmhf2), and a swipe left or right
+	across the region goes to the next or the one before (da-kmr29). Basics shows a switch's states,
 	off first and disabled (`never_false`) only once there is another, and
 	where its lane sits in the day (`Placement.svelte`), its entries drawn
 	there as the form holds them (da-srrqd); a line that goes to
@@ -150,6 +151,13 @@
 	/** The spec a save would store, which the placement draws. */
 	$: drafted = spec ? editedSpec(spec, edits) : draftSpec(field.trim(), edits);
 	$: save = { argv: spec ? specArgv(editedSpec(spec, edits)) : declareArgv(field.trim(), edits) };
+	/**
+	 * What the placement draws, held while Basics is behind (da-nmhf2): it
+	 * stays mounted there, every redraw is a CLI run (`dayview --sample`),
+	 * and no one sees it. Basics in front again, it draws once.
+	 */
+	let sampled = { field: '', verb, spec: null as Spec | null };
+	$: if (tab === 'basics') sampled = { field: field.trim(), verb, spec: field.trim() ? drafted : null };
 	let opened: string | undefined;
 	$: {
 		const now = JSON.stringify([field, verb, edits]);
@@ -223,29 +231,41 @@
 	/** Hand `next` up to run, or null to run nothing. */
 	const finish = (next: Save | null) => dispatch('close', next);
 
-	// ---- swipe (da-kmr29) ---------------------------------------------------
-	// vividn, 2026-10-19: «you should be able to switch between tabs in the setup widget by swiping left and right».
-	// The pane's frame rule, one level in (PaneFrame.svelte, da-kcmp): the first move past COMMIT_PX decides
-	// whose the gesture is. A horizontal one with a tab that way is the form's and stops there; on the last
-	// tab it goes on to the frame. A vertical one stays a scroll, and one begun on a box, a popup or the
-	// placement (which drags itself) is never the form's.
+	// ---- swipe (da-kmr29, da-nmhf2) -----------------------------------------
+	// vividn, 2026-10-19: «you should be able to switch between tabs in the setup widget by swiping left and right»;
+	// 2026-10-22: «If you swipe on the tab bar itself, or in the margins, it should go to the surrounding container».
+	// So it is the tabbed region's alone: begun on the head, the tab bar, the buttons or a margin, a swipe is the
+	// pane's (PaneFrame.svelte) from any tab. In the region it is the pane's frame rule one level in (da-kcmp): the
+	// first move past COMMIT_PX decides whose the gesture is. A horizontal one with a tab that way is the form's and
+	// stops there; on the last tab it goes on to the frame. A vertical one stays a scroll, and one begun on a box, a
+	// popup, the placement (which drags itself) or a row's drag handle is never the form's. Every tab is mounted side by side in the track,
+	// inert but the one in front, so the finger drags the tab in front and its neighbor comes in with it. Released
+	// past SWIPE_PX, or flicked, the track goes on to the neighbor; short of that it springs back. A tab pressed in
+	// the bar slides there the same way.
 	const COMMIT_PX = 10;
 	const SWIPE_PX = 40;
-	const KEEPS = 'input, textarea, select, dialog, [role="listbox"], [role="slider"], .placement, [data-pans]';
-	let swipe: { x: number; y: number; state: 'pending' | 'ours' | 'theirs' } | null = null;
+	/** A swipe faster than this, in px a ms, and at least FLICK_PX long, is a flick: it goes on to the next tab. */
+	const FLICK = 0.5;
+	const FLICK_PX = 20;
+	const KEEPS = 'input, textarea, select, dialog, [role="listbox"], [role="slider"], .placement, [data-pans], .handle';
+	let swipe: { x: number; y: number; at: number; state: 'pending' | 'ours' | 'theirs' } | null = null;
+	/** How far the finger has dragged the track from the tab in front, in px. */
+	let offset = 0;
 	/** The tab a swipe by `dx` brings on, if there is one that way. */
 	const toward = (dx: number) => TABS[TABS.indexOf(tab) + (dx < 0 ? 1 : -1)];
+	/** The reader asked for no motion: the tab changes at once, as the pane's do. */
+	const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 	function swipeStart(event: TouchEvent) {
 		const t = event.touches[0];
 		const kept = (event.target as Element).closest(KEEPS);
 		const theirs = event.touches.length > 1 || (kept && (event.currentTarget as Element).contains(kept));
-		swipe = { x: t.clientX, y: t.clientY, state: theirs ? 'theirs' : 'pending' };
+		swipe = { x: t.clientX, y: t.clientY, at: event.timeStamp, state: theirs ? 'theirs' : 'pending' };
 	}
 
 	function swipeMove(event: TouchEvent) {
 		if (!swipe || swipe.state === 'theirs') return;
-		if (event.touches.length > 1) return void (swipe.state = 'theirs');
+		if (event.touches.length > 1) return drop();
 		const dx = event.touches[0].clientX - swipe.x;
 		const dy = event.touches[0].clientY - swipe.y;
 		if (swipe.state === 'pending') {
@@ -255,26 +275,29 @@
 		}
 		event.stopPropagation();
 		event.preventDefault();
+		// Never toward a side with no tab on it.
+		if (!still()) offset = toward(dx) ? dx : 0;
 	}
 
 	function swipeEnd(event: TouchEvent) {
 		const was = swipe;
-		swipe = null;
+		drop();
 		if (was?.state !== 'ours') return;
 		event.stopPropagation();
 		const dx = event.changedTouches[0].clientX - was.x;
-		if (Math.abs(dx) >= SWIPE_PX) tab = toward(dx) ?? tab;
+		const far = Math.abs(dx);
+		if (far >= SWIPE_PX || (far >= FLICK_PX && far > FLICK * (event.timeStamp - was.at))) tab = toward(dx) ?? tab;
+	}
+
+	/** The gesture is over: the track glides to the tab in front, the same one or the next. */
+	function drop() {
+		swipe = null;
+		offset = 0;
 	}
 </script>
 
 <div class="field-form" role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
-	<form
-		on:submit|preventDefault={() => ready && finish(save)}
-		on:touchstart={swipeStart}
-		on:touchmove|nonpassive={swipeMove}
-		on:touchend={swipeEnd}
-		on:touchcancel={() => (swipe = null)}
-	>
+	<form on:submit|preventDefault={() => ready && finish(save)}>
 		<div class="verbs" role="radiogroup" aria-label="what a press logs">
 			{#each VERBS as choice (choice.verb)}
 				<div class="shape" class:split={offers(choice.verb)}>
@@ -348,194 +371,208 @@
 			</p>
 		{/if}
 
+		<!-- The tabbed region (da-nmhf2): a swipe begun in it is the form's, one begun anywhere else the pane's. -->
+		<div
+			class="tabbed"
+			on:touchstart={swipeStart}
+			on:touchmove|nonpassive={swipeMove}
+			on:touchend={swipeEnd}
+			on:touchcancel={drop}
+		>
+			<div class="track" class:dragging={swipe?.state === 'ours'} style:transform="translateX(calc({-TABS.indexOf(tab) * 100}% + {offset}px))">
+				{#each TABS as name (name)}
+					<div class="panel" role="tabpanel" id="spec-panel-{name}" aria-labelledby="spec-tab-{name}" data-panel={name} inert={name !== tab}>
+						{#if name === 'basics'}
+							<!-- vividn, 2026-10-19: «move description to the very top of the basics tab». -->
+							<label class="row">
+								<span class="label">description</span>
+								<input class="description" bind:value={description} />
+							</label>
+							<!-- vividn, 2026-10-19: «move color and symbol (not glyph) to one line, next to each other. make
+							     the symbol take on the color of color». -->
+							<div class="row">
+								<span class="label">color</span>
+								<Swatch bind:value={color} fallback={auto} label="the field's color" />
+								<span class="label near">symbol</span>
+								<Glyph bind:value={glyph} bind:icon color={color || (field.trim() && auto)} label="the field's symbol" />
+							</div>
+							{#if verb === 'switch'}
+								<!-- A switch starts with one state, off (da-i9upr): vividn, «that can be disabled as soon as you have
+								     more states». Off disabled is `never_false` (da-cwieh); a field that lists `false` keeps its `end`.
+								     Each row is handle · color · name · … · ✕ (da-puzij); a state is told apart by its color, and
+								     what it means and its symbol are under its …. Off is a row like the others, whose ✕ strikes it. -->
+								{@const listsFalse = states.some((s) => s.name.trim() === 'false')}
+								<ul class="states" bind:this={stateList}>
+									<li class="off" class:disabled={neverFalse}>
+										<span class="swatch" aria-hidden="true"></span>
+										<input class="name" value="off" disabled aria-label="off" />
+										<button
+											type="button"
+											class="remove off-state"
+											aria-label="disable off"
+											aria-pressed={neverFalse}
+											title={listsFalse
+												? 'false is one of its states, so the ring keeps end'
+												: !neverFalse && named.length === 0
+													? 'a switch needs another state before off can go'
+													: 'off disabled, the fields widget leaves a gap where end would stand'}
+											disabled={listsFalse || (!neverFalse && named.length === 0)}
+											on:click={() => (neverFalse = !neverFalse)}>✕</button
+										>
+									</li>
+									{#each states as state, i (state)}
+										{@const which = state.name || 'this state'}
+										<li class="state" class:held={held === state}>
+											<!-- The order is where each state stands around the tap in the
+											     fields widget (da-7q3ka): the first nearest the thumb. -->
+											<button
+												type="button"
+												class="handle"
+												aria-label="move {which}: drag, or the arrow keys"
+												on:pointerdown={(e) => grab(e, state)}
+												on:keydown={(e) => nudge(e, i)}>⠿</button
+											>
+											<Swatch bind:value={state.color} fallback={defaultColor(state.name.trim())} label="the color of {which}" />
+											<input
+												class="name"
+												bind:value={state.name}
+												placeholder="state"
+												aria-label="the state's name"
+												spellcheck="false"
+												autocapitalize="none"
+											/>
+											<button
+												type="button"
+												class="remove more"
+												aria-label="the options of {which}"
+												aria-expanded={shown === state}
+												on:click={() => (shown = shown === state ? null : state)}>…</button
+											>
+											<button
+												type="button"
+												class="remove"
+												aria-label="remove {state.name}"
+												on:click={() => (states = states.filter((_, j) => j !== i))}>✕</button
+											>
+											{#if shown === state}
+												<div class="options">
+													<input class="meaning" bind:value={state.description} placeholder="what it means" aria-label="what {which} means" />
+													<span class="advanced">advanced</span>
+													<span class="row">
+														<span class="label">symbol</span>
+														<Glyph bind:value={state.glyph} color={state.color || color} label="the symbol of {which}" />
+													</span>
+												</div>
+											{/if}
+										</li>
+									{/each}
+								</ul>
+								<button type="button" class="add" on:click={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
+									>+ state</button
+								>
+								<label class="row" title="a bare state names the entry FIELD:<state>, as switch reading dune names book:dune">
+									<span class="label">each state is a</span>
+									<input class="lookup" bind:value={lookup} placeholder="field, e.g. book" spellcheck="false" autocapitalize="none" />
+								</label>
+							{/if}
+							{#if sampled.verb && sampled.verb !== 'add'}
+								{#key sampled.verb}<Placement field={sampled.field} occur={sampled.verb === 'occur'} bind:place spec={sampled.spec} />{/key}
+							{/if}
+							{#if verb === 'add'}
+								<!-- vividn: «for card, embed the data widget directly on the basics». -->
+								<span class="label">data</span>
+								<DataKeys bind:keys card detail />
+							{:else}
+								<!-- vividn: «want to record extra data with each entry? [switch to data tab]». -->
+								<p class="row data-line">
+									<span class="label">data</span>
+									<span class="ask"
+										>{keyed.length ? `each entry records ${keyed.join(', ')}` : 'want to record extra data with each entry?'}</span
+									>
+									<button type="button" class="to-data" data-to-tab="data" on:click={() => (tab = 'data')}>data tab</button>
+								</p>
+							{/if}
+							{#if spec}
+								<!-- vividn, 2026-10-19: «put them back at the very bottom of the basics tab». Run at once, as the
+								     ignored list's buttons are; a new field saves with `--track`. -->
+								{@const off = ignored.includes(field)}
+								<p class="row tracking" data-tracking={off ? 'ignored' : 'tracked'}>
+									<span class="label">{off ? 'ignored' : 'tracked'}</span>
+									<span class="ask">{off ? 'no button and not in now; its entries stay' : 'a button in the fields widget'}</span>
+									<button
+										type="button"
+										use:act={'run'}
+										title={shellJoin([off ? 'track' : 'ignore', field])}
+										on:click={() => dispatch('run', { argv: [off ? 'track' : 'ignore', field] })}>{off ? 'track' : 'ignore'}</button
+									>
+								</p>
+							{/if}
+						{:else if name === 'data'}
+							<DataKeys bind:keys card={verb === 'add'} detail />
+						{:else}
+							<label class="auto"
+								><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the verb and states</label
+							>
+							<ul class="aliases">
+								{#each aliases as alias (alias)}
+									<li class="alias">
+										{#if autoalias}
+											<code class="name">{alias.state}</code><code class="expands">{alias.expands_to}</code>
+										{:else}
+											<input
+												class="name"
+												bind:value={alias.state}
+												placeholder="alias"
+												aria-label="the alias"
+												spellcheck="false"
+												autocapitalize="none"
+											/>
+											<input
+												class="expands"
+												bind:value={alias.expands_to}
+												placeholder="{verb ?? 'occur'} {field}"
+												aria-label="what {alias.state || 'it'} runs"
+												spellcheck="false"
+												autocapitalize="none"
+											/>
+											<button
+												type="button"
+												class="remove"
+												aria-label="remove {alias.state}"
+												on:click={() => (aliases = aliases.filter((a) => a !== alias))}>✕</button
+											>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+							{#if autoalias}
+								<p class="later">made again from the verb and states when saved</p>
+							{:else}
+								<button
+									type="button"
+									class="add"
+									on:click={() => (aliases = [...aliases, { state: '', expands_to: '' }])}>+ alias</button
+								>
+							{/if}
+						{/if}
+					</div>
+				{/each}
+			</div>
+		</div>
+
+		<!-- Under the tabs, over Cancel and Save (da-nmhf2): a swipe on it is the pane's. -->
 		<div class="tabs" role="tablist">
 			{#each TABS as name (name)}
 				<button
 					type="button"
 					role="tab"
 					id="spec-tab-{name}"
-					aria-controls="spec-panel"
+					aria-controls="spec-panel-{name}"
 					data-tab={name}
 					aria-selected={tab === name}
 					on:click={() => (tab = name)}>{name}</button
 				>
 			{/each}
-		</div>
-
-		<div class="panel" role="tabpanel" id="spec-panel" aria-labelledby="spec-tab-{tab}" data-panel={tab}>
-			{#if tab === 'basics'}
-				<!-- vividn, 2026-10-19: «move description to the very top of the basics tab». -->
-				<label class="row">
-					<span class="label">description</span>
-					<input class="description" bind:value={description} />
-				</label>
-				<!-- vividn, 2026-10-19: «move color and symbol (not glyph) to one line, next to each other. make
-				     the symbol take on the color of color». -->
-				<div class="row">
-					<span class="label">color</span>
-					<Swatch bind:value={color} fallback={auto} label="the field's color" />
-					<span class="label near">symbol</span>
-					<Glyph bind:value={glyph} bind:icon color={color || (field.trim() && auto)} label="the field's symbol" />
-				</div>
-				{#if verb === 'switch'}
-					<!-- A switch starts with one state, off (da-i9upr): vividn, «that can be disabled as soon as you have
-					     more states». Off disabled is `never_false` (da-cwieh); a field that lists `false` keeps its `end`.
-					     Each row is handle · color · name · … · ✕ (da-puzij); a state is told apart by its color, and
-					     what it means and its symbol are under its …. Off is a row like the others, whose ✕ strikes it. -->
-					{@const listsFalse = states.some((s) => s.name.trim() === 'false')}
-					<ul class="states" bind:this={stateList}>
-						<li class="off" class:disabled={neverFalse}>
-							<span class="swatch" aria-hidden="true"></span>
-							<input class="name" value="off" disabled aria-label="off" />
-							<button
-								type="button"
-								class="remove off-state"
-								aria-label="disable off"
-								aria-pressed={neverFalse}
-								title={listsFalse
-									? 'false is one of its states, so the ring keeps end'
-									: !neverFalse && named.length === 0
-										? 'a switch needs another state before off can go'
-										: 'off disabled, the fields widget leaves a gap where end would stand'}
-								disabled={listsFalse || (!neverFalse && named.length === 0)}
-								on:click={() => (neverFalse = !neverFalse)}>✕</button
-							>
-						</li>
-						{#each states as state, i (state)}
-							{@const which = state.name || 'this state'}
-							<li class="state" class:held={held === state}>
-								<!-- The order is where each state stands around the tap in the
-								     fields widget (da-7q3ka): the first nearest the thumb. -->
-								<button
-									type="button"
-									class="handle"
-									aria-label="move {which}: drag, or the arrow keys"
-									on:pointerdown={(e) => grab(e, state)}
-									on:keydown={(e) => nudge(e, i)}>⠿</button
-								>
-								<Swatch bind:value={state.color} fallback={defaultColor(state.name.trim())} label="the color of {which}" />
-								<input
-									class="name"
-									bind:value={state.name}
-									placeholder="state"
-									aria-label="the state's name"
-									spellcheck="false"
-									autocapitalize="none"
-								/>
-								<button
-									type="button"
-									class="remove more"
-									aria-label="the options of {which}"
-									aria-expanded={shown === state}
-									on:click={() => (shown = shown === state ? null : state)}>…</button
-								>
-								<button
-									type="button"
-									class="remove"
-									aria-label="remove {state.name}"
-									on:click={() => (states = states.filter((_, j) => j !== i))}>✕</button
-								>
-								{#if shown === state}
-									<div class="options">
-										<input class="meaning" bind:value={state.description} placeholder="what it means" aria-label="what {which} means" />
-										<span class="advanced">advanced</span>
-										<span class="row">
-											<span class="label">symbol</span>
-											<Glyph bind:value={state.glyph} color={state.color || color} label="the symbol of {which}" />
-										</span>
-									</div>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-					<button type="button" class="add" on:click={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
-						>+ state</button
-					>
-					<label class="row" title="a bare state names the entry FIELD:<state>, as switch reading dune names book:dune">
-						<span class="label">each state is a</span>
-						<input class="lookup" bind:value={lookup} placeholder="field, e.g. book" spellcheck="false" autocapitalize="none" />
-					</label>
-				{/if}
-				{#if verb && verb !== 'add'}
-					{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={field.trim() ? drafted : null} />{/key}
-				{/if}
-				{#if verb === 'add'}
-					<!-- vividn: «for card, embed the data widget directly on the basics». -->
-					<span class="label">data</span>
-					<DataKeys bind:keys card detail />
-				{:else}
-					<!-- vividn: «want to record extra data with each entry? [switch to data tab]». -->
-					<p class="row data-line">
-						<span class="label">data</span>
-						<span class="ask"
-							>{keyed.length ? `each entry records ${keyed.join(', ')}` : 'want to record extra data with each entry?'}</span
-						>
-						<button type="button" class="to-data" data-to-tab="data" on:click={() => (tab = 'data')}>data tab</button>
-					</p>
-				{/if}
-				{#if spec}
-					<!-- vividn, 2026-10-19: «put them back at the very bottom of the basics tab». Run at once, as the
-					     ignored list's buttons are; a new field saves with `--track`. -->
-					{@const off = ignored.includes(field)}
-					<p class="row tracking" data-tracking={off ? 'ignored' : 'tracked'}>
-						<span class="label">{off ? 'ignored' : 'tracked'}</span>
-						<span class="ask">{off ? 'no button and not in now; its entries stay' : 'a button in the fields widget'}</span>
-						<button
-							type="button"
-							use:act={'run'}
-							title={shellJoin([off ? 'track' : 'ignore', field])}
-							on:click={() => dispatch('run', { argv: [off ? 'track' : 'ignore', field] })}>{off ? 'track' : 'ignore'}</button
-						>
-					</p>
-				{/if}
-			{:else if tab === 'data'}
-				<DataKeys bind:keys card={verb === 'add'} detail />
-			{:else if tab === 'aliases'}
-				<label class="auto"
-					><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the verb and states</label
-				>
-				<ul class="aliases">
-					{#each aliases as alias (alias)}
-						<li class="alias">
-							{#if autoalias}
-								<code class="name">{alias.state}</code><code class="expands">{alias.expands_to}</code>
-							{:else}
-								<input
-									class="name"
-									bind:value={alias.state}
-									placeholder="alias"
-									aria-label="the alias"
-									spellcheck="false"
-									autocapitalize="none"
-								/>
-								<input
-									class="expands"
-									bind:value={alias.expands_to}
-									placeholder="{verb ?? 'occur'} {field}"
-									aria-label="what {alias.state || 'it'} runs"
-									spellcheck="false"
-									autocapitalize="none"
-								/>
-								<button
-									type="button"
-									class="remove"
-									aria-label="remove {alias.state}"
-									on:click={() => (aliases = aliases.filter((a) => a !== alias))}>✕</button
-								>
-							{/if}
-						</li>
-					{/each}
-				</ul>
-				{#if autoalias}
-					<p class="later">made again from the verb and states when saved</p>
-				{:else}
-					<button
-						type="button"
-						class="add"
-						on:click={() => (aliases = [...aliases, { state: '', expands_to: '' }])}>+ alias</button
-					>
-				{/if}
-			{/if}
 		</div>
 
 		<div class="buttons">
@@ -578,15 +615,63 @@
 		min-inline-size: 0;
 	}
 
-	/* The shapes, name, tabs and buttons stay put; a long tab scrolls here,
-	   and is never shorter than its first few rows. */
+	/* The shapes, name, tabs and buttons stay put; a long tab scrolls in its
+	   panel, and the region is never shorter than its first few rows. Its
+	   own ground and border say where a swipe changes the tab (da-nmhf2).
+	   Clipped, never scrolled: `hidden` lets a box brought into view while
+	   a tab glides in scroll the region, and the tab lands off its place. */
+	.tabbed {
+		display: flex;
+		flex: 1 1 8rem;
+		min-block-size: 0;
+		overflow: clip;
+		background: var(--page);
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+	}
+
+	/* Every tab side by side, the one in front in the box: a finger drags
+	   it with no transition, and the release, a tab pressed in the bar and
+	   the spring back of one too short glide. */
+	.track {
+		display: flex;
+		flex: 1;
+		min-inline-size: 0;
+		transition: transform 150ms ease-out;
+	}
+
+	.track.dragging {
+		transition: none;
+	}
+
 	.panel {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		flex: 1 1 8rem;
-		min-block-size: 0;
+		flex: 0 0 100%;
+		box-sizing: border-box;
+		min-inline-size: 0;
+		padding: 0.5rem;
 		overflow: auto;
+	}
+
+	/* A tab not in front is out of sight once the track has glided off it,
+	   and in sight while a finger brings it on. */
+	.panel[inert] {
+		visibility: hidden;
+		transition: visibility 0s 150ms;
+	}
+
+	.dragging > .panel {
+		visibility: visible;
+		transition: none;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.track,
+		.panel[inert] {
+			transition: none;
+		}
 	}
 
 	h2 {
@@ -610,9 +695,9 @@
 	}
 
 	/* One control of three segments: the chosen one carries the accent
-	   along its foot, the mockup's underline. Each is as wide as its word
-	   and shares out the rest, with next to no padding of its own, so the
-	   words fit the place's modal on a 320px screen (tests/track.test.mjs). */
+	   along its top edge (below). Each is as wide as its word and shares
+	   out the rest, with next to no padding of its own, so the words fit
+	   the place's modal on a 320px screen (tests/track.test.mjs). */
 	.tabs {
 		display: flex;
 		border: 1px solid var(--rule);
@@ -627,7 +712,7 @@
 		background: var(--raised);
 		border: 0;
 		border-inline-start: 1px solid var(--rule);
-		border-block-end: 2px solid transparent;
+		border-block-start: 2px solid transparent;
 		color: var(--muted);
 		font: inherit;
 		font-size: 0.7rem;
@@ -638,9 +723,10 @@
 		border-inline-start: 0;
 	}
 
+	/* The bar is under the region it names: the chosen one's accent on its top edge, toward it. */
 	.tabs button[aria-selected='true'] {
 		color: var(--ink-bright);
-		border-block-end-color: var(--accent);
+		border-block-start-color: var(--accent);
 	}
 
 	/* Two across where two fit a shape's line, else one: four fingertips,

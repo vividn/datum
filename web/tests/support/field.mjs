@@ -8,6 +8,9 @@ import { shellSplit } from '../../src/lib/shellSplit.ts';
 
 export const FIELD_FORM = '.field-form:not(.beside *)';
 
+/** The panel of the tab in front: the others stand beside it, inert (da-nmhf2). */
+export const PANEL = `${FIELD_FORM} [data-panel]:not([inert])`;
+
 /**
  * A new field's Save as a preview or an echo reads it — ONE `setup F
  * --from-json J --track` or `--ignore` (da-2pbvd) — as the line without J,

@@ -24,7 +24,7 @@ import {
 	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, stateRows, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
-import { FIELD_FORM as MODAL, cancelField, declared, openField, pickImage } from './support/field.mjs';
+import { FIELD_FORM as MODAL, PANEL, cancelField, declared, openField, pickImage } from './support/field.mjs';
 
 const PHONE = { width: 320, height: 480 };
 
@@ -665,7 +665,7 @@ describe('in the app', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const inputs = () =>
-				page.locator(`${MODAL} input`).evaluateAll((els) => els.map((e) => [e.type, e.value, e.placeholder, e.className]));
+				page.locator(`${MODAL} input:not([inert] *)`).evaluateAll((els) => els.map((e) => [e.type, e.value, e.placeholder, e.className]));
 			const noHex = async (where) => {
 				for (const [type, value, placeholder, cls] of await inputs()) {
 					// The icon's picker (da-45wgz) takes a file, and no typing at all;
@@ -815,10 +815,10 @@ describe('in the app', () => {
 			await openIt(page);
 			await fill(page, 'coffee', 'occur');
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a new field');
-			assert.equal(await page.locator(`${MODAL} ul.data`).count(), 0, 'the keys are on Basics');
+			assert.equal(await page.locator(`${MODAL} [data-panel="basics"] ul.data`).count(), 0, 'the keys are on Basics');
 			assert.equal((await page.locator(`${MODAL} .data-line .ask`).innerText()).trim(), 'want to record extra data with each entry?');
 			await page.locator(`${MODAL} button[data-to-tab="data"]`).click();
-			assert.equal(await page.locator(`${MODAL} [data-panel]`).getAttribute('data-panel'), 'data');
+			assert.equal(await page.locator(PANEL).getAttribute('data-panel'), 'data');
 			await page.locator(`${MODAL} ul.data + button.add`).click();
 			const row = page.locator(`${MODAL} ul.data li.key`).last();
 			await row.locator('input.name').fill('cups');
@@ -960,11 +960,11 @@ describe('in the app', () => {
 	test('the mode button: -K says it is the id, and one row takes the rest of the line as a list, a string or a comment', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const rows = page.locator(`${MODAL} ul.data li.key`);
+			const rows = page.locator(`${PANEL} ul.data li.key`);
 			await openIt(page);
 			await fill(page, 'book', 'add');
 			for (const name of ['id', 'title', 'notes']) {
-				await page.locator(`${MODAL} ul.data + button.add`).click();
+				await page.locator(`${PANEL} ul.data + button.add`).click();
 				await rows.last().locator('input.name').fill(name);
 			}
 			const modes = () => rows.locator('.mode').allInnerTexts();
@@ -1059,7 +1059,7 @@ describe('in the app', () => {
 			assert.equal(await page.locator(`${MODAL} .alias input`).count(), 0, 'a made alias is not edited: the save makes it again');
 			await page.locator(`${MODAL} input.autoalias`).uncheck();
 			await page.locator(`${MODAL} button[aria-label="remove sleep"]`).click();
-			await page.locator(`${MODAL} button.add`).click();
+			await page.locator(`${PANEL} button.add`).click();
 			await page.locator(`${MODAL} .alias input.name`).last().fill('zz');
 			await page.locator(`${MODAL} .alias input.expands`).last().fill('start sleep');
 			await save(app, opened);

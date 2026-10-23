@@ -48,7 +48,7 @@ describe('the field form', () => {
 					await page.locator(`${MODAL} [data-tab="${tab}"]`).click();
 					sizes[tab] = await until(
 						() => page.locator(MODAL).evaluate((d, tab) => {
-							const panel = d.querySelector('.panel');
+							const panel = d.querySelector('.panel:not([inert])');
 							const box = d.getBoundingClientRect();
 							return panel.dataset.panel === tab && panel.childElementCount > 0
 								? { width: box.width, height: box.height, done: d.querySelector('button.commit').getBoundingClientRect().bottom - box.bottom }
@@ -58,7 +58,7 @@ describe('the field form', () => {
 					);
 					// The panel is named by its tab, and the tab controls it (da-p2l88).
 					assert.equal(await page.locator(MODAL).getByRole('tabpanel', { name: tab, exact: true }).count(), 1, `no tabpanel named ${tab}`);
-					assert.equal(await page.locator(MODAL).getByRole('tab', { name: tab, exact: true }).getAttribute('aria-controls'), 'spec-panel');
+					assert.equal(await page.locator(MODAL).getByRole('tab', { name: tab, exact: true }).getAttribute('aria-controls'), `spec-panel-${tab}`);
 				}
 				// Done is in the box on every tab, however much of the panel scrolls.
 				for (const tab of TABS) assert.ok(sizes[tab].done <= 1, `${tab}: Done is ${sizes[tab].done}px below the box`);

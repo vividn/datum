@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { EXAMPLES, VERBS } from '../src/lib/track.ts';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, cancelField, declared, openField } from './support/field.mjs';
+import { FIELD_FORM, PANEL, cancelField, declared, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 import { shellJoin } from '../src/lib/shellSplit.ts';
 
@@ -267,7 +267,7 @@ describe('the field widget', () => {
 				}
 				assert.deepEqual(
 					await page
-						.locator(`${FIELD_FORM} ul.data li.key`)
+						.locator(`${PANEL} ul.data li.key`)
 						.evaluateAll((all) => all.map((li) => [li.querySelector('.mode').textContent, li.querySelector('input.name').value, li.querySelector('.eq').getAttribute('aria-pressed')])),
 					(example.keys ?? []).map((k) => [k.in_slug ? '-K' : '-k', k.name, String(k.kind !== 'required')])
 				);
@@ -520,7 +520,7 @@ describe('the field widget', () => {
 			await drawn('calm with no off: one stretch', ({ blocks }) => blocks.length === 1 && blocks[0] === 'calm');
 			// The line names the keys and goes to the Data tab.
 			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
-			assert.equal(await page.locator(`${FIELD_FORM} [data-panel]`).getAttribute('data-panel'), 'data');
+			assert.equal(await page.locator(PANEL).getAttribute('data-panel'), 'data');
 			await page.locator(`${FIELD_FORM} [data-tab="basics"]`).click();
 
 			// A card has no time: no placement, so no sample, and the Data tab's rows, typed, on Basics.
