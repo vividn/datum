@@ -223,10 +223,11 @@ const debugKind = (kind: 'debug' | 'seed', legible: Floor, help: string): Widget
 export const KINDS: Record<string, WidgetKind> = {
 	// The strip fills its box and shows as much of the past as fits above
 	// today (da-zb0d). Its settings are what the reader has moved on it:
-	// the day height and the date column (the `+` handle), whether today
-	// is frozen at the bottom, and the hour range it is zoomed onto — so
-	// a saved layout keeps a zoomed strip zoomed, and `Reset widget` is
-	// the way back to the whole day (da-ukcf).
+	// the day height (the day line) and the date column (the spine), each
+	// dragged or moved as the keyboard's slider, whether today is frozen
+	// at the bottom, and the hour range it is zoomed onto — so a saved
+	// layout keeps a zoomed strip zoomed, and `Reset widget` is the way
+	// back to the whole day (da-ukcf).
 	daystrip: {
 		// No `dayHeight` among the defaults: its default is DERIVED from the
 		// pane's height (da-r0ydu), and a declared one would be what a
@@ -260,8 +261,9 @@ export const KINDS: Record<string, WidgetKind> = {
 			hourFrom: typeof hourFrom === 'number' ? hourFrom : HOUR_FROM,
 			hourTo: typeof hourTo === 'number' ? hourTo : HOUR_TO
 		}),
-		// The strip's `change` names the settings it moved — the `+` handle
-		// moves two at once — so the fold is the same one for all of them.
+		// The strip's `change` names the settings it moved — a resize names
+		// the day height and the label width, a zoom both ends of its hour
+		// range — so the fold is the same one for all of them.
 		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
 		// A notch, not a wall: shorter, the strip clips today's band from
 		// the top and keeps its axis. Only while the reader HOLDS a day

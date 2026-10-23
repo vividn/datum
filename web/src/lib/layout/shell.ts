@@ -281,7 +281,7 @@ const RETIRED_KINDS: Record<string, string> = { spec: 'setup', field: 'setup' };
  * actually dragged to is some other number and is kept; 85 is
  * indistinguishable from a deliberate 85, and that is the trade — it was
  * the shipped default in every tree, so it is un-chosen far more often
- * than chosen, and one drag of the `+` handle puts it back.
+ * than chosen, and one drag of the day line puts it back.
  *
  * ⚑ SO A CHOSEN 85 CANNOT BE SAVED AS HELD. A reader whose box derives
  * some other height may drag the day onto 85 and «Save options with

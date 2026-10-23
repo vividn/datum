@@ -215,8 +215,8 @@ export const MAX_DAY_HEIGHT = 240;
  * derived from the label font, which is derived from the day height, so
  * moving either moved where the data area began. The strip asks for
  * `--label-width 0` now and draws the stamps in its own column, so the
- * column's width is a SETTING like the day height: the `+` handle on the
- * divider drags it sideways.
+ * column's width is a SETTING like the day height: the spine drags it
+ * sideways.
  *
  * The floor is a fingertip, not zero: the freeze-today toggle sits at the
  * far left of the divider, inside this column, and a column narrower than
