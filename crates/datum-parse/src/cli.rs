@@ -371,6 +371,29 @@ pub struct LogArgs {
 }
 
 impl LogArgs {
+    /// da-znksm: whether an `add` line's first bare word is its id: where
+    /// today the line is refused for having none. So no `-K` or `--id`, no
+    /// time (`-T`, a time flag, or an `occur_time=` / `start_time=` /
+    /// `end_time=` key, whose instant is the id), and no `-R`/`-S`/`-C`
+    /// to take its bare words. A spec's `id_template` is the caller's to
+    /// rule out.
+    pub fn takes_positional_id(&self) -> bool {
+        let timed = |t: &String| {
+            matches!(
+                t.split_once('='),
+                Some(("occur_time" | "start_time" | "end_time", _))
+            )
+        };
+        self.slug_keys.is_empty()
+            && self.id.is_none()
+            && !self.time.omit_timestamp
+            && !self.time.places()
+            && !self.rest.iter().any(timed)
+            && self.remainder.is_none()
+            && !self.string_remainder
+            && !self.comment_remainder
+    }
+
     /// Start from `Default` with `field_or_verb` pre-set — the one field
     /// every logging caller supplies up front.
     pub fn with_field(field_or_verb: impl Into<String>) -> Self {

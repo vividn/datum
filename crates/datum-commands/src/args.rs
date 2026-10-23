@@ -587,6 +587,11 @@ impl<'a> Resolver for DbAliasResolver<'a> {
         let spec = self.db.load_spec(field).ok().flatten();
         spec.map(|s| s.spec_remainder()).unwrap_or_default()
     }
+
+    fn spec_has_id_template(&self, field: &str) -> bool {
+        let spec = self.db.load_spec(field).ok().flatten();
+        spec.is_some_and(|s| s.id_template.is_some())
+    }
 }
 
 // ─── Extension traits: attach convenience methods to intent structs ──────

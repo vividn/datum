@@ -168,11 +168,12 @@ const EXPECTED_ADD: &str = "\
 datum add — register a keyed timeless record, by an id (alias: card)
 
 USAGE:
+  datum add <FIELD> <ID> [KEY=VALUE]...
   datum add <FIELD> -K <KEY> [KEY=VALUE]...
   datum add <FIELD> --id <VALUE>
 
 OPTIONS:
-  -K, --slug-key <S>    Required: derive the id from this key (K / K= / K=val)
+  -K, --slug-key <S>    ...or derive the id from this key (K / K= / K=val)
       --id <TEMPLATE>   ...or set the id directly (e.g. %field%:%uid%)
   common logging options: `datum help logging`
     including -I/-R/-S/-C for values with spaces

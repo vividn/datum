@@ -60,6 +60,11 @@ pub trait Resolver {
     fn spec_remainder(&self, _field: &str) -> crate::spec_keys::SpecRemainder {
         crate::spec_keys::SpecRemainder::default()
     }
+
+    /// Whether `field`'s spec has an `id_template`. False by default.
+    fn spec_has_id_template(&self, _field: &str) -> bool {
+        false
+    }
 }
 
 /// Always returns `None` — used by callers that want to skip alias
@@ -446,6 +451,16 @@ fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Res
             let state = (verb == "switch").then(|| typed_state(&line)).flatten();
             let declared = resolver.spec_keys(&line.field_or_verb, state.as_deref());
             let remainder = resolver.spec_remainder(&line.field_or_verb);
+            // An add whose first bare word is its id (da-znksm) leaves its
+            // keys to the log path, which takes the id ahead of them.
+            if verb == "add"
+                && line.takes_positional_id()
+                && !declared.iter().any(|k| k.id)
+                && remainder == crate::spec_keys::SpecRemainder::default()
+                && !resolver.spec_has_id_template(&line.field_or_verb)
+            {
+                continue;
+            }
             let words = spec_key_words(&line, &declared, &remainder);
             let words = words.into_argv();
             added |= !words.is_empty();

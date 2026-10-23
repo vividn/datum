@@ -89,8 +89,9 @@ fn first_positional_is_field_literal_unbound_trailing_errors() {
     //
     // Asked of `add`, not `note`: da-py5w gave `note` an implicit `-C`, so
     // its bare words are prose and have somewhere to land. `add` is the
-    // half of the family that still has nowhere to put them.
-    let err = run_cli(&["add", "another_field", "dataField"], &db).unwrap_err();
+    // half of the family that still has nowhere to put them, past its id
+    // (the first bare word, da-znksm).
+    let err = run_cli(&["add", "another_field", "id", "dataField"], &db).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("unexpected positional") || msg.contains("dataField"),
@@ -764,6 +765,144 @@ fn add_with_only_an_id_key_still_needs_an_id() {
     assert!(db.get_entry("person:vividn").is_err());
 }
 
+/// The first bare word is an add's id when nothing else names one
+/// (vividn, 2026-10-23: «let's try it with the required positional»).
+#[test]
+fn card_takes_its_first_bare_word_as_the_id() {
+    let db = fresh_db();
+    run_cli(&["card", "book", "goldmund", "title=x"], &db).expect("card book goldmund");
+    let e = db.get_entry("book:goldmund").expect("book:goldmund");
+    assert_eq!(e.data, Some(json!({"title": "x"})));
+    assert_eq!(e.state, None);
+    // `reparse` replays the word as the id, so `--fix` changes nothing.
+    run_cli(&["reparse", &e.hid.0, "--fix"], &db).expect("reparse");
+    let after = db.get_entry("book:goldmund").expect("book:goldmund");
+    assert_eq!((after.state, after.data), (e.state, e.data));
+}
+
+#[test]
+fn card_with_no_word_says_how_to_give_an_id() {
+    let db = fresh_db();
+    let err = run_cli(&["card", "book", "t=x"], &db)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("add needs an id: `datum add book <id> …` (or -K <key>, or --id <value>)"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_word_that_cannot_be_an_id_refuses_by_name() {
+    let db = fresh_db();
+    for word in ["a:b", "", "50%", "=x", ".", "..."] {
+        let err = run_cli(&["card", "book", word], &db)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(&format!("{word:?} cannot be an id")), "{err}");
+    }
+}
+
+/// A line that already has an id from its time, or a home for its words,
+/// keeps both: the first word is the id only where the line had none
+/// (vremya on #1102).
+#[test]
+fn a_timed_or_remaindered_add_keeps_its_id_and_words() {
+    let db = fresh_db();
+    run_cli(&["add", "book", "-T", "-C", "some", "prose"], &db).unwrap();
+    run_cli(
+        &[
+            "add",
+            "book",
+            "-t",
+            "2026-10-23T10:00Z",
+            "-C",
+            "more",
+            "prose",
+        ],
+        &db,
+    )
+    .unwrap();
+    run_cli(
+        &["setup", "memo", "--verb", "add", "--remainder", "body"],
+        &db,
+    )
+    .unwrap();
+    run_cli(&["add", "memo", "-T", "some", "prose", "here"], &db).unwrap();
+    let books = datum_core::test_util::logged_entries(&db, "book");
+    let comments: Vec<_> = books
+        .iter()
+        .map(|e| e.data.clone().unwrap()["comment"].clone())
+        .collect();
+    assert!(comments.contains(&json!(["some prose"])), "{comments:?}");
+    assert!(comments.contains(&json!(["more prose"])), "{comments:?}");
+    assert!(
+        books.iter().any(|e| e.slug.starts_with("book:c")),
+        "{books:?}"
+    );
+    assert!(
+        books
+            .iter()
+            .any(|e| e.slug == "book:2026-10-23T10:00:00.000Z"),
+        "{books:?}"
+    );
+    assert!(db.get_entry("book:some").is_err() && db.get_entry("book:more").is_err());
+    let memos = datum_core::test_util::logged_entries(&db, "memo");
+    assert!(
+        memos.iter().any(|e| e.slug.starts_with("memo:c")),
+        "{memos:?}"
+    );
+    assert!(db.get_entry("memo:some").is_err());
+    // A remaindered add with no time still needs an id, and is told so.
+    let err = run_cli(&["add", "memo", "just", "words"], &db)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("add needs an id"), "{err}");
+}
+
+/// `-K` and a spec's `id_template` still name the id, and a bare word then
+/// means what it did: `-K`'s slot, or a refusal.
+#[test]
+fn k_and_an_id_template_win_over_the_word() {
+    let db = fresh_db();
+    run_cli(&["add", "book", "-K", "title", "Dune"], &db).unwrap();
+    let e = db.get_entry("book:Dune").expect("book:Dune");
+    assert_eq!(e.data, Some(json!({"title": "Dune"})));
+
+    run_cli(
+        &["setup", "film", "--verb", "add", "--id-template", "%name%"],
+        &db,
+    )
+    .unwrap();
+    run_cli(&["add", "film", "name=alien"], &db).unwrap();
+    assert!(db.get_entry("film:alien").is_ok());
+    let err = run_cli(&["add", "film", "x", "name=heat"], &db)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("unexpected positional argument"), "{err}");
+}
+
+/// A spec's positional slots fill after the id.
+#[test]
+fn spec_slots_follow_the_id() {
+    let db = fresh_db();
+    run_cli(
+        &["setup", "book", "--verb", "add", "--data-key", "author="],
+        &db,
+    )
+    .unwrap();
+    for line in [
+        &["card", "book", "goldmund", "Hesse"][..],
+        &["book", "emma", "Austen"],
+    ] {
+        run_cli(line, &db).unwrap();
+    }
+    let e = db.get_entry("book:goldmund").expect("book:goldmund");
+    assert_eq!(e.data, Some(json!({"author": "Hesse"})));
+    let e = db.get_entry("book:emma").expect("book:emma");
+    assert_eq!(e.data, Some(json!({"author": "Austen"})));
+}
+
 /// Without `--id` (or `-K`), a timeless `note` falls back to the default
 /// `field:c<create_time>` shape.
 #[test]
@@ -894,13 +1033,14 @@ fn note_verb_removed_but_alias_works() {
 /// da-obmm: extra positional args on `dm add` produce a generic extra-args
 /// error that names the offending tokens. The legacy message demanded
 /// `state=<v>`, which misled users who'd accidentally passed extras
-/// unrelated to state.
+/// unrelated to state. The first bare word is the id (da-znksm), so the
+/// extras are the words after it, or every word once `--id` names one.
 #[test]
 fn add_extra_positionals_produce_generic_error() {
     let db = fresh_db();
 
     // Multiple extras: must enumerate them and must NOT demand state=<v>.
-    let err = run_cli(&["add", "field", "extra", "arg"], &db)
+    let err = run_cli(&["add", "field", "id", "extra", "arg"], &db)
         .expect_err("multi-positional add must error");
     let msg = format!("{err:#}");
     assert!(
@@ -916,8 +1056,9 @@ fn add_extra_positionals_produce_generic_error() {
         "error must not demand state=<v>, got: {msg}"
     );
 
-    // Single extra: same generic shape, names the token.
-    let err = run_cli(&["add", "field", "80"], &db).expect_err("single-positional add must error");
+    // Single extra beside --id: same generic shape, names the token.
+    let err = run_cli(&["add", "field", "--id", "x", "80"], &db)
+        .expect_err("single-positional add must error");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("unexpected positional argument") && msg.contains("80"),

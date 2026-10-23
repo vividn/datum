@@ -19,7 +19,7 @@ datum switch weight 75.2kg          # state stored exactly as typed: "75.2kg"
 datum start work project=writing    # begin a duration-tracked activity
 datum stop work                     # end the open one (alias: end)
 datum note idea spark=svg-timeline  # timeless jot, auto-id'd on create_time
-datum add person -K name name=Ada   # timeless keyed record (needs an explicit id)
+datum add person ada city=Paris     # timeless keyed record: person:ada, its id the first word
 ```
 
 `track` / `ignore` control whether a field appears in `datum now`; `flag` marks a
@@ -53,10 +53,13 @@ how the entry is identified:
   notes per field coexist. No id needed. Use it to update a field without
   claiming an occurrence.
 - **`add` = "register this keyed thing, will look it up."** Identified by *what* —
-  it **requires** an explicit id so you can reference it later. Give one with
-  `-K <key>` (derive the slug from a data key), `--id <value>` (set it directly,
-  templates like `--id %field%__%srcLang%` allowed). `id=<value>` is a data
-  key like any other. A bare `add field` with no id errors descriptively.
+  it **requires** an id so you can reference it later: its first bare word
+  (`datum card book goldmund` is `book:goldmund`), or `-K <key>` (derive the
+  slug from a data key), or `--id <value>` (set it directly, templates like
+  `--id %field%__%srcLang%` allowed), or the field's id template. A line with
+  `-T`, a time, or `-C`/`-R`/`-S` keeps its time id and its words, as before.
+  `id=<value>` is a data key like any other. A bare `add field` with no id
+  errors descriptively.
 
 `-T` / `--no-timestamp` converts any occurred verb into **note-data**: the data
 still lands, but no occurrence is logged and the entry gets a create_time id.

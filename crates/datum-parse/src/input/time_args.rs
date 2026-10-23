@@ -72,6 +72,16 @@ pub struct TimeFromArgs {
 }
 
 impl TimeArgs {
+    /// Whether a clock- or date-moving flag (`-t`/`-d`/`-y*`/`-q*`/`-D`) is
+    /// set: what places a timeless verb's entry in time. `-z` only re-zones.
+    pub fn places(&self) -> bool {
+        self.time.is_some()
+            || self.date.is_some()
+            || self.yesterday > 0
+            || self.quick > 0
+            || self.full_day
+    }
+
     /// Every `-t` value, in the order it applies: `time`, then the offsets.
     pub fn time_values(&self) -> impl Iterator<Item = &String> {
         self.time.iter().chain(&self.time_offsets)

@@ -2180,7 +2180,8 @@ mod tests {
     fn add_rejects_unbound_positional_value() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let err = log_entry(Action::Add, make_add_args("focus", vec!["80"]), &db).unwrap_err();
+        // The first bare word is the id (da-znksm); a second has no slot.
+        let err = log_entry(Action::Add, make_add_args("focus", vec!["x", "80"]), &db).unwrap_err();
         let msg = err.to_string().to_lowercase();
         assert!(
             msg.contains("unbound") || msg.contains("positional"),

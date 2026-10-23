@@ -54,7 +54,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
     // da-9s98k: the field's declared keys join the line as its slots,
     // before the `dur=` slot `prepare_log_args` declares last.
-    let spec_words = apply_spec_keys(action, &mut args, db)?;
+    let spec = db.load_spec(&args.field_or_verb)?;
+    let spec_words = apply_spec_keys(action, &mut args, spec.as_ref());
+    // da-znksm: an add no -K, --id or id_template names takes its first
+    // bare word as its id, ahead of the spec's slots.
+    if spec.and_then(|s| s.id_template).is_none() {
+        take_positional_id(action, &mut args)?;
+    }
 
     // da-ooe2: restore v2's flexiblePositional duration model. The verb-
     // specific trailing-duration peelers are gone; `prepare_log_args`
@@ -417,12 +423,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         // absence is what tells `add` from `occur`. `-z` alone only
         // re-zones, and `-T` is the branch above. (da-r17h: `note` is `add`
         // with an auto id, so it shares the rule.)
-        let add_timeless = matches!(action, Action::Add | Action::Note)
-            && args.time.time.is_none()
-            && args.time.date.is_none()
-            && args.time.yesterday == 0
-            && args.time.quick == 0
-            && !args.time.full_day;
+        let add_timeless = matches!(action, Action::Add | Action::Note) && !args.time.places();
 
         // --last-state on Stop: close the most recent open block, recording
         // its prior state as `last_state` metadata. Errors if there's nothing
@@ -692,7 +693,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // Precedence for the body template:
     //   1. `-K` slug-keys → `%key1%__%key2%` (one `%key%` per -K, joined
     //      by the canonical slug separator `__`)
-    //   2. `--id` template
+    //   2. `--id` template (an add's first bare word lands here, da-znksm,
+    //      when neither 1 nor 3 names one)
     //   3. spec's `id_template`
     //   4. Default → `%occur_time%` if the entry has an occur_time, else
     //      (timeless) `%create_time%` → `field:c<create_time>`. da-r17h:
@@ -722,8 +724,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         // `add … -T` is exempt: `-T` explicitly converts to note-data, so it
         // takes the create_time-id branch below like any other `-T` insert.
         anyhow::bail!(
-            "add needs an id. Derive one from a key (-K name) or set it \
-             directly (--id <value>). See --help for --id %templates%."
+            "add needs an id: `datum add {} <id> …` (or -K <key>, or --id <value>)",
+            entry.field
         );
     } else {
         // Timeless `note` / `-T` / `--no-timestamp`: identify by create_time.
@@ -1432,15 +1434,17 @@ fn compound_field(field: String, field_keys: &[String]) -> Result<String> {
 /// ([`datum_parse::spec_keys`]); a key the alias already added is named by
 /// then, and left alone. A switch takes its state's keys too (da-cej7q).
 /// Returns the words it added, if any.
-fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<Option<SpecKeyWords>> {
+fn apply_spec_keys(
+    action: Action,
+    args: &mut LogArgs,
+    spec: Option<&field_spec::FieldSpec>,
+) -> Option<SpecKeyWords> {
     use datum_parse::spec_keys::{spec_key_words, takes_spec_keys, typed_state};
-    let Some(spec) = db.load_spec(&args.field_or_verb)? else {
-        return Ok(None);
-    };
+    let spec = spec?;
     // da-b2f8o: a typed key parses as its type on every line of the field.
     args.key_types = spec.key_types();
     if !takes_spec_keys(&action.to_string(), args) {
-        return Ok(None);
+        return None;
     }
     let state = matches!(action, Action::Switch)
         .then(|| typed_state(args))
@@ -1451,10 +1455,10 @@ fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<Option
         &spec.spec_remainder(),
     );
     if words == SpecKeyWords::default() {
-        return Ok(None);
+        return None;
     }
     bind_spec_words(args, words.clone());
-    Ok(Some(words))
+    Some(words)
 }
 
 /// Join a field's key words to the line, as its slots and ahead of its
@@ -1468,6 +1472,32 @@ pub(crate) fn bind_spec_words(args: &mut LogArgs, words: SpecKeyWords) {
     }
     args.string_remainder |= words.string_remainder;
     args.comment_remainder |= words.comment_remainder;
+}
+
+/// da-znksm: where an `add`'s first bare word sits when it is the id
+/// ([`LogArgs::takes_positional_id`]). The caller rules out an id_template.
+pub(crate) fn positional_id(action: Action, args: &LogArgs) -> Option<usize> {
+    if !matches!(action, Action::Add) || !args.takes_positional_id() {
+        return None;
+    }
+    args.rest
+        .iter()
+        .position(|t| !matches!(t.split_once('='), Some((k, _)) if !k.is_empty()))
+}
+
+/// Move that word to `--id`, as typed: one that cannot be an id refuses.
+pub(crate) fn take_positional_id(action: Action, args: &mut LogArgs) -> Result<()> {
+    let Some(i) = positional_id(action, args) else {
+        return Ok(());
+    };
+    let word = args.rest.remove(i);
+    if word.chars().all(|c| c == '.') || word.contains([':', '%', '=']) {
+        anyhow::bail!(
+            "{word:?} cannot be an id: an id is not empty or only dots, and has no ':', '%' or '='"
+        );
+    }
+    args.id = Some(word);
+    Ok(())
 }
 
 /// The verbs whose trailing positional can be a duration.

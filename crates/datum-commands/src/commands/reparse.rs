@@ -41,8 +41,8 @@ use crate::args::{Command, ReparseArgs};
 use crate::commands::helpers::build_resolver_from_chain;
 use crate::commands::log_core::{
     bind_spec_words, build_time_from_flags, change_command, datum_value_to_slug_string,
-    expand_array_states, extract_reserved_columns, lift_time_keys, parse_log_args,
-    prepare_log_args, validate_switch_state_token, LiftedTimes,
+    expand_array_states, extract_reserved_columns, lift_time_keys, parse_log_args, positional_id,
+    prepare_log_args, take_positional_id, validate_switch_state_token, LiftedTimes,
 };
 
 /// Parser-derivable Entry shape — what the parser alone determines from
@@ -102,6 +102,11 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     }
     if let Some(types) = bound.and_then(|steps| steps.iter().find_map(|s| s.get("key_types"))) {
         log_args.key_types = serde_json::from_value(types.clone())?;
+    }
+
+    // An add's id word was its id when that is the id it stored (da-znksm).
+    if positional_id(action, &log_args).map(|i| &log_args.rest[i]) == entry.id_structure.as_ref() {
+        take_positional_id(action, &mut log_args)?;
     }
 
     // Mirror the per-action pre-pass from `log_entry` so the parsed
