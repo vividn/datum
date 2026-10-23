@@ -1,8 +1,8 @@
-//! da-5t94: `update <hid> field=X` re-fields (and `id=X` re-slugs) in
-//! place. Before the fix, `field=`/`id=` leaked silently into `extra_data`
+//! da-5t94: `update <hid> field=X` re-fields (and `--id X` re-slugs,
+//! da-uf6it) in place. Before the fix, `field=` leaked silently into `extra_data`
 //! because the update path only peeled the other reserved columns; the
-//! shared `extract_reserved_columns` boundary now routes them onto the
-//! entry's identity columns for both insert and update.
+//! shared `extract_reserved_columns` boundary now routes it onto the
+//! entry's field for both insert and update.
 
 use crate::common;
 
@@ -64,34 +64,37 @@ fn update_field_refields_and_reslugs_in_place() {
     );
 }
 
-/// `update <slug> id=Y` re-derives the slug body to the new literal id and
-/// preserves hid; `id=` must not leak into `data`.
+/// `update <slug> --id Y` re-derives the slug body to Y and keeps the hid
+/// (da-uf6it).
 #[test]
-fn update_id_reslugs_in_place() {
+fn update_dash_dash_id_reslugs_in_place() {
     let db = fresh_db();
 
-    run_cli(&["occur", "habit", "id=morning"], &db).expect("seed occur with id");
-    let before = db
+    run_cli(&["occur", "habit", "--id", "morning"], &db).expect("seed occur with id");
+    let hid = db
         .get_entry("habit:morning")
-        .expect("seeded under id literal");
-    let hid = before.hid.clone();
+        .expect("seeded under --id")
+        .hid;
 
-    run_cli(&["update", "habit:morning", "id=evening"], &db)
+    run_cli(&["update", "habit:morning", "--id", "evening"], &db)
         .unwrap_or_else(|e| panic!("re-id must succeed: {e:#}"));
 
-    assert!(
-        db.get_entry("habit:morning").is_err(),
-        "old slug must be gone after re-slug",
-    );
+    assert!(db.get_entry("habit:morning").is_err(), "old slug gone");
     let after = db
         .get_entry("habit:evening")
         .expect("row re-slugged to new id");
     assert_eq!(after.hid, hid, "hid preserved across re-slug");
     assert_eq!(after.field, "habit", "field unchanged");
-    if let Some(data) = after.data.as_ref() {
-        assert!(
-            data.get("id").is_none(),
-            "`id=` must NOT leak into data, got {data:?}",
-        );
-    }
+    assert_eq!(after.data, None, "--id is not data");
+}
+
+/// `update <slug> id=Y` is data: it changes `data.id` and not the slug.
+#[test]
+fn update_id_key_is_data_and_keeps_the_slug() {
+    let db = fresh_db();
+    run_cli(&["occur", "habit", "--id", "morning"], &db).expect("seed");
+    run_cli(&["update", "habit:morning", "id=evening"], &db).expect("update id=");
+    let after = db.get_entry("habit:morning").expect("slug unchanged");
+    assert_eq!(after.data, Some(serde_json::json!({"id": "evening"})));
+    assert!(db.get_entry("habit:evening").is_err());
 }

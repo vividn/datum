@@ -4,7 +4,7 @@
 //!   * `note` = timeless, AUTO create_time id (`field:c<create_time>`) —
 //!     "record this moment, won't look it up." Many-per-field works because
 //!     distinct create_times keep slugs apart.
-//!   * `add`  = timeless, REQUIRES an explicit id (`-K` / `--id` / `id=`) —
+//!   * `add`  = timeless, REQUIRES an explicit id (`-K` / `--id`; `id=` is data) —
 //!     "register this keyed thing, will look it up."
 //!   * `-T`   = convert an occurred verb to note-data (no occurrence logged).
 //!
@@ -92,7 +92,7 @@ fn add_without_id_errors_descriptively() {
 }
 
 #[test]
-fn add_with_slug_key_id_or_positional_works() {
+fn add_takes_dash_k_or_dash_dash_id_not_an_id_key() {
     let db = fresh_db();
     // -K derives the slug from a key.
     run_cli(&["add", "widget", "-K", "kind", "kind=gear"], &db).expect("add -K");
@@ -100,9 +100,8 @@ fn add_with_slug_key_id_or_positional_works() {
     // --id sets it directly.
     run_cli(&["add", "gadget", "--id", "alpha"], &db).expect("add --id");
     assert_eq!(db.get_entry("gadget:alpha").unwrap().field, "gadget");
-    // id= positional promotion.
-    run_cli(&["add", "book", "id=goldmund"], &db).expect("add id=");
-    assert_eq!(db.get_entry("book:goldmund").unwrap().field, "book");
+    // `id=` is data, and no id (da-uf6it).
+    assert!(run_cli(&["add", "book", "id=goldmund"], &db).is_err());
 }
 
 /// `add … -T` is exempt from the id requirement: `-T` explicitly converts to

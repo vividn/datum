@@ -470,7 +470,7 @@ stored as typed; a marker there is accepted and reads alike.
 line per field, key and slug. Nothing is refused at write.
 
 ```bash
-datum add book id=dune title=Dune
+datum add book --id dune title=Dune
 datum occur read what=ref://book:dune
 datum occur quote said='"ref://book:dune"'
 datum get read:_::what::title
@@ -767,7 +767,7 @@ and `datum check refs` names each reference that finds no live entry, one
 line per field and slug:
 
 ```bash
-datum add book id=great_gatsby
+datum add book --id great_gatsby
 datum switch media book:great_gatsby
 datum setup issue --verb switch --state-lookup-field issue_state
 datum switch issue queued

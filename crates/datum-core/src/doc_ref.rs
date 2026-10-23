@@ -1,5 +1,5 @@
 //! Document-reference detection — parse `<field>:<id>` colon-pattern strings
-//! produced by the `datum add … id=<name>` convention.
+//! produced by `datum add … --id <name>`.
 //!
 //! Entries whose slug is `<field>:<id>` act as documents; later entries can
 //! reference them by using that slug as a value (`datum switch consume

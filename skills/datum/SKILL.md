@@ -55,8 +55,8 @@ how the entry is identified:
 - **`add` = "register this keyed thing, will look it up."** Identified by *what* —
   it **requires** an explicit id so you can reference it later. Give one with
   `-K <key>` (derive the slug from a data key), `--id <value>` (set it directly,
-  templates like `--id %field%__%srcLang%` allowed), or the `id=<value>`
-  positional. A bare `add field` with no id errors descriptively.
+  templates like `--id %field%__%srcLang%` allowed). `id=<value>` is a data
+  key like any other. A bare `add field` with no id errors descriptively.
 
 `-T` / `--no-timestamp` converts any occurred verb into **note-data**: the data
 still lands, but no occurrence is logged and the entry gets a create_time id.

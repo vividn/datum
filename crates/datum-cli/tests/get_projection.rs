@@ -154,7 +154,7 @@ fn tracker() -> (Env, String) {
         "--state-lookup-field",
         "issue_state",
     ]);
-    env.ok(&["add", "issue_state", "id=queued", "class=waiting"]);
+    env.ok(&["add", "issue_state", "--id", "queued", "class=waiting"]);
     env.ok(&["switch", "issue", "queued"]);
     let hid = env.ok(&["get", "issue:_::hid"]).trim_end().to_string();
     (env, hid)
@@ -191,7 +191,7 @@ fn state_hops_into_the_doc_a_bare_state_names_through_the_lookup_field() {
 #[test]
 fn a_full_slug_state_hops_and_hops_chain() {
     let (env, _) = tracker();
-    env.ok(&["add", "book", "id=dune", "title=Dune"]);
+    env.ok(&["add", "book", "--id", "dune", "title=Dune"]);
     env.ok(&["switch", "media", "book:dune"]);
     // One hop through a `field:id` state, on a field with no lookup field.
     assert_eq!(
@@ -260,7 +260,7 @@ fn a_value_that_refers_to_nothing_refuses_a_further_hop() {
 #[test]
 fn an_array_state_asks_for_an_element() {
     let env = Env::new();
-    env.ok(&["add", "book", "id=a"]);
+    env.ok(&["add", "book", "--id", "a"]);
     env.ok(&["switch", "media", r#"["book:a","book:a"]"#]);
     let stderr = env.err(&["get", "media:_::state::slug"]);
     assert!(stderr.contains("is an array"), "{stderr}");
@@ -270,8 +270,8 @@ fn an_array_state_asks_for_an_element() {
 #[test]
 fn a_cycle_errors_with_the_chain() {
     let env = Env::new();
-    env.ok(&["add", "a", "id=1", "state=b:1"]);
-    env.ok(&["add", "b", "id=1", "state=a:1"]);
+    env.ok(&["add", "a", "--id", "1", "state=b:1"]);
+    env.ok(&["add", "b", "--id", "1", "state=a:1"]);
     // Control: one hop each way reads.
     assert_eq!(
         env.ok(&["get", "a:1::state::slug"]),
@@ -292,7 +292,8 @@ fn a_ninth_hop_errors_with_the_chain() {
         env.ok(&[
             "add",
             &format!("n{i}"),
-            "id=x",
+            "--id",
+            "x",
             &format!("state=n{}:x", i + 1),
         ]);
     }
@@ -312,8 +313,8 @@ fn a_ninth_hop_errors_with_the_chain() {
 #[test]
 fn a_data_ref_hops_and_chains_with_state_hops() {
     let env = Env::new();
-    env.ok(&["add", "book", "id=dune", "title=Dune"]);
-    env.ok(&["add", "shelf", "id=top", "holds=ref://book:dune"]);
+    env.ok(&["add", "book", "--id", "dune", "title=Dune"]);
+    env.ok(&["add", "shelf", "--id", "top", "holds=ref://book:dune"]);
     env.ok(&["occur", "read", "what=ref://book:dune"]);
     assert_eq!(env.ok(&["get", "read:_::what::title"]), "Dune\n");
     // Control: no hop prints the reference as stored.
@@ -334,7 +335,7 @@ fn a_bare_slug_hops_only_on_a_key_the_spec_types_ref() {
         "--from-json",
         r#"{"field":"task","verb":"occur","subfields":{"blocker":{"value_type":"ref"}}}"#,
     ]);
-    env.ok(&["add", "issue", "id=k7f2a", "title=Fix it"]);
+    env.ok(&["add", "issue", "--id", "k7f2a", "title=Fix it"]);
     env.ok(&["occur", "task", "blocker=issue:k7f2a"]);
     assert_eq!(env.ok(&["get", "task:_::blocker::title"]), "Fix it\n");
     // Control: the same value on a field without the spec type.
@@ -355,8 +356,8 @@ fn a_dangling_or_looping_data_ref_errors() {
         stderr.contains("read:_::what refers to book:nope, which does not exist"),
         "{stderr}"
     );
-    env.ok(&["add", "a", "id=1", "next=ref://b:1"]);
-    env.ok(&["add", "b", "id=1", "next=ref://a:1"]);
+    env.ok(&["add", "a", "--id", "1", "next=ref://b:1"]);
+    env.ok(&["add", "b", "--id", "1", "next=ref://a:1"]);
     assert_eq!(env.ok(&["get", "a:1::next::slug"]), "b:1\n");
     let stderr = env.err(&["get", "a:1::next::next::slug"]);
     assert!(
@@ -370,7 +371,7 @@ fn a_dangling_or_looping_data_ref_errors() {
 #[test]
 fn a_literal_ref_string_reads_bare_and_does_not_hop() {
     let env = Env::new();
-    env.ok(&["add", "book", "id=dune", "title=Dune"]);
+    env.ok(&["add", "book", "--id", "dune", "title=Dune"]);
     let echo = env.ok(&[
         "occur",
         "q",
@@ -410,7 +411,7 @@ fn double_colon_is_refused_in_a_slug_body_and_a_field_name() {
     let env = Env::new();
     // The default `:` delimiter collapses a run of colons, so `::` reaches
     // a slug only through another delimiter — a literal id, a `-K` key.
-    let stderr = env.err(&["add", "thing", "id=x::y", "--id-delimiter", "_"]);
+    let stderr = env.err(&["add", "thing", "--id", "x::y", "--id-delimiter", "_"]);
     assert!(stderr.contains("cannot contain '::'"), "{stderr}");
     let stderr = env.err(&[
         "add",

@@ -53,7 +53,8 @@ fn the_marker_is_stored_as_typed_and_both_literals_as_str() {
         &[
             "add",
             "x",
-            "id=1",
+            "--id",
+            "1",
             "needs=ref://issue:k7f2a",
             "lit=str://ref://issue:k7f2a",
             r#"quoted="ref://issue:k7f2a""#,
@@ -114,10 +115,10 @@ fn check_flags_a_missing_target_until_it_exists() {
             .all(|i| i.category == "dangling_data_ref")
     );
 
-    run_cli(&["add", "issue", "id=k7f2a"], &db).unwrap();
-    run_cli(&["add", "a", "id=1"], &db).unwrap();
+    run_cli(&["add", "issue", "--id", "k7f2a"], &db).unwrap();
+    run_cli(&["add", "a", "--id", "1"], &db).unwrap();
     assert_eq!(dangling(&db), ["x.many → b:2 x1"]);
-    run_cli(&["add", "b", "id=2"], &db).unwrap();
+    run_cli(&["add", "b", "--id", "2"], &db).unwrap();
     assert!(dangling(&db).is_empty(), "{:?}", dangling(&db));
 }
 

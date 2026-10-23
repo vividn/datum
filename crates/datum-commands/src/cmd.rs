@@ -890,6 +890,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"srcLang": "es"})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -971,6 +972,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"lang": null})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )

@@ -166,7 +166,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         field,
         value,
         mut extra_data,
-        slug_values,
         command,
     } = parsed;
 
@@ -693,11 +692,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // Precedence for the body template:
     //   1. `-K` slug-keys → `%key1%__%key2%` (one `%key%` per -K, joined
     //      by the canonical slug separator `__`)
-    //   2. `id=<value>` positional shorthand (no `-K`, no `--id`) →
-    //      literal `<value>` (joined by `__` if multiple promoted)
-    //   3. `--id` template
-    //   4. spec's `id_template`
-    //   5. Default → `%occur_time%` if the entry has an occur_time, else
+    //   2. `--id` template
+    //   3. spec's `id_template`
+    //   4. Default → `%occur_time%` if the entry has an occur_time, else
     //      (timeless) `%create_time%` → `field:c<create_time>`. da-r17h:
     //      this replaced the old `:unset` sentinel, which made the slug
     //      UNIQUE-collide so only one timeless entry per field could exist.
@@ -713,11 +710,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             })
             .collect::<Vec<_>>()
             .join("__")
-    } else if !slug_values.is_empty() {
-        // `id=<value>` positional promotion (parse_log_args populates
-        // slug_values from data["id"] only when no `-K` was declared).
-        // Stored as a literal — later updates don't re-key the slug.
-        slug_values.join("__")
     } else if let Some(tmpl) = args.id.clone() {
         tmpl
     } else if let Some(tmpl) = db.load_spec(&entry.field)?.and_then(|s| s.id_template) {
@@ -731,7 +723,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         // takes the create_time-id branch below like any other `-T` insert.
         anyhow::bail!(
             "add needs an id. Derive one from a key (-K name) or set it \
-             directly (--id <value>). See --help for --id %templates% and id=."
+             directly (--id <value>). See --help for --id %templates%."
         );
     } else {
         // Timeless `note` / `-T` / `--no-timestamp`: identify by create_time.
@@ -978,16 +970,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     Ok(())
 }
 
-/// Parsed LogArgs — distinguishes the slug-contributing id-key values from
-/// the rest of the extra_data payload so callers can build the slug from
-/// `-K` slots without re-walking the argv.
+/// Parsed LogArgs: the field, the state and the rest of the data payload.
 pub(crate) struct ParsedLogArgs {
     pub(crate) field: String,
     pub(crate) value: Option<JsonValue>,
     pub(crate) extra_data: Option<JsonValue>,
-    /// Values captured from `-K` slots, in declaration order. Empty when
-    /// no slug-contributing slot was filled.
-    pub(crate) slug_values: Vec<String>,
     /// The command a trailing verb changed the line to (`start sleep end`
     /// is `end`), which [`change_command`] makes the action.
     pub(crate) command: Option<Action>,
@@ -1045,7 +1032,6 @@ pub(crate) fn parse_log_args(
         ),
         ..DataArgs::default()
     };
-    let mut slug_paths: Vec<String> = Vec::new();
     for spec in &args.slug_keys {
         let (name, _) = spec
             .split_once('=')
@@ -1054,7 +1040,6 @@ pub(crate) fn parse_log_args(
         if name.is_empty() {
             anyhow::bail!("empty id-key name in spec '{spec}'");
         }
-        slug_paths.push(canonical_data_path(name));
         data_args.push_id_key(spec.clone());
     }
 
@@ -1242,28 +1227,6 @@ pub(crate) fn parse_log_args(
         datum_data.remove(PRIMARY_VALUE_KEY)
     };
 
-    // Slug values: the resolved value at each `-K` slot path, in
-    // declaration order. Slots that resolved to nothing (e.g. `-K key=`
-    // with no positional) contribute the empty string — matching legacy
-    // `slug_values.push(... .unwrap_or_default())`.
-    let mut slug_values: Vec<String> = Vec::with_capacity(slug_paths.len());
-    for path in &slug_paths {
-        slug_values.push(datum_value_to_slug_string(get_path_value(
-            &datum_data,
-            path,
-        )));
-    }
-
-    // `id=<name>` shorthand: when no `-K` slug-keys were declared, a
-    // positional `id=...` token is promoted to the slug identity. The
-    // value stays in extra_data only as a side effect — pre-existing
-    // behaviour stripped it from the payload, so we do the same here.
-    if slug_values.is_empty() {
-        if let Some(id_value) = datum_data.remove("id") {
-            slug_values.push(datum_value_to_slug_string(Some(&id_value)));
-        }
-    }
-
     let extra_data = if datum_data.is_empty() {
         None
     } else {
@@ -1274,7 +1237,6 @@ pub(crate) fn parse_log_args(
         field,
         value,
         extra_data,
-        slug_values,
         command,
     })
 }
@@ -1302,39 +1264,6 @@ pub(crate) fn change_command(
         }
     }
     to
-}
-
-/// Translate a `-K`/`-k` raw key name to the path `handle_data_args`
-/// writes to. Post-da-ju71.4 the parser does state-aware translation, so
-/// `state` → `state.id` and leading-dot `.x` → `state.x`; this helper
-/// must mirror that for slot-fill lookup parity.
-fn canonical_data_path(raw: &str) -> String {
-    if raw == "state" {
-        "state.id".to_string()
-    } else if let Some(rest) = raw.strip_prefix('.') {
-        format!("state.{rest}")
-    } else {
-        raw.to_string()
-    }
-}
-
-/// Resolve a slot path within `datum_data` for slug derivation. Daydumb's
-/// flat-paths compat stores `-K my.nested` as the literal key `my.nested`,
-/// so try the literal lookup first before walking dotted segments.
-fn get_path_value<'a>(
-    obj: &'a serde_json::Map<String, JsonValue>,
-    path: &str,
-) -> Option<&'a JsonValue> {
-    if let Some(v) = obj.get(path) {
-        return Some(v);
-    }
-    let mut segs = path.split('.');
-    let first = segs.next()?;
-    let mut cur = obj.get(first)?;
-    for seg in segs {
-        cur = cur.as_object().and_then(|m| m.get(seg))?;
-    }
-    Some(cur)
 }
 
 /// Stringify a resolved `DatumData` value for slug derivation. Missing
@@ -1810,10 +1739,8 @@ pub(crate) struct ReservedColumns {
     /// into `data` (da-5t94). On insert the positional field is injected
     /// as `field=` (see `parse_log_args`) and flows through here too.
     ///
-    /// `id=` is deliberately NOT lifted here: on insert it competes with
-    /// `-K` slug slots and may legitimately stay in `data` (the slot
-    /// already claimed the slug), so the update path peels it locally
-    /// instead — see `update_core::take_reserved_id`.
+    /// `id=` is not one of them: it is data like any other key, and
+    /// `--id` sets the entry's id (vividn, 2026-10-23, da-uf6it).
     pub(crate) field: Option<String>,
     pub(crate) state: Option<JsonValue>,
     pub(crate) dur: Option<datum_core::dur::Dur>,

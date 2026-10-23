@@ -897,7 +897,7 @@ ARGS:
 
 OPTIONS:
       --strategy <S>      update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|append
-      --id <TEMPLATE>     New id/slug template
+      --id <TEMPLATE>     Re-id the entry (a template, as on insert); keeps its hid
       --id-delimiter <S>  Delimiter between empty segments
   -k, --key <KV>          Extra key=value (repeatable)
   -c, --comment <T>       Append a comment to data.comment (repeatable)

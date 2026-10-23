@@ -733,7 +733,7 @@ const UPDATE_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("TEMPLATE"),
         value_optional: false,
-        summary: "New id/slug template",
+        summary: "Re-id the entry (a template, as on insert); keeps its hid",
         long_description: None,
         left_override: None,
     },
@@ -2041,7 +2041,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "register a keyed timeless record, by an id (alias: card)",
         intro: "",
         long_description: Some(
-            "Timeless record identified by *what* it is. `add` requires an explicit id: derive one from a key (-K name) or set it directly (--id <value>); see --id %templates% and id= below. Sibling of `note`, which auto-ids on its create_time instead.",
+            "Timeless record identified by *what* it is. `add` requires an explicit id: derive one from a key (-K name) or set it directly (--id <value>); see --id %templates% below. Sibling of `note`, which auto-ids on its create_time instead.",
         ),
         usage: &["datum add <FIELD> -K <KEY> [KEY=VALUE]...", "datum add <FIELD> --id <VALUE>"],
         args: NO_ARGS,

@@ -71,7 +71,7 @@ fn a_full_slug_dangles_until_its_entry_exists() {
         "one finding per (field, slug), with its count"
     );
 
-    run_cli(&["add", "book", "id=great_gatsby"], &db).unwrap();
+    run_cli(&["add", "book", "--id", "great_gatsby"], &db).unwrap();
     assert_eq!(dangling(&db), ["clock → 12:30 x1"]);
 
     // A tombstoned document is missing again.
@@ -104,9 +104,13 @@ fn a_bare_state_resolves_through_the_lookup_field() {
         ]
     );
 
-    run_cli(&["add", "issue_state", "id=queued", "class=waiting"], &db).unwrap();
-    run_cli(&["add", "issue_state", "id=done"], &db).unwrap();
-    run_cli(&["add", "book", "id=x"], &db).unwrap();
+    run_cli(
+        &["add", "issue_state", "--id", "queued", "class=waiting"],
+        &db,
+    )
+    .unwrap();
+    run_cli(&["add", "issue_state", "--id", "done"], &db).unwrap();
+    run_cli(&["add", "book", "--id", "x"], &db).unwrap();
     assert!(dangling(&db).is_empty(), "{:?}", dangling(&db));
 }
 

@@ -85,6 +85,8 @@ pub struct UpdateRequest<'a> {
     /// (or `field`) from a stored template. Used by every strategy: any
     /// mutation that touches templated data triggers auto-reinterpolation.
     pub slug_delimiter: &'a str,
+    /// `--id`: the entry's new id template, as on insert (da-uf6it).
+    pub id: Option<&'a str>,
 }
 
 /// Apply a mutation strategy to the row identified by
@@ -109,6 +111,7 @@ pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOut
             req.payload_extra,
             ExtraMergeMode::Shallow,
             req.slug_delimiter,
+            req.id,
             db,
         ),
         // datum's merge: a conflict collects both values, no duplicates.
@@ -118,6 +121,7 @@ pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOut
             req.payload_extra,
             ExtraMergeMode::Combine(Combine::MERGE),
             req.slug_delimiter,
+            req.id,
             db,
         ),
         UpdateStrategy::Combine(how) => apply_mutation(
@@ -126,10 +130,11 @@ pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOut
             req.payload_extra,
             ExtraMergeMode::Combine(how),
             req.slug_delimiter,
+            req.id,
             db,
         ),
         UpdateStrategy::Rekey => {
-            apply_data_key_rename(existing, req.payload_extra, req.slug_delimiter, db)
+            apply_data_key_rename(existing, req.payload_extra, req.slug_delimiter, req.id, db)
         }
     }
 }
@@ -165,6 +170,7 @@ pub fn update_from_args(
             payload_extra,
             strategy,
             slug_delimiter: &delim,
+            id: args.id.as_deref(),
         },
         db,
     )?;
@@ -352,6 +358,7 @@ pub fn update_batch_from_args(
                 payload_extra: extra,
                 strategy,
                 slug_delimiter: &delim,
+                id: args.id.as_deref(),
             },
             db,
         );
@@ -430,6 +437,7 @@ fn apply_mutation(
     payload_extra: Option<JsonValue>,
     mode: ExtraMergeMode,
     slug_delimiter: &str,
+    id: Option<&str>,
     db: &Db,
 ) -> Result<UpdateOutcome> {
     // da-5ns.3: peel reserved column-bound keys (`state=`, `dur=`,
@@ -450,11 +458,6 @@ fn apply_mutation(
             anyhow::bail!(msg);
         }
     }
-    // da-5t94: `id=` re-slugs on update. The shared peeler leaves `id`
-    // alone (on insert it competes with `-K` slug slots); update has no
-    // slug slots, so a bare `id=` here always rewrites the slug body. Peel
-    // it locally so it lands on `id_structure` instead of leaking to `data`.
-    let id_literal = take_reserved_id(&mut payload_extra);
 
     // da-ult68: a comment APPENDS — the payload's go after the row's own,
     // and a row written before comments were arrays holds a string, which
@@ -476,18 +479,14 @@ fn apply_mutation(
     }
     let mut updated = existing.clone();
     updated.data = combine_extra(updated.data, payload_extra, mode)?;
-    // da-5t94: `field=` / `id=` re-field and re-slug in place. Setting
-    // `updated.field` (or the literal `id_structure`) makes
-    // `persist_with_auto_reinterp` re-derive the slug as `<field>:<body>`
-    // while preserving hid + timestamps. Previously these keys leaked
-    // silently into `data` because update only peeled the other reserved
-    // columns. The id literal mirrors insert's `id=` promotion (stored as
-    // a literal id_structure so later edits don't re-key the slug).
+    // da-5t94: `field=` re-fields in place: `persist_with_auto_reinterp`
+    // re-derives the slug as `<field>:<body>`, keeping hid + timestamps.
+    // `id=` is data; `--id` re-ids (da-uf6it).
     if let Some(f) = reserved.field {
         updated.field = f;
     }
-    if let Some(id) = id_literal {
-        updated.id_structure = Some(id);
+    if let Some(id) = id {
+        updated.id_structure = Some(id.to_string());
     }
     if let Some(v) = payload_value {
         updated.state = Some(v);
@@ -537,6 +536,7 @@ fn apply_data_key_rename(
     existing: Entry,
     payload_extra: Option<JsonValue>,
     slug_delimiter: &str,
+    id: Option<&str>,
     db: &Db,
 ) -> Result<UpdateOutcome> {
     let mapping = match payload_extra {
@@ -544,6 +544,9 @@ fn apply_data_key_rename(
         _ => anyhow::bail!("rekey requires a key-rename mapping like 'oldKey=newKey'"),
     };
     let mut updated = existing.clone();
+    if let Some(id) = id {
+        updated.id_structure = Some(id.to_string());
+    }
     if let Some(JsonValue::Object(mut data_map)) = updated.data.take() {
         for (old_key, new_key_v) in mapping {
             let new_key = match new_key_v {
@@ -669,25 +672,6 @@ fn combine_extra(
 
 fn is_empty_string(v: &JsonValue) -> bool {
     matches!(v, JsonValue::String(s) if s.is_empty())
-}
-
-/// da-5t94: pull a `id=` token out of the update payload, returning it as
-/// the slug-body literal to stamp onto `id_structure`. Resets the payload
-/// to `None` once empty so an `id`-only update doesn't carry a stray empty
-/// object into `combine_extra`.
-fn take_reserved_id(payload_extra: &mut Option<JsonValue>) -> Option<String> {
-    let JsonValue::Object(obj) = payload_extra.as_mut()? else {
-        return None;
-    };
-    let v = obj.remove("id")?;
-    let lit = match v {
-        JsonValue::String(s) => s,
-        other => other.to_string(),
-    };
-    if obj.is_empty() {
-        *payload_extra = None;
-    }
-    Some(lit)
 }
 
 /// Outcome of [`parse_update_payload`].
@@ -944,6 +928,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"reps": 20})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -975,6 +960,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"nested": {"b": 2}})),
                 strategy: UpdateStrategy::Merge,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1006,6 +992,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"reps": "repetitions"})),
                 strategy: UpdateStrategy::Rekey,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1092,6 +1079,7 @@ mod tests {
                 payload_extra: None,
                 strategy: UpdateStrategy::Rekey,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1120,6 +1108,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"reps": 42})),
                 strategy: UpdateStrategy::Rekey,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1158,6 +1147,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"oldKind": "kind"})),
                 strategy: UpdateStrategy::Rekey,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1193,6 +1183,7 @@ mod tests {
                     payload_extra: None,
                     strategy,
                     slug_delimiter: ":",
+                    id: None,
                 },
                 &db,
             )
@@ -1233,6 +1224,7 @@ mod tests {
                 payload_extra: payload.extra,
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1277,6 +1269,7 @@ mod tests {
                 payload_extra: payload.extra,
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1312,6 +1305,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"state": "sad"})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1348,6 +1342,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"srcLang": "es"})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1382,6 +1377,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"reps": 20})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1421,6 +1417,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"state": "sad"})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1469,6 +1466,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"dur": "PT2H"})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1515,6 +1513,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"following_state": "focused"})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1545,6 +1544,7 @@ mod tests {
                 })),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )
@@ -1577,6 +1577,7 @@ mod tests {
                 payload_extra: Some(serde_json::json!({"state": "doing"})),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
+                id: None,
             },
             &db,
         )

@@ -708,14 +708,13 @@ fn comment_flag_populates_extra_data_comment() {
 
 // ─── P1 acceptance-criteria tests (beyond the 25-case port) ──────────────────
 
-// ─── da-ndd.18: `id=` positional convention → field:id slugs ─────────────────
+// ─── da-uf6it: `id=` is data; `--id` sets the entry's id ──────────────────────
 
-/// A positional `id=<name>` kvpair is promoted to the slug identity
-/// (`field:name`) without needing an explicit `-K id` declaration. The
-/// other kvpairs remain in extra_data. This makes entries act as documents
-/// that later entries can reference via the colon pattern.
+/// `--id <name>` sets the slug identity (`field:name`), so the entry acts
+/// as a document later entries reference via the colon pattern. The
+/// kvpairs stay in data.
 #[test]
-fn id_positional_promotes_to_slug() {
+fn dash_dash_id_sets_the_slug() {
     let db = fresh_db();
     run_cli(
         &[
@@ -723,45 +722,50 @@ fn id_positional_promotes_to_slug() {
             "book",
             "title=goldmund und narziß",
             "author=herman hesse",
-            "lang=de",
-            "id=goldmund",
+            "--id",
+            "goldmund",
         ],
         &db,
     )
-    .expect("datum add book …  id=goldmund");
+    .expect("datum add book … --id goldmund");
     let e = db
         .get_entry("book:goldmund")
         .expect("slug book:goldmund exists");
-    assert_eq!(e.slug, "book:goldmund");
     let extra = e.data.as_ref().unwrap();
     assert_eq!(extra.get("title"), Some(&json!("goldmund und narziß")));
     assert_eq!(extra.get("author"), Some(&json!("herman hesse")));
-    assert_eq!(extra.get("lang"), Some(&json!("de")));
-    assert!(
-        extra.get("id").is_none(),
-        "id= is stripped from extra_data once promoted to the slug",
-    );
+    assert!(extra.get("id").is_none(), "--id is not data");
 }
 
-/// `id=` with no other payload still promotes — minimal document form.
+/// `id=` is a key like any other: `occur F id=x` stores `data.id` and keeps
+/// the default identity, the entry's time (vividn, 2026-10-23: «probably
+/// more sane to let users use id for themselves»).
 #[test]
-fn id_positional_alone_produces_field_colon_id_slug() {
+fn id_key_is_data_and_leaves_the_default_identity() {
     let db = fresh_db();
-    run_cli(&["add", "person", "id=vividn"], &db).expect("add person id=vividn");
-    let e = db
-        .get_entry("person:vividn")
-        .expect("slug person:vividn exists");
-    assert_eq!(e.slug, "person:vividn");
-    // Only `id` was supplied; it's consumed by the slug, so extra_data stays None.
-    assert!(
-        e.data.is_none(),
-        "sole id= is consumed by the slug; no extra_data left behind",
-    );
+    run_cli(&["occur", "habit", "id=x", "-t", "2026-10-23T10:00Z"], &db).expect("occur id=x");
+    let e = &datum_core::test_util::logged_entries(&db, "habit")[0];
+    assert_eq!(e.data, Some(json!({"id": "x"})));
+    assert_eq!(e.slug, "habit:2026-10-23T10:00:00.000Z");
+    assert!(db.get_entry("habit:x").is_err(), "no slug from id=");
 }
 
-/// Without `id=` (or `-K`), a timeless `note` falls back to the default
-/// `field:c<create_time>` shape. Regression guard: the `id=` promotion path
-/// must not hijack entries that have no `id=` at all.
+/// A bare `add` still needs an id, and `id=` is not one: the error names
+/// `-K` and `--id` and no longer offers `id=`.
+#[test]
+fn add_with_only_an_id_key_still_needs_an_id() {
+    let db = fresh_db();
+    let err = run_cli(&["add", "person", "id=vividn"], &db)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("add needs an id"), "{err}");
+    assert!(err.contains("--id <value>"), "{err}");
+    assert!(!err.contains("id="), "{err}");
+    assert!(db.get_entry("person:vividn").is_err());
+}
+
+/// Without `--id` (or `-K`), a timeless `note` falls back to the default
+/// `field:c<create_time>` shape.
 #[test]
 fn no_id_falls_back_to_timestamp_slug() {
     let db = fresh_db();
@@ -781,10 +785,7 @@ fn no_id_falls_back_to_timestamp_slug() {
     assert_eq!(extra.get("title"), Some(&json!("anon")));
 }
 
-/// Explicit `-K` slug-keys take precedence over the `id=` convention. When
-/// both are present, `-K` fills slug_values first and `id=` stays in
-/// extra_data as ordinary payload — the user explicitly declared a
-/// different slug contract.
+/// `-K` slug-keys set the slug, and `id=` beside them is ordinary data.
 #[test]
 fn explicit_dash_k_wins_over_id_positional() {
     let db = fresh_db();
@@ -805,11 +806,7 @@ fn explicit_dash_k_wins_over_id_positional() {
         .expect("slug book:primary-slug exists");
     assert_eq!(e.slug, "book:primary-slug");
     let extra = e.data.as_ref().unwrap();
-    assert_eq!(
-        extra.get("id"),
-        Some(&json!("secondary")),
-        "id= stays in extra_data when -K already populated slug_values",
-    );
+    assert_eq!(extra.get("id"), Some(&json!("secondary")), "id= is data",);
     assert_eq!(
         extra.get("custom"),
         Some(&json!("primary-slug")),
@@ -825,7 +822,8 @@ fn explicit_dash_k_wins_over_id_positional() {
 fn colon_pattern_value_stored_as_plain_string() {
     let db = fresh_db();
     // Create the document.
-    run_cli(&["add", "book", "title=Goldmund", "id=goldmund"], &db).expect("add book id=goldmund");
+    run_cli(&["add", "book", "title=Goldmund", "--id", "goldmund"], &db)
+        .expect("add book --id goldmund");
     // Create a switch that references it.
     run_cli(&["switch", "consume", "book:goldmund"], &db).expect("switch consume book:goldmund");
     let switch_entry = &datum_core::test_util::logged_entries(&db, "consume")[0];
