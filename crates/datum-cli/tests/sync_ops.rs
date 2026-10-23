@@ -582,6 +582,104 @@ fn sides(conflicts: &Value, key: &str) -> Vec<Value> {
         .collect()
 }
 
+/// The states `check` says carried a `-l` that history disagrees with.
+fn mismatched(copy: &Copy) -> Vec<Value> {
+    let check: Value = serde_json::from_slice(&copy.run(&["check", "--json"], "").stdout).unwrap();
+    check["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["category"] == "integrity_last_state_mismatch")
+        .flat_map(|i| i["entries"].as_array().unwrap())
+        .map(|e| e["state"].clone())
+        .collect()
+}
+
+/// A `-l` that a sync contradicts is reported as a local write
+/// contradicting it is (da-iu8v1): on the copy that receives it, and on the
+/// copy that made it, where what the sync applied is the entry before it.
+#[test]
+fn a_last_state_a_sync_contradicts_is_reported_on_both_copies() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["switch", "x", "queued", "-t", "-10"]);
+    a.send(&b);
+    a.ok(&["switch", "x", "parked", "-l", "queued", "-t", "-5"]);
+    b.ok(&["switch", "x", "late", "-l", "queued", "-t", "-3"]);
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert_eq!(mismatched(copy), ["late"]);
+    }
+    // Resolved on b, as no command does yet.
+    b.sql("UPDATE integrity_warnings SET resolution = 'keep_both', resolved_at = '2026-10-23'");
+    // A later write that changes the field before it reads `late` again on
+    // both copies, and files it no second time: pending on a, resolved on b.
+    a.ok(&["switch", "x", "early", "-t", "-20"]);
+    assert_eq!(mismatched(&a), ["late"]);
+    converged(&a, &b);
+    assert_eq!(mismatched(&a), ["late"]);
+    assert_eq!(mismatched(&b), Vec::<Value>::new());
+    // A retime of `late` itself moves its slug, not its hid: still resolved.
+    let late = b.query("SELECT hid FROM entries WHERE state = ?1", "\"late\"");
+    b.ok(&["retime", &late, "-1"]);
+    converged(&a, &b);
+    assert_eq!(mismatched(&a), ["late"]);
+    assert_eq!(mismatched(&b), Vec::<Value>::new());
+}
+
+/// A local backfill under a later `-l` is reported where it is written, as
+/// on the copy it syncs to, so the two agree (da-iu8v1).
+#[test]
+fn a_backfill_under_a_last_state_is_reported_where_it_is_written() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["switch", "x", "queued", "-t", "-10"]);
+    a.ok(&["switch", "x", "late", "-l", "queued", "-t", "-3"]);
+    a.ok(&["switch", "x", "parked", "-t", "-5"]);
+    assert_eq!(mismatched(&a), ["late"]);
+    // A second backfill under the warning still pending names `late` once.
+    a.ok(&["switch", "x", "held", "-t", "-4"]);
+    assert_eq!(mismatched(&a), ["late"]);
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert_eq!(mismatched(copy), ["late"]);
+    }
+}
+
+/// A retime that moves the entry before a `-l` to after it changes the
+/// field from where the entry WAS: the copy it syncs to reads `late` again
+/// from the row before the apply, not the one after (da-iu8v1).
+#[test]
+fn a_retime_past_a_last_state_is_reported_on_both_copies() {
+    let (a, b) = (Copy::new(), Copy::new());
+    b.ok(&["switch", "x", "queued", "-t", "-10"]);
+    b.ok(&["switch", "x", "parked", "-t", "-8"]);
+    let parked = b.hid("x");
+    b.ok(&["switch", "x", "late", "-l", "parked", "-t", "-3"]);
+    converged(&a, &b);
+    assert_eq!(mismatched(&b), Vec::<Value>::new());
+    a.ok(&["retime", &parked, "+7"]);
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert_eq!(mismatched(copy), ["late"]);
+    }
+}
+
+/// `-l null` claims the field held no state, and stores the string `"null"`,
+/// which every copy reads as null: two copies each claiming it of a fresh
+/// field offline both name the later once synced.
+#[test]
+fn a_last_state_of_no_state_travels() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["switch", "f", "first", "-l", "null", "-t", "-5"]);
+    b.ok(&["switch", "f", "second", "-l", "null", "-t", "-3"]);
+    for copy in [&a, &b] {
+        assert_eq!(mismatched(copy), Vec::<Value>::new());
+    }
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert_eq!(mismatched(copy), ["second"]);
+    }
+}
+
 #[test]
 fn concurrent_edits_of_one_key_go_to_the_later_and_file_a_conflict() {
     let (a, b) = (Copy::new(), Copy::new());
@@ -2894,5 +2992,6 @@ fn offline_adds_each_carry_the_set_they_changed() {
     for copy in [&a, &b] {
         assert_eq!(assumed(copy, r#"["queued","parked"]"#), r#""queued""#);
         assert_eq!(assumed(copy, r#"["queued","late"]"#), r#""queued""#);
+        assert_eq!(mismatched(copy), [r#"["queued","late"]"#]);
     }
 }

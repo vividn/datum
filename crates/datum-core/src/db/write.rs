@@ -201,7 +201,9 @@ impl Db {
         f: impl FnOnce(&Connection) -> std::result::Result<T, E>,
     ) -> std::result::Result<T, E> {
         let tx = begin(&self.conn, TransactionBehavior::Immediate)?;
+        crate::integrity::forget_moved();
         let out = f(&tx)?;
+        crate::integrity::detect_moved(&tx, crate::integrity::DetectedBy::LocalValidator)?;
         tx.commit().map_err(DatumError::from)?;
         Ok(out)
     }
@@ -233,7 +235,9 @@ impl Db {
                 }
             }
         };
+        crate::integrity::forget_moved();
         let out = write(&tx, read)?;
+        crate::integrity::detect_moved(&tx, crate::integrity::DetectedBy::LocalValidator)?;
         if commit {
             tx.commit().map_err(DatumError::from)?;
         }

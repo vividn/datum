@@ -20,10 +20,9 @@
 //! remains an internal helper for callers that need to clear obvious
 //! cases (e.g. tests, future surfaces) once enough time has passed.
 //!
-//! This module is also the backing store for C4e's sync-pull integrity
-//! detection — incoming remote entries are walked through the same
-//! `detect_for_entry` and any inconsistencies file rows with
-//! `detected_by = sync_pull`.
+//! A `-l` assertion is checked again whenever a write moves its field's
+//! timeline before it, local or a sync's apply ([`detect_moved`],
+//! da-iu8v1); a sync files only that kind, with `detected_by = sync_pull`.
 //!
 //! # Column meaning
 //! - `id`: full 12-char base36 token.
@@ -233,6 +232,106 @@ pub fn detect_for_entries(
         detect_one(conn, trigger, detected_by, &mut snaps, &mut filed)?;
     }
     Ok(filed)
+}
+
+thread_local! {
+    /// Each field's earliest instant the open transaction's writes changed
+    /// its timeline at ([`moved`], da-iu8v1).
+    static MOVED: std::cell::RefCell<std::collections::BTreeMap<String, DateTime<Utc>>> =
+        Default::default();
+}
+
+/// Note a write of one entry, `pre` its row before and `post` after: its
+/// field, from the earlier leading edge on, may hold a `-l` the write
+/// contradicts. One that changes none of what the timeline reads (a
+/// comment, a data key) moves nothing, and a dot asserting nothing — a
+/// spec, an occur — is no row of the timeline (`OCCUR_DOT_SQL`).
+pub(crate) fn moved(pre: Option<&Entry>, post: Option<&Entry>) {
+    fn line(e: &Entry) -> impl PartialEq + '_ {
+        (
+            (&e.field, &e.occur_time, &e.dur, &e.verb),
+            (&e.state, &e.following_state, &e.user_asserted_last_state),
+            (e.deleted_at.is_some(), &e.superseded_by),
+        )
+    }
+    if pre.zip(post).is_some_and(|(a, b)| line(a) == line(b)) {
+        return;
+    }
+    let dot = |e: &&Entry| {
+        e.verb == Verb::Point
+            && e.state
+                .as_ref()
+                .is_none_or(|s| *s == serde_json::Value::Bool(true))
+            && e.user_asserted_last_state.is_none()
+    };
+    for e in pre.into_iter().chain(post).filter(|e| !dot(e)) {
+        if let Some(at) = e.leading_edge_utc() {
+            MOVED.with_borrow_mut(|m| {
+                let from = m.entry(e.field.clone()).or_insert(at);
+                *from = at.min(*from);
+            });
+        }
+    }
+}
+
+/// Forget what [`moved`] noted: a transaction begins.
+pub(crate) fn forget_moved() {
+    MOVED.take();
+}
+
+/// Every `-l` assertion the writes [`moved`] noted may contradict, which it
+/// forgets: the live rows of each field asserting a last state, from the
+/// earliest instant the writes changed it at — a written entry's own, and
+/// the later ones whose history they rewrote — on a local write as on a
+/// sync's apply. Filed once an entry while one is pending, and not again
+/// for a counterpart one was resolved against, so a warning the user
+/// resolved stays so, a retime or all. Keyed by hid, which a retime keeps:
+/// the slug moves.
+pub(crate) fn detect_moved(conn: &Connection, detected_by: DetectedBy) -> Result<()> {
+    let moved = MOVED.take();
+    if moved.is_empty() {
+        return Ok(());
+    }
+    let mut stmt = conn.prepare_cached(
+        "SELECT * FROM entries
+         WHERE field = ?1 AND occur_time >= ?2
+           AND deleted_at IS NULL AND superseded_by IS NULL
+           AND user_asserted_last_state IS NOT NULL",
+    )?;
+    let mut triggers = Vec::new();
+    for (field, from) in &moved {
+        for e in stmt.query_map(
+            params![field, from.to_rfc3339()],
+            crate::db::row_to_entry_public,
+        )? {
+            let e = e?;
+            if e.leading_edge_utc().is_some_and(|t| t >= *from) {
+                triggers.push(e);
+            }
+        }
+    }
+    let mut filed = conn.prepare_cached(
+        "SELECT 1 FROM integrity_warnings
+         WHERE kind = 'last_state_mismatch' AND json_extract(local_entry, '$.hid') = ?1
+           AND (resolution IS NULL OR json_extract(remote_entry, '$.hid') IS ?2)",
+    )?;
+    let mut snaps = FieldSnapshots::over(&triggers);
+    for t in &triggers {
+        let Some(counterpart) = detect_last_state_mismatch(conn, t, &mut snaps)? else {
+            continue;
+        };
+        let against = counterpart.as_ref().map(|c| c.hid.as_str());
+        if !filed.exists(params![t.hid.as_str(), against])? {
+            file_warning(
+                conn,
+                t,
+                counterpart.as_ref(),
+                detected_by,
+                IntegrityKind::LastStateMismatch,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Per-field history read once and reused across a batch of detections.
