@@ -216,7 +216,7 @@ fn comment_appends_one_comment_to_an_existing_entry() {
 }
 
 #[test]
-fn comment_refuses_an_unknown_hid_and_a_strategy() {
+fn comment_refuses_an_unknown_hid_a_strategy_and_no_words() {
     let db = fresh_db();
     run_cli(&["occur", "x"], &db).unwrap();
     let hid = logged_entries(&db, "x")[0].hid.as_str().to_string();
@@ -225,10 +225,13 @@ fn comment_refuses_an_unknown_hid_and_a_strategy() {
         (
             err(&["comment", "zzzzzz", "nope"]),
             err(&["comment", &hid, "--strategy", "useNew", "nope"]),
+            err(&["comment", &hid]),
         ),
         (
             "Entry not found: zzzzzz".to_string(),
             "Invalid argument: comment takes no --strategy: it is update --strategy append -C"
+                .to_string(),
+            "Invalid argument: comment takes the words of the comment: comment <hid> words…"
                 .to_string(),
         )
     );
