@@ -11,6 +11,7 @@
 // "datum" itself before dispatching a line).
 
 import { currentDb, DEFAULT_DB } from './database.js';
+import { dbFlag } from './dbFlag.js';
 import type { Stage } from './dbProtocol.js';
 import { shellSplit } from './shellSplit.js';
 
@@ -69,32 +70,6 @@ export const cliError = (stderr: string, fallback = ''): Error =>
 	new Error(stderr.trim().replace(/^[Ee]rror: /, '') || fallback);
 
 /**
- * The database `argv` names for itself: whether it names one at all, and
- * which — `--db X` or `--db=X`, the first of them, stopping at `--`, which
- * is the CLI's own pre-scan to the token (`extract_global_db_flag`).
- *
- * `--db` with nothing after it names no database but is still a flag the
- * caller wrote, so `named` and `db` are separate answers.
- *
- * `-D` is NOT here, and reading it as a database flag was a bug, not a
- * cosmetic disagreement (vremya on #22): the CLI's `-D` is `--full-day`
- * (`crates/datum-parse/src/alias/scope.rs`), so `occur coffee -D` on a
- * `?db=other` page looked to this scanner like a command that had already
- * chosen its database, got no `--db other`, and logged the day to `datum`.
- * Only `--db` selects a database, here and in the worker's own scanner
- * ($lib/cli.ts `dbNamed`).
- */
-function namedDb(argv: string[]): { named: boolean; db?: string } {
-	for (let i = 0; i < argv.length; i += 1) {
-		const word = argv[i];
-		if (word === '--') break;
-		if (word === '--db') return { named: true, db: argv[i + 1] };
-		if (word.startsWith('--db=')) return { named: true, db: word.slice(5) };
-	}
-	return { named: false };
-}
-
-/**
  * The env that runs `argv` against the page's database (da-vk1x).
  *
  * The ONE place `?db=<name>` reaches the CLI: every command the app runs on
@@ -109,7 +84,7 @@ function namedDb(argv: string[]): { named: boolean; db?: string } {
  * `--show`). Nothing is added at the default.
  */
 export function dbEnv(argv: string[], db: string = currentDb()): string[] {
-	return db === DEFAULT_DB || namedDb(argv).named ? [] : [`DATUM_DB=${db}`];
+	return db === DEFAULT_DB || dbFlag(argv) ? [] : [`DATUM_DB=${db}`];
 }
 
 /**
@@ -122,7 +97,7 @@ export function dbEnv(argv: string[], db: string = currentDb()): string[] {
  * flag does is worse than no prompt at all.
  */
 export function dbOf(argv: string[], db: string = currentDb()): string {
-	return namedDb(argv).db ?? db;
+	return dbFlag(argv)?.db ?? db;
 }
 
 // Null until the first `run`, which imports the CLI runner lazily: this

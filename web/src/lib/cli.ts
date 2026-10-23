@@ -41,6 +41,7 @@ import { File as MemFile, OpenFile, WASI, wasi as defs, type Fd, type PreopenDir
 import cliWasm from './wasm/datum-cli.wasm?url';
 import { cached, DATABASES, dbFiles, forgetCached, KEPT, MemoryHandle, opfsDirectory, Sink, staged, unkept, type Handle } from './wasiFs.js';
 import { backupArgv, mergeArgv } from './calls.js';
+import { dbFlag } from './dbFlag.js';
 import { OPFS_DIR } from './databases.js';
 import { FROZEN_AT, type CliResult, type Stage, type StorageKind } from './dbProtocol.js';
 
@@ -116,20 +117,15 @@ let databases: readonly string[] = DATABASES;
 /**
  * The database `argv` and `env` name, if they name one by NAME.
  *
- * The CLI's own resolution, in TypeScript: `--db X` or `--db=X`, before any
- * `--`, else `DATUM_DB`, and a value that is a name rather than a path
+ * The CLI's own resolution, in TypeScript: the `--db` flag ($lib/dbFlag.ts),
+ * else `DATUM_DB`, and a value that is a name rather than a path
  * (`extract_global_db_flag`, `locate` and `looks_like_path`,
  * `crates/datum-commands/src/config.rs`). A path is left to the process's
  * own filesystem, as it always has been.
  */
 function dbNamed(argv: string[], env: string[]): string | undefined {
-	let value: string | undefined;
-	for (let i = 0; i < argv.length && value === undefined; i += 1) {
-		const word = argv[i];
-		if (word === '--') break;
-		value = word === '--db' ? (argv[i + 1] ?? '') : word.startsWith('--db=') ? word.slice(5) : undefined;
-	}
-	value ??= env.findLast((v) => v.startsWith('DATUM_DB='))?.slice(9);
+	const flag = dbFlag(argv);
+	const value = flag ? flag.db : env.findLast((v) => v.startsWith('DATUM_DB='))?.slice(9);
 	if (!value || value.includes('/') || value.startsWith('.') || value.endsWith('.db')) return undefined;
 	return value;
 }

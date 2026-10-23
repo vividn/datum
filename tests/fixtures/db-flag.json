@@ -1,0 +1,28 @@
+{
+  "about": [
+    "Which database an argv names with `--db`, as one list of cases read by both sides.",
+    "",
+    "`crates/datum-commands/src/config.rs::pre_scan_db_flag` (the CLI) and",
+    "`web/src/lib/dbFlag.ts::dbFlag` (datum.day's run.ts and its worker's cli.ts)",
+    "have to agree, or a page on `?db=other` runs a command against another",
+    "database than the one it opens a file for. They disagreed once: `-D` (`--full-day`)",
+    "was read as a database flag, and `occur coffee -D` logged to `datum`.",
+    "",
+    "`argv` is without the binary's name; `db` is the value named, or null for none."
+  ],
+  "cases": [
+    { "name": "no flag", "argv": ["occur", "coffee"], "db": null },
+    { "name": "--db X", "argv": ["--db", "work", "occur", "coffee"], "db": "work" },
+    { "name": "--db=X", "argv": ["--db=work", "occur", "coffee"], "db": "work" },
+    { "name": "--db after the command", "argv": ["occur", "coffee", "--db", "work"], "db": "work" },
+    { "name": "the first of two", "argv": ["--db=a", "occur", "coffee", "--db", "b"], "db": "a" },
+    { "name": "--db last names none", "argv": ["occur", "coffee", "--db"], "db": null },
+    { "name": "--db= is the empty name", "argv": ["--db=", "occur", "coffee"], "db": "" },
+    { "name": "a -- before --db", "argv": ["note", "jot", "--", "--db", "work"], "db": null },
+    { "name": "a -- after --db", "argv": ["--db", "work", "note", "jot", "--", "--db", "x"], "db": "work" },
+    { "name": "-D is --full-day", "argv": ["occur", "coffee", "-D"], "db": null },
+    { "name": "-D with a word after it", "argv": ["occur", "coffee", "-D", "work"], "db": null },
+    { "name": "--dbx is not --db", "argv": ["occur", "coffee", "--dbx", "work"], "db": null },
+    { "name": "a path is still the value", "argv": ["--db", "./my.db", "tail"], "db": "./my.db" }
+  ]
+}
