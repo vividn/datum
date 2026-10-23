@@ -42,6 +42,7 @@ use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 
@@ -201,6 +202,50 @@ fn queued(conn: &Connection, spool: &Path) -> usize {
         .collect();
     let n = read.len();
     pending(conn, read).map_or(n, |p| p.len()) + unread
+}
+
+/// Whether queued `line` lands before a write that reads `field`'s state
+/// at `at` (da-0aup5): unless each time it gives an entry of `field`, where
+/// it puts one or where one was, is after `at`. A block may span `at`, so
+/// it lands before.
+fn lands_before(conn: &Connection, (_, line): &Line, field: &str, at: DateTime<Utc>) -> bool {
+    let ops = line["ops"].as_array().map_or(&[][..], Vec::as_slice);
+    let mut times = Vec::new();
+    for op in ops.iter().filter(|op| op["field"] == field) {
+        for effect in op["effect"]
+            .as_object()
+            .into_iter()
+            .flat_map(|e| e.values())
+        {
+            if !effect["dur"].is_null() {
+                return true;
+            }
+            times.extend(effect["occur_time"]["utc"].as_str().map(str::to_string));
+        }
+        let row = conn
+            .query_row(
+                "SELECT occur_time, dur FROM entries WHERE hid = ?1",
+                [op["hid"].as_str()],
+                |r| {
+                    Ok((
+                        r.get::<_, Option<String>>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .optional()
+            .ok()
+            .flatten();
+        match row {
+            Some((_, Some(_))) => return true,
+            Some((t, None)) => times.extend(t),
+            None => {}
+        }
+    }
+    times.is_empty()
+        || times
+            .iter()
+            .any(|t| DateTime::parse_from_rfc3339(t).map_or(true, |t| t.with_timezone(&Utc) <= at))
 }
 
 /// Land one line, in its own transaction: ops computed already, so the
@@ -408,10 +453,36 @@ impl Db {
         Ok((out, n))
     }
 
+    /// Is the first change queued beside this database, not landed yet, one
+    /// a write reading `field`'s state at `at` lands after (da-0aup5)?
+    /// Reads only, so it needs no lock.
+    pub fn spool_due(&self, field: &str, at: DateTime<Utc>) -> bool {
+        let Some(path) = &self.path else {
+            return false;
+        };
+        let bytes = std::fs::read(beside(path, ".spool")).unwrap_or_default();
+        let read = pieces(&bytes).filter_map(|(_, line, _)| line).collect();
+        pending(&self.conn, read).is_ok_and(|p| {
+            p.first()
+                .is_some_and(|l| lands_before(&self.conn, l, field, at))
+        })
+    }
+
     /// Land the changes queued beside this database, in order, until the
     /// write lock is another's. A line that fails for any other reason is
     /// `stuck`, and it and the lines after it wait.
     pub fn drain_spool(&self) -> Result<Drained> {
+        self.drain(None)
+    }
+
+    /// [`Self::drain_spool`], stopping at the first line a write reading
+    /// `field`'s state at `at` lands before: that line and the ones after
+    /// it land after the write.
+    pub fn drain_spool_due(&self, field: &str, at: DateTime<Utc>) -> Result<Drained> {
+        self.drain(Some((field, at)))
+    }
+
+    fn drain(&self, due: Option<(&str, DateTime<Utc>)>) -> Result<Drained> {
         let Some(path) = &self.path else {
             return Ok(Drained::default());
         };
@@ -428,6 +499,9 @@ impl Db {
         let (mut landed, mut wiped) = (0, 0);
         let stuck = waiting(&self.conn, DRAIN_WAIT, || {
             for line in &todo {
+                if due.is_some_and(|(f, at)| !lands_before(&self.conn, line, f, at)) {
+                    break;
+                }
                 match land(self, line) {
                     Ok(true) => landed += 1,
                     Ok(false) => wiped += 1,

@@ -292,3 +292,102 @@ fn edits_wait_out_a_held_lock_and_lose_no_member() {
     }
     assert_eq!(held(&db), ["a", "b", "queued"]);
 }
+
+/// A plain switch typed while an edit waits out the lock is queued, and was
+/// typed first: it lands before the edit, whose set holds it (da-0aup5).
+#[test]
+fn a_switch_queued_while_an_edit_waits_lands_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    let datum = spawn_env(tmp.path());
+    let db = tmp.path().join("edit.db");
+    assert!(datum(&["switch", "x", "queued", "-t", "-1"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let lock = rusqlite::Connection::open(&db).unwrap();
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let edit = datum(&["switch", "x", "+=a"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let plain = datum(&["switch", "x", "b"]).output().unwrap();
+    let said = String::from_utf8_lossy(&plain.stdout);
+    assert!(plain.status.success() && said.contains("QUEUED"), "{said}");
+    lock.execute_batch("COMMIT").unwrap();
+    let out = edit.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Any write lands what is still queued.
+    assert!(datum(&["occur", "y"]).output().unwrap().status.success());
+    let check = datum(&["check"]).output().unwrap();
+    let said = String::from_utf8_lossy(&check.stdout);
+    assert!(
+        check.status.success() && !said.contains("last_state"),
+        "{said}"
+    );
+    assert_eq!(held(&db), ["a", "b"]);
+}
+
+/// Hold the lock, start `claim` (a `-L` line), queue `queued` while it
+/// waits, let go: what the claim said, and `check` once everything landed.
+fn claim_behind_a_queued_line(claim: &[&str], queued: &[&str]) -> (bool, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let datum = spawn_env(tmp.path());
+    assert!(datum(&["switch", "x", "queued", "-t", "-10"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let lock = rusqlite::Connection::open(tmp.path().join("edit.db")).unwrap();
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let claimed = datum(claim)
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let out = datum(queued).output().unwrap();
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success() && said.contains("QUEUED"), "{said}");
+    lock.execute_batch("COMMIT").unwrap();
+    let out = claimed.wait_with_output().unwrap();
+    let refusal = String::from_utf8_lossy(&out.stderr).into_owned();
+
+    assert!(datum(&["occur", "y"]).output().unwrap().status.success());
+    let check = datum(&["check"]).output().unwrap();
+    let said = String::from_utf8_lossy(&check.stdout);
+    assert!(
+        check.status.success() && !said.contains("last_state"),
+        "{said}"
+    );
+    (out.status.success(), refusal)
+}
+
+/// A line typed after a claim lands after it, at its later time: it does
+/// not refuse the claim (da-0aup5).
+#[test]
+fn a_claim_lands_before_a_later_line_queued_while_it_waits() {
+    let (landed, said) = claim_behind_a_queued_line(
+        &["switch", "x", "in_progress", "-L", "queued"],
+        &["switch", "x", "b"],
+    );
+    assert!(landed, "{said}");
+}
+
+/// A line queued while a claim waits, at a time before the claim's, lands
+/// first: the claim holds against it (da-0aup5).
+#[test]
+fn a_line_queued_at_an_earlier_time_lands_before_the_claim() {
+    let (landed, said) = claim_behind_a_queued_line(
+        &["switch", "x", "in_progress", "-L", "b", "-t", "-2"],
+        &["switch", "x", "b", "-t", "-5"],
+    );
+    assert!(landed, "{said}");
+}

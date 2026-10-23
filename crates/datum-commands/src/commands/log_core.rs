@@ -931,31 +931,66 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         false => None,
     };
     // In the write's transaction: the set an edit changes, at now if it was
-    // made at now, then a `-L` claim.
-    let outcome = db.insert_entry_declaring(
-        &entry,
-        strategy,
-        declare.as_ref(),
-        Some(&|tx, e| {
-            if let (true, Some(t)) = (edit_at_now, e.occur_time.as_mut()) {
-                t.utc = t.utc.max(chrono::Utc::now());
-                if let Some(id) = e.id_structure.clone() {
-                    let body =
-                        field_spec::interpolate(&id, &InterpolationContext::from_entry(e), &delim);
-                    e.slug = datum_core::ids::Slug(format!("{}:{}", e.field, body));
+    // made at now, then a `-L` claim. Each reads the state where the entry
+    // lands, so a line queued meanwhile that lands at or before that time
+    // lands first and the write is made again; a later one lands after it
+    // (da-0aup5).
+    let behind = std::cell::Cell::new(None);
+    let outcome = loop {
+        let outcome = db.insert_entry_declaring(
+            &entry,
+            strategy,
+            declare.as_ref(),
+            Some(&|tx, e| {
+                if let (true, Some(t)) = (edit_at_now, e.occur_time.as_mut()) {
+                    t.utc = t.utc.max(chrono::Utc::now());
+                    if let Some(id) = e.id_structure.clone() {
+                        let body = field_spec::interpolate(
+                            &id,
+                            &InterpolationContext::from_entry(e),
+                            &delim,
+                        );
+                        e.slug = datum_core::ids::Slug(format!("{}:{}", e.field, body));
+                    }
                 }
-            }
-            if let Some(edit) = &edit {
-                let held = datum_core::integrity::state_before(tx, e)?;
-                edit.apply(held, e)
-                    .map_err(datum_core::error::DatumError::Other)?;
-            }
-            match args.ensure_last_state {
-                true => datum_core::integrity::ensure_last_state(tx, e),
-                false => Ok(()),
-            }
-        }),
-    )?;
+                let reads = edit.is_some() || args.ensure_last_state;
+                if let Some(at) = e.leading_edge_utc().filter(|_| reads) {
+                    if db.spool_due(&e.field, at) {
+                        // Only `behind` is read: this error rolls the write back.
+                        behind.set(Some(at));
+                        return Err(datum_core::error::DatumError::Other("queued".into()));
+                    }
+                }
+                if let Some(edit) = &edit {
+                    let held = datum_core::integrity::state_before(tx, e)?;
+                    edit.apply(held, e)
+                        .map_err(datum_core::error::DatumError::Other)?;
+                }
+                match args.ensure_last_state {
+                    true => datum_core::integrity::ensure_last_state(tx, e),
+                    false => Ok(()),
+                }
+            }),
+        );
+        let Some(at) = behind.take() else {
+            break outcome?;
+        };
+        let drained = db.drain_spool_due(&entry.field, at)?;
+        let spool = db
+            .path()
+            .map_or("the spool".into(), |p| format!("{}.spool", p.display()));
+        if let Some(e) = drained.stuck {
+            anyhow::bail!(
+                "the changes queued in {spool} cannot land: {e} — `datum check spool` shows them; \
+                 this line reads its field's state where it lands, after them, so nothing is written"
+            );
+        }
+        if drained.landed + drained.wiped == 0 && db.spool_due(&entry.field, at) {
+            anyhow::bail!(
+                "changes queued in {spool} have not landed, and this line reads its field's state where it lands; try again"
+            );
+        }
+    };
     // Stamp the last-accessed pointer at the affected entry's hid so a
     // follow-up bare `get` / `delete` / `update` can target it — before
     // anything prints, since a closed pipe ends the process at the print
