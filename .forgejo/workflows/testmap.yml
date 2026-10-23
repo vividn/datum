@@ -29,7 +29,11 @@ on:
   schedule:
     - cron: "40 */2 * * *"
   workflow_dispatch:
+  # A PR into staging or main alone (da-44xpb): the map is staging's, and a
+  # sync PR into an integration branch carries these paths from staging and
+  # built two maps no one reads, ~28 min each on the runner (#1061, 10-22).
   pull_request:
+    branches: [main, staging]
     paths:
       - .forgejo/workflows/testmap.yml
       - scripts/testmap-*

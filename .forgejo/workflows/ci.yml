@@ -39,7 +39,10 @@ on:
     # each reaches main (the same PR merge as before) only once a staging
     # commit holding it runs green, main's tree then checked equal to that
     # commit's. So a push to staging runs exactly as a push to main does.
-    branches: [main, staging, 'ci/**']
+    # `integration/**` is for the integration branches (da-44xpb): a push to
+    # one listed in .forgejo/integration-branches.toml runs the `integration`
+    # job below, and a push to any other runs nothing.
+    branches: [main, staging, 'ci/**', 'integration/**']
     # `hero/**` used to be here so a hero's branch reached the runner through
     # the mirror before the cutover, when the forge had no PRs. Since
     # 2026-09-16 17:0x branches are pushed to the forge itself and their PRs
@@ -84,6 +87,8 @@ env:
 jobs:
   ci:
     name: CI (cargo + web)
+    # A push to an integration branch is the `integration` job's alone.
+    if: github.event_name != 'push' || !startsWith(github.ref_name, 'integration/')
     # A staging run, pushed or dispatched, runs on its own runner, labelled ONLY
     # `staging` so it never takes a PR job (da-laema). On the shared one it
     # queued behind every PR run and, started after the tip had moved,
@@ -190,6 +195,20 @@ jobs:
 
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: env.TRAIN != '1'
+
+      # A PR into a branch the integration permit lists runs the `integration`
+      # job below instead (da-44xpb), so this one sets the same TRAIN=1 as an
+      # inherited verdict: every later step skips and the job ends green, with
+      # nothing judged. The full suites run once, on the epic's PR into staging.
+      - name: Is the base an integration branch?
+        if: env.TRAIN != '1' && github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          if python3 scripts/integration-permit.py "$BASE"; then
+            echo "TRAIN=1" >> "$GITHUB_ENV"
+            echo "every later step skipped: CI (integration) is this PR's verdict"
+          fi
 
       # A PR whose every changed file is under crates/, docs, markdown or
       # scripts/mq-check.sh skips the wasm build and the ~40-minute web suite
@@ -603,3 +622,165 @@ jobs:
             curl -sSf -K - -H 'Content-Type: application/json' --data @/tmp/status.json \
               "${SERVER%/}/api/v1/repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}" >/dev/null ||
             echo "::warning::could not post ci/base ($STATE with $BASE@$BASE_SHA)"
+
+  # The integration branches' light job (da-44xpb, vividn 2026-10-22: «I want
+  # this integration procedure to be generally applicable»). A PR into a
+  # branch .forgejo/integration-branches.toml lists, and a push to one, run
+  # this and not the full job: the CLI's build, the wasm module, fmt, clippy,
+  # svelte-check, the Rust tests the change reaches when it changes crates/ or
+  # a Cargo manifest, and the entry's `web_tests`. The full Rust and web
+  # suites run once, on the epic's PR into staging. A branch under
+  # `integration/` the file does not list ends at the first step.
+  integration:
+    name: CI (integration)
+    if: (github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) || (github.event_name == 'push' && startsWith(github.ref_name, 'integration/'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      # The branch's entry: LISTED=1 runs every later step. DIFF is what the
+      # change is read against: a PR's base, a push's previous tip (staging's
+      # tip for a new branch). Not staging for every push: a sync squashes
+      # staging into the branch, so `staging...HEAD` holds staging's changes.
+      - name: Is this branch in the integration permit?
+        env:
+          BRANCH: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+          BASE: ${{ github.event_name == 'pull_request' && github.base_ref || 'staging' }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          python3 scripts/integration-permit.py "$BRANCH" "$RUNNER_TEMP/web.tests" || exit 0
+          echo "LISTED=1" >> "$GITHUB_ENV"
+          git fetch -q --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
+          echo "BASE=$BASE" >> "$GITHUB_ENV"
+          diff=origin/$BASE
+          [ "${{ github.event_name }}" = pull_request ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null || diff=$BEFORE
+          echo "DIFF=$diff" >> "$GITHUB_ENV"
+          echo "the change: $diff...HEAD, $(git diff --name-only "$diff...HEAD" | wc -l) files"
+
+      # The full job's name guard (da-r6o39). Before the merge, so HEAD is the
+      # PR's own head.
+      - name: Name guard
+        if: env.LISTED == '1' && github.event_name == 'pull_request'
+        env:
+          NAME_GUARD: ${{ secrets.NAME_GUARD }}
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          printf 'header = "Authorization: token %s"\n' "$TOKEN" |
+            curl -sSf -K - "${SERVER%/}/api/v1/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" > "$RUNNER_TEMP/pr.json"
+          python3 scripts/name-guard.py "origin/$BASE" "$RUNNER_TEMP/pr.json"
+
+      # As the full job does (da-kz73u): the PR as it would land.
+      - name: Merge the PR with its base's tip
+        if: env.LISTED == '1' && github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          echo "testing ${{ github.event.pull_request.head.sha }} merged with $BASE at $(git rev-parse "origin/$BASE")"
+          git -c user.name=ci -c user.email=ci@localhost merge -q --no-edit "origin/$BASE" ||
+            { git diff --name-only --diff-filter=U; echo "::error::conflicts with $BASE: rebase"; exit 1; }
+
+      # The full job's installs, under the same lock (da-nmf83).
+      - name: Install rustup, the pinned toolchain and cargo-nextest
+        if: env.LISTED == '1'
+        run: |
+          set -euo pipefail
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          mkdir -p "$HOME/.cargo" && exec 9>"$HOME/.cargo/.ci-install.lock" && flock 9
+          RUSTUP_AUTO_INSTALL=0 rustup --version >/dev/null 2>&1 ||
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+          rustup toolchain install --no-self-update
+          rustup target add wasm32-wasip1
+          v=0.9.146
+          if ! cargo nextest --version 2>/dev/null | grep -x "release: $v" >/dev/null; then
+            tmp=$(mktemp -d "$HOME/.cargo/.nextest.XXXXXX")
+            curl -LsSf "https://get.nexte.st/$v/linux" | tar zxf - -C "$tmp"
+            mv "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest" && rmdir "$tmp"
+          fi
+
+      - name: cargo fmt --all -- --check
+        if: env.LISTED == '1'
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy --workspace --all-targets -- -D warnings
+        if: env.LISTED == '1'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo build -p datum-cli
+        if: env.LISTED == '1'
+        run: cargo build -p datum-cli
+
+      # No Rust test for a change outside crates/ and the Cargo manifests: the
+      # build, the wasm module and clippy catch a break there (vremya,
+      # 2026-10-22). One inside runs the tests it reaches, as the full job's
+      # selection picks them, and the whole suite when that says so.
+      - name: The Rust tests this change reaches
+        if: env.LISTED == '1'
+        run: |
+          set -euo pipefail
+          if ! git diff --name-only "$DIFF...HEAD" | grep -qE '^crates/|^Cargo\.(toml|lock)$'; then
+            echo "no Rust test: nothing under crates/ or a Cargo manifest changed"; exit 0
+          fi
+          sel="$RUNNER_TEMP/tests" map="$RUNNER_TEMP/testmap.json"
+          git fetch -q origin +refs/heads/testmap:refs/remotes/origin/testmap &&
+            git show origin/testmap:testmap.json > "$map" || echo "no testmap branch"
+          cargo run -q -p xtask -- testmap select "$map" "$DIFF" "$sel" ||
+            { mkdir -p "$sel"; echo "the selection failed" > "$sel/FULL"; echo "::warning::the selection failed: every test runs"; }
+          for cohort in workspace e2e-full; do
+            run=(cargo nextest run --workspace --no-fail-fast --test-threads 3 --no-tests=pass)
+            [ "$cohort" = workspace ] || run=(cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads 3 --no-tests=pass)
+            if [ -e "$sel/FULL" ]; then "${run[@]}"
+            elif [ -s "$sel/$cohort.tests" ] || [ -s "$sel/new.tests" ]; then
+              mapfile -t names < "$sel/$cohort.tests"; mapfile -t new < "$sel/new.tests"
+              "${run[@]}" "${new[@]}" -- --exact "${names[@]}"
+            else echo "$cohort: no test reaches this change"; fi
+          done
+
+      - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: env.LISTED == '1'
+        with:
+          node-version: 24
+
+      - uses: https://github.com/pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        if: env.LISTED == '1'
+        with:
+          package_json_file: web/package.json
+
+      - name: pnpm install
+        if: env.LISTED == '1'
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the CLI module (or fetch it, for a change whose crates are main's)
+        if: env.LISTED == '1'
+        run: node web/scripts/ensure-wasm.mjs
+
+      - name: svelte-check
+        if: env.LISTED == '1'
+        working-directory: web
+        run: pnpm run check
+
+      - name: Say the web tests were NOT RUN
+        if: ${{ failure() }}
+        run: |
+          echo "::warning::web tests NOT RUN: a step above failed — this run says nothing about the web"
+
+      # The entry's own list. A name with no file is red: the runner would
+      # drop it unseen.
+      - name: The branch's web tests
+        if: env.LISTED == '1'
+        working-directory: web
+        env:
+          DATUM_TEST_PR: "1"
+          DATUM_TEST_CONCURRENCY: 4
+        run: |
+          set -euo pipefail
+          [ -s "$RUNNER_TEMP/web.tests" ] || { echo "no web test is listed for this branch"; exit 0; }
+          while read -r t; do [ -f "$t" ] || { echo "::error::$t is listed in the permit file and does not exist"; exit 1; }; done < "$RUNNER_TEMP/web.tests"
+          pnpm exec playwright install --with-deps --only-shell chromium
+          DATUM_TEST_ONLY="$RUNNER_TEMP/web.tests" pnpm test

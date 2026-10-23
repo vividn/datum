@@ -1,0 +1,32 @@
+# The integration permit (da-44xpb). An integration branch carries one epic's
+# work under a lighter review and CI until the epic lands on staging whole
+# (AGENTS.md, «Integration branches»). Each [[branch]] below is one, and
+# adding an entry IS the permit: a change to .forgejo/ is vividn's to
+# approve, so no integration branch exists without his yes (vividn,
+# 2026-10-22: «it requires approval from me to establish a new integration
+# section»).
+#
+# ci.yml reads this file. A PR into a listed branch, and a push to one, run
+# its `integration` job, the light one, and not the full `ci` job; the full
+# job runs once, when the epic's PR into staging does. A name is under
+# `integration/`, since that is the push trigger ci.yml listens on.
+#
+#   name       the branch
+#   epic       the epic bead its work belongs to
+#   review     the default review level for its beads
+#   web_tests  the web test files the light job runs, `tests/<file>` each
+
+[[branch]]
+name = "integration/tutorial"
+epic = "da-uzyih"
+review = "light"
+# calls-pure and tree are repo-wide rules every lesson can break, and nothing
+# else on the epic's PRs runs them (da-uzyih.3).
+web_tests = [
+  "tests/calls-pure.test.mjs",
+  "tests/tree.test.mjs",
+  "tests/tutorial.test.mjs",
+  "tests/tutorial-occur.test.mjs",
+  "tests/tutorial-lamps.test.mjs",
+  "tests/tutorial-switch.test.mjs",
+]
