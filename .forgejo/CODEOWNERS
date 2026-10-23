@@ -1,0 +1,5 @@
+# Forgejo requests @vividn's review on any PR changing these paths. Each pattern is a
+# regular expression anchored ^...$, not a glob; the tokenizer eats one backslash,
+# so a literal dot is \\.
+\\.forgejo/.* @vividn
+\\.github/.* @vividn
