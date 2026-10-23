@@ -889,6 +889,17 @@ describe('what the bands take, and what they leave', () => {
 					(want) => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === want,
 					was + 20
 				);
+				// Every band drawn again at the new height, and the stack pinned
+				// back to today: each picture that lands grows its band and
+				// re-pins the stack, so a rest read before the last is no rest.
+				// On a loaded runner one landed as the swipe began, the stack
+				// went 300 to its new bottom, and the swipe's 300 brought it
+				// back to the stale rest (da-fgb1e).
+				await app.idle();
+				await page.waitForFunction(() => {
+					const el = document.querySelector('.stack');
+					return el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+				});
 				const band = await page.locator('.stack .band').last().boundingBox();
 				const line = await page.locator('.divider').boundingBox();
 				const [x, y] = [band.x + band.width / 2, line.y - 3];
