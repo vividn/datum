@@ -1286,7 +1286,8 @@ impl StatsPeriod {
 
 /// A flag that names an end of `stats`' window, in [`StatsArgs::window`]:
 /// the later flag wins, end by end (da-4va65). The values are the args'
-/// own fields; this is only which of them came last.
+/// own fields, and this is only which of them came last, but for
+/// `--all-time`, which has no field: its entry here is its value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatsWindowFlag {
     /// A period flag: both ends.

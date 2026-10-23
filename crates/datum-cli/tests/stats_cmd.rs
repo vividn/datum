@@ -883,6 +883,41 @@ fn last_week_is_counted_from_today_in_the_zone_of_now() {
     assert_eq!(dur(&r, "work"), 3600);
 }
 
+/// da-e0aij: a past day is resolved in the zones it was lived in, which the
+/// first read of zones, from four days before now, does not hold. 10-10
+/// began in Tokyo (+9), at 15:00Z on the 9th, and the move to Los Angeles
+/// (−7) came at 12:00Z, after its midnight there, so the day lasted 40
+/// hours: read in Los Angeles alone, it would begin at 07:00Z and last 24.
+/// It reads the all-fields table, whose zones reach no further back than
+/// its window (a field's periods line reads a year of them), and not
+/// through the cache, which cuts a whole day at midnights in zones of its
+/// own.
+#[test]
+fn a_past_day_begins_in_the_zone_it_began_in() {
+    let _g = freeze_time("2026-10-19T00:00:00Z");
+    let db = fresh_db();
+    seed_zoned(
+        &db,
+        "Asia/Tokyo",
+        &[
+            ("2026-10-09T14:00:00Z", "work"),
+            ("2026-10-09T16:00:00Z", "rest"),
+        ],
+    );
+    seed_zoned(
+        &db,
+        "America/Los_Angeles",
+        &[("2026-10-10T12:00:00Z", "rest")],
+    );
+    let mut args = StatsArgs {
+        no_cache: true,
+        ..StatsArgs::default()
+    };
+    args.time.date = Some("2026-10-10".to_string());
+    let r = compute_all_fields(&args, &db).unwrap();
+    assert_eq!(r.tracked_duration_seconds, 40 * 3600);
+}
+
 #[test]
 fn closed_periods_stop_where_the_open_ones_start() {
     let _g = freeze_time("2026-06-17T09:00:00Z"); // a Wednesday

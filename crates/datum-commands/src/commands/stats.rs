@@ -833,15 +833,14 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 /// host's (da-4tj7q): the date and the clock they name are the database's,
 /// so a host a day ahead of it does not count the day before the one named.
 ///
-/// The zones are read from a little before the earliest instant resolved
+/// The zones are read from [`ZONES_BEFORE`] the earliest instant resolved
 /// in them — the window's start, or `reach` before its end, which is where
 /// the periods line begins — and read again when the window turns out to
-/// begin before that (da-cwpr1), so `--today` reads days of history and
-/// not years. Two zones read one local time at most 27 hours apart, so a
-/// boundary two days past where the read began is the whole timeline's.
-/// That second read stops three days past the window's end, by the same
-/// margin, so a day in the past does not read on to now (da-l8240); the
-/// flags are composed in the zone of now the first read holds.
+/// begin within [`ZONES_TRUSTED`] of that (da-cwpr1), so `--today` reads
+/// days of history and not years. That second read stops [`ZONES_AFTER`]
+/// past the window's end, so a day in the past does not read on to now
+/// (da-l8240); the flags are composed in the zone of now the first read
+/// holds. What each margin covers is beside it.
 fn resolve_window(
     args: &StatsArgs,
     db: &Db,
@@ -851,7 +850,7 @@ fn resolve_window(
     let order = window_order(args);
     refuse_two_starts(args, &order)?;
 
-    let since = now - reach - Duration::days(4);
+    let since = now - reach - ZONES_BEFORE;
     let mut zones = window_zones(args, db, since, None)?;
     let here = zones.zone_at(now).clone();
     let window = |zones: &ZoneTimeline| fold_window(args, &order, zones, &here, now);
@@ -860,15 +859,47 @@ fn resolve_window(
         start.map_or(anchor, |s| s.min(anchor)) - reach
     };
     let mut bounds = window(&zones)?;
-    if earliest(bounds) < since + Duration::days(2) {
-        let until = bounds.1.checked_add_signed(Duration::days(3));
-        zones = window_zones(args, db, earliest(bounds) - Duration::days(4), until)?;
+    if earliest(bounds) < since + ZONES_TRUSTED {
+        let until = bounds.1.checked_add_signed(ZONES_AFTER);
+        zones = window_zones(args, db, earliest(bounds) - ZONES_BEFORE, until)?;
         bounds = window(&zones)?;
     }
     refuse_empty_window(bounds, &zones, &args.time, &here, now)?;
     let (start, end) = bounds;
     Ok((start, end, zones))
 }
+
+// What [`resolve_window`]'s zone margins cover. Zones read from `since` to
+// `until` resolve a wall clock exactly when the instant it denotes is at or
+// after `since` and a day and two hours or more before `until`: before `since`
+// they hold the zone in force there, and after `until` the one in force at
+// `until`, which `ZoneTimeline::resolve_local` tries first, so it may take
+// a reading past `until` that a later zone would have turned away. A day and
+// two hours is how far apart two zones read one wall clock (offsets run from
+// −12:00 to +14:00), so it is also the most a bound read in zones wrong about
+// where the person was is off by. The lookups a window makes lie between the
+// midnight opening its start's local day (the stats cache's first whole day),
+// at most 25 hours before the start, and its end.
+
+/// Where a read of zones begins, before the earliest instant the window
+/// resolves. The second read is not checked again, so it must cover a start
+/// the first read got wrong by a day and two hours, and the 25 hours before
+/// it: 51 hours, so three days would do. The first read starts as far back,
+/// so a window that begins within its excess over [`ZONES_TRUSTED`], two
+/// days, is read once: `--today` always.
+const ZONES_BEFORE: Duration = Duration::days(4);
+
+/// The first read's window is kept when it begins this far past where the
+/// read began. A start the first read got wrong was truly before that, so
+/// it read at most a day and two hours past it; one it got right has its
+/// midnight 25 hours before it at most. So this must be a day and two hours
+/// or more.
+const ZONES_TRUSTED: Duration = Duration::days(2);
+
+/// How far past the window's end the second read goes: the end the first
+/// read got wrong by up to a day and two hours, and the day and two hours
+/// past the true one a reading stays exact before `until`. That is 52 hours.
+const ZONES_AFTER: Duration = Duration::days(3);
 
 /// A window's `(start, end)`: `start = None` is unbounded below.
 type Bounds = (Option<DateTime<Utc>>, DateTime<Utc>);
