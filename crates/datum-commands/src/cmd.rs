@@ -1045,6 +1045,7 @@ mod tests {
             id_delimiter: None,
             keys: vec![],
             comment: Vec::new(),
+            comment_remainder: false,
             dry_run: false,
             all_or_nothing: false,
             output: Default::default(),

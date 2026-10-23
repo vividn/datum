@@ -38,6 +38,7 @@ LOGGING:
 MUTATE:
   edit     Open an entry in the configured editor
   update   Replace keys on an existing entry
+  comment  Add a comment to an existing entry
   merge    Merge values into an entry, collecting a key's into a list
   rekey    Rename an entry's data keys, in place
   retime   Move an entry's occur_time (alias: rt)
@@ -893,20 +894,21 @@ USAGE:
   datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]...
 
 ARGS:
-  <ID_OR_SLUG>            Several ids are joined with commas (`a1b2,c3d4`): a word after a space is a VALUE
+  <ID_OR_SLUG>             Several ids are joined with commas (`a1b2,c3d4`): a word after a space is a VALUE
 
 OPTIONS:
-      --strategy <S>      update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|append
-      --id <TEMPLATE>     Re-id the entry (a template, as on insert); keeps its hid
-      --id-delimiter <S>  Delimiter between empty segments
-  -k, --key <KV>          Extra key=value (repeatable)
-  -c, --comment <T>       Append a comment to data.comment (repeatable)
-      --dry-run           Show what would change
-      --all-or-nothing    Change nothing if any batched id fails
+      --strategy <S>       update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|append
+  -C, --comment-remainder  The words after the id → one appended comment
+      --id <TEMPLATE>      Re-id the entry (a template, as on insert); keeps its hid
+      --id-delimiter <S>   Delimiter between empty segments
+  -k, --key <KV>           Extra key=value (repeatable)
+  -c, --comment <T>        Append a comment to data.comment (repeatable)
+      --dry-run            Show what would change
+      --all-or-nothing     Change nothing if any batched id fails
 
 OUTPUT:
-      --show <MODE>       default|none|minimal|standard|format|all|json
-      --json              Shorthand for --show json
+      --show <MODE>        default|none|minimal|standard|format|all|json
+      --json               Shorthand for --show json
 ";
 
 #[test]
@@ -917,7 +919,7 @@ fn snapshot_update_help() {
 #[test]
 fn merge_and_rekey_share_update_options() {
     // All three share UPDATE_FLAGS; only the header + USAGE differ.
-    let options = "OPTIONS:\n      --strategy <S>      update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|append\n";
+    let options = "OPTIONS:\n      --strategy <S>       update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|append\n";
     assert!(
         command_help("merge").contains(options),
         "merge should render generated OPTIONS"
@@ -933,7 +935,7 @@ fn rekey_help_says_it_renames_data_keys_in_place() {
     let help = command_help("rekey");
     assert!(
         help.starts_with(
-            "datum rekey — rename an entry's data keys, in place\n\nUSAGE:\n  datum rekey <ID_OR_SLUG[,ID_OR_SLUG]...> <OLD=NEW>...\n\nARGS:\n  <OLD=NEW>               Move OLD's value to the key NEW. The id template is read again, so the slug follows: a template key renamed away empties its part of the id\n\nOPTIONS:\n"
+            "datum rekey — rename an entry's data keys, in place\n\nUSAGE:\n  datum rekey <ID_OR_SLUG[,ID_OR_SLUG]...> <OLD=NEW>...\n\nARGS:\n  <OLD=NEW>                Move OLD's value to the key NEW. The id template is read again, so the slug follows: a template key renamed away empties its part of the id\n\nOPTIONS:\n"
         ),
         "{help}"
     );
@@ -1589,4 +1591,14 @@ fn every_documented_flag_is_the_parsers() {
         refused.is_empty(),
         "documented, but the parser refuses: {refused:#?}"
     );
+}
+
+#[test]
+fn comment_help_names_the_update_it_stands_for() {
+    let help = command_help("comment");
+    assert!(
+        help.contains("shorthand for\n`datum update <id> --strategy append -C looks fine`"),
+        "{help}"
+    );
+    assert!(!help.contains("--strategy <S>"), "{help}");
 }

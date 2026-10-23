@@ -283,6 +283,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "edit" => Command::Edit(parse_edit_args(rest)?),
 
         "update" => Command::Update(parse_update_args(rest)?),
+        "comment" => Command::Update(parse_comment_args(rest)?),
         "merge" => Command::Merge(parse_update_args(rest)?),
         "rekey" => Command::Rekey(parse_update_args(rest)?),
 

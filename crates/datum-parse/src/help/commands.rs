@@ -63,6 +63,13 @@ const UPDATE_ARGS: &[ArgSpec] = &[ArgSpec {
     variadic: false,
     summary: "Several ids are joined with commas (`a1b2,c3d4`): a word after a space is a VALUE",
 }];
+const COMMENT_ARGS: &[ArgSpec] = &[ArgSpec {
+    name: "<ID_OR_SLUG>",
+    required: true,
+    variadic: false,
+    summary:
+        "Several ids are joined with commas (`a1b2,c3d4`): the words after a space are the comment",
+}];
 const REKEY_ARGS: &[ArgSpec] = &[ArgSpec {
     name: "<OLD=NEW>",
     required: true,
@@ -734,6 +741,16 @@ const UPDATE_FLAGS: &[FlagSpec] = &[
         left_override: None,
     },
     FlagSpec {
+        short: Some('C'),
+        long: "comment-remainder",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "The words after the id → one appended comment",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
         short: None,
         long: "id",
         takes_value: true,
@@ -794,6 +811,9 @@ const UPDATE_FLAGS: &[FlagSpec] = &[
         left_override: None,
     },
 ];
+
+/// `comment` is `update --strategy append -C`: every update flag but those two.
+const COMMENT_FLAGS: &[FlagSpec] = UPDATE_FLAGS.split_at(2).1;
 
 const COUNT_FLAGS: &[FlagSpec] = &[
     FlagSpec {
@@ -2374,7 +2394,30 @@ pub const COMMANDS: &[CommandSpec] = &[
         flags: UPDATE_FLAGS,
         shared_flags: None,
         examples: NO_EXAMPLES,
-        summary_col: 26,
+        summary_col: 27,
+        body_override: None,
+        display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
+    },
+    CommandSpec {
+        name: "comment",
+        aliases: &[],
+        category: Category::Mutate,
+        summary: "add a comment to an existing entry",
+        intro: "`datum comment <id> looks fine` is shorthand for\n\
+                `datum update <id> --strategy append -C looks fine`: the words are one\n\
+                comment, appended to the entry's data.comment, and the entry keeps its\n\
+                earlier version in its history. Any entry takes one, timed or not.\n\
+                \n\
+                `-c`/`-C` on a logging line is a remark made with the entry; `comment`\n\
+                is one made later about an entry that exists.\n",
+        long_description: None,
+        usage: &["datum comment <ID_OR_SLUG[,ID_OR_SLUG]...> <WORDS>..."],
+        args: COMMENT_ARGS,
+        flags: COMMENT_FLAGS,
+        shared_flags: None,
+        examples: NO_EXAMPLES,
+        summary_col: 27,
         body_override: None,
         display_input_name: false,
         subcommands: NO_SUBCOMMANDS,
@@ -2393,7 +2436,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         flags: UPDATE_FLAGS,
         shared_flags: None,
         examples: NO_EXAMPLES,
-        summary_col: 26,
+        summary_col: 27,
         body_override: None,
         display_input_name: false,
         subcommands: NO_SUBCOMMANDS,
@@ -2412,7 +2455,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         flags: UPDATE_FLAGS,
         shared_flags: None,
         examples: NO_EXAMPLES,
-        summary_col: 26,
+        summary_col: 27,
         body_override: None,
         display_input_name: false,
         subcommands: NO_SUBCOMMANDS,

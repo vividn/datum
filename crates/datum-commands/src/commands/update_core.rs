@@ -773,7 +773,9 @@ pub(crate) fn parse_update_payload(
         .reserve(injected_immediates.len() + positionals.len());
     data_args.data.extend(injected_immediates);
     data_args.data.extend(positionals);
-    data_args.remainder = Some(PRIMARY_VALUE_KEY.to_string());
+    // `-C`: the words after the id are one appended comment (da-7sc0u).
+    data_args.comment_remainder = args.comment_remainder;
+    data_args.remainder = (!args.comment_remainder).then(|| PRIMARY_VALUE_KEY.to_string());
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
@@ -884,6 +886,7 @@ mod tests {
             id_delimiter: None,
             keys: vec![],
             comment: Vec::new(),
+            comment_remainder: false,
             dry_run: false,
             all_or_nothing: false,
             output: Default::default(),

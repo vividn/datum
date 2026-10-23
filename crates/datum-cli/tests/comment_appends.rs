@@ -168,3 +168,69 @@ fn a_get_matcher_reads_one_comment_as_itself() {
         (true, true, true),
     );
 }
+
+/// `comment <hid> words…` is `update <hid> --strategy append -C words…`: the
+/// words are one comment, appended, on a timed entry or a timeless one, and
+/// each earlier version stays in the history (da-7sc0u).
+#[test]
+fn comment_appends_one_comment_to_an_existing_entry() {
+    let db = fresh_db();
+    run_cli(&["occur", "x"], &db).unwrap();
+    run_cli(&["note", "y", "a", "thought"], &db).unwrap();
+    for field in ["x", "y"] {
+        let hid = logged_entries(&db, field)[0].hid.as_str().to_string();
+        run_cli(&["comment", &hid, "looks", "fine"], &db).unwrap();
+        run_cli(&["comment", &hid, "a", "second"], &db).unwrap();
+    }
+    assert_eq!(comments(&db, "x"), [json!(["looks fine", "a second"])]);
+    assert_eq!(
+        comments(&db, "y"),
+        [json!(["a thought", "looks fine", "a second"])]
+    );
+
+    let e = &logged_entries(&db, "x")[0];
+    let at = |v| db.entry_at_version(e, v).unwrap().unwrap().data;
+    assert_eq!(
+        (at(1), at(2)),
+        (None, Some(json!({"comment": ["looks fine"]}))),
+        "each earlier version is in the history"
+    );
+
+    run_cli(
+        &[
+            "update",
+            e.hid.as_str(),
+            "--strategy",
+            "append",
+            "-C",
+            "same",
+            "thing",
+        ],
+        &db,
+    )
+    .unwrap();
+    assert_eq!(
+        comments(&db, "x"),
+        [json!(["looks fine", "a second", "same thing"])]
+    );
+}
+
+#[test]
+fn comment_refuses_an_unknown_hid_and_a_strategy() {
+    let db = fresh_db();
+    run_cli(&["occur", "x"], &db).unwrap();
+    let hid = logged_entries(&db, "x")[0].hid.as_str().to_string();
+    let err = |args: &[&str]| run_cli(args, &db).unwrap_err().to_string();
+    assert_eq!(
+        (
+            err(&["comment", "zzzzzz", "nope"]),
+            err(&["comment", &hid, "--strategy", "useNew", "nope"]),
+        ),
+        (
+            "Entry not found: zzzzzz".to_string(),
+            "Invalid argument: comment takes no --strategy: it is update --strategy append -C"
+                .to_string(),
+        )
+    );
+    assert_eq!(comments(&db, "x"), [Value::Null]);
+}

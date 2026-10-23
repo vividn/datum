@@ -11,6 +11,7 @@ pub(crate) struct UpdateParsing {
     id_delimiter: Option<String>,
     keys: Vec<String>,
     comment: Vec<String>,
+    comment_remainder: bool,
     dry_run: bool,
     all_or_nothing: bool,
 }
@@ -38,6 +39,10 @@ pub(crate) fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
     }));
     r.push(local_value(Some('c'), Some("comment"), |p, v| {
         p.comment.push(v.to_string());
+        Ok(())
+    }));
+    r.push(local_switch(Some('C'), Some("comment-remainder"), |p| {
+        p.comment_remainder = true;
         Ok(())
     }));
     r.push(local_switch(None, Some("dry-run"), |p| {
@@ -90,10 +95,25 @@ pub(crate) fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
         id_delimiter: composed.id_delimiter,
         keys: composed.keys,
         comment: composed.comment,
+        comment_remainder: composed.comment_remainder,
         dry_run: composed.dry_run,
         all_or_nothing: composed.all_or_nothing,
         output: composed.output,
     })
+}
+
+/// `comment <hid> words…`: `update <hid> --strategy append -C words…`,
+/// a remark made later about an existing entry (da-7sc0u).
+pub(crate) fn parse_comment_args(tail: &[&str]) -> Result<UpdateArgs> {
+    let mut args = parse_update_args(tail)?;
+    if args.strategy.is_some() {
+        return Err(ParseError::InvalidArg(
+            "comment takes no --strategy: it is update --strategy append -C".into(),
+        ));
+    }
+    args.strategy = Some(UpdateStrategyArg::Combine(crate::combine::Combine::APPEND));
+    args.comment_remainder = true;
+    Ok(args)
 }
 
 /// `rename OLD NEW [--dry-run]`.

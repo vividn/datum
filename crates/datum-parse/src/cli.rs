@@ -527,6 +527,9 @@ pub struct UpdateArgs {
     /// `-c` / `--comment`. Repeatable: a single flag yields a string, two
     /// or more yield an array — see [`LogArgs::comment`].
     pub comment: Vec<String>,
+    /// `-C` / `--comment-remainder`: the words after the id are one
+    /// appended comment.
+    pub comment_remainder: bool,
     pub dry_run: bool,
     /// `--all-or-nothing`: with comma-batched ids, change nothing if any
     /// one would fail (da-eqb30; was `--strict`).
