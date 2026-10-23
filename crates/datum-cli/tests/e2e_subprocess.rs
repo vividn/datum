@@ -306,6 +306,22 @@ fn subprocess_alias_set_builtin_name_warns_on_stderr() {
     );
 }
 
+/// `kit install` warns as `alias set` does for each alias it installs that
+/// a built-in shadows, and for no other (da-ny2p7).
+#[test]
+fn subprocess_kit_install_builtin_alias_warns_on_stderr() {
+    let env = Env::new();
+    let kit = "[kit]\nname = \"projects\"\n\n[[alias]]\nname = \"on\"\nexpands_to = \"switch project\"\n\n[[alias]]\nname = \"proj\"\nexpands_to = \"switch project\"\n";
+    let out = env.run_with_stdin(&["kit", "install", "-", "--yes"], kit);
+    assert_ok(&out, "kit install");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("warning: alias 'on' shadows a built-in subcommand"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("'proj'"), "{stderr}");
+}
+
 /// A state named after a command derives an alias the command takes:
 /// `setup` warns as `alias set` does, for `--states` and `--add-state`,
 /// and not for a state that is no command's name (da-kba2e).

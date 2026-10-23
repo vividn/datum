@@ -39,8 +39,8 @@ mod retired;
 mod spec;
 
 pub use alias::{
-    alias_effect, user_alias_to_save, Alias, AliasEffect, DerivedAlias, DerivedAliasKind,
-    SpecAliasCollision, SpecAliasIndex, SpecRegistry,
+    alias_effect, shadow_warning, user_alias_to_save, Alias, AliasEffect, DerivedAlias,
+    DerivedAliasKind, SpecAliasCollision, SpecAliasIndex, SpecRegistry,
 };
 pub use interpolation::{
     contains_template, fill_name_only, interpolate, interpolate_field, names_time,

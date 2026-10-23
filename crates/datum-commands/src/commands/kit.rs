@@ -34,7 +34,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use datum_core::db::{validate_command, Db};
-use datum_core::field_spec::{detect_anchor_cycles, format_cycle};
+use datum_core::field_spec::{detect_anchor_cycles, format_cycle, shadow_warning};
 use datum_core::kit::{
     validate_layout_entry, validate_widget_entry, FieldEntry, IndexEntry, KitMeta, KitToml,
 };
@@ -495,6 +495,9 @@ fn install_toml(
         println!("Installed {} alias(es):", aliases_installed.len());
         for a in &aliases_installed {
             println!("  + {a}{}", alias_notes.get(*a).map_or("", String::as_str));
+            if let Some(w) = shadow_warning(a) {
+                eprintln!("{w}");
+            }
         }
     }
     if !aliases_skipped.is_empty() {

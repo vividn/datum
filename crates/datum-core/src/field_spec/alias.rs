@@ -203,12 +203,17 @@ pub fn user_alias_to_save(
         expands_to,
         description: None,
     };
-    let warning = datum_parse::alias::KNOWN_SUBCOMMANDS
+    Ok((alias, shadow_warning(name)))
+}
+
+/// The warning for an alias a built-in subcommand shadows, which `alias set`
+/// and `kit install` both print (da-ny2p7).
+pub fn shadow_warning(name: &str) -> Option<String> {
+    datum_parse::alias::KNOWN_SUBCOMMANDS
         .contains(&name)
         .then(|| format!(
             "warning: alias '{name}' shadows a built-in subcommand and will not fire when a verb is expected"
-        ));
-    Ok((alias, warning))
+        ))
 }
 
 /// Decide `sub` against the alias rows (`user`, in name order) and the
