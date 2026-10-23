@@ -243,7 +243,8 @@ Positional `field` + `-F/--fieldless` (suppresses the positional).
   `skipKey` it served. The positional `field` is `LogArgs::field_or_verb`;
   the swap pre-pass makes `<field> <verb>` work.
 - **`-F` is reused** as the compound-field slot, `-F/--field-key KEY`:
-  a `-k` slot whose value is also appended to the field, `__`-joined.
+  a `-k` slot whose value is appended to the field, `__`-joined, and
+  builds the name only: it is not stored (da-vk747).
 
 ### `outputArgs.ts` (37 LOC)
 

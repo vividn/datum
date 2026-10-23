@@ -43,7 +43,7 @@ pub use alias::{
     DerivedAliasKind, SpecAliasCollision, SpecAliasIndex, SpecRegistry,
 };
 pub use interpolation::{
-    contains_template, fill_name_only, interpolate, interpolate_field, names_time,
+    contains_template, interpolate, interpolate_field, names_time, refuse_name_only_marker,
     strip_field_prefix, unfilled, InterpolationContext, DEFAULT_ID_DELIMITER,
 };
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};

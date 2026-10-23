@@ -16,7 +16,7 @@ use datum_core::{
     time::{parse_duration, resolve_timezone, DatumTime, TimeCtx, Zone},
 };
 use datum_parse::input::TimeArgs;
-use datum_parse::spec_keys::SpecKeyWords;
+use datum_parse::spec_keys::{parse_key_decl, KeyKind, SpecKeyWords};
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -173,6 +173,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         value,
         mut extra_data,
         command,
+        field_values,
     } = parsed;
 
     // da-5ns.3: route reserved column-bound keys (`state=`, `dur=`,
@@ -233,7 +234,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `reserved.field`; `block` keeps `field_or_verb`. `id` is untouched
     // here — it stays on the insert-only slug-promotion path in
     // `parse_log_args` so it can defer to an explicit `-K` slug slot.
-    let field = compound_field(reserved.field.take().unwrap_or(field), &args.field_keys)?;
+    let field = compound_field(
+        reserved.field.take().unwrap_or(field),
+        &args.field_keys,
+        &field_values,
+    )?;
 
     // da-5ns.3 strict positional gate (the timeless Add/Note family): the
     // v=20 model has no implicit `value` column, so a bare unkeyed positional
@@ -686,22 +691,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `field_structure` on every mutation, so a later `dm update
     // <hid> srcLang=es` cascades into both `field` and `slug`.
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
-    // da-n1rcs: a `%-key%` fills the name only — its key leaves the data,
-    // and the template keeps its value as text.
     if field_spec::contains_template(&entry.field) {
+        let template = entry.field.clone();
         let ctx = InterpolationContext::from_entry(&entry);
-        let field = field_spec::interpolate_field(&entry.field, &ctx, &delim)?;
-        let (template, name_only) = field_spec::fill_name_only(&entry.field, &ctx);
-        entry.field = field;
-        entry.field_structure = template;
-        if let Some(JsonValue::Object(data)) = entry.data.as_mut() {
-            for key in &name_only {
-                data.remove(key);
-            }
-            if data.is_empty() && !name_only.is_empty() {
-                entry.data = None;
-            }
-        }
+        entry.field = field_spec::interpolate_field(&template, &ctx, &delim)?;
+        entry.field_structure = Some(template);
     }
     datum_core::slug::validate_new_field_name(&entry.field)?;
 
@@ -733,6 +727,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             .collect::<Vec<_>>()
             .join("__")
     } else if let Some(tmpl) = args.id.clone() {
+        field_spec::refuse_name_only_marker(&tmpl, None)?;
         tmpl
     } else if let Some(tmpl) = db.load_spec(&entry.field)?.and_then(|s| s.id_template) {
         tmpl
@@ -1030,6 +1025,9 @@ pub(crate) struct ParsedLogArgs {
     /// The command a trailing verb changed the line to (`start sleep end`
     /// is `end`), which [`change_command`] makes the action.
     pub(crate) command: Option<Action>,
+    /// Each name-only `-F` key and the value it took, if any (da-vk747):
+    /// they build the field's name and are not in `extra_data`.
+    pub(crate) field_values: Vec<(String, Option<String>)>,
 }
 
 /// Sentinel remainder-bucket key. Holds positionals that don't fill a
@@ -1279,6 +1277,26 @@ pub(crate) fn parse_log_args(
         datum_data.remove(PRIMARY_VALUE_KEY)
     };
 
+    // da-vk747: an `-F key`'s value names the field and nothing else, so it
+    // leaves the data where the slot hands it over — unless a `-k`/`-K` of
+    // its name keeps it, the field then a template re-derived from the key.
+    let kept: Vec<&str> = args
+        .keys
+        .iter()
+        .chain(&args.slug_keys)
+        .map(|k| parse_key_decl(k).0)
+        .collect();
+    let field_values = args
+        .field_keys
+        .iter()
+        .map(|k| parse_key_decl(k).0)
+        .filter(|k| !kept.contains(k))
+        .map(|k| {
+            let v = datum_value_to_slug_string(datum_data.remove(k).as_ref());
+            (k.to_string(), (!v.is_empty()).then_some(v))
+        })
+        .collect();
+
     let extra_data = if datum_data.is_empty() {
         None
     } else {
@@ -1290,6 +1308,7 @@ pub(crate) fn parse_log_args(
         value,
         extra_data,
         command,
+        field_values,
     })
 }
 
@@ -1459,24 +1478,30 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     Ok(())
 }
 
-/// da-0csuh: each `-F key` appends `__%key%` to the field — `%?key%` for an
-/// optional `key=`, so an absent value leaves the field as it was. The
-/// result is an ordinary field template: the key stays in the data, and
-/// `update` re-derives field and slug from it.
-fn compound_field(field: String, field_keys: &[String]) -> Result<String> {
+/// da-0csuh: each `-F key` appends `__<value>` to the field, and nothing
+/// when an optional `key=` took none (da-vk747: `values`, from
+/// [`parse_log_args`]). A key a `-k` keeps appends `__%key%` (`%?key%` when
+/// optional): the field is then a template, re-derived from the key.
+pub(crate) fn compound_field(
+    field: String,
+    field_keys: &[String],
+    values: &[(String, Option<String>)],
+) -> Result<String> {
     if field_keys.is_empty() {
         return Ok(field);
     }
     if field.is_empty() {
         anyhow::bail!("-F appends to a field: name one (e.g. `issue -F issue_id`)");
     }
-    Ok(field_keys
-        .iter()
-        .fold(field, |acc, spec| match spec.split_once('=') {
-            Some((name, "")) => format!("{acc}__%?{name}%"),
-            Some((name, _)) => format!("{acc}__%{name}%"),
-            None => format!("{acc}__%{spec}%"),
-        }))
+    Ok(field_keys.iter().fold(field, |acc, spec| {
+        let (name, kind) = parse_key_decl(spec);
+        match values.iter().find(|(n, _)| n == name) {
+            Some((_, Some(v))) => format!("{acc}__{v}"),
+            Some((_, None)) => acc,
+            None if matches!(kind, KeyKind::Optional) => format!("{acc}__%?{name}%"),
+            None => format!("{acc}__%{name}%"),
+        }
+    }))
 }
 
 /// da-9s98k: a field's declared keys join the line as its slots — the

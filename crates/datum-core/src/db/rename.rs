@@ -35,7 +35,7 @@ impl Db {
     /// Rename `old` to `new`; with `dry_run`, say what would move.
     /// Refuses a `new` that holds any row or a spec (no silent merge), a
     /// meta field, a field template, and a field its entries derive from a
-    /// template (`issue -F id`), which re-deriving would undo.
+    /// template (`issue__%id%`), which re-deriving would undo.
     pub fn rename_field(&self, old: &str, new: &str, dry_run: bool) -> Result<FieldRenamed> {
         if old == new {
             return Err(DatumError::Other(format!("`{old}` is already called that")));

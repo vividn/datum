@@ -40,9 +40,10 @@ use serde_json::Value as JsonValue;
 use crate::args::{Command, ReparseArgs};
 use crate::commands::helpers::build_resolver_from_chain;
 use crate::commands::log_core::{
-    bind_spec_words, build_time_from_flags, change_command, datum_value_to_slug_string,
-    expand_array_states, extract_reserved_columns, lift_time_keys, parse_log_args, positional_id,
-    prepare_log_args, take_positional_id, validate_switch_state_token, LiftedTimes,
+    bind_spec_words, build_time_from_flags, change_command, compound_field,
+    datum_value_to_slug_string, expand_array_states, extract_reserved_columns, lift_time_keys,
+    parse_log_args, positional_id, prepare_log_args, take_positional_id,
+    validate_switch_state_token, LiftedTimes,
 };
 
 /// Parser-derivable Entry shape — what the parser alone determines from
@@ -269,8 +270,12 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
 
     Ok(Some(ReparsedShape {
         // The flex-field verbs land the field in `reserved.field`, as
-        // `log_entry` reads it (da-5t94).
-        field: reserved.field.unwrap_or(parsed.field),
+        // `log_entry` reads it (da-5t94), and an `-F` value builds on it.
+        field: compound_field(
+            reserved.field.unwrap_or(parsed.field),
+            &log_args.field_keys,
+            &parsed.field_values,
+        )?,
         state,
         dur,
         // The first row of a field carries its declaration as a trailing

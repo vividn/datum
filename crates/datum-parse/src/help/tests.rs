@@ -518,14 +518,8 @@ fn alias_help_documents_f_trichotomy() {
     assert!(s.contains("-F key         required"));
     assert!(s.contains("-F key=        optional"));
     assert!(s.contains("-F key=val     defaulted"));
-    assert!(s.contains("appended to the field with `__`"));
-}
-
-#[test]
-fn alias_help_documents_name_only_keys() {
-    let s = command_help("alias");
-    assert!(s.contains("NAME-ONLY KEYS (%-key%)"));
-    assert!(s.contains("leaves\n  `key` out of the data"));
+    assert!(s.contains("appended to the field\n  with `__` and builds its name only"));
+    assert!(s.contains("`%-key%`, which did\n  this in a field template, is retired"));
 }
 
 #[test]

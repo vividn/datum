@@ -190,6 +190,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             .context("--color")?;
     }
     if let Some(t) = &args.id_template {
+        datum_core::field_spec::refuse_name_only_marker(t, None)?;
         spec.id_template = Some(t.clone());
     }
     if let Some(d) = &args.description {

@@ -809,20 +809,14 @@ pub(crate) fn parse_update_payload(
         }
     }
 
-    let mut extra_data = if datum_data.is_empty() {
+    let extra_data = if datum_data.is_empty() {
         None
     } else {
         Some(JsonValue::Object(datum_data))
     };
-    let (resolved_id, name_only) =
-        fill_entry_template(&resolved_id, extra_data.as_ref(), value.as_ref())?;
-    if let Some(JsonValue::Object(data)) = extra_data.as_mut() {
-        for key in &name_only {
-            data.remove(key);
-        }
-        if data.is_empty() {
-            extra_data = None;
-        }
+    let resolved_id = fill_entry_template(&resolved_id, extra_data.as_ref(), value.as_ref())?;
+    if let Some(id) = &args.id {
+        datum_core::field_spec::refuse_name_only_marker(id, None)?;
     }
     Ok(UpdatePayload {
         pattern: resolved_id,
@@ -835,18 +829,20 @@ pub(crate) fn parse_update_payload(
 /// da-61cne: the entry argument's `%key%` placeholders filled from the
 /// payload, as a log fills its field's — so an alias's `update
 /// issue__%issue_id%:doc -k issue_id` names the entry its positional fills.
-/// A plain `%key%` with no value refuses by name; `%?key%` may be empty.
-/// The keys of its `%-key%`s come back too: they fill the name only, and the
-/// payload stores them no longer (da-n1rcs).
+/// A plain `%key%` with no value refuses by name; `%?key%` may be empty, and
+/// a retired `%-key%` is refused (da-vk747).
 fn fill_entry_template(
     pattern: &str,
     data: Option<&JsonValue>,
     state: Option<&JsonValue>,
-) -> Result<(String, Vec<String>)> {
-    use datum_core::field_spec::{contains_template, fill_name_only, interpolate, unfilled};
+) -> Result<String> {
+    use datum_core::field_spec::{
+        contains_template, interpolate, refuse_name_only_marker, unfilled,
+    };
     if !contains_template(pattern) {
-        return Ok((pattern.to_string(), Vec::new()));
+        return Ok(pattern.to_string());
     }
+    refuse_name_only_marker(pattern, None)?;
     let ctx = datum_core::field_spec::InterpolationContext {
         field: "",
         extra_data: data,
@@ -864,10 +860,7 @@ fn fill_entry_template(
     if !empty.is_empty() {
         anyhow::bail!("{pattern}: {} has no value", empty.join(", "));
     }
-    Ok((
-        interpolate(pattern, &ctx, ""),
-        fill_name_only(pattern, &ctx).1,
-    ))
+    Ok(interpolate(pattern, &ctx, ""))
 }
 
 #[cfg(test)]

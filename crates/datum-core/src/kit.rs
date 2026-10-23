@@ -665,6 +665,9 @@ impl FieldEntry {
         let mut spec = FieldSpec::new(&self.name, action);
         spec.description = self.description;
         spec.subfields = self.subfields.into_iter().collect();
+        if let Some(t) = &self.id_template {
+            crate::field_spec::refuse_name_only_marker(t, None)?;
+        }
         spec.id_template = self.id_template;
         spec.state_lookup_field = self.state_lookup_field;
         spec.only_listed_keys = self.only_listed_keys;

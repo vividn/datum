@@ -17,10 +17,10 @@
 //! since that lands the entry in another field; the `?` is how a field
 //! template says the key may be absent.
 //!
-//! A leading `-` (`%-key%`, `%-?key%`) in a FIELD template fills the name
-//! only ([`fill_name_only`], da-n1rcs): the key leaves the data, its value
-//! already being in the field's name. In an id template it is read and
-//! ignored: `%-key%` renders as `%key%` does.
+//! A leading `-` (`%-key%`, `%-?key%`) filled a field's name only
+//! (da-n1rcs). It is retired (da-vk747): a template given or declared with
+//! one is refused ([`refuse_name_only_marker`]), and one already stored reads
+//! as `%key%` does, so no name or slug moves.
 
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
@@ -162,6 +162,7 @@ pub fn interpolate_field(
     ctx: &InterpolationContext,
     delimiter: &str,
 ) -> Result<String> {
+    refuse_name_only_marker(template, Some("-F"))?;
     let empty = unfilled(template, ctx);
     if !empty.is_empty() {
         return Err(DatumError::Other(format!(
@@ -174,27 +175,29 @@ pub fn interpolate_field(
     Ok(interpolate(template, ctx, delimiter))
 }
 
-/// da-n1rcs: `template` with each `%-key%` its value as literal text, and
-/// those keys, which the entry is to store no longer: the name holds them.
-/// The template is `None` once no placeholder is left in it, the field
-/// then being a plain name that no `update` re-derives.
-pub fn fill_name_only(template: &str, ctx: &InterpolationContext) -> (Option<String>, Vec<String>) {
-    let escape = |s: &str| s.replace('%', "\\%");
-    let (mut out, mut keys) = (String::new(), Vec::new());
-    for (i, part) in split_raw_and_fields(template).iter().enumerate() {
-        if i % 2 == 0 {
-            out.push_str(&escape(part));
-        } else if markers(part).contains('-') {
-            out.push_str(&escape(&lookup_field(part, ctx)));
-            keys.push(canonical_key(part).to_string());
-        } else {
-            out.push_str(&format!("%{part}%"));
-        }
-    }
-    (contains_template(&out).then_some(out), keys)
+/// A template's `%-key%`, retired (da-vk747), refused by name. `flag` is
+/// the line's way to a name part from a value (`-F`); with none, a plain
+/// `%key%` is.
+pub fn refuse_name_only_marker(template: &str, flag: Option<&str>) -> Result<()> {
+    let Some(k) = split_raw_and_fields(template)
+        .into_iter()
+        .skip(1)
+        .step_by(2)
+        .find(|k| markers(k).contains('-'))
+    else {
+        return Ok(());
+    };
+    let key = canonical_key(&k);
+    let instead = match flag {
+        Some(f) => format!("A name part from a value is `{f} {key}`, which stores no {key}."),
+        None => format!("Write %{key}%."),
+    };
+    Err(DatumError::Other(format!(
+        "'{template}': %{k}% is retired. {instead}"
+    )))
 }
 
-/// A placeholder's leading markers: `?` optional, `-` name only.
+/// A placeholder's leading markers: `?` optional, `-` the retired name only.
 fn markers(key: &str) -> &str {
     &key[..key.len() - key.trim_start_matches(['?', '-']).len()]
 }
@@ -495,6 +498,24 @@ mod tests {
         let got = interpolate("%hid%:%uid%:%hid:8%:%hid:99%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "a1b2c3d4e5f6:a1b2c:a1b2c3d4:a1b2c3d4e5f6");
         assert_eq!(interpolate("x__%hid:3%", &ctx, "__"), "x");
+    }
+
+    /// da-vk747: a stored `%-key%` reads as `%key%`; given, it is refused.
+    #[test]
+    fn a_retired_name_only_marker_reads_as_plain_and_is_refused() {
+        let extra = serde_json::json!({"a": "q"});
+        let ctx = occur_ctx("f", Some(&extra), "a1b2c3d4e5f6");
+        assert_eq!(interpolate("%-a%:%-?b%", &ctx, ":"), "q");
+        let err = refuse_name_only_marker("x__%-?a%", None).unwrap_err();
+        assert!(
+            err.to_string().ends_with("%-?a% is retired. Write %a%."),
+            "{err}"
+        );
+        let err = interpolate_field("x__%-a%", &ctx, "__").unwrap_err();
+        assert!(
+            err.to_string().contains("`-F a`, which stores no a"),
+            "{err}"
+        );
     }
 
     /// da-0ibow: a field template refuses a plain placeholder that expands

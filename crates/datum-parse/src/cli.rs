@@ -301,9 +301,9 @@ pub struct LogArgs {
     pub undo: bool,
     pub keys: Vec<String>,
     pub slug_keys: Vec<String>,
-    /// `-F` / `--field-key` (da-0csuh): a `-k` slot whose value is also
-    /// appended to the field, `__`-joined — `issue -F issue_id` builds the
-    /// field template `issue__%issue_id%`. Same K / K= / K=val forms.
+    /// `-F` / `--field-key` (da-0csuh): a `-k` slot whose value is
+    /// appended to the field, `__`-joined, and not stored (da-vk747) —
+    /// `issue -F issue_id ex7` logs `issue__ex7`. Same K / K= / K=val forms.
     pub field_keys: Vec<String>,
     /// `-c` / `--comment`. Repeatable; each flag APPENDS one string to the
     /// `data.comment` array, which is an array however many there are

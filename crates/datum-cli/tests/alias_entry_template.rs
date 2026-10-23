@@ -1,8 +1,7 @@
 //! An alias fills its templates in `update` / `merge`'s entry argument, as a
 //! log fills its field (da-61cne): `update issue__%issue_id%:doc -k issue_id`
-//! names the doc its positional fills (`%-issue_id%` without storing the key),
-//! and a template left unfilled is refused by name rather than read as an
-//! entry that is not there.
+//! names the doc its positional fills, and a template left unfilled is refused
+//! by name rather than read as an entry that is not there.
 
 use std::process::{Command, Output};
 
@@ -44,7 +43,7 @@ fn update_and_merge_aliases_fill_the_entry_template() {
             "alias",
             "set",
             "ititle",
-            "update issue__%-issue_id%:doc -k issue_id -k title",
+            "update issue__%issue_id%:doc -k issue_id -k title",
         ],
     );
     ok(
@@ -57,10 +56,9 @@ fn update_and_merge_aliases_fill_the_entry_template() {
         ],
     );
 
-    // `%-issue_id%` fills the name only (da-n1rcs): the doc gains no key.
     ok(&tmp, &["ititle", "abcd1234", "second"]);
-    assert!(!ok(&tmp, &["get", doc]).contains("issue_id"));
-    // A plain `%issue_id%` keeps it, as a log's field template does.
+    // A plain `%issue_id%` keeps the key, as a log's field template does.
+    assert!(ok(&tmp, &["get", doc]).contains(r#"issue_id: "abcd1234""#));
     ok(&tmp, &["iblock", "abcd1234", "x"]);
     ok(&tmp, &["iblock", "abcd1234", "y"]);
 
@@ -69,7 +67,7 @@ fn update_and_merge_aliases_fill_the_entry_template() {
     assert!(got.contains(r#"blocked_by: ["x","y"]"#), "{got}");
     let history = ok(&tmp, &["history", doc]);
     assert!(history.contains("title=first"), "{history}");
-    assert!(history.contains(r#"set data.title="second""#), "{history}");
+    assert!(history.contains(r#"data.title="second""#), "{history}");
 
     ok(
         &tmp,
@@ -87,4 +85,12 @@ fn update_and_merge_aliases_fill_the_entry_template() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("%issue_id% has no value"), "{err}");
     assert!(ok(&tmp, &["get", doc]).contains(r#"title: "second""#));
+
+    // `%-key%` is retired (da-vk747).
+    let out = datum(&tmp, &["update", "issue__%-issue_id%:doc", "issue_id=x"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("%-issue_id% is retired. Write %issue_id%."),
+        "{err}"
+    );
 }
