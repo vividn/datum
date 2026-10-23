@@ -52,7 +52,9 @@ on:
   # red (ct-bzat). Such a run is a push run in everything below: the staging
   # runner, the whole web suite, and evidence main inherits. It takes NO
   # inputs, and must not gain one: a green dispatched run promotes main
-  # because nothing could have told it to skip a step.
+  # because nothing could have told it to skip a step. The integration nightly
+  # dispatches it at each integration branch's tip (da-4g6zm), the full job on
+  # ubuntu-latest; promotion reads staging's runs alone, so it promotes nothing.
   workflow_dispatch:
 
 # One run per ref at a time. On a PR ref a newer push cancels the run of the
@@ -71,8 +73,12 @@ on:
 # green; only the tip is verified. An older commit is verified on demand,
 # when main goes red, by bisecting through `ci/**` branches (see `on.push`) —
 # unless staging passed its tree, which makes the red a flake (da-kc0k7).
+#
+# A dispatched run on an integration branch, the integration nightly's
+# (da-4g6zm), has a group of its own: a push to the branch and the nightly
+# never cancel each other's run.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'integration/') && '-nightly' || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/staging' }}
 
 env:

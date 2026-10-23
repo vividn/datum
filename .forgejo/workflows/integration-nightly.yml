@@ -1,0 +1,59 @@
+# The integration nightly (da-4g6zm), the integration branches' third CI
+# layer: each night the full CI runs on the tip of every branch
+# .forgejo/integration-branches.toml lists, so a branch's drift shows long
+# before its epic's PR into staging. It holds nothing and files nothing:
+# vremya's beat reads the runs and files a red as a bead under the branch's
+# epic. «Holds nothing» rests on the kiez leaving cantown's
+# `merge_queue.target_ci_workflow` unset: set to ci.yml, the alchemiter would
+# read a red nightly as its branch's verdict and hold every PR into it.
+#
+# It copies no step of the full job. It dispatches ci.yml at each branch, so
+# each branch gets a run of its own, at its tip, of the `ci` job exactly as
+# it stands on that branch: a dispatched run is a push run there (the whole
+# web suite, no PR scoping), and the `integration` job skips it. Forgejo
+# 16.0.6 titles a dispatched run with the workflow's `name`, «CI», and has no
+# `run-name` (services/actions/workflows.go, Dispatch). So a run names its
+# branch and tip by its ref and commit, which the run list shows beside the
+# title (`prettyref`, `commit_sha` in the API). This run's log names every
+# run it started.
+name: Integration nightly
+
+on:
+  schedule:
+    # 05:20 UTC, the shared runner's quietest stretch. Over 10-16..10-23 it
+    # was busy 7-9 min an hour from 05:00 to 07:00 UTC and 19-53 every other
+    # hour. testmap.yml starts at 04:40 and 06:40 and takes ~22-40 min, and a
+    # full run takes 33-42 min (staging's runs that week), so one branch's
+    # run fits between the two. Each further branch queues behind it on the
+    # one lane, into hours no PR is waiting on.
+    - cron: "20 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    name: Run the full CI on each listed branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # A branch that cannot be dispatched (deleted, misspelt) turns this run
+      # red, and the others still run.
+      - name: Dispatch ci.yml at each listed branch's tip
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -uo pipefail
+          api="${SERVER%/}/api/v1/repos/${{ github.repository }}"
+          call() { printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - "$@"; }
+          branches=$(python3 -c 'import tomllib; [print(b["name"]) for b in tomllib.load(open(".forgejo/integration-branches.toml", "rb")).get("branch", [])]') || exit 1
+          failed=0
+          for b in $branches; do
+            id=$(call -X POST -H 'Content-Type: application/json' --data "{\"ref\":\"$b\",\"return_run_info\":true}" \
+              "$api/actions/workflows/ci.yml/dispatches" | node -p 'JSON.parse(require("fs").readFileSync(0)).id') ||
+              { echo "::error::could not dispatch ci.yml on $b"; failed=1; continue; }
+            call "$api/actions/runs/$id" | node -e 'const r = JSON.parse(require("fs").readFileSync(0)); console.log(`${process.argv[1]} at ${r.commit_sha}: ${r.html_url}`)' "$b" ||
+              echo "$b: run $id"
+          done
+          exit $failed
