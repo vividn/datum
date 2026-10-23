@@ -178,8 +178,8 @@ pub struct AliasStep {
 /// 1. Alias expansion (DB-backed via [`Resolver`]).
 /// 2. Trailing regions: split at `,` and consume `,,` (spec v2.1, see
 ///    `regions::apply_regions`).
-/// 3. Switch promote: `switch <field> end|stop|start` → `end|stop|start <field>`.
-/// 4. Stacked short-flag expansion: `-yy` → `-y -y`.
+/// 3. Stacked short-flag expansion: `-yy` → `-y -y`.
+/// 4. Switch promote: `switch <field> end|stop|start` → `end|stop|start <field>`.
 ///
 /// Returns the expanded argv plus the list of alias steps that were
 /// applied (for provenance stamping onto the entry). Returns
@@ -209,8 +209,8 @@ pub fn expand_argv(
         }
         argv.extend(side);
     }
-    let argv = apply_switch_promote_override(argv);
     let argv = expand_stacked_flags(argv);
+    let argv = apply_switch_promote_override(argv);
     Ok((argv, chain))
 }
 
@@ -219,17 +219,41 @@ pub fn expand_argv(
 /// `end`/`stop`/`start`, `off` as `end` and `on` as `start`) and `<field>` is not itself a known subcommand.
 /// Without this rewrite, the switch parser would seal `end`/`stop`/`start`
 /// as a literal state string rather than routing through the verb body.
-pub fn apply_switch_promote_override(argv: Vec<String>) -> Vec<String> {
-    if argv.len() < 4 {
+///
+/// The field and the state are the first two positionals, wherever a flag
+/// sits: an alias's region puts the typed flags ahead of the typed state
+/// (`proj off -t -6`, `proj` = `switch project`, reaches here as `switch
+/// project -t -6 off`), and they stored the text «off» (da-47ge3). A `k=v`
+/// is data, as the regions read it. `-I` asks for the words as a string
+/// state, so it promotes nothing.
+pub fn apply_switch_promote_override(mut argv: Vec<String>) -> Vec<String> {
+    if argv.get(1).map(String::as_str) != Some("switch") {
         return argv;
     }
-    if argv[1] != "switch" {
+    if argv.iter().any(|t| t == "-I" || t == "--string-state") {
         return argv;
     }
-    if KNOWN_SUBCOMMANDS.contains(&argv[2].as_str()) {
+    let mut positionals = Vec::new();
+    let mut i = 2;
+    let mut end_of_flags = false;
+    while i < argv.len() && positionals.len() < 2 {
+        let tok = &argv[i];
+        if tok == "--" && !end_of_flags {
+            end_of_flags = true;
+        } else if !end_of_flags && super::regions::is_flag(tok) {
+            i += usize::from(super::regions::is_value_flag(tok));
+        } else if !tok.contains('=') {
+            positionals.push(i);
+        }
+        i += 1;
+    }
+    let [field, state] = positionals[..] else {
+        return argv;
+    };
+    if KNOWN_SUBCOMMANDS.contains(&argv[field].as_str()) {
         return argv;
     }
-    if !SWITCH_PROMOTE_VERBS.contains(&argv[3].as_str()) {
+    if !SWITCH_PROMOTE_VERBS.contains(&argv[state].as_str()) {
         return argv;
     }
     // da-b4k5: `switch <field> end <D> , <Y>` (post-collapse) is a
@@ -242,22 +266,13 @@ pub fn apply_switch_promote_override(argv: Vec<String>) -> Vec<String> {
     if argv.iter().skip(2).any(|t| t == MULTI_COMMA) {
         return argv;
     }
-    let mut iter = argv.into_iter();
-    let bin = iter.next().expect("argv[0]");
-    let _switch = iter.next();
-    let field = iter.next().expect("argv[2]");
-    let verb = iter.next().expect("argv[3]");
-    let verb = match verb.as_str() {
+    let verb = argv.remove(state);
+    argv[1] = match verb.as_str() {
         "off" => "end".to_string(),
         "on" => "start".to_string(),
         _ => verb,
     };
-    let mut out = Vec::with_capacity(iter.size_hint().0 + 3);
-    out.push(bin);
-    out.push(verb);
-    out.push(field);
-    out.extend(iter);
-    out
+    argv
 }
 
 /// Resolve `argv[1]` as an alias from the resolver, recording each
@@ -1441,6 +1456,45 @@ mod tests {
         aliases.insert("lit".to_string(), alias("switch $1 on"));
         let (argv, _) = expand_argv(v(&["datum", "lit", "light"]), &MapResolver(&aliases)).unwrap();
         assert_eq!(argv, v(&["datum", "start", "light"]));
+    }
+
+    /// da-47ge3: the state is the second positional wherever a flag sits,
+    /// as an alias's region puts a typed flag ahead of the typed state;
+    /// `-I` keeps the word.
+    #[test]
+    fn switch_promote_finds_the_state_past_flags() {
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("proj".to_string(), alias("switch project"));
+        let resolver = MapResolver(&aliases);
+        for (words, want) in [
+            (
+                &["datum", "proj", "off", "-t", "-6"][..],
+                &["datum", "end", "project", "-t", "-6"][..],
+            ),
+            (
+                &["datum", "proj", "on", "--dry-run"],
+                &["datum", "start", "project", "--dry-run"],
+            ),
+            (
+                &["datum", "switch", "project", "-t", "-6", "k=v", "off"],
+                &["datum", "end", "project", "-t", "-6", "k=v"],
+            ),
+            (
+                &["datum", "switch", "project", "-yt", "3", "on"],
+                &["datum", "start", "project", "-y", "-t", "3"],
+            ),
+            (
+                &["datum", "proj", "-I", "off"],
+                &["datum", "switch", "project", "-I", "off"],
+            ),
+            (
+                &["datum", "switch", "project", "-t", "on"],
+                &["datum", "switch", "project", "-t", "on"],
+            ),
+        ] {
+            let (argv, _) = expand_argv(v(words), &resolver).unwrap();
+            assert_eq!(argv, v(want), "{words:?}");
+        }
     }
 
     #[test]

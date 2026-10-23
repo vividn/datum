@@ -1109,3 +1109,29 @@ fn switch_on_is_true_and_the_literal_is_quoted_str_marked_or_string_state() {
     assert_eq!(e.state, Some(json!("x")));
     assert_eq!(e.following_state, Some(json!(true)));
 }
+
+/// da-47ge3: an alias for `switch F` followed by a typed `off` or `on`
+/// stores `false` or `true`, with a flag typed after it (which the alias's
+/// region puts ahead of the state) or before the state on a typed switch;
+/// `-I` keeps the word.
+#[test]
+fn switch_off_and_on_after_an_alias_for_switch_f_store_false_and_true() {
+    for (words, want) in [
+        (&["proj", "off", "-t=-1"][..], json!(false)),
+        (&["proj", "on", "-t=-1"], json!(true)),
+        (&["proj", "-t=-1", "off"], json!(false)),
+        (&["switch", "project", "-t=-1", "on"], json!(true)),
+        (&["proj", "off", "-I", "-t=-1"], json!("off")),
+    ] {
+        let db = fresh_db();
+        run_cli(&["alias", "set", "proj", "switch project"], &db).expect("alias");
+        run_cli(&["switch", "project", "idle", "-t=-2"], &db).expect("idle");
+        run_cli(words, &db).expect("log");
+        let entries = datum_core::test_util::logged_entries(&db, "project");
+        let last = entries
+            .iter()
+            .max_by_key(|e| e.occur_time.as_ref().map(|t| t.utc))
+            .unwrap();
+        assert_eq!(last.state, Some(want), "{words:?}");
+    }
+}
