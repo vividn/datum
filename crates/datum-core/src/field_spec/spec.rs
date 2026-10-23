@@ -188,6 +188,12 @@ pub struct FieldSpec {
     /// `end` or a `switch … false` is refused (da-eqb30).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub never_false: bool,
+    /// Whether a write may bring a field this TEMPLATE covers into being
+    /// (da-j04cq): `false` refuses a log naming one that has no entries and
+    /// no spec of its own, unless the line says `--setup`. Only a template
+    /// sets it — a plain field's own spec already says it exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_setup: Option<bool>,
 
     /// Only the keys the spec lists may be written to an entry's data
     /// (da-rcoi; da-eqb30 renamed it from `strict`, which a stored spec
@@ -327,6 +333,7 @@ impl FieldSpec {
             id_assign: BTreeMap::new(),
             no_autoalias: false,
             never_false: false,
+            auto_setup: None,
             only_listed_keys: false,
             only_listed_states: false,
             remainder: None,

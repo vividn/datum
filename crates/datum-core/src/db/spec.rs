@@ -177,6 +177,15 @@ fn check_spec_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Resu
             spec_slug(&spec.field)
         ));
     }
+    // da-j04cq: whether a write may create a field is a question about the
+    // fields a template covers; a plain field's spec is its existence.
+    if spec.auto_setup.is_some() && !is_template(&spec.field) {
+        return refuse(format!(
+            "`auto_setup` is a template's to set (`issue__%hid:8%`), and `{}` is not one: \
+             its own spec already says it exists",
+            spec.field
+        ));
+    }
     Ok(())
 }
 
@@ -399,6 +408,13 @@ impl Db {
             return Ok(None);
         }
         Ok(Some(verb_from_log(&states)))
+    }
+
+    /// True when `field` exists (da-j04cq): it has an entry or a spec of its
+    /// own. A template's spec covering the name does not make it one, or
+    /// every mistyped id a template matches would.
+    pub fn field_exists(&self, field: &str) -> Result<bool> {
+        Ok(self.field_has_entries(field)? || self.own_spec_data(field)?.is_some())
     }
 
     /// True when at least one entry exists for `field` (any state,

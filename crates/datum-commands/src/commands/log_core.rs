@@ -698,6 +698,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.field_structure = Some(template);
     }
     datum_core::slug::validate_new_field_name(&entry.field)?;
+    refuse_unset_up_field(db, &entry.field, args.setup)?;
 
     // da-ivld: id_structure is the single source of truth for slug.
     // Every entry now carries an id_structure on insert; slug is always
@@ -1069,6 +1070,26 @@ pub(crate) struct ParsedLogArgs {
 /// declared `-K`/`-k` slot — extracted post-call as the entry's primary
 /// `value`. The `__datum_*` prefix avoids collision with any user key.
 pub(crate) const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
+
+/// da-j04cq: a write names a field that does not exist yet (no entries, no
+/// spec of its own) under a template whose `auto_setup` is false, and does
+/// not say `--setup`: refused, so a mistyped id creates nothing.
+fn refuse_unset_up_field(db: &Db, field: &str, setup: bool) -> Result<()> {
+    if setup {
+        return Ok(());
+    }
+    let Some(spec) = db.load_spec(field)?.filter(|s| s.auto_setup == Some(false)) else {
+        return Ok(());
+    };
+    if db.field_exists(field)? {
+        return Ok(());
+    }
+    let template = spec.template.map(|c| c.template).unwrap_or_default();
+    anyhow::bail!(
+        "no field '{field}' yet (no entries, no spec of its own), and its template \
+         `{template}` creates none unless asked: add `--setup` to create it"
+    )
+}
 
 /// Parse LogArgs into a structured bundle — field, primary value, extra_data,
 /// and the list of `-K` slug-key values for slug derivation.

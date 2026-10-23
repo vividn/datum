@@ -141,3 +141,69 @@ fn a_template_spec_undoes_like_any_spec() {
         "a template derives no aliases"
     );
 }
+
+/// da-j04cq: the board, with its template saying a write creates no issue.
+fn strict_board() -> Db {
+    let db = board();
+    run_cli(&["setup", "issue__%hid:8%", "--auto-setup", "false"], &db).unwrap();
+    db
+}
+
+#[test]
+fn a_template_with_auto_setup_off_refuses_a_never_written_name_unless_setup() {
+    let db = strict_board();
+    let err = run_cli(&["switch", "issue__abcdefgh", "queued"], &db).unwrap_err();
+    assert!(err.to_string().contains("--setup"), "{err}");
+    assert!(
+        !db.field_exists("issue__abcdefgh").unwrap(),
+        "nothing written"
+    );
+    let err = run_cli(&["add", "issue__%hid:8%", "--id", "doc"], &db).unwrap_err();
+    assert!(
+        err.to_string().contains("--setup"),
+        "a new hid is a new field: {err}"
+    );
+
+    run_cli(&["switch", "issue__abcdefgh", "queued", "--setup"], &db).unwrap();
+    // Now it exists, and logs as before.
+    run_cli(&["switch", "issue__abcdefgh", "done"], &db).unwrap();
+    let state = db.state_at("issue__abcdefgh", chrono::Utc::now()).unwrap();
+    assert_eq!(state, Some(serde_json::json!("done")));
+    run_cli(&["add", "issue__%hid:8%", "--id", "doc", "--setup"], &db).unwrap();
+    // A field no template covers is the db's, which creates it.
+    run_cli(&["occur", "coffee"], &db).unwrap();
+    assert!(db.field_exists("coffee").unwrap());
+}
+
+#[test]
+fn auto_setup_is_a_templates_alone() {
+    let db = strict_board();
+    let err = run_cli(
+        &["setup", "mood", "--verb", "switch", "--auto-setup", "false"],
+        &db,
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("not one"), "{err}");
+    assert!(db.load_spec("mood").unwrap().is_none());
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("plain.toml");
+    let kit = "[kit]\nname = \"plain\"\n\n[[field]]\nname = \"tea\"\nverb = \"occur\"\nauto_setup = false\n";
+    std::fs::write(&path, kit).unwrap();
+    let err = run_cli(&["kit", "install", &path.to_string_lossy()], &db).unwrap_err();
+    assert!(format!("{err:#}").contains("not one"), "{err:#}");
+
+    run_cli(&["setup", "issue__%hid:8%", "--auto-setup", ""], &db).unwrap();
+    run_cli(&["switch", "issue__abcdefgh", "queued"], &db).unwrap();
+}
+
+#[test]
+fn a_kits_template_sets_auto_setup() {
+    let db = fresh_db();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("board.toml");
+    std::fs::write(&path, format!("{BOARD}auto_setup = false\n")).unwrap();
+    run_cli(&["kit", "install", &path.to_string_lossy()], &db).unwrap();
+    assert!(run_cli(&["switch", "issue__abcdefgh", "queued"], &db).is_err());
+    run_cli(&["switch", "issue__abcdefgh", "queued", "--setup"], &db).unwrap();
+}

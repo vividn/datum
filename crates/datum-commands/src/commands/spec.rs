@@ -345,6 +345,9 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(n) = args.never_false {
         spec.never_false = n;
     }
+    if let Some(a) = args.auto_setup {
+        spec.auto_setup = a;
+    }
     if args.y.is_some() {
         spec.presentation.y = args.y;
     }
@@ -882,6 +885,17 @@ impl Block {
         }
         if spec.never_false {
             line("never false", "yes".into());
+        }
+        if let Some(a) = spec.auto_setup {
+            line(
+                "auto setup",
+                if a {
+                    "yes"
+                } else {
+                    "no: a new field needs --setup"
+                }
+                .into(),
+            );
         }
         // Each state's own, listed or not, in the list's order and then by name.
         for state in spec.declared_states() {

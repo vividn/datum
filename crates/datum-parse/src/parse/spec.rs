@@ -285,6 +285,15 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
                 out.never_false = Some(false);
                 i += 1;
             }
+            FlagSplit::Long("auto-setup") => {
+                let (v, ni) = take_value(tail, i, None, "--auto-setup")?;
+                out.auto_setup = Some(parse_auto_setup(v)?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("auto-setup", v) => {
+                out.auto_setup = Some(parse_auto_setup(v)?);
+                i += 1;
+            }
             FlagSplit::Long("y") => {
                 let (v, ni) = take_value(tail, i, None, "--y")?;
                 out.y = Some(parse_position_f64(v, "--y")?);
@@ -450,6 +459,18 @@ fn list_op(out: &mut SpecSetArgs, flag: &str, v: &str) {
         _ => return out.remove_keys.push(v.to_string()),
     };
     list.extend(names(v));
+}
+
+/// `--auto-setup`'s value: `true`, `false`, or `''` to clear it.
+fn parse_auto_setup(s: &str) -> Result<Option<bool>> {
+    match s {
+        "" => Ok(None),
+        "true" => Ok(Some(true)),
+        "false" => Ok(Some(false)),
+        _ => Err(ParseError::InvalidArg(format!(
+            "--auto-setup expects true, false or '' (clears it), got '{s}'"
+        ))),
+    }
 }
 
 /// A size factor (da-c05v1): a number above zero.

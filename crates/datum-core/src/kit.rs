@@ -122,6 +122,10 @@ pub struct FieldEntry {
     /// The field is never off: the spec's `never_false` (da-cwieh).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub never_false: bool,
+    /// A template's `auto_setup` (da-j04cq): `false`, a write creates a
+    /// field it covers only with `--setup`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_setup: Option<bool>,
     /// Position perpendicular to the time axis, fraction `[0.0, 1.0]`.
     /// Maps to [`PresentationSpec::y`](crate::field_spec::PresentationSpec::y) for the current axis-orientation.
     #[serde(default)]
@@ -677,6 +681,7 @@ impl FieldEntry {
         spec.comment_remainder = self.comment_remainder;
         spec.no_autoalias = self.no_autoalias;
         spec.never_false = self.never_false;
+        spec.auto_setup = self.auto_setup;
         spec.color = color_resolved;
         spec.presentation.glyph = self.glyph;
         spec.presentation.glyph_by = self.glyph_by;
@@ -791,6 +796,7 @@ impl FieldEntry {
             comment_remainder: spec.comment_remainder,
             no_autoalias: spec.no_autoalias,
             never_false: spec.never_false,
+            auto_setup: spec.auto_setup,
             pos,
             size,
             color: spec.color.clone(),

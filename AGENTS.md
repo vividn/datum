@@ -106,6 +106,10 @@ stores only the keys it sets differently, and they override the template's
 key by key (`setup F` names the template and them). The longer literal text
 wins between two templates, and `setup` refuses one tying another. The
 templates are read by their own index, `entries_spec_templates`.
+A template's `auto_setup = false` (`setup T --auto-setup false`, a kit's key)
+refuses a log naming a field it covers that has no entries and no spec of its
+own, unless the line says `--setup` (da-j04cq): a template covering the name
+is not the field existing. Only a template takes the key.
 
 ### The spool: a write is never lost to the lock
 A command that changes entries (every one but sync's, `db`'s, `config`'s and

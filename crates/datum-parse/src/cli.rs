@@ -365,6 +365,9 @@ pub struct LogArgs {
     /// `--if-changed` (switch/start/end only, da-hxmtg) — write nothing
     /// when the field already holds this state at the entry's time.
     pub if_changed: bool,
+    /// `--setup` (da-j04cq): this write may create its field where a
+    /// covering template's `auto_setup` is false.
+    pub setup: bool,
     /// The types the field's spec declares for its keys (da-b2f8o) — not
     /// a flag; filled from the spec before the line is parsed.
     pub key_types: std::collections::BTreeMap<String, crate::input::KeyType>,
@@ -776,6 +779,9 @@ pub struct SpecSetArgs {
     /// `--never-false` / `--allow-false` (da-cwieh): the spec's
     /// `never_false`; `None` leaves the existing value.
     pub never_false: Option<bool>,
+    /// `--auto-setup true|false|''` (da-j04cq): a template's
+    /// `auto_setup`, `''` clearing it; `None` leaves the existing value.
+    pub auto_setup: Option<Option<bool>>,
     /// `--glyph <CHAR>` — what the field's occur dots draw instead of a
     /// circle (da-gzowt). An empty value clears it.
     pub glyph: Option<String>,
