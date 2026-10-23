@@ -757,8 +757,10 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
     );
 
     let uncertain_line = lines[2];
+    // The time cell alone: the row's random hid may hold "3m" (da-ovved).
+    let uncertain_time = uncertain_line.split("coffee").next().unwrap();
     assert!(
-        uncertain_line.contains("21:00:± ") && !uncertain_line.contains("3m"),
+        uncertain_time.contains("21:00:± ") && !uncertain_time.contains("3m"),
         "uncertain row: ± in its seconds' place, no amount: {uncertain_line:?}"
     );
     assert!(
