@@ -1446,8 +1446,13 @@ fn render_text(r: &StatsResult) -> String {
     } else {
         format!("  ({} tracked)", format_dur(r.tracked_duration_seconds))
     };
+    let entries = if r.total_count == 1 {
+        "entry"
+    } else {
+        "entries"
+    };
     let mut out = format!(
-        "{}  ·  {} over {} entries{}{}\n{}\n",
+        "{}  ·  {} over {} {entries}{}{}\n{}\n",
         r.field,
         total_dur,
         r.total_count,
@@ -1498,8 +1503,13 @@ fn render_all_text(r: &AllFieldsStats) -> String {
         Some(field) => format!("{field} by client"),
         None => "all fields".to_string(),
     };
+    let entries = if r.total_count == 1 {
+        "entry"
+    } else {
+        "entries"
+    };
     let mut out = format!(
-        "{heading}  ·  {} tracked over {} entries\n\n",
+        "{heading}  ·  {} tracked over {} {entries}\n\n",
         format_dur(r.tracked_duration_seconds),
         r.total_count,
     );

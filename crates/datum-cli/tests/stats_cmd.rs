@@ -1470,6 +1470,38 @@ fn a_window_of_named_days_is_the_rates_denominator() {
 }
 
 #[test]
+fn one_entry_is_an_entry_at_both_summary_lines() {
+    let tmp = tempfile::tempdir().unwrap();
+    let until = ["--until", "2026-06-01T08:00:00Z"];
+    let lines = || {
+        let field = datum(tmp.path(), &[&["stats", "work"][..], &until].concat());
+        let all = datum(tmp.path(), &[&["stats"][..], &until].concat());
+        (field, all)
+    };
+    datum(
+        tmp.path(),
+        &["start", "work", "-d", "2026-06-01", "-t", "0630"],
+    );
+    let (field, all) = lines();
+    assert!(
+        field.starts_with("work  ·  1h30m over 1 entry  ·"),
+        "{field}"
+    );
+    assert!(all.contains("tracked over 1 entry\n"), "{all}");
+
+    datum(
+        tmp.path(),
+        &["stop", "work", "-d", "2026-06-01", "-t", "0730"],
+    );
+    let (field, all) = lines();
+    assert!(
+        field.starts_with("work  ·  1h30m over 2 entries"),
+        "{field}"
+    );
+    assert!(all.contains("tracked over 2 entries\n"), "{all}");
+}
+
+#[test]
 fn a_field_that_takes_time_keeps_its_time_and_has_no_frequency() {
     let tmp = tempfile::tempdir().unwrap();
     // A fixed day and one `--until`: `-t -90` / `-t -30` each read the wall
