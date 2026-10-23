@@ -178,6 +178,32 @@ describe('the nowview flows', () => {
 		);
 	});
 
+	test('a clock time still to come is not drawn beside «now», and is at its instant (da-xwe0h)', async () => {
+		/** The 15:00 label: where its near edge is against the now line, and whether it is drawn. */
+		const next = (page) =>
+			page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => {
+				const label = [...svg.querySelectorAll('.minute-label')].find((l) => l.textContent === '15:00');
+				const line = svg.querySelector('.current-time-line');
+				const now = new DOMPoint(Number(line.dataset.now), 0).matrixTransform(svg.getScreenCTM()).x;
+				return { peeks: label.getBoundingClientRect().left < now, drawn: getComputedStyle(label).visibility !== 'hidden' };
+			});
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await page.locator(`${NOWVIEW} svg.svg .minute-mark`).first().waitFor({ state: 'attached' });
+				await page.clock.runFor(SETTLE);
+				await app.idle();
+				// A second short of 15:00, half its label lies before the now line.
+				assert.deepEqual(await next(page), { peeks: true, drawn: false });
+				// Half a second on, the slide's last step has passed 15:00.
+				await app.clock.forward(1_500);
+				assert.equal((await next(page)).drawn, true);
+				assert.deepEqual(app.errors, []);
+			},
+			{ clock: AT - 1_000 - SETTLE, holdTimers: true, desk: deskWith({ history: '2m' }) }
+		);
+	});
+
 	test('half of what was drawn ahead spent, datum is asked again, once', async () => {
 		await withApp(
 			async (app) => {

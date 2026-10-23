@@ -338,6 +338,7 @@
 		if (!drawn || offNow) {
 			slid = 0;
 			for (const g of groups) g.style.removeProperty('transform');
+			clearFar();
 			return;
 		}
 		slid = Math.max(0, Date.now() - drawn.now);
@@ -762,7 +763,9 @@
 	/**
 	 * Hide each clock time (`.minute-label`) within a step of the far label,
 	 * as `place` hides a nearer tick label; it is never the far label. They
-	 * slide with the flow, so this runs at each slide too (da-to5n4).
+	 * slide with the flow, so this runs at each slide too (da-to5n4). So is
+	 * one whose minute is still to come: the clip at the now-line hides only
+	 * its far half, and the near one peeked in beside «now» (da-xwe0h).
 	 */
 	function clearFar(): void {
 		const home = el?.getBoundingClientRect();
@@ -770,10 +773,14 @@
 		const step = y ? STEP_PX.y : STEP_PX.x;
 		const from = far && home ? (y ? far.y + home.y : far.x + home.x) : NaN;
 		const to = from + (far?.length ?? 0);
+		const now = drawn ? drawn.now + slid : Infinity;
 		for (const l of el?.querySelectorAll<SVGElement>('svg.svg .minute-label') ?? []) {
 			const r = l.getBoundingClientRect();
 			const [a, b] = y ? [r.top, r.bottom] : [r.left, r.right];
-			l.style.visibility = a < to + step && b > from - step ? 'hidden' : '';
+			// Its mark, which datum draws just before it, holds the instant; a
+			// millisecond spares `drawn.now`'s rounding.
+			const ahead = Date.parse(l.previousElementSibling?.getAttribute('data-at') ?? '') - now > 1;
+			l.style.visibility = ahead || (a < to + step && b > from - step) ? 'hidden' : '';
 		}
 	}
 	$: far, clearFar();
