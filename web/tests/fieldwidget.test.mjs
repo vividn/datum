@@ -632,6 +632,49 @@ describe('the field widget', () => {
 			}, size);
 		});
 
+	// da-ua9gv: a state dragged past a taller one (its … open) swapped with it on every move, the taller row's bottom
+	// edge below the pointer again after each swap. It passes a neighbor once the pointer reaches the neighbor's middle.
+	for (const [name, size, finger] of [['a mouse on a desktop', DESKTOP, false], ['a finger on a phone', PHONE, true]])
+		test(`with ${name}, a state dragged past a taller one moves once and lands under the pointer`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await app.run(['track', 'mood', '--verb', 'switch', '--states', 'a,b,c']);
+				const { saved } = await openField(page, 'mood');
+				const rows = page.locator(`${FIELD_FORM} .states li.state`);
+				const names = () => rows.locator('input.name').evaluateAll((all) => all.map((i) => i.value).join(''));
+				await page.locator(`${FIELD_FORM} [aria-label="the options of b"]`).click();
+				const grip = await page.locator(`${FIELD_FORM} [aria-label="move a: drag, or the arrow keys"]`).boundingBox();
+				const [a, b] = [await rows.nth(0).boundingBox(), await rows.nth(1).boundingBox()];
+				assert.ok(b.height > 2 * a.height, `b's … makes it the taller: ${a.height} and ${b.height}`);
+
+				// From a's handle down to near b's bottom, the order read after every move.
+				const [x, y] = [grip.x + grip.width / 2, grip.y + grip.height / 2];
+				const end = b.y + b.height - 4;
+				const cdp = finger && (await page.context().newCDPSession(page));
+				const touch = (type, at) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: at === undefined ? [] : [{ x, y: at }] });
+				const seen = [await names()];
+				if (finger) await touch('touchStart', y);
+				else {
+					await page.mouse.move(x, y);
+					await page.mouse.down();
+				}
+				for (let i = 1; i <= 30; i++) {
+					const at = y + ((end - y) * i) / 30;
+					await (finger ? touch('touchMove', at) : page.mouse.move(x, at));
+					seen.push(await names());
+				}
+				await (finger ? touch('touchEnd') : page.mouse.up());
+				if (cdp) await cdp.detach();
+
+				assert.deepEqual(seen.filter((s, i) => s !== seen[i - 1]), ['abc', 'bac'], seen.join(' '));
+				const landed = await rows.nth(1).boundingBox();
+				assert.ok(landed.y <= end && end <= landed.y + landed.height, `a's row ${JSON.stringify(landed)} is under ${end}`);
+				await cancelField(page);
+				assert.equal(await saved, null);
+				assert.deepEqual(app.errors, []);
+			}, size);
+		});
+
 	// vremya, for vividn, 2026-10-19: «put them back at the very bottom of the basics tab» (da-i9upr).
 	test('a field\'s Basics ends with tracked or ignored, whose button runs `ignore F` or `track F` and stays', async () => {
 		await shared.solo(async (app) => {

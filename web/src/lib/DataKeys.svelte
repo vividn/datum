@@ -19,7 +19,7 @@
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { cycle, KEY_MODES, KEY_TYPES, modeOf, moved, type KeyRow } from './track.js';
+	import { cycle, KEY_MODES, KEY_TYPES, draggedTo, modeOf, moved, type KeyRow } from './track.js';
 
 	/** The rows, in the order their words bind. */
 	export let keys: KeyRow[];
@@ -62,9 +62,8 @@
 
 	function drag(e: PointerEvent) {
 		if (!held) return;
-		const rows = [...list.querySelectorAll(':scope > li.key')];
-		const at = rows.findIndex((li) => e.clientY < li.getBoundingClientRect().bottom);
-		const [from, to] = [keys.indexOf(held), at < 0 ? rows.length - 1 : at];
+		const from = keys.indexOf(held);
+		const to = draggedTo([...list.querySelectorAll(':scope > li.key')], from, e.clientY);
 		if (to !== from) keys = moved(keys, from, to);
 	}
 

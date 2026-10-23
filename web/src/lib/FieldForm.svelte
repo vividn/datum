@@ -71,6 +71,7 @@
 	import {
 		declareArgv,
 		draftSpec,
+		draggedTo,
 		editedSpec,
 		EXAMPLES,
 		keyRows,
@@ -204,9 +205,8 @@
 
 	function drag(e: PointerEvent) {
 		if (!held) return;
-		const rows = [...stateList.querySelectorAll(':scope > li.state')];
-		const at = rows.findIndex((li) => e.clientY < li.getBoundingClientRect().bottom);
-		const [from, to] = [states.indexOf(held), at < 0 ? rows.length - 1 : at];
+		const from = states.indexOf(held);
+		const to = draggedTo([...stateList.querySelectorAll(':scope > li.state')], from, e.clientY);
 		if (to !== from) states = moved(states, from, to);
 	}
 

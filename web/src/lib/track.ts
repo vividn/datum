@@ -264,6 +264,21 @@ export const KEY_MODES: { mode: KeyMode; line: string }[] = [
 
 export const modeOf = (row: KeyRow): KeyMode => row.rest ?? (row.in_slug ? 'K' : 'k');
 
+/**
+ * Where a row dragged from `from` of `rows` goes with the pointer at `y`: past a neighbor once the pointer reaches the
+ * neighbor's middle, so rows of different heights settle where the pointer is and do not swap back on the next move (da-ua9gv).
+ */
+export function draggedTo(rows: Element[], from: number, y: number): number {
+	const middle = (i: number) => {
+		const r = rows[i].getBoundingClientRect();
+		return r.top + r.height / 2;
+	};
+	let to = from;
+	while (to > 0 && y <= middle(to - 1)) to--;
+	while (to < rows.length - 1 && y >= middle(to + 1)) to++;
+	return to;
+}
+
 /** `list` with its `from`th item moved to `to`. */
 export function moved<T>(list: T[], from: number, to: number): T[] {
 	const next = [...list.slice(0, from), ...list.slice(from + 1)];
