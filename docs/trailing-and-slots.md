@@ -155,6 +155,21 @@ implementation detail.
    `-R` buckets on multiple sides all receive the extras; differing
    buckets → the **first** side's bucket takes them all.
 
+## Emitted order
+
+10. **A side comes out in one order, whatever order it was typed in**
+    (`apply_regions`, `alias/regions.rs`): the verb, a filled field, the
+    body's own tokens up to its `--`, every region's flags, the body's
+    `--` and what follows it, every region's `key=value`, the key fills
+    (`name=value`), a `--` when a fill is dash-leading and the side has
+    none, then the state fill, `.` key skips, the dur fill and the
+    greedy's words. So `proj off -t -6` (`proj` = `switch project`)
+    reaches every reader as `switch project -t -6 off`: a positional
+    can sit behind flags it was typed ahead of. A reader of the emitted
+    argv finds a positional by scanning past flags (and their values)
+    and `k=v`, as `field_and_state` and `apply_switch_promote_override`
+    do, never by index — `argv[3]` read `-t` as the state (da-47ge3).
+
 ## Retired by this spec
 
 - The v2 **typed-vs-emitted scope split** (two-stage region application,

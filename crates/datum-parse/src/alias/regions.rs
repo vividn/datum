@@ -29,6 +29,12 @@
 //! * excess positionals error unless a sink (`-l`, plain `-R`, `add`)
 //!   exists — same-named `-R` buckets all absorb, differing buckets feed
 //!   the first.
+//!
+//! Emitted order (spec rule 10): a side comes out as verb, field fill,
+//! body up to its `--`, region flags, the body's `--` on, region `k=v`,
+//! key fills, a `--` guarding a dash-leading fill, state, `.` skips, dur,
+//! greedy words — so a positional can sit behind flags typed after it,
+//! and a reader scans for positionals, never indexes them (da-47ge3).
 
 use std::sync::OnceLock;
 
