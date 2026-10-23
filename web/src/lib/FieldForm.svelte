@@ -29,10 +29,10 @@
 
 	Every field, a new one too, has the three segments — Basics · Data ·
 	Aliases — none of them required (da-i9upr), and a swipe left or right
-	across the form goes to the next or the one before (da-kmr29). Basics shows what its entries
-	will look like drawn (`ShapeSample.svelte`), a switch's states under it,
+	across the form goes to the next or the one before (da-kmr29). Basics shows a switch's states,
 	off first and disabled (`never_false`) only once there is another, and
-	where its lane sits in the day (`Placement.svelte`); a line that goes to
+	where its lane sits in the day (`Placement.svelte`), its entries drawn
+	there as the form holds them (da-srrqd); a line that goes to
 	Data, or on a card the Data tab's rows themselves. Its colour and the
 	SYMBOL its dots draw (da-ogyxa) stand on one line, the symbol in the
 	colour, each a popup (da-rpfws); the symbol is a character or an .svg
@@ -65,11 +65,11 @@
 	import Glyph from './Glyph.svelte';
 	import Placement from './Placement.svelte';
 	import { shellJoin } from './shellSplit.js';
-	import ShapeSample from './ShapeSample.svelte';
 	import Sheet from './Sheet.svelte';
 	import Swatch from './Swatch.svelte';
 	import {
 		declareArgv,
+		draftSpec,
 		editedSpec,
 		EXAMPLES,
 		keyRows,
@@ -145,6 +145,8 @@
 		icon,
 		lookup
 	};
+	/** The spec a save would store, which the placement draws. */
+	$: drafted = spec ? editedSpec(spec, edits) : draftSpec(field.trim(), edits);
 	$: save = { argv: spec ? specArgv(editedSpec(spec, edits)) : declareArgv(field.trim(), edits) };
 	let opened: string | undefined;
 	$: {
@@ -335,15 +337,6 @@
 					<span class="label near">symbol</span>
 					<Glyph bind:value={glyph} bind:icon color={color || (field.trim() && auto)} label="the field's symbol" />
 				</div>
-				{#if verb && verb !== 'add'}
-					<ShapeSample
-						{verb}
-						color={color || (field.trim() ? auto : 'var(--accent)')}
-						{glyph}
-						states={named.map((s) => ({ name: s.name.trim(), color: s.color || defaultColor(s.name.trim()) }))}
-						off={!neverFalse}
-					/>
-				{/if}
 				{#if verb === 'switch'}
 					<!-- A switch starts with one state, off (da-i9upr): vividn, «that can be disabled as soon as you have
 					     more states». Off disabled is `never_false` (da-cwieh); a field that lists `false` keeps its `end`. -->
@@ -425,7 +418,7 @@
 					</label>
 				{/if}
 				{#if verb && verb !== 'add'}
-					{#key verb}<Placement {field} occur={verb === 'occur'} bind:place />{/key}
+					{#key verb}<Placement {field} occur={verb === 'occur'} bind:place spec={field.trim() ? drafted : null} />{/key}
 				{/if}
 				{#if verb === 'add'}
 					<!-- vividn: «for card, embed the data widget directly on the basics». -->

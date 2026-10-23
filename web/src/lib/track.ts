@@ -524,14 +524,21 @@ export const formOf = (spec: Spec): Parameters<typeof editedSpec>[1] => ({
 const blank = (field: string, verb: Verb): Spec => ({ field, verb, color: null, description: null, allowed_states: null, state_colors: {} });
 
 /**
+ * A new field's spec as its form holds it, what `declareArgv` declares.
+ * The states belong to `switch` alone: a field given one and then changed
+ * to another verb would otherwise smuggle it out.
+ */
+export const draftSpec = (field: string, edit: Parameters<typeof editedSpec>[1]): Spec =>
+	editedSpec(blank(field, edit.verb), edit.verb === 'switch' ? edit : { ...edit, states: [] });
+
+/**
  * The ONE command that declares a new field, which one Undo takes back
  * whole (da-2pbvd): `setup F --from-json` with the whole of its form, and
  * `--track` or `--ignore`, which write its TRACK or IGNORED row in the same
- * transaction. The states belong to `switch` alone: a field given one and
- * then changed to another verb would otherwise smuggle it out.
+ * transaction.
  */
 export const declareArgv = (field: string, edit: Parameters<typeof editedSpec>[1], ignore = false): string[] => [
-	...specArgv(editedSpec(blank(field, edit.verb), edit.verb === 'switch' ? edit : { ...edit, states: [] })),
+	...specArgv(draftSpec(field, edit)),
 	ignore ? '--ignore' : '--track'
 ];
 

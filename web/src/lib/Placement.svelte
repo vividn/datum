@@ -20,23 +20,30 @@
 	to this one stays put) and `glyph_aspect`. «lock aspect» keeps width over
 	height, «reset» puts back a round dot of the standard size, or the lane's
 	where the lane is thinner (da-rjf34) — which is how tall every view draws
-	it, as a fraction of the day. A day with none of the
-	field's dots has nothing to size, so the band is then the day of its
-	latest one.
+	it, as a fraction of the day.
+
+	The band draws the field as the form holds it (da-srrqd), vividn,
+	2026-10-22: «you can see the dots/states/bars and what they look like as
+	real data as you're aligning it to the rest of your data». `dayview
+	--sample` takes the form's spec, at the lane as it stands, and on a day
+	with nothing of the field to draw it draws entries in its shape that no
+	database holds. It is asked again whenever the spec changes, but not
+	while a drag is under way: the drawn marks are carried there meanwhile.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { inlineSvg } from './hover.js';
-	import { bandArgv, fieldsArgv, lastDotsArgv } from './calls.js';
+	import { bandArgv, fieldsArgv } from './calls.js';
 	import { run } from './run.js';
 	import type { FieldListing } from './fields.js';
-	import type { TailListing } from './tail.js';
-	import type { Place } from './track.js';
+	import type { Place, Spec } from './track.js';
 
 	export let field: string;
 	export let place: Place;
 	/** Whether the field is an occur field, the one whose dots are sized here. */
 	export let occur = false;
+	/** The spec a save would store, which the band draws; none while the field has no name. */
+	export let spec: Spec | null = null;
 
 	/** The day's height in pixels: tall enough to take a lane's edge with a finger. */
 	const H = 160;
@@ -69,44 +76,45 @@
 	let locked = false;
 	/** Where the dot the box is drawn round sits along the band, in px: its latest on the band. */
 	let dotX = 0;
-	/** The day the band draws when it is not today's. */
-	let sample = '';
-
-	/** The size the band draws the dots at: the saved one, which `place` starts as. */
-	const saved = { scale: place.glyph_scale ?? 1, aspect: place.glyph_aspect ?? 1 };
-
-	/** The day of the field's latest dot, `YYYY-MM-DD` as its own zone reads it. */
-	async function lastDot(): Promise<string | undefined> {
-		const r = await run(lastDotsArgv(field));
-		if (r.code !== 0) return undefined;
-		const { rows } = JSON.parse(r.stdout) as TailListing;
-		return rows.findLast((row) => row.verb === 'point')?.time?.slice(0, 10);
-	}
+	/** The lane and dot the band was drawn at, which the marks are carried from. */
+	let shown = { y: 0, h: 0, scale: 1 };
+	/** Whether `fields --json` has been read, which the lane of a field with no place is. */
+	let listed = false;
 
 	onMount(async () => {
-		const argv = bandArgv(Math.floor(band.clientWidth), H);
-		let [picture, listing] = await Promise.all([run(argv), run(fieldsArgv())]);
+		const listing = await run(fieldsArgv());
 		if (listing.code === 0) {
 			lanes = Object.fromEntries(
 				(JSON.parse(listing.stdout) as FieldListing[]).map((f) => [f.field, f])
 			);
 		}
-		svg = picture.code === 0 ? inlineSvg(picture.stdout) : null;
-		if (occur && svg && !svg.querySelector(`[data-field="${CSS.escape(field)}"] .point-fg`)) {
-			const day = await lastDot();
-			if (day) {
-				picture = await run([...argv, '--end-date', day]);
-				svg = picture.code === 0 ? inlineSvg(picture.stdout) : null;
-				sample = day;
-			}
-		}
-		// Gone while it read: the shape changed, or the tab did.
-		if (!svg || !band) return;
-		band.prepend(svg);
-		const disc = [...svg.querySelectorAll(`g.field[data-field="${CSS.escape(field)}"] .point-bg`)].at(-1);
-		dotX = disc ? Number(disc.getAttribute('cx')) : band.clientWidth / 2;
-		named = [...svg.querySelectorAll('g.field')].map((g) => g.getAttribute('data-field') ?? '');
+		listed = true;
 	});
+
+	/** What the band is to draw, and what it was last asked to. */
+	let want = '';
+	let asked = '';
+	let drawing = false;
+	/** Draw the band until it is what is wanted: the latest only, however many changes came while one drew. */
+	async function draw() {
+		if (drawing) return;
+		drawing = true;
+		while (asked !== want && band) {
+			asked = want;
+			const { at, sample } = JSON.parse(asked);
+			const picture = await run([...bandArgv(Math.floor(band.clientWidth), H), ...(sample ? ['--sample', JSON.stringify(sample)] : [])]);
+			// Gone while it read: the shape changed, or the tab did. A spec the CLI refuses keeps the last picture.
+			const next = picture.code === 0 && band ? inlineSvg(picture.stdout) : null;
+			if (!next) continue;
+			svg?.remove();
+			band.prepend(next);
+			[svg, shown] = [next, at];
+			const disc = [...next.querySelectorAll(`g.field[data-field="${CSS.escape(field)}"] .point-bg`)].at(-1);
+			dotX = disc ? Number(disc.getAttribute('cx')) : band.clientWidth / 2;
+			named = [...next.querySelectorAll('g.field')].map((g) => g.getAttribute('data-field') ?? '');
+		}
+		drawing = false;
+	}
 
 	/** The dot box's handles, by the sides each moves: four corners, four edges. */
 	const HANDLES = [-1, 0, 1].flatMap((sx) => [-1, 0, 1].map((sy) => [sx, sy])).filter(([x, y]) => x || y);
@@ -116,7 +124,7 @@
 	const round = (n: number) => Math.round(n * 1000) / 1000;
 	const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
-	/** The lane as the band drew it, from the stored spec. */
+	/** The lane the pictures resolve from the stored spec. */
 	$: drawn = lanes[field];
 	// The resolver holds a field only by an anchor with a spec; without one it draws it free.
 	$: anchor = place.relative_to && lanes[place.relative_to]?.spec ? lanes[place.relative_to] : undefined;
@@ -203,12 +211,21 @@
 		}
 	}
 
+	// The band is drawn by the spec as the form holds it, freed at the lane
+	// as it stands, so the field is drawn where its box is, tied or not.
+	$: if (band && listed && !drag) {
+		const at = { y: round(lane.y), h: round(lane.h), scale };
+		const free = { relative_to: undefined, anchor_pos_ratio: undefined, anchor_size_ratio: undefined, y: at.y, height: at.h };
+		want = JSON.stringify({ at, sample: spec && { ...spec, ...free } });
+		draw();
+	}
+
 	// The field's own marks follow the lane while it moves: the band was drawn
-	// at the stored place, so its group is carried from there to here.
+	// at `shown`, so its group is carried from there to here.
 	$: own = svg?.querySelector(`g.field[data-field="${CSS.escape(field)}"]`);
-	$: if (own && drawn && drawn.height > 0) {
-		const k = lane.h / drawn.height;
-		own.setAttribute('transform', `matrix(1 0 0 ${k} 0 ${(lane.y - drawn.y * k) * H})`);
+	$: if (own && shown.h > 0) {
+		const k = lane.h / shown.h;
+		own.setAttribute('transform', `matrix(1 0 0 ${k} 0 ${(lane.y - shown.y * k) * H})`);
 	}
 
 	// The dots follow the box: each mark is scaled about its own centre
@@ -216,9 +233,9 @@
 	// the lane, `k`. A CSS transform replaces the mark's own stretch, so the
 	// width is scaled from an unstretched one. Only this field's marks: the
 	// origin would move another's stretch.
-	$: if (own && occur && drawn && drawn.height > 0) {
-		const grow = (unit(lane.h) * scale) / (unit(drawn.height) * saved.scale);
-		const k = lane.h / drawn.height;
+	$: if (own && occur && shown.h > 0) {
+		const grow = (unit(lane.h) * scale) / (unit(shown.h) * shown.scale);
+		const k = lane.h / shown.h;
 		for (const mark of own.querySelectorAll<SVGElement>('.point-fg'))
 			Object.assign(mark.style, {
 				transformBox: 'fill-box',
@@ -310,7 +327,6 @@
 				disabled={scale === 1 && aspect === 1}
 				on:click={() => (place = { ...place, glyph_scale: undefined, glyph_aspect: undefined })}>reset</button
 			>
-			{#if sample}<span class="unchosen">no dot today — drawn on {sample}</span>{/if}
 		</div>
 	{/if}
 

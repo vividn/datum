@@ -87,7 +87,14 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					const { saved } = await openField(page, 'env');
 					const box = page.locator(`${FIELD_FORM} .states li.off input.off-state`);
 					assert.equal(await box.isChecked(), false);
-					assert.deepEqual(await page.locator(`${FIELD_FORM} .sample .block`).evaluateAll((all) => [...new Set(all.map((b) => b.dataset.state))]), ['home', 'office', 'cafe'], 'off is drawn');
+					// Its sample on the placement's band (da-srrqd): its states in turn, and off a gap between them.
+					await page.locator(`${FIELD_FORM} .placement .band svg`).waitFor();
+					const drawn = () =>
+						page.locator(`${FIELD_FORM} .placement .band g.field[data-field="env"] rect.block`).evaluateAll((all) => {
+							const r = all.map((b) => ({ s: b.dataset.state, x: +b.getAttribute('x'), w: +b.getAttribute('width') })).sort((a, b) => a.x - b.x);
+							return { states: [...new Set(r.map((b) => b.s))], gaps: r.filter((b, i) => i && b.x > r[i - 1].x + r[i - 1].w + 0.5).length };
+						});
+					assert.deepEqual(await drawn(), { states: ['home', 'office', 'cafe'], gaps: 0 }, 'off is drawn');
 					// A field that lists `false` keeps its `end`, so the box cannot say otherwise.
 					await page.locator(`${FIELD_FORM} .states + button.add`).click();
 					await page.locator(`${FIELD_FORM} .state input.name`).last().fill('false');
@@ -95,7 +102,8 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					await page.locator(`${FIELD_FORM} [aria-label="remove false"]`).click();
 					assert.equal(await box.isDisabled(), false);
 					await box.check();
-					assert.equal(await page.locator(`${FIELD_FORM} .sample .block[data-state="off"]`).count() > 0, true, 'off is not drawn');
+					for (const end = Date.now() + 5000; (await drawn()).gaps === 0; await page.waitForTimeout(50))
+						assert.ok(Date.now() < end, 'off is not drawn');
 					await page.locator(`${FIELD_FORM} .commit`).click();
 					await saved;
 					assert.equal(JSON.parse((await app.run(['setup', 'env', '--json'])).stdout).never_false, undefined);
@@ -107,7 +115,7 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 
 					// Only a switch has a ring, so only a switch is offered it.
 					const { saved: left } = await openField(page, 'alfa');
-					await page.locator(`${FIELD_FORM} .sample`).waitFor();
+					await page.locator(`${FIELD_FORM} .placement .band svg`).waitFor();
 					assert.equal(await page.locator(`${FIELD_FORM} input.off-state`).count(), 0, 'an occur field offers off');
 					await cancelField(page);
 					await left;

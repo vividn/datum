@@ -197,22 +197,26 @@ describe('the Placement tab', () => {
 			const { page } = app;
 			await app.run(['track', 'coffee', '--verb', 'occur']);
 			await setPlace(app, 'coffee', { y: 0.3, height: 0.2 });
-			// Not today: the band draws the day of its latest dot instead.
+			// Not today: today's band draws its sample dots instead (da-srrqd), the box round the latest.
 			await app.run(['occur', 'coffee', '-d', '-2', '-t', '1000']);
 
 			let { saved } = await openPlacement(page, 'coffee');
-			assert.match(await page.locator(`${MODAL} .size`).innerText(), /no dot today/);
+			const dots = page.locator(`${MODAL} .band g.field[data-field="coffee"] .point-fg`);
+			assert.equal(await dots.count(), 8, 'the sample');
 			assert.equal(await page.locator(`${MODAL} input[type="range"]`).count(), 0, 'no sliders');
 			assert.equal(await page.locator(LANE).count(), 0, 'the box is the dot, not the lane');
-			const box = page.locator(`${MODAL} .placement .dot`);
-			const dot = page.locator(`${MODAL} .band g.field[data-field="coffee"] .point-fg`);
 			const near = (a, b, what) => assert.ok(Math.abs(a - b) < 1, `${what}: ${a} vs ${b}`);
-			/** The box and the dot it is drawn round, each as its centre and size. */
-			const read = async () => {
-				const [b, d] = [await box.boundingBox(), await dot.boundingBox()];
-				const at = (r) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height });
-				return { box: at(b), dot: at(d) };
-			};
+			/** The box and the dot it is drawn round, each as its centre and size: read at once, as a redraw replaces the dots. */
+			const read = () =>
+				page.evaluate(() => {
+					const at = (el) => {
+						const r = el.getBoundingClientRect();
+						return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
+					};
+					const box = document.querySelector('.placement .dot');
+					const dot = [...document.querySelectorAll('.placement .band g.field[data-field="coffee"] .point-fg')].at(-1);
+					return { box: at(box), dot: at(dot) };
+				});
 			const fits = async (w, h, what) => {
 				const { box: b, dot: d } = await read();
 				near(b.h, h, `${what}: box height`);
@@ -262,6 +266,65 @@ describe('the Placement tab', () => {
 			await done(page, saved);
 			shown = await spec(app, 'coffee');
 			assert.equal('glyph_scale' in shown || 'glyph_aspect' in shown, false, JSON.stringify(shown));
+		});
+	});
+
+	// da-srrqd, vividn, 2026-10-22: «They should actually be inside the placement configuration tool, so that
+	// you can see the dots/states/bars and what they look like as real data as you're aligning it».
+	test('a field with nothing today is drawn as samples in its lane, as the form holds it; one with entries today, as those', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'mood', '--verb', 'switch', '--states', 'happy,sad']);
+			await setPlace(app, 'mood', { y: 0.3, height: 0.2 });
+			const blocks = page.locator(`${MODAL} .band g.field[data-field="mood"] rect.block`);
+			const states = () => blocks.evaluateAll((all) => [...new Set(all.map((b) => b.dataset.state))].sort());
+			const until = (what, test, arg = null) =>
+				page.waitForFunction(test, arg, { timeout: 5000 }).catch(() => assert.fail(`never: ${what}`));
+
+			let { saved } = await openPlacement(page, 'mood');
+			assert.deepEqual(await states(), ['happy', 'sad'], 'its states, taking turns');
+			const lane = await page.locator(LANE).boundingBox();
+			const drawn = async () => {
+				const all = await blocks.evaluateAll((els) => els.map((b) => b.getBoundingClientRect()).map((r) => [r.top, r.bottom]));
+				return [Math.min(...all.map((r) => r[0])), Math.max(...all.map((r) => r[1]))];
+			};
+			const [top, bottom] = await drawn();
+			assert.ok(Math.abs(top - lane.y) < 1.5 && Math.abs(bottom - lane.y - lane.height) < 1.5, `${[top, bottom]} in ${lane.y}+${lane.height}`);
+
+			// A state's colour is drawn as the form changes it, before any save.
+			const happy = page.locator(`${MODAL} .state`).nth(0);
+			assert.equal(await happy.locator('input.name').inputValue(), 'happy');
+			await happy.locator('.swatch[aria-expanded]').click();
+			const pick = happy.locator('.set .swatch').nth(3);
+			const color = await pick.getAttribute('data-color');
+			await pick.click();
+			await until(
+				`happy drawn in ${color}`,
+				(color) => {
+					const all = [...document.querySelectorAll('.placement .band rect.block[data-state="happy"]')];
+					return all.length > 0 && all.every((b) => b.getAttribute('fill') === color);
+				},
+				color
+			);
+			// Moved, the samples are drawn again in the lane where it is let go.
+			await page.locator(`${MODAL} .placement .band`).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+			await drag(page, 'middle', 32);
+			await until('the samples drawn again where the lane was let go', () => {
+				const svg = document.querySelector('.placement .band svg');
+				const ys = [...svg.querySelectorAll('g.field[data-field="mood"] rect.block')].map((b) => Number(b.getAttribute('y')));
+				const at = document.querySelector('.placement .lane').getBoundingClientRect().top - svg.getBoundingClientRect().top;
+				return ys.length > 0 && Math.abs(Math.min(...ys) - at) < 1.5 && Math.abs(at - 80) < 1.5;
+			});
+			await cancelField(page);
+			assert.equal(await saved, null);
+			assert.equal((await app.run(['tail', 'mood', '--json'])).stdout.includes('"happy"'), false, 'no sample was written');
+
+			// With an entry today, that is what is drawn: one stretch of happy, no sample.
+			await app.run(['switch', 'mood', 'happy', '-t', '-30']);
+			({ saved } = await openPlacement(page, 'mood'));
+			assert.deepEqual([await blocks.count(), await states()], [1, ['happy']]);
+			await cancelField(page);
+			assert.equal(await saved, null);
 		});
 	});
 

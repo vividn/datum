@@ -111,22 +111,27 @@ fn echo(db: &Db, entry: &Entry, action: Outcome, show: Show) -> Result<()> {
     Ok(())
 }
 
+/// `field`'s spec from `--from-json`'s JSON, read as a save reads it:
+/// what `dayview --sample` draws is what saving it would store.
+pub(crate) fn spec_from_json(field: &str, json: &str, db: &Db) -> Result<FieldSpec> {
+    let mut v: JsonValue = serde_json::from_str(json).with_context(|| "Invalid field spec JSON")?;
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert("field".into(), field.into());
+        // `setup F --json`'s reading of the keys, not the spec (`SpecJson`).
+        obj.remove("keys");
+        obj.remove("keys_by_state");
+        obj.remove("template");
+    }
+    // da-eciuy: the colours it changes, as `--color` would.
+    let old = db.load_spec(field)?.map(serde_json::to_value);
+    datum_core::kit_color::resolve_changed(&mut v, old.transpose()?.as_ref())?;
+    serde_json::from_value(v).with_context(|| "Invalid field spec JSON")
+}
+
 fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     // --from-json replaces the entire spec; individual flags merge in.
     let mut spec = if let Some(json) = &args.from_json {
-        let mut v: JsonValue =
-            serde_json::from_str(json).with_context(|| "Invalid field spec JSON")?;
-        if let Some(obj) = v.as_object_mut() {
-            obj.insert("field".into(), args.field.clone().into());
-            // `setup F --json`'s reading of the keys, not the spec (`SpecJson`).
-            obj.remove("keys");
-            obj.remove("keys_by_state");
-            obj.remove("template");
-        }
-        // da-eciuy: the colours it changes, as `--color` would.
-        let old = db.load_spec(&args.field)?.map(serde_json::to_value);
-        datum_core::kit_color::resolve_changed(&mut v, old.transpose()?.as_ref())?;
-        serde_json::from_value(v).with_context(|| "Invalid field spec JSON")?
+        spec_from_json(&args.field, json, db)?
     } else {
         match db.load_spec(&args.field)? {
             Some(s) => s,

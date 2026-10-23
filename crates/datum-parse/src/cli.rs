@@ -1551,6 +1551,11 @@ pub struct DayviewArgs {
     /// `--vertical`), named by time-axis direction. Defaults to horizontal
     /// per bead da-tbe.
     pub orientation: DayviewOrientation,
+    /// `--sample <SPEC-JSON>`, unlisted: datum.day's setup form (da-srrqd).
+    /// The spec's field is drawn with that spec in place of its stored one,
+    /// and on a day with nothing of it to draw, sample entries in its shape
+    /// that no database holds.
+    pub sample: Option<String>,
 }
 
 impl Default for DayviewArgs {
@@ -1569,6 +1574,7 @@ impl Default for DayviewArgs {
             show: Show::Default,
             watch: false,
             orientation: DayviewOrientation::default(),
+            sample: None,
         }
     }
 }

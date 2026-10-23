@@ -910,3 +910,128 @@ fn a_traveller_whose_clock_went_back_has_a_lane_for_each_zone() {
         (vec![(0.0, 24.0)], vec![10800], vec![(0, 12.0)])
     );
 }
+
+/// 2026-01-10's band as an SVG, its entries' ids masked: a sample's are
+/// made afresh each render.
+fn day_svg(db: &datum_core::db::Db, extra: &[&str]) -> String {
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap();
+    let argv = [
+        "dayview",
+        "--end-date",
+        "2026-01-10",
+        "--width",
+        "600",
+        "-o",
+        path,
+    ];
+    run_cli(&[&argv[..], extra].concat(), db).expect("dayview");
+    let svg = std::fs::read_to_string(path).unwrap();
+    let mut parts = svg.split(r#"data-id=""#);
+    let mut out = parts.next().unwrap().to_string();
+    for p in parts {
+        out += r#"data-id="HID"#;
+        out += &p[p.find('"').unwrap()..];
+    }
+    out
+}
+
+/// da-srrqd: `--sample SPEC` draws a field with nothing on the day as the
+/// same entries logged for real would be drawn, byte for byte, in the
+/// spec it is given and not the one stored, and writes nothing.
+#[test]
+fn a_sample_is_drawn_as_its_entries_would_be() {
+    let at = |t: &str| format!("2026-01-10 {t}");
+    let shapes: [(&str, &str, Vec<Vec<String>>); 4] = [
+        (
+            "pill",
+            r##"{"field":"pill","verb":"occur","color":"#00aa00","glyph":"★","glyph_scale":1.5,"allowed_states":null,"state_colors":{}}"##,
+            [
+                "01:30", "04:30", "06:00", "10:30", "14:30", "16:30", "20:30", "22:30",
+            ]
+            .map(|t| vec!["occur".into(), "pill".into(), "-t".into(), at(t)])
+            .into(),
+        ),
+        (
+            "lamp",
+            r#"{"field":"lamp","verb":"start","allowed_states":null,"state_colors":{}}"#,
+            [
+                "01:00", "04:00", "06:30", "11:00", "14:00", "17:30", "20:30", "23:00",
+            ]
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                vec![
+                    ["start", "end"][i % 2].into(),
+                    "lamp".into(),
+                    "-t".into(),
+                    at(t),
+                ]
+            })
+            .collect(),
+        ),
+        (
+            "mood",
+            r##"{"field":"mood","verb":"switch","allowed_states":["happy","sad"],"state_colors":{"happy":"#ff0000"}}"##,
+            [
+                "01:00", "04:00", "06:30", "11:00", "14:00", "17:30", "20:30", "23:00",
+            ]
+            .iter()
+            .enumerate()
+            .map(|(i, t)| match ["happy", "sad", "end"][i % 3] {
+                "end" => vec!["end".into(), "mood".into(), "-t".into(), at(t)],
+                s => vec!["switch".into(), "mood".into(), s.into(), "-t".into(), at(t)],
+            })
+            .collect(),
+        ),
+        // A switch with no states named and never off: a bare `switch` stores
+        // `true`, and holds it the rest of the day.
+        (
+            "env",
+            r#"{"field":"env","verb":"switch","allowed_states":null,"state_colors":{},"never_false":true}"#,
+            vec![vec![
+                "switch".into(),
+                "env".into(),
+                "-t".into(),
+                at("01:00"),
+            ]],
+        ),
+    ];
+    for (field, spec, lines) in shapes {
+        let sampled = fresh_db();
+        let svg = day_svg(&sampled, &["--sample", spec]);
+        assert!(
+            svg.contains(&format!(r#"data-field="{field}""#)),
+            "{field}: {svg}"
+        );
+        assert!(
+            sampled.distinct_fields().unwrap().is_empty(),
+            "{field}: an entry written"
+        );
+        assert!(
+            sampled.load_spec(field).unwrap().is_none(),
+            "{field}: its spec written"
+        );
+
+        let logged = fresh_db();
+        run_cli(&["setup", field, "--from-json", spec], &logged).unwrap();
+        for line in &lines {
+            let line: Vec<&str> = line.iter().map(String::as_str).collect();
+            run_cli(&line, &logged).unwrap();
+        }
+        assert_eq!(svg, day_svg(&logged, &[]), "{field}");
+    }
+}
+
+/// da-srrqd: where the field has entries on the day the band draws those,
+/// in the spec it is given, and no sample.
+#[test]
+fn a_field_with_entries_on_the_day_draws_them_and_no_sample() {
+    let db = fresh_db();
+    run_cli(&["occur", "pill", "-t", "2026-01-10 12:00"], &db).unwrap();
+    let spec = r##"{"field":"pill","verb":"occur","color":"#00aa00","allowed_states":null,"state_colors":{}}"##;
+    let svg = day_svg(&db, &["--sample", spec]);
+    assert_eq!(svg.matches("point-fg").count(), 1, "{svg}");
+    assert!(svg.contains("#00aa00"), "{svg}");
+    assert!(!day_svg(&db, &[]).contains("#00aa00"));
+}

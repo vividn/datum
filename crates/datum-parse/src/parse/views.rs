@@ -148,6 +148,15 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
                 out.orientation = DayviewOrientation::Vertical;
                 i += 1;
             }
+            FlagSplit::Long("sample") => {
+                let (v, ni) = take_value(tail, i, None, "--sample")?;
+                out.sample = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("sample", v) => {
+                out.sample = Some(v.to_string());
+                i += 1;
+            }
             FlagSplit::Positional(_) => {
                 return Err(ParseError::InvalidArg(
                     "dayview takes no positional arguments".into(),

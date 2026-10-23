@@ -60,10 +60,6 @@ export function firstEntryArgv(): string[] {
 	return ['head', '-n', '1', '--metric', 'occur', '--json'];
 }
 
-export function lastDotsArgv(field: string): string[] {
-	return ['tail', field, '-n', '50', '--json'];
-}
-
 export function aliasesArgv(): string[] {
 	return ['alias', 'list', '--json'];
 }
@@ -366,7 +362,6 @@ export interface Reads {
 	grammarArgv: GrammarEntry[];
 	nowArgv: NowListing;
 	firstEntryArgv: TailListing;
-	lastDotsArgv: TailListing;
 	aliasesArgv: Alias[];
 	conflictsArgv: Conflicted[];
 	tailArgv: TailListing;

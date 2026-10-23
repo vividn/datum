@@ -714,8 +714,8 @@ describe('in the app', () => {
 			assert.ok(b.x > a.x + a.width, 'the symbol stands after the colour');
 			assert.equal(await ink(symbol), rgb(listed.color), 'at auto, the colour datum paints it');
 
-			// What stands under the line: the shape's sample (da-i9upr).
-			const data = page.locator(`${MODAL} .panel .sample`);
+			// What stands under the line: the placement, which draws the shape's sample (da-srrqd).
+			const data = page.locator(`${MODAL} .panel .placement`);
 			const at = (await data.boundingBox()).y;
 			for (const [opener, set] of [[swatch, '.set'], [symbol, '.picker']]) {
 				await opener.click();

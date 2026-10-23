@@ -475,45 +475,55 @@ describe('the field widget', () => {
 
 	// da-i9upr, vividn, 2026-10-19: «move the placement to the basics tab and show what the data looks like
 	// displayed … completely remove the states tab … for card, embed the data widget directly on the basics».
-	test('Basics draws each shape as it is logged, with its placement; a switch\'s states start at off; a card\'s keys are there', async () => {
+	// da-srrqd, vividn, 2026-10-22: the samples «should actually be inside the placement configuration tool».
+	test('Basics draws each shape as it is logged in its lane on the band; a switch\'s states start at off; a card\'s keys are there', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
 			const at = (sel) => page.locator(`${FIELD_FORM} [data-panel="basics"] ${sel}`);
-			const blocks = () => at('.sample .block').evaluateAll((all) => all.map((b) => b.dataset.state));
+			const own = at('.placement .band g.field[data-field="thing"]');
+			/** Wait for the band to draw the field's sample as `ok` says: its blocks' states, and how many dots. */
+			const drawn = async (what, ok) => {
+				for (const end = Date.now() + 5000; ; await page.waitForTimeout(50)) {
+					const seen = {
+						blocks: await own.locator('rect.block').evaluateAll((all) => all.map((b) => b.dataset.state)),
+						dots: await own.locator('.point-fg').count()
+					};
+					if (ok(seen)) return;
+					if (Date.now() > end) assert.fail(`never drawn: ${what}, but ${JSON.stringify(seen)}`);
+				}
+			};
 			const off = at('.states li.off input.off-state');
 			await page.locator(`${FIELD_FORM} input.field`).fill('thing');
 			// No shape yet, nothing to draw.
-			assert.equal(await at('.sample').count(), 0);
+			assert.equal(await at('.placement').count(), 0);
 			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
 
 			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
-			assert.ok((await at('.sample[data-sample="occur"] .dot').count()) > 1, 'no dots');
-			await at('.placement .band svg').waitFor();
+			await drawn('the dots of an occurrence', ({ blocks, dots }) => dots === 8 && blocks.length === 0);
 			assert.equal(await at('.placement .dot').count(), 1, 'an occur field places its dot');
 
 			await page.locator(`${FIELD_FORM} button[data-verb="start"]`).click();
-			assert.deepEqual([...new Set(await blocks())], ['off', 'on']);
+			await drawn('on with off between', ({ blocks, dots }) => dots === 0 && blocks.length === 4 && blocks.every((s) => s === 'on'));
 			await at('.placement .lane').waitFor();
 
 			// A switch starts with off alone, which cannot go until there is another state.
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
-			assert.deepEqual([...new Set(await blocks())], ['off']);
 			assert.deepEqual([await off.isChecked(), await off.isDisabled()], [true, true]);
 			await at('.states + button.add').click();
 			await at('.state input.name').fill('calm');
-			assert.deepEqual([...new Set(await blocks())], ['calm', 'off']);
+			await drawn('calm with off between', ({ blocks }) => blocks.length === 4 && blocks.every((s) => s === 'calm'));
 			assert.equal(await off.isDisabled(), false);
 			await off.uncheck();
-			assert.deepEqual([...new Set(await blocks())], ['calm'], 'off disabled is still drawn');
+			await drawn('calm with no off: one stretch', ({ blocks }) => blocks.length === 1 && blocks[0] === 'calm');
 			// The line names the keys and goes to the Data tab.
 			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
 			assert.equal(await page.locator(`${FIELD_FORM} [data-panel]`).getAttribute('data-panel'), 'data');
 			await page.locator(`${FIELD_FORM} [data-tab="basics"]`).click();
 
-			// A card has no time: no sample and no placement, and the Data tab's rows, typed, on Basics.
+			// A card has no time: no placement, so no sample, and the Data tab's rows, typed, on Basics.
 			await page.locator(`${FIELD_FORM} button[data-verb="add"]`).click();
-			for (const gone of ['.sample', '.placement', '.data-line', '.states']) assert.equal(await at(gone).count(), 0, gone);
+			for (const gone of ['.placement', '.data-line', '.states']) assert.equal(await at(gone).count(), 0, gone);
 			await at('ul.data + button.add').click();
 			assert.equal(await at('ul.data li.key select.type').count(), 1, 'not the Data tab\'s rows');
 

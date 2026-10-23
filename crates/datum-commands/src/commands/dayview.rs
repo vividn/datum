@@ -17,8 +17,11 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use datum_core::action::Action;
 use datum_core::db::Db;
-use datum_core::entry::Entry;
+use datum_core::dur::Dur;
+use datum_core::entry::{Entry, Verb};
+use datum_core::field_spec::FieldSpec;
 use datum_core::time::{DatumTime, Zone, ZoneTimeline};
 use datum_layout::dayview::{
     compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewError,
@@ -33,6 +36,7 @@ use crate::commands::field_visuals::{
     leading_edge_ms, occur_time_ms, render_field_visuals, switch_regions, title_marks,
 };
 use datum_core::state::FieldStateRows;
+use serde_json::Value as JsonValue;
 
 /// Datum default per-day band height (matches dayview.ts:50).
 const DEFAULT_DAY_HEIGHT: f64 = 100.0;
@@ -185,6 +189,16 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     // no error marks.
     let findings =
         datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default();
+    let sample = match args.sample.as_deref() {
+        Some(json) => {
+            let field = serde_json::from_str::<serde_json::Value>(json)
+                .ok()
+                .and_then(|v| v["field"].as_str().map(str::to_string))
+                .context("--sample takes a field's spec as JSON, with its `field`")?;
+            Some(super::spec::spec_from_json(&field, json, db)?)
+        }
+        None => None,
+    };
 
     for date in &day_dates {
         // The day's window is every instant its date was read on a clock.
@@ -204,7 +218,14 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
             })
             .collect();
 
-        let fields = build_day_fields(db, &zones, day_start_ms, day_end_ms, now_ms)?;
+        let fields = build_day_fields(
+            db,
+            &zones,
+            day_start_ms,
+            day_end_ms,
+            now_ms,
+            sample.as_ref(),
+        )?;
 
         days_input.push(DayviewDayInput {
             date: Some(date.to_string()),
@@ -427,6 +448,7 @@ fn build_day_fields(
     day_start_ms: i64,
     day_end_ms: i64,
     now_ms: i64,
+    sample: Option<&FieldSpec>,
 ) -> Result<Vec<DayviewFieldInput>> {
     let day_start_utc = Utc
         .timestamp_millis_opt(day_start_ms)
@@ -467,11 +489,17 @@ fn build_day_fields(
     for field in db.distinct_fields()? {
         by_field.entry(field).or_default();
     }
+    if let Some(s) = sample {
+        by_field.entry(s.field.clone()).or_default();
+    }
 
     // da-vmjh: one spec query for every field in the day, not one per
     // field.
     let field_names: Vec<&str> = by_field.keys().map(String::as_str).collect();
-    let specs = db.batch_load_specs(&field_names)?;
+    let mut specs = db.batch_load_specs(&field_names)?;
+    if let Some(s) = sample {
+        specs.insert(s.field.clone(), s.clone());
+    }
     let positions = super::render_helpers::field_positions(db, &specs, &field_names)?;
     let fetch_start = day_start_utc - buffer;
     drop(field_names);
@@ -507,6 +535,27 @@ fn build_day_fields(
             day_start_ms,
             day_end_ms,
         );
+        // The setup form's preview (da-srrqd): nothing of the field on the
+        // day, so entries in its shape that no database holds, drawn as
+        // its own would be.
+        if let Some(s) =
+            sample.filter(|s| s.field == field && blocks.is_empty() && points.is_empty())
+        {
+            let made = sample_entries(s, day_start_ms, day_end_ms);
+            let regions = switch_regions(
+                &FieldStateRows::from_entries(&made),
+                window,
+                fallback_end_ms,
+            );
+            (blocks, points) = render_field_visuals(
+                &made,
+                &regions,
+                &field,
+                spec.as_ref(),
+                day_start_ms,
+                day_end_ms,
+            );
+        }
         title_marks(
             &field,
             &mut blocks,
@@ -538,6 +587,78 @@ fn build_day_fields(
         });
     }
     Ok(out)
+}
+
+/// What `--sample` draws of a field with nothing on the day: an occurrence's
+/// dots spread through it, on/off turning on and off, a switch's states in
+/// turn and off among them unless it is never off (with none named, on and
+/// off). The changes fall at fixed fractions of the day, so a sample stays
+/// put while the form changes how it looks.
+fn sample_entries(spec: &FieldSpec, start_ms: i64, end_ms: i64) -> Vec<Entry> {
+    // Hours of a 24-hour day, so a sample's changes fall on whole minutes;
+    // on a day of another length (DST) each is the same share of it, so a
+    // sample is always inside its day.
+    const DOTS: [f64; 8] = [1.5, 4.5, 6.0, 10.5, 14.5, 16.5, 20.5, 22.5];
+    const TURNS: [f64; 8] = [1.0, 4.0, 6.5, 11.0, 14.0, 17.5, 20.5, 23.0];
+    let at = |f: f64| DatumTime {
+        utc: Utc
+            .timestamp_millis_opt(start_ms + ((end_ms - start_ms) as f64 * f / 24.0) as i64)
+            .unwrap(),
+        offset_minutes: 0,
+        timezone: None,
+        uncertainty: None,
+    };
+    let state = |s: &str| match s {
+        "true" => JsonValue::Bool(true),
+        "false" => JsonValue::Bool(false),
+        _ => JsonValue::String(s.to_string()),
+    };
+    let named = spec.allowed_states.iter().flatten();
+    let mut turns: Vec<JsonValue> = match spec.verb {
+        Action::Occur => {
+            let dot = |f| {
+                Entry::new(
+                    &spec.field,
+                    Verb::Point,
+                    None,
+                    None,
+                    Some(at(f)),
+                    Some(Dur::moment()),
+                    "",
+                )
+            };
+            return DOTS.into_iter().map(dot).collect();
+        }
+        Action::Start => vec![true.into(), false.into()],
+        Action::Switch => named.map(|s| state(s)).collect(),
+        _ => return Vec::new(),
+    };
+    if turns.is_empty() {
+        turns.push(true.into());
+    }
+    if !spec.never_false && !turns.contains(&false.into()) {
+        turns.push(false.into());
+    }
+    let change = |(i, f): (usize, f64)| {
+        let s = turns[i % turns.len()].clone();
+        Entry::new(
+            &spec.field,
+            Verb::Switch,
+            Some(s),
+            None,
+            Some(at(f)),
+            None,
+            "",
+        )
+    };
+    // One state alone is one change: a second to it is no change.
+    let changes = if turns.len() == 1 { 1 } else { TURNS.len() };
+    TURNS
+        .into_iter()
+        .take(changes)
+        .enumerate()
+        .map(change)
+        .collect()
 }
 
 /// A field's dot size as its spec stores it. A stored spec may not have
@@ -651,6 +772,7 @@ mod tests {
             show: ShowFlag::Default,
             watch: true,
             orientation: DayviewOrientation::default(),
+            sample: None,
         }
     }
 
@@ -783,7 +905,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
         assert_eq!(fields.len(), 1);
         let mood = &fields[0];
         assert_eq!(mood.field, "mood");
@@ -854,7 +976,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
         assert_eq!(fields.len(), 1);
         let mood = &fields[0];
         // Two regions: 8-12 (happy) and 16-day_end (focus). The false-switch
@@ -918,7 +1040,7 @@ mod tests {
             .timestamp_millis();
         let t8 = utc8.timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, now_ms).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, now_ms, None).unwrap();
         let mood = &fields[0];
         assert_eq!(mood.blocks.len(), 1);
         assert_eq!(mood.blocks[0].start_ms, t8);
@@ -958,8 +1080,15 @@ mod tests {
         let ms = |h| at(h).timestamp_millis();
         let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap();
 
-        let fields =
-            build_day_fields(&db, &utc_zone(), ms(0), day_end.timestamp_millis(), ms(14)).unwrap();
+        let fields = build_day_fields(
+            &db,
+            &utc_zone(),
+            ms(0),
+            day_end.timestamp_millis(),
+            ms(14),
+            None,
+        )
+        .unwrap();
         let spans = |f: &str| {
             let field = fields.iter().find(|x| x.field == f).unwrap();
             (field.blocks.iter())
@@ -1006,7 +1135,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, now_ms).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, now_ms, None).unwrap();
         let mood = &fields[0];
         assert_eq!(mood.blocks.len(), 1);
         assert_eq!(mood.blocks[0].end_ms, day_end);
@@ -1050,7 +1179,7 @@ mod tests {
                 .timestamp_millis()
         };
         let lane = |db: &Db| {
-            let f = build_day_fields(db, &utc_zone(), day(0), day(23), day(23)).unwrap();
+            let f = build_day_fields(db, &utc_zone(), day(0), day(23), day(23), None).unwrap();
             assert_eq!(f.len(), 1, "mood has no marks, only coffee draws");
             (f[0].y_frac, f[0].height_frac)
         };
@@ -1116,7 +1245,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
         let names: Vec<&str> = fields.iter().map(|f| f.field.as_str()).collect();
         assert!(names.contains(&"coffee"), "names = {names:?}");
         assert!(
@@ -1162,7 +1291,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
         assert!(
             fields.iter().all(|f| f.field != "stretch_routine"),
             "render.dayview=false must drop the band",
@@ -1200,7 +1329,7 @@ mod tests {
                 .unwrap()
                 .timestamp_millis()
         };
-        let fields = build_day_fields(&db, &utc_zone(), day(27), day(28), day(28)).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day(27), day(28), day(28), None).unwrap();
         let work = fields.iter().find(|f| f.field == "work").unwrap();
         let states: Vec<_> = work
             .blocks
@@ -1245,7 +1374,8 @@ mod tests {
             spec.presentation.glyph_scale = Some(scale);
             spec.presentation.glyph_aspect = Some(aspect);
             db.save_field_spec(&spec).unwrap();
-            let fields = build_day_fields(&db, &utc_zone(), day(0), day(24), day(24)).unwrap();
+            let fields =
+                build_day_fields(&db, &utc_zone(), day(0), day(24), day(24), None).unwrap();
             fields
                 .into_iter()
                 .find(|f| f.field == "coffee")
@@ -1311,7 +1441,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
         let caffeine = fields
             .iter()
             .find(|f| f.field == "caffeine")
@@ -1351,7 +1481,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
         let alarm = fields
             .iter()
             .find(|f| f.field == "alarm")
