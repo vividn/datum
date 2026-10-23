@@ -9,8 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
-use datum_core::db::{is_meta_field, Db};
-use datum_core::field_spec::{contains_template, resolve_positions, FieldSpec, ResolvedPosition};
+use datum_core::db::Db;
 use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use serde_json::{json, Value as JsonValue};
 
@@ -132,21 +131,13 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
             entry.push(state);
         }
     }
-    let registry = db.load_registry()?;
     // A meta field's spec (an old `spec:layout`, say) is no life field, and
     // a template's covers fields without being one: a chip for it would
     // mint a new field on every press (da-jguh2).
-    for field in registry
-        .fields
-        .keys()
-        .filter(|f| !is_meta_field(f) && !contains_template(f))
-    {
-        by_field.entry(field.clone()).or_default();
+    for field in db.spec_fields()? {
+        by_field.entry(field).or_default();
     }
-    // Where each field's lane is, anchors honoured (da-btyvj): the web's
-    // Placement tab draws a field against these.
-    let positions = resolve_positions(&registry.fields, by_field.keys().cloned()).positions;
-    listing(db, &by_field, &registry.fields, &positions)
+    listing(db, &by_field)
 }
 
 /// [`compute_fields`]' rows for `names` alone, reading only their specs and
@@ -161,10 +152,7 @@ pub fn compute_named_fields(db: &Db, names: &[String]) -> Result<JsonValue> {
             entry.push(state);
         }
     }
-    let asked: Vec<&str> = by_field.keys().map(String::as_str).collect();
-    let specs = db.load_registry_for(&asked)?.fields;
-    let positions = field_positions(db, &specs, &asked)?;
-    listing(db, &by_field, &specs, &positions)
+    listing(db, &by_field)
 }
 
 /// da-5ifp: TRACKED and IGNORED are statuses, not states a field can be
@@ -173,14 +161,13 @@ fn is_a_state(state: &JsonValue) -> bool {
     *state != TRACKED_STATE_VALUE && !is_ignored_state(state)
 }
 
-/// One row a field, in `by_field`'s order.
-fn listing(
-    db: &Db,
-    by_field: &BTreeMap<String, Vec<JsonValue>>,
-    specs: &HashMap<String, FieldSpec>,
-    positions: &HashMap<String, ResolvedPosition>,
-) -> Result<JsonValue> {
+/// One row a field, in `by_field`'s order: each spec read as dayview reads
+/// it, a template's applied to the fields it covers (da-yorr2), and each
+/// lane with its anchors honoured (da-btyvj).
+fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonValue> {
     let names: Vec<&str> = by_field.keys().map(String::as_str).collect();
+    let specs = db.load_registry_for(&names)?.fields;
+    let positions = field_positions(db, &specs, &names)?;
     let latest = db.batch_state_at(&names, chrono::Utc::now())?;
     Ok(JsonValue::Array(
         by_field
@@ -434,6 +421,31 @@ mod tests {
             assert_eq!(new[key], logged[key], "{key}");
         }
         assert_ne!(new["y"], json!(0.0));
+    }
+
+    /// da-yorr2: a field a template covers is listed with the template's
+    /// spec and lane, in the full listing and the named one alike, as
+    /// `spec <field>` and the dayview read it.
+    #[test]
+    fn a_template_covered_field_takes_the_templates_spec_and_lane() {
+        let db = fresh_db();
+        let mut issue = FieldSpec::new("issue__%hid:8%", Action::Switch);
+        issue.presentation.y = Some(0.8);
+        issue.presentation.height = Some(0.1);
+        db.save_field_spec(&issue).unwrap();
+        entry_builder("issue__abcdefgh")
+            .state(json!("a"))
+            .insert(&db);
+
+        let full = compute_fields(&db).unwrap();
+        let named = compute_named_fields(&db, &["issue__abcdefgh".into()]).unwrap();
+        assert_eq!(full.as_array().unwrap().len(), 1, "{full}");
+        let row = &full[0];
+        assert_eq!(row["field"], "issue__abcdefgh");
+        assert_eq!(row["y"], json!(0.8));
+        assert_eq!(row["height"], json!(0.1));
+        assert_ne!(row["spec"], JsonValue::Null);
+        assert_eq!(named[0], *row);
     }
 
     #[test]
