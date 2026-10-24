@@ -187,6 +187,11 @@ pub struct DayviewSvgOpts<'a> {
     /// Pixels at the far end of the time axis owned by an overlay drawn on
     /// top of the axis strip (nowview's clock). Tick labels never enter it.
     pub axis_end_reserved: f64,
+    /// A stretch of the time axis, in its own coordinates, owned by text an
+    /// overlay writes on the axis strip (nowview's «now», da-ljs7b). A tick
+    /// label beside it is moved off it, to the side its tick is on, or gives
+    /// way when that leaves no room.
+    pub axis_keep_out: Option<(f64, f64)>,
     /// Per-field fills for the reserved right panel, matched to bands by
     /// name. Only the day carrying the now-line gets them; a field absent
     /// from the slice leaves its strip empty.
@@ -1156,10 +1161,16 @@ struct LabelSlot {
 /// end of the range are inset to sit flush against it. The last label,
 /// squeezed by that inset (the closing `00`, da-i37p2), gives way alone
 /// rather than thin the rest; if more still doesn't fit, the series is
-/// thinned to its major ticks and then greedily to whatever survives.
-fn fit_axis_labels(slots: &[LabelSlot], lo: f64, hi: f64) -> Vec<(usize, f64)> {
+/// thinned to its major ticks and then greedily to whatever survives. No
+/// label enters `keep_out`.
+fn fit_axis_labels(
+    slots: &[LabelSlot],
+    lo: f64,
+    hi: f64,
+    keep_out: Option<(f64, f64)>,
+) -> Vec<(usize, f64)> {
     let all: Vec<usize> = (0..slots.len()).collect();
-    let placed = greedy_place(&all, slots, lo, hi);
+    let placed = greedy_place(&all, slots, lo, hi, keep_out);
     if placed.len() + 1 >= all.len() && placed.iter().zip(&all).all(|(p, i)| p.0 == *i) {
         return placed;
     }
@@ -1167,12 +1178,19 @@ fn fit_axis_labels(slots: &[LabelSlot], lo: f64, hi: f64) -> Vec<(usize, f64)> {
     if majors.is_empty() {
         return placed;
     }
-    greedy_place(&majors, slots, lo, hi)
+    greedy_place(&majors, slots, lo, hi, keep_out)
 }
 
 /// Place `candidates` (ascending) in order, insetting each into `[lo, hi]`
-/// and dropping any that still overlaps the one before it.
-fn greedy_place(candidates: &[usize], slots: &[LabelSlot], lo: f64, hi: f64) -> Vec<(usize, f64)> {
+/// and moving each off `keep_out`, dropping any that then leaves the range
+/// or still overlaps the one before it.
+fn greedy_place(
+    candidates: &[usize],
+    slots: &[LabelSlot],
+    lo: f64,
+    hi: f64,
+    keep_out: Option<(f64, f64)>,
+) -> Vec<(usize, f64)> {
     let mut out = Vec::with_capacity(candidates.len());
     let mut prev_end = f64::NEG_INFINITY;
     for &i in candidates {
@@ -1180,7 +1198,19 @@ fn greedy_place(candidates: &[usize], slots: &[LabelSlot], lo: f64, hi: f64) -> 
         if slots[i].extent <= 0.0 || hi - lo < slots[i].extent {
             continue;
         }
-        let center = slots[i].center.clamp(lo + half, hi - half);
+        let mut center = slots[i].center.clamp(lo + half, hi - half);
+        if let Some((a, b)) = keep_out {
+            if center + half + AXIS_LABEL_GAP > a && center - half - AXIS_LABEL_GAP < b {
+                center = if slots[i].center < (a + b) / 2.0 {
+                    a - AXIS_LABEL_GAP - half
+                } else {
+                    b + AXIS_LABEL_GAP + half
+                };
+                if center - half < lo || center + half > hi {
+                    continue;
+                }
+            }
+        }
         if center - half < prev_end + AXIS_LABEL_GAP {
             continue;
         }
@@ -1307,6 +1337,8 @@ fn emit_time_axis(
         &slots,
         0.0,
         axis_origin + axis_end(layout, opts) - opts.axis_end_reserved.max(0.0),
+        opts.axis_keep_out
+            .map(|(a, b)| (axis_origin + a, axis_origin + b)),
     );
 
     match layout.orientation {
