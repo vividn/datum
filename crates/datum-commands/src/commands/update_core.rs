@@ -501,6 +501,7 @@ fn apply_mutation(
             s
         });
     }
+    let sets_dur = reserved.dur.is_some() || reserved.dur_uncertainty.is_some();
     if let Some(d) = reserved.dur {
         updated.dur = Some(d);
     }
@@ -524,6 +525,9 @@ fn apply_mutation(
         if updated.occur_time.as_ref().map(|t| &t.timezone) != Some(&base.timezone) {
             updated.zone_stated();
         }
+    }
+    if sets_dur && updated.occur_time.is_none() {
+        anyhow::bail!(crate::commands::log_core::TIMELESS_DUR);
     }
     persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
 }

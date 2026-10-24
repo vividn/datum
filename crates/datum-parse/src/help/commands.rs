@@ -328,7 +328,7 @@ const NO_TIMESTAMP: FlagSpec = FlagSpec {
     takes_value: false,
     value_hint: None,
     value_optional: false,
-    summary: "Timeless note-data (create_time id, no occurrence)",
+    summary: "Timeless note-data: no time, so no duration (create_time id)",
     long_description: None,
     left_override: None,
 };

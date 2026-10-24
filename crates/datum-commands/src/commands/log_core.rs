@@ -219,14 +219,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // durable timeless marker) and slugs on `create_time` →
     // `field:<create_time>c` (da-r17h), so `occur f -T` becomes note-data:
     // the data lands, no occurrence is logged, and many-per-field works.
-    // Note-data has no duration, so one on the line — `dur=`, the trailing
-    // positional, a `,`-chain's — is dropped with its uncertainty, as
-    // `retime -T` drops an entry's (da-fu7a0). Here, once the slot is filled.
+    // A timeless entry carries no duration: one on the line is refused once
+    // the entry's time is known (`TIMELESS_DUR`, da-mec79).
     if args.time.omit_timestamp {
         check_no_time_flags(&args)?;
-        reserved.dur = None;
-        reserved.dur_uncertainty = None;
-        args.duration.duration = None;
     }
 
     // da-5t94: the resolved `field` now flows through the shared peeler.
@@ -556,6 +552,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let at = parse_reserved_occur_time(&t, &base)?;
         entry.occur_time = Some(if full_day { whole_day(&at)? } else { at });
     }
+    // da-mec79: a timeless entry carries no duration — `dur=`, the trailing
+    // positional, a `,`-chain's or its uncertainty — on any verb (vividn,
+    // 2026-10-23). An `occur_time=` key above gave it a time, so it may.
+    if entry.occur_time.is_none()
+        && (entry.dur.is_some()
+            || args.duration.duration.is_some()
+            || reserved.dur_uncertainty.is_some())
+    {
+        anyhow::bail!(TIMELESS_DUR);
+    }
     // da-h8dvi: a zone the neighbours gave is a derivation, not something
     // said, so the entry records it as one and the log says so — where the
     // entry kept it: an `occur_time=` key with an offset of its own did not.
@@ -574,7 +580,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // switch/start does the same (`moment_point`), so `start foo -m` is a
     // dot rather than an open block; and `-T` on a verb with a state is a
     // note about that state, not a transition (`timeless_state`, da-w149).
-    // An explicit dur was honored above (and `-T` dropped one).
+    // An explicit dur was honored above (and refused on a timeless entry).
     // A `,`-chain names a transition, which a note cannot carry: leaving it
     // unstamped keeps `derive_verb`'s refusal of a duration-less chain.
     let timeless_state = args.time.omit_timestamp
@@ -2226,8 +2232,11 @@ fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
 /// Reject time-specifying flags when the caller passed `-T/--no-timestamp`.
 /// A timeless entry has no place for a clock offset — silently discarding
 /// one would mask a user misconception, so we bail with a list of the
-/// offending flags. (A duration is dropped by the caller, not refused:
-/// da-fu7a0.)
+/// offending flags. (A duration is refused by the caller, `TIMELESS_DUR`.)
+/// Why a timeless entry refuses a duration (da-mec79), on a log and on `update`.
+pub(crate) const TIMELESS_DUR: &str =
+    "a timeless entry (no time) carries no duration; give it a time with -t, or drop the duration";
+
 fn check_no_time_flags(args: &LogArgs) -> Result<()> {
     let mut bad: Vec<&str> = Vec::new();
     if args.time.time.is_some() {

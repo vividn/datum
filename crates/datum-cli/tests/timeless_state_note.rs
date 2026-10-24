@@ -2,7 +2,7 @@
 //! state, has no `occur_time`, and is a MOMENT point; it renders as `¢` and
 //! the state label, both in the state's colour as fg, with no LEAD/TRAIL and
 //! no bg chip — and no surface compiles it into a state. A duration beside
-//! `-T` is dropped (da-fu7a0).
+//! `-T` is refused (da-mec79).
 //!
 //! Runs the binary so the rendered lines carry their real SGR bytes.
 
@@ -198,22 +198,7 @@ fn structured_and_parallel_states_render_through_the_moment_label() {
     );
 }
 
-// ─── Test 4: a duration is dropped, `-m` is redundant ───────────────────────
-
-#[test]
-fn dash_t_drops_a_duration() {
-    let (_dir, db) = tmp_db();
-    for args in [
-        &["start", "work", "30m", "-T"][..],
-        &["switch", "environment", "outside", "dur=5m", "-T"][..],
-    ] {
-        ok(&db, args);
-        let row = last_row(&db);
-        assert_eq!(row["dur"], "MOMENT", "{args:?}");
-        assert_eq!(row["verb"], "point", "{args:?}");
-        assert_eq!(row["time_metric"], "create", "{args:?}");
-    }
-}
+// ─── Test 4: `-m` is redundant (a duration is refused: no_timestamp.rs) ────
 
 #[test]
 fn dash_m_with_dash_t_is_accepted() {

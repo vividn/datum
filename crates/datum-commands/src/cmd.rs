@@ -2098,8 +2098,16 @@ mod tests {
         a
     }
 
+    /// A timeless entry carries no duration (da-mec79): a dur-bearing
+    /// note is given a time.
+    fn make_timed_add_args(field: &str, rest: Vec<&str>) -> LogArgs {
+        let mut a = make_add_args(field, rest);
+        a.time.time = Some("10:00".into());
+        a
+    }
+
     #[test]
-    fn add_with_state_and_dur_lands_block_verb() {
+    fn add_with_state_and_dur_lands_block_switch_verb() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         // da-r17h: `note` is the timeless shape-inferring verb (auto
@@ -2109,14 +2117,15 @@ mod tests {
         // truth-table contract belongs to `note`.
         log_entry(
             Action::Note,
-            make_add_args("focus", vec!["state=true", "dur=PT1H"]),
+            make_timed_add_args("focus", vec!["state=true", "dur=PT1H"]),
             &db,
         )
         .unwrap();
         let live = datum_core::test_util::logged_entries(&db, "focus");
         assert_eq!(live.len(), 1);
         let e = &live[0];
-        assert_eq!(e.verb, Verb::Block);
+        // Timed, its trailing edge is filled (TRACKED): a block-switch.
+        assert_eq!(e.verb, Verb::BlockSwitch);
         assert_eq!(e.state, Some(serde_json::json!(true)));
         assert_eq!(
             e.dur
@@ -2133,7 +2142,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         log_entry(
             Action::Note,
-            make_add_args(
+            make_timed_add_args(
                 "phase",
                 vec!["state=true", "dur=PT0S", "following_state=false"],
             ),

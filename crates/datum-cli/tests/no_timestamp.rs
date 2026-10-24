@@ -6,8 +6,8 @@
 //! derive_verb returns for the action's canonical (state, dur, fs) triple. A
 //! state-bearing verb stamps `dur=MOMENT`, so it is a point naming a state,
 //! not a transition (da-w149). Distinct create_times keep many-per-field
-//! timeless entries apart. Time-specifying flags mixed with `-T` error out;
-//! a duration is dropped (da-fu7a0).
+//! timeless entries apart. Time-specifying flags mixed with `-T` error out,
+//! and so does a duration on any timeless entry (da-mec79).
 
 use crate::common;
 
@@ -190,28 +190,82 @@ fn minus_t_with_d_flag_errors() {
     assert!(format!("{err:#}").contains("-d"), "got: {err:#}");
 }
 
-/// da-fu7a0: `-T` makes note-data, which has no duration — `dur=` and the
-/// trailing positional are dropped, as `retime -T` drops an entry's, and
-/// the note is logged a timeless MOMENT point. (The retired `--dur`'s death
-/// is covered by `dur_flag_removed.rs`.)
+/// da-mec79: a timeless entry carries no duration (vividn, 2026-10-23), so
+/// one on the line — `dur=`, the trailing positional, a `,`-chain's, its
+/// uncertainty — is refused on every verb, `-T` or a note's own
+/// timelessness, and nothing is written. (The retired `--dur`'s death is
+/// covered by `dur_flag_removed.rs`.)
 #[test]
-fn minus_t_drops_a_duration() {
+fn a_timeless_entry_refuses_a_duration() {
     let db = fresh_db();
     for (args, field) in [
-        (&["occur", "run", "-T", "dur=30m"][..], "run"),
-        (&["start", "work", "-T", "dur=2h"][..], "work"),
+        (&["occur", "w", "-T", "dur=10m"][..], "w"),
+        (&["switch", "x", "on", "-T", "10m"][..], "x"),
         (&["start", "sleep", "-T", "30m"][..], "sleep"),
+        (&["switch", "z", "on,off", "-T", "10m"][..], "z"),
         (
-            &["occur", "coffee", "-T", "dur=5m±1m", "dur_uncertainty=2m"][..],
+            &["occur", "coffee", "-T", "dur_uncertainty=2m"][..],
             "coffee",
+        ),
+        (&["note", "n", "dur=5m"][..], "n"),
+        (&["add", "a", "--id", "a", "k=1", "dur=5m"][..], "a"),
+    ] {
+        let err = run_cli(args, &db).expect_err(&format!("{args:?} must refuse"));
+        assert!(
+            format!("{err:#}").contains("a timeless entry (no time) carries no duration"),
+            "{args:?}: {err:#}"
+        );
+        assert_count!(db, field, 0);
+    }
+}
+
+/// da-mec79: so is `update` setting one on a timeless entry, which keeps
+/// what it had; given a time alongside, it takes both.
+#[test]
+fn update_refuses_a_duration_on_a_timeless_entry() {
+    let db = fresh_db();
+    run_cli(&["note", "n", "hello"], &db).expect("note");
+    let hid = datum_core::test_util::logged_entries(&db, "n")[0]
+        .hid
+        .to_string();
+    let err = run_cli(&["update", &hid, "dur=10m"], &db).expect_err("must refuse");
+    assert!(
+        format!("{err:#}").contains("carries no duration"),
+        "{err:#}"
+    );
+    let e = &datum_core::test_util::logged_entries(&db, "n")[0];
+    assert!(e.dur.is_none() && e.occur_time.is_none());
+
+    run_cli(&["update", &hid, "occur_time=10:00", "dur=10m"], &db).expect("timed update");
+    let e = &datum_core::test_util::logged_entries(&db, "n")[0];
+    assert!(e.occur_time.is_some());
+    assert_eq!(e.dur, Some(Dur::parse("PT10M").unwrap()));
+}
+
+/// da-mec79: a note and an add stay `dur: null`, a timeless occur or
+/// switch `MOMENT` (da-w149), and an entry given a time keeps its duration.
+#[test]
+fn timeless_durations_and_timed_ones() {
+    let db = fresh_db();
+    for (args, field, dur) in [
+        (&["note", "n", "hello"][..], "n", None),
+        (&["add", "a", "--id", "a", "k=1"][..], "a", None),
+        (&["occur", "w", "-T"][..], "w", Some(Dur::moment())),
+        (&["switch", "x", "on", "-T"][..], "x", Some(Dur::moment())),
+        (
+            &["note", "t", "-t", "10:00", "dur=5m"][..],
+            "t",
+            Some(Dur::parse("PT5M").unwrap()),
+        ),
+        (
+            &["add", "b", "--id", "b", "occur_time=10:00", "dur=5m"][..],
+            "b",
+            Some(Dur::parse("PT5M").unwrap()),
         ),
     ] {
         run_cli(args, &db).unwrap_or_else(|e| panic!("{args:?}: {e:#}"));
         let e = &datum_core::test_util::logged_entries(&db, field)[0];
-        assert_entry_matches!(e, verb: "point");
-        assert!(e.occur_time.is_none(), "{args:?}: timeless");
-        assert!(slug_is_timeless(e.slug.as_str()), "{args:?}: {}", e.slug);
-        assert_eq!(e.dur, Some(Dur::moment()), "{args:?}");
+        assert_eq!(e.dur, dur, "{args:?}");
     }
 }
 
