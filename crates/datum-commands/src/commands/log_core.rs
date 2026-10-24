@@ -52,6 +52,14 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         anyhow::bail!("`--if-changed` is only valid with `switch`, `start` and `end`");
     }
 
+    // da-tldkb: a name that is no field may name one it starts, read
+    // before its spec is. A name `-F` builds is read once it is built.
+    if args.field_keys.is_empty() {
+        if let Some(field) = written_field(db, &args.field_or_verb, args.setup)? {
+            args.field_or_verb = field;
+        }
+    }
+
     // da-9s98k: the field's declared keys join the line as its slots,
     // before the `dur=` slot `prepare_log_args` declares last.
     let spec = db.load_spec(&args.field_or_verb)?;
@@ -235,6 +243,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         &args.field_keys,
         &field_values,
     )?;
+    let field = written_field(db, &field, args.setup)?.unwrap_or(field);
 
     // da-5ns.3 strict positional gate (the timeless Add/Note family): the
     // v=20 model has no implicit `value` column, so a bare unkeyed positional
@@ -696,6 +705,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `save_existing_entry_with_auto_reinterp` already re-interpolates
     // `field_structure` on every mutation, so a later `dm update
     // <hid> srcLang=es` cascades into both `field` and `slug`.
+    // da-tldkb: a hid never equals a field name, so `get x` names one thing;
+    // drawn again before a `%hid%` placeholder reads it.
+    while db.field_exists(entry.hid.as_str())? {
+        entry.hid = datum_core::entry::new_hid();
+    }
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
     if field_spec::contains_template(&entry.field) {
         let template = entry.field.clone();
@@ -705,6 +719,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
     datum_core::slug::validate_new_field_name(&entry.field)?;
     refuse_unset_up_field(db, &entry.field, args.setup)?;
+    crate::commands::helpers::refuse_hid_named_field(db, &entry.field)?;
 
     // da-ivld: id_structure is the single source of truth for slug.
     // Every entry now carries an id_structure on insert; slug is always
@@ -1077,24 +1092,51 @@ pub(crate) struct ParsedLogArgs {
 /// `value`. The `__datum_*` prefix avoids collision with any user key.
 pub(crate) const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 
-/// da-j04cq: a write names a field that does not exist yet (no entries, no
-/// spec of its own) under a template whose `auto_setup` is false, and does
-/// not say `--setup`: refused, so a mistyped id creates nothing.
-fn refuse_unset_up_field(db: &Db, field: &str, setup: bool) -> Result<()> {
+/// da-j04cq: the template keeping a write from creating `field`
+/// ([`Db::closing_template`](datum_core::db::Db::closing_template)), when the
+/// line does not say `--setup`. `None`: the write may create it. The one
+/// question the refusal below and [`written_field`] both ask, so the db's
+/// own setting (da-w6pp2) joins them here.
+fn creation_closed_by(db: &Db, field: &str, setup: bool) -> Result<Option<String>> {
     if setup {
-        return Ok(());
+        return Ok(None);
     }
-    let Some(spec) = db.load_spec(field)?.filter(|s| s.auto_setup == Some(false)) else {
+    Ok(db.closing_template(field)?)
+}
+
+/// da-j04cq: a write names a field that does not exist yet (no entries, no
+/// spec of its own) that it may not create: refused, so a mistyped id
+/// creates nothing.
+fn refuse_unset_up_field(db: &Db, field: &str, setup: bool) -> Result<()> {
+    let Some(template) = creation_closed_by(db, field, setup)? else {
         return Ok(());
     };
     if db.field_exists(field)? {
         return Ok(());
     }
-    let template = spec.template.map(|c| c.template).unwrap_or_default();
     anyhow::bail!(
-        "no field '{field}' yet (no entries, no spec of its own), and its template \
+        "no field '{field}' yet (no entries, no spec of its own), and the template \
          `{template}` creates none unless asked: add `--setup` to create it"
     )
+}
+
+/// da-tldkb: the field a write names when the name is no field but starts
+/// some: only where the write could not create the name anyway
+/// ([`creation_closed_by`]), so in an open db `occur envi` beside
+/// `environment` still makes `envi`. Starting several there is refused,
+/// naming them.
+fn written_field(db: &Db, name: &str, setup: bool) -> Result<Option<String>> {
+    if setup || name.is_empty() || field_spec::contains_template(name) || db.field_exists(name)? {
+        return Ok(None);
+    }
+    if creation_closed_by(db, name, false)?.is_none() {
+        return Ok(None);
+    }
+    match crate::commands::helpers::fields_starting(db, name)?.as_slice() {
+        [] => Ok(None),
+        [one] => Ok(Some(one.clone())),
+        many => Err(crate::commands::helpers::fields_ambiguous(name, many)),
+    }
 }
 
 /// Parse LogArgs into a structured bundle — field, primary value, extra_data,

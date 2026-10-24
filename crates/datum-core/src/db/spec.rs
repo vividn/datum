@@ -24,7 +24,7 @@ use crate::ids::Slug;
 use crate::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use crate::time::DatumTime;
 use crate::verb::Verb;
-use datum_parse::field_template::{is_template, literal, matches, ties};
+use datum_parse::field_template::{is_template, literal, matches, parts, ties};
 
 use super::alias::ALIAS_FIELD;
 use super::definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, VIEW_FIELD};
@@ -415,6 +415,77 @@ impl Db {
     /// every mistyped id a template matches would.
     pub fn field_exists(&self, field: &str) -> Result<bool> {
         Ok(self.field_has_entries(field)? || self.own_spec_data(field)?.is_some())
+    }
+
+    /// The template closing `field` to a write that would create it
+    /// (da-j04cq, da-tldkb): the one covering it when that says
+    /// `auto_setup = false`, and with none covering it, a template saying so
+    /// whose literal head (`issue__`) the name begins with, so `issue__k7f`
+    /// is closed though no 8-character id. `None`: a write may create it.
+    pub fn closing_template(&self, field: &str) -> Result<Option<String>> {
+        if is_template(field) || is_meta_field(field) {
+            return Ok(None);
+        }
+        let templates = self.template_specs()?;
+        let closed = |data: &str| {
+            serde_json::from_str::<JsonValue>(data)
+                .is_ok_and(|d| d.get("auto_setup") == Some(&JsonValue::Bool(false)))
+        };
+        if let Some((name, data)) = covering(field, &templates) {
+            return Ok(closed(data).then(|| name.clone()));
+        }
+        Ok(templates
+            .iter()
+            .find(|(name, data)| {
+                let head = &parts(name)[0];
+                !head.is_empty() && field.starts_with(head.as_str()) && closed(data)
+            })
+            .map(|(name, _)| name.clone()))
+    }
+
+    /// The fields whose names start with `prefix` (da-tldkb), alphabetical,
+    /// at most `cap`: a live entry's or a spec's of its own, and no meta
+    /// field or template. A skip-scan of the prefix's range, as
+    /// [`Db::distinct_fields`] is of every name, stopping at `cap`, and the
+    /// specs read by slug (by `field`, the planner read every spec), so it
+    /// reads at most `cap` names of each.
+    pub fn fields_starting(&self, prefix: &str, cap: usize) -> Result<Vec<String>> {
+        // Past every name starting `prefix` but one whose next character
+        // is U+10FFFF itself.
+        let end = format!("{prefix}\u{10FFFF}");
+        let mut stmt = self.conn.prepare_cached(&format!(
+            "WITH RECURSIVE f(field, n) AS (
+                 SELECT min(field), 1 FROM entries WHERE field >= ?1 AND field < ?2 AND {LIVE_SQL}
+                 UNION ALL
+                 SELECT (SELECT min(field) FROM entries
+                          WHERE field > f.field AND field < ?2 AND {LIVE_SQL}), n + 1
+                   FROM f WHERE f.field IS NOT NULL AND n < ?3
+             )
+             SELECT field FROM f WHERE field IS NOT NULL AND {NOT_META_FIELD_SQL}
+             UNION
+             SELECT * FROM (
+                 SELECT json_extract(data, '$.field') FROM entries INDEXED BY entries_slug_lookup
+                  WHERE slug >= 'spec:' || ?1 AND slug < 'spec:' || ?2 AND {SPEC_DOC_SQL}
+                  LIMIT ?3)
+             ORDER BY 1 LIMIT ?3"
+        ))?;
+        let rows = stmt.query_map(params![prefix, end, cap as i64], |row| {
+            row.get::<_, String>(0)
+        })?;
+        let mut fields = rows.collect::<rusqlite::Result<Vec<String>>>()?;
+        fields.retain(|f| !is_meta_field(f) && !is_template(f));
+        Ok(fields)
+    }
+
+    /// True when some entry, live or not, holds `hid` (da-tldkb): no field
+    /// may be named as one.
+    pub fn hid_exists(&self, hid: &str) -> Result<bool> {
+        let n: i64 = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM entries WHERE hid = ?1)",
+            params![hid],
+            |row| row.get(0),
+        )?;
+        Ok(n != 0)
     }
 
     /// True when at least one entry exists for `field` (any state,

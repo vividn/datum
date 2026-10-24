@@ -235,6 +235,17 @@ Native only: the browser's database is one process's at a time.
   true, a start's dur none), and `...` is a `.` for every slot left
   (`datum practice ... tail`). `datum help alias` says it.
 
+### A field name may be the start of one
+A name that is no field but starts exactly one names that one, after alias
+expansion (da-tldkb, `datum help names`): `datum tail envi` reads
+`environment`; one starting several is refused, naming them. Reads resolve
+always (`resolve_read_fields` in `cmd.rs`); a write, once `-F` has built
+the name, only where it could not create it anyway, which `creation_closed_by`
+in `log_core.rs` answers (`Db::closing_template`: a template with
+`auto_setup = false` covering the name, or its literal head `issue__` starting
+it; no `--setup`), so `occur envi` in an open db still makes `envi`. In an entry's place (`get x`, `get x::state`) a field
+wins over a hid, and no field is named as a hid, nor a hid drawn as a field.
+
 ### Alias system (built-in, not shell aliases)
 Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 - `datum alias set vbp "note word srcLang=pt pos=verb"`

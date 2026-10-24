@@ -308,8 +308,41 @@ fn writes_a_batch(command: &Command) -> bool {
     )
 }
 
-fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
+/// da-tldkb: a read resolves each field it names by unique prefix
+/// ([`read_field`](crate::commands::helpers::read_field)), after alias
+/// expansion: `tail envi` is `tail environment` when no other field starts
+/// `envi`. `get`'s plain names are `get`'s own to resolve.
+fn resolve_read_fields(command: &mut Command, db: &Db) -> Result<()> {
+    use crate::commands::helpers::read_field;
+    let field = match command {
+        Command::Tail(a) | Command::Head(a) => {
+            return a.fields.iter_mut().try_for_each(|f| read_field(db, f));
+        }
+        Command::States(a) => Some(&mut a.field),
+        Command::Grep(a) => a.field.as_mut(),
+        Command::Count(a) => a.field.as_mut(),
+        Command::Ids(a) => a.field.as_mut(),
+        Command::Get(a) if !a.matchers.is_empty() => a.id_or_slug.as_mut(),
+        Command::Stats(a) => {
+            let Some(selector) = a.selector.as_mut() else {
+                return Ok(());
+            };
+            let (mut field, state) = match selector.split_once(':') {
+                Some((f, s)) => (f.to_string(), Some(s.to_string())),
+                None => (selector.clone(), None),
+            };
+            read_field(db, &mut field)?;
+            *selector = state.map_or(field.clone(), |s| format!("{field}:{s}"));
+            return Ok(());
+        }
+        _ => None,
+    };
+    field.map_or(Ok(()), |f| read_field(db, f))
+}
+
+fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {
     use crate::commands;
+    resolve_read_fields(&mut cli.command, db)?;
     match cli.command {
         // Repl is intercepted by the binary entry point before dispatch
         // (see `datum-cli::dispatch_single`). Reaching here means a

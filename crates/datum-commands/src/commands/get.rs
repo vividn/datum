@@ -123,13 +123,20 @@ fn project(piece: &str, db: &Db) -> Result<()> {
     } else {
         id
     };
+    // Errors name what was typed, and a field with a live entry reads as its
+    // newest (da-tldkb).
+    let mut at = id.to_string();
+    let field_latest = match crate::commands::helpers::id_field_named(db, id)? {
+        Some(f) if !db.entries_for_field(&f, Some(1))?.is_empty() => Some(format!("{f}:_")),
+        _ => None,
+    };
+    let id = field_latest.as_deref().unwrap_or(id);
     let names: Vec<&str> = names.split("::").collect();
     let (last, hops) = names.split_last().expect("split yields one piece");
     let mut entry = datum_core::ids::resolve_quickid_single(db, id)?;
     let registry = (!hops.is_empty())
         .then(|| crate::commands::helpers::load_registry_opt(db))
         .flatten();
-    let mut at = id.to_string();
     let mut chain = vec![entry.slug.to_string()];
     let mut seen = vec![entry.hid.clone()];
     for &name in hops {

@@ -347,6 +347,30 @@ pub(crate) fn resolve_batch(
         std::collections::HashSet::new();
     let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
     for token in id_list(db, input) {
+        // da-tldkb: `get`'s plain name is a field before it is a hid, while
+        // the field has a live entry to show.
+        if expand_ambiguous {
+            let field = match id_field_named(db, token) {
+                Ok(field) => field,
+                Err(e) => {
+                    errors.push((token.to_string(), e));
+                    continue;
+                }
+            };
+            if let Some(field) = field {
+                match db.entries_for_field_asc(&field, None) {
+                    Ok(found) if found.is_empty() => {}
+                    Ok(found) => {
+                        entries.extend(found.into_iter().filter(|e| seen.insert(e.slug.clone())));
+                        continue;
+                    }
+                    Err(e) => {
+                        errors.push((token.to_string(), e.into()));
+                        continue;
+                    }
+                }
+            }
+        }
         let resolved = if expand_ambiguous {
             resolve_quickid_all(db, token)
         } else {
@@ -742,6 +766,75 @@ pub fn track_spec(
         datum_core::field_spec::FieldSpec::new(field, datum_core::track::verb_for_action(action));
     spec.regenerate_derived_aliases();
     Ok(Some(spec))
+}
+
+/// How many fields a name starting several lists (da-tldkb).
+const FIELD_CANDIDATES: usize = 16;
+
+/// da-tldkb: the field `name` names — itself when it is a field, else the
+/// one field whose name starts with it, as datum v1 read `tail envi`; `None`
+/// when it starts none. One starting several is refused, naming them.
+pub(crate) fn field_named(db: &Db, name: &str) -> Result<Option<String>> {
+    if name.is_empty() || datum_parse::field_template::is_template(name) {
+        return Ok(None);
+    }
+    if db.field_exists(name)? {
+        return Ok(Some(name.to_string()));
+    }
+    match fields_starting(db, name)?.as_slice() {
+        [] => Ok(None),
+        [one] => Ok(Some(one.clone())),
+        many => Err(fields_ambiguous(name, many)),
+    }
+}
+
+/// The fields whose names start with `name`: as many as a refusal lists,
+/// and one more to say there are more.
+pub(crate) fn fields_starting(db: &Db, name: &str) -> Result<Vec<String>> {
+    Ok(db.fields_starting(name, FIELD_CANDIDATES + 1)?)
+}
+
+/// da-tldkb: the field a name in an entry's place names (`get x`,
+/// `get x::state`), which wins over a hid: [`field_named`], and never for a
+/// slug, a wildcard or an `_` shorthand.
+pub(crate) fn id_field_named(db: &Db, token: &str) -> Result<Option<String>> {
+    if token.starts_with('_') || token.contains(':') || contains_wildcard(token) {
+        return Ok(None);
+    }
+    field_named(db, token)
+}
+
+/// The refusal of a name starting several fields, naming them.
+pub(crate) fn fields_ambiguous(name: &str, fields: &[String]) -> anyhow::Error {
+    let shown = &fields[..fields.len().min(FIELD_CANDIDATES)];
+    anyhow::anyhow!(
+        "no field '{name}', and it starts {}: {}",
+        if shown.len() < fields.len() {
+            "these and more"
+        } else {
+            "these"
+        },
+        shown.join(", ")
+    )
+}
+
+/// da-tldkb: no field is named as an entry's hid, so `get x` names one
+/// thing: a name a write would make a new field of, that some entry's hid
+/// is, is refused.
+pub(crate) fn refuse_hid_named_field(db: &Db, field: &str) -> Result<()> {
+    if !db.field_exists(field)? && db.hid_exists(field)? {
+        anyhow::bail!("'{field}' is an entry's hid, and no field may be named as one");
+    }
+    Ok(())
+}
+
+/// A read's field (da-tldkb): [`field_named`], or `name` as typed when it
+/// starts no field.
+pub(crate) fn read_field(db: &Db, name: &mut String) -> Result<()> {
+    if let Some(field) = field_named(db, name)? {
+        *name = field;
+    }
+    Ok(())
 }
 
 /// da-t3quu, da-mekab: a name datum has never seen — no live entry, no

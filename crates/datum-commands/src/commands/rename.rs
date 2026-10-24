@@ -8,6 +8,7 @@ use crate::args::RenameArgs;
 
 pub fn rename(args: RenameArgs, db: &Db) -> Result<()> {
     let RenameArgs { old, new, dry_run } = args;
+    crate::commands::helpers::refuse_hid_named_field(db, &new)?;
     let done = db.rename_field(&old, &new, dry_run)?;
     crate::cmd::stamp_batch(db);
     let (tag, moved) = if dry_run {

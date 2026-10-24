@@ -129,6 +129,7 @@ pub(crate) fn spec_from_json(field: &str, json: &str, db: &Db) -> Result<FieldSp
 }
 
 fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
+    crate::commands::helpers::refuse_hid_named_field(db, &args.field)?;
     // --from-json replaces the entire spec; individual flags merge in.
     let mut spec = if let Some(json) = &args.from_json {
         spec_from_json(&args.field, json, db)?
