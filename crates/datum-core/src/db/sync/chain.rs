@@ -2005,7 +2005,7 @@ mod tests {
     /// A software authenticator: a fixed P-256 key signing as a passkey would.
     fn authenticator() -> (p256::ecdsa::SigningKey, String) {
         let sk = p256::ecdsa::SigningKey::from_slice(&[7u8; 32]).unwrap();
-        let point = sk.verifying_key().to_encoded_point(false);
+        let point = sk.verifying_key().to_sec1_point(false);
         (
             sk,
             format!("es256:{}", BASE64URL_NOPAD.encode(point.as_bytes())),
@@ -2048,7 +2048,7 @@ mod tests {
         if a.high_s {
             let (r, s) = sig.split_scalars();
             sig = p256::ecdsa::Signature::from_scalars(r.to_bytes(), (-*s).to_bytes()).unwrap();
-            assert!(sig.normalize_s().is_some(), "the vector is high-S");
+            assert_ne!(sig.normalize_s(), sig, "the vector is high-S");
         }
         let mut sig = sig.to_der().as_bytes().to_vec();
         if tamper {
@@ -2158,7 +2158,7 @@ mod tests {
     #[test]
     fn a_passkey_spki_becomes_its_admin_key() {
         let (sk, key) = authenticator();
-        let point = sk.verifying_key().to_encoded_point(false);
+        let point = sk.verifying_key().to_sec1_point(false);
         let spki = [
             unhex_vec("3059301306072a8648ce3d020106082a8648ce3d030107034200"),
             point.as_bytes().to_vec(),

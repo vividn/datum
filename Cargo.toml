@@ -58,7 +58,7 @@ rand = "0.8"
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "rand_core", "zeroize"] }
 # The sync chain's admin keys are passkeys: a WebAuthn assertion is ES256
 # (P-256 ECDSA), verified by every peer offline (da-odwc7).
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8"] }
 data-encoding = "2"
 
 # Text

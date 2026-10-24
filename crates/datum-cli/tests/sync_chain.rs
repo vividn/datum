@@ -1578,7 +1578,7 @@ fn passkey_json() -> String {
         &data_encoding::HEXLOWER
             .decode(b"3059301306072a8648ce3d020106082a8648ce3d030107034200")
             .unwrap()[..],
-        sk.verifying_key().to_encoded_point(false).as_bytes(),
+        sk.verifying_key().to_sec1_point(false).as_bytes(),
     ]
     .concat();
     serde_json::json!({"alg": -7, "publicKey": BASE64URL_NOPAD.encode(&spki), "label": "phone"})
