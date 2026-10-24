@@ -207,3 +207,104 @@ fn a_kits_template_sets_auto_setup() {
     assert!(run_cli(&["switch", "issue__abcdefgh", "queued"], &db).is_err());
     run_cli(&["switch", "issue__abcdefgh", "queued", "--setup"], &db).unwrap();
 }
+
+/// da-iov64: the board, taking only its listed states.
+fn listed_board() -> Db {
+    let db = board();
+    run_cli(&["setup", "issue__%hid:8%", "--only-listed-states"], &db).unwrap();
+    db
+}
+
+fn refused(db: &Db, line: &[&str]) -> String {
+    format!("{:#}", run_cli(line, db).expect_err("refused"))
+}
+
+#[test]
+fn a_typod_state_on_a_covered_field_advises_setting_up_the_template() {
+    let db = listed_board();
+    let msg = refused(&db, &["switch", "issue__2qvk0dk4", "in_prgress"]);
+    assert!(
+        msg.contains("`datum setup 'issue__%hid:8%' --state queued --state in_progress --state done --state in_prgress`")
+            && msg.contains("`datum setup 'issue__%hid:8%' --any-states`"),
+        "{msg}"
+    );
+    assert!(!msg.contains("setup issue__2qvk0dk4"), "{msg}");
+}
+
+#[test]
+fn ending_a_never_false_covered_field_advises_setting_up_the_template() {
+    let db = listed_board();
+    run_cli(&["setup", "issue__%hid:8%", "--never-false"], &db).unwrap();
+    run_cli(&["switch", "issue__2qvk0dk4", "queued"], &db).unwrap();
+    let msg = refused(&db, &["end", "issue__2qvk0dk4"]);
+    assert!(
+        msg.contains("`datum setup 'issue__%hid:8%' --state queued --state in_progress --state done --state false`")
+            && msg.contains("`datum setup 'issue__%hid:8%' --allow-false`"),
+        "{msg}"
+    );
+    assert!(!msg.contains("setup issue__2qvk0dk4"), "{msg}");
+}
+
+#[test]
+fn a_covered_field_whose_own_spec_takes_only_its_own_states_is_advised_by_name() {
+    let db = board();
+    let own = ["--states", "queued,blocked", "--only-listed-states"];
+    run_cli(&[&["setup", "issue__2qvk0dk4"][..], &own].concat(), &db).unwrap();
+    let msg = refused(&db, &["switch", "issue__2qvk0dk4", "done"]);
+    assert!(
+        msg.contains("`datum setup issue__2qvk0dk4 --state queued --state blocked --state done`")
+            && msg.contains("`datum setup issue__2qvk0dk4 --any-states`"),
+        "{msg}"
+    );
+    assert!(!msg.contains("issue__%hid:8%"), "{msg}");
+}
+
+#[test]
+fn a_plain_fields_refusal_advises_setting_up_the_field() {
+    let db = fresh_db();
+    let spec = ["setup", "env", "--verb", "switch", "--states", "home"];
+    run_cli(
+        &[&spec[..], &["--only-listed-states", "--never-false"]].concat(),
+        &db,
+    )
+    .unwrap();
+    let msg = refused(&db, &["switch", "env", "park"]);
+    assert!(
+        msg.contains(
+            "`datum setup env --state home --state park`, or `datum setup env --any-states`"
+        ),
+        "{msg}"
+    );
+    run_cli(&["switch", "env", "home"], &db).unwrap();
+    let msg = refused(&db, &["end", "env"]);
+    assert!(
+        msg.contains(
+            "(`datum setup env --state home --state false`), or `datum setup env --allow-false`"
+        ),
+        "{msg}"
+    );
+}
+
+#[test]
+fn each_suggestion_names_the_spec_that_owns_the_key_it_changes() {
+    // The template lists the states; the field's own spec takes only them.
+    let db = board();
+    run_cli(&["setup", "issue__2qvk0dk4", "--only-listed-states"], &db).unwrap();
+    let msg = refused(&db, &["switch", "issue__2qvk0dk4", "in_prgress"]);
+    assert!(
+        msg.contains("`datum setup 'issue__%hid:8%' --state queued --state in_progress --state done --state in_prgress`")
+            && msg.contains("`datum setup issue__2qvk0dk4 --any-states`"),
+        "{msg}"
+    );
+
+    // The template takes only its states; the field's own spec is never false.
+    let db = listed_board();
+    run_cli(&["setup", "issue__2qvk0dk4", "--never-false"], &db).unwrap();
+    run_cli(&["switch", "issue__2qvk0dk4", "queued"], &db).unwrap();
+    let msg = refused(&db, &["end", "issue__2qvk0dk4"]);
+    assert!(
+        msg.contains("`datum setup 'issue__%hid:8%' --state queued --state in_progress --state done --state false`")
+            && msg.contains("`datum setup issue__2qvk0dk4 --allow-false`"),
+        "{msg}"
+    );
+}
