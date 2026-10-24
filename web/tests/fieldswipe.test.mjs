@@ -201,7 +201,8 @@ test('on a phone the finger drags the tab in front with the next in sight, and s
 		await go();
 		await until(() => lefts(page), (at) => at.data === 0);
 		assert.equal(await shown(page), 'data');
-		assert.equal(await drawn(page, 'basics'), false);
+		// Basics is put away as the track lands, the one 150ms beside the other: wait for it, not one frame.
+		await until(() => drawn(page, 'basics'), (d) => d === false);
 		// A tab pressed in the bar glides too.
 		assert.equal(await press(page, 'basics'), true, 'a tab pressed did not glide');
 		assert.deepEqual(app.errors, []);
