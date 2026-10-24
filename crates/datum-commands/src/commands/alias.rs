@@ -17,7 +17,7 @@ use datum_core::{
     db::Db,
     field_spec::{alias_effect, user_alias_to_save, AliasEffect},
 };
-use datum_parse::alias::shell_join;
+use datum_parse::alias::{sh_quote, shell_join};
 
 use crate::args::AliasCommand;
 
@@ -213,17 +213,6 @@ fn remove_loops(shell: &str, datum: Option<&str>) -> Result<()> {
         println!("✓ removed from {shown}");
     }
     Ok(())
-}
-
-/// `s` as one shell word: bare when it is plainly one, else single-quoted.
-fn sh_quote(s: &str) -> String {
-    if !s.is_empty()
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || "_-.+@:/".contains(c))
-    {
-        return s.to_string();
-    }
-    format!("'{}'", s.replace('\'', r"'\''"))
 }
 
 /// Write `alias` as this device's entry.

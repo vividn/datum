@@ -717,6 +717,17 @@ pub fn shell_join(tokens: &[String]) -> String {
         .join(" ")
 }
 
+/// `s` as one shell word: bare when it is plainly one, else single-quoted.
+pub fn sh_quote(s: &str) -> String {
+    if !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_-.+@:/".contains(c))
+    {
+        return s.to_string();
+    }
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
 fn shell_quote_token(s: &str) -> String {
     if s.is_empty() {
         return "\"\"".to_string();

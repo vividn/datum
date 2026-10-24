@@ -17,9 +17,9 @@ pub mod regions;
 pub mod scope;
 
 pub use expand::{
-    expand_argv, expand_stacked_flags, maybe_collapse_switch_chain, shell_join, shell_split,
-    spell_color, split_argv_at_commas, try_expand_alias, AliasStep, MapResolver, NoResolver,
-    ResolvedAlias, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, MULTI_COMMA,
+    expand_argv, expand_stacked_flags, maybe_collapse_switch_chain, sh_quote, shell_join,
+    shell_split, spell_color, split_argv_at_commas, try_expand_alias, AliasStep, MapResolver,
+    NoResolver, ResolvedAlias, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, MULTI_COMMA,
 };
 pub use scope::{
     expand_into_sides, expand_wrapped, verb_is_time_relevant, ExpandedSides, TimeFlags,

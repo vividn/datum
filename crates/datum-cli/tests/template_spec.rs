@@ -224,7 +224,7 @@ fn a_typod_state_on_a_covered_field_advises_setting_up_the_template() {
     let db = listed_board();
     let msg = refused(&db, &["switch", "issue__2qvk0dk4", "in_prgress"]);
     assert!(
-        msg.contains("`datum setup 'issue__%hid:8%' --state queued --state in_progress --state done --state in_prgress`")
+        msg.contains("`datum setup 'issue__%hid:8%' --add-state in_prgress`")
             && msg.contains("`datum setup 'issue__%hid:8%' --any-states`"),
         "{msg}"
     );
@@ -238,7 +238,7 @@ fn ending_a_never_false_covered_field_advises_setting_up_the_template() {
     run_cli(&["switch", "issue__2qvk0dk4", "queued"], &db).unwrap();
     let msg = refused(&db, &["end", "issue__2qvk0dk4"]);
     assert!(
-        msg.contains("`datum setup 'issue__%hid:8%' --state queued --state in_progress --state done --state false`")
+        msg.contains("`datum setup 'issue__%hid:8%' --add-state false`")
             && msg.contains("`datum setup 'issue__%hid:8%' --allow-false`"),
         "{msg}"
     );
@@ -252,7 +252,7 @@ fn a_covered_field_whose_own_spec_takes_only_its_own_states_is_advised_by_name()
     run_cli(&[&["setup", "issue__2qvk0dk4"][..], &own].concat(), &db).unwrap();
     let msg = refused(&db, &["switch", "issue__2qvk0dk4", "done"]);
     assert!(
-        msg.contains("`datum setup issue__2qvk0dk4 --state queued --state blocked --state done`")
+        msg.contains("`datum setup issue__2qvk0dk4 --add-state done`")
             && msg.contains("`datum setup issue__2qvk0dk4 --any-states`"),
         "{msg}"
     );
@@ -270,17 +270,13 @@ fn a_plain_fields_refusal_advises_setting_up_the_field() {
     .unwrap();
     let msg = refused(&db, &["switch", "env", "park"]);
     assert!(
-        msg.contains(
-            "`datum setup env --state home --state park`, or `datum setup env --any-states`"
-        ),
+        msg.contains("`datum setup env --add-state park`, or `datum setup env --any-states`"),
         "{msg}"
     );
     run_cli(&["switch", "env", "home"], &db).unwrap();
     let msg = refused(&db, &["end", "env"]);
     assert!(
-        msg.contains(
-            "(`datum setup env --state home --state false`), or `datum setup env --allow-false`"
-        ),
+        msg.contains("(`datum setup env --add-state false`), or `datum setup env --allow-false`"),
         "{msg}"
     );
 }
@@ -292,7 +288,7 @@ fn each_suggestion_names_the_spec_that_owns_the_key_it_changes() {
     run_cli(&["setup", "issue__2qvk0dk4", "--only-listed-states"], &db).unwrap();
     let msg = refused(&db, &["switch", "issue__2qvk0dk4", "in_prgress"]);
     assert!(
-        msg.contains("`datum setup 'issue__%hid:8%' --state queued --state in_progress --state done --state in_prgress`")
+        msg.contains("`datum setup 'issue__%hid:8%' --add-state in_prgress`")
             && msg.contains("`datum setup issue__2qvk0dk4 --any-states`"),
         "{msg}"
     );
@@ -303,8 +299,61 @@ fn each_suggestion_names_the_spec_that_owns_the_key_it_changes() {
     run_cli(&["switch", "issue__2qvk0dk4", "queued"], &db).unwrap();
     let msg = refused(&db, &["end", "issue__2qvk0dk4"]);
     assert!(
-        msg.contains("`datum setup 'issue__%hid:8%' --state queued --state in_progress --state done --state false`")
+        msg.contains("`datum setup 'issue__%hid:8%' --add-state false`")
             && msg.contains("`datum setup issue__2qvk0dk4 --allow-false`"),
         "{msg}"
     );
+}
+
+/// Every `datum setup …` a refusal advises, as argv, split as a shell does.
+fn advised(msg: &str) -> Vec<Vec<String>> {
+    let lines: Vec<_> = msg
+        .split('`')
+        .filter_map(|s| s.strip_prefix("datum "))
+        .map(datum_parse::alias::shell_split)
+        .collect();
+    assert!(!lines.is_empty(), "{msg}");
+    lines
+}
+
+#[test]
+fn every_advised_setup_runs_and_then_takes_the_refused_line() {
+    // da-9afg5: the advice said `--state`, which setup refuses.
+    let covered = || listed_board();
+    let covered_never_false = || {
+        let db = listed_board();
+        run_cli(&["setup", "issue__%hid:8%", "--never-false"], &db).unwrap();
+        run_cli(&["switch", "issue__2qvk0dk4", "queued"], &db).unwrap();
+        db
+    };
+    let plain = || {
+        let db = fresh_db();
+        let spec = ["setup", "env", "--verb", "switch", "--states", "home"];
+        run_cli(
+            &[&spec[..], &["--only-listed-states", "--never-false"]].concat(),
+            &db,
+        )
+        .unwrap();
+        run_cli(&["switch", "env", "home"], &db).unwrap();
+        db
+    };
+    let cases: [(&dyn Fn() -> Db, &[&str]); 6] = [
+        (&covered, &["switch", "issue__2qvk0dk4", "in_prgress"]),
+        (&covered_never_false, &["end", "issue__2qvk0dk4"]),
+        (&plain, &["switch", "env", "park"]),
+        (&plain, &["end", "env"]),
+        // A state a shell would split or read is quoted as one word.
+        (&plain, &["switch", "env", "very tired"]),
+        (&plain, &["switch", "env", "it's $HOME"]),
+    ];
+    for (make, line) in cases {
+        let msg = refused(&make(), line);
+        assert!(!msg.contains("--state "), "{msg}");
+        for setup in advised(&msg) {
+            let db = make();
+            let setup: Vec<&str> = setup.iter().map(String::as_str).collect();
+            run_cli(&setup, &db).unwrap_or_else(|e| panic!("{setup:?}: {e:#}"));
+            run_cli(line, &db).unwrap_or_else(|e| panic!("{line:?} after {setup:?}: {e:#}"));
+        }
+    }
 }

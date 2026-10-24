@@ -456,6 +456,7 @@ impl FieldSpec {
     /// field that does not list `"false"`. The statuses and null are never
     /// refused.
     pub fn refuses_state(&self, state: &JsonValue) -> Option<String> {
+        use datum_parse::alias::sh_quote;
         use datum_parse::shape::{IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
         if !self.only_listed_states {
             return None;
@@ -465,19 +466,14 @@ impl FieldSpec {
         // The setup that changes `key`: the template's when the key is its
         // (da-iov64), so a fix never forks one field off the rest.
         let target = |key: &str| match &self.template {
-            Some(c) if !c.own.iter().any(|k| k == key) => format!("'{}'", c.template),
-            _ => field.clone(),
+            Some(c) if !c.own.iter().any(|k| k == key) => sh_quote(&c.template),
+            _ => sh_quote(field),
         };
         let (states, any, allow) = (
             target("allowed_states"),
             target("only_listed_states"),
             target("never_false"),
         );
-        // `--state` names the whole list, so the line that adds one names them all.
-        let adding = |s: &str| {
-            let states = listed.iter().map(String::as_str).chain([s]);
-            states.map(|s| format!(" --state {s}")).collect::<String>()
-        };
         match state {
             JsonValue::Null => None,
             JsonValue::Array(states) => states.iter().find_map(|s| self.refuses_state(s)),
@@ -486,9 +482,8 @@ impl FieldSpec {
             JsonValue::Bool(false) => Some(format!(
                 "field '{field}' is never false and takes only its listed states \
                  (never_false, only_listed_states): it cannot be ended — switch it \
-                 to another state, list `false` (`datum setup {states}{}`), \
-                 or `datum setup {allow} --allow-false`",
-                adding("false")
+                 to another state, list `false` (`datum setup {states} --add-state false`), \
+                 or `datum setup {allow} --allow-false`"
             )),
             JsonValue::String(s) if s == IGNORED_STATE_VALUE || s == TRACKED_STATE_VALUE => None,
             JsonValue::Bool(true) => Some(format!(
@@ -503,10 +498,10 @@ impl FieldSpec {
                 (!listed.contains(&text)).then(|| {
                     format!(
                         "field '{field}' takes only its listed states (only_listed_states): \
-                         '{text}' is not one of [{}] — add it with `datum setup {states}{}`, \
+                         '{text}' is not one of [{}] — add it with `datum setup {states} --add-state {}`, \
                          or `datum setup {any} --any-states`",
                         listed.join(", "),
-                        adding(&text)
+                        sh_quote(&text)
                     )
                 })
             }
