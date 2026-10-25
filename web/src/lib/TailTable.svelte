@@ -842,7 +842,7 @@
 {:else if rows.length === 0}
 	<p class="quiet">{empty}</p>
 {:else}
-	<table class:held={widths !== null}>
+	<table class:held={widths !== null} style:width={widths ? `${Object.values(widths).reduce((a, b) => a + b, 0)}px` : null}>
 		<colgroup>
 			{#each cols as key (key)}
 				<col style:width={widths && key !== 'state' ? `${widths[key]}px` : null} />
@@ -928,7 +928,11 @@
 		text-align: left;
 	}
 
-	/* At the widths `hold` measured: a row landing does not move a column. */
+	/* At the widths `hold` measured, the table's own too: a row landing does
+	   not move a column, and nor does a box the pane has not settled on yet
+	   (`settle`, 150 ms and more): at 100% the state column took what the
+	   held ones left of the new width, none, its cells wrapped, and the rows
+	   above the reader grew before `refresh` read their place (da-lesn1). */
 	table.held {
 		table-layout: fixed;
 	}

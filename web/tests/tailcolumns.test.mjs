@@ -84,7 +84,12 @@ const drawsKeys = (page, keys) =>
 			throw new Error(`not ${keys}: ${JSON.stringify(await table(page))}`, { cause: e });
 		});
 
-/** Resize the viewport so the tail's content box is `width` wide. */
+/**
+ * Resize the viewport so the tail's content box is `width` wide, and wait
+ * until the table is laid out across it: the pane hears its box a settle
+ * after the resize (`settle`, 150 ms and more under load), and until then
+ * the table keeps the width it had.
+ */
 async function paneWidth(page, width) {
 	const { width: now } = await table(page);
 	const viewport = page.viewportSize();
@@ -93,7 +98,11 @@ async function paneWidth(page, width) {
 		([sel, width]) => {
 			const body = document.querySelector(`${sel} .body`);
 			const style = getComputedStyle(body);
-			return Math.abs(body.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - width) < 1;
+			const table = body.querySelector('table:not(.probe)');
+			return (
+				Math.abs(body.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - width) < 1 &&
+				(!table || Math.abs(table.getBoundingClientRect().width - width) < 1)
+			);
 		},
 		[TAIL, width]
 	);
