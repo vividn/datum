@@ -196,9 +196,49 @@
 	keeps only the difference from what the layout says and an absence is
 	what «following» IS.
 -->
+<script context="module" lang="ts">
+	import type { RunResult } from './run.js';
+
+	/** A band's picture or the geometry, by the epoch it was asked at (see `cache`). */
+	type Asked = { epoch: number; end: number | 'geometry'; run: Promise<RunResult> };
+	/** One hour gridline: where it sits along a band's x, and whether it is a major. */
+	type Hour = { hour: number; x: number; major: boolean; label: string };
+	/** What every band shares, read off today's layout rather than re-derived. */
+	type Geometry = { hours: Hour[]; today: string | null };
+
+	/**
+	 * What each strip had drawn when it went, by database and widget
+	 * (da-lt25u). A swipe to another layout unmounts the strip, and the
+	 * swipe back asked the CLI for every band again: vividn, «we should
+	 * cache the dayview bands on the web (at least for the past month)».
+	 * A remount paints from here at once and re-asks only what a strip
+	 * that had stayed would have: the visible days of a newer epoch, and
+	 * today and the geometry once a minute has turned. A strip holds a
+	 * month of its days at most.
+	 */
+	const held = new Map<
+		string,
+		{
+			cache: { key: string; size: string; runs: Map<string, Asked> };
+			midnights: number;
+			onDay: string | null;
+			minute: number;
+			width: number;
+			height: number;
+			geometry: Geometry | null;
+			geometryBox: number;
+		}
+	>();
+	/** The days back a strip's held pictures reach. */
+	const MONTH = 31;
+	/** The strips held, the longest gone dropped first: a widget closed for good is never mounted again. */
+	const STRIPS = 8;
+</script>
+
 <script lang="ts">
 	import { afterUpdate, createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
 	import { browser } from '$app/environment';
+	import { currentDb } from './database.js';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import IntegrityMark from './IntegrityMark.svelte';
@@ -209,7 +249,7 @@
 	import { timeAt } from './hover.js';
 	import { spendPress } from './inspect.js';
 	import { advance, LONG_MS, SLOP_PX, undecided, type Mode, type Press } from './nowpoint.js';
-	import { run, runKey, type RunResult } from './run.js';
+	import { run, runKey } from './run.js';
 	import { firstEntryArgv } from './calls.js';
 	import { currentDb } from './database.js';
 	import { syncStates } from './sync.js';
@@ -244,6 +284,12 @@
 
 	/** Any change re-runs every band. The frame bumps it after each run. */
 	export let epoch = 0;
+	/** Which widget this is — its tab's session key, `keyOf($layout, tab.id)` in Layout.svelte — and so whose pictures `held` keeps. */
+	export let key = '';
+
+	/** What this strip drew before it was last unmounted, if anything (`held`). */
+	const heldAs = `${currentDb()}\n${key}`;
+	const was = held.get(heldAs);
 
 	/**
 	 * How tall one day is drawn, in pixels — datum's `--day-height` — or
@@ -327,8 +373,8 @@
 	let stripEl: HTMLDivElement | undefined;
 	let stackEl: HTMLDivElement | undefined;
 	/** The box the pane gives the strip, in whole pixels, once measured. */
-	let width = 0;
-	let height = 0;
+	let width = was?.width ?? 0;
+	let height = was?.height ?? 0;
 	/** Is the newest day the bottom-most band in view? */
 	let atBottom = true;
 
@@ -486,7 +532,21 @@
 				void anchor();
 			}
 		});
+		// A remount sliding in beside the layout in front is laid out in
+		// THAT layout's root, which may be a pane's border smaller than its
+		// own (da-466lv): it keeps the box it held until it lands, and is
+		// observed again there, which reports the box it landed in (da-lt25u).
+		const beside = () => !!body?.closest('.tab-body.beside');
+		let landing = 0;
+		const land = () => {
+			landing = beside() ? requestAnimationFrame(land) : 0;
+			if (!landing && body) {
+				observer.unobserve(body);
+				observer.observe(body);
+			}
+		};
 		const observer = new ResizeObserver(([entry]) => {
+			if (was && beside()) return void (landing ||= requestAnimationFrame(land));
 			settled.push({
 				w: Math.floor(entry.contentRect.width),
 				h: Math.floor(entry.contentRect.height)
@@ -496,6 +556,7 @@
 		return () => {
 			observer.disconnect();
 			settled.stop();
+			cancelAnimationFrame(landing);
 			if (refreshing) cancelAnimationFrame(refreshing);
 		};
 	});
@@ -507,7 +568,7 @@
 	/** And the width each of those pictures was drawn at — see `mapFor`. */
 	let drawnAt: Record<number, number> = {};
 	/** The width the geometry on hand was read at. */
-	let geometryBox = 0;
+	let geometryBox = was?.geometryBox ?? 0;
 
 	/**
 	 * A band's picture — or the message that came instead of one, said out
@@ -545,8 +606,7 @@
 	 * reader scrolls it into view `refreshVisible` asks for that day and
 	 * no other (da-dtwz).
 	 */
-	type Asked = { epoch: number; run: Promise<RunResult> };
-	let cache = { key: '', size: '', runs: new Map<string, Asked>() };
+	let cache = was?.cache ?? { key: '', size: '', runs: new Map<string, Asked>() };
 	/**
 	 * This strip in the worker's queue, with the band after it: a band's
 	 * newer run drops its older, unstarted one, whose answer is no picture.
@@ -563,13 +623,12 @@
 	 * geometry run carries the date the CLI cut, so a change in it drops
 	 * the pictures and asks again.
 	 */
-	let midnights = 0;
-	let onDay: string | null = null;
+	let midnights = was?.midnights ?? 0;
+	let onDay = was?.onDay ?? null;
 
 	/**
 	 * The days of the stack the reader can see, plus today — what a
-	 * refresh must re-draw. Null before the stack is measured, which is a
-	 * first draw: everything.
+	 * refresh must re-draw. Null before the stack is measured.
 	 */
 	function visibleDays(): number[] | null {
 		const rows = stackEl?.querySelectorAll('.row');
@@ -584,11 +643,7 @@
 		return seen;
 	}
 
-	/** One hour gridline: where it sits along a band's x, and whether it is a major. */
-	type Hour = { hour: number; x: number; major: boolean; label: string };
-	/** What every band shares, read off today's layout rather than re-derived. */
-	type Geometry = { hours: Hour[]; today: string | null };
-	let geometry: Geometry | null = null;
+	let geometry = was?.geometry ?? null;
 
 	// Not on mount: the static build prerenders this page, and there is no
 	// database (or `run`) outside the browser. At the band's width whatever
@@ -613,6 +668,17 @@
 	// where before it waited for a command.
 	$: if (browser && $minute > 0) tock();
 
+	// A remount whose held pictures are of an earlier minute is that tick,
+	// at once at the box it held (a box measured otherwise draws again
+	// anyway). By the wall clock: `minute` counts only
+	// while someone holds it, and a midnight away is a minute away.
+	const wallMinute = () => Math.floor(Date.now() / 60_000);
+	let late = !!was && was.minute !== wallMinute();
+	$: if (late && request.width > 0) {
+		late = false;
+		tock();
+	}
+
 	function tock(): void {
 		const at = request;
 		if (at.width <= 0) return;
@@ -632,7 +698,7 @@
 		const ask = (argv: string[], band: number | 'geometry'): Promise<RunResult> => {
 			const id = argv.join(' ');
 			let pending = cache.runs.get(id);
-			if (!pending) cache.runs.set(id, (pending = { epoch: at.epoch, run: run(argv, undefined, undefined, `${queueKey}:${band}`, undefined, undefined, true) }));
+			if (!pending) cache.runs.set(id, (pending = { epoch: at.epoch, end: band, run: run(argv, undefined, undefined, `${queueKey}:${band}`, undefined, undefined, true) }));
 			return pending.run;
 		};
 
@@ -667,16 +733,17 @@
 
 	/**
 	 * What the previous cache hands on: at a new size, nothing; at a new
-	 * epoch, every day the reader cannot see. The geometry always goes
-	 * again — it is what tells the strip what day it is.
+	 * epoch, every day the reader cannot see — all of them before the stack
+	 * is measured, as on a remount's first draw, for `refreshVisible` to
+	 * re-draw what is on screen once it is (da-lt25u). The geometry always
+	 * goes again — it is what tells the strip what day it is.
 	 */
 	function kept(
 		at: { width: number; dayHeight: number },
 		sameSize: boolean
 	): Map<string, Asked> {
-		const visible = visibleDays();
-		if (!sameSize || visible === null) return new Map();
-		const again = new Set(visible.map((end) => bandArgv(at.width, at.dayHeight, end).join(' ')));
+		if (!sameSize) return new Map();
+		const again = new Set((visibleDays() ?? []).map((end) => bandArgv(at.width, at.dayHeight, end).join(' ')));
 		again.add(geometryArgv(at.width, at.dayHeight).join(' '));
 		return new Map([...cache.runs].filter(([id]) => !again.has(id)));
 	}
@@ -807,7 +874,8 @@
 	 * the scroll itself is the beat, and it asks for the stale bands that
 	 * came into view and for nothing else: days already at this epoch were
 	 * re-drawn when it turned. A day grown above the base has never been
-	 * asked at all, and this is where it is (da-vw4ow).
+	 * asked at all, and this is where it is (da-vw4ow) — or, grown again
+	 * after a remount, asked already and held, and drawn from there.
 	 */
 	function refreshVisible(): void {
 		if (refreshing || !browser) return;
@@ -816,12 +884,11 @@
 			const at = request;
 			if (at.width <= 0) return;
 			const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
-			const stale = (visibleDays() ?? []).filter(
-				(end) => (cache.runs.get(id(end))?.epoch ?? -1) < at.epoch
-			);
-			if (!stale.length) return;
+			const visible = visibleDays() ?? [];
+			const stale = visible.filter((end) => (cache.runs.get(id(end))?.epoch ?? -1) < at.epoch);
 			for (const end of stale) cache.runs.delete(id(end));
-			draw(at, stale);
+			const unseen = visible.filter((end) => !shown[end]);
+			if (stale.length || unseen.length) draw(at, [...new Set([...stale, ...unseen])]);
 		});
 	}
 
@@ -1526,6 +1593,19 @@
 		clearTimeout(settling);
 		clearTimeout(longTimer);
 		listen(false);
+		const month = [...cache.runs].filter(([, asked]) => asked.end === 'geometry' || asked.end <= MONTH);
+		held.delete(heldAs);
+		held.set(heldAs, {
+			cache: { ...cache, runs: new Map(month) },
+			midnights,
+			onDay,
+			minute: wallMinute(),
+			width,
+			height,
+			geometry,
+			geometryBox
+		});
+		if (held.size > STRIPS) held.delete(held.keys().next().value!);
 	});
 
 	/**
