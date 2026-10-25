@@ -197,7 +197,7 @@
 	what «following» IS.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
+	import { afterUpdate, createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
 	import { browser } from '$app/environment';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
@@ -377,6 +377,29 @@
 	$: panStop = [committed[0] <= HOUR_FROM && 'start', committed[1] >= HOUR_TO && 'end'].filter(Boolean).join(' ');
 	/** The transform each band's picture is shown under. */
 	$: bandZoom = (end: number) => mapFor(drawnAt[end]);
+	/**
+	 * A `<pattern>` — a multi-state block's stripes, a clock change's
+	 * hatch — tiles in the user space of the block it fills, so the map
+	 * and a previewed size stretched it with the block: wider stripes at a
+	 * shallower angle (da-hmtoq). Scaled back ahead of datum's own
+	 * transform, it is the same on screen at every zoom, as a mark is
+	 * (da-dqbso, the CSS below). On the attribute after every update,
+	 * when a new picture is in its band too: WebKit computes a CSS
+	 * `transform` on a pattern and draws it without. A label previewed as
+	 * wide as the pane leaves the bands no width (`scaleX` 0): the pattern
+	 * keeps the transform it had rather than taking a scale of Infinity.
+	 */
+	afterUpdate(() => {
+		for (const band of stripEl?.querySelectorAll<HTMLElement>('.band') ?? []) {
+			const across = 1 / (bandZoom(Number(band.dataset.daysAgo)).scale * scaleX);
+			if (!Number.isFinite(across)) continue;
+			for (const pattern of band.querySelectorAll<SVGPatternElement>('svg.svg pattern')) {
+				pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
+				const t = `scale(${across} ${1 / scaleY}) ${pattern.dataset.drawn}`;
+				if (pattern.getAttribute('patternTransform') !== t) pattern.setAttribute('patternTransform', t);
+			}
+		}
+	});
 
 	/**
 	 * The days the box SHOWS. The room is whatever is left once the ruler,

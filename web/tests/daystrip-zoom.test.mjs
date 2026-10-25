@@ -164,3 +164,60 @@ test('a pinch down the strip grows a dot as the day drawn at that height has it'
 		assert.deepEqual(app.errors, []);
 	});
 });
+
+// da-hmtoq: vividn, 2026-10-25: «The one thing that doesn't seem to zoom in
+// well are the striped multi-state region, which expand with the zoom … I
+// would keep the same stripe pattern as you are zooming in so that visually
+// it looks the same rather than stretching it like currently». A pattern
+// tiles in its block's user space, which the map stretches; so read where
+// the tile lands on the screen — the block's own screen CTM times the
+// pattern's transform — for the stripes and for the hatch of the hour a
+// clock change skipped (Berlin, 2026-03-29).
+const dst = sharedApp({ ...PHONE, timezone: 'Europe/Berlin', clock: Date.UTC(2026, 2, 29, 12) });
+
+/** How the stripes' and the hatch's tiles lie on the screen, as a 2×2, and the block's width. */
+const tiles = ({ page }) =>
+	page.locator(TODAY).evaluate((band) => {
+		const on = (filled) => {
+			// The page's pattern of that id, which is the one drawn (da-8kryw).
+			const pattern = document.getElementById(filled.getAttribute('fill').slice('url(#'.length, -1));
+			const m = filled.getScreenCTM().multiply(pattern.patternTransform.baseVal.consolidate().matrix);
+			return [m.a, m.b, m.c, m.d];
+		};
+		const block = band.querySelector('rect.multi-state');
+		return {
+			stripes: on(block),
+			hatch: on(band.querySelector('.dead-zone')),
+			block: block.getBoundingClientRect().width
+		};
+	});
+
+/** Each tile laid on the screen as it was at rest. */
+function sameTiles(at, rest, when) {
+	for (const tile of ['stripes', 'hatch'])
+		assert.ok(
+			at[tile].every((v, i) => Math.abs(v - rest[tile][i]) < 1e-3),
+			`the ${tile} ${when}: ${at[tile]} is not ${rest[tile]}`
+		);
+}
+
+test('a zoom keeps the stripes and the hatch as wide and as steep as at rest', async () => {
+	await settledRoom(dst, 'stripes', async (app) => {
+		const { page } = app;
+		await say(app, { dayHeight: 60 });
+		await settledAt(app, 60);
+		await seedLines(app, ['switch posture vertical,sit -t 6:00', 'switch posture standing -t 11:00']);
+		const rest = await tiles(app);
+		const box = await page.locator(TODAY).boundingBox();
+		let during;
+		await pinch(page, box, 100, 300, async () => (during = await tiles(app)));
+		// The control: the block is as long as its hours.
+		assert.ok(Math.abs(during.block / rest.block - 3) < 0.05, `the block is ${during.block}px, was ${rest.block}`);
+		sameTiles(during, rest, 'under the fingers');
+		await app.idle();
+		sameTiles(await tiles(app), rest, 'after the release');
+		// And a day twice as tall, previewed: the tile is not stretched down.
+		await pinch(page, box, 30, 60, async () => sameTiles(await tiles(app), rest, 'under a pinch down the strip'), 'y');
+		assert.deepEqual(app.errors, []);
+	});
+});
