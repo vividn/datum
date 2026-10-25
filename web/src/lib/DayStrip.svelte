@@ -211,6 +211,8 @@
 	import { advance, LONG_MS, SLOP_PX, undecided, type Mode, type Press } from './nowpoint.js';
 	import { run, runKey, type RunResult } from './run.js';
 	import { firstEntryArgv } from './calls.js';
+	import { currentDb } from './database.js';
+	import { syncStates } from './sync.js';
 	import type { TailListing } from './tail.js';
 	import {
 		AXIS_HEIGHT,
@@ -511,9 +513,13 @@
 	 * A band's picture — or the message that came instead of one, said out
 	 * loud rather than left as a box that never finishes loading.
 	 */
-	const picture = (result: RunResult) => ({
+	/** Since when this copy may lack what another device has, while the session's first sync is under way (da-g5jjp). */
+	$: unsynced = $syncStates[currentDb()]?.unsynced;
+
+	const picture = (result: RunResult, unsynced?: number) => ({
 		text: result.stdout || result.stderr,
-		error: !result.stdout
+		error: !result.stdout,
+		unsynced
 	});
 
 	/** How many draws have been started, and which one each picture came from. */
@@ -1573,7 +1579,7 @@
 							style:--zoom={bandZoom(end).scale}
 						>
 							<div class="shot" class:previewing={!!sizing}>
-								{#if shown[end]}<CliOutput {...picture(shown[end])} />{/if}
+								{#if shown[end]}<CliOutput {...picture(shown[end], unsynced)} />{/if}
 							</div>
 						</div>
 					</div>
@@ -1686,7 +1692,7 @@
 					style:--zoom={bandZoom(0).scale}
 				>
 					<div class="shot" class:previewing={!!sizing}>
-						{#if shown[0]}<CliOutput {...picture(shown[0])} />{:else}<p class="quiet">…</p>{/if}
+						{#if shown[0]}<CliOutput {...picture(shown[0], unsynced)} />{:else}<p class="quiet">…</p>{/if}
 					</div>
 				</div>
 			</div>

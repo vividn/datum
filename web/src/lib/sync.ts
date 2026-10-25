@@ -33,6 +33,11 @@
 //   acknowledged — ride the state too, read with the setup: at load, after a
 //   session that admitted a peer or received ops, and after any `sync`
 //   command that wrote (`syncTouched`), an ack among them.
+// - UNSYNCED (da-g5jjp): a copy that last synced over an hour before the
+//   page opened says when, until the session's first sync lands or its
+//   first round of dials is over, an offline peer's failing at the wire's
+//   timeout; the day view dims the stretch since. When it last synced is
+//   the CLI's, its members' `last_seen` in `sync status`.
 // - A tab that is not the leader forwards `offer` and `connect` to it.
 //   Pairing is the chain's (da-6177s): `offer` writes a chain invite —
 //   starting an open chain when there is none — and `connect` redeems one.
@@ -65,6 +70,8 @@ const HOLD_KEY = 'datum.syncHoldApply';
  * `HOLD_KEY` holds them: a join cut short once its count shows (da-dwm2y). */
 const HOLD_AFTER_KEY = 'datum.syncHoldApplyAfter';
 const REACHABLE_MS = 60_000;
+/** How long since this copy last synced before the day view dims the stretch since (da-g5jjp). */
+const UNSYNCED_MS = 3_600_000;
 const CHANNEL = 'datum-sync';
 
 export type Reach = 'online' | 'reachable' | 'offline';
@@ -89,6 +96,8 @@ export interface SyncState {
 	applying?: { done: number; of: number };
 	/** Its notices not yet acknowledged (da-8fucg). */
 	notices?: Notice[];
+	/** When it last synced, over an hour before the page opened, until the session's first sync is over (da-g5jjp). */
+	unsynced?: number;
 	peers: Record<string, PeerState>;
 }
 
@@ -237,6 +246,9 @@ class Leader {
 	joining = false;
 	paused?: string;
 	notices: Notice[] = [];
+	/** When a session with a member last ended well, as the CLI recorded it. */
+	lastSynced = 0;
+	unsynced?: number;
 	label = 'datum.day';
 	/** What the CLI runs (`sync status --json`'s `this`), said to every peer (da-3zqyv). */
 	version?: { datum: string; schema: number };
@@ -285,6 +297,7 @@ class Leader {
 		this.paused = status?.paused ?? undefined;
 		this.notices = status?.notices ?? [];
 		this.peers = (status?.members ?? []).filter((p): p is Peer => !p.revoked && !!p.addr);
+		this.lastSynced = Math.max(0, ...(status?.members ?? []).map((m) => Date.parse(m.last_seen ?? '') || 0));
 		if (listed) await this.start();
 		// It joined as the name its admit records: one it was told stays, the
 		// suggestion goes for the assembled label, as after a join not cut short.
@@ -367,6 +380,7 @@ class Leader {
 
 	/** A session that ended well, dialed or served. */
 	done(id: string, report: SyncReport): void {
+		this.unsynced = undefined;
 		this.seen.set(id, Date.now());
 		this.errors.delete(id);
 		this.inStep.set(id, JSON.stringify(report.vector));
@@ -437,7 +451,8 @@ class Leader {
 					: 'offline';
 			peers[p.endpoint] = { label: p.label, reach, lastSeen, error: this.errors.get(p.endpoint) };
 		}
-		return { db: this.db, endpoint: this.endpoint, paused: this.paused, applying: this.applying, notices: this.notices, peers };
+		const { db, endpoint, paused, applying, notices, unsynced } = this;
+		return { db, endpoint, paused, applying, notices, unsynced, peers };
 	}
 
 	post(): void {
@@ -470,7 +485,17 @@ async function lead(db: string): Promise<void> {
 		if (leader.endpoint) void leader.push(true).catch(() => {});
 	}, PULL_MS);
 	setInterval(() => leader.endpoint && leader.post(), REACHABLE_MS / 4);
-	void leader.push(true).catch(() => {});
+	if (leader.peers.length && !leader.paused && leader.lastSynced && Date.now() - leader.lastSynced > UNSYNCED_MS) {
+		leader.unsynced = leader.lastSynced;
+		leader.post();
+	}
+	void leader
+		.syncNow()
+		.catch(() => {})
+		.finally(() => {
+			leader.unsynced = undefined;
+			leader.post();
+		});
 	await new Promise(() => {});
 }
 

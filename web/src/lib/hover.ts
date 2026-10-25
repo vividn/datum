@@ -113,6 +113,23 @@ export function timeAt(el: Element, clientX: number, clientY = 0): Date | null {
 	return new Date(day.from + f * (day.to - day.from));
 }
 
+/** Day `i` of `days` drawn on `svg`, with how much its axis moves a millisecond and the cross axis its slot takes. */
+function slotOf(svg: SVGSVGElement, days: Day[], i: number) {
+	const view = svg.viewBox.baseVal;
+	const day = days[i];
+	const perMs = (day.hi - day.lo) / (day.to - day.from);
+	// A picture with no date column has no label group to read a slot
+	// origin from, and `readDay` says so with `-Infinity` (which is what
+	// makes `timeAt` fall back to it). The slot is then the whole
+	// picture across, which for nowview's one day it is.
+	const near = day.y ? view.x : view.y;
+	const far = day.y ? view.x + view.width : view.y + view.height;
+	const start = Number.isFinite(day.start) ? day.start : near;
+	// The next DAY's: a day the clock jumped in is several groups (da-1v9gp).
+	const next = days.slice(i + 1).find((d) => d.start !== day.start)?.start;
+	return { ...day, perMs, start, end: next !== undefined && Number.isFinite(next) ? next : far };
+}
+
 /**
  * Where on `svg` a selection is drawn: the day it belongs to, how far
  * along that day's axis it falls, and how much of the cross axis the day's
@@ -133,21 +150,7 @@ function placeOf(svg: SVGSVGElement, c: Cursor) {
 	// No day with a span at all is the SNAPSHOT — which is not «the instant
 	// is off this picture», the window a selection has been panned out of.
 	if (!days.some((d) => d.hi > d.lo)) return 'snapshot' as const;
-	const view = svg.viewBox.baseVal;
-	const at = (i: number) => {
-		const day = days[i];
-		const perMs = (day.hi - day.lo) / (day.to - day.from);
-		// A picture with no date column has no label group to read a slot
-		// origin from, and `readDay` says so with `-Infinity` (which is what
-		// makes `timeAt` fall back to it). The slot is then the whole
-		// picture across, which for nowview's one day it is.
-		const near = day.y ? view.x : view.y;
-		const far = day.y ? view.x + view.width : view.y + view.height;
-		const start = Number.isFinite(day.start) ? day.start : near;
-		// The next DAY's: a day the clock jumped in is several groups (da-1v9gp).
-		const next = days.slice(i + 1).find((d) => d.start !== day.start)?.start;
-		return { ...day, perMs, start, end: next !== undefined && Number.isFinite(next) ? next : far };
-	};
+	const at = (i: number) => slotOf(svg, days, i);
 	const now = c.rel === undefined ? null : nowAlong(svg, days[0].y);
 	const ending = now === null ? -1 : days.findIndex((d) => d.hi > d.lo && Math.abs(d.hi - now) <= 1);
 	if (ending >= 0) {
@@ -317,6 +320,32 @@ function drawCursor(svg: SVGSVGElement | null, c: Cursor | null | undefined): vo
 		);
 	}
 	svg.append(...dottedLine(a, b, along, place.start, place.end), arrowHead(place.y, along, place.start));
+}
+
+/**
+ * The stretch from `since` to now dimmed on `svg` (da-g5jjp): what another
+ * device may hold that this copy has not heard yet, until the session's
+ * first sync lands. Over the marks, which are as uncertain as the ground,
+ * and under the selection, which stays bright over it.
+ */
+function drawUnsynced(svg: SVGSVGElement | null, since: number | undefined): void {
+	svg?.querySelectorAll('.unsynced').forEach((el) => el.remove());
+	if (!svg || since === undefined) return;
+	const days = [...svg.querySelectorAll('[data-lo]')].map((d) => readDay(svg, d));
+	days.forEach((d, i) => {
+		const [from, to] = [Math.max(since, d.from), Math.min(Date.now(), d.to)];
+		if (!(to > from && d.hi > d.lo)) return;
+		const s = slotOf(svg, days, i);
+		const dim = mark('rect', {
+			class: 'unsynced',
+			[s.y ? 'y' : 'x']: s.lo + (from - s.from) * s.perMs,
+			[s.y ? 'x' : 'y']: s.start,
+			[s.y ? 'height' : 'width']: (to - from) * s.perMs,
+			[s.y ? 'width' : 'height']: Math.max(0, s.end - s.start),
+			fill: 'rgba(0, 0, 0, 0.5)'
+		});
+		svg.insertBefore(dim, svg.querySelector('.selection'));
+	});
 }
 
 /**
@@ -577,7 +606,7 @@ const ownsPointer = (node: HTMLElement) => !!node.closest('[data-points="own"]')
  * on one of the picture's days a dotted line marks it, redrawn with the
  * picture.
  */
-export function picture(node: HTMLElement, text: string) {
+export function picture(node: HTMLElement, { text, unsynced }: { text: string; unsynced?: number }) {
 	const tip = document.createElement('div');
 	tip.className = 'tip';
 	tip.id = `picture-tip-${++tips}`;
@@ -638,6 +667,7 @@ export function picture(node: HTMLElement, text: string) {
 		// took the label off stays unlabeled (da-tke7i).
 		(drawn[focused] as SVGElement | undefined)?.focus();
 		if (!labeled) show(null);
+		drawUnsynced(svg, unsynced);
 		drawCursor(svg, sel);
 		highlight(svg, pilled);
 		bringOut(svg, chosen);
@@ -797,7 +827,10 @@ export function picture(node: HTMLElement, text: string) {
 		bringOut(node.querySelector('svg'), chosen);
 	});
 	return {
-		update: (text: string) => {
+		update: (next: { text: string; unsynced?: number }) => {
+			if (next.unsynced !== unsynced) drawUnsynced(node.querySelector('svg'), (unsynced = next.unsynced));
+			if (next.text === text) return;
+			text = next.text;
 			if (pressed) late = text;
 			else draw(text);
 		},

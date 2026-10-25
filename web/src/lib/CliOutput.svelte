@@ -40,6 +40,8 @@
 	export let stream: 'stdout' | 'stderr' = 'stdout';
 	/** A newer block has been asked for: this one is dimmed until it lands. */
 	export let behind = false;
+	/** A picture's stretch from then to now is dimmed: this copy may not have it all yet (da-g5jjp). */
+	export let unsynced: number | undefined = undefined;
 
 	const SVG_START = /^\s*(?:<\?xml[\s?]|<svg[\s>])/;
 
@@ -52,7 +54,7 @@
 	     (layout/resizing.ts); it follows its box as one scaled image
 	     until the drop redraws it — whole, so an axis and its labels
 	     move together (da-jgrn). -->
-	<div class="picture" class:stretch={$resizing} class:behind use:picture={text} />
+	<div class="picture" class:stretch={$resizing} class:behind use:picture={{ text, unsynced }} />
 {:else}
 	<pre data-stream={stream} class:error class:behind><AnsiText {spans} /></pre>
 {/if}
