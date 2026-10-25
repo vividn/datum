@@ -382,7 +382,7 @@ describe('widget options', () => {
 	// The menu keeps no copy: a setting the widget moves itself is what the
 	// menu says the next time it is opened, and it went to the SESSION, so
 	// the layout is as clean as it was.
-	test('nowview: the menu asks for the history, and follows the widget’s own +', async () => {
+	test('nowview: the menu asks for the history, and follows the widget’s own handle', async () => {
 		await shared.room('wo-history', async (app, room) => {
 			const { page } = app;
 			const nowview = inRoom(room, 'nowview');
@@ -394,14 +394,15 @@ describe('widget options', () => {
 			});
 			assert.equal(await dotted(page, room), false, 'a session setting dirtied the layout');
 
-			await page.locator('section.pane[data-title="nowview"] button[aria-label="longer window"]').click();
+			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle').first().hover({ force: true }); // the wheel opens over it
+			await page.locator('.nowview-wheel .notch[data-step="60m"]').click();
 			await page.waitForFunction(() => {
 				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
 				return argv?.[argv.indexOf('--history') + 1] === '60m';
 			});
 			assert.ok((await choiceLines(page, nowview, 'history')).includes('✓ 60m'));
-			assert.equal(await dotted(page, room), false, 'the widget’s own + dirtied the layout');
-			assert.ok(!(await tree(page)).includes('"history":"60m"'), 'the widget’s own + reached the tree');
+			assert.equal(await dotted(page, room), false, 'the widget’s own handle dirtied the layout');
+			assert.ok(!(await tree(page)).includes('"history":"60m"'), 'the widget’s own handle reached the tree');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -423,7 +424,7 @@ describe('widget options', () => {
 			await toggleOption(page, nowview, 'show history');
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'nowview'));
 			assert.deepEqual(await last(), { history: '0', ahead: false });
-			await page.locator(`section.pane[data-pane="${nowview}"] .nowview-steps`).waitFor({ state: 'detached' });
+			await page.locator(`section.pane[data-pane="${nowview}"] .nowview-handles`).waitFor({ state: 'detached' });
 			await toggleOption(page, nowview, 'show history');
 			await page.waitForFunction(() => {
 				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
@@ -490,11 +491,12 @@ describe('widget options', () => {
 
 			// And the widget's own in-body control leaves the tree byte for
 			// byte as it found it.
-			await page.locator('section.pane[data-title="nowview"] button[aria-label="shorter window"]').click();
+			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle').first().hover({ force: true }); // the wheel opens over it
+			await page.locator('.nowview-wheel .notch[data-k="-1"]').click();
 			await page.waitForFunction(
 				() => document.querySelectorAll('section.pane[data-title="nowview"] svg').length > 0
 			);
-			assert.equal(await dotted(page, room), false, 'the widget’s own − dirtied the layout');
+			assert.equal(await dotted(page, room), false, 'the widget’s own handle dirtied the layout');
 			assert.equal(await tree(page), before, 'the layout was modified');
 			assert.deepEqual(app.errors, []);
 		});

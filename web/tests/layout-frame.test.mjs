@@ -141,7 +141,7 @@ describe('the title on the frame', () => {
 describe('the title row, as tall as its words', () => {
 	/** What sits on a pane's bar, or over its corner, that could reach a neighbour. */
 	const ON_BAR =
-		':scope > .titlebar :is(h2, .own, [role="tab"], button.maximize, button.add, button.close), [role="slider"], .nowview-steps button';
+		':scope > .titlebar :is(h2, .own, [role="tab"], button.maximize, button.add, button.close), [role="slider"], .nowview-handles .handle';
 
 	/** Every piece of `ON_BAR` whose DRAWING is inside another pane's border box.
 	 *

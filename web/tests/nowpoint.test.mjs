@@ -971,9 +971,13 @@ describe('on a phone', () => {
 
 				const axis = await page.locator(`${BAND} svg.svg path.axis`).boundingBox();
 				const y = axis.y + axis.height / 2;
-				// The middle of the band: the − / + steps sit over the axis's far end.
-				const band = await page.locator(BAND).boundingBox();
-				await page.touchscreen.tap(band.x + band.width / 2, y);
+				// The axis between two labels: each label is a handle (da-57vj4),
+				// and the axis scrubs in the gaps between them.
+				const gap = await page.locator(NOWVIEW).evaluate((p) => {
+					const hs = [...p.querySelectorAll('.nowview-handles .handle')].map((h) => h.getBoundingClientRect());
+					return (hs[0].right + hs[1].left) / 2;
+				});
+				await page.touchscreen.tap(gap, y);
 				// The time joins the entry: the two are a `retime`.
 				await until(
 					() => pillsOf(page),
@@ -1060,8 +1064,8 @@ describe('on a phone', () => {
 				// And the two controls drawn OVER the band, which are its
 				// siblings in the DOM and would otherwise hand a drag that
 				// starts on them to the pane (da-ndzl's test says so of the
-				// steps).
-				for (const over of ['.nowview-steps', '.nowview-jump.right']) {
+				// steps, which the handles replaced, da-57vj4).
+				for (const over of ['.nowview-handles', '.nowview-jump.right']) {
 					assert.equal(
 						await page.locator(`${NOWVIEW} ${over}`).evaluate((el) => el.getAttribute('data-pans')),
 						'x',

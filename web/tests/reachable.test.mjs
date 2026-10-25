@@ -469,7 +469,7 @@ describe('the layout engine, by keyboard', () => {
 			const controls = await page.evaluate(() =>
 				[
 					...document.querySelectorAll(
-						'button.title, button.add, button.maximize, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.tab-close:not(:disabled), .root-bar button.gear, .prompt-bar .brand'
+						'button.title, button.add, button.maximize, [role="separator"], .nowview-handles .handle, .root-bar [role="tab"][aria-selected="true"], .root-bar button.tab-close:not(:disabled), .root-bar button.gear, .prompt-bar .brand'
 					)
 				]
 					.filter((el) => el.getClientRects().length > 0)
@@ -487,14 +487,14 @@ describe('the layout engine, by keyboard', () => {
 											? `the + of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
 											: el.matches('button.maximize')
 												? `the handle of ${el.closest('section')?.dataset.title}`
-													: el.matches('.nowview-steps button')
+													: el.matches('.nowview-handles .handle')
 													? el.getAttribute('aria-label')
 													: el.matches('.brand')
 														? 'the logo’s database menu'
 														: 'border'
 					}))
 			);
-			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
+			assert.ok(controls.filter((c) => c.what.startsWith('window handle')).length >= 1, 'no nowview handles');
 			assert.equal(controls.filter((c) => c.what === 'menu of the root bar').length, 1, 'the root bar has no menu button');
 			assert.equal(controls.filter((c) => c.what === 'the gear').length, 1, 'the root bar has no gear (da-pp1a)');
 			// The one root tab wears its ×, disabled: the page's last tab does not close.

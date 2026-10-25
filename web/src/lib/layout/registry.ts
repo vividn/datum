@@ -310,7 +310,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		]),
 		component: NowviewWidget,
 		help: [
-			'What each field is doing now, and how it got there; − / + reach further back.',
+			'What each field is doing now, and how it got there; hover or hold a time on the axis to step the window, drag it sideways to scale.',
 			'Tap for a -t time pill; drag to pan; hold and drag, or drag left from now, for a span.',
 			'Hold still, or double tap, to select the entry under your finger.'
 		].join('\n'),

@@ -1,13 +1,16 @@
-// The nowview widget's − / + (da-pcis): they step how far back the picture
-// reaches, down to 30s and never to the snapshot (da-hklaz) — that is the
-// widget's «show history» turned off — and the step is the widget's setting,
-// kept in the draft and in a saved layout. They have no label: each one's
-// title names where it goes (da-rex1). They sit, tiny, either side of the
-// axis's far label — + before, − after (da-61nm8) — and the snapshot,
-// which draws no axis, has none: nothing lies over its chips (da-ndzl).
+// The nowview widget's HANDLES (da-57vj4): each major label of the time
+// axis is one. Hover it, or press a finger on it, and a wheel of the
+// ladder's steps opens around it (down to 30s and up to 12h, never to the
+// snapshot, which is the widget's «show history» turned off, da-hklaz); a
+// step keeps the handle's place and gives it the step's time, so the window
+// rescales by their ratio, and a drag along the axis moves the handle's
+// time under the finger, to a window of any length. They replaced the − / +
+// beside the far label (da-ndzl). The window is the widget's setting, kept
+// in the session and in a saved layout when asked. The snapshot, which
+// draws no axis, has none: nothing lies over its chips.
 //
 // Delta-blind on purpose: each step is held to the `--history` the seam was
-// handed and to the buttons' titles, never to "the picture changed".
+// handed and to the handles' words, never to "the picture changed".
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,8 +27,10 @@ after(stopApp);
 const shared = sharedApp();
 
 const PANE = 'section.pane[data-title="nowview"]';
-const shorter = (page) => page.locator(`${PANE} button[aria-label="shorter window"]`);
-const longer = (page) => page.locator(`${PANE} button[aria-label="longer window"]`);
+/** The handle over the label that reads `at`. */
+const handle = (page, at, pane = PANE) => page.locator(`${pane} .nowview-handles .handle[data-at="${at}"]`);
+/** A notch of the open wheel, by its step. */
+const notch = (page, step) => page.locator(`.nowview-wheel .notch[data-step="${step}"]`);
 
 /** Wait for the last nowview the seam was handed (`spyOnRunner`) to be `--history h`. */
 const asked = (page, h) =>
@@ -34,9 +39,20 @@ const asked = (page, h) =>
 		return argv?.[argv.indexOf('--history') + 1] === h;
 	}, h);
 
-/** The two buttons' titles, + then −. */
-const titles = (page) =>
-	Promise.all([longer(page).getAttribute('title'), shorter(page).getAttribute('title')]);
+/** The handles' words, far first. */
+const handled = (page, pane = PANE) =>
+	page.locator(`${pane} .nowview-handles .handle`).evaluateAll((hs) => hs.map((h) => h.dataset.at));
+
+/** The open wheel's notches, the longer (up) then the shorter, nearest first, and how clear each is. */
+const wheelOf = (page) =>
+	page.locator('.nowview-wheel').evaluate((w) => {
+		const of = (sign) =>
+			[...w.querySelectorAll('.notch')]
+				.filter((n) => Math.sign(Number(n.style.getPropertyValue('--k'))) === sign)
+				.sort((a, b) => Math.abs(a.style.getPropertyValue('--k')) - Math.abs(b.style.getPropertyValue('--k')))
+				.map((n) => [n.dataset.step, Number(getComputedStyle(n).opacity)]);
+		return { at: w.querySelector('.handle.held').dataset.at, up: of(1), down: of(-1) };
+	});
 
 /** Every nowview widget's settings in a layout tree. */
 function nowviewSettings(node, out = []) {
@@ -48,16 +64,15 @@ function nowviewSettings(node, out = []) {
 }
 
 /**
- * Where the steps of the nowview in `pane` sit against its picture: the far
- * label's words, and what is wrong — each step must be whole, the + before
- * the far label and the − after it (vividn: «move the + to the left side of
- * the -nnm number», da-61nm8), on its row, below the axis, off every band,
- * and not over the other step. The far label is the first the WINDOW
- * shows: the picture is drawn past its box (`--surround`), and a label out
- * there is not on screen. Waits for the steps to be drawn.
+ * Where the handles of the nowview in `pane` sit against its picture: the
+ * far label's words, and what is wrong — each handle must lie over the
+ * label it names, be a target a finger can take, stay under the axis line,
+ * off every other handle; the far label, the first the WINDOW shows (the
+ * picture is drawn past its box, `--surround`), whole inside it and drawn.
+ * Waits for the handles to be drawn.
  */
 async function beside(page, pane) {
-	await page.locator(`${pane} .nowview-steps button`).first().waitFor();
+	await page.locator(`${pane} .nowview-handles .handle`).first().waitFor();
 	return page.locator(pane).evaluate((p) => {
 		const r = (el) => el.getBoundingClientRect();
 		const over = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
@@ -65,50 +80,59 @@ async function beside(page, pane) {
 		const frame = r(svg.parentElement);
 		const all = [...svg.querySelectorAll('.tick-label')].filter((l) => r(l).left < frame.right && r(l).right > frame.left);
 		const far = all.reduce((a, b) => (r(b).x < r(a).x ? b : a));
-		// A label the steps take the place of is not drawn; the far one is.
 		const labels = all.filter((l) => getComputedStyle(l).visibility !== 'hidden');
-		const label = r(far);
 		const axis = r(svg.querySelector('.axis'));
-		const bands = [...svg.querySelectorAll('.day-data rect')].map(r).filter((b) => b.left < frame.right && b.right > frame.left);
-		const plus = r(p.querySelector('.nowview-steps button[aria-label="longer window"]'));
-		const minus = r(p.querySelector('.nowview-steps button[aria-label="shorter window"]'));
-		const steps = [plus, minus];
+		const handles = [...p.querySelectorAll('.nowview-handles .handle')];
 		const wrong = [];
-		if (label.left < frame.left - 0.5) wrong.push(`the far label starts at ${label.left}, the window at ${frame.left}`);
-		if (plus.left < frame.left - 0.5) wrong.push(`the + starts at ${plus.left}, the window at ${frame.left}`);
-		if (plus.right > label.left + 0.5) wrong.push(`the + ends at ${plus.right}, the label starts at ${label.left}`);
-		if (minus.left < label.right - 0.5) wrong.push(`the − starts at ${minus.left}, the label ends at ${label.right}`);
-		steps.forEach((s, i) => {
-			if (s.width < 20 || s.height < 20) wrong.push(`step ${i} is ${s.width}×${s.height}`);
-			if (s.top > label.bottom || s.bottom < label.top) wrong.push(`step ${i} is off the label's row`);
-			if (s.top < axis.top - 0.5) wrong.push(`step ${i} reaches above the axis`);
-			for (const b of bands) if (over(s, b)) wrong.push(`step ${i} is over a band`);
-			for (const l of labels) if (over(s, r(l))) wrong.push(`step ${i} is over ${l.textContent}`);
-		});
+		if (r(far).left < frame.left - 0.5) wrong.push(`the far label starts at ${r(far).left}, the window at ${frame.left}`);
 		if (!labels.includes(far)) wrong.push(`the far label ${far.textContent} is hidden`);
-		if (p.querySelectorAll('.nowview-steps button').length !== 2) wrong.push('not two steps');
-		else if (over(plus, minus)) wrong.push('the steps overlap');
+		for (const h of handles) {
+			const box = r(h);
+			const label = labels.find((l) => l.textContent === h.dataset.at);
+			if (!label) wrong.push(`no label reads ${h.dataset.at}`);
+			else {
+				const l = r(label);
+				if (l.left < box.left - 0.5 || l.right > box.right + 0.5) wrong.push(`${h.dataset.at}'s handle does not span its label`);
+			}
+			if (box.height < 18 || box.width < 20) wrong.push(`${h.dataset.at}'s handle is ${box.width}×${box.height}`);
+			if (box.top < axis.top - 0.5) wrong.push(`${h.dataset.at}'s handle reaches above the axis`);
+			for (const o of handles) if (o !== h && over(box, r(o))) wrong.push(`${h.dataset.at} is over ${o.dataset.at}`);
+		}
+		if (handles[0]?.dataset.at !== far.textContent) wrong.push(`the first handle is ${handles[0]?.dataset.at}`);
 		return { far: far.textContent, wrong };
 	});
 }
 
+/**
+ * Hover the handle reading `at`, and wait for its wheel. By the mouse and
+ * not `locator.hover`: the wheel opens OVER the handle, which is the point,
+ * and Playwright reads that as the handle not taking the pointer.
+ */
+async function hover(page, at, pane = PANE) {
+	const box = await handle(page, at, pane).boundingBox();
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.locator(`.nowview-wheel .handle.held[data-at="${at}"]`).waitFor();
+}
+
+/** Wait for the far handle to read `at`: the picture redrawn for the window asked. */
+const farIs = (page, at, pane = PANE) =>
+	page.waitForFunction(
+		([pane, at]) => document.querySelector(`${pane} .nowview-handles .handle`)?.dataset.at === at,
+		[pane, at]
+	);
+
 describe('the nowview widget', () => {
-	test('sit either side of the far axis label, + before it and − after, with no label', async () => {
+	test('a handle over every label the window shows, the far one first, and no − / +', async () => {
 		await shared.solo(async ({ page }) => {
 			const where = await beside(page, PANE);
 			assert.equal(where.far, '-30m');
 			assert.deepEqual(where.wrong, []);
-			assert.deepEqual(
-				await page.locator(`${PANE} .nowview-steps button`).evaluateAll((bs) => bs.map((b) => [b.textContent, b.ariaLabel])),
-				[
-					['+', 'longer window'],
-					['−', 'shorter window']
-				]
-			);
+			assert.ok((await handled(page)).length >= 2, `one handle: ${await handled(page)}`);
+			assert.equal(await page.locator(`${PANE} .nowview-steps, ${PANE} .step`).count(), 0, 'the − / + are still drawn');
 		});
 	});
 
-	test('with the cursor set the far label is the leftmost, and the steps follow it', async () => {
+	test('with the cursor set the far label is the leftmost, and a handle on each side of it', async () => {
 		await withApp(
 			async ({ page }) => {
 				await page.evaluate((ms) => window.datum.cursor.set(new Date(ms)), todayAt(9, 0));
@@ -120,71 +144,173 @@ describe('the nowview widget', () => {
 				const where = await beside(page, PANE);
 				assert.equal(where.far, '-15m');
 				assert.deepEqual(where.wrong, []);
+				assert.ok((await handled(page)).includes('+15m'), `${await handled(page)}`);
 			},
 			{ clock: todayAt(12, 0) }
 		);
 	});
 
-	test('steps its window with + and −, through the seam, halving past 5m to 30s and up to 12h, never to the snapshot', async () => {
+	test('hover the far handle at 30m: the wheel steps it to 45m, then 60m, and stays open', async () => {
 		await shared.room('steps', async (app) => {
 			const { page } = app;
-			assert.deepEqual(await titles(page), ['longer window (45m)', 'shorter window (20m)']);
+			await beside(page, PANE);
+			await hover(page, '-30m');
+			// The next step either way clear, those beyond it fading.
+			const wheel = await wheelOf(page);
+			assert.deepEqual(wheel.up.map(([s]) => s), ['45m', '60m', '90m']);
+			assert.deepEqual(wheel.down.map(([s]) => s), ['20m', '15m', '10m']);
+			for (const side of [wheel.up, wheel.down]) {
+				assert.equal(side[0][1], 1, `the next step is not clear: ${JSON.stringify(side)}`);
+				assert.ok(side[1][1] < 1 && side[2][1] < side[1][1], `the steps beyond do not fade: ${JSON.stringify(side)}`);
+			}
 			const seen = await app.spyOnRunner();
 
-			await longer(page).click();
+			await notch(page, '45m').click();
 			await asked(page, '45m');
-			assert.deepEqual(await titles(page), ['longer window (60m)', 'shorter window (30m)']);
+			assert.equal((await wheelOf(page)).at, '-45m', 'the wheel closed or did not move on');
+			await notch(page, '60m').click();
+			await asked(page, '60m');
+			assert.deepEqual((await wheelOf(page)).up.map(([s]) => s), ['90m', '2h', '3h']);
 
-			// 45m → 30m, 20m, 15m, 10m, 5m, then halving: 2m, 1m, 30s (da-hklaz).
-			for (let i = 0; i < 5; i++) await shorter(page).click();
-			await asked(page, '5m');
-			assert.deepEqual(await titles(page), ['longer window (10m)', 'shorter window (2m)']);
-			for (const [to, titled] of [
-				['2m', ['longer window (5m)', 'shorter window (1m)']],
-				['1m', ['longer window (2m)', 'shorter window (30s)']],
-				['30s', ['longer window (1m)', 'shorter window']]
-			]) {
-				await shorter(page).click();
-				await asked(page, to);
-				assert.deepEqual(await titles(page), titled);
-			}
-			assert.ok(await shorter(page).isDisabled(), '− is live at 30s');
+			// Leaving the handle closes the wheel.
+			await page.mouse.move(1, 1);
+			await page.locator('.nowview-wheel').waitFor({ state: 'detached' });
 			assert.ok(
 				!(await seen()).some((a) => a[0] === 'nowview' && a[a.indexOf('--history') + 1] === '0'),
-				'− reached the snapshot'
+				'a step reached the snapshot'
 			);
-
-			for (let i = 0; i < 14; i++) await longer(page).click();
-			await asked(page, '12h');
-			assert.ok(await longer(page).isDisabled(), '+ is live at 12h');
-			assert.deepEqual(await titles(page), ['longer window', 'shorter window (6h)']);
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	// da-vhwq: the step is a setting the widget moves ITSELF, so it is THIS
+	test('on −15m in a 30m window, 20m makes the window 40m; the ladder ends at 30s and 12h', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await beside(page, PANE);
+				await app.spyOnRunner();
+				// A box narrow enough that the 30m window labels its −15m.
+				assert.ok((await handled(page)).includes('-15m'), `${await handled(page)}`);
+				await hover(page, '-15m');
+				await notch(page, '20m').click();
+				await asked(page, '40m');
+				await app.idle();
+				assert.deepEqual(app.errors, [], 'datum did not take a window off the ladder');
+			},
+			{ viewport: { width: 400, height: 700 }, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+		// A window the ladder's ends would leave is not offered.
+		for (const [history, far, side] of [
+			['12h', '-720m', 'up'],
+			['30s', '-30s', 'down']
+		]) {
+			await withApp(
+				async ({ page }) => {
+					await beside(page, PANE);
+					await hover(page, far);
+					assert.deepEqual((await wheelOf(page))[side], [], `${history}'s wheel goes on ${side}`);
+				},
+				{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, soloNowview({ history })) }
+			);
+		}
+	});
+
+	test('a finger: hold the far handle and swipe up two notches, and the window steps two', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await beside(page, PANE);
+				await app.spyOnRunner();
+				const box = await handle(page, '-30m').boundingBox();
+				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, 0, -46);
+				await asked(page, '60m');
+				// A swipe's lift takes its notch and puts the wheel away.
+				await page.locator('.nowview-wheel').waitFor({ state: 'detached' });
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
+	test('a drag of the far handle along the axis to halfway to now doubles the window, and the ticks follow', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await beside(page, PANE);
+				await app.spyOnRunner();
+				const box = await handle(page, '-30m').boundingBox();
+				const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+				const now = await anchorX(page);
+				await page.mouse.move(x, y);
+				await page.locator('.nowview-wheel .handle.held').waitFor();
+				await page.mouse.down();
+				await page.mouse.move((x + now) / 2, y, { steps: 6 });
+				// Under the finger, the handle's words, and the picture scaled.
+				await page.locator('.handle.dragged', { hasText: '-30m' }).waitFor();
+				await page.mouse.up();
+				await asked(page, '60m');
+				await handle(page, '-60m').waitFor();
+
+				// And to anywhere: four fifths of the way back is 75m, off
+				// the ladder, which datum is asked for as it is.
+				const again = await handle(page, '-60m').boundingBox();
+				const [x2, y2] = [again.x + again.width / 2, again.y + again.height / 2];
+				const now2 = await anchorX(page);
+				// The wheel the redraw opened under the still pointer closes
+				// as it leaves, never having been entered.
+				await page.mouse.move(1, 1);
+				await page.locator('.nowview-wheel').waitFor({ state: 'detached' });
+				await page.mouse.move(x2, y2);
+				await page.mouse.down();
+				await page.mouse.move(now2 - (now2 - x2) * 0.8, y2, { steps: 6 });
+				await page.mouse.up();
+				await asked(page, '75m');
+				await app.idle();
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
+	test('a focused handle steps with up and down', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await beside(page, PANE);
+				await app.spyOnRunner();
+				await handle(page, '-30m').focus();
+				await page.keyboard.press('ArrowUp');
+				await asked(page, '45m');
+				await page.keyboard.press('ArrowUp');
+				await asked(page, '60m');
+				await page.keyboard.press('ArrowDown');
+				await asked(page, '45m');
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
+	// da-vhwq: the window is a setting the widget moves ITSELF, so it is THIS
 	// SESSION'S — it changes what this tab shows, the layout is not dirtied,
 	// and a reload keeps it on this device (da-ray91). «Save options with
 	// layout» is what hands it over; only then is it a draft edit, and only
 	// then does `Save layout` write it down.
-	test('the step is this session’s, and the draft and a save take it only when asked', async () => {
+	test('the window is this session’s, and the draft and a save take it only when asked', async () => {
 		await withApp(async (app) => { // reloads, and saves `main`
 			const { page } = app;
 			await app.spyOnRunner();
-			await longer(page).click();
+			await hover(page, '-30m');
+			await notch(page, '45m').click();
 			await asked(page, '45m');
 			assert.equal(
 				await page.locator('.root-bar [role="tab"].modified').count(),
 				0,
-				'the widget’s own + dirtied the layout'
+				'the widget’s own step dirtied the layout'
 			);
 
 			await app.reload();
-			assert.deepEqual(
-				await titles(page),
-				['longer window (60m)', 'shorter window (30m)'],
-				'a reload lost a session setting'
-			);
+			await farIs(page, '-45m');
 			assert.equal(
 				await page.locator('.root-bar [role="tab"].modified').count(),
 				0,
@@ -196,11 +322,7 @@ describe('the nowview widget', () => {
 
 			// Now it is the draft's, and survives a reload on its own.
 			await app.reload();
-			assert.deepEqual(
-				await titles(page),
-				['longer window (60m)', 'shorter window (30m)'],
-				'the draft did not keep the handed-over step'
-			);
+			await farIs(page, '-45m'); // the draft kept the handed-over window
 
 			// The root bar's save icon, on the `main` tab (da-0a5o).
 			await chooseRoot(page, 'Save layout');
@@ -214,7 +336,7 @@ describe('the nowview widget', () => {
 		});
 	});
 
-	test('at 360px the steps do not widen the pane', async () => {
+	test('at 360px the handles do not widen the pane', async () => {
 		await withApp(
 			async ({ page }) => {
 				const tab = page.locator('[role="tab"]', { hasText: 'nowview' });
@@ -225,7 +347,7 @@ describe('the nowview widget', () => {
 					client: b.clientWidth
 				}));
 				assert.ok(box.scroll <= box.client, `nowview scrolls sideways: ${JSON.stringify(box)}`);
-				assert.ok(await longer(page).isVisible());
+				assert.ok(await handle(page, '-30m').isVisible());
 			},
 			{ viewport: { width: 360, height: 640 } }
 		);
@@ -234,9 +356,8 @@ describe('the nowview widget', () => {
 
 // ── the zoom (da-5goc) ───────────────────────────────────────────────
 //
-// Two fingers over the picture, or ctrl+wheel, scale the same window the
-// + / − step — and land on the same ladder, so the two controls never
-// disagree about where the window can be.
+// Two fingers over the picture, or ctrl+wheel, scale the window and land
+// on the ladder the handles' wheels step along.
 //
 // The anchor is the instant the picture is about: now, or `-t`'s when a
 // tree carries one. What is held here is that the anchor does not move
@@ -325,20 +446,20 @@ describe('the nowview widget zooms', () => {
 					);
 				});
 				await asked(page, '20m');
-				assert.deepEqual(await titles(page), ['longer window (30m)', 'shorter window (15m)']);
+				await farIs(page, '-20m');
 
 				// And back: fingers together by the same ratio is 20m × 1.5,
 				// which rounds onto 30m.
 				await pinch(page, box, 120, 80);
 				await asked(page, '30m');
-				assert.deepEqual(await titles(page), ['longer window (45m)', 'shorter window (20m)']);
+				await farIs(page, '-30m');
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 		);
 	});
 
-	test('ctrl+wheel steps the same ladder, and the buttons still read it', async () => {
+	test('ctrl+wheel steps the same ladder, and the handles pick up from it', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -349,7 +470,6 @@ describe('the nowview widget zooms', () => {
 
 				await page.mouse.wheel(0, -100); // up: a shorter window
 				await asked(page, '20m');
-				assert.deepEqual(await titles(page), ['longer window (30m)', 'shorter window (15m)']);
 
 				await page.mouse.wheel(0, 100); // down: a longer one
 				await asked(page, '30m');
@@ -358,12 +478,12 @@ describe('the nowview widget zooms', () => {
 				// A bare wheel is the pane's own scroll, not a zoom.
 				await page.mouse.wheel(0, -100);
 				await app.idle();
-				assert.deepEqual(await titles(page), ['longer window (45m)', 'shorter window (20m)']);
+				await farIs(page, '-30m');
 
-				// The buttons pick up from where the wheel left the window.
-				await longer(page).click();
+				// The handles pick up from where the wheel left the window.
+				await hover(page, '-30m');
+				await notch(page, '45m').click();
 				await asked(page, '45m');
-				assert.deepEqual(await titles(page), ['longer window (60m)', 'shorter window (30m)']);
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...DESKTOP }
@@ -400,7 +520,7 @@ describe('the nowview widget zooms', () => {
 				await pinch(page, box, 80, 120);
 				await asked(page, '20m');
 				await app.idle();
-				assert.deepEqual(await titles(page), ['longer window (30m)', 'shorter window (15m)']);
+				await farIs(page, '-10m');
 				const after = await instantX(page);
 				assert.ok(Math.abs(after - before) <= 2, `09:00 moved: ${before} → ${after}`);
 				// And the window is still that instant's, not the clock's.
@@ -424,15 +544,16 @@ describe('the nowview widget zooms', () => {
 //
 // vividn, 2026-09-17: the corner + / − lay over the tiny snapshot's first
 // chip — «music: true» read «sic: true». The steps now sit beside the far
-// axis label, and the snapshot, having no axis, has none.
+// axis label, and the snapshot, having no axis, has none. The handles that
+// replaced them (da-57vj4) are the labels themselves.
 //
 // da-7q8r retired the chips from the webview altogether — they are the
 // CLI's `--labels`, which nothing here passes — so the snapshot is its
-// bands and nothing else, and there is nothing left for a step to cover.
+// bands and nothing else, and there is nothing left for a handle to cover.
 
-describe('the nowview steps stay off the picture', () => {
+describe('the nowview handles stay off the picture', () => {
 	// `mobile`'s snapshot pane went in da-2hd21; the full window is what is left.
-	test('390×664 in `mobile`: the full window has its steps beside its far label', async () => {
+	test('390×664 in `mobile`: the full window has its handles over its labels', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -456,9 +577,9 @@ describe('the nowview steps stay off the picture', () => {
 
 	// The tab stack is the phone's `main` tree (`[tail, nowview, custom]`)
 	// rather than `mobile`, whose row 3 stopped being tabs (da-hkjp). What
-	// is under test is a pan that begins on a step inside a STACK, so any
+	// is under test is a drag that begins on a handle inside a STACK, so any
 	// shipped stack holding a nowview answers it.
-	test('a tap on a step fires it; a pan that begins on one neither fires it nor moves the tab', async () => {
+	test('a tap on a handle opens its wheel and a tap on a notch steps it; a sideways drag on one scales, and never moves the tab', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -471,20 +592,25 @@ describe('the nowview steps stay off the picture', () => {
 					page.evaluate(() =>
 						window.__datumSeen.filter((a) => a[0] === 'nowview').map((a) => a[a.indexOf('--history') + 1])
 					);
-				const step = fields.locator('button[aria-label="longer window"]');
-				await step.tap();
+				await handle(page, '-30m', 'section[data-pane="side"]').tap();
+				await notch(page, '45m').tap();
 				await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'nowview' && a.includes('45m')));
+				// A finger's wheel stays until a press lands elsewhere.
+				assert.equal((await wheelOf(page)).at, '-45m');
 
-				// Now 60m is the step: a pan from it either way asks for nothing.
+				// A sideways drag on the far handle, either way, is the
+				// handle's: the window scales, and the pane keeps its tab.
 				await beside(page, 'section[data-pane="side"]');
 				await pastTheWindow(page);
-				const box = await step.boundingBox();
-				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, 120, 0);
-				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, -120, 0);
+				const was = (await histories()).length;
+				const box = await handle(page, '-45m', 'section[data-pane="side"]').boundingBox();
+				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, 60, 0);
+				await page.waitForFunction((n) => window.__datumSeen.filter((a) => a[0] === 'nowview').length > n, was);
 				await settled(page);
 				await app.idle();
-				assert.equal(await activeTab(page, 'side'), 'nowview', 'a pan on a step moved the tab');
-				assert.ok(!(await histories()).includes('60m'), `a pan fired the step: ${await histories()}`);
+				assert.equal(await activeTab(page, 'side'), 'nowview', 'a drag on a handle moved the tab');
+				const scaled = (await histories()).at(-1);
+				assert.ok(!['45m', '60m'].includes(scaled), `a drag toward now did not shorten the window: ${scaled}`);
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...TOUCH, viewport: { width: 390, height: 664 } }
@@ -497,7 +623,8 @@ describe('the nowview steps stay off the picture', () => {
 				const { page } = app;
 				await beside(page, PANE);
 				await app.spyOnRunner();
-				const box = await longer(page).boundingBox();
+				await hover(page, '-30m');
+				const box = await notch(page, '45m').boundingBox();
 				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 				await page.mouse.down();
 				await page.locator(`${PANE} svg.svg`).evaluate((svg) => (svg.dataset.old = '1'));

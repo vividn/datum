@@ -493,12 +493,44 @@ export function stepMinutes(step: string): number {
  */
 export function zoomHistory(history: string, scale: number): string {
 	const minutes = NOWVIEW_STEPS.map(stepMinutes);
-	const from = stepMinutes(NOWVIEW_STEPS.includes(history) ? history : NOWVIEW_HISTORY);
+	const own = stepMinutes(history);
+	const from = Number.isFinite(own) && own > 0 ? own : stepMinutes(NOWVIEW_HISTORY);
 	const target = from / Math.max(scale, 0.001);
 	let best = 0;
 	const off = (i: number) => Math.abs(Math.log(minutes[i] / target));
 	for (let i = 1; i < minutes.length; i++) if (off(i) < off(best)) best = i;
 	return NOWVIEW_STEPS[best];
+}
+
+/** The shortest and the longest window a handle reaches: the ladder's ends. */
+const [WINDOW_MIN, WINDOW_MAX] = [NOWVIEW_STEPS[0], NOWVIEW_STEPS.at(-1)!].map(stepMinutes);
+
+/**
+ * A window of `minutes` as `--history` reads it (da-57vj4): the ladder's own
+ * word where it is one of its steps, else whole minutes, else seconds — a
+ * handle dragged sideways asks for any length — held to the ladder's ends.
+ */
+export function historyArg(minutes: number): string {
+	const m = Math.min(WINDOW_MAX, Math.max(WINDOW_MIN, minutes));
+	const s = Math.round(m * 60);
+	return NOWVIEW_STEPS.find((step) => Math.round(stepMinutes(step) * 60) === s) ?? (s % 60 ? `${s}s` : `${s / 60}m`);
+}
+
+/**
+ * The ladder's steps either side of a handle at `minutes` (da-57vj4), the
+ * nearest first: `up` longer, `down` shorter. Only those a window of
+ * `history` minutes, rescaled by step / minutes, keeps within the ladder.
+ */
+export function ladderAround(minutes: number, history: number): { up: string[]; down: string[] } {
+	const fits = (step: string) => {
+		const w = (history * stepMinutes(step)) / minutes;
+		return w >= WINDOW_MIN - 1e-9 && w <= WINDOW_MAX + 1e-9;
+	};
+	const steps = NOWVIEW_STEPS.filter(fits);
+	return {
+		up: steps.filter((s) => stepMinutes(s) > minutes + 1e-9),
+		down: steps.filter((s) => stepMinutes(s) < minutes - 1e-9).reverse()
+	};
 }
 
 /**

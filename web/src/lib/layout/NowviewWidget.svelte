@@ -1,18 +1,21 @@
 <!--
 	The nowview widget (da-pcis): datum's nowview picture through a CliPane,
-	and a tiny − / + beside the axis's far label (da-ndzl) stepping how far
-	back the picture reaches — down to 30s, halving past 5m through the 2m
-	and 1m a game needs, and never to the snapshot of each field's state,
-	which is `showHistory` turned off in the widget's menu (da-hklaz).
-	The window's size is written nowhere: each button's title names the step
-	it goes to (da-rex1). The step is the widget's setting, handed out with
-	`change` — and since da-vhwq that lands in THIS SESSION, not the tree:
-	pressing − under a LOCKED layout used to move `history` in the tree and
-	light the layout's dot, which is the defect that bead was written
-	against. «Save options with layout» is what hands the step to the
-	layout, and only when the reader chooses it.
+	and a HANDLE over each major label of its time axis (da-57vj4), which
+	replaced the − / + beside the far one (da-ndzl). Hover a handle, or
+	press a finger on it, and a wheel of the ladder's steps opens around it
+	(down to 30s, halving past 5m through the 2m and 1m a game needs, up to
+	12h): a click or a swipe across the axis gives the handle that time in
+	the same place, so the window rescales by their ratio, and a drag along
+	the axis moves the handle's time under the finger, to a window of any
+	length. Never to the snapshot of each field's state, which is
+	`showHistory` turned off in the widget's menu (da-hklaz). The window
+	is the widget's setting, handed out with `change` — and since da-vhwq
+	that lands in THIS SESSION, not the tree: a step under a LOCKED layout
+	used to move `history` in the tree and light the layout's dot, which is
+	the defect that bead was written against. «Save options with layout» is
+	what hands the window to the layout, and only when the reader chooses it.
 
-	The snapshot draws no axis, so it has no steps: nothing lies over its
+	The snapshot draws no axis, so it has no handles: nothing lies over its
 	chips, and the way out of it is the menu's «show history».
 
 	THE PICTURE FLOWS (da-hklaz). vividn: «it should already have all future
@@ -93,7 +96,7 @@
 	`data-pans="x"` (da-kcmp): a one-finger drag across it is never a swipe
 	between the pane's tabs, whatever the pane it is in.
 
-	The steps, the buttons and the margin pills are the WIDGET's, not the
+	The handles, the buttons and the margin pills are the WIDGET's, not the
 	picture's: a redraw replaces the picture, never them — it only re-places
 	them against the new picture's geometry.
 
@@ -112,9 +115,9 @@
 	import { markOf, pressSpent } from '$lib/inspect.js';
 	import { readLanes } from '$lib/lanes.js';
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '$lib/nowpoint.js';
-	import { NOWVIEW_HISTORY, NOWVIEW_STEPS, nowviewSpec, stepMinutes, zoomHistory } from '$lib/panes.js';
+	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '$lib/panes.js';
 
-	/** How far back the window reaches: one of NOWVIEW_STEPS. */
+	/** How far back the window reaches: a step of NOWVIEW_STEPS, or any length a handle's drag left it at. */
 	export let history = NOWVIEW_HISTORY;
 	/** The instant the window is centred on (`-t`); none is now. */
 	export let at: string | undefined = undefined;
@@ -149,13 +152,11 @@
 	 */
 	let centre: { arg: string; by: 'sel' | 'pan' } | null = at ? { arg: at, by: 'pan' } : null;
 
-	// A history off the list (a hand-written tree) steps from the default.
-	$: i = NOWVIEW_STEPS.indexOf(NOWVIEW_STEPS.includes(history) ? history : NOWVIEW_HISTORY);
-	$: up = NOWVIEW_STEPS[i + 1];
-	$: down = NOWVIEW_STEPS[i - 1];
+	/** The window in minutes; a history datum would not read is the default's. */
+	$: minutes = stepMinutes(history) > 0 ? stepMinutes(history) : stepMinutes(NOWVIEW_HISTORY);
 	$: instant = centre?.arg;
 	/** How finely a tap here says its time, in seconds. */
-	$: grain = tapStep(stepMinutes(NOWVIEW_STEPS[i]));
+	$: grain = tapStep(minutes);
 
 	/**
 	 * The `-t` the picture on screen was asked for, which is the window's
@@ -708,7 +709,7 @@
 
 	/**
 	 * A notch of the wheel is half a doubling, so one lands on the next
-	 * step of the ladder and the wheel steps as the buttons do. A trackpad
+	 * step of the ladder, as a handle's wheel steps the far label. A trackpad
 	 * pinch arrives here too, as a shower of small deltas: they accumulate
 	 * into one gesture, which the pause at the end of it commits.
 	 */
@@ -726,10 +727,10 @@
 		settle = setTimeout(commit, 120);
 	}
 
-	// ── the steps, the margin and the buttons ──────────────────────────
+	// ── the handles, the margin and the buttons ────────────────────────
 
-	/** What one step takes along the axis, beside the far label: its target and a 2px gap. */
-	const STEP_PX = { x: 22 + 2, y: 24 + 2 };
+	/** The room a handle keeps clear along the axis either side of its label. */
+	const GAP_PX = 4;
 
 	/**
 	 * Below this width the margin strip, its pills and `now →` do not fit,
@@ -748,31 +749,37 @@
 	let roomy = true;
 
 	/**
-	 * Where the far label is, in px across and down the widget's box, and
-	 * how long it is along the axis: the first tick label the window shows,
-	 * which is how far back it reaches (`-30m`, or `-15m` with the window
-	 * centred on the cursor). The + goes before it and the − after (vividn:
-	 * «move the + to the left side of the -nnm number»), so it is moved in
-	 * off the window's edge, where the surroundings put it, by a step.
-	 * Read off the picture as `anchorX` reads the now-line; none when it
-	 * draws no axis — the snapshot. A nearer label the steps would lie over
-	 * is not drawn: the far one says the window.
+	 * A HANDLE over each major tick label the window shows (da-57vj4): its
+	 * words (`-15m`), how far from the anchor they say it is in minutes,
+	 * and its box, centred at `x`, `y` across and down the widget's. The
+	 * far label is the first along time, which is how far back the window
+	 * reaches; it is moved in off the window's edge, where the surroundings
+	 * put it, and a nearer label it would lie over is not drawn. None when
+	 * the picture draws no axis — the snapshot.
 	 */
-	let far: { x: number; y: number; length: number } | null = null;
+	type Handle = { text: string; minutes: number; x: number; y: number; w: number; h: number };
+	/** What a wheel opens on and a press takes hold of: a handle's time and place, not its box. */
+	type Held = Pick<Handle, 'text' | 'minutes' | 'x' | 'y'>;
+	let handles: Handle[] = [];
+	/** The widget's box on screen, for the wheel, which is drawn `fixed` beside it. */
+	let boxAt = { x: 0, y: 0 };
 
 	/**
-	 * Hide each clock time (`.minute-label`) within a step of the far label,
-	 * as `place` hides a nearer tick label; it is never the far label. They
-	 * slide with the flow, so this runs at each slide too (da-to5n4). So is
-	 * one whose minute is still to come: the clip at the now-line hides only
-	 * its far half, and the near one peeked in beside «now» (da-xwe0h).
+	 * Hide each clock time (`.minute-label`) a handle stands over, as
+	 * `place` hides a tick label the far one would cover. They slide with
+	 * the flow, so this runs at each slide too (da-to5n4). So is one whose
+	 * minute is still to come: the clip at the now-line hides only its far
+	 * half, and the near one peeked in beside «now» (da-xwe0h).
 	 */
 	function clearFar(): void {
-		const home = el?.getBoundingClientRect();
+		const box = el?.getBoundingClientRect();
 		const y = axis?.y;
-		const step = y ? STEP_PX.y : STEP_PX.x;
-		const from = far && home ? (y ? far.y + home.y : far.x + home.x) : NaN;
-		const to = from + (far?.length ?? 0);
+		const spans = box
+			? handles.map((h) => {
+					const [c, half] = y ? [h.y + box.y, h.h / 2] : [h.x + box.x, h.w / 2];
+					return [c - half - GAP_PX, c + half + GAP_PX];
+				})
+			: [];
 		const now = drawn ? drawn.now + slid : Infinity;
 		for (const l of el?.querySelectorAll<SVGElement>('svg.svg .minute-label') ?? []) {
 			const r = l.getBoundingClientRect();
@@ -780,10 +787,10 @@
 			// Its mark, which datum draws just before it, holds the instant; a
 			// millisecond spares `drawn.now`'s rounding.
 			const ahead = Date.parse(l.previousElementSibling?.getAttribute('data-at') ?? '') - now > 1;
-			l.style.visibility = ahead || (a < to + step && b > from - step) ? 'hidden' : '';
+			l.style.visibility = ahead || spans.some(([from, to]) => a < to && b > from) ? 'hidden' : '';
 		}
 	}
-	$: far, clearFar();
+	$: handles, clearFar();
 
 	/** The instants at the window's two ends, as the picture on screen draws them. */
 	let view: [number, number] | null = null;
@@ -829,6 +836,7 @@
 		if (!el) return;
 		const home = el.getBoundingClientRect();
 		roomy = home.width >= TINY_PX;
+		boxAt = { x: home.x, y: home.y };
 		const svg = svgEl();
 		// Read unmoved, then slid by `rest` alone: a redraw mid-gesture must
 		// not cache the gesture's own offset, which `commitPan` adds again.
@@ -877,35 +885,253 @@
 			l.style.visibility = '';
 		}
 		const ctm = svg?.getScreenCTM();
-		if (!labels.length || !axis || !ctm) return void (far = null);
-		// The first along time: leftmost, or topmost when time runs down —
-		// and then the steps go above and below it, in the axis strip.
+		if (!labels.length || !axis || !ctm) return void (handles = []);
+		// The first along time: leftmost, or topmost when time runs down.
 		const y = axis.y;
 		const box = (l: SVGElement) => l.getBoundingClientRect();
 		const span = (r: DOMRect) => (y ? [r.top, r.bottom] : [r.left, r.right]);
-		const [lo] = ends();
-		const shown = labels.filter((l) => {
+		const [lo, hi] = ends();
+		const inside = (l: SVGElement) => {
 			const [a, b] = span(box(l));
-			return (a + b) / 2 >= lo - 1;
-		});
-		if (!shown.length) return void (far = null);
+			return (a + b) / 2 >= lo - 1 && (a + b) / 2 <= hi + 1;
+		};
+		const shown = labels.filter(inside);
+		if (!shown.length) return void (handles = []);
 		const label = shown.reduce((a, b) => (span(box(b))[0] < span(box(a))[0] ? b : a));
-		const step = y ? STEP_PX.y : STEP_PX.x;
-		const inset = Math.max(0, lo + step - span(box(label))[0]) / (y ? ctm.d : ctm.a);
+		const inset = Math.max(0, lo + GAP_PX - span(box(label))[0]) / (y ? ctm.d : ctm.a);
 		if (inset) label.setAttribute('transform', y ? `translate(0 ${inset})` : `translate(${inset} 0)`);
-		const r = box(label);
-		const [from, to] = span(r);
+		const [from, to] = span(box(label));
 		for (const l of labels) {
 			const [a, b] = span(box(l));
-			if (l !== label && a < to + step && b > from - step) l.style.visibility = 'hidden';
+			if (l !== label && a < to + GAP_PX * 2 && b > from - GAP_PX * 2) l.style.visibility = 'hidden';
 		}
-		// On the label's middle, but no higher than keeps a step's 24px
-		// target under the axis line: the strip is only as tall as its
-		// 11px digits (da-a2cxp).
-		const under = (svg?.querySelector('.axis')?.getBoundingClientRect().top ?? 0) + 24 / 2;
-		far = y
-			? { x: r.left + r.width / 2 - home.x, y: from - home.y, length: to - from }
-			: { x: from - home.x, y: Math.max(r.top + r.height / 2, under) - home.y, length: to - from };
+		// On the label's middle, but no higher than keeps a handle's target
+		// under the axis line: the strip is only as tall as its 11px digits
+		// (da-a2cxp).
+		const under = (svg?.querySelector('.axis')?.getBoundingClientRect().top ?? 0) + HANDLE_PX / 2;
+		handles = shown
+			.filter((l) => l.style.visibility !== 'hidden')
+			.map((l) => {
+				const r = box(l);
+				const text = l.textContent ?? '';
+				const mid = r.top + r.height / 2;
+				return {
+					text,
+					minutes: stepMinutes(text.replace(/^[-+]/, '')),
+					x: r.left + r.width / 2 - home.x,
+					y: (y ? mid : Math.max(mid, under)) - home.y,
+					w: r.width + 8,
+					h: Math.max(r.height + 4, HANDLE_PX)
+				};
+			})
+			.filter((h) => h.minutes > 0);
+	}
+
+	// ── the handles' wheel and drag (da-57vj4) ─────────────────────────
+	//
+	// vividn: «make it clear that this is some sort of handle. When you
+	// click and hold on it or hover over it, show the prev/next time
+	// notches above and below … dragging up and down or selecting one of
+	// these times switches the range time to next step … Dragging left and
+	// right on this handle should place the handle in a different place on
+	// the x axis scaling appropriately.»
+	//
+	// A handle pins its time to its PLACE, with the anchor (now, or the
+	// instant a centred window is about) where it is. A step of the wheel
+	// keeps the place and changes the time, so the window is rescaled by
+	// their ratio; a drag along the axis keeps the time and moves the
+	// place, to any window at all. datum's now strip is a fixed share of
+	// the band (`NOW_STRIP_FRACTION`), so a place stays put across the
+	// redraw a step asks for.
+
+	/** How far apart the wheel's notches are, across the axis, in px. */
+	const NOTCH_PX = { x: 22, y: 44 };
+	/** How tall a handle's target is at least, its 11px words and all. */
+	const HANDLE_PX = 20;
+	/** How many of the ladder's steps the wheel shows either side: the next one clear, the rest fading. */
+	const SHOWN = 3;
+
+	/**
+	 * The wheel open on a handle: its time, the sign it is written with,
+	 * and its place across and down the widget's box — its OWN, not a
+	 * label's, so the redraw a step asks for neither closes nor moves it.
+	 * `pick` is how many notches a drag across the axis has turned it.
+	 */
+	let wheel: { minutes: number; text: string; sign: string; x: number; y: number; pick: number } | null = null;
+	let wheelEl: HTMLDivElement | undefined;
+
+	$: around = wheel ? ladderAround(wheel.minutes, minutes) : { up: [], down: [] };
+	/** The wheel's notches as drawn: how many steps from the handle (up is longer), and the step. */
+	$: notches = [
+		...around.up.slice(0, SHOWN).map((step, k) => ({ k: k + 1, step })),
+		...around.down.slice(0, SHOWN).map((step, k) => ({ k: -(k + 1), step }))
+	];
+
+	function open(h: Held): void {
+		if (wheel && Math.abs(wheel.x - h.x) < 1 && Math.abs(wheel.y - h.y) < 1) return;
+		wheel = { minutes: h.minutes, text: h.text, sign: h.text.startsWith('+') ? '+' : '-', x: h.x, y: h.y, pick: 0 };
+	}
+
+	function close(): void {
+		if (!grip) wheel = null;
+	}
+
+	/** The wheel's handle takes `step`: the window rescaled about the anchor, the wheel still open around it. */
+	function stepTo(step: string | undefined): void {
+		if (!wheel || !step) return;
+		const to = stepMinutes(step);
+		const next = historyArg((minutes * to) / wheel.minutes);
+		wheel = { ...wheel, minutes: to, text: wheel.sign + step, pick: 0 };
+		if (next !== history) dispatch('change', next);
+	}
+
+	/**
+	 * Leaving the wheel closes it, unless the keyboard is on a handle. Heard
+	 * on the window as well as the wheel: a wheel that opened under a still
+	 * pointer was never entered, and so is never left.
+	 */
+	function leave(event: PointerEvent): void {
+		if (event.pointerType !== 'mouse' || !wheel || grip) return;
+		// Where it went: a move's target, or the element a leave went into.
+		const to = event.type === 'pointermove' ? event.target : event.relatedTarget;
+		if (onCentre(event)) return;
+		const on = to instanceof Element ? to : null;
+		if (on && (wheelEl?.contains(on) || on.closest('.nowview-handles'))) return;
+		if (!document.activeElement?.matches('.handle:focus-visible')) close();
+	}
+
+	/**
+	 * Whether a pointer is on the wheel's own handle. It takes no pointer
+	 * itself — a press there is the handle's beneath it, and a click on a
+	 * handle is not one on something laid over it — so this is read off
+	 * its box: after a step there may be no label, and no handle, under it.
+	 */
+	function onCentre(event: PointerEvent): boolean {
+		const r = wheelEl?.querySelector('.handle.held')?.getBoundingClientRect();
+		return !!r && event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+	}
+
+	/** Focus leaving a handle or the wheel closes it, unless it went into the wheel or the pointer is on it. */
+	function blur(event: FocusEvent): void {
+		const to = event.relatedTarget as Node | null;
+		if (!(to && wheelEl?.contains(to)) && !wheelEl?.matches(':hover')) close();
+	}
+
+	function onWheelKey(event: KeyboardEvent): void {
+		if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+		event.preventDefault();
+		stepTo(event.key === 'ArrowUp' ? around.up[0] : around.down[0]);
+	}
+
+
+	/**
+	 * A press on a handle, in hand. Undecided until it travels: along the
+	 * axis it is the fine scale, across it the wheel, and the axis it
+	 * travels first decides, once, as the pinch's does. A finger's press
+	 * opens the wheel when it lands — a hover it has none of.
+	 */
+	let grip: {
+		id: number;
+		x: number;
+		y: number;
+		/** Where the handle is, and the anchor, along the axis on screen; the handle across it. */
+		at: number;
+		cross: number;
+		anchor: number;
+		text: string;
+		mode: 'press' | 'wheel' | 'scale';
+		touch: boolean;
+	} | null = null;
+	/** Where a scaling handle is drawn, along the axis on screen. */
+	let dragged = 0;
+
+	const across = (dx: number, dy: number) => (vertical ? dx : -dy);
+
+	function grab(event: PointerEvent, h: Held): void {
+		const svg = svgEl();
+		if (event.button > 0 || !svg || !axis) return;
+		event.preventDefault();
+		const box = svg.getBoundingClientRect();
+		const at = vertical ? boxAt.y + h.y : boxAt.x + h.x;
+		const anchor = (vertical ? box.y : box.x) + anchorX(svg);
+		const touch = event.pointerType !== 'mouse';
+		if (touch) open(h);
+		const cross = vertical ? boxAt.x + h.x : boxAt.y + h.y;
+		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, text: h.text, mode: 'press', touch };
+		dragged = at;
+		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
+	}
+
+	function onGripMove(event: PointerEvent): void {
+		if (!grip || event.pointerId !== grip.id) return;
+		const [dx, dy] = [event.clientX - grip.x, event.clientY - grip.y];
+		if (grip.mode === 'press' && Math.hypot(dx, dy) > SLOP_PX) {
+			grip.mode = Math.abs(vertical ? dy : dx) >= Math.abs(vertical ? dx : dy) ? 'scale' : 'wheel';
+			if (grip.mode === 'scale') {
+				wheel = null;
+				start();
+			} else if (!wheel) {
+				const h = handles.find((h) => h.text === grip?.text);
+				if (h) open(h);
+			}
+		}
+		if (grip.mode === 'scale' && zoom) {
+			const finger = vertical ? event.clientY : event.clientX;
+			// The picture scaled about the anchor so the handle's time is
+			// under the finger; held to a window the ladder's ends allow.
+			const s = (finger - grip.anchor) / (grip.at - grip.anchor);
+			const bound = Math.min(Math.max(s, minutes / stepMinutes('12h')), minutes / stepMinutes('30s'));
+			zoom = { ...zoom, scale: bound };
+			dragged = grip.anchor + (grip.at - grip.anchor) * bound;
+		}
+		if (grip.mode === 'wheel' && wheel) {
+			const notch = vertical ? NOTCH_PX.y : NOTCH_PX.x;
+			const pick = Math.round(across(dx, dy) / notch);
+			wheel = { ...wheel, pick: Math.max(-around.down.length, Math.min(around.up.length, pick)) };
+		}
+	}
+
+	function onGripUp(event: PointerEvent): void {
+		if (!grip || event.pointerId !== grip.id) return;
+		const was = grip;
+		ungrip();
+		if (was.mode === 'scale') {
+			const scale = zoom?.scale ?? 1;
+			zoom = null;
+			const next = historyArg(minutes / scale);
+			if (next !== history) dispatch('change', next);
+		} else if (was.mode === 'wheel' && wheel) {
+			const pick = wheel.pick;
+			stepTo(pick > 0 ? around.up[pick - 1] : pick < 0 ? around.down[-pick - 1] : undefined);
+			if (was.touch) wheel = null;
+		}
+	}
+
+	function onGripCancel(event: PointerEvent): void {
+		if (!grip || event.pointerId !== grip.id) return;
+		ungrip();
+		zoom = null;
+		if (wheel) wheel = { ...wheel, pick: 0 };
+	}
+
+	function ungrip(): void {
+		grip = null;
+		for (const [type, handler] of GRIP) window.removeEventListener(type, handler);
+	}
+
+	const GRIP = [
+		['pointermove', onGripMove],
+		['pointerup', onGripUp],
+		['pointercancel', onGripCancel]
+	] as [string, EventListener][];
+
+	/** A wheel a finger opened stays until a press lands somewhere else. */
+	function onOutside(event: PointerEvent): void {
+		if (!wheel || grip || (event.target instanceof Node && wheelEl?.contains(event.target))) return;
+		if (!onCentre(event)) return void (wheel = null);
+		// On the wheel's handle, over whatever is beneath it: the handle's.
+		event.stopPropagation();
+		grab(event, wheel);
 	}
 
 	/** The pills the selection made: the ones the margin draws beside their instants. */
@@ -985,9 +1211,13 @@
 		redrawn.observe(el, { childList: true, subtree: true });
 		const resized = new ResizeObserver(place);
 		resized.observe(el);
+		window.addEventListener('pointerdown', onOutside, true);
+		window.addEventListener('pointermove', leave);
 		return () => {
 			redrawn.disconnect();
 			resized.disconnect();
+			window.removeEventListener('pointerdown', onOutside, true);
+			window.removeEventListener('pointermove', leave);
 		};
 	});
 
@@ -996,6 +1226,7 @@
 		clearTimeout(settle);
 		clearTimeout(held);
 		listen(false);
+		ungrip();
 	});
 </script>
 
@@ -1054,31 +1285,74 @@
 		</div>
 	{/if}
 
-	{#if far && !zoom}
+	<!-- The handles (da-57vj4): one over each major tick label, its words
+	     drawn by the picture underneath. Hover or a finger opens the wheel;
+	     a drag along the axis scales the window about the anchor. -->
+	{#if handles.length && !zoom}
+		<div class="nowview-handles" data-pans={pans}>
+			<!-- Unkeyed: a step redraws the labels, and the handle the
+			     keyboard is on stays the focused element through it. -->
+			{#each handles as h}
+				<button
+					type="button"
+					class="handle"
+					data-at={h.text}
+					aria-label="window handle {h.text}"
+					title="{h.text}: hover or hold for the steps, drag along the axis to scale"
+					style:left="{h.x}px"
+					style:top="{h.y}px"
+					style:width="{h.w}px"
+					style:height="{h.h}px"
+					on:pointerenter={(e) => e.pointerType === 'mouse' && open(h)}
+					on:pointerdown={(e) => grab(e, h)}
+					on:focus={() => open(h)}
+					on:blur={blur}
+					on:keydown={onWheelKey}>{h.text}</button
+				>
+			{/each}
+		</div>
+	{/if}
+
+	<!-- The wheel: the ladder's steps either side of the handle it is open
+	     on, longer toward the picture, the next one clear and the rest
+	     fading. `fixed`, so a pane's edge does not cut its notches off. -->
+	{#if wheel && !zoom}
+		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div
-			class="nowview-steps"
+			class="nowview-wheel"
 			data-pans={pans}
-			style:left="{far.x}px"
-			style:top="{far.y}px"
-			style:--far="{far.length}px"
+			bind:this={wheelEl}
+			style:left="{boxAt.x + wheel.x}px"
+			style:top="{boxAt.y + wheel.y}px"
+			style:--turn="{wheel.pick * (vertical ? NOTCH_PX.y : NOTCH_PX.x)}px"
+			on:pointerleave={leave}
+			on:focusout={blur}
 		>
-			<button
-				type="button"
-				class="step"
-				aria-label="longer window"
-				title={up ? `longer window (${up})` : 'longer window'}
-				disabled={!up}
-				on:click={() => dispatch('change', up)}>+</button
-			>
-			<button
-				type="button"
-				class="step"
-				aria-label="shorter window"
-				title={down ? `shorter window (${down})` : 'shorter window'}
-				disabled={!down}
-				on:click={() => dispatch('change', down)}>−</button
+			{#each notches as n (n.k)}
+				<button
+					type="button"
+					class="notch"
+					class:picked={n.k === wheel.pick}
+					data-step={n.step}
+					data-k={n.k}
+					tabindex="-1"
+					style:--k={n.k}
+					style:--fade={Math.abs(n.k) === 1 ? 1 : Math.abs(n.k) === 2 ? 0.45 : 0.18}
+					on:click={() => stepTo(n.step)}>{wheel.sign}{n.step}</button
+				>
+			{/each}
+			<span class="handle held" class:turned={wheel.pick !== 0} data-at={wheel.text} aria-hidden="true"
+				>{wheel.text}</span
 			>
 		</div>
+	{/if}
+	{#if grip?.mode === 'scale'}
+		<span
+			class="handle dragged"
+			aria-hidden="true"
+			style:left="{vertical ? grip.cross : dragged}px"
+			style:top="{vertical ? dragged : grip.cross}px">{grip.text}</span
+		>
 	{/if}
 
 	<!-- Outside the band on purpose: a press on a button is not a press on
@@ -1226,39 +1500,109 @@
 		max-width: 100%;
 	}
 
-	/* + just before the far label and − just after it, on its middle. The
-	   glyph is tiny; the target is a fingertip's. */
-	.nowview-steps {
+	.nowview-handles {
 		position: absolute;
-		display: flex;
-		gap: calc(var(--far) + 4px);
-		transform: translate(calc(-22px - 2px), -50%);
+		inset: 0;
+		pointer-events: none;
 	}
-	.vertical .nowview-steps {
-		flex-direction: column;
-		transform: translate(-50%, calc(-24px - 2px));
+	.nowview-handles .handle {
+		pointer-events: auto;
 	}
 
-	.step {
-		width: 22px;
-		height: 24px;
-		padding: 0;
-		border: 0;
+	/* THE HANDLES (da-57vj4): a frame round each major label, the label's
+	   own words showing through, so the axis reads as something to take
+	   hold of. The target is at least a fingertip's height; a finger's
+	   drag on it is the handle's, never the page's. */
+	.handle {
+		position: absolute;
+		box-sizing: border-box;
+		transform: translate(-50%, -50%);
+		padding: 0 3px;
+		border: 1px solid var(--rule);
+		border-radius: 4px;
 		background: none;
-		color: var(--muted);
+		color: transparent;
 		font: inherit;
-		font-size: 13px;
+		font-size: 11px;
 		line-height: 1;
+		white-space: nowrap;
+		cursor: grab;
+		touch-action: none;
+		z-index: 2;
+	}
+	.handle:hover,
+	.handle:focus-visible {
+		border-color: var(--ink);
+	}
+
+	/* The wheel, the handle it is open on in the middle of it: its words
+	   drawn here, over the picture's, and the notches stacked toward the
+	   picture (up, or right when time runs down) for the longer steps and
+	   away from it for the shorter, turned by `--turn` while a drag picks. */
+	.nowview-wheel {
+		position: fixed;
+		width: 0;
+		height: 0;
+		z-index: 12;
+		touch-action: none;
+	}
+	.nowview-wheel .handle.held.turned {
+		visibility: hidden;
+	}
+	.nowview-wheel .handle.held {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		pointer-events: none;
+		color: var(--ink);
+		background: var(--ground);
+		border-color: var(--accent, var(--ink));
+		min-width: 2.6rem;
+		height: 20px;
+		left: 0;
+		top: 0;
+	}
+	.notch {
+		position: absolute;
+		left: 0;
+		top: 0;
+		box-sizing: border-box;
+		min-width: 2.6rem;
+		height: 20px;
+		padding: 0 4px;
+		transform: translate(-50%, calc(-50% - var(--k) * 22px + var(--turn)));
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		background: var(--ground);
+		color: var(--ink);
+		font: inherit;
+		font-size: 11px;
+		line-height: 1;
+		white-space: nowrap;
+		opacity: var(--fade);
 		cursor: pointer;
 	}
-
-	.step:hover:not(:disabled) {
-		color: inherit;
+	.vertical .notch {
+		transform: translate(calc(-50% + var(--k) * 44px - var(--turn)), -50%);
+	}
+	.notch:hover,
+	.notch.picked {
+		opacity: 1;
+		border-color: var(--ink);
 	}
 
-	.step:disabled {
-		opacity: 0.4;
-		cursor: default;
+	/* A handle dragged along the axis: its words under the finger while
+	   the picture scales about the anchor beneath it. */
+	.handle.dragged {
+		position: fixed;
+		height: 20px;
+		display: flex;
+		align-items: center;
+		color: var(--ink);
+		background: var(--ground);
+		border-color: var(--ink);
+		pointer-events: none;
+		z-index: 12;
 	}
 
 	/* Against the band's edge, on its middle: small, in the page's own ink

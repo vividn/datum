@@ -162,7 +162,7 @@ describe('the nowview flows', () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				await page.locator(`${NOWVIEW} .nowview-steps button`).first().waitFor();
+				await page.locator(`${NOWVIEW} .nowview-handles .handle`).first().waitFor();
 				await page.clock.runFor(SETTLE);
 				await app.idle();
 				// 14:59:10: 14:58 is 70 s back on a 2-minute window, well clear of «-2m».
