@@ -88,11 +88,11 @@
 	fills the bar with that field's states in place of the fields (da-g635)
 	— RADIALLY AROUND THE TAP (da-7q3ka, `ringOf` in fields.ts): the
 	spec's order is a rank, the first nearest the thumb, so a state is
-	always the same place relative to where the field was, like a pie
-	menu. `end` takes the field's own position on every switch field, or a
-	gap of its width on one whose spec says it is never off (da-cwieh),
-	with `< Back` left of it and `+ Add state` past the rightmost state on
-	its line; those three are hollow,
+	always the same place relative to where the press landed, like a pie
+	menu. `end` takes the tap's own spot on every switch field (a key's
+	press, the button's center; da-rgyrj), or a gap of its width on one
+	whose spec says it is never off (da-cwieh), with `< Back` left of it
+	and `+ Add state` past the rightmost state on its line; those three are hollow,
 	the other states a light tint, the one the field is in solid and bold.
 	Near an edge the ring is capped, not shifted: `end` stays on the tap
 	and the states spread along the free sides (da-8mk9p). Nothing floats: the ring is the
@@ -221,8 +221,9 @@
 	 */
 	let picked: string | null = null;
 	/**
-	 * Where the press that picked it landed: the tapped button's centre,
-	 * from the bar's top left corner as drawn.
+	 * Where the press that picked it landed, from the bar's top left corner
+	 * as drawn: the pointer's spot, so `end` is under the finger however
+	 * long the name (da-rgyrj), or the button's center for a key's press.
 	 */
 	let tap = { x: 0, y: 0 };
 	/** Whether the `+` at the end of that list has become its input. */
@@ -532,10 +533,12 @@
 	 * press landed is kept, for the states to stand around (da-7q3ka).
 	 */
 	/** `el` is the pressed button itself — the click's `currentTarget`, never a glyph inside it. */
-	function pick(button: FieldButton, el: HTMLElement) {
+	function pick(button: FieldButton, el: HTMLElement, e: MouseEvent) {
 		const at = el.getBoundingClientRect();
 		const box = bar!.getBoundingClientRect();
-		tap = { x: at.left + at.width / 2 - box.left, y: at.top + at.height / 2 - box.top };
+		// Enter or Space clicks with `detail` 0 and no position of its own.
+		const [x, y] = e.detail > 0 ? [e.clientX, e.clientY] : [at.left + at.width / 2, at.top + at.height / 2];
+		tap = { x: x - box.left, y: y - box.top };
 		scrolled = scrollerOf();
 		scrolledTo = { left: scrolled?.scrollLeft ?? 0, top: scrolled?.scrollTop ?? 0 };
 		picked = button.field;
@@ -553,14 +556,14 @@
 	 * A press does what `pressKind` says — the same answer the button's
 	 * outline is drawn from, so the two cannot disagree (da-z8z40).
 	 */
-	function press(button: FieldButton, el: HTMLElement) {
+	function press(button: FieldButton, el: HTMLElement, e: MouseEvent) {
 		const kind = pressKind(button, verb);
 		// With a verb pending, the press IS that verb (C1: a field tap runs
 		// at once).
 		const argv = (verb && verbPress(verb, button)) || pressArgv(button);
 		// A multi-state field can't be logged without saying which, so a
 		// plain press asks — the bar fills with its states.
-		if (kind === 'show') pick(button, el);
+		if (kind === 'show') pick(button, el, e);
 		// A record, or a field with keys to type: the line goes to the prompt.
 		else if (kind === 'fill') fill(argv);
 		else emit(argv);
@@ -818,7 +821,7 @@
 					style={vars(look) + tallOf(button)}
 					{disabled}
 					title={titleOf(button)}
-					on:click={(e) => press(button, e.currentTarget)}>{button.field}</button
+					on:click={(e) => press(button, e.currentTarget, e)}>{button.field}</button
 				>
 			{:else}
 				<button
@@ -833,7 +836,7 @@
 					data-ignored={button.ignored ? '' : undefined}
 					data-pilled={$fieldPill === button.field ? '' : undefined}
 					title={titleOf(button)}
-					on:click={(e) => press(button, e.currentTarget)}
+					on:click={(e) => press(button, e.currentTarget, e)}
 				>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
 			{/if}
 		</div>

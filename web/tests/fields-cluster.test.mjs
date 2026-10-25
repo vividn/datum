@@ -192,8 +192,9 @@ const SEED = [
  * landed; then Back.
  *
  * The press is the element's own click, not the mouse's: a bar one row
- * high is a viewport so short the bottom bar lies over it, and the widget
- * reads where the BUTTON is, not where the pointer was.
+ * high is a viewport so short the bottom bar lies over it, and a click
+ * with no pointer (`detail` 0, as a key's) stands the ring on the BUTTON's
+ * center (da-rgyrj).
  */
 async function tapAt(page, fraction, field = 'mood', px = 0) {
 	const tap = await page.locator(BAR).evaluate(
@@ -394,6 +395,70 @@ describe('a switch field’s states around the tap', () => {
 					const d = STATES.map((name) => Math.hypot(...from(t, name)));
 					assert.ok(d.every((x, i) => i === 0 || x >= d[i - 1] - 1), `${row} row: a higher rank stands further: ${d}`);
 				}
+			},
+			{
+				viewport: { width: 390, height: 640 },
+				clock: todayAt(15),
+				prepare: (context) => context.addInitScript(draft, PAGE)
+			}
+		);
+	});
+
+	// da-rgyrj — vividn: «It should appear beneath the tap location instead.
+	// So you can consistently tap tap to end and the movement is the same to
+	// change to a certain field regardless where the initial tap is.» A real
+	// pointer's press, near each end of a long name; a key's has no spot, so
+	// the button's center.
+	test('a long field: `end` stands under the tap at either end of it, and a second tap there ends it; a key centers it', async () => {
+		const long = 'the_tutorial_mood_with_a_long_name';
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seedLines(app, [
+					...OTHERS.slice(0, 2).map((f) => `setup ${f} --verb occur`),
+					`setup ${long} --verb switch --states false,${STATES.join(',')}`,
+					`switch ${long} a -t 1400`
+				]);
+				const button = page.locator(`${BAR} [data-field="${long}"]`);
+				await button.waitFor();
+				await atRows(page, 'bar', 3);
+				const at = await button.boundingBox();
+				assert.ok(at.width > 150, `${long} is ${at.width}px wide: not long enough to tell its center from its ends`);
+				const end = page.locator(`${BAR} [data-state="false"]`);
+				const center = async () => {
+					const b = await end.boundingBox();
+					return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+				};
+				const y = at.y + at.height / 2;
+				// In from each end by more than half of `end`, so a bar's edge
+				// never caps it (da-8mk9p) and the tap alone decides.
+				for (const [side, x] of [
+					['left', at.x + 40],
+					['right', at.x + at.width - 40]
+				]) {
+					await page.mouse.click(x, y);
+					await end.waitFor();
+					const c = await center();
+					assert.ok(Math.abs(c.x - x) <= 2 && Math.abs(c.y - y) <= 2, `${side}: end at ${c.x},${c.y}, the tap at ${x},${y}`);
+					const before = (await app.echoes()).length;
+					await page.mouse.click(x, y);
+					await button.waitFor();
+					await app.idle();
+					const echoes = await app.echoes();
+					assert.equal(echoes.length, before + 1, `${side}: the second tap logged nothing`);
+					assert.equal(echoes.at(-1), `end ${long}`, `${side}: the second tap did not end it`);
+					// The clock is held: two logs of one field at one minute collide.
+					await app.clock.forward(60_000);
+					await app.submit(`switch ${long} a`);
+					await app.clock.forward(60_000);
+				}
+
+				await button.focus();
+				await page.keyboard.press('Enter');
+				await end.waitFor();
+				const c = await center();
+				const mid = { x: at.x + at.width / 2, y };
+				assert.ok(Math.abs(c.x - mid.x) <= 2 && Math.abs(c.y - mid.y) <= 2, `key: end at ${c.x},${c.y}, the button's center at ${mid.x},${mid.y}`);
 			},
 			{
 				viewport: { width: 390, height: 640 },
