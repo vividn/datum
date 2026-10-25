@@ -52,4 +52,6 @@ export type SyncEvent =
 	| { served: string; report: SyncReport }
 	| { served: string; error: string }
 	/** `done` of the `of` ops a session of `db`'s received are applied (da-89ujs). */
-	| { progress: string; done: number; of: number };
+	| { progress: string; done: number; of: number }
+	/** A session `peer` dialed begins (`on`) or ends: the peer is online while it lasts (da-eglw0). */
+	| { serving: string; peer: string; on: boolean };

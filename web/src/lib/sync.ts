@@ -23,7 +23,7 @@
 // - Ops that ARRIVE are announced to this tab (`announceHere`); the other
 //   tabs heard already, from the process that applied them.
 // - REACHABILITY is held in memory, never stored: `online` while a session
-//   with the peer is open, `reachable` if it answered within `REACHABLE_MS`,
+//   with the peer is open, dialed or served, `reachable` if it answered within `REACHABLE_MS`,
 //   else `offline` with when it was last seen. The leader posts it, with the
 //   endpoint's id, on the `datum-sync` channel, so every tab shows the same.
 // - PAUSED (`datum sync pause`, da-wlbyx), it pushes nothing, and a session
@@ -172,6 +172,8 @@ function syncWorker(): Worker {
 			});
 		} else if ('served' in data) {
 			led.get(data.served)?.served(data);
+		} else if ('serving' in data) {
+			led.get(data.serving)?.serving(data.peer, data.on);
 		} else if ('progress' in data) {
 			led.get(data.progress)?.progress(data.done < data.of ? data : undefined);
 		} else {
@@ -272,6 +274,8 @@ class Leader {
 	/** Per peer: its vector when last in step, a session in flight (settled when it ends), one more asked for. */
 	inStep = new Map<string, string>();
 	busy = new Map<string, Promise<void>>();
+	/** Per peer: the sessions it dialed that this endpoint is serving now (da-eglw0). */
+	serves = new Map<string, number>();
 	again = new Set<string>();
 	seen = new Map<string, number>();
 	errors = new Map<string, string>();
@@ -410,6 +414,13 @@ class Leader {
 		if (report.got || report.added || this.joining || unknown) void this.refresh();
 	}
 
+	serving(peer: string, on: boolean): void {
+		const n = (this.serves.get(peer) ?? 0) + (on ? 1 : -1);
+		if (n > 0) this.serves.set(peer, n);
+		else this.serves.delete(peer);
+		this.post();
+	}
+
 	served(e: Extract<SyncEvent, { served: string }>): void {
 		// A `sync diff` this copy answered moved nothing, and is no session (da-n0ruf).
 		if ('report' in e && e.report.diffed) return;
@@ -458,7 +469,8 @@ class Leader {
 		const peers: Record<string, PeerState> = {};
 		for (const p of this.peers) {
 			const lastSeen = this.seen.get(p.endpoint);
-			const reach: Reach = this.busy.has(p.endpoint)
+			const open = this.busy.has(p.endpoint) || this.serves.has(p.endpoint);
+			const reach: Reach = open
 				? 'online'
 				: lastSeen !== undefined && now - lastSeen < REACHABLE_MS
 					? 'reachable'

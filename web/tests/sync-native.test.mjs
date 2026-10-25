@@ -228,8 +228,8 @@ describe('datum.day and a native copy', () => {
 	// opened page showed until it was over. Held here, it never is: held
 	// before `sync run` starts, so no session after the pairing ends. Which
 	// side dials is a race (the run steps aside while the invite is still at
-	// work), and `reach` says `online` only for the page's own dial, so the
-	// witness is `lastSeen`, which a session ending sets either way (da-h8n4e).
+	// work), so the witness is `lastSeen`, which a session ending sets
+	// either way (da-h8n4e).
 	test('what a peer sends is on the leading tab once it applies, before its session verifies (da-ajk4z)', async () => {
 		const native = await nativeCopy(relay);
 		try {
@@ -284,6 +284,32 @@ describe('datum.day and a native copy', () => {
 					await until(async () => [await native.verify(), await verifyOf(back)], ([a, b]) => a === b);
 				},
 				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
+	// A session the peer dialed and the page serves is as open as one the
+	// page dialed: the peer is online while it lasts (da-eglw0). Its verify
+	// held, it lasts; with the pull's tick taken away and nothing written
+	// here, the page dials nothing, so the session is the served one.
+	test('a peer whose session the page serves is online while it lasts (da-eglw0)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					await pairWith(app, native);
+					const { dial } = await settled(app);
+					await app.page.evaluate(() => localStorage.setItem('datum.syncHoldVerify', ''));
+					native.spawn(['sync', 'run']);
+					assert.equal((await native.run(['occur', 'arrived'])).code, 0);
+					await until(() => app.paneText('tail'), (text) => text.includes('arrived'));
+					const reach = await app.page.evaluate(() => Object.values(window.datum.sync.states().datum.peers).map((p) => p.reach));
+					assert.deepEqual(reach, ['online']);
+					assert.equal(await app.page.evaluate(() => window.__pushes.dial), dial, 'the page dialed: not a served session');
+				},
+				{ prepare: async (context) => (await relayed(relay)(context), context.addInitScript(countPushes)) }
 			);
 		} finally {
 			await native.close();

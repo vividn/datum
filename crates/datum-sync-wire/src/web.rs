@@ -27,10 +27,11 @@ fn text(v: &JsValue, key: &str) -> String {
 
 /// The CLI, as the worker hands it over: `run(argv, stdin)` resolves to a
 /// process's `{code, stdout, stderr}`; `progress(done, of)` hears an
-/// apply's.
+/// apply's, and `serving(peer, on)` a served session begin and end.
 struct Cli {
     run: Function,
     progress: Function,
+    serving: Function,
     /// The endpoint its node is bound as.
     id: String,
     /// What its Hello says it is: a join's name from then on (da-uyyyg).
@@ -192,9 +193,10 @@ impl Store for Cli {
         false
     }
 
-    fn serving(&self, _peer: &str, on: bool) {
+    fn serving(&self, peer: &str, on: bool) {
         let open = self.open.get();
         self.open.set(if on { open + 1 } else { open - 1 });
+        let _ = self.serving.call2(&JsValue::NULL, &peer.into(), &on.into());
     }
 
     fn progress(&self, done: usize, of: usize) {
@@ -351,6 +353,7 @@ impl Node {
         schema: u32,
         run: Function,
         progress: Function,
+        serving: Function,
     ) -> Result<Node, JsError> {
         let bytes: Vec<u8> = (0..key.len())
             .step_by(2)
@@ -365,6 +368,7 @@ impl Node {
             cli: Cli {
                 run,
                 progress,
+                serving,
                 id: ep.id().to_string(),
                 label: label.into(),
                 version: Version { datum, schema },

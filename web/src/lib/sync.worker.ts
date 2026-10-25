@@ -56,8 +56,9 @@ async function answer(request: Exclude<SyncRequest, { ran: number }>): Promise<u
 		void nodes.get(request.db)?.then((old) => old.close(), () => {});
 		const db = request.db;
 		const progress = (done: number, of: number) => ctx.postMessage({ progress: db, done, of });
+		const serving = (peer: string, on: boolean) => ctx.postMessage({ serving: db, peer, on });
 		const { key, relay, idle, label, datum, schema } = request;
-		const binding = Node.bind(key, relay, idle, label, datum, schema, runner(db), progress);
+		const binding = Node.bind(key, relay, idle, label, datum, schema, runner(db), progress, serving);
 		nodes.set(request.db, binding);
 		keys.set(request.db, request.key);
 		// A bind replaced while it was in flight (a leave rekeyed the db) clears nothing of its successor's.
