@@ -323,3 +323,21 @@ test('on a phone a swipe on the tab bar, the head or a margin changes the pane\'
 		assert.deepEqual(app.errors, []);
 	}, PHONE);
 });
+
+test('on a phone a swipe in the form just opened, either way, keeps the place: its slide in is no tab switch', async () => {
+	// da-bgve9: the place sliding in opened the root's window after a switch
+	// (da-d9p5m), so a swipe right in the form within the second went to the
+	// root, which has `main` that way, and closed the place.
+	await withApp(async (app) => {
+		const { page } = app;
+		await openField(page);
+		await until(() => rootShown(page), (t) => t === 'setup');
+		await until(() => shown(page), (t) => t === 'basics');
+		await across(page, -200);
+		await until(() => shown(page), (t) => t === 'data');
+		await across(page, 200);
+		await until(() => shown(page), (t) => t === 'basics');
+		assert.equal(await rootShown(page), 'setup');
+		assert.deepEqual(app.errors, []);
+	}, PHONE);
+});

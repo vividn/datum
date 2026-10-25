@@ -643,6 +643,64 @@ describe('a run of swipes: the window after a switch', () => {
 		});
 	});
 
+	test('a swipe the window passes on ends it: the next one over a scroller is the scroller’s', async () => {
+		// da-bgve9: a swipe the frame does not take, with no tab that way, is
+		// the reader working in the tab, and the run is over. Under the
+		// tail, a pane whose FIRST tab is a REPL with a line wider than it.
+		const replFirst = {
+			version: 1,
+			name: 'main',
+			root: {
+				id: 'root',
+				active: 0,
+				bar,
+				tabs: [
+					{
+						id: 'root-tab',
+						content: {
+							id: 'col',
+							direction: 'column',
+							ratios: [0.5, 0.5],
+							children: [
+								widgetPane('tail', 'tail'),
+								{
+									id: 'wide',
+									active: 0,
+									bar,
+									tabs: [
+										{ id: 'wide-repl', content: { id: 'wide-repl-w', kind: 'repl', settings: {} } },
+										{ id: 'wide-custom', content: { id: 'wide-custom-w', kind: 'custom', settings: {} } }
+									]
+								}
+							]
+						}
+					}
+				]
+			}
+		};
+		await phone.solo(
+			async (app) => {
+				const { page } = app;
+				await app.submit(`occur ${'x'.repeat(60)}`);
+				await app.submit('tail');
+				const wide = pane(page, 'wide');
+				const body = wide.locator('.body:not(.behind .body)');
+				const tab = (name) => wide.locator('[role="tab"]', { hasText: name }).click();
+				await tab('custom');
+				await tab('repl');
+				// `repl` is the first tab: a swipe right has no tab to go to.
+				await swipeOver(page, body, 120, 0, { x: 0.2, y: 0.5 });
+				const [at, most] = await body.evaluate((el) => [el.scrollLeft, el.scrollWidth - el.clientWidth]);
+				assert.ok(at < most, 'the REPL does not scroll sideways — this case needs a wider line');
+				await swipeOver(page, body, -120, 0, { x: 0.8, y: 0.5 });
+				await atRest(wide.locator('> .content'));
+				assert.equal(await activeTab(page, 'wide'), 'repl', 'the window took a swipe after one it passed on');
+				assert.ok((await body.evaluate((el) => el.scrollLeft)) > at, 'the scroller under the finger did not take the swipe');
+			},
+			JSON.stringify(replFirst)
+		);
+	});
+
 	test('after a layout switch a swipe over a tabbed pane moves the layout; after the window, the pane’s tab', async () => {
 		await withApp(
 			async ({ page }) => {

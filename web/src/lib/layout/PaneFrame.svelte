@@ -117,7 +117,9 @@
 	    ahead of scrollers, panners and tabbed panes inside — the root's
 	    after a layout switch (da-d9p5m), vividn: "a swipe anywhere on the
 	    new tab keeps switching tabs, even if otherwise a widget would have
-	    taken that swipe internally".
+	    taken that swipe internally". A run: a place the shell slides in
+	    opens no window, and a swipe the window does not take ends it
+	    (da-bgve9).
 
 	Then the tab and its neighbour move as ONE STRIP (da-24fgb): the tab
 	the finger is bringing on is drawn beside the one in front, a box away,
@@ -521,12 +523,20 @@
 	/** The finger's pointer id, for the cancel a window's claim sends what is under it. */
 	let finger = -1;
 
-	/** Any change of the tab in front — a swipe landing, a tap, the root bar — opens the window. */
+	/**
+	 * Any change of the tab in front — a swipe landing, a tap, the root bar
+	 * — opens the window. A slide the shell asked for (`goTo`, a place
+	 * coming or going) is no switch between tabs: it ends any window
+	 * instead (da-bgve9).
+	 */
 	const self = {};
 	let shown = pane.active;
+	/** The tab the shell's slide is bringing on. */
+	let asked: string | null = null;
 	$: if (pane.active !== shown) {
 		shown = pane.active;
-		switched = { frame: self, until: performance.now() + AGAIN_MS };
+		switched = pane.tabs[shown]?.id === asked ? null : { frame: self, until: performance.now() + AGAIN_MS };
+		asked = null;
 	}
 
 	/** The content box: the window the strip moves in, and what says how far off is off. */
@@ -650,7 +660,9 @@
 			// own — a day strip's long-press range at the whole day, which is
 			// at both ends — keeps it (da-xg1vi).
 			const toward = Math.abs(along) > Math.abs(across) && inRange(pane.active + (along < 0 ? 1 : -1));
-			if (windowed && !toward) return;
+			// A swipe the window does not take is the reader working in the
+			// tab: the run is over, and the next swipe is asked as ever (da-bgve9).
+			if (windowed && !toward) return void (switched = null);
 			const mine = toward && (windowed || (!event.defaultPrevented && !was.panners.some((el) => takes(el, axis, along))));
 			was.state = mine ? 'ours' : 'theirs';
 			if (!mine) return;
@@ -732,6 +744,7 @@
 		if (arriving) return void (queued = id);
 		const index = pane.tabs.findIndex((t) => t.id === id);
 		if (!inRange(index) || index === pane.active) return;
+		asked = id;
 		if (still()) {
 			fading = true;
 			return activate(index);
