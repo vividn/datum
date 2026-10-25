@@ -258,8 +258,13 @@
 
 	function swipeStart(event: TouchEvent) {
 		const t = event.touches[0];
+		const region = event.currentTarget as Element;
 		const kept = (event.target as Element).closest(KEEPS);
-		const theirs = event.touches.length > 1 || (kept && (event.currentTarget as Element).contains(kept));
+		// The browser moves a touch that goes down near a box onto it (touch adjustment), so one in the margin beside
+		// the region arrives here: where the finger went down says it is the pane's (da-wbx8e).
+		const r = region.getBoundingClientRect();
+		const beside = t.clientX < r.left || t.clientX > r.right || t.clientY < r.top || t.clientY > r.bottom;
+		const theirs = event.touches.length > 1 || beside || (kept && region.contains(kept));
 		swipe = { x: t.clientX, y: t.clientY, at: event.timeStamp, state: theirs ? 'theirs' : 'pending' };
 	}
 

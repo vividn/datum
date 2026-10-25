@@ -289,6 +289,9 @@ test('on a phone a swipe on the tab bar, the head or a margin changes the pane\'
 			await open(page);
 			await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
 			await until(() => shown(page), (t) => t === 'data');
+			// Landed, Data's panel stands at the margin's edge, where the browser moves a touch in the margin onto it
+			// (da-wbx8e): a swipe while it still glides in met no panel there, and passed by the race.
+			await until(() => lefts(page), (at) => at.data === 0);
 			assert.equal(await rootShown(page), 'setup');
 		};
 		const box = (sel) => page.locator(`${FIELD_FORM} ${sel}`).boundingBox();
