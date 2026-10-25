@@ -899,9 +899,13 @@
 			const [a, b] = span(box(l));
 			if (l !== label && a < to + step && b > from - step) l.style.visibility = 'hidden';
 		}
+		// On the label's middle, but no higher than keeps a step's 24px
+		// target under the axis line: the strip is only as tall as its
+		// 11px digits (da-a2cxp).
+		const under = (svg?.querySelector('.axis')?.getBoundingClientRect().top ?? 0) + 24 / 2;
 		far = y
 			? { x: r.left + r.width / 2 - home.x, y: from - home.y, length: to - from }
-			: { x: from - home.x, y: r.top + r.height / 2 - home.y, length: to - from };
+			: { x: from - home.x, y: Math.max(r.top + r.height / 2, under) - home.y, length: to - from };
 	}
 
 	/** The pills the selection made: the ones the margin draws beside their instants. */

@@ -133,20 +133,21 @@ fn now_label_overlay(layout: &DayviewLayout) -> String {
         return String::new();
     };
     let cross_total = layout.days.len() as f64 * layout.day_pitch - layout.interday_margin;
+    // Horizontally on the tick labels' baseline, as the clock is.
     let (x, y, anchor) = match layout.orientation {
         Orientation::Horizontal => (
             layout.label_width + middle,
-            cross_total + layout.time_axis_height / 2.0,
-            "middle",
+            cross_total + layout.time_axis_height,
+            r#"text-anchor="middle""#,
         ),
         Orientation::Vertical => (
             layout.time_axis_height - 1.0,
             layout.label_width + middle,
-            "end",
+            r#"text-anchor="end" dominant-baseline="middle""#,
         ),
     };
     format!(
-        r#"<text class="now-label" x="{x}" y="{y}" text-anchor="{anchor}" dominant-baseline="middle" fill="{NOW_LINE_COLOR}" font-size="{size}">{NOW_LABEL}</text>"#
+        r#"<text class="now-label" x="{x}" y="{y}" {anchor} fill="{NOW_LINE_COLOR}" font-size="{size}">{NOW_LABEL}</text>"#
     )
 }
 
@@ -281,25 +282,13 @@ fn now_strip_fills(current_states: &[NowviewCurrentState]) -> Vec<RightPanelFill
         .collect()
 }
 
-/// Font size of the clock overlay. Scales with the time-axis strip but
-/// stays readable when the strip is suppressed (callers may pass
+/// Font size of the clock overlay: its tick labels' size (da-78evn,
+/// da-a2cxp), and readable when the strip is suppressed (callers may pass
 /// `time_axis_height = 0`).
 fn clock_font_size(layout: &DayviewLayout) -> f64 {
-    if layout.time_axis_height <= 0.0 {
-        return 12.0;
-    }
-    match layout.orientation {
-        Orientation::Horizontal => {
-            (layout.time_axis_height + 2.0).min(layout.time_axis_height * 1.2)
-        }
-        // A vertical strip's width is room for the text, not its size: the
-        // clock is its tick labels' size (da-78evn).
-        Orientation::Vertical => {
-            match axis_label_size(Orientation::Vertical, layout.time_axis_height) {
-                s if s > 0.0 => s,
-                _ => 12.0,
-            }
-        }
+    match axis_label_size(layout.orientation, layout.time_axis_height) {
+        s if s > 0.0 => s,
+        _ => 12.0,
     }
 }
 
@@ -371,19 +360,19 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
     let _ = write!(&mut out, r#"<g class="nowview-overlay">"#,);
     match layout.orientation {
         Orientation::Horizontal => {
-            // On the mid-line of the time-axis strip, so it reads as the
-            // now-line's clock label.
+            // On the tick labels' baseline, so it reads as the now-line's
+            // own tick label.
             let text_x = data_x + time_pos;
             let text_y = data_y
                 + cross_total
                 + if layout.time_axis_height > 0.0 {
-                    layout.time_axis_height * 0.65
+                    layout.time_axis_height
                 } else {
                     font_size
                 };
             let _ = write!(
                 &mut out,
-                r#"<text class="current-time-text" x="{x}" y="{y}" text-anchor="middle" dominant-baseline="middle" fill="{c}" font-size="{fs}" font-weight="bold">{label}</text>"#,
+                r#"<text class="current-time-text" x="{x}" y="{y}" text-anchor="middle" fill="{c}" font-size="{fs}" font-weight="bold">{label}</text>"#,
                 x = text_x,
                 y = text_y,
                 c = TEXT_COLOR,
@@ -1140,6 +1129,40 @@ mod tests {
         );
     }
 
+    /// vividn, 2026-10-25: «the time axis numbers are way to big» (da-a2cxp).
+    /// The default strip draws its ticks and clock at dayview's 11.1px, and
+    /// a taller one gains room, not size.
+    #[test]
+    fn the_axis_numbers_are_dayviews_size_and_no_larger() {
+        use crate::dayview_svg::AXIS_LABEL_MAX;
+        assert!((AXIS_LABEL_MAX - 11.1).abs() < 0.05, "{AXIS_LABEL_MAX}");
+        let sizes = |svg: &str, class: &str| -> Vec<f64> {
+            svg.split(&format!(r#"<text class="{class}" "#))
+                .skip(1)
+                .map(|t| {
+                    num(
+                        &format!(r#"<text class="{class}" {t}"#),
+                        "text",
+                        class,
+                        "font-size",
+                    )
+                })
+                .collect()
+        };
+        for strip in [None, Some(40.0)] {
+            let (_, svg) = gap_picture_with(false, false, |l| {
+                if let Some(h) = strip {
+                    l.time_axis_height = h;
+                }
+            });
+            let (ticks, clock) = (sizes(&svg, "tick-label"), sizes(&svg, "current-time-text"));
+            assert!(!ticks.is_empty() && clock.len() == 1, "{svg}");
+            for size in ticks.iter().chain(&clock) {
+                assert_eq!(*size, AXIS_LABEL_MAX, "{strip:?}: {svg}");
+            }
+        }
+    }
+
     /// «a yellow now written entirely within the bounds of the yellow dotted
     /// lines underneath» (da-9g3bf), in place of the clock.
     #[test]
@@ -1159,12 +1182,10 @@ mod tests {
             let size = num(&svg, "text", "now-label", "font-size");
             let half = text_width("now", size) / 2.0;
             assert!(lead <= x - half && x + half <= end, "{lead}..{end}: {svg}");
-            // Under the bands, in the axis strip.
-            assert!(y - size / 2.0 >= layout.day_height, "{svg}");
-            assert!(
-                y + size / 2.0 <= layout.day_height + layout.time_axis_height,
-                "{svg}"
-            );
+            // Under the bands, in the axis strip, on the tick labels'
+            // baseline: «now» has no letter taller than a digit.
+            assert!(y - size * 0.72 >= layout.day_height, "{svg}");
+            assert_eq!(y, layout.day_height + layout.time_axis_height, "{svg}");
             assert_eq!(
                 attr(&svg, "text", "now-label", "fill").unwrap(),
                 NOW_LINE_COLOR

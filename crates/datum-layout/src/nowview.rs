@@ -28,7 +28,7 @@ use crate::dayview::{
     DayviewAxisTick, DayviewConfig, DayviewDayInput, DayviewFieldInput, DayviewLayout, DayviewSpan,
     Orientation,
 };
-use crate::dayview_svg::{text_width, VERTICAL_AXIS_LABEL_INSET, VERTICAL_AXIS_LABEL_MAX};
+use crate::dayview_svg::{text_width, AXIS_LABEL_MAX, VERTICAL_AXIS_LABEL_INSET};
 
 /// One block (closed or ongoing) inside a field row. Consumed by the
 /// terminal renderer in [`crate::nowview_terminal`].
@@ -427,7 +427,7 @@ impl Default for NowviewGeometry {
             width: None,
             height: 0.0,
             margin: 2.0,
-            time_axis_height: 22.0,
+            time_axis_height: 15.0,
             centred: false,
             orientation: Orientation::Horizontal,
             surround_minutes: 0.0,
@@ -661,10 +661,10 @@ pub fn crop_to_window(svg: &str, geom: &NowviewGeometry, layout: &DayviewLayout)
 /// baseline. Horizontally a strip's height is one line of text whatever
 /// it says; vertically its width is the text's own.
 ///
-/// Sized at [`VERTICAL_AXIS_LABEL_MAX`], which is what the renderer draws
+/// Sized at [`AXIS_LABEL_MAX`], which is what the renderer draws
 /// in any strip that holds five characters of it.
 fn vertical_axis_strip(ticks: &[DayviewAxisTick], asked: f64) -> f64 {
-    let size = VERTICAL_AXIS_LABEL_MAX;
+    let size = AXIS_LABEL_MAX;
     let widest = ticks
         .iter()
         .map(|t| t.label.as_str())

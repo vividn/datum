@@ -79,27 +79,27 @@ pub fn text_width(label: &str, font_size: f64) -> f64 {
     label.chars().count() as f64 * font_size * CHAR_ADVANCE_RATIO
 }
 
-/// The largest a vertical time axis's labels grow (da-78evn). A vertical
-/// strip's `time_axis_height` is its WIDTH, which has to hold the text
-/// rather than set its size, so past this the strip only gains room. It is
-/// the size nowview's default 22px horizontal strip draws at.
-pub const VERTICAL_AXIS_LABEL_MAX: f64 = 16.0;
+/// The largest a time axis's labels grow (da-a2cxp): the size dayview's
+/// default 15px strip draws its hour digits at, which reads as a label, as
+/// a chart axis's 10-12px does. Past it a strip only gains room: nowview's
+/// 22px one drew 21px digits, «way too big». A vertical strip's
+/// `time_axis_height` is its WIDTH, which holds the text rather than sets
+/// its size (da-78evn).
+pub const AXIS_LABEL_MAX: f64 = (15.0 - TICK_LENGTH - 1.0) / DIGIT_HEIGHT_RATIO;
 
 /// The time axis's label font size: in a horizontal strip the digits fill
 /// it from a pixel past the ticks to its bottom edge (da-l3tzj), and in a
-/// vertical one it is the strip less a little air, no larger than
-/// [`VERTICAL_AXIS_LABEL_MAX`]. `0` — a strip too thin for text — draws no
-/// labels.
+/// vertical one it is the strip less a little air, either no larger than
+/// [`AXIS_LABEL_MAX`]. `0` — a strip too thin for text — draws no labels.
 pub fn axis_label_size(orientation: Orientation, time_axis_height: f64) -> f64 {
     if time_axis_height <= 6.0 {
         return 0.0;
     }
-    match orientation {
-        Orientation::Horizontal => {
-            ((time_axis_height - TICK_LENGTH - 1.0) / DIGIT_HEIGHT_RATIO).max(6.0)
-        }
-        Orientation::Vertical => (time_axis_height - 6.0).clamp(6.0, VERTICAL_AXIS_LABEL_MAX),
-    }
+    let size = match orientation {
+        Orientation::Horizontal => (time_axis_height - TICK_LENGTH - 1.0) / DIGIT_HEIGHT_RATIO,
+        Orientation::Vertical => time_axis_height - 6.0,
+    };
+    size.clamp(6.0, AXIS_LABEL_MAX)
 }
 
 /// How far a vertical axis's labels sit left of its baseline: their
