@@ -713,6 +713,9 @@ pub struct SpecSetArgs {
     /// with its colour, glyph, description, keys and assigns.
     pub add_states: Vec<String>,
     pub remove_states: Vec<String>,
+    /// `--archive-state S` — dropped from the list, keeping what it carries
+    /// for its past rows (da-tdpjf).
+    pub archive_states: Vec<String>,
     pub color: Option<String>,
     /// Per-state colors in `STATE=COLOR` form. An empty COLOR clears the
     /// entry — the clear convention shared by all `STATE=VALUE` flags here.

@@ -163,20 +163,34 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     }
     // da-f9bky: a state dropped from the list drops what it carries, and
     // one removed that was neither listed nor carried anything is said.
-    if args.states.is_some() || !args.remove_states.is_empty() || !args.add_states.is_empty() {
+    // One archived (da-tdpjf) leaves the list and keeps what it carries.
+    let archive = &args.archive_states;
+    if args.states.is_some()
+        || !args.remove_states.is_empty()
+        || !args.add_states.is_empty()
+        || !archive.is_empty()
+    {
         let mut states = spec.allowed_states.take().unwrap_or_default();
-        let (lost, absent) = edit_list(
-            &mut states,
-            &args.states,
-            &args.add_states,
-            &args.remove_states,
-        );
+        let remove: Vec<String> = args.remove_states.iter().chain(archive).cloned().collect();
+        let (lost, absent) = edit_list(&mut states, &args.states, &args.add_states, &remove);
         spec.allowed_states = Some(states).filter(|s| !s.is_empty());
-        for state in lost {
-            spec.forget_state(&state);
+        for state in lost.iter().filter(|s| !archive.contains(s)) {
+            spec.forget_state(state);
         }
         for state in absent {
-            if !spec.forget_state(&state) {
+            if archive.contains(&state) {
+                if !spec.declared_states().contains(&&state) {
+                    eprintln!(
+                        "⚠ '{}' has no state '{state}': nothing archived",
+                        spec.field
+                    );
+                } else if !spec.lists_states() {
+                    eprintln!(
+                        "⚠ '{}' lists no states, so it may be in any: nothing archived",
+                        spec.field
+                    );
+                }
+            } else if !spec.forget_state(&state) {
                 eprintln!("⚠ '{}' has no state '{state}': nothing removed", spec.field);
             }
         }
@@ -883,6 +897,14 @@ impl Block {
         if !states.is_empty() || spec.only_listed_states {
             let only = listed(spec.only_listed_states);
             line("states", format!("{}{only}", states.join(" · ")));
+        }
+        let archived: Vec<&str> = spec
+            .archived_states()
+            .into_iter()
+            .map(String::as_str)
+            .collect();
+        if !archived.is_empty() {
+            line("archived", archived.join(" · "));
         }
         if spec.never_false {
             line("never false", "yes".into());

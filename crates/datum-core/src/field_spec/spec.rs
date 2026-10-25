@@ -513,6 +513,30 @@ impl FieldSpec {
     /// description, a glyph, keys (da-7905t).
     pub fn declared_states(&self) -> Vec<&String> {
         let listed = self.allowed_states.as_deref().unwrap_or_default();
+        listed.iter().chain(self.unlisted_states()).collect()
+    }
+
+    /// The states carrying something of their own that the list leaves out
+    /// (`setup --archive-state`, da-tdpjf): kept for their past rows. Only a
+    /// field that lists its states has any; without a list every state is
+    /// one it may be in.
+    pub fn archived_states(&self) -> Vec<&String> {
+        match self.lists_states() {
+            true => self.unlisted_states(),
+            false => Vec::new(),
+        }
+    }
+
+    /// Whether the field names the states it may be in: a list, or
+    /// `only_listed_states` (an empty list allowing none).
+    pub fn lists_states(&self) -> bool {
+        self.only_listed_states || self.allowed_states.as_ref().is_some_and(|s| !s.is_empty())
+    }
+
+    /// By name, each state the list leaves out that carries something of
+    /// its own — a colour, a description, a glyph, keys.
+    fn unlisted_states(&self) -> Vec<&String> {
+        let listed = self.allowed_states.as_deref().unwrap_or_default();
         let mut named: Vec<&String> = self
             .state_colors
             .keys()
@@ -524,7 +548,7 @@ impl FieldSpec {
             .collect();
         named.sort();
         named.dedup();
-        listed.iter().chain(named).collect()
+        named
     }
 
     /// Where a line's leftover words go (da-zqnt3): `remainder`, joined

@@ -111,14 +111,16 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
                 i += 1;
             }
             FlagSplit::Long(
-                f @ ("add-state" | "remove-state" | "add-tag" | "remove-tag" | "remove-key"),
+                f @ ("add-state" | "remove-state" | "archive-state" | "add-tag" | "remove-tag"
+                | "remove-key"),
             ) => {
                 let (v, ni) = take_value(tail, i, None, &format!("--{f}"))?;
                 list_op(&mut out, f, v);
                 i = ni;
             }
             FlagSplit::LongAttached(
-                f @ ("add-state" | "remove-state" | "add-tag" | "remove-tag" | "remove-key"),
+                f @ ("add-state" | "remove-state" | "archive-state" | "add-tag" | "remove-tag"
+                | "remove-key"),
                 v,
             ) => {
                 list_op(&mut out, f, v);
@@ -454,6 +456,7 @@ fn list_op(out: &mut SpecSetArgs, flag: &str, v: &str) {
     let list = match flag {
         "add-state" => &mut out.add_states,
         "remove-state" => &mut out.remove_states,
+        "archive-state" => &mut out.archive_states,
         "add-tag" => &mut out.add_tags,
         "remove-tag" => &mut out.remove_tags,
         _ => return out.remove_keys.push(v.to_string()),

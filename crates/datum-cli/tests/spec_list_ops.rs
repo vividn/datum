@@ -262,3 +262,111 @@ fn remainder_short_flags() {
     assert_eq!(s["comment_remainder"], json!(true));
     assert!(!datum(&dir, &["setup", "note", "-S"]).status.success());
 }
+
+/// `--archive-state S` (da-tdpjf) takes S out of the list and keeps what it
+/// carries, so its past rows draw as they did, and `setup F` says it is
+/// archived.
+#[test]
+fn archive_state_keeps_what_it_carries() {
+    let dir = mood();
+    ok(&dir, &["switch", "mood", "sad", "why=x", "-t", "-5"]);
+    let tail = |dir: &TempDir| {
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", dir.path().join("s.db"))
+            .env("HOME", dir.path())
+            .env("DATUM_SYNC_NO_DAEMON", "1")
+            .env("FORCE_COLOR", "1")
+            .args(["tail", "mood"])
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let before = tail(&dir);
+    assert!(before.contains("48;2;0;0;255"), "sad's blue: {before}");
+    let before_spec = spec(&dir, "mood");
+    let (out, _) = ok(&dir, &["setup", "mood", "--archive-state", "sad"]);
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("+ archived") && l.ends_with(" sad")),
+        "{out}"
+    );
+    let s = spec(&dir, "mood");
+    assert_eq!(s["allowed_states"], json!(["happy", "calm"]));
+    for key in [
+        "state_colors",
+        "state_descriptions",
+        "state_keys",
+        "state_assign",
+        "state_glyphs",
+    ] {
+        assert_eq!(s[key], before_spec[key], "{key}");
+    }
+    assert_eq!(s["state_glyphs"]["sad"], "▼", "{s}");
+    assert_eq!(tail(&dir), before);
+    assert_eq!(
+        ok(&dir, &["setup", "mood", "--archive-state", "sad"]).0,
+        "no change\n"
+    );
+    let (_, err) = ok(&dir, &["setup", "mood", "--archive-state", "nope"]);
+    assert!(
+        err.contains("'mood' has no state 'nope': nothing archived"),
+        "{err}"
+    );
+}
+
+/// Under `--only-listed-states` an archived state is refused as any
+/// unlisted one is.
+#[test]
+fn an_archived_state_is_not_listed() {
+    let dir = mood();
+    ok(&dir, &["setup", "mood", "--only-listed-states"]);
+    ok(&dir, &["switch", "mood", "sad", "why=x"]);
+    ok(&dir, &["setup", "mood", "--archive-state", "sad"]);
+    let out = datum(&dir, &["switch", "mood", "sad", "why=x"]);
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(!out.status.success() && err.contains("sad"), "{err}");
+}
+
+/// `--add-state` brings an archived state back with what it carries, and
+/// `--remove-state` drops it and all of that.
+#[test]
+fn an_archived_state_comes_back_or_goes() {
+    let dir = mood();
+    ok(&dir, &["setup", "mood", "--archive-state", "sad"]);
+    let (out, _) = ok(&dir, &["setup", "mood", "--add-state", "sad"]);
+    assert!(out.lines().any(|l| l.starts_with("− archived")), "{out}");
+    let s = spec(&dir, "mood");
+    assert_eq!(s["allowed_states"], json!(["happy", "calm", "sad"]));
+    assert_eq!(s["state_descriptions"]["sad"], "low");
+    ok(&dir, &["setup", "mood", "--archive-state", "sad"]);
+    let (_, err) = ok(&dir, &["setup", "mood", "--remove-state", "sad"]);
+    assert!(!err.contains("nothing removed"), "{err}");
+    let s = spec(&dir, "mood");
+    assert!(s["state_colors"].get("sad").is_none(), "{s}");
+    assert!(s["state_descriptions"].get("sad").is_none(), "{s}");
+    assert!(!ok(&dir, &["setup", "mood"]).0.contains("archived"));
+}
+
+/// A field that lists no states may be in any, so archiving one of its
+/// states is said to do nothing.
+#[test]
+fn archiving_without_a_list_says_nothing_is_archived() {
+    let dir = tempfile::tempdir().unwrap();
+    ok(
+        &dir,
+        &[
+            "setup",
+            "mood",
+            "--verb",
+            "switch",
+            "--state-color",
+            "sad=#0000ff",
+        ],
+    );
+    let (out, err) = ok(&dir, &["setup", "mood", "--archive-state", "sad"]);
+    assert_eq!(out, "no change\n");
+    assert!(
+        err.contains("'mood' lists no states, so it may be in any: nothing archived"),
+        "{err}"
+    );
+}
