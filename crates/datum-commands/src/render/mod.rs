@@ -1736,12 +1736,7 @@ pub fn render_snapshot(
                 // treatment — same time-column rules legacy
                 // render_now_view applied to its `stopped` bucket.
                 Some(e) => {
-                    let local_t = DatumTime {
-                        utc: t,
-                        offset_minutes: now_dt.offset_minutes,
-                        timezone: now_dt.timezone.clone(),
-                        uncertainty: None,
-                    };
+                    let local_t = in_now_zone(t, &now_dt);
                     format_now_time(
                         &local_t,
                         &now_dt,
@@ -1883,12 +1878,7 @@ fn format_now_time_utc(
     now_dt: &DatumTime,
     now_utc: chrono::DateTime<chrono::Utc>,
 ) -> String {
-    let t = DatumTime {
-        utc,
-        offset_minutes: now_dt.offset_minutes,
-        timezone: now_dt.timezone.clone(),
-        uncertainty: None,
-    };
+    let t = in_now_zone(utc, now_dt);
     if let Some(prefix) = self::action::format_relative_day_prefix(&t, now_dt) {
         let local = t.local_time();
         return format!("{prefix} {}", local.format("%H:%M"));
@@ -1897,6 +1887,20 @@ fn format_now_time_utc(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/// `utc` in now's zone at its own offset, not now's: across a DST change
+/// now's put a `-D` row logged that day on the day before (da-wd6r5).
+fn in_now_zone(utc: chrono::DateTime<chrono::Utc>, now_dt: &DatumTime) -> DatumTime {
+    let offset_minutes = datum_core::time::Zone::of(now_dt).map_or(now_dt.offset_minutes, |z| {
+        z.offset_at(utc).local_minus_utc() / 60
+    });
+    DatumTime {
+        utc,
+        offset_minutes,
+        timezone: now_dt.timezone.clone(),
+        uncertainty: None,
+    }
+}
 
 fn format_ago(secs: i64) -> String {
     // A negative age means the entry is stamped ahead of now. Sub-minute

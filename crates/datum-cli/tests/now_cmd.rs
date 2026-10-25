@@ -493,13 +493,9 @@ fn render_old_stopped_field_uses_iso_date_prefix() {
     let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
 
-    // Compute the expected date through the same FixedOffset the
-    // renderer uses (see DatumTime::local_time). Don't reach for
-    // chrono::Local — its DST-awareness diverges from the renderer's
-    // single offset_minutes snapshot when the stale instant lies on
-    // the other side of a DST cutover.
-    let render_offset = chrono::FixedOffset::east_opt(now.offset_minutes * 60)
-        .expect("offset_minutes within FixedOffset range");
+    // The renderer reads the stale instant at its own offset in now's
+    // zone, which may be across a DST change from now's (da-wd6r5).
+    let render_offset = Zone::of(&now).unwrap().offset_at(stale_utc);
     let expected = stale_utc
         .with_timezone(&render_offset)
         .format("%Y-%m-%d")
@@ -535,9 +531,11 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
     // Start-of-day is a boundary, resolved the same way `strip_to_start_of_day`
     // resolves it, so this expectation cannot drift from the insert path.
     let local_today_utc = zone.resolve(local_today).for_boundary();
+    // Midnight's own offset, as the insert path stores it: on a DST-change
+    // day now's offset is the other side of the change (da-wd6r5).
     let day_start = DatumTime {
         utc: local_today_utc,
-        offset_minutes: now.offset_minutes,
+        offset_minutes: zone.offset_at(local_today_utc).local_minus_utc() / 60,
         timezone: now.timezone.clone(),
         uncertainty: None,
     };
@@ -562,6 +560,39 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
     assert!(
         !plain.contains("@00:") && !plain.contains("00:00:00"),
         "P1D row must not show the synthetic 00:00 clock, got:\n{plain}"
+    );
+}
+
+/// da-wd6r5: on a fall-back day, a P1D row stays on its day once now is past
+/// the change. Midnight was CEST, now is CET; read at now's offset, the row
+/// put the bare date on the day before.
+#[test]
+fn render_p1d_entry_keeps_its_date_past_a_dst_change() {
+    use datum_parse::time::clock::{install, uninstall, MockClock};
+    let at = |iso: &str| DatumTime::from_utc_and_tz(iso.parse().unwrap(), "Europe/Berlin").unwrap();
+    let prev = install(std::sync::Arc::new(MockClock::new(at(
+        "2026-10-25T08:00:00Z",
+    ))));
+    let midnight = at("2026-10-24T22:00:00Z");
+    let tf = [tracked("birthday")];
+    let mut latest = HashMap::new();
+    let mut e = entry_builder("birthday")
+        .verb(Verb::Point)
+        .time_start(midnight)
+        .build();
+    e.set_occur_uncertainty(Some("P1D".to_string()));
+    latest.insert("birthday".to_string(), e);
+
+    let snap = build_snapshot(&tf, &latest, false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
+    uninstall();
+    if let Some(p) = prev {
+        install(p);
+    }
+    let plain = strip_ansi(&out);
+    assert!(
+        plain.contains("2026-10-25") && !plain.contains("2026-10-24"),
+        "P1D row must keep its date across the DST change, got:\n{plain}"
     );
 }
 
