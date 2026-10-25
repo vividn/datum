@@ -251,7 +251,6 @@
 	import { advance, LONG_MS, SLOP_PX, undecided, type Mode, type Press } from './nowpoint.js';
 	import { run, runKey } from './run.js';
 	import { firstEntryArgv } from './calls.js';
-	import { currentDb } from './database.js';
 	import { syncStates } from './sync.js';
 	import type { TailListing } from './tail.js';
 	import {
