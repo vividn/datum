@@ -225,19 +225,27 @@ describe('datum.day and a native copy', () => {
 
 	// The views follow the apply, not the verify after it, which hashes every
 	// row on both sides: seconds on a big history, the stale picture an
-	// opened page showed until it was over. Held here, it never is.
+	// opened page showed until it was over. Held here, it never is: held
+	// before `sync run` starts, so no session after the pairing ends. Which
+	// side dials is a race (the run steps aside while the invite is still at
+	// work), and `reach` says `online` only for the page's own dial, so the
+	// witness is `lastSeen`, which a session ending sets either way (da-h8n4e).
 	test('what a peer sends is on the leading tab once it applies, before its session verifies (da-ajk4z)', async () => {
 		const native = await nativeCopy(relay);
 		try {
 			await withWallClock(
 				async (app) => {
 					await pairWith(app, native);
-					native.spawn(['sync', 'run']);
+					const seen = () => app.page.evaluate(() => Object.values(window.datum.sync.states().datum.peers).map((p) => p.lastSeen));
 					await app.page.evaluate(() => localStorage.setItem('datum.syncHoldVerify', ''));
+					const paired = await seen();
+					assert.equal(paired.filter(Number.isFinite).length, 1, 'the pairing was seen');
+					native.spawn(['sync', 'run']);
 					assert.equal((await native.run(['occur', 'arrived'])).code, 0);
 					await until(() => app.paneText('tail'), (text) => text.includes('arrived'));
-					const reach = await app.page.evaluate(() => Object.values(window.datum.sync.states().datum.peers).map((p) => p.reach));
-					assert.deepEqual(reach, ['online'], 'the session ended: its verify was not held');
+					// A verify not held ends its session within the second.
+					await new Promise((r) => setTimeout(r, 1000));
+					assert.deepEqual(await seen(), paired, 'the session ended: its verify was not held');
 				},
 				{ prepare: relayed(relay) }
 			);
