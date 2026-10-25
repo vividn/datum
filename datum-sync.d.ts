@@ -57,7 +57,7 @@ export class Node {
      * and `schema` are what the CLI runs (`sync status --json`'s `this`).
      * `idle` is `DATUM_SYNC_TIMEOUT_S` for a page's tests, every node's.
      */
-    static bind(key: string, relay: string | null | undefined, idle: number | null | undefined, label: string, datum: string, schema: number, run: Function, progress: Function): Promise<Node>;
+    static bind(key: string, relay: string | null | undefined, idle: number | null | undefined, label: string, datum: string, schema: number, run: Function, progress: Function, serving: Function): Promise<Node>;
     close(): Promise<void>;
     /**
      * `datum sync chain connect [--label]`: redeem `ticket` as `label`,
@@ -106,7 +106,7 @@ export interface InitOutput {
     readonly about: (a: number, b: number, c: number) => void;
     readonly node_accept: (a: number) => number;
     readonly node_addr: (a: number, b: number) => void;
-    readonly node_bind: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
+    readonly node_bind: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
     readonly node_close: (a: number) => number;
     readonly node_connect: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly node_dial: (a: number, b: number, c: number) => number;
@@ -127,15 +127,15 @@ export interface InitOutput {
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: number) => number;
     readonly ring_core_0_17_14__bn_mul_mont: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly __wasm_bindgen_func_elem_14780: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_14782: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_6080: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_3566: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_7786: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_5878: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_6988: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7052: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_14636: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14783: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_14785: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_6083: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_3569: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_7789: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_5881: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_6991: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_7055: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14639: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
