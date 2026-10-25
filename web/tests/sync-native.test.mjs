@@ -223,6 +223,29 @@ describe('datum.day and a native copy', () => {
 		}
 	});
 
+	// The views follow the apply, not the verify after it, which hashes every
+	// row on both sides: seconds on a big history, the stale picture an
+	// opened page showed until it was over. Held here, it never is.
+	test('what a peer sends is on the leading tab once it applies, before its session verifies (da-ajk4z)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					await pairWith(app, native);
+					native.spawn(['sync', 'run']);
+					await app.page.evaluate(() => localStorage.setItem('datum.syncHoldVerify', ''));
+					assert.equal((await native.run(['occur', 'arrived'])).code, 0);
+					await until(() => app.paneText('tail'), (text) => text.includes('arrived'));
+					const reach = await app.page.evaluate(() => Object.values(window.datum.sync.states().datum.peers).map((p) => p.reach));
+					assert.deepEqual(reach, ['online'], 'the session ended: its verify was not held');
+				},
+				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
 	test('closing the tab stops its endpoint; reopened, it resumes and takes what was written meanwhile', async () => {
 		const native = await nativeCopy(relay);
 		try {

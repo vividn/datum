@@ -69,6 +69,9 @@ const HOLD_KEY = 'datum.syncHoldApply';
 /** How many `sync pipe apply` runs go through before the rest are held as
  * `HOLD_KEY` holds them: a join cut short once its count shows (da-dwm2y). */
 const HOLD_AFTER_KEY = 'datum.syncHoldApplyAfter';
+/** While set, the worker's `sync pipe verify` is never answered: a test's
+ * lever for a session that has applied and not ended (da-ajk4z). */
+const HOLD_VERIFY_KEY = 'datum.syncHoldVerify';
 const REACHABLE_MS = 60_000;
 /** How long since this copy last synced before the day view dims the stretch since (da-g5jjp). */
 const UNSYNCED_MS = 3_600_000;
@@ -158,9 +161,15 @@ function syncWorker(): Worker {
 	worker.onmessage = ({ data }: MessageEvent<SyncEvent>) => {
 		if ('run' in data) {
 			if (data.argv.includes('apply') && held()) return;
-			void cli(data.argv, data.stdin, true).then((r) =>
-				worker?.postMessage({ ran: data.run, result: { code: r.code, stdout: r.stdout, stderr: r.stderr } })
-			);
+			if (data.argv.includes('verify') && lever(HOLD_VERIFY_KEY)) return;
+			void cli(data.argv, data.stdin, true).then((r) => {
+				// What a peer sent is this tab's to show once it applies, not
+				// once the session's verify, a hash of every row on both
+				// sides, is over too: seconds on a big history (da-ajk4z).
+				// The other tabs heard it from the process already.
+				if (r.changed?.length && data.argv.includes('apply')) announceHere([dbOf(data.argv)]);
+				worker?.postMessage({ ran: data.run, result: { code: r.code, stdout: r.stdout, stderr: r.stderr } });
+			});
 		} else if ('served' in data) {
 			led.get(data.served)?.served(data);
 		} else if ('progress' in data) {
@@ -182,6 +191,14 @@ function ask<T>(db: string, op: Op): Promise<T> {
 		pending.set(id, (e) => ('ok' in e && e.ok ? resolve(e.value as T) : reject(new Error((e as { error: string }).error))));
 		syncWorker().postMessage({ ...op, id, db });
 	});
+}
+
+function lever(key: string): boolean {
+	try {
+		return localStorage.getItem(key) !== null;
+	} catch {
+		return false;
+	}
 }
 
 function held(): boolean {
@@ -384,10 +401,7 @@ class Leader {
 		this.seen.set(id, Date.now());
 		this.errors.delete(id);
 		this.inStep.set(id, JSON.stringify(report.vector));
-		if (report.got) {
-			announceHere([this.db]);
-			void this.push().catch(() => {});
-		}
+		if (report.got) void this.push().catch(() => {});
 		// A peer this leader does not list yet: admitted in a session that was
 		// cut short (da-idw54), which the leader hears of only once that dead
 		// connection times out, ~35 s on.
