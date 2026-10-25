@@ -32,6 +32,7 @@ import {
 	fill,
 	manage,
 	pane,
+	pastTheWindow,
 	scrollX,
 	settled,
 	swipeOver,
@@ -517,6 +518,7 @@ describe('a widget that takes the axis itself', () => {
 	test('a one-finger drag across the nowview band leaves the tab alone', async () => {
 		await phone.solo(async ({ page }) => {
 			await pane(page, 'side').locator('[role="tab"]', { hasText: 'nowview' }).click();
+			await pastTheWindow(page);
 			// The BAND declares the axis, not the widget: the margin above it
 			// is room a swipe may start in (da-rskp).
 			const band = pane(page, 'side').locator('.nowview-band');
@@ -531,5 +533,74 @@ describe('a widget that takes the axis itself', () => {
 			await atRest(content);
 			assert.equal(await activeTab(page, 'side'), 'nowview', 'a drag back across the band moved the tab');
 		});
+	});
+});
+
+describe('a run of swipes: the window after a switch', () => {
+	// vividn, 2026-10-25 (da-d9p5m): «when switching between tabs there
+	// should be a certain brief time window where a swipe anywhere on the new
+	// tab keeps switching tabs, even if otherwise a widget would have taken
+	// that swipe internally» — «this goes for both inner pane tabs and global
+	// tabs».
+	test('inside the window a swipe over the nowview band moves the tab; after it the band keeps it', async () => {
+		await phone.solo(async ({ page }) => {
+			const side = pane(page, 'side');
+			const content = side.locator('> .content');
+			const band = side.locator('.nowview-band');
+			const tab = (name) => side.locator('[role="tab"]', { hasText: name }).click();
+			await tab('nowview');
+			await band.locator('svg.svg').waitFor();
+			await tab('tail');
+			await pastTheWindow(page);
+
+			// A swipe lands on the nowview, and the next one over its band,
+			// which a drag across is otherwise the band's own, moves on.
+			const body = side.locator('.body:not(.behind .body)');
+			await scrollX(body, true);
+			await swipeOver(page, body, -120, 0);
+			await until(() => activeTab(page, 'side'), (t) => t === 'nowview');
+			const pan = await band.evaluate((el) => el.style.getPropertyValue('--pan'));
+			await swipeOver(page, band, -120, 0);
+			await until(() => activeTab(page, 'side'), (t) => t === 'custom');
+			assert.equal(await band.evaluate((el) => el.style.getPropertyValue('--pan')), pan, 'the band panned under the tab’s swipe');
+
+			// A tap on the tab opens the window as well.
+			await tab('nowview');
+			await swipeOver(page, band, 120, 0);
+			await until(() => activeTab(page, 'side'), (t) => t === 'tail');
+
+			// And past it the band takes the drag, as it always did.
+			await tab('nowview');
+			await pastTheWindow(page);
+			await swipeOver(page, band, -120, 0);
+			await atRest(content);
+			assert.equal(await activeTab(page, 'side'), 'nowview', 'a drag across the band moved the tab after the window');
+		});
+	});
+
+	test('after a layout switch a swipe over a tabbed pane moves the layout; after the window, the pane’s tab', async () => {
+		await withApp(
+			async ({ page }) => {
+				const root = (name) => page.locator('.root-bar [role="tab"]', { hasText: name }).click();
+				const body = () => pane(page, 'side').locator('.body:not(.behind .body)');
+				await root('tail');
+				await until(() => shown(page), (name) => name === 'tail');
+				await root('main');
+				await until(() => shown(page), (name) => name === 'main');
+				await scrollX(body(), true);
+				await swipeOver(page, body(), -120, 0);
+				await until(() => shown(page), (name) => name === 'tail');
+
+				await root('main');
+				await until(() => shown(page), (name) => name === 'main');
+				assert.equal(await activeTab(page, 'side'), 'tail', 'the inner pane moved its tab in the root’s window');
+				await pastTheWindow(page);
+				await scrollX(body(), true);
+				await swipeOver(page, body(), -120, 0);
+				await until(() => activeTab(page, 'side'), (t) => t === 'nowview');
+				assert.equal(await shown(page), 'main', 'the swipe after the window moved the layout');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
 	});
 });

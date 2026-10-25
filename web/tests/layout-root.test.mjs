@@ -32,6 +32,7 @@ import {
 	overStrip,
 	pane,
 	settled,
+	pastTheWindow,
 	swipe,
 	titles,
 	widgetPane
@@ -213,6 +214,7 @@ describe('on a phone', () => {
 			await app.submit('tail');
 			await addTab(page, 'repl', 'aliases');
 			await pane(page, 'repl').locator('[role="tab"]', { hasText: 'repl' }).click();
+			await pastTheWindow(page);
 			const body = pane(page, 'repl').locator('.body:not(.behind .body)');
 			assert.ok(
 				await body.evaluate((el) => el.scrollWidth > el.clientWidth),

@@ -392,6 +392,14 @@ export async function swipe(page, x, y, dx, dy, steps = 6, every, hold = 0) {
 }
 
 /**
+ * Wait out the window after a tab switch (da-d9p5m): for PaneFrame's
+ * `AGAIN_MS`, a second, a swipe along the frame that switched is its own
+ * whatever is under the finger, so a test of what a widget does with a drag
+ * after a switch waits first. Half as long again.
+ */
+export const pastTheWindow = (page) => page.waitForTimeout(1500);
+
+/**
  * Swipe by (dx, dy) from a point in `locator`'s box, given as fractions of
  * it — its middle unless `at` says otherwise. The element is brought on
  * screen first: a touch outside the viewport lands nowhere.

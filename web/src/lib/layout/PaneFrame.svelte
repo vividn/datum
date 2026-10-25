@@ -112,6 +112,12 @@
 	  - a touch on the frame itself — the nested inset, the root's page
 	    margin — has nothing under it and is always the frame's: "always
 	    allow swiping when swiping in the margins or along the frame".
+	  - for `AGAIN_MS` after a frame's tab switch lands, a swipe along its
+	    axis that has a tab to go to is that frame's wherever it starts,
+	    ahead of scrollers, panners and tabbed panes inside — the root's
+	    after a layout switch (da-d9p5m), vividn: "a swipe anywhere on the
+	    new tab keeps switching tabs, even if otherwise a widget would have
+	    taken that swipe internally".
 
 	Then the tab and its neighbour move as ONE STRIP (da-24fgb): the tab
 	the finger is bringing on is drawn beside the one in front, a box away,
@@ -153,6 +159,13 @@
 		coarse.addEventListener('change', read);
 		return () => coarse.removeEventListener('change', read);
 	});
+
+	/**
+	 * The frame whose tab switched last, and until when a swipe across it
+	 * is its own (da-d9p5m). One for the page, so a switch anywhere else
+	 * ends it.
+	 */
+	let switched: { frame: object; until: number } | null = null;
 </script>
 
 <script lang="ts">
@@ -203,6 +216,14 @@
 	 * the transition itself are the one number.
 	 */
 	const SLIDE_MS = 150;
+	/**
+	 * How long after this frame's tab switch lands a swipe along its axis is
+	 * its own wherever it starts — over a scroller, a panner or a tabbed
+	 * pane inside — so a run of swipes keeps moving through the same tabs
+	 * (vividn, da-d9p5m). A second: time for the next flick of a run, and
+	 * short of a reader who has looked at the tab and reached into it.
+	 */
+	const AGAIN_MS = 1000;
 
 	// What `Pane.svelte` looks for: it renders body-only inside a frame and
 	// reports its alarm here, so the orange reaches whichever pane holds
@@ -485,10 +506,28 @@
 	 * and it does not change under the finger. `state` is decided at the
 	 * first move that commits an axis and never revisited: a scroll that
 	 * runs out mid-gesture stays the browser's, and the NEXT swipe moves
-	 * the tab.
+	 * the tab. `fresh` is whether it started inside this frame's window
+	 * after a switch (`AGAIN_MS`), read at the start too.
 	 */
-	type Swipe = { x: number; y: number; panners: HTMLElement[]; state: 'pending' | 'ours' | 'theirs' };
+	type Swipe = {
+		x: number;
+		y: number;
+		target: EventTarget | null;
+		panners: HTMLElement[];
+		fresh: boolean;
+		state: 'pending' | 'ours' | 'theirs';
+	};
 	let touch: Swipe | null = null;
+	/** The finger's pointer id, for the cancel a window's claim sends what is under it. */
+	let finger = -1;
+
+	/** Any change of the tab in front — a swipe landing, a tap, the root bar — opens the window. */
+	const self = {};
+	let shown = pane.active;
+	$: if (pane.active !== shown) {
+		shown = pane.active;
+		switched = { frame: self, until: performance.now() + AGAIN_MS };
+	}
 
 	/** The content box: the window the strip moves in, and what says how far off is off. */
 	let contentEl: HTMLElement | null = null;
@@ -556,7 +595,9 @@
 		touch = {
 			x: t.clientX,
 			y: t.clientY,
+			target: event.target,
 			panners: pannersUnder(event.target, event.currentTarget as HTMLElement, vertical ? 'y' : 'x'),
+			fresh: switched?.frame === self && performance.now() < switched.until,
 			state: event.touches.length > 1 ? 'theirs' : 'pending'
 		};
 	}
@@ -576,10 +617,15 @@
 	 * from the page's own scroller as well. `touch-action` would not do:
 	 * it is read per element when the touch starts, and would forbid the
 	 * inner scrollers their own pans.
+	 *
+	 * Inside the window after a switch (da-d9p5m) the frame also hears the
+	 * move in the capture phase, `windowed`, ahead of everything under it,
+	 * and takes it if it has a tab that way, asking nothing under the
+	 * finger; else the move goes on to the rule above.
 	 */
-	function onTouchMove(event: TouchEvent) {
+	function onTouchMove(event: TouchEvent, windowed = false) {
 		const was = touch;
-		if (!was || was.state === 'theirs') return;
+		if (!was || was.state === 'theirs' || (windowed && !was.fresh)) return;
 		if (event.touches.length > 1) return void cancel();
 		const t = event.touches[0];
 		const dx = t.clientX - was.x;
@@ -592,13 +638,15 @@
 			// A widget that has already taken the move for a gesture of its
 			// own — a day strip's long-press range at the whole day, which is
 			// at both ends — keeps it (da-xg1vi).
-			const mine =
-				!event.defaultPrevented &&
-				Math.abs(along) > Math.abs(across) &&
-				!was.panners.some((el) => takes(el, axis, along)) &&
-				inRange(pane.active + (along < 0 ? 1 : -1));
+			const toward = Math.abs(along) > Math.abs(across) && inRange(pane.active + (along < 0 ? 1 : -1));
+			if (windowed && !toward) return;
+			const mine = toward && (windowed || (!event.defaultPrevented && !was.panners.some((el) => takes(el, axis, along))));
 			was.state = mine ? 'ours' : 'theirs';
 			if (!mine) return;
+			// A widget panning by pointer had the first moves: it is told the
+			// gesture is gone, as the browser tells it when it takes a pan.
+			if (windowed)
+				was.target?.dispatchEvent(new PointerEvent('pointercancel', { pointerId: finger, pointerType: 'touch', bubbles: true }));
 		}
 		event.stopPropagation();
 		event.preventDefault();
@@ -897,7 +945,9 @@
 		style:--front="translate{vertical ? 'Y' : 'X'}({offset}px)"
 		style:--beside="translate{vertical ? 'Y' : 'X'}(calc({offset}px + {peek > pane.active ? 100 : -100}%))"
 		style:--slide="{SLIDE_MS}ms"
+		on:pointerdown|capture={swipes ? (e) => (finger = e.pointerId) : undefined}
 		on:touchstart={swipes ? onTouchStart : undefined}
+		on:touchmove|capture|nonpassive={swipes ? (e) => onTouchMove(e, true) : undefined}
 		on:touchmove|nonpassive={swipes ? onTouchMove : undefined}
 		on:touchend={swipes ? onTouchEnd : undefined}
 		on:touchcancel={swipes ? cancel : undefined}

@@ -21,7 +21,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
-import { PHONE, activeTab, inRoom, maximizeButton, pane, pickOption, settled, swipe, toggleOption } from './support/layout.mjs';
+import { PHONE, activeTab, inRoom, maximizeButton, pane, pastTheWindow, pickOption, settled, swipe, toggleOption } from './support/layout.mjs';
 import { drag, finger, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
@@ -886,6 +886,8 @@ describe('the snapshot says «a selected time, not now»', () => {
 async function toNowviewTab(app) {
 	await pane(app.page, 'side').locator('[role="tab"]', { hasText: 'nowview' }).click();
 	await showBand(app, BAND);
+	// A drag on the band right after the switch is the frame's (da-d9p5m).
+	await pastTheWindow(app.page);
 }
 
 describe('on a phone', () => {

@@ -12,7 +12,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
-import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, settled, swipe } from './support/layout.mjs';
+import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, pastTheWindow, settled, swipe } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -477,6 +477,7 @@ describe('the nowview steps stay off the picture', () => {
 
 				// Now 60m is the step: a pan from it either way asks for nothing.
 				await beside(page, 'section[data-pane="side"]');
+				await pastTheWindow(page);
 				const box = await step.boundingBox();
 				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, 120, 0);
 				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, -120, 0);
