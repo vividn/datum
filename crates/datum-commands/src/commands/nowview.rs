@@ -29,7 +29,7 @@ use datum_layout::dayview::{compute_dayview, DayviewFieldInput, Orientation};
 use datum_layout::dayview_svg::FlowMark;
 use datum_layout::nowview::{
     ahead, crop_to_window, nowview_config, surround, NowviewBlock, NowviewCurrentState,
-    NowviewField, NowviewGeometry, NowviewPoint,
+    NowviewField, NowviewGeometry, NowviewPoint, FLOW_MARKS_MINUTES,
 };
 use datum_layout::nowview_svg::{
     render_nowview_at_svg, render_nowview_svg_with, with_xml_declaration, wrap_svg_in_html,
@@ -51,12 +51,6 @@ use crate::render::term_layout;
 /// The SVG's height when `--height` is not given: the band's cross extent,
 /// which is its width when time runs down the page (da-78evn).
 const DEFAULT_HEIGHT: f64 = 300.0;
-
-/// The longest window a picture drawn `--ahead` marks the whole minutes of
-/// (da-hklaz): vividn's «for the 1 and 2 minute nowviews, let's show the
-/// actual whole minute marks as they are flowing past», and up to the 5m
-/// beside them, where five marks still stand apart.
-const FLOW_MARKS_MINUTES: f64 = 5.0;
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {

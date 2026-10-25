@@ -814,6 +814,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
     let axis_ticks_override = Some(nowview_axis_ticks(
         time_axis_extent_for_ticks,
         history_minutes,
+        12.0,
     ));
 
     let day = DayviewDayInput {
@@ -892,6 +893,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
     let axis_ticks_override = Some(nowview_axis_ticks(
         time_axis_extent_for_ticks,
         history_minutes,
+        12.0,
     ));
 
     let day = DayviewDayInput {

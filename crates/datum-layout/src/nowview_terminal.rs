@@ -796,9 +796,9 @@ fn place_label(row: &mut [char], at: usize, text: &str, center: bool) {
 }
 
 /// Major tick positions, in minutes from the instant (ascending), for an
-/// axis spanning `span_minutes` on one side of it. Mirrors
-/// `nowview::tick_config`'s major spacing — only majors, so the row stays
-/// uncluttered. The clock anchors `0m`, so the list starts at the first
+/// axis spanning `span_minutes` on one side of it, by the window's length
+/// alone, as `nowview::tick_config` chose before it read the pixels
+/// (da-w4vfw) — only majors, so the row stays uncluttered. The clock anchors `0m`, so the list starts at the first
 /// major.
 fn pick_ticks(span_minutes: f64) -> Vec<f64> {
     let major = if span_minutes <= 15.0 {

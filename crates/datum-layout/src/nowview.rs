@@ -28,7 +28,9 @@ use crate::dayview::{
     DayviewAxisTick, DayviewConfig, DayviewDayInput, DayviewFieldInput, DayviewLayout, DayviewSpan,
     Orientation,
 };
-use crate::dayview_svg::{text_width, AXIS_LABEL_MAX, VERTICAL_AXIS_LABEL_INSET};
+use crate::dayview_svg::{
+    axis_label_size, text_width, AXIS_LABEL_GAP, AXIS_LABEL_MAX, VERTICAL_AXIS_LABEL_INSET,
+};
 
 /// One block (closed or ongoing) inside a field row. Consumed by the
 /// terminal renderer in [`crate::nowview_terminal`].
@@ -140,45 +142,86 @@ pub fn default_width_for_history(history_minutes: f64) -> f64 {
     }
 }
 
-/// Major / minor tick interval in minutes. Mirrors `getTickConfig` in
-/// nowview.ts. `minor_minutes` is `None` for very short histories where the
-/// 5-minute major spacing is already fine-grained enough.
+/// Major / minor tick interval in minutes. `minor_minutes` is `None` where
+/// no round step dividing the major has room, as in a window ruled at its
+/// own length.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TickConfig {
     pub major_minutes: f64,
     pub minor_minutes: Option<f64>,
 }
 
-pub fn tick_config(history_minutes: f64) -> TickConfig {
+/// The round intervals a tick steps by, in minutes. A window of two
+/// minutes or less is ruled at its own length instead.
+const TICK_STEPS: [f64; 15] = [
+    1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 180.0, 360.0, 720.0, 1440.0, 2880.0, 4320.0,
+    10080.0,
+];
+
+/// Pick the tick intervals for an axis reaching `reach` minutes from its
+/// line at `px_per_minute`, where a label takes `label_px` along it
+/// (da-w4vfw). A major is the finest round step with room for two labels,
+/// so a minor's fits between any two of them — the finest of those the
+/// window's far end falls on, where one does, so the label there says how
+/// far back it reaches (`-30m`, or `-15m` centred). A minor is the finest step
+/// dividing it with room for one, or else the coarsest with room for half
+/// of one, a gridline dayview leaves unlabelled (as it does any minor
+/// whose label a label inset at the axis's end crowds). So a 30-minute
+/// window four labels wide or wider rules every five minutes, the `-q`
+/// ladder's marks. A major is never past `reach`, so there is always one:
+/// in a window too small for the rule, the coarsest step it holds.
+pub fn tick_config(reach: f64, px_per_minute: f64, label_px: f64) -> TickConfig {
     // A window of two minutes or less is ruled at its own length alone, so
     // its far end is labelled and its whole minutes, flowing past
     // (`--ahead`), have the axis to themselves (da-hklaz).
-    if history_minutes <= 2.0 {
-        TickConfig {
-            major_minutes: history_minutes,
+    if reach <= 2.0 {
+        return TickConfig {
+            major_minutes: reach,
             minor_minutes: None,
-        }
-    } else if history_minutes <= 15.0 {
-        TickConfig {
-            major_minutes: 5.0,
-            minor_minutes: None,
-        }
-    } else if history_minutes <= 60.0 {
-        TickConfig {
-            major_minutes: 15.0,
-            minor_minutes: Some(5.0),
-        }
-    } else if history_minutes <= 180.0 {
-        TickConfig {
-            major_minutes: 30.0,
-            minor_minutes: Some(10.0),
-        }
-    } else {
-        TickConfig {
-            major_minutes: 60.0,
-            minor_minutes: Some(15.0),
-        }
+        };
     }
+    let fits = |whole: f64, s: f64| (whole / s - (whole / s).round()).abs() < 1e-9;
+    let held = TICK_STEPS
+        .iter()
+        .copied()
+        .take_while(|s| *s <= reach + 1e-9);
+    let roomy = held.clone().filter(|s| s * px_per_minute >= 2.0 * label_px);
+    let major = roomy
+        .clone()
+        .find(|s| fits(reach, *s))
+        .or_else(|| roomy.clone().next())
+        .or_else(|| held.last())
+        .unwrap_or(reach);
+    let divides = TICK_STEPS
+        .iter()
+        .copied()
+        .filter(|s| *s < major && fits(major, *s));
+    let minor_minutes = divides
+        .clone()
+        .find(|s| s * px_per_minute >= label_px)
+        .or_else(|| divides.rev().find(|s| s * px_per_minute >= label_px / 2.0));
+    TickConfig {
+        major_minutes: major,
+        minor_minutes,
+    }
+}
+
+/// How much of the time axis a tick's label takes, its gap included, for
+/// a window reaching `reach` minutes: its widest label's width across a
+/// horizontal strip `time_axis_height` tall, a line's height down a
+/// vertical one, which is always [`AXIS_LABEL_MAX`] tall, since
+/// [`vertical_axis_strip`] widens the strip to hold `00:00` at it. A
+/// horizontal strip of 6px or less draws no labels, and its gridlines are
+/// spaced as a 6px label's would be.
+fn label_px(orientation: Orientation, time_axis_height: f64, reach: f64) -> f64 {
+    let extent = match orientation {
+        Orientation::Horizontal => text_width(
+            &format!("-{}m", reach.ceil()),
+            axis_label_size(orientation, time_axis_height).max(6.0),
+        ),
+        Orientation::Vertical => AXIS_LABEL_MAX,
+    };
+    extent + AXIS_LABEL_GAP
 }
 
 /// `m` minutes as a tick spells it: whole minutes as `5m`, anything else
@@ -200,9 +243,14 @@ fn relative_label(m: f64) -> String {
 /// `time_axis_extent` is the data-area pixel extent along the time axis.
 /// The "now" instant maps to `time_axis_extent`; "history_minutes ago" maps
 /// to 0. The `now` tick is included so callers (and dayview's gridlines)
-/// see the right edge marked.
-pub fn nowview_axis_ticks(time_axis_extent: f64, history_minutes: f64) -> Vec<DayviewAxisTick> {
-    nowview_axis_ticks_around(time_axis_extent, history_minutes, 0.0)
+/// see the right edge marked. Spaced for the labels a horizontal strip
+/// `time_axis_height` tall draws.
+pub fn nowview_axis_ticks(
+    time_axis_extent: f64,
+    history_minutes: f64,
+    time_axis_height: f64,
+) -> Vec<DayviewAxisTick> {
+    nowview_axis_ticks_around(time_axis_extent, history_minutes, 0.0, time_axis_height)
 }
 
 /// [`nowview_axis_ticks`] for a window reaching `before` minutes back and
@@ -213,24 +261,27 @@ pub fn nowview_axis_ticks_around(
     time_axis_extent: f64,
     before: f64,
     after: f64,
+    time_axis_height: f64,
 ) -> Vec<DayviewAxisTick> {
-    ticks_spaced_for(time_axis_extent, before, after, before + after)
+    let reach = before.max(after);
+    let label = label_px(Orientation::Horizontal, time_axis_height, reach);
+    let cfg = tick_config(reach, time_axis_extent / (before + after), label);
+    ticks_spaced_for(time_axis_extent, before, after, cfg)
 }
 
-/// [`nowview_axis_ticks_around`] spaced as a window of `window` minutes
-/// would be, however much more the axis reaches: a picture drawn with
-/// surroundings rules them as its window does (da-61nm8).
+/// [`nowview_axis_ticks_around`] at the intervals `cfg` names, however
+/// much more the axis reaches than the window they were chosen for: a
+/// picture drawn with surroundings rules them as its window does (da-61nm8).
 fn ticks_spaced_for(
     time_axis_extent: f64,
     before: f64,
     after: f64,
-    window: f64,
+    cfg: TickConfig,
 ) -> Vec<DayviewAxisTick> {
     let span = before + after;
     if span <= 0.0 || time_axis_extent <= 0.0 {
         return Vec::new();
     }
-    let cfg = tick_config(window);
     let pos = |m: f64| (before + m) / span * time_axis_extent;
     // The line's own tick (no label — the now-line owns it).
     let mut ticks = vec![DayviewAxisTick {
@@ -280,55 +331,132 @@ mod tests {
         assert_eq!(default_width_for_history(60.0), 400.0);
     }
 
+    /// da-w4vfw: whatever the window and the width, at least one major,
+    /// majors a label apart and minors none or half a label apart.
     #[test]
-    fn tick_config_picks_intervals_from_history() {
+    fn ticks_have_room_at_any_window_and_width() {
+        let d = NowviewGeometry::default();
+        for window in [1.0, 15.0, 37.0, 120.0, 720.0] {
+            let label = label_px(d.orientation, d.time_axis_height, window);
+            for extent in [200.0, 1200.0] {
+                let ticks = nowview_axis_ticks(extent, window, d.time_axis_height);
+                let ticks: Vec<_> = ticks.iter().filter(|t| !t.label.is_empty()).collect();
+                let apart = |ts: &[&&DayviewAxisTick]| {
+                    ts.windows(2)
+                        .all(|p| p[1].time_pos - p[0].time_pos >= label - 1e-9)
+                };
+                let majors: Vec<_> = ticks.iter().filter(|t| t.is_major).collect();
+                assert!(!majors.is_empty(), "{window}m at {extent}px: no major");
+                assert!(apart(&majors), "{window}m at {extent}px: majors crowd");
+                let minor_gap = ticks
+                    .windows(2)
+                    .map(|p| p[1].time_pos - p[0].time_pos)
+                    .fold(f64::INFINITY, f64::min);
+                assert!(
+                    minor_gap >= label / 2.0 - 1e-9,
+                    "{window}m at {extent}px: minors crowd"
+                );
+            }
+        }
+    }
+
+    /// The width decides the intervals, not the window alone: twelve hours
+    /// on a phone gets fewer majors than on a wide screen, and a window
+    /// between the ladder's steps gets round ones.
+    #[test]
+    fn tick_intervals_follow_the_pixels() {
+        let d = NowviewGeometry::default();
+        let cfg = |window: f64, extent: f64| {
+            tick_config(
+                window,
+                extent / window,
+                label_px(d.orientation, d.time_axis_height, window),
+            )
+        };
+        assert!(cfg(720.0, 360.0).major_minutes > cfg(720.0, 1200.0).major_minutes);
         assert_eq!(
-            tick_config(15.0),
+            cfg(37.0, 300.0),
             TickConfig {
-                major_minutes: 5.0,
-                minor_minutes: None
+                major_minutes: 10.0,
+                minor_minutes: Some(5.0)
             }
         );
+        // The `-q` ladder's five minutes, unlabelled on a narrow axis.
         assert_eq!(
-            tick_config(60.0),
+            cfg(30.0, 150.0),
             TickConfig {
                 major_minutes: 15.0,
                 minor_minutes: Some(5.0)
             }
         );
-        assert_eq!(
-            tick_config(180.0),
-            TickConfig {
-                major_minutes: 30.0,
-                minor_minutes: Some(10.0)
+        // Too narrow for two labels: the coarsest step the window holds.
+        assert_eq!(cfg(37.0, 40.0).major_minutes, 30.0);
+    }
+
+    /// The far end is a major, so its label says the window (the web's
+    /// − / + sit either side of it): every step of the widget's ladder
+    /// from 5m, ending at now on a phone and a wide screen, and 30m
+    /// centred, whose far end is 15m back.
+    #[test]
+    fn the_far_end_of_a_window_is_a_major() {
+        let h = NowviewGeometry::default().time_axis_height;
+        let far = |ticks: Vec<DayviewAxisTick>| ticks.into_iter().next().unwrap();
+        for window in [
+            5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 360.0, 720.0,
+        ] {
+            for extent in [340.0, 1200.0] {
+                let t = far(nowview_axis_ticks(extent, window, h));
+                assert!(
+                    t.is_major && t.label == format!("-{window}m"),
+                    "{window}m at {extent}px: {t:?}"
+                );
             }
-        );
-        assert_eq!(
-            tick_config(360.0),
-            TickConfig {
-                major_minutes: 60.0,
-                minor_minutes: Some(15.0)
+        }
+        let t = far(nowview_axis_ticks_around(600.0, 15.0, 15.0, h));
+        assert!(t.is_major && t.label == "-15m", "{t:?}");
+    }
+
+    /// The web's `-q` … `-qqqq` snap to the −5 / −10 / −15 / −20
+    /// gridlines a 30-minute window draws: drawn at every width from four
+    /// labels up, at the CLI's strip and at a thin one.
+    #[test]
+    fn a_30min_window_four_labels_wide_draws_the_q_ladder() {
+        for strip in [22.0, 15.0] {
+            let label = label_px(Orientation::Horizontal, strip, 30.0);
+            let mut extent = (4.0 * label).ceil();
+            while extent <= 3000.0 {
+                let cfg = tick_config(30.0, extent / 30.0, label);
+                let ticks = ticks_spaced_for(extent, 30.0, 0.0, cfg);
+                for back in [5.0, 10.0, 15.0, 20.0] {
+                    let at = (30.0 - back) / 30.0 * extent;
+                    assert!(
+                        ticks.iter().any(|t| (t.time_pos - at).abs() < 1e-6),
+                        "no −{back}m at {extent}px, a {strip}px strip: {cfg:?}"
+                    );
+                }
+                extent += 1.0;
             }
-        );
+        }
     }
 
     #[test]
-    fn axis_ticks_30min_window_use_15min_majors_and_5min_minors() {
-        // 30 min → major=15, minor=5. Expect ticks at -5,-10,-15,-20,-25,-30
-        // labeled, plus a trailing unlabeled "now" tick at the right edge.
-        let ticks = nowview_axis_ticks(600.0, 30.0);
+    fn axis_ticks_30min_window_at_600px_use_5min_majors_and_1min_minors() {
+        // 20 px a minute, a 30.6px label: 5m majors (100px, room for two
+        // labels) and 1m minors (20px, room for half of one, so dayview
+        // draws them unlabelled), plus a trailing unlabeled "now" tick at
+        // the right edge.
+        let ticks = nowview_axis_ticks(600.0, 30.0, NowviewGeometry::default().time_axis_height);
         let labels: Vec<&str> = ticks.iter().map(|t| t.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            vec!["-30m", "-25m", "-20m", "-15m", "-10m", "-5m", ""],
-        );
-        // -15m and -30m are the majors.
+        assert_eq!(labels.len(), 31);
         let majors: Vec<&str> = ticks
             .iter()
             .filter(|t| t.is_major)
             .map(|t| t.label.as_str())
             .collect();
-        assert_eq!(majors, vec!["-30m", "-15m", ""]);
+        assert_eq!(
+            majors,
+            vec!["-30m", "-25m", "-20m", "-15m", "-10m", "-5m", ""]
+        );
         // -30m is at the left edge; "now" at the right.
         assert!(ticks.first().unwrap().time_pos.abs() < 1e-6);
         assert!((ticks.last().unwrap().time_pos - 600.0).abs() < 1e-6);
@@ -340,31 +468,59 @@ mod tests {
     #[test]
     fn a_short_window_rules_its_own_length() {
         assert_eq!(
-            tick_config(2.0),
+            tick_config(2.0, 300.0, 54.0),
             TickConfig {
                 major_minutes: 2.0,
                 minor_minutes: None
             }
         );
         let labels = |history: f64| -> Vec<String> {
-            nowview_axis_ticks(600.0, history)
+            nowview_axis_ticks(600.0, history, 15.0)
                 .into_iter()
                 .map(|t| t.label)
                 .collect()
         };
         assert_eq!(labels(1.0), vec!["-1m", ""]);
         assert_eq!(labels(0.5), vec!["-30s", ""]);
-        assert_eq!(labels(5.0), vec!["-5m", ""]);
+    }
+
+    /// da-hklaz: a window whose whole minutes flow past (`--ahead`, five
+    /// minutes or less) is ruled at its own length, leaving them the axis;
+    /// not drawn ahead, it is ruled for its pixels.
+    #[test]
+    fn a_window_marked_as_it_flows_rules_its_own_length() {
+        let labels = |ahead_minutes: f64| -> Vec<String> {
+            let geom = NowviewGeometry {
+                history_minutes: FLOW_MARKS_MINUTES,
+                width: Some(600.0),
+                ahead_minutes,
+                ..NowviewGeometry::default()
+            };
+            nowview_config(Vec::new(), 0, 0, &geom)
+                .axis_ticks_override
+                .unwrap()
+                .into_iter()
+                .map(|t| t.label)
+                .collect()
+        };
+        assert_eq!(labels(FLOW_MARKS_MINUTES), vec!["-5m", ""]);
+        assert_eq!(labels(0.0), vec!["-5m", "-4m", "-3m", "-2m", "-1m", ""]);
     }
 
     #[test]
     fn axis_ticks_empty_for_zero_history() {
-        assert!(nowview_axis_ticks(600.0, 0.0).is_empty());
-        assert!(nowview_axis_ticks(0.0, 30.0).is_empty());
+        assert!(nowview_axis_ticks(600.0, 0.0, 15.0).is_empty());
+        assert!(nowview_axis_ticks(0.0, 30.0, 15.0).is_empty());
     }
 }
 
 // ─── Shared config assembly (CLI + browser) ──────────────────────────────────
+
+/// The longest window a picture drawn `--ahead` marks the whole minutes of
+/// (da-hklaz): vividn's «for the 1 and 2 minute nowviews, let's show the
+/// actual whole minute marks as they are flowing past», and up to the 5m
+/// beside them, where five marks still stand apart.
+pub const FLOW_MARKS_MINUTES: f64 = 5.0;
 
 /// Default history window (minutes) when the caller passes none.
 pub const DEFAULT_HISTORY_MINUTES: f64 = 30.0;
@@ -531,11 +687,26 @@ pub fn nowview_config(
     let pad_px = surround_px(geom, window_extent);
     let along = along + pad_px.0 + pad_px.1;
     let time_axis_extent_for_ticks = window_extent + pad_px.0 + pad_px.1;
+    let reach = before.max(after);
+    // A window whose whole minutes flow past leaves them the axis: it is
+    // ruled at its own length, as one of two minutes or less always is.
+    let cfg = if ahead > 0.0 && history_minutes <= FLOW_MARKS_MINUTES {
+        TickConfig {
+            major_minutes: reach,
+            minor_minutes: None,
+        }
+    } else {
+        tick_config(
+            reach,
+            window_extent / history_minutes.max(f64::MIN_POSITIVE),
+            label_px(geom.orientation, geom.time_axis_height, reach),
+        )
+    };
     let mut ticks = ticks_spaced_for(
         time_axis_extent_for_ticks,
         before + pad_before,
         after + pad_after,
-        history_minutes,
+        cfg,
     );
     // The ticks past now are drawn past the strip, as the future is.
     // The ticks' axis ends where the window and its surroundings do, short

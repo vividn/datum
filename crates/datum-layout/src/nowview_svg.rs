@@ -556,7 +556,7 @@ mod tests {
             orientation: Orientation::Horizontal,
             axis_ticks_override: Some(nowview_axis_ticks(
                 // approximate — exact extent is recomputed by compute_dayview
-                500.0, 30.0,
+                500.0, 30.0, 15.0,
             )),
             right_panel_width: 0.0,
         };
@@ -656,7 +656,7 @@ mod tests {
             margin: 2.0,
             label_width: Some(0.0),
             orientation: Orientation::Horizontal,
-            axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0)),
+            axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0, 20.0)),
             right_panel_width: 120.0,
         };
         let layout = compute_dayview(&cfg);
@@ -829,7 +829,7 @@ mod tests {
             margin: 2.0,
             label_width: Some(0.0),
             orientation: Orientation::Horizontal,
-            axis_ticks_override: Some(nowview_axis_ticks(300.0, 30.0)),
+            axis_ticks_override: Some(nowview_axis_ticks(300.0, 30.0, 20.0)),
             right_panel_width: 120.0,
             ..Default::default()
         };
@@ -900,7 +900,7 @@ mod tests {
             margin: 2.0,
             label_width: Some(0.0),
             orientation: Orientation::Horizontal,
-            axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0)),
+            axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0, 20.0)),
             right_panel_width: 120.0,
             ..Default::default()
         };
@@ -965,7 +965,7 @@ mod tests {
             margin: 2.0,
             label_width: Some(0.0),
             orientation: Orientation::Horizontal,
-            axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0)),
+            axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0, 20.0)),
             right_panel_width: 120.0,
             ..Default::default()
         };

@@ -82,18 +82,19 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
 
     // Dayview-style gridline class (one per axis tick).
     let gridline_count = svg.matches(r#"class="gridline""#).count();
-    // 60m history with `tick_config(60)` → minor=5 → ticks every 5m for
-    // 60m + a trailing "now" tick = 13 gridlines total.
+    // 60m history across ~370px → minor=5 (31px, room for a 30.6px label)
+    // → ticks every 5m for 60m + a trailing "now" tick = 13 gridlines.
     assert_eq!(
         gridline_count, 13,
         "expected 13 gridlines for 60m history, got {gridline_count}"
     );
-    // Major opacity 0.4 marks the every-15m positions (-15/-30/-45/-60)
-    // plus the trailing "now" edge → 5 majors.
+    // Major opacity 0.4 marks the every-10m positions (-60 … -10), 62px
+    // apart, room for two labels (da-w4vfw), plus the trailing "now" edge
+    // → 7 majors.
     let major_count = svg.matches(r#"stroke-opacity="0.4""#).count();
     assert_eq!(
-        major_count, 5,
-        "expected 5 major gridlines, got {major_count}"
+        major_count, 7,
+        "expected 7 major gridlines, got {major_count}"
     );
 
     assert!(svg.contains(r#"data-field="mood""#));
@@ -1372,6 +1373,6 @@ fn nowview_surround_draws_past_the_box() {
         around.contains("point-bg"),
         "the surroundings drew no coffee"
     );
-    // The window's own ticks, carried on out: -15m apart, majors labelled.
-    assert!(around.contains(">-60m<") && around.contains(">-30m<") && around.contains(">-15m<"));
+    // The window's own ticks, carried on out: -10m apart, majors labelled.
+    assert!(around.contains(">-60m<") && around.contains(">-30m<") && around.contains(">-10m<"));
 }
