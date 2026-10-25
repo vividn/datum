@@ -130,6 +130,10 @@ const suite = (files, retry, extra = {}) => {
 	for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, 'tests', name), body);
 	const env = { ...process.env, DATUM_TEST_RETRY: retry, DATUM_TEST_CONCURRENCY: '1', ...extra };
 	delete env.NODE_TEST_CONTEXT; // or the child reports to this runner instead of running
+	// The run this file is in sets its own: testmap.yml's `DATUM_TEST_BAIL=0` ran
+	// last.test.mjs past the three (da-c8ypa), and its `DATUM_TEST_RECORD=1`
+	// wrote these temp files' times over durations.json.
+	for (const k of ['DATUM_TEST_BAIL', 'DATUM_TEST_RECORD', 'DATUM_TEST_SHARD']) if (!(k in extra)) delete env[k];
 	const r = spawnSync(process.execPath, [runner], { cwd: dir, env, encoding: 'utf8', timeout: 60_000 });
 	rmSync(dir, { recursive: true, force: true });
 	return { code: r.status, out: r.stdout + r.stderr };
