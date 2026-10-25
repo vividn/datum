@@ -14,7 +14,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ringOf } from '../src/lib/fields.ts';
-import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
+import { ON_COLLECT, startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
 import { atRows } from './support/rows.mjs';
 import { FIELD_FORM, openField } from './support/field.mjs';
@@ -465,6 +465,63 @@ describe('a switch field’s states around the tap', () => {
 				clock: todayAt(15),
 				prepare: (context) => context.addInitScript(draft, PAGE)
 			}
+		);
+	});
+
+	// da-hygvc: the same on a phone's «collect», whose fields pane is half
+	// the screen. A name longer than the pane is shortened inside it, and a
+	// tap at its visible right end, where `end` cannot be centered on the
+	// tap without leaving the box, still ends on a second tap there. What
+	// lies under the point is asked as well as what the tap logged: the
+	// browser's touch adjustment hands a tap that misses `end` by a pixel to
+	// it, and a finger's may not.
+	test('a phone: a field longer than its pane stays inside it, and tap-tap ends near the pane’s edge as well as its left end', async () => {
+		const long = 'a_rather_long_mood_field_name';
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				for (const line of [`setup ${long} --verb switch --states false,calm,busy`, `switch ${long} calm -t 1400`])
+					assert.equal((await app.runLine(line)).code, 0, line);
+				await app.reload();
+				const pane = page.locator('section.pane[data-title="fields"]');
+				const button = pane.locator(`.bar [data-field="${long}"]`);
+				await button.waitFor();
+				const box = await pane.boundingBox();
+				const at = await button.boundingBox();
+				assert.ok(at.x >= box.x - 0.5 && at.x + at.width <= box.x + box.width + 0.5, `${long} at ${at.x}–${at.x + at.width}, its pane ${box.x}–${box.x + box.width}`);
+				// Shortened as it is drawn, not as it is named.
+				assert.ok((await button.getAttribute('title')).includes(long), 'the title lost the full name');
+				assert.ok((await button.textContent()).includes(long), 'the accessible name lost the full name');
+				const end = pane.locator('[data-state="false"]');
+				const y = at.y + at.height / 2;
+				const under = (x, sel) => page.evaluate(([x, y, sel]) => !!document.elementFromPoint(x, y)?.closest(sel), [x, y, sel]);
+				for (const [side, x, centered] of [
+					['left', at.x + at.width * 0.12, true],
+					['right', box.x + box.width - 12, false]
+				]) {
+					assert.ok(await under(x, `[data-field="${long}"]`), `${side}: the tap at ${x} is not on ${long}`);
+					await page.touchscreen.tap(x, y);
+					await end.waitFor();
+					const b = await end.boundingBox();
+					const c = b.x + b.width / 2;
+					// On the right `end` cannot stand on the tap, which is the case.
+					assert.equal(Math.abs(c - x) <= 2, centered, `${side}: end at ${c}, the tap at ${x}`);
+					assert.ok(await under(x, '[data-state="false"]'), `${side}: end is not under the tap at ${x}`);
+					// The REPL is folded on a phone: the log is read, not echoed.
+					const before = (await app.entries()).length;
+					await page.touchscreen.tap(x, y);
+					await button.waitFor();
+					await app.idle();
+					const logged = await app.entries();
+					assert.equal(logged.length, before + 1, `${side}: the second tap logged nothing`);
+					assert.deepEqual([logged[0].field, logged[0].state], [long, false], `${side}: the second tap did not end it`);
+					// The clock is held: two logs of one field at one minute collide.
+					await app.clock.forward(60_000);
+					assert.equal((await app.runLine(`switch ${long} calm`)).code, 0);
+					await app.clock.forward(60_000);
+				}
+			},
+			{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT, clock: todayAt(15) }
 		);
 	});
 

@@ -94,8 +94,11 @@
 	whose spec says it is never off (da-cwieh), with `< Back` left of it
 	and `+ Add state` past the rightmost state on its line; those three are hollow,
 	the other states a light tint, the one the field is in solid and bold.
-	Near an edge the ring is capped, not shifted: `end` stays on the tap
-	and the states spread along the free sides (da-8mk9p). Nothing floats: the ring is the
+	Near an edge `end` is moved just inside the box and the states spread
+	along the free sides (da-8mk9p); `end`'s hit target reaches the box's
+	edge, so a second tap where the first landed still ends (da-hygvc).
+	A name too long for the pane is cut with an ellipsis, the whole of it
+	still the button's text and title. Nothing floats: the ring is the
 	widget's own content, over the bar's own box, and the pane is
 	scrolled back to where it stood when Back returns the fields. A
 	press on a state runs `switch <field> <state>` — plainly, the bar's own
@@ -473,12 +476,14 @@
 
 	/**
 	 * What a button says it does, which is the one place both gestures are
-	 * named: the press, then the hold.
+	 * named: the press, then the hold. The field's whole name leads where
+	 * the press does not name it, since the button may cut it short.
 	 */
 	function titleOf(button: FieldButton): string {
-		const press =
-			button.shape.kind === 'record' ? `${shellJoin(['add', button.field])} … — fills the prompt` : 'press to log';
+		const record = button.shape.kind === 'record';
+		const press = record ? `${shellJoin(['add', button.field])} … — fills the prompt` : 'press to log';
 		return [
+			...(record ? [] : [button.field]),
 			...(button.ignored ? ['ignored'] : []),
 			press,
 			'hold to filter the page to it'
@@ -588,8 +593,9 @@
 	/**
 	 * Stand the ring's buttons around the tap (da-7q3ka): `ringOf` gives the
 	 * spots from their measured sizes and the room the box leaves on each
-	 * side of the tap — capped at an edge, never shifted, so `end` stays
-	 * under the thumb (da-8mk9p). The ring reaches every row the box shows
+	 * side of the tap — at an edge `end` is moved inside the box, its hit
+	 * target reaching the box's edge so it is still under the thumb
+	 * (da-8mk9p, da-hygvc). The ring reaches every row the box shows
 	 * before anything scrolls (da-bstjx) — vividn: «Prioritize using visible
 	 * space over having to scroll»; at the left edge
 	 * `< Back` steps onto another row (da-u9nfv). When the
@@ -931,6 +937,17 @@
 		border-right: 1px solid var(--rule);
 	}
 
+	/* Never wider than the pane (da-hygvc): a longer name is cut, and the
+	   rest of it is not left under the pane beside, which a tap there
+	   reaches instead. */
+	.widget,
+	.record {
+		max-width: 100cqw;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
 	.widget,
 	.record,
 	.nav {
@@ -1088,6 +1105,22 @@
 
 	.spot.gap {
 		visibility: hidden;
+	}
+
+	/* `around` stands every spot two pixels inside the box, so a tap in
+	   those two pixels, on a field button still, had `end` moved off it and
+	   the ring's own gap under it (da-hygvc). Its hit target reaches them:
+	   two pixels past its border, which is the 3px double of a button that
+	   runs, since the box an `::after` is placed in is inside the border. */
+	.end {
+		position: relative;
+		overflow: visible;
+	}
+
+	.end::after {
+		content: '';
+		position: absolute;
+		inset: calc(-3px - 2px);
 	}
 
 	/* The state the field is in now: solid, as the field's own chip draws

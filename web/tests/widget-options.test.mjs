@@ -572,7 +572,7 @@ describe('widget options', () => {
 			await button.waitFor();
 			assert.equal(
 				await button.getAttribute('title'),
-				'ignored · press to log · hold to filter the page to it'
+				'run · ignored · press to log · hold to filter the page to it'
 			);
 			assert.equal(await button.getAttribute('data-ignored'), '');
 			const lines = (b) => {
