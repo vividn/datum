@@ -1597,3 +1597,27 @@ fn comment_help_names_the_update_it_stands_for() {
     );
     assert!(!help.contains("--strategy <S>"), "{help}");
 }
+
+/// The view pages' numeric defaults are the args' own, so the help cannot
+/// drift from them again (da-11ob3: nowview's said 15 while it drew 22).
+#[test]
+fn view_help_defaults_are_the_args_defaults() {
+    use crate::cli::{DayviewArgs, NowviewArgs};
+    fn said(cmd: &str, flag: &str) -> f64 {
+        let help = command_help(cmd);
+        let line = help
+            .lines()
+            .find(|l| l.trim_start().starts_with(flag))
+            .unwrap_or_else(|| panic!("{cmd} --help has no {flag}"));
+        let n = line.split("default").nth(1).expect(line);
+        n.trim_start_matches([':', ' '])
+            .trim_end_matches(')')
+            .parse()
+            .expect(line)
+    }
+    let (day, now) = (DayviewArgs::default(), NowviewArgs::default());
+    assert_eq!(said("dayview", "--time-axis-height"), day.time_axis_height);
+    assert_eq!(said("dayview", "--margin"), day.margin);
+    assert_eq!(said("nowview", "--time-axis-height"), now.time_axis_height);
+    assert_eq!(said("nowview", "--margin"), now.margin);
+}
