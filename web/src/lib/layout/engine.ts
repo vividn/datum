@@ -27,11 +27,13 @@ import { parseEcho, runEchoed } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { FROZEN_AT } from '$lib/dbProtocol.js';
+import { currentDb } from '$lib/database.js';
 import { conflictsArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '$lib/calls.js';
 import { listsConflicts, type Conflicted } from '$lib/conflicts.js';
 import { verbAsked } from '$lib/track.js';
 import { openField, specOpens } from '$lib/fieldWidget.js';
 import { openPlace, settledTree } from './shell.js';
+import { FIELDS } from './draft.js';
 import {
 	buttonsFor,
 	type FieldButton,
@@ -47,8 +49,39 @@ export const epoch = writable(0);
 /** True once `initDb()` has resolved: the REPL and the bar are usable. */
 export const ready = writable(false);
 
+/**
+ * The bar as it stood when this database was last left (da-ch6oc): the
+ * fields widget is drawn from it, live, before the CLI has answered — a
+ * press then is taken, where a dimmed copy of the last visit waited out the
+ * boot's queue — and the first refresh replaces it.
+ */
+function lastBar(): { fields: FieldButton[]; standings: Standings } {
+	try {
+		const kept = JSON.parse(localStorage.getItem(FIELDS) ?? 'null');
+		if (kept?.db === currentDb()) return { fields: kept.fields, standings: new Map(kept.standings) };
+	} catch {
+		// Refused or unreadable: the bar fills when the CLI answers.
+	}
+	return { fields: [], standings: new Map() };
+}
+
+function keepBar(): void {
+	try {
+		localStorage.setItem(FIELDS, JSON.stringify({ db: currentDb(), fields: get(fields), standings: [...get(standings)] }));
+	} catch {
+		// Refused or full: the next load fills the bar when the CLI answers.
+	}
+}
+
+if (typeof document !== 'undefined') {
+	addEventListener('pagehide', keepBar);
+	document.addEventListener('visibilitychange', () => document.hidden && keepBar());
+}
+
+const last = lastBar();
+
 /** The fields widget's entries — `datum fields --json` and `now --json`, rebuilt on every beat. */
-export const fields = writable<FieldButton[]>([]);
+export const fields = writable<FieldButton[]>(last.fields);
 
 /**
  * The entries with sync conflicts — `datum conflicts --json`, read on every
@@ -61,7 +94,7 @@ export const conflicts = writable<Conflicted[]>([]);
  * Where each field stood at the last sort (da-xtkcp) — which row of the
  * fields bar it is in and where along it. Written by `resort` alone.
  */
-export const standings = writable<Standings>(new Map());
+export const standings = writable<Standings>(last.standings);
 
 /**
  * Sort the fields bar again: on load, and when the app comes back to the
@@ -109,6 +142,10 @@ export function registerRepl(instance: ReplLike): () => void {
  */
 export const grammar = writable<Grammar | null>(null);
 
+/** Resolved once `boot` has read the grammar, or failed to. */
+let booting = () => {};
+const booted = new Promise<void>((resolve) => (booting = resolve));
+
 export async function boot(): Promise<void> {
 	// A worker that failed to load rejects this. The bar is enabled all the
 	// same (da-89kom): a command then says what failed, and the next one
@@ -122,6 +159,7 @@ export async function boot(): Promise<void> {
 		// No grammar: every command stays active.
 	}
 	ready.set(true);
+	booting();
 	// The line takes the typing once it can (da-wnjkf): after the flush that
 	// enables it, once, and only where nothing has the focus yet and the
 	// pointer is fine — on a phone a focused box is a keyboard over the page.
@@ -245,7 +283,8 @@ export async function press(
 	line?: string,
 	stdin?: string,
 	typed = false,
-	echo?: string
+	echo?: string,
+	env = gesture()
 ): Promise<RunResult> {
 	// The argv the CALLER asked for, never the one the runner received: the
 	// web adds flags of its own on the way through (`--width`), and those
@@ -257,7 +296,6 @@ export async function press(
 	// a slow command's ghost is gone before its result is; vividn chose that:
 	// «the output section shows the command that was run again, so it is
 	// okay for it to fade before then».
-	const env = gesture();
 	if (!typed) showGhost(echo ?? line ?? shellJoin(argv));
 	// Typed before the tree is filled, the REPL it is for may not be
 	// mounted yet: wait for the tree, and for that REPL to announce itself.
@@ -353,6 +391,10 @@ async function alone(argv: string[], line?: string, stdin?: string, env?: string
  * pills beside it and fade with it (da-xfa4, `spent` in $lib/bar.ts).
  */
 export const pressWithPills = async (argv: string[], line?: string): Promise<RunResult> => {
+	// Pressed while datum boots (da-ch6oc), a press with pills waits for the
+	// grammar that places them; on the clock it was pressed at, either way.
+	const env = gesture();
+	if (get(pills).length) await booted;
 	const { argv: full, used } = withPills(get(grammar), argv, get(pills));
 	const pressed = Date.now();
 	const result = await press(
@@ -360,7 +402,8 @@ export const pressWithPills = async (argv: string[], line?: string): Promise<Run
 		line === undefined ? undefined : echoed(line, used),
 		undefined,
 		line !== undefined,
-		line ?? shellJoin(argv)
+		line ?? shellJoin(argv),
+		env
 	);
 	if (result.code === 0) {
 		// A press nobody typed ghosted when it was pressed, and its pills

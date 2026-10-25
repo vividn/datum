@@ -26,7 +26,7 @@ import { backupArgv, chainListArgv, dbPurgeArgv, dbPurgeChainArgv, dbPurgeProbeA
 import { choose, confirm } from './confirm.js';
 import { runEchoed } from './echo.js';
 import { fileArgv } from './fileargv.js';
-import { STALE } from './layout/draft.js';
+import { FIELDS, STALE } from './layout/draft.js';
 import { approve } from './passkey.js';
 import { forget } from './replStore.js';
 import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
@@ -447,6 +447,7 @@ function forgetKept(): void {
 	forget();
 	try {
 		localStorage.removeItem(STALE);
+		localStorage.removeItem(FIELDS);
 	} catch {
 		// Refused: nothing was kept.
 	}

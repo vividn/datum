@@ -107,6 +107,13 @@ export interface WidgetKind {
 	/** Not offered by the chooser: a kind the app puts in a tab itself. */
 	hidden?: boolean;
 	/**
+	 * Drawn from the engine's stores and asking the CLI nothing itself
+	 * (da-ch6oc): mounted from the first paint, with no copy of the last
+	 * visit laid over it (Layout.svelte), so it is never dimmed waiting on
+	 * the CLI's queue.
+	 */
+	live?: boolean;
+	/**
 	 * Offered ONLY when the open database is this one (da-o2wm8).
 	 *
 	 * vividn's own reason for the DEBUG widget: "The DEBUG widget is only
@@ -449,6 +456,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// widget's form and not in place of it, which a reload keeps on this
 	// device (da-ray91).
 	widgetbar: {
+		live: true,
 		meta: meta('widgetbar', 'fields', { align: 'rows', switchLabel: 'field', showIgnored: false }, [
 			// Where the buttons stand (da-omw4n): today's rows, or each at the
 			// height its field is drawn in the pictures.

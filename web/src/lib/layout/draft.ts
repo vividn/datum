@@ -32,6 +32,9 @@ function get(key: string): string | null {
  */
 export const STALE = 'datum.stale.v1';
 
+/** The fields bar as it last stood (`lastBar` in engine.ts, da-ch6oc): a copy too, and goes with them. */
+export const FIELDS = 'datum.fields.v1';
+
 function set(key: string, value: string | null): void {
 	for (const retry of [false, true]) {
 		try {
@@ -44,6 +47,7 @@ function set(key: string, value: string | null): void {
 			if (retry) return;
 			try {
 				localStorage.removeItem(STALE);
+				localStorage.removeItem(FIELDS);
 			} catch {
 				return;
 			}

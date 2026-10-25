@@ -37,7 +37,7 @@
 	import type { Align, SwitchLabel } from '$lib/fields.js';
 	import { lanes } from '$lib/lanes.js';
 	import { shellJoin, shellSplit } from '$lib/shellSplit.js';
-	import { fields, grammar, pressWithPills, ready, standings } from './engine.js';
+	import { fields, grammar, pressWithPills, standings } from './engine.js';
 
 	export let switchLabel: SwitchLabel = 'field';
 	/** Where the buttons stand: in rows, or where their fields are drawn (da-omw4n). */
@@ -79,7 +79,6 @@
 <div class="body">
 	<FieldsWidget
 		fields={$fields}
-		disabled={!$ready}
 		verb={$pending}
 		duration={hasDuration($pills)}
 		rank={$lanes}

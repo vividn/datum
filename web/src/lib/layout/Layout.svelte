@@ -405,9 +405,12 @@
 				<!-- The tree is drawn before the CLI has answered (da-bhudz), with each
 				     widget's last output over it; the widget itself mounts once the
 				     bar can take a command, so the bar's own reads are not queued
-				     behind every pane's. -->
-				<Stale id={widget.id} live={$ready} />
-				{#if $ready}
+				     behind every pane's. A `live` kind, which asks nothing, is
+				     mounted at once and takes no copy (da-ch6oc): the copy,
+				     dimmed, stayed over it until the queue ran dry, on the boot
+				     and on every return to its root tab. -->
+				{#if !kind.live}<Stale id={widget.id} live={$ready} />{/if}
+				{#if $ready || kind.live}
 					<svelte:component
 						this={kind.component}
 						{...kind.props ? kind.props(settings) : { settings }}
