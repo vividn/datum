@@ -476,7 +476,7 @@ mod tests {
             assert_eq!(sent.iter().any(|l| l.contains("juice")), plain);
             send(&b, &r);
             assert_eq!(fields(&r), if plain { "coffee,juice,tea" } else { "tea" });
-            let hash = |of: &Db, with: &Db| of.sync_state_hash(Some(&id(with))).unwrap().0;
+            let hash = |of: &Db, with: &Db| of.sync_state_hash(Some(&id(with))).unwrap();
             assert_eq!(hash(&b, &r) == hash(&r, &b), !plain);
             let listed = |of: &Db| {
                 let all = of.sync_status().unwrap();

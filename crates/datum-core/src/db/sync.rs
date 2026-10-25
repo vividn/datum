@@ -85,7 +85,7 @@ use crate::migrations::{peek_schema_version, CURRENT_SCHEMA_VERSION};
 use super::insert::{apply_entry_state, try_insert};
 use super::row_mapper::row_to_entry;
 use super::spec::{SPEC_FIELD, SPEC_KIT_KEY};
-use super::{Db, WriteBatch};
+use super::{Db, Seen, WriteBatch};
 
 pub mod chain;
 mod debug;
@@ -2592,23 +2592,27 @@ fn shared_filters(
     ))
 }
 
+/// An entry row as the state hash reads it: with its `superseded_by` and
+/// any `conflicts`.
+fn state_row(r: &rusqlite::Row) -> rusqlite::Result<Map<String, Value>> {
+    let e = row_to_entry(r)?;
+    let conflicts: Option<String> = r.get("conflicts")?;
+    let mut r = row(&e);
+    r.insert("superseded_by".into(), json!(e.superseded_by));
+    if let Some(c) = conflicts {
+        r.insert(
+            "conflicts".into(),
+            serde_json::from_str(&c).unwrap_or_default(),
+        );
+    }
+    Ok(r)
+}
+
 /// Every entry row that passes each of `filters`, as [`shared_rows`].
 fn rows_passing(conn: &Connection, filters: &[Filter]) -> Result<Vec<Map<String, Value>>> {
     let rows = conn
         .prepare("SELECT * FROM entries ORDER BY slug, hid")?
-        .query_map([], |r| {
-            let e = row_to_entry(r)?;
-            let conflicts: Option<String> = r.get("conflicts")?;
-            let mut r = row(&e);
-            r.insert("superseded_by".into(), json!(e.superseded_by));
-            if let Some(c) = conflicts {
-                r.insert(
-                    "conflicts".into(),
-                    serde_json::from_str(&c).unwrap_or_default(),
-                );
-            }
-            Ok(r)
-        })?
+        .query_map([], state_row)?
         .filter(|r| {
             r.as_ref().map_or(true, |r| {
                 let belongs = belongs_to(r);
@@ -2802,7 +2806,8 @@ impl Db {
         // for themselves alone; what is served is read after, on a snapshot
         // that holds none (da-8i7f0).
         const UNCOVERED: &str =
-            "SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid LIMIT ?";
+            "SELECT * FROM entries WHERE NOT EXISTS (SELECT 1 FROM ops WHERE ops.hid = entries.hid)
+         ORDER BY hid LIMIT ?";
         let limit = limit.map_or(-1, |n| n as i64);
         if !self.conn.prepare(UNCOVERED)?.exists([limit])? {
             return Ok(0);
@@ -2883,21 +2888,28 @@ impl Db {
             // The round's last HLC, read without the bodies: the value of the
             // nth lowest, which no order of equal HLCs changes, and the round is
             // every op at or below it, so ops that share it go together.
+            // Each endpoint's ops from `since` on alone, by the primary key:
+            // a small catch-up reads no other op (da-9ln3s).
+            let mut endpoints: Vec<String> = tx
+                .prepare("SELECT DISTINCT endpoint FROM ops")?
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            endpoints.sort();
+            let from = |e: &str| since.get(e).copied().unwrap_or(0);
             let cut = match limit {
                 Some(n) => {
                     let mut stmt = tx.prepare(
-                        "SELECT endpoint, seq, applied, hid, hlc FROM ops WHERE applied IN (1, 2)",
+                        "SELECT seq, applied, hid, hlc FROM ops
+                         WHERE endpoint = ?1 AND seq > ?2 AND applied IN (1, 2)",
                     )?;
                     let mut hlcs = Vec::new();
-                    let mut rows = stmt.query([])?;
-                    while let Some(r) = rows.next()? {
-                        let (e, applied, hid): (String, i64, String) =
-                            (r.get(0)?, r.get(2)?, r.get(3)?);
-                        if lacks(&e, r.get(1)?)
-                            && serves(&e, applied)
-                            && (hid == CHAIN_HID || !dissolved)
-                        {
-                            hlcs.push(r.get::<_, String>(4)?);
+                    for e in &endpoints {
+                        let mut rows = stmt.query(params![e, from(e)])?;
+                        while let Some(r) = rows.next()? {
+                            let (applied, hid): (i64, String) = (r.get(1)?, r.get(2)?);
+                            if serves(e, applied) && (hid == CHAIN_HID || !dissolved) {
+                                hlcs.push(r.get::<_, String>(3)?);
+                            }
                         }
                     }
                     (n > 0 && hlcs.len() > n).then(|| hlcs.select_nth_unstable(n - 1).1.clone())
@@ -2906,19 +2918,22 @@ impl Db {
             };
             let (mut lines, mut purged, mut after) = (Vec::new(), Map::new(), 0);
             let mut stmt = tx.prepare(
-                "SELECT endpoint, seq, body, applied, hid, hlc FROM ops WHERE applied > 0
-             ORDER BY endpoint, seq",
+                "SELECT endpoint, seq, body, applied, hid, hlc FROM ops
+                 WHERE endpoint = ?1 AND seq >= ?2 AND applied > 0 ORDER BY seq",
             )?;
-            let rows = stmt.query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, i64>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, i64>(3)?,
-                    r.get::<_, String>(4)?,
-                    r.get::<_, String>(5)?,
-                ))
-            })?;
+            let mut rows = Vec::new();
+            for e in &endpoints {
+                rows.extend(stmt.query_map(params![e, from(e)], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, i64>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, String>(5)?,
+                    ))
+                })?);
+            }
             for row in rows {
                 let (e, seq, body, applied, hid, hlc) = row?;
                 let sent = lacks(&e, seq)
@@ -3050,22 +3065,20 @@ impl Db {
         Ok(())
     }
 
-    /// The state hash: SHA-256 over the canonical JSON of every entry row,
-    /// live and tombstoned, in `(slug, hid)` order, each with its
-    /// `superseded_by` and any `conflicts` — so two copies agree only if they
-    /// hold exactly the same data, bookkeeping included. The map is the same hash per column,
-    /// to narrow a mismatch down. With a filtered reader on either side —
-    /// this copy, or `peer` — only the entries that pass both filters count
-    /// (da-u81u1), which both sides compute alike.
+    /// The state hash (da-9ln3s): the sum, mod 2^256, of each entry row's
+    /// SHA-256 over its canonical JSON — every row, live and tombstoned,
+    /// each with its `superseded_by` and any `conflicts` — so two copies
+    /// agree only if they hold exactly the same rows, bookkeeping included.
+    /// With a filtered reader on either side — this copy, or `peer` — only
+    /// the entries that pass both filters count (da-u81u1), which both
+    /// sides compute alike.
     ///
-    /// Kept until an entry changes (`sync_state_hashes`, da-4be5x), so the
-    /// sessions after the first that brought nothing hash nothing. A hash
-    /// computed while another connection wrote, or on a read-only one, is
-    /// not kept.
-    pub fn sync_state_hash(
-        &self,
-        peer: Option<&str>,
-    ) -> Result<(String, BTreeMap<String, String>)> {
+    /// A sum, so it is kept as rows change: each row's part is kept
+    /// (`sync_row_hashes`), the triggers on `entries` name each row a write
+    /// touched (`sync_rows_changed`), and a verify reads those rows again
+    /// and no others. A hash computed while another connection wrote, or on
+    /// a read-only one, is not kept.
+    pub fn sync_state_hash(&self, peer: Option<&str>) -> Result<String> {
         self.sync_state_hash_as(None, peer)
     }
 
@@ -3073,7 +3086,32 @@ impl Db {
     /// connection on another thread than the session's, which hashes while
     /// the session sends (da-0mwws), cannot tell it. Its endpoint is the
     /// invocation's, and there it would be another copy's.
-    pub fn sync_state_hash_as(
+    pub fn sync_state_hash_as(&self, me: Option<&str>, peer: Option<&str>) -> Result<String> {
+        let Some(filters) = shared_filters(&self.conn, me, peer)? else {
+            return Ok(hex(&[0; 32]));
+        };
+        let key = json!(filters.iter().map(|f| &f.fields).collect::<Vec<_>>()).to_string();
+        let (sum, keep) = self.read(|view| summed(view.conn(), view.seen(), &key, &filters))?;
+        let _ = self.write(&keep);
+        Ok(hex(&sum))
+    }
+
+    /// The state hash a copy before da-9ln3s verifies by: SHA-256 over the
+    /// canonical JSON of the rows [`Db::sync_state_hash`] sums, in `(slug,
+    /// hid)` order. The map is the same hash per column, to narrow a
+    /// mismatch down.
+    ///
+    /// Kept until an entry changes (`sync_state_hashes`, da-4be5x), so the
+    /// sessions after the first that brought nothing hash nothing.
+    pub fn sync_state_hash_ordered(
+        &self,
+        peer: Option<&str>,
+    ) -> Result<(String, BTreeMap<String, String>)> {
+        self.sync_state_hash_ordered_as(None, peer)
+    }
+
+    /// [`Db::sync_state_hash_ordered`] as the copy whose endpoint id is `me`.
+    pub fn sync_state_hash_ordered_as(
         &self,
         me: Option<&str>,
         peer: Option<&str>,
@@ -3117,6 +3155,127 @@ impl Db {
         }
         Ok(hashed)
     }
+}
+
+/// The summed state hash of the rows passing `filters`, and what keeps
+/// it ([`Db::sync_state_hash`]). The rows read are those a write touched
+/// since the parts were kept, or every one under another build's parts: a
+/// build may serialize a row differently.
+fn summed(
+    conn: &Connection,
+    seen: Seen,
+    key: &str,
+    filters: &[Filter],
+) -> Result<([u8; 32], WriteBatch)> {
+    let passes = |belongs: &Option<String>| filters.iter().all(|f| f.admits(belongs.as_deref()));
+    let parts = |sql: &str| -> Result<Vec<([u8; 32], Option<String>)>> {
+        let rows: Vec<(String, Option<String>)> = conn
+            .prepare(sql)?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        rows.into_iter()
+            .map(|(h, b)| {
+                let h = unhex(&h).ok_or_else(|| DatumError::Other(format!("row hash {h}")))?;
+                Ok((h, b))
+            })
+            .collect()
+    };
+    let rows = |sql: &str| -> Result<Vec<Map<String, Value>>> {
+        Ok(conn
+            .prepare(sql)?
+            .query_map([], state_row)?
+            .collect::<rusqlite::Result<_>>()?)
+    };
+    let stamp: Option<String> = conn
+        .query_row(
+            "SELECT value FROM _meta WHERE key = 'sync_row_hashes'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let fresh = stamp.as_deref() == Some(crate::build());
+    let mut keep = WriteBatch::on(seen);
+    let (mut sum, gone, now) = match fresh {
+        true => {
+            let kept: Option<String> = conn
+                .query_row(
+                    "SELECT sum FROM sync_state_sums WHERE key = ?1",
+                    [key],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let sum = match kept.as_deref().map(unhex) {
+                Some(sum) => sum.ok_or_else(|| DatumError::Other("state sum".into()))?,
+                None => total(
+                    parts("SELECT hash, belongs FROM sync_row_hashes")?
+                        .iter()
+                        .filter(|(_, b)| passes(b)),
+                ),
+            };
+            keep.push(
+                "DELETE FROM sync_row_hashes WHERE hid IN (SELECT hid FROM sync_rows_changed)",
+                vec![],
+            );
+            let touched = "IN (SELECT hid FROM sync_rows_changed)";
+            (
+                sum,
+                parts(&format!(
+                    "SELECT hash, belongs FROM sync_row_hashes WHERE hid {touched}"
+                ))?,
+                rows(&format!("SELECT * FROM entries WHERE hid {touched}"))?,
+            )
+        }
+        false => {
+            keep.push("DELETE FROM sync_row_hashes", vec![]);
+            keep.push(
+                "INSERT OR REPLACE INTO _meta (key, value) VALUES ('sync_row_hashes', ?1)",
+                vec![crate::build().to_string().into()],
+            );
+            ([0; 32], Vec::new(), rows("SELECT * FROM entries")?)
+        }
+    };
+    // Another filter's sum is kept only while no part moves under it.
+    if !fresh || !gone.is_empty() || !now.is_empty() {
+        keep.push("DELETE FROM sync_state_sums", vec![]);
+    }
+    for (h, _) in gone.iter().filter(|(_, b)| passes(b)) {
+        add(&mut sum, h, -1);
+    }
+    for r in now {
+        let (hid, belongs) = (r["hid"].as_str().map(String::from), belongs_to(&r));
+        let h: [u8; 32] = Sha256::digest(canonical_json(&Value::Object(r))).into();
+        if passes(&belongs) {
+            add(&mut sum, &h, 1);
+        }
+        keep.push(
+            "INSERT INTO sync_row_hashes (hid, hash, belongs) VALUES (?1, ?2, ?3)",
+            vec![hid.into(), hex(&h).into(), belongs.into()],
+        );
+    }
+    keep.push("DELETE FROM sync_rows_changed", vec![]);
+    keep.push(
+        "INSERT OR REPLACE INTO sync_state_sums (key, sum) VALUES (?1, ?2)",
+        vec![key.to_string().into(), hex(&sum).into()],
+    );
+    Ok((sum, keep))
+}
+
+/// `sum` plus `sign` times `part`, as 256-bit little-endian numbers that wrap.
+fn add(sum: &mut [u8; 32], part: &[u8; 32], sign: i16) {
+    let mut carry = 0;
+    for (s, p) in sum.iter_mut().zip(part) {
+        let v = *s as i16 + sign * *p as i16 + carry;
+        *s = v.rem_euclid(256) as u8;
+        carry = v.div_euclid(256);
+    }
+}
+
+/// The sum of `parts`, as [`add`] adds them.
+fn total<'a>(parts: impl Iterator<Item = &'a ([u8; 32], Option<String>)>) -> [u8; 32] {
+    parts.fold([0; 32], |mut sum, (h, _)| {
+        add(&mut sum, h, 1);
+        sum
+    })
 }
 
 /// SHA-256 over the canonical JSON of `rows`, and the same per column.

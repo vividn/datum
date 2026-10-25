@@ -417,18 +417,22 @@ impl Store for DbStore<'_> {
     }
 
     /// Hashed on a connection of its own, off the session's thread, which
-    /// sends meanwhile: a big history hashes for minutes (da-0mwws).
-    async fn verify(&self, peer: &str) -> Result<String> {
+    /// sends meanwhile: a big history hashes for minutes (da-0mwws). It
+    /// writes, to keep the summed hash's parts (da-9ln3s).
+    async fn verify(&self, peer: &str, sums: bool) -> Result<String> {
         let (me, peer) = (self.0.sync_endpoint_id()?, peer.to_string());
         let hash = move |db: &Db| -> Result<String> {
             // Test knob: a slow verify, holding its thread as a big one does.
             let delay = env("DATUM_SYNC_TEST_VERIFY_DELAY_S").unwrap_or(0);
             std::thread::sleep(Duration::from_secs(delay));
-            Ok(db.sync_state_hash_as(Some(&me), Some(&peer))?.0)
+            Ok(match sums {
+                true => db.sync_state_hash_as(Some(&me), Some(&peer))?,
+                false => db.sync_state_hash_ordered_as(Some(&me), Some(&peer))?.0,
+            })
         };
         match self.0.path().and_then(|p| p.to_str()).map(String::from) {
             Some(path) => {
-                tokio::task::spawn_blocking(move || hash(&Db::open_read_only(&path)?)).await?
+                tokio::task::spawn_blocking(move || hash(&Db::open_unmigrated(&path)?)).await?
             }
             None => hash(self.0),
         }

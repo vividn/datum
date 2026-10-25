@@ -340,8 +340,9 @@ fn parse_pipe(rest: &mut Rest) -> Result<SyncCommand> {
             show: Show::Default,
         },
         Some("verify") => {
-            let o = opts(rest, &["peer"], &["verbose"], 0..=0)?;
+            let o = opts(rest, &["peer"], &["ordered", "verbose"], 0..=0)?;
             SyncCommand::Verify {
+                ordered: o.on("ordered"),
                 verbose: o.on("verbose"),
                 peer: o.get("peer"),
             }
@@ -522,6 +523,7 @@ mod tests {
         assert_eq!(
             p(&["pipe", "verify", "--verbose"]),
             SyncCommand::Verify {
+                ordered: false,
                 verbose: true,
                 peer: None
             }
@@ -529,8 +531,17 @@ mod tests {
         assert_eq!(
             p(&["pipe", "verify", "--peer", "ab"]),
             SyncCommand::Verify {
+                ordered: false,
                 verbose: false,
                 peer: Some("ab".into())
+            }
+        );
+        assert_eq!(
+            p(&["pipe", "verify", "--ordered"]),
+            SyncCommand::Verify {
+                ordered: true,
+                verbose: false,
+                peer: None
             }
         );
         assert_eq!(

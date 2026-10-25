@@ -216,6 +216,7 @@ fn every_pair_has_a_roundtrip_test() {
         (66, 67),
         (67, 68),
         (68, 69),
+        (69, 70),
     ];
     assert_eq!(
         covered.len(),
@@ -3302,4 +3303,25 @@ fn roundtrip_v68_to_v69_create_time_ids() {
     assert_eq!(marked(), 1);
     apply_one_down(conn, 69);
     assert_eq!(marked(), 0);
+}
+
+/// da-9ln3s: v70 lays down the summed state hash's three tables and the
+/// triggers naming each row a write touches; v69 takes them away.
+#[test]
+fn roundtrip_v69_to_v70_sync_row_hashes() {
+    let db = fresh_at(69);
+    let conn = db.conn();
+    apply_one_up(conn, 69);
+    let objects = || {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('sync_row_hashes',
+             'sync_state_sums') OR name LIKE 'sync_rows_changed%'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(objects(), 6, "three tables and three triggers");
+    apply_one_down(conn, 70);
+    assert_eq!(objects(), 0);
 }

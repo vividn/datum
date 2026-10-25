@@ -228,9 +228,10 @@ pub trait Store {
     }
     /// The session's ops are all applied, and its verify begins.
     fn verifying(&self) {}
-    /// The state hash, over what a session with `peer` shares. One whose
-    /// work is done off this thread lets the session send meanwhile.
-    async fn verify(&self, peer: &str) -> Result<String>;
+    /// The state hash, over what a session with `peer` shares: summed, or
+    /// ordered for a copy before da-9ln3s. One whose work is done off this
+    /// thread lets the session send meanwhile.
+    async fn verify(&self, peer: &str, sums: bool) -> Result<String>;
     /// That state hash, and each row's own by hid (da-n0ruf).
     async fn digest(&self, peer: &str) -> Result<(String, Digest)>;
     /// What this copy holds of each of `hids`, as it shares it with `peer`:
@@ -420,6 +421,10 @@ struct Hello {
     /// before it does not, and is never sent one.
     #[serde(default)]
     ends: bool,
+    /// The dialer verifies by the summed state hash (da-9ln3s); with a copy
+    /// before it, both send the ordered one.
+    #[serde(default)]
+    sums: bool,
     #[serde(flatten)]
     version: Version,
 }
@@ -441,6 +446,9 @@ enum Reply {
         /// As [`Hello`]'s.
         #[serde(default)]
         ends: bool,
+        /// As [`Hello`]'s.
+        #[serde(default)]
+        sums: bool,
         #[serde(flatten)]
         version: Version,
     },
@@ -569,6 +577,9 @@ pub struct Report {
     /// The peer reads an [`END`], as its handshake said.
     #[serde(skip)]
     ends: bool,
+    /// The peer verifies by the summed state hash, as its handshake said.
+    #[serde(skip)]
+    sums: bool,
     /// The chain of one this copy left to redeem the invite, and the chain
     /// it joined (da-h7pnc).
     pub left: Option<(String, String)>,
@@ -597,6 +608,7 @@ impl Report {
             route: None,
             waits: false,
             ends: false,
+            sums: false,
         }
     }
 }
@@ -929,7 +941,7 @@ async fn exchange(
     // A big history hashes for minutes on each side at once (da-0mwws).
     store.verifying();
     let (hash, now) = busy(s, async {
-        let hash = store.verify(&rep.id).await?;
+        let hash = store.verify(&rep.id, rep.sums).await?;
         Ok((hash, store.vector().await?))
     })
     .await?;
@@ -1104,6 +1116,7 @@ async fn session(
         round: round(),
         waits: true,
         ends: true,
+        sums: true,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -1113,7 +1126,7 @@ async fn session(
         reply = get_json(&mut r, MAX_HELLO).await?;
     }
     let carried;
-    let (label, added, met, round, waits, ends) = match reply {
+    let (label, added, met, round, waits, ends, sums) = match reply {
         Reply::Welcome {
             label,
             addr,
@@ -1121,6 +1134,7 @@ async fn session(
             round,
             waits,
             ends,
+            sums,
             version,
         } => {
             // Two copies that dialed each other at once (da-vj3ly): the
@@ -1157,7 +1171,7 @@ async fn session(
                 Ok::<_, anyhow::Error>(added)
             };
             match admitted.await {
-                Ok(added) => (label, added, known, round, waits, ends),
+                Ok(added) => (label, added, known, round, waits, ends, sums),
                 Err(e) => {
                     let busy = e
                         .downcast_ref::<Refusal>()
@@ -1181,6 +1195,7 @@ async fn session(
     rep.round = round;
     rep.waits = waits;
     rep.ends = ends;
+    rep.sums = sums;
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
     drop(carried);
     if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
@@ -1236,6 +1251,7 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
         round: 0,
         waits: false,
         ends: false,
+        sums: true,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -1379,6 +1395,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         round: round(),
         waits: true,
         ends: true,
+        sums: true,
         version: store.version(),
     };
     put_json(&mut s, &welcome).await?;
@@ -1387,6 +1404,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     rep.round = hello.round;
     rep.waits = hello.waits;
     rep.ends = hello.ends;
+    rep.sums = hello.sums;
     if diff {
         let theirs: String = get_json(&mut r, MAX_HELLO).await?;
         let (hash, digest) = store.digest(&id).await?;
@@ -1606,6 +1624,7 @@ mod tests {
                     round: ROUND,
                     waits: true,
                     ends: true,
+                    sums: true,
                     version: version.clone(),
                 },
             ),
@@ -1618,6 +1637,7 @@ mod tests {
                     round: ROUND,
                     waits: true,
                     ends: true,
+                    sums: true,
                     version,
                 },
             ),

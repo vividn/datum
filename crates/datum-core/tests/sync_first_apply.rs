@@ -67,8 +67,8 @@ fn a_first_sync_of_20k_lived_in_entries_applies_in_one_pass() {
 
     assert_eq!((s.applied, s.held, s.refused.len()), (lines.len(), 0, 0));
     assert_eq!(
-        a.sync_state_hash(None).unwrap().0,
-        b.sync_state_hash(None).unwrap().0
+        a.sync_state_hash(None).unwrap(),
+        b.sync_state_hash(None).unwrap()
     );
     // Measured unloaded: 6 s release, 26 s debug; one pass per run of live
     // or tombstone baselines took 632 s release. Generous for a loaded

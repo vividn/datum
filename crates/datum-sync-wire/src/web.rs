@@ -203,12 +203,12 @@ impl Store for Cli {
             .call2(&JsValue::NULL, &(done as u32).into(), &(of as u32).into());
     }
 
-    async fn verify(&self, peer: &str) -> Result<String> {
-        Ok(self
-            .run(&["sync", "pipe", "verify", "--peer", peer], None)
-            .await?
-            .trim()
-            .to_string())
+    async fn verify(&self, peer: &str, sums: bool) -> Result<String> {
+        let mut argv = vec!["sync", "pipe", "verify", "--peer", peer];
+        if !sums {
+            argv.push("--ordered");
+        }
+        Ok(self.run(&argv, None).await?.trim().to_string())
     }
 
     async fn digest(&self, peer: &str) -> Result<(String, Digest)> {

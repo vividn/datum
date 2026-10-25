@@ -236,38 +236,142 @@ fn an_op_from_a_clock_a_year_ahead_waits_and_does_not_pin_this_clock() {
     apply_at(&c, late, &from_a);
     apply_at(&c, late, &from_b);
     assert_eq!(
-        b.sync_state_hash(None).unwrap().0,
-        c.sync_state_hash(None).unwrap().0
+        b.sync_state_hash(None).unwrap(),
+        c.sync_state_hash(None).unwrap()
     );
 }
 
-/// The state hash is kept until an entry changes (da-4be5x): a verify
-/// after one reads the kept hash, and an insert, an update or a delete
-/// of any entry row forgets it.
+/// The ordered state hash is kept until an entry changes (da-4be5x): a
+/// verify after one reads the kept hash, and an insert, an update or a
+/// delete of any entry row forgets it.
 #[test]
-fn the_state_hash_is_kept_until_an_entry_changes() {
+fn the_ordered_state_hash_is_kept_until_an_entry_changes() {
     let db = Db::open_in_memory().unwrap();
     log_at(&db, 0, "coffee");
     let plant = |db: &Db| {
-        db.sync_state_hash(None).unwrap();
+        db.sync_state_hash_ordered(None).unwrap();
         db.conn
             .execute("UPDATE sync_state_hashes SET hash = 'kept'", [])
             .unwrap();
-        assert_eq!(db.sync_state_hash(None).unwrap().0, "kept");
+        assert_eq!(db.sync_state_hash_ordered(None).unwrap().0, "kept");
     };
     for change in ["UPDATE entries SET state = '\"x\"'", "DELETE FROM entries"] {
         plant(&db);
         db.conn.execute(change, []).unwrap();
         let fresh = state_hash(shared_rows(&db.conn, None, None).unwrap().0);
-        assert_eq!(db.sync_state_hash(None).unwrap(), fresh, "after {change}");
+        assert_eq!(
+            db.sync_state_hash_ordered(None).unwrap(),
+            fresh,
+            "after {change}"
+        );
     }
     plant(&db);
     log_at(&db, 0, "tea");
     assert_ne!(
-        db.sync_state_hash(None).unwrap().0,
+        db.sync_state_hash_ordered(None).unwrap().0,
         "kept",
         "after an insert"
     );
+}
+
+/// The summed state hash kept as rows change is the one hashed from every
+/// row (da-9ln3s): after an apply that creates, edits, deletes and
+/// contests, after a write a hash never saw, and once the build's parts
+/// are another's, it is the sum of every row's digest; and a verify reads
+/// again only the rows a write touched.
+#[test]
+fn the_summed_state_hash_kept_is_the_one_hashed_from_every_row() {
+    let (a, b) = (Db::open_in_memory().unwrap(), Db::open_in_memory().unwrap());
+    let full = |db: &Db| {
+        let (said, digest) = db.sync_digest(None).unwrap();
+        let mut sum = [0; 32];
+        for h in digest.values() {
+            add(&mut sum, &unhex(h).unwrap(), 1);
+        }
+        assert_eq!(said, hex(&sum));
+        said
+    };
+    let touched = |db: &Db| {
+        db.conn
+            .query_row("SELECT COUNT(*) FROM sync_rows_changed", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap()
+    };
+    let mut both = Vec::new();
+    for f in ["coffee", "tea", "juice", "water"] {
+        both.extend(log_at(&a, 0, f));
+    }
+    apply_at(&b, 0, &both);
+    assert_eq!(b.sync_state_hash(None).unwrap(), full(&b));
+    assert_eq!(touched(&b), 0, "a verify keeps what it read");
+
+    // Each copy edits coffee unseen by the other (a conflict), a deletes
+    // tea and b juice, and a logs more: each applies the other's.
+    let hid = |db: &Db, f: &str| {
+        db.conn
+            .query_row("SELECT hid FROM entries WHERE field = ?1", [f], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap()
+    };
+    let since = (a.sync_vector().unwrap(), b.sync_vector().unwrap());
+    for (db, state) in [(&a, "x"), (&b, "y")] {
+        let mut e = db.get_entry(&hid(db, "coffee")).unwrap();
+        e.state = Some(json!(state));
+        db.save_existing_entry(&e).unwrap();
+    }
+    a.soft_delete_entry(&hid(&a, "tea")).unwrap();
+    b.soft_delete_entry(&hid(&b, "juice")).unwrap();
+    log_at(&a, 0, "milk");
+    let from_a = a.sync_ops_since(&since.0, false, None).unwrap();
+    let from_b = b.sync_ops_since(&since.1, false, None).unwrap();
+    apply_at(&a, 0, &from_b);
+    apply_at(&b, 0, &from_a);
+    assert!(touched(&b) > 0);
+    assert!(b.sync_conflicts().unwrap().len() == 1, "a contested key");
+    assert_eq!(b.sync_state_hash(None).unwrap(), full(&b));
+    assert_eq!(
+        a.sync_state_hash(None).unwrap(),
+        b.sync_state_hash(None).unwrap()
+    );
+
+    // A write no hash saw, by another build's raw SQL, and a hash under
+    // another build's parts.
+    b.conn
+        .execute(
+            "UPDATE entries SET state = '\"z\"' WHERE field = 'water'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(b.sync_state_hash(None).unwrap(), full(&b));
+    b.conn
+        .execute("UPDATE sync_row_hashes SET hash = ?1", [hex(&[7; 32])])
+        .unwrap();
+    b.conn
+        .execute(
+            "UPDATE _meta SET value = 'old' WHERE key = 'sync_row_hashes'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(b.sync_state_hash(None).unwrap(), full(&b));
+
+    // Nothing touched: the kept sum, whatever the rows say.
+    b.conn
+        .execute("UPDATE sync_state_sums SET sum = ?1", [hex(&[9; 32])])
+        .unwrap();
+    assert_eq!(b.sync_state_hash(None).unwrap(), hex(&[9; 32]));
+}
+
+#[test]
+fn a_sum_wraps_and_takes_back_what_it_added() {
+    let (mut sum, part) = ([0xff; 32], [1; 32]);
+    add(&mut sum, &part, 1);
+    let mut want = [1; 32];
+    want[0] = 0;
+    assert_eq!(sum, want, "carried, and the last carry dropped");
+    add(&mut sum, &part, -1);
+    assert_eq!(sum, [0xff; 32]);
 }
 
 /// An op names who and what signed it (da-zjc9w), and the build before

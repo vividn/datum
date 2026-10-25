@@ -225,3 +225,49 @@ pub(super) fn down_69_to_68_create_time_ids(conn: &Connection) -> Result<()> {
     conn.execute_batch("DELETE FROM _meta WHERE key = 'create_time_ids';")?;
     Ok(())
 }
+
+/// da-9ln3s: the summed state hash kept as rows change — each row's part,
+/// the rows a write touched since, the sum per filter — and the triggers on
+/// `entries` that name the rows. The first verify after it reads every row.
+pub(super) fn m69_to_70_sync_row_hashes(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "entries")? {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS sync_row_hashes (
+                 hid     TEXT NOT NULL PRIMARY KEY,
+                 hash    TEXT NOT NULL,
+                 belongs TEXT
+             );
+             CREATE TABLE IF NOT EXISTS sync_rows_changed (
+                 hid TEXT NOT NULL PRIMARY KEY
+             );
+             CREATE TABLE IF NOT EXISTS sync_state_sums (
+                 key TEXT NOT NULL PRIMARY KEY,
+                 sum TEXT NOT NULL
+             );
+             CREATE TRIGGER IF NOT EXISTS sync_rows_changed_insert AFTER INSERT ON entries BEGIN
+                 INSERT OR IGNORE INTO sync_rows_changed (hid) VALUES (NEW.hid);
+             END;
+             CREATE TRIGGER IF NOT EXISTS sync_rows_changed_update AFTER UPDATE ON entries BEGIN
+                 INSERT OR IGNORE INTO sync_rows_changed (hid) VALUES (OLD.hid), (NEW.hid);
+             END;
+             CREATE TRIGGER IF NOT EXISTS sync_rows_changed_delete AFTER DELETE ON entries BEGIN
+                 INSERT OR IGNORE INTO sync_rows_changed (hid) VALUES (OLD.hid);
+             END;",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v69→v70.
+pub(super) fn down_70_to_69_sync_row_hashes(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP TRIGGER IF EXISTS sync_rows_changed_insert;
+         DROP TRIGGER IF EXISTS sync_rows_changed_update;
+         DROP TRIGGER IF EXISTS sync_rows_changed_delete;
+         DROP TABLE IF EXISTS sync_row_hashes;
+         DROP TABLE IF EXISTS sync_rows_changed;
+         DROP TABLE IF EXISTS sync_state_sums;
+         DELETE FROM _meta WHERE key = 'sync_row_hashes';",
+    )?;
+    Ok(())
+}

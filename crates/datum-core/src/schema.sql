@@ -549,3 +549,31 @@ END;
 CREATE TRIGGER IF NOT EXISTS sync_state_hashes_delete AFTER DELETE ON entries BEGIN
     DELETE FROM sync_state_hashes;
 END;
+
+-- da-9ln3s: the summed state hash (`Db::sync_state_hash`), kept as rows
+-- change: each row's part as last read (`sync_row_hashes`, by the build in
+-- `_meta` `sync_row_hashes`), the rows a write touched since
+-- (`sync_rows_changed`, named by the triggers, whichever path and build
+-- writes), and the sum per filter (`sync_state_sums`). A verify reads again
+-- the rows touched and no others. LOCAL and derived, never synced.
+CREATE TABLE IF NOT EXISTS sync_row_hashes (
+    hid     TEXT NOT NULL PRIMARY KEY,
+    hash    TEXT NOT NULL,
+    belongs TEXT
+);
+CREATE TABLE IF NOT EXISTS sync_rows_changed (
+    hid TEXT NOT NULL PRIMARY KEY
+);
+CREATE TABLE IF NOT EXISTS sync_state_sums (
+    key TEXT NOT NULL PRIMARY KEY,
+    sum TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS sync_rows_changed_insert AFTER INSERT ON entries BEGIN
+    INSERT OR IGNORE INTO sync_rows_changed (hid) VALUES (NEW.hid);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_rows_changed_update AFTER UPDATE ON entries BEGIN
+    INSERT OR IGNORE INTO sync_rows_changed (hid) VALUES (OLD.hid), (NEW.hid);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_rows_changed_delete AFTER DELETE ON entries BEGIN
+    INSERT OR IGNORE INTO sync_rows_changed (hid) VALUES (OLD.hid);
+END;

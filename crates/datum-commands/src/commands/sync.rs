@@ -242,9 +242,20 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 "the new key is no member of this copy's sync chain: join it again with an invite"
             );
         }
-        SyncCommand::Verify { verbose, peer } => {
-            let (hash, per_column) = db.sync_state_hash(peer.as_deref())?;
-            println!("{hash}");
+        SyncCommand::Verify {
+            ordered,
+            verbose,
+            peer,
+        } => {
+            let peer = peer.as_deref();
+            let (hash, per_column) = match ordered || verbose {
+                true => db.sync_state_hash_ordered(peer)?,
+                false => Default::default(),
+            };
+            match ordered {
+                true => println!("{hash}"),
+                false => println!("{}", db.sync_state_hash(peer)?),
+            }
             if verbose {
                 for (column, hash) in per_column {
                     println!("  {column:<24} {hash}");

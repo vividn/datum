@@ -38,6 +38,7 @@
     "proves": true,
     "round": 8192,
     "schema": 57,
+    "sums": true,
     "typed": true,
     "waits": true
   },
@@ -110,6 +111,7 @@
       "label": "phone",
       "round": 8192,
       "schema": 57,
+      "sums": true,
       "waits": true
     }
   },

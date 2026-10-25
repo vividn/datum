@@ -10,12 +10,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 
 use super::chain::{Chain, CHAIN_HID};
 use super::{
-    blockers, canonical_json, conflicts_of, derived, device, endpoint, entry_from, fetch_by_hid,
-    fold, has_ops, met, ops_of, read_only, rederive, refold, refresh_conflicts, row, sha256_hex,
-    shared_rows, Op, FOLD_RULE,
+    add, blockers, canonical_json, conflicts_of, derived, device, endpoint, entry_from,
+    fetch_by_hid, fold, has_ops, hex, met, ops_of, read_only, rederive, refold, refresh_conflicts,
+    row, shared_rows, Op, FOLD_RULE,
 };
 use crate::db::insert::as_stored;
 use crate::db::row_mapper::row_to_entry;
@@ -372,15 +373,17 @@ impl Db {
     /// that differ by comparing these.
     pub fn sync_digest(&self, peer: Option<&str>) -> Result<(String, BTreeMap<String, String>)> {
         let (rows, _) = shared_rows(&self.conn, None, peer)?;
+        let mut sum = [0; 32];
         let digest = rows
-            .iter()
+            .into_iter()
             .map(|r| {
                 let hid = r["hid"].as_str().unwrap_or_default().to_string();
-                (hid, sha256_hex(&canonical_json(&Value::Object(r.clone()))))
+                let h: [u8; 32] = Sha256::digest(canonical_json(&Value::Object(r))).into();
+                add(&mut sum, &h, 1);
+                (hid, hex(&h))
             })
             .collect();
-        let all = Value::Array(rows.into_iter().map(Value::Object).collect());
-        Ok((sha256_hex(&canonical_json(&all)), digest))
+        Ok((hex(&sum), digest))
     }
 
     /// What this copy holds of each of `hids`, for a session with `peer` to

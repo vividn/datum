@@ -343,10 +343,15 @@ holding what a member lacks, which it never relays — «not verified: R is N
 changes ahead of this copy», `pending` in `sync status` and no error (da-t3ey2);
 a copy whose vector moved between the last round and its hash (a write, another
 session) sends `moved <hash>`, and both say «not verified: X changed as it
-verified», never a MISMATCH (da-o2arv). The hash is kept until an entry
-changes (`sync_state_hashes` in `schema.sql`, per build and filter, forgotten
-by triggers on `entries`), so a page, which runs its sessions one at a time,
-hashes every row once a change and not once a member (da-4be5x).
+verified», never a MISMATCH (da-o2arv). The hash is the sum, mod 2^256, of
+each row's SHA-256 (da-9ln3s), kept as rows change: each row's part is kept
+(`sync_row_hashes`, per build), triggers on `entries` name every row a write
+touches (`sync_rows_changed`), and a verify reads those rows again and no
+others, so a session that brought 20 ops hashes 20 rows whatever the history.
+Two copies verify by it when both handshakes say `sums`; with a copy before
+it, both send the ordered hash it knows (`sync pipe verify --ordered`), kept
+until an entry changes (`sync_state_hashes`, da-4be5x). A round reads each
+endpoint's ops from its `since` on, by the primary key, and no other op.
 
 ### Who dials whom
 

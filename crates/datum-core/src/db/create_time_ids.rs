@@ -417,7 +417,10 @@ mod tests {
             (note, stamp, by.hid.0)
         };
         let db = Db::open(path).unwrap();
-        assert_eq!(db.last_migration().unwrap().to_version, 69);
+        assert_eq!(
+            db.last_migration().unwrap().to_version,
+            crate::migrations::CURRENT_SCHEMA_VERSION
+        );
         assert!(!marked(&db));
         assert_eq!(db.get_entry(&note).unwrap().slug.0, format!("y:{stamp}c"));
 
@@ -437,8 +440,8 @@ mod tests {
             assert!(copy.sync_fold_check().unwrap().stale.is_empty());
         }
         assert_eq!(
-            db.sync_state_hash(None).unwrap().0,
-            other.sync_state_hash(None).unwrap().0
+            db.sync_state_hash(None).unwrap(),
+            other.sync_state_hash(None).unwrap()
         );
     }
 }
