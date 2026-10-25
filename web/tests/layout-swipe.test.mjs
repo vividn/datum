@@ -514,6 +514,71 @@ describe('the strip: never a blank between two tabs', () => {
 	});
 });
 
+describe('the layout brought on is drawn at the size it lands at', () => {
+	// da-466lv: the root's frame is a box of another size for each kind of
+	// layout in front — a split's on its frame, a single pane's inside its
+	// 1px outline — and the layout a swipe brings on was laid out in the
+	// one in front, so every widget that measures its box drew twice: once
+	// beside, 2px off, and again as it landed.
+
+	/** The first widget body of the layout in front, or of the one beside it: its laid-out size. */
+	const body = (page, which) =>
+		page
+			.locator(`section.root > .content > .tab-body${which === 'beside' ? '.beside' : ':not(.behind)'} .body`)
+			.first()
+			.evaluate((el) => [el.getBoundingClientRect().width, el.getBoundingClientRect().height]);
+
+	/** Put a finger on `over`, drag it `dx` and hold it there while `read` runs; then let go. */
+	async function holding(page, over, dx, read) {
+		await over.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+		const box = await over.boundingBox();
+		const x = box.x + box.width / 2;
+		const y = box.y + box.height / 2;
+		const cdp = await page.context().newCDPSession(page);
+		const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+		await at('touchStart', [{ x, y }]);
+		for (let i = 1; i <= 6; i++) await at('touchMove', [{ x: x + (dx * i) / 6, y }]);
+		try {
+			return await read();
+		} finally {
+			await at('touchEnd', []);
+			await cdp.detach();
+		}
+	}
+
+	/** Swipe from the layout in front to `to` over `over`: the body's size beside, and at rest. */
+	async function across(page, over, dx, to) {
+		const beside = await holding(page, over, dx, async () => {
+			await until(() => page.locator('section.root > .content > .tab-body.beside .body').count(), (n) => n > 0);
+			return body(page, 'beside');
+		});
+		await until(() => shown(page), (t) => t === to);
+		await atRest(page.locator('section.root > .content'));
+		return { beside, rest: await body(page, 'front') };
+	}
+
+	const same = ({ beside, rest }, label) =>
+		assert.ok(
+			beside.every((v, i) => Math.abs(v - rest[i]) < 0.5),
+			`${label}: laid out at ${beside.join('x')} beside and ${rest.join('x')} where it lands`
+		);
+
+	test('a split root brought on from a single pane, and a single pane from a split', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const repl = await wideRepl(app);
+				await scrollX(repl, true);
+				same(await across(page, repl, -120, 'tail'), 'tail, beside main');
+				const tail = page.locator('section.root > .content .body').first();
+				await scrollX(tail, false);
+				same(await across(page, tail, 120, 'main'), 'main, beside tail');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+});
+
 describe('a widget that takes the axis itself', () => {
 	test('a one-finger drag across the nowview band leaves the tab alone', async () => {
 		await phone.solo(async ({ page }) => {

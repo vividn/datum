@@ -540,6 +540,17 @@
 	let peek = -1;
 	/** Whether that offset is moving on its own — the slide, or the snap back. */
 	let gliding = false;
+	/**
+	 * How far in from the root's frame a root tab's layout lands: a single
+	 * pane inside the frame's 1px outline (`.pane`), a split on it.
+	 */
+	const lands = (tab: Tab | undefined) => (tab && !isSplit(tab.content) ? 1 : 0);
+	/**
+	 * How much smaller the neighbour lands than the tab in front, each side
+	 * (da-466lv): its box is the front's, so it is drawn in the box it will
+	 * land in rather than measured at one and drawn again at the other.
+	 */
+	$: shy = root && peek >= 0 ? lands(pane.tabs[peek]) - lands(active) : 0;
 
 	/**
 	 * Whether a swipe moves between this pane's tabs: not the root's in
@@ -943,7 +954,8 @@
 		on:animationend={() => (fading = false)}
 		bind:this={contentEl}
 		style:--front="translate{vertical ? 'Y' : 'X'}({offset}px)"
-		style:--beside="translate{vertical ? 'Y' : 'X'}(calc({offset}px + {peek > pane.active ? 100 : -100}%))"
+		style:--beside="translate{vertical ? 'Y' : 'X'}(calc({offset}px {peek > pane.active ? '+' : '-'} (100% + {2 * shy}px)))"
+		style:--shy="{shy}px"
 		style:--slide="{SLIDE_MS}ms"
 		on:pointerdown|capture={swipes ? (e) => (finger = e.pointerId) : undefined}
 		on:touchstart={swipes ? onTouchStart : undefined}
@@ -1528,10 +1540,13 @@
 		transform: var(--front);
 	}
 	/* `--beside`'s 100% is the neighbour's own box, which is the content's
-	   padding box because `.behind` is `inset: 0` in it (TabBody.svelte):
-	   one box away, whatever the box. */
+	   padding box because `.behind` is `inset: 0` in it (TabBody.svelte),
+	   less `--shy` either side: the box it lands in, where the root's in
+	   front is another kind (da-466lv). 100% and both margins is one box
+	   away, whatever the box. */
 	.content.moving > :global(.tab-body.beside) {
 		visibility: visible;
+		margin: var(--shy);
 		transform: var(--beside);
 	}
 	.content.gliding > :global(.tab-body:is(:not(.behind), .beside)) {
