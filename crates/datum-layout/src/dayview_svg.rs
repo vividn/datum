@@ -655,17 +655,15 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 label.time_pos,
                 day.day_offset + label.cross_pos,
             );
-            // Along a horizontal axis the text runs away from its end; down
-            // a vertical one it sits above or hangs below it.
-            let place = match (layout.orientation, label.ends) {
-                (Orientation::Horizontal, true) => r#"dy="0.35em" text-anchor="end""#,
-                (Orientation::Horizontal, false) => r#"dy="0.35em" text-anchor="start""#,
-                (Orientation::Vertical, true) => r#"text-anchor="middle""#,
-                (Orientation::Vertical, false) => r#"dy="0.8em" text-anchor="middle""#,
+            // Across the band, along the end it names: turned upright when
+            // the band runs sideways.
+            let turn = match layout.orientation {
+                Orientation::Horizontal => format!(r#" transform="rotate(-90 {x} {y})""#),
+                Orientation::Vertical => String::new(),
             };
             let _ = write!(
                 &mut out,
-                r#"<text class="zone-label" x="{x}" y="{y}" {place} font-size="{fs}" fill="{c}" stroke="{bg}" stroke-width="2" paint-order="stroke" pointer-events="none">{txt}</text>"#,
+                r#"<text class="zone-label" x="{x}" y="{y}" dy="0.35em" text-anchor="middle"{turn} font-size="{fs}" fill="{c}" stroke="{bg}" stroke-width="2" paint-order="stroke" pointer-events="none">{txt}</text>"#,
                 fs = label.font_size,
                 c = TEXT_COLOR,
                 bg = BG_COLOR,
@@ -2001,8 +1999,24 @@ mod tests {
         ));
         assert!(svg.contains(r##"<rect class="dead-zone" x="700" y="0" width="100" height="100" fill="url(#dead-zone)" pointer-events="none"/>"##));
         assert_eq!(svg.matches(r#"<pattern id="dead-zone""#).count(), 1);
-        assert!(svg.contains(r#"text-anchor="start" font-size="11" fill="white" stroke="black" stroke-width="2" paint-order="stroke" pointer-events="none">UTC+1</text>"#));
-        assert!(svg.contains(r#"text-anchor="end" font-size="11" fill="white" stroke="black" stroke-width="2" paint-order="stroke" pointer-events="none">UTC+2</text>"#));
+        // Each label upright along its end, across the band, so it takes
+        // its height of the axis and not its length.
+        assert!(svg.contains(r#"<text class="zone-label" x="708.5" y="25" dy="0.35em" text-anchor="middle" transform="rotate(-90 708.5 25)" font-size="11""#));
+        assert!(svg.contains(r#"<text class="zone-label" x="791.5" y="75" dy="0.35em" text-anchor="middle" transform="rotate(-90 791.5 75)" font-size="11""#));
+        // Down a vertical axis the band runs sideways, and so does the text.
+        let vertical = DayviewConfig {
+            orientation: Orientation::Vertical,
+            ..jumped_config(&[(0, 0, 7, "UTC+1"), (7, 8, 24, "UTC+2")])
+        };
+        let svg = render_dayview_svg(&compute_dayview(&vertical));
+        let labels: Vec<&str> = (svg.split(r#"<text class="zone-label""#).skip(1))
+            .map(|t| &t[..t.find('>').unwrap()])
+            .collect();
+        assert_eq!(labels.len(), 2);
+        assert!(
+            labels.iter().all(|t| !t.contains("transform")),
+            "{labels:?}"
+        );
         // The dot an hour after the jump is at 09:00, and nothing forks.
         assert!(groups[1].contains(r#"<circle class="point-bg" cx="900" cy="17.5" r="6""#));
         assert!(!svg.contains(r#"<path class="block""#));
@@ -2020,15 +2034,48 @@ mod tests {
         assert!(groups[0].contains(
             r##"<path class="block" d="M600,5L700,5L700,12.5L600,12.5Z" fill="#abcdef""##
         ));
-        // The outlines: narrowing from 05:11 to a cap at 07:00, and from a
-        // cap at 06:00 to whole again by 07:53.
-        assert!(groups[0].starts_with(concat!(
+        // The outlines: narrowing from 05:30 to 05:50 to a cap at 07:00,
+        // and from a cap at 06:00 to whole again from 07:10 to 07:30.
+        let outline = |group: &str| -> Vec<(f64, f64)> {
+            let d = group.split(r#"<path class="lane" d=""#).nth(1).unwrap();
+            let d = &d[1..d.find('"').unwrap()];
+            (d.split('L').map(|p| p.split_once(',').unwrap()))
+                .map(|(x, y)| {
+                    (
+                        (x.parse::<f64>().unwrap() * 100.0).round() / 100.0,
+                        y.parse().unwrap(),
+                    )
+                })
+                .collect()
+        };
+        assert!(groups[0].starts_with(
             r#" data-day="0" data-from="2025-04-27T00:00:00.000Z" data-to="2025-04-27T07:00:00.000Z" data-axis="x" data-lo="0" data-hi="700" data-offset="0">"#,
-            r#"<path class="lane" d="M511,0L561,0L700,0L700,50L561,50L511,100" fill="none""#
-        )));
-        assert!(groups[1].contains(
-            r#"<path class="lane" d="M789,0L739,50L600,50L600,100L739,100L789,100" fill="none""#
         ));
+        let (near, far) = (outline(groups[0]), outline(groups[1]));
+        assert_eq!(near.len(), 20);
+        assert_eq!(
+            [near[0], near[8], near[9], near[10], near[11], near[19]],
+            [
+                (549.67, 0.0),
+                (583.0, 0.0),
+                (700.0, 0.0),
+                (700.0, 50.0),
+                (583.0, 50.0),
+                (549.67, 100.0)
+            ]
+        );
+        assert_eq!(far.len(), 20);
+        assert_eq!(
+            [far[0], far[8], far[9], far[10], far[11], far[19]],
+            [
+                (750.33, 0.0),
+                (717.0, 50.0),
+                (600.0, 50.0),
+                (600.0, 100.0),
+                (717.0, 100.0),
+                (750.33, 100.0)
+            ]
+        );
         // An hour after the jump is 07:00 again, in the far half.
         assert!(groups[1].contains(r#"<circle class="point-bg" cx="700" cy="58.75" r="3""#));
         assert!(!svg.contains("dead-zone"));
