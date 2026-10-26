@@ -86,6 +86,7 @@ mod kit_command_args;
 mod kit_install;
 mod kit_layouts;
 mod kit_name_clash;
+mod kit_reinstall;
 mod last_state_and_moment;
 mod mark_titles;
 mod migrate_cmd;

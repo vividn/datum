@@ -34,7 +34,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use datum_core::db::{validate_command, Db};
-use datum_core::field_spec::{detect_anchor_cycles, format_cycle, shadow_warning};
+use datum_core::field_spec::{detect_anchor_cycles, format_cycle, shadow_warning, FieldSpec};
 use datum_core::kit::{
     validate_layout_entry, validate_widget_entry, FieldEntry, IndexEntry, KitMeta, KitToml,
 };
@@ -473,7 +473,19 @@ fn install_toml(
             skipped.len()
         );
         for f in &skipped {
-            println!("  - {f}");
+            let kit_spec = specs.iter().find(|s| s.field == *f);
+            let differs = match (db.load_spec(f)?, kit_spec) {
+                (Some(yours), Some(kits)) => spec_differences(&yours, kits)?,
+                _ => Vec::new(),
+            };
+            if differs.is_empty() {
+                println!("  - {f}");
+            }
+            for (key, yours, kits) in differs {
+                println!(
+                    "  - {f}: your {key} differs from the kit's (yours: {yours}, kit's: {kits}); kept yours, --force takes the kit's"
+                );
+            }
         }
     }
     if !views_installed.is_empty() {
@@ -571,6 +583,31 @@ fn install_toml(
         }
     }
     Ok(())
+}
+
+/// Each key a skipped field's spec in the database gives differently from
+/// the kit's (da-twvn0), as `(key, yours, kit's)`, a key one side leaves
+/// out reading `unset`: a reinstall keeps yours, and says so. The derived
+/// aliases follow from the other keys unless `no_autoalias` makes them the
+/// person's own list, so only then are they a difference of their own.
+fn spec_differences(yours: &FieldSpec, kits: &FieldSpec) -> Result<Vec<(String, String, String)>> {
+    let derived = !yours.no_autoalias && !kits.no_autoalias;
+    let (yours, kits) = (serde_json::to_value(yours)?, serde_json::to_value(kits)?);
+    let show = |v: Option<&serde_json::Value>| v.map_or("unset".to_string(), |v| v.to_string());
+    let mut keys: Vec<&String> = yours
+        .as_object()
+        .into_iter()
+        .chain(kits.as_object())
+        .flat_map(|o| o.keys())
+        .filter(|k| *k != "field" && !(derived && *k == "derived_aliases"))
+        .collect();
+    keys.sort();
+    keys.dedup();
+    Ok(keys
+        .into_iter()
+        .filter(|k| yours.get(k) != kits.get(k))
+        .map(|k| (k.clone(), show(yours.get(k)), show(kits.get(k))))
+        .collect())
 }
 
 /// Split a kit's `items` by whether each name is taken in the other kind,
