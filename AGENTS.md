@@ -206,7 +206,8 @@ Native only: the browser's database is one process's at a time.
   (da-job98): the data coercion refuses it with `ParseError::RepeatedTime`
   unless `DataArgs::later` answers its key, and `log_core::asking` asks and
   parses again; a line naming two is two questions, which the page answers
-  in order on one stdin. `reparse` passes no answers and reads the first
+  in order on one stdin. `reparse` answers each with the reading the row
+  holds, the first where it holds neither (da-1ppce)
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
   (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
   so the block ENDS at the entry's time and the span precedes it —

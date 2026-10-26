@@ -334,3 +334,99 @@ fn an_update_s_time_key_is_asked_about() {
     assert!(answered.status.success(), "{}", said(&answered));
     assert_eq!(teas(&dir), second_stored());
 }
+
+/// da-1ppce: the line as typed does not say which reading was picked, so a
+/// replay takes the one the stored row holds: `reparse` finds an answered
+/// key clean, and `--fix` leaves it as stored, whichever was picked — a
+/// key's and a pair's `start_time=`.
+#[test]
+fn reparse_keeps_the_reading_picked() {
+    for answer in ["1", "2"] {
+        let dir = tempfile::tempdir().unwrap();
+        let logs: [&[&str]; 2] = [
+            &[
+                "occur",
+                "tea",
+                "-t",
+                "2026-10-25T12:00",
+                "wake_time=2026-10-25T02:30",
+            ],
+            &[
+                "start",
+                "nap",
+                "start_time=2026-10-25T02:30",
+                "end_time=2026-10-25T03:30",
+            ],
+        ];
+        for line in logs {
+            let logged = page(&dir, line, &format!("{answer}\n"));
+            assert!(logged.status.success(), "{}", said(&logged));
+        }
+        let stored = |dir: &TempDir| {
+            rows(
+                dir,
+                "SELECT field || ' ' || coalesce(data, '') || ' ' || coalesce(dur, ''), NULL \
+                 FROM entries WHERE field IN ('tea', 'nap') ORDER BY field",
+            )
+        };
+        let before = stored(&dir);
+        let ids = rows(
+            &dir,
+            "SELECT hid, NULL FROM entries WHERE field IN ('tea', 'nap')",
+        );
+        let ids: Vec<&str> = ids.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids.len(), 2);
+        for fix in [false, true] {
+            let mut cmd = run(&dir, &["reparse"]);
+            cmd.args(&ids);
+            if fix {
+                cmd.arg("--fix");
+            }
+            let out = cmd.stdin(Stdio::null()).output().unwrap();
+            let said_out = String::from_utf8_lossy(&out.stdout);
+            assert!(out.status.success(), "{}", said(&out));
+            assert_eq!(
+                said_out.matches(": clean").count(),
+                2,
+                "answered {answer}: {said_out}"
+            );
+        }
+        assert_eq!(stored(&dir), before, "answered {answer}: unchanged");
+    }
+}
+
+/// A key edited since to neither reading replays as the first, so the
+/// drift shows.
+#[test]
+fn reparse_shows_a_key_edited_since_as_the_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let line = [
+        "occur",
+        "tea",
+        "-t",
+        "2026-10-25T12:00",
+        "wake_time=2026-10-25T02:30",
+    ];
+    let logged = page(&dir, &line, "2\n");
+    assert!(logged.status.success(), "{}", said(&logged));
+    let hid = rows(&dir, "SELECT hid, NULL FROM entries WHERE field = 'tea'")[0]
+        .0
+        .clone();
+    let edited = run(&dir, &["update", &hid, "wake_time=2026-10-25T05:00"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(edited.status.success(), "{}", said(&edited));
+
+    let out = run(&dir, &["reparse", &hid])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let said_out = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{}", said(&out));
+    assert!(
+        said_out.contains("\"utc\":\"2026-10-25T04:00:00.000Z\"")
+            && said_out.contains("→ {\"wake_time\":{\"o\":2,"),
+        "the first reading: {said_out}"
+    );
+}

@@ -23,6 +23,8 @@
 //! Switch/Add). Other verbs don't write rows, so they have nothing to
 //! diff against.
 
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use datum_core::{
     action::Action,
@@ -34,7 +36,7 @@ use datum_core::{
 };
 use datum_parse::alias::expand_argv;
 use datum_parse::input::TimeArgs;
-use datum_parse::parse_argv;
+use datum_parse::{parse_argv, ParseError};
 use serde_json::Value as JsonValue;
 
 use crate::args::{Command, ReparseArgs};
@@ -167,7 +169,24 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
             t
         }
     };
-    let parsed = parse_log_args(&log_args, action, Some(base.clone()), None)?;
+    // da-1ppce: a wall time a fall-back night repeats was answered when it
+    // was logged, and the line does not say which: each key takes the
+    // reading the row holds, the first where it holds neither (a later edit).
+    let mut later = BTreeMap::new();
+    let parsed = loop {
+        let err = match parse_log_args(&log_args, action, Some(base.clone()), Some(&later)) {
+            Ok(parsed) => break parsed,
+            Err(err) => err,
+        };
+        let Some(ParseError::RepeatedTime(readings)) = err.downcast_ref() else {
+            return Err(err);
+        };
+        let key = readings.option.trim_end_matches('=').to_string();
+        let held = (entry.data.as_ref())
+            .and_then(|d| d.pointer(&format!("/{}", key.replace('.', "/"))))
+            .and_then(DatumTime::from_v2_json);
+        later.insert(key, held.is_some_and(|t| t.utc == readings.second));
+    };
     let mut extra_data = parsed.extra_data;
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
     action = change_command(
@@ -218,14 +237,29 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     // The pair is the block between them: its span is the dur, both ends
     // resolved as the insert resolved them, against its own clock.
     if let (Some(s), Some(e)) = (&lifted.start, &lifted.end) {
-        let at = |raw: &String| {
-            let time = TimeArgs {
-                time: Some(raw.clone()),
-                ..log_args.time.clone()
+        // Each end the reading the row holds (da-1ppce).
+        let at = |raw: &String, held: Option<chrono::DateTime<chrono::Utc>>| {
+            let read = |later| {
+                let time = TimeArgs {
+                    time: Some(raw.clone()),
+                    later,
+                    ..log_args.time.clone()
+                };
+                build_time_from_flags(&time, entry.create_time)
             };
-            build_time_from_flags(&time, entry.create_time)
+            let second = read(true)?;
+            if Some(second.utc) == held {
+                Ok(second)
+            } else {
+                read(false)
+            }
         };
-        let secs = (at(e)?.utc - at(s)?.utc).num_seconds().max(0);
+        let end = entry.occur_time.as_ref().map(|t| t.utc);
+        let start = match entry.dur.as_ref().map(|d| &d.span) {
+            Some(DurSpan::Of(d)) => end.map(|e| e - *d),
+            _ => None,
+        };
+        let secs = (at(e, end)?.utc - at(s, start)?.utc).num_seconds().max(0);
         dur = Some(Dur::of(chrono::Duration::seconds(secs)));
     }
     if matches!(action, Action::Occur) && dur.is_none() {

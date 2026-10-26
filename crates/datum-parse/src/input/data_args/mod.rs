@@ -197,8 +197,7 @@ pub struct DataArgs {
     /// key means, by key, `true` the later (da-job98). With a map, a key
     /// naming one it does not answer is refused,
     /// [`ParseError::RepeatedTime`](crate::ParseError::RepeatedTime), for
-    /// the command to ask; with none the first is taken, as a stored line
-    /// read again (`reparse`) took it.
+    /// the command to ask; with none the first is taken.
     pub later: Option<BTreeMap<String, bool>>,
 }
 

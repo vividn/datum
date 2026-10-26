@@ -616,7 +616,7 @@ mod tests {
     /// da-job98: a `*_time` value naming a wall time a fall-back night
     /// repeats — 02:30 on 2026-10-25 in Europe/Berlin, 00:30Z and 01:30Z —
     /// is refused naming both, unless the answers say which; with no
-    /// answers at all (`reparse`), the first, as before.
+    /// answers at all, the first, as before.
     #[test]
     fn a_repeated_wall_time_is_the_answers_to_say() {
         let base =
