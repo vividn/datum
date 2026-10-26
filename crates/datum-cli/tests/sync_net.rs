@@ -2341,14 +2341,16 @@ fn a_catch_up_cut_short_resumes_from_the_last_round_that_applied() {
     let (mut a, mut b) = paired();
     import(&a, 20_000);
     // Its baselines signed now: signing 20,000 sends nothing for longer
-    // than the 5s below.
+    // than the 10s below.
     a.ok(&["sync", "pipe", "ops", "--limit", "1"]);
     let before = ops(&b);
-    // a hears the cut session is lost within 5s; b, which paces its apply
+    // a hears the cut session is lost within 10s; b, which paces its apply
     // chunks by its own timeout, has the same one, or a can hear nothing
-    // from it for longer than that between chunks.
+    // from it for longer than that between chunks. Not 5s: on a loaded
+    // runner a closed the resume after 6,866 ops, most likely timing out
+    // on one slow chunk (da-tv8ja).
     for copy in [&mut a, &mut b] {
-        copy.env.push(("DATUM_SYNC_TIMEOUT_S", "5"));
+        copy.env.push(("DATUM_SYNC_TIMEOUT_S", "10"));
     }
     b.env.push(("DATUM_SYNC_TEST_APPLY_DELAY_MS", "1"));
     let _serving = logged(&a, &["sync", "run"], "run.log");
@@ -2368,7 +2370,15 @@ fn a_catch_up_cut_short_resumes_from_the_last_round_that_applied() {
     let first = sent_in(&log(&a, "run.log"), &to);
     b.env
         .retain(|(k, _)| *k != "DATUM_SYNC_TEST_APPLY_DELAY_MS");
-    b.ok(&["sync"]);
+    // a's log says which side gave up, should the resume fail (da-tv8ja).
+    let out = b.run(&["sync"]);
+    assert!(
+        out.status.success(),
+        "the resume failed: {}{}\na's run.log:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+        log(&a, "run.log"),
+    );
     let needed = ops(&b) - before;
     let rest = sent_in(&log(&a, "run.log"), &to) - first;
     eprintln!(
