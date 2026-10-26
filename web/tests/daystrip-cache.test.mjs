@@ -12,7 +12,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { PHONE, swipeOver, atRest } from './support/layout.mjs';
-import { band, colorOf, labelFor, scrollToDay, stamps, viewsOf } from './support/daystrip.mjs';
+import { band, colorOf, inView, labelFor, scrollToDay, stamps, viewsOf } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -54,15 +54,6 @@ async function awayAndBack(app, between = async () => {}, to = 'tail') {
 	await until(() => shown(page), (name) => name === 'main');
 	await atRest(root);
 }
-
-/** Today, and every day whose band shows at all in the stack: what a refresh re-draws. */
-const inView = ({ page }) =>
-	page.locator('.stack').evaluate((stack) => {
-		const box = stack.getBoundingClientRect();
-		return [...new Set([0, ...[...stack.querySelectorAll('.band')]
-			.filter((b) => { const at = b.getBoundingClientRect(); return at.bottom > box.top && at.top < box.bottom; })
-			.map((b) => Number(b.dataset.daysAgo))])];
-	});
 
 /** A line typed into the bar on a layout with no REPL, whose scrollback `app.submit` waits on. */
 async function barLine({ page }, line) {

@@ -45,6 +45,7 @@ import {
 	heardIs,
 	say,
 	waitForHeights,
+	inView,
 	dragBy,
 	todayBand,
 	stackScroll,
@@ -260,6 +261,33 @@ describe("the day strip's day height and its pin", () => {
 		});
 	});
 
+	// da-8khuw: a new day height asks for the days on screen alone; a day
+	// above them keeps the picture it has, stretched to the new height on
+	// the picture itself — a resting transform on `.shot` would make it the
+	// hover label's containing block (see `.shot.previewing`).
+	test('a day off screen stands in at the new height, stretched on its picture', async () => {
+		await settledRoom(shared, 'standin', async (app) => {
+			await sizeFor(app, 2);
+			const was = await valueOf(app);
+			await say(app, { dayHeight: was + 40 });
+			await waitForHeights(app, was + 40);
+			const off = await app.page.locator('.stack').evaluate((stack) => {
+				const box = stack.getBoundingClientRect();
+				const band = [...stack.querySelectorAll('.band')].find((b) => b.getBoundingClientRect().bottom <= box.top);
+				const svg = band?.querySelector('svg.svg');
+				return svg && {
+					drawn: Number(svg.getAttribute('height')),
+					shown: svg.getBoundingClientRect().height,
+					shot: getComputedStyle(band.querySelector('.shot')).transform
+				};
+			});
+			assert.ok(off, 'no band above the box with a picture');
+			assert.equal(off.drawn, was, 'the day off screen was asked for again');
+			assert.ok(Math.abs(off.shown - (was + 40)) < 1, `it shows ${off.shown}px tall, not ${was + 40}`);
+			assert.equal(off.shot, 'none', 'its .shot carries a transform at rest');
+		});
+	});
+
 	test('the day height comes in as a prop and goes out as a change', async () => {
 		await settledRoom(shared, 'prop', async (app) => {
 			// What the default is is the strip's business, not this file's, so
@@ -361,13 +389,16 @@ describe("the day strip's day height and its pin", () => {
 			assert.equal(after.label, before.label + wider, 'the date column did not widen');
 			// The strip's box did not change, so the bands are narrower by
 			// exactly what the column took — and they are re-DRAWN at it,
-			// not squeezed: the picture datum wrote is the new width.
+			// not squeezed: the picture datum wrote is the new width. Each
+			// day on screen, that is; one off it is drawn once scrolled to
+			// (da-8khuw).
 			await app.page.waitForFunction(
-				(want) =>
-					[...document.querySelectorAll('.band svg.svg')].every(
-						(svg) => Math.abs(Number(svg.getAttribute('width')) - want) <= 1
+				({ want, days }) =>
+					days.every(
+						(end) =>
+							Math.abs(Number(document.querySelector(`.band[data-days-ago="${end}"] svg.svg`)?.getAttribute('width')) - want) <= 1
 					),
-				bandWidth - wider
+				{ want: bandWidth - wider, days: await inView(app) }
 			);
 			const now = await app.page
 				.locator('.band[data-days-ago="0"]')

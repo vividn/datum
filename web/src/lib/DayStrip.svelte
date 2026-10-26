@@ -201,6 +201,10 @@
 
 	/** A band's picture or the geometry, by the epoch it was asked at (see `cache`). */
 	type Asked = { epoch: number; end: number | 'geometry'; run: Promise<RunResult> };
+	/** Every picture asked at one size, by its argv (see `cache`). */
+	type Cache = { key: string; size: string; runs: Map<string, Asked> };
+	/** The size a band's picture was drawn at: one of another stands in, stretched, until it is seen. */
+	type Drawn = { width: number; dayHeight: number; midnights: number };
 	/** One hour gridline: where it sits along a band's x, and whether it is a major. */
 	type Hour = { hour: number; x: number; major: boolean; label: string };
 	/** What every band shares, read off today's layout rather than re-derived. */
@@ -214,12 +218,16 @@
 	 * A remount paints from here at once and re-asks only what a strip
 	 * that had stayed would have: the visible days of a newer epoch, and
 	 * today and the geometry once a minute has turned. A strip holds a
-	 * month of its days at most.
+	 * month of its days at most, at each of its `SIZES`; a maximize is a
+	 * remount too.
 	 */
 	const held = new Map<
 		string,
 		{
-			cache: { key: string; size: string; runs: Map<string, Asked> };
+			cache: Cache;
+			sizes: Map<string, Cache>;
+			shown: Record<number, RunResult>;
+			drawn: Record<number, Drawn>;
 			midnights: number;
 			onDay: string | null;
 			minute: number;
@@ -233,6 +241,13 @@
 	const MONTH = 31;
 	/** The strips held, the longest gone dropped first: a widget closed for good is never mounted again. */
 	const STRIPS = 8;
+	/**
+	 * The sizes a strip holds pictures at: the one it is drawn at and the
+	 * two before it, so a maximize and its restore find their pictures held
+	 * and ask nothing (da-8khuw). A size holds what was asked at it, the
+	 * base stack and whatever was scrolled to.
+	 */
+	const SIZES = 3;
 </script>
 
 <script lang="ts">
@@ -374,6 +389,13 @@
 	/** The box the pane gives the strip, in whole pixels, once measured. */
 	let width = was?.width ?? 0;
 	let height = was?.height ?? 0;
+	/**
+	 * Has the box been measured since mount? A remount paints what it held
+	 * at once and asks for nothing at the box it held: a maximize is a
+	 * remount into another box, and asked for the days that box showed at
+	 * the old size before it was measured (da-8khuw).
+	 */
+	let measured = !was;
 	/** Is the newest day the bottom-most band in view? */
 	let atBottom = true;
 
@@ -399,11 +421,12 @@
 	 * just asked for.
 	 *
 	 * Which matters for the beat after a resize: the band's width has
-	 * changed, every band has been asked again, and what is on screen
-	 * meanwhile is the picture drawn at the width BEFORE. Mapped by the new
-	 * width it would show the wrong hours — a jump, and then a jump back as
-	 * each answer lands, one CLI process apart. Mapped by its own, it shows
-	 * exactly the hours it is meant to until its answer arrives.
+	 * changed, the bands on screen have been asked again, and what is
+	 * shown meanwhile — and off screen until it is scrolled to — is the
+	 * picture drawn at the width BEFORE. Mapped by the new width it would
+	 * show the wrong hours — a jump, and then a jump back as each answer
+	 * lands, one CLI process apart. Mapped by its own, it shows exactly the
+	 * hours it is meant to until its answer arrives.
 	 */
 	const IDENTITY = { offset: 0, scale: 1 };
 	$: mapFor = (full: number) =>
@@ -423,7 +446,7 @@
 	 */
 	$: panStop = [committed[0] <= HOUR_FROM && 'start', committed[1] >= HOUR_TO && 'end'].filter(Boolean).join(' ');
 	/** The transform each band's picture is shown under. */
-	$: bandZoom = (end: number) => mapFor(drawnAt[end]);
+	$: bandZoom = (end: number) => mapFor(drawn[end]?.width);
 	/**
 	 * A `<pattern>` — a multi-state block's stripes, a clock change's
 	 * hatch — tiles in the user space of the block it fills, so the map
@@ -442,7 +465,7 @@
 			if (!Number.isFinite(across)) continue;
 			for (const pattern of band.querySelectorAll<SVGPatternElement>('svg.svg pattern')) {
 				pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
-				const t = `scale(${across} ${1 / scaleY}) ${pattern.dataset.drawn}`;
+				const t = `scale(${across} ${1 / (scaleY * stand(Number(band.dataset.daysAgo)))}) ${pattern.dataset.drawn}`;
 				if (pattern.getAttribute('patternTransform') !== t) pattern.setAttribute('patternTransform', t);
 			}
 		}
@@ -503,6 +526,14 @@
 	 * previewed. One at rest, which is the picture at its own size.
 	 */
 	$: scaleY = shownDayHeight / day;
+	/**
+	 * How far a band's picture is stretched to the day height at rest: one,
+	 * or more or less for a picture drawn at another, which stands in until
+	 * the day is on screen (da-8khuw). On the picture, as the hour window's
+	 * map is, and not on `.shot`, which a resting transform would make the
+	 * hover label's containing block (see `.shot.previewing`).
+	 */
+	$: stand = (end: number) => day / (drawn[end]?.dayHeight ?? day);
 	$: scaleX = bandWidth > 0 ? Math.max(0, width - shownLabelWidth) / bandWidth : 1;
 
 	/**
@@ -529,6 +560,10 @@
 			if (h !== height) {
 				height = h;
 				void anchor();
+			}
+			if (!measured) {
+				measured = true;
+				refreshVisible();
 			}
 		});
 		// A remount sliding in beside the layout in front is laid out in
@@ -563,9 +598,13 @@
 	// ── the pictures ───────────────────────────────────────────────────
 
 	/** Each band on screen, by how many days back it is. 0 is today's. */
-	let shown: Record<number, RunResult> = {};
-	/** And the width each of those pictures was drawn at — see `mapFor`. */
-	let drawnAt: Record<number, number> = {};
+	let shown: Record<number, RunResult> = was?.shown ?? {};
+	/**
+	 * And the size each of those pictures was drawn at: its width is what
+	 * it is mapped by (`mapFor`), its day height what it is stretched by
+	 * (`stand`), and one of another midnight stands in for nothing.
+	 */
+	let drawn: Record<number, Drawn> = was?.drawn ?? {};
 	/** The width the geometry on hand was read at. */
 	let geometryBox = was?.geometryBox ?? 0;
 
@@ -591,7 +630,9 @@
 	 * Every picture asked for at the current band width, day height and
 	 * epoch, by its argv — held as the promise, so two draws in flight for
 	 * the same day share one run. A taller box asks for the days it gained
-	 * and re-draws nothing else, because their argv has not changed.
+	 * and re-draws nothing else, because their argv has not changed. A new
+	 * size asks for the days on screen (`redraw`), and the sizes before it
+	 * are kept aside (`sizes`), so going back to one asks for nothing.
 	 *
 	 * A new EPOCH at the same size is the one case that is not a straight
 	 * drop: today is re-drawn, and every other day keeps the picture it
@@ -606,7 +647,9 @@
 	 * reader scrolls it into view `refreshVisible` asks for that day and
 	 * no other (da-dtwz).
 	 */
-	let cache = was?.cache ?? { key: '', size: '', runs: new Map<string, Asked>() };
+	let cache: Cache = was?.cache ?? { key: '', size: '', runs: new Map<string, Asked>() };
+	/** The caches of the sizes before this one, the oldest first (`SIZES`). */
+	const sizes = was?.sizes ?? new Map<string, Cache>();
 	/**
 	 * This strip in the worker's queue, with the band after it: a band's
 	 * newer run drops its older, unstarted one, whose answer is no picture.
@@ -649,8 +692,22 @@
 	// database (or `run`) outside the browser. At the band's width whatever
 	// the window: the window is how the band shows the picture (`mapFor`).
 	$: request = { width: bandWidth, dayHeight: day, epoch, midnights };
-	$: if (browser && request.width > 0) {
-		draw(request, ends);
+	$: if (browser && measured && request.width > 0) redraw(request, ends);
+
+	/**
+	 * Draw the stack at `at`. A day showing a picture of another size, and
+	 * not held at this one, keeps it, stretched, until it is on screen:
+	 * `refreshVisible` asks for it then, as it does for a day of an older
+	 * epoch. A resize asked for the whole base stack, a fortnight of
+	 * processes in front of the days the reader sees (da-8khuw).
+	 */
+	function redraw(at: typeof request, ends: number[]): void {
+		cacheFor(at);
+		const atThisSize = (end: number) => cache.runs.has(bandArgv(at.width, at.dayHeight, end).join(' '));
+		draw(at, ends.filter((end) => end === 0 || drawn[end]?.midnights !== at.midnights || atThisSize(end)));
+		// The days on screen are read once the newest is pinned again: a
+		// taller day leaves the stack where it was, over older days.
+		void anchor();
 		refreshVisible();
 	}
 
@@ -674,7 +731,7 @@
 	// while someone holds it, and a midnight away is a minute away.
 	const wallMinute = () => Math.floor(Date.now() / 60_000);
 	let late = !!was && was.minute !== wallMinute();
-	$: if (late && request.width > 0) {
+	$: if (late && measured && request.width > 0) {
 		late = false;
 		tock();
 	}
@@ -684,16 +741,18 @@
 		if (at.width <= 0) return;
 		for (const argv of [geometryArgv(at.width, at.dayHeight), bandArgv(at.width, at.dayHeight, 0)])
 			cache.runs.delete(argv.join(' '));
-		draw(at, [0]);
+		// A size held aside has a today of a minute ago too.
+		for (const { runs } of sizes.values())
+			for (const [id, asked] of runs) if (asked.end === 0 || asked.end === 'geometry') runs.delete(id);
+		// Before the box is measured, its first redraw asks for today.
+		if (measured) draw(at, [0]);
 	}
 
 	function draw(
 		at: { width: number; dayHeight: number; epoch: number; midnights: number },
 		ends: number[]
 	): void {
-		const size = `${at.width}/${at.dayHeight}/${at.midnights}`;
-		const key = `${size}/${at.epoch}`;
-		if (cache.key !== key) cache = { key, size, runs: kept(at, cache.size === size) };
+		cacheFor(at);
 		const token = ++started;
 		const ask = (argv: string[], band: number | 'geometry'): Promise<RunResult> => {
 			const id = argv.join(' ');
@@ -725,24 +784,37 @@
 				if (result.superseded || token < (from[end] ?? 0)) return;
 				from[end] = token;
 				shown = { ...shown, [end]: result };
-				drawnAt = { ...drawnAt, [end]: at.width };
+				drawn = { ...drawn, [end]: { width: at.width, dayHeight: at.dayHeight, midnights: at.midnights } };
 				void anchor();
 			});
 		}
 	}
 
 	/**
-	 * What the previous cache hands on: at a new size, nothing; at a new
-	 * epoch, every day but today, for `refreshVisible` to check once it is
-	 * on screen (da-lt25u, da-efxk5). Today and the geometry always go
-	 * again — today has the now in it, and the geometry is what tells the
-	 * strip what day it is.
+	 * Make `cache` the one for `at`: the held one of its size, or a new one,
+	 * the size left going to `sizes`; then, at a new epoch, `kept`.
 	 */
-	function kept(
-		at: { width: number; dayHeight: number },
-		sameSize: boolean
-	): Map<string, Asked> {
-		if (!sameSize) return new Map();
+	function cacheFor(at: typeof request): void {
+		const size = `${at.width}/${at.dayHeight}/${at.midnights}`;
+		const key = `${size}/${at.epoch}`;
+		if (cache.key === key) return;
+		if (cache.size !== size) {
+			const back = sizes.get(size) ?? { key: '', size, runs: new Map<string, Asked>() };
+			sizes.delete(size);
+			if (cache.runs.size) sizes.set(cache.size, cache);
+			while (sizes.size >= SIZES) sizes.delete(sizes.keys().next().value!);
+			cache = back;
+		}
+		if (cache.key !== key) cache = { key, size, runs: kept(at) };
+	}
+
+	/**
+	 * What a cache hands on to a new epoch at its size: every day but
+	 * today, for `refreshVisible` to check once it is on screen (da-lt25u,
+	 * da-efxk5). Today and the geometry always go again — today has the
+	 * now in it, and the geometry is what tells the strip what day it is.
+	 */
+	function kept(at: { width: number; dayHeight: number }): Map<string, Asked> {
 		const again = new Set([bandArgv(at.width, at.dayHeight, 0), geometryArgv(at.width, at.dayHeight)].map((argv) => argv.join(' ')));
 		return new Map([...cache.runs].filter(([id]) => !again.has(id)));
 	}
@@ -936,7 +1008,7 @@
 		refreshing = requestAnimationFrame(() => {
 			refreshing = 0;
 			const at = request;
-			if (at.width <= 0) return;
+			if (at.width <= 0 || !measured) return;
 			const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
 			const visible = visibleDays() ?? [];
 			const stale = visible.filter((end) => (cache.runs.get(id(end))?.epoch ?? at.epoch) < at.epoch);
@@ -1648,10 +1720,19 @@
 		clearTimeout(settling);
 		clearTimeout(longTimer);
 		listen(false);
-		const month = [...cache.runs].filter(([, asked]) => asked.end === 'geometry' || asked.end <= MONTH);
+		const month = (of: Cache): Cache => ({
+			...of,
+			runs: new Map([...of.runs].filter(([, asked]) => asked.end === 'geometry' || asked.end <= MONTH))
+		});
+		function recent<T>(of: Record<number, T>): Record<number, T> {
+			return Object.fromEntries(Object.entries(of).filter(([end]) => Number(end) <= MONTH));
+		}
 		held.delete(heldAs);
 		held.set(heldAs, {
-			cache: { ...cache, runs: new Map(month) },
+			cache: month(cache),
+			sizes: new Map([...sizes].map(([size, of]) => [size, month(of)])),
+			shown: recent(shown),
+			drawn: recent(drawn),
 			midnights,
 			onDay,
 			minute: wallMinute(),
@@ -1712,6 +1793,7 @@
 							data-pan-stop={panStop}
 							style:--zoom-x="{bandZoom(end).offset}px"
 							style:--zoom={bandZoom(end).scale}
+							style:--stand={stand(end)}
 						>
 							<div class="shot" class:previewing={!!sizing}>
 								{#if shown[end]}<CliOutput {...picture(shown[end], unsynced)} />{/if}
@@ -1825,6 +1907,7 @@
 					data-pan-stop={panStop}
 					style:--zoom-x="{bandZoom(0).offset}px"
 					style:--zoom={bandZoom(0).scale}
+					style:--stand={stand(0)}
 				>
 					<div class="shot" class:previewing={!!sizing}>
 						{#if shown[0]}<CliOutput {...picture(shown[0], unsynced)} />{:else}<p class="quiet">…</p>{/if}
@@ -2077,9 +2160,11 @@
 	   the whole day, and a band whose picture is still from before a
 	   resize needs mapping until its own answer lands. The variables are
 	   the BAND's for the same reason — the map is each picture's own
-	   (`mapFor`). */
+	   (`mapFor`). And `--stand` stretches a picture drawn at another day
+	   height to this one until its own answer lands (`stand`), here for the
+	   same reason: not on `.shot`. */
 	.band :global(svg.svg) {
-		transform: translateX(var(--zoom-x)) scaleX(var(--zoom));
+		transform: translateX(var(--zoom-x)) scale(var(--zoom), var(--stand, 1));
 		transform-origin: 0 0;
 		/* And laid out at its OWN width, which is what the map above is
 		   written against. CliOutput shrinks any picture to its box
@@ -2111,7 +2196,7 @@
 	.band :global(svg.svg line:not(defs *)) {
 		transform-box: fill-box;
 		transform-origin: center;
-		scale: calc(var(--sy) / (var(--zoom) * var(--sx))) 1;
+		scale: calc(var(--sy) * var(--stand, 1) / (var(--zoom) * var(--sx))) 1;
 	}
 	.band :global(svg.svg line:not(defs *)) {
 		scale: calc(1 / (var(--zoom) * var(--sx))) 1;

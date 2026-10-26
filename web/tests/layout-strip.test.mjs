@@ -20,6 +20,7 @@ import {
 	settled,
 	widgetPane
 } from './support/layout.mjs';
+import { drawWhole } from './support/daystrip.mjs';
 
 before(startApp);
 after(stopApp);
@@ -109,6 +110,9 @@ describe('resizing', () => {
 			// and a strip showing exactly one day has nowhere.
 			await holdDay(page, 60);
 			await pane(page, 'strip').locator('.stack .band').first().waitFor();
+			// A new day height draws the days on screen; the rest are drawn
+			// as they are scrolled to (da-8khuw), here before the drag.
+			await drawWhole(app);
 			const seen = await app.spyOnRunner();
 			const held = await pastDays(page);
 			const before = await shownDays(page);

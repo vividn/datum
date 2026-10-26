@@ -434,7 +434,9 @@ describe('a pane', () => {
 								.filter((p) => p.querySelector('svg.svg'))
 								.map((p) => [
 									p.dataset.title,
-									p.querySelector('svg.svg').width.baseVal.value
+									// The strip's today: a day off screen keeps its old
+									// picture until it is scrolled to (da-8khuw).
+									(p.querySelector('.band[data-days-ago="0"] svg.svg') ?? p.querySelector('svg.svg')).width.baseVal.value
 								])
 						)
 					);
@@ -446,8 +448,8 @@ describe('a pane', () => {
 							.filter((p) => p.querySelector('svg.svg'))
 							.every(
 								(p) =>
-									p.querySelector('svg.svg').width.baseVal.value !==
-									was[p.dataset.title]
+									(p.querySelector('.band[data-days-ago="0"] svg.svg') ?? p.querySelector('svg.svg')).width.baseVal
+										.value !== was[p.dataset.title]
 							),
 					before
 				);

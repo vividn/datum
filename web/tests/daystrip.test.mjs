@@ -70,6 +70,8 @@ import {
 	FORTNIGHT,
 	heldFor,
 	onScreen,
+	inView,
+	drawWhole,
 	sizeFor,
 	sizeWhole,
 	waitForDays,
@@ -190,7 +192,7 @@ describe('the day strip', () => {
 
 				const seen = await app.spyOnRunner();
 				// A fresh day height is a fresh set of pictures: no argv is
-				// served from the cache, so what runs is what a first draw runs.
+				// served from the cache, so what runs is what a new size runs.
 				const was = await valueOf(app);
 				await say(app, { dayHeight: was + 7 });
 				await app.page.waitForFunction(
@@ -220,15 +222,14 @@ describe('the day strip', () => {
 					assert.equal(flag(argv, '--time-axis-height'), '0', `a ruler: ${argv.join(' ')}`);
 					assert.equal(flag(argv, '--margin'), '0', `an outer margin: ${argv.join(' ')}`);
 				}
-				// The days on the stack, and today, each exactly once.
+				// The days on screen, and today, each exactly once: a day off
+				// screen keeps its picture until it is scrolled to (da-8khuw).
 				const ends = pictures
 					.map((argv) => (argv.includes('--end-date') ? Number(flag(argv, '--end-date')) : 0))
 					.sort((a, b) => b - a);
-				assert.deepEqual(
-					ends,
-					Array.from({ length: heldFor(5) + 1 }, (_, i) => (i === 0 ? 0 : -i)),
-					'not one picture per day'
-				);
+				const visible = (await inView(app)).map((end) => (end ? -end : 0)).sort((a, b) => b - a);
+				assert.ok(visible.length > 2, `only ${visible} on screen`);
+				assert.deepEqual(ends, visible, 'not one picture per day on screen');
 				// And ONE geometry run for all of them: the gridlines, the
 				// ruler and the stamps come off a single `--show json`.
 				assert.equal(views.length - pictures.length, 1, 'the geometry was asked for more than once');
@@ -579,6 +580,8 @@ describe('the day strip', () => {
 			// the room's `empty` bumps the epoch, and under load that can land
 			// after the strip's own draw, leaving the days off screen at the
 			// epoch before — which a scroll to them rightly asks for again.
+			// A new size draws only the days on screen (da-8khuw), so every
+			// band is scrolled past once.
 			const was = await valueOf(app);
 			await say(app, { dayHeight: was + 7 });
 			await app.page.waitForFunction(
@@ -586,7 +589,7 @@ describe('the day strip', () => {
 				was + 7
 			);
 			await sizeWhole(app, 2);
-			await app.idle();
+			await drawWhole(app);
 
 			// Nothing has run since the stack was drawn, so every band in it
 			// is at the epoch on screen — and scrolling is just scrolling.
@@ -746,11 +749,18 @@ const hoursShown = ({ page }) =>
 const rulerLabels = ({ page }) =>
 	page.locator('.ruler .tick-label').allTextContents();
 
-/** Every band's transform, as the browser resolves it. */
+/** Every band's hour map, as the browser resolves its transform. */
 const bandTransforms = ({ page }) =>
-	page
-		.locator('.band svg.svg')
-		.evaluateAll((svgs) => svgs.map((svg) => getComputedStyle(svg).transform));
+	page.locator('.band svg.svg').evaluateAll((svgs) =>
+		svgs.map((svg) => {
+			// The hour map alone: a band standing in with a picture of
+			// another day height is stretched down too (da-8khuw).
+			const { a, e } = new DOMMatrix(getComputedStyle(svg).transform);
+			return `scaleX ${a} translateX ${e}`;
+		})
+	);
+/** What `bandTransforms` reads for a band on the whole day. */
+const WHOLE_DAY = 'scaleX 1 translateX 0';
 
 /** Where each date stamp's box begins, rounded to the pixel. */
 const stampXs = ({ page }) =>
@@ -838,6 +848,7 @@ describe('the day strip zooms onto an hour range', () => {
 			// At rest a band is drawn at the band's own width: the whole day.
 			const full = await drawnWidth(app);
 			assert.equal(await hoursShown(app), 25, 'the strip does not start on the whole day');
+			assert.deepEqual([...new Set(await bandTransforms(app))], [WHOLE_DAY], 'a band at rest is mapped');
 
 			// Fingers drawn three times as far apart: a third of the day.
 			const seen = await app.spyOnRunner();
@@ -1267,11 +1278,7 @@ describe('the day strip zooms onto an hour range', () => {
 				assert.equal(await hoursShown(app), shown);
 				const bands = await bandTransforms(app);
 				assert.deepEqual(bands, bands.map(() => bands[0]));
-				assert.notEqual(
-					bands[0],
-					'matrix(1, 0, 0, 1, 0, 0)',
-					'the restored strip draws the whole day'
-				);
+				assert.notEqual(bands[0], WHOLE_DAY, 'the restored strip draws the whole day');
 
 				// And `Reset widget` is the other way back to the whole day:
 				// the window is one of the strip's declared defaults, so the

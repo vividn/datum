@@ -400,12 +400,51 @@ export const say = ({ page }, settings) =>
 		})`
 	);
 
-/** Wait until every band has been re-drawn at the height it is due. */
+/**
+ * Wait until every band on screen has been re-drawn at the height it is
+ * due. A band off screen keeps the picture it has, stretched, until it is
+ * scrolled to (da-8khuw).
+ */
 export const waitForHeights = ({ page }, height) =>
 	page.waitForFunction((want) => {
-		const svgs = [...document.querySelectorAll('.band svg.svg')];
-		return svgs.length > 0 && svgs.every((svg) => svg.getAttribute('height') === String(want));
+		const box = document.querySelector('.stack')?.getBoundingClientRect();
+		const svgs = [...document.querySelectorAll('.band')]
+			.filter((band) => {
+				if (!box || !band.closest('.stack')) return true;
+				const at = band.getBoundingClientRect();
+				return at.bottom > box.top && at.top < box.bottom;
+			})
+			.map((band) => band.querySelector('svg.svg'));
+		return svgs.length > 0 && svgs.every((svg) => svg?.getAttribute('height') === String(want));
 	}, height);
+
+/** Today, and every day whose band shows at all in the stack: what a resize or a refresh draws. */
+export const inView = ({ page }) =>
+	page.locator('.stack').first().evaluate((stack) => {
+		const box = stack.getBoundingClientRect();
+		const seen = [...stack.querySelectorAll('.band')]
+			.filter((band) => { const at = band.getBoundingClientRect(); return at.bottom > box.top && at.top < box.bottom; })
+			.map((band) => Number(band.dataset.daysAgo));
+		return [...new Set([0, ...seen])];
+	});
+
+/**
+ * Scroll every band of the stack into view in turn, so each is drawn at
+ * the strip's size and epoch, and back to the newest: a new size asks
+ * only for the days on screen (da-8khuw).
+ */
+export async function drawWhole(app) {
+	await app.page.locator('.stack').evaluate(async (stack) => {
+		const frame = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+		for (const band of [...stack.querySelectorAll('.band')].reverse()) {
+			band.scrollIntoView({ block: 'nearest' });
+			await frame();
+		}
+		stack.scrollTop = stack.scrollHeight;
+		await frame();
+	});
+	await app.idle();
+}
 
 /** Drag a handle by (dx, dy) pixels, as a pointer does: down, move, up. */
 export async function dragBy({ page }, selector, dx, dy) {
