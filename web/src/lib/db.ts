@@ -146,7 +146,8 @@ export function initDb(): Promise<void> {
  * A process that wrote is news: for every other tab, which re-runs its panes
  * on it, and — when the write is durable — for the persistence request.
  * `null` when a newer command with the same `key` superseded it unrun.
- * `session`: a sync session's own run, announced as one (`announceChange`).
+ * `session`: a sync session's own run, announced as one (`announceChange`)
+ * and queued behind the panes ($lib/cli.ts).
  */
 export async function runCli(
 	argv: string[],
@@ -158,7 +159,7 @@ export async function runCli(
 	session?: boolean,
 	pane?: boolean
 ): Promise<CliResult | null> {
-	const cli = (await request({ op: 'cli', argv, env, stdin, key, stage, pane }, onStderr)).cli;
+	const cli = (await request({ op: 'cli', argv, env, stdin, key, stage, pane, session }, onStderr)).cli;
 	if (!cli) return null;
 	// A file SQLite cannot read fails every command on it, `db purge` too:
 	// the page offers the way out that does not go through SQLite (da-0v940).

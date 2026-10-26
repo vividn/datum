@@ -160,6 +160,8 @@ interface Job {
 	key?: string;
 	/** A pane's refresh: behind every other job, cheapest first. */
 	pane: boolean;
+	/** A sync session's run: behind the panes too. */
+	session: boolean;
 	/** The command word, what the job's cost is measured under. */
 	word: string;
 	/** Never rejects: a failed job's rejection is handed to its caller. */
@@ -187,8 +189,14 @@ const cost = new Map<string, number>();
  * counts as cheap. First in, first out had nowview's half second answer
  * 12.9 s after a write, behind `stats`, and a typed `occur` 13 s after its
  * Enter. vividn: «This whole app must feel very snappy».
+ *
+ * A sync session's run comes last (da-xzty6): its next round was always in
+ * line before the panes its last round set off, so they waited out the whole
+ * sync — the tail under its dimmed copy from the last visit, a nowview a tap
+ * asked for dimmed until it ended. So each round lets the panes draw what it
+ * brought, and what the reader asks goes before the next.
  */
-const rank = (job: Job) => (job.pane ? (cost.get(job.word) ?? 0) : -1);
+const rank = (job: Job) => (job.session ? Infinity : job.pane ? (cost.get(job.word) ?? 0) : -1);
 
 /**
  * `argv`'s command word: the first that is neither a flag nor `--db`'s value.
@@ -206,12 +214,12 @@ const wordOf = (argv: string[]) => argv.find((word, i) => !word.startsWith('-') 
  * typed or pressed — is never dropped.
  */
 function enqueue<T>(job: () => Promise<T>): Promise<T>;
-function enqueue<T>(job: () => Promise<T>, argv: string[], pane?: boolean, key?: string): Promise<T | null>;
-function enqueue<T>(job: () => Promise<T>, argv: string[] = [], pane = false, key?: string): Promise<T | null> {
+function enqueue<T>(job: () => Promise<T>, argv: string[], pane?: boolean, key?: string, session?: boolean): Promise<T | null>;
+function enqueue<T>(job: () => Promise<T>, argv: string[] = [], pane = false, key?: string, session = false): Promise<T | null> {
 	return new Promise<T | null>((resolve, reject) => {
 		const stale = key === undefined ? -1 : jobs.findIndex((waiting) => waiting.key === key);
 		if (stale >= 0) jobs.splice(stale, 1)[0].drop();
-		jobs.push({ key, pane, word: wordOf(argv), drop: () => resolve(null), start: () => job().then(resolve, reject) });
+		jobs.push({ key, pane, session, word: wordOf(argv), drop: () => resolve(null), start: () => job().then(resolve, reject) });
 		void pump();
 	});
 }
@@ -647,7 +655,8 @@ export function onBlocked(listener: (waited: number | null) => void): void {
 /**
  * Run `datum <argv>` with `env`; resolves once the process has exited, or
  * `null` if a newer command with the same `key` superseded it first.
- * `pane`: a pane's refresh, which waits behind every other command.
+ * `pane`: a pane's refresh, which waits behind every other command;
+ * `session`: a sync session's run, which waits behind the panes too.
  */
 export function runCli(
 	argv: string[],
@@ -656,7 +665,8 @@ export function runCli(
 	onStderr?: (text: string) => void,
 	key?: string,
 	stage?: Stage,
-	pane = false
+	pane = false,
+	session = false
 ): Promise<CliResult | null> {
 	// The gesture's instant is this command's alone, not the handover's.
 	const frozen = env.find((v) => v.startsWith(FROZEN_AT));
@@ -690,5 +700,5 @@ export function runCli(
 			};
 		};
 		return memory ? runIn(memory, 0) : withFiles(runIn);
-	}, argv, pane, key);
+	}, argv, pane, key, session);
 }

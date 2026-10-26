@@ -115,3 +115,67 @@ test('a peer offline: the dim lifts once its dial times out, nothing synced', as
 		{ online: false }
 	);
 });
+
+/** How `title`'s pane shows: through every ancestor's opacity, and whether anything over it takes its input. */
+const look = (app, title) =>
+	app.page.evaluate((t) => {
+		const pane = document.querySelector(`[data-title="${t}"]`);
+		let opacity = 1;
+		let inert = false;
+		for (let e = pane.querySelector('table, pre, svg'); e; e = e.parentElement) {
+			opacity *= +getComputedStyle(e).opacity;
+			inert ||= e.inert;
+		}
+		return { opacity, inert, stale: !!pane.querySelector('[data-stale]') };
+	}, title);
+
+test('while the first sync runs, every pane stays whole and answers (da-xzty6)', async () => {
+	await paired(async (app, native) => {
+		// vividn: «while syncing tail is dimmed and unusable. the only thing that
+		// should be dimmed is the part of the dayview/nowview since the last
+		// sync. However the two widgets should still be useable and act as normal».
+		assert.equal((await native.run(['db', 'restore', '-', '--merge', '-y'], backup(3000))).code, 0);
+		await app.clock.forward(2 * HOUR);
+		await app.reload();
+		const syncing = async (what) => {
+			const n = await countOf(app, 'tea');
+			assert.ok(n < 1000, `${what} only once the sync was over`);
+		};
+		// Under way: the first of what the other device wrote has landed.
+		await until(() => countOf(app, 'tea'), (n) => n > 0, 60_000);
+		await syncing('the sync began');
+
+		assert.deepEqual(await look(app, 'tail'), { opacity: 1, inert: false, stale: false });
+		await app.submit('occur coffee');
+		await app.page.locator('[data-title="tail"] tr', { hasText: 'coffee' }).waitFor();
+		await syncing('the typed line was listed');
+
+		// A tap's time on the nowview: its picture of it lands, undimmed.
+		const nowview = app.page.locator('[data-title="nowview"]');
+		// Asked: dimmed as the cursor moves, before any answer can land.
+		await app.page.evaluate(async (at) => {
+			const pane = document.querySelector('[data-title="nowview"]');
+			const asked = new Promise((resolve) =>
+				new MutationObserver((_, o) => pane.querySelector('.behind') && (o.disconnect(), resolve())).observe(pane, {
+					subtree: true,
+					attributes: true,
+					childList: true
+				})
+			);
+			window.datum.cursor.set(new Date(at));
+			await asked;
+		}, Date.now() - HOUR);
+		await nowview.locator('.behind').waitFor({ state: 'detached', timeout: 60_000 });
+		await syncing('the nowview drew the tapped time');
+		assert.equal((await look(app, 'nowview')).opacity, 1);
+
+		// And the dayview dims the two hours since the last sync, no more.
+		await until(() => countOf(app, 'tea'), (n) => n === 1000, 120_000);
+		const seen = await until(() => dims(app), (s) => s.length && !s.at(-1).length);
+		assert.ok(dimmed(seen).length, `never dimmed: ${JSON.stringify(seen)}`);
+		for (const d of dimmed(seen)) {
+			const day = d.reduce((a, b) => a + b, 0) * 24;
+			assert.ok(Math.abs(day - 2) < 0.1, `dimmed ${day.toFixed(2)} h, not the 2 h since the last sync`);
+		}
+	});
+});

@@ -62,9 +62,10 @@ export type DbCommand =
 	 * Run `datum <argv>` under WASI, with `stdin` on its standard input.
 	 * A `key` lets a newer command with the same key drop this one while it
 	 * is still queued (da-eoq3). `pane`: a pane's refresh, which waits behind
-	 * every other command (da-icmo1).
+	 * every other command (da-icmo1). `session`: a sync session's run, which
+	 * waits behind the panes too (da-xzty6).
 	 */
-	| { op: 'cli'; argv: string[]; env: string[]; stdin?: string; key?: string; stage?: Stage; pane?: boolean };
+	| { op: 'cli'; argv: string[]; env: string[]; stdin?: string; key?: string; stage?: Stage; pane?: boolean; session?: boolean };
 
 /** A command with the tag that pairs its response to it. */
 export type DbRequest = DbCommand & { id: number };
