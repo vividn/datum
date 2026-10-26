@@ -11,6 +11,9 @@ use crate::commands::helpers::{resolve_batch, BatchMode};
 use crate::render::{print_entry_pretty, show_action_with_context, Outcome};
 
 pub fn get(args: GetArgs, db: &Db) -> Result<()> {
+    if args.backlinks {
+        return backlinks(args, db);
+    }
     // da-yhh1: any matchers on the command line route to the search
     // path. The first positional is the field; no positional is a
     // user error (we can't search across every field on a whim).
@@ -98,6 +101,25 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
+/// da-xxqdb: `get <field> --backlinks` prints each record that refers to
+/// the field's ([`Db::backlinks`]), one a line: its field, then the keys
+/// holding the reference, comma-separated. The field is named as a read
+/// names one, and `<field>::` names it too.
+fn backlinks(args: GetArgs, db: &Db) -> Result<()> {
+    if !args.matchers.is_empty() {
+        anyhow::bail!("--backlinks takes a field and no matchers");
+    }
+    let Some(name) = args.id_or_slug else {
+        anyhow::bail!("--backlinks takes a field: datum get <field> --backlinks");
+    };
+    let mut field = name.strip_suffix("::").unwrap_or(&name).to_string();
+    crate::commands::helpers::read_field(db, &mut field)?;
+    for (from, keys) in db.backlinks(&field)? {
+        println!("{from} {}", keys.join(","));
+    }
+    Ok(())
+}
+
 /// A chain of `::state` hops stops after this many (da-pimix).
 const MAX_HOPS: usize = 8;
 
@@ -111,7 +133,8 @@ const MAX_HOPS: usize = 8;
 /// ([`state_refs`](datum_core::doc_ref::state_refs)), or a data value that
 /// does ([`data_refs`](datum_core::doc_ref::data_refs), da-s5k2s), and the
 /// next name is read from that entry — `x::state::class`,
-/// `x::needs::title`. A value that refers to nothing, an array, a missing
+/// `x::needs::title` — or, through a record reference (`field::`), from
+/// that field's record (da-xxqdb). A value that refers to nothing, an array, a missing
 /// entry, a revisit or a ninth hop is an error. A `str://ref://…` literal
 /// prints without its `str://`.
 fn project(piece: &str, db: &Db) -> Result<()> {
@@ -163,11 +186,21 @@ fn project(piece: &str, db: &Db) -> Result<()> {
                 chain.join(" → ")
             );
         }
-        entry = match db.get_entry(slug) {
-            Err(datum_core::error::DatumError::NotFound(_)) => {
-                anyhow::bail!("{at} refers to {slug}, which does not exist")
+        // da-xxqdb: a record reference hops to the field's record, which
+        // the next name is read from first, and to its newest entry, which
+        // reads a name the record lacks (a column), as `<field>::` does.
+        entry = match datum_core::doc_ref::record_ref(slug) {
+            Some(f) if !db.entries_for_field(f, Some(1))?.is_empty() => {
+                record = Some(db.collect(f)?);
+                datum_core::ids::resolve_quickid_single(db, &format!("{f}:_"))?
             }
-            found => found?,
+            Some(_) => anyhow::bail!("{at} refers to {slug}, a field with no entries"),
+            None => match db.get_entry(slug) {
+                Err(datum_core::error::DatumError::NotFound(_)) => {
+                    anyhow::bail!("{at} refers to {slug}, which does not exist")
+                }
+                found => found?,
+            },
         };
         chain.push(entry.slug.to_string());
         if seen.contains(&entry.hid) {

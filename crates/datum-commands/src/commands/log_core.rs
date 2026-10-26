@@ -365,7 +365,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     )?;
     // da-p9gf5: `key+=` / `key-=`, those against the record resolved where
     // the entry lands, as a state edit is.
-    let key_edits = KeyEdit::take(&mut extra_data, &field)?;
+    let mut key_edits = KeyEdit::take(&mut extra_data, &field)?;
+    // da-xxqdb: what an operator adds or takes out names a record as a value
+    // does, so `blocked_by-=` finds the full name `blocked_by+=` stored.
+    let operands = key_edits.iter_mut().flat_map(|e| {
+        let key: &str = &e.key;
+        e.add
+            .iter_mut()
+            .chain(e.remove.iter_mut())
+            .map(move |v| (key, v))
+    });
+    crate::commands::helpers::resolve_record_refs_in(db, &field, operands, None)?;
     // An edit at now is placed when it lands, after any write that landed
     // first, so no racer's set is changed under it.
     let t = &args.time;
@@ -945,6 +955,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // under its `only_listed_*` settings, is refused before the write
     // lands. Runs ahead of the dry-run and multi-collector branches so the
     // failure surfaces uniformly, whichever insert path the CLI chose.
+    crate::commands::helpers::resolve_record_refs(db, &mut entry, None)?;
     crate::commands::helpers::enforce_spec_lists(&entry, db)?;
 
     // --dry-run: preview the would-be entry — including slug derivation,

@@ -17,6 +17,9 @@
 //! reserved token, so there it is never a guess. A DATA value refers only
 //! through [`data_refs`]: the reserved `ref://` prefix, or a key the spec
 //! types `ref`.
+//!
+//! A reference with an empty id after `::`, `issue__k7f2a9x3::`, names a
+//! field's RECORD rather than an entry ([`record_ref`], da-xxqdb).
 
 use std::borrow::Cow;
 
@@ -39,6 +42,9 @@ use crate::shape::{IGNORED_STATE_VALUE, REF_MARK, STR_MARK, TRACKED_STATE_VALUE}
 /// Returns `None` when the string is not in `<field>:<id>` shape. Does NOT
 /// check that the target exists in any database.
 pub fn parse_ref(s: &str) -> Option<(&str, &str)> {
+    if record_ref(s).is_some() {
+        return None;
+    }
     let (field, id) = s.split_once(':')?;
     if field.is_empty() || id.is_empty() {
         return None;
@@ -50,6 +56,15 @@ pub fn parse_ref(s: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((field, id))
+}
+
+/// The field a RECORD reference names, without its `::` (da-xxqdb): `<field>::`, the empty id
+/// after `::`, refers to the record of the field
+/// ([`Db::collect`](crate::db::Db::collect)), not to an entry. The one test
+/// of it, for every reference [`state_refs`] and [`data_refs`] return.
+pub fn record_ref(slug: &str) -> Option<&str> {
+    slug.strip_suffix("::")
+        .filter(|f| !f.is_empty() && !f.contains(':'))
 }
 
 /// The slugs a state refers to (da-f9jyv). `:` inside a state is a
@@ -102,18 +117,66 @@ pub fn data_refs(spec: Option<&FieldSpec>, key: &str, value: &JsonValue) -> Vec<
             .iter()
             .flat_map(|(k, v)| data_refs(spec, &format!("{key}.{k}"), v))
             .collect(),
-        JsonValue::String(s) => match s.strip_prefix(REF_MARK) {
-            Some(slug) if !slug.is_empty() => vec![slug.to_string()],
-            Some(_) => vec![],
-            None if s.is_empty() || literal(s).is_some() => vec![],
-            None => spec
-                .and_then(|sp| sp.subfields.get(key))
-                .filter(|sf| matches!(sf.value_type, SubfieldType::Ref | SubfieldType::RefList))
-                .map(|_| vec![s.clone()])
-                .unwrap_or_default(),
-        },
+        JsonValue::String(s) => data_ref(s, ref_typed(spec, key))
+            .map(|r| vec![r.to_string()])
+            .unwrap_or_default(),
         _ => vec![],
     }
+}
+
+/// [`data_refs`]' walk, handing `f` each reference it finds: `Some(new)`
+/// puts `new` in its place, behind the `ref://` it had. Whether any moved.
+pub fn rewrite_data_refs<E>(
+    spec: Option<&FieldSpec>,
+    key: &str,
+    value: &mut JsonValue,
+    f: &mut impl FnMut(&str) -> Result<Option<String>, E>,
+) -> Result<bool, E> {
+    let mut moved = false;
+    match value {
+        JsonValue::Array(items) => {
+            for v in items {
+                moved |= rewrite_data_refs(spec, key, v, f)?;
+            }
+        }
+        JsonValue::Object(map) => {
+            for (k, v) in map.iter_mut() {
+                moved |= rewrite_data_refs(spec, &format!("{key}.{k}"), v, f)?;
+            }
+        }
+        JsonValue::String(s) => {
+            if let Some(new) = data_ref(s, ref_typed(spec, key))
+                .map(&mut *f)
+                .transpose()?
+                .flatten()
+            {
+                let mark = if s.starts_with(REF_MARK) {
+                    REF_MARK
+                } else {
+                    ""
+                };
+                *s = format!("{mark}{new}");
+                moved = true;
+            }
+        }
+        _ => {}
+    }
+    Ok(moved)
+}
+
+/// The slug the data string `s` refers to, by [`data_refs`]' rules: after
+/// a `ref://`, or the whole of it on a key `typed` `ref`.
+fn data_ref(s: &str, typed: bool) -> Option<&str> {
+    match s.strip_prefix(REF_MARK) {
+        Some(slug) => (!slug.is_empty()).then_some(slug),
+        None => (typed && !s.is_empty() && literal(s).is_none()).then_some(s),
+    }
+}
+
+/// Whether the spec types `key` `ref` or `ref[]`.
+fn ref_typed(spec: Option<&FieldSpec>, key: &str) -> bool {
+    spec.and_then(|sp| sp.subfields.get(key))
+        .is_some_and(|sf| matches!(sf.value_type, SubfieldType::Ref | SubfieldType::RefList))
 }
 
 /// A value as it reads: a `str://ref://…` literal without its `str://`
@@ -316,6 +379,51 @@ mod tests {
         for v in [json!("str://other"), json!("ref://x"), json!("y"), json!(1)] {
             assert!(matches!(shown(&v), Cow::Borrowed(_)), "{v}");
         }
+    }
+
+    #[test]
+    fn a_record_reference_is_the_empty_id_after_two_colons() {
+        assert_eq!(record_ref("issue__k7f2a9x3::"), Some("issue__k7f2a9x3"));
+        // controls: an entry's slug, a key of a record, no field, a time.
+        for s in [
+            "issue:doc",
+            "issue::title",
+            "::",
+            "a:b::",
+            "12:30",
+            "issue:",
+        ] {
+            assert_eq!(record_ref(s), None, "{s}");
+        }
+        assert_eq!(parse_ref("issue::"), None);
+    }
+
+    #[test]
+    fn rewrite_walks_as_data_refs_reads() {
+        use crate::action::Action;
+        use crate::field_spec::SubfieldSpec;
+        use serde_json::json;
+        let mut typed = FieldSpec::new("x", Action::Occur);
+        typed.subfields.insert(
+            "needs".into(),
+            SubfieldSpec {
+                required: false,
+                value_type: SubfieldType::RefList,
+                in_slug: false,
+                default: None,
+            },
+        );
+        let mut v = json!(["a::", "b::", "str://ref://a::"]);
+        let mut up = |r: &str| Ok::<_, ()>((r == "a::").then(|| "A::".to_string()));
+        assert_eq!(
+            rewrite_data_refs(Some(&typed), "needs", &mut v, &mut up),
+            Ok(true)
+        );
+        assert_eq!(v, json!(["A::", "b::", "str://ref://a::"]));
+        // The mark is kept; an untyped key's bare value is no reference.
+        let mut v = json!({"m": "ref://a::", "bare": "a::"});
+        assert_eq!(rewrite_data_refs(None, "k", &mut v, &mut up), Ok(true));
+        assert_eq!(v, json!({"m": "ref://A::", "bare": "a::"}));
     }
 
     #[test]

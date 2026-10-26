@@ -8,6 +8,7 @@ use crate::input::{self, lift, local_switch, local_value, LiftedSpec, OutputArgs
 pub(crate) struct GetParsing {
     output: OutputArgs,
     pretty: bool,
+    backlinks: bool,
 }
 
 pub(crate) fn get_args_registry() -> Vec<LiftedSpec<GetParsing>> {
@@ -17,6 +18,10 @@ pub(crate) fn get_args_registry() -> Vec<LiftedSpec<GetParsing>> {
     }
     r.push(local_switch(None, Some("pretty"), |p| {
         p.pretty = true;
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("backlinks"), |p| {
+        p.backlinks = true;
         Ok(())
     }));
     r
@@ -53,6 +58,7 @@ pub(crate) fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
     Ok(GetArgs {
         id_or_slug,
         pretty: composed.pretty,
+        backlinks: composed.backlinks,
         output: composed.output,
         matchers,
     })

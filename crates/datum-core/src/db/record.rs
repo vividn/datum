@@ -6,11 +6,12 @@ use chrono::Utc;
 use rusqlite::{params, Connection};
 use serde_json::{json, Map, Value as JsonValue};
 
+use crate::doc_ref::{data_refs, state_refs};
 use crate::entry::Entry;
 use crate::error::Result;
 
 use super::types::LIVE_SQL;
-use super::Db;
+use super::{is_meta_field, Db};
 
 impl Db {
     /// The record of `field`: its state now ([`Db::state_at`]) and the fold
@@ -64,6 +65,50 @@ impl Db {
             _ => record.remove("state"),
         };
         Ok(record)
+    }
+
+    /// The records that refer to `field`'s (da-xxqdb): each field whose
+    /// record ([`Db::collect`]) holds the reference `<field>::`, in its state
+    /// or under a data key by [`state_refs`] and [`data_refs`]' rules, with
+    /// those keys, alphabetical. Read from the fields whose live entries
+    /// spell the reference, and then their records, so a reference taken out
+    /// since is none.
+    pub fn backlinks(&self, field: &str) -> Result<Vec<(String, Vec<String>)>> {
+        let target = format!("{field}::");
+        // As the JSON text of a state or data spells it: the columns are
+        // written by serde_json, so the string matches as stored, escapes
+        // and all. A match only names a candidate; its record decides.
+        let spelled = serde_json::to_string(&target)?;
+        let spelled = &spelled[1..spelled.len() - 1];
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT DISTINCT field FROM entries WHERE {LIVE_SQL}
+               AND (instr(state, ?1) OR instr(following_state, ?1) OR instr(data, ?1))
+             ORDER BY field"
+        ))?;
+        let fields = stmt
+            .query_map(params![spelled], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut links = Vec::new();
+        for f in fields.into_iter().filter(|f| !is_meta_field(f)) {
+            let spec = self.load_spec(&f)?;
+            let mut keys: Vec<String> = self
+                .collect(&f)?
+                .into_iter()
+                .filter(|(k, v)| {
+                    match k.as_str() {
+                        "state" => state_refs(spec.as_ref(), v),
+                        k => data_refs(spec.as_ref(), k, v),
+                    }
+                    .contains(&target)
+                })
+                .map(|(k, _)| k)
+                .collect();
+            if !keys.is_empty() {
+                keys.sort();
+                links.push((f, keys));
+            }
+        }
+        Ok(links)
     }
 }
 

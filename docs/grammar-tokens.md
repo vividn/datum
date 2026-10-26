@@ -467,7 +467,19 @@ stored as typed; a marker there is accepted and reads alike.
 
 `get <id>::<key>::<name>` follows a reference as it follows a state (§4
 `::`), and `datum check refs` names each one that finds no live entry, one
-line per field, key and slug. Nothing is refused at write.
+line per field, key and slug. A reference to an entry is never refused at
+write.
+
+A slug with nothing after its `::`, `ref://issue__k7f2a9x3::`, refers to a
+field's RECORD (`get <field>::`), not to an entry. Written, it names the
+field its name names as a read does (`datum help names`): `ref://issue__k7f::`
+is stored `ref://issue__k7f2a9x3::` while that field alone starts
+`issue__k7f`, so the stored reference never depends on which prefixes are
+unique later. One starting several fields is refused, naming them, and one
+naming none where no write may create it (a strict template, `auto_setup
+false`). `check refs` names one whose field has no entries and no spec, a
+hop through one reads the record, and `get <field> --backlinks` lists each
+record that refers to the field's, with the keys that do.
 
 ```bash
 datum add book --id dune title=Dune

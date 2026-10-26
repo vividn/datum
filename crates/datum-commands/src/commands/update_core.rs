@@ -602,6 +602,7 @@ fn persist_with_auto_reinterp(
     db: &Db,
 ) -> Result<UpdateOutcome> {
     crate::commands::helpers::resolve_spec_colors(&mut updated, &existing)?;
+    crate::commands::helpers::resolve_record_refs(db, &mut updated, Some(&existing))?;
     // da-rcoi: the spec's lists are enforced on the update / merge /
     // rekey paths too — a key renamed into an undeclared slot or merged in
     // from a payload would otherwise slip past the log-time check.

@@ -529,6 +529,8 @@ pub struct GetArgs {
     /// as the `<field>` positional in search mode (`matchers` non-empty).
     pub id_or_slug: Option<String>,
     pub pretty: bool,
+    /// da-xxqdb: `--backlinks`, the records referring to the field's.
+    pub backlinks: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
     /// da-yhh1: matcher tokens (`k=v`, `k>v`, `k=gte=v`, …) supplied

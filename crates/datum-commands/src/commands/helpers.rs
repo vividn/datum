@@ -828,6 +828,69 @@ pub(crate) fn refuse_hid_named_field(db: &Db, field: &str) -> Result<()> {
     Ok(())
 }
 
+/// da-xxqdb: a record reference written to data (`ref://P::`, or `P::` on a
+/// key the spec types `ref`) is stored naming the field `P` names
+/// ([`field_named`]), so it never depends on which prefixes are unique
+/// later. One starting several fields is refused, naming them, and one
+/// naming none where nothing may create it
+/// ([`Db::creation_closer`](datum_core::db::Db::creation_closer)): in an open
+/// database it is kept, to dangle until the field is logged. A reference
+/// `before` held is kept as it was stored.
+pub(crate) fn resolve_record_refs(
+    db: &Db,
+    entry: &mut Entry,
+    before: Option<&Entry>,
+) -> Result<()> {
+    let Entry { field, data, .. } = entry;
+    let Some(JsonValue::Object(data)) = data.as_mut() else {
+        return Ok(());
+    };
+    let held = before.and_then(|e| e.data.as_ref()?.as_object());
+    let values = data.iter_mut().map(|(k, v)| (k.as_str(), v));
+    resolve_record_refs_in(db, field, values, held)
+}
+
+/// [`resolve_record_refs`] over `values`, each the value of its key on an
+/// entry of `field`: a `key+=` / `key-=` operand as well as data. A
+/// reference `held` holds is kept as stored.
+pub(crate) fn resolve_record_refs_in<'a>(
+    db: &Db,
+    field: &str,
+    values: impl IntoIterator<Item = (&'a str, &'a mut JsonValue)>,
+    held: Option<&serde_json::Map<String, JsonValue>>,
+) -> Result<()> {
+    use datum_core::doc_ref::{data_refs, record_ref, rewrite_data_refs};
+    // Only a value spelling `::` can hold one: no spec is read for the rest.
+    let values: Vec<_> = values
+        .into_iter()
+        .filter(|(_, v)| v.to_string().contains("::"))
+        .collect();
+    if values.is_empty() {
+        return Ok(());
+    }
+    let spec = db.load_spec(field)?;
+    let held: Vec<String> = held
+        .into_iter()
+        .flatten()
+        .flat_map(|(k, v)| data_refs(spec.as_ref(), k, v))
+        .collect();
+    for (key, value) in values {
+        rewrite_data_refs(spec.as_ref(), key, value, &mut |r| {
+            let Some(name) = record_ref(r).filter(|_| !held.iter().any(|h| h == r)) else {
+                return Ok(None);
+            };
+            match field_named(db, name)? {
+                Some(field) => Ok((field != name).then(|| format!("{field}::"))),
+                None if db.creation_closer(name)?.is_some() => {
+                    anyhow::bail!("{key} refers to {r}, and no field is or starts '{name}'")
+                }
+                None => Ok(None),
+            }
+        })?;
+    }
+    Ok(())
+}
+
 /// A read's field (da-tldkb): [`field_named`], or `name` as typed when it
 /// starts no field.
 pub(crate) fn read_field(db: &Db, name: &mut String) -> Result<()> {

@@ -9,11 +9,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::doc_ref::state_refs;
-use crate::field_spec::{
-    interpolate, FieldSpec, InterpolationContext, SubfieldType, DEFAULT_ID_DELIMITER,
-};
-use crate::shape::REF_MARK;
+use crate::doc_ref::{rewrite_data_refs, state_refs};
+use crate::field_spec::{interpolate, FieldSpec, InterpolationContext, DEFAULT_ID_DELIMITER};
 
 use super::row_mapper::row_to_entry;
 use super::{busy, Db, WriteBatch};
@@ -162,38 +159,11 @@ fn carry_refs(spec: Option<&FieldSpec>, e: &mut Entry, was: &HashMap<String, Str
     }
     if let Some(Value::Object(data)) = &mut e.data {
         for (key, value) in data.iter_mut() {
-            moved |= carry_data_refs(spec, key, value, was);
+            let carry = &mut |r: &str| Ok::<_, std::convert::Infallible>(was.get(r).cloned());
+            moved |= rewrite_data_refs(spec, key, value, carry).unwrap_or_else(|e| match e {});
         }
     }
     moved
-}
-
-fn carry_data_refs(
-    spec: Option<&FieldSpec>,
-    key: &str,
-    value: &mut Value,
-    was: &HashMap<String, String>,
-) -> bool {
-    match value {
-        Value::Array(items) => items
-            .iter_mut()
-            .fold(false, |m, v| carry_data_refs(spec, key, v, was) | m),
-        Value::Object(map) => map.iter_mut().fold(false, |m, (k, v)| {
-            carry_data_refs(spec, &format!("{key}.{k}"), v, was) | m
-        }),
-        Value::String(s) => {
-            let typed = spec.and_then(|sp| sp.subfields.get(key)).is_some_and(|sf| {
-                matches!(sf.value_type, SubfieldType::Ref | SubfieldType::RefList)
-            });
-            let new = match s.strip_prefix(REF_MARK) {
-                Some(slug) => was.get(slug).map(|n| format!("{REF_MARK}{n}")),
-                None if typed => was.get(s.as_str()).cloned(),
-                None => None,
-            };
-            new.map(|n| *s = n).is_some()
-        }
-        _ => false,
-    }
 }
 
 /// Run `f` on each string in `v`, itself or an array's; whether any changed.
