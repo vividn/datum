@@ -137,6 +137,8 @@
 -->
 <script lang="ts" context="module">
 	import { readable } from 'svelte/store';
+	import type { BarAlign, BarEdge, Pane, Tab } from './types.js';
+	import { isSplit } from './types.js';
 
 	/**
 	 * The bar's row, in pixels: the title's words (0.75rem at a line of
@@ -168,6 +170,12 @@
 	 * ends it.
 	 */
 	let switched: { frame: object; until: number } | null = null;
+
+	/**
+	 * How far in from the root's frame a root tab's layout lands: a single
+	 * pane inside the frame's 1px outline (`.pane`), a split on it.
+	 */
+	export const lands = (tab: Tab | undefined) => (tab && !isSplit(tab.content) ? 1 : 0);
 </script>
 
 <script lang="ts">
@@ -176,8 +184,6 @@
 	import { ask } from '$lib/confirm.js';
 	import { holds } from '$lib/hold.js';
 	import { writable } from 'svelte/store';
-	import type { BarAlign, BarEdge, Pane, Tab } from './types.js';
-	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
 	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, sliding } from './shell.js';
@@ -550,11 +556,6 @@
 	let peek = -1;
 	/** Whether that offset is moving on its own — the slide, or the snap back. */
 	let gliding = false;
-	/**
-	 * How far in from the root's frame a root tab's layout lands: a single
-	 * pane inside the frame's 1px outline (`.pane`), a split on it.
-	 */
-	const lands = (tab: Tab | undefined) => (tab && !isSplit(tab.content) ? 1 : 0);
 	/**
 	 * How much smaller the neighbour lands than the tab in front, each side
 	 * (da-466lv): its box is the front's, so it is drawn in the box it will

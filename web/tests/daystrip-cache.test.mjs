@@ -20,11 +20,19 @@ after(stopApp);
 
 const AT = todayAt(12);
 
-/** This device's open layouts: `main`, with the strip, and `tail`, without one. */
+/**
+ * This device's open layouts: `main`, with the strip, and `tail`, without one.
+ * One kept mounted at the root, so the swipe away unmounts the strip: a
+ * layout once opened stays mounted (da-tajsm), and the cache is for the
+ * strip that comes back anew, past what the root keeps.
+ */
 const twoLayouts = (context, next = 'tail') =>
 	context.addInitScript(
-		(json) => localStorage.setItem('datum.layout.root.v1', json),
-		JSON.stringify({ names: ['main', next], active: 0 })
+		([json]) => {
+			localStorage.setItem('datum.layout.root.v1', json);
+			window.__datumKeptLayouts = 1;
+		},
+		[JSON.stringify({ names: ['main', next], active: 0 })]
 	);
 
 const shown = async (page) =>

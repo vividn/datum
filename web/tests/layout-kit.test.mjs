@@ -149,7 +149,8 @@ describe('a kit ships a layout', () => {
 			await rootMenuButton(app.page).click();
 			await app.page.getByRole('menuitem', { name: 'Reset layout', exact: true }).click();
 			await app.page.locator('[role="menu"]').waitFor({ state: 'detached' });
-			await app.page.locator('section.pane[data-title="nowview"]').waitFor();
+			// The layout in front's: `main` stays mounted behind it (da-tajsm).
+			await app.page.locator('section.pane[data-title="nowview"]:not(.tab-body.behind *)').waitFor();
 			// A draft, not a write (da-luwe): the save still holds the
 			// person's tree until they save the reset.
 			assert.deepEqual((await layouts(app, 'loadLayout', 'focus-day')).root, mine.root);

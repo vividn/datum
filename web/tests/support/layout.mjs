@@ -57,9 +57,16 @@ export async function takeRoom(app, name) {
 	};
 }
 
-/** The widget panes' titles, in DOM order. */
+/**
+ * The widget panes' titles, in DOM order: the layout in front's. The root
+ * keeps the layouts it has opened mounted behind it (da-tajsm), hidden.
+ */
 export const titles = (page) =>
-	page.evaluate(() => [...document.querySelectorAll('section.pane')].map((p) => p.dataset.title));
+	page.evaluate(() =>
+		[...document.querySelectorAll('section.pane')]
+			.filter((p) => !p.closest('section.root > .content > .tab-body.behind'))
+			.map((p) => p.dataset.title)
+	);
 
 /** A pane, by the id the layout gives it. */
 export const pane = (page, id) => page.locator(`section[data-pane="${id}"]`);

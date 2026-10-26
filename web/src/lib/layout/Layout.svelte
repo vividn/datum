@@ -50,7 +50,7 @@
 <script lang="ts">
 	import Pane from '$lib/Pane.svelte';
 	import { act } from '$lib/act.js';
-	import PaneFrame, { ROW, badge } from './PaneFrame.svelte';
+	import PaneFrame, { ROW, badge, lands } from './PaneFrame.svelte';
 	import TabBody from './TabBody.svelte';
 	import Stale from './Stale.svelte';
 	import { ready } from './engine.js';
@@ -64,6 +64,7 @@
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
 	import { keyOf, session, setSession, withSession } from './session.js';
+	import { settled } from '$lib/run.js';
 
 	export let pane: PaneNode;
 	export let epoch = 0;
@@ -102,6 +103,59 @@
 	 * its tree — which is how a closed or broken-out pane heals itself.
 	 */
 	$: big = pane.id === rootId ? maximizedIn($maximized, active) : null;
+
+	/**
+	 * The root's layouts once opened, the latest first (da-tajsm): each stays
+	 * mounted behind the one in front as an inner pane's tabs do, so a
+	 * return shows a picture already drawn instead of building every widget
+	 * and asking the CLI again. `KEPT` of them, the tab in front included:
+	 * a phone's three default layouts cost 3 MB of heap and 6,000 DOM nodes
+	 * over one. A test's shared app keeps one (`__datumKeptLayouts`).
+	 */
+	const KEPT = (globalThis as { __datumKeptLayouts?: number }).__datumKeptLayouts ?? 3;
+	let opened: NodeId[] = [];
+	// Called here, declared below: `opened` is reassigned, never mutated, so
+	// Svelte sees each change.
+	$: if (pane.id === rootId) remember(active.id);
+	function remember(id: NodeId): void {
+		if (opened[0] !== id) opened = [id, ...opened.filter((o) => o !== id)].slice(0, KEPT);
+	}
+	// A maximize draws its pane in place of the whole tree (da-00am), so the
+	// layouts behind unmount with it: let them go, and the restore mounts the
+	// one in front alone, as it did before they were kept.
+	$: if (big) opened = [active.id];
+
+	/**
+	 * The epoch the layouts behind are drawn at: the page's, once every
+	 * command has answered and a second has gone by with no other. A run
+	 * cannot be stopped once started, and a hidden layout's refresh drawn the
+	 * moment a write lands kept a line typed after it waiting about 250 ms
+	 * longer on a phone at 4× (vremya's LINE2, da-tajsm). The tab in front,
+	 * and the one a swipe is bringing on, are always at the page's: a layout
+	 * brought to the front catches up then.
+	 */
+	const QUIET_MS = 1000;
+	let behind = epoch;
+	let lagging = 0;
+	$: if (pane.id === rootId) lag(epoch);
+	async function lag(next: number): Promise<void> {
+		const mine = ++lagging;
+		await settled();
+		await new Promise((resolve) => setTimeout(resolve, QUIET_MS));
+		if (mine === lagging) behind = next;
+	}
+	/**
+	 * The epoch each root tab was last drawn at live. A tab left in the
+	 * moment after a write is drawn at no less: an epoch going back is a
+	 * change, and its panes ran again at the old one and once more as it
+	 * caught up (vremya on #1188). A plain map, so the write below, made as
+	 * the tab is drawn, invalidates nothing.
+	 */
+	const live = new Map<NodeId, number>();
+	function drawnAt(tab: Tab, front: boolean, now: number, held: number): number {
+		if (front) live.set(tab.id, now);
+		return front ? now : Math.max(held, live.get(tab.id) ?? held);
+	}
 
 	/** The old grid named its areas by what they showed; a cell does too. */
 	const named = (child: PaneNode): string => {
@@ -314,16 +368,20 @@
 	{:else}
 		<!-- Every tab of the pane is mounted, the one in front and the ones
 		     behind it (da-rjmg), so a swipe moves a picture already drawn.
-		     Not the root's: its tabs are whole layouts, and one is plenty —
-		     with the one a swipe in hand is bringing on (da-24fgb). Listed,
-		     not filtered out of `pane.tabs` by `=== active`: the slot can be
-		     updated with a newer `pane` than its `active`, and a filter then
-		     drops the tab in front for a frame and remounts it. For the same
-		     reason the neighbour is dropped if it is the tab in front: a key
-		     listed twice is an error. -->
-		{#each pane.id === rootId ? [active, pane.tabs[peek]].filter((t, i) => t && (i === 0 || t.id !== active.id)) : pane.tabs as tab (tab.id)}
+		     The root's: the layouts it has opened (`opened`), and the one a
+		     swipe in hand is bringing on (da-24fgb). In the tree's order, so
+		     a switch moves no element, and a moved one loses its scroll. By
+		     id and with `pane.active` too: the slot can be updated with a
+		     newer `pane` than its `active`, and the tab in front must not
+		     drop out for a frame and remount. -->
+		{#each pane.id === rootId ? pane.tabs.filter((t, i) => i === peek || i === pane.active || opened.includes(t.id)) : pane.tabs as tab (tab.id)}
 		{@const content = tab.content}
-		<TabBody active={tab === active} beside={tab === pane.tabs[peek]}>
+		{@const at = pane.id === rootId ? drawnAt(tab, tab === active || tab === pane.tabs[peek], epoch, behind) : epoch}
+		<TabBody
+			active={tab === active}
+			beside={tab === pane.tabs[peek]}
+			shy={pane.id === rootId ? lands(tab) - lands(active) : 0}
+		>
 			{#if isSplit(content)}
 				{@const split = content}
 				{@const least = pane.id === rootId ? legible(pane) : undefined}
@@ -366,7 +424,7 @@
 							style:--ratio={grow[i]}
 							style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 						>
-							<svelte:self pane={child} {epoch} {rootId} {locked} />
+							<svelte:self pane={child} epoch={at} {rootId} {locked} />
 						</div>
 					{/each}
 				</div>
@@ -414,7 +472,7 @@
 					<svelte:component
 						this={kind.component}
 						{...kind.props ? kind.props(settings) : { settings }}
-						{epoch}
+						epoch={at}
 						{key}
 						on:change={(e) => fold && setSession(key, widget.settings, fold(settings, e.detail))}
 					/>

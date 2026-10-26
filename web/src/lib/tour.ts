@@ -48,9 +48,10 @@ export const NOWVIEW = '[data-widget="nowview"] > section';
 export const DAYVIEW = '[data-widget="daystrip"] > section';
 export const buttonOf = (field: string) => `[data-widget="widgetbar"] button[data-field="${CSS.escape(field)}"]`;
 
-/** The first element `at` names that is drawn, if any. */
+/** The first element `at` names that is drawn, if any: a tab behind the front one is mounted, hidden (TabBody.svelte). */
 export function shown(at: string): Element | null {
 	for (const el of document.querySelectorAll(at)) {
+		if (el.closest('.tab-body.behind')) continue;
 		const r = el.getBoundingClientRect();
 		if (r.width > 0 && r.height > 0) return el;
 	}

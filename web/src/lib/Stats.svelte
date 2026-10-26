@@ -95,7 +95,11 @@
 	/** This widget in the worker's queue: its newer run drops its older, unstarted one. */
 	const key = runKey();
 
-	$: argv = statsArgv(settings, $fieldPill);
+	// By its WORDS (CliPane.svelte's rule, da-jgrn): the layout hands the
+	// widget its settings afresh on every change to the tree, a root tab
+	// switch included, and a new array would run it again for nothing.
+	$: words = JSON.stringify(statsArgv(settings, $fieldPill));
+	$: argv = JSON.parse(words) as string[];
 	$: custom = typeof settings.range === 'object' ? settings.range : null;
 	$: all = isAllFields(summary) ? summary : null;
 	$: tiles = all ? summaryTiles(all) : summary ? fieldTiles(summary as FieldStats) : [];

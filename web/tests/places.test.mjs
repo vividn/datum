@@ -373,8 +373,17 @@ describe('a place on a phone', () => {
 	});
 
 	// da-ria1a: the place unmounts the tab it left, and with it the commands
-	// widget; what its bar was showing is kept, and so is its clearing.
+	// widget; what its bar was showing is kept, and so is its clearing. The
+	// root keeps one layout here: a layout once opened stays mounted
+	// (da-tajsm), and these are about the bar that comes back anew.
 	const commands = (page) => page.locator('.bar.commands');
+	/** `opened`, with one layout kept mounted at the root. */
+	const alone = (...names) => ({
+		prepare: async (context) => {
+			await context.addInitScript(() => (window.__datumKeptLayouts = 1));
+			await opened(...names).prepare(context);
+		}
+	});
 	const back = (page) => commands(page).locator('button[data-back]');
 	/** To the place and back to `mobile`, by a tap on its tab, the bar remounted. */
 	async function roundTrip(page) {
@@ -402,7 +411,7 @@ describe('a place on a phone', () => {
 				assert.equal(await commands(page).locator('button[data-command="db"]').count(), 1);
 				assert.deepEqual(errors, []);
 			},
-			{ ...PHONE, reducedMotion: 'reduce', ...opened('mobile') }
+			{ ...PHONE, reducedMotion: 'reduce', ...alone('mobile') }
 		);
 	});
 
@@ -448,7 +457,7 @@ describe('a place on a phone', () => {
 				assert.equal(await back(page).count(), 0, 'Escape was undone by the round trip');
 				assert.deepEqual(errors, []);
 			},
-			{ ...PHONE, reducedMotion: 'reduce', ...opened('mobile') }
+			{ ...PHONE, reducedMotion: 'reduce', ...alone('mobile') }
 		);
 	});
 

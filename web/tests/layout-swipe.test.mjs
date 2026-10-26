@@ -31,6 +31,7 @@ import {
 	placeBar,
 	fill,
 	manage,
+	maximizeButton,
 	pane,
 	pastTheWindow,
 	scrollX,
@@ -507,7 +508,137 @@ describe('the strip: never a blank between two tabs', () => {
 					0,
 					body
 				);
-				assert.deepEqual(await titles(page), ['tail'], 'the layout left behind is still mounted');
+				// Kept, inert and hidden (da-tajsm): a return shows it drawn.
+				const left = page.locator('section.root > .content > .tab-body.behind');
+				assert.deepEqual(
+					await left.evaluateAll((els) =>
+						els.map((el) => ({
+							inert: el.inert,
+							visibility: getComputedStyle(el).visibility,
+							titles: [...el.querySelectorAll('section.pane')].map((p) => p.dataset.title)
+						}))
+					),
+					[{ inert: true, visibility: 'hidden', titles: ['dayview', 'repl', 'tail', 'fields'] }],
+					'the layout left behind is kept, inert and hidden'
+				);
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	test('a return to a layout once opened asks the CLI nothing and builds nothing (da-tajsm)', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const root = async (name) => {
+					await page.locator('.root-bar [role="tab"]', { hasText: name }).click();
+					await until(() => shown(page), (shownName) => shownName === name);
+					await app.idle();
+				};
+				await root('tail');
+				await root('main');
+				const panes = page.locator('section.root > .content > .tab-body:not(.behind) section.pane');
+				await panes.evaluateAll((els) => els.forEach((el) => (el.dataset.kept = 'yes')));
+				const seen = await app.spyOnRunner();
+				await root('tail');
+				await root('main');
+				assert.deepEqual(await seen(), [], 'a switch with nothing changed ran a command');
+				assert.deepEqual(
+					await panes.evaluateAll((els) => els.map((el) => el.dataset.kept ?? 'new')),
+					['yes', 'yes', 'yes', 'yes'],
+					'the layout came back built anew'
+				);
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	// vremya on #1188: a run cannot be stopped once started, so a layout
+	// behind that refreshed the moment a write landed kept the next line
+	// typed waiting. It refreshes once every command has answered and a
+	// beat has gone by.
+	test('a layout behind takes a write once the page has gone quiet, and comes back with it', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const root = async (name) => {
+					await page.locator('.root-bar [role="tab"]', { hasText: name }).click();
+					await until(() => shown(page), (shownName) => shownName === name);
+					await app.idle();
+				};
+				await root('tail');
+				await root('main');
+				const kept = page.locator('section.root > .content > .tab-body.behind');
+				const hidden = () => kept.evaluate((el) => el.textContent.includes('coffee'));
+				await app.submit('occur coffee');
+				await app.idle();
+				assert.equal(await hidden(), false, 'the layout behind refreshed with the write');
+				await until(hidden, (has) => has);
+				const seen = await app.spyOnRunner();
+				await root('tail');
+				assert.deepEqual(await seen(), [], 'the return ran a command');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+});
+
+describe('a layout left in the moment after a write', () => {
+	// vremya on #1188: the tab left before the layouts behind caught up was
+	// drawn at their older epoch, a change, and its panes ran at it and
+	// again as it caught up. Each tail here runs once: `main`'s for the
+	// write, and `tail`'s as it comes forward; their boxes tell them apart.
+	test('runs nothing more as it goes behind', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				for (const name of ['tail', 'main']) {
+					await page.locator('.root-bar [role="tab"]', { hasText: name }).click();
+					await until(() => shown(page), (shownName) => shownName === name);
+					await app.idle();
+				}
+				const seen = await app.spyOnRunner();
+				await app.submit('occur coffee');
+				await page.evaluate(() =>
+					[...document.querySelectorAll('.root-bar [role="tab"]')].find((t) => t.textContent.trim() === 'tail').click()
+				);
+				await until(() => shown(page), (shownName) => shownName === 'tail');
+				await app.idle();
+				await page.waitForTimeout(1500);
+				await app.idle();
+				const tails = {};
+				for (const argv of await seen())
+					if (argv[0] === 'tail' && argv.includes('--json')) {
+						const n = argv[argv.indexOf('-n') + 1];
+						tails[n] = (tails[n] ?? 0) + 1;
+					}
+				assert.equal(Object.keys(tails).length, 2, `not two tails: ${JSON.stringify(tails)}`);
+				assert.deepEqual(Object.values(tails), [1, 1], `a tail ran more than once: ${JSON.stringify(tails)}`);
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+});
+
+describe('a maximize lets the kept layouts go', () => {
+	// vremya on #1188: the maximized pane is drawn in place of the tree, so
+	// a restore remounted every kept layout at once.
+	test('the restore mounts the layout in front alone', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const bodies = () => page.locator('section.root > .content > .tab-body').count();
+				for (const name of ['tail', 'main']) {
+					await page.locator('.root-bar [role="tab"]', { hasText: name }).click();
+					await until(() => shown(page), (shownName) => shownName === name);
+					await app.idle();
+				}
+				assert.equal(await bodies(), 2, 'tail was not kept behind main');
+				await maximizeButton(page, 'side').click();
+				await page.locator('section.root > .content > .tab-body').waitFor({ state: 'detached' });
+				await maximizeButton(page, 'side').click();
+				await until(() => titles(page), (seen) => seen.join() === 'dayview,repl,tail,fields');
+				assert.equal(await bodies(), 1, 'the restore remounted the kept layouts');
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);

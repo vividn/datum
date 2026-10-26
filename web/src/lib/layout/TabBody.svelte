@@ -26,6 +26,14 @@
 	export let active: boolean;
 	/** The tab a swipe in hand is bringing on. */
 	export let beside = false;
+	/**
+	 * How much smaller, each side, a root tab's layout lands than the one in
+	 * front (`lands`, PaneFrame.svelte): behind, it keeps the box it is drawn
+	 * in up front, so nothing in it is drawn again as it comes and goes. A
+	 * larger one is grown inside its box, which clips it: a layout behind
+	 * never widens the page's scroll.
+	 */
+	export let shy = 0;
 
 	interface Frame {
 		alarm: Writable<boolean>;
@@ -50,7 +58,15 @@
 	});
 </script>
 
-<div class="tab-body" class:behind={!active} class:beside inert={!active}><slot /></div>
+<div
+	class="tab-body"
+	class:behind={!active}
+	class:beside
+	class:grown={!active && shy < 0}
+	inert={!active}
+	style:margin={!active && shy > 0 ? `${shy}px` : null}
+	style:--grown={!active && shy < 0 ? `${shy}px` : null}
+><slot /></div>
 
 <style>
 	.tab-body {
@@ -63,5 +79,13 @@
 		display: flex;
 		flex-direction: column;
 		visibility: hidden;
+	}
+	/* The tab body's clip is what bounds a grown layout: its children are
+	   larger than it and not clipped themselves. */
+	.behind:not(.beside) {
+		overflow: clip;
+	}
+	.grown:not(.beside) > :global(*) {
+		margin: var(--grown);
 	}
 </style>

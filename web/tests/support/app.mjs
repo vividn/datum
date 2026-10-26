@@ -593,8 +593,16 @@ export function sharedApp(options) {
 		shared = null;
 		close = null;
 	});
+	// One layout mounted at the root, as before da-tajsm kept the ones once
+	// opened: a room is `main`'s tree a second time, and `main` kept behind
+	// it would put every pane and the REPL on the page twice. A test of the
+	// keeping opens an app of its own (`layout-swipe.test.mjs`).
+	const prepare = async (context) => {
+		await context.addInitScript(() => (window.__datumKeptLayouts = 1));
+		await options?.prepare?.(context);
+	};
 	const open = async () => {
-		if (!shared) ({ app: shared, close } = await openApp(options));
+		if (!shared) ({ app: shared, close } = await openApp({ ...options, prepare }));
 		return shared;
 	};
 	/**
