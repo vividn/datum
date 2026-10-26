@@ -102,7 +102,9 @@ describe('the selection and the pills', () => {
 					return hue >= 40 && hue <= 70;
 				};
 				return [...document.querySelectorAll('svg.svg *')]
-					.filter((el) => !/^current-time-/.test(el.getAttribute('class') ?? ''))
+					// NOW's own marks: the line and its «now» label (da-9g3bf), which
+					// a picture centred off now draws too, in its surroundings (da-6fdaf).
+					.filter((el) => !/^(current-time-|now-label)/.test(el.getAttribute('class') ?? ''))
 					// A field's own colour is the person's, not the page's.
 					.filter((el) => !el.closest('[data-field]'))
 					.filter((el) => {

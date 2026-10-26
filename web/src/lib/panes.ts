@@ -539,13 +539,20 @@ export function ladderAround(minutes: number, history: number): { up: string[]; 
  * (da-78evn). A small «now» under the now strip stands in for the clock
  * (da-9g3bf).
  *
- * With a window's worth more drawn either side of it, past the picture's
- * box (`--surround`): a pan of a whole width or a zoom out a step shows
- * what is there before datum is asked again (da-61nm8). And on now, a
+ * With SURROUND windows' worth more drawn either side of it, past the
+ * picture's box (`--surround`): a pan or a stretch shows what is there
+ * before datum is asked again (da-61nm8) — on now, a stretch to nine times
+ * the window, «at least a x5 stretch» (vividn, da-6fdaf). Never more than
+ * the longest window, 12h, either side, which is no more than that window
+ * drew before: on 300 entries a day, eight 30m windows cost what one did
+ * (30ms), and a 2h window's 53ms against 33ms (native, datum-cli release).
+ * And on now, a
  * window's worth more drawn AHEAD of it, behind the now line (`--ahead`),
  * which the widget slides along with the clock (da-hklaz). `0` is the
  * snapshot, which has no time to draw past.
  */
+const SURROUND = 8;
+
 export const nowviewSpec = (history: string, at?: string, vertical = false): PaneSpec => ({
 	...NOWVIEW,
 	argv: [
@@ -554,7 +561,7 @@ export const nowviewSpec = (history: string, at?: string, vertical = false): Pan
 		'--history',
 		history,
 		'--surround',
-		history,
+		stepMinutes(history) > 0 ? historyArg(SURROUND * stepMinutes(history)) : history,
 		...(at ? ['-t', at] : history === '0' ? [] : ['--ahead', history]),
 		...(vertical ? ['--orientation', 'vertical'] : [])
 	]

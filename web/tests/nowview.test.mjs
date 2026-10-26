@@ -580,7 +580,11 @@ describe('the nowview widget zooms', () => {
 				const { page } = app;
 				await app.spyOnRunner();
 				const box = await pictureBox(page);
-				assert.equal(await page.locator(`${PANE} svg.svg .current-time-line`).count(), 0);
+				// Now is drawn, if at all, in the surroundings past the window (da-6fdaf).
+				const lines = await page
+					.locator(`${PANE} svg.svg .current-time-line`)
+					.evaluateAll((ls) => ls.map((l) => l.getBoundingClientRect().left));
+				assert.ok(lines.every((x) => x >= box.x + box.width), `the now line is in the window: ${lines} of ${JSON.stringify(box)}`);
 				const before = await instantX(page);
 				// A centred window: the anchor is the middle of the band, and
 				// nowhere near the right edge where a window ending at now
@@ -784,6 +788,76 @@ describe('the nowview draws past its box', () => {
 			const texts = await page.locator(`${BAND} svg.svg text`).allTextContents();
 			assert.deepEqual(texts.filter((t) => /\d{1,2}:\d\d/.test(t)), []);
 			assert.equal(await page.locator(`${BAND} svg.svg .current-time-text`).count(), 0);
+		}, phone);
+	});
+});
+
+// ── a stretch (da-6fdaf) ─────────────────────────────────────────────
+//
+// vividn, 2026-10-26: «Rescaling nowview should behave similarly to
+// rescaling dayview, so occur dots and multi state stripes don't stretch
+// with it … it would be good to load in more data into nowview, so that it
+// can handle at least a x5 stretch». A pinch in to a fifth: the dot and the
+// stripes' tile lie on the screen as they did at rest, and a coffee 130
+// minutes back, five windows out, is drawn under the fingers with no
+// nowview asked for since the press.
+
+describe('a nowview stretch moves marks, never sizes them', () => {
+	const BAND = 'section[data-pane="nowview"] .nowview-band';
+	const phone = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
+
+	/** The tea dot's box, the stripes' tile on the screen as a 2×2, whether the coffee is in the band, and the nowviews asked for. */
+	const marks = (page) =>
+		page.evaluate((band) => {
+			const box = document.querySelector(band).getBoundingClientRect();
+			const dot = document.querySelector(`${band} svg.svg [data-field="tea"] .point-fg`).getBoundingClientRect();
+			const block = document.querySelector(`${band} svg.svg rect.block.multi-state`);
+			const pattern = document.getElementById(block.getAttribute('fill').slice('url(#'.length, -1));
+			const m = block.getScreenCTM().multiply(pattern.patternTransform.baseVal.consolidate().matrix);
+			const coffee = [...document.querySelectorAll(`${band} svg.svg [data-field="coffee"]:not(g)`)].some((c) => {
+				const r = c.getBoundingClientRect();
+				return r.width > 0 && r.left >= box.left && r.right <= box.right;
+			});
+			return {
+				dot: [dot.width, dot.height],
+				tile: [m.a, m.b, m.c, m.d],
+				block: block.getBoundingClientRect().width,
+				coffee,
+				asked: (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview').length
+			};
+		}, BAND);
+
+	const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-3 * Math.max(1, Math.abs(b[i])));
+
+	test('a pinch in to a fifth keeps the dot and the stripes, and shows the coffee five windows back', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of ['occur coffee -t -130', 'switch posture vertical,sit -t -20', 'occur tea -t -10'])
+				await app.runLine(line);
+			await app.redraw();
+			await page.locator(`${BAND} svg.svg rect.block.multi-state`).waitFor({ state: 'attached' });
+			await app.idle();
+			const rest = await marks(page);
+			assert.equal(rest.coffee, false, 'the coffee is in the window before any gesture');
+			await app.spyOnRunner();
+			const box = await page.locator(BAND).boundingBox();
+			let during;
+			// Fingers inside the band, a fifth as far apart at the end.
+			const apart = box.width - 20;
+			await pinch(page, box, apart, apart / 5, async () => {
+				during = await marks(page);
+				// The dash under the now strip runs along time: it stretches with the strip.
+				assert.equal(
+					await page.locator(`${BAND} svg.svg line.current-time-line-far`).evaluate((l) => getComputedStyle(l).scale),
+					'none'
+				);
+			});
+			// The control: the stretch happened, and a duration is as long as its minutes.
+			assert.ok(Math.abs(during.block / rest.block - 0.2) < 0.01, `the block is ${during.block}px, was ${rest.block}`);
+			assert.ok(near(during.dot, rest.dot), `the dot is ${during.dot}, was ${rest.dot}`);
+			assert.ok(near(during.tile, rest.tile), `the stripes' tile is ${during.tile}, was ${rest.tile}`);
+			assert.deepEqual([during.coffee, during.asked], [true, 0]);
+			assert.deepEqual(app.errors, []);
 		}, phone);
 	});
 });

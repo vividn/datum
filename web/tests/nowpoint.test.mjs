@@ -265,10 +265,12 @@ describe('a tap on a two-minute window is to the nearest five seconds', () => {
 			const { page } = app;
 			await pickOption(page, inRoom(room, 'nowview'), 'history', '2m');
 			// The two-minute picture, asked for and drawn: the one before it
-			// is taken down first, so there is a moment with none.
+			// is taken down first, so there is a moment with none. It draws
+			// some 20 minutes, eight windows before it (da-6fdaf), where the
+			// 30-minute one drew 300.
 			await page.waitForFunction((sel) => {
 				const day = document.querySelector(sel);
-				return day && Date.parse(day.dataset.to) - Date.parse(day.dataset.from) <= 15 * 60_000;
+				return day && Date.parse(day.dataset.to) - Date.parse(day.dataset.from) <= 30 * 60_000;
 			}, `${NOWVIEW} svg.svg [data-lo]`);
 			await showBand(app);
 			// 21 s back, which no gridline is near and five seconds rounds to 20.
@@ -300,7 +302,8 @@ describe('a tap on a window panned off now is to the same step, said as a clock'
 				const day = document.querySelector(sel);
 				return day && Date.parse(day.dataset.to) - Date.parse(day.dataset.from) <= ms;
 			},
-			[`${NOWVIEW} svg.svg [data-lo]`, 4 * stepMs(history)]
+			// Ten windows drawn on now: eight before it (da-6fdaf) and one ahead.
+			[`${NOWVIEW} svg.svg [data-lo]`, 12 * stepMs(history)]
 		);
 		await showBand(app);
 		const g = await geometry(page);

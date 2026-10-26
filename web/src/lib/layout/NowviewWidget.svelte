@@ -588,6 +588,24 @@
 	let zoom: { origin: number; scale: number } | null = null;
 
 	/**
+	 * The gesture stretches TIME, never a mark (da-6fdaf): a dot, a glyph
+	 * or a label is scaled back by the CSS below, and a multi-state block's
+	 * stripes here, on the pattern's own transform, as the day strip's are
+	 * (da-hmtoq, DayStrip.svelte — WebKit draws a CSS `transform` on a
+	 * pattern without it). On each step of the gesture, and on each picture
+	 * `place` reads: a ctrl+wheel holds no press, so a picture may land
+	 * under it (one under a finger waits for the lift, $lib/hover.ts).
+	 */
+	function unstretch(): void {
+		const back = 1 / (zoom?.scale || 1);
+		for (const pattern of el?.querySelectorAll<SVGPatternElement>('.nowview-band svg.svg pattern') ?? []) {
+			pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
+			pattern.setAttribute('patternTransform', `scale(${vertical ? `1 ${back}` : `${back} 1`}) ${pattern.dataset.drawn}`);
+		}
+	}
+	$: zoom, vertical, unstretch();
+
+	/**
 	 * Where the anchor is drawn, in px across the picture's own box.
 	 *
 	 * A window with `-t` is centred on its instant (da-5flt: the yellow
@@ -834,6 +852,7 @@
 
 	function place(): void {
 		if (!el) return;
+		unstretch();
 		const home = el.getBoundingClientRect();
 		roomy = home.width >= TINY_PX;
 		boxAt = { x: home.x, y: home.y };
@@ -1450,6 +1469,29 @@
 	.vertical .nowview-band :global(svg.svg) {
 		transform: translateY(var(--pan)) scaleY(var(--zoom));
 		transform-origin: center var(--zoom-x);
+	}
+
+	/* And a mark keeps its size (da-6fdaf), as on the day strip (da-dqbso):
+	   a block is as long as its minutes, and every other mark is scaled
+	   back about its own anchor, so only its place moves. */
+	.nowview-band :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *)) {
+		transform-box: fill-box;
+		transform-origin: center;
+		scale: calc(1 / var(--zoom)) 1;
+	}
+	.nowview-band :global(svg.svg text[text-anchor='end']:not(defs *)) {
+		transform-origin: right;
+	}
+	.nowview-band :global(svg.svg text:not([text-anchor='middle']):not([text-anchor='end']):not(defs *)) {
+		transform-origin: left;
+	}
+	.vertical .nowview-band :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *)) {
+		scale: 1 calc(1 / var(--zoom));
+	}
+	/* But the dash under the now strip runs along time, as long as the
+	   strip: it stretches with it. */
+	.nowview .nowview-band :global(svg.svg line.current-time-line-far:not(defs *)) {
+		scale: none;
 	}
 
 	.vertical .hold-mark.held .stem {
