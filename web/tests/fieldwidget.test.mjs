@@ -10,7 +10,7 @@
 // that fill the form and not the database (da-yqx0t), the `field:` line
 // and its «fields» (da-zz9rn), a save that leaves a field the
 // bar can log, and the sheet of fields that goes from one to the next.
-// The form's own tabs are `track.test.mjs`'s, the place's coming and going
+// The form's own sections are `track.test.mjs`'s, the place's coming and going
 // `specplace.test.mjs`'s.
 
 import test, { before, after, describe } from 'node:test';
@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { EXAMPLES, VERBS } from '../src/lib/track.ts';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, PANEL, cancelField, declared, openField } from './support/field.mjs';
+import { FIELD_FORM, SECTION, cancelField, declared, openField, openSection } from './support/field.mjs';
 import { until } from './support/until.mjs';
 import { shellJoin } from '../src/lib/shellSplit.ts';
 
@@ -36,7 +36,9 @@ const marked = async (page) => (await page.locator(`${PICKER} .chips [aria-curre
 /** The field the form is on: its name line's h2. */
 const heading = async (page) => (await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim();
 
-const TABS = ['basics', 'data', 'aliases'];
+/** The sections beneath the placement (da-4t0yn): the form has no tabs. */
+const SECTIONS = ['data', 'aliases'];
+const sections = (page) => page.locator(`${FIELD_FORM} [data-section]`).evaluateAll((all) => all.map((s) => s.dataset.section));
 /** The shape's «ex.» part, which opens its examples. */
 const more = (page, verb) => page.locator(`${FIELD_FORM} [data-examples="${verb}"]`);
 const SHEET = 'dialog.sheet[data-catalog]';
@@ -75,7 +77,7 @@ const LOGGED = {
 describe('the field widget', () => {
 	const shared = sharedApp(DESKTOP);
 
-	test('with no fields: what a field is, the four shapes first, a name box, and every tab', async () => {
+	test('with no fields: what a field is, the four shapes first, a name box, and every section', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openField(page);
@@ -100,9 +102,9 @@ describe('the field widget', () => {
 			]);
 			const top = async (sel) => (await page.locator(`${FIELD_FORM} ${sel}`).first().boundingBox()).y;
 			assert.ok((await top('.verb')) < (await top('input.field')), 'the name comes before the shapes');
-			// None chosen, and every tab there before a save, none of them required.
+			// None chosen, and every section there before a save, none of them required.
 			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).count(), 0);
-			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
+			assert.deepEqual(await sections(page), SECTIONS);
 			// The examples wait behind each shape's «ex.».
 			assert.equal(await page.locator(`${FIELD_FORM} [data-example]`).count(), 0);
 			assert.equal(await page.locator(`${FIELD_FORM} button.commit`).isEnabled(), false);
@@ -126,8 +128,8 @@ describe('the field widget', () => {
 			for (const gone of ['[data-tracking]', 'button.info', '.preview', 'p.about']) {
 				assert.equal(await page.locator(`${FIELD_FORM} ${gone}`).count(), 0, gone);
 			}
-			// The description is the first thing on Basics.
-			const panel = page.locator(`${FIELD_FORM} [data-panel="basics"]`);
+			// The description is the first thing under the name.
+			const panel = page.locator(`${FIELD_FORM} .body`);
 			const tops = await panel.evaluate((el) => [...el.children].map((c) => [c.getBoundingClientRect().top, c.querySelector('input.description') !== null]));
 			assert.equal(tops.find(([top]) => top === Math.min(...tops.map(([t]) => t)))[1], true, 'the description is not first');
 
@@ -249,7 +251,7 @@ describe('the field widget', () => {
 				const was = await tall();
 				await page.locator(`${FIELD_FORM} [data-example="${example.field}"]`).click();
 				// The place keeps its size: nothing moves under the finger that tapped.
-				assert.equal(await tall(), was, 'the form changed height from the examples to Basics');
+				assert.equal(await tall(), was, 'the form changed height from the examples to the form');
 				assert.equal(await page.locator(`${FIELD_FORM} [data-example]`).count(), 0, 'the examples stayed open');
 
 				// The form says what the field would be: its name, ready to retype, its shape, states, data.
@@ -258,16 +260,16 @@ describe('the field widget', () => {
 				assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), '', 'what was typed before stayed');
 				assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.verb);
 				assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(example.states ?? {}));
-				// A card's keys are on Basics; any other shape's a line says, which goes to the Data tab (da-i9upr).
+				// A card's keys are open; any other shape's «▸ data» says them, and opens on a tap (da-4t0yn).
 				if (example.verb !== 'add') {
-					const said = (await page.locator(`${FIELD_FORM} .data-line .ask`).innerText()).trim();
+					const said = (await page.locator(`${SECTION('data')} > summary .ask`).innerText()).trim();
 					const names = (example.keys ?? []).map((k) => k.name);
 					assert.equal(said, names.length ? `each entry records ${names.join(', ')}` : 'want to record extra data with each entry?');
-					await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
+					await openSection(page, 'data');
 				}
 				assert.deepEqual(
 					await page
-						.locator(`${PANEL} ul.data li.key`)
+						.locator(`${FIELD_FORM} ul.data li.key`)
 						.evaluateAll((all) => all.map((li) => [li.querySelector('.mode').textContent, li.querySelector('input.name').value, li.querySelector('.eq').getAttribute('aria-pressed')])),
 					(example.keys ?? []).map((k) => [k.in_slug ? '-K' : '-k', k.name, String(k.kind !== 'required')])
 				);
@@ -294,7 +296,7 @@ describe('the field widget', () => {
 				assert.equal(shown.never_false, example.neverFalse);
 				await page.locator(`${FIELD_FORM} h2`).waitFor();
 				assert.equal((await page.locator(`${FIELD_FORM} h2`).innerText()).trim(), example.field);
-				assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
+				assert.deepEqual(await sections(page), SECTIONS);
 				await page.keyboard.press('Escape');
 				await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 
@@ -387,8 +389,8 @@ describe('the field widget', () => {
 		});
 	});
 
-	// Every tab is there before a save (da-uipyt), so what is set on one is saved with the field.
-	test('a new field\'s tabs are saved with it, in one `setup F --track` that one Undo takes back (da-2pbvd)', async () => {
+	// Every section is there before a save (da-uipyt), so what is set in one is saved with the field.
+	test('a new field\'s whole form is saved with it, in one `setup F --track` that one Undo takes back (da-2pbvd)', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
@@ -457,7 +459,7 @@ describe('the field widget', () => {
 				[() => row.locator('.remove').click(), [undefined, undefined]]
 			]) {
 				const { saved } = await openField(page, 'emotion');
-				await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
+				await openSection(page, 'data');
 				assert.equal(await row.locator('input.name').inputValue(), (await route())[0]);
 				await change();
 				await page.locator(`${FIELD_FORM} button.commit`).click();
@@ -477,11 +479,11 @@ describe('the field widget', () => {
 	// da-i9upr, vividn, 2026-10-19: «move the placement to the basics tab and show what the data looks like
 	// displayed … completely remove the states tab … for card, embed the data widget directly on the basics».
 	// da-srrqd, vividn, 2026-10-22: the samples «should actually be inside the placement configuration tool».
-	test('Basics draws each shape as it is logged in its lane on the band; a switch\'s states start at off; a card\'s keys are there', async () => {
+	test('the form draws each shape as it is logged in its lane on the band; a switch\'s states start at off; a card\'s keys are there', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
-			const at = (sel) => page.locator(`${FIELD_FORM} [data-panel="basics"] ${sel}`);
+			const at = (sel) => page.locator(`${FIELD_FORM} .body ${sel}`);
 			const own = at('.placement .band g.field[data-field="thing"]');
 			/** Wait for the band to draw the field's sample as `ok` says: its blocks' states, and how many dots. */
 			const drawn = async (what, ok) => {
@@ -499,7 +501,7 @@ describe('the field widget', () => {
 			await page.locator(`${FIELD_FORM} input.field`).fill('thing');
 			// No shape yet, nothing to draw.
 			assert.equal(await at('.placement').count(), 0);
-			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
+			assert.deepEqual(await sections(page), SECTIONS);
 
 			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
 			await drawn('the dots of an occurrence', ({ blocks, dots }) => dots === 8 && blocks.length === 0);
@@ -517,16 +519,12 @@ describe('the field widget', () => {
 			assert.equal(await off.isDisabled(), false);
 			await off.click();
 			await drawn('calm with no off: one stretch', ({ blocks }) => blocks.length === 1 && blocks[0] === 'calm');
-			// The line names the keys and goes to the Data tab.
-			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
-			assert.equal(await page.locator(PANEL).getAttribute('data-panel'), 'data');
-			await page.locator(`${FIELD_FORM} [data-tab="basics"]`).click();
 
-			// A card has no time: no placement, so no sample, and the Data tab's rows, typed, on Basics.
+			// A card has no time: no placement, so no sample, and its data rows, typed, open in the form.
 			await page.locator(`${FIELD_FORM} button[data-verb="add"]`).click();
-			for (const gone of ['.placement', '.data-line', '.states']) assert.equal(await at(gone).count(), 0, gone);
+			for (const gone of ['.placement', 'details[data-section="data"]', '.states']) assert.equal(await at(gone).count(), 0, gone);
 			await at('ul.data + button.add').click();
-			assert.equal(await at('ul.data li.key select.type').count(), 1, 'not the Data tab\'s rows');
+			assert.equal(await at('ul.data li.key select.type').count(), 1, 'the rows are not typed');
 
 			// Saved as a switch, off disabled is `never_false`.
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
@@ -534,6 +532,51 @@ describe('the field widget', () => {
 			assert.equal((await saved).code, 0);
 			const shown = JSON.parse((await app.run(['setup', 'thing', '--json'])).stdout);
 			assert.deepEqual([shown.allowed_states, shown.never_false], [['calm'], true]);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-4t0yn, vividn, 2026-10-26: «completely remove the tabs on the setup widget … instead put a collapsed-by-default
+	// collapsible > data and > aliases section beneath placement. for cards (add type data), data is not collapsible
+	// since it is an inherent property of cards».
+	test('no tabs: «▸ data» and «▸ aliases» stand beneath the placement, shut until a tap opens them; a card\'s data is always open', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const { saved } = await openField(page);
+			await page.locator(`${FIELD_FORM} input.field`).fill('thing');
+			assert.equal(await page.locator(`${FIELD_FORM} :is([role="tablist"], [role="tab"], [role="tabpanel"])`).count(), 0, 'the form is tabbed');
+			const section = (name) => page.locator(SECTION(name));
+			const summary = (name) => section(name).locator('> summary');
+			const shut = (name) => section(name).evaluate((el) => el.matches('details:not([open])'));
+			/** What each section holds, which is out of sight while it is shut. */
+			const inside = { data: section('data').locator('ul.data + button.add'), aliases: section('aliases').locator('input.autoalias') };
+			const top = async (locator) => (await locator.boundingBox()).y;
+			for (const verb of ['occur', 'switch']) {
+				await page.locator(`${FIELD_FORM} button[data-verb="${verb}"]`).click();
+				const placement = page.locator(`${FIELD_FORM} .placement`);
+				await placement.waitFor();
+				assert.ok((await top(summary('data'))) > (await top(placement)), `${verb}: data is not beneath the placement`);
+				assert.ok((await top(summary('aliases'))) > (await top(summary('data'))), `${verb}: aliases is not beneath data`);
+				for (const name of SECTIONS) {
+					assert.equal(await shut(name), true, `${verb}: ${name} starts open`);
+					assert.equal((await summary(name).locator('.label').innerText()).trim(), name);
+					assert.equal(await inside[name].isVisible(), false, `${verb}: ${name}'s rows are in sight shut`);
+					await summary(name).click();
+					assert.equal(await shut(name), false, `${verb}: a tap left ${name} shut`);
+					await inside[name].waitFor();
+					// Shut again, for the next shape to start as a reader finds it.
+					await summary(name).click();
+					assert.equal(await shut(name), true);
+				}
+			}
+			// A card: data open, with nothing to shut it; aliases shut as ever.
+			await page.locator(`${FIELD_FORM} button[data-verb="add"]`).click();
+			await inside.data.waitFor();
+			assert.equal(await section('data').evaluate((el) => el.localName), 'section');
+			assert.equal(await section('data').locator('summary, [aria-expanded]').count(), 0, 'a card\'s data collapses');
+			assert.equal(await shut('aliases'), true);
+			await cancelField(page);
+			assert.equal(await saved, null);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -674,8 +717,8 @@ describe('the field widget', () => {
 			}, size);
 		});
 
-	// vremya, for vividn, 2026-10-19: «put them back at the very bottom of the basics tab» (da-i9upr).
-	test('a field\'s Basics ends with tracked or ignored, whose button runs `ignore F` or `track F` and stays', async () => {
+	// vremya, for vividn, 2026-10-19: «put them back at the very bottom of the basics tab» (da-i9upr), of the form now (da-4t0yn).
+	test('a field\'s form ends with tracked or ignored, whose button runs `ignore F` or `track F` and stays', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
@@ -685,7 +728,7 @@ describe('the field widget', () => {
 			const said = async () => [await tracking.getAttribute('data-tracking'), (await tracking.innerText()).replace(/\s+/g, ' ').trim()];
 			assert.deepEqual(await said(), ['tracked', 'tracked a button in the fields widget ignore']);
 			assert.equal(
-				await page.locator(`${FIELD_FORM} [data-panel="basics"]`).evaluate((el) => el.lastElementChild?.dataset.tracking),
+				await page.locator(`${FIELD_FORM} .body`).evaluate((el) => el.lastElementChild?.dataset.tracking),
 				'tracked',
 				'not at the very bottom'
 			);

@@ -295,7 +295,8 @@
 
 <svelte:window on:pointermove={slide} on:pointerup={release} on:pointercancel={() => (drag = null)} />
 
-<div class="placement">
+<!-- It drags itself: a sideways drag in it is never the pane's tab swipe (`data-pans`, PaneFrame.svelte; da-4t0yn). -->
+<div class="placement" data-pans="x">
 	<label class="tie">
 		<select
 			aria-label="anchor to a field"
