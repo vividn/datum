@@ -155,7 +155,17 @@ test('on a phone a drag in a text box, a popup or the placement keeps the tab, a
 		await set.waitFor({ state: 'detached' });
 		assert.equal(await shown(page), 'basics');
 
-		// On the placement: a drag left of the dot's left side widens the dot (left, as a swipe to Data would be).
+		// On the placement: a sideways drag on a dot is the dot's (da-r6wwe), and a tap on it boxes it.
+		const discs = `${FIELD_FORM} .placement .band g.field .point-bg`;
+		await swipeOver(page, page.locator(discs).last(), -60, 0);
+		assert.equal(await shown(page), 'basics');
+		// Read in one go: the band is drawn again once the drag lets go, which replaces the dots.
+		const at = await page.waitForFunction((sel) => {
+			const r = [...document.querySelectorAll(sel)].at(-1)?.getBoundingClientRect();
+			return r && [r.x + r.width / 2, r.y + r.height / 2];
+		}, discs);
+		await page.touchscreen.tap(...(await at.jsonValue()));
+		// A drag left of the dot's left side widens the dot (left, as a swipe to Data would be).
 		const dims = page.locator(`${FIELD_FORM} .placement .dims`);
 		const before = await dims.innerText();
 		await swipeOver(page, page.locator(`${FIELD_FORM} .placement [data-handle="-1,0"]`), -60, 0);

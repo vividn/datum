@@ -8,14 +8,17 @@
 	one, a field's `y` is a hash of its NAME — a lane nobody chose — and the
 	readout says so until someone does.
 
-	Drag the lane to move it, an edge to resize it. Tied to a neighbour
-	(⛓), the same drag writes the RATIOS to that neighbour and not `y` /
-	`height`, so the lane moves when its anchor does. Nothing is written
-	here: `place` is bound to the modal, which saves it with the rest.
+	No box is drawn at rest (da-r6wwe): a press and drag on any of the
+	field's marks moves its lane, and a tap on one draws a thin box round
+	that mark, whose hints size it — on a bar a dot at its top and bottom
+	centre, which move that edge of the lane. Tied to a neighbour (⛓), the
+	same drag writes the RATIOS to that neighbour and not `y` / `height`, so
+	the lane moves when its anchor does. Nothing is written here: `place` is
+	bound to the modal, which saves it with the rest.
 
-	An occur field's lane is its dot (da-c1b6m): the box is drawn round the
-	dot instead, centred on the lane. Its body moves the lane like any
-	other; an edge or corner sizes the dot about its centre, writing
+	An occur field's mark is its dot (da-c1b6m): the box is drawn round the
+	dot tapped, centred on the lane, its corners hinted; an edge or corner
+	sizes the dot about its centre, writing
 	`glyph_scale` (the dot's height over the standard dot's, so a field tied
 	to this one stays put) and `glyph_aspect`. «lock aspect» keeps width over
 	height, «reset» puts back a round dot of the standard size, or the lane's
@@ -67,17 +70,21 @@
 		at: number;
 		y: number;
 		h: number;
-		/** For `dot`: the handle's sides (-1, 0, 1 on x and y), the press's x, the box's size in px. */
+		/** For `dot`: the handle's sides (-1, 0, 1 on x and y), the box's size in px. */
 		sx?: number;
 		sy?: number;
-		ax?: number;
 		b?: number;
 		w?: number;
+		/** The press's x. */
+		ax?: number;
+		/** For `move`: the mark pressed, selected if it is let go where it was; whether it has moved since. */
+		mark?: { x: number; w: number };
+		moved?: boolean;
 	} | null = null;
 	/** Whether sizing the dot keeps its width over its height. */
 	let locked = false;
-	/** Where the dot the box is drawn round sits along the band, in px: its latest on the band. */
-	let dotX = 0;
+	/** The mark tapped, which the box is drawn round: its left and width along the band, in px. */
+	let sel: { x: number; w: number } | null = null;
 	/** The lane and dot the band was drawn at, which the marks are carried from. */
 	let shown = { y: 0, h: 0, scale: 1 };
 	/** Whether `fields --json` has been read, which the lane of a field with no place is. */
@@ -111,8 +118,6 @@
 			svg?.remove();
 			band.prepend(next);
 			[svg, shown] = [next, at];
-			const disc = [...next.querySelectorAll(`g.field[data-field="${CSS.escape(field)}"] .point-bg`)].at(-1);
-			dotX = disc ? Number(disc.getAttribute('cx')) : band.clientWidth / 2;
 			named = [...next.querySelectorAll('g.field')].map((g) => g.getAttribute('data-field') ?? '');
 		}
 		drawing = false;
@@ -120,6 +125,8 @@
 
 	/** The dot box's handles, by the sides each moves: four corners, four edges. */
 	const HANDLES = [-1, 0, 1].flatMap((sx) => [-1, 0, 1].map((sy) => [sx, sy])).filter(([x, y]) => x || y);
+	/** A bar box's handles: the lane's edges, each moved by the hint at its centre. */
+	const EDGES = ['top', 'bottom'] as const;
 	/** A corner's cursor, by the sign of its sides' product. */
 	const CURSORS: Record<string, string> = { '1': 'nwse-resize', '-1': 'nesw-resize' };
 
@@ -188,17 +195,39 @@
 	function grab(mode: 'move' | 'top' | 'bottom', e: PointerEvent) {
 		e.preventDefault();
 		e.stopPropagation();
-		drag = { mode, at: e.clientY, y: lane.y, h: lane.h };
+		drag = { mode, at: e.clientY, y: lane.y, h: lane.h, ax: e.clientX };
+	}
+
+	/** This field's mark at a point on the band, under whatever is drawn over it (gridlines, the now-line, another field); never the page's own dayview under the dialog. */
+	const markAt = (x: number, y: number) =>
+		document.elementsFromPoint(x, y).find((el) => svg?.contains(el) && el.closest('g.field')?.getAttribute('data-field') === field);
+
+	/** Press the band: on a mark, the lane moves with it, and it is selected if let go where it was; elsewhere, nothing is. */
+	function press(e: PointerEvent) {
+		const mark = markAt(e.clientX, e.clientY);
+		if (!mark) return void (sel = null);
+		const r = mark.getBoundingClientRect();
+		const left = band.getBoundingClientRect().left + band.clientLeft;
+		grab('move', e);
+		drag = { ...drag!, mark: { x: r.left - left, w: r.width } };
+	}
+
+	function release() {
+		if (drag?.mark && !drag.moved) sel = drag.mark;
+		drag = null;
 	}
 
 	/** Press a handle of the dot's box: `sx`/`sy` are the sides it moves. */
 	function size(sx: number, sy: number, e: PointerEvent) {
 		grab('move', e);
-		drag = { ...drag!, mode: 'dot', sx, sy, ax: e.clientX, b: dotH, w: dotW };
+		drag = { ...drag!, mode: 'dot', sx, sy, b: dotH, w: dotW };
 	}
 
 	function slide(e: PointerEvent) {
 		if (!drag) return;
+		// A tap's jitter moves nothing.
+		if (drag.mark && !drag.moved && Math.hypot(e.clientX - (drag.ax ?? 0), e.clientY - drag.at) < 4) return;
+		drag.moved = true;
 		const d = (e.clientY - drag.at) / H;
 		const { y, h } = drag;
 		if (drag.mode === 'dot') {
@@ -237,6 +266,7 @@
 		const k = lane.h / shown.h;
 		own.setAttribute('transform', `matrix(1 0 0 ${k} 0 ${(lane.y - shown.y * k) * H})`);
 	}
+	$: if (own instanceof SVGElement) own.style.cursor = drag?.moved ? 'grabbing' : 'grab';
 
 	// The dots follow the box: each mark is scaled about its own centre
 	// from the size the band drew it at, undoing the group's stretch of
@@ -263,7 +293,7 @@
 				: 'on';
 </script>
 
-<svelte:window on:pointermove={slide} on:pointerup={() => (drag = null)} on:pointercancel={() => (drag = null)} />
+<svelte:window on:pointermove={slide} on:pointerup={release} on:pointercancel={() => (drag = null)} />
 
 <div class="placement">
 	<label class="tie">
@@ -283,25 +313,32 @@
 		</select>
 	</label>
 
-	<div class="band" bind:this={band} style:height="{H}px">
+	<!-- A finger on a mark drags it, and does not scroll the dialog. -->
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<div
+		class="band"
+		bind:this={band}
+		style:height="{H}px"
+		on:pointerdown={press}
+		on:touchstart|nonpassive={(e) => markAt(e.touches[0].clientX, e.touches[0].clientY) && e.preventDefault()}
+	>
 		{#each named.filter((n) => n !== field && lanes[n]) as name (name)}
 			<span class="name" style:top="{lanes[name].y * H}px">{name}</span>
 		{/each}
-		{#if occur}
-			<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<span class="own" style:top="{(lane.y + lane.h / 2) * H}px">{field}</span>
+		{#if sel && occur}
 			<div
-				class="dot"
-				class:dragging={drag}
+				class="box dot"
 				data-field={field}
 				style:top="{(lane.y + lane.h / 2) * H - dotH / 2}px"
-				style:left="{dotX - dotW / 2}px"
+				style:left="{sel.x + sel.w / 2 - dotW / 2}px"
 				style:height="{dotH}px"
 				style:width="{dotW}px"
-				on:pointerdown={(e) => grab('move', e)}
 			>
 				{#each HANDLES as [sx, sy] (`${sx}${sy}`)}
 					<span
 						class="handle"
+						class:hint={sx && sy}
 						data-handle="{sx},{sy}"
 						style:left="{(sx + 1) * 50}%"
 						style:top="{(sy + 1) * 50}%"
@@ -310,19 +347,24 @@
 					></span>
 				{/each}
 			</div>
-		{:else}
-			<!-- svelte-ignore a11y-no-static-element-interactions -->
+		{:else if sel}
 			<div
-				class="lane"
-				class:dragging={drag}
+				class="box bar"
 				data-field={field}
 				style:top="{lane.y * H}px"
 				style:height="{lane.h * H}px"
-				on:pointerdown={(e) => grab('move', e)}
+				style:left="{sel.x}px"
+				style:width="{sel.w}px"
 			>
-				<span class="edge top" on:pointerdown={(e) => grab('top', e)}></span>
-				<span class="own">{field}</span>
-				<span class="edge bottom" on:pointerdown={(e) => grab('bottom', e)}></span>
+				{#each EDGES as edge (edge)}
+					<span
+						class="handle hint round"
+						data-handle={edge}
+						style:left="50%"
+						style:top={edge === 'top' ? '0' : '100%'}
+						on:pointerdown={(e) => grab(edge, e)}
+					></span>
+				{/each}
 			</div>
 		{/if}
 	</div>
@@ -392,45 +434,11 @@
 		pointer-events: none;
 	}
 
-	/* The lane being placed: its whole box moves it, its edges size it.
-	   `touch-action: none` or a finger scrolls the dialog instead. */
-	.lane {
-		position: absolute;
-		inset-inline: 0;
-		box-sizing: border-box;
-		min-block-size: 6px;
-		border: 1px solid var(--accent);
-		background: color-mix(in srgb, var(--accent) 12%, transparent);
-		cursor: grab;
-		touch-action: none;
-	}
-
-	.lane.dragging {
-		cursor: grabbing;
-	}
-
 	.own {
-		top: 50%;
 		left: auto;
 		right: 0.25rem;
 		transform: translateY(-50%);
 		color: var(--accent);
-	}
-
-	.edge {
-		position: absolute;
-		inset-inline: 0;
-		block-size: 8px;
-		cursor: ns-resize;
-		touch-action: none;
-	}
-
-	.edge.top {
-		top: -4px;
-	}
-
-	.edge.bottom {
-		bottom: -4px;
 	}
 
 	.size {
@@ -448,26 +456,38 @@
 		align-items: center;
 	}
 
-	/* The occur dot's box: its body moves the lane, a handle sizes the dot. */
-	.dot {
+	/* The mark tapped: a thin line round it, which only its hints take a press through. */
+	.box {
 		position: absolute;
 		box-sizing: border-box;
-		border: 1px dashed var(--accent);
-		cursor: grab;
-		touch-action: none;
+		min-block-size: 4px;
+		border: 1px solid var(--accent);
+		pointer-events: none;
 	}
 
-	.dot.dragging {
-		cursor: grabbing;
-	}
-
+	/* A handle is a finger's reach; a hint, what is drawn of it, is small. */
 	.handle {
 		position: absolute;
-		inline-size: 9px;
-		block-size: 9px;
+		inline-size: 14px;
+		block-size: 14px;
 		transform: translate(-50%, -50%);
-		background: var(--accent);
+		pointer-events: auto;
 		touch-action: none;
+	}
+
+	.handle.hint::after {
+		content: '';
+		position: absolute;
+		inset: 4px;
+		background: var(--accent);
+	}
+
+	.handle.round::after {
+		border-radius: 50%;
+	}
+
+	.bar .handle {
+		cursor: ns-resize;
 	}
 
 	.reset {

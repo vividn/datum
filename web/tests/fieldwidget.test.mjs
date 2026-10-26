@@ -503,11 +503,10 @@ describe('the field widget', () => {
 
 			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
 			await drawn('the dots of an occurrence', ({ blocks, dots }) => dots === 8 && blocks.length === 0);
-			assert.equal(await at('.placement .dot').count(), 1, 'an occur field places its dot');
+			assert.equal(await at('.placement .box').count(), 0, 'no box at rest (da-r6wwe)');
 
 			await page.locator(`${FIELD_FORM} button[data-verb="start"]`).click();
 			await drawn('on with off between', ({ blocks, dots }) => dots === 0 && blocks.length === 4 && blocks.every((s) => s === 'on'));
-			await at('.placement .lane').waitFor();
 
 			// A switch starts with off alone, which cannot go until there is another state.
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();

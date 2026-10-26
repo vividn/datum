@@ -13,7 +13,10 @@ import { ONE_PANE } from './support/layout.mjs';
 import { editedSpec, placeOf } from '../src/lib/track.ts';
 import { FIELD_FORM as MODAL, cancelField, openField } from './support/field.mjs';
 
-const LANE = `${MODAL} .placement .lane`;
+/** The box a tap draws round a mark (da-r6wwe): none at rest. */
+const BOX = `${MODAL} .placement .box`;
+/** A field's marks on the band, the ones a press takes. */
+const marks = (field) => `${MODAL} .placement .band g.field[data-field="${field}"] :is(.block, .point-bg)`;
 /** The band's day height in pixels (`H` in Placement.svelte): 32px is 0.2 of a day. */
 const H = 160;
 const round = (n) => Math.round(n * 1000) / 1000;
@@ -73,17 +76,50 @@ describe('the Placement tab', () => {
 		return { saved };
 	}
 
-	/** Press the middle of the lane, its bottom edge, or the middle of an occur dot's box (`dot`), and drag by `dy`. */
-	async function drag(page, at, dy) {
-		const box = await page.locator(at === 'dot' ? `${MODAL} .placement .dot` : LANE).boundingBox();
-		const x = box.x + box.width / 2;
-		const y = box.y + (at === 'bottom' ? box.height : box.height / 2);
+	/** The middle of `field`'s latest mark: read in one go, as a redraw replaces the marks. */
+	async function middle(page, field) {
+		const at = await page.waitForFunction((sel) => {
+			const r = [...document.querySelectorAll(sel)].at(-1)?.getBoundingClientRect();
+			return r && [r.x + r.width / 2, r.y + r.height / 2];
+		}, marks(field));
+		return at.jsonValue();
+	}
+
+	/** Press at `x`,`y` and drag by `dx`,`dy`. */
+	async function pull(page, [x, y], dx, dy) {
 		await page.mouse.move(x, y);
 		await page.mouse.down();
-		await page.mouse.move(x, y + dy / 2);
-		await page.mouse.move(x, y + dy);
+		await page.mouse.move(x + dx / 2, y + dy / 2);
+		await page.mouse.move(x + dx, y + dy);
 		await page.mouse.up();
 	}
+
+	/** Press the middle of `field`'s latest mark and drag it by `dy`. */
+	const drag = async (page, field, dy) => pull(page, await middle(page, field), 0, dy);
+
+	/** Tap `field`'s latest mark, which draws the box round it. */
+	async function tap(page, field) {
+		const [x, y] = await middle(page, field);
+		await page.mouse.click(x, y);
+		await page.locator(BOX).waitFor();
+	}
+
+	/** Where a handle of the box is drawn: `top`/`bottom` on a bar, `sx,sy` on a dot. */
+	async function handle(page, name) {
+		const r = await page.locator(`${BOX} [data-handle="${name}"]`).boundingBox();
+		return [r.x + r.width / 2, r.y + r.height / 2];
+	}
+
+	/** What the band holds over its picture besides the fields' names: nothing at rest, whatever it is called. */
+	const overlays = (page) =>
+		page.locator(`${MODAL} .placement .band`).evaluate((band) => [...band.children].filter((c) => !(c instanceof SVGElement) && !c.matches('.name, .own')).length);
+
+	/** The marks' top and bottom on the page. */
+	const extent = (page, field) =>
+		page.locator(marks(field)).evaluateAll((els) => {
+			const rs = els.map((b) => b.getBoundingClientRect());
+			return [Math.min(...rs.map((r) => r.top)), Math.max(...rs.map((r) => r.bottom))];
+		});
 
 	async function done(page, saved) {
 		await page.locator(`${MODAL} button.commit`).click();
@@ -103,11 +139,33 @@ describe('the Placement tab', () => {
 			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /nobody chose this/);
 			// Where the hash put it is where the lane is drawn.
 			const band = await page.locator(`${MODAL} .placement .band`).boundingBox();
-			const box = await page.locator(LANE).boundingBox();
-			assert.ok(Math.abs(box.y - band.y - 1 - hashed.y * H) < 1.5, `${box.y - band.y} vs ${hashed.y * H}`);
+			const [top] = await extent(page, 'coffee');
+			assert.ok(Math.abs(top - band.y - 1 - hashed.y * H) < 1.5, `${top - band.y} vs ${hashed.y * H}`);
+			assert.equal(await overlays(page), 0, 'no box at rest');
+
+			// A tap draws a thin box round the bar, hinted at its top and bottom centre, and moves nothing.
+			await tap(page, 'coffee');
+			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /nobody chose this/);
+			const look = await page.locator(BOX).evaluate((box) => {
+				const hints = [...box.querySelectorAll('.handle')].map((h) => {
+					const r = h.getBoundingClientRect();
+					return { name: h.dataset.handle, x: r.x + r.width / 2, y: r.y + r.height / 2, drawn: parseFloat(getComputedStyle(h, '::after').width) };
+				});
+				const r = box.getBoundingClientRect();
+				return { border: parseFloat(getComputedStyle(box).borderTopWidth), x: r.x + r.width / 2, top: r.top, bottom: r.bottom, hints };
+			});
+			assert.ok(look.border >= 1 && look.border <= 2, `a thin line: ${look.border}px`);
+			assert.deepEqual(look.hints.map((h) => h.name), ['top', 'bottom']);
+			for (const [h, y] of [[look.hints[0], look.top], [look.hints[1], look.bottom]]) {
+				// Placed in the box's padding, inside its line: within the line's width of its edge.
+				assert.ok(Math.abs(h.x - look.x) < 1 && Math.abs(h.y - y) <= look.border + 0.5, `${h.name} at the centre of its edge: ${[h.x, h.y]} vs ${[look.x, y]}`);
+				assert.ok(h.drawn > 0 && h.drawn <= 8, `${h.name} drawn small: ${h.drawn}px`);
+			}
+			await page.mouse.click(band.x + 4, band.y + (hashed.y < 0.5 ? H - 4 : 4));
+			assert.equal(await page.locator(BOX).count(), 0, 'a tap off the field clears it');
 
 			const dir = hashed.y < 0.5 ? 1 : -1;
-			await drag(page, 'middle', dir * 32);
+			await drag(page, 'coffee', dir * 32);
 			assert.doesNotMatch(await page.locator(`${MODAL} .readout`).innerText(), /nobody chose/);
 			await done(page, saved);
 			let shown = await spec(app, 'coffee');
@@ -115,7 +173,8 @@ describe('the Placement tab', () => {
 			assert.equal(shown.height, 0.12);
 
 			({ saved } = await openPlacement(page, 'coffee'));
-			await drag(page, 'bottom', 16);
+			await tap(page, 'coffee');
+			await pull(page, await handle(page, 'bottom'), 0, 16);
 			await done(page, saved);
 			const moved = shown.y;
 			shown = await spec(app, 'coffee');
@@ -138,8 +197,8 @@ describe('the Placement tab', () => {
 
 			const { saved } = await openPlacement(page, 'coffee');
 			const band = await page.locator(`${MODAL} .placement .band`).boundingBox();
-			const box = await page.locator(LANE).boundingBox();
-			assert.ok(Math.abs(box.y - band.y - 1 - resolved.y * H) < 1.5, `${box.y - band.y} vs ${resolved.y * H}`);
+			const [top] = await extent(page, 'coffee');
+			assert.ok(Math.abs(top - band.y - 1 - resolved.y * H) < 1.5, `${top - band.y} vs ${resolved.y * H}`);
 			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /y 0\.44/);
 			await cancelField(page);
 			assert.equal(await saved, null);
@@ -153,17 +212,17 @@ describe('the Placement tab', () => {
 			const { page } = app;
 			const { saved } = await openField(page, 'brandnew', 'start');
 			await page.locator(`${MODAL} .placement .band svg`).waitFor();
-			/** The lane's box, and the sample drawn in it (da-srrqd), come to stand at `name`'s lane, as `fields NAME` resolves it. */
+			/** The sample drawn (da-srrqd) comes to stand at `name`'s lane, as `fields NAME` resolves it, and the field's label beside it. */
 			const boxedAt = async (name) => {
 				const [row] = JSON.parse((await app.run(['fields', name, '--json'])).stdout);
 				await page
 					.waitForFunction(
-						([sel, name, px]) => {
+						([name, px, mid]) => {
 							const blocks = [...document.querySelectorAll(`.placement .band g.field[data-field="${name}"] rect.block`)];
 							const top = Math.min(...blocks.map((b) => Number(b.getAttribute('y'))));
-							return Math.abs(parseFloat(document.querySelector(sel)?.style.top) - px) < 0.5 && Math.abs(top - px) < 1.5;
+							return Math.abs(parseFloat(document.querySelector('.placement .own')?.style.top) - mid) < 0.5 && Math.abs(top - px) < 1.5;
 						},
-						[LANE, name, row.y * H],
+						[name, row.y * H, (row.y + row.height / 2) * H],
 						{ timeout: 5000 }
 					)
 					.catch(() => assert.fail(`never: ${name}'s box and sample at y ${row.y}`));
@@ -194,7 +253,7 @@ describe('the Placement tab', () => {
 			await page.locator(`${MODAL} .placement select`).selectOption('mood');
 			// Tied where it stood: 0.6 is 1.6 mood-heights under mood's top.
 			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /below mood · ×0\.4/);
-			await drag(page, 'middle', -24);
+			await drag(page, 'coffee', -24);
 			await done(page, saved);
 
 			const shown = await spec(app, 'coffee');
@@ -223,11 +282,12 @@ describe('the Placement tab', () => {
 		});
 	});
 
-	// da-c1b6m: an occur field's box is drawn round its dot. Its body moves
-	// the lane, a handle sizes the dot about its centre, and the CLI draws
-	// the dot exactly as tall as the box — here, and in every view. The lane
-	// is taller than the standard dot (da-rjf34), so the dot is the standard.
-	test("an occur field's box moves and sizes its dot; lock aspect keeps its shape and reset makes it round again", async () => {
+	// da-c1b6m: an occur field's box is drawn round the dot tapped
+	// (da-r6wwe), its corners hinted. A drag of a dot moves the lane, a
+	// handle sizes the dot about its centre, and the CLI draws the dot
+	// exactly as tall as the box — here, and in every view. The lane is
+	// taller than the standard dot (da-rjf34), so the dot is the standard.
+	test("an occur field's tapped dot is boxed, its handles size it; a drag of it moves it; lock aspect keeps its shape and reset makes it round again", async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'coffee', '--verb', 'occur']);
@@ -239,7 +299,15 @@ describe('the Placement tab', () => {
 			const dots = page.locator(`${MODAL} .band g.field[data-field="coffee"] .point-fg`);
 			assert.equal(await dots.count(), 8, 'the sample');
 			assert.equal(await page.locator(`${MODAL} input[type="range"]`).count(), 0, 'no sliders');
-			assert.equal(await page.locator(LANE).count(), 0, 'the box is the dot, not the lane');
+			assert.equal(await overlays(page), 0, 'no box at rest');
+			await tap(page, 'coffee');
+			assert.equal(await page.locator(`${BOX}.dot`).count(), 1, 'the box is the dot, not the lane');
+			const hints = await page.locator(`${BOX} .handle`).evaluateAll((all) =>
+				all.map((h) => [h.dataset.handle, getComputedStyle(h, '::after').content === 'none' ? 0 : parseFloat(getComputedStyle(h, '::after').width)])
+			);
+			assert.deepEqual(hints.filter(([, w]) => w > 0).map(([n]) => n).sort(), ['-1,-1', '-1,1', '1,-1', '1,1'], 'the corners hinted, the edges not');
+			for (const [n, w] of hints) assert.ok(w <= 8, `${n} drawn small: ${w}px`);
+			assert.ok(parseFloat(await page.locator(BOX).evaluate((b) => getComputedStyle(b).borderTopWidth)) <= 2, 'a thin line');
 			const near = (a, b, what) => assert.ok(Math.abs(a - b) < 1, `${what}: ${a} vs ${b}`);
 			/** The box and the dot it is drawn round, each as its centre and size: read at once, as a redraw replaces the dots. */
 			const read = () =>
@@ -248,7 +316,7 @@ describe('the Placement tab', () => {
 						const r = el.getBoundingClientRect();
 						return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
 					};
-					const box = document.querySelector('.placement .dot');
+					const box = document.querySelector('.placement .box');
 					const dot = [...document.querySelectorAll('.placement .band g.field[data-field="coffee"] .point-fg')].at(-1);
 					return { box: at(box), dot: at(dot) };
 				});
@@ -262,30 +330,22 @@ describe('the Placement tab', () => {
 				near(d.y, b.y, `${what}: centred down`);
 			};
 			/** Drag the handle on sides `sx`,`sy` by `dx`,`dy`. */
-			async function pull(sx, sy, dx, dy) {
-				const r = await page.locator(`${MODAL} .dot [data-handle="${sx},${sy}"]`).boundingBox();
-				const [x, y] = [r.x + r.width / 2, r.y + r.height / 2];
-				await page.mouse.move(x, y);
-				await page.mouse.down();
-				await page.mouse.move(x + dx / 2, y + dy / 2);
-				await page.mouse.move(x + dx, y + dy);
-				await page.mouse.up();
-			}
+			const size = async (sx, sy, dx, dy) => pull(page, await handle(page, `${sx},${sy}`), dx, dy);
 			// The lane is 0.2 of the 160px day; the dot the standard 0.12 of it.
 			const D = 0.12 * 160;
 			await fits(D, D, 'as saved');
 
-			await pull(0, 1, 0, 8);
+			await size(0, 1, 0, 8);
 			await fits(D, D + 16, 'the bottom edge grows it about its centre, its width alone');
 
 			await page.locator(`${MODAL} input[name="lock_aspect"]`).check();
-			await pull(1, 0, 8, 0);
+			await size(1, 0, 8, 0);
 			const [w, h] = [D + 16, ((D + 16) * (D + 16)) / D];
 			await fits(w, h, 'locked, the right edge grows both');
 
 			const before = (await read()).box.y;
-			await drag(page, 'dot', -16);
-			near((await read()).box.y, before - 16, 'the body moves it up');
+			await drag(page, 'coffee', -16);
+			near((await read()).box.y, before - 16, 'a drag of the dot moves it up');
 
 			await done(page, saved);
 			let shown = await spec(app, 'coffee');
@@ -295,6 +355,7 @@ describe('the Placement tab', () => {
 
 			// Opened again, the CLI draws it at the saved size: what the box showed.
 			({ saved } = await openPlacement(page, 'coffee'));
+			await tap(page, 'coffee');
 			await fits(w, h, 'drawn by the CLI');
 			await page.locator(`${MODAL} button.reset`).click();
 			await fits(D, D, 'reset');
@@ -318,7 +379,8 @@ describe('the Placement tab', () => {
 
 			let { saved } = await openPlacement(page, 'mood');
 			assert.deepEqual(await states(), ['happy', 'sad'], 'its states, taking turns');
-			const lane = await page.locator(LANE).boundingBox();
+			await tap(page, 'mood');
+			const lane = await page.locator(BOX).boundingBox();
 			const drawn = async () => {
 				const all = await blocks.evaluateAll((els) => els.map((b) => b.getBoundingClientRect()).map((r) => [r.top, r.bottom]));
 				return [Math.min(...all.map((r) => r[0])), Math.max(...all.map((r) => r[1]))];
@@ -343,11 +405,11 @@ describe('the Placement tab', () => {
 			);
 			// Moved, the samples are drawn again in the lane where it is let go.
 			await page.locator(`${MODAL} .placement .band`).evaluate((el) => el.scrollIntoView({ block: 'center' }));
-			await drag(page, 'middle', 32);
+			await drag(page, 'mood', 32);
 			await until('the samples drawn again where the lane was let go', () => {
 				const svg = document.querySelector('.placement .band svg');
 				const ys = [...svg.querySelectorAll('g.field[data-field="mood"] rect.block')].map((b) => Number(b.getAttribute('y')));
-				const at = document.querySelector('.placement .lane').getBoundingClientRect().top - svg.getBoundingClientRect().top;
+				const at = document.querySelector('.placement .box').getBoundingClientRect().top - svg.getBoundingClientRect().top;
 				return ys.length > 0 && Math.abs(Math.min(...ys) - at) < 1.5 && Math.abs(at - 80) < 1.5;
 			});
 			await cancelField(page);
