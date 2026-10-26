@@ -307,6 +307,44 @@ describe('the nowview widget', () => {
 		);
 	});
 
+	// da-byzc0, vividn: «the handles on the nowview should have their text
+	// set to non selectable, right now when trying to drag it often just
+	// selects the text which is annoying».
+	for (const finger of [false, true])
+		test(`a drag of a handle by ${finger ? 'a finger' : 'the mouse'} selects no text, and moves the window`, async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					await beside(page, PANE);
+					await app.spyOnRunner();
+					const box = await handle(page, '-30m').boundingBox();
+					const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+					const now = await anchorX(page);
+					if (finger) await swipe(page, x, y, (now - x) / 2, 0);
+					else {
+						await page.mouse.move(x, y);
+						await page.mouse.down();
+						await page.mouse.move((x + now) / 2, y, { steps: 6 });
+						await page.mouse.up();
+					}
+					await asked(page, '60m');
+					await handle(page, '-60m').waitFor();
+					assert.equal(await page.evaluate(() => window.getSelection().toString()), '');
+					// And none of a handle's words can be taken, whatever the drag.
+					// Read in one pass in the page, so no redraw lands between the
+					// query and the look.
+					const selectable = await page.evaluate(() =>
+						[...document.querySelectorAll('.handle')]
+							.filter((h) => getComputedStyle(h).userSelect !== 'none')
+							.map((h) => h.dataset.at)
+					);
+					assert.deepEqual(selectable, []);
+					assert.deepEqual(app.errors, []);
+				},
+				{ ...(finger ? TOUCH : DESKTOP), prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+			);
+		});
+
 	test('a focused handle steps with up and down', async () => {
 		await withApp(
 			async (app) => {

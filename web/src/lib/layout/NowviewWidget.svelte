@@ -1515,7 +1515,9 @@
 	   drag on it is the handle's, never the page's. Outlined in `--muted`,
 	   a control at rest, and not the rules' `--rule`, so it reads as one
 	   to grab (da-9hmqg, vividn: «a bit higher contrast so that it's more
-	   clear they are clickable/draggable»). */
+	   clear they are clickable/draggable»). Its words are not text to
+	   select, so a drag is always the handle's (da-byzc0, vividn: «right
+	   now when trying to drag it often just selects the text»). */
 	.handle {
 		position: absolute;
 		box-sizing: border-box;
@@ -1531,6 +1533,8 @@
 		white-space: nowrap;
 		cursor: grab;
 		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
 		z-index: 2;
 	}
 	.handle:hover,
