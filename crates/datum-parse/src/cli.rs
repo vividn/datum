@@ -1568,7 +1568,7 @@ pub enum DayviewOrientation {
 /// Defaults match the original. `width`, `height`, and `day_height` are
 /// `Option` so the command can apply datum's auto-sizing rules at dispatch
 /// time (see `dayview.ts` lines 38–78).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DayviewArgs {
     /// `--start-date` — inclusive start (ISO `YYYY-MM-DD` or relative
     /// offset like `-3` or `0`). Resolved via `parse_date`.
@@ -1613,6 +1613,12 @@ pub struct DayviewArgs {
     /// and on a day with nothing of it to draw, sample entries in its shape
     /// that no database holds.
     pub sample: Option<String>,
+    /// `--digests 1,2,5`, unlisted: datum.day's day strip (da-efxk5). With
+    /// `--show json`, the SHA-256 of the picture each day that many back
+    /// from the end date would get as `--days 1` with the same flags, so
+    /// the strip keeps a band whose picture is unchanged and asks for no
+    /// other run.
+    pub digests: Vec<u32>,
 }
 
 impl Default for DayviewArgs {
@@ -1632,6 +1638,7 @@ impl Default for DayviewArgs {
             watch: false,
             orientation: DayviewOrientation::default(),
             sample: None,
+            digests: Vec::new(),
         }
     }
 }

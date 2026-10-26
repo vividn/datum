@@ -974,7 +974,10 @@ binary.
   gridlines of one band land on those of the next; all but today's
   suppress the axis strip with `--time-axis-height 0`. When the band above
   today is not the day before it, a jagged `<button>` between them scrolls
-  yesterday back down.
+  yesterday back down. A change re-draws today alone: each earlier day on
+  screen is checked by one `dayview --digests` run, the SHA-256 of each
+  day's picture, and asked for again only when its held picture differs
+  (da-efxk5).
 
 ## Migration from original datum
 

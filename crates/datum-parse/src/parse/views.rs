@@ -157,6 +157,15 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
                 out.sample = Some(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("digests") => {
+                let (v, ni) = take_value(tail, i, None, "--digests")?;
+                out.digests = parse_days_back(v)?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("digests", v) => {
+                out.digests = parse_days_back(v)?;
+                i += 1;
+            }
             FlagSplit::Positional(_) => {
                 return Err(ParseError::InvalidArg(
                     "dayview takes no positional arguments".into(),
@@ -166,6 +175,11 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
         }
     }
     Ok(out)
+}
+
+/// `--digests`' list: days back, comma-separated.
+fn parse_days_back(v: &str) -> Result<Vec<u32>> {
+    v.split(',').map(|n| parse_u32(n, "--digests")).collect()
 }
 
 pub(crate) fn parse_orientation(s: &str) -> Result<DayviewOrientation> {

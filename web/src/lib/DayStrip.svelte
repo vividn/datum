@@ -594,8 +594,9 @@
 	 * and re-draws nothing else, because their argv has not changed.
 	 *
 	 * A new EPOCH at the same size is the one case that is not a straight
-	 * drop: the days the reader can SEE are re-drawn and the rest keep the
-	 * picture they have. A fortnight of bands is a fortnight of CLI
+	 * drop: today is re-drawn, and every other day keeps the picture it
+	 * has until the reader can SEE it, when it is checked (`check`) and
+	 * re-drawn only if its picture changed. A fortnight of bands is a fortnight of CLI
 	 * processes, and putting fifteen of them in front of whatever is typed
 	 * next cost three and a half seconds a command — for days that are not
 	 * on the screen.
@@ -732,19 +733,73 @@
 
 	/**
 	 * What the previous cache hands on: at a new size, nothing; at a new
-	 * epoch, every day the reader cannot see — all of them before the stack
-	 * is measured, as on a remount's first draw, for `refreshVisible` to
-	 * re-draw what is on screen once it is (da-lt25u). The geometry always
-	 * goes again — it is what tells the strip what day it is.
+	 * epoch, every day but today, for `refreshVisible` to check once it is
+	 * on screen (da-lt25u, da-efxk5). Today and the geometry always go
+	 * again — today has the now in it, and the geometry is what tells the
+	 * strip what day it is.
 	 */
 	function kept(
 		at: { width: number; dayHeight: number },
 		sameSize: boolean
 	): Map<string, Asked> {
 		if (!sameSize) return new Map();
-		const again = new Set((visibleDays() ?? []).map((end) => bandArgv(at.width, at.dayHeight, end).join(' ')));
-		again.add(geometryArgv(at.width, at.dayHeight).join(' '));
+		const again = new Set([bandArgv(at.width, at.dayHeight, 0), geometryArgv(at.width, at.dayHeight)].map((argv) => argv.join(' ')));
 		return new Map([...cache.runs].filter(([id]) => !again.has(id)));
+	}
+
+	/**
+	 * Do the pictures held for `ends`, asked before `at`'s epoch, still
+	 * stand? One `dayview --digests` answers for all of them (da-efxk5):
+	 * vividn, «The data really shouldn't update much so we don't need to
+	 * redraw from scratch everytime». A day whose picture hashes to its
+	 * digest is kept, its element and all, as of this epoch; any other is
+	 * asked again. Not by which instants a write moved: a block's title
+	 * names where it ends, so a write a day later changes its picture too.
+	 */
+	function check(at: typeof request, ends: number[]): void {
+		const mine = cache;
+		const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
+		const held = ends.map((end) => mine.runs.get(id(end))!);
+		// A day already out for this epoch is not asked for again; a new one
+		// asks for them all, since the newer check drops the older while it
+		// waits, keyed as a band is.
+		if (held.every((asked) => checking.get(asked) === at.epoch)) return;
+		for (const asked of held) checking.set(asked, at.epoch);
+		const argv = [...geometryArgv(at.width, at.dayHeight), '--digests', ends.join(',')];
+		void run(argv, undefined, undefined, `${queueKey}:check`, undefined, undefined, true).then(async (result) => {
+			if (result.superseded) return;
+			for (const asked of held) if (checking.get(asked) === at.epoch) checking.delete(asked);
+			let digests: Record<string, string> = {};
+			try {
+				digests = JSON.parse(result.stdout).digests ?? {};
+			} catch {
+				// No answer is no digest: each day is asked again.
+			}
+			const again: number[] = [];
+			for (const [i, end] of ends.entries()) {
+				const asked = held[i];
+				const same = digests[end] !== undefined && digests[end] === (await sha256((await asked.run).stdout));
+				if (cache !== mine) return;
+				if (mine.runs.get(id(end)) !== asked || asked.epoch >= at.epoch) continue;
+				if (same) asked.epoch = at.epoch;
+				else {
+					mine.runs.delete(id(end));
+					again.push(end);
+				}
+			}
+			if (again.length) draw(at, again);
+		});
+	}
+
+	/** Each held picture a `check` is out for, and the epoch it is checked at. */
+	const checking = new Map<Asked, number>();
+
+	/** The SHA-256 of a picture as `--digests` takes it: the stdout less its newline. */
+	async function sha256(stdout: string): Promise<string | null> {
+		if (!crypto.subtle) return null;
+		const bytes = new TextEncoder().encode(stdout.replace(/\n$/, ''));
+		const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+		return Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
 	}
 
 	/** `dayview --show json`, as much of it as the strip draws with. */
@@ -863,8 +918,8 @@
 	let refreshing = 0;
 
 	/**
-	 * Ask again for the days now on screen that were drawn before the
-	 * current epoch (da-dtwz).
+	 * Check the days now on screen that were drawn before the current
+	 * epoch, and ask again for today if it was (da-dtwz, da-efxk5).
 	 *
 	 * The cache keeps a day the reader could not see rather than re-running
 	 * a fortnight of CLI processes in front of the next command — and the
@@ -884,10 +939,11 @@
 			if (at.width <= 0) return;
 			const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
 			const visible = visibleDays() ?? [];
-			const stale = visible.filter((end) => (cache.runs.get(id(end))?.epoch ?? -1) < at.epoch);
-			for (const end of stale) cache.runs.delete(id(end));
-			const unseen = visible.filter((end) => !shown[end]);
-			if (stale.length || unseen.length) draw(at, [...new Set([...stale, ...unseen])]);
+			const stale = visible.filter((end) => (cache.runs.get(id(end))?.epoch ?? at.epoch) < at.epoch);
+			if (stale.includes(0)) cache.runs.delete(id(0));
+			check(at, stale.filter((end) => end !== 0));
+			const unseen = visible.filter((end) => !shown[end] || !cache.runs.has(id(end)));
+			if (unseen.length) draw(at, unseen);
 		});
 	}
 

@@ -1038,3 +1038,57 @@ fn a_field_with_entries_on_the_day_draws_them_and_no_sample() {
     assert!(svg.contains("#00aa00"), "{svg}");
     assert!(!day_svg(&db, &[]).contains("#00aa00"));
 }
+
+/// da-efxk5: `--digests` gives, with the layout, each named day's picture
+/// as SHA-256 of the SVG its own `--days 1 --end-date` run draws, so a
+/// write into one day changes its digest and no other's.
+#[test]
+fn digests_are_each_days_own_picture() {
+    use sha2::{Digest, Sha256};
+    let db = fresh_db();
+    for back in [1, 2] {
+        entry_builder("coffee")
+            .verb(Verb::Point)
+            .state(serde_json::json!(1))
+            .time_start_utc(noon_utc(back))
+            .insert(&db);
+    }
+    let band = [
+        "--width",
+        "300",
+        "--day-height",
+        "40",
+        "--margin",
+        "0",
+        "--label-width",
+        "0",
+    ];
+    let out = |argv: &[&str]| {
+        let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+        let path = tmp.path().to_str().unwrap();
+        run_cli(&[&["dayview", "-o", path][..], &band, argv].concat(), &db).expect("dayview");
+        std::fs::read_to_string(path).unwrap()
+    };
+    let digests = || {
+        let json: serde_json::Value =
+            serde_json::from_str(&out(&["--show", "json", "--digests", "1,2"])).unwrap();
+        ["1", "2"].map(|k| json["digests"][k].as_str().unwrap().to_string())
+    };
+    let picture = |back: &str| format!("{:x}", Sha256::digest(out(&["--end-date", back])));
+
+    let before = digests();
+    assert_eq!(before, [picture("-1"), picture("-2")]);
+    // Another field: a coffee's block on day 2 runs to day 1's, and its
+    // title names where it ends, so a coffee on day 1 redraws day 2 too.
+    entry_builder("walk")
+        .verb(Verb::Point)
+        .time_start_utc(noon_utc(1) + chrono::Duration::hours(2))
+        .insert(&db);
+    let after = digests();
+    assert_ne!(after[0], before[0], "the day written into kept its digest");
+    assert_eq!(
+        after[1], before[1],
+        "a day nothing touched changed its digest"
+    );
+    assert_eq!(after[0], picture("-1"));
+}

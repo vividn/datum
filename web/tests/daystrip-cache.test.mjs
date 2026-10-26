@@ -213,3 +213,55 @@ describe('the day strip across a swipe', () => {
 		);
 	});
 });
+
+// vividn: «can dayview remain cached between refreshes on datum.day. The
+// data really shouldn't update much so we don't need to redraw from scratch
+// everytime». A write checks the days on screen by one `dayview --digests`,
+// and asks again only for today and the days whose picture changed.
+describe('the day strip across a write (da-efxk5)', () => {
+	const mark = (app, end) =>
+		app.page.evaluate((end) => (document.querySelector(`.band[data-days-ago="${end}"] svg.svg`).__kept = true), end);
+	const marked = (app, end) =>
+		app.page.evaluate((end) => !!document.querySelector(`.band[data-days-ago="${end}"] svg.svg`)?.__kept, end);
+	const painted = (app, end, color) =>
+		app.page.waitForFunction(
+			([end, color]) => document.querySelector(`.band[data-days-ago="${end}"] svg.svg`)?.outerHTML.includes(color),
+			[end, color]
+		);
+
+	test('a write into today redraws today and keeps yesterday, its element and all', async () => {
+		await open(async (app) => {
+			await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3']);
+			await pictures(app);
+			await app.idle();
+			assert.ok((await inView(app)).includes(1), 'yesterday is not on screen to be kept');
+			await mark(app, 1);
+			const seen = await app.spyOnRunner();
+
+			await barLine(app, 'switch mood happy -t -5');
+			await painted(app, 0, colorOf('happy'));
+			await app.idle();
+
+			assert.deepEqual(await viewsOf(seen), [0], 'a day besides today was drawn again');
+			assert.ok((await seen()).some((argv) => argv.includes('--digests')), 'nothing checked the days on screen');
+			assert.ok(await marked(app, 1), "yesterday's picture was replaced");
+		});
+	});
+
+	test('a write backdated into yesterday redraws yesterday', async () => {
+		await open(async (app) => {
+			await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3']);
+			await pictures(app);
+			await app.idle();
+			await mark(app, 1);
+			const seen = await app.spyOnRunner();
+
+			await barLine(app, 'switch mood happy -y -t 10');
+			await painted(app, 1, colorOf('happy'));
+			await app.idle();
+
+			assert.deepEqual(await viewsOf(seen), [0, 1]);
+			assert.ok(!(await marked(app, 1)), "yesterday kept the picture from before the write");
+		});
+	});
+});

@@ -25,7 +25,7 @@ use datum_core::field_spec::FieldSpec;
 use datum_core::time::{DatumTime, Zone, ZoneTimeline};
 use datum_layout::dayview::{
     compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewError,
-    DayviewFieldInput, DayviewSpan, GlyphSize, Orientation,
+    DayviewFieldInput, DayviewLayout, DayviewSpan, GlyphSize, Orientation,
 };
 use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
 use datum_parse::cli::DayviewOrientation;
@@ -37,6 +37,7 @@ use crate::commands::field_visuals::{
 };
 use datum_core::state::FieldStateRows;
 use serde_json::Value as JsonValue;
+use sha2::{Digest, Sha256};
 
 /// Datum default per-day band height (matches dayview.ts:50).
 const DEFAULT_DAY_HEIGHT: f64 = 100.0;
@@ -129,6 +130,48 @@ fn today(db: &Db, now: &DatumTime) -> Result<NaiveDate> {
 }
 
 fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
+    let (layout, end_date) = layout_of(args, db)?;
+    if args.show == ShowFlag::None {
+        return Ok(());
+    }
+    if args.show == ShowFlag::Json {
+        let mut json = serde_json::to_value(&layout)?;
+        if !args.digests.is_empty() {
+            json["digests"] = digests(args, db, end_date)?;
+        }
+        let json = serde_json::to_string_pretty(&json)?;
+        return write_payload(args.output_file.as_deref(), &json, OutputKind::Json);
+    }
+
+    let svg = render_dayview_svg(&layout);
+    write_payload(args.output_file.as_deref(), &svg, OutputKind::Svg)
+}
+
+/// `--digests`: each day's picture as `--days 1 --end-date` that day would
+/// draw it, by days back from `end_date`, as SHA-256 hex of the SVG (the
+/// stdout less its newline), so a viewer holding a band knows whether its
+/// picture still stands without asking for it (da-efxk5).
+fn digests(args: &DayviewArgs, db: &Db, end_date: NaiveDate) -> Result<JsonValue> {
+    let mut out = serde_json::Map::new();
+    for &back in &args.digests {
+        let day = DayviewArgs {
+            start_date: None,
+            end_date: Some((end_date - Duration::days(back.into())).to_string()),
+            n_days: Some(1),
+            digests: Vec::new(),
+            ..args.clone()
+        };
+        let svg = render_dayview_svg(&layout_of(&day, db)?.0);
+        out.insert(
+            back.to_string(),
+            format!("{:x}", Sha256::digest(svg)).into(),
+        );
+    }
+    Ok(out.into())
+}
+
+/// The layout `args` draws, and the last day it draws.
+fn layout_of(args: &DayviewArgs, db: &Db) -> Result<(DayviewLayout, NaiveDate)> {
     // 1. Resolve the visible day window. One reading of the clock for the
     // days and the now-line both, so they cannot disagree about which day
     // is today, not even across midnight (da-tyggo).
@@ -283,18 +326,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         right_panel_width: 0.0,
     };
 
-    let layout = compute_dayview(&config);
-
-    if args.show == ShowFlag::None {
-        return Ok(());
-    }
-    if args.show == ShowFlag::Json {
-        let json = serde_json::to_string_pretty(&layout)?;
-        return write_payload(args.output_file.as_deref(), &json, OutputKind::Json);
-    }
-
-    let svg = render_dayview_svg(&layout);
-    write_payload(args.output_file.as_deref(), &svg, OutputKind::Svg)
+    Ok((compute_dayview(&config), end_date))
 }
 
 enum OutputKind {
@@ -773,6 +805,7 @@ mod tests {
             watch: true,
             orientation: DayviewOrientation::default(),
             sample: None,
+            digests: Vec::new(),
         }
     }
 
