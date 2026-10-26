@@ -70,3 +70,36 @@ test('two time keys are two dialogs, and each stores the reading pressed', async
 		{ timezone: 'Europe/Berlin' }
 	);
 });
+
+// da-7bomd: a stale `_LAST` and then which reading of its new time are two
+// questions in turn, and the page re-ran the line with the last answer
+// alone: the reading's dialog got EOF for the yes, and the retime's run had
+// no yes for the stale question and aborted. Every answer now goes again,
+// in order, with the pin of the entry the confirm showed.
+test('a stale _LAST retimed into a repeated hour asks both, and stores the reading pressed', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await app.declare('tea');
+			await app.submit('occur tea -d 2026-10-25 -t 04:00');
+			await app.clock.forward(16 * 60 * 1000);
+
+			await type(page, 'retime -t 02:30');
+			const dialog = page.locator('dialog.confirm');
+			const asks = (re) =>
+				page.waitForFunction((src) => new RegExp(src).test(document.querySelector('dialog.confirm[open] p')?.textContent ?? ''), re.source);
+			await asks(/Retime this entry\? \[Y\/n\]$/);
+			await dialog.getByRole('button', { name: 'retime', exact: true }).click();
+			await asks(/happens twice in Europe\/Berlin/);
+			assert.deepEqual(await dialog.getByRole('button').allInnerTexts(), [FIRST, SECOND, 'cancel']);
+
+			const before = await page.locator('.repl .echo').count();
+			await dialog.getByRole('button', { name: SECOND, exact: true }).click();
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			const [tea] = await app.entries();
+			assert.equal(tea.slug, 'tea:2026-10-25T01:30:00.000Z');
+			assert.deepEqual(app.errors, []);
+		},
+		{ timezone: 'Europe/Berlin' }
+	);
+});

@@ -90,7 +90,7 @@ export const UNANSWERED = 12;
  * `run`, but a question the CLI could not ask on stdin — a stale `_LAST`
  * under `retime` / `update` (da-f5pg2) — is asked in a confirm, in the CLI's
  * own words: what it said on stderr, the rows it printed, then its question.
- * The line runs again with the answer on stdin, so a yes changes the entry
+ * The line runs again with every answer so far on stdin, so a yes changes the entry
  * and a no prints the CLI's own «Aborted.». The answer carries the pin the
  * CLI printed after the question (da-84h6a): if another tab moved `_LAST`
  * meanwhile, the CLI reads no answer for an entry it never showed and asks
@@ -103,11 +103,15 @@ export const asking =
 	(run: CommandRunner): CommandRunner =>
 	async (argv, stdin, onStderr, key, stage, env = []) => {
 		let result = await run(argv, stdin, onStderr, key, stage, env);
-		// The buttons pressed so far, a line each in the order asked: a line
-		// may name more than one wall time a fall-back night repeats (an
-		// `occur_time=` and a `wake_time=`, da-job98), and each run asks
-		// the next only once the earlier are answered.
-		let picks = '';
+		// Every answer so far, a line each in the order asked, and the pin of
+		// the `_LAST` it confirmed: a line may ask more than one question —
+		// two wall times a fall-back night repeats (an `occur_time=` and a
+		// `wake_time=`, da-job98), a stale `_LAST` and then which reading of
+		// its new time (da-7bomd) — and each run asks the next only once the
+		// earlier are answered.
+		const answers: string[] = [];
+		let pin: string[] = [];
+		let confirmed = 0;
 		while (result.code === UNANSWERED && stdin === undefined) {
 			const said = result.stderr.trimEnd().split('\n');
 			// A question with answers of its own, a wall time a fall-back
@@ -116,17 +120,20 @@ export const asking =
 			const options = said.at(-1)?.match(/^DATUM_CHOOSE=(.*)$/)?.[1].split('|');
 			if (options) {
 				said.pop();
-				const picked = await choose(said.join('\n'), options, 'cancel', 'run');
-				picks += `${picked ?? ''}\n`;
-				result = await run(argv, picks, onStderr, key, stage, env);
-				continue;
+				answers.push((await choose(said.join('\n'), options, 'cancel', 'run')) ?? '');
+			} else {
+				// Asked again with a pin in hand, `_LAST` moved (da-84h6a): the
+				// CLI read no answer for it, so this one takes its place and
+				// whatever followed, which was about the entry it was then.
+				if (pin.length) answers.length = confirmed;
+				confirmed = answers.length;
+				pin = said.at(-1)?.startsWith('DATUM_LAST_SHOWN=') ? [said.pop()!] : [];
+				const question = said.pop()?.trimEnd() ?? '';
+				const text = [...said, result.stdout.trimEnd(), question].filter(Boolean).join('\n');
+				answers.push((await confirm(text, question.split(' ')[0].toLowerCase())) ? 'y' : 'n');
 			}
-			const pin = said.at(-1)?.startsWith('DATUM_LAST_SHOWN=') ? [said.pop()!] : [];
-			const question = said.pop()?.trimEnd() ?? '';
-			const text = [...said, result.stdout.trimEnd(), question].filter(Boolean).join('\n');
-			const yes = await confirm(text, question.split(' ')[0].toLowerCase());
-			const answer = picks + (yes ? 'y\n' : 'n\n');
-			result = await run(argv, answer, onStderr, key, stage, [...env, ...pin]);
+			const lines = answers.map((a) => `${a}\n`).join('');
+			result = await run(argv, lines, onStderr, key, stage, [...env, ...pin]);
 		}
 		return result;
 	};
