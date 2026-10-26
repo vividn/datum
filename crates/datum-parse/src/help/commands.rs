@@ -1434,6 +1434,17 @@ pub const TOPICS: &[TopicSpec] = &[
                 always behaves as if -C had been given — every un-keyed word after\n\
                 the field joins extra_data.comment.\n\
                 \n\
+                A key's operators: `blocked_by+=x` adds x to the key's list and\n\
+                `blocked_by-=x` takes it out (refused when it is not there; a line's\n\
+                removals apply before its additions), as does a slot named\n\
+                `blocked_by+` or `blocked_by-` (`-k blocked_by+`). Beside the key on\n\
+                the line they change that value: `key=a key+=b` stores `[a, b]`.\n\
+                Otherwise they change the field's record (`get <field>::`) as it\n\
+                stands where the entry lands, and the entry records the value it\n\
+                read as its `asserted_base`. `datum check keys` names a key whose\n\
+                record the merged history now gives otherwise, an add winning over a\n\
+                removal that never saw it, and `--fix` writes the history's value.\n\
+                \n\
                 Every form -t, -d and a duration take: `datum help time`.\n",
     },
     TopicSpec {
@@ -2151,7 +2162,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "jot a timeless entry (auto create_time id)",
         intro: "",
         long_description: Some(
-            "Timeless jot identified by *when* — auto-ids on its create_time (slug field:<create_time>c), so many notes per field coexist. \"Record this moment, won't look it up.\" Sibling of `add`, which instead requires an explicit id for a keyed record.\n\nBare words are the note: every un-keyed word after the field joins `extra_data.comment`, in order and single-spaced, so `datum note coffee too strong today` needs no quotes and no `-C` (`note` always behaves as if `-C` were given). `KEY=VALUE` anywhere in the line is still data, a leading `-` is still a flag, and an explicit `-R <bucket>` still names where the words go instead.\n\nA key's operators, on any log line: `blocked_by+=x` adds x to the key's list and `blocked_by-=x` takes it out (refused when it is not there; a line's removals apply before its additions), as does a slot named `blocked_by+` or `blocked_by-` (`-k blocked_by+`). Beside the key on the line they change that value: `key=a key+=b` stores `[a, b]`. Otherwise they change the field's record (`get <field>::`) as it stands where the entry lands, and the entry records the value it read as its `asserted_base`; `datum check keys` names a key whose record the merged history now gives otherwise, an add winning over a removal that never saw it, and `--fix` writes the history's value.",
+            "Timeless jot identified by *when* — auto-ids on its create_time (slug field:<create_time>c), so many notes per field coexist. \"Record this moment, won't look it up.\" Sibling of `add`, which instead requires an explicit id for a keyed record.\n\nBare words are the note: every un-keyed word after the field joins `extra_data.comment`, in order and single-spaced, so `datum note coffee too strong today` needs no quotes and no `-C` (`note` always behaves as if `-C` were given). `KEY=VALUE` anywhere in the line is still data, a leading `-` is still a flag, and an explicit `-R <bucket>` still names where the words go instead.\n\n`key+=x` and `key-=x` add to a key's list and take out of it, on this line as on every log line: `datum help logging`.",
         ),
         usage: &[
             "datum note <FIELD> [WORD | KEY=VALUE]...",

@@ -133,24 +133,36 @@ fn rows(conn: &Connection, sql: &str, args: impl rusqlite::Params) -> Result<Vec
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
+/// The newest live entry of `field` ordered before `?3, ?4` (its time and
+/// slug) that is not `?2` and whose data holds the key `?5`, whatever its
+/// value. Walked back on `entries_live_field_hybrid`, so it reads up to the
+/// first holder and no further; `json_each` names the key with no JSON path
+/// to quote, and data that does not parse holds no key.
+fn key_before_sql() -> String {
+    format!(
+        "{IN_ORDER} AND hid != ?2 AND (COALESCE(occur_time, create_time), slug) < (?3, ?4)
+           AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(data) THEN data END)
+                       WHERE key = ?5)
+         ORDER BY COALESCE(occur_time, create_time) DESC, slug DESC LIMIT 1"
+    )
+}
+
 /// What `key` reads in `e`'s field's record just before `e`: the fold
-/// [`Db::collect`] makes of the live entries ordered before it. What a key
-/// operator changes, read in the transaction that writes it.
+/// [`Db::collect`] makes of the live entries ordered before it, which is the
+/// newest of them holding the key. What a key operator changes, read in the
+/// transaction that writes it.
 pub fn key_before(conn: &Connection, e: &Entry, key: &str) -> Result<Option<JsonValue>> {
     // Compared as text: `to_rfc3339` is how both columns are written (`try_insert`).
     let at = e.occur_time.as_ref().map_or(e.create_time, |t| t.utc);
-    let sql = format!(
-        "{IN_ORDER} AND hid != ?2 AND (COALESCE(occur_time, create_time), slug) < (?3, ?4) {ORDER}"
-    );
     let rows = rows(
         conn,
-        &sql,
-        params![e.field, e.hid, at.to_rfc3339(), e.slug.0],
+        &key_before_sql(),
+        params![e.field, e.hid, at.to_rfc3339(), e.slug.0, key],
     )?;
     Ok(rows
         .into_iter()
-        .rev()
-        .find_map(|(_, mut data, _)| data.remove(key))
+        .next()
+        .and_then(|(_, mut data, _)| data.remove(key))
         .filter(|v| !v.is_null()))
 }
 
@@ -267,4 +279,74 @@ fn replay(conn: &Connection, field: &str, key: &str) -> Result<Option<KeyDrift>>
         replayed: replayed.into(),
         contradicted,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{Duration, TimeZone};
+    use serde_json::json;
+
+    use super::*;
+    use crate::dur::Dur;
+    use crate::entry::Verb;
+    use crate::time::DatumTime;
+
+    /// An occur of `issue` `minutes` past an hour, holding `data`.
+    fn log(db: &Db, minutes: i64, data: JsonValue) -> Entry {
+        let utc = Utc.with_ymd_and_hms(2026, 10, 26, 9, 0, 0).unwrap() + Duration::minutes(minutes);
+        let time = DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: Some("UTC".into()),
+            uncertainty: None,
+        };
+        let e = Entry::new(
+            "issue",
+            Verb::Point,
+            None,
+            Some(data),
+            Some(time),
+            Some(Dur::moment()),
+            "t",
+        );
+        db.insert_entry(&e).unwrap();
+        e
+    }
+
+    /// da-mzhxw: the newest holder before the entry gives the key, whatever
+    /// its name, null reading as absent, and data that does not parse
+    /// holding nothing.
+    #[test]
+    fn key_before_reads_the_newest_holder() {
+        let db = Db::open_in_memory().unwrap();
+        log(
+            &db,
+            0,
+            json!({"blocked_by": ["x"], "odd.\"key": 1, "tag": "a", "0": "zero"}),
+        );
+        for i in 1..300 {
+            log(&db, i, json!({"n": i}));
+        }
+        log(&db, 300, json!({"tag": null}));
+        let broken = log(&db, 301, json!({"n": "hidden"}));
+        db.conn
+            .execute(
+                "UPDATE entries SET data = '{' WHERE hid = ?1",
+                [&broken.hid.0],
+            )
+            .unwrap();
+        // Data that is no object holds no key: not "0" of an array.
+        log(&db, 302, json!(["array"]));
+        log(&db, 303, json!(5));
+        let e = log(&db, 304, json!({}));
+        log(&db, 305, json!({"n": "after"}));
+
+        let read = |key| key_before(&db.conn, &e, key).unwrap();
+        assert_eq!(read("blocked_by"), Some(json!(["x"])));
+        assert_eq!(read("odd.\"key"), Some(json!(1)));
+        assert_eq!(read("n"), Some(json!(299)));
+        assert_eq!(read("tag"), None);
+        assert_eq!(read("absent"), None);
+        assert_eq!(read("0"), Some(json!("zero")));
+    }
 }

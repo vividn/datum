@@ -271,6 +271,38 @@ fn a_write_and_the_reads_after_it_do_not_grow_with_the_history() {
     }
 }
 
+/// da-mzhxw: a key operator reads the key as the field's record holds it
+/// where the entry lands, which was every entry of the field before it, and
+/// is now the newest one holding the key.
+#[test]
+fn a_key_edit_does_not_grow_with_the_fields_history() {
+    let stores = [2_000, 8_000].map(|n| {
+        let db = store(0, 1);
+        for i in 1..=n {
+            let t = anchor() - Duration::minutes(10 * i as i64);
+            let tags = serde_json::json!({ "tags": [format!("t{i}")] });
+            let e = Entry::new(
+                "issue",
+                Verb::Point,
+                None,
+                Some(tags),
+                Some(datum_time(t)),
+                None,
+                "bench",
+            );
+            db.insert_entry(&e).unwrap();
+        }
+        db
+    });
+    let argv = ["occur", "issue", "tags+=new", "-t", "2026-09-14T12:05:00Z"];
+    let [small, large] = [&stores[0], &stores[1]].map(|db| vm_steps(db, &argv));
+    assert!(
+        large <= small + small / 10,
+        "`tags+=new` visits more with more of the field behind it: \
+         {small} hundred VM steps on 2k entries, {large} on 8k"
+    );
+}
+
 /// da-e853a: a state read looks ahead for a block still running at its
 /// instant, and on a field with no later block that walked every later row
 /// to find none, so a day in the past cost by its distance from now. Both
