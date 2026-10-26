@@ -26,6 +26,8 @@ mod source;
 pub use source::Source;
 mod install;
 use install::collect_install;
+mod keys;
+use keys::collect_key_drift;
 mod sync;
 use sync::collect_sync;
 mod tz;
@@ -72,6 +74,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_sync = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "sync");
     let run_spool = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "spool");
     let run_install = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "install");
+    let run_keys = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "keys");
     let run_default_battery = args.checkers.is_empty();
 
     // One walk of the entries, shared by every checker that reads them, so
@@ -140,6 +143,12 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     if run_integrity {
         examined.checkers.push("integrity");
         issues.extend(collect_integrity_warnings(db)?);
+    }
+    if run_keys {
+        examined.checkers.push("keys");
+        let (drift, fixed) = collect_key_drift(db, args.fix)?;
+        issues.extend(drift);
+        fix_reports.extend(fixed);
     }
     if run_flags {
         examined.checkers.push("flags");

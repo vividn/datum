@@ -96,6 +96,9 @@ pub(super) fn alter_datum_data(
     compat: Compat,
 ) -> Result<()> {
     let state_aware = datum_path(path);
+    // An operator's key (`key+=x`, `key-=x`, `+=s`) collects every value the
+    // line gives it, which the write applies (da-p9gf5).
+    let append = append || state_aware.ends_with(['+', '-']);
 
     // `.` → recurse with the default.
     if matches!(value, Some(".")) {

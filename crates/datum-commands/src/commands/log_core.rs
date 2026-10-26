@@ -339,10 +339,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         reserved.state.as_ref().or(value.as_ref()),
         &args,
     )?;
+    // da-p9gf5: `key+=` / `key-=`, those against the record resolved where
+    // the entry lands, as a state edit is.
+    let key_edits = KeyEdit::take(&mut extra_data, &field)?;
     // An edit at now is placed when it lands, after any write that landed
     // first, so no racer's set is changed under it.
     let t = &args.time;
-    let edit_at_now = edit.is_some()
+    let edit_at_now = (edit.is_some() || !key_edits.is_empty())
         && reserved.occur_time.is_none()
         && (t.time.is_none() && t.date.is_none() && t.time_offsets.is_empty())
         && (t.yesterday == 0 && t.quick == 0 && !t.full_day && !t.omit_timestamp);
@@ -889,6 +892,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
 
+    // da-p9gf5: the record's value a key edit changes, read to show and
+    // check the entry, and read again in the transaction that writes it.
+    if !key_edits.is_empty() {
+        db.read(|view| {
+            KeyEdit::apply_all(&key_edits, &mut entry, |e, key| {
+                datum_core::db::key_before(view.conn(), e, key)
+            })
+        })?;
+    }
+
     // da-rcoi / da-eqb30: a key or a state the field's spec does not list,
     // under its `only_listed_*` settings, is refused before the write
     // lands. Runs ahead of the dry-run and multi-collector branches so the
@@ -959,6 +972,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             "{label} reads the states it changes in its own write; a multi-entry line is not one"
         );
     }
+    if let (Some(edit), true) = (key_edits.first(), crate::args::in_multi_window()) {
+        anyhow::bail!(
+            "{}+= / -= reads the value it changes in its own write; a multi-entry line is not one",
+            edit.key
+        );
+    }
     if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
         // The window owns the spec write, once its atomic insert lands.
         if declares_field {
@@ -996,7 +1015,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
                         e.slug = datum_core::ids::Slug(format!("{}:{}", e.field, body));
                     }
                 }
-                let reads = edit.is_some() || args.ensure_last_state;
+                let reads = edit.is_some() || !key_edits.is_empty() || args.ensure_last_state;
                 if let Some(at) = e.leading_edge_utc().filter(|_| reads) {
                     if db.spool_due(&e.field, at) {
                         // Only `behind` is read: this error rolls the write back.
@@ -1009,6 +1028,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
                     edit.apply(held, e)
                         .map_err(datum_core::error::DatumError::Other)?;
                 }
+                KeyEdit::apply_all(&key_edits, e, |e, key| {
+                    datum_core::db::key_before(tx, e, key)
+                })?;
                 match args.ensure_last_state {
                     true => datum_core::integrity::ensure_last_state(tx, e),
                     false => Ok(()),
@@ -2005,6 +2027,114 @@ impl StateEdit {
                 JsonValue::Null => json!("null"),
                 held => held,
             });
+        }
+        Ok(())
+    }
+}
+
+/// da-p9gf5: a key's operators, `key+=x` / `key-=x` or a slot named `key+` /
+/// `key-`: what the line adds to the key and takes out of it. Beside the key
+/// on the line (`key=a key+=b`) they change that value; otherwise the
+/// record's, read where the entry lands, and the value read is recorded as
+/// its `asserted_base`, which `check` holds the merged history to.
+struct KeyEdit {
+    key: String,
+    add: Vec<JsonValue>,
+    remove: Vec<JsonValue>,
+}
+
+impl KeyEdit {
+    /// The edits a line asks for against the record, every operator's key
+    /// taken out of `data` and each beside its key applied to it here.
+    fn take(data: &mut Option<JsonValue>, field: &str) -> Result<Vec<Self>> {
+        let Some(JsonValue::Object(map)) = data.as_mut() else {
+            return Ok(Vec::new());
+        };
+        let ops: Vec<String> = map
+            .keys()
+            .filter(|k| k.len() > 1 && k.ends_with(['+', '-']))
+            .cloned()
+            .collect();
+        let mut edits: Vec<Self> = Vec::new();
+        for op in ops {
+            // `key+=a,b` is a list, and a repeated one a list of what each gave.
+            let given = datum_core::db::members(map.remove(&op).as_ref());
+            let given = given.iter().flat_map(|v| datum_core::db::members(Some(v)));
+            let (key, sign) = op.split_at(op.len() - 1);
+            let at = match edits.iter().position(|e| e.key == key) {
+                Some(at) => at,
+                None => {
+                    edits.push(Self {
+                        key: key.into(),
+                        add: Vec::new(),
+                        remove: Vec::new(),
+                    });
+                    edits.len() - 1
+                }
+            };
+            match sign {
+                "+" => edits[at].add.extend(given),
+                _ => edits[at].remove.extend(given),
+            }
+        }
+        let mut against_record = Vec::new();
+        for edit in edits {
+            match map.get(&edit.key) {
+                Some(line) => {
+                    let value = edit.apply(Some(line), field).map_err(anyhow::Error::msg)?;
+                    map.insert(edit.key, value);
+                }
+                None => against_record.push(edit),
+            }
+        }
+        if map.is_empty() {
+            *data = None;
+        }
+        Ok(against_record)
+    }
+
+    /// The key's value from `base`: what is taken out, then what is added.
+    /// The refusal is its words.
+    fn apply(
+        &self,
+        base: Option<&JsonValue>,
+        field: &str,
+    ) -> std::result::Result<JsonValue, String> {
+        let mut list = datum_core::db::members(base);
+        for x in &self.remove {
+            let Some(at) = list.iter().position(|y| y == x) else {
+                let x = datum_core::integrity::state_name(x);
+                return Err(format!(
+                    "{}-={x}: {field}'s {} holds no {x}, so nothing is written",
+                    self.key, self.key
+                ));
+            };
+            list.remove(at);
+        }
+        for x in &self.add {
+            if !list.contains(x) {
+                list.push(x.clone());
+            }
+        }
+        Ok(list.into())
+    }
+
+    /// Apply `edits` to `entry` against what `read` gives each key in its
+    /// field's record just before it ([`datum_core::db::key_before`] in the
+    /// transaction), recording each value read.
+    fn apply_all(
+        edits: &[Self],
+        entry: &mut Entry,
+        read: impl Fn(&Entry, &str) -> datum_core::error::Result<Option<JsonValue>>,
+    ) -> datum_core::error::Result<()> {
+        for edit in edits {
+            let base = read(entry, &edit.key)?;
+            let value = edit
+                .apply(base.as_ref(), &entry.field)
+                .map_err(datum_core::error::DatumError::Other)?;
+            entry.data.get_or_insert_with(|| json!({}))[&edit.key] = value;
+            entry.extra_metadata.get_or_insert_with(|| json!({}))["asserted_base"][&edit.key] =
+                base.unwrap_or(JsonValue::Null);
         }
         Ok(())
     }

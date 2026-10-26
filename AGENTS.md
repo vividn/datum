@@ -51,6 +51,11 @@ a top-level `migrations/` folder.)
   `update` replaces its top-level keys; `merge` is datum's: a key both hold collects both values
   into one list without duplicates (`item=apple`, `merge … item=pear` → `["apple","pear"]`).
   The deep merge where the new value wins is `update --strategy preferNew` (da-scdm3).
+  `key+=x` / `key-=x` (or a slot `-k key+`) add to a key's list and take out of it (da-p9gf5):
+  beside `key=` on the line, that value; otherwise the field's record where the entry lands,
+  the value read kept as `extra_metadata.asserted_base`. `datum check keys` replays the history
+  as an add-wins set (a removal takes out only the adds its create op's `deps` saw, `record.rs`),
+  and `--fix` writes its value as a note on the field.
   datum has no units anywhere, in specs, subfields or entries.
   The only planned form is a typed value (`u://`/`unit://`), not built.
 - `occur_time` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.

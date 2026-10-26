@@ -83,6 +83,7 @@ mod info_setup_cmd;
 mod inline_alias;
 mod install_cmd;
 mod integrity_cmd;
+mod key_operators;
 mod kit_command_args;
 mod kit_install;
 mod kit_layouts;

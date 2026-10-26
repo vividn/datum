@@ -1034,6 +1034,17 @@ fn ops_of(conn: &Connection, hid: &str) -> Result<Vec<Op>> {
     Ok(ops)
 }
 
+/// Had the copy that created entry `a` seen entry `b` (da-p9gf5)? Each is
+/// read from its first op in fold order; `None` when `a`'s is no create (a
+/// baseline's `deps` name only its own entry) or either has none.
+pub(super) fn made_seeing(conn: &Connection, a: &str, b: &str) -> Result<Option<bool>> {
+    let first = |hid| Ok::<_, DatumError>(ops_of(conn, hid)?.into_iter().next());
+    Ok(match (first(a)?, first(b)?) {
+        (Some(a), Some(b)) if a.kind == "create" => Some(a.same(&b) || a.saw(&b)),
+        _ => None,
+    })
+}
+
 /// The rule ops fold into rows by, as a number: bumped by any change to
 /// what a row and its `conflicts` are for the same ops — this file's fold,
 /// conflicts and merge — schema change or not (da-sqpjt). A copy whose rows

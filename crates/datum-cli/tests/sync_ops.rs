@@ -3012,6 +3012,63 @@ fn offline_adds_each_carry_the_set_they_changed() {
     }
 }
 
+/// `check keys --fix` on each copy apart, then both synced: the record both
+/// read, and that neither finds drift left.
+fn fixed_apart(a: &Copy, b: &Copy, field: &str) -> String {
+    for copy in [a, b] {
+        assert!(copy.ok(&["check", "keys"]).contains("key_drift"));
+        copy.ok(&["check", "keys", "--fix"]);
+    }
+    converged(a, b);
+    let record = a.ok(&["get", &format!("{field}::")]);
+    assert_eq!(b.ok(&["get", &format!("{field}::")]), record);
+    for copy in [a, b] {
+        assert!(copy
+            .ok(&["check", "keys"])
+            .contains("No consistency issues"));
+    }
+    record
+}
+
+/// da-p9gf5: from one base, one copy removes x and the other adds y. The
+/// record reads the later edit, x back in; both copies' fixes, made apart,
+/// write the history's value and fold to it.
+#[test]
+fn a_removal_and_an_add_from_one_base_fix_to_one_value_on_both_copies() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["note", "iss", "blocked_by+=x"]);
+    a.send(&b);
+    a.ok(&["note", "iss", "blocked_by-=x"]);
+    b.ok(&["note", "iss", "blocked_by+=y"]);
+    converged(&a, &b);
+    assert_eq!(a.ok(&["get", "iss::"]), "{\"blocked_by\":[\"x\",\"y\"]}\n");
+    assert_eq!(fixed_apart(&a, &b, "iss"), "{\"blocked_by\":[\"y\"]}\n");
+}
+
+/// One element added on one copy and removed on another at once: the add
+/// wins (vividn, 2026-10-26), since the removal takes out only the adds its
+/// copy had seen. The control: a removal that had seen both adds takes x out,
+/// and nothing drifts.
+#[test]
+fn an_add_the_removal_never_saw_stands() {
+    for seen in [false, true] {
+        let (a, b) = (Copy::new(), Copy::new());
+        a.ok(&["note", "iss", "blocked_by+=x"]);
+        b.ok(&["note", "iss", "blocked_by+=x"]);
+        if seen {
+            b.send(&a);
+        }
+        a.ok(&["note", "iss", "blocked_by-=x"]);
+        converged(&a, &b);
+        assert_eq!(a.ok(&["get", "iss::"]), "{\"blocked_by\":[]}\n");
+        if seen {
+            assert!(a.ok(&["check", "keys"]).contains("No consistency issues"));
+        } else {
+            assert_eq!(fixed_apart(&a, &b, "iss"), "{\"blocked_by\":[\"x\"]}\n");
+        }
+    }
+}
+
 /// da-qhm51: an entry a sync brings in the past folds into the record at its
 /// own time, on both copies: under a later title, over an earlier one.
 #[test]

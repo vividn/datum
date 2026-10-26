@@ -1545,6 +1545,7 @@ pub const KNOWN_CHECKERS: &[&str] = &[
     "sync",
     "spool",
     "install",
+    "keys",
 ];
 
 /// Render orientation for `datum dayview` and `datum nowview`, named by

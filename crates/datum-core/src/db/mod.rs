@@ -75,6 +75,7 @@ pub use now::{
     NowFieldActive, NowFieldIgnored, NowFieldTrackedFalse, NowFilter, NowSnapshot,
     SCHEMA_ID as NOW_SCHEMA_ID,
 };
+pub use record::{key_before, members, KeyDrift};
 pub use rename::FieldRenamed;
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, Closer, META_FIELDS, SPEC_FIELD};
