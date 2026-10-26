@@ -18,7 +18,7 @@
 //! See `crates/datum-cli/tests/render_state_group.rs` for the worked
 //! examples encoded as fixtures.
 
-use chrono::{FixedOffset, Timelike, Utc};
+use chrono::{Timelike, Utc};
 use datum_core::db::Db;
 use datum_core::state::FieldStateRows;
 use datum_core::{
@@ -45,15 +45,16 @@ use super::colors::*;
 /// | 1–3 days ahead                | `+Nd`        |
 /// | 4+ days ahead                 | `YYYY-MM-DD` |
 ///
-/// Both timestamps are projected onto **target's** local calendar (the
-/// `offset_minutes` recorded with the row) so "today" follows the row's
-/// timezone rather than the host's. `now` is supplied by the caller so
-/// callers control "what today means" (testable + zone-correct).
+/// Both timestamps are projected onto **target's** local calendar — its
+/// zone ([`Zone::of`]), so "today" follows the row's timezone rather than the
+/// host's, and a DST change does not split one place's day; the row's
+/// `offset_minutes` only when it names no zone that reads (da-la9pr). `now`
+/// is supplied by the caller so callers control "what today means"
+/// (testable + zone-correct).
 pub fn format_relative_day_prefix(target: &DatumTime, now: &DatumTime) -> Option<String> {
-    let off = FixedOffset::east_opt(target.offset_minutes * 60)
-        .unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
-    let target_date = target.utc.with_timezone(&off).date_naive();
-    let now_date = now.utc.with_timezone(&off).date_naive();
+    let zone = Zone::of(target).unwrap_or_else(|_| Zone::Fixed(*target.local_time().offset()));
+    let target_date = zone.local_naive(target.utc).date();
+    let now_date = zone.local_naive(now.utc).date();
     let delta = (target_date - now_date).num_days();
     if delta == 0 {
         return None;
@@ -1148,6 +1149,31 @@ mod tests {
         assert_eq!(
             format_relative_day_prefix(&dt(2026, 4, 19), &now).as_deref(),
             Some("-3d")
+        );
+    }
+
+    /// A Berlin morning before the fall-back switch (+02:00), read after
+    /// 22:00Z the same day, is today: the zone's calendar, not the row's
+    /// offset, under which 22:30Z is already tomorrow (da-la9pr).
+    #[test]
+    fn relative_day_prefix_follows_the_zone_across_fall_back() {
+        let at = |rfc: &str, tz: Option<&str>| DatumTime {
+            utc: DateTime::parse_from_rfc3339(rfc)
+                .unwrap()
+                .with_timezone(&Utc),
+            offset_minutes: 120,
+            timezone: tz.map(str::to_string),
+            uncertainty: None,
+        };
+        let berlin = Some("Europe/Berlin");
+        let now = at("2026-10-25T22:30:00Z", berlin);
+        let row = at("2026-10-25T02:30:00+02:00", berlin);
+        assert_eq!(format_relative_day_prefix(&row, &now), None);
+        // With no zone the offset is all there is, and keeps its reading.
+        let row = at("2026-10-25T02:30:00+02:00", None);
+        assert_eq!(
+            format_relative_day_prefix(&row, &now).as_deref(),
+            Some("-1d")
         );
     }
 
