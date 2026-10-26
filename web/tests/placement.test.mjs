@@ -1,5 +1,5 @@
 // The field form's Placement tab (da-btyvj): drag a field's lane on
-// today's real dayview band, optionally tied to a neighbour.
+// today's real dayview band, optionally anchored to a neighbour (⚓).
 //
 // Every assertion reads what was WRITTEN — `setup F --json`, `fields --json`,
 // `dayview --show json` — and never the pixels a drag leaves behind: a
@@ -251,43 +251,122 @@ describe('the Placement tab', () => {
 		});
 	});
 
-	test('tied to a neighbour it writes the ratios, not y/height, and moves with its anchor', async () => {
+	const FORM_OF = (field) => `.field-form[aria-label="the spec of ${field}"]:not(.beside *)`;
+	const PICKER = `${MODAL} .placement select[aria-label="anchor to a field"]`;
+
+	// da-w5ruf: anchoring is asked for. A field allows it, or names what is
+	// anchored to it; the ⚓ picker offers only those, and «⚓ mood ×» opens
+	// mood's setup on «mood» and frees the lane on ×.
+	test('the ⚓ picker offers only the fields that allow anchoring, and is not drawn when none do', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			for (const f of ['mood', 'energy', 'coffee']) await app.run(['track', f, '--verb', 'switch']);
+			await setPlace(app, 'mood', { y: 0.2, height: 0.25 });
+			await setPlace(app, 'energy', { y: 0.5, height: 0.2 });
+
+			let { saved } = await openPlacement(page, 'coffee');
+			assert.equal(await page.locator(PICKER).count(), 0, 'no field allows anchoring');
+			await leaveField(page);
+			await saved;
+
+			// mood allows it by its checkbox, which the save stores on its spec.
+			({ saved } = await openPlacement(page, 'mood'));
+			await page.locator(`${MODAL} .placement input[name="anchorable"]`).check();
+			await done(page, saved);
+			assert.equal((await spec(app, 'mood')).anchorable, true);
+
+			({ saved } = await openPlacement(page, 'coffee'));
+			const offered = await page.locator(`${PICKER} option`).evaluateAll((os) => os.map((o) => o.value));
+			assert.deepEqual(offered, ['', 'mood'], 'energy does not allow it');
+			await leaveField(page);
+			await saved;
+		});
+	});
+
+	test('a field with fields anchored to it names them as links, and has no checkbox', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			for (const f of ['body', 'mood', 'energy']) await app.run(['track', f, '--verb', 'switch']);
+			await setPlace(app, 'body', { y: 0.2, height: 0.5 });
+			await setPlace(app, 'mood', { relative_to: 'body', anchor_pos_ratio: 0, anchor_size_ratio: 0.5 });
+			await setPlace(app, 'energy', { relative_to: 'body', anchor_pos_ratio: 0.5, anchor_size_ratio: 0.5 });
+
+			await openPlacement(page, 'body');
+			assert.equal(await page.locator(`${MODAL} .placement input[name="anchorable"]`).count(), 0);
+			assert.match(await page.locator(`${MODAL} .anchorees`).innerText(), /⚓ anchored here: energy, mood/);
+			await page.locator(`${MODAL} .anchorees button`, { hasText: 'mood' }).click();
+			await page.locator(FORM_OF('mood')).waitFor();
+			assert.match(await page.locator(`${MODAL} .placement .anchor`).innerText(), /⚓ body\s*×/);
+			await leaveField(page);
+		});
+	});
+
+	test('«⚓ body ×»: body opens its setup, × frees the lane where it stands', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			for (const f of ['body', 'mood']) await app.run(['track', f, '--verb', 'switch']);
+			await setPlace(app, 'body', { y: 0.2, height: 0.5 });
+			await setPlace(app, 'mood', { relative_to: 'body', anchor_pos_ratio: 0.5, anchor_size_ratio: 0.2 });
+
+			let { saved } = await openPlacement(page, 'mood');
+			await page.locator(`${MODAL} .placement .anchor button.link`).click();
+			await page.locator(FORM_OF('body')).waitFor();
+			await leaveField(page);
+			await saved;
+
+			({ saved } = await openPlacement(page, 'mood'));
+			await page.locator(`${MODAL} .placement button.unanchor`).click();
+			assert.equal(await page.locator(`${MODAL} .placement .anchor`).count(), 0);
+			await done(page, saved);
+			const shown = await spec(app, 'mood');
+			assert.equal(shown.relative_to, undefined);
+			// body 0.2 + 0.5 × 0.5, 0.5 × 0.2 tall.
+			assert.deepEqual([shown.y, shown.height], [0.45, 0.1]);
+		});
+	});
+
+	test("anchored, the band is the anchor's lane at full scale: a drag writes the ratios, and the lane moves with its anchor", async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch']);
-			await setPlace(app, 'mood', { y: 0.2, height: 0.25 });
+			await setPlace(app, 'mood', { y: 0.2, height: 0.25, anchorable: true });
 			await app.run(['track', 'coffee', '--verb', 'start']);
 			await setPlace(app, 'coffee', { y: 0.6, height: 0.1 });
 			await app.run(['start', 'coffee', '-t', '-30']);
 
 			const { saved } = await openPlacement(page, 'coffee');
-			await page.locator(`${MODAL} .placement select`).selectOption('mood');
-			// Tied where it stood: 0.6 is 1.6 mood-heights under mood's top.
-			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /below mood · ×0\.4/);
-			await drag(page, 'coffee', -24);
+			await page.locator(PICKER).selectOption('mood');
+			// 0.6 was under mood: it is put inside it, at its foot, 0.1 of 0.25 tall.
+			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /on mood · ×0\.4/);
+			// The bar's box is drawn in mood's frame: 0.4 of the band, at its foot.
+			await tap(page, 'coffee');
+			const band = await page.locator(`${MODAL} .placement .band`).boundingBox();
+			const box = await page.locator(BOX).boundingBox();
+			assert.ok(Math.abs(box.height - 0.4 * H) < 1.5, `the lane is 0.4 of mood, drawn ${box.height}px of ${H}`);
+			assert.ok(Math.abs(box.y + box.height - (band.y + 1 + H)) < 1.5, 'at the foot of the band');
+			// Up 32px is up 0.2 of mood's lane, not of the day.
+			await drag(page, 'coffee', -32);
 			await done(page, saved);
 
 			const shown = await spec(app, 'coffee');
 			assert.equal(shown.y, undefined);
 			assert.equal(shown.height, undefined);
-			// Up 24px is up 0.15 of the day, to one mood-height under mood's top.
-			assert.deepEqual([shown.relative_to, shown.anchor_pos_ratio, shown.anchor_size_ratio], ['mood', 1, 0.4]);
+			assert.deepEqual([shown.relative_to, shown.anchor_pos_ratio, shown.anchor_size_ratio], ['mood', 0.4, 0.4]);
 
 			const drawnAt = async () => {
 				const layout = JSON.parse((await app.run(['dayview', '--day-height', '100', '--show', 'json'])).stdout);
 				return layout.days.at(-1).fields.find((f) => f.field === 'coffee').cross_offset;
 			};
-			assert.ok(Math.abs((await drawnAt()) - 45) < 1e-6, 'mood 0.2 + 0.25 × 1');
+			assert.ok(Math.abs((await drawnAt()) - 30) < 1e-6, 'mood 0.2 + 0.25 × 0.4');
 			await setPlace(app, 'mood', { y: 0.5 });
-			assert.ok(Math.abs((await drawnAt()) - 75) < 1e-6, 'the anchor moved, and so did coffee');
-			assert.equal((await lane(app, 'coffee')).y, 0.75);
+			assert.ok(Math.abs((await drawnAt()) - 60) < 1e-6, 'the anchor moved, and so did coffee');
 
-			// Tied to a field with no spec, the resolver draws it free: the tab
+			// Anchored to a field with no spec, the resolver draws it free: the tab
 			// says both — what the spec names, and where it is actually drawn.
 			await setPlace(app, 'coffee', { relative_to: 'nobody' });
 			const { saved: dismissed } = await openPlacement(page, 'coffee');
-			assert.equal(await page.locator(`${MODAL} .placement select`).inputValue(), 'nobody');
-			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /tied to nobody, which has no spec/);
+			assert.match(await page.locator(`${MODAL} .placement .anchor`).innerText(), /⚓ nobody/);
+			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /anchored to nobody, which has no spec/);
 			await leaveField(page);
 			assert.equal(await dismissed, null);
 		});

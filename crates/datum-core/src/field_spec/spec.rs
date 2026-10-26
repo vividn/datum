@@ -1023,4 +1023,15 @@ mod tests {
         assert_eq!(back.presentation.anchor_pos_ratio, Some(0.1));
         assert_eq!(back.presentation.anchor_size_ratio, Some(0.05));
     }
+
+    #[test]
+    fn anchorable_is_a_spec_key_absent_when_false() {
+        let mut spec = FieldSpec::new("body", Action::Switch);
+        assert!(!serde_json::to_string(&spec).unwrap().contains("anchorable"));
+        spec.presentation.anchorable = true;
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(json.contains("\"anchorable\":true"), "json = {json}");
+        let back: FieldSpec = serde_json::from_str(&json).unwrap();
+        assert!(back.presentation.anchorable && back.extra.is_empty());
+    }
 }

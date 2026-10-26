@@ -143,6 +143,7 @@ seed(
 		...SPEC,
 		field: 'coffee',
 		glyph: 'c',
+		anchorable: true,
 		glyph_by: { key: 'size', map: { big: 'C' } },
 		icon: '<svg viewBox="0 0 1 1"/>',
 		remainder: 'note',

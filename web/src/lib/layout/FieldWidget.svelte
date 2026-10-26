@@ -212,6 +212,7 @@
 					on:revert={revert}
 					on:redo={() => walk && void step(walk.at + 1)}
 					on:run={(e) => press(e.detail.argv)}
+					on:open={(e) => go(e.detail)}
 				>
 					<svelte:fragment slot="pick">
 						{#if $editing.field !== '' || tracked.length > 0}

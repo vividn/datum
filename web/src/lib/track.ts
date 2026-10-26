@@ -352,6 +352,8 @@ export interface Place {
 	/** An occur dot's height over its lane's and its width over its height (da-c05v1, da-c1b6m); absent is 1. */
 	glyph_scale?: number;
 	glyph_aspect?: number;
+	/** Other fields may be placed relative to this one (da-w5ruf); absent is no. */
+	anchorable?: boolean;
 }
 
 const PLACE_KEYS = [
@@ -361,7 +363,8 @@ const PLACE_KEYS = [
 	'anchor_pos_ratio',
 	'anchor_size_ratio',
 	'glyph_scale',
-	'glyph_aspect'
+	'glyph_aspect',
+	'anchorable'
 ] as const;
 
 /** The placement keys `spec` sets, and only those. */

@@ -41,5 +41,7 @@ export interface FieldSpec {
 	never_false?: boolean;
 	/** The field whose lane this one's is placed against (Placement.svelte). */
 	relative_to?: string | null;
+	/** Other fields may be placed against this one (da-w5ruf); absent when false. */
+	anchorable?: boolean;
 	[key: string]: unknown;
 }

@@ -406,7 +406,7 @@
 				</label>
 			{/if}
 			{#if verb && verb !== 'add'}
-				{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={field.trim() ? drafted : null} />{/key}
+				{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={field.trim() ? drafted : null} on:open />{/key}
 			{/if}
 			<!-- Beneath the placement, each shut until tapped (da-4t0yn); a card's data is always open, being what a card is. -->
 			{#if verb === 'add'}

@@ -123,6 +123,12 @@ pub struct PresentationSpec {
     /// wide at the same height. `None` is 1, and blocks ignore it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph_aspect: Option<f64>,
+
+    /// Other fields may be placed relative to this one (da-w5ruf): datum.day's
+    /// setup offers only such a field, or one already anchoring another, as
+    /// an anchor. The resolver does not read it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub anchorable: bool,
 }
 
 /// [`PresentationSpec::glyph_by`]: the data key to read and the glyph for

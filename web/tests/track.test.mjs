@@ -673,9 +673,10 @@ describe('in the app', () => {
 			const noHex = async (where) => {
 				for (const [type, value, placeholder, cls] of await inputs()) {
 					// The icon's picker (da-45wgz) takes a file, and no typing at all;
-					// whether off is a state (da-cwieh, da-puzij) is its row's ✕, a button; whether aliases are made is a checkbox.
+					// whether off is a state (da-cwieh, da-puzij) is its row's ✕, a button; whether aliases are made is a checkbox,
+					// and so is whether others may anchor to it (da-w5ruf).
 					assert.ok(
-						type === 'text' || (type === 'file' && cls.includes('icon')) || (type === 'checkbox' && cls.includes('autoalias')),
+						type === 'text' || (type === 'file' && cls.includes('icon')) || (type === 'checkbox' && /autoalias|anchorable/.test(cls)),
 						`${where}: input.${cls} is a ${type}`
 					);
 					assert.doesNotMatch(`${value} ${placeholder}`, /#|hex|rgb/i, `${where}: input.${cls} takes a colour`);

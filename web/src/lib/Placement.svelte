@@ -11,10 +11,19 @@
 	No box is drawn at rest (da-r6wwe): a press and drag on any of the
 	field's marks moves its lane, and a tap on one draws a thin box round
 	that mark, whose hints size it — on a bar a dot at its top and bottom
-	centre, which move that edge of the lane. Tied to a neighbour (⛓), the
-	same drag writes the RATIOS to that neighbour and not `y` / `height`, so
-	the lane moves when its anchor does. Nothing is written here: `place` is
-	bound to the modal, which saves it with the rest.
+	centre, which move that edge of the lane. Anchored to a neighbour (⚓),
+	the band is that neighbour's lane at its full height, and the same drag
+	writes the RATIOS to it and not `y` / `height`, so the lane moves when
+	its anchor does. Nothing is written here: `place` is bound to the
+	modal, which saves it with the rest.
+
+	Anchoring is asked for (da-w5ruf), vividn, 2026-10-26: «the chain menu
+	is too much». A field allows it by «place other fields relative to this
+	one?» (`anchorable`), and one with fields anchored to it names them
+	instead, each a link to its setup, so it cannot be unchecked. The ⚓
+	picker offers only those, and is not drawn when there are none;
+	anchored, the line reads «⚓ body ×»: «body» opens body's setup, ×
+	frees the lane where it stands.
 
 	An occur field's mark is its dot (da-c1b6m): the box is drawn round the
 	dot tapped, centred on the lane, its corners hinted; an edge or corner
@@ -43,7 +52,7 @@
 	the new picture draws elsewhere.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { createEventDispatcher, onMount } from 'svelte';
 	import { inlineSvg } from './hover.js';
 	import { bandArgv, fieldArgv, fieldsArgv } from './calls.js';
 	import { run } from './run.js';
@@ -56,6 +65,9 @@
 	export let occur = false;
 	/** The spec a save would store, which the band draws; none while the field has no name. */
 	export let spec: Spec | null = null;
+
+	/** `open`: the field whose setup a link names. */
+	const dispatch = createEventDispatcher<{ open: string }>();
 
 	/** The day's height in pixels: tall enough to take a lane's edge with a finger. */
 	const H = 160;
@@ -173,6 +185,10 @@
 			}
 		: // A `y` with no `height` is the band's centre, not its top (da-1r506): the drawn lane says where that is.
 			{ y: (place.height === undefined ? undefined : place.y) ?? drawn?.y ?? 0, h: place.height ?? drawn?.height ?? 0.12 };
+	/** What the band spans, in fractions of the day: the anchor's lane, or the whole day. */
+	$: frame = anchor?.height ? { y: anchor.y, h: anchor.height } : { y: 0, h: 1 };
+	/** A fraction of the day as px down the band. */
+	$: px = (v: number) => ((v - frame.y) / frame.h) * H;
 
 	/** Would tying to `name` close a loop back to this field? */
 	function loops(name: string, seen = new Set<string>()): boolean {
@@ -182,8 +198,16 @@
 		const next = lanes[name]?.spec?.relative_to;
 		return !!next && loops(next, seen);
 	}
+	/** The fields anchored to this one. */
+	$: anchored = Object.keys(lanes).filter((n) => lanes[n].spec?.relative_to === field).sort();
 	// Only a field with a spec can anchor: the resolver has nothing else to hold it by.
-	$: anchors = Object.keys(lanes).filter((n) => lanes[n].spec && lanes[n].height > 0 && !loops(n));
+	$: anchors = Object.keys(lanes).filter(
+		(n) =>
+			!!lanes[n].spec &&
+			(lanes[n].spec?.anchorable || Object.values(lanes).some((l) => l.spec?.relative_to === n)) &&
+			lanes[n].height > 0 &&
+			!loops(n)
+	);
 
 	/**
 	 * Put the lane at `y`/`h`: as ratios to `to` when tied, as absolutes when
@@ -192,7 +216,7 @@
 	function put(y: number, h: number, to = place.relative_to) {
 		const a = to ? lanes[to] : undefined;
 		// The dot's size is not the lane's, and goes along as it was.
-		const { glyph_scale, glyph_aspect } = place;
+		const { glyph_scale, glyph_aspect, anchorable } = place;
 		const at =
 			to && a?.spec && a.height > 0
 				? {
@@ -201,15 +225,22 @@
 						anchor_size_ratio: round(h / a.height)
 					}
 				: { y: round(y), height: round(h) };
-		place = { ...at, glyph_scale, glyph_aspect };
+		place = { ...at, glyph_scale, glyph_aspect, anchorable };
+	}
+
+	/** Anchor to `to`, the lane put inside its anchor's where it stood outside it. */
+	function tie(to: string) {
+		const a = lanes[to];
+		const h = Math.min(lane.h, a.height);
+		put(clamp(lane.y, a.y, a.y + a.height - h), h, to);
 	}
 
 	/** A size factor as stored: 1 is unset. */
 	const factor = (n: number) => (round(n) === 1 ? undefined : round(n));
 	$: scale = place.glyph_scale ?? 1;
 	$: aspect = place.glyph_aspect ?? 1;
-	/** The dot's box in px: the standard times its scale, about the lane's centre. */
-	$: dotH = STANDARD_DOT * scale * H;
+	/** The dot's box in px: the standard times its scale, about the lane's centre, in the frame. */
+	$: dotH = (STANDARD_DOT * scale * H) / frame.h;
 	$: dotW = dotH * aspect;
 
 	function grab(mode: 'move' | 'top' | 'bottom', e: PointerEvent) {
@@ -248,8 +279,9 @@
 		// A tap's jitter moves nothing.
 		if (drag.mark && !drag.moved && Math.hypot(e.clientX - (drag.ax ?? 0), e.clientY - drag.at) < 4) return;
 		drag.moved = true;
-		const d = (e.clientY - drag.at) / H;
+		const d = ((e.clientY - drag.at) / H) * frame.h;
 		const { y, h } = drag;
+		const [lo, hi, min] = [frame.y, frame.y + frame.h, MIN * frame.h];
 		if (drag.mode === 'dot') {
 			// About the centre, so an edge dragged out by d grows the box by 2d.
 			const { sx = 0, sy = 0, b = 1, w = 1 } = drag;
@@ -261,11 +293,11 @@
 			}
 			tall = clamp(tall, MIN * H, H);
 			wide = clamp(wide, MIN * H, band.clientWidth);
-			place = { ...place, glyph_scale: factor(tall / (STANDARD_DOT * H)), glyph_aspect: locked ? place.glyph_aspect : factor(wide / tall) };
-		} else if (drag.mode === 'move') put(clamp(y + d, 0, 1 - h), h);
-		else if (drag.mode === 'bottom') put(y, clamp(h + d, MIN, 1 - y));
+			place = { ...place, glyph_scale: factor((tall * frame.h) / (STANDARD_DOT * H)), glyph_aspect: locked ? place.glyph_aspect : factor(wide / tall) };
+		} else if (drag.mode === 'move') put(clamp(y + d, lo, hi - h), h);
+		else if (drag.mode === 'bottom') put(y, clamp(h + d, min, hi - y));
 		else {
-			const top = clamp(y + d, 0, y + h - MIN);
+			const top = clamp(y + d, lo, y + h - min);
 			put(top, y + h - top);
 		}
 	}
@@ -278,6 +310,10 @@
 		want = JSON.stringify({ at, sample: spec && { ...spec, ...free }, context: AROUND[around].context });
 		draw();
 	}
+
+	// The band is zoomed to the frame: the anchor's lane spans it.
+	$: if (svg)
+		Object.assign(svg.style, { transformOrigin: '0 0', transform: `translateY(${px(0)}px) scaleY(${1 / frame.h})` });
 
 	// The field's own marks follow the lane while it moves: the band was drawn
 	// at `shown`, so its group is carried from there to here.
@@ -293,7 +329,8 @@
 
 	// The dots follow the box: each mark is scaled about its own centre
 	// from the size the band drew it at, undoing the group's stretch of
-	// the lane, `k`. A CSS transform replaces the mark's own stretch, so the
+	// the lane, `k`, and widened as the frame's zoom heightens it. A CSS
+	// transform replaces the mark's own stretch, so the
 	// width is scaled from an unstretched one. Only this field's marks: the
 	// origin would move another's stretch.
 	$: if (own && occur && shown.h > 0) {
@@ -303,7 +340,7 @@
 			Object.assign(mark.style, {
 				transformBox: 'fill-box',
 				transformOrigin: 'center',
-				transform: `scale(${grow * aspect}, ${grow / k})`
+				transform: `scale(${(grow * aspect) / frame.h}, ${grow / k})`
 			});
 	}
 
@@ -342,22 +379,21 @@
 			</svg>
 			{AROUND[around].label}
 		</button>
-		<label class="tie">
-			<select
-				aria-label="anchor to a field"
-				value={place.relative_to ?? ''}
-				on:change={(e) => put(lane.y, lane.h, e.currentTarget.value)}
-			>
-				<option value="">⛓ free</option>
-				{#each anchors as name (name)}
-					<option value={name}>⛓ {name}</option>
-				{/each}
-				<!-- A saved anchor the list cannot offer is still what the spec says. -->
-				{#if place.relative_to && !anchors.includes(place.relative_to)}
-					<option value={place.relative_to}>⛓ {place.relative_to} (missing)</option>
-				{/if}
-			</select>
-		</label>
+		<div class="tie">
+			{#if place.relative_to}
+				<span class="anchor">
+					⚓ <button type="button" class="link" on:click={() => dispatch('open', place.relative_to ?? '')}>{place.relative_to}</button>
+					<button type="button" class="unanchor" aria-label="unanchor from {place.relative_to}" on:click={() => put(lane.y, lane.h, '')}>×</button>
+				</span>
+			{:else if anchors.length}
+				<select aria-label="anchor to a field" value="" on:change={(e) => tie(e.currentTarget.value)}>
+					<option value="">⚓</option>
+					{#each anchors as name (name)}
+						<option value={name}>⚓ {name}</option>
+					{/each}
+				</select>
+			{/if}
+		</div>
 	</div>
 
 	<!-- A finger on a mark drags it, and does not scroll the dialog. -->
@@ -370,14 +406,14 @@
 		on:touchstart|nonpassive={(e) => markAt(e.touches[0].clientX, e.touches[0].clientY) && e.preventDefault()}
 	>
 		{#each named.filter((n) => n !== field && lanes[n]) as name (name)}
-			<span class="name" style:top="{lanes[name].y * H}px">{name}</span>
+			<span class="name" style:top="{px(lanes[name].y)}px">{name}</span>
 		{/each}
-		<span class="own" style:top="{(lane.y + lane.h / 2) * H}px">{field}</span>
+		<span class="own" style:top="{px(lane.y + lane.h / 2)}px">{field}</span>
 		{#if sel && occur}
 			<div
 				class="box dot"
 				data-field={field}
-				style:top="{(lane.y + lane.h / 2) * H - dotH / 2}px"
+				style:top="{px(lane.y + lane.h / 2) - dotH / 2}px"
 				style:left="{sel.x + sel.w / 2 - dotW / 2}px"
 				style:height="{dotH}px"
 				style:width="{dotW}px"
@@ -399,8 +435,8 @@
 			<div
 				class="box bar"
 				data-field={field}
-				style:top="{lane.y * H}px"
-				style:height="{lane.h * H}px"
+				style:top="{px(lane.y)}px"
+				style:height="{(lane.h / frame.h) * H}px"
 				style:left="{sel.x}px"
 				style:width="{sel.w}px"
 			>
@@ -430,11 +466,28 @@
 		</div>
 	{/if}
 
+	{#if anchored.length}
+		<p class="anchorees">
+			⚓ anchored here: {#each anchored as name, i (name)}{#if i},
+				{/if}<button type="button" class="link" on:click={() => dispatch('open', name)}>{name}</button>{/each}
+		</p>
+	{:else}
+		<label class="allow">
+			<input
+				type="checkbox"
+				class="anchorable"
+				name="anchorable"
+				checked={!!place.anchorable}
+				on:change={(e) => (place = { ...place, anchorable: e.currentTarget.checked || undefined })}
+			/> place other fields relative to this one?
+		</label>
+	{/if}
+
 	<p class="readout">
 		{#if anchor}
 			{relation} {place.relative_to} · ×{place.anchor_size_ratio}
 		{:else if place.relative_to}
-			tied to {place.relative_to}, which has no spec — drawn free at y {lane.y.toFixed(2)}
+			anchored to {place.relative_to}, which has no spec — drawn free at y {lane.y.toFixed(2)}
 		{:else}
 			y {lane.y.toFixed(2)} &nbsp; h {lane.h.toFixed(2)}
 			{#if place.y === undefined}<span class="unchosen">· placed by its name's hash — nobody chose this</span>{/if}
@@ -495,6 +548,40 @@
 		border-radius: 4px;
 		color: var(--ink-bright);
 		font: inherit;
+	}
+
+	.anchor,
+	.anchorees,
+	.allow {
+		margin: 0;
+		font-size: 0.75rem;
+		color: var(--ink);
+	}
+
+	.allow {
+		display: flex;
+		gap: 0.4rem;
+		align-items: center;
+	}
+
+	.link,
+	.unanchor {
+		min-block-size: 28px;
+		padding: 0 0.25rem;
+		background: none;
+		border: none;
+		color: var(--accent);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.link {
+		padding: 0;
+		text-decoration: underline;
+	}
+
+	.unanchor {
+		color: var(--muted);
 	}
 
 	.band {
