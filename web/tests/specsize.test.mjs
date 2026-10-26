@@ -15,7 +15,7 @@ import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { atEachScreen, sharedApp, startApp, stopApp } from './support/app.mjs';
 import { ONE_PANE } from './support/layout.mjs';
-import { FIELD_FORM as MODAL, cancelField, openField, openSection } from './support/field.mjs';
+import { FIELD_FORM as MODAL, leaveField, openField, openSection } from './support/field.mjs';
 /** Shut, then each section opened in turn beneath the placement. */
 const STEPS = ['shut', 'data', 'aliases'];
 
@@ -58,7 +58,7 @@ describe('the field form', () => {
 					assert.ok(Math.abs(size.width - first.width) <= 1, `${STEPS[i + 1]} width ${size.width} vs ${first.width}`);
 					assert.ok(Math.abs(size.height - first.height) <= 1, `${STEPS[i + 1]} height ${size.height} vs ${first.height}`);
 				}
-				await cancelField(page);
+				await leaveField(page);
 				assert.equal(await closed, null);
 			});
 		});

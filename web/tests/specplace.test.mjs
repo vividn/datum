@@ -8,7 +8,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, cancelField, openField, pickImage } from './support/field.mjs';
+import { FIELD_FORM, leaveField, openField, pickImage } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -59,29 +59,30 @@ describe('the spec place, on a phone', () => {
 		});
 	});
 
-	test('Done saves in one `setup F` and returns; Cancel returns and writes nothing', async () => {
+	// da-hda4j: Save is a save point, and leaving saves what is not saved yet.
+	test('Save saves in one `setup F` and stays; leaving returns and saves the rest', async () => {
 		await phone.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			const was = await rootTabs(page);
 
-			let { saved } = await openField(page, 'tea');
+			const { saved } = await openField(page, 'tea');
 			await page.locator(`${FIELD_FORM} input.description`).fill('green');
 			await page.locator(`${FIELD_FORM} button.commit`).click();
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
 			assert.match(result.argv.join(' '), /^setup tea --from-json /);
 			const sent = JSON.parse(result.argv[result.argv.indexOf('--from-json') + 1]);
-			assert.equal(sent.description, 'green', 'what Done sent');
-			await until(() => rootTabs(page), (t) => t.join() === was.join());
+			assert.equal(sent.description, 'green', 'what Save sent');
 			assert.equal(await described(app, 'tea'), 'green');
+			assert.equal(await shown(page), 'setup', 'Save left the place');
+			// The form is read again from the save: a save point, with nothing to save.
+			await until(() => page.locator(`${FIELD_FORM} button.commit`).isDisabled(), (d) => d);
 
-			({ saved } = await openField(page, 'tea'));
 			await page.locator(`${FIELD_FORM} input.description`).fill('black');
-			await cancelField(page);
-			assert.equal(await saved, null);
+			await leaveField(page);
 			await until(() => rootTabs(page), (t) => t.join() === was.join());
-			assert.equal(await described(app, 'tea'), 'green');
+			await until(() => described(app, 'tea'), (d) => d === 'black');
 		});
 	});
 });
@@ -110,8 +111,9 @@ describe('a refused save', () => {
 			assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), 'green', 'the edit was lost');
 			assert.equal(await described(app, 'tea'), null, 'the refusal wrote');
 
-			await cancelField(page);
+			await leaveField(page);
 			await until(() => rootTabs(page), (t) => t.join() === was.join());
+			assert.equal(await described(app, 'tea'), null, 'a refused save was written on leaving');
 		});
 	});
 });
@@ -120,7 +122,7 @@ describe('a refused save', () => {
 describe('the spec place, on a desktop', () => {
 	const desktop = sharedApp(DESKTOP);
 
-	test('opens in the place modal, and Done saves, closes it and answers', async () => {
+	test('opens in the place modal, and Save saves and answers; closing it leaves', async () => {
 		await desktop.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
@@ -136,8 +138,9 @@ describe('the spec place, on a desktop', () => {
 			await modal.locator(`${FIELD_FORM} button.commit`).click();
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
-			await modal.waitFor({ state: 'detached' });
 			assert.equal(await described(app, 'tea'), 'green');
+			await leaveField(page);
+			await modal.waitFor({ state: 'detached' });
 		});
 	});
 });

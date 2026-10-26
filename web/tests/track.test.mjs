@@ -24,7 +24,7 @@ import {
 	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, stateRows, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
-import { FIELD_FORM as MODAL, SECTION, cancelField, declared, openField, openSection, pickImage } from './support/field.mjs';
+import { FIELD_FORM as MODAL, SECTION, leaveField, declared, openField, openSection, pickImage } from './support/field.mjs';
 
 const PHONE = { width: 320, height: 480 };
 
@@ -46,7 +46,7 @@ async function openIt(page) {
 
 /** Leave the place a new field's Save stays in, on the field it made. */
 async function leave(page) {
-	await cancelField(page);
+	await leaveField(page);
 	await page.locator(MODAL).waitFor({ state: 'detached' });
 }
 
@@ -565,15 +565,18 @@ describe('in the app', () => {
 			assert.deepEqual(shown.state_colors, { asleep: stateColor });
 			assert.deepEqual(shown.state_descriptions, { awake: 'up' });
 
-			// Opened and saved untouched, a spec with no state descriptions —
-			// the key `setup F --json` leaves out — reads back byte for byte.
+			// Saved with only its description changed (a save needs a change, da-hda4j), a spec
+			// with no state descriptions — the key `setup F --json` leaves out — reads back as it was.
 			await app.run(['setup', 'sleep', '--state-description', 'awake=']);
 			const untouched = (await app.run(['setup', 'sleep', '--json'])).stdout;
 			assert.doesNotMatch(untouched, /state_descriptions/);
 			const { saved: again } = await openField(page, 'sleep');
+			await page.locator(`${MODAL} input.description`).fill('day');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await again).code, 0);
-			assert.equal((await app.run(['setup', 'sleep', '--json'])).stdout, untouched);
+			const after = (await app.run(['setup', 'sleep', '--json'])).stdout;
+			assert.doesNotMatch(after, /state_descriptions/);
+			assert.deepEqual(JSON.parse(after), { ...JSON.parse(untouched), description: 'day' });
 		});
 	});
 
@@ -639,23 +642,24 @@ describe('in the app', () => {
 		});
 	});
 
-	// A spec is a place (da-hbrfg), and these are its two ways back.
-	test('Cancel and the browser\'s back leave a spec and write nothing', async () => {
+	// A spec is a place (da-hbrfg), and these are its two ways back; leaving it saves it (da-hda4j).
+	test('leaving a spec, closed or by the browser\'s back, saves it in one `setup F`', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'sleep', '--verb', 'start']);
-			const spec = (await app.run(['setup', 'sleep', '--json'])).stdout;
-			const before = (await app.echoes()).length;
-			for (const dismiss of [() => cancelField(page), () => page.goBack()]) {
+			for (const [said, dismiss] of [['h', () => leaveField(page)], ['i', () => page.goBack()]]) {
+				const before = (await app.echoes()).length;
 				const { saved: shut } = await openField(page, 'sleep');
-				await page.locator(`${MODAL} input.description`).fill('h');
+				await page.locator(`${MODAL} input.description`).fill(said);
 				await dismiss();
 				assert.equal(await shut, null);
 				await page.waitForFunction((sel) => !document.querySelector(sel), MODAL);
+				await app.idle();
+				assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).description, said);
+				const echoes = (await app.echoes()).slice(before);
+				assert.equal(echoes.length, 1, echoes.join(' | '));
+				assert.match(echoes[0], /^setup sleep --from-json /);
 			}
-			await app.idle();
-			assert.equal((await app.run(['setup', 'sleep', '--json'])).stdout, spec);
-			assert.equal((await app.echoes()).length, before);
 		});
 	});
 
@@ -691,7 +695,7 @@ describe('in the app', () => {
 			await noHex('spec, basics');
 			assert.equal(await page.locator(`${MODAL} .row .swatch[aria-expanded]`).getAttribute('data-color'), '#123456');
 			assert.equal(await page.locator(`${MODAL} .state .swatch[aria-expanded]`).getAttribute('data-color'), '#00ff00');
-			await cancelField(page);
+			await leaveField(page);
 			assert.equal(await shut, null);
 		});
 	});
@@ -731,7 +735,7 @@ describe('in the app', () => {
 			const color = await pick.getAttribute('data-color');
 			await pick.click();
 			assert.equal(await ink(symbol), rgb(color), 'the symbol takes the colour picked');
-			await cancelField(page);
+			await leaveField(page);
 			assert.equal(await shut, null);
 		});
 	});
@@ -786,7 +790,7 @@ describe('in the app', () => {
 			const state = page.locator(`${MODAL} .state .swatch[aria-expanded]`);
 			assert.notEqual(listed.state_colors.calm, listed.color);
 			assert.deepEqual(await looks(state), { fill: rgb(listed.state_colors.calm), border: 'dashed', color: '' });
-			await cancelField(page);
+			await leaveField(page);
 			assert.equal(await shut, null);
 		});
 	});
@@ -846,7 +850,7 @@ describe('in the app', () => {
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a spec');
 			await openSection(page, 'data');
 			assert.deepEqual(await page.locator(`${MODAL} ul.data input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
-			await cancelField(page);
+			await leaveField(page);
 			assert.equal(await shut, null);
 		});
 	});
@@ -883,11 +887,12 @@ describe('in the app', () => {
 		return { saved, before };
 	}
 
-	/** Press Done, and hold the save to ONE command that the CLI took. */
+	/** Press Save, hold the save to ONE command that the CLI took, and leave the place, which Save stays in (da-hda4j). */
 	async function save(app, { saved, before }) {
 		await app.page.locator(`${MODAL} button.commit`).click();
 		const result = await saved;
 		assert.equal(result.code, 0, result.stderr);
+		await leaveField(app.page);
 		await app.page.locator(MODAL).waitFor({ state: 'detached' });
 		await app.idle();
 		const echoes = (await app.echoes()).slice(before);
@@ -941,7 +946,7 @@ describe('in the app', () => {
 			// Opened again, in the order saved.
 			opened = await openFieldAt(app, 'word', 'data');
 			assert.deepEqual(await names(page), ['reps', 'gloss', 'pos']);
-			await cancelField(page);
+			await leaveField(page);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -1202,11 +1207,12 @@ describe('in the app', () => {
 			assert.deepEqual(JSON.parse(shown).glyph_by, { key: 'size', map: { large: '☕' } });
 			assert.equal(JSON.parse(shown).glyph, '○');
 
-			// Opened and saved untouched, the glyphs read back byte for byte.
+			// Saved with only its description changed (a save needs a change, da-hda4j), the glyphs read back as they were.
 			const { saved: again } = await openField(page, 'tea');
+			await page.locator(`${MODAL} input.description`).fill('leaves');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await again).code, 0);
-			assert.equal((await app.run(['setup', 'tea', '--json'])).stdout, shown);
+			assert.deepEqual(JSON.parse((await app.run(['setup', 'tea', '--json'])).stdout), { ...JSON.parse(shown), description: 'leaves' });
 		});
 	});
 

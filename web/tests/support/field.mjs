@@ -33,22 +33,30 @@ const ANY = '.field-form';
 
 /**
  * Open the field widget on `field` as the console does — none is a new
- * field, `verb` its kind — once any place before it has gone: a Done slides
- * back before its tab closes. `saved` is `datum.field`'s answer, what the
+ * field, `verb` its kind — once any place before it has gone: a form still
+ * open in one, as Save leaves it (da-hda4j), is left first, and a place
+ * left slides back before its tab closes. `saved` is `datum.field`'s answer, what the
  * place's next save ran or null when left, BOXED: awaiting this must not
  * await the save. Nor may a test that never awaits it be failed by it: a
  * page closed under a test that threw rejects it with «Target page closed»,
  * which node would report in place of what the test threw (da-w3y9q).
  */
 export async function openField(page, field, verb) {
+	if (await page.locator(FIELD_FORM).count()) await page.evaluate(() => window.datum.shell.leavePlace());
 	await page.locator(ANY).waitFor({ state: 'detached' });
 	const saved = page.evaluate(([f, v]) => window.datum.field(f, v), [field, verb]);
 	saved.catch(() => {});
 	return { saved };
 }
 
-/** Leave the place running nothing: its Cancel. */
-export const cancelField = (page) => page.locator(`${FIELD_FORM} button.cancel`).click();
+/**
+ * Leave the place, as its × or the back does: a new field's edits are
+ * dropped, as its Cancel drops them, and a spec's saved (da-hda4j). Never by
+ * the Cancel button: a new field's Save remounts the form on the spec it
+ * made, which has none, and a click on it then waits on a button the
+ * remount took away.
+ */
+export const leaveField = (page) => page.evaluate(() => window.datum.shell.leavePlace());
 
 /**
  * Give the open form's field the image `svg` as its symbol (da-rpfws): its

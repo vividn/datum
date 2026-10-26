@@ -25,22 +25,35 @@
 	Which field is `editing` ($lib/fieldWidget.ts), one store for every copy
 	of the widget, so anything that opens it on a field has one place to
 	say so. A field pill minted while this is on the page says so too: a
-	hold on a field in the fields widget brings that field here. A field
-	picked asks first where the form in hand has edits nobody saved.
+	hold on a field in the fields widget brings that field here. A new field
+	picked away from asks first where the form has edits nobody saved.
 
 	Save on a new field runs its one command (da-2pbvd) and STAYS, on the
 	field it made — but for the person's first, which goes on to the tour of
-	where it is logged ($lib/tour.ts). Done on a field runs its one `setup F` and leaves the place, Cancel leaves it running nothing; in a pane
-	that is no place, the form is read afresh. A save the CLI refuses
-	leaves the form as it was typed, to be put right.
+	where it is logged ($lib/tour.ts); Cancel leaves the place running nothing.
+	A save the CLI refuses leaves the form as it was typed, to be put right.
+
+	A field's spec saves when it is left (da-hda4j), vividn, 2026-10-26: «if
+	you navigate away from a spec, maybe we should autosave it? But we change
+	the bottom to have [Revert] and [Save] buttons, clicking revert goes back
+	to the unsaved settings, or if already at a save checkpoint undoes the
+	spec to the previous save (maybe we also then need a [redo] button for
+	undoing that revert??)», and how far back: «whole saved history». So going
+	to another field, renaming, or the widget closing runs the edits' one
+	`setup F`; Save runs it and stays, at a save point. Revert with edits drops
+	them; at a save point it is `undo SPEC --to-version N`, the version before
+	the one it is at as `datum history` numbers them, every copy's and kit's
+	included, and Redo the one after, back up to where the walk began. The
+	walk is this widget's: `redo SPEC` steps forward once, and a save drops it.
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import FieldForm from '$lib/FieldForm.svelte';
 	import Pane from '$lib/Pane.svelte';
 	import { act } from '$lib/act.js';
 	import { fieldPill } from '$lib/bar.js';
-	import { renameFieldArgv, specShowArgv } from '$lib/calls.js';
+	import { renameFieldArgv, specHistoryArgv, specShowArgv, undoToVersionArgv, type SpecVersion } from '$lib/calls.js';
 	import { stripAnsi } from '$lib/ansi.js';
 	import { ask, choose, confirm } from '$lib/confirm.js';
 	import type { FieldButton } from '$lib/fields.js';
@@ -63,8 +76,11 @@
 	/** Whether the sheet of fields is open, and what it is narrowed to. */
 	let picking = false;
 	let find = '';
-	/** Whether the form holds edits nobody saved (`dirty`, FieldForm.svelte). */
+	/** Whether the form holds edits nobody saved (`dirty`, FieldForm.svelte), and a spec's save of them. */
 	let dirty = false;
+	let pending: Save | null = null;
+	/** The spec's walk along its history: its entry, the version the walk began at, and the one it is at. */
+	let walk: { hid: string; top: number; at: number } | null = null;
 
 	$: tracked = $fields.filter((f) => !f.ignored);
 	$: if (browser) void load($editing);
@@ -76,20 +92,60 @@
 		if (pilled !== null) $editing = { field: pilled };
 	}
 
-	async function load(asked: typeof $editing): Promise<void> {
+	/** Read `asked`'s spec afresh, the edits left behind saved first; `at` keeps a walk going, else it begins at the newest version. */
+	async function load(asked: typeof $editing, at: typeof walk = null): Promise<void> {
+		await flush();
 		const shown = asked.field ? await run(specShowArgv(asked.field)) : null;
+		const trail = at ?? (shown?.code === 0 ? await versions(asked.field) : null);
 		if (asked !== $editing) return;
 		try {
 			spec = shown?.code === 0 ? JSON.parse(shown.stdout) : null;
 		} catch {
 			spec = null;
 		}
+		walk = trail;
 		read++;
 	}
 
-	/** A field picked: to `field`, once the reader agrees to lose what the form holds unsaved; the sheet stays open on a no. */
+	/** The spec's history as a walk at its newest version, or none (a spec only a template gives). */
+	async function versions(field: string): Promise<typeof walk> {
+		const shown = await run(specHistoryArgv(field));
+		try {
+			const [newest]: SpecVersion[] = shown.code === 0 ? JSON.parse(shown.stdout) : [];
+			return newest ? { hid: newest.hid, top: newest.version, at: newest.version } : null;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Run the save of what the form holds unsaved, if it is a spec's: what leaving it does. */
+	async function flush(): Promise<void> {
+		const save = pending;
+		pending = null;
+		if (save) await press(save.argv);
+	}
+
+	onDestroy(() => void flush());
+
+	/** Revert: the edits dropped, their save with them, or with none, the spec a version back. */
+	function revert(): void {
+		if (dirty) {
+			pending = null;
+			read++;
+		} else if (walk && walk.at > 1) void step(walk.at - 1);
+	}
+
+	/** The spec put back as version `to` of its history, the walk at it; refused (the bar says why), read afresh, the walk begun again. */
+	async function step(to: number): Promise<void> {
+		const [asked, from] = [$editing, walk];
+		if (!from) return;
+		const result = await press(undoToVersionArgv(from.hid, to));
+		if (asked === $editing) void load(asked, result.code === 0 ? { ...from, at: to } : null);
+	}
+
+	/** A field picked: to `field`, the spec's edits saved, a new field's once the reader agrees to lose them; the sheet stays open on a no. */
 	async function go(field: string): Promise<void> {
-		if (dirty && !(await confirm(`Leave ${$editing.field || 'the new field'} without saving what you changed?`, 'leave'))) return;
+		if (dirty && !spec && !(await confirm(`Leave ${$editing.field || 'the new field'} without saving what you changed?`, 'leave'))) return;
 		picking = false;
 		$editing = { field };
 	}
@@ -97,7 +153,6 @@
 	/** The field renamed: asked, its dry run shown, run, and the form on the new name. */
 	async function rename(): Promise<void> {
 		const old = $editing.field;
-		if (dirty && !(await confirm(`Rename ${old} without saving what you changed?`, 'rename'))) return;
 		let [to, said]: [string | null, string] = [old, `rename ${old} to:`];
 		for (;;) {
 			to = await ask(said, 'rename', to ?? old);
@@ -109,6 +164,7 @@
 			}
 			said = `${stripAnsi(dry.stderr).trim()} — rename ${old} to:`;
 		}
+		await flush();
 		const result = await press(renameFieldArgv(old, to));
 		if (result.code === 0 && $editing.field === old) $editing = { field: to };
 	}
@@ -118,6 +174,9 @@
 		const [asked, made] = [$editing, spec === null && save && save.argv[1]];
 		// The person's first field, tracked: the tour follows its save (da-ii8lo).
 		const first = made && tracked.length === 0 && !save?.argv.includes('--ignore');
+		// The form's own save of its edits is cleared, so the read after it does not run it again;
+		// another command (an ignored field's `track`) leaves them pending, for that read to save.
+		if (save === pending) pending = null;
 		const result = save && (await press(save.argv));
 		answerField(result);
 		// Refused, the form stays as it was, to be put right; and a reader who
@@ -128,7 +187,8 @@
 			if (first) void begin(made);
 			return;
 		}
-		leavePlace();
+		// Cancel leaves; a save stays, at a save point.
+		if (!save) leavePlace();
 		void load($editing);
 	}
 </script>
@@ -145,7 +205,12 @@
 					ignored={$fields.filter((f) => f.ignored).map((f) => f.field)}
 					taken={$fields.map((f) => f.field)}
 					bind:dirty
+					bind:pending
+					back={!!walk && walk.at > 1}
+					ahead={!!walk && walk.at < walk.top}
 					on:close={(e) => close(e.detail)}
+					on:revert={revert}
+					on:redo={() => walk && void step(walk.at + 1)}
 					on:run={(e) => press(e.detail.argv)}
 				>
 					<svelte:fragment slot="pick">

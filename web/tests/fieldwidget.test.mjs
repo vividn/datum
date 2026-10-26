@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { EXAMPLES, VERBS } from '../src/lib/track.ts';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, SECTION, cancelField, declared, openField, openSection } from './support/field.mjs';
+import { FIELD_FORM, SECTION, leaveField, declared, openField, openSection } from './support/field.mjs';
 import { until } from './support/until.mjs';
 import { shellJoin } from '../src/lib/shellSplit.ts';
 
@@ -339,20 +339,13 @@ describe('the field widget', () => {
 			await until(() => heading(page), (t) => t === 'sleep');
 			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), 'start');
 
-			// Edits nobody saved are not dropped by a stray tap: the pick asks, and cancel keeps them and the sheet.
-			const asks = (answer) => page.locator('dialog.confirm').getByRole('button', { name: answer, exact: true }).click();
+			// A spec's edits are saved by going to another field, with nothing asked (da-hda4j).
 			await page.locator(`${FIELD_FORM} input.description`).fill('nights');
 			await pick(page).click();
 			await page.locator(`${PICKER} [data-chip="coffee"]`).click();
-			assert.match(await page.locator('dialog.confirm p').innerText(), /^Leave sleep without saving/);
-			await asks('cancel');
-			assert.equal(await heading(page), 'sleep');
-			assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), 'nights', 'cancel lost the edit');
-			assert.equal(await page.locator(PICKER).isVisible(), true, 'cancel shut the sheet');
-			await page.locator(`${PICKER} [data-chip="coffee"]`).click();
-			await asks('leave');
 			await until(() => heading(page), (t) => t === 'coffee');
-			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).description, null, 'leaving saved');
+			assert.equal(await page.locator('dialog.confirm').count(), 0, 'leaving a spec asked');
+			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).description, 'nights', 'leaving did not save');
 
 			// And «+ new field» in the sheet is the way back to an empty form and its examples,
 			// less the ones there is a field for already: a tap would re-declare it.
@@ -363,6 +356,20 @@ describe('the field widget', () => {
 			assert.deepEqual(await examplesOf(page, 'occur'), ['headache', 'medication']);
 			assert.deepEqual(await examplesOf(page, 'start'), ['screentime', 'work', 'shower', 'menstruation']);
 			assert.deepEqual(await examplesOf(page, 'add'), ['book', 'place']);
+
+			// A new field is not made by leaving it: the pick asks, and cancel keeps what was typed and the sheet.
+			const asks = (answer) => page.locator('dialog.confirm').getByRole('button', { name: answer, exact: true }).click();
+			await page.locator(`${FIELD_FORM} input.field`).fill('tea');
+			await pick(page).click();
+			await page.locator(`${PICKER} [data-chip="coffee"]`).click();
+			assert.match(await page.locator('dialog.confirm p').innerText(), /^Leave the new field without saving/);
+			await asks('cancel');
+			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'tea', 'cancel lost the edit');
+			assert.equal(await page.locator(PICKER).isVisible(), true, 'cancel shut the sheet');
+			await page.locator(`${PICKER} [data-chip="coffee"]`).click();
+			await asks('leave');
+			await until(() => heading(page), (t) => t === 'coffee');
+			assert.match((await app.run(['setup', 'tea', '--json'])).stdout, /No spec defined/, 'leaving made the new field');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -427,10 +434,11 @@ describe('the field widget', () => {
 			await app.redraw();
 			await openField(page, 'nap');
 			await page.locator(`${FIELD_FORM} h2`).waitFor();
+			await page.locator(`${FIELD_FORM} input.description`).fill('short');
 			await pick(page).click();
 			await page.locator(`${PICKER} [data-chip="tea"]`).waitFor();
 			const before = (await app.echoes()).length;
-			// Done and the pick in one turn of the page, so the save is in flight when the pick lands.
+			// Save and the pick in one turn of the page, so the save is in flight when the pick lands.
 			await page.evaluate((form) => {
 				document.querySelector(`${form} button.commit`).click();
 				document.querySelector('[data-chip="tea"]').click();
@@ -575,7 +583,7 @@ describe('the field widget', () => {
 			assert.equal(await section('data').evaluate((el) => el.localName), 'section');
 			assert.equal(await section('data').locator('summary, [aria-expanded]').count(), 0, 'a card\'s data collapses');
 			assert.equal(await shut('aliases'), true);
-			await cancelField(page);
+			await leaveField(page);
 			assert.equal(await saved, null);
 			assert.deepEqual(app.errors, []);
 		});
@@ -668,7 +676,7 @@ describe('the field widget', () => {
 				assert.deepEqual([await strike.isDisabled(), await strike.getAttribute('title')], [true, 'false is one of its states, so the ring keeps end']);
 				for (const s of ['false', 'a', 'c', 'b']) await page.locator(`${FIELD_FORM} [aria-label="remove ${s}"]`).click();
 				assert.deepEqual([await strike.isDisabled(), await strike.getAttribute('title')], [true, 'a switch needs another state before off can go']);
-				await cancelField(page);
+				await leaveField(page);
 				assert.equal(await left, null);
 				assert.deepEqual(app.errors, []);
 			}, size);
@@ -711,7 +719,7 @@ describe('the field widget', () => {
 				assert.deepEqual(seen.filter((s, i) => s !== seen[i - 1]), ['abc', 'bac'], seen.join(' '));
 				const landed = await rows.nth(1).boundingBox();
 				assert.ok(landed.y <= end && end <= landed.y + landed.height, `a's row ${JSON.stringify(landed)} is under ${end}`);
-				await cancelField(page);
+				await leaveField(page);
 				assert.equal(await saved, null);
 				assert.deepEqual(app.errors, []);
 			}, size);
@@ -808,7 +816,7 @@ describe('the field widget', () => {
 			await openField(page);
 			await page.locator(`${FIELD_FORM} input.field`).waitFor();
 			assert.equal(await page.locator(`${FIELD_FORM} button.rename`).count(), 0);
-			await cancelField(page);
+			await leaveField(page);
 			await openField(page, 'mood');
 			await page.locator(`${FIELD_FORM} h2`).waitFor();
 			const button = page.locator(`${FIELD_FORM} button.rename`);
@@ -864,7 +872,7 @@ describe('the field widget', () => {
 			});
 			assert.ok(needs <= has, `the placeholder needs ${needs}px and has ${has}px`);
 			await page.screenshot({ path: process.env.DATUM_SHOT ? `${process.env.DATUM_SHOT}/new.png` : undefined });
-			await cancelField(page);
+			await leaveField(page);
 
 			await openField(page, 'tea');
 			await page.locator(`${FIELD_FORM} h2`).waitFor();
@@ -887,4 +895,93 @@ test('a test that throws with the place open fails as itself', async () => {
 		}),
 		/the real assertion/
 	);
+});
+
+// A spec saves when it is left, and its bottom is Revert · Save · Redo (da-hda4j), vividn, 2026-10-26: «if you
+// navigate away from a spec, maybe we should autosave it? But we change the bottom to have [Revert] and [Save]
+// buttons, clicking revert goes back to the unsaved settings, or if already at a save checkpoint undoes the spec to
+// the previous save (maybe we also then need a [redo] button for undoing that revert??)», and how far: «whole saved
+// history».
+describe('a spec saves when it is left, and Revert and Redo walk its saved history', () => {
+	const desktop = sharedApp(DESKTOP);
+	const described = async (app, field) => JSON.parse((await app.run(['setup', field, '--json'])).stdout).description;
+	const button = (page, name) => page.locator(`${FIELD_FORM} .buttons button.${name}`);
+	const description = (page) => page.locator(`${FIELD_FORM} input.description`);
+	/** Which of Revert, Save and Redo can be pressed. */
+	const enabled = async (page) => Object.fromEntries(await Promise.all(['revert', 'commit', 'redo'].map(async (b) => [b, await button(page, b).isEnabled()])));
+
+	test('going to another field saves the edits, and so does closing the place', async () => {
+		await desktop.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'tea', '--verb', 'occur']);
+			await app.run(['track', 'nap', '--verb', 'start']);
+			await app.redraw();
+			await openField(page, 'tea');
+			await page.locator(`${FIELD_FORM} h2`).waitFor();
+			await description(page).fill('green');
+			await pick(page).click();
+			await page.locator(`${PICKER} [data-chip="nap"]`).click();
+			await until(() => heading(page), (t) => t === 'nap');
+			await until(() => described(app, 'tea'), (d) => d === 'green');
+			// The heading follows at once; the form is nap's once it is read.
+			await until(() => description(page).inputValue(), (v) => v === '');
+
+			await description(page).fill('short');
+			await page.evaluate(() => window.datum.shell.leavePlace());
+			await page.locator('dialog.sheet[data-place="setup"]').waitFor({ state: 'detached' });
+			await until(() => described(app, 'nap'), (d) => d === 'short');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('Revert drops unsaved edits; at a save point it steps back through every version, the CLI\'s too, and Redo forward', async () => {
+		await desktop.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'tea', '--verb', 'occur']);
+			const spec = JSON.parse((await app.run(['setup', 'tea', '--json'])).stdout);
+			for (const said of ['one', 'two']) await app.run(['setup', 'tea', '--from-json', JSON.stringify({ ...spec, description: said })]);
+			await openField(page, 'tea');
+			await page.locator(`${FIELD_FORM} h2`).waitFor();
+			assert.equal(await description(page).inputValue(), 'two');
+			assert.deepEqual(await enabled(page), { revert: true, commit: false, redo: false }, 'at the newest save');
+
+			// Unsaved edits: Revert drops them and writes nothing.
+			const before = (await app.echoes()).length;
+			await description(page).fill('three');
+			assert.deepEqual(await enabled(page), { revert: true, commit: true, redo: false }, 'with edits');
+			await button(page, 'revert').click();
+			await until(() => description(page).inputValue(), (v) => v === 'two');
+			assert.equal((await app.echoes()).length, before, 'dropping the edits ran something');
+			assert.equal(await described(app, 'tea'), 'two');
+
+			// At a save point: back a version a press, to the first, as `undo SPEC --to-version N`.
+			const { hid } = JSON.parse((await app.run(['history', 'spec:tea', '--json'])).stdout)[0];
+			for (const [shown, version] of [['one', 2], ['', 1]]) {
+				await button(page, 'revert').click();
+				await until(() => description(page).inputValue(), (v) => v === shown);
+				assert.equal((await app.echoes()).at(-1), `undo ${hid} --to-version ${version}`);
+				assert.equal(await described(app, 'tea'), shown || null);
+			}
+			assert.deepEqual(await enabled(page), { revert: false, commit: false, redo: true }, 'at the first version');
+
+			// Redo walks forward again, up to where the walk began.
+			for (const [shown, version] of [['one', 2], ['two', 3]]) {
+				await button(page, 'redo').click();
+				await until(() => description(page).inputValue(), (v) => v === shown);
+				assert.equal((await app.echoes()).at(-1), `undo ${hid} --to-version ${version}`);
+				assert.equal(await described(app, 'tea'), shown);
+			}
+			assert.deepEqual(await enabled(page), { revert: true, commit: false, redo: false }, 'back where the walk began');
+
+			// A save is a new save point: the walk ahead of it is gone.
+			await button(page, 'revert').click();
+			await until(() => description(page).inputValue(), (v) => v === 'one');
+			await description(page).fill('four');
+			await button(page, 'commit').click();
+			await until(() => described(app, 'tea'), (d) => d === 'four');
+			await until(() => enabled(page), (e) => e.revert && !e.commit && !e.redo);
+			assert.equal(await description(page).inputValue(), 'four');
+			assert.deepEqual(app.errors, []);
+		});
+	});
 });

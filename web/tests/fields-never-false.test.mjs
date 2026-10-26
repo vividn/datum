@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
 import { atRows } from './support/rows.mjs';
-import { FIELD_FORM, cancelField, openField } from './support/field.mjs';
+import { FIELD_FORM, leaveField, openField } from './support/field.mjs';
 
 const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
 const BAR = 'section[data-pane="bar"] .bar';
@@ -109,8 +109,10 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					await page.locator(`${FIELD_FORM} .commit`).click();
 					await saved;
 					assert.equal(JSON.parse((await app.run(['setup', 'env', '--json'])).stdout).never_false, undefined);
+					// Save stays on the spec (da-hda4j): back to the bar.
+					await leaveField(page);
 					await app.idle();
-					// On a phone the spec is a tab, which slides back after Done:
+					// On a phone the spec is a tab, which slides back when left:
 					// tapped mid-glide, the bar is not where it stands.
 					await page.waitForFunction(() => !document.querySelector('.moving'));
 					assert.equal((await tap(page, 'env')).under, 'false', 'end did not come back');
@@ -119,7 +121,7 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					const { saved: left } = await openField(page, 'alfa');
 					await page.locator(`${FIELD_FORM} .placement .band svg`).waitFor();
 					assert.equal(await page.locator(`${FIELD_FORM} .off-state`).count(), 0, 'an occur field offers off');
-					await cancelField(page);
+					await leaveField(page);
 					await left;
 				},
 				{ viewport, clock: todayAt(15), prepare: (context) => context.addInitScript(draft, PAGE) }

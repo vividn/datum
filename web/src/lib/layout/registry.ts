@@ -573,7 +573,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// is made and changed — the Track dialog and the spec widget (da-hbrfg,
 	// kinds `spec` and `field`: `RETIRED_KINDS` in shell.ts) as one. Which field it is on is `editing`
 	// ($lib/fieldWidget.ts), every copy's, so it has no setting. Legible at
-	// its sentence, the form's name line and its Done row, with
+	// its sentence, the form's name line and its buttons' row, with
 	// their gaps and padding — about 180px, estimated from the 28px controls
 	// rather than measured; a pane shorter scrolls the widget.
 	setup: {
@@ -581,7 +581,8 @@ export const KINDS: Record<string, WidgetKind> = {
 		component: FieldWidget,
 		help: [
 			'A field is one thing you track. Make one here, or pick one to change: its shape, states, data, aliases and placement.',
-			'Save makes a new field with one `setup F --track`, which one Undo takes back; Done saves a change with `setup F`; Cancel leaves it as it was.'
+			'Save makes a new field with one `setup F --track`, which one Undo takes back; Cancel leaves it unmade.',
+			"A field's changes save in one `setup F`, by Save or by leaving it. Revert drops what is not saved, or steps the spec back to its version before, through its whole history; Redo steps forward again."
 		].join('\n'),
 		legible: { width: 240, height: 180 }
 	},

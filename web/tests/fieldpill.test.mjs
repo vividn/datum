@@ -25,6 +25,7 @@ import { changeCounter, seedLines, sharedApp, startApp, stopApp, withApp as with
 import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 import { FIELD_FORM } from './support/field.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -800,7 +801,10 @@ describe('`setup` under the pill', () => {
 			assert.equal(await line(page).inputValue(), '', 'the tap wrote a line as well');
 
 			// And what it saves is the one `setup F`, with no pill after it.
+			await page.locator(`${MODAL} input.description`).fill('how it feels');
 			await page.locator(`${MODAL} button[type="submit"]`).click();
+			await until(async () => (await app.echoes()).at(-1), (e) => /^setup mood --from-json /.test(e));
+			await page.evaluate(() => window.datum.shell.leavePlace());
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 			await app.idle();
 			assert.match((await app.echoes()).at(-1), /^setup mood --from-json /);

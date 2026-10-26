@@ -92,6 +92,16 @@ export function specShowArgv(field: string): string[] {
 	return ['setup', field, '--json'];
 }
 
+/** The spec entry's history (da-hda4j): every version of it, newest first. */
+export function specHistoryArgv(field: string): string[] {
+	return ['history', `spec:${field}`, '--json'];
+}
+
+/** One entry put back as version `version` of its history. */
+export function undoToVersionArgv(hid: string, version: number): string[] {
+	return ['undo', hid, '--to-version', String(version)];
+}
+
 /** The field renamed, or with `dry` what it would move (da-qimwi). */
 export function renameFieldArgv(old: string, to: string, dry = false): string[] {
 	return ['rename', old, to, ...(dry ? ['--dry-run'] : [])];
@@ -360,6 +370,12 @@ export function kitUninstallArgv(): string[] {
  */
 export type KitWidgetRow = Record<string, unknown> & { row_cells: string[]; row_color?: string };
 
+/** One version of a spec's history (da-hda4j): the entry, and the number `undo --to-version` takes. */
+export interface SpecVersion {
+	hid: string;
+	version: number;
+}
+
 export interface Reads {
 	/** `frecency` comes with `--sort frecency` alone. */
 	fieldsArgv: Omit<FieldListing, 'frecency'>[];
@@ -374,6 +390,7 @@ export interface Reads {
 	geometryArgv: DayviewJson;
 	showAllArgv: AllFieldsStats | FieldStats;
 	specShowArgv: Spec;
+	specHistoryArgv: SpecVersion[];
 	syncStatusArgv: SyncStatus;
 	/** `joining` takes a join cut short, `dissolved` a chain-wide purge: no seeded database holds either. */
 	chainListArgv: Omit<ChainList, 'joining' | 'dissolved'>;

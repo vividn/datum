@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { ONE_PANE } from './support/layout.mjs';
 import { editedSpec, placeOf } from '../src/lib/track.ts';
-import { FIELD_FORM as MODAL, cancelField, openField } from './support/field.mjs';
+import { FIELD_FORM as MODAL, leaveField, openField } from './support/field.mjs';
 
 /** The box a tap draws round a mark (da-r6wwe): none at rest. */
 const BOX = `${MODAL} .placement .box`;
@@ -130,10 +130,12 @@ describe('the Placement tab', () => {
 		await page.locator(`${MODAL} .placement .band svg[data-context="${context}"]`).waitFor();
 	}
 
+	/** Save, and leave the place: Save stays on the spec (da-hda4j). */
 	async function done(page, saved) {
 		await page.locator(`${MODAL} button.commit`).click();
 		const result = await saved;
 		assert.equal(result.code, 0, result.stderr);
+		await leaveField(page);
 	}
 
 	test('a field nobody placed says so, and dragging writes `y`; an edge writes `height`', async () => {
@@ -209,7 +211,7 @@ describe('the Placement tab', () => {
 			const [top] = await extent(page, 'coffee');
 			assert.ok(Math.abs(top - band.y - 1 - resolved.y * H) < 1.5, `${top - band.y} vs ${resolved.y * H}`);
 			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /y 0\.44/);
-			await cancelField(page);
+			await leaveField(page);
 			assert.equal(await saved, null);
 		});
 	});
@@ -286,7 +288,7 @@ describe('the Placement tab', () => {
 			const { saved: dismissed } = await openPlacement(page, 'coffee');
 			assert.equal(await page.locator(`${MODAL} .placement select`).inputValue(), 'nobody');
 			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /tied to nobody, which has no spec/);
-			await cancelField(page);
+			await leaveField(page);
 			assert.equal(await dismissed, null);
 		});
 	});
@@ -421,7 +423,7 @@ describe('the Placement tab', () => {
 				const at = document.querySelector('.placement .box').getBoundingClientRect().top - svg.getBoundingClientRect().top;
 				return ys.length > 0 && Math.abs(Math.min(...ys) - at) < 1.5 && Math.abs(at - 80) < 1.5;
 			});
-			await cancelField(page);
+			await leaveField(page);
 			assert.equal(await saved, null);
 			assert.equal((await app.run(['tail', 'mood', '--json'])).stdout.includes('"happy"'), false, 'no sample was written');
 
@@ -430,7 +432,7 @@ describe('the Placement tab', () => {
 			({ saved } = await openPlacement(page, 'mood'));
 			await turn(page, '12 hours');
 			assert.deepEqual([await blocks.count(), await states()], [1, ['happy']]);
-			await cancelField(page);
+			await leaveField(page);
 			assert.equal(await saved, null);
 		});
 	});
@@ -496,7 +498,7 @@ describe('the Placement tab', () => {
 
 				await turn(page, 'context');
 				assert.deepEqual((await picture(field)).fields, [field], `${field}: back to the sample alone`);
-				await cancelField(page);
+				await leaveField(page);
 				assert.equal(await saved, null);
 			}
 
@@ -527,7 +529,7 @@ describe('the Placement tab', () => {
 			await app.run(['track', 'work', '--verb', 'start']);
 			const { saved } = await openPlacement(app.page, 'work');
 			assert.equal(await app.page.locator(`${MODAL} .size`).count(), 0);
-			await cancelField(app.page);
+			await leaveField(app.page);
 			assert.equal(await saved, null);
 		});
 	});

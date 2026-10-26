@@ -56,7 +56,10 @@
 	document with it (`declareArgv`). A field with a spec gets the whole
 	edited spec back in ONE `setup F --from-json` — the list entire, never a
 	stream of one-state changes. It is all handed up as `close`'s `Save` for
-	the widget to run; null runs nothing. At the foot of a field's form,
+	the widget to run; null runs nothing. A field's is `pending` too while it
+	differs, which the widget runs when the form is left, and its buttons are
+	Revert · Save · Redo, Revert and Redo handed up for the widget to walk the
+	spec's history (da-hda4j); a new field's are Cancel · Save. At the foot of a field's form,
 	tracked or ignored, whose button runs `ignore F` or `track F` at once,
 	handed up as `run` and leaving the form open.
 -->
@@ -105,8 +108,13 @@
 	export let taken: string[] = [];
 	/** Whether it differs from what it opened as: what leaving it now would lose. */
 	export let dirty = false;
+	/** A spec's edits as the save leaving it runs (da-hda4j), or null while there are none. */
+	export let pending: Save | null = null;
+	/** Whether Revert, at a save point, has a saved version to step back to, and Redo one to step forward to. */
+	export let back = false;
+	export let ahead = false;
 
-	const dispatch = createEventDispatcher<{ close: Save | null; run: Save }>();
+	const dispatch = createEventDispatcher<{ close: Save | null; run: Save; revert: null; redo: null }>();
 
 	let color = spec?.color ?? '';
 	let description = spec?.description ?? '';
@@ -157,6 +165,7 @@
 		opened ??= now;
 		dirty = now !== opened;
 	}
+	$: pending = spec && dirty && ready ? save : null;
 	// What `auto` paints: the name's colour, and none while there is no name.
 	$: auto = field.trim() ? defaultColor(field.trim()) : 'transparent';
 	$: named = states.filter((s) => s.name.trim());
@@ -480,8 +489,14 @@
 		</div>
 
 		<div class="buttons">
-			<button type="button" class="cancel" on:click={() => finish(null)}>Cancel</button>
-			<button class="commit" use:act={'run'} type="submit" disabled={!ready}>{spec ? 'Done' : 'Save'}</button>
+			{#if spec}
+				<button type="button" class="revert" use:act={dirty ? undefined : 'run'} disabled={!dirty && !back} on:click={() => dispatch('revert', null)}>Revert</button>
+				<button class="commit" use:act={'run'} type="submit" disabled={!ready || !dirty}>Save</button>
+				<button type="button" class="redo" use:act={'run'} disabled={dirty || !ahead} on:click={() => dispatch('redo', null)}>Redo</button>
+			{:else}
+				<button type="button" class="cancel" on:click={() => finish(null)}>Cancel</button>
+				<button class="commit" use:act={'run'} type="submit" disabled={!ready}>Save</button>
+			{/if}
 		</div>
 
 		{#if ignored.length > 0}
@@ -918,9 +933,16 @@
 		color: var(--accent);
 	}
 
-	/* Done writes the spec at once, so the double outline ($lib/act.ts). */
+	/* Save writes the spec at once, so the double outline ($lib/act.ts). */
 	.commit:global([data-act='run']) {
 		border: 3px double var(--accent);
+		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
+	}
+
+	/* Revert and Redo at a save point step the spec along its history at once (da-hda4j). */
+	.revert:global([data-act='run']),
+	.redo:global([data-act='run']) {
+		border: 3px double var(--rule);
 		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
 	}
 

@@ -183,6 +183,8 @@ const SAMPLES = {
 	showAllArgv: [[statsArgv(DEFAULT_STATS)], [statsArgv(DEFAULT_STATS, 'mood')], [statsArgv({ range: 'all' }, 'coffee')]],
 	statsArgv: [[DEFAULT_STATS], [{ range: 'all' }, 'coffee']],
 	specShowArgv: [['coffee'], ['mood']],
+	specHistoryArgv: [['coffee'], ['mood']],
+	undoToVersionArgv: [[HID, 1]],
 	renameFieldArgv: [['coffee', 'drink', true], ['mood', 'feeling']],
 	bandArgv: [[400, 40], [400, 40, 3]],
 	geometryArgv: [[400, 40]],

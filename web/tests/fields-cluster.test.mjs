@@ -17,7 +17,7 @@ import { ringOf } from '../src/lib/fields.ts';
 import { ON_COLLECT, startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
 import { atRows } from './support/rows.mjs';
-import { FIELD_FORM, openField } from './support/field.mjs';
+import { FIELD_FORM, leaveField, openField } from './support/field.mjs';
 
 const H = 30;
 const GAP = 6;
@@ -311,6 +311,7 @@ describe('a switch field’s states around the tap', () => {
 				await page.locator(`${FIELD_FORM} .commit`).click();
 				await saved;
 				assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).allowed_states, ['false', 'd', 'a', 'b', 'c']);
+				await leaveField(page);
 
 				await page.locator(`${BAR} [data-field="mood"]`).waitFor();
 				await app.idle();
