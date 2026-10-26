@@ -148,6 +148,11 @@ pub struct FieldSpec {
     /// Per-state assigned keys (da-ulc0v), as `assign` is the field's.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub state_assign: BTreeMap<String, BTreeMap<String, String>>,
+    /// The states `setup --archive-state` took off the list (da-z6g2s):
+    /// kept on record whatever they carry, so a bare one is still
+    /// [archived](Self::archived_states) and its word refused as such.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub archived: Vec<String>,
     /// The field a bare state names a document of (da-f9jyv): with
     /// `issue_state`, a state `queued` refers to `issue_state:queued`. One
     /// field name, never a template. A state holding `:` is a full slug
@@ -325,6 +330,7 @@ impl FieldSpec {
             state_descriptions: BTreeMap::new(),
             state_keys: BTreeMap::new(),
             state_assign: BTreeMap::new(),
+            archived: Vec::new(),
             state_lookup_field: None,
             derived_aliases: Vec::new(),
             id_keys: Vec::new(),
@@ -406,7 +412,9 @@ impl FieldSpec {
             self.presentation.state_glyphs.remove(state).is_some(),
             self.state_keys.remove(state).is_some(),
             self.state_assign.remove(state).is_some(),
+            self.archived.iter().any(|s| s == state),
         ];
+        self.archived.retain(|s| s != state);
         own.contains(&true)
     }
 
@@ -516,8 +524,9 @@ impl FieldSpec {
         listed.iter().chain(self.unlisted_states()).collect()
     }
 
-    /// The states carrying something of their own that the list leaves out
-    /// (`setup --archive-state`, da-tdpjf): kept for their past rows. Only a
+    /// The states the list leaves out that were archived (da-z6g2s) or
+    /// carry something of their own (`setup --archive-state`, da-tdpjf):
+    /// kept for their past rows. Only a
     /// field that lists its states has any; without a list every state is
     /// one it may be in.
     pub fn archived_states(&self) -> Vec<&String> {
@@ -533,8 +542,8 @@ impl FieldSpec {
         self.only_listed_states || self.allowed_states.as_ref().is_some_and(|s| !s.is_empty())
     }
 
-    /// By name, each state the list leaves out that carries something of
-    /// its own — a colour, a description, a glyph, keys.
+    /// By name, each state the list leaves out that was archived or
+    /// carries something of its own — a colour, a description, a glyph, keys.
     fn unlisted_states(&self) -> Vec<&String> {
         let listed = self.allowed_states.as_deref().unwrap_or_default();
         let mut named: Vec<&String> = self
@@ -544,6 +553,7 @@ impl FieldSpec {
             .chain(self.presentation.state_glyphs.keys())
             .chain(self.state_keys.keys())
             .chain(self.state_assign.keys())
+            .chain(&self.archived)
             .filter(|s| !listed.contains(s))
             .collect();
         named.sort();

@@ -314,6 +314,42 @@ fn archive_state_keeps_what_it_carries() {
     );
 }
 
+/// A state declared bare, carrying nothing of its own, stays on record when
+/// archived (da-z6g2s): `setup` shows it archived, and its word, whose alias
+/// went with it, is refused naming the archive until `--add-state` brings
+/// it back.
+#[test]
+fn a_bare_archived_state_stays_on_record() {
+    let dir = tempfile::tempdir().unwrap();
+    ok(
+        &dir,
+        &[
+            "setup",
+            "place",
+            "--verb",
+            "switch",
+            "--states",
+            "kitchen,desk",
+        ],
+    );
+    let (out, _) = ok(&dir, &["setup", "place", "--archive-state", "desk"]);
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("+ archived") && l.ends_with(" desk")),
+        "{out}"
+    );
+    let out = datum(&dir, &["desk"]);
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(!out.status.success(), "{err}");
+    assert!(
+        err.contains("'desk' is an archived state of 'place': `datum setup place --add-state desk` brings it back"),
+        "{err}"
+    );
+    ok(&dir, &["setup", "place", "--add-state", "desk"]);
+    assert!(spec(&dir, "place").get("archived").is_none());
+    ok(&dir, &["desk"]);
+}
+
 /// Under `--only-listed-states` an archived state is refused as any
 /// unlisted one is.
 #[test]

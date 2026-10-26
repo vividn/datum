@@ -107,6 +107,9 @@ fn run_line(line: &str, db: &Db, path: &str) -> Result<()> {
                 if let Some(hint) = crate::leading_datum(pe, rest) {
                     anyhow::bail!("inside the REPL, {hint}");
                 }
+                if let Some(hint) = crate::archived_state(pe, db) {
+                    anyhow::bail!(hint);
+                }
             }
             Err(e)
         }

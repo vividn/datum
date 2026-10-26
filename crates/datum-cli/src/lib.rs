@@ -78,6 +78,32 @@ pub fn leading_datum(e: &ParseError, rest: &str) -> Option<String> {
     })
 }
 
+/// The first word of a line naming no command but a state some field
+/// archived (da-z6g2s): its alias went with it, and the refusal says why
+/// and how to bring it back.
+pub fn archived_state(e: &ParseError, db: &datum_core::db::Db) -> Option<String> {
+    let ParseError::InvalidArg(m) = e else {
+        return None;
+    };
+    let word = m
+        .strip_prefix("unknown subcommand: '")?
+        .strip_suffix('\'')?;
+    let fields = db.fields_archiving(word).ok()?;
+    let quoted = |w: &str| datum_parse::alias::shell_join(&[w.to_string()]);
+    let back = format!("--add-state {}", quoted(word));
+    match fields.as_slice() {
+        [] => None,
+        [field] => Some(format!(
+            "'{word}' is an archived state of '{field}': `datum setup {} {back}` brings it back",
+            quoted(field)
+        )),
+        _ => Some(format!(
+            "'{word}' is an archived state of '{}': `datum setup <FIELD> {back}` brings it back to one",
+            fields.join("', '")
+        )),
+    }
+}
+
 /// Drive a captured `argv` through the same path the `datum` binary
 /// uses for `datum <subcommand>` invocations. Carved out of `main.rs`
 /// so the bin-smoke E2E gate (`tests/e2e_bin_smoke.rs`, da-1wat) can
@@ -119,6 +145,11 @@ pub fn run(argv: Vec<String>) -> Result<()> {
                     if msg.starts_with("unknown subcommand") {
                         if let Some(()) = try_kit_level2_dispatch()? {
                             return Ok(());
+                        }
+                        if let Some(hint) =
+                            args::open_existing_db(&argv).and_then(|db| archived_state(pe, &db))
+                        {
+                            anyhow::bail!(hint);
                         }
                     }
                 }

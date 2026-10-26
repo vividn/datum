@@ -174,9 +174,16 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         let remove: Vec<String> = args.remove_states.iter().chain(archive).cloned().collect();
         let (lost, absent) = edit_list(&mut states, &args.states, &args.add_states, &remove);
         spec.allowed_states = Some(states).filter(|s| !s.is_empty());
-        for state in lost.iter().filter(|s| !archive.contains(s)) {
-            spec.forget_state(state);
+        for state in lost {
+            if !archive.contains(&state) {
+                spec.forget_state(&state);
+            } else if !spec.archived.contains(&state) {
+                spec.archived.push(state);
+            }
         }
+        // A state listed again is no longer archived.
+        let listed = spec.allowed_states.as_deref().unwrap_or_default();
+        spec.archived.retain(|s| !listed.contains(s));
         for state in absent {
             if archive.contains(&state) {
                 if !spec.declared_states().contains(&&state) {

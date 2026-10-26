@@ -294,6 +294,19 @@ impl Db {
             .optional()?)
     }
 
+    /// The fields that archived a state named `state` (da-z6g2s), by name.
+    /// Reads every spec: only a word nothing else knows asks.
+    pub fn fields_archiving(&self, state: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT json_extract(data, '$.field') FROM entries
+              WHERE {SPEC_DOC_SQL}
+                AND EXISTS (SELECT 1 FROM json_each(data, '$.archived') WHERE value = ?1)
+              ORDER BY 1"
+        ))?;
+        let rows = stmt.query_map([state], |row| row.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Every template spec (da-38obu) as its name and stored data, best
     /// first: the longer literal text, then the first by name, so every
     /// copy reads a field through the same one. Few, and read by their
