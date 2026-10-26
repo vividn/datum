@@ -294,8 +294,8 @@ describe('the Placement tab', () => {
 	// da-c1b6m: an occur field's box is drawn round the dot tapped
 	// (da-r6wwe), its corners hinted. A drag of a dot moves the lane, a
 	// handle sizes the dot about its centre, and the CLI draws the dot
-	// exactly as tall as the box — here, and in every view. The lane is
-	// taller than the standard dot (da-rjf34), so the dot is the standard.
+	// exactly as tall as the box — here, and in every view: the standard
+	// dot, whatever the lane (da-ijjjn).
 	test("an occur field's tapped dot is boxed, its handles size it; a drag of it moves it; lock aspect keeps its shape and reset makes it round again", async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
@@ -340,8 +340,8 @@ describe('the Placement tab', () => {
 			};
 			/** Drag the handle on sides `sx`,`sy` by `dx`,`dy`. */
 			const size = async (sx, sy, dx, dy) => pull(page, await handle(page, `${sx},${sy}`), dx, dy);
-			// The lane is 0.2 of the 160px day; the dot the standard 0.12 of it.
-			const D = 0.12 * 160;
+			// The lane is 0.2 of the 160px day; the dot the standard 0.06 of it.
+			const D = 0.06 * 160;
 			await fits(D, D, 'as saved');
 
 			await size(0, 1, 0, 8);

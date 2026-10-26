@@ -157,8 +157,7 @@ pub struct DayviewFieldInput {
 
 /// An occur dot's size (da-c05v1): `scale` is its height over
 /// [`STANDARD_DOT`]'s (da-rjf34), `aspect` the mark's width over its
-/// height. Blocks ignore both; `1, 1` is a round dot the standard's size,
-/// or its lane's where the lane is thinner.
+/// height. Blocks ignore both; `1, 1` is a round dot the standard's size.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GlyphSize {
     pub scale: f64,
@@ -180,12 +179,12 @@ impl Default for GlyphSize {
     }
 }
 
-/// A dot's standard height, a fraction of the day (da-rjf34): the lane of a
-/// field whose spec names no height, datum-core's `DEFAULT_FIELD_HEIGHT`,
-/// so a dot in an ordinary occur lane fills it. A taller lane draws the
-/// same dot, a thinner one caps it at its own height, and `--glyph-scale`
-/// multiplies what that leaves, so a scale above 1 may pass the lane.
-pub const STANDARD_DOT: f64 = 0.12;
+/// A dot's height, a fraction of the day, before `--glyph-scale` multiplies
+/// it (da-ijjjn): half the lane of a field whose spec names no height,
+/// datum-core's `DEFAULT_FIELD_HEIGHT`. Its lane takes no part, so a lane
+/// thinner than it has the dot pass its edges: a dot marks a moment, not
+/// the lane's area.
+pub const STANDARD_DOT: f64 = 0.06;
 
 /// One block (closed or ongoing) on a field row. Blocks may extend beyond
 /// the day's window; [`compute_dayview`] clips them to the visible domain.
@@ -972,10 +971,9 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             }
 
             let mut points: Vec<RenderedPoint> = Vec::with_capacity(f.points.len());
-            // A dot is the standard, or its lane where that is thinner,
-            // times its scale (da-rjf34): a fraction of the day, never
-            // pixels (da-c1b6m).
-            let r = f.height_frac.min(STANDARD_DOT) * config.day_height / 2.0 * f.glyph_size.scale;
+            // A dot is the standard times its scale, whatever its lane
+            // (da-ijjjn): a fraction of the day, never pixels (da-c1b6m).
+            let r = STANDARD_DOT * config.day_height / 2.0 * f.glyph_size.scale;
 
             for p in &f.points {
                 let Some((span, within)) = span_of(p.time_ms) else {

@@ -113,9 +113,8 @@ pub struct PresentationSpec {
     pub icon: Option<String>,
 
     /// How tall an occur dot's mark is drawn, as a multiple of the standard
-    /// dot's height, or its lane's where that is thinner (da-c05v1,
-    /// da-rjf34): the same fraction of the day in the dayview and the
-    /// nowview at any size. `None` is 1. Points only: a
+    /// dot's height whatever its lane (da-c05v1, da-ijjjn): the same
+    /// fraction of the day in the dayview and the nowview at any size. `None` is 1. Points only: a
     /// block's size is its lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph_scale: Option<f64>,

@@ -392,13 +392,13 @@ fn a_glyph_factor_of_one_from_json_is_stored_unset() {
     );
 }
 
-/// da-rjf34: a dot is one standard size, the height of a lane with no
-/// `--height` (0.12 of the day), however tall its own lane; a thinner lane
-/// caps it at the lane, and `--glyph-scale` multiplies the standard — a
+/// da-ijjjn: a dot is one standard size, half the height of a lane with no
+/// `--height` (0.06 of the day), however tall or thin its own lane — a thin
+/// lane's dot passes its edges — and `--glyph-scale` multiplies it: a
 /// fraction of the day and not pixels (da-c1b6m), the same in the dayview
 /// and the nowview, at a short band and a tall one.
 #[test]
-fn a_dot_is_the_standard_size_capped_by_a_thinner_lane_and_scaled() {
+fn a_dot_is_the_standard_size_whatever_its_lane_and_scaled() {
     let env = Env::new();
     let at = "2026-04-27T12:00+00:00";
     for f in ["tall", "plain", "thin", "double"] {
@@ -437,10 +437,10 @@ fn a_dot_is_the_standard_size_capped_by_a_thinner_lane_and_scaled() {
         let h: f64 = h.parse().unwrap();
         for (view, svg) in [("dayview", &dayview), ("nowview", &nowview)] {
             for (field, frac) in [
-                ("plain", 0.12),
-                ("tall", 0.12),
-                ("thin", 0.05),
-                ("double", 0.24),
+                ("plain", 0.06),
+                ("tall", 0.06),
+                ("thin", 0.06),
+                ("double", 0.12),
             ] {
                 let got = tall(svg, field);
                 assert!(

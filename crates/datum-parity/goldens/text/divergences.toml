@@ -92,6 +92,12 @@ what = "the day labels (`Mon`, `Jan 15`, the year) end at x=78 in daydumb and at
 why = "No recorded reason found."
 
 [[rule]]
+id = "dayview-dot-size"
+status = "open"
+what = "an occur dot: v2's is as tall as its lane (r=6 in the default lane at this height); daydumb's is half the default lane, 0.06 of the day, whatever its lane, times `--glyph-scale`"
+why = "da-ijjjn, vividn, 2026-10-26: «maybe just a default size * glyph-scale is the way to go, so not even taking into consideration the lane size?» and «yes let's go for it», after «the default occur dot size is still too big»."
+
+[[rule]]
 id = "snapshot-year-masked"
 status = "open"
 what = "v2's year label reads `<HID>`, daydumb's `2024`"
@@ -157,7 +163,7 @@ rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-pad
 
 [[fixture]]
 name = "dayview_single_day_svg"
-rules = ["dayview-axis", "dayview-day-label-x", "snapshot-year-masked"]
+rules = ["dayview-axis", "dayview-day-label-x", "dayview-dot-size", "snapshot-year-masked"]
 
 [[fixture]]
 name = "dayview_state_chain_svg"

@@ -21,9 +21,9 @@
 	sizes the dot about its centre, writing
 	`glyph_scale` (the dot's height over the standard dot's, so a field tied
 	to this one stays put) and `glyph_aspect`. «lock aspect» keeps width over
-	height, «reset» puts back a round dot of the standard size, or the lane's
-	where the lane is thinner (da-rjf34) — which is how tall every view draws
-	it, as a fraction of the day.
+	height, «reset» puts back a round dot of the standard size, whatever the
+	lane (da-ijjjn) — which is how tall every view draws it, as a fraction of
+	the day.
 
 	The band draws the field as the form holds it (da-srrqd), vividn,
 	2026-10-22: «you can see the dots/states/bars and what they look like as
@@ -61,10 +61,8 @@
 	const H = 160;
 	/** The thinnest lane a drag leaves. */
 	const MIN = 0.02;
-	/** A dot's standard height, the CLI's `STANDARD_DOT`: a lane with no height. */
-	const STANDARD_DOT = 0.12;
-	/** What a scale of 1 draws in a lane `h` tall: the standard, or the lane where thinner. */
-	const unit = (h: number) => Math.min(h, STANDARD_DOT);
+	/** A dot's height at a scale of 1, whatever its lane: the CLI's `STANDARD_DOT`, half a lane with no height. */
+	const STANDARD_DOT = 0.06;
 
 	let band: HTMLDivElement;
 	let svg: SVGSVGElement | null = null;
@@ -210,8 +208,8 @@
 	const factor = (n: number) => (round(n) === 1 ? undefined : round(n));
 	$: scale = place.glyph_scale ?? 1;
 	$: aspect = place.glyph_aspect ?? 1;
-	/** The dot's box in px: its unit times its scale, about the lane's centre. */
-	$: dotH = unit(lane.h) * scale * H;
+	/** The dot's box in px: the standard times its scale, about the lane's centre. */
+	$: dotH = STANDARD_DOT * scale * H;
 	$: dotW = dotH * aspect;
 
 	function grab(mode: 'move' | 'top' | 'bottom', e: PointerEvent) {
@@ -263,7 +261,7 @@
 			}
 			tall = clamp(tall, MIN * H, H);
 			wide = clamp(wide, MIN * H, band.clientWidth);
-			if (h > 0) place = { ...place, glyph_scale: factor(tall / (unit(h) * H)), glyph_aspect: locked ? place.glyph_aspect : factor(wide / tall) };
+			place = { ...place, glyph_scale: factor(tall / (STANDARD_DOT * H)), glyph_aspect: locked ? place.glyph_aspect : factor(wide / tall) };
 		} else if (drag.mode === 'move') put(clamp(y + d, 0, 1 - h), h);
 		else if (drag.mode === 'bottom') put(y, clamp(h + d, MIN, 1 - y));
 		else {
@@ -299,7 +297,7 @@
 	// width is scaled from an unstretched one. Only this field's marks: the
 	// origin would move another's stretch.
 	$: if (own && occur && shown.h > 0) {
-		const grow = (unit(lane.h) * scale) / (unit(shown.h) * shown.scale);
+		const grow = scale / shown.scale;
 		const k = lane.h / shown.h;
 		for (const mark of own.querySelectorAll<SVGElement>('.point-fg'))
 			Object.assign(mark.style, {
@@ -391,6 +389,7 @@
 						data-handle="{sx},{sy}"
 						style:left="{(sx + 1) * 50}%"
 						style:top="{(sy + 1) * 50}%"
+						style:transform="translate({(sx - 1) * 50}%, {(sy - 1) * 50}%)"
 						style:cursor={CURSORS[`${sx * sy}`] ?? (sx ? 'ew-resize' : 'ns-resize')}
 						on:pointerdown={(e) => size(sx, sy, e)}
 					></span>
@@ -549,7 +548,10 @@
 		pointer-events: none;
 	}
 
-	/* A handle is a finger's reach; a hint, what is drawn of it, is small. */
+	/* A handle is a finger's reach; a hint, what is drawn of it, is small.
+	   A dot's stand outside its box, each on its side or corner (inline):
+	   centred on a dot hardly taller than one, they would overlap, the
+	   later taking the press (da-ijjjn). */
 	.handle {
 		position: absolute;
 		inline-size: 14px;
