@@ -13,7 +13,7 @@
 use chrono::NaiveDateTime;
 use serde_json::Value;
 
-use crate::error::{ParseError, Result};
+use crate::error::{ParseError, Readings, Result};
 use crate::input::data_args::Compat;
 use crate::shape::{REF_MARK, STR_MARK};
 use crate::time::date::unsigned_days_hint;
@@ -219,6 +219,24 @@ pub(super) fn infer_typed_value(
             )));
         }
     }
+    // da-job98: a wall time a fall-back night repeats is two instants, and
+    // which is the person's to say, as of `-t` (da-6i7l1).
+    if let (KeyType::Time, Some(later)) = (ty, compat.later) {
+        if let (Some((first, _)), Some((second, _))) =
+            (instant(value, compat, false), instant(value, compat, true))
+        {
+            if first.utc != second.utc {
+                return match later.get(path) {
+                    Some(&later) => Ok(Some(if later { second } else { first }.to_v2_json())),
+                    None => Err(ParseError::RepeatedTime(Readings::new(
+                        format!("{path}="),
+                        &first,
+                        &second,
+                    ))),
+                };
+            }
+        }
+    }
     match coerce_as(ty, value, compat) {
         Some(v) => Ok(Some(v)),
         // The entry's own time and duration keep their own parsers, and
@@ -263,11 +281,11 @@ fn coerce_as(ty: KeyType, value: &str, compat: Compat) -> Option<Value> {
                 None => infer_type(value),
             }
         }
-        KeyType::Time => Some(instant(value, compat)?.0.to_v2_json()),
+        KeyType::Time => Some(instant(value, compat, false)?.0.to_v2_json()),
         // The same instant (da-iqzxa), stored as its wall clock in the
         // entry's zone, or in UTC when the value gave its own offset.
         KeyType::DateTime => {
-            let (at, zoned) = instant(value, compat)?;
+            let (at, zoned) = instant(value, compat, false)?;
             text(if zoned {
                 at.utc.format("%Y-%m-%dT%H:%M:%SZ").to_string()
             } else {
@@ -282,14 +300,18 @@ fn coerce_as(ty: KeyType, value: &str, compat: Compat) -> Option<Value> {
 /// `value` as `-t` composes its own, from the entry's time in its zone: a
 /// day word is that day's midnight, and an ISO instant is read in its own
 /// offset, `Z` being UTC (da-kvosn).
-/// With it, whether the value was an instant given with its offset.
-fn instant(value: &str, compat: Compat) -> Option<(DatumTime, bool)> {
+/// With it, whether the value was an instant given with its offset. A wall
+/// time a fall-back night repeats is its `later` reading, or its first.
+fn instant(value: &str, compat: Compat, later: bool) -> Option<(DatumTime, bool)> {
     let t = parse_time(value, time_ctx(compat)).ok()?;
     let zoned = t.iso_instant.is_some();
     let base = compat.base.cloned().or_else(wall_clock)?;
-    let at = TimeBuilder::default()
-        .with_time_arg(t)
-        .build_with_uncertainty_at(base.utc, Zone::of(&base).ok()?, base.timezone);
+    let at = TimeBuilder {
+        later,
+        ..TimeBuilder::default()
+    }
+    .with_time_arg(t)
+    .build_with_uncertainty_at(base.utc, Zone::of(&base).ok()?, base.timezone);
     Some((at, zoned))
 }
 
@@ -589,6 +611,54 @@ fn comma_items(value: &str) -> Option<Vec<&str>> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::BTreeMap;
+
+    /// da-job98: a `*_time` value naming a wall time a fall-back night
+    /// repeats — 02:30 on 2026-10-25 in Europe/Berlin, 00:30Z and 01:30Z —
+    /// is refused naming both, unless the answers say which; with no
+    /// answers at all (`reparse`), the first, as before.
+    #[test]
+    fn a_repeated_wall_time_is_the_answers_to_say() {
+        let base =
+            DatumTime::from_utc_and_tz("2026-10-25T10:00:00Z".parse().unwrap(), "Europe/Berlin")
+                .unwrap();
+        let read = |later: Option<&BTreeMap<String, bool>>| {
+            let compat = Compat {
+                base: Some(&base),
+                later,
+                ..Compat::default()
+            };
+            infer_typed_value("wake_time", "02:30", false, compat).map(|v| {
+                DatumTime::from_v2_json(&v.unwrap())
+                    .unwrap()
+                    .utc
+                    .to_rfc3339()
+            })
+        };
+        let first = "2026-10-25T00:30:00+00:00".to_string();
+        let second = "2026-10-25T01:30:00+00:00".to_string();
+        let Err(ParseError::RepeatedTime(asked)) = read(Some(&BTreeMap::new())) else {
+            panic!("an unanswered repeated wall time is refused");
+        };
+        assert_eq!(
+            asked.options(),
+            [
+                "wake_time=2026-10-25T02:30:00+02:00",
+                "wake_time=2026-10-25T02:30:00+01:00"
+            ]
+        );
+        let answered = |later| BTreeMap::from([("wake_time".to_string(), later)]);
+        assert_eq!(read(Some(&answered(true))), Ok(second));
+        assert_eq!(read(Some(&answered(false))), Ok(first.clone()));
+        assert_eq!(read(None), Ok(first));
+        // A time the night does not repeat asks nothing.
+        let compat = Compat {
+            base: Some(&base),
+            later: Some(&BTreeMap::new()),
+            ..Compat::default()
+        };
+        assert!(infer_typed_value("wake_time", "03:30", false, compat).is_ok());
+    }
 
     #[test]
     fn infer_type_empty_is_undefined() {

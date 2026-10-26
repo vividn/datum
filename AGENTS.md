@@ -200,7 +200,13 @@ Native only: the browser's database is one process's at a time.
   anywhere else the line is refused naming both, nothing written. The
   answer is `TimeArgs::later`, which every build of the line reads. A
   `retime` is asked the same of the time it builds from the first entry it
-  makes one of, before it writes, and the answer is every entry's (da-z3fzv)
+  makes one of, before it writes, and the answer is every entry's
+  (da-z3fzv). A `*_time` key's value (`occur_time=`, `wake_time=`, a pair's `start_time=`)
+  on a log or an `update` is asked about the same way, spelled as the key
+  (da-job98): the data coercion refuses it with `ParseError::RepeatedTime`
+  unless `DataArgs::later` answers its key, and `log_core::asking` asks and
+  parses again; a line naming two is two questions, which the page answers
+  in order on one stdin. `reparse` passes no answers and reads the first
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
   (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
   so the block ENDS at the entry's time and the span precedes it —

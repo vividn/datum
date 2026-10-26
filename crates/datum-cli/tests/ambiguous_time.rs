@@ -2,20 +2,27 @@
 //! Europe/Berlin is 00:30Z and 01:30Z — is asked about, never read as the
 //! first in silence. A terminal is asked which, datum.day is told the
 //! question (exit 12) and answers on a second run's stdin, and anywhere else
-//! the line is refused naming both full spellings.
+//! the line is refused naming both full spellings. So is one a `*_time`
+//! key names (da-job98), spelled as the key.
 
 use std::process::{Command, Output, Stdio};
 
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-const LINE: [&str; 5] = ["occur", "tea", "-d", "2026-10-25", "-t"];
+const LINE: [&str; 6] = ["occur", "tea", "-d", "2026-10-25", "-t", "02:30"];
 const FIRST: &str = "-t 2026-10-25T02:30:00+02:00";
 const SECOND: &str = "-t 2026-10-25T02:30:00+01:00";
 
 fn datum(dir: &TempDir) -> Command {
     let mut cmd = bare(dir);
-    cmd.args(LINE).arg("02:30");
+    cmd.args(LINE);
+    cmd
+}
+
+fn run(dir: &TempDir, line: &[&str]) -> Command {
+    let mut cmd = bare(dir);
+    cmd.args(line);
     cmd
 }
 
@@ -34,17 +41,51 @@ fn bare(dir: &TempDir) -> Command {
 
 /// Each tea's slug and zone.
 fn teas(dir: &TempDir) -> Vec<(String, Option<String>)> {
+    rows(
+        dir,
+        "SELECT slug, occur_time_tz FROM entries WHERE field = 'tea'",
+    )
+}
+
+fn rows(dir: &TempDir, sql: &str) -> Vec<(String, Option<String>)> {
     let Ok(conn) = Connection::open(dir.path().join("t.db")) else {
         return vec![];
     };
-    let Ok(mut rows) = conn.prepare("SELECT slug, occur_time_tz FROM entries WHERE field = 'tea'")
-    else {
+    let Ok(mut rows) = conn.prepare(sql) else {
         return vec![];
     };
     rows.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap()
         .map(Result::unwrap)
         .collect()
+}
+
+/// The page's run of `line`, `answer` on its stdin.
+fn page(dir: &TempDir, line: &[&str], answer: &str) -> Output {
+    use std::io::Write;
+    let mut child = run(dir, line)
+        .env("DATUM_NO_DEFAULT_ANSWER", "1")
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(answer.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+/// The `DATUM_CHOOSE=` line a page is told.
+fn options(out: &Output) -> String {
+    let err = said(out);
+    assert_eq!(out.status.code(), Some(12), "{err}");
+    err.trim_end()
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// What the second reading stores: 01:30Z, in the zone it was read in.
@@ -120,23 +161,8 @@ fn a_terminal_is_asked_and_the_second_is_stored() {
 /// nothing written; then the line again with the second option on stdin.
 #[test]
 fn the_page_is_told_the_options_and_answers_on_a_second_run() {
-    use std::io::Write;
-
     let dir = tempfile::tempdir().unwrap();
-    let page = |answer: &str| {
-        let mut child = datum(&dir)
-            .env("DATUM_NO_DEFAULT_ANSWER", "1")
-            .stdin(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(answer.as_bytes())
-            .unwrap();
-        child.wait_with_output().unwrap()
-    };
+    let page = |answer: &str| page(&dir, &LINE, answer);
 
     let asked = page("");
     let err = said(&asked);
@@ -161,7 +187,7 @@ fn retime_is_asked_which_reading() {
     use std::io::Write;
 
     let dir = tempfile::tempdir().unwrap();
-    let logged = bare(&dir).args(LINE).arg("01:00").output().unwrap();
+    let logged = bare(&dir).args(&LINE[..5]).arg("01:00").output().unwrap();
     assert!(logged.status.success(), "{}", said(&logged));
     let before = teas(&dir);
     let retime = |page: bool, answer: &str| {
@@ -203,6 +229,108 @@ fn retime_is_asked_which_reading() {
     assert_eq!(teas(&dir), before, "unanswered: nothing moved");
 
     let answered = retime(true, &format!("{SECOND}\n"));
+    assert!(answered.status.success(), "{}", said(&answered));
+    assert_eq!(teas(&dir), second_stored());
+}
+
+/// da-job98: an `occur_time=` key is a wall time as `-t` is, and refused
+/// where no one can be asked, naming both as the key.
+#[test]
+fn a_time_key_no_one_can_be_asked_about_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = run(&dir, &["occur", "tea", "occur_time=2026-10-25T02:30"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let err = said(&out);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains("`occur_time=2026-10-25T02:30:00+02:00` (the first)")
+            && err.contains("`occur_time=2026-10-25T02:30:00+01:00` (the second)"),
+        "{err}"
+    );
+    assert_eq!(teas(&dir), vec![], "nothing written");
+
+    // The pair's start is its own wall time.
+    let out = run(
+        &dir,
+        &[
+            "start",
+            "nap",
+            "start_time=2026-10-25T02:30",
+            "end_time=2026-10-25T03:30",
+        ],
+    )
+    .stdin(Stdio::null())
+    .output()
+    .unwrap();
+    let err = said(&out);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains("`start_time=2026-10-25T02:30:00+01:00` (the second)"),
+        "{err}"
+    );
+}
+
+/// Two keys on one line are two questions, the page answering the first
+/// before it is told the second, and each key stores the reading picked.
+#[test]
+fn the_page_answers_each_time_key_in_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let line = [
+        "occur",
+        "tea",
+        "occur_time=2026-10-25T02:30",
+        "brew_time=2026-10-25T02:10",
+    ];
+    let occur = "occur_time=2026-10-25T02:30:00+01:00";
+    assert_eq!(
+        options(&page(&dir, &line, "")),
+        format!("DATUM_CHOOSE=occur_time=2026-10-25T02:30:00+02:00|{occur}")
+    );
+    assert_eq!(
+        options(&page(&dir, &line, &format!("{occur}\n"))),
+        "DATUM_CHOOSE=brew_time=2026-10-25T02:10:00+02:00|brew_time=2026-10-25T02:10:00+01:00"
+    );
+    assert_eq!(teas(&dir), vec![], "unanswered: nothing written");
+
+    let answered = page(&dir, &line, &format!("{occur}\n1\n"));
+    assert!(answered.status.success(), "{}", said(&answered));
+    assert_eq!(teas(&dir), second_stored());
+    assert_eq!(
+        rows(
+            &dir,
+            "SELECT json_extract(data, '$.brew_time.utc'), NULL FROM entries WHERE field = 'tea'"
+        ),
+        vec![("2026-10-25T00:10:00.000Z".to_string(), None)],
+        "the first brew_time"
+    );
+}
+
+/// `update`'s `occur_time=` is asked about as a log's is.
+#[test]
+fn an_update_s_time_key_is_asked_about() {
+    let dir = tempfile::tempdir().unwrap();
+    let logged = run(&dir, &["occur", "tea", "-t", "2026-10-25T12:00"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(logged.status.success(), "{}", said(&logged));
+    let update = [
+        "update",
+        "tea:2026-10-25T11:00:00.000Z",
+        "occur_time=2026-10-25T02:30",
+    ];
+    let refused = run(&dir, &update).stdin(Stdio::null()).output().unwrap();
+    assert_eq!(refused.status.code(), Some(1), "{}", said(&refused));
+    assert!(
+        said(&refused).contains("happens twice"),
+        "{}",
+        said(&refused)
+    );
+    assert_eq!(teas(&dir)[0].0, "tea:2026-10-25T11:00:00.000Z", "unmoved");
+
+    let answered = page(&dir, &update, "2\n");
     assert!(answered.status.success(), "{}", said(&answered));
     assert_eq!(teas(&dir), second_stored());
 }

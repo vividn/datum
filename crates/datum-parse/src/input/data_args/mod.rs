@@ -193,6 +193,13 @@ pub struct DataArgs {
     /// duration is read from them. They fill slots, and under `-C` are the
     /// comment's words.
     pub verbatim: Vec<String>,
+    /// Which reading of a wall time a fall-back night repeats each `*_time`
+    /// key means, by key, `true` the later (da-job98). With a map, a key
+    /// naming one it does not answer is refused,
+    /// [`ParseError::RepeatedTime`](crate::ParseError::RepeatedTime), for
+    /// the command to ask; with none the first is taken, as a stored line
+    /// read again (`reparse`) took it.
+    pub later: Option<BTreeMap<String, bool>>,
 }
 
 impl FlexibleTarget for DataArgs {
@@ -227,6 +234,8 @@ pub(crate) struct Compat<'a> {
     pub(crate) types: Option<&'a BTreeMap<String, KeyType>>,
     /// See [`DataArgs::literal`].
     pub(crate) literal: bool,
+    /// See [`DataArgs::later`].
+    pub(crate) later: Option<&'a BTreeMap<String, bool>>,
 }
 
 /// Resolve `DataArgs` into the final `DatumData` object.
@@ -255,6 +264,7 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
         time_flags: args.time_flags.as_ref(),
         types: Some(&args.types),
         literal: args.literal,
+        later: args.later.as_ref(),
     };
 
     // Clone the bits we mutate; the input bag is treated as read-only.

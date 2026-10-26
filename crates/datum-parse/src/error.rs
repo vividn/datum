@@ -6,6 +6,8 @@
 
 use thiserror::Error;
 
+use crate::time::DatumTime;
+
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
     #[error("Invalid time: {0}")]
@@ -70,6 +72,60 @@ pub enum ParseError {
     /// it and exit 0.
     #[error("grammar requested{}", .0.as_deref().map(|s| format!(" for '{s}'")).unwrap_or_default())]
     GrammarRequested(Option<String>),
+
+    /// A `*_time` key names a wall time a fall-back night repeats
+    /// (da-job98), and nothing said which reading: the command asks as it
+    /// asks of `-t` (da-6i7l1), and where no one can be asked this is the
+    /// refusal.
+    #[error("{0}")]
+    RepeatedTime(Readings),
+}
+
+/// The two instants a wall time a fall-back night repeats names, and how
+/// the line says each: `-t ` or `wake_time=` before its full spelling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Readings {
+    pub option: String,
+    pub first: chrono::DateTime<chrono::FixedOffset>,
+    pub second: chrono::DateTime<chrono::FixedOffset>,
+    pub zone: Option<String>,
+}
+
+impl Readings {
+    pub fn new(option: impl Into<String>, first: &DatumTime, second: &DatumTime) -> Self {
+        Self {
+            option: option.into(),
+            first: first.local_time(),
+            second: second.local_time(),
+            zone: first.timezone.clone(),
+        }
+    }
+
+    /// What happened: «2026-10-25 02:30 happens twice in Europe/Berlin, …».
+    pub fn said(&self) -> String {
+        format!(
+            "{} happens twice in {}, the night the clocks went back",
+            self.first.format("%Y-%m-%d %H:%M"),
+            self.zone.as_deref().unwrap_or("this zone"),
+        )
+    }
+
+    /// Each reading as the line would say it, the first first.
+    pub fn options(&self) -> [String; 2] {
+        [self.first, self.second]
+            .map(|t| format!("{}{}", self.option, t.format("%Y-%m-%dT%H:%M:%S%:z")))
+    }
+}
+
+impl std::fmt::Display for Readings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let [a, b] = self.options();
+        write!(
+            f,
+            "{}: nothing written. Say which: `{a}` (the first) or `{b}` (the second)",
+            self.said()
+        )
+    }
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

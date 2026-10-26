@@ -103,6 +103,11 @@ export const asking =
 	(run: CommandRunner): CommandRunner =>
 	async (argv, stdin, onStderr, key, stage, env = []) => {
 		let result = await run(argv, stdin, onStderr, key, stage, env);
+		// The buttons pressed so far, a line each in the order asked: a line
+		// may name more than one wall time a fall-back night repeats (an
+		// `occur_time=` and a `wake_time=`, da-job98), and each run asks
+		// the next only once the earlier are answered.
+		let picks = '';
 		while (result.code === UNANSWERED && stdin === undefined) {
 			const said = result.stderr.trimEnd().split('\n');
 			// A question with answers of its own, a wall time a fall-back
@@ -112,14 +117,16 @@ export const asking =
 			if (options) {
 				said.pop();
 				const picked = await choose(said.join('\n'), options, 'cancel', 'run');
-				result = await run(argv, `${picked ?? ''}\n`, onStderr, key, stage, env);
+				picks += `${picked ?? ''}\n`;
+				result = await run(argv, picks, onStderr, key, stage, env);
 				continue;
 			}
 			const pin = said.at(-1)?.startsWith('DATUM_LAST_SHOWN=') ? [said.pop()!] : [];
 			const question = said.pop()?.trimEnd() ?? '';
 			const text = [...said, result.stdout.trimEnd(), question].filter(Boolean).join('\n');
 			const yes = await confirm(text, question.split(' ')[0].toLowerCase());
-			result = await run(argv, yes ? 'y\n' : 'n\n', onStderr, key, stage, [...env, ...pin]);
+			const answer = picks + (yes ? 'y\n' : 'n\n');
+			result = await run(argv, answer, onStderr, key, stage, [...env, ...pin]);
 		}
 		return result;
 	};

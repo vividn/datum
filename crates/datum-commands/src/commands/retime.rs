@@ -197,7 +197,7 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
             matches!((read(own, false), read(own, true)), (Some(a), Some(b)) if a.utc != b.utc)
         });
         if let Some(own) = asked {
-            match which_reading(|later| read(own, later))? {
+            match which_reading(|later| read(own, later), "-t ")? {
                 Some(later) => args.time.later = later,
                 None => {
                     println!("Aborted.");

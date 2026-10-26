@@ -66,7 +66,7 @@ pub mod verb;
 pub use alias::expand::shell_split;
 pub use cli::{Cli, Command};
 pub use dur::{Dur, DurSpan};
-pub use error::{ParseError, Result};
+pub use error::{ParseError, Readings, Result};
 pub use input::{consolidate_keys, flexible_positional, FlexibleTarget};
 pub use parse::{parse_argv, parse_argv_showing, parse_argv_string};
 pub use time::{DateArg, DatumTime, TimeArg, TimeBuilder, Uncertainty, UncertaintyUnit};

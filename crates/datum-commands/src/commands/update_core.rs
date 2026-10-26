@@ -159,7 +159,7 @@ pub fn update_from_args(
         default_last: _,
         value: payload_value,
         extra: payload_extra,
-    } = parse_update_payload(&args, strategy, Default::default(), None)?;
+    } = parse_update_payload(&args, strategy, Default::default(), None, None)?;
     let output = args.output()?;
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
@@ -206,7 +206,7 @@ pub fn update_batch_from_args(
         default_last,
         value: payload_value,
         extra: payload_extra,
-    } = parse_update_payload(&args, strategy, Default::default(), None)?;
+    } = parse_update_payload(&args, strategy, Default::default(), None, None)?;
     let untyped = (payload_value, payload_extra);
     let (entries, token_errors) = crate::commands::helpers::resolve_batch(
         db,
@@ -230,6 +230,9 @@ pub fn update_batch_from_args(
     // types them: it reuses the first parse, which is literal (da-xvtbd).
     let mut types = std::collections::HashMap::new();
     let mut payloads = Vec::with_capacity(entries.len());
+    // A `*_time` key naming a wall time a fall-back night repeats is asked
+    // about once, as a log asks (da-job98).
+    let mut later = std::collections::BTreeMap::new();
     for e in &entries {
         if strategy == UpdateStrategy::Rekey {
             payloads.push(untyped.clone());
@@ -250,7 +253,14 @@ pub fn update_batch_from_args(
             let _ = created.refresh_offset();
             created
         });
-        let p = parse_update_payload(&args, strategy, types[&e.field].clone(), Some(base))?;
+        let parse = |later: &_| {
+            let types = types[&e.field].clone();
+            parse_update_payload(&args, strategy, types, Some(base.clone()), Some(later))
+        };
+        let Some(p) = crate::commands::log_core::asking(&mut later, parse)? else {
+            println!("Aborted.");
+            return Ok(());
+        };
         payloads.push((p.value, p.extra));
     }
 
@@ -696,6 +706,7 @@ pub(crate) fn parse_update_payload(
     strategy: UpdateStrategy,
     types: std::collections::BTreeMap<String, datum_parse::input::KeyType>,
     base: Option<DatumTime>,
+    later: Option<&std::collections::BTreeMap<String, bool>>,
 ) -> Result<UpdatePayload> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
 
@@ -751,6 +762,7 @@ pub(crate) fn parse_update_payload(
         literal: strategy == UpdateStrategy::Rekey,
         types,
         base,
+        later: later.cloned(),
         ..DataArgs::default()
     };
     let mut injected_immediates: Vec<String> = Vec::new();
@@ -1217,6 +1229,7 @@ mod tests {
             UpdateStrategy::Replace,
             Default::default(),
             None,
+            None,
         )
         .unwrap();
         let outcome = update_with_strategy(
@@ -1261,6 +1274,7 @@ mod tests {
             &update_args(&e.slug, vec![".a=1", ".b=2"]),
             UpdateStrategy::Replace,
             Default::default(),
+            None,
             None,
         )
         .unwrap();

@@ -141,7 +141,8 @@ impl From<datum_parse::ParseError> for DatumError {
             datum_parse::ParseError::MissingRequiredKey(path) => {
                 DatumError::Other(datum_parse::ParseError::MissingRequiredKey(path).to_string())
             }
-            e @ datum_parse::ParseError::WrongType { .. } => DatumError::Other(e.to_string()),
+            e @ (datum_parse::ParseError::WrongType { .. }
+            | datum_parse::ParseError::RepeatedTime(_)) => DatumError::Other(e.to_string()),
             datum_parse::ParseError::ExtraData(rem) => {
                 DatumError::Other(format!("Extra data with no matching key: {rem:?}"))
             }

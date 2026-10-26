@@ -17,7 +17,9 @@ use datum_core::{
 };
 use datum_parse::input::TimeArgs;
 use datum_parse::spec_keys::{parse_key_decl, KeyKind, SpecKeyWords};
+use datum_parse::{ParseError, Readings};
 use serde_json::{json, Value as JsonValue};
+use std::collections::BTreeMap;
 
 use crate::{
     args::{LogArgs, LogArgsExt},
@@ -154,7 +156,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             )
             .ok()
         };
-        match which_reading(read)? {
+        // Said as the line said it: a lifted key is no `-t` on it.
+        let option = lifted
+            .anchor()
+            .map_or("-t ".into(), |(key, _)| format!("{key}="));
+        match which_reading(read, &option)? {
             Some(later) => args.time.later = later,
             None => {
                 println!("Aborted.");
@@ -167,7 +173,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         Some(now) => Some(now.clone()),
         None => build_time_from_flags(&args.time, now.utc).ok(),
     };
-    let mut parsed = parse_log_args(&args, action, base.clone())?;
+    // da-job98: and so is a `*_time` key's, each time the line is read.
+    let mut later = BTreeMap::new();
+    let mut parse = |base: Option<DatumTime>| {
+        asking(&mut later, |later| {
+            parse_log_args(&args, action, base.clone(), Some(later))
+        })
+    };
+    let Some(mut parsed) = parse(base.clone())? else {
+        println!("Aborted.");
+        return Ok(());
+    };
     // da-bcdjm: an `occur_time=` key places the entry, so the relative keys
     // anchor at it as they do at `-t`. Resolved against the same base the
     // column gets below, then the line is parsed again at that anchor —
@@ -185,14 +201,22 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             ..args.time.clone()
         };
         let read_from = build_time_from_flags(&clock, now.utc).ok();
-        parsed = parse_log_args(&args, action, read_from)?;
+        let Some(again) = parse(read_from)? else {
+            println!("Aborted.");
+            return Ok(());
+        };
+        parsed = again;
     }
     if let Some(t) = data_occur_time(&parsed) {
         let mut anchor = parse_reserved_occur_time(&t, &base.unwrap_or_else(DatumTime::now))?;
         if full_day {
             anchor = whole_day(&anchor)?;
         }
-        parsed = parse_log_args(&args, action, Some(anchor))?;
+        let Some(again) = parse(Some(anchor))? else {
+            println!("Aborted.");
+            return Ok(());
+        };
+        parsed = again;
         if let Some(JsonValue::Object(obj)) = parsed.extra_data.as_mut() {
             obj.insert("occur_time".into(), t);
         }
@@ -437,13 +461,28 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
                         "start_time= and end_time= already fix the duration; drop the dur"
                     );
                 }
-                let start = build_time_from_flags(
-                    &TimeArgs {
-                        time: Some(s.clone()),
-                        ..args.time.clone()
-                    },
-                    now.utc,
-                )?;
+                let mut at_start = TimeArgs {
+                    time: Some(s.clone()),
+                    later: false,
+                    ..args.time.clone()
+                };
+                // da-job98: the start is a wall time of its own, asked
+                // about as the end was.
+                let read = |later| {
+                    let at = TimeArgs {
+                        later,
+                        ..at_start.clone()
+                    };
+                    build_time_from_flags(&at, now.utc).ok()
+                };
+                match which_reading(read, "start_time=")? {
+                    Some(later) => at_start.later = later,
+                    None => {
+                        println!("Aborted.");
+                        return Ok(());
+                    }
+                }
+                let start = build_time_from_flags(&at_start, now.utc)?;
                 if base_time.utc < start.utc {
                     anyhow::bail!("end_time={e} is before start_time={s}");
                 }
@@ -1198,6 +1237,7 @@ pub(crate) fn parse_log_args(
     args: &LogArgs,
     action: Action,
     base: Option<DatumTime>,
+    later: Option<&BTreeMap<String, bool>>,
 ) -> Result<ParsedLogArgs> {
     use datum_parse::input::data_args::{handle_log_data_args, DataArgs};
     use datum_parse::input::flexible_positional::flexible_positional;
@@ -1224,6 +1264,7 @@ pub(crate) fn parse_log_args(
     // state-bearing verbs is handled below.
     let mut data_args = DataArgs {
         base,
+        later: later.cloned(),
         time_flags: Some(args.time.clone()),
         types: args.key_types.clone(),
         command_change: matches!(
@@ -2524,37 +2565,33 @@ fn neighbours_zone(db: &Db, time: &TimeArgs, now: chrono::DateTime<chrono::Utc>)
 /// the line's build with `TimeArgs::later` as given. Asked on a terminal,
 /// and of datum.day, which answers by running the line again with the answer
 /// on stdin (`DATUM_NO_DEFAULT_ANSWER=1`); anywhere else no one can be
-/// asked, and the line is refused naming both full spellings.
-pub(crate) fn which_reading(read: impl Fn(bool) -> Option<DatumTime>) -> Result<Option<bool>> {
-    use std::io::{IsTerminal, Write};
+/// asked, and the line is refused naming both full spellings, each after
+/// `option`, how the line gave the time (`-t `, `end_time=`).
+pub(crate) fn which_reading(
+    read: impl Fn(bool) -> Option<DatumTime>,
+    option: &str,
+) -> Result<Option<bool>> {
     let (Some(first), Some(second)) = (read(false), read(true)) else {
         return Ok(Some(false));
     };
     if first.utc == second.utc {
         return Ok(Some(false));
     }
-    let spell = |t: &DatumTime, format| {
-        let offset = chrono::FixedOffset::east_opt(t.offset_minutes * 60)
-            .unwrap_or(chrono::FixedOffset::east_opt(0).expect("UTC is an offset"));
-        t.utc.with_timezone(&offset).format(format).to_string()
-    };
-    let (a, b) = (
-        spell(&first, "%Y-%m-%dT%H:%M:%S%:z"),
-        spell(&second, "%Y-%m-%dT%H:%M:%S%:z"),
-    );
-    let said = format!(
-        "{} happens twice in {}, the night the clocks went back",
-        spell(&first, "%Y-%m-%d %H:%M"),
-        first.timezone.as_deref().unwrap_or("this zone"),
-    );
+    ask_reading(&Readings::new(option, &first, &second))
+}
+
+/// [`which_reading`]'s question, of a `*_time` key too (da-job98): `None`
+/// when the person asked declined.
+fn ask_reading(readings: &Readings) -> Result<Option<bool>> {
+    use std::io::{IsTerminal, Write};
+    let said = readings.said();
+    let [a, b] = readings.options();
     // A terminal is asked whatever the env says: a page's question unsaid
     // would leave a person there waiting on nothing they can see.
     let terminal = std::io::stdin().is_terminal();
     let page = !terminal && std::env::var("DATUM_NO_DEFAULT_ANSWER").is_ok_and(|v| v == "1");
     if !page && !terminal {
-        anyhow::bail!(
-            "{said}: nothing written. Say which: `-t {a}` (the first) or `-t {b}` (the second)"
-        );
+        return Err(ParseError::RepeatedTime(readings.clone()).into());
     }
     let mut stderr = std::io::stderr().lock();
     // The page's answer is on stdin before it is asked: asked, it said
@@ -2562,25 +2599,50 @@ pub(crate) fn which_reading(read: impl Fn(bool) -> Option<DatumTime>) -> Result<
     if !page {
         let _ = write!(
             stderr,
-            "{said}. Which one?\n  1  -t {a}  (the first)\n  2  -t {b}  (the second)\n[1/2] "
+            "{said}. Which one?\n  1  {a}  (the first)\n  2  {b}  (the second)\n[1/2] "
         );
         let _ = stderr.flush();
     }
     let mut line = String::new();
     if std::io::stdin().read_line(&mut line).unwrap_or(0) == 0 && page {
         // The options after the question, a button each on the page.
-        let _ = write!(stderr, "{said}. Which one?\nDATUM_CHOOSE=-t {a}|-t {b}");
+        let _ = write!(stderr, "{said}. Which one?\nDATUM_CHOOSE={a}|{b}");
         return Err(crate::commands::helpers::Unanswered.into());
     }
     let answer = line.trim();
-    let answer = answer.strip_prefix("-t ").unwrap_or(answer).trim();
-    Ok(match answer {
+    let option = readings.option.trim_end();
+    let spelled = |o: &str| o.strip_prefix(option).unwrap_or(o).trim().to_string();
+    let answer = spelled(answer);
+    Ok(match answer.as_str() {
         "1" => Some(false),
         "2" => Some(true),
-        _ if answer == a => Some(false),
-        _ if answer == b => Some(true),
+        _ if answer == spelled(&a) => Some(false),
+        _ if answer == spelled(&b) => Some(true),
         _ => None,
     })
+}
+
+/// `parse` again until every `*_time` key naming a wall time a fall-back
+/// night repeats has its reading in `later`, asking of each as `-t` is
+/// asked (da-job98): `None` when the person asked declined.
+pub(crate) fn asking<T>(
+    later: &mut BTreeMap<String, bool>,
+    mut parse: impl FnMut(&BTreeMap<String, bool>) -> Result<T>,
+) -> Result<Option<T>> {
+    loop {
+        let err = match parse(later) {
+            Ok(parsed) => return Ok(Some(parsed)),
+            Err(err) => err,
+        };
+        let Some(ParseError::RepeatedTime(readings)) = err.downcast_ref() else {
+            return Err(err);
+        };
+        let key = readings.option.trim_end_matches('=').to_string();
+        match ask_reading(readings)? {
+            Some(reading) => later.insert(key, reading),
+            None => return Ok(None),
+        };
+    }
 }
 
 /// The IANA name `-z` resolves to, `None` without one: the host's zone.
