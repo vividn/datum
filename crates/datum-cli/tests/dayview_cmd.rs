@@ -648,23 +648,26 @@ fn dayview_json_carries_the_label_geometry() {
 /// da-6gvw: `end work 5` stores a Block whose state is `false` — the
 /// field was OFF for those five minutes. It must be a HOLE: nothing
 /// painted, and the `work` block that encloses it cut in two.
+///
+/// The day is pinned: a day with two UTC offsets (as yesterday was on
+/// 2026-10-26 in Europe/Berlin) draws blocks in lanes as `<path>`s (da-igzi6).
 #[test]
 fn a_false_dur_block_is_a_hole_cut_out_of_the_enclosing_block() {
     let db = fresh_db();
-    run_cli(&["start", "work", "-y", "-t", "0900"], &db).expect("start");
-    run_cli(&["end", "work", "5", "-y", "-t", "1000"], &db).expect("end with dur");
-    run_cli(&["end", "work", "-y", "-t", "1200"], &db).expect("end");
+    let day = "2024-06-12";
+    run_cli(&["start", "work", "-d", day, "-t", "0900"], &db).expect("start");
+    run_cli(&["end", "work", "5", "-d", day, "-t", "1000"], &db).expect("end with dur");
+    run_cli(&["end", "work", "-d", day, "-t", "1200"], &db).expect("end");
 
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
-    let day = yesterday();
     run_cli(
         &[
             "dayview",
             "--start-date",
-            &day,
+            day,
             "--end-date",
-            &day,
+            day,
             "--width",
             "2400",
             "--label-width",
