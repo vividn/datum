@@ -394,7 +394,10 @@ describe('widget options', () => {
 			});
 			assert.equal(await dotted(page, room), false, 'a session setting dirtied the layout');
 
-			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle').first().hover({ force: true }); // the wheel opens over it
+			// The 45m picture, not the 30m one still drawn: 60m from a stale
+			// -30m handle is a 90m window (da-hkkx3).
+			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle[data-at="-45m"]').hover({ force: true }); // the wheel opens over it
+			await page.locator('.nowview-wheel .handle.held[data-at="-45m"]').waitFor();
 			await page.locator('.nowview-wheel .notch[data-step="60m"]').click();
 			await page.waitForFunction(() => {
 				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
