@@ -247,7 +247,7 @@ const META_SUBCOMMANDS: &[SubcommandSpec] = &[sub("show", &["datum meta show <FI
 const KIT_SUBCOMMANDS: &[SubcommandSpec] = &[
     sub(
         "install",
-        &["datum kit install <PATH|-> [--force] [--yes] [--dry-run]"],
+        &["datum kit install <PATH|-> [--force] [--yes] [--dry-run] [--set NAME=VALUE]..."],
     ),
     sub("export", &["datum kit export <NAME> [PATH]"]),
     sub("list", &["datum kit list"]),
@@ -1136,7 +1136,7 @@ const FLAG_BODY: &str = "USAGE:\n  datum flag <FIELD> [COMMENT...] [-y / -q / -d
 
 const META_BODY: &str = "USAGE:\n  datum meta <FIELD> <TEXT>...\n  datum meta show <FIELD>\n\nAttach (or list) a protocol-change note on <FIELD>. Stored as a Verb::Point\nentry with the note as its `state` and `extra_metadata = { meta: true }`.\n`meta show` lists every note attached to <FIELD> in create_time order.\n\nLike `flag`, a meta note is left out of `now` and the dayview, and `tail`\nlists it as it lists any row.\n";
 
-const KIT_BODY: &str = "USAGE:\n  datum kit install <PATH|-> [--force] [--yes] [--dry-run]\n  datum kit export <NAME> [PATH]\n  datum kit list\n  datum kit uninstall <NAME>\n  datum kit show <NAME>\n\nA kit is a TOML bundle of field specs, aliases, SQL views, indices,\nlevel-1/2 commands, layouts and datum.day widgets: a [[widget]] is a\ncommand that reads, whose `--json` rows it draws, and a row_action that\nlogs, like `occur {field}`, which a tap on a row runs. Install writes the kit's rows tagged with the kit id,\nkeeping a field's own spec unless --force (the bare one a field's first\nlog wrote is the kit's to replace); uninstall drops every row with that\nid and gives a logged field its bare spec back. Export round-trips the\ninstalled rows and the kit's [kit] table back to TOML (defaults to\nstdout when path is omitted).\nInstall reads the TOML from stdin when PATH is `-`; --dry-run prints\nwhat the kit brings and writes nothing; --yes approves its indices\nwithout asking.\n\nList shows every installed kit, its version and what it installed. Show\nprints a single kit's version, description and installed contents, and\nnames each index that would not build on this device.\n";
+const KIT_BODY: &str = "USAGE:\n  datum kit install <PATH|-> [--force] [--yes] [--dry-run] [--set NAME=VALUE]...\n  datum kit export <NAME> [PATH]\n  datum kit list\n  datum kit uninstall <NAME>\n  datum kit show <NAME>\n\nA kit is a TOML bundle of field specs, aliases, SQL views, indices,\nlevel-1/2 commands, layouts and datum.day widgets: a [[widget]] is a\ncommand that reads, whose `--json` rows it draws, and a row_action that\nlogs, like `occur {field}`, which a tap on a row runs. Install writes the kit's rows tagged with the kit id,\nkeeping a field's own spec unless --force (the bare one a field's first\nlog wrote is the kit's to replace); uninstall drops every row with that\nid and gives a logged field its bare spec back. Export round-trips the\ninstalled rows and the kit's [kit] table back to TOML (defaults to\nstdout when path is omitted).\nInstall reads the TOML from stdin when PATH is `-`; --dry-run prints\nwhat the kit brings and writes nothing; --yes approves its indices\nwithout asking.\n\nA kit may take parameters, each declared in its [kit.params] table with a\ndefault and a description (`prefix = { default = \"\", description = \"…\" }`),\nand named in its text outside [kit] as `%kit:prefix%`. Install fills each in with its\n--set value, else the one the last install used, else its default, and\nrefuses one with none; the values are kept with the kit.\n\nList shows every installed kit, its version, what it installed and its\nparameters' values. Show\nprints a single kit's version, description, parameters and installed\ncontents, and names each index that would not build on this device.\n";
 
 const VIEW_BODY: &str = "USAGE:\n  datum view <NAME> [--format FMT] [--watch]\n  datum view --list\n\nARGS:\n  <NAME>           Installed view name (see `datum view --list`).\n\nOPTIONS:\n  -f, --format <FMT>   pretty | tsv | csv | json | auto (default auto).\n  -w, --watch          Re-run the query every 2s; clear-screen between\n                       redraws.\n  --list               Print installed view names and exit.\n\nViews execute under PRAGMA query_only = 1, so a malicious or buggy\nview cannot mutate the DB.\n";
 
@@ -3073,7 +3073,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         intro: "",
         long_description: None,
         usage: &[
-            "datum kit install <PATH|-> [--force] [--yes] [--dry-run]",
+            "datum kit install <PATH|-> [--force] [--yes] [--dry-run] [--set NAME=VALUE]...",
             "datum kit export <NAME> [PATH]",
             "datum kit list",
             "datum kit uninstall <NAME>",

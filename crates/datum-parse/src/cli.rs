@@ -871,6 +871,8 @@ pub struct KitInstallArgs {
     /// Print the kit's name and what it brings, and write nothing — what a
     /// caller asks before it answers the trust prompt itself (the browser).
     pub dry_run: bool,
+    /// `--set NAME=VALUE`: the kit's parameters (da-netk8).
+    pub set: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug)]

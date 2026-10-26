@@ -748,3 +748,146 @@ fn a_widget_naming_a_kit_command_that_expands_is_refused() {
     )
     .unwrap();
 }
+
+/// A kit's parameters (da-netk8): `%kit:prefix%` in an id template, an
+/// alias and a view is filled in at install with `--set`'s value, else the
+/// last install's, else the default, and one with neither is refused by name.
+#[test]
+fn a_kits_parameters_fill_its_text() {
+    let kit = |default: &str| {
+        format!(
+            "[kit]\nname = \"tracker\"\n\n[kit.params]\nprefix = {{ {default}description = \"the id prefix\" }}\n\n\
+             [[field]]\nname = \"issue\"\nverb = \"occur\"\nid_template = \"%kit:prefix%-%hid:5%\"\n\n\
+             [[alias]]\nname = \"mine\"\nexpands_to = \"occur issue in=%kit:prefix%\"\n\n\
+             [[view]]\nname = \"issues\"\nsql = \"SELECT '%kit:prefix%' AS prefix\"\n"
+        )
+    };
+    let filled = |db: &Db| {
+        let spec = db.load_spec("issue").unwrap().unwrap();
+        let alias = db.load_aliases_by_kit("tracker").unwrap();
+        let alias = alias.iter().find(|a| a.name == "mine").unwrap();
+        let view = &db.load_views_by_kit("tracker").unwrap()[0];
+        let values = db.load_kit_params("tracker").unwrap();
+        (
+            spec.id_template.unwrap(),
+            alias.expands_to.clone(),
+            view.sql.clone(),
+            values["prefix"].clone(),
+        )
+    };
+    let cn = (
+        "cn-%hid:5%".to_string(),
+        "occur issue in=cn".to_string(),
+        "SELECT 'cn' AS prefix".to_string(),
+        "cn".to_string(),
+    );
+
+    // `--set`, then a reinstall without it keeps the value (`--force`
+    // writes every row again, from the value kept).
+    let db = fresh_db();
+    install(&db, &kit("default = \"da\", "), &["--set", "prefix=cn"]).unwrap();
+    assert_eq!(filled(&db), cn);
+    install(&db, &kit("default = \"da\", "), &["--force"]).unwrap();
+    assert_eq!(filled(&db), cn, "a reinstall keeps the first value");
+
+    // Without `--set`, the default.
+    let db = fresh_db();
+    install(&db, &kit("default = \"da\", "), &[]).unwrap();
+    assert_eq!(filled(&db).0, "da-%hid:5%");
+    assert_eq!(filled(&db).3, "da");
+
+    // With no default, `--set` is needed; refused by name, nothing written.
+    let db = fresh_db();
+    for extra in [&[][..], &["--dry-run"]] {
+        let err = format!("{:#}", install(&db, &kit(""), extra).unwrap_err());
+        assert!(
+            err.contains("parameter 'prefix'") && err.contains("--set prefix="),
+            "{err}"
+        );
+    }
+    assert!(
+        db.load_spec("issue").unwrap().is_none(),
+        "nothing installed"
+    );
+    install(&db, &kit(""), &["--set=prefix=cn"]).unwrap();
+    assert_eq!(filled(&db), cn);
+
+    // A `--set` the kit does not declare, and a placeholder naming none.
+    let db = fresh_db();
+    let err = format!(
+        "{:#}",
+        install(&db, &kit(""), &["--set", "prefix=cn", "--set", "prefx=cn"]).unwrap_err()
+    );
+    assert!(err.contains("no parameter 'prefx'"), "{err}");
+    let typo = kit("").replace("in=%kit:prefix%", "in=%kit:prefx%");
+    let err = format!(
+        "{:#}",
+        install(&db, &typo, &["--set", "prefix=cn"]).unwrap_err()
+    );
+    assert!(err.contains("«%kit:prefx%»"), "{err}");
+    assert!(
+        db.load_spec("issue").unwrap().is_none(),
+        "nothing installed"
+    );
+
+    // A value is not read again for placeholders.
+    let db = fresh_db();
+    install(&db, &kit(""), &["--set", "prefix=%kit:prefix%"]).unwrap();
+    assert_eq!(filled(&db).3, "%kit:prefix%");
+
+    // What `kit install`, `kit list` and `kit show` print of them, on the
+    // real binary: a list with no kit taking any has no column for them.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("k.toml");
+    std::fs::write(&path, kit("")).unwrap();
+    let path = path.to_string_lossy().to_string();
+    let datum = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", dir.path().join("data.db"))
+            .env("DATUM_HOME", dir.path().join("home"))
+            .env("DATUM_CONFIG_HOME", dir.path().join("config"))
+            .env("NO_COLOR", "1")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let other = dir.path().join("other.toml");
+    std::fs::write(
+        &other,
+        "[kit]\nname = \"other\"\n\n[[field]]\nname = \"tea\"\nverb = \"occur\"\n",
+    )
+    .unwrap();
+    datum(&["kit", "install", &other.to_string_lossy()]);
+    assert!(!datum(&["kit", "list"]).contains("params"));
+    let installed = datum(&["kit", "install", &path, "--set", "prefix=cn"]);
+    assert!(installed.contains("Parameters: prefix=cn\n"), "{installed}");
+    let listed = datum(&["kit", "list"]);
+    let rows: Vec<&str> = listed.lines().collect();
+    assert!(rows[0].ends_with("layouts  params"), "{listed}");
+    assert!(
+        rows.iter()
+            .any(|r| r.starts_with("tracker ") && r.ends_with("  prefix=cn")),
+        "{listed}"
+    );
+    assert!(
+        rows.iter()
+            .any(|r| r.starts_with("other ") && r.ends_with('0')),
+        "{listed}"
+    );
+    let shown = datum(&["kit", "show", "tracker"]);
+    assert!(
+        shown.contains("parameters (1):\n  prefix = \"cn\" — the id prefix\n"),
+        "{shown}"
+    );
+    let again = datum(&["kit", "install", &path, "--set", "prefix=xx", "--force"]);
+    assert!(
+        again.contains("Parameters: prefix=xx (was cn)\n"),
+        "{again}"
+    );
+}

@@ -72,6 +72,21 @@ pub struct KitMeta {
     pub version: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// `[kit.params]`: the values an install fills in wherever the kit's
+    /// text says `%kit:<name>%` (da-netk8). See [`KitToml::fill_params`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, KitParam>,
+}
+
+/// One `[kit.params]` entry: `prefix = { default = "", description = "…" }`.
+/// One with no default must be given, `kit install --set name=value`. The
+/// `[kit]` table itself is not filled in: a `%kit:…%` there stays as it is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct KitParam {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// A `[[field]]` entry as it appears in the TOML.
@@ -576,7 +591,7 @@ impl KitToml {
             kit: KitMeta {
                 name: name.to_string(),
                 version: version.map(str::to_string),
-                description: None,
+                ..KitMeta::default()
             },
             fields,
             views: Vec::new(),
@@ -614,6 +629,96 @@ impl KitToml {
         kit.widgets = widgets;
         kit
     }
+}
+
+impl KitToml {
+    /// This kit, `src` parsed again with each `%kit:<name>%` outside its
+    /// `[kit]` table replaced by parameter `name`'s value: `set`'s, else
+    /// `kept`'s (what an earlier install filled in), else its default
+    /// (da-netk8). Returns it and the values filled in. A parameter with
+    /// none, a `set` the kit does not declare and a placeholder naming one
+    /// it does not are each refused by name.
+    pub fn fill_params(
+        self,
+        src: &str,
+        set: &BTreeMap<String, String>,
+        kept: &BTreeMap<String, String>,
+    ) -> Result<(Self, BTreeMap<String, String>)> {
+        let kit = &self.kit;
+        let err = |m: String| DatumError::Other(format!("kit '{}': {m}", kit.name));
+        if let Some(name) = set.keys().find(|n| !kit.params.contains_key(*n)) {
+            let takes: Vec<&str> = kit.params.keys().map(String::as_str).collect();
+            return Err(err(match takes.is_empty() {
+                true => format!("no parameter '{name}': it declares no parameters"),
+                false => format!("no parameter '{name}': it takes {}", takes.join(", ")),
+            }));
+        }
+        let mut values = BTreeMap::new();
+        for (name, p) in &kit.params {
+            let Some(v) = set.get(name).or(kept.get(name)).or(p.default.as_ref()) else {
+                let about = p
+                    .description
+                    .as_deref()
+                    .map_or(String::new(), |d| format!(" ({d})"));
+                return Err(err(format!(
+                    "parameter '{name}'{about} has no default: --set {name}=VALUE"
+                )));
+            };
+            values.insert(name.clone(), v.clone());
+        }
+        if !src.contains(PARAM_OPEN) {
+            return Ok((self, values));
+        }
+        // Filled in the parsed TOML's strings, not in `src`'s text, so a value
+        // holding a quote cannot change what the TOML says; `self` was parsed
+        // first only for the declarations.
+        let mut doc: toml::Table = src
+            .parse()
+            .map_err(|e| DatumError::Other(format!("kit TOML parse: {e}")))?;
+        for (key, v) in doc.iter_mut() {
+            if key != "kit" {
+                fill(v, &values).map_err(err)?;
+            }
+        }
+        let filled = toml::Value::Table(doc)
+            .try_into()
+            .map_err(|e| DatumError::Other(format!("kit TOML parse: {e}")))?;
+        Ok((filled, values))
+    }
+}
+
+const PARAM_OPEN: &str = "%kit:";
+
+/// Each string in `v` with its `%kit:<name>%` replaced by `values[name]`.
+/// A value is not read again: a `%kit:…%` in one stays as it is.
+fn fill(v: &mut toml::Value, values: &BTreeMap<String, String>) -> std::result::Result<(), String> {
+    match v {
+        toml::Value::String(s) => {
+            let mut out = String::new();
+            let mut rest = s.as_str();
+            while let Some(at) = rest.find(PARAM_OPEN) {
+                out.push_str(&rest[..at]);
+                let after = &rest[at + PARAM_OPEN.len()..];
+                let Some((name, tail)) = after.split_once('%') else {
+                    let word = after.split_whitespace().next().unwrap_or("");
+                    return Err(format!("«{PARAM_OPEN}{word}» is not closed with «%»"));
+                };
+                let Some(value) = values.get(name) else {
+                    return Err(format!(
+                        "«{PARAM_OPEN}{name}%» names no parameter of the kit"
+                    ));
+                };
+                out.push_str(value);
+                rest = tail;
+            }
+            out.push_str(rest);
+            *s = out;
+        }
+        toml::Value::Array(a) => a.iter_mut().try_for_each(|v| fill(v, values))?,
+        toml::Value::Table(t) => t.iter_mut().try_for_each(|(_, v)| fill(v, values))?,
+        _ => {}
+    }
+    Ok(())
 }
 
 /// `field.3.unti` → `kit TOML: [[field]] water: unknown key «unti»`: an
@@ -1669,8 +1774,7 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
         let kit = KitToml {
             kit: KitMeta {
                 name: "k".into(),
-                version: None,
-                description: None,
+                ..KitMeta::default()
             },
             fields: vec![],
             views: vec![],

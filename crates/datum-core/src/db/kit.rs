@@ -18,6 +18,8 @@
 //! and re-tags it with the kit's `kit_id`, keeping the spec it displaced
 //! for `kit uninstall` to write back (da-uokdb).
 
+use std::collections::BTreeMap;
+
 use rusqlite::params;
 use serde_json::Value as JsonValue;
 
@@ -33,6 +35,16 @@ use super::Db;
 
 /// The key of a kit's `kit:<name>` entry that holds its widgets.
 const WIDGETS_KEY: &str = "widgets";
+/// The values its `[kit.params]` were filled with (da-netk8).
+const PARAMS_KEY: &str = "param_values";
+
+/// The parameter values a `kit:<name>` entry's data holds.
+fn params_of(data: &JsonValue) -> Result<BTreeMap<String, String>> {
+    match data.get(PARAMS_KEY) {
+        Some(v) => Ok(serde_json::from_value(v.clone())?),
+        None => Ok(BTreeMap::new()),
+    }
+}
 
 /// The kit a spec entry's data names, if any.
 fn spec_kit(data: &JsonValue) -> Option<&str> {
@@ -112,6 +124,8 @@ pub struct InstalledKit {
     pub index_count: usize,
     pub command_count: usize,
     pub layout_count: usize,
+    /// The values its parameters were filled with (da-netk8).
+    pub params: BTreeMap<String, String>,
 }
 
 /// One kit index definition, returned by [`Db::load_indices_by_kit`].
@@ -284,12 +298,14 @@ impl Db {
     /// it syncs with the kit's rows, and its `[[widget]]`s in it under
     /// `widgets` (da-gh37k). An installed one is kept unless `force`, as the
     /// kit's other rows are — and its widgets by name, as each of those is
-    /// its own row: a widget of a name it lacks is added to it. Returns the
-    /// names of the widgets written.
+    /// its own row: a widget of a name it lacks is added to it. The values
+    /// its parameters were filled with go in it under `param_values`, this
+    /// install's (da-netk8). Returns the names of the widgets written.
     pub fn install_kit_meta(
         &self,
         meta: &KitMeta,
         widgets: &[WidgetEntry],
+        values: &BTreeMap<String, String>,
         force: bool,
     ) -> Result<Vec<String>> {
         let kept = match force {
@@ -307,7 +323,8 @@ impl Db {
             .iter()
             .filter(|w| !have.iter().any(|h| h.name == w.name))
             .collect();
-        if kept.is_some() && new.is_empty() {
+        let had = kept.as_ref().map(params_of).transpose()?;
+        if kept.is_some() && new.is_empty() && had.as_ref() == Some(values) {
             return Ok(Vec::new());
         }
         let mut data = match kept {
@@ -317,6 +334,10 @@ impl Db {
         let all: Vec<&WidgetEntry> = have.iter().chain(new.iter().copied()).collect();
         if !all.is_empty() {
             data[WIDGETS_KEY] = serde_json::to_value(all)?;
+        }
+        match values.is_empty() {
+            true => _ = data.as_object_mut().map(|o| o.remove(PARAMS_KEY)),
+            false => data[PARAMS_KEY] = serde_json::to_value(values)?,
         }
         self.write_definition(KIT_FIELD, data)?;
         Ok(new.iter().map(|w| w.name.clone()).collect())
@@ -332,6 +353,14 @@ impl Db {
         {
             Some(widgets) => Ok(serde_json::from_value(widgets)?),
             None => Ok(Vec::new()),
+        }
+    }
+
+    /// The values the installed kit `kit_id`'s parameters were filled with.
+    pub fn load_kit_params(&self, kit_id: &str) -> Result<BTreeMap<String, String>> {
+        match self.definitions(KIT_FIELD, Some(kit_id))?.first() {
+            Some(data) => params_of(data),
+            None => Ok(BTreeMap::new()),
         }
     }
 
@@ -355,7 +384,8 @@ impl Db {
     pub fn list_kits(&self) -> Result<Vec<InstalledKit>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT json_extract(data, '$.kit_id') AS kit, field, COUNT(*),
-                    MAX(json_extract(data, '$.version'))
+                    MAX(json_extract(data, '$.version')),
+                    MAX(json_extract(data, '$.{PARAMS_KEY}'))
              FROM entries
              WHERE field IN ('spec', 'view', 'alias', 'index', 'command', 'layout', 'kit')
                AND {LIVE_SQL} AND kit IS NOT NULL
@@ -377,6 +407,9 @@ impl Db {
             let kit = out.last_mut().expect("pushed above");
             if field == KIT_FIELD {
                 kit.version = row.get(3)?;
+                if let Some(json) = row.get::<_, Option<String>>(4)? {
+                    kit.params = serde_json::from_str(&json)?;
+                }
                 continue;
             }
             *match field.as_str() {

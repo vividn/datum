@@ -218,6 +218,23 @@ fn install_toml(
     if kit.kit.name.trim().is_empty() {
         anyhow::bail!("kit TOML at {from} is missing [kit].name");
     }
+    // Its parameters filled in before any screen reads what they make: a
+    // reinstall takes the values the last one used unless `--set` names
+    // others (da-netk8).
+    let kept = db.load_kit_params(&kit.kit.name)?;
+    let (kit, values) = kit.fill_params(src, &args.set, &kept)?;
+    let params_line = || {
+        let shown: Vec<String> = values
+            .iter()
+            .map(|(k, v)| match kept.get(k) {
+                Some(old) if old != v => format!("{k}={v} (was {old})"),
+                _ => format!("{k}={v}"),
+            })
+            .collect();
+        if !shown.is_empty() {
+            println!("Parameters: {}", shown.join(" "));
+        }
+    };
 
     // A `[[field]]` declares a name as `setup` does, so it keeps the same
     // rule, or the kit makes a field nothing can log to (da-o6a0d).
@@ -354,6 +371,7 @@ fn install_toml(
             kit.widgets.len(),
             kit.indices.len()
         );
+        params_line();
         return Ok(());
     }
 
@@ -410,8 +428,10 @@ fn install_toml(
     // The `[kit]` table itself, so export writes it back and list names the
     // version installed (da-xnzc7) — once the kit owns a row: a kit whose
     // every row was skipped installed nothing. Its widgets go in it
-    // (da-gh37k), so a kit of widgets alone owns that row.
-    let widgets_installed = if report.installed().next().is_some()
+    // (da-gh37k), so a kit of widgets alone owns that row, and a parameter
+    // given a new value is kept for the next install whatever it wrote.
+    let widgets_installed = if (!kept.is_empty() && values != kept)
+        || report.installed().next().is_some()
         || !report.indices_installed.is_empty()
         || view_report.installed().next().is_some()
         || alias_report.installed().next().is_some()
@@ -419,7 +439,7 @@ fn install_toml(
         || layout_report.installed().next().is_some()
         || !kit.widgets.is_empty()
     {
-        db.install_kit_meta(&kit.kit, &kit.widgets, args.force)?
+        db.install_kit_meta(&kit.kit, &kit.widgets, &values, args.force)?
     } else {
         Vec::new()
     };
@@ -467,6 +487,7 @@ fn install_toml(
     {
         println!("Installed kit '{}' (no new fields)", kit.kit.name);
     }
+    params_line();
     if !skipped.is_empty() {
         println!(
             "Skipped {} field(s) (existing rows kept; use --force to overwrite):",
@@ -702,13 +723,21 @@ fn list(db: &Db) -> Result<()> {
         println!("No kits installed.");
         return Ok(());
     }
+    // The parameters' column only where a kit has any (da-netk8).
+    let any_params = kits.iter().any(|k| !k.params.is_empty());
+    let params_head = if any_params { "  params" } else { "" };
     println!(
-        "{:<24} {:<8} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}",
+        "{:<24} {:<8} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}{params_head}",
         "kit", "version", "fields", "views", "aliases", "indices", "cmds", "layouts"
     );
     for k in kits {
+        let params: Vec<String> = k.params.iter().map(|(n, v)| format!("{n}={v}")).collect();
+        let params = match any_params {
+            true => format!("  {}", params.join(" ")),
+            false => String::new(),
+        };
         println!(
-            "{:<24} {:<8} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}",
+            "{:<24} {:<8} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}{}",
             k.kit_id,
             k.version.as_deref().unwrap_or("-"),
             k.field_count,
@@ -716,7 +745,8 @@ fn list(db: &Db) -> Result<()> {
             k.alias_count,
             k.index_count,
             k.command_count,
-            k.layout_count
+            k.layout_count,
+            params.trim_end()
         );
     }
     Ok(())
@@ -731,6 +761,7 @@ fn show(name: &str, db: &Db) -> Result<()> {
     let widgets = db.load_kit_widgets(name)?;
     let indices = db.kit_index_status(name)?;
     let meta = db.load_kit_meta(name)?;
+    let values = db.load_kit_params(name)?;
     if meta.is_none()
         && specs.is_empty()
         && aliases.is_empty()
@@ -744,6 +775,7 @@ fn show(name: &str, db: &Db) -> Result<()> {
     // The DDL of each index that validates, for the line that names it.
     let built = db.load_indices_by_kit(name)?;
     println!("kit '{name}'");
+    let declared = meta.as_ref().map(|m| m.params.clone()).unwrap_or_default();
     if let Some(meta) = meta {
         if let Some(v) = meta.version {
             println!("version {v}");
@@ -752,6 +784,15 @@ fn show(name: &str, db: &Db) -> Result<()> {
             println!("{d}");
         }
     }
+    section(
+        "parameters",
+        values.iter().map(
+            |(k, v)| match declared.get(k).and_then(|p| p.description.as_deref()) {
+                Some(d) => format!("{k} = {v:?} — {d}"),
+                None => format!("{k} = {v:?}"),
+            },
+        ),
+    );
     section(
         "fields",
         specs.iter().map(|s| {
