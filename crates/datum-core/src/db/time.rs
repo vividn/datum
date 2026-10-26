@@ -57,6 +57,13 @@ impl Db {
         })
     }
 
+    /// The rows [`Self::set_start_time`] would move, read outside its
+    /// transaction: retime asks about a time they make ambiguous before it
+    /// writes (da-z3fzv).
+    pub fn retime_targets(&self, filter: &RetimeFilter) -> Result<Vec<Entry>> {
+        select_retime_targets(self, filter)
+    }
+
     /// Shift matching rows' `occur_time` by `offset`. Atomic over the
     /// batch, same as [`Self::set_start_time`] (da-sunq).
     pub fn update_times(&self, filter: &RetimeFilter, offset: Duration) -> Result<Vec<Retimed>> {

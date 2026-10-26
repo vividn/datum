@@ -1705,7 +1705,7 @@ const TIME_FORMS: &[FormGroup] = &[
             },
             FormSpec {
                 example: "-t 2026-10-25T02:30+01:00",
-                meaning: "a time the clocks went back over: the offset says which, else a log asks",
+                meaning: "a time the clocks went back over: the offset says which, else a log or retime asks",
             },
             FormSpec {
                 example: "-d yesterday -t 10:00",

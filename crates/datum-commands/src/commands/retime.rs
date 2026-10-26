@@ -21,11 +21,11 @@ use datum_core::{
 
 use crate::args::RetimeArgs;
 use crate::commands::helpers::{registry_of, resolve_batch, BatchMode};
-use crate::commands::log_core::build_time_anchored;
+use crate::commands::log_core::{build_time_anchored, which_reading};
 use crate::commands::time_bounds::{parse_after, parse_before};
 use crate::render::{show_retime, OutputArgs};
 
-pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
+pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
     // da-rorg: slug defaults to `_LAST` (matching update/merge/delete/
     // undo) so a bare `datum retime` resolves the user's last touch.
     // Bulk filters (--field/--after/--before) stay as explicit
@@ -174,6 +174,38 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // stated, so how well the entry's time is known stays as it was.
     let shifted = args.relative
         || placed && (args.time.time.as_deref()).is_none_or(|t| t.starts_with(['+', '-']));
+    // da-z3fzv: a wall time a fall-back night repeats is asked about as a
+    // log's is (da-6i7l1), before the write, of the first entry the args
+    // make it of; the answer is every entry's.
+    if placed {
+        let read = |own: &DatumTime, later| {
+            let time = datum_parse::input::TimeArgs {
+                later,
+                ..args.time.clone()
+            };
+            build_time_anchored(&time, own.utc, Some(own), args.relative).ok()
+        };
+        let mut owns = Vec::new();
+        for filter in &filters {
+            owns.extend(
+                db.retime_targets(filter)?
+                    .into_iter()
+                    .filter_map(|e| e.occur_time),
+            );
+        }
+        let asked = owns.iter().find(|own| {
+            matches!((read(own, false), read(own, true)), (Some(a), Some(b)) if a.utc != b.utc)
+        });
+        if let Some(own) = asked {
+            match which_reading(|later| read(own, later))? {
+                Some(later) => args.time.later = later,
+                None => {
+                    println!("Aborted.");
+                    return Ok(());
+                }
+            }
+        }
+    }
     let mut moved = Vec::new();
     for filter in &filters {
         moved.extend(

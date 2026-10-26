@@ -193,7 +193,9 @@ Native only: the browser's database is one process's at a time.
   and stores the one picked; datum.day gets them as `DATUM_CHOOSE=` with
   exit 12 and asks with a button each (`asking` in `web/src/lib/dbio.ts`);
   anywhere else the line is refused naming both, nothing written. The
-  answer is `TimeArgs::later`, which every build of the line reads
+  answer is `TimeArgs::later`, which every build of the line reads. A
+  `retime` is asked the same of the time it builds from the first entry it
+  makes one of, before it writes, and the answer is every entry's (da-z3fzv)
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
   (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
   so the block ENDS at the entry's time and the span precedes it —

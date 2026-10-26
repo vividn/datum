@@ -14,6 +14,12 @@ const FIRST: &str = "-t 2026-10-25T02:30:00+02:00";
 const SECOND: &str = "-t 2026-10-25T02:30:00+01:00";
 
 fn datum(dir: &TempDir) -> Command {
+    let mut cmd = bare(dir);
+    cmd.args(LINE).arg("02:30");
+    cmd
+}
+
+fn bare(dir: &TempDir) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
     cmd.env("DATUM_DB", dir.path().join("t.db"))
         .env("DATUM_HOME", dir.path())
@@ -21,8 +27,6 @@ fn datum(dir: &TempDir) -> Command {
         .env("TZ", "Europe/Berlin")
         .env("NO_COLOR", "1")
         .env_remove("DATUM_NO_DEFAULT_ANSWER")
-        .args(LINE)
-        .arg("02:30")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     cmd
@@ -147,5 +151,58 @@ fn the_page_is_told_the_options_and_answers_on_a_second_run() {
     let answered = page(&format!("{SECOND}\n"));
     assert!(answered.status.success(), "{}", said(&answered));
     assert_eq!(said(&answered), "", "asked once, not again");
+    assert_eq!(teas(&dir), second_stored());
+}
+
+/// da-z3fzv: retime is asked as a log is, of the time it builds from the
+/// entry's own: `-t 02:30` on a tea logged at 01:00 that night.
+#[test]
+fn retime_is_asked_which_reading() {
+    use std::io::Write;
+
+    let dir = tempfile::tempdir().unwrap();
+    let logged = bare(&dir).args(LINE).arg("01:00").output().unwrap();
+    assert!(logged.status.success(), "{}", said(&logged));
+    let before = teas(&dir);
+    let retime = |page: bool, answer: &str| {
+        let mut cmd = bare(&dir);
+        if page {
+            cmd.env("DATUM_NO_DEFAULT_ANSWER", "1");
+        }
+        let mut child = cmd
+            .args(["retime", "-t", "02:30"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(answer.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+
+    let refused = retime(false, "");
+    let err = said(&refused);
+    assert_eq!(refused.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains(&format!("`{FIRST}`")) && err.contains(&format!("`{SECOND}`")),
+        "{err}"
+    );
+    assert_eq!(teas(&dir), before, "nothing moved");
+
+    let asked = retime(true, "");
+    let err = said(&asked);
+    assert_eq!(asked.status.code(), Some(12), "{err}");
+    assert_eq!(
+        err.trim_end().lines().last(),
+        Some(format!("DATUM_CHOOSE={FIRST}|{SECOND}").as_str()),
+        "{err}"
+    );
+    assert_eq!(teas(&dir), before, "unanswered: nothing moved");
+
+    let answered = retime(true, &format!("{SECOND}\n"));
+    assert!(answered.status.success(), "{}", said(&answered));
     assert_eq!(teas(&dir), second_stored());
 }

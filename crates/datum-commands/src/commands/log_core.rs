@@ -144,7 +144,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // da-6i7l1: a wall time a fall-back night repeats is asked about, once,
     // and every build below reads the answer.
     if !args.time.omit_timestamp {
-        match which_reading(&args.time, now.utc)? {
+        let read = |later| {
+            build_time_from_flags(
+                &TimeArgs {
+                    later,
+                    ..args.time.clone()
+                },
+                now.utc,
+            )
+            .ok()
+        };
+        match which_reading(read)? {
             Some(later) => args.time.later = later,
             None => {
                 println!("Aborted.");
@@ -2380,22 +2390,13 @@ fn neighbours_zone(db: &Db, time: &TimeArgs, now: chrono::DateTime<chrono::Utc>)
 
 /// Which of the two instants the flags name the line means, where they name
 /// a wall time a fall-back night repeats (da-6i7l1): `Some(later)`, `false`
-/// when there is one, or `None` when the person asked declined. Asked on a
-/// terminal, and of datum.day, which answers by running the line again with
-/// the answer on stdin (`DATUM_NO_DEFAULT_ANSWER=1`); anywhere else no one
-/// can be asked, and the line is refused naming both full spellings.
-fn which_reading(time: &TimeArgs, now: chrono::DateTime<chrono::Utc>) -> Result<Option<bool>> {
+/// when there is one, or `None` when the person asked declined. `read` is
+/// the line's build with `TimeArgs::later` as given. Asked on a terminal,
+/// and of datum.day, which answers by running the line again with the answer
+/// on stdin (`DATUM_NO_DEFAULT_ANSWER=1`); anywhere else no one can be
+/// asked, and the line is refused naming both full spellings.
+pub(crate) fn which_reading(read: impl Fn(bool) -> Option<DatumTime>) -> Result<Option<bool>> {
     use std::io::{IsTerminal, Write};
-    let read = |later| {
-        build_time_from_flags(
-            &TimeArgs {
-                later,
-                ..time.clone()
-            },
-            now,
-        )
-        .ok()
-    };
     let (Some(first), Some(second)) = (read(false), read(true)) else {
         return Ok(Some(false));
     };
