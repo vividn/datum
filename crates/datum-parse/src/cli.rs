@@ -1619,6 +1619,12 @@ pub struct DayviewArgs {
     /// the strip keeps a band whose picture is unchanged and asks for no
     /// other run.
     pub digests: Vec<u32>,
+    /// `--context none|now|<DUR>`, unlisted, beside `--sample` (da-jc8ic):
+    /// what is drawn around the sample. `none` the sample's field alone,
+    /// sampled; `now` every field's state now across the band, the sample
+    /// over it; a duration the band as that long before now, no integrity
+    /// marks, the field's own entries in it drawn in place of a sample.
+    pub context: Option<String>,
 }
 
 impl Default for DayviewArgs {
@@ -1639,6 +1645,7 @@ impl Default for DayviewArgs {
             orientation: DayviewOrientation::default(),
             sample: None,
             digests: Vec::new(),
+            context: None,
         }
     }
 }

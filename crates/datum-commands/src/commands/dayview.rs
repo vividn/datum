@@ -229,9 +229,13 @@ fn layout_of(args: &DayviewArgs, db: &Db) -> Result<(DayviewLayout, NaiveDate)> 
     let zones = db.zone_timeline_between(Zone::host(), Some(since), Some(until))?;
     // What `check integrity` finds in the window, bucketed below by the day
     // each flagged entry happened on (da-0lful). Empty result is fine; just
-    // no error marks.
-    let findings =
-        datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default();
+    // no error marks, and none around a sample (da-jc8ic).
+    let findings = match args.context {
+        Some(_) => Vec::new(),
+        None => {
+            datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default()
+        }
+    };
     let sample = match args.sample.as_deref() {
         Some(json) => {
             let field = serde_json::from_str::<serde_json::Value>(json)
@@ -242,8 +246,62 @@ fn layout_of(args: &DayviewArgs, db: &Db) -> Result<(DayviewLayout, NaiveDate)> 
         }
         None => None,
     };
+    let context = match (args.context.as_deref(), &sample) {
+        (None, _) => None,
+        (Some(_), None) => anyhow::bail!("--context is what is drawn around a --sample"),
+        (Some(c), Some(_)) => Some(parse_context(c)?),
+    };
+    let window_ms = context.and_then(Around::window_ms);
+    let windowed = window_ms.is_some();
+    // One band, the window before now: a day-window flag would be dropped unsaid.
+    if windowed
+        && (args.start_date.is_some()
+            || args.end_date.is_some()
+            || args.n_days.is_some_and(|n| n != 1)
+            || !args.digests.is_empty())
+    {
+        anyhow::bail!(
+            "--context now or a duration draws one window before now: \
+             no --start-date, --end-date, --digests, or --days but 1"
+        );
+    }
+    // Its ticks are measured along a horizontal band.
+    if windowed && args.orientation == DayviewOrientation::Vertical {
+        anyhow::bail!("--context now or a duration is drawn horizontally");
+    }
 
-    for date in &day_dates {
+    // A sample's context in time (da-jc8ic): one band, the window before
+    // now, with no integrity marks.
+    if let Some(window_ms) = window_ms {
+        let start_ms = now_ms - window_ms;
+        let mut fields = build_day_fields(
+            db,
+            &zones,
+            start_ms,
+            now_ms,
+            now_ms,
+            sample.as_ref().map(|s| (s, context == Some(Around::Now))),
+        )?;
+        if context == Some(Around::Now) {
+            // Each other field's state now, not what it did in the last minute.
+            let own = sample.as_ref().map(|s| s.field.as_str());
+            for f in fields.iter_mut().filter(|f| Some(f.field.as_str()) != own) {
+                f.points.clear();
+            }
+            fields.retain(|f| !f.blocks.is_empty() || !f.points.is_empty());
+        }
+        days_input.push(DayviewDayInput {
+            date: None,
+            label_lines: Vec::new(),
+            start_ms,
+            end_ms: now_ms,
+            errors: Vec::new(),
+            fields,
+            spans: Vec::new(),
+        });
+    }
+
+    for date in if windowed { &[][..] } else { &day_dates[..] } {
         // The day's window is every instant its date was read on a clock.
         // A date no clock read (Samoa's 2011-12-30) is an empty band.
         let spans = day_spans(&zones, *date);
@@ -261,14 +319,20 @@ fn layout_of(args: &DayviewArgs, db: &Db) -> Result<(DayviewLayout, NaiveDate)> 
             })
             .collect();
 
-        let fields = build_day_fields(
+        let mut fields = build_day_fields(
             db,
             &zones,
             day_start_ms,
             day_end_ms,
             now_ms,
-            sample.as_ref(),
+            // Any `--context` here is `none`: the sample in place of the
+            // field's own entries. Without one, only where it has none (da-srrqd).
+            sample.as_ref().map(|s| (s, context.is_some())),
         )?;
+        // `--context none`: the sample's field and nothing else.
+        if let Some(s) = sample.as_ref().filter(|_| context.is_some()) {
+            fields.retain(|f| f.field == s.field);
+        }
 
         days_input.push(DayviewDayInput {
             date: Some(date.to_string()),
@@ -311,6 +375,18 @@ fn layout_of(args: &DayviewArgs, db: &Db) -> Result<(DayviewLayout, NaiveDate)> 
         _ => day_height_default,
     };
 
+    // A window's ticks are nowview's, minutes before now, across the whole
+    // width. `now`'s are none, and `Some` empty, not `None`: `None` is a
+    // day's 24 hourly ticks, which a minute's band must not draw.
+    let window_ticks = match context {
+        Some(Around::Window(ms)) => Some(datum_layout::nowview::nowview_axis_ticks(
+            width - 2.0 * args.margin,
+            ms as f64 / 60_000.0,
+            args.time_axis_height,
+        )),
+        Some(Around::Now) => Some(Vec::new()),
+        _ => None,
+    };
     let config = DayviewConfig {
         days: days_input,
         now_ms,
@@ -320,9 +396,14 @@ fn layout_of(args: &DayviewArgs, db: &Db) -> Result<(DayviewLayout, NaiveDate)> 
         interday_margin: DEFAULT_INTERDAY_MARGIN,
         time_axis_height: args.time_axis_height,
         margin: args.margin,
-        label_width: args.label_width,
+        // A window has no date to label.
+        label_width: if windowed {
+            Some(0.0)
+        } else {
+            args.label_width
+        },
         orientation,
-        axis_ticks_override: None,
+        axis_ticks_override: window_ticks,
         right_panel_width: 0.0,
     };
 
@@ -474,14 +555,18 @@ fn format_day_label(date: NaiveDate) -> Vec<String> {
 /// (`min(day_end_ms, now_ms) == day_end_ms`); for days entirely after
 /// `now_ms` the resulting region falls outside the day window and is
 /// dropped by `push_switch_region`.
+///
+/// `sample` is `--sample`'s spec, and whether it is drawn in place of what
+/// the field has (`--context`, da-jc8ic) or only where it has nothing.
 fn build_day_fields(
     db: &Db,
     zones: &ZoneTimeline,
     day_start_ms: i64,
     day_end_ms: i64,
     now_ms: i64,
-    sample: Option<&FieldSpec>,
+    sample: Option<(&FieldSpec, bool)>,
 ) -> Result<Vec<DayviewFieldInput>> {
+    let (sample, sample_always) = sample.map_or((None, false), |(s, a)| (Some(s), a));
     let day_start_utc = Utc
         .timestamp_millis_opt(day_start_ms)
         .single()
@@ -570,9 +655,9 @@ fn build_day_fields(
         // The setup form's preview (da-srrqd): nothing of the field on the
         // day, so entries in its shape that no database holds, drawn as
         // its own would be.
-        if let Some(s) =
-            sample.filter(|s| s.field == field && blocks.is_empty() && points.is_empty())
-        {
+        if let Some(s) = sample.filter(|s| {
+            s.field == field && (sample_always || blocks.is_empty() && points.is_empty())
+        }) {
             let made = sample_entries(s, day_start_ms, day_end_ms);
             let regions = switch_regions(
                 &FieldStateRows::from_entries(&made),
@@ -587,6 +672,10 @@ fn build_day_fields(
                 day_start_ms,
                 day_end_ms,
             );
+            // No entry is behind a sample's mark (da-jc8ic), so it carries
+            // no `data-id`: which is how a reader tells it from a real one.
+            blocks.iter_mut().for_each(|b| b.id = None);
+            points.iter_mut().for_each(|p| p.id = None);
         }
         title_marks(
             &field,
@@ -619,6 +708,45 @@ fn build_day_fields(
         });
     }
     Ok(out)
+}
+
+/// What `--context` draws around a `--sample` (da-jc8ic).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Around {
+    /// The sample's field alone, on today's band, sampled.
+    None,
+    /// Every field's state now across the band, the sample over it.
+    Now,
+    /// The band as the window of this many ms before now; the field's own
+    /// entries in it are drawn, and a sample only when it has none.
+    Window(i64),
+}
+
+impl Around {
+    /// The band's length, for one that is not a day. `now` is a minute,
+    /// nowview's snapshot's: enough for every field in a state to read it.
+    fn window_ms(self) -> Option<i64> {
+        match self {
+            Around::None => None,
+            Around::Now => Some(60_000),
+            Around::Window(ms) => Some(ms),
+        }
+    }
+}
+
+fn parse_context(s: &str) -> Result<Around> {
+    Ok(match s {
+        "none" => Around::None,
+        "now" => Around::Now,
+        _ => {
+            let ms = datum_parse::time::dur::parse_duration(s)
+                .ok()
+                .map(|d| d.num_milliseconds())
+                .filter(|ms| *ms > 0)
+                .with_context(|| format!("--context takes none, now or a duration: '{s}'"))?;
+            Around::Window(ms)
+        }
+    })
 }
 
 /// What `--sample` draws of a field with nothing on the day: an occurrence's
@@ -806,6 +934,7 @@ mod tests {
             orientation: DayviewOrientation::default(),
             sample: None,
             digests: Vec::new(),
+            context: None,
         }
     }
 

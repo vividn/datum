@@ -121,6 +121,15 @@ describe('the Placement tab', () => {
 			return [Math.min(...rs.map((r) => r.top)), Math.max(...rs.map((r) => r.bottom))];
 		});
 
+	/** Click the eye until it says `label`, and wait for the band drawn around what it names (`dayview --context`). */
+	async function turn(page, label) {
+		const eye = page.locator(`${MODAL} .placement button.around`);
+		for (let i = 0; i < 3 && (await eye.innerText()).trim() !== label; i++) await eye.click();
+		assert.equal((await eye.innerText()).trim(), label);
+		const context = { context: 'none', now: 'now', '12 hours': '12h' }[label];
+		await page.locator(`${MODAL} .placement .band svg[data-context="${context}"]`).waitFor();
+	}
+
 	async function done(page, saved) {
 		await page.locator(`${MODAL} button.commit`).click();
 		const result = await saved;
@@ -416,12 +425,100 @@ describe('the Placement tab', () => {
 			assert.equal(await saved, null);
 			assert.equal((await app.run(['tail', 'mood', '--json'])).stdout.includes('"happy"'), false, 'no sample was written');
 
-			// With an entry today, that is what is drawn: one stretch of happy, no sample.
+			// With an entry in the last twelve hours, that is what «12 hours» draws: one stretch of happy, no sample.
 			await app.run(['switch', 'mood', 'happy', '-t', '-30']);
 			({ saved } = await openPlacement(page, 'mood'));
+			await turn(page, '12 hours');
 			assert.deepEqual([await blocks.count(), await states()], [1, ['happy']]);
 			await cancelField(page);
 			assert.equal(await saved, null);
+		});
+	});
+
+	// da-jc8ic, vividn, 2026-10-26: «default should be to show no contextual data, just a sample of the field being
+	// set … Clicking it changes [now], which then shows current now state of everything … another click -> [12 hours]
+	// which shows all the data from the last 12 hours (no errors showed here though please). If any occurences of the
+	// field actually happen in the last 12 hours, actually use these to do the placement».
+	test('the eye cycles context, now and 12 hours: the sample alone, every state now, the last twelve hours', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			await app.run(['switch', 'mood', 'happy', '-t', '-300']);
+			await app.run(['start', 'work', '-t', '-120']);
+			await app.run(['occur', 'coffee', '-t', '-60']);
+			// A close with no open, which `check integrity` flags and today's dayview marks.
+			await app.run(['end', 'lamp', '-t', '-30']);
+			assert.match((await app.run(['dayview'])).stdout, /integrity-error/);
+			await app.run(['track', 'pill', '--verb', 'occur']);
+			await app.run(['track', 'light', '--verb', 'start']);
+			await app.run(['track', 'weather', '--verb', 'switch', '--states', 'sun,rain']);
+
+			/** What the band draws: each field's marks, their states, whether they name an entry, and its integrity marks. */
+			const picture = (field) =>
+				page.locator(`${MODAL} .placement .band svg`).evaluate((svg, field) => {
+					const width = svg.getBoundingClientRect().width;
+					const groups = [...svg.querySelectorAll('g.field')];
+					return {
+						fields: groups.map((g) => g.dataset.field).sort(),
+						others: Object.fromEntries(
+							groups
+								.filter((g) => g.dataset.field !== field)
+								.map((g) => [
+									g.dataset.field,
+									[...g.querySelectorAll('rect.block')].map((b) => Math.round(b.getBoundingClientRect().width - width))
+								])
+						),
+						own: svg.querySelectorAll(`g.field[data-field="${field}"] :is(rect.block, .point-fg)`).length,
+						named: svg.querySelectorAll(`g.field[data-field="${field}"] [data-id]`).length,
+						real: svg.querySelector(`g.field[data-field="${field}"]`)?.classList.contains('real'),
+						errors: svg.querySelectorAll('.integrity-error').length
+					};
+				}, field);
+
+			for (const field of ['pill', 'light', 'weather']) {
+				const { saved } = await openPlacement(page, field);
+				const eye = page.locator(`${MODAL} .placement button.around`);
+				assert.equal((await eye.innerText()).trim(), 'context', `${field} opens on context`);
+				let seen = await picture(field);
+				assert.deepEqual([seen.fields, seen.errors, seen.named], [[field], 0, 0], `${field}: the sample alone`);
+				assert.ok(seen.own > 1, `${field}: a sample, ${seen.own} marks`);
+
+				await turn(page, 'now');
+				seen = await picture(field);
+				// One state a field, each across the whole band; coffee's dot is no state.
+				assert.deepEqual(seen.others, { mood: [0], work: [0] }, `${field}: every state now`);
+				assert.ok(seen.own > 1 && seen.named === 0, `${field}: the sample over them`);
+
+				await turn(page, '12 hours');
+				seen = await picture(field);
+				assert.deepEqual(seen.fields, ['coffee', field, 'mood', 'work'].sort(), `${field}: the last twelve hours`);
+				assert.equal(seen.errors, 0, `${field}: no integrity marks`);
+				assert.deepEqual([seen.own > 1, seen.named, seen.real], [true, 0, false], `${field}: none of its own, so the sample`);
+
+				await turn(page, 'context');
+				assert.deepEqual((await picture(field)).fields, [field], `${field}: back to the sample alone`);
+				await cancelField(page);
+				assert.equal(await saved, null);
+			}
+
+			// With an entry in the last twelve hours, that entry is what is placed.
+			await app.run(['occur', 'pill', '-t', '-90']);
+			const { saved } = await openPlacement(page, 'pill');
+			assert.equal((await picture('pill')).named, 0, 'context: still the sample');
+			await turn(page, '12 hours');
+			const seen = await picture('pill');
+			assert.deepEqual([seen.own, seen.named, seen.real], [1, 1, true], 'its own dot, outlined');
+			// A drag on that real dot moves the lane, and the dot with it.
+			const [, before] = await middle(page, 'pill');
+			await drag(page, 'pill', 16);
+			await page.waitForFunction(
+				([sel, y]) => {
+					const r = document.querySelector(sel)?.getBoundingClientRect();
+					return r && Math.abs(r.y + r.height / 2 - y) < 1;
+				},
+				[marks('pill'), before + 16]
+			);
+			await done(page, saved);
+			assert.notEqual((await spec(app, 'pill')).y, undefined, 'the lane it was dragged to');
 		});
 	});
 

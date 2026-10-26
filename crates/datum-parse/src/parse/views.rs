@@ -166,6 +166,15 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
                 out.digests = parse_days_back(v)?;
                 i += 1;
             }
+            FlagSplit::Long("context") => {
+                let (v, ni) = take_value(tail, i, None, "--context")?;
+                out.context = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("context", v) => {
+                out.context = Some(v.to_string());
+                i += 1;
+            }
             FlagSplit::Positional(_) => {
                 return Err(ParseError::InvalidArg(
                     "dayview takes no positional arguments".into(),

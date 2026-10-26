@@ -32,6 +32,15 @@
 	with nothing of the field to draw it draws entries in its shape that no
 	database holds. It is asked again whenever the spec changes, but not
 	while a drag is under way: the drawn marks are carried there meanwhile.
+
+	What is drawn around the field is the eye's above the band (da-jc8ic),
+	cycled by a click and opened on «context» each time: «context», the
+	field's sample alone; «now», every field's state now across the band,
+	the sample over it; «12 hours», the twelve hours before now with no
+	integrity marks, where the field's own entries there are what is placed,
+	faintly outlined, and a sample only when it has none (`dayview
+	--context`). A click on it lets go of a tapped mark's box, whose mark
+	the new picture draws elsewhere.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -89,6 +98,13 @@
 	let shown = { y: 0, h: 0, scale: 1 };
 	/** Whether `fields --json` has been read, which the lane of a field with no place is. */
 	let listed = false;
+	/** What the band draws around the field, by `dayview --context`, in the order a click turns them. */
+	const AROUND = [
+		{ context: 'none', label: 'context' },
+		{ context: 'now', label: 'now' },
+		{ context: '12h', label: '12 hours' }
+	] as const;
+	let around = 0;
 
 	onMount(async () => {
 		const listing = await run(fieldsArgv());
@@ -110,11 +126,17 @@
 		drawing = true;
 		while (asked !== want && band) {
 			asked = want;
-			const { at, sample } = JSON.parse(asked);
-			const picture = await run([...bandArgv(Math.floor(band.clientWidth), H), ...(sample ? ['--sample', JSON.stringify(sample)] : [])]);
+			const { at, sample, context } = JSON.parse(asked);
+			const picture = await run([
+				...bandArgv(Math.floor(band.clientWidth), H),
+				...(sample ? ['--sample', JSON.stringify(sample), '--context', context] : [])
+			]);
 			// Gone while it read: the shape changed, or the tab did. A spec the CLI refuses keeps the last picture.
 			const next = picture.code === 0 && band ? inlineSvg(picture.stdout) : null;
 			if (!next) continue;
+			// What it was drawn around — `none`, `now` or `12h`, the eye's — for a reader
+			// to wait on; nothing for a band drawn with no sample, which no context is.
+			if (sample) next.dataset.context = context;
 			svg?.remove();
 			band.prepend(next);
 			[svg, shown] = [next, at];
@@ -255,13 +277,16 @@
 	$: if (band && listed && !drag) {
 		const at = { y: round(lane.y), h: round(lane.h), scale };
 		const free = { relative_to: undefined, anchor_pos_ratio: undefined, anchor_size_ratio: undefined, y: at.y, height: at.h };
-		want = JSON.stringify({ at, sample: spec && { ...spec, ...free } });
+		want = JSON.stringify({ at, sample: spec && { ...spec, ...free }, context: AROUND[around].context });
 		draw();
 	}
 
 	// The field's own marks follow the lane while it moves: the band was drawn
 	// at `shown`, so its group is carried from there to here.
 	$: own = svg?.querySelector(`g.field[data-field="${CSS.escape(field)}"]`);
+	// Its own entries, not a sample, whose marks name no entry: outlined against the rest.
+	// Read again with each picture: the marks change only with a new `svg`.
+	$: own?.classList.toggle('real', !!own.querySelector('[data-id]'));
 	$: if (own && shown.h > 0) {
 		const k = lane.h / shown.h;
 		own.setAttribute('transform', `matrix(1 0 0 ${k} 0 ${(lane.y - shown.y * k) * H})`);
@@ -297,22 +322,45 @@
 
 <!-- It drags itself: a sideways drag in it is never the pane's tab swipe (`data-pans`, PaneFrame.svelte; da-4t0yn). -->
 <div class="placement" data-pans="x">
-	<label class="tie">
-		<select
-			aria-label="anchor to a field"
-			value={place.relative_to ?? ''}
-			on:change={(e) => put(lane.y, lane.h, e.currentTarget.value)}
+	<div class="top">
+		<button
+			type="button"
+			class="around"
+			data-context={AROUND[around].context}
+			aria-label="what is drawn around {field}: {AROUND[around].label}; click for the next"
+			title="what is drawn around {field}: click for the next"
+			on:click={() => ([around, sel] = [(around + 1) % AROUND.length, null])}
 		>
-			<option value="">⛓ free</option>
-			{#each anchors as name (name)}
-				<option value={name}>⛓ {name}</option>
-			{/each}
-			<!-- A saved anchor the list cannot offer is still what the spec says. -->
-			{#if place.relative_to && !anchors.includes(place.relative_to)}
-				<option value={place.relative_to}>⛓ {place.relative_to} (missing)</option>
-			{/if}
-		</select>
-	</label>
+			<svg viewBox="0 0 16 16" aria-hidden="true">
+				{#if around === 0}
+					<path d="M1.5 6.5 Q8 12.5 14.5 6.5 M4 9.6 2.8 11.4 M8 11 V13.3 M12 9.6 13.2 11.4" />
+				{:else if around === 1}
+					<path d="M1.5 8 H14.5 Q8 14.5 1.5 8Z" />
+					<path class="pupil" d="M5.6 8 A2.4 2.4 0 0 0 10.4 8Z" />
+				{:else}
+					<path d="M1.5 8 Q8 1.5 14.5 8 Q8 14.5 1.5 8Z" />
+					<circle class="pupil" cx="8" cy="8" r="2.4" />
+				{/if}
+			</svg>
+			{AROUND[around].label}
+		</button>
+		<label class="tie">
+			<select
+				aria-label="anchor to a field"
+				value={place.relative_to ?? ''}
+				on:change={(e) => put(lane.y, lane.h, e.currentTarget.value)}
+			>
+				<option value="">⛓ free</option>
+				{#each anchors as name (name)}
+					<option value={name}>⛓ {name}</option>
+				{/each}
+				<!-- A saved anchor the list cannot offer is still what the spec says. -->
+				{#if place.relative_to && !anchors.includes(place.relative_to)}
+					<option value={place.relative_to}>⛓ {place.relative_to} (missing)</option>
+				{/if}
+			</select>
+		</label>
+	</div>
 
 	<!-- A finger on a mark drags it, and does not scroll the dialog. -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -402,8 +450,43 @@
 		gap: 0.4rem;
 	}
 
-	.tie {
-		align-self: flex-end;
+	.top {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.around {
+		display: flex;
+		gap: 0.3rem;
+		align-items: center;
+		min-block-size: 28px;
+		background: none;
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		color: var(--ink-bright);
+		font: inherit;
+		font-size: 0.75rem;
+	}
+
+	.around svg {
+		inline-size: 16px;
+		block-size: 16px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.3;
+		stroke-linecap: round;
+	}
+
+	.around .pupil {
+		fill: currentColor;
+		stroke: none;
+	}
+
+	/* The field's own entries among the rest: enough to tell them apart, no more. */
+	.band :global(g.field.real) {
+		filter: drop-shadow(0 0 1px color-mix(in srgb, var(--ink-bright) 70%, transparent));
 	}
 
 	select {

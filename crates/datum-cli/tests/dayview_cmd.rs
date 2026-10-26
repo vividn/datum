@@ -914,8 +914,8 @@ fn a_traveller_whose_clock_went_back_has_a_lane_for_each_zone() {
     );
 }
 
-/// 2026-01-10's band as an SVG, its entries' ids masked: a sample's are
-/// made afresh each render.
+/// 2026-01-10's band as an SVG, its entries' ids dropped: a sample's
+/// marks carry none, having no entry behind them.
 fn day_svg(db: &datum_core::db::Db, extra: &[&str]) -> String {
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
     let path = tmp.path().to_str().unwrap();
@@ -930,11 +930,10 @@ fn day_svg(db: &datum_core::db::Db, extra: &[&str]) -> String {
     ];
     run_cli(&[&argv[..], extra].concat(), db).expect("dayview");
     let svg = std::fs::read_to_string(path).unwrap();
-    let mut parts = svg.split(r#"data-id=""#);
+    let mut parts = svg.split(r#" data-id=""#);
     let mut out = parts.next().unwrap().to_string();
     for p in parts {
-        out += r#"data-id="HID"#;
-        out += &p[p.find('"').unwrap()..];
+        out += &p[p.find('"').unwrap() + 1..];
     }
     out
 }
@@ -1091,4 +1090,174 @@ fn digests_are_each_days_own_picture() {
         "a day nothing touched changed its digest"
     );
     assert_eq!(after[0], picture("-1"));
+}
+
+/// Today's band around a `--sample` of `spec`, drawn `--context ctx`.
+fn around(db: &datum_core::db::Db, spec: &str, ctx: &str) -> String {
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap();
+    let argv = [
+        "dayview",
+        "--width",
+        "600",
+        "--label-width",
+        "0",
+        "-o",
+        path,
+    ];
+    run_cli(
+        &[&argv[..], &["--sample", spec, "--context", ctx]].concat(),
+        db,
+    )
+    .expect("dayview");
+    std::fs::read_to_string(path).unwrap()
+}
+
+/// The fields a band draws, by their groups.
+fn fields_drawn(svg: &str) -> Vec<&str> {
+    let mut out: Vec<&str> = (svg.split(r#"<g class="field" data-field=""#).skip(1))
+        .map(|p| &p[..p.find('"').unwrap()])
+        .collect();
+    out.sort();
+    out
+}
+
+const PILL: &str = r#"{"field":"pill","verb":"occur","allowed_states":null,"state_colors":{}}"#;
+
+/// The other fields of [`around`]'s tests: one in a state since five hours
+/// ago, one dotted an hour ago, and a close with no open half an hour ago,
+/// which `check integrity` flags.
+fn neighbours() -> datum_core::db::Db {
+    let db = fresh_db();
+    for line in [
+        &["switch", "mood", "happy", "-t", "-300"][..],
+        &["occur", "coffee", "-t", "-60"],
+        &["end", "lamp", "-t", "-30"],
+    ] {
+        run_cli(line, &db).unwrap();
+    }
+    db
+}
+
+/// da-jc8ic: `--context none` is the sample's field alone, and its sample
+/// even where it has entries on the day.
+#[test]
+fn context_none_draws_the_sample_alone() {
+    let db = neighbours();
+    run_cli(&["occur", "pill", "-t", "-90"], &db).unwrap();
+    let svg = around(&db, PILL, "none");
+    assert_eq!(fields_drawn(&svg), ["pill"], "{svg}");
+    assert_eq!(svg.matches("point-fg").count(), 8, "{svg}");
+    assert!(!svg.contains("integrity-error"), "{svg}");
+}
+
+/// da-jc8ic: `--context now` draws each other field's state now across the
+/// whole band, not a dot of the last minute, and the sample over it.
+#[test]
+fn context_now_draws_every_state_across_the_band() {
+    let db = neighbours();
+    run_cli(&["occur", "coffee"], &db).unwrap();
+    run_cli(&["occur", "pill", "-t", "-90"], &db).unwrap();
+    let svg = around(&db, PILL, "now");
+    assert_eq!(fields_drawn(&svg), ["mood", "pill"], "{svg}");
+    let mood = svg
+        .split("<rect")
+        .find(|r| r.contains(r#"class="block""#) && r.contains(r#"data-field="mood""#))
+        .unwrap_or_else(|| panic!("{svg}"));
+    let attr = |name: &str| -> f64 {
+        let at = mood.find(&format!(r#" {name}=""#)).unwrap() + name.len() + 3;
+        mood[at..at + mood[at..].find('"').unwrap()]
+            .parse()
+            .unwrap()
+    };
+    assert_eq!((attr("x"), attr("width")), (0.0, 596.0), "{mood}");
+    assert_eq!(svg.matches("point-fg").count(), 8, "the sample: {svg}");
+}
+
+/// da-jc8ic: `--context 12h` is the twelve hours before now with no
+/// integrity marks, the field's own entries in them drawn and no sample;
+/// a field with none there is sampled.
+#[test]
+fn context_window_draws_its_data_and_the_field_s_own_entries() {
+    let db = neighbours();
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap();
+    run_cli(&["dayview", "-o", path], &db).unwrap();
+    let today = std::fs::read_to_string(path).unwrap();
+    assert!(
+        today.contains("integrity-error"),
+        "the close with no open: {today}"
+    );
+    let sampled = around(&db, PILL, "12h");
+    assert_eq!(
+        fields_drawn(&sampled),
+        ["coffee", "mood", "pill"],
+        "{sampled}"
+    );
+    assert!(!sampled.contains("integrity-error"), "{sampled}");
+    assert_eq!(sampled.matches("point-fg").count(), 1 + 8, "{sampled}");
+    let own = |svg: &str| -> usize {
+        let at = svg.find(r#"<g class="field" data-field="pill">"#).unwrap();
+        let group = &svg[at..at + svg[at..].find("</g>").unwrap()];
+        group.matches("data-id=").count()
+    };
+    assert_eq!(own(&sampled), 0, "a sample has no entry behind it");
+
+    run_cli(&["occur", "pill", "-t", "-90"], &db).unwrap();
+    let placed = around(&db, PILL, "12h");
+    assert_eq!(placed.matches("point-fg").count(), 1 + 1, "{placed}");
+    assert_eq!(own(&placed), 1, "the entry's own: {placed}");
+}
+
+#[test]
+fn context_needs_a_sample() {
+    let db = fresh_db();
+    let err = run_cli(&["dayview", "--context", "now"], &db).unwrap_err();
+    assert!(err.to_string().contains("--sample"), "{err}");
+}
+
+/// A window is one band before now: a flag naming days, or the vertical
+/// band its ticks are not measured for, is refused, not dropped unsaid.
+#[test]
+fn a_window_context_refuses_what_it_would_drop() {
+    let db = fresh_db();
+    for extra in [
+        &["--days", "3"][..],
+        &["--end-date", "-1"],
+        &["--start-date", "-2"],
+        &["--digests", "1"],
+        &["--orientation", "vertical"],
+    ] {
+        for ctx in ["now", "12h"] {
+            let argv = [&["dayview", "--sample", PILL, "--context", ctx][..], extra].concat();
+            let err = run_cli(&argv, &db).unwrap_err().to_string();
+            assert!(err.starts_with("--context"), "{argv:?}: {err}");
+        }
+    }
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap();
+    let ok = [
+        "dayview",
+        "--days",
+        "1",
+        "--sample",
+        PILL,
+        "--context",
+        "12h",
+        "-o",
+        path,
+    ];
+    run_cli(&ok, &db).expect("--days 1 is the one band");
+    let none = [
+        "dayview",
+        "--days",
+        "3",
+        "--sample",
+        PILL,
+        "--context",
+        "none",
+        "-o",
+        path,
+    ];
+    run_cli(&none, &db).expect("none draws days");
 }
