@@ -432,7 +432,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         takes_value: false,
         value_hint: None,
         value_optional: false,
-        summary: "Remainder positionals → one appended comment",
+        summary: "Remainder positionals → one appended comment; after `--`, words as typed",
         long_description: None,
         left_override: None,
     },
@@ -764,7 +764,7 @@ const UPDATE_FLAGS: &[FlagSpec] = &[
         takes_value: false,
         value_hint: None,
         value_optional: false,
-        summary: "The words after the id → one appended comment",
+        summary: "The words after the id → one appended comment; after `--`, as typed",
         long_description: None,
         left_override: None,
     },
@@ -1412,7 +1412,9 @@ datum.day names a field's kind occurrence, on/off, switch or card:
 
 An entry is at now unless -t, -d, -q or -y say otherwise. Words after
 the field need a key (`size=large`) unless the field's spec gives them
-one; a note takes them as its text.
+one; a note takes them as its text. After a bare `--` every word is
+taken as typed, no flag and no key: `datum occur jot -C -- see
+https://example.com/?a=b -t now` stores that sentence as the comment.
 
 The options below are read by all six. Each verb's own page lists only
 what is particular to it.
@@ -2476,6 +2478,9 @@ pub const COMMANDS: &[CommandSpec] = &[
                 `datum update <id> --strategy append -C looks fine`: the words are one\n\
                 comment, appended to the entry's data.comment, and the entry keeps its\n\
                 earlier version in its history. Any entry takes one, timed or not.\n\
+                A word with `=` in it is a key, as on any line; after a bare `--`\n\
+                every word is the comment's, as typed: `datum comment <id> -- see\n\
+                https://example.com/?a=b`.\n\
                 \n\
                 `-c`/`-C` on a logging line is a remark made with the entry; `comment`\n\
                 is one made later about an entry that exists.\n",

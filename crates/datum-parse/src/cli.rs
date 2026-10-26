@@ -299,6 +299,8 @@ pub struct DbImportArgs {
 pub struct LogArgs {
     pub field_or_verb: String,
     pub rest: Vec<String>,
+    /// The words after a bare `--`: positionals as typed (da-gqy3b).
+    pub verbatim: Vec<String>,
     /// `-y/-q/-d/-t/-z/-T/-D` — composed timing concern.
     pub time: TimeArgs,
     /// `-m/--moment` + the resolved duration — composed duration concern.
@@ -555,6 +557,8 @@ pub struct UpdateArgs {
     /// last-accessed pointer, refusing if it's > 15 min stale).
     pub id_or_slug: Option<String>,
     pub rest: Vec<String>,
+    /// The words after a bare `--`: positionals as typed (da-gqy3b).
+    pub verbatim: Vec<String>,
     pub strategy: Option<UpdateStrategyArg>,
     pub id: Option<String>,
     /// `--id-delimiter` raw CLI value. `None` falls through to env /

@@ -1073,6 +1073,7 @@ mod tests {
         UpdateArgs {
             id_or_slug: Some(id.to_string()),
             rest: rest.into_iter().map(String::from).collect(),
+            verbatim: Vec::new(),
             strategy: None,
             id: None,
             id_delimiter: None,

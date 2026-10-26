@@ -188,6 +188,11 @@ pub struct DataArgs {
     /// changes the line's command. Set by the log commands alone; see
     /// [`handle_log_data_args`].
     pub command_change: bool,
+    /// The words after a bare `--` (da-gqy3b), which follow [`Self::data`]:
+    /// positionals as typed, so no `key=value`, command or trailing
+    /// duration is read from them. They fill slots, and under `-C` are the
+    /// comment's words.
+    pub verbatim: Vec<String>,
 }
 
 impl FlexibleTarget for DataArgs {
@@ -253,7 +258,12 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
     };
 
     // Clone the bits we mutate; the input bag is treated as read-only.
-    let mut data_queue: Vec<String> = args.data.clone();
+    let mut data_queue: Vec<String> = [&args.data[..], &args.verbatim[..]].concat();
+    // How many words at the queue's end came after `--`, and of those the
+    // remainder took (a tail of it: once a word misses every slot, the
+    // rest do too).
+    let mut verbatim = args.verbatim.len();
+    let mut verbatim_left = 0;
     let mut keys: Vec<String> = consolidate_keys(&args.keys);
 
     let remainder_key: Option<String> = args.remainder.clone().or_else(|| {
@@ -291,8 +301,12 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
     loop {
         // ── positional loop ────────────────────────────────────────────────
         while !data_queue.is_empty() {
+            let as_typed = data_queue.len() <= verbatim;
             let arg = data_queue.remove(0);
-            let (before_eq, after_eq) = split_first_eq(&arg);
+            let (before_eq, after_eq) = match as_typed {
+                true => (arg.as_str(), None),
+                false => split_first_eq(&arg),
+            };
             let prev = prev_slot.take();
 
             if let Some(value) = after_eq {
@@ -344,7 +358,7 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
                     // Already filled manually — skip to the next declared key.
                     continue;
                 }
-                if path == "dur" && is_command(data_value) {
+                if path == "dur" && !as_typed && is_command(data_value) {
                     change_command(&mut datum_data, &mut keys, data_value);
                     command = Some(data_value.to_string());
                     consumed = true;
@@ -367,6 +381,7 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
 
             if !consumed {
                 remainder_data.push(data_value.to_string());
+                verbatim_left += usize::from(as_typed);
             }
         }
 
@@ -392,11 +407,15 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
         }
 
         // ── leftover words led by a command: the line is that command ──────
-        if remainder_key.is_none() && remainder_data.first().is_some_and(|w| is_command(w)) {
+        if remainder_key.is_none()
+            && remainder_data.len() > verbatim_left
+            && is_command(&remainder_data[0])
+        {
             let word = remainder_data.remove(0);
             change_command(&mut datum_data, &mut keys, &word);
             command = Some(word);
             data_queue = std::mem::take(&mut remainder_data);
+            verbatim = std::mem::take(&mut verbatim_left);
             continue;
         }
         break;
@@ -416,7 +435,7 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
     //     NOT re-fire on the new last token (one `.`, one skip).
     //   * `\.` → escapes to a literal `.` that joins normally.
     //   * anything else → joins normally.
-    if args.peek_trailing_dur && !remainder_data.is_empty() {
+    if args.peek_trailing_dur && verbatim_left == 0 && !remainder_data.is_empty() {
         let last = remainder_data.last().expect("checked non-empty");
         if last == "." {
             remainder_data.pop();

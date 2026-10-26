@@ -779,6 +779,7 @@ pub(crate) fn parse_update_payload(
     data_args.data.extend(positionals);
     // `-C`: the words after the id are one appended comment (da-7sc0u).
     data_args.comment_remainder = args.comment_remainder;
+    data_args.verbatim = args.verbatim.clone();
     data_args.remainder = (!args.comment_remainder).then(|| PRIMARY_VALUE_KEY.to_string());
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
@@ -878,6 +879,7 @@ mod tests {
         UpdateArgs {
             id_or_slug: Some(id.to_string()),
             rest: rest.into_iter().map(String::from).collect(),
+            verbatim: Vec::new(),
             strategy: None,
             id: None,
             id_delimiter: None,

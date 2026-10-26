@@ -231,7 +231,7 @@ pub fn expand_argv(
 /// (`proj off -t -6`, `proj` = `switch project`, reaches here as `switch
 /// project -t -6 off`), and they stored the text «off» (da-47ge3). A `k=v`
 /// is data, as the regions read it. `-I` asks for the words as a string
-/// state, so it promotes nothing.
+/// state, so it promotes nothing, and nor does a word after `--`.
 pub fn apply_switch_promote_override(mut argv: Vec<String>) -> Vec<String> {
     if argv.get(1).map(String::as_str) != Some("switch") {
         return argv;
@@ -241,12 +241,11 @@ pub fn apply_switch_promote_override(mut argv: Vec<String>) -> Vec<String> {
     }
     let mut positionals = Vec::new();
     let mut i = 2;
-    let mut end_of_flags = false;
     while i < argv.len() && positionals.len() < 2 {
         let tok = &argv[i];
-        if tok == "--" && !end_of_flags {
-            end_of_flags = true;
-        } else if !end_of_flags && super::regions::is_flag(tok) {
+        if tok == "--" {
+            break; // the words after it are as typed (da-gqy3b)
+        } else if super::regions::is_flag(tok) {
             i += usize::from(super::regions::is_value_flag(tok));
         } else if !tok.contains('=') {
             positionals.push(i);

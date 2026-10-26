@@ -1330,6 +1330,7 @@ pub(crate) fn parse_log_args(
     };
     data_args.string_remainder = args.string_remainder;
     data_args.comment_remainder = args.comment_remainder;
+    data_args.verbatim = args.verbatim.clone();
     data_args.string_state = args.string_state;
     // da-vo0y F2: trailing-dur peek — only when a string-join remainder is
     // active on a duration-bearing verb (matches the dur=-slot suppression

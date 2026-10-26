@@ -893,7 +893,7 @@ ARGS:
 
 OPTIONS:
       --strategy <S>       update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|append
-  -C, --comment-remainder  The words after the id → one appended comment
+  -C, --comment-remainder  The words after the id → one appended comment; after `--`, as typed
       --id <TEMPLATE>      Re-id the entry (a template, as on insert); keeps its hid
       --id-delimiter <S>   Delimiter between empty segments
   -k, --key <KV>           Extra key=value (repeatable)

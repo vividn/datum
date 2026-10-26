@@ -541,8 +541,9 @@ struct RegionContent {
 }
 
 /// Split a region's tokens into positionals / flags / `key=value`,
-/// honoring a region-scoped unix `--` (everything after it is
-/// positional, even dash-prefixed — spec rule 4).
+/// honoring a region-scoped unix `--` (everything after it is a
+/// positional as typed, even dash-prefixed or holding `=` — spec rule 4,
+/// da-gqy3b).
 fn classify_region(tokens: &[String]) -> RegionContent {
     let mut positionals: Vec<String> = Vec::new();
     let mut positional_at: Vec<usize> = Vec::new();
@@ -565,9 +566,10 @@ fn classify_region(tokens: &[String]) -> RegionContent {
                     i += 1;
                 }
             }
+        } else if no_more_flags {
+            positionals.push(format!("{TYPED}{tok}"));
+            positional_at.push(i);
         } else if tok.contains('=') {
-            // `key=value` is datum's data grammar, not flag grammar — a
-            // unix `--` de-flags but does not de-key (rule 4 note).
             kv.push(tok.clone());
         } else {
             positionals.push(tok.clone());
@@ -813,9 +815,24 @@ fn trailing(
     } else if find_command(&queue[qi]).is_some() {
         fills.push(Fill::Command { at: qi });
     } else {
-        return Err(ParseError::ExtraData(queue[qi..].to_vec()));
+        return Err(ParseError::ExtraData(
+            queue[qi..].iter().map(|t| untyped(t).0).collect(),
+        ));
     }
     Ok(fills)
+}
+
+/// Marks a positional typed after a region's `--` for the walk
+/// (da-gqy3b): no `.`, duration or command reads as one, so it fills its
+/// slot as typed, and the side it fills gets a `--` before its fills.
+const TYPED: char = '\u{1f}';
+
+/// A walked word as typed, and whether it came after a `--`.
+fn untyped(t: &str) -> (String, bool) {
+    match t.strip_prefix(TYPED) {
+        Some(word) => (word.to_string(), true),
+        None => (t.to_string(), false),
+    }
 }
 
 /// The commands that read a state after their field (`tail F:S`).
@@ -893,10 +910,14 @@ fn push_skip(fills: &mut Vec<Fill>, kind: &SlotKind, open_sides: Vec<usize>) {
 
 fn push_fill(fills: &mut Vec<Fill>, kind: &SlotKind, open_sides: Vec<usize>, value: String) {
     match kind {
-        SlotKind::Field { side } => fills.push(Fill::Field { side: *side, value }),
+        // A field and a key's value stand before any `--`, as typed.
+        SlotKind::Field { side } => fills.push(Fill::Field {
+            side: *side,
+            value: untyped(&value).0,
+        }),
         SlotKind::Key { name } => fills.push(Fill::Key {
             sides: open_sides,
-            kv: format!("{name}={value}"),
+            kv: format!("{name}={}", untyped(&value).0),
         }),
         SlotKind::State => fills.push(Fill::State {
             sides: open_sides,
@@ -1026,9 +1047,10 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
         // and 10 is distanceKm's, as typed (da-cze5g).
         let sided: Vec<Vec<String>> = (0..n)
             .map(|s| {
-                let mut side = with_flags(&locals[s], &blanket_flags[s]);
-                side.extend(blanket_kv[s].iter().cloned());
-                side
+                with_flags(
+                    &locals[s],
+                    &[&blanket_flags[s][..], &blanket_kv[s]].concat(),
+                )
             })
             .collect();
         atoms = atoms_for(&sided)
@@ -1042,10 +1064,10 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
             .collect();
     }
 
-    // Emit: locals, then blanket flags (BEFORE any local `--` so they
-    // stay flags), then blanket k=v + positional fills (positional-class,
-    // protected by a `--` when a fill is dash-leading and the side has
-    // none yet).
+    // Emit: locals, then blanket flags, k=v and key fills (BEFORE any
+    // local `--`, so they stay flags and keys), then the positional fills
+    // (protected by a `--` when a fill is dash-leading or was typed after
+    // one, and the side has none yet).
     let mut out: Vec<Vec<String>> = Vec::with_capacity(n);
     for (i, mut local) in locals.into_iter().enumerate() {
         if let Some(field) = field_fills[i].take() {
@@ -1054,21 +1076,23 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
             let at = 1.min(local.len());
             local.insert(at, field);
         }
-        let mut side = with_flags(&local, &blanket_flags[i]);
-        side.extend(blanket_kv[i].iter().cloned());
-        side.extend(key_fills[i].iter().cloned());
-        let dash_fill = state_fills[i]
-            .iter()
-            .chain(dur_fills[i].iter())
-            .chain(window_fills[i].iter())
-            .any(|t| is_flag(t));
+        let blanket = [&blanket_flags[i][..], &blanket_kv[i], &key_fills[i]].concat();
+        let mut side = with_flags(&local, &blanket);
+        let fills: Vec<(String, bool)> = [
+            &state_fills[i],
+            &key_skips[i],
+            &dur_fills[i],
+            &window_fills[i],
+        ]
+        .into_iter()
+        .flatten()
+        .map(|t| untyped(t))
+        .collect();
+        let dash_fill = fills.iter().any(|(t, typed)| *typed || is_flag(t));
         if dash_fill && !side.iter().any(|t| t == "--") {
             side.push("--".to_string());
         }
-        side.extend(state_fills[i].iter().cloned());
-        side.extend(key_skips[i].iter().cloned());
-        side.extend(dur_fills[i].iter().cloned());
-        side.extend(window_fills[i].iter().cloned());
+        side.extend(fills.into_iter().map(|(t, _)| t));
         out.push(side);
     }
     if let Some((lo, hi, words)) = command {

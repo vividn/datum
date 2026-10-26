@@ -237,3 +237,36 @@ fn comment_refuses_an_unknown_hid_a_strategy_and_no_words() {
     );
     assert_eq!(comments(&db, "x"), [Value::Null]);
 }
+
+/// A bare `--` ends the keys as well as the flags (da-gqy3b, vividn
+/// 2026-10-26): every word after it is a positional as typed, so under
+/// `-C` a URL, an `x=y` or a `-t` is the comment's text, typed directly, in
+/// an alias's words, or in `comment <hid>`'s. A line without `--` keeps
+/// its keys, and a word after `--` still fills a slot.
+#[test]
+fn words_after_a_bare_double_dash_are_as_typed() {
+    let db = fresh_db();
+    let data = |field: &str| logged_entries(&db, field)[0].data.clone();
+    let sentence = "see https://example.com/?a=b and dose=5 -t now";
+    let words: Vec<&str> = sentence.split(' ').collect();
+    run_cli(&[&["occur", "x", "-C", "--"][..], &words].concat(), &db).unwrap();
+    assert_eq!(data("x"), Some(json!({"comment": [sentence]})));
+
+    run_cli(&["alias", "set", "jot", "occur jotting -C"], &db).unwrap();
+    run_cli(&[&["jot", "--"][..], &words].concat(), &db).unwrap();
+    assert_eq!(data("jotting"), Some(json!({"comment": [sentence]})));
+    let hid = logged_entries(&db, "jotting")[0].hid.as_str().to_string();
+    run_cli(&["comment", &hid, "--", "a=b", "-c"], &db).unwrap();
+    assert_eq!(comments(&db, "jotting"), [json!([sentence, "a=b -c"])]);
+
+    run_cli(&["occur", "y", "-C", "say", "dose=5", "--", "x=y"], &db).unwrap();
+    assert_eq!(data("y"), Some(json!({"comment": ["say x=y"], "dose": 5})));
+
+    run_cli(&["switch", "temp", "--", "-5"], &db).unwrap();
+    run_cli(&["switch", "mood", "--", "end"], &db).unwrap();
+    let state = |field: &str| logged_entries(&db, field)[0].state.clone();
+    assert_eq!(
+        (state("temp"), state("mood")),
+        (Some(json!(-5)), Some(json!("end")))
+    );
+}

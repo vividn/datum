@@ -526,18 +526,23 @@ mod tests {
     }
 
     #[test]
-    fn keyed_after_explicit_double_dash_at_call_site_idempotent_with_implicit() {
-        // Explicit `--` at call site is redundant with the implicit
-        // body-end `--`; result must match the without-`--` form.
+    fn words_after_a_call_site_double_dash_reach_the_side_as_typed() {
+        // da-gqy3b: after `--` a `k=v` is a word, not a key: it fills the
+        // `-C` comment behind a `--` the side parser reads it after, and a
+        // key the alias was given before it stays ahead of that `--`.
         let mut a = HashMap::new();
-        a.insert("m".into(), alias("switch body sit , occur caffeine"));
-        let with_dd = expand_into_sides(v(&["datum", "m", "--", "k=X"]), &MapResolver(&a)).unwrap();
-        let without_dd = expand_into_sides(v(&["datum", "m", "k=X"]), &MapResolver(&a)).unwrap();
-        assert_eq!(with_dd.sides, without_dd.sides);
-        for side in &with_dd.sides {
-            assert!(side.iter().any(|t| t == "k=X"));
-            assert!(!side.iter().any(|t| t == "--"));
-        }
+        a.insert("m".into(), alias("occur jot -C"));
+        let r = expand_into_sides(
+            v(&["datum", "m", "dose=5", "see", "--", "x=y", "-t", "end"]),
+            &MapResolver(&a),
+        )
+        .unwrap();
+        assert_eq!(
+            r.sides,
+            vec![v(&[
+                "occur", "jot", "-C", "dose=5", "--", "see", "x=y", "-t", "end"
+            ])]
+        );
     }
 
     #[test]
@@ -559,8 +564,8 @@ mod tests {
     #[test]
     fn unix_dash_dash_does_not_promote() {
         // Spec v2 rule 4: `--` is end-of-flags, side-scoped — the old
-        // promote-to-all meaning is gone. k=v after it stays on its
-        // side (k=v is data grammar, unaffected by the latch).
+        // promote-to-all meaning is gone. A word after it stays on its
+        // side, as typed (da-gqy3b).
         let r = expand(&[
             "datum", "vertical", "abc=1", ",", "sit", "ghi=2", "--", "xyz=3",
         ]);

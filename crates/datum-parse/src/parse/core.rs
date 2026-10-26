@@ -164,10 +164,23 @@ pub(crate) fn fold_args_with_pre<'a, P: 'static>(
     tail: &'a [&'a str],
     composed: &mut P,
     registry: &[LiftedSpec<P>],
-    mut pre_hook: impl FnMut(&'a [&'a str], usize, &mut P) -> Result<Option<usize>>,
+    pre_hook: impl FnMut(&'a [&'a str], usize, &mut P) -> Result<Option<usize>>,
 ) -> Result<Vec<&'a str>> {
+    let (mut pos, after) = fold_args_split(tail, composed, registry, pre_hook)?;
+    pos.extend_from_slice(after);
+    Ok(pos)
+}
+
+/// [`fold_args_with_pre`], with the words after a bare `--` kept apart
+/// from the positionals before it, for a command that takes them as typed
+/// (a log or update line's, da-gqy3b).
+pub(crate) fn fold_args_split<'a, P: 'static>(
+    tail: &'a [&'a str],
+    composed: &mut P,
+    registry: &[LiftedSpec<P>],
+    mut pre_hook: impl FnMut(&'a [&'a str], usize, &mut P) -> Result<Option<usize>>,
+) -> Result<(Vec<&'a str>, &'a [&'a str])> {
     let mut pos: Vec<&str> = Vec::new();
-    let mut no_more_flags = false;
     let mut i = 0;
     while i < tail.len() {
         // Unix `--` (spec v2 rule 4, docs/trailing-and-slots.md): end of
@@ -175,15 +188,8 @@ pub(crate) fn fold_args_with_pre<'a, P: 'static>(
         // is positional, even dash-prefixed. Side-scoping is automatic
         // (each side parses its own argv); alias-scoping is handled by
         // the region layer before the tokens reach us.
-        if no_more_flags {
-            pos.push(tail[i]);
-            i += 1;
-            continue;
-        }
         if tail[i] == "--" {
-            no_more_flags = true;
-            i += 1;
-            continue;
+            return Ok((pos, &tail[i + 1..]));
         }
         if let Some(ni) = pre_hook(tail, i, composed)? {
             i = ni;
@@ -201,7 +207,7 @@ pub(crate) fn fold_args_with_pre<'a, P: 'static>(
             f => return Err(unknown_flag(f)),
         }
     }
-    Ok(pos)
+    Ok((pos, &[]))
 }
 
 /// Parse the value of `--<flag>`, which accepts only `accepted` — so the

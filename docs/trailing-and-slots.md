@@ -78,7 +78,10 @@ implementation detail.
    the prefix's unfilled **slot list**.
 4. **Unix `--` — end of option parsing, side- and alias-scoped.** `--`
    keeps its conventional meaning: every later token *in the same side or
-   region* is positional data, even when dash-prefixed. The effect ends at
+   region* is positional data, even when dash-prefixed, and is taken as
+   typed: a `key=value` is a word, not a key, and no `.`, duration or
+   command is read from it (da-gqy3b, vividn 2026-10-26), so under `-C`
+   the words after it are the comment's. The effect ends at
    the next `,` or `,,`, and a `--` inside an alias body applies only
    within that body — it never leaks to the call site or outer scopes.
    Dash-positionals participate in slot walks like any positional (they
@@ -90,6 +93,7 @@ implementation detail.
    ```
    note cmd -- --verbose --dry-run        # stores two dash-positionals
    note cmd -- --verbose , occur coffee -q  # side 2's -q is still a flag
+   occur jot -C -- see https://x.org/?a=b   # one comment, no key
    occur f -k expr ,, \(                  # expr="(" — escaped literal
    ```
 
@@ -159,11 +163,11 @@ implementation detail.
 
 10. **A side comes out in one order, whatever order it was typed in**
     (`apply_regions`, `alias/regions.rs`): the verb, a filled field, the
-    body's own tokens up to its `--`, every region's flags, the body's
-    `--` and what follows it, every region's `key=value`, the key fills
-    (`name=value`), a `--` when a fill is dash-leading and the side has
-    none, then the state fill, `.` key skips, the dur fill and the
-    greedy's words. So `proj off -t -6` (`proj` = `switch project`)
+    body's own tokens up to its `--`, every region's flags, every
+    region's `key=value`, the key fills (`name=value`), the body's `--`
+    and what follows it, a `--` when a fill is dash-leading or was typed
+    after one and the side has none, then the state fill, `.` key skips,
+    the dur fill and the greedy's words. So `proj off -t -6` (`proj` = `switch project`)
     reaches every reader as `switch project -t -6 off`: a positional
     can sit behind flags it was typed ahead of. A reader of the emitted
     argv finds a positional by scanning past flags (and their values)

@@ -85,11 +85,12 @@ fn parse_update_strategy(v: &str) -> Result<UpdateStrategyArg> {
 pub(crate) fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
     let registry = update_args_registry();
     let mut composed = UpdateParsing::default();
-    let pos = fold_args(tail, &mut composed, &registry)?;
+    let (pos, verbatim) = fold_args_split(tail, &mut composed, &registry, |_, _, _| Ok(None))?;
     let mut it = pos.into_iter();
     Ok(UpdateArgs {
         id_or_slug: it.next().map(|s| s.to_string()),
         rest: it.map(|s| s.to_string()).collect(),
+        verbatim: verbatim.iter().map(|s| s.to_string()).collect(),
         strategy: composed.strategy,
         id: composed.id,
         id_delimiter: composed.id_delimiter,
@@ -111,7 +112,7 @@ pub(crate) fn parse_comment_args(tail: &[&str]) -> Result<UpdateArgs> {
             "comment takes no --strategy: it is update --strategy append -C".into(),
         ));
     }
-    if args.rest.is_empty() && args.comment.is_empty() {
+    if args.rest.is_empty() && args.comment.is_empty() && args.verbatim.is_empty() {
         return Err(ParseError::InvalidArg(
             "comment takes the words of the comment: comment <hid> words…".into(),
         ));

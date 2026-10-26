@@ -193,7 +193,13 @@ fn normalize_id_segment(v: &str) -> String {
 pub(crate) fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
     let registry = log_args_registry();
     let mut out = LogArgs::with_field(String::new());
-    let pos = fold_args(tail, &mut out, &registry)?;
+    let (pos, verbatim) = fold_args_split(tail, &mut out, &registry, |_, _, _| Ok(None))?;
+    // `occur -- -x`: a field before the line has one is still its field.
+    let (pos, verbatim) = match (pos.is_empty(), verbatim.split_first()) {
+        (true, Some((field, rest))) => (vec![*field], rest),
+        _ => (pos, verbatim),
+    };
+    out.verbatim = verbatim.iter().map(|s| s.to_string()).collect();
     let mut it = pos.into_iter();
     out.field_or_verb = it
         .next()

@@ -79,7 +79,14 @@ fn update_occur_time_reads_its_value_as_retime_does() {
     let after = |verb: &str, arg: &str| {
         let db = fresh_db();
         let hid = point_in(&db, "coffee", start, "Europe/Berlin");
-        let ran = run_cli(&[verb, &hid, "--", arg], &db).map_err(|e| e.to_string());
+        // `--` keeps retime's `-5m` a word; after it update's key would be
+        // one too (da-gqy3b), so update's comes without it.
+        let dd = if verb == "retime" { "--" } else { "" };
+        let argv: Vec<&str> = [verb, &hid, dd, arg]
+            .into_iter()
+            .filter(|w| !w.is_empty())
+            .collect();
+        let ran = run_cli(&argv, &db).map_err(|e| e.to_string());
         let at = time_of(&db, &hid).utc;
         assert!(
             ran.is_ok() || at == utc(start),
