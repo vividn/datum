@@ -7,8 +7,9 @@
 # section»).
 #
 # ci.yml reads this file. A PR into a listed branch, and a push to one, run
-# its `integration` job, the light one, and not the full `ci` job; the full
-# job runs once, when the epic's PR into staging does. A name is under
+# its `integration` job, the light one, and not the full `ci` job. The full
+# job runs each night at every listed branch's tip (integration-nightly.yml
+# reads this file too), and on the epic's PR into staging. A name is under
 # `integration/`, since that is the push trigger ci.yml listens on.
 #
 #   name       the branch
