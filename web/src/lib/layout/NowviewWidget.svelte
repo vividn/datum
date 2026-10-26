@@ -1512,13 +1512,16 @@
 	/* THE HANDLES (da-57vj4): a frame round each major label, the label's
 	   own words showing through, so the axis reads as something to take
 	   hold of. The target is at least a fingertip's height; a finger's
-	   drag on it is the handle's, never the page's. */
+	   drag on it is the handle's, never the page's. Outlined in `--muted`,
+	   a control at rest, and not the rules' `--rule`, so it reads as one
+	   to grab (da-9hmqg, vividn: «a bit higher contrast so that it's more
+	   clear they are clickable/draggable»). */
 	.handle {
 		position: absolute;
 		box-sizing: border-box;
 		transform: translate(-50%, -50%);
 		padding: 0 3px;
-		border: 1px solid var(--rule);
+		border: 1px solid var(--muted);
 		border-radius: 4px;
 		background: none;
 		color: transparent;

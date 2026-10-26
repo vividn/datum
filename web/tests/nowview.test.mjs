@@ -132,6 +132,41 @@ describe('the nowview widget', () => {
 		});
 	});
 
+	// da-9hmqg, vividn: «make the outline of the handles a bit higher
+	// contrast so that it's more clear they are clickable/draggable». The
+	// ratio of what is painted, against the first ancestor that paints, beside
+	// the axis rules' `--rule` against the same ground.
+	test('a handle is outlined at a clearly higher contrast than a rule', async () => {
+		await shared.solo(async ({ page }) => {
+			await page.locator(`${PANE} .nowview-handles .handle`).first().waitFor();
+			const m = await page.locator(`${PANE} .nowview-handles .handle`).first().evaluate((h) => {
+				const parse = (color) => (color.match(/[\d.]+/g) ?? []).map(Number);
+				const channel = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+				const lum = ([r, g, b]) => 0.2126 * channel(r / 255) + 0.7152 * channel(g / 255) + 0.0722 * channel(b / 255);
+				const ratio = (a, b) => {
+					const [light, dark] = [lum(a), lum(b)].sort((x, y) => y - x);
+					return Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
+				};
+				let ground = [0, 0, 0];
+				for (let node = h.parentElement; node; node = node.parentElement) {
+					const bg = parse(getComputedStyle(node).backgroundColor);
+					if (bg[3] === undefined || bg[3] > 0) {
+						ground = bg.slice(0, 3);
+						break;
+					}
+				}
+				const probe = document.createElement('span');
+				probe.style.color = 'var(--rule)';
+				h.parentElement.append(probe);
+				const rule = parse(getComputedStyle(probe).color).slice(0, 3);
+				probe.remove();
+				const border = parse(getComputedStyle(h).borderTopColor).slice(0, 3);
+				return { border: ratio(border, ground), rule: ratio(rule, ground), ground: `rgb(${ground})` };
+			});
+			assert.ok(m.border >= 2.5 && m.border >= 1.75 * m.rule, `handle ${m.border}:1, rule ${m.rule}:1 on ${m.ground}`);
+		});
+	});
+
 	test('with the cursor set the far label is the leftmost, and a handle on each side of it', async () => {
 		await withApp(
 			async ({ page }) => {
