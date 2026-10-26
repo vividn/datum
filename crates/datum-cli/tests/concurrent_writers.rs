@@ -91,7 +91,6 @@ fn a_write_beside_a_large_sync_apply_waits_a_chunk() {
     use std::collections::BTreeMap;
     use std::io::Write;
     use std::process::Stdio;
-    use std::time::{Duration, Instant};
 
     use datum_core::db::{ConflictStrategy, Db};
     use datum_core::entry::{Entry, Verb};
@@ -147,17 +146,16 @@ fn a_write_beside_a_large_sync_apply_waits_a_chunk() {
         .unwrap()
         .write_all(ops.join("\n").as_bytes())
         .unwrap();
-    let (mut writes, mut failed, mut slowest) = (0, Vec::new(), Duration::ZERO);
+    let (mut writes, mut failed, mut queued) = (0, Vec::new(), 0);
     // Writes that got in while the apply still ran: one transaction for
     // the batch lets at most the one before it, whatever the box's speed.
     let mut beside = 0;
     while apply.try_wait().unwrap().is_none() {
-        let t = Instant::now();
         let out = datum(&["occur", "busyprobe", &format!("n={writes}")])
             .output()
             .unwrap();
-        slowest = slowest.max(t.elapsed());
         writes += 1;
+        queued += usize::from(String::from_utf8_lossy(&out.stdout).contains("QUEUED"));
         beside += usize::from(apply.try_wait().unwrap().is_none());
         if !out.status.success() {
             failed.push(String::from_utf8_lossy(&out.stderr).into_owned());
@@ -170,12 +168,14 @@ fn a_write_beside_a_large_sync_apply_waits_a_chunk() {
         failed.len(),
         failed[0]
     );
-    // A chunk holds the lock 500 ms; measured, the slowest write took
-    // 0.56-0.66 s, and before the chunks one waited out the whole apply,
-    // 4.7-5.0 s.
+    // A chunk holds the lock 500 ms, and a write waiting longer than 750 ms
+    // spools instead (da-9q3fr), so how long a write took says nothing of
+    // the chunks: a fixed cap only ever failed under load (da-d3hte). That
+    // it waited a chunk and landed, not queued, does: measured, 0 of 28
+    // writes queued, and 28 of 33 with the apply's pause taken out.
     assert!(
-        slowest < Duration::from_millis(2000),
-        "a write took {slowest:?}"
+        queued * 4 < writes,
+        "{queued} of {writes} writes were queued beside the apply"
     );
     assert!(
         beside >= 5,
