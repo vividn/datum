@@ -122,7 +122,8 @@ fn an_update_resolves_what_it_writes_and_keeps_what_was_held() {
     // Held while no field started `soon`, so stored as typed.
     env.ok(&["occur", "x", "held=ref://soon::"]);
     env.ok(&["occur", "soonest"]);
-    env.ok(&["update", "x", "n=ref://issue__k7g::"]);
+    // `x:_`, not a bare `x`, which a hid starting with x would make ambiguous.
+    env.ok(&["update", "x:_", "n=ref://issue__k7g::"]);
     assert_eq!(env.ok(&["get", "x::held"]).trim(), "ref://soon::");
     assert_eq!(env.ok(&["get", "x::n"]).trim(), format!("ref://{B}::"));
 }
