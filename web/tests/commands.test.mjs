@@ -234,7 +234,7 @@ describe('the bar of commands', () => {
 // instead.» Which are subcommands is `datum help --json`'s to say.
 describe('a command with subcommands drills into them', () => {
 	const back = (page) => commands(page).locator('button[data-back]');
-	const DB = ['purge', 'backup', 'restore', 'migrate', 'v2import'];
+	const DB = ['purge', 'backup', 'restore', 'migrate', 'v2import', 'config'];
 
 	test('db shows its subcommands under < Back, and migrate fills `db migrate `', async () => {
 		await onPage(async ({ page }) => {
