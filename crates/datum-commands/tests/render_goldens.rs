@@ -864,6 +864,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
         orientation: Orientation::Horizontal,
         axis_ticks_override,
         right_panel_width: panel_width,
+        panel_at_ms: None,
     };
     let layout = compute_dayview(&cfg);
     let current_states = vec![NowviewCurrentState {
@@ -935,6 +936,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         orientation: Orientation::Horizontal,
         axis_ticks_override,
         right_panel_width: panel_width,
+        panel_at_ms: None,
     };
     let layout = compute_dayview(&cfg);
     let current_states = vec![NowviewCurrentState {

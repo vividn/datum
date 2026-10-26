@@ -153,14 +153,19 @@ describe('a burst of changes', () => {
 				assert.ok(burst.dimmed, 'the old picture was not dimmed while the new one was on its way');
 				assert.equal(behind, 0, 'the final picture is still dimmed');
 
-				// The final picture is centred on the last cursor: its line sits mid-axis.
-				const [mid, line] = await page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => {
-					const day = svg.querySelector('[data-lo]');
-					return [
-						(Number(day.getAttribute('data-lo')) + Number(day.getAttribute('data-hi'))) / 2,
-						Number(svg.querySelector('line.cursor').getAttribute('x1'))
-					];
-				});
+				// The final picture is centred on the last cursor: its line sits
+				// where its stretch holding that instant draws it — the now strip
+				// cuts the picture in two (da-6csum), so not the first's middle.
+				const last = requested.at(-1);
+				const [mid, line] = await page.locator(`${NOWVIEW} svg.svg`).evaluate((svg, iso) => {
+					const t = Date.parse(iso);
+					const day = [...svg.querySelectorAll('[data-lo]')].find(
+						(d) => Date.parse(d.getAttribute('data-from')) <= t && t <= Date.parse(d.getAttribute('data-to'))
+					);
+					const [from, to] = ['data-from', 'data-to'].map((n) => Date.parse(day.getAttribute(n)));
+					const [lo, hi] = ['data-lo', 'data-hi'].map((n) => Number(day.getAttribute(n)));
+					return [lo + ((t - from) / (to - from)) * (hi - lo), Number(svg.querySelector('line.cursor').getAttribute('x1'))];
+				}, last[last.indexOf('-t') + 1]);
 				assert.ok(Math.abs(mid - line) < 0.5, `the cursor at ${line}, the centre ${mid}`);
 				assert.deepEqual(app.errors, []);
 			},

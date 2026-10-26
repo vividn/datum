@@ -103,7 +103,8 @@ describe('the selection and the pills', () => {
 				};
 				return [...document.querySelectorAll('svg.svg *')]
 					// NOW's own marks: the line and its «now» label (da-9g3bf), which
-					// a picture centred off now draws too, in its surroundings (da-6fdaf).
+					// a picture centred off now draws too, in its surroundings (da-6fdaf),
+					// and under a now strip pinned to the window's edge (da-6csum).
 					.filter((el) => !/^(current-time-|now-label)/.test(el.getAttribute('class') ?? ''))
 					// A field's own colour is the person's, not the page's.
 					.filter((el) => !el.closest('[data-field]'))

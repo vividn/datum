@@ -294,6 +294,11 @@ pub struct DayviewConfig {
     /// da-34w nowview uses this to stack a current-state panel beside the
     /// now-line.
     pub right_panel_width: f64,
+    /// The instant that strip stands at, when it is not now: a nowview
+    /// window that now is outside keeps its now strip at the edge now lies
+    /// beyond (da-6csum). `None` is now.
+    #[serde(default)]
+    pub panel_at_ms: Option<i64>,
 }
 
 impl Default for DayviewConfig {
@@ -311,6 +316,7 @@ impl Default for DayviewConfig {
             orientation: Orientation::default(),
             axis_ticks_override: None,
             right_panel_width: 0.0,
+            panel_at_ms: None,
         }
     }
 }
@@ -388,6 +394,14 @@ pub struct RenderedDay {
     /// Time-axis pixel position of the now-line within the data area. Some
     /// only on the day whose window contains `now_ms`.
     pub now_time_pos: Option<f64>,
+    /// Where the reserved strip starts along the time axis when it stands
+    /// at [`DayviewConfig::panel_at_ms`] and not at now (da-6csum).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel_pos: Option<f64>,
+    /// That strip ends the window, now being after it, rather than
+    /// starting it: which of its sides faces the window's time.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub panel_at_window_end: bool,
     /// Far end of the now-line along the day-stack/cross axis, relative to
     /// the data-area origin. For the last day of a horizontal layout this
     /// extends through the time-axis tick strip; otherwise stops at the
@@ -412,6 +426,11 @@ pub struct RenderedDay {
     pub dead_zones: Vec<[f64; 2]>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zone_labels: Vec<RenderedZoneLabel>,
+}
+
+/// For `skip_serializing_if`: a flag left unset is left out.
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// A [`DayviewSpan`] placed along the time axis.
@@ -882,27 +901,34 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         // A reserved strip with time on past now sits AT now (da-9g3bf):
         // the past, then the strip, then the future, as two stretches
         // `right_panel_width` apart. The future's starts a millisecond on,
-        // so what is at now is drawn in the past's.
+        // so what is at now is drawn in the past's. A strip standing at
+        // another instant (`panel_at_ms`, da-6csum) cuts the day there, and
+        // one at the day's very start has no past before it.
+        let panel_at = config.panel_at_ms.unwrap_or(config.now_ms);
         let split = config.right_panel_width > 0.0
             && day.spans.is_empty()
-            && day.start_ms < config.now_ms
-            && config.now_ms < day.end_ms;
+            && day.start_ms <= panel_at
+            && panel_at < day.end_ms;
+        let at = |t: i64| (t - day.start_ms) as f64 / (day.end_ms - day.start_ms) as f64;
         let past_and_future = split.then(|| {
-            let at = |t: i64| (t - day.start_ms) as f64 / (day.end_ms - day.start_ms) as f64;
             let strip = config.right_panel_width / time_axis_extent.max(f64::MIN_POSITIVE);
-            [
-                DayviewSpan {
-                    end_ms: config.now_ms,
-                    hi: at(config.now_ms),
-                    ..whole[0].clone()
-                },
-                DayviewSpan {
-                    start_ms: config.now_ms + 1,
-                    lo: at(config.now_ms + 1) + strip,
-                    hi: 1.0 + strip,
-                    ..whole[0].clone()
-                },
-            ]
+            let past = (day.start_ms < panel_at).then(|| DayviewSpan {
+                end_ms: panel_at,
+                hi: at(panel_at),
+                ..whole[0].clone()
+            });
+            let start_ms = if past.is_some() {
+                panel_at + 1
+            } else {
+                panel_at
+            };
+            let future = DayviewSpan {
+                start_ms,
+                lo: at(start_ms) + strip,
+                hi: 1.0 + strip,
+                ..whole[0].clone()
+            };
+            past.into_iter().chain([future]).collect::<Vec<_>>()
         });
         let day_spans: &[DayviewSpan] = match (&past_and_future, day.spans.is_empty()) {
             (Some(two), _) => two,
@@ -1025,6 +1051,13 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         // Now-line: only on the day whose window contains now_ms.
         let now = span_of(config.now_ms).map(|(i, s)| (i, time_to_pos(s, config.now_ms)));
         let now_time_pos = now.map(|(_, pos)| pos);
+        let panel_pos = config
+            .panel_at_ms
+            .filter(|_| config.right_panel_width > 0.0)
+            .and_then(|t| match split {
+                true => Some(at(t) * time_axis_extent),
+                false => span_of(t).map(|(_, s)| time_to_pos(s, t)),
+            });
         let (now_near, now_far) = now.map_or((0.0, 1.0), |(i, pos)| spans[i].lane_at(pos));
         // Last day extends now-line through the axis; otherwise stops at
         // day's far edge along the cross/day-stack axis. Only horizontally:
@@ -1051,6 +1084,8 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             errors,
             fields,
             now_time_pos,
+            panel_pos,
+            panel_at_window_end: panel_at < config.now_ms,
             now_extent_far,
             start_ms: day.start_ms,
             end_ms: day.end_ms,

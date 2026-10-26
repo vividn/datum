@@ -179,15 +179,21 @@ describe('the time cursor', () => {
 				},
 				iso
 			);
-			// The nowview's own line is its centre, on its own axis.
+			// The nowview's own line is its centre, on its own axis: where its
+			// stretch holding that instant draws it — the window's now strip
+			// cuts the picture in two (da-6csum), so not the first stretch's middle.
 			await page.locator(`${NOWVIEW} line.cursor`).waitFor({ state: 'attached' });
 			const centre = await page
 				.locator(`${NOWVIEW} svg.svg`)
-				.evaluate((svg) => {
-					const day = svg.querySelector('[data-lo]');
-					const mid = (Number(day.getAttribute('data-lo')) + Number(day.getAttribute('data-hi'))) / 2;
-					return [mid, Number(svg.querySelector('line.cursor').getAttribute('x1'))];
-				});
+				.evaluate((svg, iso) => {
+					const t = Date.parse(iso);
+					const day = [...svg.querySelectorAll('[data-lo]')].find(
+						(d) => Date.parse(d.getAttribute('data-from')) <= t && t <= Date.parse(d.getAttribute('data-to'))
+					);
+					const [from, to] = ['data-from', 'data-to'].map((n) => Date.parse(day.getAttribute(n)));
+					const [lo, hi] = ['data-lo', 'data-hi'].map((n) => Number(day.getAttribute(n)));
+					return [lo + ((t - from) / (to - from)) * (hi - lo), Number(svg.querySelector('line.cursor').getAttribute('x1'))];
+				}, iso);
 			assert.ok(Math.abs(centre[0] - centre[1]) < 0.5, `nowview's line at ${centre[1]}, its centre ${centre[0]}`);
 
 			// A line from the bar is logged at the cursor, then the (unlocked)

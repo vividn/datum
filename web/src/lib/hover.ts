@@ -183,13 +183,20 @@ function placeOf(svg: SVGSVGElement, c: Cursor) {
  * pan moves the window (da-rskp). Read through `readDay`, the same reader
  * `timeAt` and `placeOf` go through, so the three cannot come to disagree
  * about where the picture put the hour. `null` for a picture with no time
- * axis at all: nowview's snapshot.
+ * axis at all: nowview's snapshot. Of the stretch holding `at` where there
+ * are several, the first otherwise.
  */
-export function timeAxis(svg: SVGSVGElement): { y: boolean; from: number; to: number; lo: number; hi: number } | null {
-	const el = svg.querySelector('[data-lo]');
-	const ctm = el && svg.getScreenCTM();
-	if (!el || !ctm) return null;
-	const day = readDay(svg, el);
+export function timeAxis(
+	svg: SVGSVGElement,
+	at?: number
+): { y: boolean; from: number; to: number; lo: number; hi: number } | null {
+	const days = [...svg.querySelectorAll('[data-lo]')].map((el) => readDay(svg, el));
+	const ctm = days.length && svg.getScreenCTM();
+	if (!ctm) return null;
+	// The stretch that holds `at`: a nowview cut by its now strip (da-9g3bf,
+	// da-6csum) draws the time past the strip a strip further on, so a line
+	// through the stretch before it misses the one after by that much.
+	const day = (at === undefined ? undefined : days.find((d) => d.from <= at && at <= d.to)) ?? days[0];
 	if (!(day.hi > day.lo) || !(day.to > day.from)) return null;
 	const screen = (u: number) => {
 		const p = new DOMPoint(day.y ? 0 : u, day.y ? u : 0).matrixTransform(ctm);

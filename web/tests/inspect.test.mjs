@@ -299,7 +299,7 @@ describe('a tap in the nowview selects the entry behind the mark', () => {
 			await page.mouse.down();
 			await page.mouse.move(from.x + 90, from.y, { steps: 8 });
 			await page.mouse.up();
-			await page.locator(`${NOWVIEW} .nowview-jump.right`).waitFor();
+			await page.locator(`${NOWVIEW} .nowview-now`).waitFor();
 			assert.equal(
 				(await pillsOf(page)).some((p) => p.startsWith('hid:')),
 				false,

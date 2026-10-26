@@ -82,19 +82,21 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
 
     // Dayview-style gridline class (one per axis tick).
     let gridline_count = svg.matches(r#"class="gridline""#).count();
-    // 60m history across ~370px → minor=5 (31px, room for a 30.6px label)
-    // → ticks every 5m for 60m + a trailing "now" tick = 13 gridlines.
+    // 60m history across ~356px → minor=5 (30px, room for a 30.6px label
+    // less its margin) → ticks every 5m for 60m + a trailing "now" tick =
+    // 13 gridlines.
     assert_eq!(
         gridline_count, 13,
         "expected 13 gridlines for 60m history, got {gridline_count}"
     );
-    // Major opacity 0.4 marks the every-10m positions (-60 … -10), 62px
-    // apart, room for two labels (da-w4vfw), plus the trailing "now" edge
-    // → 7 majors.
+    // Major opacity 0.4 marks the every-15m positions (-60 … -15): 10m is
+    // 59px there since the now strip widened to a tenth (da-6csum), short
+    // of the room for two labels (da-w4vfw), plus the trailing "now" edge
+    // → 5 majors.
     let major_count = svg.matches(r#"stroke-opacity="0.4""#).count();
     assert_eq!(
-        major_count, 7,
-        "expected 7 major gridlines, got {major_count}"
+        major_count, 5,
+        "expected 5 major gridlines, got {major_count}"
     );
 
     assert!(svg.contains(r#"data-field="mood""#));
@@ -569,7 +571,7 @@ fn nowview_lanes_fill_edge_to_edge_and_carry_a_now_chunk() {
         }
         // ... up to now, a gap short of the now-line (da-9g3bf).
         assert!(
-            (x + 2.0 - now_x).abs() < 1e-6,
+            (x + 6.0 - now_x).abs() < 1e-6,
             "{field}: lane ends at {x}, not a gap before the now-line {now_x}: {svg}"
         );
 
@@ -777,11 +779,19 @@ fn nowview_centred_window_draws_no_yellow_for_its_instant() {
     assert!(!svg.contains("#ffcc00"), "{svg}");
     let blocks = field_rects(&svg, "mood", "block");
     assert_eq!(blocks.len(), 2, "both switches inside the window: {svg}");
+    // The window takes the 360px its now strip leaves of 400.
     assert!(
-        blocks[0].x + 2.0 < 202.0 && blocks[1].x + 2.0 > 202.0,
+        blocks[0].x + 2.0 < 182.0 && blocks[1].x + 2.0 > 182.0,
         "{svg}"
     );
-    assert!(field_rects(&svg, "mood", "now-chunk").is_empty(), "{svg}");
+    // ... and the strip stands at its end, now being after it (da-6csum):
+    // a gap, then the state mood is in now, to the edge.
+    let chunk = field_rects(&svg, "mood", "now-chunk");
+    assert_eq!(chunk.len(), 1, "{svg}");
+    assert!(
+        (chunk[0].x - 366.0).abs() < 1e-6 && (chunk[0].x + chunk[0].w - 400.0).abs() < 1e-6,
+        "{svg}"
+    );
     let local = at
         .parse::<chrono::DateTime<Utc>>()
         .unwrap()
@@ -795,7 +805,7 @@ fn nowview_centred_window_draws_no_yellow_for_its_instant() {
     // A centred window that still holds now draws its now strip AT now:
     // ten minutes back, a 30m window runs five minutes past now, so the
     // chunk is between two lines, the future past the second (da-9g3bf).
-    // The window's 30 minutes take the 375px the strip leaves of 400.
+    // The window's 30 minutes take the 360px the strip leaves of 400.
     let svg = at_clock("2026-09-10T14:10:00Z", || {
         nowview_out(&db, &["-qq", "--history", "30m", "--width", "404"], ".svg")
     });
@@ -803,14 +813,14 @@ fn nowview_centred_window_draws_no_yellow_for_its_instant() {
     assert_eq!(svg.matches(r#"class="current-time-line-end""#).count(), 1);
     let x = now_x(&svg);
     assert!(
-        (x - (375.0 * 5.0 / 6.0 + 2.0)).abs() < 1e-6,
+        (x - (360.0 * 5.0 / 6.0 + 6.0)).abs() < 1e-6,
         "now-line at {x}: {svg}"
     );
     let chunk = field_rects(&svg, "mood", "now-chunk");
     assert_eq!(chunk.len(), 1, "{svg}");
     assert!((chunk[0].x - x).abs() < 1e-6, "{svg}");
     assert!(
-        (chunk[0].x + chunk[0].w - (312.5 + 25.0 - 2.0)).abs() < 1e-6,
+        (chunk[0].x + chunk[0].w - (300.0 + 40.0 - 6.0)).abs() < 1e-6,
         "{svg}"
     );
 

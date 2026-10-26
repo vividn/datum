@@ -232,7 +232,10 @@ describe('the nowview widget', () => {
 				await app.idle();
 				assert.deepEqual(app.errors, [], 'datum did not take a window off the ladder');
 			},
-			{ viewport: { width: 400, height: 700 }, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+			// 460, not 400: the now strip takes a tenth of the plot (da-6csum),
+			// and at 400 five minutes of window were a pixel short of the room
+			// two labels need, so the 30m window ruled tens and drew no −15m.
+			{ viewport: { width: 460, height: 700 }, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 		);
 		// A window the ladder's ends would leave is not offered.
 		for (const [history, far, side] of [
@@ -586,12 +589,13 @@ describe('the nowview widget zooms', () => {
 					.evaluateAll((ls) => ls.map((l) => l.getBoundingClientRect().left));
 				assert.ok(lines.every((x) => x >= box.x + box.width), `the now line is in the window: ${lines} of ${JSON.stringify(box)}`);
 				const before = await instantX(page);
-				// A centred window: the anchor is the middle of the band, and
-				// nowhere near the right edge where a window ending at now
-				// would draw it.
+				// A centred window: the anchor is the middle of the window,
+				// which is the band less its now strip, a tenth at the right
+				// edge since now is after it (da-6csum) — and nowhere near the
+				// right edge where a window ending at now would draw it.
 				assert.ok(
-					Math.abs(before - (box.x + box.width / 2)) <= 4,
-					`09:00 is not the middle of the band: ${before} of ${JSON.stringify(box)}`
+					Math.abs(before - (box.x + box.width * 0.45)) <= 4,
+					`09:00 is not the middle of the window: ${before} of ${JSON.stringify(box)}`
 				);
 
 				await pinch(page, box, 80, 120);

@@ -112,8 +112,10 @@ pub(crate) const AXIS_LABEL_GAP: f64 = 4.0;
 
 /// The space between now and the line beside it, and between the now chunk
 /// and a future drawn past it (da-9g3bf): the past stops short of the line,
-/// so it never reads as more time spent in a state than there was.
-pub(crate) const NOW_GAP: f64 = 2.0;
+/// so it never reads as more time spent in a state than there was. Wide
+/// enough to tell the strip from the timeline at a glance (da-6csum,
+/// vividn: «Increase the gap between the timeline and the now section»).
+pub(crate) const NOW_GAP: f64 = 6.0;
 
 /// Where a day's now strip puts its chunk along the time axis.
 #[derive(Debug, Clone, Copy)]
@@ -125,6 +127,9 @@ pub(crate) struct NowChunk {
     pub from: f64,
     pub to: f64,
     pub future: bool,
+    /// The strip stands at the window's edge and not at now (da-6csum):
+    /// no now-line beside it, since now is not there.
+    pub pinned: bool,
 }
 
 /// How far along the time axis anything is drawn: its extent, or past it
@@ -148,7 +153,10 @@ fn axis_end(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>) -> f64 {
 /// `day`'s now chunk, or `None` when it draws no now strip. The snapshot,
 /// with no time axis, is all strip and no gap.
 pub(crate) fn now_chunk(layout: &DayviewLayout, day: &RenderedDay) -> Option<NowChunk> {
-    let (now, w) = (day.now_time_pos?, layout.right_panel_width);
+    let (now, w) = (
+        day.panel_pos.or(day.now_time_pos)?,
+        layout.right_panel_width,
+    );
     if w <= 0.0 {
         return None;
     }
@@ -158,11 +166,20 @@ pub(crate) fn now_chunk(layout: &DayviewLayout, day: &RenderedDay) -> Option<Now
     } else {
         0.0
     };
+    // A strip pinned to the window's edge keeps a gap on the window's side
+    // alone: the other side is the window's edge (da-6csum).
+    let pinned = day.panel_pos.is_some();
+    let (lead, trail) = match (pinned, day.panel_at_window_end) {
+        (true, true) => (gap, 0.0),
+        (true, false) => (0.0, gap),
+        (false, _) => (gap, if future { gap } else { 0.0 }),
+    };
     Some(NowChunk {
         now,
-        from: now + gap,
-        to: now + w - if future { gap } else { 0.0 },
+        from: now + lead,
+        to: now + w - trail,
         future,
+        pinned,
     })
 }
 
@@ -408,6 +425,14 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             Orientation::Horizontal => ("x", layout.margin + geom.data_x),
             Orientation::Vertical => ("y", layout.margin + geom.data_y),
         };
+        // The now strip is drawn with the first stretch that reaches it,
+        // and every field with a state to paint there is drawn with it: a
+        // strip pinned to the window's edge (da-6csum) may stand where a
+        // field has nothing else to draw.
+        let chunk = now_chunk(layout, day);
+        let chunk_span = chunk.and_then(|c| {
+            (day.spans.iter()).position(|s| c.now <= s.time_offset + s.time_extent + 1e-9)
+        });
         for (si, span) in day.spans.iter().enumerate() {
             let _ = write!(
                 &mut out,
@@ -427,9 +452,12 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 );
             }
             for field in &day.fields {
+                let fill = (opts.right_panel_fills.iter())
+                    .find(|r| r.field == field.field)
+                    .filter(|_| chunk_span == Some(si));
                 let here = field.blocks.iter().any(|b| b.span == si)
                     || field.points.iter().any(|p| p.span == si);
-                if day.spans.len() > 1 && !here {
+                if day.spans.len() > 1 && !here && fill.is_none() {
                     continue;
                 }
                 let _ = write!(
@@ -445,15 +473,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 // A flowing picture draws it after the lane's dots, outside
                 // the group that moves.
                 let mut strip = String::new();
-                let chunk = now_chunk(layout, day).filter(|c| {
-                    (span.time_offset..=span.time_offset + span.time_extent).contains(&c.now)
-                });
                 if let Some(c) = chunk {
-                    if let Some(pf) = opts
-                        .right_panel_fills
-                        .iter()
-                        .find(|r| r.field == field.field)
-                    {
+                    if let Some(pf) = fill {
                         push_fill(
                             &mut strip,
                             &mut defs,
@@ -745,8 +766,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         };
         // Beside a now strip the line is finer and stands a gap past now,
         // and a second closes the chunk when the future is drawn on beyond
-        // it (da-9g3bf).
-        let chunk = now_chunk(layout, day);
+        // it (da-9g3bf). A strip pinned away from now has none of that.
+        let chunk = now_chunk(layout, day).filter(|c| !c.pinned);
         let (stroke, dash) = if chunk.is_some() {
             (1, "2,2")
         } else {

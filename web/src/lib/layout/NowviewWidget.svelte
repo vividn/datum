@@ -87,10 +87,19 @@
 	swipe that starts in it changes tabs, because `data-pans` is the BAND's
 	and not the widget's.
 
-	`now →` sits at the band's right edge whenever the window is not on now,
-	and takes the window back AND the time-based pills away with it. Its
-	mirror `← selection` appears when a selection exists that the window
-	does not contain (vividn's second «maybe»).
+	THE NOW SECTION (da-6csum) is the CLI's strip of each field's current
+	state, and it stands where now is: at now while the window holds now,
+	at the right edge of a window in the past and pinned to the left of one
+	wholly in the future, a gap between it and the timeline either side.
+	vividn: «any time the view is panned off the default, the "now" label
+	under the now section becomes a filled in yellow button with black now
+	written on it. Clicking that button restores the default.» So off now
+	the yellow «now» under the strip is a BUTTON laid over it, which takes
+	the window back AND the time-based pills away with it — and keeps the
+	window's length: «stretching should always leave now where it is», and
+	a stretch alone does not leave now. `← selection` appears when a
+	selection exists that the window does not contain (vividn's second
+	«maybe»).
 
 	The band takes sideways motion of its own, so it says so with
 	`data-pans="x"` (da-kcmp): a one-finger drag across it is never a swipe
@@ -133,13 +142,18 @@
 
 	const dispatch = createEventDispatcher<{ change: string }>();
 
+	// A second of slack either side: a range that ends AT now sits on the
+	// window's own edge, and rounding must not read that as «off it». Up
+	// here, above everything that reads it.
+	const EDGE_MS = 1000;
+
 	/**
 	 * Where the window is centred, and WHY — `null` is on now.
 	 *
 	 * The why is the difference between the two ways a window leaves now.
 	 * `sel` means it is following the page's selection: a click on the
 	 * dayview put it there, and clearing that selection brings it home. `pan`
-	 * means a hand moved it, and then nothing brings it home but `now →` —
+	 * means a hand moved it, and then nothing brings it home but «now» —
 	 * the minute tick and a write re-draw it in place (da-rskp).
 	 *
 	 * It carries the `-t` VALUE the CLI is handed rather than an instant,
@@ -168,8 +182,23 @@
 	let askedFor = instant;
 	$: spec = nowviewSpec(showHistory ? history : '0', askedFor, vertical);
 
+	// Above `ask`, which the cursor's subscription below calls as the
+	// component is set up, and which reads the picture on screen.
+	let el: HTMLDivElement | undefined;
+
+	const svgEl = () => el?.querySelector<SVGSVGElement>('svg.svg') ?? null;
+
+	/**
+	 * The picture on screen when another window was asked for: it stays
+	 * where it was slid until datum's answer replaces it, so a pan that asks
+	 * on its release does not throw it back first (da-6csum).
+	 */
+	let stale: Element | null = null;
+
 	function ask(..._because: unknown[]): void {
+		const was = askedFor;
 		askedFor = centre?.arg;
+		stale = askedFor !== was ? svgEl() : null;
 		// The picture on screen may already be this one, slid: slid back.
 		void tick().then(place);
 	}
@@ -196,7 +225,7 @@
 	// same object included, so this ran once a minute and re-centred a
 	// window a hand had panned away: asked at 12:00, panned to 11:45, back
 	// at 12:00 a minute later (vremya on PR #48, da-rskp). The header above
-	// says only `now →` brings a hand-moved window home, and now it is
+	// says only «now» brings a hand-moved window home, and now it is
 	// true. The guard is for the other door into the same bug: the pills
 	// reconciler re-points the cursor at the SAME instant when a `dur=`
 	// pill is dropped, and that is not a new selection either.
@@ -247,10 +276,6 @@
 
 	// ── the picture's geometry ──────────────────────────────────────────
 
-	let el: HTMLDivElement | undefined;
-
-	const svgEl = () => el?.querySelector<SVGSVGElement>('svg.svg') ?? null;
-
 	/**
 	 * The picture's time axis on screen, as the last redraw left it.
 	 *
@@ -277,6 +302,17 @@
 	/** How far the picture is slid along its axis at rest, in px: see `askedFor`. */
 	let rest = 0;
 
+	/**
+	 * The window's middle in TIME — the instant it is centred on, or half
+	 * of it back from now — and the window about a middle. Never read off
+	 * the band's box, which holds the now strip as well as the window: at
+	 * the window's end, its start or at now inside it (da-6csum), so the
+	 * box's middle is the window's only where the strip happens to balance.
+	 * NaN for a hand-written `at` that is no instant the page can read.
+	 */
+	const middleOf = (at: string | undefined) => (at ? Date.parse(at) : nowMs() - minutes * 30_000);
+	const windowAbout = (middle: number): [number, number] => [middle - minutes * 30_000, middle + minutes * 30_000];
+
 	/** The instant a point on screen is, by the picture's own geometry, as it is slid now. */
 	const instantAt = (x: number, y: number) => (axis ? instantOn(axis, along(x, y)) + slid : NaN);
 
@@ -286,8 +322,17 @@
 	 */
 	const nowMs = () => (offNow || !axis ? Date.now() : (drawn ? drawn.now + slid : axis.to));
 
+	/**
+	 * The instants the whole picture on screen is drawn between: past the
+	 * window either side (`--surround`), and across a now strip that cuts it
+	 * into two stretches (da-9g3bf), which `axis`, one stretch, stops at.
+	 */
+	let spanned: [number, number] = [NaN, NaN];
+
+	/** Where the picture on screen starts drawing. */
+	const drawnFrom = () => (Number.isFinite(spanned[0]) ? spanned[0] : (axis?.from ?? NaN));
 	/** The instant the picture on screen stops drawing what is known: its now, drawn ahead. */
-	const drawnTo = () => drawn?.now ?? axis?.to ?? NaN;
+	const drawnTo = () => drawn?.now ?? (Number.isFinite(spanned[1]) ? spanned[1] : (axis?.to ?? NaN));
 
 	// ── the flow ───────────────────────────────────────────────────────
 
@@ -547,17 +592,27 @@
 	 * The window the pan has dragged it to: the drag moves the content, so
 	 * the span moves the other way. The picture stays where the finger left
 	 * it, and datum is asked for another only when the window has left what
-	 * this one drew (da-61nm8).
+	 * this one drew (da-61nm8) — or when either window, the one the pan left
+	 * or the one it reached, does not hold now, a pan from one past window
+	 * to another included. The now strip stands at now in a window holding
+	 * now, and slides with it; in one that does not it is pinned to an edge,
+	 * which a slide would carry off (da-6csum).
 	 */
 	function commitPan(): void {
 		if (!axis) return drop();
-		const [lo, hi] = ends().map((p) => instantOn(axis!, p - panned) + slid);
+		const was = middleOf(instant);
+		const [lo, hi] = Number.isFinite(was)
+			? windowAbout(was - panned * msPerPx(axis))
+			: ends().map((p) => instantOn(axis!, p - panned) + slid);
 		centre = { arg: new Date((lo + hi) / 2).toISOString(), by: 'pan' };
 		rest += panned;
 		panned = 0;
-		if (lo < axis.from || hi > drawnTo()) ask();
+		if (lo < drawnFrom() || hi > drawnTo() || !holdsNow([lo, hi]) || (view && !holdsNow(view))) ask();
 		else void tick().then(place);
 	}
+
+	/** Whether now is inside a window's two ends, a second's slack either side. */
+	const holdsNow = ([lo, hi]: [number, number]) => lo - EDGE_MS <= Date.now() && Date.now() <= hi + EDGE_MS;
 
 	function finish(event: PointerEvent): void {
 		if (!press) return;
@@ -609,7 +664,9 @@
 	 * Where the anchor is drawn, in px across the picture's own box.
 	 *
 	 * A window with `-t` is centred on its instant (da-5flt: the yellow
-	 * line there is now, wherever now falls, not the instant). One without
+	 * line there is now, wherever now falls, not the instant), drawn where
+	 * the picture puts it — the middle of the window, which the now strip
+	 * beside it moves off the box's (da-6csum). One without
 	 * ends at now, which datum draws as the now-line (`current-time-line`,
 	 * dayview_svg.rs) wherever its geometry puts it; the snapshot draws
 	 * none, and its anchor is the right edge.
@@ -619,6 +676,8 @@
 		const start = axis?.y ? box.y : box.x;
 		const line = svg.querySelector('.current-time-line');
 		const [lo, hi] = ends();
+		const at = Date.parse(instant ?? '');
+		if (instant && axis && Number.isFinite(at)) return axis.lo + (at - axis.from) / msPerPx(axis) - start;
 		if (instant || !line) return (instant ? (lo + hi) / 2 : hi) - start;
 		const marker = line.getBoundingClientRect();
 		return (axis?.y ? marker.y + marker.height / 2 : marker.x + marker.width / 2) - start;
@@ -751,15 +810,19 @@
 	const GAP_PX = 4;
 
 	/**
-	 * Below this width the margin strip, its pills and `now →` do not fit,
+	 * Below this width the margin strip, its pills and `← sel` do not fit,
 	 * and the widget shows the LINES alone.
 	 *
 	 * The tiny nowview in `mobile` is ~100px wide (measured on the built
-	 * app): `now →` is 46px there and the shortest time pill — `-qq`, two
-	 * sections of nothing — is 54px, so the two together already overflow
-	 * it, and a pill near the instant it names has no room to be near
-	 * anything. 200px fits `now →` beside a `-t 14:30` pill with a third of
-	 * the band still legible. vividn agreed, 17:01.
+	 * app): the old `now →` was 46px there and the shortest time pill —
+	 * `-qq`, two sections of nothing — is 54px, so the two together already
+	 * overflowed it, and a pill near the instant it names has no room to be
+	 * near anything. 200px fit `now →` beside a `-t 14:30` pill with a third
+	 * of the band still legible. vividn agreed, 17:01.
+	 *
+	 * The «now» button that replaced `now →` is NOT behind this (da-6csum):
+	 * it is the only way home, and it stands where datum wrote «now», which
+	 * a strip too narrow for the word does not have.
 	 */
 	const TINY_PX = 200;
 
@@ -823,16 +886,24 @@
 	function restFor(unmoved: NonNullable<typeof axis>): number {
 		const target = Date.parse(instant ?? '');
 		if (instant === askedFor || !Number.isFinite(target)) return 0;
+		// From the middle of the window the picture was drawn for, at its
+		// scale: what a slide moves is time.
+		const drewAbout = askedFor ? Date.parse(askedFor) : (readDrawn(svgEl())?.now ?? NaN) - minutes * 30_000;
+		if (Number.isFinite(drewAbout)) return (drewAbout - target) / msPerPx(unmoved);
 		const [lo, hi] = ends();
 		return (lo + hi) / 2 - (unmoved.lo + (target - unmoved.from) / msPerPx(unmoved));
 	}
 
-	/** The picture's axis as it is drawn before any slide or gesture moves it. */
+	/**
+	 * The picture's axis as it is drawn before any slide or gesture moves it:
+	 * the stretch holding the window's middle, where its now strip cuts it in
+	 * two (da-6csum) — all of a window the strip is pinned left of.
+	 */
 	function unmovedAxis(svg: SVGSVGElement): typeof axis {
 		const moved = svg.style.transform;
 		svg.style.transform = 'none';
 		try {
-			return timeAxis(svg);
+			return timeAxis(svg, Date.parse(askedFor ?? ''));
 		} finally {
 			svg.style.transform = moved;
 		}
@@ -850,6 +921,14 @@
 	 */
 	let spots: { time: number | null; dur: number | null } = { time: null, dur: null };
 
+	/**
+	 * Where the picture writes «now» under its now section, in px across
+	 * and down the widget's box: off now the button takes its place
+	 * (da-6csum), and the words under it are hidden. None when the strip
+	 * is too narrow for datum to write them.
+	 */
+	let nowAt: { x: number; y: number } | null = null;
+
 	function place(): void {
 		if (!el) return;
 		unstretch();
@@ -860,8 +939,11 @@
 		// Read unmoved, then slid by `rest` alone: a redraw mid-gesture must
 		// not cache the gesture's own offset, which `commitPan` adds again.
 		const unmoved = svg && unmovedAxis(svg);
-		const moved = unmoved ? restFor(unmoved) : rest;
+		const moved = unmoved && svg !== stale ? restFor(unmoved) : rest;
 		axis = unmoved && { ...unmoved, lo: unmoved.lo + moved, hi: unmoved.hi + moved };
+		const stretches = svg?.querySelectorAll('[data-lo]') ?? [];
+		const edge = (el: Element | undefined, name: string) => Date.parse(el?.getAttribute(name) ?? '');
+		spanned = [edge(stretches[0], 'data-from'), edge(stretches[stretches.length - 1], 'data-to')];
 		// What is read off the picture below is read where it will be drawn.
 		if (Math.abs(moved - rest) >= 0.5) {
 			rest = moved;
@@ -869,12 +951,17 @@
 		}
 		drawn = readDrawn(svg);
 		flow();
-		view = axis ? (ends().map((p) => instantOn(axis!, p) + slid) as [number, number]) : null;
+		const about = middleOf(instant);
+		view = !axis
+			? null
+			: Number.isFinite(about)
+				? windowAbout(about)
+				: (ends().map((p) => instantOn(axis!, p) + slid) as [number, number]);
 		// The window has left what the picture drew — the clock moved an
 		// on-now picture out from under it: a picture of the window, then.
 		// Asked once: `ask` makes `askedFor` the window's, and from then on
 		// this `place` and every one after it has nothing left to ask for.
-		if (view && axis && instant !== askedFor && (view[0] < axis.from - EDGE_MS || view[1] > drawnTo() + EDGE_MS)) ask();
+		if (view && axis && instant !== askedFor && (view[0] < drawnFrom() - EDGE_MS || view[1] > drawnTo() + EDGE_MS)) ask();
 		// Before the early returns below: a snapshot draws no tick labels
 		// and leaves by the first of them, and a selection is drawn there
 		// too.
@@ -898,6 +985,10 @@
 			time: held(centreOf('svg.svg .cursor-head'), '.nowview-margin .pill.time'),
 			dur: held(centreOf('svg.svg .cursor-span'), '.nowview-margin .pill.dur')
 		};
+		const word = svg?.querySelector<SVGElement>('.now-label');
+		const at = word?.getBoundingClientRect();
+		nowAt = at?.width ? { x: at.left + at.width / 2 - home.x, y: at.top + at.height / 2 - home.y } : null;
+		if (word) word.style.visibility = offNow ? 'hidden' : '';
 		const labels = [...(svg?.querySelectorAll<SVGElement>('.tick-label') ?? [])];
 		for (const l of labels) {
 			l.removeAttribute('transform');
@@ -1211,10 +1302,6 @@
 	 * outside the window draws nothing at all, so there would be no mark
 	 * to read, and the button has to appear the moment the window leaves it.
 	 */
-	// A second of slack either side: a range that ends AT now sits on the
-	// window's own edge, and rounding must not read that as «off it».
-	const EDGE_MS = 1000;
-
 	$: away =
 		!view || !$pointed
 			? null
@@ -1379,13 +1466,15 @@
 	     without a single stopPropagation. They still declare the band's
 	     axis, so a drag that starts on one is not a tab swipe either
 	     (da-ndzl's test says so of the steps). -->
-	{#if roomy && offNow && !zoom}
+	{#if offNow && nowAt && !zoom}
 		<button
 			type="button"
-			class="nowview-jump right"
+			class="nowview-now"
 			data-pans={pans}
 			title="back to now, and the time pills away"
-			on:click={toNow}>{vertical ? 'now ↓' : 'now →'}</button
+			style:left="{nowAt.x + (vertical ? 0 : panned)}px"
+			style:top="{nowAt.y + (vertical ? panned : 0)}px"
+			on:click={toNow}>now</button
 		>
 	{/if}
 	{#if roomy && away && !zoom}
@@ -1505,10 +1594,6 @@
 		top: auto;
 		left: 50%;
 		transform: translateX(-50%);
-	}
-	.vertical .nowview-jump.right {
-		right: auto;
-		bottom: 4px;
 	}
 	.vertical .nowview-jump.left {
 		left: 50%;
@@ -1654,6 +1739,26 @@
 		z-index: 12;
 	}
 
+	/* «now» off now (da-6csum): the yellow word under the now section,
+	   filled — the CLI's now yellow, `NOW_LINE_COLOR` — with black words,
+	   on the word it stands for. */
+	.nowview-now {
+		position: absolute;
+		transform: translate(-50%, -50%);
+		padding: 1px 6px;
+		border: none;
+		border-radius: 4px;
+		background: #ffcc00;
+		color: #000000;
+		font: inherit;
+		font-size: 0.7rem;
+		font-weight: 600;
+		line-height: 1.2;
+		white-space: nowrap;
+		cursor: pointer;
+		z-index: 2;
+	}
+
 	/* Against the band's edge, on its middle: small, in the page's own ink
 	   over its own ground, so it reads as a control and not as a mark of
 	   the picture. */
@@ -1683,7 +1788,7 @@
 	}
 
 	/* The selection's button is white-edged, as the selection is; on the
-	   right it stands inside `now →`, which owns that corner. */
+	   right it stands clear of the now section, which owns that edge. */
 	.nowview-jump.selection {
 		border-color: #ffffff;
 	}

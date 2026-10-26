@@ -559,6 +559,7 @@ mod tests {
                 500.0, 30.0, 15.0,
             )),
             right_panel_width: 0.0,
+            panel_at_ms: None,
         };
         compute_dayview(&cfg)
     }
@@ -658,6 +659,7 @@ mod tests {
             orientation: Orientation::Horizontal,
             axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0, 20.0)),
             right_panel_width: 120.0,
+            panel_at_ms: None,
         };
         let layout = compute_dayview(&cfg);
         // Right panel reserved → time axis shrinks by 120 px.
@@ -1018,7 +1020,18 @@ mod tests {
         now_label: bool,
         edit: impl FnOnce(&mut DayviewLayout),
     ) -> (DayviewLayout, String) {
+        picture_at(centred.then_some(-5), now_label, edit)
+    }
+
+    /// [`gap_picture`]'s entries in a window centred `at` minutes from now,
+    /// or ending at now with none.
+    fn picture_at(
+        at: Option<i64>,
+        now_label: bool,
+        edit: impl FnOnce(&mut DayviewLayout),
+    ) -> (DayviewLayout, String) {
         use crate::nowview::{nowview_config, NowviewGeometry};
+        let centred = at.is_some();
         let now = 1_700_000_000_000_i64;
         let min = 60_000;
         let block = |from: i64, to: i64, c: &str| DayviewBlock {
@@ -1044,7 +1057,7 @@ mod tests {
             centred,
             ..NowviewGeometry::default()
         };
-        let at = if centred { now - 5 * min } else { now };
+        let at = now + at.unwrap_or(0) * min;
         let mut layout = compute_dayview(&nowview_config(fields, at, now, &geom));
         edit(&mut layout);
         let states = [NowviewCurrentState {
@@ -1070,7 +1083,7 @@ mod tests {
     fn the_past_stops_a_gap_short_of_a_finer_now_line() {
         let (layout, svg) = gap_picture(false, false);
         let now = layout.time_axis_extent;
-        assert_eq!(now, 400.0 * 15.0 / 16.0);
+        assert_eq!(now, 400.0 * 9.0 / 10.0);
         let past = rects(&field_group(&svg, "mood"), "block");
         let past_end = past.iter().map(|b| b.x + b.w).fold(0.0, f64::max);
         let line = num(&svg, "line", "current-time-line", "x1");
@@ -1102,7 +1115,7 @@ mod tests {
     fn a_future_drawn_past_the_chunk_between_two_lines() {
         let (layout, svg) = gap_picture(true, false);
         let (extent, strip) = (layout.time_axis_extent, layout.right_panel_width);
-        assert_eq!((extent, strip), (375.0, 25.0));
+        assert_eq!((extent, strip), (360.0, 40.0));
         // Now is 20 of the window's 30 minutes in.
         let now = extent * 20.0 / 30.0;
         let lead = num(&svg, "line", "current-time-line", "x1");
@@ -1119,7 +1132,10 @@ mod tests {
         // the second line, 22 minutes in plus the strip.
         let blocks = rects(&svg, "block");
         assert_eq!(blocks[0].x + blocks[0].w, now, "{svg}");
-        assert_eq!(blocks[1].x, extent * 22.0 / 30.0 + strip, "{svg}");
+        assert!(
+            (blocks[1].x - (extent * 22.0 / 30.0 + strip)).abs() < 1e-9,
+            "{svg}"
+        );
         assert!(blocks[1].x > end + NOW_GAP, "{svg}");
         // The two stretches say their own times, for a reader of the picture.
         assert_eq!(svg.matches(r#"<g class="day-data""#).count(), 2, "{svg}");
@@ -1127,6 +1143,38 @@ mod tests {
             !svg.contains("dead-zone") && !svg.contains("zone-label"),
             "{svg}"
         );
+    }
+
+    /// vividn, 2026-10-26 (da-6csum): a window in the past keeps the now
+    /// section «on the right side of the now view», one far enough in the
+    /// future pins it «on the left side»: the chunk at that edge, a gap
+    /// between it and the timeline, the «now» under it, and no now-line
+    /// beside it, now not being there.
+    #[test]
+    fn a_window_now_is_outside_pins_its_strip_to_the_edge_now_lies_beyond() {
+        for (at, left) in [(-60, false), (60, true)] {
+            let (layout, svg) = picture_at(Some(at), true, |_| {});
+            let (extent, strip) = (layout.time_axis_extent, layout.right_panel_width);
+            assert_eq!((extent, strip), (360.0, 40.0));
+            let chunk = rect_attrs(&field_group(&svg, "mood"), "now-chunk").expect("a chunk");
+            let (from, to) = (chunk.x, chunk.x + chunk.w);
+            if left {
+                assert_eq!((from, to), (0.0, strip - NOW_GAP), "{svg}");
+            } else {
+                assert_eq!((from, to), (extent + NOW_GAP, extent + strip), "{svg}");
+            }
+            // The timeline stops a gap short of the strip, and starts a gap
+            // past it.
+            for b in rects(&svg, "block") {
+                assert!(
+                    b.x + b.w <= from - NOW_GAP + 1e-9 || b.x >= to + NOW_GAP - 1e-9,
+                    "{svg}"
+                );
+            }
+            let label = num(&svg, "text", "now-label", "x") - layout.label_width;
+            assert!((label - (from + to) / 2.0).abs() < 1e-9, "{svg}");
+            assert!(!svg.contains("current-time-line"), "{svg}");
+        }
     }
 
     /// vividn, 2026-10-25: «the time axis numbers are way to big» (da-a2cxp).
