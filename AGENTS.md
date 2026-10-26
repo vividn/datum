@@ -983,6 +983,59 @@ cargo test -p datum-cli
 
 Add tests for new behavior.
 
+## Integration branches
+
+Work too big for one PR, many beads under one epic that should land on staging together, is built on a branch of
+its own, `integration/<name>`, so it can move fast, and lands on staging in one PR at the end. The first was the
+tutorial (epic da-uzyih, `integration/tutorial`); the rules below are for any such branch. vividn, 2026-10-22:
+«shorten the turn around time for integration branch work … we'll do one big PR at the end to merge the integration
+branch into staging later, that will go through a deeper check», and «I want this integration procedure to be
+generally applicable in the future, not just for this tutorial development».
+
+- **The permit.** A branch is opened by one small PR into staging adding its entry to
+  `.forgejo/integration-branches.toml`: the branch, its epic, the web tests its work reaches, and its default review
+  level. The file is under `.forgejo/`, so the PR is vividn's to approve, and that approval is the permit:
+  `.forgejo/CODEOWNERS` requests his review on any PR changing `.forgejo/` or `.github/`, and staging's rule blocks
+  the merge while that request is open, however many other approvals the PR has
+  (vividn, 2026-10-22: «like an integration permit or something … it requires approval from me to establish a new
+  integration section»). The crane or the mayor then cuts the branch from staging; `integration/*` takes no direct
+  pushes from anyone else. When the branch has landed, a second PR removes its entry.
+- **CI, in four layers**, all from staging's ci.yml, which every branch inherits when it is cut:
+  1. A PR into a listed branch runs the shared light job: the CLI's build, the wasm module, fmt, clippy,
+     svelte-check, the Rust tests its diff reaches (the test map), and the web tests its entry lists. Minutes, not
+     the web suite's forty.
+  2. A push to the branch (the crane's staging sync, a merge) runs the same job on the merged tree.
+  3. Each night `integration-nightly.yml` (05:20 UTC) dispatches ci.yml's full job at every listed branch's tip,
+     holding nothing; vremya reads the runs and files a red as a bead under the epic.
+  4. The final PR into staging runs staging's CI as any PR does.
+- Each bead under the epic carries a review level, a label set when it is filed (vividn, 2026-10-22: «for certain
+  issues/beads you could flag if they needed a certain amount of reviews»). The default follows what it touches,
+  and whoever files it, or vividn, may raise it. A PR whose bead carries no label is treated as `review/canary`:
+  - `review/light`, the default for the branch's own files: the PR merges on the branch's CI. `integration/*` needs
+    no approval. Its workflow files are NOT protected there (a protected file refuses every push that changes it,
+    the crane's syncs of staging included), so a bead that changes `.forgejo/` or `.github/` on the branch is
+    `review/hero` and goes to vividn by convention: the `integration/*` rule asks for no approval, so nothing on
+    the forge holds such a PR there.
+  - `review/canary`, for a change that reaches shared code (app code outside the branch's own files, a crate): the
+    PR waits for the canaries' round, and only a fault they find holds it.
+  - `review/hero`, for data, sync, storage, security, or whatever vividn marks: vremya approves before it merges.
+- The canaries review every PR into the branch, `review/light` too, without holding the merge: their verdict may
+  arrive after it («canaries should run anyway, even if the branch gets merged so that future nits can be beaded»).
+  vremya also reads what lands, in batches. A fault found after the merge becomes a bead that must close before
+  the final PR. A nit becomes a bead under the epic naming its files, and is done by the next bead that touches
+  them («scooped into other issues to avoid slowing things down», vividn). A fault is a finding that, left in,
+  makes the branch wrong to use (wrong behaviour, lost or corrupted data, a broken build or test, a security
+  hole); style, naming, wording and «a better way to do it» are nits.
+- Two beads that change the same files get a dependency between them, so their PRs don't collide.
+- The crane merges green staging into the branch, a merge commit pushed with no PR, so the final merge has little
+  to reconcile. The branch's CI runs on that push; a red is fixed forward, and a conflict goes to a can as a bead.
+  Until the crane's sync is confirmed live, a sync is by hand: a PR from `sync/staging-into-<branch>-<sha>`,
+  carrying a bead under the epic, of green staging only (the last commit whose push CI passed), merged as a merge
+  commit, never a squash.
+- The final PR, from the branch into staging, gets the deep check: staging's CI as any PR there (the Rust tests
+  its change can reach, by the test map) and the full suites when it lands, the canaries, vremya's full gate over
+  the whole diff, and a read of the entire branch.
+
 ## Pre-submit
 
 Before opening a PR, run the gate:
