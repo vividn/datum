@@ -658,7 +658,7 @@ jobs:
           BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          python3 scripts/integration-permit.py "$BRANCH" "$RUNNER_TEMP/web.tests" || exit 0
+          python3 scripts/integration-permit.py "$BRANCH" "$RUNNER_TEMP/web.tests" "$RUNNER_TEMP/web.glob" || exit 0
           echo "LISTED=1" >> "$GITHUB_ENV"
           git fetch -q --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
           echo "BASE=$BASE" >> "$GITHUB_ENV"
@@ -777,7 +777,8 @@ jobs:
           echo "::warning::web tests NOT RUN: a step above failed — this run says nothing about the web"
 
       # The entry's own list. A name with no file is red: the runner would
-      # drop it unseen.
+      # drop it unseen. So is a file its `web_tests_glob` matches that the
+      # list does not name: a new lesson's test would go unrun (da-s8x24).
       - name: The branch's web tests
         if: env.LISTED == '1'
         working-directory: web
@@ -786,6 +787,10 @@ jobs:
           DATUM_TEST_CONCURRENCY: 4
         run: |
           set -euo pipefail
+          glob=$(cat "$RUNNER_TEMP/web.glob")
+          for f in $(compgen -G "$glob" || true); do
+            grep -qxF "$f" "$RUNNER_TEMP/web.tests" || { echo "::error::$f matches the permit's web_tests_glob ($glob) and is not in its web_tests: list it"; exit 1; }
+          done
           [ -s "$RUNNER_TEMP/web.tests" ] || { echo "no web test is listed for this branch"; exit 0; }
           while read -r t; do [ -f "$t" ] || { echo "::error::$t is listed in the permit file and does not exist"; exit 1; }; done < "$RUNNER_TEMP/web.tests"
           pnpm exec playwright install --with-deps --only-shell chromium

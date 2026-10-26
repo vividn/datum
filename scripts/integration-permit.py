@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Integration permit (da-44xpb): is BRANCH listed in .forgejo/integration-branches.toml?
 
-usage: integration-permit.py BRANCH [WEB_TESTS_OUT]
+usage: integration-permit.py BRANCH [WEB_TESTS_OUT [WEB_TESTS_GLOB_OUT]]
 
-Exits 0 when it is, writing the entry's `web_tests` to WEB_TESTS_OUT one a line,
-and 1 when it is not, or when the file is missing or does not read: then a
-PR into the branch gets the full CI, and a push to it none (ci.yml).
+Exits 0 when it is, writing the entry's `web_tests` to WEB_TESTS_OUT one a line
+and its `web_tests_glob` (empty when it has none) to WEB_TESTS_GLOB_OUT, and 1
+when it is not, or when the file is missing or does not read: then a PR into
+the branch gets the full CI, and a push to it none (ci.yml).
 """
 import sys
 import tomllib
@@ -24,4 +25,7 @@ if entry is None:
 if len(sys.argv) > 2:
     with open(sys.argv[2], "w") as f:
         f.writelines(f"{t}\n" for t in entry.get("web_tests", []))
+if len(sys.argv) > 3:
+    with open(sys.argv[3], "w") as f:
+        f.write(entry.get("web_tests_glob", ""))
 print(f"{branch} is in the permit file: epic {entry.get('epic')}, review {entry.get('review')}")
