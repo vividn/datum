@@ -94,9 +94,8 @@ pub struct DayviewError {
     pub what: String,
 }
 
-/// A [`DayviewError`] placed: where along the time axis, in which of
-/// [`RenderedDay::spans`], and where across the band the field's own
-/// track is centred — `None` when the field draws no track that day.
+/// A [`DayviewError`] placed: where along the time axis, and in which of
+/// [`RenderedDay::spans`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderedError {
     pub time_ms: i64,
@@ -105,8 +104,6 @@ pub struct RenderedError {
     pub time_pos: f64,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub span: usize,
-    /// Cross-axis pixel position within the band, and the track's extent.
-    pub track: Option<(f64, f64)>,
 }
 
 /// One stretch of a day lived at a single UTC offset (da-1v9gp).
@@ -983,15 +980,12 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         let errors = (day.errors.iter())
             .filter_map(|e| {
                 let (span, within) = span_of(e.time_ms)?;
-                let track = (fields.iter().find(|f| f.field == e.field))
-                    .map(|f| (f.cross_offset + f.cross_extent / 2.0, f.cross_extent));
                 Some(RenderedError {
                     time_ms: e.time_ms,
                     field: e.field.clone(),
                     what: e.what.clone(),
                     time_pos: time_to_pos(within, e.time_ms),
                     span,
-                    track,
                 })
             })
             .collect();
@@ -1490,9 +1484,9 @@ mod tests {
     }
 
     #[test]
-    fn errors_are_placed_on_the_day_and_on_their_field_track() {
-        // da-0lful: a finding is placed at its instant, on its field's track
-        // when the field has one that day; one outside the day is not drawn.
+    fn errors_are_placed_on_the_day() {
+        // da-0lful: a finding is placed at its instant, whether or not its
+        // field draws a track that day; one outside the day is not drawn.
         let mut day = empty_day(&["Mon", "Apr 27", "2026"]);
         day.fields = vec![DayviewFieldInput {
             field: "mood".into(),
@@ -1534,12 +1528,9 @@ mod tests {
         assert!(marked.has_error && !clean.has_error);
         let extent = layout.time_axis_extent;
         let placed: Vec<_> = (marked.errors.iter())
-            .map(|e| (e.field.as_str(), e.time_pos / extent, e.track))
+            .map(|e| (e.field.as_str(), e.time_pos / extent))
             .collect();
-        assert_eq!(
-            placed,
-            [("mood", 0.25, Some((60.0, 20.0))), ("work", 0.75, None)]
-        );
+        assert_eq!(placed, [("mood", 0.25), ("work", 0.75)]);
     }
 
     #[test]

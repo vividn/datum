@@ -672,8 +672,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         }
 
         // What `check integrity` finds at an instant (da-0lful): a red
-        // dotted line across the whole day, the field's name at its start,
-        // and v2's warning icon on the field's own track.
+        // dotted line across the whole day and the field's name at its
+        // start. The warning icon is the day label's alone (da-0w8le).
         for e in &day.errors {
             let field = escape_xml(&e.field);
             let (x1, y1) = to_xy(layout, &geom, e.time_pos, day.day_offset);
@@ -694,19 +694,6 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 at = iso(e.time_ms),
                 what = escape_xml(&e.what),
             );
-            if let Some((cross, extent)) = e.track {
-                // v2's size: half again the dot the track draws.
-                let size = extent * 1.5;
-                let (cx, cy) = to_xy(layout, &geom, e.time_pos, day.day_offset + cross);
-                let _ = write!(
-                    &mut out,
-                    r#"<g class="error-track" transform="translate({x},{y})">"#,
-                    x = cx - size / 2.0,
-                    y = cy - size / 2.0,
-                );
-                push_warning_icon(&mut out, size);
-                out.push_str("</g>");
-            }
             out.push_str("</g>");
         }
     }
@@ -1635,9 +1622,10 @@ mod tests {
 
     /// da-0lful: in either orientation the line crosses the day's whole
     /// cross axis at the finding's instant, labelled with its field and
-    /// titled with what is wrong, and v2's icon sits on the field's track.
+    /// titled with what is wrong; the warning icon is the day label's
+    /// alone (da-0w8le).
     #[test]
-    fn an_error_is_a_line_across_the_day_and_an_icon_on_its_track() {
+    fn an_error_is_a_line_across_the_day_and_the_icon_is_the_days_alone() {
         for orientation in [Orientation::Horizontal, Orientation::Vertical] {
             let layout = compute_dayview(&one_day_with_block(true, orientation));
             let svg = render_dayview_svg(&layout);
@@ -1670,26 +1658,12 @@ mod tests {
                 "{orientation:?}: the line spans the whole day"
             );
 
-            // The icon is centred on mood's track: 10% across, 15% wide.
-            let icon = class("error-track");
-            let t = icon.attribute("transform").unwrap();
-            let xy: Vec<f64> = t["translate(".len()..t.len() - 1]
-                .split(',')
-                .map(|v| v.parse().unwrap())
+            // The day label's icon is the finding's only one (da-0w8le).
+            let icons: Vec<_> = (doc.descendants())
+                .filter(|n| n.attribute("fill") == Some("#ffff00"))
+                .map(|n| n.ancestors().find_map(|a| a.attribute("class")))
                 .collect();
-            let size = 15.0 * 1.5;
-            let (centre_time, centre_cross) = match orientation {
-                Orientation::Horizontal => (xy[0] - geom.data_x, xy[1] - geom.data_y),
-                Orientation::Vertical => (xy[1] - geom.data_y, xy[0] - geom.data_x),
-            };
-            assert!(
-                (centre_time + size / 2.0 - at).abs() < 1e-6,
-                "{orientation:?}"
-            );
-            assert!(
-                (centre_cross + size / 2.0 - 17.5).abs() < 1e-6,
-                "{orientation:?}"
-            );
+            assert_eq!(icons, [Some("day-error")], "{orientation:?}: {svg}");
         }
     }
 

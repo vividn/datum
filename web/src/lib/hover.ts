@@ -652,7 +652,7 @@ export function picture(node: HTMLElement, { text, unsynced }: { text: string; u
 		// A mark's own transform goes to a group around it, drawn the same:
 		// the day strip scales a mark back about its own middle (da-dqbso),
 		// which a transform on the mark itself would be composed inside.
-		for (const el of svg?.querySelectorAll('.point-fg[transform], .error-track[transform]') ?? []) {
+		for (const el of svg?.querySelectorAll('.point-fg[transform]') ?? []) {
 			const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 			g.setAttribute('transform', el.getAttribute('transform')!);
 			el.removeAttribute('transform');

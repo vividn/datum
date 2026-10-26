@@ -98,7 +98,7 @@ fn a_double_start_backfilled_onto_yesterday_marks_yesterday_not_today() {
     );
 
     // In the picture: the day's icon by yesterday's label alone, and the
-    // line, its label and the track's icon at 11:00.
+    // line and its label at 11:00, with no icon of their own (da-0w8le).
     let svg = datum(&db, &["dayview", "--days", "2"]);
     let label = |day: usize| {
         let from = svg
@@ -117,7 +117,8 @@ fn a_double_start_backfilled_onto_yesterday_marks_yesterday_not_today() {
     )));
     assert!(svg.contains(r#"class="error-line""#));
     assert!(svg.contains(r#"class="error-label""#));
-    assert!(svg.contains(r#"class="error-track""#));
+    assert!(!svg.contains("error-track"));
+    assert_eq!(svg.matches(r#"class="day-error""#).count(), 1);
 }
 
 #[test]

@@ -25,7 +25,7 @@ const TODAY = '.band[data-days-ago="0"]';
 
 /**
  * Today's marks as drawn: a dot, a glyph stretched twice as wide as it is
- * tall, the integrity finding's label and its warning, and a block — each
+ * tall, the integrity finding's label, and a block — each
  * one's middle across the screen and its size, in px.
  */
 const marks = ({ page }) =>
@@ -38,7 +38,6 @@ const marks = ({ page }) =>
 			dot: box('[data-field="tea"] .point-fg'),
 			glyph: box('[data-field="coffee"] .point-fg'),
 			label: box('.error-label'),
-			warning: box('.error-track'),
 			block: box('.block[data-field="work"]')
 		};
 	});
@@ -113,7 +112,7 @@ test('a zoom moves every mark to its time, stretches none, and redraws nothing',
 			[during, 'under the fingers'],
 			[after, 'after the release']
 		]) {
-			for (const mark of ['dot', 'glyph', 'label', 'warning'])
+			for (const mark of ['dot', 'glyph', 'label'])
 				sameSize(at[mark], rest[mark], `the ${mark} ${name}`);
 			// And where its time is: the dot on the strip's 09:00.
 			const nine = await hourAt(app, 9);

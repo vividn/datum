@@ -2043,29 +2043,27 @@
 	   — a block, a lane, the now strip — is as long as its hours and is
 	   left to them; every other mark is scaled back about its own anchor
 	   to the size the picture drawn at the new size gives it: a dot, a
-	   glyph, an icon, the selection's arrow, a label, a warning grows with
-	   the day's height (as datum sizes them) and not with the window, and
-	   a line keeps its stroke. Not inside an icon or a warning, which are
-	   scaled as one. The rules after the first carry its guards: a `:not`
-	   counts what it names, so without them the first one wins. */
-	.band :global(svg.svg circle:not(defs *):not(.error-track *)),
-	.band :global(svg.svg text:not(defs *):not(.error-track *)),
-	.band :global(svg.svg use:not(defs *):not(.error-track *)),
-	.band :global(svg.svg polygon:not(defs *):not(.error-track *)),
-	.band :global(svg.svg rect.point-bg:not(defs *):not(.error-track *)),
-	.band :global(svg.svg .error-track:not(defs *):not(.error-track *)),
-	.band :global(svg.svg line:not(defs *):not(.error-track *)) {
+	   glyph, an icon, the selection's arrow, a label grows with the day's
+	   height (as datum sizes them) and not with the window, and a line
+	   keeps its stroke. The rules after the first carry its guard: a
+	   `:not` counts what it names, so without it the first one wins. */
+	.band :global(svg.svg circle:not(defs *)),
+	.band :global(svg.svg text:not(defs *)),
+	.band :global(svg.svg use:not(defs *)),
+	.band :global(svg.svg polygon:not(defs *)),
+	.band :global(svg.svg rect.point-bg:not(defs *)),
+	.band :global(svg.svg line:not(defs *)) {
 		transform-box: fill-box;
 		transform-origin: center;
 		scale: calc(var(--sy) / (var(--zoom) * var(--sx))) 1;
 	}
-	.band :global(svg.svg line:not(defs *):not(.error-track *)) {
+	.band :global(svg.svg line:not(defs *)) {
 		scale: calc(1 / (var(--zoom) * var(--sx))) 1;
 	}
 	.band :global(svg.svg text:not([text-anchor='middle']):not([text-anchor='end'])) {
 		transform-origin: left;
 	}
-	.band :global(svg.svg text[text-anchor='end']:not(defs *):not(.error-track *)) {
+	.band :global(svg.svg text[text-anchor='end']:not(defs *)) {
 		transform-origin: right;
 	}
 
