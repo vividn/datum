@@ -1,7 +1,8 @@
 //! `datum db <subcommand>` — DB-lifecycle group.
 //!
 //! Houses every database administration verb: `purge`, `backup`,
-//! `restore`, `migrate`, `v2import`. da-33g consolidated the standalone
+//! `restore`, `migrate`, `v2import`, and `config`, the database's own
+//! settings. da-33g consolidated the standalone
 //! `setup` / `backup` / `restore` / `migrate` top-level verbs under here,
 //! and da-a4ptr folded `db setup` into `db migrate`.
 
@@ -25,7 +26,30 @@ pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
         DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, cli_db, db),
         DbCommand::Migrate(sub) => super::migrate::migrate(sub, db),
         DbCommand::V2import(args) => import::import(args, db),
+        DbCommand::Config(args) => config(args, db),
     }
+}
+
+/// `datum db config [KEY [true|false]]` (da-w6pp2): each setting is an entry
+/// (`setting:<KEY>`), so it syncs to every copy of the database. Bare, every
+/// setting and its value; with KEY, its value; with a value, sets it.
+fn config(args: crate::args::DbConfigArgs, db: &Db) -> Result<()> {
+    use datum_core::db::SETTINGS;
+    let keys: Vec<&str> = match args.key.as_deref() {
+        None => SETTINGS.to_vec(),
+        Some(k) if SETTINGS.contains(&k) => vec![k],
+        Some(k) => anyhow::bail!("no setting '{k}' (there are: {})", SETTINGS.join(", ")),
+    };
+    if let Some(value) = args.value {
+        db.set_setting(keys[0], value)?;
+    }
+    for key in keys {
+        match db.setting(key)? {
+            Some(v) => println!("{key} {v}"),
+            None => println!("{key} true (default)"),
+        }
+    }
+    Ok(())
 }
 
 /// `datum db purge` — destructive, prompts for the database identifier

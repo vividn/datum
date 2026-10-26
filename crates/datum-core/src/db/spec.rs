@@ -27,11 +27,20 @@ use crate::verb::Verb;
 use datum_parse::field_template::{is_template, literal, matches, parts, ties};
 
 use super::alias::ALIAS_FIELD;
-use super::definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, VIEW_FIELD};
+use super::definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, SETTING_FIELD, VIEW_FIELD};
 use super::insert::{insert_new_in_tx, save_existing_entry_with_kind_in_tx};
 use super::kit_layout::LAYOUT_FIELD;
 use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport, LIVE_SQL};
 use super::Db;
+
+/// What keeps a write from creating a field ([`Db::creation_closer`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Closer {
+    /// The template of this name, whose `auto_setup` is false.
+    Template(String),
+    /// The database's own `auto_setup` setting (da-w6pp2).
+    Db,
+}
 
 /// The field every spec entry is logged under.
 pub const SPEC_FIELD: &str = "spec";
@@ -45,7 +54,8 @@ pub(crate) const SPEC_DISPLACED_KEY: &str = "displaced";
 
 /// Fields whose entries describe the database rather than the life it
 /// records — specs, layouts, aliases (da-b3752), views, kit commands,
-/// kit index definitions (da-fwwtn) and kits' `[kit]` tables (da-xnzc7). One rule keeps them all off the
+/// kit index definitions (da-fwwtn), kits' `[kit]` tables (da-xnzc7) and the
+/// database's settings (da-w6pp2). One rule keeps them all off the
 /// life-data surfaces — tail, now, dayview, nowview, stats, fields —
 /// unless asked for by name (`tail spec`) or with `--show-meta` / `-A`.
 pub const META_FIELDS: &[&str] = &[
@@ -56,11 +66,12 @@ pub const META_FIELDS: &[&str] = &[
     COMMAND_FIELD,
     INDEX_FIELD,
     KIT_FIELD,
+    SETTING_FIELD,
 ];
 
 /// [`META_FIELDS`] as a SQL predicate on `entries.field`.
 pub(crate) const NOT_META_FIELD_SQL: &str =
-    "field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')";
+    "field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit', 'setting')";
 
 pub fn is_meta_field(field: &str) -> bool {
     META_FIELDS.contains(&field)
@@ -134,7 +145,7 @@ pub(crate) fn new_spec_entry(field: &str, data: JsonValue, client_id: &str) -> E
 
 /// Refuse a write under a field the database reserves: a spec
 /// ([`check_spec_entry`]), an alias ([`super::alias::check_alias_entry`]),
-/// or a view, command, index or kit ([`super::definition::check_definition_entry`]).
+/// or a view, command, index, kit or setting ([`super::definition::check_definition_entry`]).
 /// Every row writer in `insert.rs` calls this.
 pub(crate) fn check_meta_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Result<()> {
     check_spec_entry(slug, entry, data)?;
@@ -417,30 +428,41 @@ impl Db {
         Ok(self.field_has_entries(field)? || self.own_spec_data(field)?.is_some())
     }
 
-    /// The template closing `field` to a write that would create it
-    /// (da-j04cq, da-tldkb): the one covering it when that says
-    /// `auto_setup = false`, and with none covering it, a template saying so
-    /// whose literal head (`issue__`) the name begins with, so `issue__k7f`
-    /// is closed though no 8-character id. `None`: a write may create it.
-    pub fn closing_template(&self, field: &str) -> Result<Option<String>> {
+    /// What closes `field` to a write that would create it (da-j04cq,
+    /// da-tldkb, da-w6pp2). The template covering it, when that sets
+    /// `auto_setup` (`false` closes, `true` opens whatever the database
+    /// says); with none covering it, a template saying `false` whose literal
+    /// head (`issue__`) the name begins with, so `issue__k7f` is closed though
+    /// no 8-character id; then the database's own `auto_setup` setting.
+    /// `None`: a write may create it.
+    pub fn creation_closer(&self, field: &str) -> Result<Option<Closer>> {
         if is_template(field) || is_meta_field(field) {
             return Ok(None);
         }
         let templates = self.template_specs()?;
-        let closed = |data: &str| {
+        let auto_setup = |data: &str| {
             serde_json::from_str::<JsonValue>(data)
-                .is_ok_and(|d| d.get("auto_setup") == Some(&JsonValue::Bool(false)))
+                .ok()
+                .and_then(|d| d.get("auto_setup").and_then(JsonValue::as_bool))
         };
-        if let Some((name, data)) = covering(field, &templates) {
-            return Ok(closed(data).then(|| name.clone()));
+        match covering(field, &templates) {
+            Some((name, data)) => match auto_setup(data) {
+                Some(false) => return Ok(Some(Closer::Template(name.clone()))),
+                Some(true) => return Ok(None),
+                None => {}
+            },
+            None => {
+                if let Some((name, _)) = templates.iter().find(|(name, data)| {
+                    let head = &parts(name)[0];
+                    !head.is_empty()
+                        && field.starts_with(head.as_str())
+                        && auto_setup(data) == Some(false)
+                }) {
+                    return Ok(Some(Closer::Template(name.clone())));
+                }
+            }
         }
-        Ok(templates
-            .iter()
-            .find(|(name, data)| {
-                let head = &parts(name)[0];
-                !head.is_empty() && field.starts_with(head.as_str()) && closed(data)
-            })
-            .map(|(name, _)| name.clone()))
+        Ok((self.setting("auto_setup")? == Some(false)).then_some(Closer::Db))
     }
 
     /// The fields whose names start with `prefix` (da-tldkb), alphabetical,
@@ -511,7 +533,7 @@ impl Db {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT json_extract(data, '$.field') AS f FROM entries
              WHERE {SPEC_DOC_SQL}
-               AND f NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
+               AND f NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit', 'setting')
              ORDER BY f"
         ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;

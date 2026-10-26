@@ -70,7 +70,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `setup` — Set up a field: its verb, states and look (alias: spec)
 - `alias` — Manage aliases
 - `check` — Run database consistency checks
-- `db` — DB-lifecycle (purge, backup, restore, migrate, v2import)
+- `db` — DB-lifecycle (purge, backup, restore, migrate, v2import, config)
 - `info` — Show health/metadata for DB(s)
 - `config` — Show or manage user configuration
 - `completions` — Shell tab completion: print, install or remove the script

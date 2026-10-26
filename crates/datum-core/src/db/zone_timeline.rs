@@ -13,8 +13,13 @@ use chrono::{DateTime, Utc};
 use crate::error::Result;
 use crate::time::{Zone, ZoneTimeline};
 
-use super::spec::NOT_META_FIELD_SQL;
 use super::Db;
+
+/// The meta fields as `entries_zoned`'s predicate names them
+/// (`stats_cache.sql`), which a query must repeat word for word for SQLite
+/// to read that index. It names no `setting`: a setting carries no zone.
+const NOT_ZONED_META_SQL: &str =
+    "field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')";
 
 /// One row per *change* of zone, not one per entry.
 ///
@@ -132,7 +137,7 @@ impl Db {
                     AND superseded_by IS NULL
                     AND occur_time {cmp} ?1
                     AND occur_time_tz IS NOT NULL
-                    AND {NOT_META_FIELD_SQL}
+                    AND {NOT_ZONED_META_SQL}
                   ORDER BY occur_time {order}
                   LIMIT {NEIGHBOURS}"
             );

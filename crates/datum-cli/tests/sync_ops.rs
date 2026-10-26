@@ -199,6 +199,22 @@ fn two_copies_converge_over_a_pipe() {
     );
 }
 
+/// da-w6pp2: the database's `auto_setup` is an entry, so a copy synced from
+/// a strict one is strict too (vividn, 2026-10-26: «yes it should sync»).
+#[test]
+fn a_dbs_auto_setup_syncs_to_every_copy() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee"]);
+    a.ok(&["db", "config", "auto_setup", "false"]);
+    converged(&a, &b);
+    assert_eq!(b.ok(&["db", "config", "auto_setup"]), "auto_setup false\n");
+    let out = b.run(&["occur", "newfield"], "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--setup"));
+    b.ok(&["occur", "coffee"]);
+    b.ok(&["occur", "newfield", "--setup"]);
+}
+
 /// Every op names who and what signed it (da-zjc9w), and a second copy
 /// reads that back from the ops it was sent: the CLI's host, installation,
 /// program and build, and on a scripted run the script `DATUM_SCRIPT` names.

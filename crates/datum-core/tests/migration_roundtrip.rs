@@ -217,6 +217,7 @@ fn every_pair_has_a_roundtrip_test() {
         (67, 68),
         (68, 69),
         (69, 70),
+        (70, 71),
     ];
     assert_eq!(
         covered.len(),
@@ -3324,4 +3325,46 @@ fn roundtrip_v69_to_v70_sync_row_hashes() {
     assert_eq!(objects(), 6, "three tables and three triggers");
     apply_one_down(conn, 70);
     assert_eq!(objects(), 0);
+}
+
+/// da-w6pp2: `setting` is reserved as `kit` was; nothing moves either way.
+#[test]
+fn roundtrip_v70_to_v71_setting_is_reserved() {
+    let db = fresh_at(70);
+    apply_one_up(db.conn(), 70);
+    apply_one_down(db.conn(), 71);
+}
+
+/// A life field named `setting` is refused, and nothing changes; a deleted
+/// one, or a setting itself (a v71 peer's, synced to a v70 copy), is no clash.
+#[test]
+fn v70_to_v71_refuses_a_field_already_named_setting() {
+    let db = fresh_at(70);
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, data, occur_time, create_time, modify_time,
+             client_id)
+         VALUES ('s1', 'setting:auto_setup', 's1', 'setting',
+                 '{\"name\":\"auto_setup\",\"value\":false}', '1970-01-01T00:00:00+00:00',
+                 '2026-10-26T00:00:00Z', '2026-10-26T00:00:00Z', 'dev-a'),
+                ('h1', 'setting:h1', 'h1', 'setting', NULL, '2026-10-01T00:00:00+00:00',
+                 '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', 'dev-a')",
+        [],
+    )
+    .unwrap();
+    let err = apply_migrations(conn, MIGRATIONS, 70, 71)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("1 entry") && err.contains("`setting`"),
+        "{err}"
+    );
+    assert_eq!(read_schema_version(conn).unwrap(), Some(70));
+    conn.execute(
+        "UPDATE entries SET deleted_at = '2026-10-02T00:00:00Z' WHERE hid = 'h1'",
+        [],
+    )
+    .unwrap();
+    apply_migrations(conn, MIGRATIONS, 70, 71).unwrap();
 }

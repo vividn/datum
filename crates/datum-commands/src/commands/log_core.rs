@@ -9,7 +9,7 @@
 use anyhow::Result;
 use datum_core::{
     action::Action,
-    db::{agreed_zone, Db, InsertOutcome, IGNORED_STATE_VALUE},
+    db::{agreed_zone, Closer, Db, InsertOutcome, IGNORED_STATE_VALUE},
     dur::DurSpan,
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
@@ -1092,31 +1092,34 @@ pub(crate) struct ParsedLogArgs {
 /// `value`. The `__datum_*` prefix avoids collision with any user key.
 pub(crate) const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 
-/// da-j04cq: the template keeping a write from creating `field`
-/// ([`Db::closing_template`](datum_core::db::Db::closing_template)), when the
+/// da-j04cq, da-w6pp2: what keeps a write from creating `field`
+/// ([`Db::creation_closer`](datum_core::db::Db::creation_closer)), when the
 /// line does not say `--setup`. `None`: the write may create it. The one
-/// question the refusal below and [`written_field`] both ask, so the db's
-/// own setting (da-w6pp2) joins them here.
-fn creation_closed_by(db: &Db, field: &str, setup: bool) -> Result<Option<String>> {
+/// question the refusal below and [`written_field`] both ask.
+fn creation_closed_by(db: &Db, field: &str, setup: bool) -> Result<Option<Closer>> {
     if setup {
         return Ok(None);
     }
-    Ok(db.closing_template(field)?)
+    Ok(db.creation_closer(field)?)
 }
 
 /// da-j04cq: a write names a field that does not exist yet (no entries, no
 /// spec of its own) that it may not create: refused, so a mistyped id
 /// creates nothing.
 fn refuse_unset_up_field(db: &Db, field: &str, setup: bool) -> Result<()> {
-    let Some(template) = creation_closed_by(db, field, setup)? else {
+    let Some(closer) = creation_closed_by(db, field, setup)? else {
         return Ok(());
     };
     if db.field_exists(field)? {
         return Ok(());
     }
+    let by = match closer {
+        Closer::Template(t) => format!("the template `{t}`"),
+        Closer::Db => "this database (`datum db config auto_setup false`)".to_string(),
+    };
     anyhow::bail!(
-        "no field '{field}' yet (no entries, no spec of its own), and the template \
-         `{template}` creates none unless asked: add `--setup` to create it"
+        "no field '{field}' yet (no entries, no spec of its own), and {by} \
+         creates none unless asked: add `--setup` to create it"
     )
 }
 

@@ -11,6 +11,10 @@
 //! | `command` | `command:<name>`       | [`CommandEntry`] (+ `kit_id`) |
 //! | `index`   | `index:<kit_id>/<name>`| [`IndexEntry`] + `kit_id`     |
 //! | `kit`     | `kit:<name>`           | [`KitMeta`] + `kit_id`        |
+//! | `setting` | `setting:<name>`       | [`SettingEntry`]              |
+//!
+//! A `setting` is the database's own (da-w6pp2): an entry, so every copy of
+//! the database holds it, as vividn chose («yes it should sync»).
 //!
 //! Only an index's DEFINITION travels: the SQLite index it describes is this
 //! device's, derived from the definitions by [`Db::derive_kit_indices`].
@@ -43,6 +47,20 @@ pub const INDEX_FIELD: &str = "index";
 /// logged under, so `kit export` can write it back and `kit list` name the
 /// version installed (da-xnzc7).
 pub const KIT_FIELD: &str = "kit";
+/// The field the database's settings are logged under, one entry each
+/// (da-w6pp2).
+pub const SETTING_FIELD: &str = "setting";
+
+/// The settings a database takes, each a bool and true until set:
+/// `auto_setup`, whether a write may create a field (da-j04cq).
+pub const SETTINGS: &[&str] = &["auto_setup"];
+
+/// A database setting as its entry holds it.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SettingEntry {
+    pub name: String,
+    pub value: bool,
+}
 
 /// The data key naming the kit that shipped a definition, as for specs.
 pub(crate) const KIT_KEY: &str = "kit_id";
@@ -115,35 +133,43 @@ pub(crate) fn new_definition_entry(field: &str, data: JsonValue, client_id: &str
 }
 
 /// Refuse a write that would store something other than a definition under
-/// `view`, `command`, `index` or `kit` — a malformed one, one at a slug its data
-/// does not name, or a plain log like `occur view`. Tombstones pass.
+/// `view`, `command`, `index`, `kit` or `setting` — a malformed one, one at a
+/// slug its data does not name, or a plain log like `occur view`. Tombstones
+/// pass.
 pub(crate) fn check_definition_entry(
     slug: &str,
     entry: &Entry,
     data: Option<&JsonValue>,
 ) -> Result<()> {
     let field = entry.field.as_str();
-    if ![VIEW_FIELD, COMMAND_FIELD, INDEX_FIELD, KIT_FIELD].contains(&field)
+    if ![
+        VIEW_FIELD,
+        COMMAND_FIELD,
+        INDEX_FIELD,
+        KIT_FIELD,
+        SETTING_FIELD,
+    ]
+    .contains(&field)
         || entry.deleted_at.is_some()
     {
         return Ok(());
     }
     let refuse = |why: String| Err(DatumError::Other(format!("`{slug}`: {why}")));
     let Some(data) = data.filter(|d| d.is_object()) else {
-        let what = if field == KIT_FIELD {
-            "kits' `[kit]` tables".to_string()
-        } else {
-            format!("kit {field}s")
+        let (what, see) = match field {
+            KIT_FIELD => ("kits' `[kit]` tables".to_string(), "datum kit install"),
+            SETTING_FIELD => ("the database's settings".to_string(), "datum db config"),
+            _ => (format!("kit {field}s"), "datum kit install"),
         };
         return refuse(format!(
-            "`{field}` is reserved for {what}, and this entry carries none \
-             (see `datum kit install`)"
+            "`{field}` is reserved for {what}, and this entry carries none (see `{see}`)"
         ));
     };
     let parsed = match field {
         VIEW_FIELD => serde_json::from_value::<ViewEntry>(data.clone()).map(|v| v.name),
         COMMAND_FIELD => serde_json::from_value::<CommandEntry>(data.clone()).map(|c| c.name),
         KIT_FIELD => serde_json::from_value::<KitMeta>(data.clone()).map(|k| k.name),
+        SETTING_FIELD => serde_json::from_value::<SettingEntry>(data.clone()).map(|s| s.name),
         _ => serde_json::from_value::<IndexEntry>(data.clone()).map(|i| i.name),
     };
     let name = match parsed {
@@ -152,6 +178,12 @@ pub(crate) fn check_definition_entry(
     };
     if name.is_empty() {
         return refuse(format!("a {field} needs a name"));
+    }
+    if field == SETTING_FIELD && !SETTINGS.contains(&name.as_str()) {
+        return refuse(format!(
+            "no setting `{name}` (there are: {})",
+            SETTINGS.join(", ")
+        ));
     }
     if field == INDEX_FIELD && data[KIT_KEY].as_str().is_none() {
         return refuse("an index belongs to a kit, and this one names none".into());
@@ -210,6 +242,29 @@ impl Db {
                 Ok(self.get_entry(&row.slug)?.hid)
             }
         }
+    }
+
+    /// The database's setting `name` (da-w6pp2): `None` until set.
+    pub fn setting(&self, name: &str) -> Result<Option<bool>> {
+        let Some(row) = self.definition_entry(&format!("{SETTING_FIELD}:{name}"))? else {
+            return Ok(None);
+        };
+        Ok(row
+            .data
+            .and_then(|d| serde_json::from_value::<SettingEntry>(d).ok())
+            .map(|s| s.value))
+    }
+
+    /// Set the database's setting `name`, as its entry, so it syncs.
+    pub fn set_setting(&self, name: &str, value: bool) -> Result<Hid> {
+        let data = definition_data(
+            &SettingEntry {
+                name: name.into(),
+                value,
+            },
+            None,
+        )?;
+        self.write_definition(SETTING_FIELD, data)
     }
 
     /// Install a kit's `field` definitions (each `(name, data)`), marked

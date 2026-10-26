@@ -249,6 +249,17 @@ pub enum DbCommand {
     Migrate(MigrateCommand),
     /// `datum db v2import` — load a legacy datum CouchDB backup JSON.
     V2import(DbImportArgs),
+    /// `datum db config [KEY [true|false]]` — the database's own settings,
+    /// entries that sync (da-w6pp2).
+    Config(DbConfigArgs),
+}
+
+#[derive(Debug, Default)]
+pub struct DbConfigArgs {
+    /// The setting named; `None` lists them all.
+    pub key: Option<String>,
+    /// The value to set it to; `None` prints it.
+    pub value: Option<bool>,
 }
 
 #[derive(Debug, Default)]

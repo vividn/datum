@@ -60,7 +60,9 @@ use crate::error::{DatumError, Result};
 pub use crate::migrations::{MigrationReport, MAX_PRE_MIGRATION_BACKUPS};
 
 pub use alias::{InstallAliasesReport, KitAliasOutcome, ALIAS_FIELD};
-pub use definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, VIEW_FIELD};
+pub use definition::{
+    SettingEntry, COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, SETTINGS, SETTING_FIELD, VIEW_FIELD,
+};
 pub use holder::lock_holder;
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use kit_command::{
@@ -74,7 +76,7 @@ pub use now::{
 };
 pub use rename::FieldRenamed;
 pub use row_mapper::row_to_entry_public;
-pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
+pub use spec::{is_meta_field, Closer, META_FIELDS, SPEC_FIELD};
 pub use spool::{busy, Drained, Spool};
 pub use stats_cache::{CachedDay, CachedState, CachedSum, Dirty, Refill};
 pub(crate) use sync::derive_all_conflicts;

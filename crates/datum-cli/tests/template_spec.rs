@@ -208,6 +208,64 @@ fn a_kits_template_sets_auto_setup() {
     run_cli(&["switch", "issue__abcdefgh", "queued", "--setup"], &db).unwrap();
 }
 
+/// da-w6pp2: the database's own `auto_setup`, an entry: off, a write naming
+/// a field that does not exist refuses unless `--setup`, and an existing
+/// field logs as before.
+#[test]
+fn a_db_with_auto_setup_off_refuses_a_new_field_unless_setup() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee"], &db).unwrap();
+    run_cli(&["db", "config", "auto_setup", "false"], &db).unwrap();
+    assert_eq!(db.setting("auto_setup").unwrap(), Some(false));
+
+    let err = run_cli(&["occur", "newfield"], &db).unwrap_err();
+    let err = err.to_string();
+    assert!(
+        err.contains("'newfield'") && err.contains("--setup"),
+        "{err}"
+    );
+    assert!(!db.field_exists("newfield").unwrap(), "nothing written");
+
+    run_cli(&["occur", "newfield", "--setup"], &db).unwrap();
+    assert!(db.field_exists("newfield").unwrap());
+    run_cli(&["occur", "newfield"], &db).unwrap();
+    run_cli(&["occur", "coffee"], &db).unwrap();
+
+    // `true` opens it again.
+    run_cli(&["db", "config", "auto_setup", "true"], &db).unwrap();
+    run_cli(&["occur", "tea"], &db).unwrap();
+}
+
+/// A template's own `auto_setup` overrides the database's either way.
+#[test]
+fn a_templates_auto_setup_overrides_the_dbs() {
+    let db = board();
+    run_cli(&["db", "config", "auto_setup", "false"], &db).unwrap();
+    // The template says nothing: the database's closes it.
+    assert!(run_cli(&["switch", "issue__abcdefgh", "queued"], &db).is_err());
+    run_cli(&["setup", "issue__%hid:8%", "--auto-setup", "true"], &db).unwrap();
+    run_cli(&["switch", "issue__abcdefgh", "queued"], &db).unwrap();
+    // A name no template covers stays closed.
+    assert!(run_cli(&["occur", "newfield"], &db).is_err());
+}
+
+/// The setting is an entry the database keeps off the life surfaces, and
+/// `setting` takes no other.
+#[test]
+fn a_setting_is_a_meta_entry() {
+    let db = fresh_db();
+    run_cli(&["db", "config", "auto_setup", "false"], &db).unwrap();
+    assert!(!db
+        .distinct_fields()
+        .unwrap()
+        .contains(&"setting".to_string()));
+    assert!(run_cli(&["occur", "setting"], &db).is_err());
+    assert!(run_cli(&["db", "config", "nope", "false"], &db).is_err());
+    assert!(run_cli(&["db", "config", "auto_setup", "maybe"], &db).is_err());
+    run_cli(&["undo"], &db).unwrap();
+    assert_eq!(db.setting("auto_setup").unwrap(), None);
+}
+
 /// da-iov64: the board, taking only its listed states.
 fn listed_board() -> Db {
     let db = board();

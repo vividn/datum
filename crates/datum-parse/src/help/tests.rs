@@ -64,7 +64,7 @@ ADMIN:
   setup        Set up a field: its verb, states and look (alias: spec)
   alias        Manage aliases
   check        Run database consistency checks
-  db           DB-lifecycle (purge, backup, restore, migrate, v2import)
+  db           DB-lifecycle (purge, backup, restore, migrate, v2import, config)
   info         Show health/metadata for DB(s)
   config       Show or manage user configuration
   completions  Shell tab completion: print, install or remove the script
@@ -1028,7 +1028,10 @@ fn help_json_lists_db_subcommands() {
         .iter()
         .map(|s| s["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["purge", "backup", "restore", "migrate", "v2import"]);
+    assert_eq!(
+        names,
+        ["purge", "backup", "restore", "migrate", "v2import", "config"]
+    );
     assert_eq!(db["subcommands"][1]["usage"].as_array().unwrap().len(), 4);
     assert_eq!(db["bare"], false);
     assert_eq!(entry("sync")["bare"], true);

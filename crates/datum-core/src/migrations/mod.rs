@@ -20,7 +20,7 @@
 //! * [`support`] holds the introspection and table-rebuild helpers used
 //!   by more than one era;
 //! * `v01_v10`, `v11_v20`, `v21_v30`, `v31_v40`, `v41_v50`, `v51_v60`,
-//!   `v61_v70`
+//!   `v61_v70`, `v71_v80`
 //!   hold the migration **bodies**, one module per decade of schema versions.
 //!
 //! Adding a migration therefore appends one entry here and one function
@@ -40,6 +40,7 @@ mod v31_v40;
 mod v41_v50;
 mod v51_v60;
 mod v61_v70;
+mod v71_v80;
 
 #[cfg(test)]
 mod tests;
@@ -53,6 +54,7 @@ use v31_v40::*;
 use v41_v50::*;
 use v51_v60::*;
 use v61_v70::*;
+use v71_v80::*;
 
 /// The schema version this binary writes.
 ///
@@ -60,7 +62,7 @@ use v61_v70::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 70;
+pub const CURRENT_SCHEMA_VERSION: u32 = 71;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -568,5 +570,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_row_hashes: the verify's state hash a sum of each row's, kept as rows change (da-9ln3s)",
         apply: m69_to_70_sync_row_hashes,
         down: down_70_to_69_sync_row_hashes,
+    },
+    Migration {
+        from: 70,
+        to: 71,
+        summary: "`setting` is reserved: a database setting is the entry `setting:<name>`, synced (da-w6pp2)",
+        apply: m70_to_71_setting_is_reserved,
+        down: down_71_to_70_setting_is_reserved,
     },
 ];

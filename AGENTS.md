@@ -110,6 +110,11 @@ A template's `auto_setup = false` (`setup T --auto-setup false`, a kit's key)
 refuses a log naming a field it covers that has no entries and no spec of its
 own, unless the line says `--setup` (da-j04cq): a template covering the name
 is not the field existing. Only a template takes the key.
+The database's own `auto_setup` (`datum db config auto_setup false`, da-w6pp2)
+does the same for every field, and a template's key, `true` or `false`, wins
+over it for the fields it covers. It is an entry, `setting:auto_setup` of the
+meta field `setting` (`db/definition.rs`), so every copy of the db is strict
+(vividn, 2026-10-26: «yes it should sync»).
 
 ### The spool: a write is never lost to the lock
 A command that changes entries (every one but sync's, `db`'s, `config`'s and
@@ -241,9 +246,9 @@ expansion (da-tldkb, `datum help names`): `datum tail envi` reads
 `environment`; one starting several is refused, naming them. Reads resolve
 always (`resolve_read_fields` in `cmd.rs`); a write, once `-F` has built
 the name, only where it could not create it anyway, which `creation_closed_by`
-in `log_core.rs` answers (`Db::closing_template`: a template with
+in `log_core.rs` answers (`Db::creation_closer`: a template with
 `auto_setup = false` covering the name, or its literal head `issue__` starting
-it; no `--setup`), so `occur envi` in an open db still makes `envi`. In an entry's place (`get x`, `get x::state`) a field
+it, or the database's `auto_setup = false`; no `--setup`), so `occur envi` in an open db still makes `envi`. In an entry's place (`get x`, `get x::state`) a field
 wins over a hid, and no field is named as a hid, nor a hid drawn as a field.
 
 ### Alias system (built-in, not shell aliases)

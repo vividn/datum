@@ -41,7 +41,7 @@ pub(crate) fn parse_reparse_args(tail: &[&str]) -> Result<ReparseArgs> {
 pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing db subcommand (purge|backup|restore|migrate|v2import)".into(),
+            "missing db subcommand (purge|backup|restore|migrate|v2import|config)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
@@ -51,6 +51,7 @@ pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
         "restore" => Ok(DbCommand::Restore(parse_restore_args(rest)?)),
         "migrate" => Ok(DbCommand::Migrate(parse_migrate_cmd(rest)?)),
         "v2import" => Ok(DbCommand::V2import(parse_db_import(rest)?)),
+        "config" => Ok(DbCommand::Config(parse_db_config(rest)?)),
         "import" => Err(ParseError::InvalidArg(
             "unknown db subcommand: 'import' (the legacy import is `db v2import`)".into(),
         )),
@@ -58,6 +59,36 @@ pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
             "unknown db subcommand: '{other}'"
         ))),
     }
+}
+
+/// `datum db config [KEY [true|false]]`.
+fn parse_db_config(tail: &[&str]) -> Result<DbConfigArgs> {
+    let mut pos: Vec<&str> = Vec::new();
+    for tok in tail {
+        match split_flag(tok) {
+            FlagSplit::Positional(s) => pos.push(s),
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    let value = match pos.get(1) {
+        None => None,
+        Some(&"true") => Some(true),
+        Some(&"false") => Some(false),
+        Some(v) => {
+            return Err(ParseError::InvalidArg(format!(
+                "db config: a setting is true or false, got '{v}'"
+            )))
+        }
+    };
+    if pos.len() > 2 {
+        return Err(ParseError::InvalidArg(
+            "db config takes a setting and its value, no more".into(),
+        ));
+    }
+    Ok(DbConfigArgs {
+        key: pos.first().map(|s| s.to_string()),
+        value,
+    })
 }
 
 pub(crate) fn parse_db_purge_args(tail: &[&str]) -> Result<DbPurgeArgs> {

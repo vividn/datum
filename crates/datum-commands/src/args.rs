@@ -33,12 +33,12 @@ use crate::render::{OutputArgs, Show};
 pub use pcli::{
     AliasCommand, BackupArgs, BackupRotationArgs, CheckArgs, Cli, Command, ConfigCommand,
     ConfigShowArgs, ConflictStrategyArg, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-    CountArgs, DayviewArgs, DbCommand, DbImportArgs, DbPurgeArgs, DebugCommand, DeleteArgs,
-    EditArgs, FieldsArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, InfoArgs, KitCommand,
-    KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs, NowviewArgs,
-    RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SpecCommand, SpecSetArgs,
-    StatsArgs, StatsPeriod, SyncAdminAct, SyncCommand, SyncDaemonAct, SyncFilter, TailArgs,
-    UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
+    CountArgs, DayviewArgs, DbCommand, DbConfigArgs, DbImportArgs, DbPurgeArgs, DebugCommand,
+    DeleteArgs, EditArgs, FieldsArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, InfoArgs,
+    KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs,
+    NowviewArgs, RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SpecCommand,
+    SpecSetArgs, StatsArgs, StatsPeriod, SyncAdminAct, SyncCommand, SyncDaemonAct, SyncFilter,
+    TailArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
 };
 // Apart from the list above, which every added name reflows.
 pub use pcli::RenameArgs;
