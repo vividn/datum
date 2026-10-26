@@ -33,6 +33,7 @@ mod lookup;
 mod multi;
 mod now;
 mod query;
+mod record;
 mod rename;
 mod row_mapper;
 pub(crate) mod spec;

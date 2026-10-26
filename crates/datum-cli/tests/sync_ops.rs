@@ -3011,3 +3011,25 @@ fn offline_adds_each_carry_the_set_they_changed() {
         assert_eq!(mismatched(copy), [r#"["queued","late"]"#]);
     }
 }
+
+/// da-qhm51: an entry a sync brings in the past folds into the record at its
+/// own time, on both copies: under a later title, over an earlier one.
+#[test]
+fn a_synced_entry_in_the_past_folds_at_its_time() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["switch", "x", "open", "title=first", "-t", "-30"]);
+    a.ok(&["occur", "x", "title=last", "-t", "-10"]);
+    a.send(&b);
+    b.ok(&["occur", "x", "title=middle", "size=3", "-t", "-20"]);
+    b.ok(&["occur", "x", "owner=jade", "-t", "-25"]);
+    b.ok(&["occur", "x", "owner=null", "-t", "-15"]);
+    let before = a.ok(&["get", "x::"]);
+    assert_eq!(before, "{\"state\":\"open\",\"title\":\"last\"}\n");
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert_eq!(
+            copy.ok(&["get", "x::"]),
+            "{\"size\":3,\"state\":\"open\",\"title\":\"last\"}\n"
+        );
+    }
+}

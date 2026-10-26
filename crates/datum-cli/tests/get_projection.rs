@@ -451,3 +451,68 @@ fn get_help_documents_the_syntax_and_the_precedence() {
         "{help}"
     );
 }
+
+/// da-qhm51: a field's record, `<field>::`: its state now, each data key
+/// from the latest entry carrying it in time order, a timeless entry at its
+/// create time, `null` clearing a key, and every comment with its time.
+#[test]
+fn a_field_reads_as_its_record() {
+    let env = Env::new();
+    let f = "issue__k7f2a9x3";
+    env.ok(&[
+        "switch",
+        f,
+        "queued",
+        "title=one",
+        "priority=2",
+        "-t",
+        "-30",
+    ]);
+    env.ok(&["note", f, "title=two", "-c", "looked"]);
+    // Backdated under the note, so the note's title stays.
+    env.ok(&[
+        "occur",
+        f,
+        "title=old",
+        "size=3",
+        "-c",
+        "first",
+        "-t",
+        "-20",
+    ]);
+    env.ok(&["switch", f, "doing", "priority=null", "-c", "claimed"]);
+    let record: serde_json::Value =
+        serde_json::from_str(&env.ok(&["get", &format!("{f}::")])).unwrap();
+    let comments: Vec<&str> = record["comment"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            assert!(c["time"].is_string(), "{c}");
+            c["text"].as_str().unwrap()
+        })
+        .collect();
+    assert_eq!(comments, ["first", "looked", "claimed"]);
+    assert_eq!(
+        record.as_object().unwrap().keys().collect::<Vec<_>>(),
+        ["comment", "size", "state", "title"]
+    );
+    assert_eq!(env.ok(&["get", "issue__k7f::state"]), "doing\n");
+    assert_eq!(env.ok(&["get", "issue__k7f::title"]), "two\n");
+    assert_eq!(env.ok(&["get", "issue__k7f::size"]), "3\n");
+    let stderr = env.err(&["get", "issue__k7f::priority"]);
+    assert!(stderr.contains("issue__k7f has no priority"), "{stderr}");
+    // A column is still the newest entry's, and a hop reads the record.
+    assert_eq!(env.ok(&["get", "issue__k7f::field"]), format!("{f}\n"));
+    // The record's state is the field's now: a block that handed the field
+    // back leaves it in the state before, whatever the block's own column.
+    env.ok(&["switch", "x", "open", "-t", "-30"]);
+    env.ok(&["start", "x", "10m"]);
+    assert_eq!(env.ok(&["get", "x:_::state"]), "true\n");
+    assert_eq!(env.ok(&["get", "x::state"]), "open\n");
+    assert_eq!(env.ok(&["get", "x::"]), "{\"state\":\"open\"}\n");
+    // Only a field has a record.
+    let hid = env.ok(&["get", "issue__k7f::hid"]).trim_end().to_string();
+    let stderr = env.err(&["get", &format!("{hid}::")]);
+    assert!(stderr.contains("only a field has a record"), "{stderr}");
+}

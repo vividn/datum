@@ -123,14 +123,16 @@ fn project(piece: &str, db: &Db) -> Result<()> {
     } else {
         id
     };
-    // Errors name what was typed, and a field with a live entry reads as its
-    // newest (da-tldkb).
+    // Errors name what was typed, and a field with a live entry reads its
+    // record, a column of it its newest (da-tldkb, da-qhm51).
     let mut at = id.to_string();
-    let field_latest = match crate::commands::helpers::id_field_named(db, id)? {
-        Some(f) if !db.entries_for_field(&f, Some(1))?.is_empty() => Some(format!("{f}:_")),
+    let field = match crate::commands::helpers::id_field_named(db, id)? {
+        Some(f) if !db.entries_for_field(&f, Some(1))?.is_empty() => Some(f),
         _ => None,
     };
+    let field_latest = field.as_ref().map(|f| format!("{f}:_"));
     let id = field_latest.as_deref().unwrap_or(id);
+    let mut record = field.map(|f| db.collect(&f)).transpose()?;
     let names: Vec<&str> = names.split("::").collect();
     let (last, hops) = names.split_last().expect("split yields one piece");
     let mut entry = datum_core::ids::resolve_quickid_single(db, id)?;
@@ -140,7 +142,7 @@ fn project(piece: &str, db: &Db) -> Result<()> {
     let mut chain = vec![entry.slug.to_string()];
     let mut seen = vec![entry.hid.clone()];
     for &name in hops {
-        let value = read(&entry, name, &at)?;
+        let value = read_in(record.take(), &entry, name, &at)?;
         at = format!("{at}::{name}");
         if value.is_array() {
             anyhow::bail!(
@@ -173,11 +175,28 @@ fn project(piece: &str, db: &Db) -> Result<()> {
         }
         seen.push(entry.hid.clone());
     }
-    match datum_core::doc_ref::shown(&read(&entry, last, &at)?).into_owned() {
+    match datum_core::doc_ref::shown(&read_in(record, &entry, last, &at)?).into_owned() {
         serde_json::Value::String(s) => println!("{s}"),
         other => println!("{other}"),
     }
     Ok(())
+}
+
+/// da-qhm51: a field's first name reads its record ([`Db::collect`]): the
+/// whole of it when empty (`<field>::`), else its key, and a name the record
+/// lacks (a column: `hid`, `occur_time`) its newest entry's.
+fn read_in(
+    record: Option<serde_json::Map<String, serde_json::Value>>,
+    entry: &datum_core::entry::Entry,
+    name: &str,
+    at: &str,
+) -> Result<serde_json::Value> {
+    match (record, name) {
+        (Some(record), "") => Ok(record.into()),
+        (None, "") => anyhow::bail!("{at} is no field, and only a field has a record (<field>::)"),
+        (Some(mut record), _) if record.contains_key(name) => Ok(record.remove(name).unwrap()),
+        _ => read(entry, name, at),
+    }
 }
 
 /// One value of `entry`: a column name (any key of the serialized
