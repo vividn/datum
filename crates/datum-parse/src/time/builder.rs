@@ -6,7 +6,7 @@ use crate::error::{ParseError, Result};
 use crate::time::date::DateArg;
 use crate::time::datum_time::DatumTime;
 use crate::time::dur::quick_uncertainty_for_count;
-use crate::time::resolve::Zone;
+use crate::time::resolve::{Resolved, Zone};
 use crate::time::time::TimeArg;
 use crate::time::uncertainty::UncertaintyUnit;
 use crate::time::uncertainty::{Direction, Uncertainty};
@@ -52,6 +52,10 @@ pub struct TimeBuilder {
     /// `build_with_uncertainty` strips the time-of-day to 00:00:00 in the
     /// effective zone and emits a `P1D` uncertainty.
     pub full_day: bool,
+    /// A wall reading a fall-back night repeats is read as its later
+    /// instant, not its earlier (da-6i7l1): the answer to the question
+    /// datum asks of a typed time that names both.
+    pub later: bool,
 }
 
 #[cfg(feature = "native")]
@@ -306,13 +310,12 @@ impl TimeBuilder {
     /// instant once it is whole, so a reading a DST night skips or repeats
     /// on the way (today's 02:30, bound for another day) never reaches the
     /// result. That read is [`Zone::resolve`] under
-    /// [`Resolved::for_boundary`]: one must always come out. The `.single()`
+    /// [`Resolved::for_boundary`]: one must always come out, the later of a
+    /// repeated reading under [`later`](Self::later). The `.single()`
     /// guards this replaces silently discarded the entire `-d`/`-t`
     /// override whenever the wall clock landed on a DST seam (da-ztae).
     /// Flags that move nothing leave the instant alone, so the later
     /// reading of a fall-back overlap is not re-read as the earlier.
-    ///
-    /// [`Resolved::for_boundary`]: crate::time::Resolved::for_boundary
     pub fn build_at(
         self,
         now: DateTime<Utc>,
@@ -323,8 +326,8 @@ impl TimeBuilder {
         // typed offset is believed, and stored as what it is, an offset, or
         // as UTC by name for `Z` / `+00:00`, as v2 stores it. An offset the
         // zone in use gives at that instant only says which instant, and the
-        // zone is kept: datum.day's cursor dates a repeated hour's second
-        // reading so, which is `+00:00` in London.
+        // zone is kept: datum.day's cursor dates each reading of a repeated
+        // hour so (da-6i7l1), the second being `+00:00` in London.
         let (zone, timezone_name) = match self.iso_instant_override {
             Some(t) if self.timezone.is_none() && zone.offset_at(t.to_utc()) != *t.offset() => {
                 match t.offset().local_minus_utc() {
@@ -345,7 +348,10 @@ impl TimeBuilder {
             if wall == zone.local_naive(utc) {
                 utc
             } else {
-                zone.resolve(wall).for_boundary()
+                match zone.resolve(wall) {
+                    Resolved::Ambiguous { second, .. } if self.later => second,
+                    r => r.for_boundary(),
+                }
             }
         };
 
@@ -560,6 +566,43 @@ mod tests {
         assert_eq!(dt.timezone.as_deref(), Some("America/New_York"));
     }
 
+    /// `later` reads the same repeated 01:30 as its second instant (EST,
+    /// −05:00 → 06:30 UTC): the answer to the question a log asks
+    /// (da-6i7l1), and the zone stays the zone.
+    #[test]
+    fn iso_naive_dst_overlap_later_picks_later_instant() {
+        let b = TimeBuilder {
+            later: true,
+            ..TimeBuilder::now()
+        }
+        .with_timezone(Some("America/New_York".into()))
+        .with_time_arg(TimeArg {
+            absolute: None,
+            iso_instant: None,
+            iso_naive: Some(
+                NaiveDate::from_ymd_opt(2024, 11, 3)
+                    .unwrap()
+                    .and_hms_opt(1, 30, 0)
+                    .unwrap(),
+            ),
+            date: None,
+            offset: None,
+            uncertainty: None,
+            direction: None,
+        });
+        let dt = b.build();
+        assert_eq!(dt.offset_minutes, -300);
+        assert_eq!(
+            dt.utc,
+            NaiveDate::from_ymd_opt(2024, 11, 3)
+                .unwrap()
+                .and_hms_opt(6, 30, 0)
+                .unwrap()
+                .and_utc()
+        );
+        assert_eq!(dt.timezone.as_deref(), Some("America/New_York"));
+    }
+
     /// Same fall-back hour, but with no `-z` so the build runs the
     /// host-local (`chrono::Local`) arm. This is the regression that the
     /// explicit-`-z` test above cannot catch: `chrono::Local` orders the
@@ -749,7 +792,7 @@ mod tests {
 
     /// da-kvosn: `-t`'s offset is the zone, unless the zone already in use
     /// gives that offset at that instant: then it only says which instant
-    /// (datum.day's cursor dates a repeated hour's second reading so), and
+    /// (datum.day's cursor dates each reading of a repeated hour so), and
     /// the zone is kept. `Z` is UTC by name.
     #[test]
     fn an_instant_s_offset_is_the_zone_unless_the_zone_agrees() {

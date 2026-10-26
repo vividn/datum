@@ -469,16 +469,16 @@ describe('the time pill says a date and a time', () => {
 });
 
 // da-fir4a. On the day the clocks go back, 02:00 to 03:00 is lived twice,
-// and a bare `-t 02:30` is the FIRST of the two to the CLI. So the second
-// says its offset, and the entry lands on the instant the page was pointed
-// at rather than an hour before it. Held to the row the CLI wrote.
+// and a bare `-t 02:30` is a question to the CLI (da-6i7l1). So each says
+// its offset, and the entry lands on the instant the page was pointed at,
+// unasked. Held to the row the CLI wrote.
 describe('a clock time the day reads twice', () => {
 	test('Europe/Berlin, 2026-10-25: each 02:30 is logged at its own instant', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				for (const [field, iso, face, argv] of [
-					['first', '2026-10-25T00:30:00.000Z', ['02:30'], '-t 02:30'],
+					['first', '2026-10-25T00:30:00.000Z', ['02:30+02:00'], '-t 2026-10-25T02:30+02:00'],
 					['second', '2026-10-25T01:30:00.000Z', ['02:30+01:00'], '-t 2026-10-25T02:30+01:00']
 				]) {
 					await pointAt(page, iso);

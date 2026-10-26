@@ -89,14 +89,20 @@ const clock = (at: Date) =>
 /**
  * The UTC offset `at` must say for its clock time to be read as it, or
  * nothing (da-fir4a). A clock the day reads twice, the hour the clocks go
- * back over, is read at its FIRST occurrence by the CLI's `-t` and by
- * `new Date` alike, so only a later occurrence says its own: `+01:00`.
+ * back over, is asked about by the CLI's `-t` (da-6i7l1), so each of its
+ * two occurrences says its own: `+02:00`, then `+01:00`. The other one is
+ * as far off as the offset moves within three hours either side.
  */
 function offset(at: Date): string {
-	const first = new Date(at.getFullYear(), at.getMonth(), at.getDate(), at.getHours(), at.getMinutes());
-	const east = -at.getTimezoneOffset();
-	if (east === -first.getTimezoneOffset()) return '';
-	return `${east < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(east) / 60))}:${pad(Math.abs(east) % 60)}`;
+	const east = (t: number) => -new Date(t).getTimezoneOffset();
+	const wall = (t: number) => new Date(t).toString().slice(0, 24);
+	const twice = [-3, 3].some((h) => {
+		const other = +at + (east(+at) - east(+at + h * 3_600_000)) * MINUTE;
+		return other !== +at && wall(other) === wall(+at);
+	});
+	if (!twice) return '';
+	const e = east(+at);
+	return `${e < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(e) / 60))}:${pad(Math.abs(e) % 60)}`;
 }
 
 /**

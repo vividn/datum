@@ -630,6 +630,7 @@ dependencies = [
  "datum-parse",
  "datum-test-util",
  "ed25519-dalek 2.2.0",
+ "libc",
  "md-5",
  "p256",
  "rusqlite",

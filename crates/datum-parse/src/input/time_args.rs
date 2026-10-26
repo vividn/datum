@@ -53,6 +53,9 @@ pub struct TimeArgs {
     pub full_day: bool,
     /// `-T` / `--omit-timestamp`: no time recorded.
     pub omit_timestamp: bool,
+    /// Read a wall time a fall-back night repeats as its later instant
+    /// ([`TimeBuilder::later`]): no flag, the answer to datum's question.
+    pub later: bool,
 }
 
 /// Output of [`TimeArgs::build`] — what datum called `TimeFromArgs`.
@@ -118,6 +121,7 @@ impl TimeArgs {
     pub fn builder_anchored(&self, ctx: TimeCtx) -> Result<TimeBuilder> {
         let mut builder = TimeBuilder {
             timezone: self.timezone.as_deref().map(resolve_timezone).transpose()?,
+            later: self.later,
             ..TimeBuilder::default()
         }
         .with_quick_count(i64::from(self.quick))

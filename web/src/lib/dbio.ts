@@ -8,8 +8,9 @@
 // stdout, and the CLI runs `-` exactly as it would in a pipe. `db purge`,
 // which wants a TTY to ask on, asks in a dialog instead, and so do
 // `setup F --delete` (da-ez40f), `kit install`'s trust (da-axrk), a replacing `db restore`'s
-// deletions (da-jrbwc), a `--hard` one's drops (da-qq7gb) and a stale
-// `_LAST`'s question (da-f5pg2, `asking`).
+// deletions (da-jrbwc), a `--hard` one's drops (da-qq7gb), a stale
+// `_LAST`'s question (da-f5pg2, `asking`) and which of a repeated hour's
+// two readings a time means (da-6i7l1, `asking`).
 //
 // Every line a person types consults it — the REPL's own runner and the
 // bottom bar's through `press` — and nothing else: `run` is the seam and
@@ -93,7 +94,10 @@ export const UNANSWERED = 12;
  * and a no prints the CLI's own «Aborted.». The answer carries the pin the
  * CLI printed after the question (da-84h6a): if another tab moved `_LAST`
  * meanwhile, the CLI reads no answer for an entry it never showed and asks
- * again, about the entry `_LAST` is now.
+ * again, about the entry `_LAST` is now. A question whose answers the CLI
+ * names after it (`DATUM_CHOOSE=`, a wall time a fall-back night repeats,
+ * da-6i7l1) is a button an answer, and the line runs again with the env it
+ * ran with, so a gesture's frozen instant is the answer's too.
  */
 export const asking =
 	(run: CommandRunner): CommandRunner =>
@@ -101,6 +105,16 @@ export const asking =
 		let result = await run(argv, stdin, onStderr, key, stage, env);
 		while (result.code === UNANSWERED && stdin === undefined) {
 			const said = result.stderr.trimEnd().split('\n');
+			// A question with answers of its own, a wall time a fall-back
+			// night repeats (da-6i7l1): a button each, the one pressed on
+			// stdin, and nothing on stdin for cancel, which the CLI aborts.
+			const options = said.at(-1)?.match(/^DATUM_CHOOSE=(.*)$/)?.[1].split('|');
+			if (options) {
+				said.pop();
+				const picked = await choose(said.join('\n'), options, 'cancel', 'run');
+				result = await run(argv, `${picked ?? ''}\n`, onStderr, key, stage, env);
+				continue;
+			}
 			const pin = said.at(-1)?.startsWith('DATUM_LAST_SHOWN=') ? [said.pop()!] : [];
 			const question = said.pop()?.trimEnd() ?? '';
 			const text = [...said, result.stdout.trimEnd(), question].filter(Boolean).join('\n');

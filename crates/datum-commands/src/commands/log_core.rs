@@ -141,6 +141,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if inferred_zone.is_some() {
         args.time.timezone = inferred_zone.clone();
     }
+    // da-6i7l1: a wall time a fall-back night repeats is asked about, once,
+    // and every build below reads the answer.
+    if !args.time.omit_timestamp {
+        match which_reading(&args.time, now.utc)? {
+            Some(later) => args.time.later = later,
+            None => {
+                println!("Aborted.");
+                return Ok(());
+            }
+        }
+    }
     let created = args.time.omit_timestamp.then(|| now.clone());
     let base = match &created {
         Some(now) => Some(now.clone()),
@@ -2365,6 +2376,80 @@ fn neighbours_zone(db: &Db, time: &TimeArgs, now: chrono::DateTime<chrono::Utc>)
         ..time.clone()
     };
     (host.as_ref() != Some(&zone) && around(&placed)?.0 == zone).then_some(zone)
+}
+
+/// Which of the two instants the flags name the line means, where they name
+/// a wall time a fall-back night repeats (da-6i7l1): `Some(later)`, `false`
+/// when there is one, or `None` when the person asked declined. Asked on a
+/// terminal, and of datum.day, which answers by running the line again with
+/// the answer on stdin (`DATUM_NO_DEFAULT_ANSWER=1`); anywhere else no one
+/// can be asked, and the line is refused naming both full spellings.
+fn which_reading(time: &TimeArgs, now: chrono::DateTime<chrono::Utc>) -> Result<Option<bool>> {
+    use std::io::{IsTerminal, Write};
+    let read = |later| {
+        build_time_from_flags(
+            &TimeArgs {
+                later,
+                ..time.clone()
+            },
+            now,
+        )
+        .ok()
+    };
+    let (Some(first), Some(second)) = (read(false), read(true)) else {
+        return Ok(Some(false));
+    };
+    if first.utc == second.utc {
+        return Ok(Some(false));
+    }
+    let spell = |t: &DatumTime, format| {
+        let offset = chrono::FixedOffset::east_opt(t.offset_minutes * 60)
+            .unwrap_or(chrono::FixedOffset::east_opt(0).expect("UTC is an offset"));
+        t.utc.with_timezone(&offset).format(format).to_string()
+    };
+    let (a, b) = (
+        spell(&first, "%Y-%m-%dT%H:%M:%S%:z"),
+        spell(&second, "%Y-%m-%dT%H:%M:%S%:z"),
+    );
+    let said = format!(
+        "{} happens twice in {}, the night the clocks went back",
+        spell(&first, "%Y-%m-%d %H:%M"),
+        first.timezone.as_deref().unwrap_or("this zone"),
+    );
+    // A terminal is asked whatever the env says: a page's question unsaid
+    // would leave a person there waiting on nothing they can see.
+    let terminal = std::io::stdin().is_terminal();
+    let page = !terminal && std::env::var("DATUM_NO_DEFAULT_ANSWER").is_ok_and(|v| v == "1");
+    if !page && !terminal {
+        anyhow::bail!(
+            "{said}: nothing written. Say which: `-t {a}` (the first) or `-t {b}` (the second)"
+        );
+    }
+    let mut stderr = std::io::stderr().lock();
+    // The page's answer is on stdin before it is asked: asked, it said
+    // the question already, and it is not said twice.
+    if !page {
+        let _ = write!(
+            stderr,
+            "{said}. Which one?\n  1  -t {a}  (the first)\n  2  -t {b}  (the second)\n[1/2] "
+        );
+        let _ = stderr.flush();
+    }
+    let mut line = String::new();
+    if std::io::stdin().read_line(&mut line).unwrap_or(0) == 0 && page {
+        // The options after the question, a button each on the page.
+        let _ = write!(stderr, "{said}. Which one?\nDATUM_CHOOSE=-t {a}|-t {b}");
+        return Err(crate::commands::helpers::Unanswered.into());
+    }
+    let answer = line.trim();
+    let answer = answer.strip_prefix("-t ").unwrap_or(answer).trim();
+    Ok(match answer {
+        "1" => Some(false),
+        "2" => Some(true),
+        _ if answer == a => Some(false),
+        _ if answer == b => Some(true),
+        _ => None,
+    })
 }
 
 /// The IANA name `-z` resolves to, `None` without one: the host's zone.

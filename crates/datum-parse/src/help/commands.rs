@@ -1704,6 +1704,10 @@ const TIME_FORMS: &[FormGroup] = &[
                 meaning: "the same",
             },
             FormSpec {
+                example: "-t 2026-10-25T02:30+01:00",
+                meaning: "a time the clocks went back over: the offset says which, else a log asks",
+            },
+            FormSpec {
                 example: "-d yesterday -t 10:00",
                 meaning: "10:00 yesterday: -d and -y move -t's day",
             },

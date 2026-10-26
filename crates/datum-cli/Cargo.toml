@@ -80,3 +80,5 @@ sha2 = { workspace = true }
 data-encoding = { workspace = true }
 # Signs a test release as `minisign -S` does: Ed25519 over its BLAKE2b-512 (da-0b55k).
 blake2 = "0.10"
+# A pseudo-terminal for a question asked on one (da-6i7l1).
+libc = { workspace = true }

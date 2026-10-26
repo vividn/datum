@@ -187,6 +187,13 @@ Native only: the browser's database is one process's at a time.
   believed. `datum check tz` warns of the converse, `tz_off_neighbours`: a run
   of one or two entries whose neighbours agree on another zone — a spike,
   where a move is a step
+- a log whose flags name a wall time a fall-back night repeats (`-d
+  2026-10-25 -t 02:30` in Europe/Berlin) asks which (da-6i7l1): a terminal
+  lists both full spellings, `-t 2026-10-25T02:30:00+02:00` and `…+01:00`,
+  and stores the one picked; datum.day gets them as `DATUM_CHOOSE=` with
+  exit 12 and asks with a button each (`asking` in `web/src/lib/dbio.ts`);
+  anywhere else the line is refused naming both, nothing written. The
+  answer is `TimeArgs::later`, which every build of the line reads
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
   (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
   so the block ENDS at the entry's time and the span precedes it —
