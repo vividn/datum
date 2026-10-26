@@ -169,6 +169,10 @@ pub struct FieldEntry {
     pub glyph_scale: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph_aspect: Option<f64>,
+    /// Other fields may be placed relative to this one — the spec's
+    /// `anchorable` (da-fr02k).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub anchorable: bool,
     /// When true, the field is hidden from views by default: the spec's
     /// `render = false`, over any `render` beside it.
     #[serde(default)]
@@ -793,6 +797,7 @@ impl FieldEntry {
         spec.presentation.icon = self.icon;
         spec.presentation.glyph_scale = self.glyph_scale;
         spec.presentation.glyph_aspect = self.glyph_aspect;
+        spec.presentation.anchorable = self.anchorable;
         spec.presentation.z_index = self.z_index;
         spec.id_keys = self.id_keys;
         spec.data_keys = self.data_keys;
@@ -910,6 +915,7 @@ impl FieldEntry {
             icon: spec.presentation.icon.clone(),
             glyph_scale: spec.presentation.glyph_scale,
             glyph_aspect: spec.presentation.glyph_aspect,
+            anchorable: spec.presentation.anchorable,
             hidden: false,
             z_index: spec.presentation.z_index,
             relative_to,

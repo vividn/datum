@@ -225,6 +225,7 @@ glyph = "●"
 icon = '{ICON}'
 glyph_scale = 2.5
 glyph_aspect = 0.5
+anchorable = true
 tags = ["feel"]
 subfields.why = {{ value_type = "string" }}
 subfields.level = {{ value_type = "number", required = true }}
@@ -261,6 +262,7 @@ fn a_kit_field_installs_what_spec_set_stores() {
         "icon": ICON,
         "glyph_scale": 2.5,
         "glyph_aspect": 0.5,
+        "anchorable": true,
         "tags": ["feel"],
         "subfields": {
             "why": {"value_type": "string"},
@@ -285,6 +287,7 @@ fn a_kit_field_installs_what_spec_set_stores() {
         serde_json::json!(["tired", "calm"])
     );
     assert_eq!(installed["derived_aliases"], serde_json::json!([]));
+    assert_eq!(installed["anchorable"], true);
 }
 
 /// The sample kit's mood keeps the order a day goes in, not the alphabet.
@@ -329,6 +332,7 @@ fn kit_export_round_trips_the_whole_field() {
         "glyph_by",
         "glyph_scale = 2.5",
         "glyph_aspect = 0.5",
+        "anchorable = true",
         "subfields",
         "worn out",
     ] {
@@ -367,6 +371,7 @@ fn a_kit_routes_leftover_words_as_track_does() {
     }
     assert!(spec_json(&again, "book")["string_remainder"] == true);
     assert!(spec_json(&again, "tea")["comment_remainder"] == true);
+    assert!(!exported.contains("anchorable"), "{exported}");
 
     for (bad, word) in [
         (
