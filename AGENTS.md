@@ -374,10 +374,14 @@ each row's SHA-256 (da-9ln3s), kept as rows change: each row's part is kept
 (`sync_row_hashes`, per build), triggers on `entries` name every row a write
 touches (`sync_rows_changed`), and a verify reads those rows again and no
 others, so a session that brought 20 ops hashes 20 rows whatever the history.
-Two copies verify by it when both handshakes say `sums`; with a copy before
-it, both send the ordered hash it knows (`sync pipe verify --ordered`), kept
-until an entry changes (`sync_state_hashes`, da-4be5x). A round reads each
-endpoint's ops from its `since` on, by the primary key, and no other op.
+A sum of hashes binds copies that are not trying to fool each other, and is
+not collision-resistant against chosen rows (da-eh3wq): nothing outside one
+person's devices attests to it, and an anchor would need a Merkle root,
+MuHash, ECMH or LtHash. Two copies verify by it when both handshakes say
+`sums`; with a copy before it, both send the ordered hash it knows (`sync
+pipe verify --ordered`), kept until an entry changes (`sync_state_hashes`,
+da-4be5x). A round reads each endpoint's ops from its `since` on, by the
+primary key, and no other op.
 
 ### Who dials whom
 

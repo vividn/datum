@@ -3084,6 +3084,11 @@ impl Db {
     /// the entries that pass both filters count (da-u81u1), which both
     /// sides compute alike.
     ///
+    /// That binds copies that are not trying to fool each other, and no
+    /// more: a sum of hashes (AdHash) is not collision-resistant against
+    /// chosen rows, so nothing outside one person's devices should attest
+    /// to it. An anchor would need a Merkle root, MuHash, ECMH or LtHash.
+    ///
     /// A sum, so it is kept as rows change: each row's part is kept
     /// (`sync_row_hashes`), the triggers on `entries` name each row a write
     /// touched (`sync_rows_changed`), and a verify reads those rows again

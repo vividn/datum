@@ -422,7 +422,9 @@ struct Hello {
     #[serde(default)]
     ends: bool,
     /// The dialer verifies by the summed state hash (da-9ln3s); with a copy
-    /// before it, both send the ordered one.
+    /// before it, both send the ordered one. The sum binds copies that are
+    /// not adversaries, not chosen rows: nothing outside the chain attests
+    /// to it (datum-core's `Db::sync_state_hash`).
     #[serde(default)]
     sums: bool,
     #[serde(flatten)]
