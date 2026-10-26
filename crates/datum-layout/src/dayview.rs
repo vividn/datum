@@ -451,7 +451,8 @@ impl RenderedSpan {
 }
 
 /// The offset written at an end of a stretch, in the room beside it: the
-/// text runs across the band, centered on these positions.
+/// text runs across the band, centered on these positions, its foot
+/// against the end it names.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderedZoneLabel {
     pub time_pos: f64,
@@ -459,6 +460,10 @@ pub struct RenderedZoneLabel {
     pub cross_pos: f64,
     pub text: String,
     pub font_size: f64,
+    /// The stretch it names is the one before it, which ended there: its
+    /// foot faces back along the axis.
+    #[serde(default)]
+    pub names_earlier: bool,
 }
 
 /// One field's positioned blocks + points within a day.
@@ -612,8 +617,19 @@ pub fn day_height_for_extent(
     (usable > 0.0).then(|| (usable / n_days as f64).max(MIN_DAY_HEIGHT))
 }
 
-/// Air between a zone label and the end it names.
-const ZONE_LABEL_PAD: f64 = 3.0;
+/// Air between a zone label's foot and the end it names.
+const ZONE_LABEL_PAD: f64 = 1.5;
+
+/// A label's text from its foot to its baseline, and from its baseline to
+/// the top of its capitals, in ems: `dy="0.35em"` in the SVG, and a sans
+/// serif's cap height.
+const ZONE_LABEL_DROP: f64 = 0.35;
+const ZONE_LABEL_CAPS: f64 = 0.75;
+
+/// Air between two lanes, a share of the band (vividn, 2026-10-26: «a
+/// small margin between the two horizontal bars, let's try 8% of the day
+/// height», then «let's reduce it to 5%», da-0b9z4).
+const LANE_GAP: f64 = 0.05;
 
 /// The straight pieces a lane's S is drawn in.
 const EASE_STEPS: usize = 8;
@@ -625,7 +641,8 @@ const EASE_STEPS: usize = 8;
 /// Stretches that overlap share the band, the earliest nearest. The first
 /// narrows to its lane on a quick S before the overlap and the last widens
 /// again after it, each leaving room past the end beside it for that
-/// end's label, which runs along the end across the band.
+/// end's label, which runs along the end across the band, and two labels'
+/// width of air between it and the S.
 fn place_spans(
     spans: &[DayviewSpan],
     extent: f64,
@@ -665,18 +682,30 @@ fn place_spans(
             reach = reach.max(hi(end));
             end += 1;
         }
-        // The two ends of a dead zone share the band as two lanes do.
-        let (k, lanes) = (end - i, (end - i).max(2));
+        // Each lane's share of the band and where it starts across it. The
+        // two ends of a dead zone share the band as two lanes do, with no
+        // bars to keep apart.
+        let k = end - i;
+        let (width, step) = match k {
+            1 => (0.5, 0.5),
+            _ => {
+                let width = (1.0 - (k - 1) as f64 * LANE_GAP) / k as f64;
+                (width, width + LANE_GAP)
+            }
+        };
         // The text runs across the band, so its length is a lane's and
         // only its height is the axis's.
         let widest = (i..end).map(|s| spans[s].label.chars().count()).max();
-        let fits =
-            (day_height / lanes as f64 - 2.0 * ZONE_LABEL_PAD) / (widest.unwrap_or(1) as f64 * 0.6);
+        let fits = (day_height * width - 2.0 * ZONE_LABEL_PAD) / (widest.unwrap_or(1) as f64 * 0.6);
         let font_size = fits.clamp(6.0, 11.0);
-        let room = font_size + 2.0 * ZONE_LABEL_PAD;
+        // vividn, 2026-10-26: the label «actually on the edge of [the]
+        // break, there can be a bit of room between the label and the S
+        // so that it is obvious that it pertain to the broken timeline»,
+        // then «about 50% of» two labels' room: one (da-0b9z4).
+        let room = ZONE_LABEL_PAD + (ZONE_LABEL_CAPS + 1.0) * font_size;
         for s in i..end {
             let j = s - i;
-            let (near, far) = (j as f64 / k as f64, (j + 1) as f64 / k as f64);
+            let (near, far) = (j as f64 * step, j as f64 * step + width);
             if k > 1 {
                 let split = (i + 1..end).map(lo).fold(f64::INFINITY, f64::min) - room;
                 let merge = (i..s).map(hi).fold(0.0, f64::max) + room;
@@ -691,22 +720,27 @@ fn place_spans(
                     vec![[lo(s), near, far]]
                 };
             }
-            // Beside its end, but never off the axis: against an edge the
-            // text is over its own stretch instead.
-            let half = font_size / 2.0 + ZONE_LABEL_PAD;
-            let mut label = |time_pos: f64, lane: usize| {
+            // Beside its end, its baseline the pad from it, but never off
+            // the axis: against an edge the text is over its own stretch
+            // instead.
+            let (half, off) = (
+                font_size / 2.0 + ZONE_LABEL_PAD,
+                ZONE_LABEL_PAD + ZONE_LABEL_DROP * font_size,
+            );
+            let mut label = |time_pos: f64, lane: usize, names_earlier: bool| {
                 labels.push(RenderedZoneLabel {
                     time_pos: time_pos.max(half).min(extent - half),
-                    cross_pos: (lane as f64 + 0.5) / lanes as f64 * day_height,
+                    cross_pos: (lane as f64 * step + width / 2.0) * day_height,
                     text: spans[s].label.clone(),
                     font_size,
+                    names_earlier,
                 });
             };
             if lo(s) > EPS {
-                label(lo(s) - half, if k > 1 { j } else { 1 });
+                label(lo(s) - off, if k > 1 { j } else { 1 }, false);
             }
             if hi(s) < extent - EPS {
-                label(hi(s) + half, if k > 1 { j } else { 0 });
+                label(hi(s) + off, if k > 1 { j } else { 0 }, true);
             }
         }
         i = end;
@@ -1744,12 +1778,15 @@ mod tests {
         let day = jumped(vec![span(0, 0, 2, "UTC+1"), span(2, 3, 24, "UTC+2")], 2.5);
         let dead: Vec<[f64; 2]> = day.dead_zones.iter().map(|z| z.map(px)).collect();
         assert_eq!(dead, [[200.0, 100.0]]);
-        // Each end's offset in the zone, the earlier one nearest, 11px
-        // of text across the band and 3px of air either side of it.
+        // Each end's offset in the zone, the earlier one nearest, across
+        // the band with its foot 1.5px from the end it names: 11px text
+        // whose baseline is 0.35em from its middle.
         assert_eq!(
             labels(&day),
-            [("UTC+1", 208.5, 25.0), ("UTC+2", 291.5, 75.0)]
+            [("UTC+1", 205.35, 25.0), ("UTC+2", 294.65, 75.0)]
         );
+        let feet: Vec<bool> = day.zone_labels.iter().map(|l| l.names_earlier).collect();
+        assert_eq!(feet, [true, false], "each foot toward its own stretch");
         // The block stops at 02:00 and goes on from 03:00; half an hour
         // after the jump is 03:30, where the dot and the now-line are.
         assert_eq!(pieces(&day), [(0, 100.0, 100.0), (1, 300.0, 200.0)]);
@@ -1764,16 +1801,22 @@ mod tests {
     fn a_backward_jump_forks_the_band_into_a_lane_for_each_occurrence() {
         let spans = vec![span(0, 0, 3, "UTC+2"), span(3, 2, 24, "UTC+1")];
         let (first, second) = (jumped(spans.clone(), 2.5), jumped(spans, 3.5));
-        // 02:30 happened twice: the same place along the axis, a lane each.
+        // 02:30 happened twice: the same place along the axis, a lane each,
+        // 5% of the band between them.
         for (day, lane) in [(&first, 0), (&second, 1)] {
             let dot = &day.fields[0].points[0];
             assert_eq!((dot.span, px(dot.time_pos)), (lane, 250.0));
             assert_eq!(day.now_time_pos.map(px), Some(250.0));
         }
         let lane = |s: usize, at: f64| first.spans[s].lane_at(at);
-        assert_eq!((lane(0, 250.0), lane(1, 250.0)), ((0.0, 0.5), (0.5, 1.0)));
+        assert_eq!(
+            (lane(0, 250.0), lane(1, 250.0)),
+            ((0.0, 0.475), (0.525, 1.0))
+        );
         // Whole again away from the fork, which each S leaves a label's
-        // room beside: 11px of text across the band, 3px of air each side.
+        // room beside: 1.5px of air at the break, 11px text's capitals
+        // across the band (8.25px), and a label's width, 11px, between
+        // them and the S.
         assert_eq!((lane(0, 0.0), lane(1, 2400.0)), ((0.0, 1.0), (0.0, 1.0)));
         let knots = |s: usize| -> Vec<[f64; 3]> {
             (first.spans[s].lane.iter().map(|k| k.map(px))).collect()
@@ -1782,39 +1825,42 @@ mod tests {
         assert_eq!(
             [narrow[0], narrow[8], widen[0], widen[8]],
             [
-                [149.67, 0.0, 1.0],
-                [183.0, 0.0, 0.5],
-                [317.0, 0.5, 1.0],
-                [350.33, 0.0, 1.0]
+                [145.92, 0.0, 1.0],
+                [179.25, 0.0, 0.48],
+                [320.75, 0.53, 1.0],
+                [354.08, 0.0, 1.0]
             ]
         );
         // Each over a 72nd of the axis, 20 minutes of a whole day, and
         // on an S: a quarter of the way along it has gone 5/32 of the way
-        // across, not a quarter, and halfway along, half.
+        // across, not a quarter, and halfway along, half: of the 0.525 the
+        // first lane's far edge comes in.
         assert_eq!(narrow.len(), 9);
         assert_eq!(px(narrow[8][0] - narrow[0][0]), px(2400.0 / 72.0));
         assert_eq!(px(widen[8][0] - widen[0][0]), px(2400.0 / 72.0));
         assert_eq!(
             [narrow[2][2], narrow[4][2]],
-            [px(1.0 - 0.5 * 5.0 / 32.0), 0.75]
+            [px(1.0 - 0.525 * 5.0 / 32.0), px(0.7375)]
         );
         assert_eq!(
             labels(&first),
-            [("UTC+2", 308.5, 25.0), ("UTC+1", 191.5, 75.0)]
+            [("UTC+2", 305.35, 23.75), ("UTC+1", 194.65, 76.25)]
         );
+        let feet: Vec<bool> = first.zone_labels.iter().map(|l| l.names_earlier).collect();
+        assert_eq!(feet, [true, false], "each foot toward its own stretch");
         // The block runs to 03:00 in the first lane and from 02:00 in the
         // second, and no clock time is dead.
         assert_eq!(pieces(&first), [(0, 100.0, 200.0), (1, 200.0, 100.0)]);
         assert!(first.dead_zones.is_empty());
         // The now-line keeps to the lane now is in.
-        assert_eq!((first.now_extent_near, first.now_extent_far), (0.0, 50.0));
+        assert_eq!((first.now_extent_near, first.now_extent_far), (0.0, 47.5));
         assert_eq!(
             (second.now_extent_near, second.now_extent_far),
-            (50.0, 100.0)
+            (52.5, 100.0)
         );
     }
 
-    /// On an axis with no room beside an end, 48px here for a label 17px
+    /// On an axis with no room beside an end, 48px here for a label 14px
     /// wide with its air, the label stays on the axis, over its own
     /// stretch: the one that starts at 02:00 (4px), and the one that ends
     /// at 23:00 (46px).
@@ -1825,9 +1871,9 @@ mod tests {
             labels.iter().map(|l| px(l.time_pos)).collect()
         };
         let early = [span(0, 0, 3, "UTC+2"), span(3, 2, 24, "UTC+1")];
-        assert_eq!(at(&early), [14.5, 8.5]);
+        assert_eq!(at(&early), [11.35, 7.0]);
         let late = [span(0, 0, 23, "UTC+2"), span(23, 22, 24, "UTC+1")];
-        assert_eq!(at(&late), [39.5, 35.5]);
+        assert_eq!(at(&late), [41.0, 38.65]);
     }
 
     /// Two jumps back whose repeats overlap: 06:00 → 04:00, then 08:00 →
@@ -1836,13 +1882,14 @@ mod tests {
     fn clock_times_that_happened_n_times_get_n_lanes() {
         let spans = vec![span(0, 0, 6, "A"), span(6, 4, 8, "B"), span(10, 5, 24, "C")];
         let day = jumped(spans, 0.5);
-        let third = |s: usize| {
+        // Each 30% of the band, 5% between two.
+        let lane = |s: usize| {
             let (near, far) = day.spans[s].lane_at(550.0);
-            (px(near * 3.0), px(far * 3.0))
+            (px(near), px(far))
         };
         assert_eq!(
-            [third(0), third(1), third(2)],
-            [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0)]
+            [lane(0), lane(1), lane(2)],
+            [(0.0, 0.3), (0.35, 0.65), (0.7, 1.0)]
         );
     }
 }

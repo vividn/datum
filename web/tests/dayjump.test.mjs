@@ -14,6 +14,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
+import { devices } from 'playwright';
 
 before(startApp);
 after(stopApp);
@@ -22,7 +23,7 @@ const TODAY = '.band[data-days-ago="0"]';
 const BERLIN = { timezone: 'Europe/Berlin', viewport: { width: 1280, height: 900 } };
 
 /** Today's band with `dots` logged on it, each a `-t` the CLI reads. */
-async function withDay(clock, dots, fn) {
+async function withDay(clock, dots, fn, screen = BERLIN) {
 	await withApp(
 		async (app) => {
 			for (const at of dots) assert.equal((await app.run(['occur', 'water', '-t', at])).code, 0);
@@ -31,7 +32,7 @@ async function withDay(clock, dots, fn) {
 			await app.idle();
 			await fn(app);
 		},
-		{ clock, ...BERLIN }
+		{ clock, ...screen }
 	);
 }
 
@@ -55,6 +56,7 @@ const drawn = (page) =>
 				dots: [...g.querySelectorAll('circle[data-at]')].map((c) => ({ at: c.getAttribute('data-at'), ...box(c) }))
 			})),
 			labels: [...svg.querySelectorAll('.zone-label')].map((t) => t.textContent),
+			labelBoxes: [...svg.querySelectorAll('.zone-label')].map(box),
 			dead: [...svg.querySelectorAll('.dead-zone')].map(box)
 		};
 	});
@@ -178,6 +180,43 @@ test('an hour that never happened is hatched, and a press on it is the instant t
 		await pointedAt(page, xOf(d, 3.5), y, instantOn(since, xOf(d, 3.5)));
 		await pointedAt(page, xOf(d, 2.25), y, jump);
 	});
+});
+
+// da-0b9z4: the strip counter-scales every text about its own center, which
+// moved the origin of a label's `rotate(-90 x y)` and threw it to about
+// (2x, 2y): off the band, but for «a random U floating around somewhere».
+test('each offset label is drawn inside the band, beside the end it names, on a desktop and on a phone', async () => {
+	const days = [
+		[Date.UTC(2026, 9, 25, 12), ['2026-10-25T02:30:00+02:00', '2026-10-25T02:30:00+01:00'], { 'UTC+2': 3, 'UTC+1': 2 }],
+		[Date.UTC(2026, 2, 29, 12), ['2026-03-29T01:40:00+01:00', '2026-03-29T03:20:00+02:00'], { 'UTC+1': 2, 'UTC+2': 3 }]
+	];
+	const screens = { desktop: BERLIN, phone: { timezone: 'Europe/Berlin', device: devices['iPhone 12'] } };
+	for (const [name, screen] of Object.entries(screens)) {
+		for (const [clock, dots, ends] of days) {
+			await withDay(
+				clock,
+				dots,
+				async ({ page }) => {
+					const d = await drawn(page);
+					assert.deepEqual([...d.labels].sort(), Object.keys(ends).sort());
+					d.labels.forEach((text, n) => {
+						const r = d.labelBoxes[n];
+						const what = `${name}, ${text}: ${JSON.stringify(r)} in ${JSON.stringify(d.box)}`;
+						assert.ok(r.right - r.left > 0 && r.bottom - r.top > 0, `drawn: ${what}`);
+						assert.ok(
+							r.left >= d.box.left - 0.5 && r.right <= d.box.right + 0.5 && r.top >= d.box.top - 0.5 && r.bottom <= d.box.bottom + 0.5,
+							`inside the band: ${what}`
+						);
+						// Its width along the axis is the text's height, so its
+						// middle is within a label of the end it names.
+						const off = Math.abs((r.left + r.right) / 2 - xOf(d, ends[text]));
+						assert.ok(off <= 12, `beside ${ends[text]}:00, ${off.toFixed(1)}px off: ${what}`);
+					});
+				},
+				screen
+			);
+		}
+	}
 });
 
 // da-3ctgr: the tip told a mark's time on the BROWSER's clock, so a reader
