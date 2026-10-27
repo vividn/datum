@@ -124,7 +124,8 @@
 	in devtools which gesture the machine took.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
+	import { createEventDispatcher, onDestroy, onMount, tick, untrack } from 'svelte';
+	import { on } from 'svelte/events';
 	import CliPane from '$lib/CliPane.svelte';
 	import Pill from '$lib/Pill.svelte';
 	import { pills, selected } from '$lib/bar.js';
@@ -136,19 +137,23 @@
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '$lib/nowpoint.js';
 	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '$lib/panes.js';
 
-	/** How far back the window reaches: a step of NOWVIEW_STEPS, or any length a handle's drag left it at. */
-	export let history = NOWVIEW_HISTORY;
-	/** The instant the window is centred on (`--center`); none is now. */
-	export let at: string | undefined = undefined;
-	/**
-	 * Time runs down the page (da-78evn). Every gesture below is measured
-	 * ALONG the time axis, which the picture itself says (`axis.y`); this
-	 * asks for the picture, and turns the chrome around it.
-	 */
-	export let vertical = false;
-	export let epoch = 0;
-	/** Whether the window reaches back at all: off is the snapshot (da-hklaz). */
-	export let showHistory = true;
+	interface Props {
+		/** How far back the window reaches: a step of NOWVIEW_STEPS, or any length a handle's drag left it at. */
+		history?: string;
+		/** The instant the window is centred on (`--center`); none is now. */
+		at?: string | undefined;
+		/**
+		 * Time runs down the page (da-78evn). Every gesture below is measured
+		 * ALONG the time axis, which the picture itself says (`axis.y`); this
+		 * asks for the picture, and turns the chrome around it.
+		 */
+		vertical?: boolean;
+		epoch?: number;
+		/** Whether the window reaches back at all: off is the snapshot (da-hklaz). */
+		showHistory?: boolean;
+	}
+
+	let { history = NOWVIEW_HISTORY, at = undefined, vertical = false, epoch = 0, showHistory = true }: Props = $props();
 
 	const dispatch = createEventDispatcher<{ change: string }>();
 
@@ -174,10 +179,10 @@
 	 * Seeded from that `at`, as a pan: nothing in the app writes the prop,
 	 * and a tree that names an instant means it.
 	 */
-	let centre: { arg: string; by: 'sel' | 'pan' } | null = at ? { arg: at, by: 'pan' } : null;
+	let centre = $state.raw<{ arg: string; by: 'sel' | 'pan' } | null>(untrack(() => (at ? { arg: at, by: 'pan' } : null)));
 
 	/** The window in minutes; a history datum would not read is the default's. */
-	$: minutes = stepMinutes(history) > 0 ? stepMinutes(history) : stepMinutes(NOWVIEW_HISTORY);
+	const minutes = $derived(stepMinutes(history) > 0 ? stepMinutes(history) : stepMinutes(NOWVIEW_HISTORY));
 	/** `-t`'s spelling of `m` minutes before now, to the second: `-15`, `-22m30s`, `-20s`. */
 	const backArg = (m: number) => {
 		const s = Math.round(m * 60);
@@ -185,7 +190,7 @@
 		return sec ? `-${whole ? `${whole}m` : ''}${sec}s` : `-${whole}`;
 	};
 	/** The window's middle as the CLI is handed it (`--center`); none is on now. */
-	$: middle = centre?.arg;
+	const middle = $derived(centre?.arg);
 	/**
 	 * The instant the now section is about (da-zccjs): the time pill's, when
 	 * there is one; none is now. vividn: «when a time pill is selected, the
@@ -193,15 +198,15 @@
 	 * instant». A range is about its end; one ending now (`rel: 0`) is about
 	 * now.
 	 */
-	$: pill = $pointed && $pointed.rel !== 0 ? $pointed : null;
+	const pill = $derived($pointed && $pointed.rel !== 0 ? $pointed : null);
 	/**
 	 * The pill as the CLI's `-t`: the instant the page draws it at, so its
 	 * line and its section agree. A relative one's moves on with the minute
 	 * (`pointed`), and so is asked for again with it.
 	 */
-	$: pillArg = pill?.at.toISOString();
+	const pillArg = $derived(pill?.at.toISOString());
 	/** How finely a tap here says its time, in seconds. */
-	$: grain = tapStep(minutes);
+	const grain = $derived(tapStep(minutes));
 
 	/**
 	 * The `--center` the picture on screen was asked for — the window's
@@ -211,19 +216,16 @@
 	 * a pan that stays in it slides the picture along (`rest`) and asks
 	 * datum for nothing. Everything else that moves the window asks.
 	 */
-	let askedFor = middle;
-	// A new step or orientation is a new picture, of where the window is.
-	// Above `spec`, which reads what it asks for: a stretch moves the window
-	// as it changes its length (`rescale`), and a statement below would set
-	// `askedFor` after `spec` had been worked out for the same change.
-	$: ask(history, vertical, showHistory);
+	let askedFor = $state<string | undefined>();
 	// A window on now with a pill is centred half its length back from now,
 	// relative too: it is not drawn ahead, there being an instant to draw.
-	$: spec = nowviewSpec(
-		showHistory ? history : '0',
-		askedFor ?? (pillArg ? backArg(minutes / 2) : undefined),
-		vertical,
-		pillArg
+	const spec = $derived(
+		nowviewSpec(
+			showHistory ? history : '0',
+			askedFor ?? (pillArg ? backArg(minutes / 2) : undefined),
+			vertical,
+			pillArg
+		)
 	);
 
 	// Above `ask`, which the cursor's subscription below calls as the
@@ -239,7 +241,7 @@
 	 */
 	let stale: Element | null = null;
 
-	function ask(..._because: unknown[]): void {
+	function ask(): void {
 		const was = askedFor;
 		askedFor = centre?.arg;
 		stale = askedFor !== was ? svgEl() : null;
@@ -247,21 +249,29 @@
 		void tick().then(place);
 	}
 
+	// A new step or orientation is a new picture, of where the window is.
+	// Below `ask` and what it reads: an effect made as the component is set
+	// up runs where it stands.
+	$effect.pre(() => {
+		void [history, vertical, showHistory];
+		untrack(ask);
+	});
+
 	/** The axis a drag along the band travels, for the pane's tab swipe. */
-	$: pans = vertical ? 'y' : 'x';
+	const pans = $derived(vertical ? 'y' : 'x');
 	/** Whether the window has left now — and so whether a tap makes an absolute pill. */
-	$: offNow = !!middle;
+	const offNow = $derived(!!middle);
 	/** Whether the button under the section shows: «now» off now, «reset» at a pill (da-zccjs). */
-	$: homeward = offNow || !!pill;
+	const homeward = $derived(offNow || !!pill);
 
 	// A selection made somewhere ELSE points this window; one made here does
 	// not, and neither does a RELATIVE one — that is measured from now, and
 	// the window it was dropped on is the one on now. A selection CLEARED
 	// takes back only the window it was pointing.
 	//
-	// A subscription rather than a `$:`, because this ASSIGNS the window and
-	// a reactive statement that both reads and writes one variable re-runs
-	// itself for ever.
+	// A subscription rather than an effect, because this ASSIGNS the window
+	// and an effect that both reads and writes one value re-runs itself for
+	// ever.
 	//
 	// And of `cursor`, NOT of `pointed` — plus a guard on the instant it
 	// last acted on. `pointed` is derived over the minute clock, and a
@@ -344,7 +354,7 @@
 	}
 
 	/** How far the picture is slid along its axis at rest, in px: see `askedFor`. */
-	let rest = 0;
+	let rest = $state(0);
 
 	/**
 	 * The window's middle in TIME — the instant it is centred on, or half
@@ -414,7 +424,7 @@
 	/** The picture `refills` last asked to be replaced, by its now. */
 	let refilled = NaN;
 	/** Bumped to ask datum for the picture again: what it drew ahead is half spent. */
-	let refills = 0;
+	let refills = $state(0);
 	let wait: ReturnType<typeof setTimeout> | undefined;
 
 	function readDrawn(svg: SVGSVGElement | null): typeof drawn {
@@ -468,7 +478,10 @@
 	// as any pan's is (`restFor`); coming back starts it. A trigger on
 	// `offNow` alone: `place` starts the loop on each picture it reads, and
 	// the loop then schedules itself for as long as there is one to slide.
-	$: offNow, flow();
+	$effect.pre(() => {
+		void offNow;
+		untrack(flow);
+	});
 
 	/**
 	 * The gridlines' positions along the axis, as the CLI ruled them.
@@ -513,13 +526,13 @@
 
 	/** The press in hand, and what it has become. */
 	let press: Press | null = null;
-	let mode: Mode = 'press';
+	let mode: Mode = $state('press');
 	/** Where the pointer is, for the timer that has no event of its own. */
 	let last = { x: 0, y: 0 };
 	/** Whether the press has lasted long enough to be a range. */
 	let long = false;
 	/** How far the band is dragged while a pan is in hand, in px. */
-	let panned = 0;
+	let panned = $state(0);
 	let held: ReturnType<typeof setTimeout> | undefined;
 	/**
 	 * What the press went down ON, for the tap that may inspect it
@@ -541,7 +554,7 @@
 	 * own line has. Nothing is selected while it shows: it says only that
 	 * the finger has been heard.
 	 */
-	let waiting: { x: number; y: number } | null = null;
+	let waiting = $state.raw<{ x: number; y: number } | null>(null);
 
 	/**
 	 * Whether a point is on the TIME AXIS: the axis line and the ticks and
@@ -708,7 +721,7 @@
 	// ── the zoom ───────────────────────────────────────────────────────
 
 	/** The gesture in hand: what the band is scaled by, about which x. */
-	let zoom: { origin: number; scale: number } | null = null;
+	let zoom = $state.raw<{ origin: number; scale: number } | null>(null);
 
 	/**
 	 * The gesture stretches TIME, never a mark (da-6fdaf): a dot, a glyph
@@ -726,7 +739,10 @@
 			pattern.setAttribute('patternTransform', `scale(${vertical ? `1 ${back}` : `${back} 1`}) ${pattern.dataset.drawn}`);
 		}
 	}
-	$: zoom, vertical, unstretch();
+	$effect.pre(() => {
+		void [zoom, vertical];
+		untrack(unstretch);
+	});
 
 	/**
 	 * Where the anchor is drawn, in px across the picture's own box.
@@ -911,7 +927,7 @@
 	const TINY_PX = 200;
 
 	/** Whether this nowview is wide enough for the margin and the buttons. */
-	let roomy = true;
+	let roomy = $state(true);
 
 	/**
 	 * A HANDLE over each major tick label the window shows (da-57vj4): its
@@ -925,9 +941,9 @@
 	type Handle = { text: string; minutes: number; x: number; y: number; w: number; h: number };
 	/** What a wheel opens on and a press takes hold of: a handle's time and place, not its box. */
 	type Held = Pick<Handle, 'text' | 'minutes' | 'x' | 'y'>;
-	let handles: Handle[] = [];
+	let handles: Handle[] = $state.raw([]);
 	/** The widget's box on screen, for the wheel, which is drawn `fixed` beside it. */
-	let boxAt = { x: 0, y: 0 };
+	let boxAt = $state.raw({ x: 0, y: 0 });
 
 	/**
 	 * Hide each clock time (`.minute-label`) a handle stands over, as
@@ -955,10 +971,13 @@
 			l.style.visibility = ahead || spans.some(([from, to]) => a < to && b > from) ? 'hidden' : '';
 		}
 	}
-	$: handles, clearFar();
+	$effect.pre(() => {
+		void handles;
+		untrack(clearFar);
+	});
 
 	/** The instants at the window's two ends, as the picture on screen draws them. */
-	let view: [number, number] | null = null;
+	let view = $state.raw<[number, number] | null>(null);
 
 	/**
 	 * How far to slide the picture, along its UNMOVED axis, so the window is
@@ -1014,7 +1033,7 @@
 	 * relative selection, which is placed against the picture's own
 	 * now-line and not against the clock.
 	 */
-	let spots: { time: number | null; dur: number | null } = { time: null, dur: null };
+	let spots: { time: number | null; dur: number | null } = $state.raw({ time: null, dur: null });
 
 	/**
 	 * Where the picture writes «now» under its now section, in px across
@@ -1022,7 +1041,7 @@
 	 * (da-6csum), and the words under it are hidden. None when the strip
 	 * is too narrow for datum to write them.
 	 */
-	let nowAt: { x: number; y: number } | null = null;
+	let nowAt = $state.raw<{ x: number; y: number } | null>(null);
 
 	function place(): void {
 		if (!el) return;
@@ -1167,15 +1186,15 @@
 	 * label's, so the redraw a step asks for neither closes nor moves it.
 	 * `pick` is how many notches a drag across the axis has turned it.
 	 */
-	let wheel: { minutes: number; text: string; sign: string; x: number; y: number; pick: number } | null = null;
-	let wheelEl: HTMLDivElement | undefined;
+	let wheel = $state.raw<{ minutes: number; text: string; sign: string; x: number; y: number; pick: number } | null>(null);
+	let wheelEl: HTMLDivElement | undefined = $state();
 
-	$: around = wheel ? ladderAround(wheel.minutes, minutes) : { up: [], down: [] };
+	const around = $derived(wheel ? ladderAround(wheel.minutes, minutes) : { up: [], down: [] });
 	/** The wheel's notches as drawn: how many steps from the handle (up is longer), and the step. */
-	$: notches = [
+	const notches = $derived([
 		...around.up.slice(0, SHOWN).map((step, k) => ({ k: k + 1, step })),
 		...around.down.slice(0, SHOWN).map((step, k) => ({ k: -(k + 1), step }))
-	];
+	]);
 
 	function open(h: Held): void {
 		if (wheel && Math.abs(wheel.x - h.x) < 1 && Math.abs(wheel.y - h.y) < 1) return;
@@ -1251,9 +1270,9 @@
 		text: string;
 		mode: 'press' | 'wheel' | 'scale';
 		touch: boolean;
-	} | null = null;
+	} | null = $state(null);
 	/** Where a scaling handle is drawn, along the axis on screen. */
-	let dragged = 0;
+	let dragged = $state(0);
 
 	const across = (dx: number, dy: number) => (vertical ? dx : -dy);
 
@@ -1344,7 +1363,7 @@
 	}
 
 	/** The pills the selection made: the ones the margin draws beside their instants. */
-	$: marginPills = $pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID);
+	const marginPills = $derived($pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID));
 
 	// ── the tooltip on a selected entry ────────────────────────────────
 	//
@@ -1364,7 +1383,7 @@
 	// would be a whole `datum get` per gesture.
 
 	/** What the tooltip says and where it floats, in the viewport's own px. */
-	let tip: { field: string; state: string; when: string; x: number; y: number } | null = null;
+	let tip = $state.raw<{ field: string; state: string; when: string; x: number; y: number } | null>(null);
 
 	/** The two instants as one label: a span, or the one instant of a dot. */
 	function whenOf(from: number | null, to: number | null): string {
@@ -1392,7 +1411,10 @@
 	// redrawn or the box resized — `place` is the one that knows the latter,
 	// and it runs off the same MutationObserver the margin pills are placed
 	// by, so the tooltip cannot be left floating over a mark that is gone.
-	$: readTip($selected);
+	$effect.pre(() => {
+		const hids = $selected;
+		untrack(() => readTip(hids));
+	});
 
 	/**
 	 * Which way a selection the window does not contain lies.
@@ -1401,14 +1423,15 @@
 	 * outside the window draws nothing at all, so there would be no mark
 	 * to read, and the button has to appear the moment the window leaves it.
 	 */
-	$: away =
+	const away = $derived(
 		!view || !$pointed
 			? null
 			: +$pointed.at < view[0] - EDGE_MS
 				? 'left'
 				: +$pointed.at > view[1] + EDGE_MS
 					? 'right'
-					: null;
+					: null
+	);
 
 	onMount(() => {
 		if (!el) return;
@@ -1453,7 +1476,7 @@
 	{/if}
 
 	<!-- The band is pointed into, not a control: its marks take the keyboard. -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="nowview-band"
 		style:--zoom={zoom?.scale ?? 1}
@@ -1462,10 +1485,10 @@
 		data-pans={pans}
 		data-points="own"
 		data-mode={mode}
-		on:pointerdown={onPointerDown}
-		on:contextmenu={onContextMenu}
-		on:touchmove|nonpassive={onTouchMove}
-		on:wheel|nonpassive={onWheel}
+		onpointerdown={onPointerDown}
+		oncontextmenu={onContextMenu}
+		{@attach (el) => on(el, 'touchmove', onTouchMove, { passive: false })}
+		{@attach (el) => on(el, 'wheel', onWheel, { passive: false })}
 	>
 		<!-- `refills` rides on the epoch: a bump re-runs the command, as a
 		     write's does, once half of what was drawn ahead is spent. -->
@@ -1508,11 +1531,11 @@
 					style:top="{h.y}px"
 					style:width="{h.w}px"
 					style:height="{h.h}px"
-					on:pointerenter={(e) => e.pointerType === 'mouse' && open(h)}
-					on:pointerdown={(e) => grab(e, h)}
-					on:focus={() => open(h)}
-					on:blur={blur}
-					on:keydown={onWheelKey}>{h.text}</button
+					onpointerenter={(e) => e.pointerType === 'mouse' && open(h)}
+					onpointerdown={(e) => grab(e, h)}
+					onfocus={() => open(h)}
+					onblur={blur}
+					onkeydown={onWheelKey}>{h.text}</button
 				>
 			{/each}
 		</div>
@@ -1522,7 +1545,7 @@
 	     on, longer toward the picture, the next one clear and the rest
 	     fading. `fixed`, so a pane's edge does not cut its notches off. -->
 	{#if wheel && !zoom}
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="nowview-wheel"
 			data-pans={pans}
@@ -1530,8 +1553,8 @@
 			style:left="{boxAt.x + wheel.x}px"
 			style:top="{boxAt.y + wheel.y}px"
 			style:--turn="{wheel.pick * (vertical ? NOTCH_PX.y : NOTCH_PX.x)}px"
-			on:pointerleave={leave}
-			on:focusout={blur}
+			onpointerleave={leave}
+			onfocusout={blur}
 		>
 			{#each notches as n (n.k)}
 				<button
@@ -1543,7 +1566,7 @@
 					tabindex="-1"
 					style:--k={n.k}
 					style:--fade={Math.abs(n.k) === 1 ? 1 : Math.abs(n.k) === 2 ? 0.45 : 0.18}
-					on:click={() => stepTo(n.step)}>{wheel.sign}{n.step}</button
+					onclick={() => stepTo(n.step)}>{wheel.sign}{n.step}</button
 				>
 			{/each}
 			<span class="handle held" class:turned={wheel.pick !== 0} data-at={wheel.text} aria-hidden="true"
@@ -1573,7 +1596,7 @@
 			title="back to now, and the time pills away"
 			style:left="{nowAt.x + (vertical ? 0 : panned)}px"
 			style:top="{nowAt.y + (vertical ? panned : 0)}px"
-			on:click={toNow}>{pill ? 'reset' : 'now'}</button
+			onclick={toNow}>{pill ? 'reset' : 'now'}</button
 		>
 	{/if}
 	{#if roomy && away && !zoom}
@@ -1582,7 +1605,7 @@
 			class="nowview-jump {away} selection"
 			data-pans={pans}
 			title="the window onto the selection"
-			on:click={toSelection}
+			onclick={toSelection}
 			>{vertical ? (away === 'left' ? '↑ sel' : 'sel ↓') : away === 'left' ? '← sel' : 'sel →'}</button
 		>
 	{/if}

@@ -8,16 +8,18 @@
 	CLI's picture as it draws it.
 -->
 <script lang="ts">
+	import type { ComponentProps } from 'svelte';
 	import { DAYVIEW_VERTICAL } from '$lib/calls.js';
 	import CliPane from '$lib/CliPane.svelte';
 	import DayStrip from '$lib/DayStrip.svelte';
 
-	export let epoch = 0;
-	export let orientation = 'horizontal';
+	type Props = ComponentProps<typeof DayStrip> & { orientation?: string };
+
+	let { epoch = 0, orientation = 'horizontal', ...rest }: Props = $props();
 </script>
 
 {#if orientation === 'vertical'}
 	<CliPane spec={DAYVIEW_VERTICAL} {epoch} />
 {:else}
-	<DayStrip {...$$restProps} {epoch} on:change />
+	<DayStrip {...rest} {epoch} on:change />
 {/if}

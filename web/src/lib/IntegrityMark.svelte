@@ -4,8 +4,8 @@
 	CLI's icon, drawn the same, naming the fields it flags.
 -->
 <script lang="ts">
-	export let fields: string[];
-	$: label = `integrity: ${fields.join(', ')}`;
+	let { fields }: { fields: string[] } = $props();
+	const label = $derived(`integrity: ${fields.join(', ')}`);
 </script>
 
 <svg class="integrity-mark" viewBox="0 0 24 24" role="img" aria-label={label}>

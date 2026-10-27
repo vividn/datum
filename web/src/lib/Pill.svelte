@@ -28,13 +28,17 @@
 <script lang="ts">
 	import { dropSection, sectionsOf, toggleLockPill, type Pill } from './bar.js';
 
-	export let pill: Pill;
-	/**
-	 * Drawn as CONTEXT (da-tu30m, `roleOf` in $lib/commands.ts): it narrows
-	 * the panes and is in no command, so it is the smaller outline with a
-	 * filter mark, and a press on it is the only thing it offers.
-	 */
-	export let context = false;
+	interface Props {
+		pill: Pill;
+		/**
+		 * Drawn as CONTEXT (da-tu30m, `roleOf` in $lib/commands.ts): it narrows
+		 * the panes and is in no command, so it is the smaller outline with a
+		 * filter mark, and a press on it is the only thing it offers.
+		 */
+		context?: boolean;
+	}
+
+	let { pill, context = false }: Props = $props();
 </script>
 
 <span
@@ -48,7 +52,7 @@
 			type="button"
 			class="remove"
 			aria-label={section.rest ? `drop ${section.text}` : `remove ${pill.text}`}
-			on:click={() => dropSection(pill.id, i)}
+			onclick={() => dropSection(pill.id, i)}
 			>{#if context}<svg class="glyph funnel" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
 					><path d="M2 3h12l-4.5 5.5V13l-3-1.5v-3z" /></svg
 				>{/if}<span class="label">{section.text}</span
@@ -58,7 +62,7 @@
 		class="lock"
 		aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
 		aria-pressed={!!pill.locked}
-		on:click={() => toggleLockPill(pill.id)}
+		onclick={() => toggleLockPill(pill.id)}
 		><svg class="glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
 			><rect x="3" y="7" width="10" height="7" rx="1.5" /><path
 				d={pill.locked ? 'M5.5 7V5a2.5 2.5 0 0 1 5 0v2' : 'M10.5 7V5a2.5 2.5 0 0 1 5 0'}

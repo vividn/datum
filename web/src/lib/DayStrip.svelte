@@ -197,7 +197,7 @@
 	keeps only the difference from what the layout says and an absence is
 	what «following» IS.
 -->
-<script context="module" lang="ts">
+<script module lang="ts">
 	import type { RunResult } from './run.js';
 
 	/** A band's picture or the geometry, by the epoch it was asked at (see `cache`). */
@@ -257,7 +257,8 @@
 </script>
 
 <script lang="ts">
-	import { afterUpdate, createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
+	import { createEventDispatcher, onDestroy, onMount, tick, untrack } from 'svelte';
+	import { on } from 'svelte/events';
 	import { browser } from '$app/env';
 	import { currentDb } from './database.js';
 	import Pane from './Pane.svelte';
@@ -303,36 +304,47 @@
 	} from './panes.js';
 	import { settle } from './layout/resizing.js';
 
-	/** Any change re-runs every band. The frame bumps it after each run. */
-	export let epoch = 0;
-	/** Which widget this is — its tab's session key, `keyOf($layout, tab.id)` in Layout.svelte — and so whose pictures `held` keeps. */
-	export let key = '';
+	interface Props {
+		/** Any change re-runs every band. The frame bumps it after each run. */
+		epoch?: number;
+		/** Which widget this is — its tab's session key, `keyOf($layout, tab.id)` in Layout.svelte — and so whose pictures `held` keeps. */
+		key?: string;
+		/**
+		 * How tall one day is drawn, in pixels — datum's `--day-height` — or
+		 * UNDEFINED, which is the strip following its own box (da-r0ydu).
+		 *
+		 * The absence IS the derivation: `day` below is `dayFilling(height)`
+		 * while nothing is here — `dayUnderSliver(height)` while today is
+		 * pinned — so one day fills the widget at any size and follows it when
+		 * the pane is resized. A number here is the reader's
+		 * own, held against the box; the handle sends `undefined` back when it
+		 * is dragged onto the derived value, and the follow re-arms. Nothing
+		 * flags which of the two is in force — the absence is the flag.
+		 */
+		dayHeight?: number | undefined;
+		/** How wide the strip's own date-stamp column is, in pixels. */
+		labelWidth?: number;
+		/** Is today pinned under the scroller, or the last band inside it? */
+		freezeToday?: boolean;
+		/** The hour range every band is drawn onto — the whole day at rest (da-ukcf). */
+		hourFrom?: number;
+		hourTo?: number;
+	}
+
+	let {
+		epoch = 0,
+		key = '',
+		dayHeight = undefined,
+		labelWidth: givenLabelWidth = DEFAULT_LABEL_WIDTH,
+		freezeToday = false,
+		hourFrom = HOUR_FROM,
+		hourTo = HOUR_TO
+	}: Props = $props();
 
 	/** What this strip drew before it was last unmounted, if anything (`held`). */
-	const heldAs = `${currentDb()}\n${key}`;
+	const heldAs = `${currentDb()}\n${untrack(() => key)}`;
 	const was = mounted.get(heldAs)?.() ?? held.get(heldAs);
 	mounted.set(heldAs, holding);
-
-	/**
-	 * How tall one day is drawn, in pixels — datum's `--day-height` — or
-	 * UNDEFINED, which is the strip following its own box (da-r0ydu).
-	 *
-	 * The absence IS the derivation: `day` below is `dayFilling(height)`
-	 * while nothing is here — `dayUnderSliver(height)` while today is
-	 * pinned — so one day fills the widget at any size and follows it when
-	 * the pane is resized. A number here is the reader's
-	 * own, held against the box; the handle sends `undefined` back when it
-	 * is dragged onto the derived value, and the follow re-arms. Nothing
-	 * flags which of the two is in force — the absence is the flag.
-	 */
-	export let dayHeight: number | undefined = undefined;
-	/** How wide the strip's own date-stamp column is, in pixels. */
-	export let labelWidth: number = DEFAULT_LABEL_WIDTH;
-	/** Is today pinned under the scroller, or the last band inside it? */
-	export let freezeToday = false;
-	/** The hour range every band is drawn onto — the whole day at rest (da-ukcf). */
-	export let hourFrom: number = HOUR_FROM;
-	export let hourTo: number = HOUR_TO;
 
 	/**
 	 * What the reader moved, folded into the widget's settings by the
@@ -368,10 +380,11 @@
 	 * is no number at all (NaN) holds nothing, and the strip follows —
 	 * which is what an unusable setting should leave a reader with.
 	 */
-	$: heldDay =
+	const heldDay = $derived(
 		typeof dayHeight === 'number' && Number.isFinite(dayHeight)
 			? clamp(Math.round(dayHeight), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT)
-			: null;
+			: null
+	);
 	/**
 	 * The day height the strip DRAWS at: the reader's, or the one that
 	 * makes one day fill the box it was just measured at — less the sliver
@@ -382,33 +395,32 @@
 	 * default stands in — nothing is drawn at it, since every ask is gated
 	 * on a width the same measurement supplies.
 	 */
-	$: derived = height > 0 ? dayUnderSliver(height) : DEFAULT_DAY_HEIGHT;
+	const boxDay = $derived.by(() => (height > 0 ? dayUnderSliver(height) : DEFAULT_DAY_HEIGHT));
 	/** The day DRAWN: the reader's held height when there is one, else the box's. */
-	$: day = heldDay ?? derived;
-	$: labelWidth = clamp(
-		Math.round(labelWidth) || DEFAULT_LABEL_WIDTH,
-		MIN_LABEL_WIDTH,
-		MAX_LABEL_WIDTH
+	const day = $derived(heldDay ?? boxDay);
+	/** The label width drawn: the owner's made drawable, or a handle's until the owner's changes (`setSizes`). */
+	let labelWidth = $derived(
+		clamp(Math.round(givenLabelWidth) || DEFAULT_LABEL_WIDTH, MIN_LABEL_WIDTH, MAX_LABEL_WIDTH)
 	);
 
-	let body: HTMLDivElement | undefined;
+	let body: HTMLDivElement | undefined = $state();
 	let stripEl: HTMLDivElement | undefined;
-	let stackEl: HTMLDivElement | undefined;
+	let stackEl: HTMLDivElement | undefined = $state();
 	/** The box the pane gives the strip, in whole pixels, once measured. */
-	let width = was?.width ?? 0;
-	let height = was?.height ?? 0;
+	let width = $state(was?.width ?? 0);
+	let height = $state(was?.height ?? 0);
 	/**
 	 * Has the box been measured since mount? A remount paints what it held
 	 * at once and asks for nothing at the box it held: a maximize is a
 	 * remount into another box, and asked for the days that box showed at
 	 * the old size before it was measured (da-8khuw).
 	 */
-	let measured = !was;
+	let measured = $state(!was);
 	/** Is the newest day the bottom-most band in view? */
-	let atBottom = true;
+	let atBottom = $state(true);
 
 	/** The band's own width on screen: the box less the stamp column. */
-	$: bandWidth = Math.max(0, width - labelWidth);
+	const bandWidth = $derived(Math.max(0, width - labelWidth));
 
 	// ── the hour window ────────────────────────────────────────────────
 	//
@@ -418,11 +430,11 @@
 	// mapped where they are, and datum is asked again only on release.
 
 	/** The window a gesture is previewing, or null when none is in hand. */
-	let live: [number, number] | null = null;
+	let live = $state.raw<[number, number] | null>(null);
 	/** The window the widget holds: its setting, made sane. */
-	$: committed = clampWindow(hourFrom, hourTo);
+	const committed = $derived(clampWindow(hourFrom, hourTo));
 	/** The window on screen. */
-	$: view = live ?? committed;
+	const view = $derived(live ?? committed);
 
 	/**
 	 * Each picture is mapped by the width IT was drawn at, not by the one
@@ -437,14 +449,14 @@
 	 * hours it is meant to until its answer arrives.
 	 */
 	const IDENTITY = { offset: 0, scale: 1 };
-	$: mapFor = (full: number) =>
+	const mapFor = (full: number) =>
 		full > 0 && bandWidth > 0 ? windowMap(view, full, bandWidth) : IDENTITY;
 	/** The gridlines and the ruler are drawn from the GEOMETRY's own width. */
-	$: gridMap = mapFor(geometryBox);
+	const gridMap = $derived.by(() => mapFor(geometryBox));
 	/** Where along the band a gridline or a ruler tick falls. */
-	$: bandX = (x: number) => gridMap.offset + gridMap.scale * x;
+	const bandX = (x: number) => gridMap.offset + gridMap.scale * x;
 	/** Is there a window at all, or is the whole day on screen? */
-	$: zoomed = !wholeDay(view);
+	const zoomed = $derived(!wholeDay(view));
 	/**
 	 * The ends the hour window is AT, which a finger cannot pan past: there
 	 * the swipe is the pane's, to change tabs (da-xg1vi). `start` is the
@@ -452,9 +464,9 @@
 	 * toward earlier) stops, and `end` its last; the whole day is at both
 	 * (`takes`, PaneFrame.svelte).
 	 */
-	$: panStop = [committed[0] <= HOUR_FROM && 'start', committed[1] >= HOUR_TO && 'end'].filter(Boolean).join(' ');
+	const panStop = $derived([committed[0] <= HOUR_FROM && 'start', committed[1] >= HOUR_TO && 'end'].filter(Boolean).join(' '));
 	/** The transform each band's picture is shown under. */
-	$: bandZoom = (end: number) => mapFor(drawn[end]?.width);
+	const bandZoom = (end: number) => mapFor(drawn[end]?.width);
 	/**
 	 * A `<pattern>` — a multi-state block's stripes, a clock change's
 	 * hatch — tiles in the user space of the block it fills, so the map
@@ -466,8 +478,11 @@
 	 * `transform` on a pattern and draws it without. A label previewed as
 	 * wide as the pane leaves the bands no width (`scaleX` 0): the pattern
 	 * keeps the transform it had rather than taking a scale of Infinity.
+	 * After every update that puts a picture or a band on screen, and as the
+	 * map and the scales it reads change.
 	 */
-	afterUpdate(() => {
+	$effect(() => {
+		void [shown, rows, freezeToday, unsynced];
 		for (const band of stripEl?.querySelectorAll<HTMLElement>('.band') ?? []) {
 			const across = 1 / (bandZoom(Number(band.dataset.daysAgo)).scale * scaleX);
 			if (!Number.isFinite(across)) continue;
@@ -485,13 +500,10 @@
 	 * theirs; a day only partly revealed still counts, because it is a day
 	 * that has to be drawn and the first one the stack scrolls up to.
 	 */
-	$: room = Math.max(
-		0,
-		height - AXIS_HEIGHT - (freezeToday ? SEAM + bandBox(day) : DIVIDER)
-	);
-	$: slots = room > 0 ? Math.ceil((room - bandBox(day)) / dayPitch(day)) + 1 : 0;
+	const room = $derived(Math.max(0, height - AXIS_HEIGHT - (freezeToday ? SEAM + bandBox(day) : DIVIDER)));
+	const slots = $derived(room > 0 ? Math.ceil((room - bandBox(day)) / dayPitch(day)) + 1 : 0);
 	/** Of those slots, the ones the PAST gets: unfrozen, today is in the scroller too. */
-	$: fits = Math.max(0, freezeToday ? slots : slots - 1);
+	const fits = $derived(Math.max(0, freezeToday ? slots : slots - 1));
 	/**
 	 * The days the stack HOLDS: a fortnight at least, and as many as the
 	 * box shows when it shows more (da-bewc) — at any box height, so the
@@ -499,41 +511,40 @@
 	 * room above a pinned today still gives the stack a `SLIVER` of a day,
 	 * clipping today from the top (`.stack`'s `min-height`).
 	 */
-	$: base = Math.max(FORTNIGHT, fits);
+	const base = $derived(Math.max(FORTNIGHT, fits));
 	/** The days the reader has scrolled the stack into, above `base` (`reachBack`). */
-	let extra = 0;
-	$: depth = base + extra;
+	let extra = $state(0);
+	const depth = $derived(base + extra);
 	/** What the stack keeps of the box however short it is: a sliver of a day. */
-	$: sliver = Math.round(bandBox(shownDayHeight) * SLIVER);
+	const sliver = $derived.by(() => Math.round(bandBox(shownDayHeight) * SLIVER));
 	/**
 	 * The middle of the seam over a pinned today (da-2hd21), where the tear
 	 * sits: today's band and its ruler, less what the sliver took.
 	 */
-	$: seamAt =
-		Math.min(bandBox(shownDayHeight), Math.max(0, height - AXIS_HEIGHT - SEAM - sliver)) +
-		AXIS_HEIGHT +
-		SEAM / 2;
+	const seamAt = $derived.by(
+		() => Math.min(bandBox(shownDayHeight), Math.max(0, height - AXIS_HEIGHT - SEAM - sliver)) + AXIS_HEIGHT + SEAM / 2
+	);
 
 	/** The days in the scroller, oldest first — today among them when it is not frozen. */
-	$: rows = [
+	const rows = $derived([
 		...Array.from({ length: depth }, (_, i) => depth - i),
 		...(freezeToday ? [] : [0])
-	];
+	]);
 	/**
 	 * Every day that is drawn without being seen: today first, it being the
 	 * one in front, then the base stack. A day grown above it is drawn only
 	 * once it is on screen (`refreshVisible`).
 	 */
-	$: ends = Array.from({ length: base + 1 }, (_, i) => i);
+	const ends = $derived(Array.from({ length: base + 1 }, (_, i) => i));
 
 	/** The sizes a drag is previewing, or the committed ones at rest. */
-	$: shownDayHeight = sizing ? sizing.height : day;
-	$: shownLabelWidth = sizing ? sizing.width : labelWidth;
+	const shownDayHeight = $derived.by(() => (sizing ? sizing.height : day));
+	const shownLabelWidth = $derived.by(() => (sizing ? sizing.width : labelWidth));
 	/**
 	 * How far the drawn bands are stretched to stand in for the size being
 	 * previewed. One at rest, which is the picture at its own size.
 	 */
-	$: scaleY = shownDayHeight / day;
+	const scaleY = $derived(shownDayHeight / day);
 	/**
 	 * How far a band's picture is stretched to the day height at rest: one,
 	 * or more or less for a picture drawn at another, which stands in until
@@ -541,15 +552,15 @@
 	 * map is, and not on `.shot`, which a resting transform would make the
 	 * hover label's containing block (see `.shot.previewing`).
 	 */
-	$: stand = (end: number) => day / (drawn[end]?.dayHeight ?? day);
-	$: scaleX = bandWidth > 0 ? Math.max(0, width - shownLabelWidth) / bandWidth : 1;
+	const stand = (end: number) => day / (drawn[end]?.dayHeight ?? day);
+	const scaleX = $derived(bandWidth > 0 ? Math.max(0, width - shownLabelWidth) / bandWidth : 1);
 
 	/**
 	 * The jagged line shows exactly when the band against the divider is
 	 * not the newest one — which is to say, when the reader has scrolled
 	 * up into older days.
 	 */
-	$: jagged = depth > 0 && !atBottom;
+	const jagged = $derived(depth > 0 && !atBottom);
 
 	// The content box, not the element's own size: the body is padded, and
 	// the strip is 100% of that box.
@@ -606,22 +617,22 @@
 	// ── the pictures ───────────────────────────────────────────────────
 
 	/** Each band on screen, by how many days back it is. 0 is today's. */
-	let shown: Record<number, RunResult> = was?.shown ?? {};
+	let shown: Record<number, RunResult> = $state.raw(was?.shown ?? {});
 	/**
 	 * And the size each of those pictures was drawn at: its width is what
 	 * it is mapped by (`mapFor`), its day height what it is stretched by
 	 * (`stand`), and one of another midnight stands in for nothing.
 	 */
-	let drawn: Record<number, Drawn> = was?.drawn ?? {};
+	let drawn: Record<number, Drawn> = $state.raw(was?.drawn ?? {});
 	/** The width the geometry on hand was read at. */
-	let geometryBox = was?.geometryBox ?? 0;
+	let geometryBox = $state(was?.geometryBox ?? 0);
 
 	/**
 	 * A band's picture — or the message that came instead of one, said out
 	 * loud rather than left as a box that never finishes loading.
 	 */
 	/** Since when this copy may lack what another device has, while the session's first sync is under way (da-g5jjp). */
-	$: unsynced = $syncStates[currentDb()]?.unsynced;
+	const unsynced = $derived($syncStates[currentDb()]?.unsynced);
 
 	const picture = (result: RunResult, unsynced?: number) => ({
 		text: result.stdout || result.stderr,
@@ -674,7 +685,7 @@
 	 * geometry run carries the date the CLI cut, so a change in it drops
 	 * the pictures and asks again.
 	 */
-	let midnights = was?.midnights ?? 0;
+	let midnights = $state(was?.midnights ?? 0);
 	let onDay = was?.onDay ?? null;
 
 	/**
@@ -694,13 +705,16 @@
 		return seen;
 	}
 
-	let geometry = was?.geometry ?? null;
+	let geometry: Geometry | null = $state.raw(was?.geometry ?? null);
 
 	// Not on mount: the static build prerenders this page, and there is no
 	// database (or `run`) outside the browser. At the band's width whatever
 	// the window: the window is how the band shows the picture (`mapFor`).
-	$: request = { width: bandWidth, dayHeight: day, epoch, midnights };
-	$: if (browser && measured && request.width > 0) redraw(request, ends);
+	const request = $derived({ width: bandWidth, dayHeight: day, epoch, midnights });
+	$effect.pre(() => {
+		const [at, all] = [request, ends];
+		if (browser && measured && at.width > 0) untrack(() => redraw(at, all));
+	});
 
 	/**
 	 * Draw the stack at `at`. A day showing a picture of another size, and
@@ -731,7 +745,9 @@
 	// today. A changed date is a midnight, and `midnights` redraws the
 	// stack (see `draw`) — so the strip now follows a midnight by itself,
 	// where before it waited for a command.
-	$: if (browser && $minute > 0) tock();
+	$effect.pre(() => {
+		if (browser && $minute > 0) untrack(tock);
+	});
 
 	// A remount whose held pictures are of an earlier minute is that tick,
 	// at once at the box it held (a box measured otherwise draws again
@@ -739,10 +755,13 @@
 	// while someone holds it, and a midnight away is a minute away.
 	const wallMinute = () => Math.floor(Date.now() / 60_000);
 	let late = !!was && was.minute !== wallMinute();
-	$: if (late && measured && request.width > 0) {
-		late = false;
-		tock();
-	}
+	$effect.pre(() => {
+		if (late && measured && request.width > 0)
+			untrack(() => {
+				late = false;
+				tock();
+			});
+	});
 
 	function tock(): void {
 		const at = request;
@@ -965,10 +984,10 @@
 	 * database with nothing timed. Asked once an epoch, and only while the
 	 * reader is near the top: a command costs this run only then.
 	 */
-	let first: { epoch: number; back: number; date: string | null } | null = null;
+	let first = $state.raw<{ epoch: number; back: number; date: string | null } | null>(null);
 	let reaching = false;
 	/** The stack reaches the first entry: nothing older to add. */
-	$: ended = first !== null && depth >= first.back;
+	const ended = $derived(first !== null && depth >= first.back);
 
 	/** Is the reader within a box's height of the oldest band? */
 	const nearTop = () => !!stackEl && stackEl.scrollTop < stackEl.clientHeight;
@@ -976,7 +995,9 @@
 	// A command may have moved the first entry, or wiped the database: ask
 	// again if the reader is up there, and otherwise forget the answer — out
 	// of their sight, so the marker's room goes without moving them.
-	$: if (first && first.epoch !== epoch) void (nearTop() ? reachBack() : keepPlace(() => (first = null)));
+	$effect.pre(() => {
+		if (first && first.epoch !== epoch) untrack(() => void (nearTop() ? reachBack() : keepPlace(() => (first = null))));
+	});
 
 	/** Within a box's height of the oldest band, add a fortnight above it. */
 	async function reachBack(): Promise<void> {
@@ -1093,12 +1114,11 @@
 	}
 
 	/** The stamp font: as tall as three lines of the band allow, and as wide as the column. */
-	$: stampFont = Math.max(
-		7,
-		Math.min(14, Math.floor(Math.min(shownDayHeight / 3 - 4, shownLabelWidth / 4.2)))
+	const stampFont = $derived(
+		Math.max(7, Math.min(14, Math.floor(Math.min(shownDayHeight / 3 - 4, shownLabelWidth / 4.2))))
 	);
 	/** How many of the three lines fit, tallest first — datum shrinks 3 → 2 → 1 the same way. */
-	$: stampLines = Math.max(1, Math.min(3, Math.floor(shownDayHeight / (stampFont + 2))));
+	const stampLines = $derived(Math.max(1, Math.min(3, Math.floor(shownDayHeight / (stampFont + 2)))));
 	const stamp = (iso: string | null, back: number, lines: number) =>
 		iso ? stampFor(iso, back).slice(0, lines) : [];
 	/**
@@ -1108,9 +1128,12 @@
 	 * Read as a document, so a name comes back unescaped (`r&d`, not
 	 * `r&amp;d`) whatever order the attributes are written in.
 	 */
-	$: flagged = Object.fromEntries(
-		Object.entries(shown).map(([end, result]) => [end, fieldsFlagged(result.stdout)])
-	) as Record<number, string[]>;
+	const flagged = $derived(
+		Object.fromEntries(Object.entries(shown).map(([end, result]) => [end, fieldsFlagged(result.stdout)])) as Record<
+			number,
+			string[]
+		>
+	);
 	function fieldsFlagged(svg: string): string[] {
 		if (!svg.includes('integrity-error')) return [];
 		const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
@@ -1134,7 +1157,7 @@
 	 * squeezed, as the CLI's axis closes (da-zyfbl); a window ending inside
 	 * the day has no 24 on the band to draw.
 	 */
-	$: ruler = (() => {
+	const ruler = $derived.by(() => {
 		if (!geometry) return [] as { x: number; at: number; label: string }[];
 		const half = AXIS_FONT * 0.6 + 3;
 		let prev = -Infinity;
@@ -1152,7 +1175,7 @@
 				if (named) prev = at + half;
 				return { x, at, label: named ? hour.label : '' };
 			});
-	})();
+	});
 
 	// ── the handles: the day lines the day height, the spine the label width ──
 
@@ -1182,7 +1205,7 @@
 	 */
 	function setSizes(px: number, wide: number): void {
 		const next = clamp(Math.round(px), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
-		if (next !== day) dayHeight = next === derived ? undefined : next;
+		if (next !== day) dayHeight = next === boxDay ? undefined : next;
 		labelWidth = clamp(Math.round(wide), MIN_LABEL_WIDTH, MAX_LABEL_WIDTH);
 		dispatch('change', { dayHeight, labelWidth });
 	}
@@ -1195,7 +1218,7 @@
 	type Axes = 'y' | 'x';
 
 	/** Where a drag started, what the values were when it did, and the preview. */
-	let sizing: { x: number; y: number; height: number; width: number; axes: Axes } | null = null;
+	let sizing = $state.raw<{ x: number; y: number; height: number; width: number; axes: Axes } | null>(null);
 	let from0 = { height: 0, width: 0 };
 
 	/**
@@ -1264,9 +1287,12 @@
 
 	// Today going into the scroller or out of it, from the widget's
 	// options, changes what the bottom of the stack is: back to the newest.
-	// After the update, not inside it: what `anchor` sets of `atBottom` in
-	// the middle of one is never seen by `jagged`, declared above it.
-	$: (freezeToday, void tick().then(anchor));
+	// After the update, not inside it: `anchor` reads the stack the change
+	// leaves.
+	$effect.pre(() => {
+		void freezeToday;
+		void tick().then(anchor);
+	});
 
 	// ── the zoom: two fingers, ctrl+wheel, and a button back ───────────
 
@@ -1480,7 +1506,7 @@
 
 	/** The press in hand on a band, and what it has become. */
 	let press: Press | null = null;
-	let mode: Mode = 'press';
+	let mode: Mode = $state('press');
 	/** Where the pointer is, for the timer that has no event of its own. */
 	let last = { x: 0, y: 0 };
 	/** Whether the press has lasted long enough to be a range. */
@@ -1492,7 +1518,7 @@
 	 * the 400ms no longer commits to a range, so the bar it used to drop is
 	 * no longer the signal that the press registered.
 	 */
-	let waiting: { x: number; y: number } | null = null;
+	let waiting = $state.raw<{ x: number; y: number } | null>(null);
 	/**
 	 * The DAY the press went down in — the picture's own group, whose
 	 * `data-from` / `data-to` every instant of this gesture is read
@@ -1667,7 +1693,7 @@
 	// ── the selection's pills, in the strip's own margin ───────────────
 
 	/** The pills the selection made — the ones drawn over their own marks. */
-	$: marginPills = $pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID);
+	const marginPills = $derived($pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID));
 
 	/**
 	 * Where each margin pill's LEFT edge goes, in px across the strip's box.
@@ -1687,12 +1713,15 @@
 	 * — the one whose day holds the instant — whichever day of the stack the
 	 * press fell in.
 	 */
-	let spots: { time: number | null; span: number | null } = { time: null, span: null };
+	let spots: { time: number | null; span: number | null } = $state.raw({ time: null, span: null });
 
 	// Re-placed after anything that MOVES a mark: the selection itself, a
 	// band's picture, the window, the box. After `tick`, so the placing
 	// reads the marks this change drew and not the ones it replaced.
-	$: void [$pointed, shown, view, width, shownDayHeight, shownLabelWidth], void placePills();
+	$effect.pre(() => {
+		void [$pointed, shown, view, width, shownDayHeight, shownLabelWidth];
+		void placePills();
+	});
 
 	/**
 	 * Twice, because the first pass is what puts the pills on screen: with
@@ -1804,9 +1833,9 @@
 		bind:this={stripEl}
 		data-mode={mode}
 		data-height={height}
-		on:pointerdown={onPointerDown}
-		on:touchmove|nonpassive={onTouchMove}
-		on:wheel|nonpassive={onWheel}
+		onpointerdown={onPointerDown}
+		{@attach (el) => on(el, 'touchmove', onTouchMove, { passive: false })}
+		{@attach (el) => on(el, 'wheel', onWheel, { passive: false })}
 		style:--band="{bandBox(shownDayHeight)}px"
 		style:--pitch="{dayPitch(shownDayHeight)}px"
 		style:--today="{todayBox(shownDayHeight)}px"
@@ -1820,7 +1849,7 @@
 		style:--sy={scaleY}
 	>
 		{#if rows.length > 0}
-			<div class="stack" bind:this={stackEl} on:scroll={onScroll}>
+			<div class="stack" bind:this={stackEl} onscroll={onScroll}>
 				{#if ended && first?.date}<p class="quiet first">first entry · {first.date}</p>{/if}
 				{#each rows as end, i (end)}
 					<div class="row" class:now={end === 0}>
@@ -1905,7 +1934,7 @@
 				type="button"
 				title="the whole day back"
 				aria-label="reset the zoom to the whole day"
-				on:click={resetZoom}
+				onclick={resetZoom}
 			>
 				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
 					<circle class="lens" cx="6.5" cy="6.5" r="5" />
@@ -1930,7 +1959,7 @@
 			-->
 			<button
 				class="jagged"
-				on:click={toNewest}
+				onclick={toNewest}
 				aria-label="the band above the divider is not the newest day — bring it back"
 			>
 				<svg viewBox="0 0 400 6" preserveAspectRatio="none" aria-hidden="true">

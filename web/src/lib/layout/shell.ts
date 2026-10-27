@@ -295,7 +295,7 @@ const RETIRED_KINDS: Record<string, string> = { spec: 'setup', field: 'setup' };
  * ⚑ THE NUMBER IS A LITERAL, NOT `DEFAULT_DAY_HEIGHT`. A migration key is
  * a fact about HISTORY — «what trees written before da-r0ydu carry» — and
  * that constant has stopped meaning it: it is now only the strip's
- * stand-in before its box is measured (`derived` in DayStrip.svelte). The
+ * stand-in before its box is measured (`boxDay` in DayStrip.svelte). The
  * two coincide at 85 today and are free to part tomorrow, and the day they
  * part this arm would quietly stop matching, every layout saved before
  * da-r0ydu would go back to holding a height nobody chose, and no test
