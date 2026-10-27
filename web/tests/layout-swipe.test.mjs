@@ -553,6 +553,50 @@ describe('the strip: never a blank between two tabs', () => {
 		);
 	});
 
+	// da-1acrc: the tab in front was `display: contents`, so going behind
+	// built the layout's boxes again. As a box it must still let the page
+	// scroll to the split's far edge and the content's padding past it,
+	// which an absolute box in front lost (638 → 630 at 560×420).
+	test('the layout in front is a box, and the page scrolls past its split by the padding (da-1acrc)', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await page.setViewportSize({ width: 300, height: 300 });
+				for (const name of ['tail', 'main']) {
+					await page.locator('.root-bar [role="tab"]', { hasText: name }).click();
+					await until(() => shown(page), (shownName) => shownName === name);
+				}
+				await app.idle();
+				const seen = await page.evaluate(() => {
+					const content = document.querySelector('section.root > .content');
+					const front = content.querySelector(':scope > .tab-body:not(.behind)');
+					const split = front.querySelector(':scope > .split').getBoundingClientRect();
+					const box = content.getBoundingClientRect();
+					const pad = getComputedStyle(content);
+					return {
+						display: getComputedStyle(front).display,
+						client: [content.clientWidth, content.clientHeight],
+						scroll: [content.scrollWidth, content.scrollHeight],
+						reach: [
+							split.right - box.left - content.clientLeft + content.scrollLeft + parseFloat(pad.paddingRight),
+							split.bottom - box.top - content.clientTop + content.scrollTop + parseFloat(pad.paddingBottom)
+						]
+					};
+				});
+				assert.equal(seen.display, 'flex', 'the tab in front is not a box');
+				assert.ok(
+					seen.scroll.some((s, i) => s > seen.client[i]),
+					`main fits ${seen.client.join('x')}, so nothing here overflows: ${seen.scroll.join('x')}`
+				);
+				assert.ok(
+					seen.scroll.every((s, i) => Math.abs(s - seen.reach[i]) <= 1),
+					`the page scrolls ${seen.scroll.join('x')}, the split and its padding reach ${seen.reach.join('x')}`
+				);
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
 	// vremya on #1188: a run cannot be stopped once started, so a layout
 	// behind that refreshed the moment a write landed kept the next line
 	// typed waiting. It refreshes once every command has answered and a

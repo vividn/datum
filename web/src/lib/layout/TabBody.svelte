@@ -4,15 +4,17 @@
 	widget even when not displayed so that swiping looks nicer and all the
 	data is ready to go").
 
-	The tab in front is `display: contents`, so the frame's content box lays
-	its widget out exactly as it did when it was the only one mounted. A
-	tab behind it keeps a box of the same size — laid over the content and
-	padded as it is, `visibility: hidden` rather than `display: none`,
-	since a drawn widget measures its box to render — and is `inert`, so
-	nothing in it takes focus, a key or a pointer. The one `beside` the
-	tab in front is the neighbour a swipe brings on (da-24fgb): the frame
-	shows it, a box away, while the strip moves (PaneFrame.svelte). It hears the epoch and the minute tick as the
-	tab in front does, so a swipe shows a picture already drawn.
+	Every tab is a box of the frame's content box's size: the one in front
+	in the flow, filling it as its widget did when it was the only one
+	mounted, and at the root no smaller than the split's legible floor
+	(`least`), so the page scrolls exactly as far. A tab behind it is laid
+	over the content and padded as it is, `visibility: hidden` rather than
+	`display: none`, since a drawn widget measures its box to render — and
+	is `inert`, so nothing in it takes focus, a key or a pointer. The one
+	`beside` the tab in front is the neighbour a swipe brings on
+	(da-24fgb): the frame shows it, a box away, while the strip moves
+	(PaneFrame.svelte). It hears the epoch and the minute tick as the tab
+	in front does, so a swipe shows a picture already drawn.
 
 	The frame's context is passed down through a gate: what a widget sends
 	up to its frame — its own title controls (da-ndjo's `.own` box) and its
@@ -34,6 +36,15 @@
 	 * never widens the page's scroll.
 	 */
 	export let shy = 0;
+	/**
+	 * The root split's legible floor, which the tab in front holds as its
+	 * own: an overflowing split inside a smaller box would lose the
+	 * content's end padding from the page's scroll. A tab behind takes no
+	 * floor, being clipped. In front or behind, the tab is a flex box, so a
+	 * switch changes its `position` and not its `display`: going behind
+	 * lays out the box and not the layout in it again (da-1acrc).
+	 */
+	export let least: { width: number; height: number } | undefined = undefined;
 
 	interface Frame {
 		alarm: Writable<boolean>;
@@ -64,20 +75,24 @@
 	class:beside
 	class:grown={!active && shy < 0}
 	inert={!active}
+	style:min-width={active && least ? `${least.width}px` : null}
+	style:min-height={active && least ? `${least.height}px` : null}
 	style:margin={!active && shy > 0 ? `${shy}px` : null}
 	style:--grown={!active && shy < 0 ? `${shy}px` : null}
 ><slot /></div>
 
 <style>
 	.tab-body {
-		display: contents;
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
 	}
 	.behind {
 		position: absolute;
 		inset: 0;
 		padding: inherit;
-		display: flex;
-		flex-direction: column;
 		visibility: hidden;
 	}
 	/* The tab body's clip is what bounds a grown layout: its children are

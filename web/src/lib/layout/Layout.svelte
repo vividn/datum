@@ -377,14 +377,15 @@
 		{#each pane.id === rootId ? pane.tabs.filter((t, i) => i === peek || i === pane.active || opened.includes(t.id)) : pane.tabs as tab (tab.id)}
 		{@const content = tab.content}
 		{@const at = pane.id === rootId ? drawnAt(tab, tab === active || tab === pane.tabs[peek], epoch, behind) : epoch}
+		{@const least = pane.id === rootId && isSplit(content) ? legible(pane) : undefined}
 		<TabBody
 			active={tab === active}
 			beside={tab === pane.tabs[peek]}
 			shy={pane.id === rootId ? lands(tab) - lands(active) : 0}
+			{least}
 		>
 			{#if isSplit(content)}
 				{@const split = content}
-				{@const least = pane.id === rootId ? legible(pane) : undefined}
 				{@const grow = (tab === active && preview) || split.ratios}
 				<div
 					class="split {split.direction}"

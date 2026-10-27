@@ -1546,19 +1546,13 @@
 	}
 
 	/* The swipe's motion (da-kcmp, da-24fgb): the content box stays and
-	   clips, and what moves in it is the strip — the tab in front, made a
-	   box of the same size for the while (it is `display: contents` at
-	   rest, TabBody.svelte), and its neighbour a box away. Under the finger
-	   they follow it with no transition at all; the slide the release
-	   finishes and the snap back of one too short are the same strip,
-	   moved with one. Under `prefers-reduced-motion` nothing is ever
+	   clips, and what moves in it is the strip — the tab in front, a box
+	   of the content's size (TabBody.svelte), and its neighbour a box
+	   away. Under the finger they follow it with no transition at all;
+	   the slide the release finishes and the snap back of one too short
+	   are the same strip, moved with one. Under `prefers-reduced-motion` nothing is ever
 	   `moving` (the handlers), so the swap is the instant one it was. */
 	.content.moving > :global(.tab-body:not(.behind)) {
-		display: flex;
-		flex-direction: column;
-		flex: 1;
-		min-width: 0;
-		min-height: 0;
 		transform: var(--front);
 	}
 	/* `--beside`'s 100% is the neighbour's own box, which is the content's
