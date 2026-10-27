@@ -438,8 +438,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             if !span.lane.is_empty() {
                 let _ = write!(
                     &mut out,
-                    r#"<path class="lane" d="{d}" fill="none" stroke="white" stroke-opacity="0.5" pointer-events="none"/>"#,
-                    d = lane_outline(layout, &geom, day, span),
+                    r#"<path class="lane" d="{d}" fill="none" pointer-events="none"/>"#,
+                    d = lane_path(layout, &geom, day, span),
                 );
             }
             for field in &day.fields {
@@ -1149,10 +1149,11 @@ fn block_shape(
     ("path", format!(r#"d="{d}Z""#))
 }
 
-/// The outline of a stretch's lane where the band is forked (da-1v9gp):
+/// The bounds of a stretch's lane where the band is forked (da-1v9gp):
 /// its two edges from where the band narrows to where it widens again, and
-/// a cap across each end the stretch has there.
-fn lane_outline(
+/// a cap across each end the stretch has there. Drawn with no stroke
+/// (da-bqcln): it is only the area hover.ts's `stretchAt` reads a point in.
+fn lane_path(
     layout: &DayviewLayout,
     geom: &PlotGeom,
     day: &RenderedDay,
@@ -1167,7 +1168,7 @@ fn lane_outline(
         last[0]
     };
     let mut xs = bends(span, from, to);
-    // One stroke: out along an edge, across the cap, back along the other.
+    // One path: out along an edge, across the cap, back along the other.
     if cap_lo && !cap_hi {
         xs.reverse();
     }
@@ -2067,7 +2068,7 @@ mod tests {
     }
 
     /// The clock went from 07:00 back to 06:00: each stretch has a lane,
-    /// outlined, 5% of the band between them, and a mark is drawn at the
+    /// bounded by an unstroked path, 5% of the band between them, and a mark is drawn at the
     /// size its lane gives it.
     #[test]
     fn a_backward_jump_draws_each_stretch_in_its_own_lane() {
@@ -2079,11 +2080,14 @@ mod tests {
         assert!(groups[0].contains(
             r##"<path class="block" d="M600,4.75L700,4.75L700,11.875L600,11.875Z" fill="#abcdef""##
         ));
-        // The outlines: narrowing from 05:28 to 05:48 to a cap at 07:00,
-        // and from a cap at 06:00 to whole again from 07:12 to 07:32.
+        // The lanes' bounds: narrowing from 05:28 to 05:48 to a cap at 07:00,
+        // and from a cap at 06:00 to whole again from 07:12 to 07:32, each a
+        // path that draws nothing (da-bqcln).
         let outline = |group: &str| -> Vec<(f64, f64)> {
             let d = group.split(r#"<path class="lane" d=""#).nth(1).unwrap();
-            let d = &d[1..d.find('"').unwrap()];
+            let end = d.find('"').unwrap();
+            assert!(d[end..].starts_with(r#"" fill="none" pointer-events="none"/>"#));
+            let d = &d[1..end];
             (d.split('L').map(|p| p.split_once(',').unwrap()))
                 .map(|(x, y)| {
                     (

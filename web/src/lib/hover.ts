@@ -64,8 +64,8 @@ type Day = ReturnType<typeof readDay>;
  * A day the clock jumped in is one group per UTC offset it was lived at,
  * each with a straight axis of its own. Clock times a jump skipped are
  * under none of them, and the point reads as the nearest end; ones a jump
- * repeated are under two, each in a lane the stretch outlines with its own
- * `.lane`, and the point is in one of them.
+ * repeated are under two, each in a lane its own `.lane` path bounds (drawn
+ * with no stroke), and the point is in one of them.
  */
 function stretchAt(days: Day[], day: Day, along: number, clientX: number, clientY: number): Day {
 	const same = days.filter((d) => d.el.getAttribute('data-day') === day.el.getAttribute('data-day'));
