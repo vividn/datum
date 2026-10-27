@@ -199,6 +199,25 @@ stop();
 	assert.equal(code, 1, out);
 });
 
+// da-aksfc: node passes a file on its exit code with whatever tests it
+// reported, so a process ended mid-file is a pass of the tests before. An exit
+// stands in for the events `forceExit` lost. A file whose tests another module
+// declares (act-taps-*) still sends its own summary, and stays green.
+test('a file cut short with exit code 0 is ✗ and red, and says so', () => {
+	const cut = `import test from 'node:test';
+test('reported', () => {});
+test('exits', () => process.exit(0));
+test('never reported', () => {});
+`;
+	const elsewhere = `import { declare } from './declare.mjs';\ndeclare();\n`;
+	const declare = `import test from 'node:test';\nexport const declare = () => test('declared elsewhere', () => {});\n`;
+	const { code, out } = suite({ 'cut.test.mjs': cut, 'elsewhere.test.mjs': elsewhere, 'declare.mjs': declare }, '');
+	assert.match(out, /^ +[\d.]+ s ✗ tests\/cut\.test\.mjs$/m, out);
+	assert.match(out, /^ +[\d.]+ s {3}tests\/elsewhere\.test\.mjs$/m, out);
+	assert.match(out, /^test: 1 file cut short, some tests never reported: tests\/cut\.test\.mjs$/m, out);
+	assert.equal(code, 1, out);
+});
+
 describe('DATUM_TEST_RETRY', () => {
 	const once = `import test from 'node:test';
 import { existsSync, writeFileSync } from 'node:fs';

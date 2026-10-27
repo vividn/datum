@@ -54,6 +54,13 @@
 // run waiting on it for six hours (da-cvd7y). `forceExit` ends a file's
 // process once its tests and hooks are done, whatever it still holds.
 //
+// It ends it without waiting for the pipe its events go out on, which does not
+// block: when the run reads slowly, the events still queued are lost, and node
+// passes the file on its exit code with the tests that arrived — 49 of
+// calls-pure.test.mjs's 75 (da-aksfc). So each file's process blocks on its
+// stdout, and a file is cut, ✗, unless its own `test:summary` came: a whole
+// file's process sends one before it exits.
+//
 // That is node 24's `run()`. Node 22's never hands the budget on, and its
 // file process ignores `--test-timeout` without `--test`, so there the 300 s
 // is the FILE's whole wall: `tailwatch.test.mjs`, 130 s on its own, was cut
@@ -203,6 +210,8 @@ const started = new Set(files.slice(0, concurrency));
 const hooked = new Set(); // files whose top-level hook failed
 let stray = false; // a hook failure whose file's summary is still to come
 let notRun;
+const summarized = new Set(); // files whose own summary came
+const execArgv = ['--import=data:text/javascript,process.stdout._handle.setBlocking(true)'];
 const stop = new AbortController();
 const stream = run({
 	files,
@@ -210,6 +219,7 @@ const stream = run({
 	signal: stop.signal,
 	timeout: 300_000,
 	forceExit: true,
+	execArgv,
 	testNamePatterns
 });
 // An aborted run still dequeues and completes every file, so what had
@@ -235,6 +245,7 @@ stream.on('test:fail', (t) => {
 stream.on('test:summary', (s) => {
 	if (s.file === undefined && s.success) process.exitCode = 0;
 	const f = s.file && relative(process.cwd(), s.file);
+	if (f) summarized.add(f);
 	if (!stray || !files.includes(f)) return;
 	stray = false;
 	hooked.add(f);
@@ -260,13 +271,23 @@ out.on('end', async () => {
 		process.exitCode = 1;
 		console.log(`test: ${missing.length} file${missing.length === 1 ? '' : 's'} never completed: ${missing.join(' ')}`);
 	}
+	// Read at the end: a file's `test:complete` comes as it finishes, its
+	// summary only once the files before it have reported.
+	const cut = files.filter((f) => took[f]?.passed && !summarized.has(f));
+	for (const f of cut) took[f] = { ...took[f], passed: false };
+	if (cut.length) {
+		process.exitCode = 1;
+		console.log(`test: ${cut.length} file${cut.length === 1 ? '' : 's'} cut short, some tests never reported: ${cut.join(' ')}`);
+	}
 	const red = Object.keys(took).filter((f) => !took[f].passed);
 	if (!notRun && !missing.length) {
 		for (const f of red.filter((f) => retry.has(f))) {
 			let passed = false;
-			const again = run({ files: [f], timeout: 300_000, forceExit: true, testNamePatterns });
+			let whole = false;
+			const again = run({ files: [f], timeout: 300_000, forceExit: true, execArgv, testNamePatterns });
 			again.on('test:summary', (s) => {
-				if (s.file === undefined) passed = s.success;
+				if (s.file === undefined) passed = whole && s.success;
+				else whole = true;
 			});
 			for await (const chunk of again.compose(reporter())) process.stdout.write(chunk);
 			console.log(`RETRIED web/${f} (${retry.get(f)}): first run failed, retry ${passed ? 'passed' : 'failed'}`);
