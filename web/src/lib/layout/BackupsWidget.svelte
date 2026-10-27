@@ -184,7 +184,10 @@
 		fresh = { ...fresh, ...next };
 		found = null;
 		probe = null;
-		void explain(fresh, '');
+		// The reach reads the frequency and the cap, the size the databases: a
+		// destination's field changes neither, and asked again on each, four
+		// runs a field queued ahead of the plan's own (da-a0rcg).
+		if ('every' in next || 'slots' in next || 'dbs' in next) void explain(fresh, '');
 	}
 
 	const look = () => perform(async () => (found = (await listed(fresh)).backups));

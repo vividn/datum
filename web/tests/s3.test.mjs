@@ -87,6 +87,28 @@ describe('an S3-compatible destination', () => {
 		});
 	});
 
+	// Each field re-asked the reach and the size, four runs a field, so filling
+	// a plan in queued some thirty ahead of its first backup, which a loaded
+	// lane took past 30 s to reach (da-a0rcg).
+	test('a destination’s fields ask the CLI nothing; the frequency asks the reach again', async () => {
+		await withApp(async (app) => {
+			const sheet = await openSheet(app.page);
+			await sheet.locator('.add .explain').waitFor();
+			const seen = await app.spyOnRunner();
+			await fillS3(sheet, { bucket: 'plan' });
+			await sheet.locator('input[data-plan-field="name"]').fill('cloud');
+			await app.idle();
+			assert.deepEqual(await seen(), []);
+
+			await sheet.getByLabel('Frequency').selectOption({ label: 'daily' });
+			await app.idle();
+			assert.deepEqual(
+				(await seen()).map((argv) => argv.slice(0, 3).join(' ')),
+				['db backup --plan', 'db backup --plan', 'db backup --plan']
+			);
+		});
+	});
+
 	test('off the DEBUG database a plan backs up to the bucket: the slot file and the index, in this device’s folder under the prefix, found again', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
