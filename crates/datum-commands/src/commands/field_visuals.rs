@@ -21,8 +21,8 @@ use chrono::{DateTime, Utc};
 use datum_core::db::IGNORED_STATE_VALUE;
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
-use datum_core::shape::is_off_state;
 use datum_core::shape::{is_block_verb, is_unrendered_switch_value, render_shape, RenderShape};
+use datum_core::shape::{is_inactive_state, is_off_state};
 use datum_core::state::FieldStateRows;
 use datum_core::time::ZoneTimeline;
 use datum_layout::dayview::{BlockFill, DayviewBlock, DayviewPoint};
@@ -270,8 +270,10 @@ pub(crate) fn render_field_visuals(
                                 .icon_for(entry.state.as_ref(), entry.data.as_ref())
                                 .is_some()
                         }),
-                        // An occur carries no state; a moment does.
-                        moment: entry.state.as_ref().is_some_and(|v| !v.is_null()),
+                        // A dotted line where the field is on at this
+                        // instant, a dot where it is not: an occur, or a
+                        // moment of `false`, TRACKED or IGNORED (da-2028s).
+                        moment: !is_inactive_state(entry.state.as_ref()),
                     });
                 }
             }

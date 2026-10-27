@@ -242,8 +242,10 @@ pub struct DayviewPoint {
     /// (da-45wgz). Resolved by the caller, as `glyph` is.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub icon: bool,
-    /// A state change at an instant (`switch run -m`), not an occurrence
-    /// (da-lqo7x): drawn as a dotted line across its lane, not a dot.
+    /// A moment of an active state (`switch run -m`), not an occurrence
+    /// (da-lqo7x): drawn as a dotted line across its lane, not a dot. A
+    /// moment of `false`, TRACKED or IGNORED is a dot, as an occur is
+    /// (da-2028s).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub moment: bool,
 }

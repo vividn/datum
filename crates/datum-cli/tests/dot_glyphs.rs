@@ -514,3 +514,55 @@ fn a_moment_is_a_dotted_line_its_lane_tall_and_an_occur_is_a_dot() {
         assert!(!coffee.contains("moment"), "{view}: {coffee}");
     }
 }
+
+/// da-2028s: a moment is a dotted line where the state it records is
+/// active, `true` or a named state, and a dot, as an occur is, where it is
+/// not: `false`, TRACKED or IGNORED.
+#[test]
+fn a_moment_of_an_inactive_state_is_a_dot() {
+    let env = Env::new();
+    let at = "2026-04-27T12:00+00:00";
+    for (field, state) in [
+        ("on", "true"),
+        ("named", "run"),
+        ("off", "false"),
+        ("tracked", "TRACKED"),
+        ("ignored", "IGNORED"),
+    ] {
+        env.run(&["switch", field, state, "-m", "-t", at]);
+    }
+    env.run(&["occur", "coffee", "-t", at]);
+    let svg = env.run(&[
+        "dayview",
+        "--width",
+        "300",
+        "--day-height",
+        "200",
+        "--end-date",
+        "2026-04-27",
+    ]);
+    for (field, moment) in [
+        ("on", true),
+        ("named", true),
+        ("off", false),
+        ("tracked", false),
+        ("ignored", false),
+        ("coffee", false),
+    ] {
+        let lane = svg
+            .split(&format!(r#"<g class="field" data-field="{field}">"#))
+            .nth(1)
+            .unwrap_or_else(|| panic!("no {field} lane\n{svg}"));
+        let lane = &lane[..lane.find("</g>").unwrap()];
+        assert_eq!(
+            lane.contains(r#"<line class="point-fg moment""#),
+            moment,
+            "{field}: {lane}"
+        );
+        assert_eq!(
+            lane.contains(r#"<circle class="point-fg""#),
+            !moment,
+            "{field}: {lane}"
+        );
+    }
+}
