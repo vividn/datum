@@ -642,6 +642,43 @@ describe('the strip: never a blank between two tabs', () => {
 		);
 	});
 
+	// da-obvkq: a class toggled over a `> *` rule has Chrome restyle every
+	// element under the box that wears it, and `grown` went on `main` at
+	// every switch to a single-pane root: about 50 ms of each on a phone at
+	// 4×, booked as Layout. Chrome's trace names such an invalidation.
+	test('a root switch restyles no layout whole (da-obvkq)', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const root = async (name) => {
+					await page.locator('.root-bar [role="tab"]', { hasText: name }).click();
+					await until(() => shown(page), (shownName) => shownName === name);
+					await app.idle();
+				};
+				await root('tail');
+				await root('main');
+				const cdp = await page.context().newCDPSession(page);
+				const events = [];
+				cdp.on('Tracing.dataCollected', (e) => events.push(...e.value));
+				await cdp.send('Tracing.start', {
+					categories: 'disabled-by-default-devtools.timeline.invalidationTracking',
+					transferMode: 'ReportEvents'
+				});
+				await root('tail');
+				await root('main');
+				const done = new Promise((resolve) => cdp.once('Tracing.tracingComplete', resolve));
+				await cdp.send('Tracing.end');
+				await done;
+				await cdp.detach();
+				const invalidations = events.filter((e) => e.name === 'StyleInvalidatorInvalidationTracking').map((e) => e.args.data);
+				assert.ok(invalidations.length > 0, 'the trace held no style invalidation at all');
+				const whole = invalidations.filter((d) => /subtree/.test(d.reason) && /tab-body/.test(d.nodeName));
+				assert.deepEqual(whole.map((d) => d.nodeName), [], 'a switch restyled everything under a tab');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
 	// da-1acrc: the tab in front was `display: contents`, so going behind
 	// built the layout's boxes again. As a box it must still let the page
 	// scroll to the split's far edge and the content's padding past it,

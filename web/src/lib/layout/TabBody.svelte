@@ -181,7 +181,11 @@
 	.behind:not(.beside) {
 		overflow: clip;
 	}
-	.grown:not(.beside) > :global(*) {
+	/* Only a split is ever grown (`lands`), and the rule names it: a class
+	   toggled over `> *` has Chrome restyle everything under the tab, and
+	   for `main` on a phone at 4× that was about 50 ms of every root switch
+	   (da-obvkq). */
+	.grown:not(.beside) > :global([data-split]) {
 		margin: -1px;
 	}
 </style>
