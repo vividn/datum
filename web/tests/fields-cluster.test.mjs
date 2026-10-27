@@ -173,6 +173,20 @@ describe('ringOf', () => {
 		assert.deepEqual(ring.add, { x: rightmost(ring, w) + GAP + 55, y: 0 });
 		assert.deepEqual(overlaps(boxes(ring, w)), []);
 	});
+
+	// da-65210: the 8-row phone bar below, its buttons measured. It has room
+	// for every state, which the first pass split either side of a row at
+	// some tap points, leaving one state past the edge.
+	test('a box with room for every state holds them all, wherever across it the tap is', () => {
+		const w = { back: 78.3, add: 110, end: 54.75, states: Array.from({ length: 34 }, (_, i) => (i < 10 ? 46.6 : 54.75)) };
+		for (let x = 20; x <= 324; x += 4) {
+			const r = { up: 244, down: 298 - 244, left: x, right: 345 - x };
+			const ring = ringOf(w, 30.19, r, GAP);
+			const out = ring.states.filter((s, i) => s.x - w.states[i] / 2 < -r.left - 1e-9 || s.x + w.states[i] / 2 > r.right + 1e-9);
+			assert.equal(out.length, 0, `tapped ${x}px from the left: ${out.length} past an edge`);
+			assert.deepEqual(overlaps(boxes(ring, w)), [], `tapped ${x}px from the left`);
+		}
+	});
 });
 
 const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
@@ -534,9 +548,8 @@ describe('a switch field’s states around the tap', () => {
 	test('in an 8-row bar on a phone, the states fill its rows before any scrolls', async () => {
 		const many = Array.from({ length: 34 }, (_, i) => `s${i}`);
 		// Enough fields more to overrun eight rows, so the bar scrolls and the
-		// tap is at its middle: fewer stand centered (da-syu4f), where the tap
-		// falls by chance on a spot `ringOf` packs one state short of the
-		// rows (da-65210).
+		// tap is at its middle: fewer stand centered (da-syu4f). The other tap
+		// points are `ringOf`'s sweep above (da-65210).
 		const more = Array.from({ length: 20 }, (_, i) => `x${i}`);
 		await withApp(
 			async (app) => {

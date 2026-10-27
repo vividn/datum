@@ -559,7 +559,10 @@ export interface Room {
  * centre where one is, before any state (da-u9nfv) — vividn: «yes shift
  * those into another row if needed». A button no spot inside `room`
  * holds, and a `+ Add state` past the right edge, go past it, where the
- * box scrolls, rather than move anything.
+ * box scrolls, rather than move anything — but first a second pass
+ * (da-65210): a state past the edge takes the nearest row of states whose
+ * room either side adds up to it, the row slid left to open that room at
+ * the right edge, so a row's room is not lost by being split in two.
  *
  * `w` is each button's width, `h` a button's height; every spot returned
  * is from the tap.
@@ -571,9 +574,10 @@ export function ringOf(
 	gap: number
 ): Ring {
 	const half = (h + gap) / 2;
-	const placed: { x: number; y: number; w: number }[] = [];
-	const clear = (x: number, y: number, wide: number) =>
-		placed.every((p) => Math.abs(p.x - x) >= (p.w + wide) / 2 + gap || Math.abs(p.y - y) >= h + gap);
+	type Placed = Spot & { w: number };
+	const placed: Placed[] = [];
+	const apart = (a: Placed, b: Placed) => Math.abs(a.x - b.x) >= (a.w + b.w) / 2 + gap || Math.abs(a.y - b.y) >= h + gap;
+	const clear = (x: number, y: number, wide: number) => placed.every((p) => apart(p, { x, y, w: wide }));
 	const x0 = Math.max(w.end / 2 - room.left, Math.min(0, room.right - w.end / 2));
 	const y0 = Math.max(h / 2 - room.up, Math.min(0, room.down - h / 2));
 	placed.push({ x: x0, y: y0, w: w.end });
@@ -593,7 +597,24 @@ export function ringOf(
 	};
 	const line = { x: x0 - (w.end / 2 + gap + w.back / 2), y: y0 };
 	const back = (inside(line, w.back) && put(line, w.back)) || take(w.back, (p) => p.x < x0);
-	const states = w.states.map((wide) => take(wide));
+	w.states.forEach((wide) => take(wide));
+	// `end` and `< Back` are placed first, and their rows never slide.
+	const ys = [...new Set(placed.slice(2).map((p) => p.y))].sort((a, b) => Math.abs(a - y0) - Math.abs(b - y0));
+	for (const p of placed.slice(2).filter((p) => p.x + p.w / 2 > room.right))
+		ys.some((y) => {
+			const row = placed.filter((q) => q !== p && q.y === y);
+			if (!row.length || row.some((q) => placed.indexOf(q) < 2)) return false;
+			const by = Math.max(0, p.w + gap - room.right + Math.max(...row.map((q) => q.x + q.w / 2)));
+			if (Math.min(...row.map((q) => q.x - q.w / 2)) - by < -room.left) return false;
+			const moved = [...row, p];
+			const was = moved.map((q) => ({ ...q }));
+			row.forEach((q) => (q.x -= by));
+			Object.assign(p, { x: room.right - p.w / 2, y });
+			if (moved.every((m) => placed.every((q) => q === m || apart(q, m)))) return true;
+			moved.forEach((q, i) => Object.assign(q, was[i]));
+			return false;
+		});
+	const states = placed.slice(2).map(({ x, y }) => ({ x, y }));
 	const right = Math.max(...placed.map((p) => p.x + p.w / 2));
 	const add = { x: right + gap + w.add / 2, y: y0 };
 	return { back, add, end: { x: x0, y: y0 }, states };
