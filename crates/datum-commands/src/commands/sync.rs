@@ -129,6 +129,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     local(&at)
                 );
             }
+            bind_device(db);
             #[cfg(feature = "net")]
             let synced = datum_sync::now_all(db, verbose);
             #[cfg(not(feature = "net"))]
@@ -449,6 +450,8 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         // page can already read the whole db file, `sync_local` included
         // (vividn, 2026-09-29, da-rcb5m). Hidden from help and completions.
         SyncCommand::EndpointKey => {
+            // datum.day's sync leader asks it as it starts: its sync's start.
+            bind_device(db);
             let key = db.sync_endpoint_secret()?;
             println!(
                 "{}",
@@ -658,6 +661,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         #[cfg(feature = "net")]
         SyncCommand::Run => {
             db.sync_refuse_debug()?;
+            bind_device(db);
             let path = db
                 .conn()
                 .path()
@@ -851,6 +855,40 @@ pub(crate) fn client_labeller(db: &Db) -> Result<impl Fn(&str) -> String> {
             format!("{kind} {}", id.chars().take(8).collect::<String>())
         })
     })
+}
+
+/// Bind this copy to this install's device once (da-n0uj1.2): a copy
+/// chained before the binding, or bound under another key (two tabs of a
+/// browser's first visit each making one), describes itself again as a sync
+/// starts, its label kept as `rename` keeps it. Bound, it writes nothing. A
+/// failure is said and the sync goes on.
+pub(super) fn bind_device(db: &Db) {
+    let bound = || -> Result<()> {
+        crate::config::device_key()?;
+        let Some(device) = datum_core::db::device_id() else {
+            return Ok(());
+        };
+        let chain = db.sync_chain()?;
+        if !chain.exists() || chain.dissolved().is_some() {
+            return Ok(());
+        }
+        let Some(m) = chain.member(&db.sync_endpoint_id()?) else {
+            return Ok(());
+        };
+        // One that never described itself is joining: its join's describe
+        // binds it, and one here would push mid-join (da-qlffb).
+        let Some(kind) = m.kind.as_deref() else {
+            return Ok(());
+        };
+        if m.device.as_ref() == Some(&device) || m.revoked.is_some() {
+            return Ok(());
+        }
+        let label = (!m.auto).then_some(m.label.as_str());
+        describe_self(db, label, kind)
+    };
+    if let Err(e) = bound() {
+        eprintln!("⚠ this copy could not bind itself to this device: {e:#}");
+    }
 }
 
 /// What this build is to its peers: the native CLI, or datum.day's, whose
@@ -1230,7 +1268,7 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
             .map(|m| {
                 json!({
                     "endpoint": m.endpoint, "label": m.label, "client": m.client,
-                    "kind": m.kind, "user": m.user, "host": m.host, "db": m.db,
+                    "device": m.device, "kind": m.kind, "user": m.user, "host": m.host, "db": m.db,
                     "admitted": chain::hlc_time(&m.admitted), "via": m.via,
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
                     "purged": m.purged.as_deref().map(chain::hlc_time),
@@ -1414,6 +1452,7 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
             "open": live && chain.is_open(), "unlocked": unlocked,
             "this": {
                 "endpoint": mine, "client": db.sync_client_id()?, "label": label,
+                "device": datum_core::db::device_id(),
                 "datum": datum_core::build(), "schema": CURRENT_SCHEMA_VERSION,
                 "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
                 "revoked": chain.member(&mine).and_then(|m| m.revoked.as_deref()).map(chain::hlc_time),

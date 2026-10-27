@@ -49,6 +49,31 @@ describe('a sync chain started in the page', () => {
 	});
 });
 
+describe("a browser's device key (da-n0uj1.2)", () => {
+	test('binds each database in the profile to one device, kept across a reload', async () => {
+		await withWallClock(
+			async (app) => {
+				const deviceOf = async (db) => {
+					const list = await app.run(['--db', db, 'sync', 'chain', 'list', '--json']);
+					assert.equal(list.code, 0, list.stderr);
+					return JSON.parse(list.stdout).members[0].device;
+				};
+				for (const db of ['datum', 'other']) {
+					const invite = await app.run(['--db', db, 'sync', 'new-invite']);
+					assert.equal(invite.code, 0, invite.stderr);
+				}
+				const device = await deviceOf('datum');
+				assert.match(device, /^[0-9a-f]{64}$/);
+				assert.equal(await deviceOf('other'), device);
+				await app.reload();
+				const status = JSON.parse((await app.run(['sync', 'status', '--json'])).stdout);
+				assert.equal(status.this.device, device);
+			},
+			{ prepare: relayed(relay) }
+		);
+	});
+});
+
 /** Two browser profiles, `a` and `b`, each syncing through the relay. */
 const twoBrowsers = (body) =>
 	withWallClock((a) => withWallClock((b) => body(a, b), { prepare: relayed(relay) }), { prepare: relayed(relay) });

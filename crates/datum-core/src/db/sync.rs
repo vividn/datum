@@ -108,6 +108,7 @@ struct Invocation {
     alias_chain: Option<Value>,
     client_source: Option<fn() -> Option<String>>,
     client: Option<String>,
+    device_source: Option<fn() -> Option<String>>,
     origin: Option<Value>,
 }
 
@@ -131,6 +132,24 @@ pub fn set_invocation(raw: Option<String>, alias_chain: Option<Value>) {
 /// Lazy, so a command that writes nothing reads nothing for it.
 pub fn set_client_source(source: fn() -> Option<String>) {
     INVOCATION.with(|i| i.borrow_mut().client_source = Some(source));
+}
+
+/// How to learn this install's device key (da-n0uj1.2), hex: one per
+/// install, signing that each of its databases' endpoints is its own.
+pub fn set_device_source(source: fn() -> Option<String>) {
+    INVOCATION.with(|i| i.borrow_mut().device_source = Some(source));
+}
+
+/// This install's device secret, if it has one.
+fn device_secret() -> Option<[u8; 32]> {
+    let source = INVOCATION.with(|i| i.borrow().device_source)?;
+    unhex::<32>(source()?.trim())
+}
+
+/// This install's device id: its device key's public half (da-n0uj1.2).
+pub fn device_id() -> Option<String> {
+    let key = SigningKey::from_bytes(&device_secret()?);
+    Some(hex(key.verifying_key().as_bytes()))
 }
 
 fn client_id() -> String {

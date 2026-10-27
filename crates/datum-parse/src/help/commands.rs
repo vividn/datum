@@ -1881,6 +1881,11 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
         summary: "Override the per-installation client id stamped on entries.",
     },
     EnvVarSpec {
+        name: "DATUM_DEVICE_KEY",
+        key: "",
+        summary: "This install's device key (hex), in place of `device_key` in the data directory.",
+    },
+    EnvVarSpec {
         name: "DATUM_DEFAULT_FIELD",
         key: "default_field",
         summary: "Field used when one is omitted from the argv.",

@@ -234,6 +234,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     // `client_id` file lives and dies with each process, and a new client per
     // process was a new endpoint key per process (da-6kpj5, da-mmkre).
     datum_core::db::set_client_source(|| crate::config::client_id().ok());
+    datum_core::db::set_device_source(|| crate::config::device_key().ok());
     let notices = db.sync_notices_unannounced().unwrap_or_default();
     // The `--show json` echo is one document per run, not per entry, so the
     // outermost scope is the one that prints (da-yc9w). Both dispatch entry

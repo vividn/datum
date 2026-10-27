@@ -17,6 +17,7 @@ from the table the binary itself carries:
 | `DATUM_CONFIG`         | Path to a specific `datumrc.toml`.                                                              |
 | `DATUM_CONFIG_HOME`    | Override the directory `datumrc.toml` lives in.                                                 |
 | `DATUM_CLIENT_ID`      | Override the per-installation client id stamped on entries.                                     |
+| `DATUM_DEVICE_KEY`     | This install's device key (hex), in place of `device_key` in the data directory.                |
 | `DATUM_DEFAULT_FIELD`  | Field used when one is omitted from the argv.                                                   |
 | `DATUM_SCRIPT`         | Name a scripted run: every change it makes says so in its origin (`datum history`).             |
 | `DATUM_EDITOR`         | Editor for `datum edit`. Read FIRST, before toml `editor`, `$VISUAL`, `$EDITOR`.                |

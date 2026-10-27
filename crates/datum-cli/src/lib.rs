@@ -118,6 +118,7 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     // and with no client yet `sync::endpoint` would mint this copy a new
     // key (da-9q3fr).
     datum_core::db::set_client_source(|| config::client_id().ok());
+    datum_core::db::set_device_source(|| config::device_key().ok());
     // Shell completion's hidden reader (da-bu09u): before any parse or db
     // open, and it never fails — a TAB must not print an error. Global
     // options may stand before it (da-ejoes).

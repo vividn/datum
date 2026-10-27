@@ -80,3 +80,91 @@ fn chain_list_says_a_departure_no_member_holds_is_pending() {
     let row = own_row();
     assert!(row.contains("  LEFT ") && !row.contains("LEAVING"), "{row}");
 }
+
+/// One install is one device (da-n0uj1.2): each of its databases, in a
+/// chain of its own, binds its own endpoint to the one device key in its
+/// data directory, made at the first need and kept for every later process.
+/// Another install is another device, and its binding reaches the chain's
+/// other members with its describe.
+#[test]
+fn an_installs_databases_bind_their_endpoints_to_one_device_key() {
+    let (a, b) = chained();
+    let in_db = |args: &[&str]| {
+        let out = a.cmd(args).env("DATUM_DB", a.key("other.db")).output();
+        let out = out.unwrap();
+        assert!(out.status.success(), "{out:?}");
+        json(&String::from_utf8(out.stdout).unwrap())
+    };
+    in_db(&["sync", "new-invite"]);
+    let other = in_db(&["sync", "chain", "list", "--json"]);
+    let device = member_of(&a, &a.id())["device"].clone();
+    assert!(device.as_str().is_some_and(|d| d.len() == 64), "{device}");
+    assert_eq!(other["members"][0]["device"], device, "{other}");
+    assert_ne!(other["members"][0]["endpoint"], a.id().as_str());
+    assert_ne!(
+        other["chain"],
+        json(&a.ok(&["sync", "chain", "list", "--json"]))["chain"]
+    );
+    assert_eq!(
+        json(&a.ok(&["sync", "status", "--json"]))["this"]["device"],
+        device
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let file = std::fs::metadata(a.tmp.path().join("home/device_key")).unwrap();
+        assert_eq!(file.permissions().mode() & 0o777, 0o600);
+    }
+    // b is admitted and has not described itself: bound to nothing, until it does.
+    assert_eq!(member_of(&a, &b.id())["device"], serde_json::Value::Null);
+    b.ok(&["sync", "chain", "rename", "bee"]);
+    assert!(b.send(&a).0);
+    let theirs = member_of(&a, &b.id())["device"].clone();
+    assert_eq!(
+        theirs,
+        json(&b.ok(&["sync", "status", "--json"]))["this"]["device"]
+    );
+    assert!(theirs.is_string() && theirs != device, "{theirs}");
+}
+
+/// A copy chained before the binding is bound at its next sync, its label
+/// kept (da-n0uj1.2): it describes itself again once, and not after. A
+/// device key file, or a `DATUM_DEVICE_KEY`, that holds no key is said, by
+/// name, and the sync goes on.
+#[test]
+fn a_copy_chained_unbound_is_bound_at_its_next_sync() {
+    let a = Copy::new();
+    for args in [
+        &["sync", "new-invite"][..],
+        &["sync", "chain", "rename", "lap"],
+    ] {
+        let out = a
+            .cmd(args)
+            .env("DATUM_DEVICE_KEY", "none")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+    }
+    let row = || member_of(&a, &a.id());
+    assert_eq!(row()["device"], serde_json::Value::Null);
+    let records = || a.query("SELECT COUNT(*) FROM ops WHERE kind = 'chain'");
+    a.ok(&["sync"]);
+    let (bound, held) = (row(), records());
+    assert_eq!(bound["label"], "lap");
+    assert_eq!(
+        bound["device"],
+        json(&a.ok(&["sync", "status", "--json"]))["this"]["device"]
+    );
+    a.ok(&["sync"]);
+    assert_eq!(records(), held, "bound, a sync describes nothing more");
+    std::fs::write(a.tmp.path().join("home/device_key"), "").unwrap();
+    let said = a.stderr_of(&["sync"]);
+    assert!(said.contains("device_key holds no device key"), "{said}");
+    let out = a
+        .cmd(&["sync"])
+        .env("DATUM_DEVICE_KEY", "none")
+        .output()
+        .unwrap();
+    let said = String::from_utf8(out.stderr).unwrap();
+    assert!(said.contains("DATUM_DEVICE_KEY is no device key"), "{said}");
+}

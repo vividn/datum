@@ -484,10 +484,12 @@ fn run() -> Result<()> {
             std::thread::spawn(move || {
                 // The client source is per thread, as `dispatch` sets it.
                 datum_core::db::set_client_source(|| config::client_id().ok());
+                datum_core::db::set_device_source(|| config::device_key().ok());
                 // A panic is a failure like any other: retried at the next look.
                 // `Ok(Err)`: it opened and ran, and then stopped.
                 let done = std::panic::catch_unwind(|| {
                     let db = Db::open(&path.to_string_lossy())?;
+                    super::sync::bind_device(&db);
                     // A `connect` or an `invite` taking it up meanwhile has it
                     // to itself (da-8sah2): this endpoint would serve its
                     // joiner too. Retried at a look that finds it free.

@@ -314,6 +314,52 @@ fn file_client_id() -> Result<String> {
     Ok(id)
 }
 
+/// This install's device key (da-n0uj1.2), hex: `DATUM_DEVICE_KEY` (a
+/// browser's, kept in its own storage), else `device_key` in the data
+/// directory, made on first need. One per install: it signs that each of
+/// its databases' endpoints is its own.
+pub fn device_key() -> Result<String> {
+    let is_key = |k: &str| k.len() == 64 && k.bytes().all(|b| b.is_ascii_hexdigit());
+    if let Some(v) = read_env("DATUM_DEVICE_KEY") {
+        anyhow::ensure!(
+            is_key(&v),
+            "DATUM_DEVICE_KEY is no device key: 64 hex digits"
+        );
+        return Ok(v);
+    }
+    let path = data_dir()?.join("device_key");
+    if !path.exists() {
+        // Written aside and linked in, so two first needs at once agree on
+        // one key and none reads it half written.
+        // Named by the new key, as a process id panics under WASI.
+        let secret = datum_core::db::chain::new_admin_secret();
+        let aside = path.with_extension(&secret[..16]);
+        let mut f = std::fs::OpenOptions::new();
+        f.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut f, 0o600);
+        std::io::Write::write_all(&mut f.open(&aside)?, secret.as_bytes())
+            .with_context(|| format!("Writing the device key to {aside:?}"))?;
+        let linked = std::fs::hard_link(&aside, &path);
+        let _ = std::fs::remove_file(&aside);
+        match linked {
+            Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
+                return Err(e).with_context(|| format!("Writing the device key to {path:?}"));
+            }
+            _ => {}
+        }
+    }
+    let key = std::fs::read_to_string(&path)
+        .with_context(|| format!("Reading the device key from {path:?}"))?;
+    let key = key.trim();
+    anyhow::ensure!(
+        is_key(key),
+        "{} holds no device key; with it moved aside, the next sync makes a new one",
+        path.display()
+    );
+    Ok(key.into())
+}
+
 fn xdg_data_dir() -> Option<PathBuf> {
     std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)

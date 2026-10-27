@@ -71,6 +71,12 @@
 //!     pieces ([`Chain::assemble`], da-xijlw); `label` is then only what a
 //!     copy before it shows. The latest per endpoint wins. Unsigned when an
 //!     endpoint describes ITSELF; about another member, an admin act.
+//!     Its own carries `device_key` and `device_sig` (da-n0uj1.2): its
+//!     install's device key, one per data directory or browser profile, and
+//!     that key's signature saying this endpoint in this chain is its own
+//!     ([`bind_device`]), so one install's copies in every chain are one
+//!     device. A bad or missing one binds nothing; a describe of another
+//!     member leaves its binding as it was.
 //!
 //!   - `leave {endpoint}` (da-dsob1): a member's departure, which it signs
 //!     itself before it forgets the chain — unsigned by an admin, and the
@@ -110,8 +116,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::{
-    check_signature, digest, endpoint, hex, parse_hlc, push, reconsider, relabel_conflicts, settle,
-    sha256_hex, sign_uncovered, unhex, ApplySummary, Op,
+    check_signature, device_secret, digest, endpoint, hex, parse_hlc, push, reconsider,
+    relabel_conflicts, settle, sha256_hex, sign_uncovered, unhex, ApplySummary, Op,
 };
 use crate::db::Db;
 use crate::error::{DatumError, Refusal, Result};
@@ -214,6 +220,29 @@ pub fn new_admin_secret() -> String {
 /// The secret a key file holds.
 pub fn read_admin_secret(text: &str) -> Option<[u8; 32]> {
     unhex::<32>(text.trim())
+}
+
+/// What a device key signs to say an endpoint is one of its install's.
+fn binding(chain: &str, endpoint: &str) -> Vec<u8> {
+    format!("datum device binding\nchain {chain}\nendpoint {endpoint}").into_bytes()
+}
+
+/// `device_key` and `device_sig` for a describe: the device secret's public
+/// half, and its signature binding `endpoint` in `chain` to it.
+pub fn bind_device(secret: &[u8; 32], chain: &str, endpoint: &str) -> (String, String) {
+    let key = SigningKey::from_bytes(secret);
+    let sig = key.sign(&binding(chain, endpoint));
+    (hex(key.verifying_key().as_bytes()), hex(&sig.to_bytes()))
+}
+
+/// The device a describe binds its endpoint to, when its `device_sig` is
+/// its `device_key`'s over its chain and endpoint: else none.
+fn bound_device(r: &Value) -> Option<String> {
+    let key = ed25519_dalek::VerifyingKey::from_bytes(&unhex(r["device_key"].as_str()?)?).ok()?;
+    let sig = ed25519_dalek::Signature::from_bytes(&unhex(r["device_sig"].as_str()?)?);
+    let signed = binding(r["chain"].as_str()?, r["endpoint"].as_str()?);
+    key.verify_strict(&signed, &sig).ok()?;
+    Some(hex(key.as_bytes()))
 }
 
 /// The hash an invite record carries of its secret.
@@ -397,6 +426,8 @@ pub struct Member {
     pub host: Option<String>,
     pub db: Option<String>,
     pub auto: bool,
+    /// The device key its own latest `describe` bound it to (da-n0uj1.2).
+    pub device: Option<String>,
     /// The HLC of the revoke: its ops from then on are refused.
     pub revoked: Option<String>,
     /// The HLC of its purge (da-ry11c): every op of its is refused.
@@ -917,6 +948,9 @@ impl Chain {
                 m.kind = kind.as_str().map(Into::into);
                 (m.user, m.host, m.db) = (piece("user"), piece("host"), piece("db"));
                 m.auto = r["auto"] == true && m.host.is_some();
+                if own {
+                    m.device = bound_device(r);
+                }
                 m.last_act = op.hlc.clone();
                 Ok(())
             }
@@ -1082,6 +1116,7 @@ impl Chain {
             host: None,
             db: None,
             auto: false,
+            device: None,
             roles: vec![(hlc.into(), role)],
             filter,
         });
@@ -1368,13 +1403,18 @@ impl Db {
         let db = db.map(|s| fit(&s.to_string_lossy(), MAX_LABEL));
         let (user, host) = (user.map(|u| fit(u, MAX_LABEL)), fit(host, MAX_LABEL));
         let (user, host) = (user.as_deref(), host.as_str());
-        let record = json!({
-            "type": "describe", "chain": self.sync_chain()?.id,
-            "endpoint": self.sync_endpoint_id()?, "client": self.sync_client_id()?,
+        let (chain, me) = (self.sync_chain()?.id, self.sync_endpoint_id()?);
+        let mut record = json!({
+            "type": "describe", "chain": chain,
+            "endpoint": me, "client": self.sync_client_id()?,
             "label": label.map_or_else(|| assembled(user, host, db.as_deref()), String::from),
             "auto": label.is_none(), "kind": kind, "user": user, "host": host, "db": db,
             "created": Utc::now().to_rfc3339(),
         });
+        if let Some(secret) = device_secret() {
+            let (key, sig) = bind_device(&secret, &chain, &me);
+            (record["device_key"], record["device_sig"]) = (key.into(), sig.into());
+        }
         self.sync_chain_write(record, true)
     }
 
@@ -1713,6 +1753,67 @@ mod tests {
         assert_eq!(
             (&shown[1], &shown[4]),
             (&"phone".into(), &"phone (data)".into())
+        );
+    }
+
+    /// A member's own describe binds its endpoint to the device key that
+    /// signed it (da-n0uj1.2); a signature over another endpoint or chain,
+    /// or by another key than the one named, binds nothing, and the record
+    /// still folds. A describe of it by another member leaves the binding.
+    #[test]
+    fn a_describe_binds_its_endpoint_to_the_device_that_signed_it() {
+        let [a, b] = ["a1", "b2"].map(|h| h.repeat(32));
+        let (device, other) = ([7u8; 32], [8u8; 32]);
+        let mut ops = Vec::new();
+        let mut add = |by: &str, mut rec: Value| {
+            let t = ops.len() + 1;
+            rec["chain"] = "c1".into();
+            let op = json!({
+                "endpoint": by, "seq": t, "hlc": format!("2026-09-29T00:00:{t:02}.000Z/0000"),
+                "hid": CHAIN_HID, "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
+            });
+            ops.push(Op::parse(&op.to_string()).unwrap());
+            let chain = Chain::fold(ops.clone());
+            assert!(chain.rejected.is_empty(), "{:?}", chain.rejected);
+            chain.member(&a).unwrap().device.clone()
+        };
+        let describe = |label: &str, (key, sig): (String, String)| {
+            json!({"type": "describe", "endpoint": a, "label": label,
+                "device_key": key, "device_sig": sig})
+        };
+        add(&a, json!({"type": "genesis", "admins": [], "label": "a"}));
+        let (key, sig) = bind_device(&device, "c1", &a);
+        assert_eq!(
+            add(&a, describe("laptop", (key.clone(), sig))),
+            Some(key.clone())
+        );
+        // Signed over b, over another chain, by another key: bound to nothing.
+        let forged = [
+            bind_device(&device, "c1", &b),
+            bind_device(&device, "c2", &a),
+            (key.clone(), bind_device(&other, "c1", &a).1),
+        ];
+        for (n, forged) in forged.into_iter().enumerate() {
+            assert_eq!(add(&a, describe(&format!("forged {n}"), forged)), None);
+        }
+        assert_eq!(
+            add(&a, describe("again", bind_device(&device, "c1", &a))),
+            Some(key.clone())
+        );
+        let invite = json!({"type": "invite", "invite_id": "i", "secret_hash": sha256_hex("s"),
+            "expires": "2099-01-01T00:00:00Z", "caps": {}});
+        add(&a, invite);
+        add(
+            &a,
+            json!({"type": "admit", "endpoint": b, "label": "b", "via": "i", "secret": "s"}),
+        );
+        // b renames a in the open chain, carrying no binding: a keeps it.
+        let rename = json!({"type": "describe", "endpoint": a, "label": "desk"});
+        assert_eq!(add(&b, rename), Some(key.clone()));
+        // a's own describe without one (an older build) binds nothing.
+        assert_eq!(
+            add(&a, json!({"type": "describe", "endpoint": a, "label": "x"})),
+            None
         );
     }
 

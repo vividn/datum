@@ -25,3 +25,29 @@ export function clientId(): string {
 		return minted();
 	}
 }
+
+const DEVICE_KEY = 'datum-device-key';
+
+/**
+ * This browser's device key (da-n0uj1.2): an Ed25519 secret, hex, one per
+ * profile like the client id and kept beside it, which the CLI reads as
+ * `DATUM_DEVICE_KEY` to sign that each database's endpoint here is this
+ * device's. Cleared site data makes a new device; a store the browser
+ * blocks gives one for the session.
+ */
+let sessionDeviceKey: string | undefined;
+export function deviceKey(): string {
+	const minted = () =>
+		(sessionDeviceKey ??= Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
+			b.toString(16).padStart(2, '0')
+		).join(''));
+	try {
+		const existing = localStorage.getItem(DEVICE_KEY);
+		if (existing) return existing;
+		const key = minted();
+		localStorage.setItem(DEVICE_KEY, key);
+		return key;
+	} catch {
+		return minted();
+	}
+}
