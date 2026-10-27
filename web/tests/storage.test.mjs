@@ -624,6 +624,10 @@ const spyOnPersist = (context) =>
 
 const persistCalls = (app) => app.page.evaluate(() => window.__persistCalls);
 
+// The ask follows the durable-write notice, which may land after `app.run`
+// returns (da-iw3j4): wait for one, then read how many.
+const asked = (app) => until(() => persistCalls(app), (n) => n >= 1);
+
 const DURABLE =
 	'datum.day is early software. Your entries are stored in this browser only: ' +
 	'clearing site data deletes them, and';
@@ -690,7 +694,7 @@ describe('asking the browser to keep it', () => {
 				(await app.entries()).map((e) => e.field),
 				['coffee']
 			);
-			assert.equal(await persistCalls(app), 1);
+			assert.equal(await asked(app), 1);
 			assert.equal(await app.bannerText(), MAY_CLEAR);
 			assert.deepEqual(app.errors, []);
 		}, 'throw');
@@ -703,7 +707,7 @@ describe('asking the browser to keep it', () => {
 			for (const [i, time] of ['0700', '0701', '0702'].entries()) {
 				const logged = await app.run(['occur', 'coffee', '-t', time]);
 				assert.equal(logged.code, 0, logged.stderr);
-				assert.equal(await persistCalls(app), 1, `after write ${i + 1}`);
+				assert.equal(await asked(app), 1, `after write ${i + 1}`);
 			}
 			// Headless Chromium may answer either way, so the claim is the
 			// correspondence: the sentence is the one for what it answered.
