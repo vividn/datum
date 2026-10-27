@@ -399,6 +399,25 @@
 
 	let strip: HTMLElement | null = $state(null);
 
+	/**
+	 * Whatever moved it — a swipe, a tap, a key, a script — the tab in front
+	 * is scrolled to the strip's middle, so its neighbours show either side
+	 * as far as they fit (da-i0hbs, vividn: «the tab bar at the top should
+	 * scroll with the active tab … and also possible to see what the next
+	 * and previous tabs are»). The browser clamps at the ends, and a strip
+	 * whose tabs all fit has nowhere to go.
+	 */
+	$effect(() => {
+		void [$layout.root.active, tabs.length, $loaded];
+		void tick().then(() => {
+			const tab = strip?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+			if (!strip || !tab) return;
+			const [s, t] = [strip.getBoundingClientRect(), tab.getBoundingClientRect()];
+			const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+			strip.scrollTo({ left: strip.scrollLeft + t.left - s.left - (s.width - t.width) / 2, behavior: still ? 'instant' : 'smooth' });
+		});
+	});
+
 	/** A tab's marks: the dot's class, and the italics of a preview. */
 	const marks = (tab: Tab, dots: Set<string>, shown: Set<string>) =>
 		[dots.has(tab.id) ? 'modified' : '', tab.layout !== undefined && shown.has(tab.layout) ? 'preview' : '']
