@@ -115,9 +115,11 @@
 	   pictures of one size share it, and `url(#…)` finds the first on the
 	   page: maybe one in a tab behind, which is `visibility: hidden`. A
 	   clip's shape that is not visible clips everything away, so the tab in
-	   front drew no history at all (da-wvdz2). Never painted itself, it is
-	   always visible. */
-	.picture :global(clipPath *) {
+	   front drew no history at all (da-wvdz2). A pattern (every dayview's
+	   `#dead-zone` hatch), a mask and a marker are the same: their content
+	   is styled where it sits, so the front picture's hatch went unpainted
+	   (da-9lzxv). None is ever painted in place, so each is always visible. */
+	.picture :global(:is(clipPath, pattern, mask, marker) *) {
 		visibility: visible;
 	}
 

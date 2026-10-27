@@ -241,3 +241,62 @@ test("a mark's tip tells its time on the clock its day was lived by, as the axis
 		{ clock: Date.UTC(2026, 0, 11, 12), ...BERLIN }
 	);
 });
+
+// da-9lzxv: every dayview names its hatch `#dead-zone`, and `url(#…)` takes
+// the first on the page. A pattern's content is styled where it sits, so the
+// first one in a tab behind (`visibility: hidden`) painted nothing for the
+// tab in front. Sampled in pixels: the zone takes no pointer.
+const strips = (...names) => {
+	const bar = { edge: 'top', align: 'start' };
+	const pane = (id, tabs) => ({ id, tabs, active: tabs.length - 1, bar });
+	const tab = (id, kind) => ({ id: `${id}-tab`, content: { id: `${id}-w`, kind, settings: { hourFrom: 0, hourTo: 24 } } });
+	return {
+		version: 1,
+		name: 'default',
+		designedFor: 'desktop',
+		root: pane('root', [
+			{
+				id: 'main-tab',
+				content: {
+					id: 'main',
+					direction: 'column',
+					ratios: [0.5, 0.5],
+					children: [pane('strip', names.map((name) => tab(name, 'daystrip'))), pane('tail', [tab('tail', 'tail')])]
+				}
+			}
+		])
+	};
+};
+
+/** The share of the front dead zone's pixels the hatch's gray paints. */
+async function hatched(page) {
+	const zone = page.locator(`${TODAY} svg.svg .dead-zone:not(.behind *)`);
+	const png = await zone.screenshot();
+	return page.evaluate(async (b64) => {
+		const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+		const ctx = new OffscreenCanvas(img.width, img.height).getContext('2d');
+		ctx.drawImage(img, 0, 0);
+		const px = ctx.getImageData(0, 0, img.width, img.height).data;
+		let gray = 0;
+		for (let i = 0; i < px.length; i += 4) if ([0, 1, 2].every((c) => Math.abs(px[i + c] - 0x80) <= 16)) gray++;
+		return gray / (px.length / 4);
+	}, png.toString('base64'));
+}
+
+for (const names of [['b'], ['a', 'b']])
+	test(`the hatch of an hour that never happened is painted beside a dayview in a tab behind (${names.length} tab${names.length > 1 ? 's' : ''})`, async () => {
+		const dots = ['2026-03-29T01:40:00+01:00', '2026-03-29T03:20:00+02:00'];
+		await withApp(
+			async (app) => {
+				for (const at of dots) assert.equal((await app.run(['occur', 'water', '-t', at])).code, 0);
+				await app.redraw();
+				await app.page.locator(`${TODAY} svg.svg .dead-zone`).nth(names.length - 1).waitFor({ state: 'attached' });
+				await app.idle();
+				assert.equal(await app.page.locator('svg.svg .dead-zone').count(), names.length, 'each strip draws the zone');
+				const share = await hatched(app.page);
+				assert.ok(share > 0.15, `the hatch is painted: ${(share * 100).toFixed(1)}% of the zone is its gray`);
+				assert.deepEqual(app.errors, []);
+			},
+			{ clock: Date.UTC(2026, 2, 29, 12), ...BERLIN, desk: strips(...names) }
+		);
+	});
