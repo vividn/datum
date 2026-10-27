@@ -6,7 +6,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp } from './support/app.mjs';
+import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE } from './support/layout.mjs';
 import { FIELD_FORM, leaveField, openField, pickImage } from './support/field.mjs';
 import { until } from './support/until.mjs';
@@ -84,6 +84,67 @@ describe('the spec place, on a phone', () => {
 			await until(() => rootTabs(page), (t) => t.join() === was.join());
 			await until(() => described(app, 'tea'), (d) => d === 'black');
 		});
+	});
+});
+
+// A typed `setup F` is the person going there themselves (da-29s6c): only a
+// hold on a field, then the setup command, BRINGS them (da-wz84y), so Save
+// stays wherever the line opened the widget — its place, or the setup layout
+// kept behind the tab in front (da-tajsm) — and nothing decides it by timing.
+describe('a typed `setup F`', () => {
+	/**
+	 * Save the description `words` and see that it stayed: the person's own
+	 * row, with no Cancel, and «saved» under Save, which is said only where
+	 * Save stays — a leave on a phone slides back after the save has landed,
+	 * so the tab in front cannot say it in time.
+	 */
+	async function saveStays(app, words) {
+		const { page } = app;
+		const row = () => page.locator(`${FIELD_FORM} .buttons button`).allInnerTexts();
+		assert.deepEqual((await row()).map((t) => t.trim()), ['Revert', 'Save', 'Redo'], 'brought');
+		await page.locator(`${FIELD_FORM} input.description`).fill(words);
+		await page.locator(`${FIELD_FORM} button.commit`).click();
+		await page.locator(`${FIELD_FORM} .buttons .saved`).waitFor();
+		assert.equal(await described(app, 'tea'), words);
+		assert.equal(await shown(page), 'setup', 'Save left');
+		assert.equal((await page.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
+	}
+
+	test('opening its place: Save stays, and leaving returns', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'tea', '--verb', 'occur']);
+			const was = await rootTabs(page);
+			await app.submit('setup tea');
+			await until(() => shown(page), (t) => t === 'setup');
+			await saveStays(app, 'green');
+			await leaveField(page);
+			await until(() => rootTabs(page), (t) => t.join() === was.join());
+		}, PHONE);
+	});
+
+	test('the setup layout kept behind: Save stays', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.run(['track', 'tea', '--verb', 'occur']);
+				const tab = (name) => page.locator('.root-bar [role="tab"]', { hasText: name });
+				await tab('setup').click();
+				await until(() => shown(page), (t) => t === 'setup');
+				await tab('collect').click();
+				await until(() => shown(page), (t) => t === 'collect');
+				// A root tab that is the widget alone has no pane host around it: the form is what is kept.
+				await page.locator(`.tab-body.behind ${FIELD_FORM}`).waitFor({ state: 'attached' });
+				// Typed in the bar, which collect's page has; its REPL, where `submit` waits for the echo, it has not.
+				await page.locator('.prompt-bar input').fill('setup tea');
+				await page.locator('.prompt-bar input').press('Enter');
+				await until(() => shown(page), (t) => t === 'setup');
+				await until(async () => (await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim(), (t) => t === 'tea');
+				await saveStays(app, 'green');
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...PHONE, home: ON_COLLECT }
+		);
 	});
 });
 

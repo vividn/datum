@@ -80,7 +80,8 @@
 		if (!held && opensField(name, $pills)) {
 			if (field) clearUnlockedPills([field]);
 			// The widget runs its own save; what it answers is the console's.
-			void openField(field?.text);
+			// A field held, then the setup command: brought, so Save goes back (da-wz84y).
+			void openField(field?.text, null, { brought: !!field });
 		} else {
 			if (spend) clearUnlockedPills(spend);
 			prefill.set({ line, keyboard });

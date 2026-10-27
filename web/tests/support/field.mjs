@@ -40,11 +40,12 @@ const ANY = '.field-form';
  * await the save. Nor may a test that never awaits it be failed by it: a
  * page closed under a test that threw rejects it with «Target page closed»,
  * which node would report in place of what the test threw (da-w3y9q).
+ * `brought` opens it as the hold → setup path does (da-29s6c): Save goes back.
  */
-export async function openField(page, field, verb) {
+export async function openField(page, field, verb, brought = false) {
 	if (await page.locator(FIELD_FORM).count()) await page.evaluate(() => window.datum.shell.leavePlace());
 	await page.locator(ANY).waitFor({ state: 'detached' });
-	const saved = page.evaluate(([f, v]) => window.datum.field(f, v), [field, verb]);
+	const saved = page.evaluate(([f, v, b]) => window.datum.field(f, v, { brought: b }), [field, verb ?? null, brought]);
 	saved.catch(() => {});
 	return { saved };
 }

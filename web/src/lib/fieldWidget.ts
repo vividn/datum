@@ -39,10 +39,12 @@ const placeOpen = derived([layout, modalPlace], ([l, m]) => m?.name === FIELD ||
 
 /**
  * Whether the person was BROUGHT to the widget from another pane (da-wz84y):
- * `openField` opened its place. Its Cancel and a spec's Save then go back
- * there, and wear the chevron; reached by the person's own pick in its list
- * of fields, it is false, and Save stays. vividn, 2026-10-26: «maybe it
- * should depend on how you got there?». The place left, it is false again.
+ * a hold on a field, then the setup command, which says so to `openField`
+ * (`brought`) — never inferred from its opening the place, so a typed
+ * `setup F` is the person going there themselves (da-29s6c). Its Cancel and
+ * a spec's Save then go back there, and wear the chevron; otherwise it is
+ * false, and Save stays. vividn, 2026-10-26: «maybe it should depend on how
+ * you got there?». The place left, or a pick in its own list, it is false again.
  */
 export const away = writable(false);
 placeOpen.subscribe((here) => here || away.set(false));
@@ -67,12 +69,12 @@ export function answerField(result: RunResult | null): void {
 /**
  * Put the setup widget on `field` — none is a new one, `verb` its kind —
  * and bring it into view: a pane showing it already, else its place
- * (`openPlace`). Resolves with what the place's next save ran — a refused
+ * (`openPlace`), `away` from where the caller was when it is `brought`. Resolves with what the place's next save ran — a refused
  * one leaves it open, to be put right — or null when it is left without
  * one. A widget someone keeps, in a pane or a tab of its own, answers in
  * its own time: null at once.
  */
-export async function openField(field = '', verb: Verb | null = null): Promise<RunResult | null> {
+export async function openField(field = '', verb: Verb | null = null, { brought = false } = {}): Promise<RunResult | null> {
 	answerField(null);
 	away.set(false);
 	editing.set({ field, verb });
@@ -81,7 +83,7 @@ export async function openField(field = '', verb: Verb | null = null): Promise<R
 	if (hosts.some((host) => !host.closest('.tab-body.behind'))) return null;
 	await openPlace(FIELD);
 	if (get(modalPlace)?.name !== FIELD && !isPreview(FIELD)) return null;
-	away.set(true);
+	away.set(brought);
 	let answer!: (result: RunResult | null) => void;
 	const left = new Promise<RunResult | null>((resolve) => (answer = resolve));
 	waiting = answer;

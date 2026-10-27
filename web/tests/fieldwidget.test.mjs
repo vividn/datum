@@ -1055,7 +1055,7 @@ describe('the bottom row by how the person came', () => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			await app.redraw();
-			await openField(page, 'tea');
+			await openField(page, 'tea', undefined, true);
 			await description(page).waitFor();
 			assert.deepEqual(await row(page), [['Cancel', true], ['Revert', false], ['Save', true], ['Redo', false]]);
 
@@ -1072,14 +1072,14 @@ describe('the bottom row by how the person came', () => {
 			assert.equal((await app.echoes()).length, before, 'Cancel ran something');
 			assert.equal(await described(app, 'tea'), null);
 
-			await openField(page, 'tea');
+			await openField(page, 'tea', undefined, true);
 			await description(page).fill('green');
 			await button(page, 'commit').click();
 			await place(page).waitFor({ state: 'detached' });
 			assert.equal(await described(app, 'tea'), 'green');
 
 			// A pick in its own list is reaching it: the row is the person's own again.
-			await openField(page, '');
+			await openField(page, '', undefined, true);
 			await pick(page).click();
 			await page.locator(`${PICKER} [data-chip="tea"]`).click();
 			await until(() => row(page), (r) => r.length === 3);
@@ -1091,7 +1091,7 @@ describe('the bottom row by how the person came', () => {
 	test('a new field keeps Cancel · Save; brought, its Cancel wears the chevron and goes back, and its Save stays', async () => {
 		await desktop.solo(async (app) => {
 			const { page } = app;
-			await openField(page);
+			await openField(page, undefined, undefined, true);
 			await page.locator(`${FIELD_FORM} input.field`).waitFor();
 			assert.deepEqual(await row(page), [['Cancel', true], ['Save', false]]);
 			await button(page, 'cancel').click();
@@ -1108,7 +1108,7 @@ describe('the bottom row by how the person came', () => {
 			await app.redraw();
 			const home = await front();
 			for (const leave of ['cancel', 'commit']) {
-				await openField(page, 'tea');
+				await openField(page, 'tea', undefined, true);
 				await description(page).waitFor();
 				await until(front, (t) => t === 'setup');
 				assert.deepEqual(await row(page), [['Cancel', true], ['Revert', false], ['Save', true], ['Redo', false]]);
