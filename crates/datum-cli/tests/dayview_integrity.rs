@@ -100,13 +100,7 @@ fn a_double_start_backfilled_onto_yesterday_marks_yesterday_not_today() {
     // In the picture: the day's icon by yesterday's label alone, and the
     // line and its label at 11:00, with no icon of their own (da-0w8le).
     let svg = datum(&db, &["dayview", "--days", "2"]);
-    let label = |day: usize| {
-        let from = svg
-            .find(&format!(r#"<g class="day-label" data-day="{day}""#))
-            .unwrap();
-        let end = from + svg[from..].find(r#"<g class="day-data""#).unwrap();
-        svg[from..end].contains("day-error")
-    };
+    let label = |day: usize| svg.contains(&format!(r#"<g class="day-error" data-day="{day}""#));
     assert!(
         label(0) && !label(1),
         "the icon by yesterday's label only: {svg}"

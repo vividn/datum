@@ -359,7 +359,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
 
     // Per-day rendering.
     for (i, day) in layout.days.iter().enumerate() {
-        // The date-label strip: group, lines, and the day's warning icon.
+        // The date-label strip: group and lines; the warning icon comes last.
         // A zero-width strip is a caller drawing its own date labels (or
         // none at all) — there is no column to write into, so nothing is
         // emitted rather than a label at a negative x (da-55ru).
@@ -402,29 +402,6 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     a = anchor,
                     txt = escape_xml(line),
                 );
-            }
-            // Warning icon for conflicts — placed next to the date label.
-            if day.has_error {
-                let icon_size = (layout.day_height * 0.4).clamp(8.0, 20.0);
-                let (icon_x, icon_y) = match layout.orientation {
-                    Orientation::Horizontal => (
-                        layout.label_width - 2.0,
-                        (layout.day_height - icon_size) / 2.0,
-                    ),
-                    // At the column's edge, clear of the centred lines.
-                    Orientation::Vertical => (
-                        layout.day_height - icon_size,
-                        layout.label_width - 2.0 - icon_size,
-                    ),
-                };
-                let _ = write!(
-                    &mut out,
-                    r#"<g class="day-error" transform="translate({x},{y})">"#,
-                    x = icon_x,
-                    y = icon_y,
-                );
-                push_warning_icon(&mut out, icon_size);
-                out.push_str("</g>");
             }
             out.push_str("</g>");
         }
@@ -742,6 +719,32 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 at = iso(e.time_ms),
                 what = escape_xml(&e.what),
             );
+            out.push_str("</g>");
+        }
+
+        // The day's warning icon, by its date label (da-0w8le). Drawn after
+        // the bands and lines: in a horizontal layout it reaches past the
+        // label strip, where a band at midnight covered it (da-az40e).
+        if day.has_error && layout.label_width > 0.0 {
+            let icon_size = (layout.day_height * 0.4).clamp(8.0, 20.0);
+            let (icon_x, icon_y) = match layout.orientation {
+                Orientation::Horizontal => (
+                    layout.label_width - 2.0,
+                    day.day_offset + (layout.day_height - icon_size) / 2.0,
+                ),
+                // At the column's edge, clear of the centred lines.
+                Orientation::Vertical => (
+                    geom.data_x + day.day_offset + layout.day_height - icon_size,
+                    layout.label_width - 2.0 - icon_size,
+                ),
+            };
+            let _ = write!(
+                &mut out,
+                r#"<g class="day-error" data-day="{i}" transform="translate({x},{y})">"#,
+                x = icon_x,
+                y = icon_y,
+            );
+            push_warning_icon(&mut out, icon_size);
             out.push_str("</g>");
         }
     }
@@ -1712,6 +1715,22 @@ mod tests {
                 .map(|n| n.ancestors().find_map(|a| a.attribute("class")))
                 .collect();
             assert_eq!(icons, [Some("day-error")], "{orientation:?}: {svg}");
+        }
+    }
+
+    /// da-az40e: the icon is drawn after the day's bands, so one at
+    /// midnight, under the icon's corner in a horizontal layout, cannot
+    /// cover it.
+    #[test]
+    fn the_warning_icon_is_drawn_over_the_bands() {
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            let svg = render_dayview_svg(&compute_dayview(&one_day_with_block(true, orientation)));
+            let icon = svg.find(r#"<g class="day-error" data-day="0""#);
+            let last_band = svg.rfind(r#"class="block""#);
+            assert!(
+                icon.is_some() && last_band.is_some() && icon > last_band,
+                "{orientation:?}: {svg}"
+            );
         }
     }
 
