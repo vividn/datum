@@ -14,7 +14,7 @@
 	arranges them.
 -->
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import Pane from '$lib/Pane.svelte';
 	import { run, runKey } from '$lib/run.js';
 	import {

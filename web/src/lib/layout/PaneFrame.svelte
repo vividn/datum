@@ -539,6 +539,7 @@
 	let shown = pane.active;
 	/** The tab the shell's slide is bringing on. */
 	let asked: string | null = null;
+	// svelte-ignore reactive_declaration_module_script_dependency
 	$: if (pane.active !== shown) {
 		shown = pane.active;
 		switched = pane.tabs[shown]?.id === asked ? null : { frame: self, until: performance.now() + AGAIN_MS };
@@ -1331,9 +1332,10 @@
 	   is a character and an anonymous grid item cannot be sent to a named
 	   cell; `isolation` makes the button the stacking context the `z-index`
 	   is measured in, so the box lands under the glyph and over nothing
-	   else. Svelte repeats its scope class over a bare class, which is
-	   what lets these outweigh `.control.badge:hover:not(:disabled)` in
-	   `app.css` and keep the button's own outline away under the pointer.
+	   else. The class is repeated, which is what lets these outweigh
+	   `.control.badge:hover:not(:disabled)` in `app.css` and keep the
+	   button's own outline away under the pointer: Svelte 4 repeated its
+	   scope class to the same weight, and Svelte 5 adds it once.
 	   Asserted in layout-maximize.test.mjs.
 
 	   ⚑ THE `×` WAS IN FLIGHT WHILE THIS LANDED and the two rebased past
@@ -1348,6 +1350,10 @@
 	.add,
 	.close {
 		--edge: var(--rule);
+	}
+	.maximize.maximize.maximize.maximize,
+	.add.add.add.add,
+	.close.close.close.close {
 		background: none;
 		border-color: transparent;
 	}
@@ -1394,13 +1400,14 @@
 		border-color: var(--accent);
 		box-shadow: 0 0 0 1px var(--accent);
 	}
-	.handle {
+	/* Repeated to outweigh the badge's hover colour in app.css, as above. */
+	.handle.handle.handle.handle {
 		--edge: var(--accent);
 		color: var(--accent);
 		cursor: grab;
 		touch-action: none;
 	}
-	.handle:active {
+	.handle.handle.handle.handle:active {
 		cursor: grabbing;
 	}
 	.editing[data-bar-drop='top'] {
@@ -1453,7 +1460,8 @@
 
 	/* Filling the page is a state, so it is drawn as one — the ink here,
 	   and the drawn edge in the `--edge` rule above. */
-	.maximize[aria-pressed='true'] {
+	/* Repeated to outweigh the badge's hover colour in app.css, as above. */
+	.maximize.maximize.maximize.maximize[aria-pressed='true'] {
 		color: var(--accent);
 	}
 

@@ -48,7 +48,7 @@
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import FieldForm from '$lib/FieldForm.svelte';
 	import Pane from '$lib/Pane.svelte';
 	import { act } from '$lib/act.js';
@@ -73,6 +73,8 @@
 	let spec: Spec | null | undefined;
 	/** Bumped by every read, so the form is drawn afresh from it. */
 	let read = 0;
+	/** What the spec was read for: the form's field and verb change with its spec, not before it. */
+	let readFor = $editing;
 	/** Whether the sheet of fields is open, and what it is narrowed to. */
 	let picking = false;
 	let find = '';
@@ -104,6 +106,7 @@
 			spec = null;
 		}
 		walk = trail;
+		readFor = asked;
 		read++;
 	}
 
@@ -199,8 +202,8 @@
 		{#if spec !== undefined}
 			{#key read}
 				<FieldForm
-					field={$editing.field}
-					verb={$editing.verb ?? null}
+					field={readFor.field}
+					verb={readFor.verb ?? null}
 					{spec}
 					ignored={$fields.filter((f) => f.ignored).map((f) => f.field)}
 					taken={$fields.map((f) => f.field)}

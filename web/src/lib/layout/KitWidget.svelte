@@ -23,7 +23,7 @@
 	does and the epoch it bumps redraws the list.
 -->
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import Pane from '$lib/Pane.svelte';
 	import { kitWidgetArgv, type KitWidgetRow } from '$lib/calls.js';
 	import { run } from '$lib/run.js';

@@ -54,7 +54,7 @@
 	     (layout/resizing.ts); it follows its box as one scaled image
 	     until the drop redraws it — whole, so an axis and its labels
 	     move together (da-jgrn). -->
-	<div class="picture" class:stretch={$resizing} class:behind use:picture={{ text, unsynced }} />
+	<div class="picture" class:stretch={$resizing} class:behind use:picture={{ text, unsynced }}></div>
 {:else}
 	<pre data-stream={stream} class:error class:behind><AnsiText {spans} /></pre>
 {/if}

@@ -468,8 +468,7 @@
 
 	{#if anchored.length}
 		<p class="anchorees">
-			⚓ anchored here: {#each anchored as name, i (name)}{#if i},
-				{/if}<button type="button" class="link" on:click={() => dispatch('open', name)}>{name}</button>{/each}
+			⚓ anchored here: {#each anchored as name, i (name)}{#if i},{' '}{/if}<button type="button" class="link" on:click={() => dispatch('open', name)}>{name}</button>{/each}
 		</p>
 	{:else}
 		<label class="allow">

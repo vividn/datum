@@ -7,6 +7,7 @@
 // rewritten command (`dbio.ts`: `db purge`, installing a kit) ask from
 // wherever it was run.
 
+import { mount, unmount } from 'svelte';
 import type { ActKind } from './act.js';
 import Ask from './Ask.svelte';
 import Confirm from './Confirm.svelte';
@@ -17,10 +18,15 @@ import Confirm from './Confirm.svelte';
  */
 export function confirm(text: string, action: string, name = '', cancel = 'cancel'): Promise<boolean> {
 	return new Promise((resolve) => {
-		const dialog = new Confirm({ target: document.body, props: { text, action, name, cancel } });
-		dialog.$on('close', ({ detail }) => {
-			dialog.$destroy();
-			resolve(detail);
+		const dialog = mount(Confirm, {
+			target: document.body,
+			props: { text, action, name, cancel },
+			events: {
+				close: ({ detail }: CustomEvent) => {
+					unmount(dialog);
+					resolve(detail);
+				}
+			}
 		});
 	});
 }
@@ -43,10 +49,15 @@ export function choose(
 ): Promise<string | null> {
 	const [action, ...also] = actions;
 	return new Promise((resolve) => {
-		const dialog = new Confirm({ target: document.body, props: { text, action, also, cancel, kind, danger: dangerousCancel ? 'cancel' : null } });
-		dialog.$on('chose', ({ detail }) => {
-			dialog.$destroy();
-			resolve(detail);
+		const dialog = mount(Confirm, {
+			target: document.body,
+			props: { text, action, also, cancel, kind, danger: dangerousCancel ? 'cancel' : null },
+			events: {
+				chose: ({ detail }: CustomEvent) => {
+					unmount(dialog);
+					resolve(detail);
+				}
+			}
 		});
 	});
 }
@@ -58,10 +69,15 @@ export function choose(
  */
 export function ask(text: string, action: string, value = '', optional = false): Promise<string | null> {
 	return new Promise((resolve) => {
-		const dialog = new Ask({ target: document.body, props: { text, action, value, optional } });
-		dialog.$on('close', ({ detail }) => {
-			dialog.$destroy();
-			resolve(detail);
+		const dialog = mount(Ask, {
+			target: document.body,
+			props: { text, action, value, optional },
+			events: {
+				close: ({ detail }: CustomEvent) => {
+					unmount(dialog);
+					resolve(detail);
+				}
+			}
 		});
 	});
 }

@@ -46,8 +46,8 @@ const rootContent = (page) => page.locator('section.root > .content');
 /** The modal a place opens on a desktop. */
 const modal = (page, kind = 'sync') => page.locator(`dialog.sheet[open][data-place="${kind}"]`);
 
-/** Whether the history entry the browser is on is a place's. */
-const onPlaceEntry = (page) => page.evaluate(() => JSON.stringify(history.state ?? null).includes('"place"'));
+/** Whether the history entry the browser is on is a place's: Kit keeps its state serialized inside it. */
+const onPlaceEntry = (page) => page.evaluate(() => /\\?"place\\?"/.test(JSON.stringify(history.state ?? null)));
 
 /** Open the place `kind` and wait for it to have slid in: a tap during the slide is a tap on the tab it left. */
 async function openPlace(page, kind) {

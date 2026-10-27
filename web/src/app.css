@@ -17,7 +17,7 @@
 	mark's floor size had gone faint at 200. SIL OFL 1.1, vendored under `static/fonts/` with
 	its own licence beside it — local-first means the app looks the same
 	offline, so nothing here is fetched from fonts.gstatic. The static
-	directory is what `$service-worker`'s `files` precaches, so the face is
+	directory is what `$app/manifest`'s `assets` precaches, so the face is
 	offline from the first visit on.
 
 	ONE weight, and the file is a static instance of it, not the variable

@@ -15,7 +15,7 @@
 
 	onMount(async () => {
 		if (location.hash.length > 1) joining.set(location.hash.slice(1));
-		await goto(withDb('/'), { replaceState: true });
+		await goto(withDb('/'), { replace: true });
 		await openPlace('sync');
 	});
 </script>

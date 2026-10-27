@@ -55,7 +55,7 @@
 			style:top="{box.top - 4}px"
 			style:width="{box.width + 8}px"
 			style:height="{box.height + 8}px"
-		/>
+		></div>
 		<div class="say" role="dialog" aria-label="tour" style={place}>
 			<p aria-live="polite">{stop.say}</p>
 			<div class="acts">

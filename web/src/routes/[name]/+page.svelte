@@ -27,13 +27,13 @@
 	with.
 
 	One catch-all route, not a route per name, so the deployed site — where
-	every path is served by adapter-static's fallback (svelte.config.js) —
+	every path is served by adapter-static's fallback (vite.config.ts) —
 	answers any name without a file per name.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { arriving, open, openPreview } from '$lib/layout/shell.js';
 	import { withDb } from '$lib/database.js';
 
@@ -47,12 +47,12 @@
 	onMount(() => arriving(enter()));
 
 	async function enter(): Promise<void> {
-		const name = $page.params.name ?? '';
+		const name = page.params.name ?? '';
 		// `|| null`: an empty `?from=` is no `from`, not a layout called "".
-		const from = $page.url.searchParams.get('from') || null;
+		const from = page.url.searchParams.get('from') || null;
 		// Either door answers with the name that is NOTHING, or null.
 		const missing = from === null ? ((await open(name)) ? null : name) : await openPreview(name, from);
-		if (missing === null) await goto(home, { replaceState: true });
+		if (missing === null) await goto(home, { replace: true });
 		else unknown = missing;
 	}
 </script>

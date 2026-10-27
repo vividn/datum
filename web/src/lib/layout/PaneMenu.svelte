@@ -405,7 +405,7 @@
 								: item.toggled !== undefined
 									? item.run?.()
 									: choose(item)}
-				>{#if item.glyph}<span class="glyph" aria-hidden="true">{item.glyph}</span> {/if}{item.label}</button
+				>{#if item.glyph}<span class="glyph" aria-hidden="true">{item.glyph}</span>{' '}{/if}{item.label}</button
 				>
 			{/if}
 		{/each}

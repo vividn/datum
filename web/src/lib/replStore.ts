@@ -13,7 +13,7 @@
 // was printed, never a second execution of the command that printed it.
 
 import { get, writable } from 'svelte/store';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import type { RunResult } from './run.js';
 import { noteRun } from './bar.js';
 import { maskTicket } from './sync.js';

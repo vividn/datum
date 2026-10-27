@@ -37,16 +37,17 @@
 	import { boot as bootEngine } from '$lib/layout/engine.js';
 	import { boot as bootShell, openPlace } from '$lib/layout/shell.js';
 	import { approving, joining } from '$lib/syncView.js';
-	import { get } from 'svelte/store';
+	import { get, toStore } from 'svelte/store';
 	import { currentDb, DEFAULT_DB, hueOf, INTERNAL_DB, refusedDb } from '$lib/database.js';
-	import { browser } from '$app/environment';
-	import { page } from '$app/stores';
+	import { browser } from '$app/env';
+	import { page } from '$app/state';
 
-	// `?db=<name>` (da-vk1x). Off `$page.url` rather than `location`, so a
+	// `?db=<name>` (da-vk1x). Off `page.url` rather than `location`, so a
 	// client-side navigation that changes the query re-renders the title and
 	// the refusal with it; the seam reads the same query for itself.
-	$: db = $page.url ? currentDb() : DEFAULT_DB;
-	$: refused = $page.url ? refusedDb() : null;
+	const url = toStore(() => page.url);
+	$: db = $url ? currentDb() : DEFAULT_DB;
+	$: refused = $url ? refusedDb() : null;
 
 	// The page's base colour says which database it is (da-y992): one hue,
 	// derived from the name, and every accent in app.css is drawn from it.

@@ -14,7 +14,7 @@
  * whether the tabs share the owner's connection or fell back to one
  * database each.
  */
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 const CHANNEL = 'datum-db-changes';
 

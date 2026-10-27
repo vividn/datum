@@ -3,22 +3,25 @@
 /// <reference lib="esnext" />
 /// <reference lib="webworker" />
 
-import { build, files, version } from '$service-worker';
+import { version } from '$app/env';
+import { assets, immutable } from '$app/manifest';
 import { workerAssets } from '$lib/workerAssets.generated.js';
 
 const CACHE_NAME = `datum-${version}`;
 
-// `build` is derived from the client Vite manifest, which does not know
+// `immutable` is derived from the client Vite manifest, which does not know
 // about Vite's separate worker bundle — the SQLite worker and sqlite3.wasm
 // live there. `workerAssets` is that bundle, enumerated at build time by
 // the datum-worker-precache plugin in vite.config.ts (da-d1l9).
 // '/' because nothing else caches it: adapter-static is in fallback mode,
-// so no page is prerendered and `$service-worker`'s `prerendered` list is
+// so no page is prerendered and `$app/manifest`'s `prerendered` list is
 // empty. Without it the shell the fetch handler falls back to is never
 // there, and the app does not load offline at all.
 const SHELL = '/';
 
-const ASSETS = [SHELL, ...build, ...files, ...workerAssets];
+// `$app/manifest`'s paths are relative to the base, which is the root here.
+// It names the worker bundle's scripts too, which `workerAssets` repeats.
+const ASSETS = [...new Set([SHELL, ...[...immutable, ...assets].map(({ path }) => `/${path}`), ...workerAssets])];
 
 /**
  * The two headers that make a document cross-origin isolated, which is what
@@ -58,6 +61,13 @@ function isolated(response: Response): Response {
 
 /** Everything under here is content-hashed, so it is safe to cache forever. */
 const IMMUTABLE = '/_app/immutable/';
+
+/**
+ * A server's `Vary: Origin` (Vite's own since 6) keyed each entry to the
+ * precache's request, which has no Origin, and a module script's request
+ * has one, so nothing matched offline. One name is one file here.
+ */
+const ANY = { ignoreVary: true };
 
 /**
  * Precache one asset, deciding whether the HTTP cache may answer for it.
@@ -111,7 +121,7 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
 
 /** Serve from the cache, and fill it on a miss so the next visit is offline-safe. */
 async function cacheFirst(request: Request): Promise<Response> {
-	const cached = await caches.match(request);
+	const cached = await caches.match(request, ANY);
 	if (cached) return cached;
 	const response = await fetch(request);
 	if (response.ok) (await caches.open(CACHE_NAME)).put(request, response.clone());
@@ -141,8 +151,8 @@ async function navigate(request: Request): Promise<Response> {
 	clearTimeout(timer);
 	if (response && response.status < 500) return response;
 	return (
-		(await caches.match(request)) ??
-		(await caches.match(SHELL)) ??
+		(await caches.match(request, ANY)) ??
+		(await caches.match(SHELL, ANY)) ??
 		response ??
 		new Response('Offline', { status: 503 })
 	);
@@ -176,7 +186,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 	// names the wrong thing.
 	event.respondWith(
 		fetch(event.request)
-			.catch(async () => (await caches.match(event.request)) ?? new Response('Offline', { status: 503 }))
+			.catch(async () => (await caches.match(event.request, ANY)) ?? new Response('Offline', { status: 503 }))
 			.then(isolated)
 	);
 });

@@ -133,18 +133,21 @@ describe('the icons outside the manifest', () => {
 	});
 
 	test('the service worker precaches them, so an installed app has them offline', () => {
-		// `$service-worker`'s `files` is everything under static/, and
+		// `$app/manifest`'s `assets` is everything under static/, and
 		// service-worker.ts spreads it into the precache list — so this is a
 		// check that the icons are in static/ under the names the manifest
 		// uses, not a second claim about the worker. If the precache ever
-		// stops covering `files`, this is where it shows.
+		// stops covering `assets`, this is where it shows.
 		const sw = fs.readFileSync(path.join(web, 'build', 'service-worker.js'), 'utf8');
 		const manifest = JSON.parse(
 			fs.readFileSync(path.join(web, 'build', 'manifest.json'), 'utf8')
 		);
 		const wanted = [...manifest.icons.map((icon) => icon.src), '/icons/apple-touch-icon.png'];
+		// `$app/manifest` names a file without the leading slash, and the
+		// minifier quotes a string with any of the three.
+		const named = (src) => ['"', "'", '`'].some((q) => sw.includes(q + src.slice(1) + q));
 		assert.deepEqual(
-			wanted.filter((src) => !sw.includes(`"${src}"`)),
+			wanted.filter((src) => !named(src)),
 			[],
 			'not named in the precache list'
 		);

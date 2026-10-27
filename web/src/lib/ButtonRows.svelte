@@ -66,6 +66,7 @@
      buttons finds it. -->
 <span class="probe" aria-hidden="true" bind:this={probe}><slot name="probe" /></span>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="bar {$$props.class ?? ''} {axis}"
 	bind:this={bar}

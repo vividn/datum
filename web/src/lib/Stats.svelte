@@ -50,7 +50,7 @@
 -->
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { fieldPill } from './bar.js';
 	import { inkOver } from './fields.js';
 	import CliOutput from './CliOutput.svelte';

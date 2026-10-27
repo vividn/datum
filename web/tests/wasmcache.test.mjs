@@ -168,6 +168,6 @@ describe('what the deploy and the precache promise', () => {
 		// is what refuses that, and it is in the built worker or it is
 		// nowhere.
 		const sw = fs.readFileSync(path.join(built, 'service-worker.js'), 'utf8');
-		assert.match(sw, /cache\s*:\s*["']reload["']/, 'the precache still trusts the HTTP cache');
+		assert.match(sw, /cache\s*:\s*["'`]reload["'`]/, 'the precache still trusts the HTTP cache');
 	});
 });

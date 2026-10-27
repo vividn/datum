@@ -809,7 +809,7 @@ binary.
   connection's own lock as another's and so never saw a journal as hot, and
   a write cut short read as «malformed» for good (da-dfmg8).
 - Service Worker caches app shell for offline use — the shell, everything
-  `$service-worker` lists, and Vite's separate worker bundle (the database
+  `$app/manifest` lists, and Vite's separate worker bundle (the database
   worker and datum-cli.wasm), which that list does not know about and which
   the `datum-worker-precache` plugin in `web/vite.config.ts` enumerates
   instead. `web/tests/offline.test.mjs` reloads the app with the network

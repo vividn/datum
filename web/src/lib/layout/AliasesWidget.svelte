@@ -7,7 +7,7 @@
 	forming.
 -->
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import Pane from '$lib/Pane.svelte';
 	import { run } from '$lib/run.js';
 	import { aliasesArgv } from '$lib/calls.js';

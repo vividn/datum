@@ -1,3 +1,5 @@
+import adapter from '@sveltejs/adapter-static';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
@@ -77,7 +79,7 @@ const WORKER_ASSETS_MODULE = fileURLToPath(
 /**
  * Hand the service worker the names of the files in Vite's worker bundle.
  *
- * `$service-worker`'s `build` list is derived from the *client* Vite
+ * `$app/manifest`'s `immutable` list is derived from the *client* Vite
  * manifest, and Vite compiles workers in a rollup pass of their own whose
  * output never lands in that manifest. So the SQLite worker, its chunks,
  * the OPFS async proxy and sqlite3.wasm — together more than half the
@@ -122,7 +124,20 @@ export default defineConfig({
 		__DATUM_VERSION__: JSON.stringify(build.version),
 		__DATUM_COMMIT__: JSON.stringify(build.commit)
 	},
-	plugins: [sveltekit(), crossOriginIsolation(), workerPrecache()],
+	plugins: [
+		sveltekit({
+			preprocess: vitePreprocess(),
+			adapter: adapter({ fallback: 'index.html' }),
+			// Kit 3 generates no `$lib`; kept as an alias rather than moving every
+			// import to `#lib`.
+			alias: { $lib: 'src/lib' },
+			// The browser's HTTP cache never answers for the worker script or its
+			// imports, so a deploy is seen at the next update check (da-v1wqf).
+			serviceWorker: { register: true, options: { updateViaCache: 'none' } }
+		}),
+		crossOriginIsolation(),
+		workerPrecache()
+	],
 	// The web test map's instrumented run (da-e0gtq) reads its coverage back
 	// to source files through these; nothing else builds them.
 	build: { sourcemap: process.env.DATUM_TEST_COVERAGE ? 'hidden' : false },

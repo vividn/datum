@@ -221,22 +221,27 @@
 	 * month of its days at most, at each of its `SIZES`; a maximize is a
 	 * remount too.
 	 */
-	const held = new Map<
-		string,
-		{
-			cache: Cache;
-			sizes: Map<string, Cache>;
-			shown: Record<number, RunResult>;
-			drawn: Record<number, Drawn>;
-			midnights: number;
-			onDay: string | null;
-			minute: number;
-			width: number;
-			height: number;
-			geometry: Geometry | null;
-			geometryBox: number;
-		}
-	>();
+	type Held = {
+		cache: Cache;
+		sizes: Map<string, Cache>;
+		shown: Record<number, RunResult>;
+		drawn: Record<number, Drawn>;
+		midnights: number;
+		onDay: string | null;
+		minute: number;
+		width: number;
+		height: number;
+		geometry: Geometry | null;
+		geometryBox: number;
+	};
+	const held = new Map<string, Held>();
+	/**
+	 * The strip mounted under each key, as what it would hold if it went now.
+	 * Svelte 5 builds a pane's new place before it tears down the old one (a
+	 * maximize and its restore), so the strip taking over reads the one it
+	 * replaces from here: `held` has nothing of it yet.
+	 */
+	const mounted = new Map<string, () => Held>();
 	/** The days back a strip's held pictures reach. */
 	const MONTH = 31;
 	/** The strips held, the longest gone dropped first: a widget closed for good is never mounted again. */
@@ -252,7 +257,7 @@
 
 <script lang="ts">
 	import { afterUpdate, createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { currentDb } from './database.js';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
@@ -303,7 +308,8 @@
 
 	/** What this strip drew before it was last unmounted, if anything (`held`). */
 	const heldAs = `${currentDb()}\n${key}`;
-	const was = held.get(heldAs);
+	const was = mounted.get(heldAs)?.() ?? held.get(heldAs);
+	mounted.set(heldAs, holding);
 
 	/**
 	 * How tall one day is drawn, in pixels — datum's `--day-height` — or
@@ -1720,6 +1726,13 @@
 		clearTimeout(settling);
 		clearTimeout(longTimer);
 		listen(false);
+		if (mounted.get(heldAs) === holding) mounted.delete(heldAs);
+		held.delete(heldAs);
+		held.set(heldAs, holding());
+		if (held.size > STRIPS) held.delete(held.keys().next().value!);
+	});
+
+	function holding(): Held {
 		const month = (of: Cache): Cache => ({
 			...of,
 			runs: new Map([...of.runs].filter(([, asked]) => asked.end === 'geometry' || asked.end <= MONTH))
@@ -1727,8 +1740,7 @@
 		function recent<T>(of: Record<number, T>): Record<number, T> {
 			return Object.fromEntries(Object.entries(of).filter(([end]) => Number(end) <= MONTH));
 		}
-		held.delete(heldAs);
-		held.set(heldAs, {
+		return {
 			cache: month(cache),
 			sizes: new Map([...sizes].map(([size, of]) => [size, month(of)])),
 			shown: recent(shown),
@@ -1740,9 +1752,8 @@
 			height,
 			geometry,
 			geometryBox
-		});
-		if (held.size > STRIPS) held.delete(held.keys().next().value!);
-	});
+		};
+	}
 
 	/**
 	 * The jagged line's teeth: a vertex every 2 units across a 400-wide
@@ -1753,6 +1764,7 @@
 </script>
 
 <Pane title="dayview" bind:body>
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="strip"
 		bind:this={stripEl}

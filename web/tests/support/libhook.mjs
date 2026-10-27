@@ -11,7 +11,7 @@
 // the two registry importers did not, and it went unnoticed until registry
 // first reached a module that imports `svelte/store` (da-7q8r).
 //
-// `$app/environment` is SvelteKit's, and node cannot resolve it: it becomes
+// `$app/env` is SvelteKit's, and node cannot resolve it: it becomes
 // `browser = false`, which is the honest value there. `database.ts`,
 // `changes.ts`, `replStore.ts` and `storageState.ts` import it, so without
 // this nothing that reaches `run.ts` loads in node at all (da-mgxdt).
@@ -22,7 +22,7 @@
 import { registerHooks } from 'node:module';
 
 const EMPTY_MODULE = 'data:text/javascript,export default {}';
-const APP_ENVIRONMENT = 'data:text/javascript,export const browser = false';
+const APP_ENV = 'data:text/javascript,export const browser = false';
 
 /** Register the resolve hook. `base` is the calling test's `import.meta.url`. */
 export function resolveLibAsSource(base) {
@@ -30,7 +30,7 @@ export function resolveLibAsSource(base) {
 	registerHooks({
 		resolve(specifier, context, next) {
 			if (specifier.endsWith('.svelte')) return { url: EMPTY_MODULE, shortCircuit: true };
-			if (specifier === '$app/environment') return { url: APP_ENVIRONMENT, shortCircuit: true };
+			if (specifier === '$app/env') return { url: APP_ENV, shortCircuit: true };
 			if (!/^(\.|\$lib\/)/.test(specifier)) return next(specifier, context);
 			const url = new URL(specifier.replace(/^\$lib\//, lib.href), context.parentURL);
 			const ours = context.parentURL?.includes('/src/lib/');

@@ -319,7 +319,9 @@
 	}
 
 	/* Conflicts to deal with (da-6cutb): red until the last is resolved. */
-	.command.clashing {
+	/* `.command` twice, to outweigh `button.command:hover:not(:disabled)`
+	   (app.css): Svelte 4's scope class did, and Svelte 5's adds less. */
+	.command.command.clashing {
 		border-color: var(--error);
 		color: var(--error);
 	}
@@ -351,7 +353,7 @@
 
 	/* Track is where a field begins, so it is the one command in a colour
 	   of its own (da-y6jfb): easy to find where it stands. */
-	.command[data-command='track'] {
+	.command.command[data-command='track'] {
 		border-color: var(--track);
 		color: var(--track);
 	}

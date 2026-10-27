@@ -1,6 +1,6 @@
 // The cursor's argv and its date label, in node (da-mgxdt).
 //
-// `cursor.ts` reaches `$app/environment` through `bar.ts` → `layout/engine.ts`
+// `cursor.ts` reaches `$app/env` through `bar.ts` → `layout/engine.ts`
 // → `db.ts` → `changes.ts`, so it could not be imported here until
 // `libhook.mjs` stubbed it. What this file checks is what `cursor.test.mjs`
 // cannot put a clock on cheaply: the boundaries of `dateLabel`, and the

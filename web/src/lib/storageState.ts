@@ -10,7 +10,7 @@
 // disagree about it.
 
 import { derived, readable } from 'svelte/store';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import {
 	initDb,
 	onDurableWrite,

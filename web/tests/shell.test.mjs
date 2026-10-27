@@ -446,7 +446,7 @@ describe('a URL', () => {
 	});
 
 	// The deployed site serves every path from adapter-static's fallback
-	// (svelte.config.js), the shape of a plain bucket — so `/stats` has to
+	// (vite.config.ts), the shape of a plain bucket — so `/stats` has to
 	// work with no route file of its own, against the BUILT output. The same
 	// bare server isolation.test.mjs uses: no headers, index.html for any
 	// path it does not have.

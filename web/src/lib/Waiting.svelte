@@ -20,7 +20,7 @@
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { blocked, first, upgrading } from './waiting.js';
 	import { ready } from './layout/engine.js';
 

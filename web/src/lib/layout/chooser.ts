@@ -11,6 +11,7 @@
 // layouts are read BEFORE it is mounted, so the list it shows is whole
 // the instant it appears rather than growing a line under the pointer.
 
+import { mount, unmount } from 'svelte';
 import Chooser from './Chooser.svelte';
 import { BUILTIN_NAMES } from './defaults.js';
 import { ancestorsOf, device, inlineInto, widgetInto } from './shell.js';
@@ -73,10 +74,15 @@ export async function choose(ancestors: string[] = [], kits = true): Promise<Cho
 	const layouts = await layoutsFor(ancestors);
 	const widgets = kits ? kitWidgets() : [];
 	return new Promise((resolve) => {
-		const modal = new Chooser({ target: document.body, props: { layouts, widgets } });
-		modal.$on('close', ({ detail }) => {
-			modal.$destroy();
-			resolve(detail);
+		const modal = mount(Chooser, {
+			target: document.body,
+			props: { layouts, widgets },
+			events: {
+				close: ({ detail }: CustomEvent) => {
+					unmount(modal);
+					resolve(detail);
+				}
+			}
 		});
 	});
 }

@@ -2,7 +2,7 @@
 //
 // datum.day is local-first: the data is on the device and the network is
 // only for sync, so an installed app has to open its database with no
-// network at all. It did not. `$service-worker`'s `build` list comes from
+// network at all. It did not. `$app/manifest`'s `immutable` list comes from
 // the *client* Vite manifest, and Vite compiles workers in a rollup pass of
 // its own — so the SQLite worker, its chunks, the OPFS async proxy and
 // sqlite3.wasm (more than half the payload) were in no precache list, and

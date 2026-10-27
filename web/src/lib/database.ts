@@ -17,7 +17,7 @@
 // database's: the layout store keeps its explicit `--db _internal`
 // ($lib/layout/store.ts) and is untouched by any of this.
 
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 /** The database a page with no `?db` runs against. */
 export const DEFAULT_DB = 'datum';

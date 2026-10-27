@@ -39,7 +39,7 @@
 // every pane scrolls the page rather than squeezing them — a drag never
 // sees these numbers.
 
-import type { ComponentType } from 'svelte';
+import type { Component } from 'svelte';
 import type { Tab, WidgetKindMeta, WidgetOption } from './types.js';
 import { nameOf, type Floor } from './tree.js';
 import CliPane from '$lib/CliPane.svelte';
@@ -80,7 +80,7 @@ import WelcomeWidget from './WelcomeWidget.svelte';
 
 export interface WidgetKind {
 	meta: WidgetKindMeta;
-	component: ComponentType;
+	component: Component<any>;
 	/** Props for the component, when it wants more than `settings`. */
 	props?: (settings: Record<string, unknown>) => Record<string, unknown>;
 	/**

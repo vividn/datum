@@ -972,14 +972,16 @@ export async function openPlace(kind: string, asTab = false): Promise<void> {
 	const { pushState, replaceState } = await import('$app/navigation');
 	// A modal open already has the entry; what opens next takes it over.
 	const handed = get(modalPlace)?.name === pushedFor && pushedFor !== null;
+	// Kit 3's push resolves the route first, so it lands only once awaited.
 	const enter = (place: string) => (handed ? replaceState : pushState)('', { place });
-	modalPlace.set(null);
 	if (widget) {
-		enter(name);
+		// Straight from the modal open to this one, which keeps its dialog.
+		await enter(name);
 		pushedFor = name;
 		modalPlace.set({ name, widget });
 		return;
 	}
+	modalPlace.set(null);
 	const tab = await openTab(name, new Set(allIds(get(layout))));
 	if (!tab) return;
 	const from = get(layout).root.active;
@@ -996,7 +998,7 @@ export async function openPlace(kind: string, asTab = false): Promise<void> {
 	// The entry is this place's BEFORE the tab switches: under reduced motion
 	// the switch is at once, and the closer of the place it leaves must not
 	// take this entry for its own (vremya on #349).
-	enter(name);
+	await enter(name);
 	pushedFor = name;
 	sliding.set(tab.id);
 }

@@ -38,7 +38,7 @@
 	under the page's pale ink had been a contrast of 1.1.
 -->
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { onDestroy } from 'svelte';
 	import Pane from '$lib/Pane.svelte';
 	import { onAnyChange } from '$lib/changes.js';

@@ -59,9 +59,11 @@
 	import { currentDb, DEFAULT_DB, INTERNAL_DB, withDb } from '$lib/database.js';
 	import { ask } from '$lib/confirm.js';
 	import { listDatabases } from '$lib/databases.js';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
+	import { toStore } from 'svelte/store';
 
-	$: db = $page.url ? currentDb() : DEFAULT_DB;
+	const url = toStore(() => page.url);
+	$: db = $url ? currentDb() : DEFAULT_DB;
 
 	/** The pool, as the menu last read it. */
 	let pool: string[] = [];

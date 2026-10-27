@@ -154,7 +154,9 @@
 >
 
 <style>
-	.data {
+	/* `ul`, to outweigh the form's `.section > * + *` margin, which this
+	   tied and beat only by coming later in the stylesheet. */
+	ul.data {
 		display: flex;
 		flex-direction: column;
 		gap: 0.3rem;

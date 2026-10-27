@@ -304,7 +304,7 @@
 		{#if hint}
 			<p class="hint">
 				{hint}{#if fixed}
-					<button type="button" class="fix" on:click={() => (field = fixed ?? '')}>use {fixed}</button
+					{' '}<button type="button" class="fix" on:click={() => (field = fixed ?? '')}>use {fixed}</button
 					>{/if}
 			</p>
 		{/if}
