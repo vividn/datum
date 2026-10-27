@@ -31,14 +31,22 @@ test(`a page pulling ${ENTRIES} ops shows how far the apply is in its root bar`,
 				const status = app.page.locator('nav.root-bar .syncing');
 				assert.equal(await status.count(), 0, 'no apply, nothing shown');
 
-				const pushing = native.run(['sync']);
 				const said = new Set();
-				for (let over = false; !over; ) {
-					over = (await Promise.race([pushing.then(() => true), new Promise((r) => setTimeout(() => r(false), 50))])) === true;
-					const s = await status.textContent({ timeout: 50 }).catch(() => null);
-					if (s) said.add(s);
-				}
-				assert.equal((await pushing).code, 0);
+				let pushed;
+				// The page pushes once more after it joins, to the invite that has
+				// ended, and holds that dial until it fails: it runs one session at
+				// a time, so a sync meanwhile is refused as busy, and is run again
+				// as a person would (da-td7qj).
+				do {
+					const pushing = native.run(['sync']);
+					for (let over = false; !over; ) {
+						over = (await Promise.race([pushing.then(() => true), new Promise((r) => setTimeout(() => r(false), 50))])) === true;
+						const s = await status.textContent({ timeout: 50 }).catch(() => null);
+						if (s) said.add(s);
+					}
+					pushed = await pushing;
+				} while (pushed.stdout.includes('refused: is busy'));
+				assert.equal(pushed.code, 0, pushed.stdout);
 
 				const counts = [...said].map((s) => {
 					const m = /^syncing ([\d,]+) of ([\d,]+)$/.exec(s);
