@@ -24,7 +24,7 @@ fn chain_list_prints_its_instants_on_the_readers_clock() {
     let (a, b) = chained();
     let admin = a.key("admin.key");
     a.ok(&["sync", "admin", "add", &admin]);
-    a.ok(&["sync", "chain", "revoke", "b", "--admin-key", &admin]);
+    a.ok(&["sync", "chain", "expel", "b", "--admin-key", &admin]);
     let at_two = |args: &[&str]| {
         let out = a.cmd(args).env("TZ", "Etc/GMT-2").output().unwrap();
         assert!(out.status.success(), "{out:?}");
@@ -38,7 +38,7 @@ fn chain_list_prints_its_instants_on_the_readers_clock() {
     let shown = [
         ("admitted", raw(&member_of(&a, &a.id())["admitted"])),
         ("admitted", raw(&b_row["admitted"])),
-        ("REVOKED", raw(&b_row["revoked"])),
+        ("EXPELLED", raw(&b_row["revoked"])),
         ("added", added.clone()),
     ];
     for (word, instant) in shown {

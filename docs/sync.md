@@ -8,10 +8,10 @@ datum sync chain invite            # on the first copy: starts a chain, prints `
 datum sync chain connect <LINK>    # on the second: it joins the chain, and they sync
 datum sync                         # sync with every member once
 datum sync status                  # how this copy stands with each member
-datum sync chain list              # list them; `datum sync chain revoke <WHO>` removes one
+datum sync chain list              # list them; `datum sync chain expel <WHO>` removes one
 ```
 
-A chain with no admin is open: any member may invite, revoke or rename
+A chain with no admin is open: any member may invite, expel or rename
 another. `datum sync admin add <KEYFILE>` (or a datum.day passkey) locks
 it, and from then on those acts take the admin key; removing the last
 admin takes `--allow-unlock`, and opens it again. The link is a datum.day

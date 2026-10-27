@@ -85,7 +85,7 @@ fn no_command_takes_a_row_away_and_keeps_its_ops() {
     // A reverted member's entries go from every copy.
     b.ok(&["occur", "bread"]);
     assert!(b.send(&a).0 && a.send(&c).0);
-    takes(&a, &[&c], &["sync", "chain", "revert", &b.id(), "--yes"]);
+    takes(&a, &[&c], &["sync", "chain", "unjoin", &b.id(), "--yes"]);
 
     // A filtered reader drops an entry that moved out of its fields.
     let r = Copy::new();

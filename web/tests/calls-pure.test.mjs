@@ -10,8 +10,8 @@
 // key the page reads that no answer carries, naming the files that send it.
 // The keys are every one `Reads` — the types the call sites parse each
 // answer into — names, walked by the TypeScript checker (da-qy4w0).
-// What a call does at RUN time is not this test's business: a revoke of a
-// member that is not there may fail, as long as it fails as a revoke.
+// What a call does at RUN time is not this test's business: an expel of a
+// member that is not there may fail, as long as it fails as an expel.
 //
 // The last test keeps the list whole: a command spelled out at a `run`-like
 // call site, instead of built in calls.ts, fails it.
@@ -221,8 +221,8 @@ const SAMPLES = {
 	renameArgv: [['phone'], ['phone', MEMBER]],
 	unsetRenameArgv: [[]],
 	labelCheckArgv: [['kitchen']],
-	revokeArgv: [[MEMBER]],
-	revertArgv: [[MEMBER], [MEMBER, true]],
+	expelArgv: [[MEMBER]],
+	unjoinArgv: [[MEMBER], [MEMBER, true]],
 	ackArgv: [['unlock'], [MEMBER]],
 	adminAddArgv: [['not-a-key']],
 	adminRemoveArgv: [['not-a-key'], ['not-a-key', true]],

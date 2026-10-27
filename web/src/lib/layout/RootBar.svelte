@@ -121,7 +121,7 @@
 	import { run } from '$lib/run.js';
 	import { pausedArgv } from '$lib/calls.js';
 	import { syncStates } from '$lib/sync.js';
-	import { ackNotice, noticeWords, revokeDevice } from '$lib/syncView.js';
+	import { ackNotice, expelDevice, noticeWords } from '$lib/syncView.js';
 	import { act } from '$lib/act.js';
 	import { storageSentence } from '$lib/storageState.js';
 	import { openBackups } from '$lib/backups.js';
@@ -339,7 +339,7 @@
 	/**
 	 * The ⚠'s dialog (da-8fucg): each notice, where devices are managed, and
 	 * an OK that acknowledges what it showed, as the Sync widget's OK does —
-	 * and for each device that joined, a revoke, should it not be the
+	 * and for each device that joined, an expel, should it not be the
 	 * reader's (da-o9xdd), which acknowledges them too. Nothing is checked of
 	 * an ack: one settles a device's rejoins with it, the next then has
 	 * nothing to acknowledge, and whatever is left the leader says again, the
@@ -355,15 +355,15 @@
 				if ((n.kind === 'endpoint' || n.kind === 'rejoin') && n.endpoint) byId.set(`${db} ${n.endpoint}`, { db, label: n.label, endpoint: n.endpoint });
 			const devices = [...byId.values()];
 			const shared = (label: string) => devices.filter((d) => d.label === label).length > 1;
-			const revokes = devices.map((d) => `revoke ${d.label}${shared(d.label) ? ` (${d.endpoint.slice(0, 8)})` : ''}`);
+			const expels = devices.map((d) => `expel ${d.label}${shared(d.label) ? ` (${d.endpoint.slice(0, 8)})` : ''}`);
 			const text =
 				shown.map(({ db, n }) => noticeWords(db, n)).join('\n\n') +
-				(devices.length ? '\n\nNot yours? Revoke it, and it syncs no more.' : '') +
+				(devices.length ? '\n\nNot yours? Expel it, and it syncs no more.' : '') +
 				'\n\nTo manage devices, open the Sync widget: the + in this bar, then sync. OK acknowledges this.';
-			const picked = await chooseAnswer(text, ['OK', ...revokes], 'not now', 'run');
+			const picked = await chooseAnswer(text, ['OK', ...expels], 'not now', 'run');
 			if (picked === null) return;
-			const revoked = devices[revokes.indexOf(picked)];
-			if (revoked) await revokeDevice(revoked.db, revoked.endpoint);
+			const expelled = devices[expels.indexOf(picked)];
+			if (expelled) await expelDevice(expelled.db, expelled.endpoint);
 			for (const { db, n } of shown) await ackNotice(db, n);
 		});
 

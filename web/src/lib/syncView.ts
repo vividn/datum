@@ -17,7 +17,7 @@
 // broadcast reachability ($lib/sync.ts `syncStates`) into clients × databases.
 
 import { writable } from 'svelte/store';
-import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, revokeArgv, syncStatusArgv } from './calls.js';
+import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, expelArgv, syncStatusArgv } from './calls.js';
 import { dateLabel, localTime } from './clock.js';
 import { cliError, run, type RunResult } from './run.js';
 import { approve, approveLink } from './passkey.js';
@@ -101,7 +101,7 @@ export interface Notice {
 	label: string;
 	/** What `sync chain ack` takes for it. */
 	who: string;
-	/** The device it is about, which a revoke names. */
+	/** The device it is about, which an expel names. */
 	endpoint?: string | null;
 	/** The CLI's own words: who, by label, in local time (da-o9xdd). */
 	text: string;
@@ -203,8 +203,8 @@ export function joinWords(
 	if (d?.chain && d.chain === a.chain)
 		words.push(
 			d.this?.revoked
-				? `«${db}» was revoked from this chain: joining again admits it back, and what it logged since goes to the others.`
-				: `«${db}» is in this chain already: joining again admits it back, as after a revoke.`
+				? `«${db}» was expelled from this chain: joining again admits it back, and what it logged since goes to the others.`
+				: `«${db}» is in this chain already: joining again admits it back, as after an expel.`
 		);
 	else if (d?.chain && alone) words.push(`«${db}»’s own sync chain, just this browser, is replaced by this one.`);
 	else if (d?.chain)
@@ -304,7 +304,7 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 			const row = rows.get(key) ?? { key, label: m.label, here: false, reach: 'offline' as Reach, endpoints: {}, revoked: true, cells: {} };
 			rows.set(key, row);
 			if (m.revoked) {
-				row.cells[d.db] = { mark: 'none', stale: false, title: 'revoked' };
+				row.cells[d.db] = { mark: 'none', stale: false, title: m.purged ? 'unjoined' : 'expelled' };
 				continue;
 			}
 			row.revoked = false;
@@ -356,7 +356,7 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 	return all;
 }
 
-/** What `sync chain revert <who> --json` says a revert would set aside (da-ry11c). */
+/** What `sync chain unjoin <who> --json` says an unjoin would withdraw (da-ry11c). */
 export interface PurgePreview {
 	created: number;
 	edited: number;
@@ -367,11 +367,11 @@ export interface PurgePreview {
 	last?: string | null;
 }
 
-/** The revert's confirm, naming the device and what goes, before anything is done. */
-export function purgeWords(label: string, db: string, p: PurgePreview): string {
+/** The unjoin's confirm, naming the device and what goes, before anything is done. */
+export function unjoinWords(label: string, db: string, p: PurgePreview): string {
 	const day = (t?: string | null) => (t ? dateLabel(localTime(new Date(t))) : '');
 	const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : more}`;
-	// As the CLI's revert preview: a zero count says nothing, and the noun rides the first count.
+	// As the CLI's unjoin preview: a zero count says nothing, and the noun rides the first count.
 	const did = ([[p.created, 'created'], [p.edited, 'edited'], [p.deleted, 'deleted']] as const)
 		.filter(([n]) => n > 0)
 		.map(([n, verb], i) => `${i ? n : many(n, 'entry', 'entries')} it ${verb}`);
@@ -380,9 +380,9 @@ export function purgeWords(label: string, db: string, p: PurgePreview): string {
 	const what = p.first
 		? `Every change it made goes, on every device: ${list}, ${day(p.first)} to ${day(p.last)}.`
 		: p.defined
-			? `It made no change to an entry, only ${many(p.defined, 'definition', 'definitions')}: this revokes it and sets ${p.defined === 1 ? 'that' : 'them'} aside.`
-			: 'It made no change to an entry: this only revokes it.';
-	return `Revert ${label} in ${db}? ${what} It is revoked too, until a fresh invite brings it and its changes back.`;
+			? `It made no change to an entry, only ${many(p.defined, 'definition', 'definitions')}: this expels it and sets ${p.defined === 1 ? 'that' : 'them'} aside.`
+			: 'It made no change to an entry: this only expels it.';
+	return `Unjoin ${label} from ${db}? ${what} It is expelled too: it syncs no more, though it keeps its own copy, until a fresh invite brings it and its changes back.`;
 }
 
 /**
@@ -402,8 +402,8 @@ export async function syncAct(db: string, argv: string[]): Promise<RunResult> {
 export const ackNotice = (db: string, n: Notice): Promise<RunResult> =>
 	syncAct(db, ackArgv(n.who));
 
-/** Revoke `endpoint`, the device a notice of `db`'s is about: «not yours?» (da-o9xdd). */
-export const revokeDevice = (db: string, endpoint: string): Promise<RunResult> => syncAct(db, revokeArgv(endpoint));
+/** Expel `endpoint`, the device a notice of `db`'s is about: «not yours?» (da-o9xdd). */
+export const expelDevice = (db: string, endpoint: string): Promise<RunResult> => syncAct(db, expelArgv(endpoint));
 
 /** Write `link`'s record into `db`, signed with `code`. */
 export const approveInto = (db: string, link: string, code: string): Promise<RunResult> =>
@@ -459,10 +459,11 @@ export function approvalWords(r: Record<string, unknown>, d: DbSync | undefined,
 	const [kind, rest] = key.includes(':') ? key.split(':', 2) : ['key', key];
 	const print = `${kind} ${rest.slice(0, 12)}…`;
 	switch (r.type) {
+		// The stored record types keep their names: `revoke` is an expel, `purge` an unjoin (da-n0uj1.1).
 		case 'revoke':
-			return [`Revoke ${who(r.endpoint)} ${where}`];
+			return [`Expel ${who(r.endpoint)} ${where}: it syncs no more, keeping its copy; what it wrote stays`];
 		case 'purge':
-			return [`Revert ${who(r.endpoint)} ${where}: every change it made goes, on every device`];
+			return [`Unjoin ${who(r.endpoint)} ${where}: every change it made goes, on every device`];
 		// No longer written (da-q4rau), but an older CLI's link may ask for one.
 		case 'unpurge':
 			return [`Unpurge ${who(r.endpoint)} ${where}: its changes come back`];
@@ -478,7 +479,7 @@ export function approvalWords(r: Record<string, unknown>, d: DbSync | undefined,
 		case 'remove_admin': {
 			const admin = d?.admins?.find((a) => a.key === key);
 			const words = [`Remove admin ${admin ? `«${admin.label}»` : 'an unknown key'} (${print}) ${where}`];
-			if (r.unlock) words.push('This unlocks the chain: any device can add, revoke or rename devices.');
+			if (r.unlock) words.push('This unlocks the chain: any device can add, expel or rename devices.');
 			return words;
 		}
 		case 'invite': {

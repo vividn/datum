@@ -285,11 +285,11 @@ describe('the sync widget', () => {
 		}, DESKTOP);
 	});
 
-	test('a revoked device has no line, the list says one is hidden, and the legend has no «not syncing» (da-73gyz)', async () => {
+	test('an expelled device has no line, the list says one is hidden, and the legend has no «not syncing» (da-73gyz)', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			const phone = await member(app, 'home', 'phone');
-			await cli(app, ['--db', 'home', 'sync', 'chain', 'revoke', phone]);
+			await cli(app, ['--db', 'home', 'sync', 'chain', 'expel', phone]);
 			// Every other database chained too, so no «not syncing» comes from them.
 			await cli(app, ['sync', 'new-invite']);
 			await app.goto('/sync?db=home');

@@ -178,13 +178,14 @@ export function labelCheckArgv(label: string): string[] {
 	return ['sync', 'chain', 'rename', '--check', label];
 }
 
-export function revokeArgv(endpoint: string): string[] {
-	return ['sync', 'chain', 'revoke', endpoint];
+/** The device stops syncing; it keeps its copy, and what it wrote stays (da-n0uj1.1). */
+export function expelArgv(endpoint: string): string[] {
+	return ['sync', 'chain', 'expel', endpoint];
 }
 
-/** The preview, or with `yes` the revert itself (da-ry11c). */
-export function revertArgv(endpoint: string, yes = false): string[] {
-	return ['sync', 'chain', 'revert', endpoint, yes ? '--yes' : '--json'];
+/** The preview, or with `yes` the unjoin itself: everything it wrote withdrawn (da-ry11c). */
+export function unjoinArgv(endpoint: string, yes = false): string[] {
+	return ['sync', 'chain', 'unjoin', endpoint, yes ? '--yes' : '--json'];
 }
 
 export function ackArgv(subject: string): string[] {
@@ -398,8 +399,8 @@ export interface Reads {
 	chainListArgv: Omit<ChainList, 'joining' | 'dissolved'>;
 	adminListArgv: Admins;
 	newInviteArgv: Invite;
-	/** The preview's: the `--yes` revert answers no JSON. */
-	revertArgv: PurgePreview;
+	/** The preview's: the `--yes` unjoin answers no JSON. */
+	unjoinArgv: PurgePreview;
 	restorePreviewArgv: RestorePreview;
 	plansArgv: PlanRows;
 	backupListArgv: { backups: Listed[] };

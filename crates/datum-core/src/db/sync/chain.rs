@@ -618,13 +618,20 @@ impl Chain {
             Some(Member {
                 purged: Some(p), ..
             }) => Err(format!(
-                "set aside: its endpoint was reverted ({})",
+                "set aside: its endpoint was unjoined ({})",
                 hlc_time(p)
             )),
             Some(Member {
-                revoked: Some(r), ..
+                revoked: Some(r),
+                left,
+                ..
             }) if hlc >= r.as_str() => Err(format!(
-                "made after its endpoint was revoked ({})",
+                "made after its endpoint {} ({})",
+                if left.is_some() {
+                    "left"
+                } else {
+                    "was expelled"
+                },
                 hlc_time(r)
             )),
             Some(_) => Ok(()),
@@ -964,7 +971,7 @@ impl Chain {
             }
             "purge" | "unpurge" => {
                 if s("endpoint") == op.endpoint {
-                    return Err("a copy does not revert itself".into());
+                    return Err("a copy does not unjoin itself".into());
                 }
                 let m = self
                     .members
@@ -977,7 +984,7 @@ impl Chain {
                     }
                     m.purged = None;
                 } else if m.purged.is_some() {
-                    return Err("already reverted".into());
+                    return Err("already unjoined".into());
                 } else {
                     m.purged = Some(op.hlc.clone());
                     m.revoked.get_or_insert_with(|| op.hlc.clone());
@@ -1790,14 +1797,14 @@ mod tests {
         assert_eq!(step(4, it("unpurge", &b)).0, Err("not purged".into()));
         assert_eq!(
             step(5, it("purge", &a)).0,
-            Err("a copy does not revert itself".into())
+            Err("a copy does not unjoin itself".into())
         );
         // An op from before the purge — and before the admit — is refused.
         assert_eq!(
             step(6, it("purge", &b)),
             (Ok(()), Some((true, true)), false)
         );
-        assert_eq!(chain_err(&step(7, it("purge", &b))), "already reverted");
+        assert_eq!(chain_err(&step(7, it("purge", &b))), "already unjoined");
         assert_eq!(
             step(8, it("unpurge", &b)),
             (Ok(()), Some((false, true)), true)
@@ -1978,9 +1985,8 @@ mod tests {
         assert!(chain.member(&r).unwrap().left.is_some());
         assert!(chain.allows(&a, &at(5)).is_ok());
         assert!(chain.allows(&a, &at(7)).is_err());
-        assert!(step(&mut chain, 7, &a, leave(&a))
-            .unwrap_err()
-            .contains("revoked"));
+        let again = step(&mut chain, 7, &a, leave(&a)).unwrap_err();
+        assert!(again.contains("made after its endpoint left"), "{again}");
     }
 
     /// A filter (da-u81u1) is a reader's, names its fields, and its `of`

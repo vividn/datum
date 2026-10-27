@@ -1,28 +1,28 @@
 // The purge confirm's words, in node (da-sivjb): a device that signed only
-// definitions loses them too, so its confirm must not say «only revokes».
+// definitions loses them too, so its confirm must not say «only expels».
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource(import.meta.url);
-const { purgeWords } = await import('../src/lib/syncView.ts');
+const { unjoinWords } = await import('../src/lib/syncView.ts');
 
 const none = { created: 0, edited: 0, deleted: 0, first: null, last: null };
 
-test('a device that signed nothing is only revoked', () => {
-	assert.match(purgeWords('phone', 'home', { ...none, defined: 0 }), /It made no change to an entry: this only revokes it\./);
+test('a device that signed nothing is only expelled', () => {
+	assert.match(unjoinWords('phone', 'home', { ...none, defined: 0 }), /It made no change to an entry: this only expels it\./);
 });
 
 test('a device that signed only definitions is told they go', () => {
-	assert.match(purgeWords('phone', 'home', { ...none, defined: 1 }), /only 1 definition: this revokes it and sets that aside\./);
-	assert.match(purgeWords('phone', 'home', { ...none, defined: 3 }), /only 3 definitions: this revokes it and sets them aside\./);
+	assert.match(unjoinWords('phone', 'home', { ...none, defined: 1 }), /only 1 definition: this expels it and sets that aside\./);
+	assert.match(unjoinWords('phone', 'home', { ...none, defined: 3 }), /only 3 definitions: this expels it and sets them aside\./);
 });
 
 // da-t0acg: as the CLI's preview, a zero count says nothing and definitions are named.
 const span = { first: '2026-10-07T10:00:00Z', last: '2026-10-08T10:00:00Z' };
 const changes = (created, edited, deleted, defined) =>
-	purgeWords('phone', 'home', { created, edited, deleted, defined, ...span }).match(/device: (.*), 2026-10-07 to 2026-10-08\./)[1];
+	unjoinWords('phone', 'home', { created, edited, deleted, defined, ...span }).match(/device: (.*), 2026-10-07 to 2026-10-08\./)[1];
 
 test('a device that changed entries names only the counts it has, definitions too', () => {
 	assert.equal(changes(1, 1, 1, 0), '1 entry it created, 1 it edited and 1 it deleted');
@@ -41,7 +41,7 @@ test('the span is the days on the reader\'s clock', () => {
 	process.env.TZ = 'Europe/Berlin';
 	try {
 		const p = { created: 1, edited: 0, deleted: 0, first: '2026-10-17T22:30:00Z', last: '2026-10-18T22:30:00Z' };
-		assert.match(purgeWords('phone', 'home', p), /, 2026-10-18 to 2026-10-19\./);
+		assert.match(unjoinWords('phone', 'home', p), /, 2026-10-18 to 2026-10-19\./);
 	} finally {
 		if (was === undefined) delete process.env.TZ;
 		else process.env.TZ = was;

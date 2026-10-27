@@ -1,9 +1,9 @@
-// The revert confirm's joint (da-tyj2t): datum.day hands `sync chain revert
-// <who> --json` straight to `purgeWords`, and each side is tested alone —
+// The unjoin confirm’s joint (da-tyj2t): datum.day hands `sync chain unjoin
+// <who> --json` straight to `unjoinWords`, and each side is tested alone —
 // the CLI's keys in sync_chain.rs, the words on objects built by hand in
 // purgewords-pure. Here the real CLI's output meets the real function, so a
 // key renamed on one side fails here instead of falling back to «this only
-// revokes it» for a device whose definitions go.
+// expels it» for a device whose definitions go.
 
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import { nativeCopy, startRelay } from './support/sync.mjs';
 import { until } from './support/until.mjs';
 
 resolveLibAsSource(import.meta.url);
-const { purgeWords } = await import('../src/lib/syncView.ts');
+const { unjoinWords } = await import('../src/lib/syncView.ts');
 
 let relay;
 before(async () => (relay = await startRelay()));
@@ -28,16 +28,16 @@ async function purgeOf(writes) {
 		const joined = await b.run(['sync', 'chain', 'connect', ticket]);
 		assert.equal(joined.code, 0, joined.stderr);
 		const { endpoint } = JSON.parse((await b.run(['sync', 'status', '--json'])).stdout).this;
-		const preview = await a.run(['sync', 'chain', 'revert', endpoint, '--json']);
+		const preview = await a.run(['sync', 'chain', 'unjoin', endpoint, '--json']);
 		assert.equal(preview.code, 0, preview.stderr);
-		return purgeWords('phone', 'home', JSON.parse(preview.stdout));
+		return unjoinWords('phone', 'home', JSON.parse(preview.stdout));
 	} finally {
 		await Promise.all([a.close(), b.close()]);
 	}
 }
 
 test('a device that signed only a definition is told it goes', async () => {
-	assert.match(await purgeOf([['setup', 'coffee', '--verb', 'occur']]), /only 1 definition: this revokes it and sets that aside\./);
+	assert.match(await purgeOf([['setup', 'coffee', '--verb', 'occur']]), /only 1 definition: this expels it and sets that aside\./);
 });
 
 test('a device that made an entry and a definition is told both go', async () => {

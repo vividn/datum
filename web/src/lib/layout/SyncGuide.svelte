@@ -82,14 +82,14 @@
 	<h3>When it says a device joined</h3>
 	<p>
 		Every other device shows a ⚠ at the top: tap it, and it says «Another device joined», names it and when, and offers
-		to revoke it should it not be yours. Sync lists it too, with <b class="ui">OK</b>. The device that joined is told
+		to expel it should it not be yours. Sync lists it too, with <b class="ui">OK</b>. The device that joined is told
 		the chain’s members once, plainly.
 	</p>
 	<ul>
 		<li>One you added: press OK.</li>
 		<li>
-			One you don't know: in Sync press <b class="ui">More</b>, then <b class="ui">Revoke</b> beside it, so it can
-			no longer sync. <b class="ui">Revert</b> also takes back everything it changed.
+			One you don't know: in Sync press <b class="ui">More</b>, then <b class="ui">Expel</b> beside it, so it can
+			no longer sync. <b class="ui">Unjoin</b> also takes back everything it changed.
 		</li>
 	</ul>
 	<p>

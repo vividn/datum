@@ -19,7 +19,7 @@
 
 	Bottom, every act together: [Turn on sync] alone for a database in no
 	chain; else [Add device], [Rename this device] and [More], which holds
-	pause, the other devices' rename and revoke, the admins (da-bjxts) and
+	pause, the other devices' rename, expel and unjoin, the admins (da-bjxts) and
 	the raw `sync` subcommands, each filling `sync <sub> ` on the line
 	(da-6du3o). The header's `?` opens the guide to all of it (da-oyvsz).
 	[Add device], or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
@@ -56,7 +56,7 @@
 		markOwn,
 		newInvite,
 		ownKeys,
-		purgeWords,
+		unjoinWords,
 		qr,
 		readSync,
 		redeemer,
@@ -80,9 +80,9 @@
 		labelCheckArgv,
 		leaveArgv,
 		pausedArgv,
-		revertArgv,
+		unjoinArgv,
 		renameArgv,
-		revokeArgv
+		expelArgv
 	} from '$lib/calls.js';
 	import { act } from '$lib/act.js';
 	import { now } from '$lib/clock.js';
@@ -170,7 +170,7 @@
 	const others = $derived(dbs.filter((d) => d.db !== db));
 	const rows = $derived(cur.chain ? table([cur], $syncStates) : []);
 	const overall = $derived(standing(cur, $syncStates));
-	// A revoked device has no line, only a count of them: «More» lists them (da-73gyz).
+	// An expelled device has no line, only a count of them: «More» lists them (da-73gyz).
 	const live = $derived(rows.filter((r) => !r.revoked));
 	const hidden = $derived(rows.filter((r) => r.revoked).length);
 	const shown = $derived([...live.map((r) => r.cells[db]), ...others.map((d) => standing(d, $syncStates))]);
@@ -316,18 +316,19 @@
 			ok(await syncAct(db, renameArgv(label, row.endpoints[db])));
 		});
 
-	const revoke = (row: Row) =>
+	const expel = (row: Row) =>
 		doing(async () => {
-			if (!(await confirm(`Revoke ${row.label}? It can no longer sync ${db} until a new invite admits it again.`, 'revoke'))) return;
-			ok(await syncAct(db, revokeArgv(row.endpoints[db])));
+			const words = `Expel ${row.label} from ${db}? It can no longer sync ${db} until a new invite admits it again. It keeps its own copy, and what it wrote stays on every device.`;
+			if (!(await confirm(words, 'expel'))) return;
+			ok(await syncAct(db, expelArgv(row.endpoints[db])));
 		});
 
-	/** A revert previews first (da-ry11c): the confirm names the device and what goes. */
-	const purge = (label: string, endpoint: string) =>
+	/** An unjoin previews first (da-ry11c): the confirm names the device and what goes. */
+	const unjoin = (label: string, endpoint: string) =>
 		doing(async () => {
-			const preview = JSON.parse(ok(await syncAct(db, revertArgv(endpoint))).stdout) as PurgePreview;
-			if (!(await confirm(purgeWords(label, db, preview), 'revert', label))) return;
-			ok(await syncAct(db, revertArgv(endpoint, true)));
+			const preview = JSON.parse(ok(await syncAct(db, unjoinArgv(endpoint))).stdout) as PurgePreview;
+			if (!(await confirm(unjoinWords(label, db, preview), 'unjoin', label))) return;
+			ok(await syncAct(db, unjoinArgv(endpoint, true)));
 		});
 
 	const addAdmin = (d: DbSync) =>
@@ -344,7 +345,7 @@
 	const removeAdmin = (d: DbSync, a: Admin) =>
 		doing(async () => {
 			const last = d.admins?.length === 1;
-			const unlock = 'This unlocks the chain: any device can add, revoke or rename devices.';
+			const unlock = 'This unlocks the chain: any device can add, expel or rename devices.';
 			if (last && !(await confirm(unlock, 'unlock'))) return;
 			ok(await syncAct(d.db, adminRemoveArgv(a.key, last)));
 		});
@@ -594,15 +595,15 @@
 						<div class="actions device" data-client={row.key}>
 							<span class="name">{row.label}</span>
 							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => rename(row)}>Rename</button>
-							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => revoke(row)}>Revoke</button>
-							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => purge(row.label, row.endpoints[db])}>Revert</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => expel(row)}>Expel</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => unjoin(row.label, row.endpoints[db])}>Unjoin</button>
 						</div>
 					{/each}
 					{#each cur.members.filter((m) => m.revoked) as m (m.endpoint)}
 						<div class="actions device" data-endpoint={m.endpoint}>
-							<span class="name">{m.label} · {m.purged ? 'reverted' : 'revoked'}</span>
+							<span class="name">{m.label} · {m.purged ? 'unjoined' : 'expelled'}</span>
 							{#if !m.purged}
-								<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => purge(m.label, m.endpoint)}>Revert</button>
+								<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => unjoin(m.label, m.endpoint)}>Unjoin</button>
 							{/if}
 						</div>
 					{/each}

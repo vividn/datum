@@ -1,5 +1,5 @@
 // The Sync widget's actions (da-bjxts): turn sync on, add a device, lock a
-// chain with a passkey, revoke with it, and approve a record from its link.
+// chain with a passkey, expel with it, and approve a record from its link.
 //
 // A passkey is Chrome's virtual authenticator (CDP `WebAuthn`), and the app
 // is served at https://datum.day, the one origin the CLI takes an assertion
@@ -108,7 +108,7 @@ describe('the sync widget’s actions', () => {
 		}
 	});
 
-	test('a passkey locks the chain; a revoke is approved with it and the device moves to More as revoked', async () => {
+	test('a passkey locks the chain; an expel is approved with it and the device moves to More as expelled', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			await authenticator(page);
@@ -120,12 +120,14 @@ describe('the sync widget’s actions', () => {
 			assert.match(chain.admins[0].key, /^(es256|eddsa):/);
 			assert.equal(chain.admins[0].label, 'my phone');
 
-			// Locked: the revoke stops at an approve link, which the passkey signs.
-			await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Revoke' }).click();
-			await page.locator('dialog.confirm').getByRole('button', { name: 'revoke' }).click();
+			// Locked: the expel stops at an approve link, which the passkey signs.
+			await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Expel' }).click();
+			const asked = page.locator('dialog.confirm');
+			assert.match(await asked.innerText(), /Expel phone from home\? It can no longer sync home until a new invite admits it again\. It keeps its own copy, and what it wrote stays on every device\./);
+			await asked.getByRole('button', { name: 'expel' }).click();
 			await page.locator(`${WIDGET} p.revoked`).waitFor();
 			assert.equal(await page.locator(`${WIDGET} .devices li[data-client="${phone}"]`).count(), 0);
-			assert.equal(await page.locator(`${WIDGET} .more .device[data-endpoint="${phone}"] .name`).innerText(), 'phone · revoked');
+			assert.equal(await page.locator(`${WIDGET} .more .device[data-endpoint="${phone}"] .name`).innerText(), 'phone · expelled');
 			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 			assert.ok(await revokedOf(app, phone));
 		}, AT_DATUM_DAY);
@@ -146,7 +148,7 @@ describe('the sync widget’s actions', () => {
 		}, { viewport: DESKTOP });
 	});
 
-	test('a revert previews what goes and takes the device’s name typed, and leaves no unpurge (da-q4rau)', async () => {
+	test('an unjoin previews what goes and takes the device’s name typed, and leaves no unpurge (da-q4rau)', async () => {
 		await withWallClock(
 			async (app) => {
 				const { page } = app;
@@ -154,22 +156,22 @@ describe('the sync widget’s actions', () => {
 				const of = async () => (await members(app)).members.find((m) => m.endpoint === phone);
 				await app.goto('/sync?db=home');
 				await more(page);
-				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Revert', exact: true }).click();
+				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Unjoin', exact: true }).click();
 				const dialog = page.locator('dialog.confirm');
-				assert.match(await dialog.innerText(), /Revert phone in home\? It made no change to an entry: this only revokes it\./);
-				assert.match(await dialog.innerText(), /It is revoked too, until a fresh invite brings it and its changes back\./);
+				assert.match(await dialog.innerText(), /Unjoin phone from home\? It made no change to an entry: this only expels it\./);
+				assert.match(await dialog.innerText(), /It is expelled too: it syncs no more, though it keeps its own copy, until a fresh invite brings it and its changes back\./);
 				// A wrong name is a no.
 				await dialog.locator('input').fill('phon');
-				await dialog.getByRole('button', { name: 'revert', exact: true }).click();
+				await dialog.getByRole('button', { name: 'unjoin', exact: true }).click();
 				assert.equal((await of()).purged, null);
 
-				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Revert', exact: true }).click();
+				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Unjoin', exact: true }).click();
 				await dialog.locator('input').fill('phone');
-				await dialog.getByRole('button', { name: 'revert', exact: true }).click();
+				await dialog.getByRole('button', { name: 'unjoin', exact: true }).click();
 				const gone = page.locator(`${WIDGET} .more .device[data-endpoint="${phone}"]`);
-				await gone.filter({ hasText: 'phone · reverted' }).waitFor();
+				await gone.filter({ hasText: 'phone · unjoined' }).waitFor();
 				assert.equal(await gone.getByRole('button').count(), 0);
-				// Listed once: its device line, with Rename and Revoke, is gone.
+				// Listed once: its device line, with Rename and Expel, is gone.
 				assert.equal(await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).count(), 0);
 				assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 				assert.ok((await of()).purged);
@@ -189,7 +191,7 @@ describe('the sync widget’s actions', () => {
 
 			await remove.click();
 			const dialog = page.locator('dialog.confirm');
-			assert.match(await dialog.innerText(), /This unlocks the chain: any device can add, revoke or rename devices/);
+			assert.match(await dialog.innerText(), /This unlocks the chain: any device can add, expel or rename devices/);
 			await dialog.getByRole('button', { name: 'cancel' }).click();
 			assert.equal((await members(app)).admins.length, 1);
 
@@ -222,13 +224,13 @@ describe('the sync widget’s actions', () => {
 
 			await warn.click();
 			const said = await dialog.innerText();
-			// By label, on this page's clock, with a revoke one step away (da-o9xdd).
+			// By label, on this page's clock, with an expel one step away (da-o9xdd).
 			assert.match(said, /«home»: Another device joined: phone, at \d\d:\d\d$/m);
 			assert.doesNotMatch(said, /via|Z\b|[0-9a-f]{10}/);
-			assert.match(said, /Not yours\? Revoke it/);
+			assert.match(said, /Not yours\? Expel it/);
 			assert.match(said, /To manage devices, open the Sync widget/);
 			assert.equal(await warn.innerText(), '⚠');
-			await dialog.getByRole('button', { name: 'revoke phone' }).waitFor();
+			await dialog.getByRole('button', { name: 'expel phone' }).waitFor();
 			// Closed without an OK, nothing is acknowledged.
 			await dialog.getByRole('button', { name: 'not now' }).click();
 			assert.equal((await notices()).length, 1);
@@ -243,8 +245,8 @@ describe('the sync widget’s actions', () => {
 			await warn.click();
 			assert.match(await dialog.innerText(), /Another device joined: tablet, at /);
 			assert.doesNotMatch(await dialog.innerText(), /phone/);
-			// Not this reader's: its revoke revokes it, and acknowledges what was shown.
-			await dialog.getByRole('button', { name: 'revoke tablet' }).click();
+			// Not this reader's: its expel expels it, and acknowledges what was shown.
+			await dialog.getByRole('button', { name: 'expel tablet' }).click();
 			await until(() => warn.count(), (n) => n === 0);
 			assert.deepEqual(await notices(), []);
 			const tablet = (await members(app)).members.find((m) => m.label === 'tablet');
@@ -254,7 +256,7 @@ describe('the sync widget’s actions', () => {
 			const pads = [await openChain(app, 'pad'), await openChain(app, 'pad')];
 			await until(() => page.evaluate(() => window.datum.sync.states().home?.notices?.length), (n) => n === 2);
 			await warn.click();
-			for (const pad of pads) await dialog.getByRole('button', { name: `revoke pad (${pad.slice(0, 8)})`, exact: true }).waitFor();
+			for (const pad of pads) await dialog.getByRole('button', { name: `expel pad (${pad.slice(0, 8)})`, exact: true }).waitFor();
 			await dialog.getByRole('button', { name: 'not now' }).click();
 		}, { viewport: DESKTOP });
 	});
@@ -281,7 +283,7 @@ describe('the sync widget’s actions', () => {
 			const dialog = page.locator('dialog.confirm');
 			const said = await dialog.innerText();
 			assert.match(said, /«away»: You joined this sync chain; its members: .*phone \(since \d\d:\d\d\)/);
-			assert.doesNotMatch(said, /Another device joined|Revoke/);
+			assert.doesNotMatch(said, /Another device joined|Expel/);
 			await dialog.getByRole('button', { name: 'OK' }).click();
 			await until(() => told.count(), (n) => n === 0);
 			assert.deepEqual(await notices(), []);
@@ -321,14 +323,14 @@ describe('the sync widget’s actions', () => {
 			await app.goto('/sync?db=home');
 			await addAdmin(page);
 			// What a CLI in the chain prints when it wants a passkey.
-			const asked = await runIn(app, ['--db', 'home', 'sync', 'chain', 'revoke', phone]);
+			const asked = await runIn(app, ['--db', 'home', 'sync', 'chain', 'expel', phone]);
 			const link = /https:\/\/datum\.day\/sync\/approve#\S+/.exec(asked.stderr)[0];
 
 			await app.goto(`/sync/approve#${link.split('#')[1]}`);
 			const card = page.locator(`${WIDGET} .approve`);
 			// The card names what the passkey signs: a link is anyone's to send.
 			await card.locator('.what').waitFor();
-			assert.equal(await card.locator('.what').innerText(), `Revoke phone (${phone.slice(0, 10)}) in home`);
+			assert.equal(await card.locator('.what').innerText(), `Expel phone (${phone.slice(0, 10)}) in home: it syncs no more, keeping its copy; what it wrote stays`);
 			await card.getByRole('button', { name: 'approve with passkey' }).click();
 			await page.locator(`${WIDGET} .approve .done, ${WIDGET} .failure`).first().waitFor();
 			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0, await page.locator(`${WIDGET}`).innerText());
@@ -343,7 +345,7 @@ describe('the sync widget’s actions', () => {
 			await app.goto(`/sync/approve#${Buffer.from(JSON.stringify(record)).toString('base64url')}`);
 			assert.equal(
 				await card.locator('.what').innerText(),
-				`Revoke an unknown device (${phone.slice(0, 10)}) in a chain this browser holds no copy of`
+				`Expel an unknown device (${phone.slice(0, 10)}) in a chain this browser holds no copy of: it syncs no more, keeping its copy; what it wrote stays`
 			);
 			await card.getByRole('button', { name: 'approve with passkey' }).click();
 			await card.locator('.code').waitFor();

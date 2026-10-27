@@ -414,7 +414,7 @@ fn a_member_that_never_answers_is_offline_and_one_that_refuses_is_an_error() {
     );
     assert!(!said.contains("could not reach"), "{said}");
 
-    a.ok(&["sync", "chain", "revoke", &b.id()]);
+    a.ok(&["sync", "chain", "expel", &b.id()]);
     let _a_runs = a.serve(&["sync", "run"]);
     b.fails(&["sync"], "");
     let row = entry_of(&b, "status", &a);
@@ -726,7 +726,7 @@ fn a_chain_of_one_holding_a_revoked_members_data_is_refused() {
         b.ok(&["sync"]);
     }
     assert!(a.has("walk"));
-    a.ok(&["sync", "chain", "revoke", &b.id()]);
+    a.ok(&["sync", "chain", "expel", &b.id()]);
     let c = Copy::new();
     let (_inviting, ticket) = c.invite(&[]);
     let refused = a.fails(&["sync", "chain", "connect", &ticket], "");
@@ -751,7 +751,7 @@ fn a_purge_drops_the_ops_the_chain_and_the_endpoint_key() {
         .ok(&["sync", "chain", "connect", &ticket])
         .contains("verify ok"));
     assert!(inviting.finish().0);
-    b.ok(&["sync", "chain", "revoke", &a.id()]);
+    b.ok(&["sync", "chain", "expel", &a.id()]);
     let held = b.fails(&["sync", "chain", "leave", "--alone"], "");
     assert!(held.contains("holds other copies' data"), "{held}");
     let (old_id, old_chain) = (b.id(), b.query(CHAIN));
@@ -1134,7 +1134,7 @@ fn a_revoked_device_rejoins_by_a_fresh_invite_and_data_goes_both_ways() {
     let chain = a
         .query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1");
     let b_id = b.id();
-    a.ok(&["sync", "chain", "revoke", &b_id]);
+    a.ok(&["sync", "chain", "expel", &b_id]);
     b.ok(&["occur", "out"]);
     a.ok(&["occur", "meanwhile"]);
     let (mut inviting, ticket) = a.invite(&[]);
@@ -1149,7 +1149,7 @@ fn a_revoked_device_rejoins_by_a_fresh_invite_and_data_goes_both_ways() {
     assert!(list.contains(&chain), "{list}");
     let list = a.ok(&["sync", "chain", "list"]);
     assert!(
-        !list.contains("REVOKED") && list.contains(", again "),
+        !list.contains("EXPELLED") && list.contains(", again "),
         "{list}"
     );
 }
@@ -1658,7 +1658,7 @@ fn a_new_member_is_announced_once() {
     }
     let first = a.ok(&["sync", "status"]);
     assert!(
-        first.contains("not yours? `datum sync chain revoke "),
+        first.contains("not yours? `datum sync chain expel "),
         "{first}"
     );
 }
@@ -2973,7 +2973,7 @@ fn a_member_only_its_inviter_heard_of_shows_its_admission_and_syncs() {
 #[test]
 fn one_admitted_by_a_copy_held_as_revoked_is_refused_with_what_would_fix_it() {
     let (a, b, c) = admitted_unheard(&["--reader"]);
-    b.ok(&["sync", "chain", "revoke", &a.id()[..10]]);
+    b.ok(&["sync", "chain", "expel", &a.id()[..10]]);
     let mut b_runs = b.cmd(&["sync", "run"]);
     let mut b_runs = Serving::of(b_runs.stderr(Stdio::null()));
     let out = c.fails(&["sync"], "");
@@ -3139,7 +3139,7 @@ fn diff_names_the_entry_and_the_column_two_copies_hold_differently() {
     );
 
     // A copy that is no member is told nothing.
-    a.ok(&["sync", "chain", "revoke", &b.id()[..12]]);
+    a.ok(&["sync", "chain", "expel", &b.id()[..12]]);
     let refused = b.fails(&["sync", "diff", who], "");
     assert!(refused.contains("refused: "), "{refused}");
 }

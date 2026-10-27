@@ -474,7 +474,7 @@ two copies found signing with one key are refused by name, and `sync chain
 rekey` gives one a new key.
 
 Membership is the signed chain (`db/sync/chain.rs`), and there is one mechanism:
-a chain with no admin is OPEN — any member invites, revokes or renames, and
+a chain with no admin is OPEN — any member invites, expels or renames, and
 `invite` on a copy in no chain starts one — and the first `admin add` LOCKS it,
 after which those acts take an admin key (passkey or key file). A copy starting
 a chain while it holds another endpoint's ops — piped in, or its own old key's —
@@ -510,12 +510,16 @@ entry that moved in whole, `{"remove": hid}` for one that moved out, and a
 no gap wait, drops what falls outside, and its vector is its marks
 (`sync_caught_up`, v50). `verify` hashes the filtered set on both sides.
 
-### Revert and purge
+### Expel, unjoin and purge
 
-`sync chain revert <WHO>` (da-ry11c; `chain purge <WHO>` until da-c9fiy, now
-refused with the new name) previews, and with `--yes` writes a `purge` record:
+The commands are `expel` and `unjoin`; the chain records they write keep their
+types, `revoke` and `purge`, on every copy and on the wire (da-n0uj1.1, which
+cut the old verbs `revoke` and `revert` with no alias). `sync chain expel <WHO>`
+writes a `revoke`: the device stops syncing, keeping its copy, and what it wrote
+stays. `sync chain unjoin <WHO>` (da-ry11c; `chain purge <WHO>` is refused
+naming it) previews, and with `--yes` writes a `purge` record:
 every copy refuses every op that endpoint signed and folds its entries again
-without them — what it made goes, its edits and deletes are undone — and revokes
+without them — what it made goes, its edits and deletes are undone — and expels
 it. There is no unpurge: a fresh invite brings it back (below), though an old
 chain's `unpurge` record still folds as it did.
 
@@ -582,13 +586,13 @@ Redeeming another chain's invite leaves on its own only a copy holding nothing
 but its own data (no other live member, no other endpoint's op), keeping its
 key.
 
-A revoked device rejoins by a fresh invite to its chain: the `admit` of a listed
+An expelled device rejoins by a fresh invite to its chain: the `admit` of a listed
 endpoint RE-ADMITS it, clearing the revoke, so what it made while out folds in
-(da-j8c4l) — and a revert too, so a reverted device rejoins as at a first
+(da-j8c4l) — and an unjoin too, so an unjoined device rejoins as at a first
 connection, every op it made folding back in (da-q4rau).
 
-`chain list` leaves a revoked, reverted or departed member out and counts it,
-and `status` a revoked or reverted one, a departed one having no row there at
+`chain list` leaves an expelled, unjoined or departed member out and counts it,
+and `status` an expelled or unjoined one, a departed one having no row there at
 all (`--show-revoked` shows them, `--json` always carries them), as bare `sync`
 and datum.day's sync widget do: the chain's record of it stays (da-73gyz).
 
@@ -625,7 +629,7 @@ through the hidden `sync pipe records` and `sync handshake --records`.
 ### The command tree
 
 The tree: `sync`, `status`, `pause | resume`, `diff <WHO>`, `refold`, `chain
-invite | connect | leave | list | rename | revoke | revert | ack | rekey`,
+invite | connect | leave | list | rename | expel | unjoin | ack | rekey`,
 `admin list | add | remove`, `daemon install | uninstall | status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync
 run` for every chained db `known_dbs` lists; a copy's first `chain invite` /

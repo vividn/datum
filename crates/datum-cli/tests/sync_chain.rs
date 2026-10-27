@@ -392,7 +392,7 @@ fn the_leave_connect_makes_is_refused_a_copy_holding_others_data() {
         assert!(refused.contains("only a copy holding nothing but its own data"));
     }
     assert_eq!(a.query("SELECT COUNT(*) FROM ops"), ops);
-    a.ok(&["sync", "chain", "revoke", "b"]);
+    a.ok(&["sync", "chain", "expel", "b"]);
     let refused = a.fails(&["sync", "chain", "leave", "--alone"], "");
     assert!(refused.contains("holds other copies' data"), "{refused}");
     assert!(a.has("tea"));
@@ -870,14 +870,14 @@ fn in_an_open_chain_a_member_invites_a_third_copy_and_revokes_one() {
         .starts_with("invite "));
     // c revokes a: no admin, no key, no prompt.
     assert!(c
-        .ok(&["sync", "chain", "revoke", &a.id()[..10]])
-        .contains("revoked"));
+        .ok(&["sync", "chain", "expel", &a.id()[..10]])
+        .starts_with("expelled "));
     assert!(c.send(&b).0);
     assert!(member_of(&b, &a.id())["revoked"].is_string());
     a.ok(&["occur", "after"]);
     let (ok, text) = a.send(&b);
     assert!(
-        !ok && text.contains("made after its endpoint was revoked"),
+        !ok && text.contains("made after its endpoint was expelled"),
         "{text}"
     );
 }
@@ -898,7 +898,7 @@ fn chain_list_and_status_hide_revoked_members_and_say_how_many() {
     };
     let count = |args: &[&str]| json(&a.ok(args))["members"].as_array().unwrap().len();
 
-    a.ok(&["sync", "chain", "revoke", "c"]);
+    a.ok(&["sync", "chain", "expel", "c"]);
     for (cmd, live) in [
         (&["sync", "chain", "list"][..], 3),
         (&["sync", "status"], 2),
@@ -917,7 +917,7 @@ fn chain_list_and_status_hide_revoked_members_and_say_how_many() {
     }
 
     // A revert is hidden the same way, and the count is of both.
-    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
+    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
     for cmd in [&["sync", "chain", "list"][..], &["sync", "status"]] {
         let out = a.ok(cmd);
         assert!(
@@ -927,7 +927,7 @@ fn chain_list_and_status_hide_revoked_members_and_say_how_many() {
         assert!(!shows(cmd, &b) && !shows(cmd, &c), "{out}");
         assert!(a
             .ok(&[cmd, &["--show-revoked"]].concat())
-            .contains("REVERTED"));
+            .contains("UNJOINED"));
     }
     assert!(shows(&["sync", "chain", "list"], &a));
 
@@ -935,7 +935,7 @@ fn chain_list_and_status_hide_revoked_members_and_say_how_many() {
     assert!(a.send(&c).0);
     let own = c.ok(&["sync", "chain", "list"]);
     assert!(
-        own.contains("(this copy)") && own.contains("REVOKED"),
+        own.contains("(this copy)") && own.contains("EXPELLED"),
         "{own}"
     );
 }
@@ -951,14 +951,14 @@ fn the_first_admin_add_locks_the_chain() {
     let out = a.fails(&["sync", "new-invite"], "not-a-signature\n");
     assert!(out.contains("https://datum.day/sync/approve#"), "{out}");
     assert!(out.contains("not signed by an admin"), "{out}");
-    let out = a.fails(&["sync", "chain", "revoke", "b"], "");
+    let out = a.fails(&["sync", "chain", "expel", "b"], "");
     assert!(out.contains("no approval code"), "{out}");
     // A second key needs the first: first come, first served.
     let out = a.fails(&["sync", "admin", "add", &a.key("mine.key")], "\n");
     assert!(out.contains("no approval code"), "{out}");
 
     a.ok(&["sync", "new-invite", "--admin-key", &admin]);
-    a.ok(&["sync", "chain", "revoke", "b", "--admin-key", &admin]);
+    a.ok(&["sync", "chain", "expel", "b", "--admin-key", &admin]);
     let members = json(&a.ok(&["sync", "chain", "list", "--json"]));
     assert_eq!(members["admins"].as_array().unwrap().len(), 1, "{members}");
 }
@@ -974,11 +974,11 @@ fn a_revoke_refuses_what_the_endpoint_made_after_it_on_every_copy() {
     // Three characters of an id name nothing: too easy to hit by accident.
     let b_id = b.id();
     let short = a.fails(
-        &["sync", "chain", "revoke", &b_id[..3], "--admin-key", &admin],
+        &["sync", "chain", "expel", &b_id[..3], "--admin-key", &admin],
         "",
     );
     assert!(short.contains("names 0 members"), "{short}");
-    a.ok(&["sync", "chain", "revoke", "b", "--admin-key", &admin]);
+    a.ok(&["sync", "chain", "expel", "b", "--admin-key", &admin]);
     b.ok(&["occur", "after"]);
     // c takes b's op before it hears of the revoke…
     assert!(b.send(&c).0);
@@ -986,20 +986,20 @@ fn a_revoke_refuses_what_the_endpoint_made_after_it_on_every_copy() {
     // …and drops it when it does.
     let (ok, text) = a.send(&c);
     assert!(
-        !ok && text.contains("made after its endpoint was revoked"),
+        !ok && text.contains("made after its endpoint was expelled"),
         "{text}"
     );
     assert!(!c.has("after") && c.has("before"));
     // a refuses it outright.
     let (ok, text) = b.send(&a);
     assert!(
-        !ok && text.contains("made after its endpoint was revoked"),
+        !ok && text.contains("made after its endpoint was expelled"),
         "{text}"
     );
     assert!(!a.has("after") && a.has("before"));
     assert_eq!(a.hash(), c.hash());
     let members = a.ok(&["sync", "chain", "list", "--show-revoked"]);
-    assert!(members.contains("REVOKED"), "{members}");
+    assert!(members.contains("EXPELLED"), "{members}");
 }
 
 /// How `copy` holds the three entries the purge test is about: whether it
@@ -1031,17 +1031,17 @@ fn a_purge_preview_of_a_device_that_only_made_specs_says_they_go() {
     assert!(b.send(&a).0);
     let spec = || a.ok(&["setup", "coffee", "--json"]);
     assert!(!spec().contains("No spec defined"), "{}", spec());
-    let preview = a.ok(&["sync", "chain", "revert", "b"]);
+    let preview = a.ok(&["sync", "chain", "unjoin", "b"]);
     assert!(
-        preview.contains("signed no change to an entry, only 1 definition: reverting it revokes it and sets that aside"),
+        preview.contains("signed no change to an entry, only 1 definition: unjoining it expels it and sets that aside"),
         "{preview}"
     );
-    let p = json(&a.ok(&["sync", "chain", "revert", "b", "--json"]));
+    let p = json(&a.ok(&["sync", "chain", "unjoin", "b", "--json"]));
     assert!(
         p["first"].is_null() && p["last"].is_null() && p["defined"] == 1,
         "{p}"
     );
-    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
+    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
     assert!(spec().contains("No spec defined"), "{}", spec());
 }
 
@@ -1069,17 +1069,17 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
 
     // The old spelling is refused, naming the new (da-c9fiy).
     let old = a.fails(&["sync", "chain", "purge", "b", "--yes"], "");
-    assert!(old.contains("`sync chain revert <WHO>`"), "{old}");
+    assert!(old.contains("`sync chain unjoin <WHO>`"), "{old}");
     // The preview names what goes, and changes nothing.
-    let preview = a.ok(&["sync", "chain", "revert", "b"]);
+    let preview = a.ok(&["sync", "chain", "unjoin", "b"]);
     assert!(
         preview.contains("b (")
             && preview.contains("1 entry it created goes,")
             && preview.contains("1 it edited and 1 it deleted")
-            && preview.contains("nothing changed: `datum sync chain revert b --yes`"),
+            && preview.contains("nothing changed: `datum sync chain unjoin b --yes`"),
         "{preview}"
     );
-    let p = json(&a.ok(&["sync", "chain", "revert", "b", "--json"]));
+    let p = json(&a.ok(&["sync", "chain", "unjoin", "b", "--json"]));
     assert_eq!(
         (&p["created"], &p["edited"], &p["deleted"], &p["purged"]),
         (&1.into(), &1.into(), &1.into(), &serde_json::Value::Null),
@@ -1088,19 +1088,19 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
     assert!(p["first"].is_string() && p["last"].is_string(), "{p}");
     assert_eq!(purge_view(&a), poisoned);
 
-    let purged = a.ok(&["sync", "chain", "revert", "b", "--yes"]);
-    assert!(purged.starts_with("reverted: b ("), "{purged}");
+    let purged = a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
+    assert!(purged.starts_with("unjoined: b ("), "{purged}");
     let clean = (false, "1".to_string(), false);
     assert_eq!(purge_view(&a), clean);
-    let again = a.fails(&["sync", "chain", "revert", "b", "--yes"], "");
-    assert!(again.contains("reverted already"), "{again}");
+    let again = a.fails(&["sync", "chain", "unjoin", "b", "--yes"], "");
+    assert!(again.contains("unjoined already"), "{again}");
     assert!(a
         .ok(&["sync", "chain", "list", "--show-revoked"])
-        .contains("REVERTED"));
+        .contains("UNJOINED"));
 
     // c syncs after the purge, from a: b's ops arrive with it, set aside.
     let (_, text) = a.send(&c);
-    assert!(text.contains("its endpoint was reverted"), "{text}");
+    assert!(text.contains("its endpoint was unjoined"), "{text}");
     assert_eq!(purge_view(&c), clean);
     // b itself hears of it, and its own ops go.
     a.send(&b);
@@ -1113,9 +1113,9 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
     check_clean(&a, &[&b, &c]);
     check_clean(&c, &[&a, &b]);
 
-    // A copy does not revert itself.
-    let own = a.fails(&["sync", "chain", "revert", &a.id()[..10], "--yes"], "");
-    assert!(own.contains("does not revert itself"), "{own}");
+    // A copy does not unjoin itself.
+    let own = a.fails(&["sync", "chain", "unjoin", &a.id()[..10], "--yes"], "");
+    assert!(own.contains("does not unjoin itself"), "{own}");
 }
 
 /// A PURGED device that rejoins by a fresh invite connects as if for the
@@ -1134,7 +1134,7 @@ fn a_purged_device_that_rejoins_brings_all_its_ops_back() {
     b.ok(&["occur", "coffee"]);
     b.ok(&["update", &tea, "cups=3"]);
     assert!(b.send(&a).0 && a.send(&c).0);
-    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
+    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
     a.send(&b);
     a.send(&c);
     let cups = "SELECT json_extract(data, '$.cups') FROM entries WHERE field = 'tea'";
@@ -1182,7 +1182,7 @@ fn a_purge_frees_the_rows_merged_into_the_purged_devices_row() {
     let b_row = b.query("SELECT hid FROM entries WHERE field = 'coffee'");
     let shown_hid = "SELECT hid FROM entries WHERE field = 'coffee' AND superseded_by IS NULL";
     assert_eq!(a.query(shown_hid), b_row);
-    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
+    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
     assert_eq!(a.query(shown), "1");
     assert_eq!(
         a.query("SELECT COUNT(*) FROM entries WHERE field = 'coffee'"),
@@ -1213,7 +1213,7 @@ fn a_purge_frees_two_rows_merged_into_the_purged_devices_row() {
         a.query(shown),
         b.query("SELECT hid FROM entries WHERE field = 'coffee'")
     );
-    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
+    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
     assert_eq!(a.query(rows), "2");
     assert_eq!(a.query(shown), a.query("SELECT hid FROM entries WHERE field = 'coffee' AND client_id = (SELECT client_id FROM sync_local)"));
     let live = "SELECT COUNT(*) FROM entries WHERE field = 'coffee'
@@ -1221,7 +1221,7 @@ fn a_purge_frees_two_rows_merged_into_the_purged_devices_row() {
     assert_eq!(a.query(live), "1");
     // At c the purge arrives by sync, and the session goes through.
     let (_, text) = a.send(&c);
-    assert!(text.contains("its endpoint was reverted"), "{text}");
+    assert!(text.contains("its endpoint was unjoined"), "{text}");
     assert!(!text.contains("UNIQUE"), "{text}");
     assert_eq!((c.query(rows), c.query(live)), ("2".into(), "1".into()));
     assert_eq!(a.hash(), c.hash());
@@ -1243,18 +1243,18 @@ fn a_revoked_device_rejoins_by_a_fresh_invite_with_what_it_made_while_out() {
     assert!(b.send(&a).0 && a.send(&c).0);
     let admitted = member_of(&a, &b.id())["admitted"].clone();
 
-    a.ok(&["sync", "chain", "revoke", "b"]);
+    a.ok(&["sync", "chain", "expel", "b"]);
     assert!(a.send(&b).0 && a.send(&c).0);
     b.ok(&["occur", "out"]);
     let (ok, text) = b.send(&a);
     assert!(
-        !ok && text.contains("made after its endpoint was revoked"),
+        !ok && text.contains("made after its endpoint was expelled"),
         "{text}"
     );
     assert!(!a.has("out"));
     a.ok(&["occur", "meanwhile"]);
     let status = b.ok(&["sync", "status"]);
-    assert!(status.contains("this copy was revoked"), "{status}");
+    assert!(status.contains("this copy was expelled"), "{status}");
 
     let out = redeem(&a, &b, "b again", None, &["--chain", &chain_of(&a)]);
     assert!(
@@ -1284,7 +1284,7 @@ fn a_revoked_device_rejoins_by_a_fresh_invite_with_what_it_made_while_out() {
     c.ok(&["sync", "chain", "ack", &b.id()]);
     let notices = json(&c.ok(&["sync", "status", "--json"]))["notices"].to_string();
     assert!(!notices.contains(&b.id()[..18]), "{notices}");
-    assert!(!b.ok(&["sync", "status"]).contains("revoked"));
+    assert!(!b.ok(&["sync", "status"]).contains("expelled"));
 }
 
 #[test]
@@ -1358,7 +1358,7 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
         .find(|l| l.starts_with("⚠ another device joined: b, at "))
         .unwrap_or_else(|| panic!("{status}"));
     assert!(
-        line.contains("not yours? `datum sync chain revoke ")
+        line.contains("not yours? `datum sync chain expel ")
             && line.contains("to acknowledge")
             && !line.contains("via")
             && !line.contains('Z'),
@@ -1544,7 +1544,7 @@ fn the_warning_comes_after_the_commands_own_output() {
 #[test]
 fn an_admin_act_without_a_valid_signature_is_refused_by_name() {
     let (a, b, _) = locked();
-    let out = a.fails(&["sync", "chain", "revoke", "b"], "not-a-signature\n");
+    let out = a.fails(&["sync", "chain", "expel", "b"], "not-a-signature\n");
     assert!(out.contains("https://datum.day/sync/approve#"), "{out}");
     assert!(out.contains("not signed by an admin"), "{out}");
     assert!(member_of(&a, &b.id())["revoked"].is_null());
@@ -2074,7 +2074,7 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
     session(&a, &b);
 
     // b revoked, what it makes is refused, and the transport says so.
-    a.ok(&["sync", "chain", "revoke", "b"]);
+    a.ok(&["sync", "chain", "expel", "b"]);
     b.ok(&["occur", "after"]);
     let (ok, why) = b.send(&a);
     assert!(!ok, "{why}");
@@ -2090,12 +2090,12 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
         row["error"]
             .as_str()
             .unwrap()
-            .contains("made after its endpoint was revoked"),
+            .contains("made after its endpoint was expelled"),
         "{row}"
     );
     let table = a.ok(&["sync", "status", "--show-revoked"]);
     assert!(
-        table.contains("error") && table.contains("REVOKED"),
+        table.contains("error") && table.contains("EXPELLED"),
         "{table}"
     );
 }
@@ -2469,10 +2469,23 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     assert_eq!(
         complete(&["chain"]),
         [
-            "invite", "connect", "leave", "list", "rename", "revoke", "revert", "purge", "role",
+            "invite", "connect", "leave", "list", "rename", "expel", "unjoin", "purge", "role",
             "ack", "rekey"
         ]
     );
+    // `revoke` and `revert` were renamed `expel` and `unjoin`, and cut
+    // (da-n0uj1.1): each is unknown, naming the verbs there are.
+    for gone in ["revoke", "revert"] {
+        let out = a.fails(&["sync", "chain", gone, "x"], "");
+        assert!(
+            out.contains("unknown sync chain subcommand")
+                && out.contains("expel")
+                && out.contains("unjoin"),
+            "{gone}: {out}"
+        );
+    }
+    let purge = a.fails(&["sync", "chain", "purge", "x"], "");
+    assert!(purge.contains("`sync chain unjoin <WHO>`"), "{purge}");
     assert_eq!(complete(&["admin"]), ["list", "add", "remove"]);
     assert_eq!(complete(&["daemon"]), ["install", "uninstall", "status"]);
     // `datum sync help` is the page.
@@ -2694,7 +2707,7 @@ fn a_write_warns_once_a_day_of_changes_no_other_device_has() {
     );
 
     // With b revoked, a is its chain's lone member: never a warning.
-    a.ok(&["sync", "chain", "revoke", "b"]);
+    a.ok(&["sync", "chain", "expel", "b"]);
     age_unsent(&a, 3);
     a.exec("UPDATE sync_local SET warned_at = NULL");
     assert!(!a.stderr_of(&["occur", "tea"]).contains(stale));
@@ -3433,7 +3446,7 @@ fn an_edit_a_purge_left_without_its_create_is_no_orphan() {
     assert!(b.send(&a).0);
     let coffee = a.query("SELECT hid FROM entries WHERE field = 'coffee'");
     a.ok(&["update", &coffee, "cups=3"]);
-    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
+    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
     assert!(!a.has("coffee"));
     let applied = format!("SELECT kind FROM ops WHERE hid = '{coffee}' AND applied = 1");
     assert_eq!(a.query(&applied), "update");

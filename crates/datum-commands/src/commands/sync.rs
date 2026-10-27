@@ -285,14 +285,14 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             let chain = db.sync_chain()?;
             ensure!(chain.exists(), NO_CHAIN);
             let (mut record, said) = match act {
-                SyncAdminAct::Revoke => {
+                SyncAdminAct::Expel => {
                     let m = member(&chain, &who)?;
                     (
                         json!({"type": "revoke", "endpoint": m}),
-                        format!("revoked {who}"),
+                        format!("expelled {who}: it syncs no more and keeps its copy; what it wrote stays"),
                     )
                 }
-                SyncAdminAct::Revert { yes, show } => {
+                SyncAdminAct::Unjoin { yes, show } => {
                     let m = member(&chain, &who)?;
                     let purged = chain.member(&m).and_then(|m| m.purged.as_deref());
                     let p = db.sync_purge_preview(&m)?;
@@ -308,18 +308,18 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     }
                     ensure!(
                         purged.is_none(),
-                        "{who} is reverted already: a fresh invite brings it back, its ops with it"
+                        "{who} is unjoined already: a fresh invite brings it back, its ops with it"
                     );
-                    let what = revert_words(&who, &m, &p);
+                    let what = unjoin_words(&who, &m, &p);
                     if !yes {
                         println!("{what}");
-                        if !ask(&format!("sync chain revert {who}"))? {
+                        if !ask(&format!("sync chain unjoin {who}"))? {
                             return Ok(());
                         }
                     }
                     (
                         json!({"type": "purge", "endpoint": m}),
-                        format!("reverted: {what}\na fresh invite brings it back, its ops with it"),
+                        format!("unjoined: {what}\na fresh invite brings it back, its ops with it"),
                     )
                 }
                 SyncAdminAct::Role { reader, filter } => {
@@ -380,10 +380,10 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     } else {
                         ensure!(
                             allow_unlock,
-                            "this is the last admin: removing it UNLOCKS the chain, so any device can add, revoke or rename devices. Pass --allow-unlock to do it"
+                            "this is the last admin: removing it UNLOCKS the chain, so any device can add, expel or rename devices. Pass --allow-unlock to do it"
                         );
                         r["unlock"] = true.into();
-                        (r, format!("removed admin {}: the chain is unlocked, so any device can add, revoke or rename devices", a.label))
+                        (r, format!("removed admin {}: the chain is unlocked, so any device can add, expel or rename devices", a.label))
                     }
                 }
             };
@@ -913,7 +913,7 @@ pub(crate) fn wipe_reach(db: &Db, does: &str) -> Result<String> {
     for p in db.sync_status()? {
         let who = format!("{} ({})", p.label, &p.endpoint[..10]);
         out += &match (p.revoked, &p.last_seen) {
-            (true, _) => format!("  {who} is revoked: it is never told, and keeps what it holds\n"),
+            (true, _) => format!("  {who} is expelled: it is never told, and keeps what it holds\n"),
             (_, Some(at)) => {
                 format!("  {who} last synced with this copy at {}: it {does} when it next connects\n", local(at))
             }
@@ -985,9 +985,9 @@ fn backup_words(backup: Option<std::path::PathBuf>) -> String {
     })
 }
 
-/// What reverting `who` sets aside, in words (da-ry11c): a verb agrees with
+/// What unjoining `who` sets aside, in words (da-ry11c): a verb agrees with
 /// its count, and a count of zero says nothing (da-sivjb).
-fn revert_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
+fn unjoin_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
     let minute = |t: &Option<String>| t.as_deref().map(local);
     let id = &endpoint[..10];
     let many = |n: usize, one: &str, more: &str| match n {
@@ -998,9 +998,9 @@ fn revert_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
     let defs = many(p.defined, "definition", "definitions");
     let (Some(first), Some(last)) = (minute(&p.first), minute(&p.last)) else {
         return match p.defined {
-            0 => format!("{who} ({id}) signed no change to an entry: reverting it only revokes it"),
+            0 => format!("{who} ({id}) signed no change to an entry: unjoining it only expels it"),
             n => format!(
-                "{who} ({id}) signed no change to an entry, only {defs}: reverting it revokes \
+                "{who} ({id}) signed no change to an entry, only {defs}: unjoining it expels \
                  it and sets {} aside",
                 if n == 1 { "that" } else { "them" }
             ),
@@ -1036,7 +1036,7 @@ fn revert_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
         what.push(format!("{defs} it signed {}", go(p.defined)));
     }
     format!(
-        "{who} ({id}) — every op it signed, {first} to {last}: {}; it is revoked",
+        "{who} ({id}) — every op it signed, {first} to {last}: {}; it is expelled",
         what.join(", ")
     )
 }
@@ -1286,7 +1286,7 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 .map(|(d, s)| format!("  datum {d} (schema {s})"))
                 .unwrap_or_default(),
             match (m.purged.as_deref(), m.left.as_deref()) {
-                (Some(p), _) => format!("  REVERTED {}", at(p)),
+                (Some(p), _) => format!("  UNJOINED {}", at(p)),
                 (_, Some(l)) if pending && m.endpoint == mine => {
                     format!(
                         "  LEAVING: signed {}, finishes once a member holds it",
@@ -1295,7 +1295,7 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 }
                 (_, Some(l)) => format!("  LEFT {}", at(l)),
                 _ => revoked
-                    .map(|r| format!("  REVOKED {r}"))
+                    .map(|r| format!("  EXPELLED {r}"))
                     .unwrap_or_default(),
             },
             if m.endpoint == mine {
@@ -1478,7 +1478,7 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
             local(chain::hlc_time(at))
         ),
         Some((_, Some(at))) => println!(
-            "⚠ this copy was revoked at {}: it syncs again once a member's invite admits it, \
+            "⚠ this copy was expelled at {}: it syncs again once a member's invite admits it, \
              or `datum sync chain leave` keeps every entry and starts afresh",
             local(chain::hlc_time(at))
         ),
@@ -1527,8 +1527,8 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
             p.to_send,
             when.as_deref().map_or("-".into(), local),
             match (p.purged, p.revoked) {
-                (true, _) => "  REVERTED",
-                (_, true) => "  REVOKED",
+                (true, _) => "  UNJOINED",
+                (_, true) => "  EXPELLED",
                 _ => "",
             },
             if p.reader { "  reader" } else { "" },
@@ -1657,7 +1657,7 @@ fn notice_line(n: &Notice, text: &str) -> String {
         "unlock" => format!("⚠ {text} — {UNLOCK_HINT}"),
         "wipe" => format!("⚠ {text}; `datum sync chain ack {who}` to acknowledge"),
         "endpoint" | "rejoin" => format!(
-            "⚠ {text} — not yours? `datum sync chain revoke {who}`; \
+            "⚠ {text} — not yours? `datum sync chain expel {who}`; \
              `datum sync chain ack {who}` to acknowledge"
         ),
         "refused" => format!(
@@ -1763,7 +1763,7 @@ mod tests {
     /// A verb agrees with its count, a count of zero says nothing, and the
     /// definitions a device signed beside its entries are named (da-sivjb).
     #[test]
-    fn revert_words_agree_with_their_counts() {
+    fn unjoin_words_agree_with_their_counts() {
         let words = |created, edited, deleted, defined| {
             let at = Some("2026-10-07T10:00:00Z".to_string());
             let p = chain::PurgePreview {
@@ -1774,15 +1774,15 @@ mod tests {
                 first: at.clone(),
                 last: at,
             };
-            let w = revert_words("b", "0123456789abcdef", &p);
+            let w = unjoin_words("b", "0123456789abcdef", &p);
             w.split_once(": ").unwrap().1.to_string()
         };
-        let back = "back to the state without it; it is revoked";
+        let back = "back to the state without it; it is expelled";
         assert_eq!(
             words(1, 1, 1, 0),
             format!("1 entry it created goes, 1 it edited and 1 it deleted go {back}")
         );
-        assert_eq!(words(2, 0, 0, 0), "2 entries it created go; it is revoked");
+        assert_eq!(words(2, 0, 0, 0), "2 entries it created go; it is expelled");
         assert_eq!(words(0, 1, 0, 0), format!("1 entry it edited goes {back}"));
         assert_eq!(words(0, 0, 3, 0), format!("3 entries it deleted go {back}"));
         assert_eq!(
@@ -1791,11 +1791,11 @@ mod tests {
         );
         assert_eq!(
             words(1, 0, 0, 2),
-            "1 entry it created goes, 2 definitions it signed go; it is revoked"
+            "1 entry it created goes, 2 definitions it signed go; it is expelled"
         );
         assert_eq!(
             words(0, 1, 0, 1),
-            format!("1 entry it edited goes back to the state without it, 1 definition it signed goes; it is revoked")
+            format!("1 entry it edited goes back to the state without it, 1 definition it signed goes; it is expelled")
         );
     }
 }

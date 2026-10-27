@@ -167,7 +167,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|leave|list|rename|revoke|revert|purge|role|ack|rekey";
+    const SET: &str = "invite|connect|leave|list|rename|expel|unjoin|purge|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = ["expires", "admin-key", "fields", "kit", "label"];
@@ -220,13 +220,13 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 check: o.on("check"),
             }
         }
-        Some("revoke") => act(rest, SyncAdminAct::Revoke, &[], &[])?,
-        // Renamed (da-c9fiy): one device's purge is `revert <WHO>`.
+        Some("expel") => act(rest, SyncAdminAct::Expel, &[], &[])?,
+        // One device's purge is `unjoin <WHO>` (da-c9fiy, da-n0uj1.1).
         Some("purge") => {
             let o = opts(rest, &["admin-key"], &["data", "all", "yes"], 0..=1)?;
             if !o.positional.is_empty() {
                 return Err(ParseError::InvalidArg(
-                    "`sync chain purge <WHO>` is now `sync chain revert <WHO>`".into(),
+                    "`sync chain purge <WHO>` is now `sync chain unjoin <WHO>`".into(),
                 ));
             }
             if o.on("data") == o.on("all") {
@@ -242,10 +242,10 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 admin_key: o.get("admin-key"),
             }
         }
-        Some("revert") => {
+        Some("unjoin") => {
             let mut o = opts(rest, &["admin-key"], &["yes"], 1..=1)?;
             SyncCommand::Admin {
-                act: SyncAdminAct::Revert {
+                act: SyncAdminAct::Unjoin {
                     yes: o.on("yes"),
                     show: Show::Default,
                 },
@@ -702,9 +702,9 @@ mod tests {
         // A flag it does not take is refused, never a refold that writes.
         assert!(parse_sync_cmd(&["refold", "--dryrun"]).is_err());
         assert_eq!(
-            p(&["chain", "revoke", "b"]),
+            p(&["chain", "expel", "b"]),
             SyncCommand::Admin {
-                act: SyncAdminAct::Revoke,
+                act: SyncAdminAct::Expel,
                 who: "b".into(),
                 label: None,
                 admin_key: None,
@@ -712,9 +712,9 @@ mod tests {
             }
         );
         assert_eq!(
-            p(&["chain", "revert", "b", "--yes", "--admin-key", "k"]),
+            p(&["chain", "unjoin", "b", "--yes", "--admin-key", "k"]),
             SyncCommand::Admin {
-                act: SyncAdminAct::Revert {
+                act: SyncAdminAct::Unjoin {
                     yes: true,
                     show: Show::Default
                 },
@@ -724,10 +724,10 @@ mod tests {
                 allow_unlock: false
             }
         );
-        assert!(parse_sync_cmd(&["chain", "revert"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "unjoin"]).is_err());
         let old = parse_sync_cmd(&["chain", "purge", "b", "--yes"]).unwrap_err();
         assert!(
-            old.to_string().contains("`sync chain revert <WHO>`"),
+            old.to_string().contains("`sync chain unjoin <WHO>`"),
             "{old}"
         );
         assert_eq!(
@@ -858,7 +858,7 @@ mod tests {
         );
         // The flags are each act's own.
         assert!(parse_sync_cmd(&["admin", "add", "k", "--allow-unlock"]).is_err());
-        assert!(parse_sync_cmd(&["chain", "revoke", "k", "--label", "x"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "expel", "k", "--label", "x"]).is_err());
         for group in ["chain", "admin", "daemon", "pipe"] {
             let err = parse_sync_cmd(&[group]).unwrap_err().to_string();
             assert!(
@@ -867,8 +867,8 @@ mod tests {
             );
             assert!(parse_sync_cmd(&[group, "nope"]).is_err());
         }
-        assert!(parse_sync_cmd(&["chain", "revoke"]).is_err());
-        assert!(parse_sync_cmd(&["chain", "revoke", "a", "b"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "expel"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "expel", "a", "b"]).is_err());
         assert!(parse_sync_cmd(&["chain", "rename"]).is_err());
         assert!(parse_sync_cmd(&["chain", "rekey", "extra"]).is_err());
         assert!(parse_sync_cmd(&["chain", "invite", "--expires", "0s"]).is_err());

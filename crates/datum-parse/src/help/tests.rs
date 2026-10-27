@@ -1245,7 +1245,7 @@ fn subcommand_help_is_its_own_page() {
     assert_eq!(chain, parse("help sync chain purge"));
     assert!(chain.contains("  purge       Every copy drops"), "{chain}");
     assert!(chain.contains("`datum db purge --chain`"), "{chain}");
-    assert!(!chain.contains("  revert"), "{chain}");
+    assert!(!chain.contains("  unjoin"), "{chain}");
 
     // `status` is the top-level row; the daemon's is under `daemon`.
     assert!(parse("sync status -h").contains("Per member"));
