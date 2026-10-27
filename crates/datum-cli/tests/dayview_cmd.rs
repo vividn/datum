@@ -1222,6 +1222,9 @@ fn context_now_draws_every_state_across_the_band() {
 /// a field with none there is sampled.
 #[test]
 fn context_window_draws_its_data_and_the_field_s_own_entries() {
+    // Midday: in the first hours of a day the neighbours fall on yesterday,
+    // which the plain `dayview` below does not draw (da-ah8h5).
+    let _g = freeze_time("2026-10-27T12:00:00");
     let db = neighbours();
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
     let path = tmp.path().to_str().unwrap();
