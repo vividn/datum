@@ -44,7 +44,8 @@ export class Node {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * The next incoming connection; `undefined` once the endpoint closed.
+     * The next session arriving, on a new connection or one kept
+     * (da-3jcth); `undefined` once the endpoint closed.
      */
     accept(): Promise<Pending | undefined>;
     /**
@@ -87,7 +88,7 @@ export class Node {
 }
 
 /**
- * An incoming connection, not yet served.
+ * A session arriving, not yet served ([`accept`]).
  */
 export class Pending {
     private constructor();
@@ -133,15 +134,15 @@ export interface InitOutput {
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: number) => number;
     readonly ring_core_0_17_14__bn_mul_mont: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly __wasm_bindgen_func_elem_14830: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_14832: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_6130: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_3615: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_7836: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_5928: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7038: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7102: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_14686: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14967: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_14969: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_6253: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_3738: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_7959: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_6051: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_7161: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_7225: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14823: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
