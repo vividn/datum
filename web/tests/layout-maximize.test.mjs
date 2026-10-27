@@ -120,6 +120,28 @@ describe('the maximize badge', () => {
 		});
 	});
 
+	// da-x7xjg: the tree stays mounted under the big pane, every other pane
+	// at its own size and hidden, so a restore remounts nothing and asks the
+	// CLI nothing of the panes that were never moved.
+	test('a restore remounts no pane, and asks the CLI nothing', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const unkept = () => page.evaluate(() => [...document.querySelectorAll('section.pane')].filter((p) => !p.__kept).length);
+			await app.idle();
+			await page.evaluate(() => document.querySelectorAll('section.pane').forEach((p) => (p.__kept = true)));
+			await press(page, 'repl');
+			await app.idle();
+			assert.equal(await unkept(), 0, 'the maximize mounted a pane');
+			const seen = await app.spyOnRunner();
+			await press(page, 'repl');
+			await app.idle();
+			assert.deepEqual(await titles(page), SIX);
+			assert.deepEqual((await seen()).map((argv) => argv.join(' ')), [], 'the restore asked the CLI');
+			assert.equal(await unkept(), 0, 'the restore mounted a pane again');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
 	// «leaving the layout and coming back should unmaximize the pane».
 	test('is dropped by opening another layout and coming back', async () => {
 		await shared.solo(async ({ page }) => {

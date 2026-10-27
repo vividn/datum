@@ -664,10 +664,11 @@ describe('a layout left in the moment after a write', () => {
 	});
 });
 
-describe('a maximize lets the kept layouts go', () => {
-	// vremya on #1188: the maximized pane is drawn in place of the tree, so
-	// a restore remounted every kept layout at once.
-	test('the restore mounts the layout in front alone', async () => {
+describe('a maximize keeps every layout mounted', () => {
+	// da-x7xjg, after vremya on #1188: the maximized pane is the tree's own,
+	// laid over it, so a restore shows the layout in front still drawn and
+	// mounts nothing, the layouts kept behind it included.
+	test('the restore mounts no pane and no layout', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -678,11 +679,16 @@ describe('a maximize lets the kept layouts go', () => {
 					await app.idle();
 				}
 				assert.equal(await bodies(), 2, 'tail was not kept behind main');
+				const mark = () => page.evaluate(() => document.querySelectorAll('section.pane').forEach((p) => (p.__kept = true)));
+				const unkept = () => page.evaluate(() => [...document.querySelectorAll('section.pane')].filter((p) => !p.__kept).length);
+				await mark();
 				await maximizeButton(page, 'side').click();
-				await page.locator('section.root > .content > .tab-body').waitFor({ state: 'detached' });
+				await page.locator('section[data-pane="side"] > .titlebar button.maximize[aria-pressed="true"]').waitFor();
+				assert.equal(await bodies(), 2, 'the maximize let the kept layout go');
 				await maximizeButton(page, 'side').click();
 				await until(() => titles(page), (seen) => seen.join() === 'dayview,repl,tail,fields');
-				assert.equal(await bodies(), 1, 'the restore remounted the kept layouts');
+				assert.equal(await bodies(), 2, 'the restore let the kept layout go');
+				assert.equal(await unkept(), 0, 'the restore mounted a pane again');
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);

@@ -65,6 +65,8 @@ export const titles = (page) =>
 	page.evaluate(() =>
 		[...document.querySelectorAll('section.pane')]
 			.filter((p) => !p.closest('section.root > .content > .tab-body.behind'))
+			// Under a maximize the tree is hidden, and the big pane alone is shown (da-x7xjg).
+			.filter((p) => !p.closest('.split.maximized') || p.closest('section.big'))
 			.map((p) => p.dataset.title)
 	);
 

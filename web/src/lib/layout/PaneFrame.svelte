@@ -321,7 +321,8 @@
 
 	/**
 	 * Whether this pane is the one filling the root (da-00am) — which is
-	 * what turns the badge round into its restore state. The store alone is
+	 * what turns the badge round into its restore state, and lays the
+	 * section over the root's box (`.big`, Layout.svelte). The store alone is
 	 * not the answer: a maximize belongs to the root tab it was made in, and
 	 * stops applying when another is in front (`isMaximized`).
 	 */
@@ -638,13 +639,15 @@
 
 	function onTouchStart(event: TouchEvent) {
 		const t = event.touches[0];
+		// A frame the big pane is inside is hidden under it (da-x7xjg): a swipe on the big pane is not its.
+		const under = section.closest('.split.maximized') !== null && section.closest('section.big') === null;
 		touch = {
 			x: t.clientX,
 			y: t.clientY,
 			target: event.target,
 			panners: pannersUnder(event.target, event.currentTarget as HTMLElement, vertical ? 'y' : 'x'),
 			fresh: switched?.frame === self && performance.now() < switched.until,
-			state: event.touches.length > 1 ? 'theirs' : 'pending'
+			state: event.touches.length > 1 || under ? 'theirs' : 'pending'
 		};
 	}
 
@@ -823,6 +826,7 @@
 	class:root
 	class:nested
 	class:bare
+	class:big
 	class:clip={!root && kind !== undefined}
 	class:editing={!locked}
 	data-bar-drop={dropAt?.edge}

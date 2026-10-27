@@ -9,8 +9,9 @@
 // maximized — no draft is written, no copy wears the modified dot, and a
 // reload comes back to the whole tree by construction, because this store
 // is not persisted anywhere. It is also what makes «restore» exact: the
-// tree was never touched, so putting it back is just drawing it again,
-// ratios, tabs and all.
+// tree was never touched, nor taken down — it stays mounted and hidden
+// under the big pane (da-x7xjg, Layout.svelte) — so putting it back is
+// showing it again, ratios, tabs, pictures and all.
 //
 // What is remembered is the ROOT TAB it belongs to and the PANE, because a
 // maximize belongs to the layout it was made in: the root render honours it
