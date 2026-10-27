@@ -621,6 +621,52 @@ describe('scrolling up', () => {
 		});
 	});
 
+	// vividn, 2026-10-27: «if you scroll sufficiently far up in the tail
+	// widget, you become unable to scroll down all the way anymore». The cap
+	// let the newest rows go and nothing paged them back: `↓ new` waited on
+	// a write. Scrolling down alone brings them back now (da-r88ur).
+	test('past the cap, scrolling down pages the newest back in, to the live end, with no write', async () => {
+		await TALLEST.solo(async (app) => {
+			const { page } = app;
+			const total = 600;
+			await seed(app, total);
+			await atRest(page);
+			const newest = seedHid(total - 1);
+			const [before] = await app.entries(1);
+			for (let pages = 0; pages < 60 && (await geometry(page)).hids.includes(newest); pages++) {
+				const top = (await geometry(page)).hids[0];
+				await toTop(page);
+				await waitTopNot(page, top);
+			}
+			await app.idle();
+			assert.ok(!(await geometry(page)).hids.includes(newest), 'the cap never let the newest row go');
+			// Not held, the live end is one press away, write or none.
+			await marker(page).waitFor();
+
+			const lastRow = () =>
+				page.evaluate(() => document.querySelector('section.pane[data-title="tail"] tbody tr:last-child')?.dataset.hid);
+			for (let i = 0; i < 20 && !(await geometry(page)).shown.includes(newest); i++) {
+				const last = await lastRow();
+				await page.evaluate(() => {
+					const body = document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)');
+					body.scrollTop = body.scrollHeight;
+				});
+				if (last !== newest)
+					await page.waitForFunction(
+						(last) => document.querySelector('section.pane[data-title="tail"] tbody tr:last-child')?.dataset.hid !== last,
+						last
+					);
+			}
+			const g = await geometry(page);
+			assert.ok(g.shown.includes(newest), `scrolling down stopped at ${g.hids.at(-1)}, short of ${newest}`);
+			assert.equal(g.hids.at(-1), newest, 'the newest row is not last');
+			assert.ok(g.hids.length <= 300, `held ${g.hids.length} rows, past the cap`);
+			await page.waitForFunction(() => !document.querySelector('section.pane[data-title="tail"] button.new'));
+			const [after] = await app.entries(1);
+			assert.equal(after.hid, before.hid, 'a write landed: not the case this is about');
+		});
+	});
+
 	// One scroll event for two scrolls (da-gaiko). A body raises its scroll
 	// events a frame at a time, so a reader who reaches the top in the frame
 	// the widget put them back at their row shares the one event with it.

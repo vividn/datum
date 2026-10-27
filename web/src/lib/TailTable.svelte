@@ -42,7 +42,9 @@
 	something landed below. A page the reader pulled in is scrolled up
 	until they come back to the bottom, even where it leaves their row at
 	the live end (da-nkkjb). The table holds at most `CAP` rows — past it,
-	the far end goes, and `↓ new` brings the live end back.
+	the far end goes, and the newest rows with it: scrolling down pages them
+	back in as it does under a jump, and `↓ new`, shown whenever the live end
+	is not held, brings it back in one press (da-r88ur).
 
 	Two things it does NOT decide: the rows (every one is the CLI's), and
 	the row height. That is measured off a hidden one-line probe table in
@@ -112,7 +114,7 @@
 
 	let { epoch = 0, empty = '', box = null, scroller = undefined }: Props = $props();
 
-	/** Most rows the table holds. Past it, older rows replace newer ones. */
+	/** Most rows the table holds. Past it, the rows paged in replace the far end. */
 	const CAP = 300;
 	/** Most rows of a page drawn in one task. */
 	const DRAW = 25;
@@ -195,7 +197,7 @@
 	/** What the tail last followed: a hid, `@<ms>` for an instant, or '' for nothing. */
 	let followed = '';
 
-	/** Rows landed below the reader's view (or the live end was let go). */
+	/** Rows landed below the reader's view, while the live end is held. */
 	let unseen = $state(false);
 	/** The page above came back with nothing new: the listing's beginning. */
 	let exhausted = $state(false);
@@ -606,6 +608,8 @@
 			});
 			if (of !== generation) return;
 			if (down && table.rows.length < size) live = true;
+			// Found at the bottom already: no scroll event is coming to say so.
+			if (down && live && nearBottom()) unseen = away = false;
 			// A row retimed since it was listed can come back above itself.
 			const held = new Set(rows.map((row) => row.hid));
 			const fresh = toShown(table).filter((row) => !held.has(row.hid));
@@ -627,7 +631,7 @@
 					exhausted = false;
 				} else if (rows.length > CAP) {
 					rows = rows.slice(0, CAP);
-					unseen = true;
+					live = false;
 				}
 				await hold(false);
 				await keep(a);
@@ -777,8 +781,11 @@
 		if (!up && !live && scroller.scrollHeight - top - scroller.clientHeight <= lead) void page(true);
 	}
 
+	// At an end already, the wheel or a finger raises no scroll event: a
+	// page asked for there while another was in flight is asked again.
 	function onWheel(e: WheelEvent): void {
 		if (e.deltaY < 0 && scroller && scroller.scrollTop <= 0) void page();
+		if (e.deltaY > 0 && nearBottom()) void page(true);
 	}
 
 	let touchY: number | null = null;
@@ -791,6 +798,9 @@
 		if (y - touchY > 24 && scroller.scrollTop <= 0) {
 			touchY = null;
 			void page();
+		} else if (touchY - y > 24 && nearBottom()) {
+			touchY = null;
+			void page(true);
 		}
 	}
 
@@ -910,7 +920,7 @@
 		</tbody>
 	</table>
 	<div class="slack" style:height="{slack + extra}px"></div>
-	{#if unseen}
+	{#if unseen || !live}
 		<div class="foot">
 			<button type="button" class="new" onclick={jump}>↓ new</button>
 		</div>
