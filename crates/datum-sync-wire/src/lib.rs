@@ -22,6 +22,11 @@
 //!   applied a full round it mostly held already, another session's, sends
 //!   [`END`] for its next vector, and both sides end there (da-3l8ay). Last
 //!   the verify hashes, the dialer's first, and the dialer closes.
+//! - **Kept.** Two copies whose handshakes both say `keeps` leave the
+//!   connection open once the session ends (da-3jcth): the next session
+//!   either one runs with the other is a new stream on it, the same frames
+//!   as above, until no session has run on it for [`KEEP`]. A copy before
+//!   it closes after one session, and the next dials afresh.
 //! - **Diff.** ALPN `datum/sync-diff/1` (da-n0ruf), which a copy before it
 //!   refuses: after the same handshake the dialer sends its state hash and
 //!   the acceptor its [`Digest`], or null when the hashes agree; then the
@@ -69,21 +74,23 @@
 //!   round carries and the rows [`Store::held`] returns are datum-core's,
 //!   opaque here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::pin::pin;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use data_encoding::BASE32_NOPAD;
 use futures_util::future::{select, Either};
 use iroh::endpoint::{
-    presets, Connection, ConnectionError, Incoming, RecvStream, SendStream, TransportErrorCode,
+    presets, Connection, ConnectionError, Incoming, ReadError, ReadExactError, RecvStream,
+    SendStream, TransportErrorCode, VarInt, WriteError,
 };
 pub use iroh::{Endpoint, EndpointAddr};
 use iroh::{RelayMode, SecretKey, TransportAddr, Watcher};
-use n0_future::time::{sleep, timeout};
+use n0_future::time::{sleep, timeout, Instant};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -233,7 +240,7 @@ pub trait Store {
     }
     /// A session this copy dials reached its peer, over `conn`: datum.day
     /// closes it as busy when a session served first takes its turn
-    /// (da-gvia0).
+    /// (da-gvia0). Only a new connection: a kept one may carry that session.
     fn reached(&self, _conn: &Connection) {}
     /// The session's ops are all applied, and its verify begins.
     fn verifying(&self) {}
@@ -436,6 +443,10 @@ struct Hello {
     /// to it (datum-core's `Db::sync_state_hash`).
     #[serde(default)]
     sums: bool,
+    /// The dialer keeps the connection open once the session ends, for the
+    /// next either side runs on it (da-3jcth); a copy before it closes it.
+    #[serde(default)]
+    keeps: bool,
     #[serde(flatten)]
     version: Version,
 }
@@ -460,6 +471,9 @@ enum Reply {
         /// As [`Hello`]'s.
         #[serde(default)]
         sums: bool,
+        /// As [`Hello`]'s.
+        #[serde(default)]
+        keeps: bool,
         #[serde(flatten)]
         version: Version,
     },
@@ -597,6 +611,8 @@ pub struct Report {
     /// How the session reached the peer, as `datum sync -v` says it.
     #[serde(skip)]
     pub route: Option<String>,
+    /// It ran on a connection kept from an earlier session (da-3jcth).
+    pub kept: bool,
 }
 
 impl Report {
@@ -617,6 +633,7 @@ impl Report {
             left: None,
             round: 0,
             route: None,
+            kept: false,
             waits: false,
             ends: false,
             sums: false,
@@ -1083,10 +1100,17 @@ pub async fn dial(
 /// after the acceptor welcomed it: the acceptor records nothing (da-h31wt).
 const CLOSED_BUSY: &[u8] = b"busy";
 
-/// Whether `e` is the peer closing with [`CLOSED_BUSY`].
+/// [`CLOSED_BUSY`] on a kept connection, which a session served may share:
+/// the dialer resets its stream with it, and leaves the connection open.
+const RESET_BUSY: VarInt = VarInt::from_u32(1);
+
+/// Whether `e` is the peer closing with [`CLOSED_BUSY`], or its stream with
+/// [`RESET_BUSY`].
 fn closed_busy(e: &anyhow::Error) -> bool {
     e.chain().any(|e| {
         matches!(e.downcast_ref(), Some(ConnectionError::ApplicationClosed(c)) if c.reason == CLOSED_BUSY)
+            || matches!(e.downcast_ref(), Some(ReadExactError::ReadError(ReadError::Reset(c))) if *c == RESET_BUSY)
+            || matches!(e.downcast_ref(), Some(WriteError::Stopped(c)) if *c == RESET_BUSY)
     })
 }
 
@@ -1106,9 +1130,6 @@ async fn session(
 ) -> Result<Report> {
     ensure!(addr.id != ep.id(), COPY);
     let id = addr.id.to_string();
-    let conn = connect(ep, addr, ALPN).await?;
-    store.reached(&conn);
-    let (mut s, mut r) = conn.open_bi().await?;
     let left = invite.and_then(|r| r.leaves.clone());
     let holds = match invite {
         Some(_) => store.holds().await?,
@@ -1131,16 +1152,55 @@ async fn session(
         waits: true,
         ends: true,
         sums: true,
+        keeps: true,
         version: store.version(),
     };
-    put_json(&mut s, &hello).await?;
-    let mut reply = get_json(&mut r, MAX_HELLO).await?;
+    // The connection kept from an earlier session with the peer, while it
+    // is open (da-3jcth): one that died meanwhile costs the stream it fails
+    // on, and then a fresh connect.
+    let (conn, using, mut s, mut r, mut reply) = loop {
+        let using = take(ep, &id);
+        let conn = match &using {
+            Some(kept) => kept.conn.clone(),
+            None => {
+                let conn = connect(ep, addr.clone(), ALPN).await?;
+                // Never a kept one: closing it would end a session served
+                // on it too (`web::Dialing`).
+                store.reached(&conn);
+                conn
+            }
+        };
+        let opened = async {
+            let (mut s, mut r) = conn.open_bi().await?;
+            put_json(&mut s, &hello).await?;
+            let reply: Reply = get_json(&mut r, MAX_HELLO).await?;
+            Ok::<_, anyhow::Error>((s, r, reply))
+        };
+        match opened.await {
+            Ok((s, r, reply)) => break (conn, using, s, r, reply),
+            Err(_) if using.is_some() => conn.close(0u32.into(), b"stale"),
+            Err(e) => return Err(e),
+        }
+    };
+    // How a session ends early: on a kept connection the stream alone.
+    let end = |s: &mut SendStream, r: &mut RecvStream, reason: &[u8]| match using {
+        Some(_) => {
+            let code = if reason == CLOSED_BUSY {
+                RESET_BUSY
+            } else {
+                VarInt::from_u32(0)
+            };
+            let _ = s.reset(code);
+            let _ = r.stop(code);
+        }
+        None => conn.close(0u32.into(), reason),
+    };
     if hello.proves && matches!(reply, Reply::Prove) {
         put_json(&mut s, &store.records().await?).await?;
         reply = get_json(&mut r, MAX_HELLO).await?;
     }
     let carried;
-    let (label, added, met, round, waits, ends, sums) = match reply {
+    let (label, added, met, round, waits, ends, sums, keeps) = match reply {
         Reply::Welcome {
             label,
             addr,
@@ -1149,6 +1209,7 @@ async fn session(
             waits,
             ends,
             sums,
+            keeps,
             version,
         } => {
             // Two copies that dialed each other at once (da-vj3ly): the
@@ -1157,7 +1218,7 @@ async fn session(
             // Past here this one carries, and the peer's dial, if it comes
             // only now, is refused as busy (da-mghh3).
             if invite.is_none() && store.serves(&id) && ep.id().to_string() > id {
-                conn.close(0u32.into(), CLOSED_BUSY);
+                end(&mut s, &mut r, CLOSED_BUSY);
                 return Err(closed_carried(&label));
             }
             carried = Served::new(store, &id, true);
@@ -1185,22 +1246,22 @@ async fn session(
                 Ok::<_, anyhow::Error>(added)
             };
             match admitted.await {
-                Ok(added) => (label, added, known, round, waits, ends, sums),
+                Ok(added) => (label, added, known, round, waits, ends, sums, keeps),
                 Err(e) => {
                     let busy = e
                         .downcast_ref::<Refusal>()
                         .is_some_and(|r| r.0 == Why::Busy);
-                    conn.close(0u32.into(), if busy { CLOSED_BUSY } else { b"refused" });
+                    end(&mut s, &mut r, if busy { CLOSED_BUSY } else { b"refused" });
                     return Err(e);
                 }
             }
         }
         Reply::Refused(why) => {
-            conn.close(0u32.into(), b"refused");
+            end(&mut s, &mut r, b"refused");
             return Err(refused(why, None));
         }
         Reply::Refusal { why, kind } => {
-            conn.close(0u32.into(), b"refused");
+            end(&mut s, &mut r, b"refused");
             return Err(refused(why, Some(kind)));
         }
         Reply::Prove => bail!("{} asked for what it was not offered", short(&id)),
@@ -1216,10 +1277,191 @@ async fn session(
         rep.left = Some((old, new));
     }
     rep.route = route(&conn);
-    conn.close(0u32.into(), b"done");
+    rep.kept = using.is_some();
+    // The acceptor keeps the connection once this stream ends (`serve`).
+    // A SendStream finishes as it drops, too; said here so nothing relies on it.
+    if done.is_ok() {
+        let _ = s.finish();
+    }
+    match (&using, keeps && done.is_ok()) {
+        (Some(_), _) => {}
+        (None, true) => keep(ep, &conn),
+        (None, false) => conn.close(0u32.into(), b"done"),
+    }
     match done {
         Ok(()) => Ok(rep),
         Err(e) => Err(Lost(rep, e).into()),
+    }
+}
+
+// ─── Kept connections ───────────────────────────────────────────────────────
+
+/// How long a connection is kept once no session runs on it (da-3jcth):
+/// three of datum.day's 30-s pulls (`PULL_MS` in `web/src/lib/sync.ts`), so
+/// a page's connection to a peer online stays open through a pull skipped
+/// while another session ran, and a write's push finds it there.
+const KEEP: Duration = Duration::from_secs(90);
+
+/// A connection kept to a peer: how many sessions run on it, and when the
+/// last one ended.
+struct Kept {
+    conn: Connection,
+    open: usize,
+    since: Instant,
+}
+
+/// One endpoint's kept connections by peer, and the sessions their peers
+/// opened on them, waiting for [`accept`].
+#[derive(Default)]
+struct Keeper {
+    kept: BTreeMap<String, Kept>,
+    arrived: VecDeque<Arriving>,
+    notify: Arc<tokio::sync::Notify>,
+}
+
+/// Every endpoint's [`Keeper`], by its id. One is never removed: a running
+/// [`accept`] waits on its `notify`, and a process binds a few endpoints in
+/// its life (a page one per database and key), so what stays is bounded.
+static KEEPERS: Mutex<BTreeMap<String, Keeper>> = Mutex::new(BTreeMap::new());
+
+fn keeper<T>(ep: &str, f: impl FnOnce(&mut Keeper) -> T) -> T {
+    f(KEEPERS.lock().unwrap().entry(ep.to_string()).or_default())
+}
+
+/// `conn`'s entry, if it is the one kept to its peer.
+fn kept<'a>(k: &'a mut Keeper, conn: &Connection) -> Option<&'a mut Kept> {
+    let kept = k.kept.get_mut(&conn.remote_id().to_string())?;
+    (kept.conn.stable_id() == conn.stable_id()).then_some(kept)
+}
+
+/// A session on a kept connection, counted open in its [`Kept`]: the
+/// connection is idle again once it drops.
+pub struct Using {
+    ep: String,
+    conn: Connection,
+}
+
+impl Using {
+    fn new(k: &mut Keeper, ep: &str, conn: &Connection) -> Self {
+        if let Some(kept) = kept(k, conn) {
+            kept.open += 1;
+        }
+        Using {
+            ep: ep.to_string(),
+            conn: conn.clone(),
+        }
+    }
+}
+
+impl Drop for Using {
+    fn drop(&mut self) {
+        keeper(&self.ep, |k| {
+            if let Some(kept) = kept(k, &self.conn) {
+                kept.open -= 1;
+                kept.since = Instant::now();
+            }
+        })
+    }
+}
+
+/// The connection kept to `peer`, unless it has closed.
+fn take(ep: &Endpoint, peer: &str) -> Option<Using> {
+    let id = ep.id().to_string();
+    keeper(&id, |k| {
+        let conn = k.kept.get(peer)?.conn.clone();
+        conn.close_reason()
+            .is_none()
+            .then(|| Using::new(k, &id, &conn))
+    })
+}
+
+/// Keep `conn` once a session both sides keep has ended on it, for the
+/// next: dialed on it, or served as its peer opens a stream. One already
+/// kept to the peer with a session on it stays, and this one closes.
+fn keep(ep: &Endpoint, conn: &Connection) {
+    let id = ep.id().to_string();
+    let fresh = keeper(&id, |k| {
+        if kept(k, conn).is_some() {
+            return Some(false);
+        }
+        let peer = conn.remote_id().to_string();
+        if let Some(old) = k.kept.get(&peer) {
+            if old.open > 0 && old.conn.close_reason().is_none() {
+                return None;
+            }
+            old.conn.close(0u32.into(), b"done");
+        }
+        let since = Instant::now();
+        let conn = conn.clone();
+        k.kept.insert(
+            peer,
+            Kept {
+                conn,
+                open: 0,
+                since,
+            },
+        );
+        Some(true)
+    });
+    match fresh {
+        Some(true) => drop(n0_future::task::spawn(forward(id, conn.clone()))),
+        Some(false) => {}
+        None => conn.close(0u32.into(), b"done"),
+    }
+}
+
+/// Hand [`accept`] each session `conn`'s peer opens on it, until the
+/// connection closes: most often here, once no session has run on it for
+/// [`KEEP`], or by the peer, or with its endpoint.
+async fn forward(ep: String, conn: Connection) {
+    loop {
+        let idle = keeper(&ep, |k| kept(k, &conn).map(|k| (k.open, k.since.elapsed())));
+        let Some((open, idle)) = idle else { break };
+        let wait = if open > 0 {
+            KEEP
+        } else {
+            KEEP.saturating_sub(idle)
+        };
+        if wait.is_zero() {
+            conn.close(0u32.into(), b"idle");
+            break;
+        }
+        match timeout(wait, conn.accept_bi()).await {
+            Ok(Ok((s, r))) => keeper(&ep, |k| {
+                let using = Using::new(k, &ep, &conn);
+                k.arrived.push_back(Arriving::Kept(using, s, r));
+                k.notify.notify_one();
+            }),
+            Ok(Err(_)) => break,
+            Err(_) => {}
+        }
+    }
+    keeper(&ep, |k| {
+        if kept(k, &conn).is_some() {
+            k.kept.remove(&conn.remote_id().to_string());
+        }
+    });
+}
+
+/// A session to [`serve`]: a connection a peer dialed, or a stream it
+/// opened on one kept from an earlier session (da-3jcth).
+pub enum Arriving {
+    Dialed(Box<Incoming>),
+    Kept(Using, SendStream, RecvStream),
+}
+
+/// The next session to serve; none once `ep` has closed.
+pub async fn accept(ep: &Endpoint) -> Option<Arriving> {
+    let id = ep.id().to_string();
+    let notify = keeper(&id, |k| Arc::clone(&k.notify));
+    loop {
+        if let Some(arrived) = keeper(&id, |k| k.arrived.pop_front()) {
+            return Some(arrived);
+        }
+        let (dialed, notified) = (pin!(ep.accept()), pin!(notify.notified()));
+        if let Either::Left((incoming, _)) = select(dialed, notified).await {
+            return incoming.map(|i| Arriving::Dialed(Box::new(i)));
+        }
     }
 }
 
@@ -1266,6 +1508,7 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
         waits: false,
         ends: false,
         sums: true,
+        keeps: false,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -1348,15 +1591,25 @@ async fn accepted(incoming: Incoming) -> Result<Connection> {
     })
 }
 
-/// Answer one incoming connection: a peer, or the redemption of an invite.
-pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
-    let conn = accepted(incoming).await?;
+/// Answer one session [`accept`] gave: a peer, or the redemption of an
+/// invite.
+pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Result<Report> {
+    let (conn, kept) = match arriving {
+        Arriving::Dialed(incoming) => (accepted(*incoming).await?, None),
+        Arriving::Kept(using, s, r) => (using.conn.clone(), Some((using, s, r))),
+    };
     let id = conn.remote_id().to_string();
     // Taken with the mark, so the peer's own dial past its handshake
     // (`carries`) and this session (`serves`) never both go on (da-mghh3).
     let carried = store.carries(&id);
     let _served = Served::new(store, &id, false);
-    let (mut s, mut r) = within(async { Ok(conn.accept_bi().await?) }).await?;
+    let (using, mut s, mut r) = match kept {
+        Some((using, s, r)) => (Some(using), s, r),
+        None => {
+            let (s, r) = within(async { Ok(conn.accept_bi().await?) }).await?;
+            (None, s, r)
+        }
+    };
     let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
     // A diff admits no one: it answers a member this copy holds, redeems
     // no invite, and asks for no records to admit one it has not heard of.
@@ -1398,7 +1651,10 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         Err((kind, e)) => {
             let reply = Reply::refusal(&hello, kind, format!("{e:#}"));
             put_json(&mut s, &reply).await?;
-            let _ = timeout(Duration::from_secs(5), conn.closed()).await;
+            // On a kept connection the dialer ends the stream alone.
+            if using.is_none() {
+                let _ = timeout(Duration::from_secs(5), conn.closed()).await;
+            }
             // The store's error stays its cause, for a caller to read.
             let why = format!("refused {} ({})", hello.label, short(&id));
             return Err(e.context(Failed(Failure::Refused(kind), why)));
@@ -1412,6 +1668,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         waits: true,
         ends: true,
         sums: true,
+        keeps: true,
         version: store.version(),
     };
     put_json(&mut s, &welcome).await?;
@@ -1421,6 +1678,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     rep.waits = hello.waits;
     rep.ends = hello.ends;
     rep.sums = hello.sums;
+    rep.kept = using.is_some();
     if diff {
         let theirs: String = get_json(&mut r, MAX_HELLO).await?;
         let (hash, digest) = store.digest(&id).await?;
@@ -1433,7 +1691,15 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     }
     let done = match exchange(store, &mut s, &mut r, false, &mut rep).await {
         Ok(()) => {
-            let _ = timeout(Duration::from_secs(5), conn.closed()).await;
+            // The dialer reads last: it closes once it has, or, keeping the
+            // connection, ends its stream.
+            match hello.keeps {
+                true => {
+                    let _ = timeout(Duration::from_secs(5), r.read_to_end(0)).await;
+                    keep(ep, &conn);
+                }
+                false => drop(timeout(Duration::from_secs(5), conn.closed()).await),
+            }
             Ok(rep)
         }
         Err(e) if closed_busy(&e) => {
@@ -1641,6 +1907,7 @@ mod tests {
                     waits: true,
                     ends: true,
                     sums: true,
+                    keeps: true,
                     version: version.clone(),
                 },
             ),
@@ -1654,6 +1921,7 @@ mod tests {
                     waits: true,
                     ends: true,
                     sums: true,
+                    keeps: true,
                     version,
                 },
             ),

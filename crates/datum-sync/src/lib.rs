@@ -31,8 +31,9 @@ use datum_core::error::{DatumError, Refusal as CoreRefusal};
 use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use datum_parse::time::Zone;
 use datum_sync_wire::{
-    dial, failure, gave_way, redeem, serve, unix_now, About, Applied, Diffed, Digest, Endpoint,
-    EndpointAddr, Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector, Version, Why,
+    accept, dial, failure, gave_way, redeem, serve, unix_now, About, Applied, Diffed, Digest,
+    Endpoint, EndpointAddr, Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector, Version,
+    Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use iroh::Watcher;
@@ -679,7 +680,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
         let result = loop {
             tokio::select! {
                 _ = &mut deadline, if sessions.is_empty() => break Err(anyhow!("the invite expired unredeemed")),
-                incoming = ep.accept() => {
+                incoming = accept(&ep) => {
                     let Some(incoming) = incoming else { break Ok(()) };
                     let ep = &ep;
                     sessions.push(async move {
@@ -834,7 +835,10 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
     // A dial that never connected (offline, or refused at the handshake)
     // has no route to say.
     let route = match rep {
-        Ok(rep) => rep.route.clone(),
+        Ok(rep) => rep.route.clone().map(|r| match rep.kept {
+            true => format!("{r}, on the connection kept"),
+            false => r,
+        }),
         Err(e) => e.downcast_ref::<Lost>().and_then(|l| l.0.route.clone()),
     };
     let why = rep.as_ref().err().filter(|_| offline);
@@ -1143,7 +1147,7 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                         sessions.push(push(store, &ep, p, Some(tx.clone())));
                     }
                 }
-                Some(incoming) = ep.accept() => {
+                Some(incoming) = accept(&ep) => {
                     let ep = &ep;
                     sessions.push(Box::pin(async move {
                         (None, serve(store, ep, incoming).await)
@@ -1157,7 +1161,8 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                         (Ok(rep), _) => {
                             // A peer that reached us, or we it, is up again.
                             retry.remove(&rep.id);
-                            println!("{} {rep}", now());
+                            let kept = if rep.kept { " (on the connection kept)" } else { "" };
+                            println!("{} {rep}{kept}", now());
                         }
                         // A write held this copy's file past YIELD: every peer
                         // not backing off for being unreachable is tried again

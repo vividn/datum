@@ -21,6 +21,7 @@
     "ends": true,
     "holds": 3,
     "invite": "secret",
+    "keeps": true,
     "known": [
       {
         "addrs": [
@@ -95,6 +96,7 @@
       },
       "datum": "3.0.0-beta (440b271)",
       "ends": true,
+      "keeps": true,
       "known": [
         {
           "addrs": [

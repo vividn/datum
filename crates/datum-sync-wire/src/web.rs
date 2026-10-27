@@ -385,9 +385,9 @@ pub struct Node {
     cli: Cli,
 }
 
-/// An incoming connection, not yet served.
+/// A session arriving, not yet served ([`accept`]).
 #[wasm_bindgen]
-pub struct Pending(Incoming);
+pub struct Pending(Arriving);
 
 fn report(rep: Result<Report>) -> Result<String, JsError> {
     serde_json::to_string(&rep.map_err(|e| js(format!("{e:#}")))?).map_err(js)
@@ -460,9 +460,10 @@ impl Node {
         serde_json::to_string(&self.ep.addr()).map_err(js)
     }
 
-    /// The next incoming connection; `undefined` once the endpoint closed.
+    /// The next session arriving, on a new connection or one kept
+    /// (da-3jcth); `undefined` once the endpoint closed.
     pub async fn accept(&self) -> Option<Pending> {
-        self.ep.accept().await.map(Pending)
+        accept(&self.ep).await.map(Pending)
     }
 
     /// Serve `pending`; its report, as JSON.
