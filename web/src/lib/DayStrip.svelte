@@ -773,9 +773,9 @@
 			const argv = missing.length ? picturesArgv(at.width, at.dayHeight, missing) : geometryArgv(at.width, at.dayHeight);
 			const label = [...(bare ? ['geometry'] : []), ...missing].join(',');
 			const asked = run(argv, undefined, undefined, `${queueKey}:${label}`, undefined, undefined, true);
-			if (bare) cache.runs.set(geometryId, { epoch: at.epoch, end: 'geometry', run: asked });
-			const band = asked.then(picturesOf);
-			for (const end of missing) cache.runs.set(id(end), { epoch: at.epoch, end, run: band.then((of) => of(end)) });
+			const parts = asked.then(picturesOf);
+			if (bare) cache.runs.set(geometryId, { epoch: at.epoch, end: 'geometry', run: parts.then((of) => of('geometry')) });
+			for (const end of missing) cache.runs.set(id(end), { epoch: at.epoch, end, run: parts.then((of) => of(end)) });
 		}
 
 		// The geometry first: the gridlines, the ruler and the date stamps
@@ -807,16 +807,27 @@
 		}
 	}
 
-	/** Each band's answer out of a `--pictures` run: its SVG as its own `--days 1` run prints it. */
-	function picturesOf(result: RunResult): (end: number) => RunResult {
+	/**
+	 * Each band's answer out of a `--pictures` run, its SVG as its own
+	 * `--days 1` run prints it, and the geometry's, the run with the
+	 * pictures dropped: the bands hold them, and holding them twice
+	 * doubled what the strip keeps (da-xemyx).
+	 */
+	function picturesOf(result: RunResult): (end: number | 'geometry') => RunResult {
 		if (result.superseded || result.code !== 0) return () => result;
 		let pictures: Record<string, string> = {};
+		let geometry = result.stdout;
 		try {
-			pictures = JSON.parse(result.stdout).pictures ?? {};
+			const { pictures: of = {}, ...rest } = JSON.parse(result.stdout);
+			pictures = of;
+			geometry = JSON.stringify(rest);
 		} catch {
 			// No answer is no picture.
 		}
-		return (end) => ({ ...result, stdout: end in pictures ? `${pictures[end]}\n` : '' });
+		return (end) =>
+			end === 'geometry'
+				? { ...result, stdout: geometry }
+				: { ...result, stdout: end in pictures ? `${pictures[end]}\n` : '' };
 	}
 
 	/**
