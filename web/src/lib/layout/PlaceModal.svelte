@@ -34,7 +34,7 @@
 		<kind.component
 			{...kind.props ? kind.props(settings) : { settings }}
 			epoch={$epoch}
-			on:change={(e) => kind?.onChange && (settings = kind.onChange(settings, e.detail))}
+			onchange={(moved: unknown) => kind?.onChange && (settings = kind.onChange(settings, moved))}
 		/>
 	</Sheet>
 {/if}

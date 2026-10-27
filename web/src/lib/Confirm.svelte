@@ -2,17 +2,17 @@
 	The web's answer to a CLI prompt that wants a TTY the browser has not
 	got: `db purge`'s database name (da-podv), `kit install`'s trust
 	(da-axrk), a stale `_LAST`'s question (da-f5pg2) — the CLI's own text,
-	painted and spaced as it printed it. `close` says whether the `action`
+	painted and spaced as it printed it. `onclose` hears whether the `action`
 	button was pressed — with `name` typed exactly, when there is one to
 	type. Escape, cancel or a wrong name are all no. A question with more
 	answers than one, a chained purge's leave, rejoin or chain (da-0hay9), puts
-	the rest in `also`, and `chose` says which was pressed, or null.
+	the rest in `also`, and `onchose` hears which was pressed, or null.
 	`danger` names the button that destroys, drawn in `--error`: the action
 	for a confirm, the cancel for a choice whose way out throws work away
 	(layout mode's Discard changes), or none, and every action is the accent.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { act, type ActKind } from './act.js';
 	import { ansiSpans } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
@@ -25,6 +25,8 @@
 		cancel?: string;
 		kind?: ActKind;
 		danger?: 'action' | 'cancel' | null;
+		onclose?: (yes: boolean) => void;
+		onchose?: (pressed: string | null) => void;
 	}
 
 	let {
@@ -34,10 +36,11 @@
 		name = '',
 		cancel = 'cancel',
 		kind = 'run',
-		danger = 'action'
+		danger = 'action',
+		onclose,
+		onchose
 	}: Props = $props();
 
-	const dispatch = createEventDispatcher<{ close: boolean; chose: string | null }>();
 	let dialog: HTMLDialogElement;
 	let typed = $state('');
 
@@ -51,8 +54,8 @@
 	bind:this={dialog}
 	onclose={() => {
 		const pressed = typed === name && [action, ...also].includes(dialog.returnValue) ? dialog.returnValue : null;
-		dispatch('chose', pressed);
-		dispatch('close', pressed === action);
+		onchose?.(pressed);
+		onclose?.(pressed === action);
 	}}
 >
 	<form method="dialog">

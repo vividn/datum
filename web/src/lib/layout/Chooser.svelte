@@ -31,7 +31,7 @@
 	changing nothing.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { CHANGE } from './menu.js';
 	import { currentDb } from '$lib/database.js';
 	import { pickableIn, titleOf } from './registry.js';
@@ -43,11 +43,10 @@
 		layouts?: Offer[];
 		/** The widgets this database's kits ship (da-gh37k), each the `kit` kind. */
 		widgets?: (KitWidget & { kit: string })[];
+		onclose: (choice: Choice | null) => void;
 	}
 
-	let { layouts = [], widgets = [] }: Props = $props();
-
-	const dispatch = createEventDispatcher<{ close: Choice | null }>();
+	let { layouts = [], widgets = [], onclose }: Props = $props();
 
 	let dialog: HTMLDialogElement;
 	let chosen = $state.raw<Choice | null>(null);
@@ -68,7 +67,7 @@
 	class="chooser"
 	aria-label={CHANGE}
 	bind:this={dialog}
-	onclose={() => dispatch('close', chosen)}
+	onclose={() => onclose(chosen)}
 	onclick={(e) => e.target === dialog && dialog.close()}
 >
 	<h2>{CHANGE}</h2>

@@ -7,7 +7,7 @@
 	one axis — `axis`, scrolled left and right today — and a taller box buys it more rows,
 	up to `maxRows` (three, MAX_ROWS, unless the widget lifts it: the fields
 	widget takes all its box fits, da-arms4), never a wrap onto the other axis. The rows are counted
-	from the box the layout gave the bar and the size of the `probe` slot
+	from the box the layout gave the bar and the size of the `probe` snippet
 	— one of the widget's own buttons, drawn and hidden — so the bar's own
 	content never enters the question (`watchRows` in $lib/commands.ts).
 
@@ -26,8 +26,8 @@
 	and set apart from the next by a divider — the commands widget's kinds
 	of action. The runs share the one scroll and the one count of rows.
 
-	A widget hands in its `items`, a `key` for each, and a default slot
-	that draws one (`let:item`); its buttons keep its own classes, which
+	A widget hands in its `items`, a `key` for each, and `children`, a
+	snippet that draws one (`{ item }`); its buttons keep its own classes, which
 	style them where they are written.
 -->
 <script lang="ts" generics="T">
@@ -49,8 +49,7 @@
 		class?: string;
 		onpointerenter?: (e: PointerEvent) => void;
 		onpointerleave?: (e: PointerEvent) => void;
-		/** The kept `<slot>`s, filled by a runes caller's snippets (`<slot>` reads them from `$$props`, so they are
-		    typed here and not destructured: `probe` is also the probe span's binding). */
+		/** One of the widget's own buttons, drawn hidden: what the rows are counted by. */
 		probe?: Snippet;
 		children?: Snippet<[{ item: T }]>;
 	}
@@ -65,15 +64,17 @@
 		bar = $bindable(),
 		class: classes = '',
 		onpointerenter,
-		onpointerleave
+		onpointerleave,
+		probe,
+		children
 	}: Props = $props();
 
-	let probe: HTMLElement;
+	let stick: HTMLElement;
 	/** The rows the box fits; the cap is applied after, so it can move on its own. */
 	let fit = $state(1);
 	const rows = $derived(Math.min(maxRows, fit));
 
-	onMount(() => watchRows(bar!, probe, (n) => (fit = n), axis));
+	onMount(() => watchRows(bar!, stick, (n) => (fit = n), axis));
 
 	const groups = $derived(
 		(section ? runsOf(items, section) : [items]).map((run) => ({
@@ -88,11 +89,7 @@
 <!-- The measuring stick: the widget's own button, laid out and invisible,
      outside the bar and out of flow, so nothing that reads the bar's
      buttons finds it. -->
-<!-- The slots stay `<slot>`s until the callers pass snippets (the sweep,
-     da-ul23i): a legacy caller's `let:item` and named slot never reach a
-     `{@render}`. -->
-<!-- svelte-ignore slot_element_deprecated -->
-<span class="probe" aria-hidden="true" bind:this={probe}><slot name="probe" /></span>
+<span class="probe" aria-hidden="true" bind:this={stick}>{@render probe?.()}</span>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
@@ -108,8 +105,7 @@
 			{#each lanes as lane}
 				<div class="lane">
 					{#each lane as item (key(item))}
-						<!-- svelte-ignore slot_element_deprecated -->
-						<slot {item} />
+						{@render children?.({ item })}
 					{/each}
 				</div>
 			{/each}

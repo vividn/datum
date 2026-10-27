@@ -27,7 +27,7 @@
 	Without `section` (a drilled bar) the items are one run that wraps to the
 	box and scrolls up and down.
 
-	`bar` and the slots are ButtonRows', so a widget chooses between the two
+	`bar` and the snippets are ButtonRows', so a widget chooses between the two
 	with one `svelte:component`.
 -->
 <script lang="ts" generics="T">
@@ -46,8 +46,7 @@
 		/** The whole bar, as ButtonRows hands it out. */
 		bar?: HTMLElement;
 		class?: string;
-		/** The kept `<slot>`s, filled by a runes caller's snippets (`<slot>` reads them from `$$props`, so they are
-		    typed here and not destructured: `probe` is also the probe span's binding). */
+		/** One of the widget's own buttons, drawn hidden: what the rows are counted by. */
 		probe?: Snippet;
 		children?: Snippet<[{ item: T }]>;
 	}
@@ -59,10 +58,12 @@
 		columns = {},
 		pinned = () => false,
 		bar = $bindable(),
-		class: classes = ''
+		class: classes = '',
+		probe,
+		children
 	}: Props = $props();
 
-	let probe: HTMLElement;
+	let stick: HTMLElement;
 	let rows = $state(1);
 	/** A row's height, in px: the rows that fit share the box between them. */
 	let row = $state(0);
@@ -88,7 +89,7 @@
 	}
 
 	onMount(() =>
-		watchRows(bar!, probe, (n) => {
+		watchRows(bar!, stick, (n) => {
 			rows = n;
 			row = (bar!.clientHeight + ROW_GAP) / n - ROW_GAP;
 			mark();
@@ -101,18 +102,13 @@
 	});
 </script>
 
-<!-- The slots stay `<slot>`s until the callers pass snippets (the sweep,
-     da-ul23i): a legacy caller's `let:item` and named slot never reach a
-     `{@render}`. -->
-<!-- svelte-ignore slot_element_deprecated -->
-<span class="probe" aria-hidden="true" bind:this={probe}><slot name="probe" /></span>
+<span class="probe" aria-hidden="true" bind:this={stick}>{@render probe?.()}</span>
 
 <div class="pages {classes}" style:--row="{row}px" data-rows={rows} bind:this={bar} onscrollcapture={mark}>
 	{#if held.length}
 		<div class="pinned">
 			{#each held as item (key(item))}
-				<!-- svelte-ignore slot_element_deprecated -->
-				<div class="cell"><slot {item} /></div>
+				<div class="cell">{@render children?.({ item })}</div>
 			{/each}
 		</div>
 	{/if}
@@ -121,8 +117,7 @@
 			<div class="section" data-section={name} style:--columns={columns[name ?? ''] ?? 1}>
 				<div class="grid">
 					{#each run as item (key(item))}
-						<!-- svelte-ignore slot_element_deprecated -->
-						<div class="cell"><slot {item} /></div>
+						<div class="cell">{@render children?.({ item })}</div>
 					{/each}
 				</div>
 			</div>

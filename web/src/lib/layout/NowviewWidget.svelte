@@ -9,7 +9,7 @@
 	the axis moves the handle's time under the finger, to a window of any
 	length. Never to the snapshot of each field's state, which is
 	`showHistory` turned off in the widget's menu (da-hklaz). The window
-	is the widget's setting, handed out with `change` — and since da-vhwq
+	is the widget's setting, handed out with `onchange` — and since da-vhwq
 	that lands in THIS SESSION, not the tree: a step under a LOCKED layout
 	used to move `history` in the tree and light the layout's dot, which is
 	the defect that bead was written against. «Save options with layout» is
@@ -124,7 +124,7 @@
 	in devtools which gesture the machine took.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onDestroy, onMount, tick, untrack } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { on } from 'svelte/events';
 	import CliPane from '$lib/CliPane.svelte';
 	import Pill from '$lib/Pill.svelte';
@@ -151,11 +151,18 @@
 		epoch?: number;
 		/** Whether the window reaches back at all: off is the snapshot (da-hklaz). */
 		showHistory?: boolean;
+		/** The history a pinch or a handle moved the window to. */
+		onchange?: (history: string) => void;
 	}
 
-	let { history = NOWVIEW_HISTORY, at = undefined, vertical = false, epoch = 0, showHistory = true }: Props = $props();
-
-	const dispatch = createEventDispatcher<{ change: string }>();
+	let {
+		history = NOWVIEW_HISTORY,
+		at = undefined,
+		vertical = false,
+		epoch = 0,
+		showHistory = true,
+		onchange
+	}: Props = $props();
 
 	// A second of slack either side: a range that ends AT now sits on the
 	// window's own edge, and rounding must not read that as «off it». Up
@@ -802,7 +809,7 @@
 			const by = stepMinutes(next) / minutes;
 			centre = { by: centre?.by ?? 'sel', arg: new Date(at + (was - at) * by).toISOString() };
 		}
-		dispatch('change', next);
+		onchange?.(next);
 	}
 
 	// ── two fingers ────────────────────────────────────────────────────

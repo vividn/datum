@@ -3,7 +3,7 @@
 
 	The frame every region sits in (da-1x72) — dayview, nowview, tail and
 	the REPL each get one. The pane owns the frame and the scroll; its
-	default slot owns the content. Scrolling is per-pane and goes both
+	`children` own the content. Scrolling is per-pane and goes both
 	ways: CLI tables are wide, and a pane must be able to scroll sideways
 	without dragging the whole page with it.
 
@@ -17,7 +17,7 @@
 	live in a pane of the dashboard.
 -->
 <script lang="ts">
-	import { getContext } from 'svelte';
+	import { getContext, type Snippet } from 'svelte';
 	import type { Writable } from 'svelte/store';
 
 	interface Props {
@@ -40,17 +40,18 @@
 		body?: HTMLDivElement;
 
 		/**
-		 * Whether the title slot is the widget's OWN — the custom pane's ✎ and
-		 * its editor — rather than merely the pane's name.
+		 * The widget's OWN title controls — the custom pane's ✎ and its
+		 * editor — drawn in the title's place. Not `title`, which is the
+		 * pane's name.
 		 *
 		 * Only a widget's own controls are moved into the frame (da-ndjo). A
 		 * name the frame draws itself, moved in, costs more than it says: it
 		 * overrides a renamed tab, silences the modified dot, and on a tabbed
 		 * bar it is the same word twice beside the tab already carrying it.
-		 * `CliPane` forwards whatever slot ITS caller gave it, so it passes
-		 * this.
 		 */
-		ownTitle?: boolean;
+		heading?: Snippet;
+
+		children?: Snippet;
 
 		/**
 		 * Draw the BODY alone: no title strip, no outline.
@@ -78,7 +79,7 @@
 		scale?: number;
 	}
 
-	let { title, alarm = false, body = $bindable(), ownTitle = true, bare = false, scale = 1 }: Props = $props();
+	let { title, alarm = false, body = $bindable(), heading, children, bare = false, scale = 1 }: Props = $props();
 
 	/** Pin the view to the newest content. The REPL calls this after a run. */
 	export function scrollToBottom(): void {
@@ -94,7 +95,7 @@
 	/** What `layout/PaneFrame.svelte` puts in the context. */
 	interface Frame {
 		alarm: Writable<boolean>;
-		/** The frame's h2, once it exists; the title slot is moved into it. */
+		/** The frame's h2, once it exists; the `heading` is moved into it. */
 		titleHost: Writable<HTMLElement | null>;
 		/** Told when something has been moved in, so the frame hides its own. */
 		hosted: Writable<boolean>;
@@ -120,12 +121,7 @@
 </script>
 
 <!--
-	The slots stay `<slot>`s until the callers pass snippets (the sweep,
-	da-ul23i): a legacy caller's named slot never reaches a `{@render}`, and
-	the `title` slot shares its name with the `title` prop, so its snippet
-	needs a new name, which its callers (CliPane, CustomPane) must use.
-
-	Inside a frame the title slot cannot be rendered here — the frame draws
+	Inside a frame the `heading` cannot be rendered here — the frame draws
 	the bar — so it is rendered and then MOVED into the frame's h2 (the
 	`portal` action), where the custom pane's ✎ and its editor land in the
 	title bar of a dashboard pane exactly as they did in the grid's.
@@ -139,14 +135,11 @@
 	class:alarm={!frame && !bare && alarm}
 >
 	{#if !frame && !bare}
-		<!-- svelte-ignore slot_element_deprecated -->
-		<h2><slot name="title">{title}</slot></h2>
-	{:else if frame && $$slots.title && ownTitle}
-		<!-- svelte-ignore slot_element_deprecated -->
-		<span class="hosted-title" use:portal={frame}><slot name="title" /></span>
+		<h2>{#if heading}{@render heading()}{:else}{title}{/if}</h2>
+	{:else if frame && heading}
+		<span class="hosted-title" use:portal={frame}>{@render heading()}</span>
 	{/if}
-	<!-- svelte-ignore slot_element_deprecated -->
-	<div class="body" bind:this={body} style:--type-scale={scale === 1 ? null : scale}><slot /></div>
+	<div class="body" bind:this={body} style:--type-scale={scale === 1 ? null : scale}>{@render children?.()}</div>
 </svelte:element>
 
 <style>

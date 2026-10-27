@@ -84,15 +84,15 @@ export interface WidgetKind {
 	/** Props for the component, when it wants more than `settings`. */
 	props?: (settings: Record<string, unknown>) => Record<string, unknown>;
 	/**
-	 * What the component's `change` event means for its settings: the
-	 * detail folded into them. A kind without one has nothing to keep.
+	 * What the component's `onchange` means for its settings: the
+	 * argument folded into them. A kind without one has nothing to keep.
 	 *
 	 * It is given the settings as SHOWN and what it returns lands in THIS
 	 * SESSION (da-vhwq, Layout.svelte), not in the tree — so a widget
 	 * moving one of its own settings cannot modify the layout, in either
 	 * mode.
 	 */
-	onChange?: (settings: Record<string, unknown>, detail: unknown) => Record<string, unknown>;
+	onChange?: (settings: Record<string, unknown>, moved: unknown) => Record<string, unknown>;
 	/**
 	 * What the Help button says about this kind (da-vjwid): what it shows,
 	 * what a tap does, what a hold does — a line each ($lib/help.ts).
@@ -268,7 +268,7 @@ export const KINDS: Record<string, WidgetKind> = {
 			hourFrom: typeof hourFrom === 'number' ? hourFrom : HOUR_FROM,
 			hourTo: typeof hourTo === 'number' ? hourTo : HOUR_TO
 		}),
-		// The strip's `change` names the settings it moved — a resize names
+		// The strip's `onchange` names the settings it moved — a resize names
 		// the day height and the label width, a zoom both ends of its hour
 		// range — so the fold is the same one for all of them.
 		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
@@ -390,7 +390,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		legible: { width: 160, height: 49 }
 	},
 	// The stats widget (da-n7r0): its settings ARE the widget's settings, and
-	// its range chips move them with a `change` like any other widget's own
+	// its range chips move them with an `onchange` like any other widget's own
 	// control — so since da-vhwq THIS SESSION keeps them, not the tree, and
 	// «Save options with layout» is what hands a window over (Layout.svelte).
 	// Which is why a reload starts the widget back at what the layout says.

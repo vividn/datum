@@ -20,11 +20,14 @@ export function confirm(text: string, action: string, name = '', cancel = 'cance
 	return new Promise((resolve) => {
 		const dialog = mount(Confirm, {
 			target: document.body,
-			props: { text, action, name, cancel },
-			events: {
-				close: ({ detail }: CustomEvent) => {
+			props: {
+				text,
+				action,
+				name,
+				cancel,
+				onclose: (answer) => {
 					unmount(dialog);
-					resolve(detail);
+					resolve(answer);
 				}
 			}
 		});
@@ -51,11 +54,16 @@ export function choose(
 	return new Promise((resolve) => {
 		const dialog = mount(Confirm, {
 			target: document.body,
-			props: { text, action, also, cancel, kind, danger: dangerousCancel ? 'cancel' : null },
-			events: {
-				chose: ({ detail }: CustomEvent) => {
+			props: {
+				text,
+				action,
+				also,
+				cancel,
+				kind,
+				danger: dangerousCancel ? 'cancel' : null,
+				onchose: (pressed) => {
 					unmount(dialog);
-					resolve(detail);
+					resolve(pressed);
 				}
 			}
 		});
@@ -71,11 +79,14 @@ export function ask(text: string, action: string, value = '', optional = false):
 	return new Promise((resolve) => {
 		const dialog = mount(Ask, {
 			target: document.body,
-			props: { text, action, value, optional },
-			events: {
-				close: ({ detail }: CustomEvent) => {
+			props: {
+				text,
+				action,
+				value,
+				optional,
+				onclose: (answer) => {
 					unmount(dialog);
-					resolve(detail);
+					resolve(answer);
 				}
 			}
 		});

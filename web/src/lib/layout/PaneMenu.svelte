@@ -58,7 +58,6 @@
 -->
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
-	import { createBubbler } from 'svelte/legacy';
 	import { act } from '../act.js';
 	import type { Item } from './menu.js';
 
@@ -99,12 +98,6 @@
 		children,
 		...rest
 	}: Props = $props();
-
-	// A caller's `on:keydown`, `on:pointerenter` and `on:focus` are passed on
-	// until the callers are runes too (the sweep, da-ul23i); a caller that
-	// passes `onkeydown` and the rest as props has them in `rest`, which is
-	// spread after these and so wins.
-	const bubble = createBubbler();
 
 	const LOOK: Record<typeof look, string> = {
 		title: 'title',
@@ -357,9 +350,6 @@
 <svelte:window onpointerdown={onWindowPointerDown} onkeydowncapture={onWindowKey} />
 
 <button
-	onkeydown={bubble('keydown')}
-	onpointerenter={bubble('pointerenter')}
-	onfocus={bubble('focus')}
 	{...rest}
 	type="button"
 	class="{LOOK[look]} {rest.class ?? ''}"

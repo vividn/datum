@@ -125,8 +125,8 @@
 		title="database: {db} — choose a database"
 		aria-label="database: {db} — choose a database"
 		style="--len: {db.length}"
-		on:pointerenter={refresh}
-		on:focus={refresh}><span class="name">{db}</span></PaneMenu
+		onpointerenter={refresh}
+		onfocus={refresh}><span class="name">{db}</span></PaneMenu
 	>
 </div>
 

@@ -734,157 +734,160 @@
 	maxRows={Infinity}
 	key={keyOf}
 	bind:bar
-	let:item
 	onpointerenter={() => (over = true)}
 	onpointerleave={() => (over = false)}
 >
 	<!-- Given a line colour, or `var(--line)` voids its border and the rows
 	     are counted two pixels short of the buttons they hold. -->
-	<button slot="probe" class="widget" style="--line: transparent" tabindex="-1">probe</button>
-	{#if item.kind === 'ring' && picking}
-		{@const chosen = picking}
-		{@const states = statesOf(chosen.shape)}
-		<div class="ring" use:around={tap}>
-			<div class="spot" data-role="back">
-				<button class="nav back" use:act={'show'} data-back {disabled} title="back to the fields" onclick={back}>
-					&lt; Back
-				</button>
+	{#snippet probe()}
+		<button class="widget" style="--line: transparent" tabindex="-1">probe</button>
+	{/snippet}
+	{#snippet children({ item })}
+		{#if item.kind === 'ring' && picking}
+			{@const chosen = picking}
+			{@const states = statesOf(chosen.shape)}
+			<div class="ring" use:around={tap}>
+				<div class="spot" data-role="back">
+					<button class="nav back" use:act={'show'} data-back {disabled} title="back to the fields" onclick={back}>
+						&lt; Back
+					</button>
+				</div>
+				{#if chosen.neverFalse}
+					<!-- A field that is never off (da-cwieh) leaves a GAP on the tap:
+					     `end` drawn and hidden, so it is `end`'s own width and every
+					     other button stands where it would beside it. -->
+					<div class="spot gap" data-role="end" aria-hidden="true">
+						<!-- A line colour, or `var(--line)` voids its border and the gap is narrower than `end`. -->
+						<button class="widget states end" use:act={'run'} style="--line: transparent" tabindex="-1" disabled
+							>end</button
+						>
+					</div>
+				{:else}
+					{@const color = chosen.stateColors.false ?? chosen.color}
+					<!-- `false` is off: `end`, on the tap itself on every switch field
+					     (da-cwieh), and hollow like the two ends — the one state a
+					     thumb reaches without moving. -->
+					<div class="spot" data-role="end">
+						<button
+							class="widget states end"
+							use:act={'run'}
+							style={vars({ fill: null, line: color, text: color, label: 'end' })}
+							{disabled}
+							data-state="false"
+							title={shellJoin(['end', chosen.field])}
+							onclick={() => emit(['end', chosen.field])}
+						>
+							end
+						</button>
+					</div>
+				{/if}
+				{#each states.filter((s) => s !== 'false') as state (state)}
+					{@const look = stateLook(chosen, state)}
+					<div class="spot" data-role="state">
+						<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type. -->
+						<button
+							class="widget states"
+							use:act={typesKeys('switch', chosen) ? 'fill' : 'run'}
+							class:on={chosen.current === state}
+							style={vars(look)}
+							{disabled}
+							data-state={state}
+							title={shellJoin(pressArgv(chosen, state))}
+							onclick={() => log(pressArgv(chosen, state), chosen)}
+						>
+							{state}
+						</button>
+					</div>
+				{/each}
+				<div class="spot" data-role="add">
+					{#if addingState}
+						<form
+							onsubmit={(e) => {
+								e.preventDefault();
+								addState(chosen);
+							}}
+						>
+							<!-- svelte-ignore a11y_autofocus -->
+							<input
+								class="new-state"
+								bind:value={newState}
+								placeholder="state"
+								aria-label="a new state for {chosen.field}"
+								spellcheck="false"
+								autofocus
+							/>
+						</form>
+					{:else}
+						<button
+							class="nav add-state"
+							use:act={'show'}
+							data-add-state
+							{disabled}
+							title="add a state to {chosen.field}"
+							onclick={() => (addingState = true)}
+						>
+							+ Add state
+						</button>
+					{/if}
+				</div>
 			</div>
-			{#if chosen.neverFalse}
-				<!-- A field that is never off (da-cwieh) leaves a GAP on the tap:
-				     `end` drawn and hidden, so it is `end`'s own width and every
-				     other button stands where it would beside it. -->
-				<div class="spot gap" data-role="end" aria-hidden="true">
-					<!-- A line colour, or `var(--line)` voids its border and the gap is narrower than `end`. -->
-					<button class="widget states end" use:act={'run'} style="--line: transparent" tabindex="-1" disabled
-						>end</button
-					>
-				</div>
-			{:else}
-				{@const color = chosen.stateColors.false ?? chosen.color}
-				<!-- `false` is off: `end`, on the tap itself on every switch field
-				     (da-cwieh), and hollow like the two ends — the one state a
-				     thumb reaches without moving. -->
-				<div class="spot" data-role="end">
+		{:else if item.kind === 'hint'}
+			<!-- No direction word here on purpose: this hint said "below" while the
+			     bar was at the top of the page (da-nz29), and da-1x72 moved the
+			     bar to the bottom without the copy following. Name the thing, not
+			     where it is. -->
+			<p class="hint empty">nothing tracked yet — set a field up in the setup widget, or type a command to log something</p>
+		{:else if item.kind === 'field'}
+			{@const button = item.button}
+			{@const look = lookOf(button, switchLabel)}
+			{@const stand = stands.get(keyOf(item))}
+			<div
+				class="slot"
+				class:edge={item.edge}
+				class:stand={picture}
+				class:glide={glide && !live}
+				style:left={stand ? `${stand.x}px` : null}
+				style:top={stand ? `${stand.top}px` : null}
+				data-promoted={item.promoted ? '' : undefined}
+				use:sized={keyOf(item)}
+			>
+				{#if button.shape.kind === 'record'}
+					<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
+					     HOLD is every field's (da-8810n) — a record is a field like
+					     any other, and only what a press MEANS is its own. -->
 					<button
-						class="widget states end"
-						use:act={'run'}
-						style={vars({ fill: null, line: color, text: color, label: 'end' })}
+						class="record"
+						use:act={pressKind(button, verb)}
+						class:ignored={button.ignored}
+						class:pilled={$fieldPill === button.field}
+						role="link"
+						data-field={button.field}
+						data-ignored={button.ignored ? '' : undefined}
+						data-pilled={$fieldPill === button.field ? '' : undefined}
+						style={vars(look) + tallOf(button)}
 						{disabled}
-						data-state="false"
-						title={shellJoin(['end', chosen.field])}
-						onclick={() => emit(['end', chosen.field])}
+						title={titleOf(button)}
+						onclick={(e) => press(button, e.currentTarget, e)}>{button.field}</button
 					>
-						end
-					</button>
-				</div>
-			{/if}
-			{#each states.filter((s) => s !== 'false') as state (state)}
-				{@const look = stateLook(chosen, state)}
-				<div class="spot" data-role="state">
-					<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type. -->
-					<button
-						class="widget states"
-						use:act={typesKeys('switch', chosen) ? 'fill' : 'run'}
-						class:on={chosen.current === state}
-						style={vars(look)}
-						{disabled}
-						data-state={state}
-						title={shellJoin(pressArgv(chosen, state))}
-						onclick={() => log(pressArgv(chosen, state), chosen)}
-					>
-						{state}
-					</button>
-				</div>
-			{/each}
-			<div class="spot" data-role="add">
-				{#if addingState}
-					<form
-						onsubmit={(e) => {
-							e.preventDefault();
-							addState(chosen);
-						}}
-					>
-						<!-- svelte-ignore a11y_autofocus -->
-						<input
-							class="new-state"
-							bind:value={newState}
-							placeholder="state"
-							aria-label="a new state for {chosen.field}"
-							spellcheck="false"
-							autofocus
-						/>
-					</form>
 				{:else}
 					<button
-						class="nav add-state"
-						use:act={'show'}
-						data-add-state
+						class="widget {button.shape.kind}"
+						use:act={pressKind(button, verb)}
+						class:on={look.fill !== null}
+						class:ignored={button.ignored}
+						class:pilled={$fieldPill === button.field}
+						style={vars(look) + tallOf(button)}
 						{disabled}
-						title="add a state to {chosen.field}"
-						onclick={() => (addingState = true)}
-					>
-						+ Add state
-					</button>
+						data-field={button.field}
+						data-ignored={button.ignored ? '' : undefined}
+						data-pilled={$fieldPill === button.field ? '' : undefined}
+						title={titleOf(button)}
+						onclick={(e) => press(button, e.currentTarget, e)}
+					>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
 				{/if}
 			</div>
-		</div>
-	{:else if item.kind === 'hint'}
-		<!-- No direction word here on purpose: this hint said "below" while the
-		     bar was at the top of the page (da-nz29), and da-1x72 moved the
-		     bar to the bottom without the copy following. Name the thing, not
-		     where it is. -->
-		<p class="hint empty">nothing tracked yet — set a field up in the setup widget, or type a command to log something</p>
-	{:else if item.kind === 'field'}
-		{@const button = item.button}
-		{@const look = lookOf(button, switchLabel)}
-		{@const stand = stands.get(keyOf(item))}
-		<div
-			class="slot"
-			class:edge={item.edge}
-			class:stand={picture}
-			class:glide={glide && !live}
-			style:left={stand ? `${stand.x}px` : null}
-			style:top={stand ? `${stand.top}px` : null}
-			data-promoted={item.promoted ? '' : undefined}
-			use:sized={keyOf(item)}
-		>
-			{#if button.shape.kind === 'record'}
-				<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
-				     HOLD is every field's (da-8810n) — a record is a field like
-				     any other, and only what a press MEANS is its own. -->
-				<button
-					class="record"
-					use:act={pressKind(button, verb)}
-					class:ignored={button.ignored}
-					class:pilled={$fieldPill === button.field}
-					role="link"
-					data-field={button.field}
-					data-ignored={button.ignored ? '' : undefined}
-					data-pilled={$fieldPill === button.field ? '' : undefined}
-					style={vars(look) + tallOf(button)}
-					{disabled}
-					title={titleOf(button)}
-					onclick={(e) => press(button, e.currentTarget, e)}>{button.field}</button
-				>
-			{:else}
-				<button
-					class="widget {button.shape.kind}"
-					use:act={pressKind(button, verb)}
-					class:on={look.fill !== null}
-					class:ignored={button.ignored}
-					class:pilled={$fieldPill === button.field}
-					style={vars(look) + tallOf(button)}
-					{disabled}
-					data-field={button.field}
-					data-ignored={button.ignored ? '' : undefined}
-					data-pilled={$fieldPill === button.field ? '' : undefined}
-					title={titleOf(button)}
-					onclick={(e) => press(button, e.currentTarget, e)}
-				>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
-			{/if}
-		</div>
-	{/if}
+		{/if}
+	{/snippet}
 </ButtonRows>
 {#if picture && zoomedIn}
 	<!-- Which part of the pictures' height is in view; a tap shows it all again. -->

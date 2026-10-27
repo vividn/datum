@@ -160,7 +160,7 @@
 	or no selection — and it is there only while there is a selection.
 
 	What the reader sets — `dayHeight`, `labelWidth`, `freezeToday`,
-	`hourFrom`/`hourTo` — is a prop in and a `change` out; the dashboard
+	`hourFrom`/`hourTo` — is a prop in and an `onchange` out; the dashboard
 	keeps them in the widget's settings, and the strip itself writes
 	nothing down.
 
@@ -257,7 +257,7 @@
 </script>
 
 <script lang="ts">
-	import { createEventDispatcher, onDestroy, onMount, tick, untrack } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { on } from 'svelte/events';
 	import { browser } from '$app/env';
 	import { currentDb } from './database.js';
@@ -329,6 +329,8 @@
 		/** The hour range every band is drawn onto — the whole day at rest (da-ukcf). */
 		hourFrom?: number;
 		hourTo?: number;
+		/** What the reader moved, for the owner to fold into the widget's settings (`Setting`). */
+		onchange?: (moved: Setting) => void;
 	}
 
 	let {
@@ -338,7 +340,8 @@
 		labelWidth: givenLabelWidth = DEFAULT_LABEL_WIDTH,
 		freezeToday = false,
 		hourFrom = HOUR_FROM,
-		hourTo = HOUR_TO
+		hourTo = HOUR_TO,
+		onchange
 	}: Props = $props();
 
 	/** What this strip drew before it was last unmounted, if anything (`held`). */
@@ -358,7 +361,6 @@
 		hourFrom?: number;
 		hourTo?: number;
 	};
-	const dispatch = createEventDispatcher<{ change: Setting }>();
 
 	/** The least past the stack holds, so there is somewhere to scroll to — and what it grows by. */
 	const FORTNIGHT = 14;
@@ -1207,7 +1209,7 @@
 		const next = clamp(Math.round(px), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
 		if (next !== day) dayHeight = next === boxDay ? undefined : next;
 		labelWidth = clamp(Math.round(wide), MIN_LABEL_WIDTH, MAX_LABEL_WIDTH);
-		dispatch('change', { dayHeight, labelWidth });
+		onchange?.({ dayHeight, labelWidth });
 	}
 
 	/**
@@ -1318,7 +1320,7 @@
 		live = null;
 		if (next[0] === committed[0] && next[1] === committed[1]) return;
 		[hourFrom, hourTo] = next;
-		dispatch('change', { hourFrom, hourTo });
+		onchange?.({ hourFrom, hourTo });
 	}
 
 	/** The band's box on screen — what a gesture's x is a fraction of. */

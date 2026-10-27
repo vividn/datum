@@ -35,18 +35,13 @@
 		[key: string]: unknown;
 	}
 
-	// `head` and the body stay `<slot>`s until every caller passes snippets
-	// (the sweep, da-ul23i): a legacy caller's named slot never reaches a
-	// `{@render}`, and one component cannot hold both. They are named here
-	// so that `rest` leaves them off the dialog.
-
 	let {
 		title,
 		open = $bindable(false),
 		widget = false,
 		onclose = undefined,
-		head: _head,
-		children: _children,
+		head,
+		children,
 		...rest
 	}: Props = $props();
 
@@ -71,15 +66,13 @@
 	>
 		<div class="sheet-head">
 			<span>{title}</span>
-			<!-- svelte-ignore slot_element_deprecated -->
-			<slot name="head" />
+			{@render head?.()}
 			<button type="button" class="close" aria-label="close" onclick={() => sheet?.close()}
 				>×</button
 			>
 		</div>
 		<div class="sheet-body">
-			<!-- svelte-ignore slot_element_deprecated -->
-			<slot />
+			{@render children?.()}
 		</div>
 	</dialog>
 {/if}

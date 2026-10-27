@@ -458,9 +458,9 @@
 				{@const settings = withSession(widget.settings, $session[key])}
 				<!-- A widget that changes a setting of its own (nowview's − / +,
 				     the strip's handle, the stats widget's range chips) says so
-				     with `change`, and it lands in THIS SESSION, exactly where the menu's option
+				     with `onchange`, and it lands in THIS SESSION, exactly where the menu's option
 				     rows land — through the kind's `onChange`, which knows what
-				     the event's detail is. The layout hears of it only when the
+				     the callback's argument is. The layout hears of it only when the
 				     reader asks («Save options with layout»), which is what makes
 				     the layout safe from a widget's own in-body controls without
 				     a guard on every one of them.
@@ -482,7 +482,7 @@
 						{...kind.props ? kind.props(settings) : { settings }}
 						epoch={at}
 						{key}
-						on:change={(e) => fold && setSession(key, widget.settings, fold(settings, e.detail))}
+						onchange={(moved: unknown) => fold && setSession(key, widget.settings, fold(settings, moved))}
 					/>
 				{/if}
 			{:else}

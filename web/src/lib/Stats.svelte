@@ -10,7 +10,7 @@
 	the fields widget mints (`da-8810n`, $lib/bar.ts).
 
 	What the range chips choose is the WINDOW, which is the widget's whole
-	settings now (`StatsSettings`). `change` hands a new one out and it
+	settings now (`StatsSettings`). `onchange` hands a new one out and it
 	lands in THIS SESSION (da-vhwq, `layout/session.ts`): it changes what
 	this tab is showing and the layout does not hear of it, so a reload
 	starts back at what the layout says and «Save options with layout» is
@@ -49,7 +49,7 @@
 	own, from the one command the widget already runs.
 -->
 <script lang="ts">
-	import { createEventDispatcher, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { browser } from '$app/env';
 	import { fieldPill } from './bar.js';
 	import { inkOver } from './fields.js';
@@ -75,11 +75,10 @@
 		settings?: StatsSettings;
 		/** Any change re-runs everything: a new row changes the numbers. */
 		epoch?: number;
+		onchange?: (settings: StatsSettings) => void;
 	}
 
-	let { settings = DEFAULT_STATS, epoch = 0 }: Props = $props();
-
-	const dispatch = createEventDispatcher<{ change: StatsSettings }>();
+	let { settings = DEFAULT_STATS, epoch = 0, onchange }: Props = $props();
 
 	const PERIODS: { range: StatsRange; label: string }[] = [
 		{ range: 'all', label: 'all time' },
@@ -148,7 +147,7 @@
 
 	function set(next: Partial<StatsSettings>): void {
 		settings = { ...settings, ...next };
-		dispatch('change', settings);
+		onchange?.(settings);
 	}
 
 	/**

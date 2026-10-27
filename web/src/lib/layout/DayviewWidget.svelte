@@ -21,5 +21,5 @@
 {#if orientation === 'vertical'}
 	<CliPane spec={DAYVIEW_VERTICAL} {epoch} />
 {:else}
-	<DayStrip {...rest} {epoch} on:change />
+	<DayStrip {...rest} {epoch} />
 {/if}

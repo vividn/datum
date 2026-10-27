@@ -170,7 +170,7 @@
 		inProgress.set(key, { open, flagged });
 	});
 	let bar: HTMLElement | undefined = $state();
-	/** Either bar: SectionPages takes ButtonRows' items, key, section and slot. */
+	/** Either bar: SectionPages takes ButtonRows' items, key, section and snippets. */
 	const Bar = $derived((sections ? SectionPages : ButtonRows) as typeof ButtonRows<CommandButton>);
 	/** What SectionPages takes beyond them: its columns, and «conflicts» kept in sight while there are any. */
 	const paged = $derived(sections ? { columns: COLUMNS, pinned: (command: CommandButton) => conflicts > 0 && command.name === 'conflicts' } : {});

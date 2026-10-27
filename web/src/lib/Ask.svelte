@@ -11,7 +11,7 @@
 	cancels, and closing hands focus back to whatever held it before — the
 	control the question was asked from.
 
-	`close` carries the trimmed answer, or null for Escape, cancel or an
+	`onclose` gets the trimmed answer, or null for Escape, cancel or an
 	empty field. An empty answer is refused QUIETLY: the button that would
 	take it is disabled, so Enter on an empty field does nothing at all —
 	unless the question is `optional`, where an empty field is an answer of
@@ -20,24 +20,25 @@
 	`value` is what the field starts with.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onMount, untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	interface Props {
 		text: string;
 		action: string;
 		value?: string;
 		optional?: boolean;
+		onclose: (answer: string | null) => void;
 	}
 
 	let {
 		text,
 		action,
 		value = '',
-		optional = false
+		optional = false,
+		onclose
 	}: Props = $props();
 
 	const OK = 'ok';
-	const dispatch = createEventDispatcher<{ close: string | null }>();
 	let dialog: HTMLDialogElement;
 	// The field starts at `value`; the reader's typing owns it after that.
 	let typed = $state(untrack(() => value));
@@ -50,7 +51,7 @@
 <dialog
 	class="ask"
 	bind:this={dialog}
-	onclose={() => dispatch('close', dialog.returnValue === OK && (answer || optional) ? answer : null)}
+	onclose={() => onclose(dialog.returnValue === OK && (answer || optional) ? answer : null)}
 >
 	<form method="dialog">
 		<label>

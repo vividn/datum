@@ -54,7 +54,7 @@
 		 * with it — known, not learned again by writing once more (da-v36y).
 		 */
 		writer = $bindable(null),
-		/** The caller's title controls, forwarded into the pane's title slot. */
+		/** The caller's title controls, forwarded as the pane's `heading`. */
 		title: titled
 	}: {
 		spec: PaneSpec;
@@ -188,14 +188,10 @@
 </script>
 
 <!--
-	`ownTitle` is whether the title slot is a widget's own controls: this
-	pane forwards its caller's, and has none of its own — its name is the
-	frame's to draw (da-ndjo). Its default fills the unframed pane's h2,
-	which is where `spec.title` is still wanted.
+	This pane forwards its caller's title controls, and has none of its own —
+	its name is the frame's to draw (da-ndjo).
 -->
-<Pane title={spec.title} ownTitle={!!titled} {scale} bind:body>
-	<!-- A `slot=` and not a snippet: Pane's `title` is a prop too, which a snippet of that name would replace. -->
-	<svelte:fragment slot="title">{#if titled}{@render titled()}{:else}{spec.title}{/if}</svelte:fragment>
+<Pane title={spec.title} heading={titled} {scale} bind:body>
 	{#if manual}
 		<p class="quiet">
 			this command writes — it runs only when you press

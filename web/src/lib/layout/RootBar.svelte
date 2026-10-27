@@ -439,7 +439,7 @@
 					aria-selected="true"
 					tabindex="0"
 					class={marks(tab, $modified, $previews)}
-					on:keydown={(e) => onTabKey(e, i)}
+					onkeydown={(e: KeyboardEvent) => onTabKey(e, i)}
 					>{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}</PaneMenu
 				>
 			{:else}

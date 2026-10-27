@@ -703,10 +703,9 @@ binary.
 ## Web app (PWA)
 
 - SvelteKit static adapter — no server-side rendering
-- Svelte 5: a new component is written with runes (`$props`, `$state`,
-  `$derived`, `$effect`, snippets, `onclick`); the rest convert in the runes
-  batches, and the sweep (da-ul23i) sets `runes: true` so the old syntax no
-  longer compiles
+- Svelte 5, runes only (`$props`, `$state`, `$derived`, `$effect`, snippets,
+  `onclick`, a callback prop for an event): `compilerOptions: { runes: true }`
+  in `web/vite.config.ts` (da-ul23i), so the old syntax does not compile
 - The real `datum` CLI is the only runner: `datum-cli` built for
   wasm32-wasip1, one WASI process per command in `web/src/lib/db.worker.ts`
   (`cli.ts`, `wasiFs.ts`), its SQLite file in OPFS. There is no SQL, parser

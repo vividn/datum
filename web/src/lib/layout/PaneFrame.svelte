@@ -905,7 +905,7 @@
 								role="tab"
 								aria-selected="true"
 								tabindex="0"
-								on:keydown={(e) => onTabKey(e, i)}
+								onkeydown={(e: KeyboardEvent) => onTabKey(e, i)}
 								>{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}</PaneMenu
 							>
 						{:else}

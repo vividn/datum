@@ -76,11 +76,12 @@ export async function choose(ancestors: string[] = [], kits = true): Promise<Cho
 	return new Promise((resolve) => {
 		const modal = mount(Chooser, {
 			target: document.body,
-			props: { layouts, widgets },
-			events: {
-				close: ({ detail }: CustomEvent) => {
+			props: {
+				layouts,
+				widgets,
+				onclose: (choice) => {
 					unmount(modal);
-					resolve(detail);
+					resolve(choice);
 				}
 			}
 		});

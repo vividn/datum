@@ -128,6 +128,8 @@ export default defineConfig({
 		sveltekit({
 			preprocess: vitePreprocess(),
 			adapter: adapter({ fallback: 'index.html' }),
+			// Runes only: a component in Svelte 4 syntax fails to compile (da-ul23i).
+			compilerOptions: { runes: true },
 			// Kit 3 generates no `$lib`; kept as an alias rather than moving every
 			// import to `#lib`.
 			alias: { $lib: 'src/lib' },
