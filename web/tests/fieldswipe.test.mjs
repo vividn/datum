@@ -27,7 +27,7 @@ async function open(page) {
 	await openField(page);
 	await page.locator(`${FIELD_FORM} input.field`).fill('thing');
 	await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
-	await page.locator(`${FIELD_FORM} .placement .band svg`).waitFor();
+	await page.locator(`${FIELD_FORM} .placement .band[data-drawn] svg`).waitFor();
 	await until(() => rootShown(page), (t) => t === 'setup');
 }
 
@@ -81,11 +81,12 @@ test('on a phone a drag on the placement or a state\'s handle is theirs, and a v
 		const discs = `${FIELD_FORM} .placement .band g.field .point-bg`;
 		await swipeOver(page, page.locator(discs).last(), 60, 0);
 		assert.equal(await rootShown(page), 'setup');
-		// Read in one go: the band is drawn again once the drag lets go, which replaces the dots.
-		const at = await page.waitForFunction((sel) => {
-			const r = [...document.querySelectorAll(sel)].at(-1)?.getBoundingClientRect();
+		// Read in one go once the band's picture is the one wanted (da-bnc6r): a picture asked for during the drag is drawn
+		// once it lets go, which replaces the dots, and a tap during that misses them.
+		const at = await page.waitForFunction(([drawn, sel]) => {
+			const r = document.querySelector(drawn) && [...document.querySelectorAll(sel)].at(-1)?.getBoundingClientRect();
 			return r && [r.x + r.width / 2, r.y + r.height / 2];
-		}, discs);
+		}, [`${FIELD_FORM} .placement .band[data-drawn]`, discs]);
 		await page.touchscreen.tap(...(await at.jsonValue()));
 		// A drag right of the dot's right side widens the dot.
 		const dims = page.locator(`${FIELD_FORM} .placement .dims`);

@@ -155,6 +155,8 @@
 			named = [...next.querySelectorAll('g.field')].map((g) => g.getAttribute('data-field') ?? '');
 		}
 		drawing = false;
+		// The picture is the one wanted, for a reader to wait on before it reads a mark (da-bnc6r).
+		if (band) band.dataset.drawn = '';
 	}
 
 	/** The dot box's handles, by the sides each moves: four corners, four edges. */
@@ -317,6 +319,7 @@
 			const at = { y: round(lane.y), h: round(lane.h), scale };
 			const free = { relative_to: undefined, anchor_pos_ratio: undefined, anchor_size_ratio: undefined, y: at.y, height: at.h };
 			want = JSON.stringify({ at, sample: spec && { ...spec, ...free }, context: AROUND[around].context });
+			if (want !== asked) delete band.dataset.drawn;
 			untrack(draw);
 		}
 	});
