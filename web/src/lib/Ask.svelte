@@ -20,19 +20,29 @@
 	`value` is what the field starts with.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { createEventDispatcher, onMount, untrack } from 'svelte';
 
-	export let text: string;
-	export let action: string;
-	export let value = '';
-	export let optional = false;
+	interface Props {
+		text: string;
+		action: string;
+		value?: string;
+		optional?: boolean;
+	}
+
+	let {
+		text,
+		action,
+		value = '',
+		optional = false
+	}: Props = $props();
 
 	const OK = 'ok';
 	const dispatch = createEventDispatcher<{ close: string | null }>();
 	let dialog: HTMLDialogElement;
-	let typed = value;
+	// The field starts at `value`; the reader's typing owns it after that.
+	let typed = $state(untrack(() => value));
 
-	$: answer = typed.trim();
+	const answer = $derived(typed.trim());
 
 	onMount(() => dialog.showModal());
 </script>
@@ -40,7 +50,7 @@
 <dialog
 	class="ask"
 	bind:this={dialog}
-	on:close={() => dispatch('close', dialog.returnValue === OK && (answer || optional) ? answer : null)}
+	onclose={() => dispatch('close', dialog.returnValue === OK && (answer || optional) ? answer : null)}
 >
 	<form method="dialog">
 		<label>
@@ -49,7 +59,7 @@
 		</label>
 		<div class="buttons">
 			<button value={OK} disabled={!answer && !optional}>{action}</button>
-			<button type="button" on:click={() => dialog.close()}>cancel</button>
+			<button type="button" onclick={() => dialog.close()}>cancel</button>
 		</div>
 	</form>
 </dialog>

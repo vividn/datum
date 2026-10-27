@@ -49,7 +49,7 @@
 	own, from the one command the widget already runs.
 -->
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, untrack } from 'svelte';
 	import { browser } from '$app/env';
 	import { fieldPill } from './bar.js';
 	import { inkOver } from './fields.js';
@@ -71,9 +71,13 @@
 		type StatsSettings
 	} from './stats.js';
 
-	export let settings: StatsSettings = DEFAULT_STATS;
-	/** Any change re-runs everything: a new row changes the numbers. */
-	export let epoch = 0;
+	interface Props {
+		settings?: StatsSettings;
+		/** Any change re-runs everything: a new row changes the numbers. */
+		epoch?: number;
+	}
+
+	let { settings = DEFAULT_STATS, epoch = 0 }: Props = $props();
 
 	const dispatch = createEventDispatcher<{ change: StatsSettings }>();
 
@@ -87,8 +91,8 @@
 	/** The custom range's two inputs, by the flag each one fills. */
 	const EDGES = ['since', 'until'] as const;
 
-	let result: RunResult | null = null;
-	let summary: FieldStats | AllFieldsStats | null = null;
+	let result = $state.raw<RunResult | null>(null);
+	let summary = $state.raw<FieldStats | AllFieldsStats | null>(null);
 	/** How many runs have been started, and the newest one on screen. */
 	let started = 0;
 	let shown = -1;
@@ -98,14 +102,17 @@
 	// By its WORDS (CliPane.svelte's rule, da-jgrn): the layout hands the
 	// widget its settings afresh on every change to the tree, a root tab
 	// switch included, and a new array would run it again for nothing.
-	$: words = JSON.stringify(statsArgv(settings, $fieldPill));
-	$: argv = JSON.parse(words) as string[];
-	$: custom = typeof settings.range === 'object' ? settings.range : null;
-	$: all = isAllFields(summary) ? summary : null;
-	$: tiles = all ? summaryTiles(all) : summary ? fieldTiles(summary as FieldStats) : [];
+	const words = $derived(JSON.stringify(statsArgv(settings, $fieldPill)));
+	const argv = $derived(JSON.parse(words) as string[]);
+	const custom = $derived(typeof settings.range === 'object' ? settings.range : null);
+	const all = $derived(isAllFields(summary) ? summary : null);
+	const tiles = $derived(all ? summaryTiles(all) : summary ? fieldTiles(summary as FieldStats) : []);
 
 	// Not on mount: there is no `run` outside the browser.
-	$: if (browser) void refresh(argv, epoch);
+	$effect.pre(() => {
+		const asked = argv, at = epoch;
+		if (browser) untrack(() => void refresh(asked, at));
+	});
 
 	/**
 	 * The CLI's JSON, or null when it is not JSON. A process killed
@@ -150,7 +157,7 @@
 	 * drawn rather than drawn as nothing; the table below it still counts
 	 * it.
 	 */
-	$: shares = (all?.fields ?? []).filter((f) => (f.ratio ?? 0) > 0);
+	const shares = $derived((all?.fields ?? []).filter((f) => (f.ratio ?? 0) > 0));
 </script>
 
 <div class="stats">
@@ -159,13 +166,13 @@
 			<button
 				class:on={settings.range === range}
 				aria-pressed={settings.range === range}
-				on:click={() => set({ range })}>{label}</button
+				onclick={() => set({ range })}>{label}</button
 			>
 		{/each}
 		<button
 			class:on={!!custom}
 			aria-pressed={!!custom}
-			on:click={() => set({ range: { since: '', until: '' } })}>custom</button
+			onclick={() => set({ range: { since: '', until: '' } })}>custom</button
 		>
 	</div>
 	{#if custom}
@@ -176,7 +183,7 @@
 					<input
 						type="datetime-local"
 						value={custom[edge]}
-						on:change={(e) => set({ range: { ...custom, [edge]: e.currentTarget.value } })}
+						onchange={(e) => set({ range: { ...custom, [edge]: e.currentTarget.value } })}
 					/></label
 				>
 			{/each}

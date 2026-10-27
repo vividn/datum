@@ -28,25 +28,35 @@
 	import { picture } from './hover.js';
 	import { resizing } from './layout/resizing.js';
 
-	export let text: string;
-	/** Paint the block as an error (stderr). */
-	export let error = false;
-	/**
-	 * Which stream this block is. `error` cannot say: since progress went
-	 * to stderr (da-h9vj) a successful command renders two plain blocks,
-	 * and a reader asking for "what it printed" got the progress lines
-	 * (da-q15y).
-	 */
-	export let stream: 'stdout' | 'stderr' = 'stdout';
-	/** A newer block has been asked for: this one is dimmed until it lands. */
-	export let behind = false;
-	/** A picture's stretch from then to now is dimmed: this copy may not have it all yet (da-g5jjp). */
-	export let unsynced: number | undefined = undefined;
+	interface Props {
+		text: string;
+		/** Paint the block as an error (stderr). */
+		error?: boolean;
+		/**
+		 * Which stream this block is. `error` cannot say: since progress went
+		 * to stderr (da-h9vj) a successful command renders two plain blocks,
+		 * and a reader asking for "what it printed" got the progress lines
+		 * (da-q15y).
+		 */
+		stream?: 'stdout' | 'stderr';
+		/** A newer block has been asked for: this one is dimmed until it lands. */
+		behind?: boolean;
+		/** A picture's stretch from then to now is dimmed: this copy may not have it all yet (da-g5jjp). */
+		unsynced?: number | undefined;
+	}
+
+	let {
+		text,
+		error = false,
+		stream = 'stdout',
+		behind = false,
+		unsynced = undefined
+	}: Props = $props();
 
 	const SVG_START = /^\s*(?:<\?xml[\s?]|<svg[\s>])/;
 
-	$: svg = SVG_START.test(text);
-	$: spans = svg ? [] : ansiSpans(text);
+	const svg = $derived(SVG_START.test(text));
+	const spans = $derived(svg ? [] : ansiSpans(text));
 </script>
 
 {#if svg}

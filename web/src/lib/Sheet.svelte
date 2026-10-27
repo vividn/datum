@@ -21,38 +21,64 @@
 	has to go with it.
 -->
 <script lang="ts">
-	export let title: string;
-	export let open = false;
-	/** Sized for a widget, which fills the body, rather than for a list. */
-	export let widget = false;
-	/** Told when the sheet closes, however: the ×, Escape, the backdrop. */
-	export let onclose: (() => void) | undefined = undefined;
+	import type { Snippet } from 'svelte';
 
-	let sheet: HTMLDialogElement | undefined;
-	let outside = false;
+	interface Props {
+		title: string;
+		open?: boolean;
+		/** Sized for a widget, which fills the body, rather than for a list. */
+		widget?: boolean;
+		/** Told when the sheet closes, however: the ×, Escape, the backdrop. */
+		onclose?: (() => void) | undefined;
+		head?: Snippet;
+		children?: Snippet;
+		[key: string]: unknown;
+	}
 
-	$: if (sheet && open && !sheet.open) sheet.showModal();
+	// `head` and the body stay `<slot>`s until every caller passes snippets
+	// (the sweep, da-ul23i): a legacy caller's named slot never reaches a
+	// `{@render}`, and one component cannot hold both. They are named here
+	// so that `rest` leaves them off the dialog.
+
+	let {
+		title,
+		open = $bindable(false),
+		widget = false,
+		onclose = undefined,
+		head: _head,
+		children: _children,
+		...rest
+	}: Props = $props();
+
+	let sheet: HTMLDialogElement | undefined = $state();
+	let outside = $state(false);
+
+	$effect.pre(() => {
+		if (sheet && open && !sheet.open) sheet.showModal();
+	});
 </script>
 
 {#if open}
-	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 	<dialog
 		class="sheet"
 		class:widget
-		{...$$restProps}
+		{...rest}
 		bind:this={sheet}
-		on:close={() => ((open = false), onclose?.())}
-		on:pointerdown={(e) => (outside = e.target === sheet)}
-		on:click={(e) => outside && e.target === sheet && sheet?.close()}
+		onclose={() => ((open = false), onclose?.())}
+		onpointerdown={(e) => (outside = e.target === sheet)}
+		onclick={(e) => outside && e.target === sheet && sheet?.close()}
 	>
 		<div class="sheet-head">
 			<span>{title}</span>
+			<!-- svelte-ignore slot_element_deprecated -->
 			<slot name="head" />
-			<button type="button" class="close" aria-label="close" on:click={() => sheet?.close()}
+			<button type="button" class="close" aria-label="close" onclick={() => sheet?.close()}
 				>×</button
 			>
 		</div>
 		<div class="sheet-body">
+			<!-- svelte-ignore slot_element_deprecated -->
 			<slot />
 		</div>
 	</dialog>

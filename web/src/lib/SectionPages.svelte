@@ -31,28 +31,45 @@
 	with one `svelte:component`.
 -->
 <script lang="ts" generics="T">
-	import { afterUpdate, onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { ROW_GAP, runsOf, watchRows } from './commands.js';
 
-	export let items: T[];
-	export let key: (item: T) => unknown;
-	/** Which section an item is in; consecutive items of one section are drawn together. */
-	export let section: ((item: T) => unknown) | undefined = undefined;
-	/** How many columns each section stands in; one, for a section not named here. */
-	export let columns: Record<string, number> = {};
-	/** The items that must not scroll away. */
-	export let pinned: (item: T) => boolean = () => false;
-	/** The whole bar, as ButtonRows hands it out. */
-	export let bar: HTMLElement | undefined = undefined;
+	interface Props {
+		items: T[];
+		key: (item: T) => unknown;
+		/** Which section an item is in; consecutive items of one section are drawn together. */
+		section?: (item: T) => unknown;
+		/** How many columns each section stands in; one, for a section not named here. */
+		columns?: Record<string, number>;
+		/** The items that must not scroll away. */
+		pinned?: (item: T) => boolean;
+		/** The whole bar, as ButtonRows hands it out. */
+		bar?: HTMLElement;
+		class?: string;
+		/** The kept `<slot>`s, filled by a runes caller's snippets (`<slot>` reads them from `$$props`, so they are
+		    typed here and not destructured: `probe` is also the probe span's binding). */
+		probe?: Snippet;
+		children?: Snippet<[{ item: T }]>;
+	}
+
+	let {
+		items,
+		key,
+		section = undefined,
+		columns = {},
+		pinned = () => false,
+		bar = $bindable(),
+		class: classes = ''
+	}: Props = $props();
 
 	let probe: HTMLElement;
-	let rows = 1;
+	let rows = $state(1);
 	/** A row's height, in px: the rows that fit share the box between them. */
-	let row = 0;
+	let row = $state(0);
 
-	$: held = items.filter(pinned);
-	$: rest = items.filter((item) => !pinned(item));
-	$: groups = (section ? runsOf(rest, section) : [rest]).map((run) => ({ name: section?.(run[0]) as string | undefined, run }));
+	const held = $derived(items.filter(pinned));
+	const rest = $derived(items.filter((item) => !pinned(item)));
+	const groups = $derived((section ? runsOf(rest, section) : [rest]).map((run) => ({ name: section?.(run[0]) as string | undefined, run })));
 
 	/**
 	 * Size and place every section's thumb; no length where every row shows.
@@ -77,15 +94,24 @@
 			mark();
 		})
 	);
-	afterUpdate(mark);
+	// After an update: a change to what the grids hold moves their thumbs.
+	$effect(() => {
+		void [held, groups, columns, row];
+		mark();
+	});
 </script>
 
+<!-- The slots stay `<slot>`s until the callers pass snippets (the sweep,
+     da-ul23i): a legacy caller's `let:item` and named slot never reach a
+     `{@render}`. -->
+<!-- svelte-ignore slot_element_deprecated -->
 <span class="probe" aria-hidden="true" bind:this={probe}><slot name="probe" /></span>
 
-<div class="pages {$$props.class ?? ''}" style:--row="{row}px" data-rows={rows} bind:this={bar} on:scroll|capture={mark}>
+<div class="pages {classes}" style:--row="{row}px" data-rows={rows} bind:this={bar} onscrollcapture={mark}>
 	{#if held.length}
 		<div class="pinned">
 			{#each held as item (key(item))}
+				<!-- svelte-ignore slot_element_deprecated -->
 				<div class="cell"><slot {item} /></div>
 			{/each}
 		</div>
@@ -95,6 +121,7 @@
 			<div class="section" data-section={name} style:--columns={columns[name ?? ''] ?? 1}>
 				<div class="grid">
 					{#each run as item (key(item))}
+						<!-- svelte-ignore slot_element_deprecated -->
 						<div class="cell"><slot {item} /></div>
 					{/each}
 				</div>

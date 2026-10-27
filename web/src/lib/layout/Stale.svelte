@@ -23,7 +23,7 @@
 	copy's ids cannot collide with the live widget's. `inert`, so nothing in
 	it takes a pointer or the focus.
 -->
-<script context="module" lang="ts">
+<script module lang="ts">
 	import { get } from 'svelte/store';
 	import { currentDb } from '$lib/database.js';
 	import { dry } from '$lib/db.js';
@@ -110,18 +110,24 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 
-	/** The widget's id, which is what its copy is kept under. */
-	export let id: string;
-	/** Whether the widget is mounted: a change to its content counts from then on. */
-	export let live = false;
-	let watch: (() => void) | undefined;
-	$: if (live && watch) void tick().then(watch);
+	interface Props {
+		/** The widget's id, which is what its copy is kept under. */
+		id: string;
+		/** Whether the widget is mounted: a change to its content counts from then on. */
+		live?: boolean;
+	}
 
-	let host: HTMLElement;
-	let gone = false;
+	let { id, live = false }: Props = $props();
+	let watch: (() => void) | undefined = $state();
+	$effect.pre(() => {
+		if (live && watch) void tick().then(watch);
+	});
+
+	let host = $state<HTMLElement>();
+	let gone = $state(false);
 
 	onMount(() => {
-		const body = host.parentElement as HTMLElement;
+		const body = host!.parentElement as HTMLElement;
 		body.dataset.kept = id;
 		const forget = () => delete body.dataset.kept;
 		const html = load()[id];
@@ -129,7 +135,7 @@
 			gone = true;
 			return forget;
 		}
-		const root = host.attachShadow({ mode: 'closed' });
+		const root = host!.attachShadow({ mode: 'closed' });
 		root.adoptedStyleSheets = styles();
 		root.append(Object.assign(document.createElement('div'), { className: 'stale-copy', innerHTML: html }));
 

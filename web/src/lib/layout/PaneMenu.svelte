@@ -57,34 +57,54 @@
 	that element, rotation and all, not to the screen.
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
+	import { createBubbler } from 'svelte/legacy';
 	import { act } from '../act.js';
 	import type { Item } from './menu.js';
 
-	/** The items, from the one builder both menus use (`menu.ts`). */
-	export let items: Item[];
-	/**
-	 * Names the menu for assistive tech: which pane it belongs to. It names
-	 * the BUTTON too, where the button has no words of its own — a trigger
-	 * with words (a tab) is named by them — unless the caller passes an
-	 * `aria-label` of its own, which is what a trigger whose whole word is
-	 * a GLYPH does (the root bar's gear, da-pp1a).
-	 */
-	export let label: string;
-	export let title = 'pane menu';
-	/**
-	 * What the button that opens the menu looks like: the pane's own title
-	 * — a button with no look of its own, laid over the title's box
-	 * (da-9vtw) — or one of its tabs, which is what the root bar's active
-	 * tab is too (da-wjob). Everything else about the menu is the same
-	 * either way, and the attributes a trigger needs beyond these (a tab's
-	 * `role` and `aria-selected`) are passed straight through to the
-	 * button — a `class` among them is ADDED to the look's own rather than
-	 * replacing it, which is how a root tab wears its `modified`
-	 * (RootBar.svelte). `badge` is the square the root bar's `+` is, for a
-	 * button whose whole word is a glyph.
-	 */
-	export let look: 'title' | 'tab' | 'badge' | 'plain' = 'title';
+	interface Props {
+		/** The items, from the one builder both menus use (`menu.ts`). */
+		items: Item[];
+		/**
+		 * Names the menu for assistive tech: which pane it belongs to. It names
+		 * the BUTTON too, where the button has no words of its own — a trigger
+		 * with words (a tab) is named by them — unless the caller passes an
+		 * `aria-label` of its own, which is what a trigger whose whole word is
+		 * a GLYPH does (the root bar's gear, da-pp1a).
+		 */
+		label: string;
+		title?: string;
+		/**
+		 * What the button that opens the menu looks like: the pane's own title
+		 * — a button with no look of its own, laid over the title's box
+		 * (da-9vtw) — or one of its tabs, which is what the root bar's active
+		 * tab is too (da-wjob). Everything else about the menu is the same
+		 * either way, and the attributes a trigger needs beyond these (a tab's
+		 * `role` and `aria-selected`) are passed straight through to the
+		 * button — a `class` among them is ADDED to the look's own rather than
+		 * replacing it, which is how a root tab wears its `modified`
+		 * (RootBar.svelte). `badge` is the square the root bar's `+` is, for a
+		 * button whose whole word is a glyph.
+		 */
+		look?: 'title' | 'tab' | 'badge' | 'plain';
+		children?: Snippet;
+		[key: string]: any;
+	}
+
+	let {
+		items,
+		label,
+		title = 'pane menu',
+		look = 'title',
+		children,
+		...rest
+	}: Props = $props();
+
+	// A caller's `on:keydown`, `on:pointerenter` and `on:focus` are passed on
+	// until the callers are runes too (the sweep, da-ul23i); a caller that
+	// passes `onkeydown` and the rest as props has them in `rest`, which is
+	// spread after these and so wins.
+	const bubble = createBubbler();
 
 	const LOOK: Record<typeof look, string> = {
 		title: 'title',
@@ -96,31 +116,31 @@
 		plain: 'plain'
 	};
 
-	let open = false;
+	let open = $state(false);
 	let button: HTMLButtonElement;
-	let menu: HTMLDivElement | undefined;
-	let at = { top: 0, left: 0 };
+	let menu: HTMLDivElement | undefined = $state();
+	let at = $state({ top: 0, left: 0 });
 	/**
 	 * The open submenu: its item, and the button that opened it. An item is
 	 * known by its LABEL here, as in `within` and the items' `{#each}` key,
 	 * so the labels of one menu must be distinct.
 	 */
-	let sub: { item: (typeof items)[number]; opener: HTMLButtonElement } | null = null;
+	let sub = $state.raw<{ item: (typeof items)[number]; opener: HTMLButtonElement } | null>(null);
 	/** Whether an item opens a submenu beside it: its `list` of words. */
 	const opens = (item?: (typeof items)[number]) => !!item?.list;
-	let subMenu: HTMLDivElement | undefined;
-	let subAt = { top: 0, left: 0 };
+	let subMenu: HTMLDivElement | undefined = $state();
+	let subAt = $state({ top: 0, left: 0 });
 	/**
 	 * The item whose `items` are shown in the menu's place, by label, so a
 	 * switch turned over in there redraws from the caller's fresh list.
 	 */
-	let within: string | null = null;
-	$: shown = (within !== null && items.find((item) => item.label === within)?.items) || items;
+	let within: string | null = $state(null);
+	const shown = $derived((within !== null && items.find((item) => item.label === within)?.items) || items);
 	/**
 	 * The open submenu's words, read from the caller's fresh list by label,
 	 * as `within` is: a switch in a set turned over redraws it in place.
 	 */
-	$: picks = sub ? (shown.find((item) => item.label === sub?.item.label) ?? sub.item).list ?? [] : [];
+	const picks = $derived(sub ? (shown.find((item) => item.label === sub?.item.label) ?? sub.item).list ?? [] : []);
 
 	/** One step in, or back out with null: the menu's first item takes the focus. */
 	async function step(to: string | null) {
@@ -334,21 +354,21 @@
 	}
 </script>
 
-<svelte:window on:pointerdown={onWindowPointerDown} on:keydown|capture={onWindowKey} />
+<svelte:window onpointerdown={onWindowPointerDown} onkeydowncapture={onWindowKey} />
 
 <button
-	{...$$restProps}
+	onkeydown={bubble('keydown')}
+	onpointerenter={bubble('pointerenter')}
+	onfocus={bubble('focus')}
+	{...rest}
 	type="button"
-	class="{LOOK[look]} {$$restProps.class ?? ''}"
+	class="{LOOK[look]} {rest.class ?? ''}"
 	bind:this={button}
 	aria-haspopup="menu"
 	aria-expanded={open}
-	aria-label={$$restProps['aria-label'] ?? ($$slots.default ? undefined : label)}
+	aria-label={rest['aria-label'] ?? (children ? undefined : label)}
 	{title}
-	on:keydown
-	on:pointerenter
-	on:focus
-	on:click={() => (open ? close() : show())}><slot /></button
+	onclick={() => (open ? close() : show())}>{@render children?.()}</button
 >
 
 {#if open}
@@ -361,7 +381,7 @@
 		use:portal={place}
 		style:top="{at.top}px"
 		style:left="{at.left}px"
-		on:keydown={onMenuKey}
+		onkeydown={onMenuKey}
 	>
 		{#each shown as item (item.label)}
 			{#if item.note}
@@ -375,8 +395,8 @@
 							role="menuitem"
 							aria-label={short.title}
 							title={short.title}
-							on:pointerenter={hover}
-							on:click={() => choose(short)}>{short.text}</button
+							onpointerenter={hover}
+							onclick={() => choose(short)}>{short.text}</button
 						>
 					{/each}
 				</div>
@@ -396,8 +416,8 @@
 					use:act={item.act}
 					aria-haspopup={opens(item) || item.items ? 'menu' : undefined}
 					aria-expanded={opens(item) ? sub?.item.label === item.label : undefined}
-					on:pointerenter={(e) => hover(e, item)}
-					on:click={(e) =>
+					onpointerenter={(e) => hover(e, item)}
+					onclick={(e) =>
 						item.items
 							? step(item.label)
 							: opens(item)
@@ -423,7 +443,7 @@
 		use:portal
 		style:top="{subAt.top}px"
 		style:left="{subAt.left}px"
-		on:keydown={onSubKey}
+		onkeydown={onSubKey}
 	>
 		{#each picks as pick (pick.label)}
 			<button
@@ -432,7 +452,7 @@
 				role={pick.toggled === undefined ? 'menuitemradio' : 'menuitemcheckbox'}
 				aria-checked={pick.toggled ?? pick.checked}
 				title={pick.title}
-				on:click={() => (pick.toggled === undefined ? choose(pick) : pick.run())}>{pick.label}</button
+				onclick={() => (pick.toggled === undefined ? choose(pick) : pick.run())}>{pick.label}</button
 			>
 		{/each}
 	</div>

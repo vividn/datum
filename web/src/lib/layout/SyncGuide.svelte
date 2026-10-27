@@ -20,9 +20,13 @@
 	import { run } from '$lib/run.js';
 	import { openPlace } from './shell.js';
 
-	export let widget = '';
+	interface Props {
+		widget?: string;
+	}
 
-	let reference = '';
+	let { widget = '' }: Props = $props();
+
+	let reference = $state('');
 	onMount(async () => {
 		const { stdout, stderr } = await run(helpArgv('sync'));
 		reference = stdout || stderr;
@@ -39,7 +43,7 @@
 	<h3>Where it is</h3>
 	<p>
 		The gear at the top, then <b class="ui">Sync</b>; or type <code>sync</code> in the input bar.
-		<button type="button" class="command" use:act={'open'} on:click={() => void openPlace('sync')}>Open Sync</button>
+		<button type="button" class="command" use:act={'open'} onclick={() => void openPlace('sync')}>Open Sync</button>
 	</p>
 
 	<h3>Connect a second device</h3>

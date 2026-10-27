@@ -42,7 +42,7 @@
 	// it is a navigation into another database.
 	const home = withDb('/');
 
-	let unknown: string | null = null;
+	let unknown: string | null = $state(null);
 
 	onMount(() => arriving(enter()));
 

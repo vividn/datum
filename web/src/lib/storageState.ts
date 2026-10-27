@@ -80,6 +80,12 @@ export const persisted = readable<boolean | null>(null, (set) => {
 	});
 });
 
+// The request is the page's, so the page holds the store for its whole life:
+// a store asks only while something subscribes, and whoever reads the
+// sentence is incidental. The gear menu's items were the one reader on most
+// pages, and a runes menu reads its items only while it is open (da-u9a6i).
+if (browser) persisted.subscribe(() => {});
+
 /**
  * Whether entries typed now would be lost on reload.
  *

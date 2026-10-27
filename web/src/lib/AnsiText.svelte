@@ -23,12 +23,16 @@
 	 */
 	import type { AnsiSpan } from './ansi.js';
 
-	/**
-	 * The runs to paint, as `ansiSpans()` returned them. Immutable: the
-	 * same array is the same runs, so a caller that keeps its spans (the
-	 * tail's rows, da-j6frl) is not painted again on every update.
-	 */
-	export let spans: AnsiSpan[];
+	interface Props {
+		/**
+		 * The runs to paint, as `ansiSpans()` returned them. Immutable: the
+		 * same array is the same runs, so a caller that keeps its spans (the
+		 * tail's rows, da-j6frl) is not painted again on every update.
+		 */
+		spans: AnsiSpan[];
+	}
+
+	let { spans }: Props = $props();
 </script>
 
 {#each spans as span}<span
@@ -38,4 +42,4 @@
 		style:opacity={span.dim ? '0.6' : null}
 		style:font-style={span.italic ? 'italic' : null}
 		style:text-decoration={span.underline ? 'underline' : null}>{span.text}</span
-	>{/each}<svelte:options immutable />
+	>{/each}

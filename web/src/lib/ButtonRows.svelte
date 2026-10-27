@@ -31,55 +31,84 @@
 	style them where they are written.
 -->
 <script lang="ts" generics="T">
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { MAX_ROWS, lanesOf, runsOf, watchRows, type Axis } from './commands.js';
 
-	export let items: T[];
-	export let key: (item: T) => unknown;
-	export let axis: Axis = 'x';
-	/** How `items` are laid into so many rows; dealt by index unless the widget says otherwise. */
-	export let arrange: (items: T[], rows: number) => T[][] = lanesOf;
-	/** Which section an item is in; consecutive items of one section are drawn together. */
-	export let section: ((item: T) => unknown) | undefined = undefined;
-	/** The most rows drawn, whatever the box fits; `Infinity` for every row it fits. */
-	export let maxRows = MAX_ROWS;
-	/** The scroller itself, for a widget that has to put a scroll back. */
-	export let bar: HTMLElement | undefined = undefined;
+	interface Props {
+		items: T[];
+		key: (item: T) => unknown;
+		axis?: Axis;
+		/** How `items` are laid into so many rows; dealt by index unless the widget says otherwise. */
+		arrange?: (items: T[], rows: number) => T[][];
+		/** Which section an item is in; consecutive items of one section are drawn together. */
+		section?: (item: T) => unknown;
+		/** The most rows drawn, whatever the box fits; `Infinity` for every row it fits. */
+		maxRows?: number;
+		/** The scroller itself, for a widget that has to put a scroll back. */
+		bar?: HTMLElement;
+		class?: string;
+		onpointerenter?: (e: PointerEvent) => void;
+		onpointerleave?: (e: PointerEvent) => void;
+		/** The kept `<slot>`s, filled by a runes caller's snippets (`<slot>` reads them from `$$props`, so they are
+		    typed here and not destructured: `probe` is also the probe span's binding). */
+		probe?: Snippet;
+		children?: Snippet<[{ item: T }]>;
+	}
+
+	let {
+		items,
+		key,
+		axis = 'x',
+		arrange = lanesOf,
+		section = undefined,
+		maxRows = MAX_ROWS,
+		bar = $bindable(),
+		class: classes = '',
+		onpointerenter,
+		onpointerleave
+	}: Props = $props();
 
 	let probe: HTMLElement;
 	/** The rows the box fits; the cap is applied after, so it can move on its own. */
-	let fit = 1;
-	$: rows = Math.min(maxRows, fit);
+	let fit = $state(1);
+	const rows = $derived(Math.min(maxRows, fit));
 
 	onMount(() => watchRows(bar!, probe, (n) => (fit = n), axis));
 
-	$: groups = (section ? runsOf(items, section) : [items]).map((run) => ({
-		name: section?.(run[0]),
-		lanes: arrange(run, rows)
-	}));
+	const groups = $derived(
+		(section ? runsOf(items, section) : [items]).map((run) => ({
+			name: section?.(run[0]),
+			lanes: arrange(run, rows)
+		}))
+	);
 	/** Every group is as many lines as the fullest, so a line runs straight across them. */
-	$: lines = Math.max(1, ...groups.map(({ lanes }) => lanes.length));
+	const lines = $derived(Math.max(1, ...groups.map(({ lanes }) => lanes.length)));
 </script>
 
 <!-- The measuring stick: the widget's own button, laid out and invisible,
      outside the bar and out of flow, so nothing that reads the bar's
      buttons finds it. -->
+<!-- The slots stay `<slot>`s until the callers pass snippets (the sweep,
+     da-ul23i): a legacy caller's `let:item` and named slot never reach a
+     `{@render}`. -->
+<!-- svelte-ignore slot_element_deprecated -->
 <span class="probe" aria-hidden="true" bind:this={probe}><slot name="probe" /></span>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="bar {$$props.class ?? ''} {axis}"
+	class="bar {classes} {axis}"
 	bind:this={bar}
 	data-rows={rows}
 	data-axis={axis}
-	on:pointerenter
-	on:pointerleave
+	{onpointerenter}
+	{onpointerleave}
 >
 	{#each groups as { name, lanes }}
 		<div class="section" data-section={name} style:--lines={lines}>
 			{#each lanes as lane}
 				<div class="lane">
 					{#each lane as item (key(item))}
+						<!-- svelte-ignore slot_element_deprecated -->
 						<slot {item} />
 					{/each}
 				</div>

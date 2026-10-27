@@ -6,20 +6,25 @@
 	tap meant as «next» never logs the field the ring is round.
 -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { shown, tour } from '$lib/tour.js';
 
 	/** Where the stop's element is drawn, read every frame: a pane may still be settling. */
-	let box: DOMRect | null = null;
+	let box = $state<DOMRect | null>(null);
 	let frame = 0;
-	let height = 0;
-	let next: HTMLButtonElement | undefined;
+	let height = $state(0);
+	let next: HTMLButtonElement | undefined = $state();
 
-	$: stop = $tour[0];
-	$: follow(stop);
-	$: if (stop && next) next.focus();
+	const stop = $derived($tour[0]);
+	$effect.pre(() => {
+		const on = stop;
+		untrack(() => follow(on));
+	});
+	$effect.pre(() => {
+		if (stop && next) next.focus();
+	});
 	/** The sentence goes under the ring where it fits, else over it, else inside its foot. */
-	$: place = !box ? '' : box.bottom + 150 < height ? `top: ${box.bottom + 10}px` : box.top > 150 ? `bottom: ${height - box.top + 10}px` : `bottom: ${height - box.bottom + 10}px`;
+	const place = $derived(!box ? '' : box.bottom + 150 < height ? `top: ${box.bottom + 10}px` : box.top > 150 ? `bottom: ${height - box.top + 10}px` : `bottom: ${height - box.bottom + 10}px`);
 
 	function follow(on: typeof stop): void {
 		cancelAnimationFrame(frame);
@@ -44,11 +49,11 @@
 	}
 </script>
 
-<svelte:window bind:innerHeight={height} on:keydown|capture={key} />
+<svelte:window bind:innerHeight={height} onkeydowncapture={key} />
 
 {#if stop && box}
-	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-	<div class="tour" on:click={onward}>
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div class="tour" onclick={onward}>
 		<div
 			class="ring"
 			style:left="{box.left - 4}px"
@@ -59,8 +64,8 @@
 		<div class="say" role="dialog" aria-label="tour" style={place}>
 			<p aria-live="polite">{stop.say}</p>
 			<div class="acts">
-				<button type="button" class="skip" on:click|stopPropagation={end}>skip</button>
-				<button type="button" class="next" bind:this={next} on:click|stopPropagation={onward}
+				<button type="button" class="skip" onclick={(e) => (e.stopPropagation(), end())}>skip</button>
+				<button type="button" class="next" bind:this={next} onclick={(e) => (e.stopPropagation(), onward())}
 					>{$tour.length === 1 ? 'done' : 'next'}</button
 				>
 			</div>

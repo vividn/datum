@@ -20,18 +20,22 @@
 <script lang="ts">
 	import { stripAnsi } from '$lib/ansi.js';
 
-	/** What the command printed: stdout while there is any, else stderr. */
-	export let text = '';
-	/** Whether to paint it as a failure. */
-	export let error = false;
-	/** How many lines of it the surface has room for. */
-	export let lines = 4;
+	interface Props {
+		/** What the command printed: stdout while there is any, else stderr. */
+		text?: string;
+		/** Whether to paint it as a failure. */
+		error?: boolean;
+		/** How many lines of it the surface has room for. */
+		lines?: number;
+	}
+
+	let { text = '', error = false, lines = 4 }: Props = $props();
 
 	const SVG_START = /^\s*(?:<\?xml[\s?]|<svg[\s>])/;
 
-	$: drawing = SVG_START.test(text);
-	$: all = stripAnsi(text).replace(/\n+$/, '').split('\n');
-	$: shown = drawing ? [] : all.slice(-lines);
+	const drawing = $derived(SVG_START.test(text));
+	const all = $derived(stripAnsi(text).replace(/\n+$/, '').split('\n'));
+	const shown = $derived(drawing ? [] : all.slice(-lines));
 </script>
 
 <div class="raw" class:error>

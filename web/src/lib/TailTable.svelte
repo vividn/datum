@@ -85,7 +85,7 @@
 	selection moved goes back to the live end.
 -->
 <script lang="ts">
-	import { onDestroy, tick } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { ansiSpans, type AnsiSpan } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
 	import StateCell from './StateCell.svelte';
@@ -99,14 +99,18 @@
 	import { runKey } from './run.js';
 	import { tailListing, type TailColumn, type TailRow } from './tail.js';
 
-	/** Any change re-reads the listing. The pane bumps it after each run. */
-	export let epoch = 0;
-	/** Shown when the listing is empty. */
-	export let empty = '';
-	/** The pane's content box, once measured (`CliPane.svelte`'s `box`). */
-	export let box: PaneBox | null = null;
-	/** The pane's scrolling body: where the reader is, and what is pinned. */
-	export let scroller: HTMLElement | undefined = undefined;
+	interface Props {
+		/** Any change re-reads the listing. The pane bumps it after each run. */
+		epoch?: number;
+		/** Shown when the listing is empty. */
+		empty?: string;
+		/** The pane's content box, once measured (`CliPane.svelte`'s `box`). */
+		box?: PaneBox | null;
+		/** The pane's scrolling body: where the reader is, and what is pinned. */
+		scroller?: HTMLElement | undefined;
+	}
+
+	let { epoch = 0, empty = '', box = null, scroller = undefined }: Props = $props();
 
 	/** Most rows the table holds. Past it, older rows replace newer ones. */
 	const CAP = 300;
@@ -144,31 +148,31 @@
 	/** The columns a narrow pane gives up, in the order it gives them up. */
 	const SACRIFICE = ['hid', '_n'];
 
-	let keys: string[] = [];
-	let headers: Record<string, string> = {};
+	let keys: string[] = $state([]);
+	let headers: Record<string, string> = $state({});
 	/** Oldest first, newest at the bottom. */
-	let rows: Shown[] = [];
+	let rows = $state.raw<Shown[]>([]);
 	/** The rows of the screen as last replaced: what the width probe decides the columns by (da-gtk48). */
-	let probed: Shown[] = [];
+	let probed = $state.raw<Shown[]>([]);
 	/** The columns' widths, held while rows arrive, and the box width they were measured in; null lays them out afresh. */
-	let widths: Record<string, number> | null = null;
+	let widths = $state.raw<Record<string, number> | null>(null);
 	let widthsIn = 0;
-	let error = '';
+	let error = $state('');
 	/** How many reads have been started, and the newest one on screen. */
 	let started = 0;
-	let shown = -1;
+	let shown = $state(-1);
 
-	let thead: HTMLTableSectionElement | undefined;
-	let tbody: HTMLTableSectionElement | undefined;
+	let thead: HTMLTableSectionElement | undefined = $state();
+	let tbody: HTMLTableSectionElement | undefined = $state();
 	/** The probe: a header row and a one-line row, hidden, to measure by. */
-	let probeHead: HTMLTableSectionElement | undefined;
-	let probeRows: HTMLTableSectionElement | undefined;
+	let probeHead: HTMLTableSectionElement | undefined = $state();
+	let probeRows: HTMLTableSectionElement | undefined = $state();
 	/** The width probe: every column, every held row, words whole. */
-	let probeWide: HTMLDivElement | undefined;
+	let probeWide: HTMLDivElement | undefined = $state();
 	/** How many of `SACRIFICE` are not drawn; and the fewest the box and epoch allow. */
-	let dropped = 0;
-	let least = 0;
-	$: cols = keys.filter((key) => !SACRIFICE.slice(0, dropped).includes(key));
+	let dropped = $state(0);
+	let least = $state(0);
+	const cols = $derived(keys.filter((key) => !SACRIFICE.slice(0, dropped).includes(key)));
 	/** Where the widget itself last scrolled to: the event that reports it is not the reader's. */
 	let own: number | null = null;
 	/** Where the body was at its last scroll event, or where the widget has put it since: below it now is the reader going up. */
@@ -185,16 +189,16 @@
 	/** Every listing's bounds: the field and the range. */
 	const bounds = () => ({ ...(field ? { field } : {}), ...range });
 	/** The newest row held is the listing's newest: false below a jump, until paging down reaches it. */
-	let live = true;
+	let live = $state(true);
 	/** The selection moved the tail, so clearing it gives the live end back. */
 	let jumped = false;
 	/** What the tail last followed: a hid, `@<ms>` for an instant, or '' for nothing. */
 	let followed = '';
 
 	/** Rows landed below the reader's view (or the live end was let go). */
-	let unseen = false;
+	let unseen = $state(false);
 	/** The page above came back with nothing new: the listing's beginning. */
-	let exhausted = false;
+	let exhausted = $state(false);
 	/** Bumped whenever the screen is replaced, so a page in flight for the old one is dropped. */
 	let generation = 0;
 	let paging = false;
@@ -207,7 +211,7 @@
 	 */
 	let away = false;
 	/** Room a kept place needed past the slack, until the screen is replaced. */
-	let extra = 0;
+	let extra = $state(0);
 
 	/**
 	 * The count the screen, as drawn, settled on, when the probe's is not
@@ -221,27 +225,34 @@
 	 * its rows — kept across an epoch, since that screen is still shown.
 	 */
 	const unsettled = { n: null as number | null, fits: 0, over: Infinity };
-	let drawn = { box: null as PaneBox | null, epoch: -1, ...unsettled, slack: Infinity };
-	$: if (box !== drawn.box) {
-		drawn = { box, epoch, ...unsettled, slack: Infinity };
-		least = 0;
-	}
-	$: if (epoch !== drawn.epoch) {
-		drawn = { ...drawn, epoch, ...unsettled };
-		least = 0;
-	}
+	let drawn = $state.raw({ box: null as PaneBox | null, epoch: -1, ...unsettled, slack: Infinity });
+	$effect.pre(() => {
+		if (box !== drawn.box) {
+			drawn = { box, epoch, ...unsettled, slack: Infinity };
+			least = 0;
+		}
+	});
+	$effect.pre(() => {
+		if (epoch !== drawn.epoch) {
+			drawn = { ...drawn, epoch, ...unsettled };
+			least = 0;
+		}
+	});
 
 	/** The count the box holds, and the slack under it. Null until measured, or while the pane is hidden. */
-	$: fit = measure(box, probeHead, probeRows);
-	$: n = fit ? (drawn.n ?? fit.n) : null;
-	$: slack = fit ? Math.min(fit.slack, drawn.slack) : 0;
+	const fit = $derived(measure(box, probeHead, probeRows));
+	const n = $derived(fit ? (drawn.n ?? fit.n) : null);
+	const slack = $derived(fit ? Math.min(fit.slack, drawn.slack) : 0);
 	// A box that holds no row still asks for one: its columns are the
 	// header. A new box lays the listing out again at the same count: its
 	// width rewraps — but asks the CLI only if the count changed (da-4glsf).
-	$: if (n !== null && box) void refresh(Math.max(1, n), epoch);
-	$: visible = n === 0 ? [] : rows;
+	$effect.pre(() => {
+		const count = n, at = epoch;
+		if (count !== null && box) untrack(() => void refresh(Math.max(1, count), at));
+	});
+	const visible = $derived(n === 0 ? [] : rows);
 	/** The row the selected instant's line is over (da-lqz3j); past the last, under it; -1 for none. */
-	$: line = $cursor && !$cursor.span ? lineOver(visible, +$cursor.at, exhausted, live) : -1;
+	const line = $derived($cursor && !$cursor.span ? lineOver(visible, +$cursor.at, exhausted, live) : -1);
 
 	/** Where `t` falls among `shown`, or -1 when it is past an end that is not the listing's. */
 	function lineOver(shown: Shown[], t: number, first: boolean, last: boolean): number {
@@ -255,7 +266,10 @@
 	 * afresh. The counts that were settled against the old rows go with
 	 * them — a narrowed listing wraps differently and is measured again.
 	 */
-	$: narrow($fieldPill, rangeOf($cursor));
+	$effect.pre(() => {
+		const next = $fieldPill, within = rangeOf($cursor);
+		untrack(() => narrow(next, within));
+	});
 
 	/**
 	 * A selection with a length, as the CLI's bounds: dated, so `--since`
@@ -453,8 +467,7 @@
 			headers[column.key] = column.key.startsWith(column.header) ? column.key : column.header;
 			if (!keys.includes(column.key)) keys.push(column.key);
 		}
-		headers = headers;
-		keys = keys.sort((a, b) => rank(a) - rank(b));
+		keys.sort((a, b) => rank(a) - rank(b));
 	}
 
 	const nearBottom = () =>
@@ -636,7 +649,10 @@
 	 * Follow the selection (da-lqz3j): an instant with no length, or the
 	 * entry selected last. A range is `narrow`'s, and leaves both alone.
 	 */
-	$: if (n !== null) follow($cursor, $selected);
+	$effect.pre(() => {
+		const c = $cursor, hids = $selected;
+		if (n !== null) untrack(() => follow(c, hids));
+	});
 
 	function follow(c: Cursor | null, hids: string[]): void {
 		const to = c ? (c.span ? '' : `@${+c.at}`) : (hids.at(-1) ?? '');
@@ -718,7 +734,10 @@
 	// cannot be scrolled at all, so a wheel or a finger pulling down at the
 	// top asks the same way.
 	let attached: HTMLElement | undefined;
-	$: attach(scroller);
+	$effect.pre(() => {
+		const el = scroller;
+		untrack(() => attach(el));
+	});
 
 	function attach(el: HTMLElement | undefined): void {
 		if (el === attached) return;
@@ -787,7 +806,7 @@
 	 * a row's mouse belongs to its text, and knows no `pressTraveled`.
 	 */
 	let holding: ReturnType<typeof setTimeout> | undefined;
-	let held = false;
+	let held = $state(false);
 	const unpress = () => clearTimeout(holding);
 	function press(e: PointerEvent, hid: string): void {
 		unpress();
@@ -867,14 +886,14 @@
 					class:selected={isSelected($selected, row.hid)}
 					class:line={i === line}
 					class:line-under={line === visible.length && i === line - 1}
-					on:mousedown={(e) => e.shiftKey && e.preventDefault()}
-					on:click={(e) =>
+					onmousedown={(e) => e.shiftKey && e.preventDefault()}
+					onclick={(e) =>
 						tapped(e) && !pressTraveled() && select(row.hid, e, visible.map((r) => r.hid))}
-					on:pointerdown={(e) => press(e, row.hid)}
-					on:pointerup={unpress}
-					on:pointercancel={unpress}
-					on:pointerleave={unpress}
-					on:contextmenu={(e) => held && e.preventDefault()}
+					onpointerdown={(e) => press(e, row.hid)}
+					onpointerup={unpress}
+					onpointercancel={unpress}
+					onpointerleave={unpress}
+					oncontextmenu={(e) => held && e.preventDefault()}
 					class:start={exhausted && i === 0}
 					title={exhausted && i === 0 ? 'the start of the log' : undefined}
 				>
@@ -893,7 +912,7 @@
 	<div class="slack" style:height="{slack + extra}px"></div>
 	{#if unseen}
 		<div class="foot">
-			<button type="button" class="new" on:click={jump}>↓ new</button>
+			<button type="button" class="new" onclick={jump}>↓ new</button>
 		</div>
 	{/if}
 {/if}

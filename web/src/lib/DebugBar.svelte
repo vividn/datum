@@ -41,12 +41,12 @@
 	];
 
 	/** The artifact: the live pair, as one line to select and send back. */
-	$: pair = `TAU=${$tuning.tau} DETENT=${$tuning.detent}`;
-	$: moved = $tuning.tau !== DEFAULT_TUNING.tau || $tuning.detent !== DEFAULT_TUNING.detent;
+	const pair = $derived(`TAU=${$tuning.tau} DETENT=${$tuning.detent}`);
+	const moved = $derived($tuning.tau !== DEFAULT_TUNING.tau || $tuning.detent !== DEFAULT_TUNING.detent);
 
 	/** A clipboard is a convenience; the line is selectable either way. */
-	$: canCopy = typeof navigator !== 'undefined' && !!navigator.clipboard;
-	let copied = false;
+	const canCopy = $derived(typeof navigator !== 'undefined' && !!navigator.clipboard);
+	let copied = $state(false);
 
 	function set(knob: (typeof KNOBS)[number], value: string): void {
 		// An empty box is a box being retyped, not a request for zero. What
@@ -80,7 +80,7 @@
 					step="1"
 					value={$tuning[knob.key]}
 					aria-label={knob.name}
-					on:change={(e) => set(knob, e.currentTarget.value)}
+					onchange={(e) => set(knob, e.currentTarget.value)}
 				/>
 				<span class="unit">{knob.unit}</span>
 				<span class="was">default {DEFAULT_TUNING[knob.key]}</span>
@@ -93,7 +93,7 @@
 				step="1"
 				value={$tuning[knob.key]}
 				aria-label="{knob.name} slider"
-				on:input={(e) => set(knob, e.currentTarget.value)}
+				oninput={(e) => set(knob, e.currentTarget.value)}
 			/>
 		</div>
 	{/each}
@@ -102,9 +102,9 @@
 <p class="report">
 	<code class="pair">{pair}</code>
 	{#if canCopy}
-		<button type="button" class="tool" on:click={copy}>{copied ? 'copied' : 'copy'}</button>
+		<button type="button" class="tool" onclick={copy}>{copied ? 'copied' : 'copy'}</button>
 	{/if}
-	<button type="button" class="tool" disabled={!moved} on:click={resetTuning}>reset to defaults</button>
+	<button type="button" class="tool" disabled={!moved} onclick={resetTuning}>reset to defaults</button>
 </p>
 
 <style>

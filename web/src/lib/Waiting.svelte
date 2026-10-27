@@ -25,22 +25,25 @@
 	import { ready } from './layout/engine.js';
 
 	/** When the wait began, on `performance.now()`: another tab's hold, the upgrade, or the navigation. */
-	$: since = $blocked ?? $upgrading ?? ($first && $ready ? null : 0);
+	const since = $derived($blocked ?? $upgrading ?? ($first && $ready ? null : 0));
 
-	let now = browser ? performance.now() : 0;
+	let now = $state(browser ? performance.now() : 0);
 	// Read again when the wait's start moves: the tick's `now` is up to
 	// 250 ms old, which put a wait dated a second back under a second and
 	// blinked the line out as its words changed (kimi-k3 on #493).
-	$: if (browser && since !== null) now = performance.now();
 	let timer: ReturnType<typeof setInterval> | undefined;
-	$: if (browser && since !== null) timer ??= setInterval(() => (now = performance.now()), 250);
-	$: if (since === null && timer) {
-		clearInterval(timer);
-		timer = undefined;
-	}
+	$effect.pre(() => {
+		if (browser && since !== null) {
+			now = performance.now();
+			timer ??= setInterval(() => (now = performance.now()), 250);
+		} else if (timer) {
+			clearInterval(timer);
+			timer = undefined;
+		}
+	});
 	onDestroy(() => clearInterval(timer));
 
-	$: seconds = since === null ? 0 : Math.floor((now - since) / 1000);
+	const seconds = $derived(since === null ? 0 : Math.floor((now - since) / 1000));
 </script>
 
 {#if since !== null && seconds >= 1}

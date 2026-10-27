@@ -1,4 +1,4 @@
-<script lang="ts" context="module">
+<script lang="ts" module>
 	/*
 	 * A row's state as the three values it is made of (da-fknn8) — what the
 	 * field was in before it, what it says, and what continues forward —
@@ -53,10 +53,14 @@
 	import AnsiText from './AnsiText.svelte';
 	import type { TailRow } from './tail.js';
 
-	/** The row, as `datum tail --json` reports it, never changed in place (immutable). */
-	export let row: TailRow;
-	/** The row's painted `state` cell, for a listing with no parts to draw. */
-	export let painted = '';
+	interface Props {
+		/** The row, as `datum tail --json` reports it, never changed in place (immutable). */
+		row: TailRow;
+		/** The row's painted `state` cell, for a listing with no parts to draw. */
+		painted?: string;
+	}
+
+	let { row, painted = '' }: Props = $props();
 
 	/**
 	 * The word a slot stands for, for the hover. A colour names no state on
@@ -74,16 +78,16 @@
 		return ignored(state) ? NULL_SET : (text ?? NULL_SET);
 	}
 
-	$: lead = typeof row.previous_state_cell === 'string' ? row.previous_state_cell : '';
-	$: trail = typeof row.following_state_cell === 'string' ? row.following_state_cell : '';
+	const lead = $derived(typeof row.previous_state_cell === 'string' ? row.previous_state_cell : '');
+	const trail = $derived(typeof row.following_state_cell === 'string' ? row.following_state_cell : '');
 	/**
 	 * A listing from before these keys existed — or any row the CLI did not
 	 * paint parts for — falls back to the whole painted cell, which is what
 	 * was drawn before and is the same pixels.
 	 */
-	$: body = typeof row.state_body === 'string' ? row.state_body : painted;
+	const body = $derived(typeof row.state_body === 'string' ? row.state_body : painted);
 	/** An occur dot's declared keys, plain, after the cell as the CLI prints them (da-545c9). */
-	$: keys = typeof row.keys === 'string' ? row.keys : '';
+	const keys = $derived(typeof row.keys === 'string' ? row.keys : '');
 
 	/*
 	 * A NOTE ON THE MARKUP BELOW, which lives here rather than in an HTML
@@ -107,7 +111,7 @@
 		class="edge to"
 		title={hover(row.following_state, row.following_state_label)}
 		><AnsiText spans={ansiSpans(trail)} /></span
-	>{/if}{#if keys}<span class="keys">{` ${keys}`}</span>{/if}<svelte:options immutable />
+	>{/if}{#if keys}<span class="keys">{` ${keys}`}</span>{/if}
 
 <style>
 	/*

@@ -38,15 +38,19 @@
 	import type { Choice, Offer } from './chooser.js';
 	import type { KitWidget } from './store.js';
 
-	/** The layouts this tab could hold, in order (chooser.ts). */
-	export let layouts: Offer[] = [];
-	/** The widgets this database's kits ship (da-gh37k), each the `kit` kind. */
-	export let widgets: (KitWidget & { kit: string })[] = [];
+	interface Props {
+		/** The layouts this tab could hold, in order (chooser.ts). */
+		layouts?: Offer[];
+		/** The widgets this database's kits ship (da-gh37k), each the `kit` kind. */
+		widgets?: (KitWidget & { kit: string })[];
+	}
+
+	let { layouts = [], widgets = [] }: Props = $props();
 
 	const dispatch = createEventDispatcher<{ close: Choice | null }>();
 
 	let dialog: HTMLDialogElement;
-	let chosen: Choice | null = null;
+	let chosen = $state.raw<Choice | null>(null);
 
 	onMount(() => dialog.showModal());
 
@@ -59,13 +63,13 @@
 <!-- The backdrop is the dialog's own box outside its content, so a click on
      it lands on the dialog: that is what closes it, and it is the pointer's
      shorthand for the Escape the keyboard already has. -->
-<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 <dialog
 	class="chooser"
 	aria-label={CHANGE}
 	bind:this={dialog}
-	on:close={() => dispatch('close', chosen)}
-	on:click={(e) => e.target === dialog && dialog.close()}
+	onclose={() => dispatch('close', chosen)}
+	onclick={(e) => e.target === dialog && dialog.close()}
 >
 	<h2>{CHANGE}</h2>
 	<!-- Nothing to offer, nothing to head: inside `main`, with nothing else
@@ -78,7 +82,7 @@
 					type="button"
 					class="layout"
 					data-source={source}
-					on:click={() => pick({ layout: name })}
+					onclick={() => pick({ layout: name })}
 				>
 					<span class="name">{name}</span>{#if source.startsWith('kit:')}<span class="from"
 							>{source.slice(4)}</span
@@ -90,14 +94,14 @@
 	<h3>Widgets</h3>
 	<div class="group" role="group" aria-label="Widgets">
 		{#each pickableIn(currentDb()) as kind (kind)}
-			<button type="button" class="widget" on:click={() => pick({ kind })}>{titleOf(kind)}</button>
+			<button type="button" class="widget" onclick={() => pick({ kind })}>{titleOf(kind)}</button>
 		{/each}
 		{#each widgets as { kit, name, title } (`${kit}/${name}`)}
 			<button
 				type="button"
 				class="widget"
 				data-source="kit:{kit}"
-				on:click={() => pick({ kind: 'kit', settings: { kit, widget: name, ...(title ? { title } : {}) } })}
+				onclick={() => pick({ kind: 'kit', settings: { kit, widget: name, ...(title ? { title } : {}) } })}
 				><span class="name">{title ?? name}</span><span class="from">{kit}</span></button
 			>
 		{/each}

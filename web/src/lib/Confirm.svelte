@@ -17,17 +17,29 @@
 	import { ansiSpans } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
 
-	export let text: string;
-	export let action: string;
-	export let also: string[] = [];
-	export let name = '';
-	export let cancel = 'cancel';
-	export let kind: ActKind = 'run';
-	export let danger: 'action' | 'cancel' | null = 'action';
+	interface Props {
+		text: string;
+		action: string;
+		also?: string[];
+		name?: string;
+		cancel?: string;
+		kind?: ActKind;
+		danger?: 'action' | 'cancel' | null;
+	}
+
+	let {
+		text,
+		action,
+		also = [],
+		name = '',
+		cancel = 'cancel',
+		kind = 'run',
+		danger = 'action'
+	}: Props = $props();
 
 	const dispatch = createEventDispatcher<{ close: boolean; chose: string | null }>();
 	let dialog: HTMLDialogElement;
-	let typed = '';
+	let typed = $state('');
 
 	onMount(() => dialog.showModal());
 </script>
@@ -37,7 +49,7 @@
 	class:danger
 	style:--act={danger === 'action' ? 'var(--error)' : 'var(--accent)'}
 	bind:this={dialog}
-	on:close={() => {
+	onclose={() => {
 		const pressed = typed === name && [action, ...also].includes(dialog.returnValue) ? dialog.returnValue : null;
 		dispatch('chose', pressed);
 		dispatch('close', pressed === action);
@@ -52,7 +64,7 @@
 			{#each [action, ...also] as a}
 				<button value={a} use:act={kind}>{a}</button>
 			{/each}
-			<button type="button" class:danger={danger === 'cancel'} on:click={() => dialog.close()}>{cancel}</button>
+			<button type="button" class:danger={danger === 'cancel'} onclick={() => dialog.close()}>{cancel}</button>
 		</div>
 	</form>
 </dialog>

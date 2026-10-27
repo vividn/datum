@@ -686,6 +686,20 @@ describe('asking the browser to keep it', () => {
 		);
 	});
 
+	// An app of its own, whose gear menu is never opened: the request is the
+	// page's, not the menu's. The menu reads its items only while it is open
+	// (da-u9a6i), and the store that asks was subscribed through them alone.
+	test('the first durable write asks with nothing on the page reading the sentence', async () => {
+		await withApp(
+			async (app) => {
+				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
+				assert.equal(logged.code, 0, logged.stderr);
+				await until(() => persistCalls(app), (n) => n === 1);
+			},
+			{ ...REPL, prepare: spyOnPersist }
+		);
+	});
+
 	test('a persist that throws does not fail the write', async () => {
 		await session(async (app) => {
 			const logged = await app.run(['occur', 'coffee', '-t', '0700']);

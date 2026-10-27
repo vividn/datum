@@ -18,9 +18,13 @@
 	import { copyOf, damaged, reset } from './damaged.js';
 	import { OPFS_DIR } from './databases.js';
 
-	export let db: string;
+	interface Props {
+		db: string;
+	}
 
-	let said = '';
+	let { db }: Props = $props();
+
+	let said = $state('');
 
 	async function download() {
 		said = '';
@@ -58,8 +62,8 @@
 		it, and clearing site data in the browser may not either.
 	</p>
 	<div class="buttons">
-		<button use:act={'run'} on:click={download}>Download a copy</button>
-		<button use:act={'open'} on:click={resetDb}>Reset this database</button>
+		<button use:act={'run'} onclick={download}>Download a copy</button>
+		<button use:act={'open'} onclick={resetDb}>Reset this database</button>
 	</div>
 	{#if said}<p class="said">{said}</p>{/if}
 </section>

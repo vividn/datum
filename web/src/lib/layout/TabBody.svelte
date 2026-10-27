@@ -22,29 +22,40 @@
 	mounted, but only one is ACTIVE, and the portal keys on that.
 -->
 <script lang="ts">
-	import { getContext, setContext } from 'svelte';
+	import { getContext, setContext, untrack, type Snippet } from 'svelte';
 	import { derived, writable, type Writable } from 'svelte/store';
 
-	export let active: boolean;
-	/** The tab a swipe in hand is bringing on. */
-	export let beside = false;
-	/**
-	 * How much smaller, each side, a root tab's layout lands than the one in
-	 * front (`lands`, PaneFrame.svelte): behind, it keeps the box it is drawn
-	 * in up front, so nothing in it is drawn again as it comes and goes. A
-	 * larger one is grown inside its box, which clips it: a layout behind
-	 * never widens the page's scroll.
-	 */
-	export let shy = 0;
-	/**
-	 * The root split's legible floor, which the tab in front holds as its
-	 * own: an overflowing split inside a smaller box would lose the
-	 * content's end padding from the page's scroll. A tab behind takes no
-	 * floor, being clipped. In front or behind, the tab is a flex box, so a
-	 * switch changes its `position` and not its `display`: going behind
-	 * lays out the box and not the layout in it again (da-1acrc).
-	 */
-	export let least: { width: number; height: number } | undefined = undefined;
+	interface Props {
+		active: boolean;
+		/** The tab a swipe in hand is bringing on. */
+		beside?: boolean;
+		/**
+		 * How much smaller, each side, a root tab's layout lands than the one in
+		 * front (`lands`, PaneFrame.svelte): behind, it keeps the box it is drawn
+		 * in up front, so nothing in it is drawn again as it comes and goes. A
+		 * larger one is grown inside its box, which clips it: a layout behind
+		 * never widens the page's scroll.
+		 */
+		shy?: number;
+		/**
+		 * The root split's legible floor, which the tab in front holds as its
+		 * own: an overflowing split inside a smaller box would lose the
+		 * content's end padding from the page's scroll. A tab behind takes no
+		 * floor, being clipped. In front or behind, the tab is a flex box, so a
+		 * switch changes its `position` and not its `display`: going behind
+		 * lays out the box and not the layout in it again (da-1acrc).
+		 */
+		least?: { width: number; height: number } | undefined;
+		children?: Snippet;
+	}
+
+	let {
+		active,
+		beside = false,
+		shy = 0,
+		least = undefined,
+		children
+	}: Props = $props();
 
 	interface Frame {
 		alarm: Writable<boolean>;
@@ -54,12 +65,18 @@
 	}
 
 	const frame = getContext<Frame>('layout-frame');
-	const front = writable(active);
+	const front = writable(untrack(() => active));
 	const alarm = writable(false);
 	const hosted = writable(false);
-	$: front.set(active);
-	$: if (active) frame.alarm.set($alarm);
-	$: if (active) frame.hosted.set($hosted);
+	$effect.pre(() => {
+		front.set(active);
+	});
+	$effect.pre(() => {
+		if (active) frame.alarm.set($alarm);
+	});
+	$effect.pre(() => {
+		if (active) frame.hosted.set($hosted);
+	});
 	setContext('layout-frame', {
 		alarm,
 		hosted,
@@ -79,7 +96,7 @@
 	style:min-height={active && least ? `${least.height}px` : null}
 	style:margin={!active && shy > 0 ? `${shy}px` : null}
 	style:--grown={!active && shy < 0 ? `${shy}px` : null}
-><slot /></div>
+>{@render children?.()}</div>
 
 <style>
 	.tab-body {

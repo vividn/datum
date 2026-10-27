@@ -61,29 +61,31 @@
 	import { isSelected } from '$lib/selection.js';
 	import { tapped } from '$lib/tap.js';
 
-	export let doc: EchoDoc;
-	/** The section is too narrow for a row to read: show the count alone. */
-	export let tight = false;
-	/** No band to fit — the REPL, the sheet: every row, no `+N`. */
-	export let all = false;
+	interface Props {
+		doc: EchoDoc;
+		/** The section is too narrow for a row to read: show the count alone. */
+		tight?: boolean;
+		/** No band to fit — the REPL, the sheet: every row, no `+N`. */
+		all?: boolean;
+	}
+
+	let { doc, tight = false, all = false }: Props = $props();
 
 	/** Rows of data the brace holds before it goes to a `+N`. */
 	const ROWS = 4;
 
-	let shown = false;
-	let open = false;
+	let shown = $state(false);
+	let open = $state(false);
 
 	/** The line's runs, or the unpainted line as its one run. */
-	let segments: InfoSegment[];
-	$: segments = doc.info_segments?.length
-		? doc.info_segments
-		: [{ text: doc.info, color: null }];
+	const segments: InfoSegment[] = $derived(
+		doc.info_segments?.length ? doc.info_segments : [{ text: doc.info, color: null }]
+	);
 
 	/** The CLI's `key: value` strings — `data`, not the terminal's join. */
-	let rows: string[];
-	$: rows = doc.data ?? [];
-	$: visible = tight ? [] : all ? rows : rows.slice(0, ROWS);
-	$: hidden = rows.length - visible.length;
+	const rows: string[] = $derived(doc.data ?? []);
+	const visible = $derived(tight ? [] : all ? rows : rows.slice(0, ROWS));
+	const hidden = $derived(rows.length - visible.length);
 
 	/**
 	 * A tap on the document selects its entry (da-r13j); the hid and the
@@ -100,14 +102,14 @@
 	}
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
 	class="doc"
 	class:all
 	class:selected={isSelected($selected, doc.hid)}
 	data-hid={doc.hid}
-	on:mousedown={(e) => e.shiftKey && e.preventDefault()}
-	on:click={tap}
+	onmousedown={(e) => e.shiftKey && e.preventDefault()}
+	onclick={tap}
 >
 	<div class="lines">
 		<div class="receipt">
@@ -118,7 +120,7 @@
 				title={doc.id}
 				aria-label="full id {doc.id}"
 				aria-expanded={shown}
-				on:click={() => (shown = !shown)}>{shown ? doc.id : doc.hid}</button
+				onclick={() => (shown = !shown)}>{shown ? doc.id : doc.hid}</button
 			>
 		</div>
 		<!-- Nothing may come between the spans: the line is monospace and
@@ -140,7 +142,7 @@
 				</div>
 			{/if}
 			{#if hidden > 0}
-				<button type="button" class="more" use:act={'open'} title="{hidden} more" on:click={() => (open = true)}
+				<button type="button" class="more" use:act={'open'} title="{hidden} more" onclick={() => (open = true)}
 					>+{hidden}</button
 				>
 			{/if}

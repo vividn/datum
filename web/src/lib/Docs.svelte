@@ -28,12 +28,17 @@
 <script lang="ts">
 	import { act } from '$lib/act.js';
 	import Doc from '$lib/Doc.svelte';
+	import Docs from '$lib/Docs.svelte';
 	import type { EchoDoc } from '$lib/echo.js';
 	import Sheet from '$lib/Sheet.svelte';
 
-	export let docs: EchoDoc[];
-	/** Draw every document and wrap, rather than fitting a fixed band. */
-	export let all = false;
+	interface Props {
+		docs: EchoDoc[];
+		/** Draw every document and wrap, rather than fitting a fixed band. */
+		all?: boolean;
+	}
+
+	let { docs, all = false }: Props = $props();
 
 	/** The narrowest section whose info line still reads, in px. */
 	const MIN = 208;
@@ -48,16 +53,16 @@
 	/** What the `+N` chip takes from the row. */
 	const CHIP = 48;
 
-	let row: HTMLDivElement | undefined;
-	let width = 0;
-	let open = false;
+	let row: HTMLDivElement | undefined = $state();
+	let width = $state(0);
+	let open = $state(false);
 
-	$: capacity = Math.max(1, Math.floor(width / MIN));
-	$: over = !all && width > 0 && docs.length > capacity;
-	$: shown = all || !over ? docs.length : Math.max(1, Math.floor((width - CHIP) / MIN));
+	const capacity = $derived(Math.max(1, Math.floor(width / MIN)));
+	const over = $derived(!all && width > 0 && docs.length > capacity);
+	const shown = $derived(all || !over ? docs.length : Math.max(1, Math.floor((width - CHIP) / MIN)));
 	// Never in the REPL or the sheet: there is no band to fit there, and a
 	// section is at least the 14rem the row wraps at.
-	$: tight = !all && width > 0 && width / shown < ROOMY;
+	const tight = $derived(!all && width > 0 && width / shown < ROOMY);
 
 	function measure(node: HTMLDivElement): { destroy(): void } {
 		const observer = new ResizeObserver(([entry]) => (width = entry.contentRect.width));
@@ -76,13 +81,13 @@
 			class="more"
 			use:act={'open'}
 			title="{docs.length - shown} more"
-			on:click={() => (open = true)}>+{docs.length - shown}</button
+			onclick={() => (open = true)}>+{docs.length - shown}</button
 		>
 	{/if}
 </div>
 
 <Sheet title="{docs.length} documents" bind:open>
-	<svelte:self {docs} all />
+	<Docs {docs} all />
 </Sheet>
 
 <style>

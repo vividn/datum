@@ -20,10 +20,10 @@
 	import { clearSample, installKit, seedSample, uninstallKit, type Step } from './sample.js';
 	import { stripAnsi } from './ansi.js';
 
-	let steps: Step[] = [];
-	let busy = false;
-	let report = '';
-	let failed = false;
+	let steps = $state.raw<Step[]>([]);
+	let busy = $state(false);
+	let report = $state('');
+	let failed = $state(false);
 
 	const entries = (n: number) => `${n} sample ${n === 1 ? 'entry' : 'entries'} in this database`;
 
@@ -68,12 +68,12 @@
 </script>
 
 <p class="acts">
-	<button type="button" class="tool" use:act={'run'} disabled={busy} on:click={() => perform(seed)}>seed the last 7 days</button>
-	<button type="button" class="tool" use:act={'run'} disabled={busy} on:click={() => perform(clear)}>clear the sample</button>
-	<button type="button" class="tool" use:act={'run'} disabled={busy} on:click={() => perform(kit(installKit, 'the sample kit is installed'))}
+	<button type="button" class="tool" use:act={'run'} disabled={busy} onclick={() => perform(seed)}>seed the last 7 days</button>
+	<button type="button" class="tool" use:act={'run'} disabled={busy} onclick={() => perform(clear)}>clear the sample</button>
+	<button type="button" class="tool" use:act={'run'} disabled={busy} onclick={() => perform(kit(installKit, 'the sample kit is installed'))}
 		>install the sample kit</button
 	>
-	<button type="button" class="tool" use:act={'run'} disabled={busy} on:click={() => perform(kit(uninstallKit, 'the sample kit is uninstalled'))}
+	<button type="button" class="tool" use:act={'run'} disabled={busy} onclick={() => perform(kit(uninstallKit, 'the sample kit is uninstalled'))}
 		>uninstall the sample kit</button
 	>
 </p>

@@ -106,7 +106,7 @@ comment: obsessed with time</pre>
 		<ol>
 			<li>
 				Choose one or two fields to track.
-				<button type="button" class="command" use:act={'open'} on:click={() => openField()}>Setup</button>
+				<button type="button" class="command" use:act={'open'} onclick={() => openField()}>Setup</button>
 				(or swipe to the next tab)
 			</li>
 			<li>Log them as they happen: tap, or type in the input bar.</li>
@@ -136,7 +136,7 @@ comment: obsessed with time</pre>
 		<h3>Learn more</h3>
 		<ul class="more">
 			{#each MORE as [name, what] (name)}
-				<li><button type="button" class="link" on:click={() => (GUIDES[name] ? explainGuide(name) : explainCommand(name))}>{what}</button></li>
+				<li><button type="button" class="link" onclick={() => (GUIDES[name] ? explainGuide(name) : explainCommand(name))}>{what}</button></li>
 			{/each}
 		</ul>
 </div>

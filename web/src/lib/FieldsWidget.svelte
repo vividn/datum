@@ -735,8 +735,8 @@
 	key={keyOf}
 	bind:bar
 	let:item
-	on:pointerenter={() => (over = true)}
-	on:pointerleave={() => (over = false)}
+	onpointerenter={() => (over = true)}
+	onpointerleave={() => (over = false)}
 >
 	<!-- Given a line colour, or `var(--line)` voids its border and the rows
 	     are counted two pixels short of the buttons they hold. -->
