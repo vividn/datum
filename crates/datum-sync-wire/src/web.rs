@@ -338,10 +338,19 @@ fn report(rep: Result<Report>) -> Result<String, JsError> {
 }
 
 /// What a ticket or join link says of itself ([`About`], as JSON): what a
-/// page asks before it redeems one (da-l9kdr). Never the secret.
+/// page asks before it redeems one (da-l9kdr). Never the secret. `relay`
+/// says whether the inviter's address names its relay: one that does not,
+/// made before the page reached it, no other device reaches (da-y9voq).
 #[wasm_bindgen]
 pub fn about(ticket: String) -> Result<String, JsError> {
-    serde_json::to_string(&Ticket::decode(&ticket).map_err(js)?.about).map_err(js)
+    let ticket = Ticket::decode(&ticket).map_err(js)?;
+    let mut about = serde_json::to_value(&ticket.about).map_err(js)?;
+    let relay = ticket
+        .addrs
+        .first()
+        .is_some_and(|a| a.relay_urls().next().is_some());
+    about["relay"] = relay.into();
+    serde_json::to_string(&about).map_err(js)
 }
 
 #[wasm_bindgen]

@@ -88,4 +88,26 @@ describe('the invite panel (da-2bvxq)', () => {
 			{ prepare: relayed(relay), viewport: DESKTOP }
 		);
 	});
+
+	// An invite waits for this device's relay, up to 30 s, before its ticket
+	// is made (da-kfhty): meanwhile the widget says so, and a ticket made
+	// without the relay is offered as one no other device reaches (da-y9voq).
+	test('while its invite waits for the relay it says so, and without the relay it offers no QR', async () => {
+		await withApp(
+			async (app) => {
+				await app.goto('/sync');
+				const widget = app.page.locator(WIDGET);
+				const turnOn = widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Turn on sync' });
+				await turnOn.click();
+				assert.equal(await widget.locator('.waiting').innerText(), 'Making the invite…');
+				assert.equal(await turnOn.isDisabled(), true);
+				const offer = widget.locator('.offer[data-db="datum"]');
+				// The endpoint's bind waits 10 s for the relay, and the ticket 30 s more.
+				await offer.locator('.unreachable').waitFor({ timeout: 60000 });
+				assert.deepEqual(await offered(offer), { qr: 0, ticket: 0, buttons: ['Try again', 'Done'] });
+				assert.equal(await widget.locator('.waiting').count(), 0);
+			},
+			{ prepare: (context) => context.addInitScript(() => localStorage.setItem('datum.syncRelay', 'http://127.0.0.1:1')), viewport: DESKTOP }
+		);
+	});
 });

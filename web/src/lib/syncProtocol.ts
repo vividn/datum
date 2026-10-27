@@ -28,6 +28,8 @@ export interface TicketAbout {
 	chain?: string;
 	/** When the invite expires, unix seconds. */
 	expires?: number;
+	/** Read, never written: whether the inviter's address names its relay, without which no other device reaches it. */
+	relay?: boolean;
 }
 
 export type SyncRequest =

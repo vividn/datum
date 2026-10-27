@@ -121,8 +121,8 @@
 	/** More's acts shown, and the whole legend. */
 	let more = $state(false);
 	let key = $state(false);
-	/** The join link of the last device invited, its QR, until when it works, and its invite's id. */
-	let offer = $state<{ db: string; link: string; svg: string; until: string; expires: number; id: string } | null>(null);
+	/** The join link of the last device invited, its QR, until when it works, its invite's id, and whether it names this device's relay. */
+	let offer = $state<{ db: string; link: string; svg: string; until: string; expires: number; id: string; relay: boolean } | null>(null);
 	/** The approval card's outcome: written here, or the code to paste. */
 	let approval: { done?: string; code?: string } = $state({});
 	/**
@@ -283,10 +283,18 @@
 	// A declaration, hoisted: the effect above runs as it is created, before this line.
 	function addDevice(db: string): Promise<void> {
 		return doing(async () => {
-			const invite = await newInvite(db);
-			const link = joinLink(await syncOffer(db, invite));
-			const expires = Date.parse(invite.expires);
-			offer = { db, link, svg: await qr(link), until: hm(expires), expires, id: invite.id };
+			// The ticket waits for this device to reach its relay, up to 30 s (da-kfhty).
+			waiting = 'Making the invite…';
+			try {
+				const invite = await newInvite(db);
+				const ticket = await syncOffer(db, invite);
+				const { relay = false } = await ticketAbout(ticket);
+				const link = joinLink(ticket);
+				const expires = Date.parse(invite.expires);
+				offer = { db, link, svg: await qr(link), until: hm(expires), expires, id: invite.id, relay };
+			} finally {
+				waiting = '';
+			}
 		});
 	}
 
@@ -544,6 +552,8 @@
 					<p class="head joined">{joined.label} joined at {hm(Date.parse(joined.at))}.</p>
 				{:else if expired}
 					<p class="head expired">This invite expired at {offer.until}, unused.</p>
+				{:else if !offer.relay}
+					<p class="head unreachable">This device has not reached its relay yet, so no other device can reach this invite. Check the connection and try again.</p>
 				{:else}
 					<p class="head">Add a device to {offer.db}: scan this with it, or open the link in its browser. It works once, until {offer.until}.</p>
 					<div class="qr">{@html offer.svg}</div>
@@ -555,6 +565,8 @@
 				<div class="actions">
 					{#if joined || expired}
 						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => offer && addDevice(offer.db)}>Add another device</button>
+					{:else if !offer.relay}
+						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => offer && addDevice(offer.db)}>Try again</button>
 					{:else}
 						<button type="button" class="command" use:act={'run'} onclick={() => navigator.clipboard?.writeText(offer?.link ?? '')}>Copy link</button>
 						{#if canShare}<button type="button" class="command" use:act={'open'} onclick={() => offer && share(offer.link)}>Share</button>{/if}
