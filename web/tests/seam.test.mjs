@@ -41,7 +41,7 @@ const onPage = (fn) => shared.solo(fn);
 
 /** The REPL entry a typed `line` made: its own output, not the scrollback's. */
 const answer = (page, line) =>
-	page.locator('.repl .entry').filter({ has: page.locator('.echo', { hasText: line }) }).first();
+	page.locator('.cli .entry').filter({ has: page.locator('.echo', { hasText: line }) }).first();
 
 /** Exit codes: success, the CLI's generic failure, and its duplicate. */
 const OK = 0;

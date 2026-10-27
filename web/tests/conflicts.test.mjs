@@ -22,7 +22,7 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('cmd', 'command')));
+const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('cmd', 'command')));
 
 test('the button counts them in red, the widget resolves them, and the last one turns it plain', async () => {
 	await withApp(

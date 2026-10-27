@@ -42,7 +42,7 @@ after(stopApp);
 const DESKTOP = { viewport: { width: 1280, height: 900 } };
 
 /** The day frame's panes, which is what a room seeded from `main` draws. */
-const DAY = ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields'];
+const DAY = ['dayview', 'cli', 'nowview', 'tail', 'custom', 'fields'];
 
 const rootTabs = (page) =>
 	page

@@ -48,7 +48,7 @@ const single = (kind = 'tail') => ({ version: 1, name: 'test', root: newPane([wi
 
 /** A root pane whose one tab is a row split of two widget panes. */
 function pair() {
-	const left = newPane([widgetTab('repl')]);
+	const left = newPane([widgetTab('cli')]);
 	const right = newPane([widgetTab('tail')]);
 	return {
 		layout: { version: 1, name: 'test', root: newPane([newTab(newSplit('row', [left, right]))]) },
@@ -136,7 +136,7 @@ describe('breakOut', () => {
 	/** A root whose tab holds a column of [A, H], where H holds a row of [P, Q]. */
 	function nested() {
 		const a = newPane([widgetTab('dayview')]);
-		const p = newPane([widgetTab('repl')]);
+		const p = newPane([widgetTab('cli')]);
 		const q = newPane([widgetTab('tail')]);
 		const holder = newPane([newTab(newSplit('row', [p, q]))]);
 		const tab = newTab(newSplit('column', [a, holder]));
@@ -186,7 +186,7 @@ describe('breakOut', () => {
 		const split = after.root.tabs[0].content;
 		assert.equal(split.direction, 'row');
 		// The pane keeps its other tab, and the one that left is beside it.
-		assert.deepEqual(kinds(split.children[0]), ['repl']);
+		assert.deepEqual(kinds(split.children[0]), ['cli']);
 		assert.deepEqual(kinds(split.children[1]), ['tail']);
 		assert.deepEqual(kinds(split.children[2]), ['tail'], 'the pane beside it moved');
 		assert.deepEqual(split.ratios, [0.25, 0.25, 0.5]);
@@ -199,7 +199,7 @@ describe('breakOut', () => {
 		const tabbed = addTab(layout, left.id);
 		const after = breakOut(tabbed, left.id, 'down');
 		assert.ok(isCanonical(after));
-		assert.equal(shape(after.root), 'ROW(COL(repl, empty), tail)');
+		assert.equal(shape(after.root), 'ROW(COL(cli, empty), tail)');
 		const row = after.root.tabs[0].content;
 		assert.deepEqual(row.ratios, [0.5, 0.5], 'the enclosing split’s ratios moved');
 		assert.deepEqual(row.children[0].tabs[0].content.ratios, [0.5, 0.5]);
@@ -239,14 +239,14 @@ describe('breakOut', () => {
 
 	test('a tab holding a split and a layout travels whole', () => {
 		const { layout, column, stack } = phone();
-		const inner = newSplit('row', [newPane([widgetTab('repl')]), newPane([widgetTab('dayview')])]);
+		const inner = newSplit('row', [newPane([widgetTab('cli')]), newPane([widgetTab('dayview')])]);
 		const held = { ...newTab(inner), layout: 'mine' };
 		const stacked = { ...stack, tabs: [...stack.tabs, held], active: 3 };
 		const content = { ...column, children: [column.children[0], stacked, column.children[2]] };
 		const before = { ...layout, root: { ...layout.root, tabs: [{ ...layout.root.tabs[0], content }] } };
 		const after = breakOut(before, stack.id, 'right');
 		assert.ok(isCanonical(after));
-		assert.equal(shape(after.root), 'COL(daystrip, ROW(TABS[tail · nowview · custom], ROW(repl, dayview)), widgetbar)');
+		assert.equal(shape(after.root), 'COL(daystrip, ROW(TABS[tail · nowview · custom], ROW(cli, dayview)), widgetbar)');
 		const landed = after.root.tabs[0].content.children[1].tabs[0].content.children[1];
 		assert.deepEqual(landed.tabs[0], held, 'the tab lost its layout name or ids');
 	});
@@ -271,7 +271,7 @@ describe('breakOut', () => {
 		// which unnested behind it — and its share comes out of that box.
 		assert.equal(column.children[0].id, a.id);
 		assert.equal(column.children[1].id, p.id, 'the pane did not land above what it left');
-		assert.deepEqual(shown(after), ['dayview', 'repl', 'tail']);
+		assert.deepEqual(shown(after), ['dayview', 'cli', 'tail']);
 		assert.deepEqual(column.ratios, [0.5, 0.25, 0.25]);
 		assert.deepEqual(kinds(column.children[2]), ['tail'], 'what was left behind');
 	});
@@ -285,7 +285,7 @@ describe('breakOut', () => {
 		assert.equal(row.children[0].id, p.id, 'the pane is not the left-hand band');
 		const column = row.children[1].tabs[0].content;
 		assert.equal(column.direction, 'column', 'the grouping it left is not under the new split');
-		assert.deepEqual(shown(after), ['repl', 'dayview', 'tail']);
+		assert.deepEqual(shown(after), ['cli', 'dayview', 'tail']);
 	});
 
 	test('two in a row walk it up two levels', () => {
@@ -296,9 +296,9 @@ describe('breakOut', () => {
 		assert.ok(isCanonical(twice));
 		const column = twice.root.tabs[0].content;
 		assert.equal(column.children[0].id, p.id, 'it is not the top band of the page');
-		assert.deepEqual(shown(twice), ['repl', 'dayview', 'tail']);
+		assert.deepEqual(shown(twice), ['cli', 'dayview', 'tail']);
 		// And there it stays: the root tab is the top of the tree.
-		assert.deepEqual(shown(breakOut(twice, p.id, 'up')), ['repl', 'dayview', 'tail']);
+		assert.deepEqual(shown(breakOut(twice, p.id, 'up')), ['cli', 'dayview', 'tail']);
 	});
 
 	test('the tabs left behind are untouched, and the split it left closes up', () => {
@@ -402,7 +402,7 @@ describe('nameOf', () => {
 		assert.equal(label(newTab(newSplit('column', [pane('tail'), pane('nowview')]))), 'tail / nowview');
 		const nested = newTab(newSplit('row', [pane('tail'), newPane([newTab(newSplit('column', [pane('nowview'), pane('custom')]))])]));
 		assert.equal(label(nested), 'tail | (nowview / custom)');
-		const stacked = { ...pane('repl', 'aliases'), active: 1 };
+		const stacked = { ...pane('cli', 'aliases'), active: 1 };
 		assert.equal(label(newTab(newSplit('row', [pane('tail'), stacked]))), 'tail | aliases');
 		const renamed = newPane([{ ...newTab(newSplit('column', [pane('nowview'), pane('custom')])), title: 'side' }]);
 		assert.equal(label(newTab(newSplit('row', [pane('tail'), renamed]))), 'tail | side');
@@ -478,7 +478,7 @@ describe('addTab / setActive / closeTab', () => {
 		assert.equal(canCloseTab(layout, right.id), true);
 		const after = closeTab(layout, right.id, 0);
 		assert.ok(isCanonical(after));
-		assert.deepEqual(kinds(after.root), ['repl'], 'the survivor’s tabs are the root’s tabs now');
+		assert.deepEqual(kinds(after.root), ['cli'], 'the survivor’s tabs are the root’s tabs now');
 		assert.equal(findPane(after, left.id), undefined, 'the survivor pane itself is gone');
 		assert.equal(findSplit(after, layout.root.tabs[0].content.id), undefined);
 	});
@@ -487,7 +487,7 @@ describe('addTab / setActive / closeTab', () => {
 		const { layout, left, right } = pair();
 		const withTabs = addTab(layout, left.id);
 		const after = closeTab(withTabs, right.id, 0);
-		assert.deepEqual(kinds(after.root), ['repl', EMPTY_KIND]);
+		assert.deepEqual(kinds(after.root), ['cli', EMPTY_KIND]);
 		assert.ok(isCanonical(after));
 	});
 
@@ -501,7 +501,7 @@ describe('addTab / setActive / closeTab', () => {
 		// it is that pane — the outer split's first child — that holds the
 		// REPL now, under its own id.
 		const holder = once.root.tabs[0].content.children[0];
-		assert.deepEqual(kinds(holder), ['repl']);
+		assert.deepEqual(kinds(holder), ['cli']);
 		const after = closeTab(once, holder.id, 0);
 		assert.ok(isCanonical(after));
 		assert.deepEqual(kinds(after.root), ['tail']);
@@ -536,7 +536,7 @@ describe('setRatios', () => {
 describe('addEdge', () => {
 	/** A root whose tab holds a column of three widget panes. */
 	function column() {
-		const panes = ['strip', 'repl', 'bar'].map((kind) => newPane([widgetTab(kind)]));
+		const panes = ['strip', 'cli', 'bar'].map((kind) => newPane([widgetTab(kind)]));
 		const split = { ...newSplit('column', panes), ratios: [0.3, 0.6, 0.1] };
 		return { layout: { version: 1, name: 'test', root: newPane([newTab(split)]) }, split, panes };
 	}
@@ -673,12 +673,12 @@ describe('floorOf', () => {
 		// `minOf` is given the TAB since da-vhwq, so a caller can merge in
 		// what this session holds over the tree's settings.
 		const legible = (tab) =>
-			({ repl: { width: 200, height: 106 }, widgetbar: { width: 160, height: 45 }, stats: { width: 240, height: 140 } })[
+			({ cli: { width: 200, height: 106 }, widgetbar: { width: 160, height: 45 }, stats: { width: 240, height: 140 } })[
 				tab.content.kind
 			];
 		const bar = newPane([widgetTab('widgetbar'), widgetTab('stats')]);
-		const root = newPane([newTab(newSplit('column', [newPane([widgetTab('repl')]), bar]))]);
-		// repl 106 + its frame 20, the border, stats 140 + its frame 20; the root holder draws no frame.
+		const root = newPane([newTab(newSplit('column', [newPane([widgetTab('cli')]), bar]))]);
+		// cli 106 + its frame 20, the border, stats 140 + its frame 20; the root holder draws no frame.
 		assert.deepEqual(rootFloorOf(root, legible, 8, chrome), { width: 242, height: 126 + 8 + 160 });
 	});
 });
@@ -699,7 +699,7 @@ describe('snapsOfKind', () => {
 		// is derived from the height, so every height is already one whole
 		// day and there is no one of them to be drawn to.
 		assert.deepEqual(snapsOfKind('daystrip', {}), { width: [], height: [] }, 'a following strip snapped');
-		for (const kind of ['repl', 'tail', 'nowview', 'custom', 'stats', 'widgetbar', 'nope']) {
+		for (const kind of ['cli', 'tail', 'nowview', 'custom', 'stats', 'widgetbar', 'nope']) {
 			assert.deepEqual(snapsOfKind(kind), { width: [], height: [] }, kind);
 		}
 	});
@@ -714,7 +714,7 @@ describe('snapsOfKind', () => {
 		// (da-r0ydu) — above that every box holds one whole day, because
 		// the day is derived from the box.
 		assert.deepEqual(legibleOfKind('daystrip', {}), { width: 240, height: todayBox(40) + 16 });
-		assert.deepEqual(legibleOfKind('repl'), { width: 200, height: 71 });
+		assert.deepEqual(legibleOfKind('cli'), { width: 200, height: 71 });
 		assert.deepEqual(legibleOfKind('nope'), { width: 0, height: 0 });
 	});
 
@@ -790,7 +790,7 @@ describe('normalize', () => {
 
 describe('any sequence of operations', () => {
 	test('leaves the tree canonical, and never reuses an id', () => {
-		let layout = single('repl');
+		let layout = single('cli');
 		const seen = new Set(allIds(layout));
 		let previous = new Set(seen);
 		let seed = 7;
@@ -824,7 +824,7 @@ describe('any sequence of operations', () => {
 				case 4: {
 					const tab = pick(pane.tabs);
 					if (!('children' in tab.content))
-						layout = setWidget(layout, tab.id, newWidget(pick(['tail', 'nowview', 'repl'])));
+						layout = setWidget(layout, tab.id, newWidget(pick(['tail', 'nowview', 'cli'])));
 					break;
 				}
 				case 5:
@@ -861,7 +861,7 @@ describe('any sequence of operations', () => {
 describe('a layout tab', () => {
 	/** A root whose one tab holds layout `main`: a row split of two widget panes. */
 	function held() {
-		const left = newPane([widgetTab('repl')]);
+		const left = newPane([widgetTab('cli')]);
 		const right = newPane([widgetTab('tail')]);
 		const tab = { ...newTab(newSplit('row', [left, right])), layout: 'main' };
 		return { layout: { version: 1, name: 'root', root: newPane([tab]) }, tab, left, right };
@@ -879,7 +879,7 @@ describe('a layout tab', () => {
 		// Without the layout the same close unnests, as before.
 		const plain = { ...layout, root: { ...layout.root, tabs: [{ ...tab, layout: undefined }] } };
 		delete plain.root.tabs[0].layout;
-		assert.deepEqual(kinds(closeTab(plain, right.id, 0).root), ['repl']);
+		assert.deepEqual(kinds(closeTab(plain, right.id, 0).root), ['cli']);
 	});
 
 	test('closing everything under it leaves it an empty tab, not gone', () => {

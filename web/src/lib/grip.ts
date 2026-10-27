@@ -5,7 +5,8 @@
 // and it behaves as one unit, so it will just pull the input section up
 // more." So the bar and the log under it are not two surfaces with two
 // gestures — they are one handle, and this action is what makes them one:
-// `use:grip` on the bar and on the log, one drag, one number ($lib/log.ts).
+// `use:grip`, one drag, one number ($lib/log.ts). It is on the bar alone
+// since the log moved above it and took a terminal's scroll (da-mwp4m).
 //
 // The state below is at MODULE scope and not per node, which is the point:
 // a drag that starts on the log and wanders onto the bar is the same drag,

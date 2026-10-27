@@ -26,19 +26,20 @@ export const NARROW = { viewport: { width: 360, height: 640 } };
  */
 export const settledRoom = (on, name, fn) =>
 	on.room(name, async (app) => {
-		await app.page.waitForFunction(([min, max, sliver]) => {
+		await app.page.waitForFunction(async ([min, max, sliver]) => {
 			const strip = document.querySelector('.strip');
 			const body = strip?.closest('.body');
 			const grip = strip?.querySelector('.today-line');
 			if (!body || !grip) return false;
-			const s = getComputedStyle(body);
-			const px = (name) => parseFloat(s.getPropertyValue(name));
-			const content =
-				body.getBoundingClientRect().height -
-				px('padding-top') -
-				px('padding-bottom') -
-				px('border-top-width') -
-				px('border-bottom-width');
+			// The content box as the strip's own ResizeObserver reports it,
+			// not rebuilt from the element's rect less its padding and
+			// border: the two differ in the last fraction of a pixel, and a
+			// box that lands just under a whole pixel (86.987 on a Pixel 5,
+			// da-mwp4m) floors to one less from the rect.
+			const content = await new Promise((done) => {
+				const watch = new ResizeObserver(([entry]) => (watch.disconnect(), done(entry.contentRect.height)));
+				watch.observe(body);
+			});
 			const css = getComputedStyle(strip);
 			const axis = parseFloat(css.getPropertyValue('--axis'));
 			const seam = parseFloat(css.getPropertyValue('--seam-line'));

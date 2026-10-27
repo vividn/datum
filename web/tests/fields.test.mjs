@@ -387,12 +387,12 @@ describe('in the app', () => {
 			// the test could never pass (da-q15y).
 			// `--merge`: an import ADDS, and a bare restore would replace —
 			// deleting walk, which the page asks about first (da-jrbwc).
-			const before = await page.locator('.repl .echo').count();
+			const before = await page.locator('.cli .echo').count();
 			const input = page.locator('.prompt-bar input');
 			await input.fill('db restore --merge -');
 			const [chooser] = await Promise.all([page.waitForEvent('filechooser'), input.press('Enter')]);
 			await chooser.setFiles({ name: 'swim.jsonl', mimeType: 'application/jsonl', buffer: Buffer.from(`${header}\n${JSON.stringify(swim)}\n`) });
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			await page.locator('.bar button[data-field="swim"]').waitFor();
 			assert.equal((await app.entries()).some((e) => e.field === 'swim'), true);
 		});

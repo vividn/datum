@@ -98,7 +98,7 @@ function paneImage({ page }, title) {
 
 /** The drawing the newest command left in the REPL's scrollback. */
 function replImage({ page }) {
-	return page.locator('.repl svg.svg').last();
+	return page.locator('.cli svg.svg').last();
 }
 
 /** Assert a drawing clears the floor, reporting the arithmetic either way. */

@@ -1,49 +1,49 @@
 <!--
 	THE SEAM (da-ckw3, reshaping da-xfa4's bar).
 
-	The bar is no longer a box with a REPL that opens upward over the
-	dashboard. It is the seam between the dashboard above it and a
-	newest-first log below it:
+	The bar is the seam between the dashboard and the history, and it reads
+	as a terminal does — the history above, the newest answer under it, the
+	line being typed at the very bottom:
 
 	    dashboard (the layout)
-	    ────────────────────────────────────────────────────
-	    INPUT    datum  16:09:21  ❯ occur coffee▏ [pills]  ⌄
-	    OUTPUT   the newest result  ← this IS the log's first entry
-	    ──────────────────── below the fold, reached only through the bar
+	    ────────────────────────────────────────────────────  ^
+	    older entry …                     ← the log, opened by pulling up
 	    older entry
-	    older entry …
-	                                       [ close history ]
+	    OUTPUT   the newest result  ← this IS the log's last entry
+	    INPUT    datum  16:09:21  ❯ occur coffee▏ [pills]
 
-	Input, then its newest result, then older ones: one reading order.
-
-	TWO SECTIONS, INPUT OVER OUTPUT. vividn, 2026-09-17: "Put dbname, clock, >
-	and input all on the input section. The output section is reserved just
-	for output. Put the input section on top of the output section". They
-	were equal at first ("so 50/50"); on seeing that build he asked for the
-	input to come back down — "Decrease the height of the input bar. There
-	is a lot of wasted padding" — and for its type to go up a step, so the
-	input is 2.9rem against the output's 3.6rem. So:
+	TWO SECTIONS, OUTPUT OVER INPUT. vividn, 2026-10-27: «keep the input bar
+	on the bottom, and put the output/return bar above it again … Mimicking
+	an actual cli with the input bar on the bottom». (It was input over
+	output from 2026-09-17, da-ckw3, until then.) The input is 2.9rem; the
+	output is open by default on every screen and taller than it was,
+	«basically where the command widget is now by default» — the collect
+	tab's command pane, which went to make the room (defaults.ts).
 
 	- the INPUT section is ONE ROW — the mark (Brand.svelte: the database's
 	  name, its colour, its menu), the clock WITH SECONDS, the `❯` and the
-	  box with its pills (Prompt.svelte), and nothing else. The clock no
-	  longer hides its seconds on a narrow screen: vividn, "On mobile too
-	  please show seconds on the clock". The mark is a step smaller than it
-	  was ("The size of the db/logo can be reduced some to save some
-	  space") and still ellipsizes rather than taking the box's room.
-	- the OUTPUT section is ROW ONE OF THE HISTORY and the full width of the
-	  bar: the same `ReplEntry.svelte` the log below draws its rows with, so
-	  the newest command looks the same whether the log is open or shut and
-	  dragging the log up never meets it twice (vividn, 2026-09-21).
+	  box with its pills (Prompt.svelte), and nothing else. The clock does
+	  not hide its seconds on a narrow screen: vividn, "On mobile too please
+	  show seconds on the clock". The mark ellipsizes rather than taking the
+	  box's room.
+	- the OUTPUT section is THE NEWEST ROW OF THE HISTORY and the full width
+	  of the bar: the same `ReplEntry.svelte` the log above draws its rows
+	  with, so the newest command looks the same whether the log is open or
+	  shut and dragging the log up never meets it twice (vividn, 2026-09-21).
+
+	ON A PAGE THAT IS THE CLI WIDGET ALONE (`/cli`, `/repl`) there is no
+	output section: vividn, 2026-10-27, «the output bar is then completely
+	gone on this full screen widget, since it basically becomes the output
+	section» (`outputless`, $lib/log.ts).
 
 	Both are `--input-height` / `--output-height`, declared together on the
 	shell (routes/+layout.svelte) because the dashboard's own height is the
 	other side of that sum. vividn: "we may have to play around with the
 	heights some" — they are two numbers in one place.
 
-	THE OUTPUT FOLDS AWAY, and the GESTURE is what folds it. A phone starts
-	folded and anything wider starts open, and after that it is whatever this
-	device last chose ($lib/log.ts). Each state's height is fixed, so the
+	THE OUTPUT FOLDS AWAY, and the GESTURE is what folds it. Every screen
+	starts open, and after that it is whatever this device last chose
+	($lib/log.ts). Each state's height is fixed, so the
 	dashboard reflows when a PERSON moves the bar and never because a command
 	answered something long.
 
@@ -61,13 +61,11 @@
 	for `ERROR_MS`, and a tap on it unfolds the output onto the error text.
 	Nothing unfolds by itself.
 
-	THE LOG IS REACHED THROUGH THE BAR AND NOWHERE ELSE. How far open the
-	bar is, is ONE number of pixels ($lib/log.ts has the arithmetic, the
-	notch and the scroll past it); the page itself never scrolls. The two
-	gestures that move that number — a drag and a wheel — are `use:grip`
-	($lib/grip.ts), which is on this bar AND on the log below it, because
-	the two are one handle: vividn, 2026-09-21, "you should be able to grab
-	from anywhere in the repl and it behaves as one unit".
+	THE LOG IS REACHED THROUGH THE BAR. How far open the bar is, is ONE
+	number of pixels ($lib/log.ts has the arithmetic and the notch); the
+	page itself never scrolls. The two gestures that move that number — a
+	drag and a wheel — are `use:grip` ($lib/grip.ts), on this bar; the
+	log's rows scroll as a terminal's do.
 
 	Escape comes back too. Entering the log from the keyboard is not built:
 	vividn wants the whole app keyboard-navigable "once the shape starts to
@@ -88,7 +86,9 @@
 	import { repl } from '$lib/replStore.js';
 	import { ACTION_MS, ERROR_MS, focusLine, marks, peel, pills, prefill, text } from '$lib/bar.js';
 	import { clockSecondsLabel, now } from '$lib/clock.js';
-	import { closeLog, inLog, openOutput, output, shown, toggleOutput } from '$lib/log.js';
+	import { closeLog, inLog, openOutput, output, outputless, shown, toggleOutput } from '$lib/log.js';
+	import { layout } from '$lib/layout/current.js';
+	import { isWidget } from '$lib/layout/types.js';
 	import { grip } from '$lib/grip.js';
 	import Prompt from '$lib/Prompt.svelte';
 	import { isDegraded, storage, storageSentence } from '$lib/storageState.js';
@@ -127,7 +127,17 @@
 		toggleOutput();
 	}
 
-	/** The newest command, which is row one — see the output section below. */
+	/**
+	 * A root tab that is the CLI widget ALONE draws no output section: the
+	 * widget is the output there (vividn's answer, 2026-10-27). A CLI beside
+	 * other panes is not the whole page, and the bar keeps its output.
+	 */
+	$effect.pre(() => {
+		const tab = $layout.root.tabs[$layout.root.active];
+		outputless.set(!!tab && isWidget(tab.content) && tab.content.kind === 'cli');
+	});
+
+	/** The newest command, the history's last row — see the output section below. */
 	const newest = $derived($repl.scrollback.at(-1) ?? null);
 
 	const degraded = $derived(isDegraded($storage));
@@ -180,6 +190,37 @@
 		title={degraded ? $storageSentence : undefined}
 	use:grip
 >
+	{#if $shown > 0}
+		<!-- It OPENS: its height is the first slice of how far the bar is
+		     pulled ($lib/log.ts), so a drag grows it smoothly and the notch
+		     is where it has finished. Clipped while it is part-way, from the
+		     top: what shows first is the foot of the row, next to the input. -->
+		<div class="section output">
+			<div class="roll">
+				<!-- THE HISTORY'S NEWEST ROW, not a second rendering of it.
+				     vividn, 2026-09-21: "the output section … should actually
+				     *be* the first line of the repl. That is, it shouldn't be
+				     repeated when you drag it up. … It should also have the same
+				     format as the rest of the repl." So it mounts the same
+				     `ReplEntry` the log does — stamp, echo line and all — and the
+				     log ends at the row before it (`skip={1}` in BarLog.svelte).
+
+				     Straight from the scrollback rather than from `last`: both
+				     say the same thing (bar.ts's `noteRun` IS what `record`
+				     calls), and one list with one source cannot drift from
+				     itself. `all` is left off, so a multi-document command draws
+				     what fits here and `+N` for the rest — the history has the
+				     room and passes it. `cap` is more lines than the section
+				     holds: the raw output stands on the section's foot and the
+				     lines that do not fit are cut from the top, so a `tail` shows
+				     its newest rows at whatever height the screen gives. -->
+				{#if newest}
+					<ReplEntry entry={newest} cap={12} />
+				{/if}
+			</div>
+		</div>
+	{/if}
+
 	<div class="section input">
 		<!-- The mark and the clock, as ONE item of the row. On a wide screen it
 		     is not a box at all (`display: contents`) and they stand side by
@@ -217,8 +258,10 @@
 			<!-- Folded, this is the whole of what a command says. Keyed on the
 			     object so a second command restarts the fade rather than joining
 			     the first one's; the store's own timer takes it away at the
-			     moment the fade ends ($lib/bar.ts). -->
-			{#if !$output && $marks}
+			     moment the fade ends ($lib/bar.ts). Not on a page that is the
+			     CLI alone: the widget says it there, and ERROR has no output
+			     to open. -->
+			{#if !$output && !$outputless && $marks}
 				{#key $marks}
 					{#if $marks.failed}
 						<!-- Its own element, not one of the words: a failure has to
@@ -244,49 +287,6 @@
 		</div>
 	</div>
 
-	{#if $shown > 0}
-		<!-- It OPENS: its height is the first slice of how far the bar is
-		     pulled ($lib/log.ts), so a drag grows it smoothly and the notch
-		     is where it has finished. Clipped while it is part-way. -->
-		<div class="section output">
-			<!-- THE ROW RIDES UP. Past the ceiling the bar cannot open further
-			     and the pull becomes the list scrolling — and "the REPL then
-			     scroll all together (including the most recent command)", which
-			     is THIS row (vividn, 2026-09-21). It is drawn by the bar and the
-			     rest of the list by the log, so the two are made one list by
-			     one number: this box keeps its full `--output-height` and slides
-			     up by `--rolled` while the section around it gives exactly that
-			     many pixels to the log below ($lib/log.ts). The row is never
-			     handed to the other renderer, so there is nothing to flicker or
-			     to draw twice.
-
-			     The wrapper below is what is LIFTED — it exists so the row can
-			     ride up without the section around it moving, the section
-			     being the thing that clips it. The arithmetic is in the
-			     stylesheet, on `.roll`. -->
-			<div class="roll">
-				<!-- ROW ONE OF THE HISTORY, not a second rendering of it. vividn,
-				     2026-09-21: "the output section … should actually *be* the
-				     first line of the repl. That is, it shouldn't be repeated
-				     when you drag it up. It's just the last entry of the last
-				     entries … It should also have the same format as the rest of
-				     the repl." So it mounts the same `ReplEntry` the log does —
-				     stamp, echo line and all — and the log starts at row two
-				     (`skip={1}` in BarLog.svelte).
-
-				     Straight from the scrollback rather than from `last`: both
-				     say the same thing (bar.ts's `noteRun` IS what `record`
-				     calls), and one list with one source cannot drift from
-				     itself. `all` is left off, so a multi-document command draws
-				     what fits here and `+N` for the rest — the history has the
-				     room and passes it. -->
-				{#if newest}
-					<ReplEntry entry={newest} cap={4} />
-				{/if}
-			</div>
-		</div>
-	{/if}
-
 	<!-- THE ARROW, and it is a control. It was a button standing IN the row,
 	     then a mark that took no pointer, and it is a button again on the
 	     rule. The three asks, in his order:
@@ -308,6 +308,7 @@
 	     says what it does, and its 24px hit area (conventions #12) hangs
 	     above the rule so that the ink and the target both stay off the
 	     row's text. -->
+	{#if !$outputless}
 	<button
 		type="button"
 		class="caret"
@@ -317,6 +318,7 @@
 		title={$output ? 'close the output section' : 'open the output section'}
 		onclick={toggle}><span class="chevron">^</span></button
 	>
+	{/if}
 </footer>
 
 <style>
@@ -404,41 +406,56 @@
 	}
 
 	/* Output only, and the full width of the bar. */
-	/* As tall as the bar is open, not a fixed 3.6rem: the first `--output-height`
-	   px of the pull ARE this section growing (`--shown`, set on the shell).
-	   Clipped, so a half-open one shows the top of what it says rather than
-	   squashing it. */
+	/* As tall as the bar is open, not a fixed height: the first
+	   `--output-height` px of the pull ARE this section growing (`--shown`,
+	   set on the shell). Clipped, and anchored at the BOTTOM, so a half-open
+	   one shows the foot of what it says, next to the input, rather than
+	   squashing it. The rule under it is the seam to the input row. */
 	.section.output {
 		flex: none;
 		flex-direction: column;
 		align-items: stretch;
-		/* The box inside is the row at its full height; this one is however
-		   much of it is showing, and clips the rest. Anchored at the TOP, so
-		   an opening section shows the top of what it says (rather than
-		   squashing it) and a rolling one shows the bottom. */
-		justify-content: flex-start;
+		justify-content: flex-end;
 		height: var(--shown, 0px);
 		overflow: hidden;
-		border-top: 1px solid var(--tint);
+		border-bottom: 1px solid var(--tint);
 	}
 
-	/* A COLUMN, because what is in it is a row of the history now
+	/* A COLUMN, because what is in it is a row of the history
 	   (ReplEntry.svelte): its head — the time and the command — sits ABOVE
 	   what the command answered, exactly as it does in the log. `.section`
 	   is a flex row for the input's four things, and an entry laid out that
 	   way put its head beside its answer instead of over it: at 320px the
 	   head measured 540px wide and the document had nowhere left to be.
 
-	   ALWAYS THE ROW'S WHOLE HEIGHT, and lifted by `--rolled`: what makes
-	   this row part of the list's scroll rather than a thing that stays put
-	   while the list moves under it. */
+	   ALWAYS THE ROW'S WHOLE HEIGHT — the section's, less the rule under
+	   it — and the entry stands on its foot, as a terminal's last answer
+	   stands on the prompt. */
 	.roll {
 		display: flex;
 		flex-direction: column;
-		justify-content: center;
+		justify-content: flex-end;
 		flex: none;
-		height: var(--output-height);
-		margin-top: calc(-1 * var(--rolled, 0px));
+		height: calc(var(--output-height) - 1px);
+	}
+
+	/* The raw lines take what the head leaves and keep the LAST of them:
+	   `cap` asks for more than fit, and a column standing on its foot cuts
+	   the overflow from the top. */
+	/* `.raw.raw`: RawLines' own `.raw` centres its lines at the same
+	   specificity, and which of two equal rules wins is the bundler's order. */
+	.roll :global(.raw.raw) {
+		flex: 0 1 auto;
+		min-height: 0;
+		justify-content: flex-end;
+		overflow: hidden;
+	}
+
+	/* Each line its own height: a line clips its own overflow sideways, and
+	   a flex item that clips may shrink to nothing, which squashed every line
+	   into the box instead of cutting the oldest. */
+	.roll :global(.raw p) {
+		flex: none;
 	}
 
 	.section.output :global(.result) {

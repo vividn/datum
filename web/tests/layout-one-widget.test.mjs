@@ -102,7 +102,7 @@ describe('a root tab whose layout is one widget', () => {
 	test('/repl opens with Reset widget, its option and the acts; layout mode has Change Widget', async () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
-			await openPage(app, 'repl');
+			await openPage(app, 'cli');
 
 			const lines = await rootLines(page);
 			assert.deepEqual(lines, [RESET_WIDGET, NEWEST, ...ACTS]);
@@ -123,11 +123,11 @@ describe('a root tab whose layout is one widget', () => {
 	test('/repl on a phone: the switch flips the order this session, and the save makes it the layout’s', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await openPage(app, 'repl');
+			await openPage(app, 'cli');
 			assert.ok((await rootLines(page)).includes(NEWEST), 'no option on the phone’s root menu');
 			// The option works, and it is not the layout's.
 			await toggleOption(page, null, NEWEST);
-			assert.equal(await dotted(page, 'repl'), false, 'a session setting dirtied the layout');
+			assert.equal(await dotted(page, 'cli'), false, 'a session setting dirtied the layout');
 			assert.equal((await rootSettings(page)).reversed, undefined, 'a session setting reached the tree');
 			// The menu whole on a 390px screen, wherever it is placed.
 			await rootMenuButton(page).click();
@@ -146,14 +146,14 @@ describe('a root tab whose layout is one widget', () => {
 			// the dot lights and it survives a reload.
 			await chooseRoot(page, SAVE);
 			await until(() => rootSettings(page), (s) => s.reversed === true);
-			assert.equal(await dotted(page, 'repl'), true, 'the save left the layout unmodified');
+			assert.equal(await dotted(page, 'cli'), true, 'the save left the layout unmodified');
 
 			await app.reload();
 			await until(() => rootSettings(page), (s) => s.reversed === true);
 
 			await chooseRoot(page, 'Restore layout');
 			await until(() => rootSettings(page), (s) => s.reversed !== true);
-			assert.equal(await dotted(page, 'repl'), false);
+			assert.equal(await dotted(page, 'cli'), false);
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
@@ -219,7 +219,7 @@ describe('a root tab whose layout is one widget', () => {
 	test('a one-widget layout a person saved gets the items too, and no Reset layout', async () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
-			await openPage(app, 'repl');
+			await openPage(app, 'cli');
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await chooseRoot(page, 'Save layout as');
 			await rootMenuButton(page).filter({ hasText: 'mine' }).waitFor();

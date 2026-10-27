@@ -640,6 +640,9 @@ describe('the field widget', () => {
 
 				// A drag on c's handle to a's row puts c first; the arrow keys move it back down one, keeping the focus.
 				const handle = (s) => page.locator(`${FIELD_FORM} [aria-label="move ${s}: drag, or the arrow keys"]`);
+				// In view first: a phone's form is shorter with the bar's output open
+				// (da-mwp4m), and a drag off the visible box lands on nothing.
+				await handle('c').scrollIntoViewIfNeeded();
 				const [from, to] = [await handle('c').boundingBox(), await rows.first().boundingBox()];
 				await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
 				await page.mouse.down();

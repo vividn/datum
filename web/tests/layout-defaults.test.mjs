@@ -156,7 +156,7 @@ async function stage(app) {
 
 	// A SECOND built-in, saved while it is not open: the act is about every
 	// name datum ships, not only the one in front of the reader.
-	await layouts(page, 'saveLayout', { version: 1, name: 'tail', root: kitRoot('tail-only', 'repl') });
+	await layouts(page, 'saveLayout', { version: 1, name: 'tail', root: kitRoot('tail-only', 'cli') });
 
 	// A kit's layout, which lives in the DATA db and must not be reached at
 	// all — opened as a SECOND root tab, so the root's tabs are not the

@@ -112,7 +112,7 @@ describe('/input', () => {
 			assert.equal(await page.locator('.prompt-bar').count(), 1);
 			assert.equal(await page.locator('.input-widget .prompt-bar').count(), 0);
 			// Not the REPL: no output pane and no scrollback of its own.
-			assert.equal(await page.locator('.input-widget .repl').count(), 0);
+			assert.equal(await page.locator('.input-widget .cli').count(), 0);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

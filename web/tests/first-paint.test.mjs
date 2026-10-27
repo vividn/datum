@@ -298,14 +298,14 @@ describe('before the CLI answers', () => {
 		await withApp(
 			async (app) => {
 				// Kept when a tab is left, which a close is.
-				await (await app.newTab('repl')).page.close();
+				await (await app.newTab('cli')).page.close();
 				await watch(app.page.context());
-				const third = await app.newTab('repl');
+				const third = await app.newTab('cli');
 				assert.equal((await marksOf(third.page)).stale, 1, 'the copy was not drawn');
 				// ready() has waited it out.
 				assert.equal(await third.page.locator('[data-stale]').count(), 0);
 			},
-			{ query: 'repl' }
+			{ query: 'cli' }
 		);
 	});
 });

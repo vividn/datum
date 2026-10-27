@@ -13,7 +13,7 @@ import { MAX_ROWS, atRows, axes, boxes, gaps, lastReached, packed, rowsOf } from
 before(startApp);
 after(stopApp);
 
-const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
+const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 
 const EIGHT = ['alfa', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel'];
 const STATES = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
@@ -69,7 +69,7 @@ describe('the fields bar and the scroll rule', () => {
 // bar beside it, at the same height, keeps its three.
 describe('the fields bar takes every row its box fits', () => {
 	const SIDE = JSON.stringify(
-		along('column', widgetPane('repl', 'repl'), along('row', widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')).root)
+		along('column', widgetPane('repl', 'cli'), along('row', widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')).root)
 	);
 	/** Eighteen fields, each its own `y`, so six rows of three and three of six are both equal counts. */
 	const FIELDS = Array.from({ length: 18 }, (_, i) => `f${String(i).padStart(2, '0')}`);

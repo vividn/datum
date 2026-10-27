@@ -29,11 +29,11 @@ export const CLEAR = 'rgba(0, 0, 0, 0)';
 
 /** Type `line` into the bottom bar's prompt and wait for the REPL to echo it. */
 export async function type(page, line) {
-	const before = await page.locator('.repl .echo').count();
+	const before = await page.locator('.cli .echo').count();
 	const input = page.locator('.prompt-bar input');
 	await input.fill(line);
 	await input.press('Enter');
-	await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+	await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 }
 
 /** Wait until the bar's `field` button has computed `prop` of `value`. */

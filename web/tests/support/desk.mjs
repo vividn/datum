@@ -5,7 +5,7 @@
 // WHY IT IS PINNED. The suite finds panes by the ids this tree gives them
 // (`repl`, `custom`, `side`, …), and `app.submit`, `pressWidget`,
 // `echoes()` and `outputs()` (support/app.mjs) — and `type` in
-// support/fields.mjs — wait on or read `.repl .echo` / `.repl pre`: the
+// support/fields.mjs — wait on or read `.cli .echo` / `.cli pre`: the
 // REPL PANE. The shipped desktop tree has no REPL pane (the REPL is the log
 // under the bottom bar, which mounts on the first gesture and skips the
 // newest entry), so against it every one of those waits times out — 183
@@ -52,7 +52,7 @@ export const DESK = {
 			holder(
 				'middle',
 				split('across', 'row', [2 / 3, 1 / 3], [
-					widgetPane('repl', 'repl'),
+					widgetPane('repl', 'cli'),
 					holder(
 						'side',
 						split('aside', 'column', legibly([122, 116, 116]), [

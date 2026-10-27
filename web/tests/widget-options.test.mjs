@@ -69,7 +69,7 @@ after(stopApp);
 const shared = sharedApp(DESKTOP);
 
 const SAVE = 'Save options with layout';
-const REPL = 'section.pane[data-title="repl"]';
+const REPL = 'section.pane[data-title="cli"]';
 const NEWEST = 'newest first';
 
 /** Open a pane's menu, read its lines, and close it again. */
@@ -105,11 +105,11 @@ describe('widget options', () => {
 			// the registry's to hold.
 			assert.deepEqual(declared.map((k) => k.kind).sort(), [
 				'chart',
+				'cli',
 				'command',
 				'daystrip',
 				'input',
 				'nowview',
-				'repl',
 				'tail',
 				'widgetbar'
 			]);
@@ -229,7 +229,7 @@ describe('widget options', () => {
 		});
 	}
 
-	test('repl reversed: newest first, this session’s, saved only when asked, undone by Reset widget', async () => {
+	test('CLI reversed: newest first, this session’s, saved only when asked, undone by Reset widget', async () => {
 		await withApp(async (app) => { // reloads
 			const { page, submit } = app;
 			for (const line of ['occur coffee', 'occur water', 'occur tea']) await submit(line);
@@ -250,15 +250,16 @@ describe('widget options', () => {
 				.evaluate((el) => [...el.children].map((e) => e.className));
 			assert.match(first[0], /head/, `the first entry opens with ${first[0]}`);
 
-			// The bar's own log is newest-first WHATEVER this widget's option
-			// says (da-ckw3): it is not the widget, and the option is not its.
+			// The bar's own log is oldest-first WHATEVER this widget's option
+			// says (da-ckw3, da-mwp4m): it is not the widget, and the option is
+			// not its. It ends before the newest, which is the bar's own row.
 			const bar = await page.locator('.prompt-bar').boundingBox();
 			await page.mouse.move(bar.x + bar.width / 2, bar.y + 10);
 			await page.mouse.wheel(0, 120);
 			await page.locator('.log .echo').first().waitFor();
 			assert.deepEqual(
 				(await page.locator('.log .echo').allInnerTexts()).map((t) => t.replace(/^\s*❯\s*/, '').trim()),
-				[...oldestFirst].reverse().slice(1)
+				oldestFirst.slice(0, -1)
 			);
 			await page.keyboard.press('Escape');
 			await page.waitForFunction(
@@ -512,7 +513,7 @@ describe('widget options', () => {
 		await shared.solo(async ({ page }) => {
 			const settings = () =>
 				page.evaluate(() => {
-					const find = (p) => p.tabs.flatMap((t) => (t.content.kind === 'repl' ? [t.content] : (t.content.children ?? []).flatMap(find)));
+					const find = (p) => p.tabs.flatMap((t) => (t.content.kind === 'cli' ? [t.content] : (t.content.children ?? []).flatMap(find)));
 					return find(window.datum.layout.current().root)[0].settings;
 				});
 			await page.evaluate(() => {
@@ -521,7 +522,7 @@ describe('widget options', () => {
 					tabs: p.tabs.map((t) => ({
 						...t,
 						content:
-							t.content.kind === 'repl'
+							t.content.kind === 'cli'
 								? { ...t.content, settings: { future: 1 } }
 								: t.content.children
 									? { ...t.content, children: t.content.children.map(walk) }
@@ -674,7 +675,7 @@ describe('widget options', () => {
 			// leaving a root tab and coming back keeps this session's — and
 			// mobile's write did not reach it.
 			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly(room) }).click();
-			await page.locator('section.pane[data-title="repl"]').waitFor();
+			await page.locator('section.pane[data-title="cli"]').waitFor();
 			assert.equal(await orientation(dayStrip), 'vertical', 'leaving a root tab lost what it held');
 
 			// And once more the other way, with the two now set apart: put
@@ -699,9 +700,9 @@ describe('widget options', () => {
 			await page.evaluate(() => window.datum.layout.apply((l) => l));
 			assert.equal(await held(), 1, 'a change that closed nothing dropped a setting');
 			await enterLayoutMode(page);
-			await page.locator('section.pane[data-title="repl"] .titlebar button.title').click();
+			await page.locator('section.pane[data-title="cli"] .titlebar button.title').click();
 			await page.getByRole('menuitem', { name: 'Close pane', exact: true }).click();
-			await page.locator('section.pane[data-title="repl"]').waitFor({ state: 'detached' });
+			await page.locator('section.pane[data-title="cli"]').waitFor({ state: 'detached' });
 			assert.equal(await held(), 0, 'a closed tab kept its session setting');
 			assert.deepEqual(app.errors, []);
 		});

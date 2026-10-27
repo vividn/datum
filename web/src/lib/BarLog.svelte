@@ -1,78 +1,59 @@
 <!--
-	The log: what is under the bar, below the fold (da-ckw3).
+	The log: the history ABOVE the bar's output section (da-ckw3, da-mwp4m).
 
-	vividn, 2026-09-17: "have the REPL be in reverse order […] the ability to
-	go back in time to view previous commands and their outputs. […] When
-	scrolled down into the REPL, put a (return to top) at the bottom, which
-	restores back to the dashboard with the input section down in its normal
-	place."
+	vividn, 2026-10-27: «keep the input bar on the bottom, and put the
+	output/return bar above it again / make the CLI chronological order
+	again». So it reads as a terminal does, top to bottom: the oldest
+	command first and the newest last, nearest the input — the REPL
+	COMPONENT, the same widget a layout can hold, drawn in its own order.
 
-	So it is the REPL COMPONENT — the same widget a layout can hold, reading
-	the same scrollback store — drawn `reversed` (da-gvdc): newest first,
-	each entry keeping its own order, the view pinned to the top. Not a
-	second rendering of it and not a second reversal; the reversal already
-	exists and it keys its entries by the ENTRY, which is what keeps a run
-	from rebuilding the whole scrollback (review on #33).
-
-	`bare`, because a titled box under a reader's own prompt says "this is a
+	`bare`, because a titled box over a reader's own prompt says "this is a
 	widget" where it has to say "this is the rest of what you just saw" —
 	vividn, 2026-09-21: "Remove the 'repl' header line."
 
-	`skip={1}`, because the bar's OUTPUT SECTION is row one of this same
-	list (PromptBar.svelte draws it with the same `ReplEntry`). vividn: "the
-	output section … should actually *be* the first line of the repl … it
-	shouldn't be repeated when you drag it up." So the log starts at row
-	two, and what a reader drags up is the continuation of what they were
-	already looking at.
+	`skip={1}`, because the bar's OUTPUT SECTION is the newest row of this
+	same list (PromptBar.svelte draws it with the same `ReplEntry`). vividn:
+	"the output section … should actually *be* the first line of the repl …
+	it shouldn't be repeated when you drag it up." So the log ends at the
+	row before it, and what a reader pulls up is the continuation of what
+	they were already looking at.
+
+	ITS ROWS SCROLL ON THEIR OWN, pinned to the newest whenever a command
+	lands, as a terminal's do. The bar's number opens it and the number no
+	longer scrolls it (da-tj6m's phase 2 went with the order it was for):
+	the handle and the full screen are da-0b2vy's.
 
 	It mounts on the first gesture at the bar rather than at boot: until a
 	finger or a wheel has touched the bar nobody has ever seen this box, and
 	a scrollback rendered twice on every command is a cost paid for nothing.
-	The box's own height is fixed in CSS, so nothing above it moves when it
-	fills.
 
-	`close history` is PINNED TO THE BOTTOM OF THE SCREEN — vividn, 16:25, of
-	the name it had then: "yes, return to top is pinned at the bottom". A
-	history can be thousands
-	of entries long, and a control at the end of one is a control nobody can
-	reach. The box's bottom edge IS the screen's bottom edge once the page
-	has come to rest in the log ($lib/log.ts has that arithmetic), so the
-	button is simply at the bottom of the box.
+	`close history` is PINNED TO THE BOTTOM OF THE BOX, just over the output
+	section — vividn, 16:25, of the name it had then: "yes, return to top is
+	pinned at the bottom". A history can be thousands of entries long, and a
+	control at the end of one is a control nobody can reach.
 -->
 <script lang="ts">
-	import { onDestroy, untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import Repl from '$lib/Repl.svelte';
 	import { repl } from '$lib/replStore.js';
-	import { armed, closeLog, inLog, scrolled, toNewest, trackLog } from '$lib/log.js';
-	import { grip } from '$lib/grip.js';
+	import { armed, closeLog, inLog } from '$lib/log.js';
 
-	/** The box the rows are in — the ONE NUMBER's to scroll, and nobody else's. */
-	let scroller: HTMLDivElement | undefined = $state();
-	$effect.pre(() => {
-		const box = scroller ?? null;
-		untrack(() => trackLog(box));
-	});
-	// PHASE 2, and it is the same pull as phase 1: past the ceiling the bar
-	// cannot open further, so the number becomes the list moving ($lib/log.ts).
-	$effect.pre(() => {
-		if (scroller) scroller.scrollTop = $scrolled;
-	});
-	// A command that lands is row one again, so the list comes back to its
-	// newest — the same pin `Repl.svelte` does after a run, said to the
-	// number, so the two cannot disagree about where the list is.
+	let body: HTMLDivElement | undefined = $state();
+	// A command that lands is the newest row, at the bottom: the list comes
+	// back to it, wherever the reader had scrolled.
 	$effect.pre(() => {
 		void $repl.scrollback;
-		untrack(toNewest);
+		const box = body;
+		if (box) untrack(() => tick().then(() => (box.scrollTop = box.scrollHeight)));
 	});
-	onDestroy(() => trackLog(null));
 </script>
 
 <!-- `inert` is for the REPL inside: `close history` is already out of the
      DOM until the log is reached, and a scrollback nobody can see must not
      be in the Tab order either (canary on PR #46). -->
-<div class="log" class:reached={$inLog} inert={!$inLog} use:grip>
+<div class="log" class:reached={$inLog} inert={!$inLog}>
 	{#if $armed}
-		<Repl reversed bare skip={1} bind:body={scroller} />
+		<Repl bare skip={1} bind:body />
 	{/if}
 	{#if $inLog}
 		<button type="button" class="top" onclick={closeLog}>close history</button>
@@ -87,35 +68,11 @@
 		/* As tall as the bar has been pulled past the notch, and no taller
 		   than the page less the bar — vividn: "open the REPL section as far as
 		   you want, not to full screen". At its tallest the dashboard is gone
-		   and the bar's top is the top of the page; past that the pane's own
-		   body scrolls. */
+		   and the log's top is the top of the page; its body scrolls. */
 		height: var(--log-height, 0px);
 		overflow: hidden;
 		min-width: 0;
 		background: var(--page);
-		/* The log is a vertical handle exactly as the bar is. */
-		touch-action: pan-x;
-	}
-
-	/* THE ROWS DO NOT SCROLL UNDER A FINGER — the NUMBER scrolls them.
-	
-	   vividn, 2026-09-21, of the build before this: "2-N in the repl seem to
-	   scroll independently, so if I pull up the input section a bit, I can
-	   then scroll through the old history independently. This behavior is
-	   incorrect". That was this box's own vertical scroll, live at every
-	   height: a finger on the rows moved the rows instead of the bar. So it
-	   is inert to the reader — `overflow-y: hidden` is still scrollable
-	   PROGRAMMATICALLY, which is how `scrollTop` above gets set — while
-	   `overflow-x` stays the pane's own, because a CLI table is wide and
-	   reaching its right-hand columns is not the bar's gesture.
-	
-	   `touch-action` for the same reason it is on the prompt's box: the
-	   value resolves from the touch's target up to the NEAREST SCROLL
-	   CONTAINER and no further, and this box is one. Without it the browser
-	   claims every vertical drag that starts on a row. */
-	.log :global(.body) {
-		overflow-y: hidden;
-		touch-action: pan-x;
 	}
 
 	.log :global(section.pane) {

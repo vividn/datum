@@ -5,8 +5,12 @@
 // similar to the mobile interface, so commands along the bottom, next row
 // up can just be fields. In the second row, let's have tail, nowview, and
 // stats. Then dayview along the top». So: dayview / tail | nowview | stats
-// / fields / commands, over the app's own bottom bar and with no `input`
-// pane drawing that bar a second time.
+// / fields, over the app's own bottom bar and with no `input` pane drawing
+// that bar a second time.
+//
+// The commands pane at the foot went in da-mwp4m. vividn, 2026-10-27:
+// «remove the command widget on the collect tab (it can remain a widget in
+// general)»: its room is the bar's output section's, open over the input.
 //
 // The rest of the suite opens `main` on a tree it PINS (support/desk.mjs),
 // so this file is the one that asks for the shipped tree (`desk: null`).
@@ -16,7 +20,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, atEachScreen, sharedApp, startApp, stopApp } from './support/app.mjs';
-import { CHROME, DESKTOP, pane, titles } from './support/layout.mjs';
+import { CHROME, DESKTOP, titles } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -51,8 +55,7 @@ const LEGIBLE = {
 	tail: { width: 200, height: 102 },
 	nowview: { width: 160, height: 108 },
 	stats: { width: 240, height: 140 },
-	bar: { width: 160, height: 49 },
-	command: { width: 160, height: 49 }
+	bar: { width: 160, height: 49 }
 };
 
 /** Every dashboard pane's box, and the top of the bottom bar. */
@@ -67,28 +70,14 @@ const screen = (page) =>
 		)
 	}));
 
-/** The commands pane's buttons drawn whole, inside the bar's box. */
-const wholeCommands = (page) =>
-	pane(page, 'command')
-		.locator('.bar.commands')
-		.evaluate((el) => {
-			const box = el.getBoundingClientRect();
-			return [...el.querySelectorAll('button')]
-				.filter((b) => {
-					const r = b.getBoundingClientRect();
-					return r.width > 0 && r.left >= box.left - 0.5 && r.right <= box.right + 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
-				})
-				.map((b) => b.textContent.trim());
-		});
-
 describe('a fresh desktop', () => {
-	test('`collect` is `main`: dayview / tail | nowview | stats / fields / command', async () => {
+	test('`collect` is `main`: dayview / tail | nowview | stats / fields, and no command pane', async () => {
 		const { page, errors } = await fresh();
 		assert.deepEqual(
 			await page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout)),
 			['welcome', 'setup', 'collect']
 		);
-		assert.deepEqual(await titles(page), ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command']);
+		assert.deepEqual(await titles(page), ['dayview', 'tail', 'nowview', 'stats', 'fields']);
 		// No `input`: the bottom bar is the command line, and one is enough.
 		assert.equal(await page.locator('main section.pane[data-title="input"]').count(), 0);
 		// Splits, not tabs: all three of row two are on the screen at once.
@@ -101,11 +90,12 @@ describe('a fresh desktop', () => {
 			assert.ok(near(p[id].top, p.tail.top) && near(p[id].bottom, p.tail.bottom), `${id} is not on the tail's row`);
 		assert.ok(p.tail.right <= p.nowview.left + 1 && p.nowview.right <= p.stats.left + 1, 'row two is not tail, nowview, stats');
 		assert.ok(p.tail.bottom <= p.bar.top + 1, 'fields is not under row two');
-		assert.ok(p.bar.bottom <= p.command.top + 1, 'command is not under fields');
+		// Its room is the bar's output, open over the input.
+		assert.equal(await page.locator('.prompt-bar .section.output').count(), 1, 'the output section is not open');
 		assert.deepEqual(errors, []);
 	});
 
-	test('every pane is legible, and the commands whole above the bottom bar, at every size', async (t) => {
+	test('every pane is legible, and the fields above the bottom bar, at every size', async (t) => {
 		const { page } = await fresh();
 		const seen = [];
 		await atEachScreen(t, page, SIZES, async ({ width, height }) => {
@@ -117,12 +107,9 @@ describe('a fresh desktop', () => {
 					`${width}×${height}: ${id} is ${box.width.toFixed(1)}×${box.height.toFixed(1)}, under its ${floor.width}×${floor.height} and its frame`
 				);
 			}
-			// The pane a reader reaches for, and the one that loses when
-			// anything above it grows: on the screen, over the bar, whole.
-			assert.ok(panes.command.bottom <= prompt + 0.5, `${width}×${height}: the commands run under the bottom bar`);
-			const commands = await wholeCommands(page);
-			for (const name of ['Undo', '↷', 'occur', 'start', 'end'])
-				assert.ok(commands.includes(name), `${width}×${height}: ${name} is not whole: ${commands.join(' · ')}`);
+			// The last row, and the one that loses when anything above it
+			// grows: on the screen, over the bar.
+			assert.ok(panes.bar.bottom <= prompt + 0.5, `${width}×${height}: the fields run under the bottom bar`);
 			seen.push(`${width}×${height} ${Object.entries(panes).map(([id, b]) => `${id} ${Math.round(b.width)}×${Math.round(b.height)}`).join(' ')}`);
 		});
 		t.diagnostic(seen.join('\n'));

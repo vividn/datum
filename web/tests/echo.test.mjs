@@ -26,7 +26,7 @@ import { readFileSync } from 'node:fs';
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
-import { ONE_PANE } from './support/layout.mjs';
+import { CLI_BESIDE, ONE_PANE } from './support/layout.mjs';
 import { echoEnv, parseEcho } from '../src/lib/echo.ts';
 
 before(startApp);
@@ -81,7 +81,7 @@ describe('the record is what was typed (da-vx31e)', () => {
 			assert.match(why.stdout, /raw_input:\s+occur coffee$/m, why.stdout || why.stderr);
 			// …and the REPL drew its echo as a document, so it WAS asked for.
 			const hid = why.stdout.match(/hid: (\w+)/)?.[1] ?? '';
-			const drawn = await app.page.locator('.repl .doc[data-hid]').evaluateAll((all) => all.map((d) => d.dataset.hid));
+			const drawn = await app.page.locator('.cli .doc[data-hid]').evaluateAll((all) => all.map((d) => d.dataset.hid));
 			assert.ok(drawn.some((h) => h && hid.startsWith(h)), `${hid} not among ${drawn}`);
 		});
 	});
@@ -143,13 +143,15 @@ describe('the echo is painted in datum’s colours', () => {
 		return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
 	};
 
-	test('the field is in its own colour, in the bar and in the REPL alike', async () => {
-		await onSeam(async (app) => {
+	// The CLI beside a static pane, not alone: the CLI alone draws no output
+	// section in the bar (da-mwp4m), and this reads both.
+	test('the field is in its own colour, in the bar and in the CLI alike', async () => {
+		await shared.solo(async (app) => {
 			await app.submit('occur coffee');
 			const [doc] = parseEcho((await app.run(['get', 'coffee', '--show', 'json'])).stdout);
 			assert.ok(doc.field_color, 'the CLI answered no field colour');
 
-			for (const root of ['.prompt-bar', '.repl']) {
+			for (const root of ['.prompt-bar', '.cli']) {
 				const drawn = await runs(app.page, root);
 				assert.equal(
 					drawn.map((r) => r.text).join(''),
@@ -165,7 +167,7 @@ describe('the echo is painted in datum’s colours', () => {
 				);
 			}
 			assert.deepEqual(app.errors, []);
-		});
+		}, CLI_BESIDE);
 	});
 
 	test('a state gets its own colour, which is not the field’s', async () => {
@@ -178,7 +180,7 @@ describe('the echo is painted in datum’s colours', () => {
 			const doc = parseEcho((await app.run(['get', 'mood', '--show', 'json'])).stdout).at(-1);
 			assert.notEqual(doc.state_color, doc.field_color);
 
-			const drawn = await runs(app.page, '.repl');
+			const drawn = await runs(app.page, '.cli');
 			assert.equal(drawn.map((r) => r.text).join(''), doc.info);
 			assert.ok(
 				drawn.some(

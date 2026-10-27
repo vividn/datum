@@ -19,7 +19,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, PHONE, atRest, chooseRoot, swipeOver } from './support/layout.mjs';
+import { DESKTOP, PHONE, along, atRest, chooseRoot, swipeOver, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -77,12 +77,16 @@ const opened = (...names) => ({
 		)
 });
 
+// The CLI over a commands pane, whose `Sync` is the door these open by: the
+// shipped tree had one until da-mwp4m took it off collect.
+const WITH_COMMANDS = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('cmd', 'command')));
 const desktop = sharedApp({ ...DESKTOP, desk: null });
+const onDesktop = (fn) => desktop.solo(fn, WITH_COMMANDS);
 const phone = sharedApp(PHONE);
 
 describe('a place on a desktop', () => {
 	test('the Sync button opens it in a modal, not a tab, and the browser’s back closes it', async () => {
-		await desktop.solo(async ({ page, errors }) => {
+		await onDesktop(async ({ page, errors }) => {
 			const sync = page.locator('.bar.commands [data-command="sync"]');
 			assert.equal((await sync.innerText()).trim(), 'Sync');
 			assert.equal(await sync.getAttribute('data-act'), 'open');
@@ -108,7 +112,7 @@ describe('a place on a desktop', () => {
 		['×', (page) => modal(page).locator('.sheet-head .close').click()]
 	]) {
 		test(`${how} closes it, and takes its history entry with it`, async () => {
-			await desktop.solo(async ({ page }) => {
+			await onDesktop(async ({ page }) => {
 				await page.evaluate(() => window.datum.shell.openPlace('sync'));
 				await modal(page).locator('.sync header').waitFor();
 				await close(page);
@@ -145,7 +149,7 @@ describe('a place on a desktop', () => {
 	// layout; the modal has to draw what that name resolves to, not a kind of
 	// the same spelling. `dayview` is `only('dayview', 'daystrip', …)`.
 	test('a place whose name is not its kind opens the widget its layout holds', async () => {
-		await desktop.solo(async ({ page }) => {
+		await onDesktop(async ({ page }) => {
 			await page.evaluate(() => window.datum.shell.openPlace('dayview'));
 			const dayview = modal(page, 'dayview');
 			await dayview.locator('.strip .today-line').waitFor();
@@ -161,7 +165,7 @@ describe('a place on a desktop', () => {
 	// carrying the retired `dayHeight: 85` (da-r0ydu) draws a day that
 	// follows its box in the tab; in the modal it has to as well.
 	test('a place’s save is migrated in the modal as it is in the tab', async () => {
-		await desktop.solo(async ({ page }) => {
+		await onDesktop(async ({ page }) => {
 			const settings = { dayHeight: 85, freezeToday: true };
 			await page.evaluate(
 				(settings) =>
@@ -185,7 +189,7 @@ describe('a place on a desktop', () => {
 	});
 
 	test('a root tab holding it is brought forward, and no modal opens', async () => {
-		await desktop.solo(async (app) => {
+		await onDesktop(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.shell.openPlace('sync', true));
 			await until(() => shown(page), (t) => t === 'sync');
@@ -200,7 +204,7 @@ describe('a place on a desktop', () => {
 	});
 
 	test('in a pane, it is just the widget', async () => {
-		await desktop.solo(async ({ page }) => {
+		await onDesktop(async ({ page }) => {
 			const tab = await page.evaluate(() => {
 				const [first] = window.datum.layout.current().root.tabs[0].content.children;
 				return first.tabs[0].id;
@@ -215,7 +219,7 @@ describe('a place on a desktop', () => {
 	});
 
 	test('/sync/approve#… opens the Sync place', async () => {
-		await desktop.solo(async (app) => {
+		await onDesktop(async (app) => {
 			await app.goto('/sync/approve#eyJ9');
 			await modal(app.page).locator('.sync header').waitFor();
 		});
@@ -264,10 +268,10 @@ describe('a place on a phone', () => {
 		await withApp(
 			async ({ page, errors }) => {
 				await openPlace(page, 'sync');
-				assert.deepEqual(await rootTabs(page), ['main', 'sync', 'tail', 'repl']);
+				assert.deepEqual(await rootTabs(page), ['main', 'sync', 'tail', 'cli']);
 				await watch(page);
 				await page.locator('.root-bar [role="tab"]', { hasText: 'main' }).click();
-				await until(() => rootTabs(page), (t) => t.join() === 'main,tail,repl');
+				await until(() => rootTabs(page), (t) => t.join() === 'main,tail,cli');
 				assert.equal(await shown(page), 'main');
 				assert.ok(
 					(await strip(page)).moved.some((t) => /translateX\(\d/.test(t)),
@@ -276,14 +280,14 @@ describe('a place on a phone', () => {
 
 				await page.locator('.root-bar [role="tab"]', { hasText: 'tail' }).click();
 				await openPlace(page, 'sync');
-				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'sync', 'repl']);
+				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'sync', 'cli']);
 				// Leaving it for a tab that is not the one it came from closes it too.
-				await page.locator('.root-bar [role="tab"]', { hasText: 'repl' }).click();
-				await until(() => rootTabs(page), (t) => t.join() === 'main,tail,repl');
-				assert.equal(await shown(page), 'repl');
+				await page.locator('.root-bar [role="tab"]', { hasText: 'cli' }).click();
+				await until(() => rootTabs(page), (t) => t.join() === 'main,tail,cli');
+				assert.equal(await shown(page), 'cli');
 				assert.deepEqual(errors, []);
 			},
-			{ ...PHONE, ...opened('main', 'tail', 'repl') }
+			{ ...PHONE, ...opened('main', 'tail', 'cli') }
 		);
 	});
 
@@ -294,7 +298,7 @@ describe('a place on a phone', () => {
 		await withApp(
 			async ({ page }) => {
 				await openPlace(page, 'sync');
-				assert.deepEqual(await rootTabs(page), ['main', 'sync', 'tail', 'repl']);
+				assert.deepEqual(await rootTabs(page), ['main', 'sync', 'tail', 'cli']);
 				await page.evaluate(async () => {
 					const { shell } = window.datum;
 					shell.activate(0);
@@ -302,12 +306,12 @@ describe('a place on a phone', () => {
 					for (let i = 0; i < 2; i++) await new Promise((r) => requestAnimationFrame(r));
 					shell.activate(3);
 				});
-				await until(() => shown(page), (t) => t === 'repl');
+				await until(() => shown(page), (t) => t === 'cli');
 				await atRest(rootContent(page));
-				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'repl']);
-				assert.equal(await shown(page), 'repl');
+				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'cli']);
+				assert.equal(await shown(page), 'cli');
 			},
-			{ ...PHONE, ...opened('main', 'tail', 'repl') }
+			{ ...PHONE, ...opened('main', 'tail', 'cli') }
 		);
 	});
 
@@ -386,12 +390,12 @@ describe('a place on a phone', () => {
 		}
 	});
 	const back = (page) => commands(page).locator('button[data-back]');
-	/** To the place and back to `mobile`, by a tap on its tab, the bar remounted. */
+	/** To the place and back to `command`, by a tap on its tab, the bar remounted. */
 	async function roundTrip(page) {
 		const bar = await commands(page).elementHandle();
 		await openPlace(page, 'sync');
-		await page.locator('.root-bar [role="tab"]', { hasText: 'mobile' }).click();
-		await until(() => rootTabs(page), (t) => t.join() === 'mobile');
+		await page.locator('.root-bar [role="tab"]', { hasText: 'command' }).click();
+		await until(() => rootTabs(page), (t) => t.join() === 'command');
 		await commands(page).waitFor();
 		assert.equal(await bar.evaluate((el) => el.isConnected), false, 'the place did not unmount the bar');
 	}
@@ -412,7 +416,7 @@ describe('a place on a phone', () => {
 				assert.equal(await commands(page).locator('button[data-command="db"]').count(), 1);
 				assert.deepEqual(errors, []);
 			},
-			{ ...PHONE, reducedMotion: 'reduce', ...alone('mobile') }
+			{ ...PHONE, reducedMotion: 'reduce', ...alone('command') }
 		);
 	});
 
@@ -427,14 +431,14 @@ describe('a place on a phone', () => {
 				const id = await page.evaluate(() => window.datum.layout.current().root.tabs[0].id);
 				await page.evaluate(() => window.datum.shell.close(0));
 				await until(() => rootTabs(page), (t) => t.join() === 'tail');
-				await page.evaluate(() => window.datum.shell.open('mobile'));
-				await until(() => shown(page), (t) => t === 'mobile');
+				await page.evaluate(() => window.datum.shell.open('command'));
+				await until(() => shown(page), (t) => t === 'command');
 				await commands(page).waitFor();
-				assert.equal(await page.evaluate(() => window.datum.layout.current().root.tabs.find((t) => t.layout === 'mobile').id), id, 'a new id: this proves nothing');
+				assert.equal(await page.evaluate(() => window.datum.layout.current().root.tabs.find((t) => t.layout === 'command').id), id, 'a new id: this proves nothing');
 				assert.equal(await back(page).count(), 0, 'the reopened tab came back drilled');
 				assert.deepEqual(errors, []);
 			},
-			{ ...PHONE, reducedMotion: 'reduce', ...opened('mobile', 'tail') }
+			{ ...PHONE, reducedMotion: 'reduce', ...opened('command', 'tail') }
 		);
 	});
 
@@ -458,7 +462,7 @@ describe('a place on a phone', () => {
 				assert.equal(await back(page).count(), 0, 'Escape was undone by the round trip');
 				assert.deepEqual(errors, []);
 			},
-			{ ...PHONE, reducedMotion: 'reduce', ...alone('mobile') }
+			{ ...PHONE, reducedMotion: 'reduce', ...alone('command') }
 		);
 	});
 

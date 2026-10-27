@@ -75,12 +75,12 @@ describe("the fields pane's box", () => {
 			const axis = await bar.evaluate(over);
 			assert.ok(axis, 'the bar fits its pane — there is nothing this test can prove');
 
-			const echoes = await page.locator('.repl .echo').count();
+			const echoes = await page.locator('.cli .echo').count();
 			// Playwright refuses to click what is out of view or covered, and
 			// scrolls its scrollable ancestor to reach it: the press is the
 			// assertion that the button is reachable, not clipped away.
 			await page.locator('.bar button.widget').last().click();
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoes);
 			assert.ok(
 				await bar.evaluate((el, a) => (a === 'x' ? el.scrollLeft : el.scrollTop) > 0, axis),
 				'the bar never scrolled to reach it'

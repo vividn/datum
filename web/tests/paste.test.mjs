@@ -16,7 +16,7 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const shared = sharedApp({ viewport: { width: 1280, height: 800 }, query: 'repl' });
+const shared = sharedApp({ viewport: { width: 1280, height: 800 }, query: 'cli' });
 
 const BOX = '.prompt-bar input';
 

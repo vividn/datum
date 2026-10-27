@@ -53,13 +53,13 @@ const slowPanes = (page, quick) =>
 async function watch(app, field, line) {
 	const { page } = app;
 	await page.evaluate((field) => {
-		const echoes = document.querySelectorAll('.repl .echo').length;
+		const echoes = document.querySelectorAll('.cli .echo').length;
 		const seen = (window.__datumSeen = { frames: [], output: null });
 		let frame = 0;
 		const tick = () => {
 			frame += 1;
 			const fill = document.querySelector(`.bar button.widget[data-field="${field}"]`)?.style.getPropertyValue('--fill').trim();
-			if (seen.output === null && document.querySelectorAll('.repl .echo').length > echoes) seen.output = frame;
+			if (seen.output === null && document.querySelectorAll('.cli .echo').length > echoes) seen.output = frame;
 			if (seen.frames.at(-1)?.fill !== fill) seen.frames.push({ frame, fill, at: performance.now() });
 			if (!seen.done) requestAnimationFrame(tick);
 		};

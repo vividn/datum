@@ -61,7 +61,7 @@ describe('a state field fills the widget with its states', () => {
 
 			const before = (await app.echoes()).length;
 			await page.locator('.bar [data-state="happy"]').click();
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			// The argv the menu sent before this bead — `pressArgv`'s, so the
 			// bar's pills still reach it. (The hold panel's bubbles reached it
 			// too until da-e78x6 removed them; the pills are what is left.)
@@ -115,7 +115,7 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-add-state]').click();
 			await page.locator('.bar input.new-state').fill('sad');
 			await page.locator('.bar input.new-state').press('Enter');
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			assert.equal((await app.echoes()).at(-1), 'switch mood sad');
 
 			await page.locator('.bar [data-field="mood"]').waitFor();

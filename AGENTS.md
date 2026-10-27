@@ -736,13 +736,15 @@ binary.
   (da-help3). A device's tabs take
   backups one run at a time, under the `datum-backups` Web Lock (da-u050c).
   A command a reader runs also carries `--show json` (`echoArgv`
-  in `web/src/lib/echo.ts`), so the bottom bar and the REPL PLACE the
+  in `web/src/lib/echo.ts`), so the bottom bar and the CLI widget PLACE the
   CLI's own action echo — action, hid, id, info, data — instead of
   parsing its printed lines; a command with no echo falls back to them.
 - The bottom bar is the page's command line AND its status line
-  and the SEAM between the dashboard and the history: an INPUT
-  section over an OUTPUT section, `--input-height` (2.9rem) and
-  `--output-height` (3.6rem) on the shell. The input is one row — the mark,
+  and the SEAM between the dashboard and the history, read as a terminal
+  is: an OUTPUT section over an INPUT section on the foot of the page,
+  `--output-height` (a share of the page, `clamp(3.6rem, 15cqh, 8rem)`,
+  the room the collect tab's commands pane had) and `--input-height`
+  (2.9rem) on the shell. The input is one row — the mark,
   the clock with seconds at every width, `❯`, the box with its time-cursor
   pills, which stand to the RIGHT of the box and never over the `❯`, going
   off the screen's right edge and coming back on the box's own sideways
@@ -753,15 +755,19 @@ binary.
   answers with its ACTION words along the bottom of it STARTING AT THE `❯`,
   in the color the CLI paints the tag (`Outcome::hex`, carried as
   `action_color` on `--show json`), fading, or a red `ERROR` that opens the
-  output on a tap. UNDER the bar, below the fold, is the newest-first REPL
-  (`$lib/BarLog.svelte`).
+  output on a tap. OVER the bar is the history, oldest first and the
+  newest nearest the input (`$lib/BarLog.svelte`), its rows scrolling as
+  a terminal's do. The CLI widget (`cli`; the `repl` kind until da-mwp4m,
+  which a stored layout still opens as it) is that history as a pane, and
+  a root tab that is the CLI alone (`/cli`, `/repl`) draws no output
+  section at all: the widget is the output there.
 - THE SCROLLBACK STANDS IN COLUMNS (`$lib/scrollback.ts`) — the aim:
   "the output of a single entry should be narrow enough to comfortably fit
   2 on mobile side by side". As many entries abreast as fit at the width an
   entry's lines WANT (270px, measured), and never fewer than two wherever
   two clear what an entry NEEDS (160px, measured against the width it
   starts being cut at): a 390px phone gets two, a 1280px screen four, a box
-  narrower than two columns the single column it always had. The REPL cuts
+  narrower than two columns the single column it always had. The CLI cuts
   nothing to pay for it — it has the vertical room the bar's fixed band has
   not, so a line too long for its column wraps and the brace drops under it
   (`.doc.all` in Doc.svelte); a command whose answer is the CLI's own
@@ -777,11 +783,11 @@ binary.
   HOW FAR OPEN it is, is ONE number of pixels (`reveal` in `$lib/log.ts`)
   that three boxes are sized from — the page itself never scrolls. The
   output opens over the first `--output-height` of it, which is the NOTCH;
-  past it the log grows to whatever height the finger leaves it at, up to
-  the whole page. A release CARRIES ITS SPEED, at any speed (`rest` in
+  past it the log grows upward to whatever height the finger leaves it at,
+  up to the top of the page, the input staying at the foot. A release CARRIES ITS SPEED, at any speed (`rest` in
   `$lib/detent.ts`; there is no fling threshold): it glides on by `speed *
   TAU` (320ms) and may rest anywhere but for three DETENTS — shut, the
-  notch, and the ceiling, the bar at the top of the screen. The notch and
+  notch, and the ceiling, the log at the top of the screen. The notch and
   the ceiling each take a glide ending within `DETENT` (24px) of them, and
   a coast never crosses either from above — the SNAG — so a throw down from
   a tall log stops at the notch, the output still open, and a second one
@@ -790,9 +796,9 @@ binary.
   ending short of the notch's catch goes to the notch from a gesture
   heading up, and shuts from one heading down. Every settle is one
   ease-out cubic whose duration is set to leave at the finger's own speed.
-  A phone starts folded, anything wider open, remembered per device.
-  `return to top` sits pinned at the bottom of the screen and Escape does
-  the same. NB `touch-action: pan-x` is on `.field` as well as the bar: the
+  Every screen starts open, and the fold is remembered per device.
+  `close history` sits pinned at the foot of the log and Escape does the
+  same. NB `touch-action: pan-x` is on `.field` as well as the bar: the
   value resolves only up to the nearest scroll container, so without it the
   browser claims every drag that starts on the box.
 - `?db=<name>` names the DATABASE the page runs against (`web/src/lib/database.ts`): the name becomes the CLI's `DATUM_DB` at the

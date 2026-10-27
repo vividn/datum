@@ -13,7 +13,7 @@ import { along, draft, widgetPane } from './support/layout.mjs';
 import { atRows } from './support/rows.mjs';
 import { FIELD_FORM, leaveField, openField } from './support/field.mjs';
 
-const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
+const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 const BAR = 'section[data-pane="bar"] .bar';
 const GAP = 6;
 /** Fields around the two alphabetically, so each stands mid-row and can be scrolled to the middle. */

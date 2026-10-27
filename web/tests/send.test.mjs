@@ -123,7 +123,7 @@ describe('Send', () => {
 	// The same line in a second place (da-3zon): an input widget draws its
 	// own Send, and it runs the line.
 	test('an input widget draws one too, and it runs the line', async () => {
-		const page_ = JSON.stringify(along('column', widgetPane('in', 'input'), widgetPane('repl', 'repl')));
+		const page_ = JSON.stringify(along('column', widgetPane('in', 'input'), widgetPane('repl', 'cli')));
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const WIDGET_SEND = '.input-widget button[aria-label="run the line"]';

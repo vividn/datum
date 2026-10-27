@@ -24,7 +24,7 @@ after(stopApp);
 const AT = Date.UTC(2026, 8, 10, 9, 10);
 
 const PAGE = JSON.stringify(
-	along('column', widgetPane('repl', 'repl'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'))
+	along('column', widgetPane('repl', 'cli'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'))
 );
 
 const withApp = (fn, options = {}) =>
@@ -88,10 +88,10 @@ const showing = async (page) => (await listed(fieldsBar(page), '[data-field]')).
 
 /** Run `act` and wait for the REPL to echo the command it started. */
 async function echoed(app, act) {
-	const before = await app.page.locator('.repl .echo').count();
+	const before = await app.page.locator('.cli .echo').count();
 	await act();
 	await app.page.waitForFunction(
-		(n) => document.querySelectorAll('.repl .echo').length > n,
+		(n) => document.querySelectorAll('.cli .echo').length > n,
 		before
 	);
 }
@@ -806,7 +806,7 @@ describe('the sections that scroll (da-u79wl)', () => {
 	// row, off a phone's screen — so that is what the old bar is caught
 	// doing here, beside the new one, on one page.
 	const BOTH = JSON.stringify(
-		along('column', widgetPane('repl', 'repl'), widgetPane('old', 'command'), widgetPane('new', 'command', { sections: true }))
+		along('column', widgetPane('repl', 'cli'), widgetPane('old', 'command'), widgetPane('new', 'command', { sections: true }))
 	);
 	const COLUMNS = { undo: 1, log: 3, setup: 2, edit: 1, analysis: 2, db: 1 };
 	const pages = (page) => page.locator('section[data-pane="new"] .pages.commands');

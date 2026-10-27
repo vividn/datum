@@ -143,10 +143,10 @@ async function kitConfirm(page, line = 'kit install') {
 async function answer(page, button) {
 	const before = await echoes(page);
 	await page.locator('dialog.confirm').getByRole('button', { name: button, exact: true }).click();
-	await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+	await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 }
 
-const echoes = (page) => page.locator('.repl .echo').count();
+const echoes = (page) => page.locator('.cli .echo').count();
 
 /** Type `line` into the bottom bar and press Enter, without waiting for it to land. */
 async function type(page, line) {
@@ -163,7 +163,7 @@ async function choose(page, line, files) {
 		type(page, line)
 	]);
 	await chooser.setFiles(files);
-	await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+	await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 }
 
 /** Recorded argvs, a restore's pin (da-2zqad) read as `FP`: the fingerprint of the live entries it was counted on. */
@@ -253,7 +253,7 @@ for (const engine of [chromium, webkit]) {
 					// as typed, never the local purge's dialog, and in no chain refused.
 					let before = await echoes(page);
 					await type(page, 'db purge --chain');
-					await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+					await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 					assert.match((await app.outputs()).at(-1), /in no sync chain/);
 					assert.equal(await page.locator('dialog.confirm[open]').count(), 0);
 					assert.equal(await count(app), 4);
@@ -264,7 +264,7 @@ for (const engine of [chromium, webkit]) {
 					const name = page.locator('dialog.confirm input');
 					await name.fill('datu');
 					await name.press('Enter');
-					await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+					await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 					assert.match((await app.outputs()).at(-1), /aborted/);
 					assert.equal(await count(app), 4);
 
@@ -283,7 +283,7 @@ for (const engine of [chromium, webkit]) {
 					await name.fill('datum');
 					await name.press('Enter');
 					// The purge is the one command left in the scrollback.
-					await page.waitForFunction(() => document.querySelectorAll('.repl .echo').length === 1);
+					await page.waitForFunction(() => document.querySelectorAll('.cli .echo').length === 1);
 					await tailShows(page, 0);
 					assert.equal(await count(app), 0);
 					// ...and none of it is left on the device: the purge is the oldest command the REPL holds (da-3ni5m).
@@ -308,7 +308,7 @@ for (const engine of [chromium, webkit]) {
 					assert.match((await app.stdouts()).at(-1), /120 imported/);
 					const imported = (await count(app)) - 4;
 					await app.submit('dayview --start-date 2025-01-01 --end-date 2025-01-03');
-					const drawn = await page.locator('.repl svg.svg').last().evaluate((svg) => svg.outerHTML);
+					const drawn = await page.locator('.cli svg.svg').last().evaluate((svg) => svg.outerHTML);
 					// The imported field draws as a mark: its name is the mark's
 					// `data-title` since the page stopped keeping `<title>` (da-8jb8).
 					assert.match(drawn, /data-title="music /);
@@ -366,13 +366,13 @@ for (const engine of [chromium, webkit]) {
 						]);
 						await chooser.setFiles(LEGACY);
 						await page.waitForFunction(
-							(said) => [...document.querySelectorAll('.repl pre')].some((p) => new RegExp(said).test(p.textContent)),
+							(said) => [...document.querySelectorAll('.cli pre')].some((p) => new RegExp(said).test(p.textContent)),
 							said.source
 						);
 					}
 					await kitConfirm(page);
 					await answer(page, 'install');
-					assert.match((await page.locator('.repl pre').allInnerTexts()).at(-1), /^Installed kit 'rest'/);
+					assert.match((await page.locator('.cli pre').allInnerTexts()).at(-1), /^Installed kit 'rest'/);
 					assert.deepEqual(await page.evaluate(() => window.__chooserClicks), [true, true, true]);
 				},
 				{ engine, viewport: { width: 390, height: 844 }, prepare: clickedInKeydown }
@@ -399,10 +399,10 @@ test('an import shows its progress while it runs, and the result after', async (
 			// Every reading the REPL shows, and whether the command had landed by then.
 			await page.evaluate(() => {
 				window.__readings = [];
-				const echoes = () => document.querySelectorAll('.repl .echo').length;
+				const echoes = () => document.querySelectorAll('.cli .echo').length;
 				const before = echoes();
 				new MutationObserver(() => {
-					const shown = document.querySelector('.repl .progress')?.textContent;
+					const shown = document.querySelector('.cli .progress')?.textContent;
 					if (shown && shown !== window.__readings.at(-1)?.shown) {
 						window.__readings.push({ shown, landed: echoes() > before });
 					}
@@ -415,7 +415,7 @@ test('an import shows its progress while it runs, and the result after', async (
 			assert.ok(new Set(running).size >= 2, JSON.stringify(readings));
 			for (const shown of running) assert.match(shown, /^v2import: (reading|inserting) \d+\/5000$/);
 			assert.ok((await app.outputs()).some((o) => /5000 imported/.test(o)));
-			assert.equal(await page.locator('.repl .progress').count(), 0);
+			assert.equal(await page.locator('.cli .progress').count(), 0);
 			assert.deepEqual(app.errors, []);
 		}
 	);
@@ -627,7 +627,7 @@ test('an answer to the stale _LAST question acts on the entry it showed, or asks
 
 		// The tea is fresh: the answered run says nothing again (da-e7739),
 		// least of all that `_LAST` is older than 15 minutes.
-		const said = page.locator('.repl pre[data-stream="stderr"]');
+		const said = page.locator('.cli pre[data-stream="stderr"]');
 		const saidBefore = await said.count();
 		await answer(page, 'retime');
 		assert.equal(await said.count(), saidBefore, (await said.allInnerTexts()).join('\n'));
@@ -849,7 +849,7 @@ test('a hard restore’s name drops what its confirm counted; another tab’s wr
 		await name.fill('datum');
 		await name.press('Enter');
 		await page.waitForFunction(() => !document.querySelector('dialog.confirm[open]'));
-		await page.waitForFunction(() => /cannot be undone/.test(document.querySelector('.repl')?.textContent ?? ''));
+		await page.waitForFunction(() => /cannot be undone/.test(document.querySelector('.cli')?.textContent ?? ''));
 		assert.equal(await count(other), 3);
 		await other.page.close();
 		assert.deepEqual(app.errors, []);
@@ -902,7 +902,7 @@ test('a hard restore asks with what it drops and the database’s name, even wit
 			let before = await echoes(page);
 			await name.fill('datu');
 			await name.press('Enter');
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			assert.equal((await app.outputs()).at(-1), 'db restore --hard: aborted (input did not match datum)');
 			assert.deepEqual(await asked(), [['db', 'restore', '--hard', '-', '--dry-run', '--json']]);
 			assert.equal(await count(app), 3);
@@ -912,7 +912,7 @@ test('a hard restore asks with what it drops and the database’s name, even wit
 			before = await echoes(page);
 			await name.fill('datum');
 			await name.press('Enter');
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			assert.match((await app.stdouts()).at(-1), /cannot be undone/);
 			assert.deepEqual(pinned(await asked()), [
 				['db', 'restore', '--hard', '-', '--dry-run', '--json'],
@@ -927,7 +927,7 @@ test('a hard restore asks with what it drops and the database’s name, even wit
 			before = await echoes(page);
 			await name.fill('datum');
 			await name.press('Enter');
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			assert.deepEqual(await asked(), [
 				['db', 'restore', '--hard', '-', '--dry-run', '--json'],
 				['db', 'restore', '--hard', '-', '--yes']
@@ -967,7 +967,7 @@ test('a hard restore with --chain asks naming the chain whose every copy it rest
 		const before = await echoes(page);
 		await dialog.locator('input').fill('datu');
 		await dialog.locator('input').press('Enter');
-		await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+		await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 		assert.equal((await app.outputs()).at(-1), 'db restore --hard: aborted (input did not match datum)');
 		assert.equal(await count(app), 2);
 		assert.deepEqual(app.errors, []);

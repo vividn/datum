@@ -20,7 +20,7 @@ const PHONE = { width: 390, height: 844 };
 /** The newest entry's output: its lines, how wide it is, the room it has, and the history's sideways scroll. */
 const newest = (page) =>
 	page.evaluate(() => {
-		const entry = [...document.querySelectorAll('.repl .entry')].at(-1);
+		const entry = [...document.querySelectorAll('.cli .entry')].at(-1);
 		const pre = entry.querySelector('pre');
 		const body = entry.closest('.body');
 		return {
@@ -50,7 +50,7 @@ for (const line of ['help occur', 'help']) {
 				};
 				assert.equal(at(a), at(b), `${a} and ${b} line up:\n${lines.join('\n')}`);
 			},
-			{ viewport: PHONE, query: 'repl' }
+			{ viewport: PHONE, query: 'cli' }
 		);
 	});
 }
@@ -117,21 +117,21 @@ const first = (line) => (context) =>
 test(`help occur typed as the prompt is enabled fits a ${PHONE.width}px phone`, async () => {
 	await withApp(
 		async (app) => {
-			await app.page.locator('.repl .entry pre').first().waitFor();
+			await app.page.locator('.cli .entry pre').first().waitFor();
 			await app.idle();
 			const { lines, wide, room, sideways } = await newest(app.page);
 			assert.ok(lines.length > 10, `help occur printed ${lines.length} lines`);
 			assert.ok(wide <= room, `help occur is ${wide}px wide in a ${room}px pane`);
 			assert.equal(sideways, 0, `the history scrolls ${sideways}px sideways`);
 		},
-		{ viewport: PHONE, query: 'repl', prepare: first('help occur') }
+		{ viewport: PHONE, query: 'cli', prepare: first('help occur') }
 	);
 });
 
 test(`dayview typed as the prompt is enabled is drawn at a ${PHONE.width}px phone's width`, async () => {
 	await withApp(
 		async (app) => {
-			const svg = app.page.locator('.repl .entry svg').first();
+			const svg = app.page.locator('.cli .entry svg').first();
 			await svg.waitFor();
 			await app.idle();
 			const { drawn, room } = await svg.evaluate((el) => ({
@@ -140,6 +140,6 @@ test(`dayview typed as the prompt is enabled is drawn at a ${PHONE.width}px phon
 			}));
 			assert.ok(drawn <= room, `dayview is drawn ${drawn}px wide for a ${room}px pane`);
 		},
-		{ viewport: PHONE, query: 'repl', prepare: first('dayview') }
+		{ viewport: PHONE, query: 'cli', prepare: first('dayview') }
 	);
 });

@@ -104,7 +104,7 @@ writing it down.
    load, so bar.ts needs no list of which kinds may come back.
 6. **The web asks every command it runs for its echo as data** — `--show json` appended the way
    `fitArgv` appends `--width` (`echoArgv` in `$lib/echo.ts`, at `Repl.runArgv` and
-   `engine.alone`). The bottom bar and the REPL then PLACE the CLI's own strings — action, hid,
+   `engine.alone`). The bottom bar and the CLI widget then PLACE the CLI's own strings — action, hid,
    id, info, and its `data` items one to a row in a brace beside the two lines (da-f4mw) — and
    compose none of them; `data_inline` is the terminal's own join and the web does not use it. The document carries the CLI's
    own COLORS too (da-yu9s): `field` and `state` as logged, `field_color` and `state_color` as
@@ -192,9 +192,10 @@ writing it down.
    The migration, when a kind GOES, is `RETIRED_KINDS` in `layout/shell.ts` — the id maps to the
    kind that took its work over, applied where layouts are read (`inline`) so a stored layout opens
    as the new kind rather than as an untitled empty pane, and is written back out by `extract`.
-   The map is empty today: `input` was its one arm (→ `repl`, da-22vg) and the input widget came
-   back under that very id (da-3zon), so a layout saved with one opens as one again — which is what
-   a kind's id being a saved-layout key BUYS, and not only what it costs.
+   `input` was its first arm (→ `repl`, da-22vg) and the input widget came back under that very
+   id (da-3zon), so a layout saved with one opens as one again — which is what a kind's id being a
+   saved-layout key BUYS, and not only what it costs. `repl` → `cli` is one (da-mwp4m: the REPL
+   was renamed the CLI), and `/repl` an alias of `/cli`.
    A kind renamed BEFORE anyone has saved a layout naming it needs no arm at all — it is a plain
    rename, no migration, no alias, nothing to carry (`command` → `custom`, da-zqop, 2026-09-15,
    which freed `command` for the commands widget that took it, da-ltux); after that first saved
@@ -360,13 +361,15 @@ writing it down.
     on the 24-core build box (da-x6ea): `withApp` on the **day page is 2.4–2.8 s** — 0.13 s of
     context, page and navigation, ~0.9 s to the seam being ready (worker, wasm compile, OPFS,
     schema) and 1.1–1.3 s for the frame's six panes, the day strip alone being one `dayview`
-    process per band it holds. On the **one-pane `repl` layout it is 1.65 s**, and
+    process per band it holds. On the **one-pane `cli` layout it is 1.65 s**, and
     `page.setViewportSize()` is **10 ms**. So a file is, to a first approximation, its number
     of `withApp`s times one of those two numbers, and the three ways to spend less are:
-    - **`{ query: 'repl' }`** for a test the day page is only scenery for. The bottom bar is
+    - **`{ query: 'cli' }`** for a test the day page is only scenery for. The bottom bar is
       drawn by `+layout.svelte` above whatever tree is in front, so it is the same bar on every
-      page; a test that reads the seam, the bar or the banner does not need the frame behind it.
-      A test that reads a pane, the fields widget or the strip does, and says so.
+      page; a test that reads the seam, the input or the banner does not need the frame behind it.
+      A test that reads a pane, the fields widget or the strip does, and says so. The CLI alone
+      draws NO output section (da-mwp4m), so a test of the bar's output opens `prepare: withBar`
+      (`tests/support/layout.mjs`), the CLI beside one static pane.
     - **`atEachScreen(t, page, screens, body)`** (`tests/support/app.mjs`) for a size matrix: a
       subtest per screen — so the report still names the size that failed — against ONE app,
       resized, two animation frames apart so the ResizeObservers have run.

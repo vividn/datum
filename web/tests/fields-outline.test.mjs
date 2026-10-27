@@ -137,7 +137,7 @@ describe('the outline says what a tap does', () => {
 				const echoed = (await app.echoes()).length;
 				await app.clock.forward(1000);
 				await button.click();
-				if (double) await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoed);
+				if (double) await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoed);
 				await app.idle();
 				assert.equal((await app.echoes()).length > echoed, double, `${field}: ran`);
 				assert.equal((await entries(app)) > had, double, `${field}: double=${double}`);

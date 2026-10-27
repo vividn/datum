@@ -946,13 +946,13 @@ function app(page, errors, query, clean, internal) {
 			// An echo not there before, not a higher count: a purge empties
 			// the scrollback (da-3ni5m), and an entry is a new element.
 			await page.evaluate(() => {
-				document.querySelectorAll('.repl .echo').forEach((e) => (e.dataset.seen = ''));
+				document.querySelectorAll('.cli .echo').forEach((e) => (e.dataset.seen = ''));
 				window.__submitLast = window.datum.bar.last();
 			});
 			const input = page.locator('.prompt-bar input');
 			await input.fill(line);
 			await input.press('Enter');
-			const echoed = () => [...document.querySelectorAll('.repl .echo')].some((e) => !('seen' in e.dataset));
+			const echoed = () => [...document.querySelectorAll('.cli .echo')].some((e) => !('seen' in e.dataset));
 			await page.waitForFunction(echoed).catch(async (e) => {
 				const seen = {
 					echoed: await page.evaluate(echoed),
@@ -1003,7 +1003,7 @@ function app(page, errors, query, clean, internal) {
 						placeholder: getComputedStyle(input, '::placeholder').color,
 						animations: fades.length,
 						age: fade?.currentTime ?? 0,
-						echoes: document.querySelectorAll('.repl .echo').length
+						echoes: document.querySelectorAll('.cli .echo').length
 					};
 					if (fade?.currentTime != null) {
 						const was = fade.currentTime;
@@ -1042,17 +1042,17 @@ function app(page, errors, query, clean, internal) {
 
 		/** Press a widget in the bar, by the field it names. */
 		async pressWidget(field) {
-			const before = await page.locator('.repl .echo').count();
+			const before = await page.locator('.cli .echo').count();
 			await page.locator('.bar button.widget', { hasText: field }).first().click();
 			await page.waitForFunction(
-				(n) => document.querySelectorAll('.repl .echo').length > n,
+				(n) => document.querySelectorAll('.cli .echo').length > n,
 				before
 			);
 		},
 
 		/** The REPL's echoed command lines, oldest first, `❯ ` stripped. */
 		echoes: async () =>
-			(await page.locator('.repl .echo').allInnerTexts()).map((t) =>
+			(await page.locator('.cli .echo').allInnerTexts()).map((t) =>
 				t.replace(/^\s*❯\s*/, '').trim()
 			),
 
@@ -1064,7 +1064,7 @@ function app(page, errors, query, clean, internal) {
 		 * answered `[]` — which nothing noticed, a helper that lies being
 		 * silent until someone finally asks it something (da-b049).
 		 */
-		outputs: () => page.locator('.repl pre').allInnerTexts(),
+		outputs: () => page.locator('.cli pre').allInnerTexts(),
 
 		/**
 		 * The REPL's rendered stdout blocks, oldest first.
@@ -1076,7 +1076,7 @@ function app(page, errors, query, clean, internal) {
 		 * `pre` alike, since the error paint follows the exit code and a
 		 * successful command's stderr is not an error (da-q15y).
 		 */
-		stdouts: () => page.locator('.repl pre[data-stream="stdout"]').allInnerTexts(),
+		stdouts: () => page.locator('.cli pre[data-stream="stdout"]').allInnerTexts(),
 
 		/**
 		 * What one of the day frame's panes is showing, by its title.

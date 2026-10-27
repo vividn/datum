@@ -35,7 +35,7 @@ const shared = sharedApp(DESKTOP);
 // `main` as a draft of the REPL and the widget bar alone: nothing here
 // reads the rest of the day frame, and drawing it costs what a boot did
 // (da-m1m9a).
-const BAR = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
+const BAR = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 const onBar = (fn) => shared.solo(fn, BAR);
 
 /**
@@ -84,7 +84,7 @@ describe('the bar after Enter', () => {
 			const { page } = app;
 			await slowRunner(page, 700);
 			const input = page.locator('.prompt-bar input');
-			const echoes = await page.locator('.repl .echo').count();
+			const echoes = await page.locator('.cli .echo').count();
 
 			await input.fill('occur slowly');
 			await input.press('Enter');
@@ -93,7 +93,7 @@ describe('the bar after Enter', () => {
 
 			// And still empty when the command finally lands, which is the
 			// moment the old code refilled it.
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoes);
 			await app.idle();
 			assert.equal(await input.inputValue(), '');
 			assert.equal(await page.locator('.prompt-bar .ghost').count(), 0, 'a typed line ghosted');
@@ -110,7 +110,7 @@ describe('the bar after Enter', () => {
 			await withCoffee(app);
 			await slowRunner(page, 700);
 			const input = page.locator('.prompt-bar input');
-			const echoes = await page.locator('.repl .echo').count();
+			const echoes = await page.locator('.cli .echo').count();
 
 			await input.fill('occur slowly');
 			await input.press('Enter');
@@ -120,7 +120,7 @@ describe('the bar after Enter', () => {
 			await page.locator('.bar [data-field="coffee"]').click();
 
 			await page.waitForFunction(
-				(n) => document.querySelectorAll('.repl .echo').length > n + 1,
+				(n) => document.querySelectorAll('.cli .echo').length > n + 1,
 				echoes
 			);
 			await app.idle();
@@ -159,7 +159,7 @@ describe('the ghost', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await slowRunner(page, 700);
-			const echoes = await page.locator('.repl .echo').count();
+			const echoes = await page.locator('.cli .echo').count();
 
 			// vividn: "~1.5 s later, finally the ghost text of the command
 			// *finally* appears" (da-jrozq). The REPL's echoes counted as the

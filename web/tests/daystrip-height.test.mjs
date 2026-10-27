@@ -587,10 +587,13 @@ describe("the day strip's day height and its pin", () => {
 			await app.page.keyboard.press('ArrowUp');
 			const taller = await valueOf(app);
 			assert.ok(taller > tall, `up did not make the day taller: ${taller}`);
+			// Down from above the start, not below it: the strip may open at
+			// its floor (a 720px screen does, under the bar's open output,
+			// da-mwp4m), where a second Down has nowhere to go.
+			await app.page.keyboard.press('ArrowUp');
 			await app.page.keyboard.press('ArrowDown');
-			await app.page.keyboard.press('ArrowDown');
-			assert.equal(await valueOf(app), 2 * tall - taller);
-			assert.equal(await heard(app), 2 * tall - taller);
+			assert.equal(await valueOf(app), taller);
+			assert.equal(await heard(app), taller);
 
 			// Sideways on the day line is nothing: the width is the spine's.
 			await app.page.keyboard.press('ArrowRight');
@@ -608,7 +611,7 @@ describe("the day strip's day height and its pin", () => {
 				'the focused spine draws no ring a reader sees'
 			);
 			await app.page.keyboard.press('ArrowUp');
-			assert.equal(await valueOf(app), 2 * tall - taller, 'the spine moved the day height');
+			assert.equal(await valueOf(app), taller, 'the spine moved the day height');
 			await app.page.keyboard.press('ArrowRight');
 			const wider = await widthOf(app);
 			assert.ok(wider > wide, `right did not widen the date column: ${wider}`);

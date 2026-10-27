@@ -204,7 +204,7 @@ const twoStrips = (dayHeight) => ({
 					children: [
 						widgetPane('left', 'daystrip', { dayHeight }, 'left'),
 						widgetPane('top', 'daystrip', { dayHeight }),
-						widgetPane('repl', 'repl')
+						widgetPane('repl', 'cli')
 					]
 				}
 			}
@@ -245,7 +245,7 @@ describe("the strip's notch", () => {
 				const dropped = (await cellExtents(page, 'column'))[1];
 				assert.ok(Math.abs(dropped - snap) <= 0.5, `the drop kept ${dropped}px, not the ${snap}px the drag showed`);
 			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('strip', 'daystrip', { dayHeight: HELD })))) }
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('strip', 'daystrip', { dayHeight: HELD })))) }
 		);
 	});
 
@@ -270,7 +270,7 @@ describe("the strip's notch", () => {
 			{
 				...DESKTOP,
 				prepare: (context) =>
-					context.addInitScript(draft, JSON.stringify(along('column', widgetPane('a', 'daystrip', { dayHeight: HELD }), widgetPane('b', 'daystrip', { dayHeight: 120 }), widgetPane('repl', 'repl'))))
+					context.addInitScript(draft, JSON.stringify(along('column', widgetPane('a', 'daystrip', { dayHeight: HELD }), widgetPane('b', 'daystrip', { dayHeight: 120 }), widgetPane('repl', 'cli'))))
 			}
 		);
 	});
@@ -304,7 +304,7 @@ describe("the strip's notch", () => {
 				assert.ok(seen.today.top < seen.strip.top - 1, 'today\'s band is not clipped at the top');
 				assert.ok(Math.abs(seen.axis.bottom - seen.strip.bottom) <= 1, 'the hour ruler left the bottom of the strip');
 			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('strip', 'daystrip', { freezeToday: true })))) }
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('strip', 'daystrip', { freezeToday: true })))) }
 		);
 	});
 });

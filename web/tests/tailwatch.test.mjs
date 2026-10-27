@@ -278,7 +278,9 @@ describe('rows from height', () => {
 				const { page } = app;
 				await seed(app, 40);
 				let hair = Infinity;
-				for (let height = 790; height <= 850; height++) {
+				// To 870: the bar's output is a share of the page (da-mwp4m), so
+				// the box moves 15% less a step and 60 steps no longer cross a row.
+				for (let height = 790; height <= 870; height++) {
 					await page.setViewportSize({ width: 1280, height });
 					// Two frames: the box is laid out at the new size, so the
 					// pane is not found at rest in the box it is leaving.

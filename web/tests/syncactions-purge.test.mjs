@@ -70,7 +70,7 @@ describe('`db purge --leave` in the bar', () => {
 			await dialog.locator('input').fill('home');
 			await dialog.locator('input').press('Enter');
 			// The phone never syncs: the purge waits for a sync, then asks again.
-			await page.locator('.repl .progress', { hasText: 'Telling the chain’s other devices that this copy is leaving…' }).waitFor();
+			await page.locator('.cli .progress', { hasText: 'Telling the chain’s other devices that this copy is leaving…' }).waitFor();
 			const anyway = dialog.getByRole('button', { name: 'purge anyway' });
 			await anyway.waitFor({ timeout: 30_000 });
 			assert.match(await dialog.innerText(), /No device of sync chain \S+ could be reached to receive this copy’s departure\. Purge home now/);

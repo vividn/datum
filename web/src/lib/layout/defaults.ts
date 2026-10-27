@@ -79,7 +79,7 @@ const legibly = (heights: number[]): number[] =>
 	heights.map((h) => h / heights.reduce((a, b) => a + b, 0));
 
 /**
- * The desktop: dayview / tail | nowview | stats / fields / commands.
+ * The desktop: dayview / tail | nowview | stats / fields.
  *
  * vividn, 2026-09-23 (da-ncsyn): «change the default desktop interface to be
  * more similar to the mobile interface, so commands along the bottom, next
@@ -92,9 +92,13 @@ const legibly = (heights: number[]): number[] =>
  * pane, for the reason `MOBILE_LAYOUT` gives: the bottom bar is one.
  *
  * Every share is `legibly`'s: the strip's 85 (da-r0ydu), the row's max
- * (tail 116, nowview 122, stats 154), fields 63 and commands 63 —
- * 0.233 / 0.422 / 0.173 / 0.173. Across the row, their legible WIDTHS
- * (200, 160, 240), as mobile's fields | nowview pair is.
+ * (tail 116, nowview 122, stats 154) and fields 63. Across the row, their
+ * legible WIDTHS (200, 160, 240), as mobile's fields | nowview pair is.
+ *
+ * The commands pane at the foot went in da-mwp4m. vividn, 2026-10-27:
+ * «remove the command widget on the collect tab (it can remain a widget in
+ * general)», and its room is the bar's output section's now, open above
+ * the input (`--output-height`, routes/+layout.svelte).
  */
 export const DEFAULT_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -102,7 +106,7 @@ export const DEFAULT_LAYOUT: Layout = {
 	designedFor: 'desktop',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([85, 154, 63, 63]), [
+		split('main', 'column', legibly([85, 154, 63]), [
 			strip(),
 			holder(
 				'row',
@@ -112,8 +116,7 @@ export const DEFAULT_LAYOUT: Layout = {
 					widgetPane('stats', 'stats')
 				])
 			),
-			widgetPane('bar', 'widgetbar'),
-			widgetPane('command', 'command')
+			widgetPane('bar', 'widgetbar')
 		])
 	)
 };
@@ -128,8 +131,8 @@ const tabbed = (id: string, kinds: string[]): Pane => ({
 });
 
 /**
- * A phone: strip / REPL / [tail, nowview, custom] as tabs / fields,
- * one column — the strip, the REPL, the tabs and the fields pane at
+ * A phone: strip / CLI / [tail, nowview, custom] as tabs / fields,
+ * one column — the strip, the CLI, the tabs and the fields pane at
  * their legible 85 (da-r0ydu), 85, 122 (nowview's, the tallest of the
  * three) and 63: 0.240 / 0.240 / 0.344 / 0.178.
  */
@@ -141,7 +144,9 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
 		'root',
 		split('main', 'column', legibly([85, 85, 122, 63]), [
 			strip(),
-			widgetPane('repl', 'repl'),
+			// The id is the REPL's still (da-mwp4m renamed the kind): an id is
+			// what a draft saved before the rename names this pane by.
+			widgetPane('repl', 'cli'),
 			tabbed('side', ['tail', 'nowview', 'custom']),
 			widgetPane('bar', 'widgetbar')
 		])
@@ -219,8 +224,8 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
  * the strip's 85 was 48, about half its box at 390×844; row 2 is the
  * tail alone at its legible height in small type and its frame (103,
  * registry.ts) where nowview's 122 held it; row 3 took the 56 the two
- * gave up; the commands keep their 63, and the column's total, so their
- * pixels too. Half left the three shorter phones a strip of 52 / 49 / 40
+ * gave up; the commands kept their 63, and the column's total, so their
+ * pixels too, until da-mwp4m took the pane away (below). Half left the three shorter phones a strip of 52 / 49 / 40
  * px, under the shortest day it draws (40), its ruler and the seam, so
  * today was cut and no yesterday showed. vividn, 2026-10-15 (da-frewq),
  * «B»: about 70% of the old height instead, so the sliver shows on every
@@ -234,6 +239,14 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
  * A pinned today leaves a quarter of yesterday over it (`dayUnderSliver`),
  * and in a box too short for both today gives way from the top, so the
  * strip scrolls into the past at every size.
+ *
+ * The commands pane at the foot went in da-mwp4m. vividn, 2026-10-27:
+ * «remove the command widget on the collect tab (it can remain a widget in
+ * general)», and «make the output section open by default … take up a bit
+ * more room, basically where the command widget is now by default». So
+ * the bar's output section, above the input, has its room
+ * (`--output-height`), and the three rows above keep their shares of
+ * what is left.
  */
 export const MOBILE_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -241,7 +254,7 @@ export const MOBILE_LAYOUT: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([70, 103, 156, 63]), [
+		split('main', 'column', legibly([70, 103, 156]), [
 			strip(),
 			widgetPane('tail', 'tail', { type: 'small' }),
 			holder(
@@ -253,8 +266,7 @@ export const MOBILE_LAYOUT: Layout = {
 					widgetPane('bar', 'widgetbar'),
 					widgetPane('nowview', 'nowview')
 				])
-			),
-			widgetPane('command', 'command')
+			)
 		])
 	)
 };
@@ -265,7 +277,7 @@ export const PHONE_WIDTH = 720;
 /**
  * A desktop tree the page was handed before it loaded, in place of the one
  * above — the web suite's, and nobody else's (da-ncsyn). The suite is
- * written against a `main` with a REPL, a custom pane and a side column,
+ * written against a `main` with a CLI, a custom pane and a side column,
  * so `tests/support/desk.mjs` pins THAT tree and the default can move
  * without taking two hundred tests with it; the default itself is tested
  * with the pin off. Nothing a READER can do reaches it: it is not a query,
@@ -308,7 +320,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	collect: (phone) => ({ ...(phone ? MOBILE_LAYOUT : defaultLayoutFor(false)), name: 'collect' }),
 	mobile: () => MOBILE_LAYOUT,
 	dayview: () => only('dayview', 'daystrip', { ...STRIP }),
-	repl: () => only('repl', 'repl'),
+	cli: () => only('cli', 'cli'),
 	nowview: () => only('nowview', 'nowview'),
 	tail: () => only('tail', 'tail'),
 	custom: () => only('custom', 'custom'),
@@ -336,6 +348,8 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
  */
 export const ALIASES: Record<string, string> = {
 	now: 'nowview',
+	// The CLI widget was the REPL until da-mwp4m; `/repl` and `/cli` are both it.
+	repl: 'cli',
 	daystrip: 'dayview',
 	widgets: 'fields',
 	widgetbar: 'fields',
@@ -367,7 +381,8 @@ export const BUILTIN_NAMES = Object.keys(BUILTIN);
 const NEW_DEFAULTS: string[] = [
 	'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; setup, where you choose what to track; and collect, the page you log on.',
 	"On a phone, collect's day strip is half as tall and shows a sliver of yesterday to scroll up into, the tail has its row alone, and the fields and nowview below it have the room.",
-	"On a phone, collect's day strip is a little taller again, so the sliver of yesterday shows on shorter phones too."
+	"On a phone, collect's day strip is a little taller again, so the sliver of yesterday shows on shorter phones too.",
+	"collect has no command pane now: the command line's output stands open above it, where the commands were. The commands are still a widget to add."
 ];
 
 /** `NEW_DEFAULTS`, or the web suite's in its place, handed over as `pinned`'s tree is. */

@@ -25,8 +25,8 @@
 // narrow for two it draws ONE and cuts nothing there either, which is the
 // reading this started from, unchanged.
 //
-// `query: 'repl'` throughout: the one-pane layout is the REPL at the
-// width of the screen, which is what makes a viewport a column count.
+// `query: 'cli'` throughout: the one-pane layout is the CLI at the width
+// of the screen, which is what makes a viewport a column count.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -149,7 +149,7 @@ describe('the measurements the column width rests on', () => {
 					`the measurement never reached MIN (${MIN}): the narrowest column tried was ${whole}px`
 				);
 			},
-			{ viewport: PHONES[0], query: 'repl', clock: todayAt(15) }
+			{ viewport: PHONES[0], query: 'cli', clock: todayAt(15) }
 		);
 	});
 
@@ -183,7 +183,7 @@ describe('the measurements the column width rests on', () => {
 					`WANT is ${WANT} and the widest line asks for ${widest}: the number has come loose from the measurement`
 				);
 			},
-			{ viewport: PHONES[0], query: 'repl', clock: todayAt(15) }
+			{ viewport: PHONES[0], query: 'cli', clock: todayAt(15) }
 		);
 	});
 });
@@ -208,7 +208,7 @@ describe('two entries side by side on a phone', () => {
 					assert.deepEqual(cut, [], 'a phone column cut an entry');
 					assert.deepEqual(app.errors, []);
 				},
-				{ viewport, query: 'repl', clock: todayAt(15) }
+				{ viewport, query: 'cli', clock: todayAt(15) }
 			);
 		});
 	}
@@ -228,7 +228,7 @@ describe('two entries side by side on a phone', () => {
 				assert.equal(second.top, first.top, 'the second entry was drawn under the first');
 				assert.ok(second.left > first.left, 'the second entry was not to the right of the first');
 			},
-			{ viewport: PHONES[0], query: 'repl', clock: todayAt(15) }
+			{ viewport: PHONES[0], query: 'cli', clock: todayAt(15) }
 		);
 	});
 });
@@ -249,7 +249,7 @@ describe('the single column a narrower box keeps', () => {
 				assert.deepEqual(cut, [], 'the single column cut an entry');
 				assert.deepEqual(app.errors, []);
 			},
-			{ viewport: { width: 320, height: 700 }, query: 'repl', clock: todayAt(15) }
+			{ viewport: { width: 320, height: 700 }, query: 'cli', clock: todayAt(15) }
 		);
 	});
 });
@@ -278,7 +278,7 @@ describe('what the columns cannot carry', () => {
 				assert.equal(table.echoes[0], '❯ tail -n 3');
 				assert.equal(table.width, table.grid, 'the table did not get the whole row');
 			},
-			{ viewport: PHONES[0], query: 'repl', clock: todayAt(15) }
+			{ viewport: PHONES[0], query: 'cli', clock: todayAt(15) }
 		);
 	});
 });
@@ -312,7 +312,7 @@ describe('the hairline between commands, once there are columns', () => {
 				for (const cell of cells) rows.set(cell.top, (rows.get(cell.top) ?? 0) + 1);
 				assert.ok([...rows.values()].some((n) => n > 1), 'no two entries shared a row');
 			},
-			{ viewport: PHONES[0], query: 'repl', clock: todayAt(15) }
+			{ viewport: PHONES[0], query: 'cli', clock: todayAt(15) }
 		);
 	});
 });

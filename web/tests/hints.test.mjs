@@ -49,7 +49,7 @@ async function hints() {
 		await onSeam(async ({ page }) => {
 			offered = {
 				placeholder: await page.locator('.prompt-bar input').getAttribute('placeholder'),
-				examples: await page.locator('.repl .quiet code').allInnerTexts()
+				examples: await page.locator('.cli .quiet code').allInnerTexts()
 			};
 		});
 	}

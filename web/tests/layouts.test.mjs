@@ -59,7 +59,7 @@ const tree = (name, kind) => ({
 							id: 'pane-2',
 							active: 0,
 							bar: { edge: 'bottom', align: 'end' },
-							tabs: [{ id: 'tab-3', content: { id: 'w-2', kind: 'repl', settings: {} } }]
+							tabs: [{ id: 'tab-3', content: { id: 'w-2', kind: 'cli', settings: {} } }]
 						}
 					]
 				}
@@ -292,7 +292,7 @@ describe('the draft', () => {
 			assert.deepEqual(await layouts(app, 'loadLayout', 'main'), edited);
 			assert.equal(await draft(app), null);
 
-			await setDraft(app, shellTree('main', 'repl'));
+			await setDraft(app, shellTree('main', 'cli'));
 			await app.reload();
 			await controlsReady(app);
 			assert.equal(await isModified(app), true);
@@ -358,7 +358,7 @@ describe('the controls', () => {
 			// And the tab shows it: the strip alone, titled by the draft's tab.
 			await until(
 				() => app.page.evaluate(() => [...document.querySelectorAll('section.pane')].map((p) => p.dataset.title)),
-				(t) => isDeepStrictEqual(t, ['dayview', 'repl'])
+				(t) => isDeepStrictEqual(t, ['dayview', 'cli'])
 			);
 		});
 	});
@@ -547,7 +547,7 @@ describe('Reset layout', () => {
 			assert.deepEqual((await held(app)).root, builtin.root);
 			// The phone's own tree (`defaults.ts`), not the desktop's six
 			// panes: the strip, the REPL, one pane of tabs and the fields.
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'fields']);
 			assert.deepEqual(app.errors, []);
 		}, { viewport: { width: 390, height: 640 } });
 	});

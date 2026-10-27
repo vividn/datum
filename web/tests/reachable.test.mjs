@@ -626,12 +626,12 @@ describe('the layout engine, by keyboard', () => {
 				const reached = await tabWalk(page);
 				const controls = await page.evaluate(() => ({
 					hidden: document.querySelectorAll('section.root button.add, section.root [role="separator"]').length,
-					// A menu is left only where a widget has options (da-gvdc): the repl's.
+					// A menu is left only where a widget has options (da-gvdc): the CLI's.
 					titles: [...document.querySelectorAll('section.root button.title')].map((b) => b.closest('section.pane')?.dataset.title),
 					tabs: [...document.querySelectorAll('section.root [role="tab"]')].map((el) => el.dataset.walk ?? null)
 				}));
 				assert.equal(controls.hidden, 0, 'normal mode still offers a `+` or a border');
-				assert.deepEqual(controls.titles, ['repl'], 'normal mode offers a menu beyond a widget’s options');
+				assert.deepEqual(controls.titles, ['cli'], 'normal mode offers a menu beyond a widget’s options');
 				assert.equal(controls.tabs.length, 2);
 				// The active tab is the strip's one stop; the arrows walk the rest.
 				assert.ok(controls.tabs.some((walk) => walk && reached.has(walk)), 'the tab strip is not in the Tab order');
@@ -680,7 +680,7 @@ const TWO = JSON.stringify({
 					direction: 'row',
 					ratios: [0.5, 0.5],
 					children: [
-						{ id: 'repl', active: 0, bar, tabs: [{ id: 'repl-tab', content: { id: 'repl-widget', kind: 'repl', settings: {} } }] },
+						{ id: 'repl', active: 0, bar, tabs: [{ id: 'repl-tab', content: { id: 'repl-widget', kind: 'cli', settings: {} } }] },
 						{
 							id: 'tabbed',
 							active: 0,

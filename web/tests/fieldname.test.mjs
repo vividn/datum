@@ -63,7 +63,7 @@ const shared = sharedApp();
 // `main` as a draft of the REPL and the widget bar alone: nothing here
 // reads the rest of the day frame, and drawing it costs what a boot did
 // (da-m1m9a).
-const BAR = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
+const BAR = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 const onBar = (fn) => shared.solo(fn, BAR);
 
 /**
@@ -119,10 +119,10 @@ async function chipIndex(app, field) {
 /** Press that chip, and wait for the REPL to echo what it ran. */
 async function pressChip(app, field) {
 	const index = await chipIndex(app, field);
-	const echoes = await app.page.locator('.repl .echo').count();
+	const echoes = await app.page.locator('.cli .echo').count();
 	await app.page.locator('.bar button.widget').nth(index).click();
 	await app.page.waitForFunction(
-		(n) => document.querySelectorAll('.repl .echo').length > n,
+		(n) => document.querySelectorAll('.cli .echo').length > n,
 		echoes
 	);
 }

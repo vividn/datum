@@ -2,8 +2,8 @@
 	The app shell.
 
 	The root tab bar above, and under it the PAGE: a scroller holding three
-	boxes — the dashboard, the bottom bar, and the log below the fold
-	(da-ckw3). The document itself still never scrolls, and neither does
+	boxes — the dashboard, the log, and the bottom bar at the foot, which is
+	the output over the input (da-ckw3, da-mwp4m). The document itself still never scrolls, and neither does
 	this box under any gesture of the browser's: it is `overflow: hidden`
 	and the only thing that moves it is the bar's own drag and wheel
 	($lib/log.ts, which has the arithmetic that makes the two rest states
@@ -26,7 +26,7 @@
 	import { schedule } from '$lib/backups.js';
 	import { installConsole } from '$lib/console.js';
 	import BarLog from '$lib/BarLog.svelte';
-	import { attach, logHeight, rolled, shown } from '$lib/log.js';
+	import { attach, logHeight, shown } from '$lib/log.js';
 	import PromptBar from '$lib/PromptBar.svelte';
 	import Waiting from '$lib/Waiting.svelte';
 	import Damaged from '$lib/Damaged.svelte';
@@ -168,7 +168,7 @@
 	<title>{db === DEFAULT_DB ? 'datum' : `datum · ${db}`}</title>
 </svelte:head>
 
-<div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px; --rolled: {$rolled}px">
+<div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px">
 	<RootBar />
 	{#if $damaged !== null}<Damaged db={$damaged} />{:else}<Waiting />{/if}
 
@@ -195,8 +195,8 @@
 			{/if}
 		</main>
 
-		<PromptBar />
 		<BarLog />
+		<PromptBar />
 	</div>
 	<PlaceModal />
 </div>
@@ -227,7 +227,14 @@
 		   four raw lines and the two-line document it has to hold
 		   (BarResult.svelte), and it is not the row's to shrink. */
 		--input-height: 2.9rem;
-		--output-height: 3.6rem;
+		/* vividn, 2026-10-27: «take up a bit more room, basically where the
+		   command widget is now by default» — the collect tab's command
+		   pane, which was 0.173 of its column on both trees and went to
+		   make this room. So a share of the page (`cqh` is `.pages`, the
+		   nearest size container of every box that reads this), between
+		   the 3.6rem that holds four raw lines and a ceiling that leaves a
+		   tall desktop its dashboard. */
+		--output-height: clamp(3.6rem, 15cqh, 8rem);
 		/* The hairline that separates the bar from the dashboard is part of
 		   the bar's box, so it belongs in the sum: without it the sections
 		   add up to a pixel more than the bar they are in, and the output's
@@ -251,7 +258,7 @@
 		container-type: size;
 	}
 
-	/* The page: the dashboard, the bar, the log. `overflow: hidden` and a
+	/* The page: the dashboard, the log, the bar. `overflow: hidden` and a
 	   size container — hidden because the browser must never move this box
 	   (a rubber-band, a flick, a focus), and a container because the three
 	   heights inside are shares of it and `cqh` is the one unit that says

@@ -203,7 +203,7 @@ describe('navigating inside a database', () => {
 describe('the layouts are the device’s, not the database’s', () => {
 	test('a layout saved under one database is listed under the other', async () => {
 		await withApp(async (first) => { // a second tab
-			const other = await first.newTab('repl?db=other');
+			const other = await first.newTab('cli?db=other');
 			const named = (app) =>
 				app.page.evaluate(async () =>
 					(await window.datum.layouts.listLayouts()).map((l) => l.name)
@@ -219,7 +219,7 @@ describe('the layouts are the device’s, not the database’s', () => {
 					root: {
 						id: 'root',
 						active: 0,
-						tabs: [{ id: 'tab-1', content: { id: 'w-1', kind: 'repl', settings: {} } }]
+						tabs: [{ id: 'tab-1', content: { id: 'w-1', kind: 'cli', settings: {} } }]
 					}
 				})
 			);
@@ -248,8 +248,8 @@ describe('the cross-tab refresh is keyed by database', () => {
 
 	test('a write in an `other` tab reaches the other `other` tab and not the `datum` one', async () => {
 		await withApp(async (writer) => { // second and third tabs
-			const peer = await writer.newTab('repl?db=other');
-			const elsewhere = await writer.newTab('repl');
+			const peer = await writer.newTab('cli?db=other');
+			const elsewhere = await writer.newTab('cli');
 			const heardByPeer = await peer.spyOnRunner();
 			const heardElsewhere = await elsewhere.spyOnRunner();
 			// The channel object the app opens is made before this one, so by

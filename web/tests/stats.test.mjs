@@ -15,6 +15,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
 import { chooseRoot, widgetPane } from './support/layout.mjs';
+import { fold as foldBar } from './support/bar.mjs';
 
 before(startApp);
 after(stopApp);
@@ -422,6 +423,10 @@ describe('/stats', () => {
 				}
 				await openStats(app);
 				await expectStats(app, MONTH);
+				// Folded, as a reader on a screen this short keeps it: every
+				// screen opens with the bar's output open (da-mwp4m), and at
+				// 300px that is the room this claim is about.
+				await foldBar(app.page);
 
 				const fit = await app.page.evaluate(() => {
 					const widget = document.querySelector('section.pane .stats');

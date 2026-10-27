@@ -15,7 +15,7 @@ after(stopApp);
 
 /** The REPL, tail and the commands widget, all on one desktop screen. */
 const PAGE = JSON.stringify(
-	along('column', widgetPane('repl', 'repl'), widgetPane('tail', 'tail'), widgetPane('cmd', 'command'))
+	along('column', widgetPane('repl', 'cli'), widgetPane('tail', 'tail'), widgetPane('cmd', 'command'))
 );
 
 // ONE APP for every desktop test (da-6b3dj, sharedApp in support/app.mjs),
@@ -60,8 +60,8 @@ const button = (page, name) => page.locator(`.bar.commands button[data-command="
 /** The command buttons drawn, in order. */
 const drawn = async (page) => (await listed(page.locator('.bar.commands'), 'button[data-command]')).map((b) => b.command);
 
-/** The last `.repl .echo`'s count, before a press. */
-const echoCount = (page) => page.evaluate(() => document.querySelectorAll('.repl .echo').length);
+/** The last `.cli .echo`'s count, before a press. */
+const echoCount = (page) => page.evaluate(() => document.querySelectorAll('.cli .echo').length);
 
 /**
  * Press a command the selection COMPLETES — it runs at the tap, with no
@@ -70,7 +70,7 @@ const echoCount = (page) => page.evaluate(() => document.querySelectorAll('.repl
 async function run(app, name) {
 	const echoes = await echoCount(app.page);
 	await button(app.page, name).click();
-	await app.page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
+	await app.page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoes);
 	await app.idle();
 	assert.equal(await app.page.locator('.prompt-bar input').inputValue(), '', 'the tap put something on the line');
 }
@@ -271,7 +271,7 @@ describe('selecting several', () => {
 
 			await run(app, 'get');
 			assert.equal((await app.echoes()).at(-1), `get ${hids.join(',')}`);
-			const docs = await page.locator('.repl .doc[data-hid]').evaluateAll((all) => all.slice(-2).map((d) => d.dataset.hid));
+			const docs = await page.locator('.cli .doc[data-hid]').evaluateAll((all) => all.slice(-2).map((d) => d.dataset.hid));
 			assert.deepEqual(
 				docs.map((d, i) => hids[i].startsWith(d) || d.startsWith(hids[i])),
 				[true, true],
@@ -291,7 +291,7 @@ describe('selecting several', () => {
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill.hid button.remove').length === 4);
 			assert.equal(await page.evaluate(() => getSelection().isCollapsed), true, 'shift-click selected no text');
 			// The REPL drew the last seed line's document, the newest row, in the range.
-			const doc = page.locator('.repl .doc[data-hid]').last();
+			const doc = page.locator('.cli .doc[data-hid]').last();
 			assert.equal(await doc.evaluate((d) => d.classList.contains('selected')), true);
 
 			// A tap on that document alone replaces the range with it, in both.
@@ -307,8 +307,8 @@ describe('selecting several', () => {
 		await solo(async (app) => {
 			const { page } = app;
 			await seedApart(app);
-			await page.locator('.repl .doc .hid').last().click();
-			await page.locator('.repl .doc .hid[aria-expanded="true"]').waitFor();
+			await page.locator('.cli .doc .hid').last().click();
+			await page.locator('.cli .doc .hid[aria-expanded="true"]').waitFor();
 			assert.equal(await hidPill(page).count(), 0);
 		});
 	});

@@ -113,7 +113,7 @@ describe('window.datum.run — the loud door', () => {
 	test('with no REPL mounted it records and bumps the beat itself', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			assert.equal(await page.locator('section.pane[data-title="repl"]').count(), 0);
+			assert.equal(await page.locator('section.pane[data-title="cli"]').count(), 0);
 			await app.declare('cocoa');
 			await markNoReload(page);
 

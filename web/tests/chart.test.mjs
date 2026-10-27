@@ -18,7 +18,7 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('chart', 'chart')));
+const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('chart', 'chart')));
 
 test('two fields with a number key draw both series and their means; a categorical key draws its counts', async () => {
 	await withApp(
@@ -109,7 +109,7 @@ test('two fields with a number key draw both series and their means; a categoric
 test('a field with more entries in the window than one read holds is drawn whole', async () => {
 	const COUNT = 2500;
 	const at = (i) => new Date(HELD_AT - 3_600_000 - (COUNT - 1 - i) * 15 * 60_000).toISOString();
-	const page = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('chart', 'chart', { fields: ['heavy'] })));
+	const page = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('chart', 'chart', { fields: ['heavy'] })));
 	await withApp(
 		async (app) => {
 			// The header the CLI itself writes, so the schema version is its own.

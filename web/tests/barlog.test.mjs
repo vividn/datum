@@ -1,41 +1,37 @@
-// The log under the bar, and the two gestures that reach it (da-ckw3).
+// The log over the bar, and the two gestures that reach it (da-ckw3,
+// da-mwp4m).
 //
-// vividn, 2026-09-17: "clicking and dragging the input bar up, or hovering
-// the mouse over the input bar and scrolling down scrolls the page down to
-// reveal the reversed REPL, and the ability to go back in time to view
-// previous commands and their outputs. Scrolling or dragging anywhere else
-// on the page should not go down into the repl section. When scrolled down
-// into the REPL, put a (return to top) at the bottom, which restores back
-// to the dashboard with the input section down in its normal place. When
-// scrolling deep into the repl, the input section still stays at the
-// top(!)".
+// vividn, 2026-09-17, of the first: "clicking and dragging the input bar up,
+// or hovering the mouse over the input bar and scrolling down scrolls the
+// page down to reveal the reversed REPL … Scrolling or dragging anywhere
+// else on the page should not go down into the repl section." And,
+// 2026-10-27: «keep the input bar on the bottom, and put the output/return
+// bar above it again / make the CLI chronological order again».
 //
 // So there are four claims here and they are all measured on the page:
 //
 // 1. the bar's own gestures move it — a touch drag on a phone, a wheel on
-//    a desktop — and when they have, the input section is at the top of
-//    the page with the newest entry directly under it and older ones
-//    below;
+//    a desktop — and when they have, the history is ABOVE the bar, oldest
+//    first, the newest in the bar's output section, and the input row
+//    still at the foot of the page;
 // 2. no other gesture moves it: a wheel over a pane, a drag that starts on
 //    a pane, and a drag on the bar too small to be one;
-// 3. `close history` — `return to top` when he named it — is pinned to the
-//    BOTTOM of the screen, not to the end
-//    of a history that can be thousands of entries long — and Escape does
-//    the same thing;
-// 4. the bar is still the bar down there: a tap on the box still focuses
-//    it, the mark's menu still opens, and a command run from inside the
-//    log lands at the TOP of it.
+// 3. `close history` is pinned to the foot of the log, on screen however
+//    long the history is, and Escape does the same thing;
+// 4. the bar is still the bar with the log open: a tap on the box still
+//    focuses it, the mark's menu still opens, and a command run then lands
+//    at the FOOT of the history.
 //
-// What the log shows is `Repl.svelte` with `reversed` (da-gvdc), the same
-// component a layout can hold, reading the same scrollback store. So this
-// file does not re-assert what a REPL draws — repl.test.mjs does that. It
-// asserts where it is and how you get to it. A bare `Pane` has no `.repl`
+// What the log shows is `Repl.svelte`, the same component a layout can
+// hold, reading the same scrollback store. So this file does not re-assert
+// what the CLI draws — repl.test.mjs does that. It
+// asserts where it is and how you get to it. A bare `Pane` has no `.cli`
 // class (that is the layout frame's), so the log is read through `.log`.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { swipe } from './support/layout.mjs';
+import { swipe, withBar } from './support/layout.mjs';
 // Synthesised rather than driven through `page.touchscreen`, because what is
 // asserted is the POINTER contract the bar listens on — down, a run of
 // moves, up — and a test that sent two events could not tell a threshold
@@ -45,11 +41,11 @@ import { dragOn as dragBy } from './support/bar.mjs';
 before(startApp);
 after(stopApp);
 
-const DESKTOP = { viewport: { width: 1280, height: 900 }, query: 'repl' };
+const DESKTOP = { viewport: { width: 1280, height: 900 }, prepare: withBar };
 const PHONE = {
 	viewport: { width: 390, height: 664 },
 	device: { isMobile: true, hasTouch: true },
-	query: 'repl'
+	prepare: withBar
 };
 
 const BAR = '.prompt-bar';
@@ -112,22 +108,22 @@ const where = (page) =>
 			main: box('main'),
 			shown: px('--shown'),
 			height: px('--log-height'),
-			// How far the list has scrolled, in its two halves: the bar's own
-			// row riding off the top, and then the log's box (da-tj6m).
-			rolled: px('--rolled'),
-			scroll: Math.round(document.querySelector('.log .body')?.scrollTop ?? 0)
+			// How far the log's rows are scrolled, and how far they could be.
+			scroll: Math.round(document.querySelector('.log .body')?.scrollTop ?? 0),
+			scrollMax: (() => {
+				const body = document.querySelector('.log .body');
+				return body ? Math.round(body.scrollHeight - body.clientHeight) : 0;
+			})()
 		};
 	});
 
 /**
  * Wait until the bar has stopped moving.
  *
- * It settles on an animation frame curve now ($lib/log.ts) rather than by a
+ * It settles on an animation frame curve ($lib/log.ts) rather than by a
  * scroll, so what a test waits for is the number holding still — two reads
- * the same, a few frames apart. ALL of the number: past the ceiling the
- * bar's height stops changing and the list scrolls instead (da-tj6m), so a
- * watch on `--log-height` alone would call a glide through the history
- * finished before it began.
+ * the same, a few frames apart: the output's height, the log's, and where
+ * the log's rows are scrolled to.
  */
 const settled = (page) =>
 	page.evaluate(
@@ -138,7 +134,7 @@ const settled = (page) =>
 				const tick = () => {
 					const style = getComputedStyle(document.querySelector('.shell'));
 					const px = (name) => Math.round(parseFloat(style.getPropertyValue(name)) || 0);
-					const now = `${px('--log-height')}/${px('--rolled')}/${Math.round(
+					const now = `${px('--shown')}/${px('--log-height')}/${Math.round(
 						document.querySelector('.log .body')?.scrollTop ?? 0
 					)}`;
 					same = now === last ? same + 1 : 0;
@@ -151,9 +147,9 @@ const settled = (page) =>
 	);
 
 /**
- * The bar shut, as a phone opens with it: a drag with no speed in it, down
- * further than any list is long — but not on a bar already shut, since a
- * drag mounts the log.
+ * The bar shut: a drag with no speed in it, down further than any list is
+ * long, when the log is open — and the arrow when only the output is, since
+ * a drag mounts the log and the first test below is that a tap mounts none.
  *
  * And the click a drag ends in, spent: the drag before this — a test's, or
  * the one above — may have armed the 300ms swallow ($lib/grip.ts), which
@@ -162,12 +158,13 @@ const settled = (page) =>
  */
 async function shut(page) {
 	const { shown, height } = await where(page);
-	if (shown || height) await dragBy(page, BAR, 100_000);
+	if (height) await dragBy(page, BAR, 100_000);
+	else if (shown) await page.locator(`${BAR} .caret`).click();
 	await page.locator(BAR).dispatchEvent('click');
 	await settled(page);
 }
 
-/** The log's echoed command lines, as it draws them: newest first. */
+/** The log's echoed command lines, as it draws them: oldest first. */
 const logEchoes = async (page) =>
 	(await page.locator('.log .echo').allInnerTexts()).map((t) => t.replace(/^\s*❯\s*/, '').trim());
 
@@ -215,7 +212,7 @@ describe('the bar is the way in', () => {
 				send('pointerdown', y);
 				send('pointermove', y - 4);
 				send('pointercancel', y - 4);
-				return { log: !!document.querySelector('.log .repl, .log section.pane') };
+				return { log: !!document.querySelector('.log .cli, .log section.pane') };
 			});
 			await settled(page);
 			assert.equal(seen.log, false, 'a cancelled tap mounted the log');
@@ -224,7 +221,11 @@ describe('the bar is the way in', () => {
 		});
 	});
 
-	test('a finger dragging the bar up puts the input at the top with the newest entry under it', async () => {
+	// THE INPUT STAYS AT THE FOOT (da-mwp4m). vividn, 2026-10-27: «keep the
+	// input bar on the bottom, and put the output/return bar above it again
+	// … make the CLI chronological order again». So pulling the bar up opens
+	// the history ABOVE it, oldest at the top, and the input never moves.
+	test('a finger dragging the bar up opens the history above it, oldest first, the input staying at the foot', async () => {
 		await phone(async (app) => {
 			const { page } = app;
 			for (const line of ['occur coffee', 'occur water', 'occur tea']) await app.submit(line);
@@ -239,38 +240,37 @@ describe('the bar is the way in', () => {
 			await settled(page);
 
 			const deep = await where(page);
-			// The top of the PAGE — the root tab bar is the app's own chrome
-			// and stands above it however far the bar is opened.
 			assert.ok(deep.height > 0, 'the drag opened no log at all');
-			// The BAR's top, which is the input row plus the hairline above it.
+			// The input on the foot of the page, as at rest.
 			assert.ok(
-				Math.abs(deep.bar.top - deep.pages.top) <= 1,
-				`the bar is at ${deep.bar.top}, the page starts at ${deep.pages.top}`
+				Math.abs(deep.input.bottom - deep.pages.bottom) <= 1,
+				`the input's foot is at ${deep.input.bottom}, the page ends at ${deep.pages.bottom}`
 			);
+			assert.ok(Math.abs(deep.input.top - rest.input.top) <= 1, 'the input row moved');
+			// And the log over the bar, up to the top of the PAGE — the root
+			// tab bar is the app's own chrome and stands above it.
+			assert.ok(Math.abs(deep.log.top - deep.pages.top) <= 1, `the log starts at ${deep.log.top}`);
+			assert.ok(deep.log.bottom <= deep.bar.top + 1, `the log ends at ${deep.log.bottom}, under the bar's ${deep.bar.top}`);
 			assert.ok(deep.main.height <= 1, `the dashboard kept ${deep.main.height}px at the log's tallest`);
-			assert.ok(
-				deep.log.top >= deep.input.bottom - 1,
-				`the log starts at ${deep.log.top}, above the input's ${deep.input.bottom}`
-			);
-			// ONE LIST, and the bar's output section is row one of it (vividn,
-			// 2026-09-21: "it shouldn't be repeated when you drag it up").
-			// So the newest is in the BAR, and the log carries on from the
-			// second — newest first, directly under the input row.
+			// ONE LIST, and the bar's output section is its newest row (vividn,
+			// 2026-09-21: "it shouldn't be repeated when you drag it up"). So
+			// the newest is in the BAR, and the log is the ones before it in
+			// the order they ran, the last of them just over the bar.
 			assert.deepEqual(
 				await page.locator(`${BAR} .section.output .echo`).allInnerTexts(),
 				['❯ occur tea']
 			);
-			assert.deepEqual(await logEchoes(page), ['occur water', 'occur coffee']);
+			assert.deepEqual(await logEchoes(page), ['occur coffee', 'occur water']);
 
-			// A command run from in here becomes row one, and the one it
-			// displaces moves to the top of the log — still no repeat.
+			// A command run from in here becomes the bar's row, and the one it
+			// displaces is the log's last — still no repeat.
 			await app.submit('occur toast');
 			await app.idle();
 			assert.deepEqual(
 				await page.locator(`${BAR} .section.output .echo`).allInnerTexts(),
 				['❯ occur toast']
 			);
-			assert.deepEqual((await logEchoes(page))[0], 'occur tea');
+			assert.deepEqual((await logEchoes(page)).at(-1), 'occur tea');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -546,10 +546,13 @@ describe('a tap during a settle', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			// A failure, so the ERROR chip is there to open the output with.
+			// Folded first: every screen starts open (da-mwp4m), and the chip
+			// is what a folded bar says.
+			await page.locator(`${BAR} .caret`).click();
+			await page.locator(`${BAR} .section.output`).waitFor({ state: 'detached' });
 			await page.locator(`${BAR} input`).fill('occur nope --nonsense');
 			await page.locator(`${BAR} input`).press('Enter');
 			await page.locator(`${BAR} .failed`).waitFor();
-			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the phone did not start folded');
 
 			// Open it, and tap the box while it is still opening.
 			await page.locator(`${BAR} .failed`).click();
@@ -688,7 +691,10 @@ describe('a fling keeps going', () => {
 });
 
 describe('the way back', () => {
-	test('`close history` is pinned to the bottom of the screen, and restores the bar’s place', async () => {
+	// At the foot of the LOG, just over the output section: the log is above
+	// the bar now (da-mwp4m), and its foot is the nearest the history comes
+	// to the input — on screen however long the history is.
+	test('`close history` is pinned to the foot of the log, and restores the bar’s place', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			// A history long enough that its end is nowhere near the screen.
@@ -709,8 +715,8 @@ describe('the way back', () => {
 			// reading the source and asked for a test instead.
 			assert.equal(await page.locator('.log .top').innerText(), 'close history');
 			assert.ok(
-				deep.pages.bottom - deep.top.bottom < 40,
-				`the button's foot is ${deep.pages.bottom - deep.top.bottom}px off the bottom of the screen`
+				deep.log.bottom - deep.top.bottom < 40 && deep.top.bottom <= deep.log.bottom,
+				`the button's foot is ${deep.log.bottom - deep.top.bottom}px over the log's`
 			);
 			assert.ok(deep.top.height >= 24, `the button is ${deep.top.height}px tall`);
 
@@ -776,7 +782,7 @@ describe('down there it is still the bar', () => {
 	// every key on it, which is `bar.test.mjs`'s claim — so the data is not
 	// lost, only somewhere else. The claim that moves here is the one that
 	// replaced it: two surfaces, one list, and no entry on both.
-	test('the newest entry is the bar’s row, and the log carries on from the second', async () => {
+	test('the newest entry is the bar’s row, and the log ends at the one before it', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
 			await app.declare('brew');
@@ -793,14 +799,14 @@ describe('down there it is still the bar', () => {
 			await wheelOver(page, BAR, 120);
 			await settled(page);
 
-			// And the log starts at the one before it, whole: the brace it
+			// And the log ends at the one before it, whole: the brace it
 			// draws has every key, where the bar's row would have cut to four
 			// and a `+2`.
 			const echoes = await logEchoes(page);
-			assert.equal(echoes[0], 'occur brew a=1 b=2 c=3 d=4 e=5 f=6');
+			assert.equal(echoes.at(-1), 'occur brew a=1 b=2 c=3 d=4 e=5 f=6');
 			assert.ok(!echoes.includes('occur water'), `the log repeated the bar's row: ${echoes.join(' | ')}`);
 
-			const doc = page.locator('.log .doc').first();
+			const doc = page.locator('.log .doc').last();
 			assert.deepEqual(await doc.locator('.brace .row').allInnerTexts(), [
 				'a: 1',
 				'b: 2',
@@ -818,59 +824,59 @@ describe('down there it is still the bar', () => {
 // ONE LIST, TWO RENDERERS, AND A HAIRLINE PER SEAM BETWEEN ITS ROWS.
 //
 // vividn, 2026-09-21, of the deployed build: "there is a missing line between
-// the first entry in the repl and the second." `Repl.svelte` drew its rule
-// before every row but its own first, which was right while the repl was
-// one pane and wrong the moment the bar's output section became row one of
-// the same list: the log's `i === 0` is the SECOND row overall, and the one
-// seam neither renderer owns went undrawn.
+// the first entry in the repl and the second." The one seam neither renderer
+// owns is the one between the log's rows and the bar's own row, so this
+// counts rules against rows ACROSS BOTH SURFACES.
 //
-// So this counts rules against rows ACROSS BOTH SURFACES, which is the
-// count no earlier assertion made — every one of them counted rows.
-//
-// Since da-5iyo the log is COLUMNS, which settles the count for good: the
-// row above every row of the log is a row the log draws or the bar does,
-// so EVERY cell in it is ruled, and there is no arithmetic left to get
-// wrong. In a pane, where the first row is the first row, the first row
-// is the one that is not.
+// In time order (da-mwp4m) that seam is the bar's TOP RULE: the log ends
+// over it and the bar's row begins under it. Within the log, every row but
+// its first is ruled — the first stands against the top of the log's box,
+// as a pane's first row does.
 describe('the seam between the bar’s row and the log', () => {
 	/** Rows and rules, over the output section and the log together. */
 	const drawn = (page) =>
-		page.evaluate(() => ({
-			barRows: document.querySelectorAll('.prompt-bar .section.output .head').length,
-			logRows: document.querySelectorAll('.log .head').length,
-			logUnruled: [...document.querySelectorAll('.log .entry')].filter(
-				(el) => getComputedStyle(el).borderTopWidth === '0px'
-			).length
-		}));
+		page.evaluate(() => {
+			const cells = [...document.querySelectorAll('.log .entry')];
+			const top = (c) => Math.round(c.getBoundingClientRect().top);
+			const first = cells.length ? top(cells[0]) : 0;
+			const ruled = (c) => getComputedStyle(c).borderTopWidth !== '0px';
+			return {
+				barRows: document.querySelectorAll('.prompt-bar .section.output .head').length,
+				logRows: document.querySelectorAll('.log .head').length,
+				firstRuled: cells.filter((c) => top(c) === first && ruled(c)).length,
+				laterUnruled: cells.filter((c) => top(c) !== first && !ruled(c)).length,
+				barRule: parseFloat(getComputedStyle(document.querySelector('.prompt-bar')).borderTopWidth)
+			};
+		});
 
 	test('every seam between two rows has a hairline, the bar’s own included', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			for (const line of ['occur coffee', 'occur water', 'occur tea']) await app.submit(line);
+			for (const line of ['occur coffee', 'occur water', 'occur tea', 'occur toast']) await app.submit(line);
 			await app.idle();
 
 			await dragBy(page, BAR, -900);
 			await settled(page);
 
-			const { barRows, logRows, logUnruled } = await drawn(page);
+			const { barRows, logRows, firstRuled, laterUnruled, barRule } = await drawn(page);
 			assert.equal(barRows, 1, 'the bar drew no row of its own');
-			assert.equal(logRows, 2, `the log drew ${logRows} rows of three entries`);
-			// The log owns every seam it has, because the row above its
-			// first is the bar's: not one of its entries goes unruled.
-			assert.equal(logUnruled, 0, `${logUnruled} of the log's entries drew no hairline`);
+			assert.equal(logRows, 3, `the log drew ${logRows} rows of four entries`);
+			assert.equal(firstRuled, 0, "the log ruled its first row against the top of its own box");
+			assert.equal(laterUnruled, 0, `${laterUnruled} of the log's later entries drew no hairline`);
+			assert.ok(barRule >= 1, "no rule between the log's last row and the bar's");
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
 
-	// AND NOT IN A PANE. A repl WIDGET is the same component with `skip` 0,
+	// AND NOT IN A PANE. A CLI WIDGET is the same component with `skip` 0,
 	// and there the first row is the first row: a hairline above it would be
 	// a rule against the top of the pane's own body.
-	test('a repl widget still draws no rule above its first row', async () => {
+	test('a CLI widget still draws no rule above its first row', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
-			const pane = page.locator('.pane.repl, [data-title="repl"]').first();
+			const pane = page.locator('.pane.cli, [data-title="cli"]').first();
 			await pane.waitFor();
-			// The desktop's repl keeps the tests before this one: counted from there.
+			// The desktop's CLI keeps the tests before this one: counted from there.
 			const had = await pane.locator('.head').count();
 			for (const line of ['occur coffee', 'occur water']) await app.submit(line);
 			await app.idle();
@@ -898,26 +904,14 @@ describe('the seam between the bar’s row and the log', () => {
 	});
 });
 
-// ONE GESTURE, THREE PHASES, IN SEQUENCE (da-tj6m).
+// THE BAR OPENS THE LOG, AND THE LOG'S ROWS SCROLL AS A TERMINAL'S DO.
 //
-// vividn, 2026-09-21, of the deployed bar: "2-N in the repl seem to scroll
-// independently, so if I pull up the input section a bit, I can then scroll
-// through the old history independently. This behavior is incorrect,
-// instead, you should be able to grab from anywhere in the repl and it
-// behaves as one unit, so it will just pull the input section up more. When
-// and only when the input bar reaches the top of the screen, does the REPL
-// then scroll all together (including the most recent command). Then I can
-// scroll around. When I get back to the top, then trying to scroll up
-// further starts closing the input section".
-//
-//     phase 1   drag anywhere in the repl  ->  the input section GROWS
-//     phase 2   at full height             ->  the list scrolls, ALL ROWS
-//                                              AS ONE, the newest included
-//     phase 3   back at the list's top,    ->  the section starts CLOSING
-//               still pulling
-//
-// The handoffs are inside ONE drag, so what these assert is the SEQUENCE —
-// sampled at every step of the gesture — and not merely where it ends up.
+// da-tj6m made the bar and the log ONE handle — past the ceiling the pull
+// scrolled the list — for a history that hung below an input at the top of
+// the screen. In time order, with the input at the foot (da-mwp4m), the
+// history reads upward from the bar, and its rows scroll on their own,
+// pinned to the newest. The handle, the full screen and the scroll past the
+// history's end that closes it are da-0b2vy's.
 describe('the bar and the log are one handle', () => {
 	const phone = onePhone();
 	/**
@@ -932,7 +926,7 @@ describe('the bar and the log are one handle', () => {
 	 *
 	 * ONCE for the describe (da-87x74): the phone is its one, and nothing puts
 	 * a scrollback back, so the list the first test seeds is the list the
-	 * rest drag.
+	 * rest read.
 	 */
 	let seeded = false;
 	const seed = async (app) => {
@@ -943,155 +937,41 @@ describe('the bar and the log are one handle', () => {
 		seeded = true;
 	};
 
-	/**
-	 * Drag `selector` by `dy`, reading the bar and the list at EVERY step.
-	 *
-	 * A frame between the moves, because Svelte writes the DOM on a
-	 * microtask: a sample taken in a tight loop would report the state
-	 * before the move that caused it, which is the one thing a sequence
-	 * cannot be asserted from. It also gives the moves real stamps, so this
-	 * gesture has a speed in it like a thumb's — where it SETTLES is
-	 * `detent.test.mjs`'s business and not this one's.
-	 */
-	const dragWatching = (page, selector, dy, steps = 14) =>
-		page.evaluate(
-			async ([selector, dy, steps]) => {
-				const el = document.querySelector(selector);
-				const r = el.getBoundingClientRect();
-				const x = r.left + r.width / 2;
-				const y = r.top + r.height / 2;
-				const send = (type, at) =>
-					el.dispatchEvent(
-						new PointerEvent(type, {
-							pointerId: 31,
-							pointerType: 'touch',
-							isPrimary: true,
-							clientX: x,
-							clientY: at,
-							bubbles: true,
-							cancelable: true
-						})
-					);
-				const px = (name) =>
-					Math.round(
-						parseFloat(getComputedStyle(document.querySelector('.shell')).getPropertyValue(name)) || 0
-					);
-				const read = () => ({
-					log: px('--log-height'),
-					shown: px('--shown'),
-					rolled: px('--rolled'),
-					scroll: Math.round(document.querySelector('.log .body')?.scrollTop ?? 0),
-					main: Math.round(document.querySelector('main').getBoundingClientRect().height)
-				});
-				const frame = () => new Promise((done) => requestAnimationFrame(done));
-				send('pointerdown', y);
-				const seen = [];
-				for (let i = 1; i <= steps; i += 1) {
-					send('pointermove', y + (dy * i) / steps);
-					await frame();
-					seen.push(read());
-				}
-				send('pointerup', y + dy);
-				return seen;
-			},
-			[selector, dy, steps]
-		);
-
-	// THE COMPLAINT ITSELF, and it is about the rows and not about the bar:
-	// a finger on the history used to move the history. The box's own
-	// vertical scroll is what did that, and it is inert now — asserted as
-	// the RULE (the computed value) and as what the rule is for (the drag).
-	test('a drag on the rows pulls the bar up; it does not scroll them', async () => {
+	test('the log opens on its newest row, and its rows scroll without moving the bar', async () => {
 		await phone(async (app) => {
 			const { page } = app;
 			await seed(app);
-
-			// Part-way open, so there is a log to put a finger on and room
-			// above it for the bar still to grow.
-			await dragBy(page, BAR, -300);
+			await dragBy(page, BAR, -900);
 			await settled(page);
-			const part = await where(page);
-			assert.ok(part.height > 40, `the log is ${part.height}px — nothing to grab`);
-			assert.ok(part.main.height > 40, `the bar is already at the top: ${part.main.height}px of dashboard`);
+			const open = await where(page);
+			assert.ok(open.scrollMax > 0, `the history fits in ${open.height}px — nothing to scroll`);
+			assert.ok(open.scrollMax - open.scroll <= 1, `the log opened ${open.scrollMax - open.scroll}px above its newest row`);
 
-			assert.equal(
-				await page.locator('.log .body').evaluate((el) => getComputedStyle(el).overflowY),
-				'hidden',
-				'the rows still scroll on their own'
-			);
-
-			await dragBy(page, '.log', -120);
+			await wheelOver(page, '.log', -400);
 			await settled(page);
-			const pulled = await where(page);
-			assert.ok(
-				pulled.height > part.height + 60,
-				`the drag on the rows opened the bar by ${pulled.height - part.height}px`
-			);
-			assert.equal(pulled.scroll, 0, `the rows scrolled ${pulled.scroll}px under the finger`);
-			assert.equal(pulled.rolled, 0, "the bar's own row moved before the bar was at the top");
+			const back = await where(page);
+			assert.ok(back.scroll < open.scroll, 'a wheel over the rows did not scroll them');
+			assert.equal(back.height, open.height, 'the wheel over the rows moved the bar');
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	test('the list starts scrolling when, and only when, the input row reaches the top', async () => {
+	test('a command that lands brings the log back to its newest row', async () => {
 		await phone(async (app) => {
 			const { page } = app;
 			await seed(app);
-			await dragBy(page, BAR, -200);
+			await dragBy(page, BAR, -900);
 			await settled(page);
-			// Open and unrolled, so this IS the output section's whole height.
-			const whole = (await where(page)).shown;
-
-			const seen = await dragWatching(page, '.log', -1400);
-			for (const step of seen)
-				if (step.rolled + step.scroll > 0)
-					assert.ok(
-						step.main <= 1,
-						`the list scrolled with ${step.main}px of dashboard still showing: ${JSON.stringify(step)}`
-					);
-			const end = seen.at(-1);
-			assert.ok(end.scroll > 0, `the pull never reached the list: ${JSON.stringify(end)}`);
-			// AND THE NEWEST COMMAND WENT WITH IT. The bar's own row is the
-			// first thing the list scrolls, and the output section gives the
-			// log exactly the pixels the row takes with it — one list, drawn
-			// by two renderers, and no row handed between them.
-			const rolled = seen.find((step) => step.rolled > 0 && step.rolled < whole);
-			assert.ok(rolled, `the bar's row never rolled: ${JSON.stringify(seen.map((s) => s.rolled))}`);
-			assert.ok(
-				Math.abs(rolled.shown + rolled.rolled - whole) <= 1,
-				`the row rolled ${rolled.rolled}px and the section kept ${rolled.shown}px of ${whole}px`
-			);
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	test('and pulling the other way scrolls back to the top before it closes anything', async () => {
-		await phone(async (app) => {
-			const { page } = app;
-			await seed(app);
-			// TWO DRAGS, and the first one is what MOUNTS the log: the
-			// scrollback down there is drawn on the first gesture and not
-			// before ($lib/log.ts's `armed`), and `dragBy` dispatches its
-			// whole run of moves synchronously — so a drag that arms the log
-			// cannot also reach into it, there being no frame in the middle
-			// for it to be drawn in. A finger has frames.
-			await dragBy(page, BAR, -200);
+			await wheelOver(page, '.log', -400);
 			await settled(page);
-			await dragBy(page, '.log', -900);
-			await settled(page);
-			const deep = await where(page);
-			assert.ok(deep.scroll > 0, `the list is at ${deep.scroll}px — there is nothing to come back from`);
+			assert.ok((await where(page)).scroll < (await where(page)).scrollMax - 1, 'the rows did not scroll up');
 
-			const seen = await dragWatching(page, '.log', 900, 20);
-			for (const step of seen)
-				if (step.main > 1)
-					assert.deepEqual(
-						[step.rolled, step.scroll],
-						[0, 0],
-						`the bar began closing with the list at ${step.scroll}px: ${JSON.stringify(step)}`
-					);
-			const end = seen.at(-1);
-			assert.ok(end.main > 1, `the pull never started closing: ${JSON.stringify(end)}`);
+			await app.submit('occur water');
+			await app.idle();
+			await settled(page);
+			const after = await where(page);
+			assert.ok(after.scrollMax - after.scroll <= 1, `the log stayed ${after.scrollMax - after.scroll}px above its newest row`);
+			assert.equal((await logEchoes(page)).at(-1), 'occur coffee');
 			assert.deepEqual(app.errors, []);
 		});
 	});

@@ -138,8 +138,10 @@ async function reset(app, line, layout = false) {
 	await page.evaluate(() => window.datum.mode.discard());
 	// A maximize is view state no `solo` puts back (maximize.ts).
 	// Help armed (`help.ts`) explains the next tap instead of acting it:
-	// Escape disarms it.
-	if ((await page.locator('.command.help.armed').count()) > 0) await page.keyboard.press('Escape');
+	// Escape disarms it. Armed from the commands widget's Help or from the
+	// root bar's (?), which is the one a page without the commands pane has
+	// (collect, da-mwp4m).
+	if ((await page.locator('.command.help.armed, .root-bar .help.armed').count()) > 0) await page.keyboard.press('Escape');
 	// A widget option a tap set holds for the session, which `solo` keeps:
 	// forgotten, and the fields widget's own put back below.
 	const session = () => page.evaluate(() => JSON.stringify(window.datum.layout.session()));

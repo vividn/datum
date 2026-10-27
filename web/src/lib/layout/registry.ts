@@ -1,7 +1,7 @@
 // The widget kinds: what the tree can name, and what draws each one.
 //
 // Everything on the page is a widget (vividn: "They are widgets like
-// anything else yes") — the day strip, the REPL and the fields widget
+// anything else yes") — the day strip, the CLI and the fields widget
 // included. A kind is its `WidgetKindMeta` (the contract in types.ts:
 // title and default settings) plus the Svelte component that draws
 // it and, where the component wants something other than `settings`, the
@@ -21,7 +21,7 @@
 // built app (2026-09-10, Chromium, 0.85rem monospace): the pane's body at
 // the size below which the kind stops being legible. The strip: one whole
 // day at its drawn height (`todayBox(85)`, 100px at the default) plus the
-// body's 16px of padding — its snap. The REPL: three lines of scrollback
+// body's 16px of padding — its snap. The CLI: three lines of scrollback
 // (18.4px each) plus padding, 71px — the bottom bar is its prompt
 // (da-rfs9), so it has no line of its own to keep. The tail,
 // and a custom pane showing one: its header row and three rows (21.6px
@@ -280,9 +280,12 @@ export const KINDS: Record<string, WidgetKind> = {
 			typeof settings.dayHeight === 'number' ? { height: [oneDay(settings)] } : {},
 		legible: (settings) => ({ width: 240, height: oneDay(settings) })
 	},
-	// `reversed` (da-gvdc): the newest entry first, and the view pinned to the top.
-	repl: {
-		meta: meta('repl', 'repl', { reversed: false }, [{ key: 'reversed', label: 'newest first', type: 'boolean' }]),
+	// The REPL until da-mwp4m (vividn, 2026-10-27: «let's rename the REPL to
+	// be CLI»); a layout naming `repl` opens as this (`RETIRED_KINDS`,
+	// shell.ts). `reversed` (da-gvdc): the newest entry first, and the view
+	// pinned to the top; off, it reads as a terminal does.
+	cli: {
+		meta: meta('cli', 'cli', { reversed: false }, [{ key: 'reversed', label: 'newest first', type: 'boolean' }]),
 		component: ReplWidget,
 		help: [
 			'Every command run on this page and what datum answered, the newest last.',

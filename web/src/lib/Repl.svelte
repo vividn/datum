@@ -1,5 +1,7 @@
 <!--
-	The REPL — the day frame's large pane: the scrollback, and nothing to
+	The CLI widget (the REPL until da-mwp4m; vividn, 2026-10-27: «let's rename
+	the REPL to be CLI, I think that is a more commonly understood acronym»)
+	— the day frame's large pane: the scrollback, and nothing to
 	type into. The bottom bar's prompt is the page's command line
 	($lib/PromptBar.svelte, da-rfs9: "Remove the input box at the bottom of
 	the REPL widget it is redundant now").
@@ -25,7 +27,7 @@
 	also what keeps them across a reload. A command typed into the input
 	widget is in this scrollback too, output and all.
 
-	`reversed` (da-gvdc, the repl widget's option) draws the entries newest
+	`reversed` (da-gvdc, the CLI widget's option) draws the entries newest
 	first — each entry keeps its own order, the command and then its answer
 	— and pins the view to the top wherever it pins it to the bottom
 	otherwise: on mount, on every run, and under a progress line, which is
@@ -59,8 +61,8 @@
 		/**
 		 * How many of the newest entries this view does NOT draw.
 		 *
-		 * The bar's log passes 1, because the bar's own output section is row
-		 * one and dragging the log up must not meet it again (vividn, 2026-09-21:
+		 * The bar's log passes 1, because the bar's own output section is the
+		 * newest row and dragging the log up must not meet it again (vividn, 2026-09-21:
 		 * "it shouldn't be repeated when you drag it up"). One list, and the two
 		 * surfaces show different slices of it.
 		 */
@@ -68,8 +70,8 @@
 		/**
 		 * The scrolling box, bindable.
 		 *
-		 * The bar's log is the caller (da-tj6m): down there the ONE NUMBER owns
-		 * this box's vertical scroll, so it has to be able to reach it.
+		 * The bar's log is the caller: it pins this box to the newest row when
+		 * a command it did not run lands.
 		 */
 		body = $bindable(),
 		/** Each run, once it has landed in the scrollback. */
@@ -102,9 +104,11 @@
 	const wide = $derived(entries.map((entry) => !parseEcho(entry.result.stdout)));
 	const rows = $derived(rowsOf(wide, columns));
 	// The hairline stands on a SEAM (da-qdm7), so it is drawn above every
-	// row but the first — and above that one too when this view begins at
-	// `skip`, because then there is a row above that it does not draw.
-	const ruled = $derived(rows.map((row) => row > 0 || skip > 0));
+	// row but the first — and above that one too when a newest-first view
+	// begins at `skip`, because then there is a row above that it does not
+	// draw. In time order the skipped rows are below the last one, where the
+	// bar's own rule is the seam.
+	const ruled = $derived(rows.map((row) => row > 0 || (reversed && skip > 0)));
 
 	/** The view to the newest entry: the bottom, or the top when reversed. */
 	function pin(): void {
@@ -186,7 +190,7 @@
 	}
 </script>
 
-<Pane title="repl" {bare} alarm={isDegraded($storage)} bind:this={pane} bind:body>
+<Pane title="cli" {bare} alarm={isDegraded($storage)} bind:this={pane} bind:body>
 	{#if entries.length === 0}
 		<p class="quiet">type a command — <code>switch mood happy</code>, <code>tail</code></p>
 	{/if}

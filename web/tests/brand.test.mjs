@@ -306,7 +306,7 @@ describe('the logo', () => {
 			// The database this tab LEFT, then the one it is on — in that
 			// order, from one peer, so the second landing proves the first
 			// was heard and ignored rather than merely slow.
-			const peer = await app.newTab('repl?db=other');
+			const peer = await app.newTab('cli?db=other');
 			assert.equal((await peer.run(['--db', 'datum', 'occur', 'tea', '-t', '0800'])).code, 0);
 			assert.equal((await peer.run(['occur', 'milk', '-t', '0900'])).code, 0);
 

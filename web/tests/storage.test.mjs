@@ -128,7 +128,7 @@ function oneApp(options) {
  * answers, the tail that has to see the other tab's write — stay where
  * they are.
  */
-const REPL = { query: 'repl' };
+const REPL = { query: 'cli' };
 
 describe('when durable storage never answers', () => {
 	test('the app opens in memory and says so', async () => {

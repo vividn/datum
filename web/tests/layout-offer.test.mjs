@@ -43,6 +43,7 @@ const FIRST_VISIT = [
 	['main'],
 	['welcome', 'setup', 'collect'],
 	['welcome', 'setup', 'collect'],
+	['welcome', 'setup', 'collect'],
 	['welcome', 'setup', 'collect']
 ];
 

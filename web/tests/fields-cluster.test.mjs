@@ -189,7 +189,7 @@ describe('ringOf', () => {
 	});
 });
 
-const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
+const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 const BAR = 'section[data-pane="bar"] .bar';
 /** Nineteen fields around `mood` alphabetically, so it stands mid-row and can be scrolled anywhere. */
 const OTHERS = 'alfa bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra'.split(' ');

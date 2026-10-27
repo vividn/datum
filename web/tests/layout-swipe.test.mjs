@@ -134,7 +134,7 @@ describe('the root swipes between layouts', () => {
 				await scrollX(back, false);
 				await swipeOver(page, back, 120, 0);
 				await until(() => shown(page), (name) => name === 'main');
-				assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
+				assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'fields']);
 
 				// And the page it came back to does not hang off its own edge:
 				// the root's content is the page's scroller, and a box moved
@@ -194,7 +194,7 @@ describe('a scroller keeps the gesture until its end', () => {
 								bar,
 								tabs: [
 									{ id: 'wide-aliases', content: { id: 'wide-aliases-w', kind: 'aliases', settings: {} } },
-									{ id: 'wide-repl', content: { id: 'wide-repl-w', kind: 'repl', settings: {} } },
+									{ id: 'wide-repl', content: { id: 'wide-repl-w', kind: 'cli', settings: {} } },
 									{ id: 'wide-custom', content: { id: 'wide-custom-w', kind: 'custom', settings: {} } }
 								]
 							}
@@ -223,7 +223,7 @@ describe('a scroller keeps the gesture until its end', () => {
 				await scrollX(body, false);
 				await swipeOver(page, body, -120, 0, { x: 0.8, y: 0.5 });
 				await atRest(pane(page, 'wide').locator('> .content'));
-				assert.equal(await activeTab(page, 'wide'), 'repl', 'a swipe over a scroller with room changed the tab');
+				assert.equal(await activeTab(page, 'wide'), 'cli', 'a swipe over a scroller with room changed the tab');
 
 				// The other way it has not: the line is already at its start,
 				// so the frame takes the gesture and the tab before it arrives.
@@ -232,7 +232,7 @@ describe('a scroller keeps the gesture until its end', () => {
 				await until(() => activeTab(page, 'wide'), (t) => t === 'aliases');
 
 				// And at its end, a swipe left is the frame's too.
-				await pane(page, 'wide').locator('[role="tab"]', { hasText: 'repl' }).click();
+				await pane(page, 'wide').locator('[role="tab"]', { hasText: 'cli' }).click();
 				await scrollX(body, true);
 				await swipeOver(page, body, -120, 0, { x: 0.8, y: 0.5 });
 				await until(() => activeTab(page, 'wide'), (t) => t === 'custom');
@@ -507,7 +507,7 @@ describe('the strip: never a blank between two tabs', () => {
 			async (app) => {
 				const { page } = app;
 				// The next layout is not mounted until a gesture brings it on.
-				assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
+				assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'fields']);
 				const body = await wideRepl(app);
 				await scrollX(body, true);
 				await unbroken(
@@ -539,7 +539,7 @@ describe('the strip: never a blank between two tabs', () => {
 							};
 						})
 					),
-					[{ clip: 'inset(50%)', hidden: 'true', focused: false, hit: false, titles: ['dayview', 'repl', 'tail', 'fields'] }],
+					[{ clip: 'inset(50%)', hidden: 'true', focused: false, hit: false, titles: ['dayview', 'cli', 'tail', 'fields'] }],
 					'the layout left behind is kept, clipped, and takes no focus or press'
 				);
 			},
@@ -775,7 +775,7 @@ describe('a maximize keeps every layout mounted', () => {
 				await page.locator('section[data-pane="side"] > .titlebar button.maximize[aria-pressed="true"]').waitFor();
 				assert.equal(await bodies(), 2, 'the maximize let the kept layout go');
 				await maximizeButton(page, 'side').click();
-				await until(() => titles(page), (seen) => seen.join() === 'dayview,repl,tail,fields');
+				await until(() => titles(page), (seen) => seen.join() === 'dayview,cli,tail,fields');
 				assert.equal(await bodies(), 2, 'the restore let the kept layout go');
 				assert.equal(await unkept(), 0, 'the restore mounted a pane again');
 			},
@@ -938,7 +938,7 @@ describe('a run of swipes: the window after a switch', () => {
 									active: 0,
 									bar,
 									tabs: [
-										{ id: 'wide-repl', content: { id: 'wide-repl-w', kind: 'repl', settings: {} } },
+										{ id: 'wide-repl', content: { id: 'wide-repl-w', kind: 'cli', settings: {} } },
 										{ id: 'wide-custom', content: { id: 'wide-custom-w', kind: 'custom', settings: {} } }
 									]
 								}
@@ -957,14 +957,14 @@ describe('a run of swipes: the window after a switch', () => {
 				const body = wide.locator('.body:not(.behind .body)');
 				const tab = (name) => wide.locator('[role="tab"]', { hasText: name }).click();
 				await tab('custom');
-				await tab('repl');
-				// `repl` is the first tab: a swipe right has no tab to go to.
+				await tab('cli');
+				// `cli` is the first tab: a swipe right has no tab to go to.
 				await swipeOver(page, body, 120, 0, { x: 0.2, y: 0.5 });
 				const [at, most] = await body.evaluate((el) => [el.scrollLeft, el.scrollWidth - el.clientWidth]);
 				assert.ok(at < most, 'the REPL does not scroll sideways — this case needs a wider line');
 				await swipeOver(page, body, -120, 0, { x: 0.8, y: 0.5 });
 				await atRest(wide.locator('> .content'));
-				assert.equal(await activeTab(page, 'wide'), 'repl', 'the window took a swipe after one it passed on');
+				assert.equal(await activeTab(page, 'wide'), 'cli', 'the window took a swipe after one it passed on');
 				assert.ok((await body.evaluate((el) => el.scrollLeft)) > at, 'the scroller under the finger did not take the swipe');
 			},
 			JSON.stringify(replFirst)

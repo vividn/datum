@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, seedLines } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
 
-const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
+const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 const BAR = 'section[data-pane="bar"] .bar';
 
 /** The bar's box and the box around every field button in it. */

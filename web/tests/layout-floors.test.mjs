@@ -320,7 +320,7 @@ describe('resizing', () => {
 // the content box is the inside half of the title's row — 8px down a
 // column under a top bar, 0px across a row.
 describe('a widget pane shrinks to its frame', () => {
-	for (const kind of ['daystrip', 'repl', 'nowview', 'tail', 'custom', 'stats']) {
+	for (const kind of ['daystrip', 'cli', 'nowview', 'tail', 'custom', 'stats']) {
 		for (const direction of ['column', 'row']) {
 			const axis = direction === 'row' ? 'width' : 'height';
 			test(`${kind}, across a ${direction}: only its frame is left, ${CHROME[axis]}px ${axis}`, async () => {
@@ -350,7 +350,7 @@ describe('a widget pane shrinks to its frame', () => {
 						assert.ok(!seen.spills, `${kind}: the widget paints outside its frame`);
 						assert.ok(Math.abs(seen.section - CHROME[axis]) <= 1, `${kind}: the frame is ${seen.section}px ${axis}, not ${CHROME[axis]}`);
 					},
-					JSON.stringify(along(direction, widgetPane('a', kind), widgetPane('b', 'repl')))
+					JSON.stringify(along(direction, widgetPane('a', kind), widgetPane('b', 'cli')))
 				);
 			});
 		}
@@ -368,7 +368,7 @@ describe('a tabbed holder shrinks to its strip and its panes\' frames', () => {
 		tabs: [
 			{
 				id: 'tabbed-split',
-				content: { id: 'inner', direction: 'row', ratios: [0.5, 0.5], children: [widgetPane('x', 'tail'), widgetPane('y', 'repl')] }
+				content: { id: 'inner', direction: 'row', ratios: [0.5, 0.5], children: [widgetPane('x', 'tail'), widgetPane('y', 'cli')] }
 			},
 			{ id: 'tabbed-aliases', content: { id: 'tabbed-aliases-widget', kind: 'aliases', settings: {} } }
 		],
@@ -381,7 +381,7 @@ describe('a tabbed holder shrinks to its strip and its panes\' frames', () => {
 	]) {
 		test(`under a ${pointer} pointer: a ${strip}px strip, ${strip / 2}px under it, and a pane's frame`, async () => {
 			await withApp(async (app) => {
-				const { page } = await app.solo(JSON.stringify(along('column', tabbed, widgetPane('b', 'repl'))));
+				const { page } = await app.solo(JSON.stringify(along('column', tabbed, widgetPane('b', 'cli'))));
 				const at = await grab(page, page.locator('.split.column > [role="separator"]').first());
 				for (let i = 1; i <= 20; i++) await page.mouse.move(at.x, at.y - i * 60);
 				await page.mouse.up();

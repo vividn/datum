@@ -27,7 +27,7 @@ const opened = (names, active) => ({
 		}, JSON.stringify({ names, active }))
 });
 
-const MANY = ['main', 'tail', 'repl', 'aliases', 'stats', 'sync', 'setup', 'welcome'];
+const MANY = ['main', 'tail', 'cli', 'aliases', 'stats', 'sync', 'setup', 'welcome'];
 
 /**
  * Which tabs lie wholly inside the strip's visible box, by name, with the

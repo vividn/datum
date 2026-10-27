@@ -7,8 +7,13 @@
 // the site is opened on a phone» — dayview / tail | a tiny nowview /
 // fields + nowview / commands, over the app's own bottom bar. So this file
 // holds the tree, that every pane of it is on the screen at a phone's
-// sizes, that the two taps of a log work inside it, and that a device with
-// an open list keeps it.
+// sizes, that a log works inside it, and that a device with an open list
+// keeps it.
+//
+// The commands pane at the foot went in da-mwp4m. vividn, 2026-10-27:
+// «remove the command widget on the collect tab (it can remain a widget in
+// general)», and the bar's output, open by default over the input, has its
+// room.
 //
 // vividn, 2026-09-21, changed three things about it (da-hkjp): the strip
 // shows ONE day, the tail's type is smaller, and row 3 is a SPLIT of the
@@ -16,7 +21,7 @@
 // that was MEASURED rather than reasoned about — see the note over
 // `MOBILE_LAYOUT` — so the sweep below asserts it at the four sizes the
 // measurement was taken at, the fourth (412×563) added here because it is
-// where a column split of row 3 cut the commands pane.
+// where a column split of row 3 cut the pane under it.
 //
 // The FIRST is no longer geometry at all (da-r0ydu). It was a weight
 // measured at one of the four screens, because a day was a fixed height
@@ -28,7 +33,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { unfold as openBar } from './support/bar.mjs';
+import { fold as foldBar } from './support/bar.mjs';
 import { DESKTOP, pane, titles } from './support/layout.mjs';
 import { toggleFreeze } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
@@ -47,8 +52,8 @@ const phone = (width = 390, height = 844) => ({
 const FIRST = ['welcome', 'setup', 'collect'];
 
 /** `collect`'s two trees, by their panes' titles: the phone's, and the shipped desktop's (`desk: null`). */
-const MOBILE_TREE = ['dayview', 'tail', 'fields', 'nowview', 'command'];
-const DESKTOP_TREE = ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command'];
+const MOBILE_TREE = ['dayview', 'tail', 'fields', 'nowview'];
+const DESKTOP_TREE = ['dayview', 'tail', 'nowview', 'stats', 'fields'];
 
 /** A desktop that has never opened the site. */
 const FRESH_DESKTOP = { ...DESKTOP, home: null };
@@ -101,25 +106,6 @@ const screen = (page) =>
 		})
 	}));
 
-/** The buttons of `bar` drawn whole, inside the bar's box AND the screen. */
-const whole = (bar) =>
-	bar.evaluate((el) => {
-		const box = el.getBoundingClientRect();
-		return [...el.querySelectorAll('button')]
-			.filter((b) => {
-				const r = b.getBoundingClientRect();
-				return (
-					r.width > 0 &&
-					r.left >= Math.max(box.left, 0) - 0.5 &&
-					r.right <= Math.min(box.right, innerWidth) + 0.5 &&
-					r.top >= box.top - 0.5 &&
-					r.bottom <= box.bottom + 0.5
-				);
-			})
-			.map((b) => b.textContent.trim());
-	});
-
-const commandBar = (page) => pane(page, 'command').locator('.bar.commands');
 // `fields` names the HOLDER of row 3's split now (da-hkjp); the widget
 // itself is the pane `bar` inside it.
 const fieldsBar = (page) => pane(page, 'bar').locator('.bar').first();
@@ -184,7 +170,7 @@ const typeSize = (page, id) =>
 	pane(page, id).evaluate((p) => parseFloat(getComputedStyle(p.querySelector('.body')).fontSize));
 
 describe('a fresh phone', () => {
-	test('`collect` is `mobile`: dayview / tail / fields + nowview / command', async () => {
+	test('`collect` is `mobile`: dayview / tail / fields + nowview, the output open over the input', async () => {
 		await asOpened(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
@@ -194,6 +180,8 @@ describe('a fresh phone', () => {
 			// the screen and neither wears a tab; row 2 is the tail alone
 			// (da-2hd21), its tiny nowview gone.
 			assert.deepEqual(await titles(page), MOBILE_TREE);
+			// No command pane: the bar's output stands where it was, open.
+			assert.equal(await page.locator('.prompt-bar .section.output').count(), 1, 'the output is not open');
 			// The root bar's own tab is not the dashboard's: `main`'s panes
 			// are what row 3 stopped tabbing.
 			assert.equal(await page.locator('main [role="tab"]').count(), 0, 'something in `mobile` is still tabbed');
@@ -216,8 +204,8 @@ describe('a fresh phone', () => {
 	// every pane body shares. So the claim to assert is that ratio, against
 	// a pane that did not ask — not merely "smaller than its neighbour".
 	//
-	// The baseline has to be a plain widget pane. `command` and the fields
-	// widget draw their own 13px inside their bars, so measuring against
+	// The baseline has to be a plain widget pane. The fields widget draws
+	// its own 13px inside its bar, so measuring against
 	// either reads 0.89 and says nothing about the option; the strip and
 	// the nowview are both at the shared 13.6px.
 	test("the tail's type is 0.85 of the rule every other pane body keeps", async () => {
@@ -300,84 +288,67 @@ describe('a fresh phone', () => {
 	// height from the shortening of row 1 and 2 give to row 3» — and
 	// (da-frewq) the strip about 70% of its old height rather than half, the
 	// 22 it takes back from row 3. The rows' heights are the tree's shares,
-	// 70 : 103 : 156 : 63, of one column.
-	test('the rows stand 70 : 103 : 156 : 63', async () => {
+	// 70 : 103 : 156, of one column — the commands' 63 gone with them
+	// (da-mwp4m).
+	test('the rows stand 70 : 103 : 156', async () => {
 		await withApp(async ({ page }) => {
 			const h = await page.evaluate(() =>
-				['strip', 'tail', 'nowview', 'command'].map((id) =>
+				['strip', 'tail', 'nowview'].map((id) =>
 					document.querySelector(`main section.pane[data-pane="${id}"]`).getBoundingClientRect().height
 				)
 			);
 			const total = h.reduce((a, b) => a + b, 0);
-			[70, 103, 156, 63].forEach((w, i) =>
-				assert.ok(Math.abs(h[i] - (total * w) / 392) <= 3, `row ${i + 1} is ${h[i]}px of ${total}: ${h.join(' / ')}`)
+			[70, 103, 156].forEach((w, i) =>
+				assert.ok(Math.abs(h[i] - (total * w) / 329) <= 3, `row ${i + 1} is ${h[i]}px of ${total}: ${h.join(' / ')}`)
 			);
 		}, phone());
 	});
 
 	for (const [width, height] of SIZES) {
-		test(`at ${width}x${height} every pane is on the screen, and the bars' buttons are whole`, async () => {
+		test(`at ${width}x${height} every pane is on the screen, the output open or folded`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				await app.declare('coffee');
 				await app.reload();
-				// A fresh phone opens FOLDED (da-ckw3), which is the state
-				// this layout is drawn for and which gives it back the
-				// output section's ~58px. Both states are asked, because the
-				// reader may pull the bar open: what is CUT when the output
-				// is showing is what the second pass says out loud.
-				for (const folded of [true, false]) {
-					if (!folded) await openBar(page);
+				// A phone opens with the output OPEN (da-mwp4m), which is the
+				// state this layout is drawn for now; folded gives the dashboard
+				// the output's room back. Both are asked: nothing is cut in
+				// either, the room the commands pane took being the output's.
+				for (const folded of [false, true]) {
+					if (folded) await foldBar(page);
 					// `main` clips rather than scrolls, so the scroll metrics say
 					// nothing: each pane's own box against the screen does.
 					const s = await screen(page);
-					assert.equal(s.panes.length, 5);
-					const under = s.panes.filter((p) => p.bottom > s.prompt).map((p) => p.id);
+					assert.equal(s.panes.length, 4);
+					const under = s.panes.filter((p) => p.bottom > s.prompt + 0.5).map((p) => p.id);
 					for (const p of s.panes)
 						assert.ok(p.left >= 0 && p.right <= s.width, `${p.id} is off the side: ${p.left}…${p.right} of ${s.width}`);
-					if (folded)
-						assert.deepEqual(under, [], `folded, ${under.join(', ')} runs under the bottom bar`);
-					else if (under.length)
-						// Not a failure, a MEASUREMENT: the tree sits on its own
-						// floors at these sizes, so an open bar takes the last
-						// pane's tail. Named here so it is a decision and not a
-						// surprise, and it is why a phone starts folded.
-						assert.deepEqual(
-							under,
-							['command'],
-							`open, the panes cut are ${under.join(', ')} — not the last one alone`
-						);
-					const commands = await whole(commandBar(page));
-					// Four at 360: the fifth, `end`, is a scroll away, since the
-					// five are wider than a 360px phone's pane (da-shzs).
-					if (folded)
-						for (const name of ['Undo', '↷', 'occur', 'start', ...(width > 360 ? ['end'] : [])])
-							assert.ok(commands.includes(name), `${name} is not whole: ${commands.join(' · ')}`);
+					assert.deepEqual(under, [], `${folded ? 'folded' : 'open'}, ${under.join(', ')} runs under the bottom bar`);
 				}
 				assert.deepEqual(app.errors, []);
 			}, phone(width, height));
 		});
 	}
 
-	test('two taps log an entry, tail shows it, and Undo takes it back', async () => {
+	// The commands pane's two taps were `occur` and then the field. With no
+	// commands pane, a field's own press is the log (fields-press.test.mjs),
+	// and the bar is where `undo` is typed.
+	test('a tap logs an entry, tail shows it, and `undo` at the bar takes it back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.declare('coffee');
 			await app.reload();
-			await commandBar(page).locator('button[data-command="occur"]').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur ');
 			await fieldsBar(page).locator('[data-field="coffee"]').click();
 			await until(() => app.entries(5), (es) => es.some((e) => e.field === 'coffee'));
 			await app.idle();
 			await page.waitForFunction(() =>
 				[...document.querySelectorAll('section[data-pane="tail"] tbody tr')].some((tr) => tr.textContent.includes('coffee'))
 			);
-			const logged = (await app.entries(5)).length;
-			assert.equal(logged, 1);
+			assert.equal((await app.entries(5)).length, 1);
 
-			await commandBar(page).locator('button[data-command="undo"]').click();
-			await app.idle();
-			assert.equal((await app.entries(5)).length, 0, 'Undo did not take the entry back');
+			await page.locator('.prompt-bar input').fill('undo');
+			await page.locator('.prompt-bar input').press('Enter');
+			await until(() => app.entries(5), (es) => es.length === 0);
 			assert.deepEqual(app.errors, []);
 		}, phone(390, 664));
 	});

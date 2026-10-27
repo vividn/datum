@@ -49,7 +49,7 @@ const closeMenu = async (page) => {
 };
 /** The layout-mode dialog that asks how to leave. */
 const asking = (page) => page.locator('dialog.confirm[open]');
-const TWO = { home: { names: ['main', 'repl'], active: 0 } };
+const TWO = { home: { names: ['main', 'cli'], active: 0 } };
 
 /** A finger's long press through CDP, `move`d by (dx, 0) before the lift when given. */
 async function fingerHold(page, locator, dx = 0, back = false) {
@@ -346,7 +346,7 @@ describe('the ways out', () => {
 			await asking(page).waitFor();
 			await asking(page).getByRole('button', { name: 'Discard changes' }).click();
 			await mode(page).waitFor({ state: 'detached' });
-			await until(() => rootMenuButton(page).textContent(), (t) => t.includes('repl'));
+			await until(() => rootMenuButton(page).textContent(), (t) => t.includes('cli'));
 			await page.locator('.root-bar [role="tab"][aria-selected="false"]').click();
 			await until(() => titles(page), (t) => JSON.stringify(t) === JSON.stringify(before));
 		}, { ...DESKTOP, ...TWO });

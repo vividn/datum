@@ -214,7 +214,7 @@ describe('a press', () => {
 			const input = page.locator('.prompt-bar input');
 			await input.fill('note coffee too strong');
 			await input.press('Enter');
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoes);
 
 			assert.equal((await app.echoes()).at(-1), 'note coffee too strong');
 			await app.idle();

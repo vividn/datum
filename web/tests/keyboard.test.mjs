@@ -22,7 +22,7 @@ const PHONE = { viewport: { width: 390, height: 664 }, device: { isMobile: true,
 
 const page_ = (...extra) =>
 	JSON.stringify(
-		along('column', widgetPane('repl', 'repl'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'), ...extra)
+		along('column', widgetPane('repl', 'cli'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'), ...extra)
 	);
 
 // ONE phone app for the file (da-6b3dj, sharedApp in support/app.mjs),
@@ -125,7 +125,7 @@ describe('a command tap focuses the line without the keyboard', () => {
 			await load([hid, { id: 't', kind: 'time', text: '-t -5' }]);
 			const echoes = (await app.echoes()).length;
 			await commands(page).locator('button[data-command="retime"]').tap();
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoes);
 			assert.equal((await app.echoes()).at(-1), `retime ${entry.hid} -t -5`);
 			await app.idle();
 			const [moved] = await app.entries(1);
@@ -138,7 +138,7 @@ describe('a command tap focuses the line without the keyboard', () => {
 			await load([hid, { id: 't', kind: 'time', text: '-t -10' }]);
 			const before = (await app.echoes()).length;
 			await commands(page).locator('button[data-command="retime"]').tap();
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			assert.equal((await app.echoes()).at(-1), `retime ${entry.hid} -t -10`);
 			assert.equal((await state(page)).text, '', 'the single tap put something on the line');
 		});

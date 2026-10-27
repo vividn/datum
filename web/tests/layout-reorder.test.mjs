@@ -51,31 +51,31 @@ async function carry(page, from, x, y) {
 	for (let i = 1; i <= 8; i++) await page.mouse.move(x0 + ((x - x0) * i) / 8, y0 + ((y - y0) * i) / 8);
 }
 
-const THREE = opened(['main', 'tail', 'repl'], 1);
+const THREE = opened(['main', 'tail', 'cli'], 1);
 
 describe('a root tab dragged on a desktop', () => {
 	test('the third dropped before the first moves there, the tab in front stays in front, and a reload keeps it', async () => {
 		await withApp(
 			async (app) => {
 				const { page, errors } = app;
-				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'repl']);
+				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'cli']);
 				assert.equal(await shown(page), 'tail');
 				const first = await boxOf(tab(page, 'main'));
 				await page.evaluate(() =>
 					addEventListener('gotpointercapture', (e) => (window.__captured = e.target.textContent.trim()), true)
 				);
-				await carry(page, tab(page, 'repl'), first.x + 3, first.y + first.height / 2);
+				await carry(page, tab(page, 'cli'), first.x + 3, first.y + first.height / 2);
 				// The drop position is drawn: the line on `main`'s leading side.
 				assert.deepEqual(await marked(page), [['main', 'before']]);
 				// And the tab holds the pointer, so a release outside the window still lands.
-				assert.equal(await page.evaluate(() => window.__captured), 'repl');
+				assert.equal(await page.evaluate(() => window.__captured), 'cli');
 				await page.mouse.up();
-				assert.deepEqual(await rootTabs(page), ['repl', 'main', 'tail']);
+				assert.deepEqual(await rootTabs(page), ['cli', 'main', 'tail']);
 				assert.equal(await shown(page), 'tail');
 				assert.equal(await menuOpen(page), 0, 'the drag opened a menu');
 				assert.deepEqual(await marked(page), []);
 				await app.reload();
-				assert.deepEqual(await rootTabs(page), ['repl', 'main', 'tail']);
+				assert.deepEqual(await rootTabs(page), ['cli', 'main', 'tail']);
 				assert.equal(await shown(page), 'tail');
 				assert.deepEqual(errors, []);
 			},
@@ -89,25 +89,25 @@ describe('a root tab dragged on a desktop', () => {
 				await tab(page, 'main').click();
 				await front(page, 'main');
 				assert.equal(await shown(page), 'main');
-				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'repl']);
+				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'cli']);
 
 				// The tab in front is its menu's button: dragged, it moves and opens nothing.
-				const last = await boxOf(tab(page, 'repl'));
+				const last = await boxOf(tab(page, 'cli'));
 				await carry(page, tab(page, 'main'), last.x + last.width - 3, last.y + last.height / 2);
-				assert.deepEqual(await marked(page), [['repl', 'after']]);
+				assert.deepEqual(await marked(page), [['cli', 'after']]);
 				await page.mouse.up();
-				assert.deepEqual(await rootTabs(page), ['tail', 'repl', 'main']);
+				assert.deepEqual(await rootTabs(page), ['tail', 'cli', 'main']);
 				assert.equal(await shown(page), 'main');
 				assert.equal(await menuOpen(page), 0, 'dragging the tab in front opened its menu');
 
 				// Escape: nothing moves, nothing switches, and the line goes.
 				const first = await boxOf(tab(page, 'tail'));
-				await carry(page, tab(page, 'repl'), first.x + 3, first.y + first.height / 2);
+				await carry(page, tab(page, 'cli'), first.x + 3, first.y + first.height / 2);
 				assert.deepEqual(await marked(page), [['tail', 'before']]);
 				await page.keyboard.press('Escape');
 				assert.deepEqual(await marked(page), []);
 				await page.mouse.up();
-				assert.deepEqual(await rootTabs(page), ['tail', 'repl', 'main']);
+				assert.deepEqual(await rootTabs(page), ['tail', 'cli', 'main']);
 				assert.equal(await shown(page), 'main');
 				assert.deepEqual(errors, []);
 			},
@@ -121,7 +121,7 @@ describe('a root tab dragged on a phone', () => {
 		await withApp(
 			async (app) => {
 				const { page, errors } = app;
-				const from = await boxOf(tab(page, 'repl'));
+				const from = await boxOf(tab(page, 'cli'));
 				const first = await boxOf(tab(page, 'main'));
 				const [x, y] = [from.x + from.width / 2, from.y + from.height / 2];
 				const cdp = await page.context().newCDPSession(page);
@@ -135,11 +135,11 @@ describe('a root tab dragged on a phone', () => {
 				assert.deepEqual(await marked(page), [['main', 'before']]);
 				await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 				await cdp.detach();
-				assert.deepEqual(await rootTabs(page), ['repl', 'main', 'tail']);
+				assert.deepEqual(await rootTabs(page), ['cli', 'main', 'tail']);
 				assert.equal(await shown(page), 'tail');
 				assert.equal(await menuOpen(page), 0, 'the drag opened a menu');
 				await app.reload();
-				assert.deepEqual(await rootTabs(page), ['repl', 'main', 'tail']);
+				assert.deepEqual(await rootTabs(page), ['cli', 'main', 'tail']);
 				assert.equal(await shown(page), 'tail');
 				assert.deepEqual(errors, []);
 			},
@@ -148,7 +148,7 @@ describe('a root tab dragged on a phone', () => {
 	});
 
 	test('a sideways swipe on the strip scrolls it and reorders nothing; a tap still switches', async () => {
-		const names = ['main', 'tail', 'repl', 'nowview', 'custom', 'command', 'stats', 'fields', 'aliases', 'help'];
+		const names = ['main', 'tail', 'cli', 'nowview', 'custom', 'command', 'stats', 'fields', 'aliases', 'help'];
 		await withApp(
 			async ({ page, errors }) => {
 				const strip = page.locator('.root-bar .tabs');

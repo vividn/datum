@@ -17,7 +17,7 @@ before(startApp);
 after(stopApp);
 
 const PAGE = JSON.stringify(
-	along('column', widgetPane('repl', 'repl'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'))
+	along('column', widgetPane('repl', 'cli'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'))
 );
 
 const shared = sharedApp({ ...DESKTOP });

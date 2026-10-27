@@ -636,17 +636,33 @@ export const along = (direction, ...children) => ({
 	}
 });
 
-/** A draft of one REPL pane for the `main` tab, written before the app loads. */
+/**
+ * A draft of one CLI pane for the `main` tab, written before the app loads.
+ *
+ * The CLI alone at the root, so the bar draws NO output section on it
+ * (`outputless`, $lib/log.ts, da-mwp4m): for a test that reads the widget.
+ */
 export const ONE_PANE = JSON.stringify({
 	version: 1,
 	name: 'main',
 	root: {
 		id: 'only',
-		tabs: [{ id: 'only-tab', content: { id: 'only-widget', kind: 'repl', settings: {} } }],
+		tabs: [{ id: 'only-tab', content: { id: 'only-widget', kind: 'cli', settings: {} } }],
 		active: 0,
 		bar: { edge: 'top', align: 'start' }
 	}
 });
+
+/**
+ * The CLI beside the welcome text, for a test of the bottom bar's OUTPUT:
+ * the CLI pane is there for `app.submit` to wait on, and the root is not
+ * the CLI alone, so the bar's output section is drawn (da-mwp4m). Opened
+ * with `prepare: withBar`.
+ */
+export const CLI_BESIDE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('note', 'welcome')));
+
+/** `prepare` for an app opened on `CLI_BESIDE`. */
+export const withBar = (context) => context.addInitScript(draft, CLI_BESIDE);
 
 /** An init script: `json` as the `main` tab's draft. */
 export function draft(json) {

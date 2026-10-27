@@ -60,7 +60,7 @@ after(stopApp);
  * opens nothing (da-z8klv). The hold has to reach it anyway. (`command`
  * stood here until it declared an option, da-u79wl.)
  */
-const PAGE = JSON.stringify(along('row', widgetPane('repl', 'repl'), widgetPane('cmd', 'aliases')));
+const PAGE = JSON.stringify(along('row', widgetPane('repl', 'cli'), widgetPane('cmd', 'aliases')));
 
 // ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs), each test
 // on `main` opened from the PAGE draft (`solo(fn, PAGE)`), locks put back
@@ -129,11 +129,11 @@ describe('the × on the widget title', () => {
 	test('it closes what the title names, and writes only the draft doing it', async () => {
 		await onPage(async ({ page }) => {
 			await enterLayoutMode(page);
-			assert.deepEqual(await titles(page), ['repl', 'aliases']);
+			assert.deepEqual(await titles(page), ['cli', 'aliases']);
 			const before = await layoutStorage(page);
 
 			// The act is named after the thing, as the menu's Close is.
-			assert.equal(await closeButton(page, 'repl').getAttribute('aria-label'), 'close the repl pane');
+			assert.equal(await closeButton(page, 'repl').getAttribute('aria-label'), 'close the cli pane');
 			await closeButton(page, 'repl').click();
 			await settled(page);
 			assert.deepEqual(await titles(page), ['aliases'], 'the × did not close the pane');
@@ -174,7 +174,7 @@ describe('the × on the widget title', () => {
 			await enterLayoutMode(page);
 			await closeButton(page, 'cmd').click();
 			await settled(page);
-			assert.deepEqual(await titles(page), ['repl']);
+			assert.deepEqual(await titles(page), ['cli']);
 
 			// The × is the menu's `Close pane` and nothing else, so it ends
 			// where that ends: a layout is never left with no pane in it, and
@@ -268,7 +268,7 @@ describe('the hold on the widget title', () => {
 			await addTab(page, 'repl', 'aliases');
 			await settled(page);
 			const tabs = pane(page, 'repl').locator('> .titlebar [role="tab"]');
-			assert.deepEqual(await tabs.allInnerTexts(), ['repl', 'aliases']);
+			assert.deepEqual(await tabs.allInnerTexts(), ['cli', 'aliases']);
 			await watchMenus(page);
 
 			// A tab BEHIND is a way to switch panes and nothing else: the
@@ -292,7 +292,7 @@ describe('the hold on the widget title', () => {
 			await closeButton(page, 'repl').click();
 			await settled(page);
 			assert.deepEqual(await tabs.allInnerTexts(), [], 'the strip outlived its second tab');
-			assert.deepEqual(await titles(page), ['repl', 'aliases'], 'the × closed the pane, not the tab');
+			assert.deepEqual(await titles(page), ['cli', 'aliases'], 'the × closed the pane, not the tab');
 		});
 	});
 

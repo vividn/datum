@@ -47,7 +47,7 @@ after(stopApp);
 // in, and the config a command writes (the database registry, the client
 // id) no case reads. The clock stays where the app opened: nothing here
 // moves it.
-const shared = sharedApp({ query: 'repl' });
+const shared = sharedApp({ query: 'cli' });
 
 describe('the same argv stores the same entry as the CLI', () => {
 	test('the fixture has been captured from a real binary', () => {

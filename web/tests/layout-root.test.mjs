@@ -54,7 +54,7 @@ const phone = sharedApp(PHONE);
 describe('the default layout', () => {
 	test('shows the strip, the REPL, nowview, tail and the widget bar in panes', async () => {
 		await shared.solo(async ({ page }) => {
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'custom', 'fields']);
 		});
 	});
 
@@ -139,7 +139,7 @@ describe('the draft', () => {
 				// (da-u7vz8): `welcome` in front, the default behind it.
 				assert.deepEqual(await titles(app.page), ['welcome']);
 				await app.toCollect();
-				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
+				assert.deepEqual(await titles(app.page), ['dayview', 'cli', 'nowview', 'tail', 'custom', 'fields']);
 				await addTab(app.page, 'tail', 'aliases');
 				assert.equal(await activeTab(app.page, 'tail'), 'aliases');
 				assert.deepEqual(app.errors, []);
@@ -162,7 +162,7 @@ describe('the draft', () => {
 describe('on a phone', () => {
 	test('the mobile default is one column with the bar on screen, tail, nowview and custom as tabs', async () => {
 		await phone.solo(async ({ page }) => {
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'fields']);
 			const boxes = await page.evaluate(() =>
 				[...document.querySelectorAll('section.pane')].map((p) => {
 					const b = p.getBoundingClientRect();
@@ -213,7 +213,7 @@ describe('on a phone', () => {
 			await app.submit(`occur ${'x'.repeat(60)}`);
 			await app.submit('tail');
 			await addTab(page, 'repl', 'aliases');
-			await pane(page, 'repl').locator('[role="tab"]', { hasText: 'repl' }).click();
+			await pane(page, 'repl').locator('[role="tab"]', { hasText: 'cli' }).click();
 			await pastTheWindow(page);
 			const body = pane(page, 'repl').locator('.body:not(.behind .body)');
 			assert.ok(
@@ -224,7 +224,7 @@ describe('on a phone', () => {
 			box = await body.boundingBox();
 			await swipe(page, box.x + box.width * 0.8, box.y + box.height / 2, -120, 0);
 			await atRest(pane(page, 'repl').locator('> .content'));
-			assert.equal(await activeTab(page, 'repl'), 'repl', 'a swipe over a sideways scroll changed the tab');
+			assert.equal(await activeTab(page, 'repl'), 'cli', 'a swipe over a sideways scroll changed the tab');
 		});
 	});
 });
@@ -319,7 +319,7 @@ describe('holders', () => {
 			async ({ page }) => {
 				assert.equal(await page.locator('section.root > .titlebar').count(), 0, 'the page root drew a strip');
 				const inner = pane(page, 'root');
-				assert.deepEqual(await inner.locator('> .titlebar [role="tab"]').allInnerTexts(), ['repl', 'tail']);
+				assert.deepEqual(await inner.locator('> .titlebar [role="tab"]').allInnerTexts(), ['cli', 'tail']);
 				await inner.locator('> .titlebar [role="tab"]', { hasText: 'tail' }).click();
 				assert.deepEqual(await titles(page), ['tail']);
 			},
@@ -403,7 +403,7 @@ describe('a tab that holds a layout', () => {
 			// Its two panes are inside it, and its title is not lain on by
 			// theirs: the inset (the gap all round, the whole row on the
 			// bar's edge) is what keeps the two outlines two.
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'mine', 'nowview', 'stats', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'mine', 'nowview', 'stats', 'custom', 'fields']);
 			const [frame] = await boxes(mine);
 			const inside = await boxes(mine.locator(':scope > .content > .tab-body > .split > .cell section.pane'));
 			assert.equal(inside.length, 2);
@@ -427,7 +427,7 @@ describe('a tab that holds a layout', () => {
 			// One frame between the reader and the widget, not two: the
 			// widget's pane IS the layout's tab (shell.ts lifts it).
 			assert.equal(await one.locator('section.pane, section.holder').count(), 0, 'a second frame inside the one-widget layout');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'one', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'one', 'custom', 'fields']);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -483,7 +483,7 @@ describe('normal mode', () => {
 		await withApp( // own app: a `prepare` that writes a draft
 			async (app) => {
 				const { page } = app;
-				assert.deepEqual(await titles(page), ['repl', 'tail']);
+				assert.deepEqual(await titles(page), ['cli', 'tail']);
 				assert.equal(await page.locator('[role="separator"]').count(), 0);
 				assert.equal(await page.locator('section.root button.add').count(), 0);
 				// A menu is left only where a widget has options (da-gvdc, and
@@ -551,7 +551,7 @@ function tabbedHolder() {
 						direction: 'row',
 						ratios: [0.5, 0.5],
 						children: [
-							widgetPane('repl', 'repl'),
+							widgetPane('repl', 'cli'),
 							{
 								id: 'tabbed',
 								tabs: [
@@ -588,7 +588,7 @@ function lockable() {
 			direction: 'row',
 			ratios: [0.5, 0.5],
 			children: [
-				widgetPane('repl', 'repl'),
+				widgetPane('repl', 'cli'),
 				{
 					id: 'tabbed',
 					tabs: [
@@ -611,7 +611,7 @@ const TWO_ROOT_TABS = JSON.stringify({
 	root: {
 		id: 'root',
 		tabs: [
-			{ id: 'root-repl', content: { id: 'root-repl-widget', kind: 'repl', settings: {} } },
+			{ id: 'root-repl', content: { id: 'root-repl-widget', kind: 'cli', settings: {} } },
 			{ id: 'root-tail', content: { id: 'root-tail-widget', kind: 'tail', settings: {} } }
 		],
 		active: 0,

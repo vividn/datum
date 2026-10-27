@@ -42,7 +42,7 @@ const PAGE = JSON.stringify(
 	along(
 		'column',
 		along('row', widgetPane('strip', 'daystrip'), widgetPane('stats', 'stats')).root,
-		along('row', widgetPane('tail', 'tail'), widgetPane('repl', 'repl')).root,
+		along('row', widgetPane('tail', 'tail'), widgetPane('repl', 'cli')).root,
 		widgetPane('cmd', 'command'),
 		widgetPane('bar', 'widgetbar')
 	)
@@ -1010,9 +1010,9 @@ describe('a field pill under a selected hid is context', () => {
 				assert.ok(under.includes(name), `${name} is hidden under a field and an hid`);
 
 			// A press carries no field: the echo is the hid's command alone.
-			const echoes = await page.evaluate(() => document.querySelectorAll('.repl .echo').length);
+			const echoes = await page.evaluate(() => document.querySelectorAll('.cli .echo').length);
 			await pane(page, 'cmd').locator('button[data-command="get"]').click();
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoes);
 			await app.idle();
 			assert.equal((await app.echoes()).at(-1), `get ${hid}`);
 			// The hid was spent; the field was not, and is an argument again.

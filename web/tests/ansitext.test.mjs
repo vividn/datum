@@ -57,7 +57,7 @@ const tailSpans = (page) =>
 /** The REPL's newest output block: its text, and every run in it. */
 const replSpans = (page) =>
 	page.evaluate(() => {
-		const pre = [...document.querySelectorAll('.repl pre')].at(-1);
+		const pre = [...document.querySelectorAll('.cli pre')].at(-1);
 		return {
 			text: pre.textContent,
 			spans: [...pre.querySelectorAll('span')].map((s) => {

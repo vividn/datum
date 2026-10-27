@@ -16,7 +16,7 @@ before(startApp);
 after(stopApp);
 
 const PAGE = JSON.stringify(
-	along('column', widgetPane('repl', 'repl'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'))
+	along('column', widgetPane('repl', 'cli'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'))
 );
 
 // On a phone, where a place is a tab; the desktop's modal is the last test.
@@ -54,7 +54,7 @@ async function read(page, title) {
 async function explain(page, target, title, back = () => page.goBack(), button = help(page)) {
 	const output = () => page.locator('.prompt-bar .roll').allInnerTexts();
 	const [echoes, said, tabs, from] = [
-		await page.locator('.repl .echo').count(),
+		await page.locator('.cli .echo').count(),
 		await output(),
 		await rootTabs(page),
 		await shown(page)
@@ -74,7 +74,7 @@ async function explain(page, target, title, back = () => page.goBack(), button =
 	assert.equal(await shown(page), from);
 	// Not in the bar's output section, and not in the REPL.
 	assert.deepEqual(await output(), said, 'the explanation went to the output');
-	assert.equal(await page.locator('.repl .echo').count(), echoes, 'the explanation was recorded');
+	assert.equal(await page.locator('.cli .echo').count(), echoes, 'the explanation was recorded');
 	return lines;
 }
 
@@ -243,10 +243,10 @@ describe('the Help button', () => {
 			along('column', widgetPane('cmd', 'command'), {
 				id: 'x',
 				tabs: [
-					pane('x-repl', 'repl'),
+					pane('x-repl', 'cli'),
 					{
 						id: 'x-inner',
-						content: { id: 'x-split', direction: 'row', ratios: [0.5, 0.5], children: [widgetPane('h', 'help'), widgetPane('r', 'repl')] }
+						content: { id: 'x-split', direction: 'row', ratios: [0.5, 0.5], children: [widgetPane('h', 'help'), widgetPane('r', 'cli')] }
 					}
 				],
 				active: 0,

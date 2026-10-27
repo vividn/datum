@@ -23,25 +23,14 @@
 // has just finished opening is a place on the line — the NOTCH. Where a
 // release comes to rest on the line is $lib/detent.ts.
 //
-// AND THE LINE DOES NOT STOP AT THE CEILING (da-tj6m). vividn, 2026-09-21:
-// "you should be able to grab from anywhere in the repl and it behaves as
-// one unit, so it will just pull the input section up more. When and only
-// when the input bar reaches the top of the screen, does the REPL then
-// scroll all together (including the most recent command). […] When I get
-// back to the top, then trying to scroll up further starts closing the
-// input section." Three phases, in sequence, inside ONE drag — so they are
-// three slices of the ONE NUMBER and nothing hands over to anything:
-//
-//   reveal   0 ─── OUT ─── CEILING ─────────────────── CEILING+OVERHANG
-//   phase    the bar opening │ the LIST scrolling under a pinned input row
-//
-// Past the ceiling the bar cannot open further, so the pull becomes the
-// list moving: first the bar's OWN row rolls off the top (`rolled`, which
-// is what makes "the most recent command" part of the scroll — it is drawn
-// by the output section, not by the log), and then the log's box scrolls
-// (`scrolled`). The log's box is scrolled BY THIS NUMBER and never by the
-// browser: its own vertical scroll is inert, which is what stopped rows
-// 2-N from sliding about under a finger that meant to open the bar.
+// THE BAR OPENS UPWARD (da-mwp4m). vividn, 2026-10-27: «keep the input bar
+// on the bottom, and put the output/return bar above it again». So the input
+// row stays at the foot of the page and what the number opens is ABOVE it:
+// the output section first, then the log over that, growing up into the
+// dashboard until the dashboard is gone at the ceiling. The line stops
+// there. The log scrolls on its own, like a terminal's history, newest at
+// the bottom next to the input; the handle and the full screen, and how a
+// scroll past the history's end closes it again, are bead 3's (da-0b2vy).
 //
 // THE PAGE STILL NEVER SCROLLS. `routes/+layout.svelte` sizes three boxes
 // from this one number; nothing here moves a scrollport, so a gesture that
@@ -51,7 +40,6 @@
 import { derived, get, writable } from 'svelte/store';
 import { rest } from './detent.js';
 import { tuningNow } from './tuning.js';
-import { PHONE_WIDTH } from './layout/defaults.js';
 
 /** Where the fold is remembered, per device (never synced: it is a screen's). */
 export const OUTPUT_KEY = 'datum.bar.output.v1';
@@ -101,77 +89,28 @@ const ceilingH = writable(0);
 /** The same two as plain numbers, for the imperative side of this file. */
 const out = (): number => get(outH);
 
-/**
- * The log's scrolling box, once the log has mounted.
- *
- * Held here and not in the component because the ONE NUMBER owns the
- * scroll: its extent is how far the number goes, and its `scrollTop` is a
- * slice of the number. A live read of `scrollHeight` rather than a store,
- * because the list grows with every command and a number that has to be
- * right at the moment a finger asks is a number to read then.
- *
- * A LIST THAT CHANGES UNDER A GESTURE is therefore read again on the next
- * move and on the release, never carried over from where the gesture began.
- * A list that GREW simply lets the number go further; one that SHRANK
- * clamps it back, which is the only honest answer — there is no longer a
- * list down there to be scrolled to. The command that changes it is the
- * reader's own, and `toNewest` has already brought the list back to its
- * newest row by then (canary on PR #59).
- */
-let scroller: HTMLElement | null = null;
-
-/** The log hands over its box; `null` when it goes away. */
-export const trackLog = (el: HTMLElement | null): void => {
-	scroller = el;
-};
-
-/** The rows BELOW the bar's own, in px — nothing until the log has mounted. */
-const content = (): number => scroller?.scrollHeight ?? 0;
-
-/**
- * As far as the number goes: the bar fully open, plus the list's OVERHANG.
- *
- * The list is the bar's own row and then the log's rows, and the window it
- * is read through is the page less the input row — the ceiling. Whatever
- * the list is taller than that window by is how far it can be scrolled, so
- * a history that fits has no phase 2 at all and the ceiling is the end.
- */
-const maxReveal = (): number => {
-	const c = get(ceilingH);
-	return c + Math.max(0, content() + out() - c);
-};
-
 /** How far open the bar is, in px: 0 shut, `OUT` the output alone, more is log. */
 export const reveal = writable(0);
 
-/** How far the bar itself is open — the number, with the scroll taken off. */
-const opened = derived([reveal, ceilingH], ([r, c]) => Math.min(r, c));
-
 /**
- * How much of the bar's OWN row has rolled off the top of the screen, in px.
- *
- * The first `OUT` px of the scroll. "the REPL then scroll all together
- * (including the most recent command)" — the most recent command is the
- * output section's row, and the output section is in the bar, above the
- * log. So the two surfaces scroll as one list by this one number: the row
- * rides up under the input as the section it is in gives its height to the
- * log below it, and the seam between them simply moves.
+ * Whether this page draws no output section at all: a root tab that is the
+ * CLI widget alone (`/cli`, `/repl`). vividn, 2026-10-27: «the output bar is
+ * then completely gone on this full screen widget, since it basically
+ * becomes the output section». Every height below is 0 while it is.
  */
-export const rolled = derived([reveal, ceilingH, outH], ([r, c, o]) =>
-	Math.min(Math.max(0, r - c), o)
-);
+export const outputless = writable(false);
+
+/** How far the bar itself is open, as far as the ceiling and no further. */
+const opened = derived([reveal, ceilingH, outputless], ([r, c, none]) => (none ? 0 : Math.min(r, c)));
 
 /** The output section's height right now — it opens as the first `OUT` px. */
-export const shown = derived([opened, outH, rolled], ([r, o, k]) => Math.max(0, Math.min(r, o) - k));
+export const shown = derived([opened, outH], ([r, o]) => Math.min(r, o));
 
-/** The log's height right now — everything past the notch, and what the row gave. */
-export const logHeight = derived([opened, outH, rolled], ([r, o, k]) => Math.max(0, r - o) + k);
-
-/** The log box's own `scrollTop`: the scroll left once the bar's row is gone. */
-export const scrolled = derived([reveal, ceilingH, outH], ([r, c, o]) => Math.max(0, r - c - o));
+/** The log's height right now — everything past the notch. */
+export const logHeight = derived([opened, outH], ([r, o]) => Math.max(0, r - o));
 
 /** The output section is open (the `^`'s state, and what is remembered). */
-export const output = derived([reveal, outH], ([r, o]) => r >= o - 0.5 && o > 0);
+export const output = derived([opened, outH], ([r, o]) => r >= o - 0.5 && o > 0);
 
 /** The log is showing at all: `close history` is up and Escape closes. */
 export const inLog = derived(logHeight, (h) => h > 0.5);
@@ -186,13 +125,18 @@ export const inLog = derived(logHeight, (h) => h > 0.5);
  */
 export const armed = writable(false);
 
-export const arm = (): void => armed.set(true);
+export const arm = (): void => {
+	// A page with no output section has no log to mount: the widget is the
+	// output there, and a gesture on its bar must not pay for a second
+	// scrollback nobody can open (canary-qwen on #1256).
+	if (!get(outputless)) armed.set(true);
+};
 
 /** The notch, in px: where the output has just finished opening. */
 export const notch = (): number => out();
 
-/** As far as the bar opens before the log's own pane takes over. */
-export const ceiling = (): number => maxReveal();
+/** As far as the bar opens: the dashboard gone, the log up to the top. */
+const maxReveal = (): number => get(ceilingH);
 
 /** Where the bar is now, in px. */
 export const at = (): number => get(reveal);
@@ -212,6 +156,11 @@ export function attach(el: HTMLElement): () => void {
 		el.append(probe);
 		const height = probe.getBoundingClientRect().height;
 		probe.remove();
+		// The notch MOVES with the page (`--output-height` is a share of it,
+		// da-mwp4m), so an output that was open stays open, and a log above
+		// it keeps its height, rather than being left part-way at the old one.
+		const was = out();
+		if (was > 0 && get(reveal) >= was - 0.5) reveal.update((r) => r + height - was);
 		outH.set(height);
 		const bar = el.querySelector('.prompt-bar');
 		const rule = bar ? parseFloat(getComputedStyle(bar).borderTopWidth) || 0 : 0;
@@ -240,15 +189,20 @@ export function attach(el: HTMLElement): () => void {
 	return () => observer.disconnect();
 }
 
-/** The fold this device last chose; a phone starts shut, anything wider open. */
+/**
+ * The fold this device last chose; open, on every screen, until it chose.
+ *
+ * A phone started folded until vividn, 2026-10-27: «make the output section
+ * open by default, always above the input bar».
+ */
 function remembered(): boolean {
 	try {
 		const kept = localStorage.getItem(OUTPUT_KEY);
 		if (kept === 'open' || kept === 'folded') return kept === 'open';
 	} catch {
-		// A browser with storage off gets the device's default, every visit.
+		// A browser with storage off gets the default, every visit.
 	}
-	return typeof innerWidth === 'number' ? innerWidth > PHONE_WIDTH : true;
+	return true;
 }
 
 /** Remember the fold, but only as the two states the `^` speaks of. */
@@ -262,6 +216,9 @@ function remember(open: boolean): void {
 
 /** Follow a finger: no animation, no snapping — the bar is under it. */
 export function moveTo(px: number): void {
+	// A page with no output section has no bar to move, and a gesture there
+	// must not write the fold every other page opens with.
+	if (get(outputless)) return;
 	stop();
 	// The finger is placing the bar itself, so wherever a glide was aiming is
 	// no longer where this gesture is going.
@@ -280,16 +237,6 @@ export function moveTo(px: number): void {
 export function settle(up: boolean, speed = 0): void {
 	glide(rest(get(reveal), speed, up, out(), get(ceilingH), tuningNow()), speed);
 }
-
-/**
- * Back to the newest row, with no glide.
- *
- * A command that lands is row one of the list, so the list comes back to
- * it — the same pin `Repl.svelte` does after a run, said to the number
- * that owns the scroll. How far the bar is OPEN is untouched: a reader
- * with the log pulled up keeps it pulled up.
- */
-export const toNewest = (): void => reveal.update((r) => Math.min(r, get(ceilingH)));
 
 /**
  * THE ARROW: open the output, or shut it.
@@ -358,6 +305,7 @@ export function stop(): void {
  * the motion. Clamped at both ends — see `glideMax`.
  */
 function glide(target: number, speed = 0): void {
+	if (get(outputless)) return;
 	stop();
 	const from = get(reveal);
 	const to = Math.max(0, Math.min(maxReveal(), target));

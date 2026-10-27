@@ -130,8 +130,9 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 			const input = page.locator('.prompt-bar input');
 			await input.fill('start walk -y 13:00');
 			await input.press('Enter');
-			// Folded, a failure is a red ERROR by the `❯` for a minute.
-			await page.locator('.prompt-bar button.failed').waitFor();
+			// A failure is the output's red line: every screen starts with the
+			// output open (da-mwp4m).
+			await page.locator('.prompt-bar .section.output .raw.error').waitFor();
 
 			release();
 			held = null;
@@ -141,7 +142,7 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 			await page.waitForTimeout(1500);
 			await page.waitForLoadState('load');
 			assert.equal(loads(), 1, 'the page reloaded under the command');
-			assert.equal(await page.locator('.prompt-bar button.failed').count(), 1, 'the ERROR is gone');
+			assert.equal(await page.locator('.prompt-bar .section.output .raw.error').count(), 1, 'the reload took the error away');
 		} finally {
 			release();
 			held = null;

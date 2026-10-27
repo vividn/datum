@@ -31,6 +31,7 @@ import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { atEachScreen, sharedApp, startApp, stopApp, todayAt, withApp, seedLines } from './support/app.mjs';
 import { fold as foldBar, unfold as openBar } from './support/bar.mjs';
+import { withBar } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -48,11 +49,11 @@ after(stopApp);
  * a taller receipt does not reflow the dashboard. That one wants a
  * dashboard.
  */
-const DESKTOP = { viewport: { width: 1280, height: 800 }, query: 'repl' };
+const DESKTOP = { viewport: { width: 1280, height: 800 }, prepare: withBar };
 /** The narrowest screen the bar has to work on (the bead's trap 2). */
-const NARROW = { viewport: { width: 320, height: 640 }, query: 'repl' };
+const NARROW = { viewport: { width: 320, height: 640 }, prepare: withBar };
 /** A phone, which is where this is judged (da-ckw3). */
-const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, query: 'repl' };
+const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, prepare: withBar };
 const DAY = { viewport: DESKTOP.viewport };
 
 const BAR = '.prompt-bar';
@@ -355,20 +356,28 @@ describe('several documents', () => {
 });
 
 describe('a command with no echo', () => {
-	test('a tail shows its own LAST four lines', async () => {
+	// The LAST lines, as many as the section shows: it is a share of the
+	// page now (da-mwp4m), so it holds four or more, and the lines it cannot
+	// hold are cut from the top, where the oldest rows of a table are.
+	test('a tail shows its own LAST lines, as many as fit', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
-			for (const f of ['a', 'b', 'c', 'd', 'e', 'f']) assert.equal((await app.run(['occur', f])).code, 0);
+			for (const f of 'abcdefghijkl') assert.equal((await app.run(['occur', f])).code, 0);
 			await app.submit('tail');
 			await page.locator(`${BAR} .raw p`).first().waitFor();
 
 			const printed = (await app.run(['tail'])).stdout.replace(ESC, '').replace(/\n+$/, '').split('\n');
-			assert.ok(printed.length > 4, 'the tail fitted — nothing to prove');
-			assert.deepEqual(
-				await page.locator(`${BAR} .raw p`).allInnerTexts(),
-				printed.slice(-4),
-				'the bar showed lines that were not the CLI’s last four'
-			);
+			// What is drawn whole inside the box that clips the lines, not
+			// what is in the DOM.
+			const visible = await page.locator(`${BAR} .section.output .raw`).evaluate((raw) => {
+				const box = raw.getBoundingClientRect();
+				return [...raw.querySelectorAll('p')]
+					.filter((p) => p.getBoundingClientRect().top >= box.top - 0.5 && p.getBoundingClientRect().bottom <= box.bottom + 0.5)
+					.map((p) => p.innerText);
+			});
+			assert.ok(visible.length >= 4, `the section showed ${visible.length} lines`);
+			assert.ok(printed.length > visible.length, 'the tail fitted — nothing to prove');
+			assert.deepEqual(visible, printed.slice(-visible.length), 'the bar showed lines that were not the CLI’s last');
 
 			// What it cut is one tap away, at the bar's own control — the
 			// area itself offers none any more (da-bhvy).
@@ -413,14 +422,13 @@ describe('a command with no echo', () => {
 			assert.deepEqual(await page.locator(`${BAR} .doc .action`).allInnerTexts(), ['DELETE']);
 			assert.equal((await section(page)).hid, hid);
 			assert.deepEqual(await page.locator(`${BAR} .raw.error p`).allInnerTexts(), [said]);
-			// Inside the output section, and the bar did not grow to hold it.
-			// The row is exactly the section's height and sits under its 1px
-			// top rule, so its last pixel is the one the rule displaced.
+			// Inside the output section, and the bar did not grow to hold it:
+			// the row is the section's height less the 1px rule under it.
 			const fit = await page.locator(`${BAR} .section.output`).evaluate((out) => {
 				const box = out.getBoundingClientRect();
-				const rule = parseFloat(getComputedStyle(out).borderTopWidth);
+				const rule = parseFloat(getComputedStyle(out).borderBottomWidth);
 				const [head, line] = ['.head', '.raw.error p'].map((s) => out.querySelector(s).getBoundingClientRect());
-				return { head: head.top - box.top, line: box.bottom + rule - line.bottom };
+				return { head: head.top - box.top, line: box.bottom - rule - line.bottom };
 			});
 			assert.ok(fit.head >= 0 && fit.line >= -0.5, `the entry is cut out of the output section: ${JSON.stringify(fit)}`);
 			assert.equal(await barHeight(page), height);
@@ -455,12 +463,11 @@ describe('a command with no echo', () => {
 	});
 });
 
-describe('the anatomy: INPUT over OUTPUT', () => {
-	// vividn, 2026-09-17: "Increase the size of the input section to be the
-	// same size the output section is now, so 50/50. Put dbname, clock, >
-	// and input all on the input section. The output section is reserved
-	// just for output. Put the input section on top of the output section."
-	// The 50/50 did not survive its own build — see the test below.
+describe('the anatomy: OUTPUT over INPUT', () => {
+	// vividn, 2026-09-17: "Put dbname, clock, > and input all on the input
+	// section. The output section is reserved just for output." And,
+	// 2026-10-27 (da-mwp4m): «keep the input bar on the bottom, and put the
+	// output/return bar above it again … take up a bit more room».
 
 	/** The boxes the bar is made of, and the two heights it declares. */
 	const parts = (page) =>
@@ -472,12 +479,14 @@ describe('the anatomy: INPUT over OUTPUT', () => {
 				return { top, bottom, left, right, height, width };
 			};
 			// The declared heights, in the pixels they resolve to: a custom
-			// property computes to the token it was written as (`3.6rem`),
-			// and only something drawn in it says how tall that is.
+			// property computes to the token it was written as, and only
+			// something drawn in it says how tall that is. In `.pages`, the
+			// size container the bar's own `cqh` resolves against.
 			const px = (name) => {
 				const probe = document.createElement('div');
-				probe.style.height = `var(${name})`;
-				document.querySelector('.shell').append(probe);
+				// Out of the flow, or `.pages`, already full, shrinks it to 0.
+				probe.style.cssText = `position: absolute; height: var(${name})`;
+				document.querySelector('.pages').append(probe);
 				const drawn = probe.getBoundingClientRect().height;
 				probe.remove();
 				return drawn;
@@ -504,16 +513,17 @@ describe('the anatomy: INPUT over OUTPUT', () => {
 	// with padding" (2026-09-18). So the claim is no longer that they match,
 	// it is that each is the height the shell declares for it and the input
 	// is the SHORTER of the two, which is the change he asked for.
-	test('the input section is above the output, each is its declared height, and the input is the shorter', async (t) => {
+	test('the output section is above the input, the input on the foot of the page, each its declared height, and the input the shorter', async (t) => {
 		await desktop(async (app) => {
 			const { page } = app;
 			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 664 }], async () => {
 				const p = await parts(page);
 				assert.ok(p.output, 'the output section is not there to measure');
 				assert.ok(
-					p.input.bottom <= p.output.top + 1,
-					`the input ends at ${p.input.bottom}, the output starts at ${p.output.top}`
+					p.output.bottom <= p.input.top + 1,
+					`the output ends at ${p.output.bottom}, the input starts at ${p.input.top}`
 				);
+				assert.ok(Math.abs(p.input.bottom - p.bar.bottom) <= 1, `the input ends at ${p.input.bottom}, the bar at ${p.bar.bottom}`);
 				assert.ok(
 					p.declared.input < p.declared.output,
 					`the input row is ${p.declared.input}px against the output's ${p.declared.output}px`
@@ -601,14 +611,18 @@ describe('the arrow folds the output, and a drag does too', () => {
 
 	const output = (page) => page.locator(`${BAR} .section.output`);
 
-	test('a fresh phone starts folded, a fresh desktop open, and the choice survives a reload', async () => {
+	// Every screen starts open now (da-mwp4m). vividn, 2026-10-27: «make the
+	// output section open by default, always above the input bar».
+	test('a fresh phone starts open, and the fold it chooses survives a reload', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			assert.equal(await output(page).count(), 0, 'a fresh phone opened with the output showing');
-
-			await openBar(page);
-			await app.reload();
 			await output(page).waitFor();
+
+			await foldBar(page);
+			await app.reload();
+			await page.locator(`${BAR} input:not([disabled])`).waitFor();
+			assert.equal(await output(page).count(), 0, 'the reload forgot the fold');
+			await openBar(page);
 			assert.deepEqual(app.errors, []);
 		}, { ...PHONE, home: null });
 	});
@@ -660,7 +674,12 @@ describe('the arrow folds the output, and a drag does too', () => {
 			assert.equal(seen.takesThePress, true, 'a press at the arrow does not reach it');
 
 			// It folds, and it unfolds, and neither takes the keyboard.
-			assert.equal(await output.count(), 0, 'a fresh phone opened with the output showing');
+			await output.waitFor();
+			await caret.click();
+			await output.waitFor({ state: 'detached' });
+			assert.notEqual(await focused(), 'input', 'the arrow opened the keyboard');
+			await page.locator(`${BAR} .caret[aria-expanded="false"]`).waitFor();
+
 			await caret.click();
 			await output.waitFor();
 			assert.notEqual(await focused(), 'input', 'the arrow opened the keyboard');
@@ -668,10 +687,8 @@ describe('the arrow folds the output, and a drag does too', () => {
 			// ~220ms — the section is in the DOM on the first frame of that, so
 			// waiting for the section is not waiting for the state.
 			await page.locator(`${BAR} .caret[aria-expanded="true"]`).waitFor();
-
 			await caret.click();
 			await output.waitFor({ state: 'detached' });
-			assert.notEqual(await focused(), 'input', 'the arrow opened the keyboard');
 			await page.locator(`${BAR} .caret[aria-expanded="false"]`).waitFor();
 
 			// Nor when there is a half-typed line under it to come back to.
@@ -768,8 +785,20 @@ describe('folded, a command still answers', () => {
 	// failure: "red Error that opens on tap is enough I think, as long as
 	// the ERROR is prominent enough".
 
-	/** The app with a clock the test holds, page and CLI together. */
-	const held = (at) => ({ ...PHONE, clock: at, holdTimers: true });
+	/**
+	 * The app with a clock the test holds, page and CLI together — and the
+	 * bar folded, as this device chose it: every screen starts open
+	 * (da-mwp4m), and these are about what a folded bar says.
+	 */
+	const held = (at) => ({
+		...PHONE,
+		clock: at,
+		holdTimers: true,
+		prepare: async (context) => {
+			await withBar(context);
+			await context.addInitScript(() => localStorage.setItem('datum.bar.output.v1', 'folded'));
+		}
+	});
 
 	const marks = (page) => page.locator(`${BAR} .marks`);
 
@@ -785,7 +814,7 @@ describe('folded, a command still answers', () => {
 			// arrives through a timer (tick.test.mjs).
 			await page.clock.runFor(200);
 			await app.idle();
-			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the phone did not start folded');
+			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the bar was not folded');
 
 			// NOT declared first: the clock is held, and `track` would stamp
 			// its own document at the very instant `occur` wants. Since
@@ -800,7 +829,7 @@ describe('folded, a command still answers', () => {
 			// documents the very same run drew in the scrollback, so nothing
 			// here is a word this file made up and nothing is run twice.
 			assert.ok(words.length > 0, 'the folded bar said nothing about a CREATE');
-			assert.deepEqual(words, await page.locator('.repl .doc .action').allInnerTexts());
+			assert.deepEqual(words, await page.locator('.cli .doc .action').allInnerTexts());
 			// IN THE BOTTOM OF THE SECTION, AND OVER BY THE `❯`. vividn asked
 			// first for the right of the row ("show all the ACTION words on the
 			// right side"), then for the padding under it ("move the ACTION
@@ -859,7 +888,7 @@ describe('folded, a command still answers', () => {
 			);
 			assert.deepEqual(
 				painted,
-				await page.locator('.repl .doc .action').evaluateAll((els) => els.map((el) => getComputedStyle(el).color))
+				await page.locator('.cli .doc .action').evaluateAll((els) => els.map((el) => getComputedStyle(el).color))
 			);
 			assert.ok(
 				painted.includes('rgb(38, 162, 105)'),
@@ -956,7 +985,7 @@ describe('folded, a command still answers', () => {
 			await app.idle();
 			// FOLDED is the state it appears in, and the only one: the strip
 			// is drawn `{#if !$output}`, so an open bar has no words to clip.
-			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the phone did not start folded');
+			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the bar was not folded');
 
 			await app.submit('occur coffee');
 			await marks(page).waitFor();
@@ -1063,7 +1092,7 @@ describe('folded, a command still answers', () => {
 			assert.equal((await app.run(['occur', 'coffee'])).code, 11, 'the second log is not a re-log');
 			const relog = await said('occur coffee');
 			// The colour is the one the same run's scrollback document drew.
-			const drawn = page.locator('.repl .doc .action', { hasText: 'EXISTS' }).first();
+			const drawn = page.locator('.cli .doc .action', { hasText: 'EXISTS' }).first();
 			assert.deepEqual(relog, [{ text: 'EXISTS', color: await drawn.evaluate((el) => getComputedStyle(el).color) }]);
 
 			// The same exit with nothing echoed is a slug collision: a failure.
@@ -1634,7 +1663,7 @@ describe('two pills on a phone', () => {
 				);
 				assert.equal(scrolled.left, scrolled.reach, 'the run did not scroll to its end');
 				assert.deepEqual(app.errors, []);
-			}, { viewport: { width, height: 720 }, device: { isMobile: true, hasTouch: true }, query: 'repl' });
+			}, { viewport: { width, height: 720 }, device: { isMobile: true, hasTouch: true }, prepare: withBar });
 		});
 	}
 });
@@ -1645,7 +1674,7 @@ describe('a phone stacks the mark over the clock (da-ovdtt)', () => {
 	// amount=3 cups=1` composed only `[mount=3] [cups=1]` showed. So on a
 	// phone they share one column, the mark over the clock — and the mark
 	// stays, because it is the database switcher.
-	const PIXEL = { device: devices['Pixel 7'], query: 'repl' };
+	const PIXEL = { device: devices['Pixel 7'], prepare: withBar };
 
 	/**
 	 * The mark, the clock and where the box starts — and where the box

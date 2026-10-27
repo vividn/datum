@@ -253,7 +253,9 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
  * saved-layout key. `field` is the setup widget's name before da-rgyq8
  * (an early user's word, vividn's call), and `spec` its old half (da-fu29p); the
  * `field` setting a saved one carries is read by nobody now, and kept as
- * it is — `RETIRED_SETTINGS` drops a known value, not a key.
+ * it is — `RETIRED_SETTINGS` drops a known value, not a key. `repl` is
+ * the CLI widget's name before da-mwp4m (vividn, 2026-10-27: «rename the
+ * REPL to be CLI»).
  *
  * Here rather than in `tree.ts` because this is where layouts are READ:
  * `inline` is the one door every save, draft and built-in comes through,
@@ -262,7 +264,7 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
  * on every drag of a border instead, and would give the tree's shape
  * module an opinion about kinds, which it has never had.
  */
-const RETIRED_KINDS: Record<string, string> = { spec: 'setup', field: 'setup' };
+const RETIRED_KINDS: Record<string, string> = { spec: 'setup', field: 'setup', repl: 'cli' };
 
 /**
  * A setting a saved layout may carry that no reader ever chose, dropped so

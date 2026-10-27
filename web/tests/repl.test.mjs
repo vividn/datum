@@ -27,6 +27,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { HELD_AT, startApp, stopApp, withApp } from './support/app.mjs';
+import { dragBar } from './support/bar.mjs';
 
 before(startApp);
 after(stopApp);
@@ -59,7 +60,7 @@ const apart = (earlier, later) => (seconds(later) - seconds(earlier) + 86400) % 
 const promptClock = (page) => page.locator('.prompt-bar .section.input .stamp').innerText();
 
 /** Every scrollback stamp, oldest first. */
-const stamps = (page) => page.locator('.repl .head .stamp').allInnerTexts();
+const stamps = (page) => page.locator('.cli .head .stamp').allInnerTexts();
 
 /** A colour's relative brightness, enough to compare two greys by. */
 const brightness = (css) => {
@@ -127,7 +128,7 @@ describe('a command in the scrollback', () => {
 			assert.deepEqual(await echoes(), ['occur coffee']);
 
 			const { stampColour, echoColour } = await page.evaluate(() => {
-				const head = document.querySelector('.repl .head');
+				const head = document.querySelector('.cli .head');
 				return {
 					stampColour: getComputedStyle(head.querySelector('.stamp')).color,
 					echoColour: getComputedStyle(head.querySelector('.echo')).color
@@ -184,7 +185,7 @@ describe('the space between commands', () => {
 	// width and does not care how many columns the pane happens to give.
 	const seams = (page) =>
 		page.evaluate(() => {
-			const cells = [...document.querySelectorAll('.repl .entry')];
+			const cells = [...document.querySelectorAll('.cli .entry')];
 			const top = (el) => Math.round(el.getBoundingClientRect().top);
 			const first = cells.length ? top(cells[0]) : 0;
 			return {
@@ -214,7 +215,7 @@ describe('the space between commands', () => {
 
 			// Dim: the pane's own hairline, not a bright line across it.
 			const colour = await page.evaluate(
-				() => getComputedStyle(document.querySelector('.repl .entry.ruled')).borderTopColor
+				() => getComputedStyle(document.querySelector('.cli .entry.ruled')).borderTopColor
 			);
 			assert.ok(brightness(colour) < 60, `the rule between commands is not dim: ${colour}`);
 		});
@@ -238,7 +239,7 @@ describe('the scrollback across a reload', () => {
 			assert.deepEqual(await app.outputs(), outputs, 'the output did not come back');
 			// `tail`'s table takes a row of its own, so there is one seam
 			// above it whatever the pane's width (da-5iyo).
-			assert.equal(await page.locator('.repl .entry.ruled').count(), 1);
+			assert.equal(await page.locator('.cli .entry.ruled').count(), 1);
 
 			// Restored, not re-run: `tail` printed one coffee before the
 			// reload and would print it again — but a second execution would
@@ -273,7 +274,7 @@ describe('the scrollback across a reload', () => {
 
 				await reload();
 				await toCollect();
-				await page.locator('.repl').first().waitFor();
+				await page.locator('.cli').first().waitFor();
 				assert.deepEqual(await echoes(), [], 'something was restored from a blocked store');
 				assert.deepEqual(errors, [], `the blocked store threw at the page: ${errors[0]}`);
 			},
@@ -290,4 +291,115 @@ describe('the scrollback across a reload', () => {
 			}
 		);
 	});
+});
+
+// THE REPL IS THE CLI NOW (da-mwp4m). vividn, 2026-10-27: «let's rename the
+// REPL to be CLI, I think that is a more commonly understood acronym». A
+// widget kind's id is a saved-layout key, so the rename must lose no one's
+// layout: `repl` in a stored tree opens as the CLI (`RETIRED_KINDS`,
+// layout/shell.ts), and `/repl` is `/cli` (`ALIASES`, layout/defaults.ts).
+describe('the CLI, which was the REPL', () => {
+	/** A `main` draft stored before the rename: the old kind, beside a tail. */
+	const OLD = JSON.stringify({
+		version: 1,
+		name: 'main',
+		root: {
+			id: 'root',
+			active: 0,
+			bar: { edge: 'top', align: 'start' },
+			tabs: [
+				{
+					id: 'root-tab',
+					content: {
+						id: 'split',
+						direction: 'column',
+						ratios: [0.5, 0.5],
+						children: ['repl', 'tail'].map((kind) => ({
+							id: `old-${kind}`,
+							tabs: [{ id: `old-${kind}-tab`, content: { id: `old-${kind}-widget`, kind, settings: {} } }],
+							active: 0,
+							bar: { edge: 'top', align: 'start' }
+						}))
+					}
+				}
+			]
+		}
+	});
+
+	/** Every widget kind in the root tab in front. */
+	const kinds = (page) =>
+		page.evaluate(() => {
+			const all = [];
+			const walk = (content) => {
+				if (content.kind) all.push(content.kind);
+				for (const child of content.children ?? []) for (const tab of child.tabs) walk(tab.content);
+			};
+			const { root } = window.datum.layout.current();
+			walk(root.tabs[root.active].content);
+			return all;
+		});
+
+	test('a stored layout naming `repl` opens it as the CLI widget, and a command lands in it', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await page.locator('section[data-pane="old-repl"][data-title="cli"]').waitFor();
+				assert.deepEqual(await kinds(page), ['cli', 'tail']);
+				await app.submit('occur coffee');
+				assert.deepEqual(await app.echoes(), ['occur coffee']);
+				// And the bar's output is drawn: the CLI is not alone here.
+				assert.equal(await page.locator('.prompt-bar .section.output').count(), 1);
+				assert.deepEqual(app.errors, []);
+			},
+			{ prepare: (context) => context.addInitScript((json) => localStorage.setItem('datum.layout.draft.v1.main', json), OLD) }
+		);
+	});
+
+	// vividn's answer, 2026-10-27: «for /repl or /cli (both can work) let's
+	// have this be an exception where the output bar is then completely gone
+	// on this full screen widget, since it basically becomes the output
+	// section».
+	for (const path of ['cli', 'repl'])
+		test(`/${path} opens the CLI alone, and the bar draws no output section there`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				const output = page.locator('.prompt-bar .section.output');
+				await output.waitFor();
+				await app.goto(`/${path}`);
+				await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'cli' }).waitFor();
+				assert.deepEqual(await kinds(page), ['cli']);
+				await app.submit('occur coffee');
+				assert.equal(await output.count(), 0, 'the CLI page drew the output section');
+				assert.equal(await page.locator('.prompt-bar .caret').count(), 0, 'the CLI page offers to open an output it has not got');
+				// The input row is all of the bar, on the foot of the page.
+				const [bar, input] = await Promise.all(
+					['.prompt-bar', '.prompt-bar .section.input'].map((s) => page.locator(s).boundingBox())
+				);
+				assert.ok(Math.abs(bar.y + bar.height - (input.y + input.height)) <= 1 && bar.height - input.height <= 1.5);
+
+				// No marks either: the widget says what a command said here, and
+				// an ERROR would have no output to open.
+				await app.submit('occur');
+				assert.equal(await page.locator('.prompt-bar .marks, .prompt-bar .failed').count(), 0);
+
+				// A drag on the bar here moves nothing, and writes no fold for the
+				// pages that have an output (canary-qwen on #1256).
+				const fold = () => page.evaluate(() => localStorage.getItem('datum.bar.output.v1'));
+				const kept = await fold();
+				await dragBar(page, 300);
+				await dragBar(page, -900);
+				assert.equal(await fold(), kept, 'a drag on the CLI page wrote the fold');
+				assert.equal(await page.locator('.log section.pane').count(), 0, 'a drag on the CLI page mounted the log');
+
+				// Another tab is drawn with it again, as it was: open, and no log.
+				await page.evaluate(() => window.datum.shell.activate(0));
+				await output.waitFor();
+				assert.equal(
+					await page.evaluate(() => getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height').trim()),
+					'0px',
+					'the drag on the CLI page left the log open'
+				);
+				assert.deepEqual(app.errors, []);
+			});
+		});
 });

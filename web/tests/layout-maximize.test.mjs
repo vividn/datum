@@ -54,7 +54,7 @@ const shared = sharedApp(DESKTOP);
 const phone = sharedApp(PHONE);
 
 /** The desktop default (defaults.ts), as the panes are titled. */
-const SIX = ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields'];
+const SIX = ['dayview', 'cli', 'nowview', 'tail', 'custom', 'fields'];
 
 /** Maximize or restore `id`, and wait for the page to settle on it — in normal mode, where the badge maximizes. */
 async function press(page, id) {
@@ -100,11 +100,11 @@ describe('the maximize badge', () => {
 			assert.deepEqual(await titles(page), SIX);
 
 			await press(page, 'repl');
-			assert.deepEqual(await titles(page), ['repl']);
-			sameBox(await boxOf(pane(page, 'repl')), whole, 'the maximized repl');
+			assert.deepEqual(await titles(page), ['cli']);
+			sameBox(await boxOf(pane(page, 'repl')), whole, 'the maximized cli');
 
 			const badge = maximizeButton(page, 'repl');
-			assert.equal(await badge.getAttribute('aria-label'), 'restore the repl pane');
+			assert.equal(await badge.getAttribute('aria-label'), 'restore the cli pane');
 			assert.equal(await badge.getAttribute('aria-pressed'), 'true');
 
 			await press(page, 'repl');
@@ -114,7 +114,7 @@ describe('the maximize badge', () => {
 			assert.equal(await dots(page), 0, 'maximizing marked a layout modified');
 			assert.equal(
 				await maximizeButton(page, 'repl').getAttribute('aria-label'),
-				'maximize the repl pane'
+				'maximize the cli pane'
 			);
 			assert.deepEqual(errors, []);
 		});
@@ -146,7 +146,7 @@ describe('the maximize badge', () => {
 	test('is dropped by opening another layout and coming back', async () => {
 		await shared.solo(async ({ page }) => {
 			await press(page, 'repl');
-			assert.deepEqual(await titles(page), ['repl']);
+			assert.deepEqual(await titles(page), ['cli']);
 
 			await page.locator('.root-bar button[aria-label="open a layout"]').click();
 			await chooser(page).waitFor();
@@ -165,7 +165,7 @@ describe('the maximize badge', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await press(page, 'repl');
-			assert.deepEqual(await titles(page), ['repl']);
+			assert.deepEqual(await titles(page), ['cli']);
 
 			await app.reload();
 			await settled(page);
@@ -184,7 +184,7 @@ describe('the maximize badge', () => {
 			await settled(page);
 			assert.deepEqual(
 				await titles(page),
-				SIX.filter((t) => t !== 'repl')
+				SIX.filter((t) => t !== 'cli')
 			);
 			assert.equal(await pressed(page), 0);
 			assert.deepEqual(errors, []);
@@ -307,7 +307,7 @@ describe('the maximize badge', () => {
 			assert.equal(await page.locator('section.pane button.close').count(), 0, 'normal mode has a `×`');
 
 			await press(page, 'repl');
-			assert.deepEqual(await titles(page), ['repl']);
+			assert.deepEqual(await titles(page), ['cli']);
 			await press(page, 'repl');
 			assert.deepEqual(await titles(page), SIX);
 		});
@@ -744,7 +744,7 @@ describe('the maximize badge, drawn and placed', () => {
 				// Pressing it there still maximizes: the place is all that moved.
 				await leaveLayoutMode(page);
 				await press(page, 'repl');
-				assert.deepEqual(await titles(page), ['repl']);
+				assert.deepEqual(await titles(page), ['cli']);
 			});
 		});
 	}

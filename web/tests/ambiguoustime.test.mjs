@@ -35,9 +35,9 @@ test('an hour that happened twice is a dialog with a button each, and the second
 			assert.deepEqual(await dialog.getByRole('button').allInnerTexts(), [FIRST, SECOND, 'cancel']);
 			assert.deepEqual(await app.entries(), [], 'asked: nothing written');
 
-			const before = await page.locator('.repl .echo').count();
+			const before = await page.locator('.cli .echo').count();
 			await dialog.getByRole('button', { name: SECOND, exact: true }).click();
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			const [tea] = await app.entries();
 			assert.equal(tea.slug, 'tea:2026-10-25T01:30:00.000Z');
 			assert.equal(tea.occur_time.timezone, 'Europe/Berlin');
@@ -59,9 +59,9 @@ test('two time keys are two dialogs, and each stores the reading pressed', async
 			const occur = 'occur_time=2026-10-25T02:30:00+01:00';
 			await dialog.getByRole('button', { name: occur, exact: true }).click();
 			const brew = 'brew_time=2026-10-25T02:10:00+02:00';
-			const before = await page.locator('.repl .echo').count();
+			const before = await page.locator('.cli .echo').count();
 			await dialog.getByRole('button', { name: brew, exact: true }).click();
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			const [tea] = await app.entries();
 			assert.equal(tea.slug, 'tea:2026-10-25T01:30:00.000Z');
 			assert.equal(tea.data.brew_time.utc, '2026-10-25T00:10:00.000Z');
@@ -93,9 +93,9 @@ test('a stale _LAST retimed into a repeated hour asks both, and stores the readi
 			await asks(/happens twice in Europe\/Berlin/);
 			assert.deepEqual(await dialog.getByRole('button').allInnerTexts(), [FIRST, SECOND, 'cancel']);
 
-			const before = await page.locator('.repl .echo').count();
+			const before = await page.locator('.cli .echo').count();
 			await dialog.getByRole('button', { name: SECOND, exact: true }).click();
-			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			const [tea] = await app.entries();
 			assert.equal(tea.slug, 'tea:2026-10-25T01:30:00.000Z');
 			assert.deepEqual(app.errors, []);

@@ -27,7 +27,10 @@ const LABELS = { coffee: '14:05 coffee', work: '14:00 work: on 14:00–14:30' };
 // ONE app for the tests on the default screen (sharedApp in support/app.mjs),
 // each in a room of its own so no test meets the widgets the last one moved.
 // A test that says how its app is to be opened opens its own.
-const shared = sharedApp({ clock: NOW });
+// 900px tall: at Playwright's 720 the bar's open output (da-mwp4m) leaves
+// the strip at its shortest day, where today gives way from the top and
+// the band over it takes the press.
+const shared = sharedApp({ viewport: { width: 1280, height: 900 }, clock: NOW });
 
 async function withDay(fn, options) {
 	const body = async (app) => {
@@ -127,7 +130,7 @@ describe('hovering the day strip', () => {
 				assert.equal(await page.locator(TIP).innerText(), LABELS.coffee);
 				// Anywhere but the strip: a pane's own body. Not its title —
 				// that is the button that opens the pane's menu now (da-9vtw).
-				await page.locator('section.pane[data-title="repl"] .body').tap();
+				await page.locator('section.pane[data-title="cli"] .body').tap();
 				assert.ok(await page.locator(TIP).isHidden());
 			},
 			{ device: devices['iPhone 13'] }

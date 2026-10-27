@@ -348,7 +348,7 @@ describe('in the app', () => {
 			assert.deepEqual(columns.filter((c) => c.key === 'action'), []);
 			// The day frame is scenery here — nothing but the seam is read
 			// (docs/web-conventions.md #21).
-		}, { query: 'repl' });
+		}, { query: 'cli' });
 	});
 
 	test('a new field opens the form on the four pictograms, Save shut until a name and a verb', async () => {
