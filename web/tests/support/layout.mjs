@@ -409,11 +409,15 @@ export const pastTheWindow = (page) => page.waitForTimeout(1500);
 /**
  * Swipe by (dx, dy) from a point in `locator`'s box, given as fractions of
  * it — its middle unless `at` says otherwise. The element is brought on
- * screen first: a touch outside the viewport lands nowhere.
+ * screen first: a touch outside the viewport lands nowhere. Both are done
+ * again while the box reads null: a widget drawn again between the two
+ * replaces the element, and the locator finds its successor (da-568ac).
  */
 export async function swipeOver(page, locator, dx, dy, at = { x: 0.5, y: 0.5 }) {
-	await locator.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
-	const box = await locator.boundingBox();
+	const box = await until(async () => {
+		await locator.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+		return locator.boundingBox();
+	}, Boolean);
 	await swipe(page, box.x + box.width * at.x, box.y + box.height * at.y, dx, dy);
 }
 
