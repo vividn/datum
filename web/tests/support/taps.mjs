@@ -5,8 +5,10 @@
 // size. `act-guard.test.mjs` holds the source to one door (`use:act`);
 // this holds what that door draws to what a tap then DOES.
 //
-// A file per screen (`act-taps-desktop`, `act-taps-phone`): node's budget
-// is per FILE, and the two together took 201 s of its 300 under load.
+// A file per page (`act-taps-desktop`, `act-taps-phone`, and
+// `act-taps-commands`, a desktop tree with the commands pane the shipped
+// ones lost in da-mwp4m): node's budget is per FILE, and the first two
+// together took 201 s of its 300 under load.
 //
 // "Ran" is the bar's receipt (`bar.last()`, a fresh object for every
 // command anything runs) moving; "wrote" is the database's change counter

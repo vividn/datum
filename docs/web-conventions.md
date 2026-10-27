@@ -399,7 +399,8 @@ rule is decided but not yet everywhere, it names the bead.
     (`$lib/act.ts`, held by `act-guard.test.mjs`); a menu item says it as its `Item`'s `act`
     (`menu.ts`), so «Save layout», which writes at once, is double and «Reset default
     layouts», which opens a confirm, is not (da-kk0vr). Tap-everything tests hold double ⇔ the
-    tap wrote or ran: on the page (`act-taps-desktop`, `act-taps-phone`, da-y0ocz) and in every
+    tap wrote or ran: on the page (`act-taps-desktop`, `act-taps-phone`, da-y0ocz, and `act-taps-commands` for the
+    commands widget, which no shipped tree holds since da-mwp4m, da-0o5z9) and in every
     sheet, dialog and menu a tap opens from it (`act-taps-dialogs*`, da-juku7).
     And a tap that OPENS a modal, a sheet, a confirm or a place (rule 31) — or the browser's own
     prompt or file picker — wears a trailing chevron `›`, and nothing else does (da-vteda; vividn:
