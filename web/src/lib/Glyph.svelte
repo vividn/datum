@@ -22,16 +22,25 @@
 	import Sheet from './Sheet.svelte';
 	import { GLYPHS, wide } from './track.js';
 
-	/** The glyph, one character; empty for the circle. */
-	export let value = '';
-	/** The `<svg>` drawn instead, or null where an image is not offered. */
-	export let icon: string | null = null;
-	/** What it is the symbol of, for a reader that cannot see it. */
-	export let label: string;
-	/** The colour the dot is drawn in, so the tile looks like the dot. */
-	export let color = '';
+	interface Props {
+		/** The glyph, one character; empty for the circle. */
+		value?: string;
+		/** The `<svg>` drawn instead, or null where an image is not offered. */
+		icon?: string | null;
+		/** What it is the symbol of, for a reader that cannot see it. */
+		label: string;
+		/** The colour the dot is drawn in, so the tile looks like the dot. */
+		color?: string;
+	}
 
-	let open = false;
+	let {
+		value = $bindable(''),
+		icon = $bindable(null),
+		label,
+		color = ''
+	}: Props = $props();
+
+	let open = $state(false);
 
 	function pick(next: string) {
 		value = next;
@@ -69,7 +78,7 @@
 	aria-haspopup="dialog"
 	title={two(value)}
 	use:act={'open'}
-	on:click={() => (open = true)}
+	onclick={() => (open = true)}
 	>{#if icon}<img src={src(icon)} alt="" />{:else}{value || '●'}{/if}</button
 >
 <Sheet title={label} bind:open>
@@ -81,7 +90,7 @@
 			aria-selected={!value && !icon}
 			aria-label="none"
 			data-glyph=""
-			on:click={() => pick('')}>●</button
+			onclick={() => pick('')}>●</button
 		>
 		{#each GLYPHS as { group, glyphs } (group)}
 			<span class="group">{group}</span>
@@ -94,15 +103,15 @@
 					aria-label={glyph}
 					data-glyph={glyph}
 					title={two(glyph)}
-					on:click={() => pick(glyph)}>{glyph}</button
+					onclick={() => pick(glyph)}>{glyph}</button
 				>
 			{/each}
 		{/each}
-		<input class="any" placeholder="any character" aria-label="{label}, any character" autocomplete="off" on:input={typed} />
+		<input class="any" placeholder="any character" aria-label="{label}, any character" autocomplete="off" oninput={typed} />
 		{#if icon !== null}
 			<!-- The input covers the box, so a drop lands on it. -->
 			<label class="image" class:on={!!icon}>
-				<input type="file" accept=".svg,image/svg+xml" aria-label="{label}, image (svg)" on:change={image} />
+				<input type="file" accept=".svg,image/svg+xml" aria-label="{label}, image (svg)" onchange={image} />
 				image (svg)
 			</label>
 		{/if}

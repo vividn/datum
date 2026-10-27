@@ -52,22 +52,24 @@
 	the new picture draws elsewhere.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import { on } from 'svelte/events';
 	import { inlineSvg } from './hover.js';
 	import { bandArgv, fieldArgv, fieldsArgv } from './calls.js';
 	import { run } from './run.js';
 	import type { FieldListing } from './fields.js';
 	import type { Place, Spec } from './track.js';
 
-	export let field: string;
-	export let place: Place;
-	/** Whether the field is an occur field, the one whose dots are sized here. */
-	export let occur = false;
-	/** The spec a save would store, which the band draws; none while the field has no name. */
-	export let spec: Spec | null = null;
-
-	/** `open`: the field whose setup a link names. */
-	const dispatch = createEventDispatcher<{ open: string }>();
+	let {
+		field,
+		place = $bindable(),
+		/** Whether the field is an occur field, the one whose dots are sized here. */
+		occur = false,
+		/** The spec a save would store, which the band draws; none while the field has no name. */
+		spec = null,
+		/** Go to the field whose setup a link names. */
+		onopen
+	}: { field: string; place: Place; occur?: boolean; spec?: Spec | null; onopen: (field: string) => void } = $props();
 
 	/** The day's height in pixels: tall enough to take a lane's edge with a finger. */
 	const H = 160;
@@ -76,14 +78,14 @@
 	/** A dot's height at a scale of 1, whatever its lane: the CLI's `STANDARD_DOT`, half a lane with no height. */
 	const STANDARD_DOT = 0.06;
 
-	let band: HTMLDivElement;
-	let svg: SVGSVGElement | null = null;
+	let band: HTMLDivElement | undefined = $state.raw();
+	let svg = $state.raw<SVGSVGElement | null>(null);
 	/** Every field's lane as the pictures resolve it (`fields --json`), anchors included. */
-	let lanes: Record<string, FieldListing> = {};
+	let lanes: Record<string, FieldListing> = $state.raw({});
 	/** The row of a field `lanes` has none for, a new one: its lane is where the pictures will draw it. */
-	let unlisted: FieldListing | undefined;
+	let unlisted: FieldListing | undefined = $state.raw();
 	/** The fields today's band draws, whose names label their lanes. */
-	let named: string[] = [];
+	let named: string[] = $state.raw([]);
 	let drag: {
 		mode: 'move' | 'top' | 'bottom' | 'dot';
 		at: number;
@@ -99,22 +101,22 @@
 		/** For `move`: the mark pressed, selected if it is let go where it was; whether it has moved since. */
 		mark?: { x: number; w: number };
 		moved?: boolean;
-	} | null = null;
+	} | null = $state(null);
 	/** Whether sizing the dot keeps its width over its height. */
-	let locked = false;
+	let locked = $state(false);
 	/** The mark tapped, which the box is drawn round: its left and width along the band, in px. */
-	let sel: { x: number; w: number } | null = null;
+	let sel: { x: number; w: number } | null = $state.raw(null);
 	/** The lane and dot the band was drawn at, which the marks are carried from. */
-	let shown = { y: 0, h: 0, scale: 1 };
+	let shown = $state.raw({ y: 0, h: 0, scale: 1 });
 	/** Whether `fields --json` has been read, which the lane of a field with no place is. */
-	let listed = false;
+	let listed = $state(false);
 	/** What the band draws around the field, by `dayview --context`, in the order a click turns them. */
 	const AROUND = [
 		{ context: 'none', label: 'context' },
 		{ context: 'now', label: 'now' },
 		{ context: '12h', label: '12 hours' }
 	] as const;
-	let around = 0;
+	let around = $state(0);
 
 	onMount(async () => {
 		const listing = await run(fieldsArgv());
@@ -171,24 +173,28 @@
 		const row = r.code === 0 ? (JSON.parse(r.stdout) as FieldListing[])[0] : undefined;
 		if (row?.field === field) unlisted = row;
 	}
-	$: if (listed && field && !lanes[field] && unlisted?.field !== field) unknown(field);
+	$effect.pre(() => {
+		if (listed && field && !lanes[field] && unlisted?.field !== field) untrack(() => unknown(field));
+	});
 
 	/** The lane as the band drew it, from the stored spec, or where it will for a field nobody placed (da-gq232). */
-	$: drawn = lanes[field] ?? (unlisted?.field === field ? unlisted : undefined);
+	const drawn = $derived(lanes[field] ?? (unlisted?.field === field ? unlisted : undefined));
 	// The resolver holds a field only by an anchor with a spec; without one it draws it free.
-	$: anchor = place.relative_to && lanes[place.relative_to]?.spec ? lanes[place.relative_to] : undefined;
+	const anchor = $derived(place.relative_to && lanes[place.relative_to]?.spec ? lanes[place.relative_to] : undefined);
 	/** The lane as it stands now, in fractions of the day. */
-	$: lane = anchor
-		? {
-				y: anchor.y + anchor.height * (place.anchor_pos_ratio ?? 0),
-				h: anchor.height * (place.anchor_size_ratio ?? 1)
-			}
-		: // A `y` with no `height` is the band's centre, not its top (da-1r506): the drawn lane says where that is.
-			{ y: (place.height === undefined ? undefined : place.y) ?? drawn?.y ?? 0, h: place.height ?? drawn?.height ?? 0.12 };
+	const lane = $derived(
+		anchor
+			? {
+					y: anchor.y + anchor.height * (place.anchor_pos_ratio ?? 0),
+					h: anchor.height * (place.anchor_size_ratio ?? 1)
+				}
+			: // A `y` with no `height` is the band's centre, not its top (da-1r506): the drawn lane says where that is.
+				{ y: (place.height === undefined ? undefined : place.y) ?? drawn?.y ?? 0, h: place.height ?? drawn?.height ?? 0.12 }
+	);
 	/** What the band spans, in fractions of the day: the anchor's lane, or the whole day. */
-	$: frame = anchor?.height ? { y: anchor.y, h: anchor.height } : { y: 0, h: 1 };
+	const frame = $derived(anchor?.height ? { y: anchor.y, h: anchor.height } : { y: 0, h: 1 });
 	/** A fraction of the day as px down the band. */
-	$: px = (v: number) => ((v - frame.y) / frame.h) * H;
+	const px = (v: number) => ((v - frame.y) / frame.h) * H;
 
 	/** Would tying to `name` close a loop back to this field? */
 	function loops(name: string, seen = new Set<string>()): boolean {
@@ -199,14 +205,16 @@
 		return !!next && loops(next, seen);
 	}
 	/** The fields anchored to this one. */
-	$: anchored = Object.keys(lanes).filter((n) => lanes[n].spec?.relative_to === field).sort();
+	const anchored = $derived(Object.keys(lanes).filter((n) => lanes[n].spec?.relative_to === field).sort());
 	// Only a field with a spec can anchor: the resolver has nothing else to hold it by.
-	$: anchors = Object.keys(lanes).filter(
-		(n) =>
-			!!lanes[n].spec &&
-			(lanes[n].spec?.anchorable || Object.values(lanes).some((l) => l.spec?.relative_to === n)) &&
-			lanes[n].height > 0 &&
-			!loops(n)
+	const anchors = $derived(
+		Object.keys(lanes).filter(
+			(n) =>
+				!!lanes[n].spec &&
+				(lanes[n].spec?.anchorable || Object.values(lanes).some((l) => l.spec?.relative_to === n)) &&
+				lanes[n].height > 0 &&
+				!loops(n)
+		)
 	);
 
 	/**
@@ -237,11 +245,11 @@
 
 	/** A size factor as stored: 1 is unset. */
 	const factor = (n: number) => (round(n) === 1 ? undefined : round(n));
-	$: scale = place.glyph_scale ?? 1;
-	$: aspect = place.glyph_aspect ?? 1;
+	const scale = $derived(place.glyph_scale ?? 1);
+	const aspect = $derived(place.glyph_aspect ?? 1);
 	/** The dot's box in px: the standard times its scale, about the lane's centre, in the frame. */
-	$: dotH = (STANDARD_DOT * scale * H) / frame.h;
-	$: dotW = dotH * aspect;
+	const dotH = $derived((STANDARD_DOT * scale * H) / frame.h);
+	const dotW = $derived(dotH * aspect);
 
 	function grab(mode: 'move' | 'top' | 'bottom', e: PointerEvent) {
 		e.preventDefault();
@@ -258,7 +266,7 @@
 		const mark = markAt(e.clientX, e.clientY);
 		if (!mark) return void (sel = null);
 		const r = mark.getBoundingClientRect();
-		const left = band.getBoundingClientRect().left + band.clientLeft;
+		const left = band!.getBoundingClientRect().left + band!.clientLeft;
 		grab('move', e);
 		drag = { ...drag!, mark: { x: r.left - left, w: r.width } };
 	}
@@ -292,7 +300,7 @@
 				[tall, wide] = [b * k, w * k];
 			}
 			tall = clamp(tall, MIN * H, H);
-			wide = clamp(wide, MIN * H, band.clientWidth);
+			wide = clamp(wide, MIN * H, band!.clientWidth);
 			place = { ...place, glyph_scale: factor((tall * frame.h) / (STANDARD_DOT * H)), glyph_aspect: locked ? place.glyph_aspect : factor(wide / tall) };
 		} else if (drag.mode === 'move') put(clamp(y + d, lo, hi - h), h);
 		else if (drag.mode === 'bottom') put(y, clamp(h + d, min, hi - y));
@@ -304,28 +312,37 @@
 
 	// The band is drawn by the spec as the form holds it, freed at the lane
 	// as it stands, so the field is drawn where its box is, tied or not.
-	$: if (band && listed && !drag) {
-		const at = { y: round(lane.y), h: round(lane.h), scale };
-		const free = { relative_to: undefined, anchor_pos_ratio: undefined, anchor_size_ratio: undefined, y: at.y, height: at.h };
-		want = JSON.stringify({ at, sample: spec && { ...spec, ...free }, context: AROUND[around].context });
-		draw();
-	}
+	$effect.pre(() => {
+		if (band && listed && !drag) {
+			const at = { y: round(lane.y), h: round(lane.h), scale };
+			const free = { relative_to: undefined, anchor_pos_ratio: undefined, anchor_size_ratio: undefined, y: at.y, height: at.h };
+			want = JSON.stringify({ at, sample: spec && { ...spec, ...free }, context: AROUND[around].context });
+			untrack(draw);
+		}
+	});
 
 	// The band is zoomed to the frame: the anchor's lane spans it.
-	$: if (svg)
-		Object.assign(svg.style, { transformOrigin: '0 0', transform: `translateY(${px(0)}px) scaleY(${1 / frame.h})` });
+	$effect(() => {
+		if (svg) Object.assign(svg.style, { transformOrigin: '0 0', transform: `translateY(${px(0)}px) scaleY(${1 / frame.h})` });
+	});
 
 	// The field's own marks follow the lane while it moves: the band was drawn
 	// at `shown`, so its group is carried from there to here.
-	$: own = svg?.querySelector(`g.field[data-field="${CSS.escape(field)}"]`);
+	const own = $derived(svg?.querySelector(`g.field[data-field="${CSS.escape(field)}"]`));
 	// Its own entries, not a sample, whose marks name no entry: outlined against the rest.
 	// Read again with each picture: the marks change only with a new `svg`.
-	$: own?.classList.toggle('real', !!own.querySelector('[data-id]'));
-	$: if (own && shown.h > 0) {
-		const k = lane.h / shown.h;
-		own.setAttribute('transform', `matrix(1 0 0 ${k} 0 ${(lane.y - shown.y * k) * H})`);
-	}
-	$: if (own instanceof SVGElement) own.style.cursor = drag?.moved ? 'grabbing' : 'grab';
+	$effect(() => {
+		own?.classList.toggle('real', !!own.querySelector('[data-id]'));
+	});
+	$effect(() => {
+		if (own && shown.h > 0) {
+			const k = lane.h / shown.h;
+			own.setAttribute('transform', `matrix(1 0 0 ${k} 0 ${(lane.y - shown.y * k) * H})`);
+		}
+	});
+	$effect(() => {
+		if (own instanceof SVGElement) own.style.cursor = drag?.moved ? 'grabbing' : 'grab';
+	});
 
 	// The dots follow the box: each mark is scaled about its own centre
 	// from the size the band drew it at, undoing the group's stretch of
@@ -333,27 +350,31 @@
 	// transform replaces the mark's own stretch, so the
 	// width is scaled from an unstretched one. Only this field's marks: the
 	// origin would move another's stretch.
-	$: if (own && occur && shown.h > 0) {
-		const grow = scale / shown.scale;
-		const k = lane.h / shown.h;
-		for (const mark of own.querySelectorAll<SVGElement>('.point-fg'))
-			Object.assign(mark.style, {
-				transformBox: 'fill-box',
-				transformOrigin: 'center',
-				transform: `scale(${(grow * aspect) / frame.h}, ${grow / k})`
-			});
-	}
+	$effect(() => {
+		if (own && occur && shown.h > 0) {
+			const grow = scale / shown.scale;
+			const k = lane.h / shown.h;
+			for (const mark of own.querySelectorAll<SVGElement>('.point-fg'))
+				Object.assign(mark.style, {
+					transformBox: 'fill-box',
+					transformOrigin: 'center',
+					transform: `scale(${(grow * aspect) / frame.h}, ${grow / k})`
+				});
+		}
+	});
 
-	$: relation = !anchor
-		? ''
-		: (place.anchor_pos_ratio ?? 0) >= 1
-			? 'below'
-			: (place.anchor_pos_ratio ?? 0) + (place.anchor_size_ratio ?? 1) <= 0
-				? 'above'
-				: 'on';
+	const relation = $derived(
+		!anchor
+			? ''
+			: (place.anchor_pos_ratio ?? 0) >= 1
+				? 'below'
+				: (place.anchor_pos_ratio ?? 0) + (place.anchor_size_ratio ?? 1) <= 0
+					? 'above'
+					: 'on'
+	);
 </script>
 
-<svelte:window on:pointermove={slide} on:pointerup={release} on:pointercancel={() => (drag = null)} />
+<svelte:window onpointermove={slide} onpointerup={release} onpointercancel={() => (drag = null)} />
 
 <!-- It drags itself: a sideways drag in it is never the pane's tab swipe (`data-pans`, PaneFrame.svelte; da-4t0yn). -->
 <div class="placement" data-pans="x">
@@ -364,7 +385,7 @@
 			data-context={AROUND[around].context}
 			aria-label="what is drawn around {field}: {AROUND[around].label}; click for the next"
 			title="what is drawn around {field}: click for the next"
-			on:click={() => ([around, sel] = [(around + 1) % AROUND.length, null])}
+			onclick={() => ([around, sel] = [(around + 1) % AROUND.length, null])}
 		>
 			<svg viewBox="0 0 16 16" aria-hidden="true">
 				{#if around === 0}
@@ -382,11 +403,11 @@
 		<div class="tie">
 			{#if place.relative_to}
 				<span class="anchor">
-					⚓ <button type="button" class="link" on:click={() => dispatch('open', place.relative_to ?? '')}>{place.relative_to}</button>
-					<button type="button" class="unanchor" aria-label="unanchor from {place.relative_to}" on:click={() => put(lane.y, lane.h, '')}>×</button>
+					⚓ <button type="button" class="link" onclick={() => onopen(place.relative_to ?? '')}>{place.relative_to}</button>
+					<button type="button" class="unanchor" aria-label="unanchor from {place.relative_to}" onclick={() => put(lane.y, lane.h, '')}>×</button>
 				</span>
 			{:else if anchors.length}
-				<select aria-label="anchor to a field" value="" on:change={(e) => tie(e.currentTarget.value)}>
+				<select aria-label="anchor to a field" value="" onchange={(e) => tie(e.currentTarget.value)}>
 					<option value="">⚓</option>
 					{#each anchors as name (name)}
 						<option value={name}>⚓ {name}</option>
@@ -397,13 +418,14 @@
 	</div>
 
 	<!-- A finger on a mark drags it, and does not scroll the dialog. -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="band"
 		bind:this={band}
 		style:height="{H}px"
-		on:pointerdown={press}
-		on:touchstart|nonpassive={(e) => markAt(e.touches[0].clientX, e.touches[0].clientY) && e.preventDefault()}
+		onpointerdown={press}
+		{@attach (node) =>
+			on(node, 'touchstart', (e) => markAt(e.touches[0].clientX, e.touches[0].clientY) && e.preventDefault(), { passive: false })}
 	>
 		{#each named.filter((n) => n !== field && lanes[n]) as name (name)}
 			<span class="name" style:top="{px(lanes[name].y)}px">{name}</span>
@@ -427,7 +449,7 @@
 						style:top="{(sy + 1) * 50}%"
 						style:transform="translate({(sx - 1) * 50}%, {(sy - 1) * 50}%)"
 						style:cursor={CURSORS[`${sx * sy}`] ?? (sx ? 'ew-resize' : 'ns-resize')}
-						on:pointerdown={(e) => size(sx, sy, e)}
+						onpointerdown={(e) => size(sx, sy, e)}
 					></span>
 				{/each}
 			</div>
@@ -446,7 +468,7 @@
 						data-handle={edge}
 						style:left="50%"
 						style:top={edge === 'top' ? '0' : '100%'}
-						on:pointerdown={(e) => grab(edge, e)}
+						onpointerdown={(e) => grab(edge, e)}
 					></span>
 				{/each}
 			</div>
@@ -461,14 +483,14 @@
 				type="button"
 				class="reset"
 				disabled={scale === 1 && aspect === 1}
-				on:click={() => (place = { ...place, glyph_scale: undefined, glyph_aspect: undefined })}>reset</button
+				onclick={() => (place = { ...place, glyph_scale: undefined, glyph_aspect: undefined })}>reset</button
 			>
 		</div>
 	{/if}
 
 	{#if anchored.length}
 		<p class="anchorees">
-			⚓ anchored here: {#each anchored as name, i (name)}{#if i},{' '}{/if}<button type="button" class="link" on:click={() => dispatch('open', name)}>{name}</button>{/each}
+			⚓ anchored here: {#each anchored as name, i (name)}{#if i},{' '}{/if}<button type="button" class="link" onclick={() => onopen(name)}>{name}</button>{/each}
 		</p>
 	{:else}
 		<label class="allow">
@@ -477,7 +499,7 @@
 				class="anchorable"
 				name="anchorable"
 				checked={!!place.anchorable}
-				on:change={(e) => (place = { ...place, anchorable: e.currentTarget.checked || undefined })}
+				onchange={(e) => (place = { ...place, anchorable: e.currentTarget.checked || undefined })}
 			/> place other fields relative to this one?
 		</label>
 	{/if}

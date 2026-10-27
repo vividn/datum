@@ -114,7 +114,7 @@
 	is no second string built for display that could drift from it.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
 	import {
 		FULL,
@@ -150,59 +150,75 @@
 		type Verb
 	} from './commands.js';
 
-	export let fields: FieldButton[] = [];
-	/**
-	 * Where the buttons stand (da-omw4n): `rows`, today's, or `picture` —
-	 * each at the height its field is drawn, see «ALIGNED TO THE PICTURE»
-	 * above.
-	 */
-	export let align: Align = 'rows';
-	export let disabled = false;
-	/** How a switch in a state is labelled; see `SwitchLabel`. */
-	export let switchLabel: SwitchLabel = 'field';
-	/**
-	 * The verb the command line is pending (da-ltux), or null.
-	 *
-	 * It filters the list to the fields that verb can be spent on and
-	 * makes a press MEAN that verb — so `start` on a switch field with
-	 * `true` among its states runs `start <field>`, not the state list a
-	 * plain press would open. The `+` at the end is then the way to a
-	 * field that does not exist yet, with the verb already chosen.
-	 */
-	export let verb: Verb | null = null;
-	/**
-	 * Whether the bar holds a DURATION — a `dur=` pill (da-qu16).
-	 *
-	 * It leaves the fields a length can be spent on: the blocks. It
-	 * COMPOSES with `verb` — both filters apply.
-	 */
-	export let duration = false;
-	/**
-	 * What a press on a picture landed on or near, field by rank
-	 * (`nearest` in $lib/lanes.ts), or null.
-	 *
-	 * Those fields come FIRST. Nothing is hidden by it: a person who
-	 * clicked empty space still finds every field, in its usual order.
-	 */
-	export let rank: Map<string, Near> | null = null;
-	/**
-	 * Whether the IGNORED fields get a button too (da-xhio).
-	 *
-	 * Off is today's bar: a field whose latest status is IGNORED is not
-	 * drawn, and the setup widget is where it is offered back. On adds it to the
-	 * list, drawn as an ignored field and not as a tracked one — a second
-	 * way to see it, never a way to stop it being ignored.
-	 *
-	 * This session's, not the layout's: the option is declared `session`
-	 * in the registry and held in $lib/layout/session.ts.
-	 */
-	export let showIgnored = false;
-	/** Where each field stood at the last sort (`standings` in $lib/layout/engine.ts, da-xtkcp). */
-	export let standings: Standings = new Map();
+	let {
+		fields = [],
+		/**
+		 * Where the buttons stand (da-omw4n): `rows`, today's, or `picture` —
+		 * each at the height its field is drawn, see «ALIGNED TO THE PICTURE»
+		 * above.
+		 */
+		align = 'rows',
+		disabled = false,
+		/** How a switch in a state is labelled; see `SwitchLabel`. */
+		switchLabel = 'field',
+		/**
+		 * The verb the command line is pending (da-ltux), or null.
+		 *
+		 * It filters the list to the fields that verb can be spent on and
+		 * makes a press MEAN that verb — so `start` on a switch field with
+		 * `true` among its states runs `start <field>`, not the state list a
+		 * plain press would open. The `+` at the end is then the way to a
+		 * field that does not exist yet, with the verb already chosen.
+		 */
+		verb = null,
+		/**
+		 * Whether the bar holds a DURATION — a `dur=` pill (da-qu16).
+		 *
+		 * It leaves the fields a length can be spent on: the blocks. It
+		 * COMPOSES with `verb` — both filters apply.
+		 */
+		duration = false,
+		/**
+		 * What a press on a picture landed on or near, field by rank
+		 * (`nearest` in $lib/lanes.ts), or null.
+		 *
+		 * Those fields come FIRST. Nothing is hidden by it: a person who
+		 * clicked empty space still finds every field, in its usual order.
+		 */
+		rank = null,
+		/**
+		 * Whether the IGNORED fields get a button too (da-xhio).
+		 *
+		 * Off is today's bar: a field whose latest status is IGNORED is not
+		 * drawn, and the setup widget is where it is offered back. On adds it to the
+		 * list, drawn as an ignored field and not as a tracked one — a second
+		 * way to see it, never a way to stop it being ignored.
+		 *
+		 * This session's, not the layout's: the option is declared `session`
+		 * in the registry and held in $lib/layout/session.ts.
+		 */
+		showIgnored = false,
+		/** Where each field stood at the last sort (`standings` in $lib/layout/engine.ts, da-xtkcp). */
+		standings = new Map(),
+		/** Run a press's line. */
+		onrun,
+		/** Put a press's line in the command line, unrun, for the rest to be typed. */
+		onfill
+	}: {
+		fields?: FieldButton[];
+		align?: Align;
+		disabled?: boolean;
+		switchLabel?: SwitchLabel;
+		verb?: Verb | null;
+		duration?: boolean;
+		rank?: Map<string, Near> | null;
+		showIgnored?: boolean;
+		standings?: Standings;
+		onrun: (argv: string[]) => void;
+		onfill: (argv: string[]) => void;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{ run: string[]; fill: string[] }>();
-
-	let bar: HTMLElement | undefined;
+	let bar: HTMLElement | undefined = $state.raw();
 	// The hold's action ($lib/hold.ts) on the bar ButtonRows draws — an
 	// action cannot be handed through a component, so it is attached here.
 	// So are the picture layout's pinch, pan and wheel.
@@ -222,16 +238,16 @@
 	 * now — the state just logged marked — rather than from a copy that
 	 * went stale the moment it was picked.
 	 */
-	let picked: string | null = null;
+	let picked: string | null = $state(null);
 	/**
 	 * Where the press that picked it landed, from the bar's top left corner
 	 * as drawn: the pointer's spot, so `end` is under the finger however
 	 * long the name (da-rgyrj), or the button's center for a key's press.
 	 */
-	let tap = { x: 0, y: 0 };
+	let tap = $state.raw({ x: 0, y: 0 });
 	/** Whether the `+` at the end of that list has become its input. */
-	let addingState = false;
-	let newState = '';
+	let addingState = $state(false);
+	let newState = $state('');
 	/** The pane's scroller and where it stood when the states took over. */
 	let scrolled: HTMLElement | null = null;
 	/**
@@ -242,7 +258,7 @@
 	let scrolledTo = { left: 0, top: 0 };
 
 	/** Whether a pointer — a mouse, a finger — is over the bar right now. */
-	let over = false;
+	let over = $state(false);
 	/**
 	 * The ranking the bar is DRAWN under.
 	 *
@@ -251,22 +267,28 @@
 	 * up the moment the pointer leaves, which is what this statement
 	 * re-running on `over` is for.
 	 */
-	let shown: Map<string, Near> | null = null;
-	$: if (!over) shown = rank;
+	let shown: Map<string, Near> | null = $state.raw(null);
+	$effect.pre(() => {
+		if (!over) shown = rank;
+	});
 
-	$: buttons = fieldsUnder(
-		fieldsWithDuration(
-			fields.filter((w) => showIgnored || !w.ignored),
-			duration
-		),
-		verb
+	const buttons = $derived(
+		fieldsUnder(
+			fieldsWithDuration(
+				fields.filter((w) => showIgnored || !w.ignored),
+				duration
+			),
+			verb
+		)
 	);
-	$: picking = picked === null ? null : (buttons.find((b) => b.field === picked) ?? null);
+	const picking = $derived(picked === null ? null : (buttons.find((b) => b.field === picked) ?? null));
 	// A picked field no longer on the bar — deleted, the database emptied or
 	// restored, another tab's write, or a verb or `dur=` pill filtering it
 	// out — is Back, not a list held in waiting to take the bar over again
 	// the moment a field of that name returns (da-mv8ng).
-	$: if (picked !== null && picking === null) back();
+	$effect.pre(() => {
+		if (picked !== null && picking === null) untrack(back);
+	});
 
 	/**
 	 * What the bar draws. A picked field's states (da-g635) are ONE entry,
@@ -279,51 +301,57 @@
 		| { kind: 'hint' }
 		| { kind: 'ring' }
 		| { kind: 'field'; button: FieldButton; promoted: boolean; edge: boolean };
-	$: entries = ((): Entry[] => {
+	const entries = $derived.by((): Entry[] => {
 		if (picking) return [{ kind: 'ring' }];
 		if (buttons.length > 0) return [];
 		return [{ kind: 'hint' }];
-	})();
+	});
 	/**
 	 * The fields' rows (da-xtkcp): by height top to bottom, most used first
 	 * along each, as they stood at the last sort — and a press's fields at
 	 * the head of them, the hairline after the last of them in each row.
 	 */
-	$: arrange = picking
-		? (items: Entry[]): Entry[][] => [items]
-		: buttons.length === 0
-			? lanesOf
-			: picture
-				? (): Entry[][] => [placing]
-				: (_: Entry[], rows: number): Entry[][] =>
-						rowsUnder(buttons, rows, standings, shown).map(({ lead, rest }): Entry[] => [
-							...lead.map(
-								(button, k): Entry => ({
-									kind: 'field',
-									button,
-									promoted: true,
-									edge: k === lead.length - 1 && rest.length > 0
-								})
-							),
-							...rest.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
-						]);
+	const arrange = $derived.by(() => {
+		// Read here and not only in the functions: a new one lays the bar out again.
+		const [placed, standing, near] = [placing, standings, shown];
+		return picking
+			? (items: Entry[]): Entry[][] => [items]
+			: buttons.length === 0
+				? lanesOf
+				: picture
+					? (): Entry[][] => [placed]
+					: (_: Entry[], rows: number): Entry[][] =>
+							rowsUnder(buttons, rows, standing, near).map(({ lead, rest }): Entry[] => [
+								...lead.map(
+									(button, k): Entry => ({
+										kind: 'field',
+										button,
+										promoted: true,
+										edge: k === lead.length - 1 && rest.length > 0
+									})
+								),
+								...rest.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
+							]);
+	});
 	const keyOf = (e: Entry) => (e.kind === 'field' ? `f:${e.button.field}` : e.kind);
 
 	/** Whether the buttons stand where their fields are drawn: the option, on a bar of fields. */
-	$: picture = align === 'picture' && !picking && buttons.length > 0;
+	const picture = $derived(align === 'picture' && !picking && buttons.length > 0);
 	/** The fields in the order they claim their places: most used at the last sort first. */
-	$: placing = [...buttons]
-		.sort((a, b) => (standings.get(b.field)?.frecency ?? -1) - (standings.get(a.field)?.frecency ?? -1))
-		.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }));
+	const placing = $derived(
+		[...buttons]
+			.sort((a, b) => (standings.get(b.field)?.frecency ?? -1) - (standings.get(a.field)?.frecency ?? -1))
+			.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
+	);
 	/** The bar's height, and each placed slot's size as drawn, in px. */
-	let tall = 0;
-	let sizes = new Map<string, { w: number; h: number }>();
+	let tall = $state(0);
+	let sizes = $state.raw(new Map<string, { w: number; h: number }>());
 	/** The part of the pictures shown; this session's, never the layout's. */
-	let view: View = FULL;
-	$: zoomedIn = view.to - view.from < 1;
+	let view: View = $state.raw(FULL);
+	const zoomedIn = $derived(view.to - view.from < 1);
 	const GAP = 6;
 	/** Where each slot stands. */
-	$: stands = ((): Map<string, { x: number; top: number }> => {
+	const stands = $derived.by((): Map<string, { x: number; top: number }> => {
 		if (!picture) return new Map();
 		const keys = placing.map(keyOf);
 		const at = aligned(
@@ -336,12 +364,14 @@
 			GAP
 		);
 		return new Map(at.map((stand, i) => [keys[i], stand]));
-	})();
+	});
 	/** Whether a move glides: not on the first placing, nor under a finger that is moving it. */
-	let glide = false;
-	let live = false;
-	$: if (picture) requestAnimationFrame(() => requestAnimationFrame(() => (glide = picture)));
-	else glide = false;
+	let glide = $state(false);
+	let live = $state(false);
+	$effect.pre(() => {
+		if (picture) requestAnimationFrame(() => requestAnimationFrame(() => (glide = picture)));
+		else glide = false;
+	});
 
 	/** Keep `sizes` to the slot's size as drawn. */
 	function sized(node: HTMLElement, key: string) {
@@ -440,7 +470,10 @@
 	 * A press on a picture, while zoomed: the view pans to the height of the
 	 * field it landed nearest (`closer` in $lib/lanes.ts).
 	 */
-	$: towards(rank);
+	$effect.pre(() => {
+		const near = rank;
+		untrack(() => towards(near));
+	});
 	function towards(near: Map<string, Near> | null) {
 		if (!near || !picture || !zoomedIn) return;
 		const first = [...near].sort(([, a], [, b]) => closer(a, b))[0];
@@ -514,13 +547,13 @@
 
 	function emit(argv: string[]) {
 		back();
-		dispatch('run', argv);
+		onrun(argv);
 	}
 
 	/** Put `argv` in the command line, unrun, for the rest to be typed. */
 	function fill(argv: string[]) {
 		back();
-		dispatch('fill', argv);
+		onfill(argv);
 	}
 
 	/** Run `argv`, or fill it where `button` has keys to type (da-chml5). */
@@ -692,7 +725,7 @@
 	}
 </script>
 
-<svelte:window on:keydown={onWindowKeyDown} />
+<svelte:window onkeydown={onWindowKeyDown} />
 
 <div class="fields" class:picture data-align={picture ? 'picture' : 'rows'}>
 <ButtonRows
@@ -713,7 +746,7 @@
 		{@const states = statesOf(chosen.shape)}
 		<div class="ring" use:around={tap}>
 			<div class="spot" data-role="back">
-				<button class="nav back" use:act={'show'} data-back {disabled} title="back to the fields" on:click={back}>
+				<button class="nav back" use:act={'show'} data-back {disabled} title="back to the fields" onclick={back}>
 					&lt; Back
 				</button>
 			</div>
@@ -740,7 +773,7 @@
 						{disabled}
 						data-state="false"
 						title={shellJoin(['end', chosen.field])}
-						on:click={() => emit(['end', chosen.field])}
+						onclick={() => emit(['end', chosen.field])}
 					>
 						end
 					</button>
@@ -758,7 +791,7 @@
 						{disabled}
 						data-state={state}
 						title={shellJoin(pressArgv(chosen, state))}
-						on:click={() => log(pressArgv(chosen, state), chosen)}
+						onclick={() => log(pressArgv(chosen, state), chosen)}
 					>
 						{state}
 					</button>
@@ -766,8 +799,13 @@
 			{/each}
 			<div class="spot" data-role="add">
 				{#if addingState}
-					<form on:submit|preventDefault={() => addState(chosen)}>
-						<!-- svelte-ignore a11y-autofocus -->
+					<form
+						onsubmit={(e) => {
+							e.preventDefault();
+							addState(chosen);
+						}}
+					>
+						<!-- svelte-ignore a11y_autofocus -->
 						<input
 							class="new-state"
 							bind:value={newState}
@@ -784,7 +822,7 @@
 						data-add-state
 						{disabled}
 						title="add a state to {chosen.field}"
-						on:click={() => (addingState = true)}
+						onclick={() => (addingState = true)}
 					>
 						+ Add state
 					</button>
@@ -827,7 +865,7 @@
 					style={vars(look) + tallOf(button)}
 					{disabled}
 					title={titleOf(button)}
-					on:click={(e) => press(button, e.currentTarget, e)}>{button.field}</button
+					onclick={(e) => press(button, e.currentTarget, e)}>{button.field}</button
 				>
 			{:else}
 				<button
@@ -842,7 +880,7 @@
 					data-ignored={button.ignored ? '' : undefined}
 					data-pilled={$fieldPill === button.field ? '' : undefined}
 					title={titleOf(button)}
-					on:click={(e) => press(button, e.currentTarget, e)}
+					onclick={(e) => press(button, e.currentTarget, e)}
 				>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
 			{/if}
 		</div>
@@ -856,7 +894,7 @@
 		data-to={view.to}
 		title="showing {Math.round(view.from * 100)}–{Math.round(view.to * 100)}% of the pictures' height · tap to zoom out"
 		aria-label="zoom out"
-		on:click={() => (view = FULL)}
+		onclick={() => (view = FULL)}
 	>
 		<span style:top="{view.from * 100}%" style:height="{(view.to - view.from) * 100}%"></span>
 	</button>

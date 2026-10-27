@@ -21,16 +21,20 @@
 	import { tick } from 'svelte';
 	import { cycle, KEY_MODES, KEY_TYPES, draggedTo, modeOf, moved, type KeyRow } from './track.js';
 
-	/** The rows, in the order their words bind. */
-	export let keys: KeyRow[];
-	/** Whether the field is a card, whose new key starts in its id. */
-	export let card = false;
-	/** The Data tab's rows: each key's type and whether it is fixed. */
-	export let detail = false;
+	interface Props {
+		/** The rows, in the order their words bind. */
+		keys: KeyRow[];
+		/** Whether the field is a card, whose new key starts in its id. */
+		card?: boolean;
+		/** The Data tab's rows: each key's type and whether it is fixed. */
+		detail?: boolean;
+	}
 
-	let list: HTMLUListElement;
+	let { keys = $bindable(), card = false, detail = false }: Props = $props();
+
+	let list: HTMLUListElement | undefined = $state();
 	/** The row a handle is dragging. */
-	let held: KeyRow | null = null;
+	let held: KeyRow | null = $state(null);
 
 	const add = () => (keys = [...keys, { name: '', kind: 'required', value: '', value_type: 'any', in_slug: card }]);
 	const line = (key: KeyRow) =>
@@ -63,7 +67,7 @@
 	function drag(e: PointerEvent) {
 		if (!held) return;
 		const from = keys.indexOf(held);
-		const to = draggedTo([...list.querySelectorAll(':scope > li.key')], from, e.clientY);
+		const to = draggedTo([...list!.querySelectorAll(':scope > li.key')], from, e.clientY);
 		if (to !== from) keys = moved(keys, from, to);
 	}
 
@@ -74,7 +78,7 @@
 		e.preventDefault();
 		keys = moved(keys, i, to);
 		await tick();
-		list.querySelectorAll<HTMLElement>(':scope > li.key .handle')[to]?.focus();
+		list!.querySelectorAll<HTMLElement>(':scope > li.key .handle')[to]?.focus();
 	}
 </script>
 
@@ -87,14 +91,14 @@
 				type="button"
 				class="handle"
 				aria-label="move {key.name || 'this key'}: drag, or the arrow keys"
-				on:pointerdown={(e) => grab(e, key)}
-				on:keydown={(e) => nudge(e, i)}>⠿</button
+				onpointerdown={(e) => grab(e, key)}
+				onkeydown={(e) => nudge(e, i)}>⠿</button
 			>
 			<button
 				type="button"
 				class="mode"
 				aria-label="how {key.name || 'this key'} is declared: -{modeOf(key)}, press for the next"
-				on:click={() => (cycle(keys, key), (keys = keys))}>-{modeOf(key)}</button
+				onclick={() => (cycle(keys, key), (keys = keys))}>-{modeOf(key)}</button
 			>
 			{#if key.rest === 'C'}
 				<input class="name" value="comment" disabled aria-label="the comment" />
@@ -115,7 +119,7 @@
 					class="eq"
 					aria-pressed={key.kind !== 'required'}
 					aria-label="{key.name || 'this key'} is optional"
-					on:click={() => eq(key)}>=</button
+					onclick={() => eq(key)}>=</button
 				>{/if}
 				{#if key.kind !== 'required'}
 					<input
@@ -123,11 +127,11 @@
 						bind:value={key.value}
 						placeholder={key.kind === 'assign' ? 'value' : 'default'}
 						aria-label="the {key.kind === 'assign' ? 'value' : 'default'} of {key.name || 'this key'}"
-						on:input={() => key.kind !== 'assign' && (key.kind = key.value ? 'default' : 'optional')}
+						oninput={() => key.kind !== 'assign' && (key.kind = key.value ? 'default' : 'optional')}
 					/>
 				{/if}
 			{/if}
-			<button type="button" class="remove" aria-label="remove {key.name}" on:click={() => (keys = keys.filter((k) => k !== key))}
+			<button type="button" class="remove" aria-label="remove {key.name}" onclick={() => (keys = keys.filter((k) => k !== key))}
 				>✕</button
 			>
 			{#if explained}<span class="line">{explained}</span>{/if}
@@ -138,7 +142,7 @@
 							type="checkbox"
 							class="fixed"
 							checked={key.kind === 'assign'}
-							on:change={(e) => ((key.kind = e.currentTarget.checked ? 'assign' : key.value ? 'default' : 'required'), (keys = keys))}
+							onchange={(e) => ((key.kind = e.currentTarget.checked ? 'assign' : key.value ? 'default' : 'required'), (keys = keys))}
 						/> fixed</label
 					>
 					<select class="type" bind:value={key.value_type} aria-label="the type of {key.name}">
@@ -149,7 +153,7 @@
 		</li>
 	{/each}
 </ul>
-<button type="button" class="add" title="a value each entry carries, typed after the field, one word per key" on:click={add}
+<button type="button" class="add" title="a value each entry carries, typed after the field, one word per key" onclick={add}
 	>+ key</button
 >
 

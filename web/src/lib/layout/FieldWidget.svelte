@@ -58,7 +58,7 @@
 	edits and goes back, Save saves and goes back; Revert and Redo never leave.
 -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { browser } from '$app/env';
 	import FieldForm from '$lib/FieldForm.svelte';
 	import Pane from '$lib/Pane.svelte';
@@ -81,36 +81,42 @@
 	const glyphOf = (f: FieldButton) => f.glyph ?? VERBS.find((v) => v.verb === VERB[f.shape.kind])?.glyph;
 
 	/** The spec as read: undefined while reading, null for a field without one (made here instead). */
-	let spec: Spec | null | undefined;
+	let spec: Spec | null | undefined = $state.raw();
 	/** Bumped by every read, so the form is drawn afresh from it. */
-	let read = 0;
+	let read = $state(0);
 	/** What the spec was read for: the form's field and verb change with its spec, not before it. */
-	let readFor = $editing;
+	let readFor = $state.raw($editing);
 	/** Whether the sheet of fields is open, and what it is narrowed to. */
-	let picking = false;
-	let find = '';
+	let picking = $state(false);
+	let find = $state('');
 	/** Whether the form holds edits nobody saved (`dirty`, FieldForm.svelte), and a spec's save of them. */
-	let dirty = false;
-	let pending: Save | null = null;
+	let dirty = $state(false);
+	let pending: Save | null = $state.raw(null);
 	/** The spec's walk along its history: its entry, the version the walk began at, and the one it is at. */
-	let walk: { hid: string; top: number; at: number } | null = null;
+	let walk: { hid: string; top: number; at: number } | null = $state.raw(null);
 	/** A save that stayed, said under Save for a moment (da-wz84y). */
-	let saved = false;
+	let saved = $state(false);
 	let unsay: ReturnType<typeof setTimeout> | undefined;
 
-	$: tracked = $fields.filter((f) => !f.ignored);
+	const tracked = $derived($fields.filter((f) => !f.ignored));
 	// Another field: what was said of the last one's save is not said of it.
-	$: if (browser) {
-		saved = false;
-		void load($editing);
-	}
+	$effect.pre(() => {
+		const asked = $editing;
+		if (browser)
+			untrack(() => {
+				saved = false;
+				void load(asked);
+			});
+	});
 
 	// Only a pill minted while this is here: one that was there already is not an ask.
 	let pilled = $fieldPill;
-	$: if ($fieldPill !== pilled) {
-		pilled = $fieldPill;
-		if (pilled !== null) $editing = { field: pilled };
-	}
+	$effect.pre(() => {
+		if ($fieldPill !== pilled) {
+			pilled = $fieldPill;
+			if (pilled !== null) $editing = { field: pilled };
+		}
+	});
 
 	/** Read `asked`'s spec afresh, the edits left behind saved first; `at` keeps a walk going, else it begins at the newest version. */
 	async function load(asked: typeof $editing, at: typeof walk = null): Promise<void> {
@@ -244,22 +250,22 @@
 					{saved}
 					back={!!walk && walk.at > 1}
 					ahead={!!walk && walk.at < walk.top}
-					on:close={(e) => close(e.detail)}
-					on:revert={revert}
-					on:redo={() => walk && void step(walk.at + 1)}
-					on:run={(e) => press(e.detail.argv)}
-					on:open={(e) => go(e.detail)}
+					onclose={close}
+					onrevert={revert}
+					onredo={() => walk && void step(walk.at + 1)}
+					onrun={(save) => press(save.argv)}
+					onopen={go}
 				>
-					<svelte:fragment slot="pick">
+					{#snippet pick()}
 						{#if $editing.field !== '' || tracked.length > 0}
-							<button type="button" class="pick" use:act={'open'} aria-haspopup="dialog" on:click={() => ((find = ''), (picking = true))}
+							<button type="button" class="pick" use:act={'open'} aria-haspopup="dialog" onclick={() => ((find = ''), (picking = true))}
 								>fields</button
 							>
 						{/if}
 						{#if spec}
-							<button type="button" class="rename" use:act={'open'} aria-haspopup="dialog" on:click={rename}>rename</button>
+							<button type="button" class="rename" use:act={'open'} aria-haspopup="dialog" onclick={rename}>rename</button>
 						{/if}
-					</svelte:fragment>
+					{/snippet}
 				</FieldForm>
 			{/key}
 		{/if}
@@ -270,7 +276,7 @@
 		{/if}
 		<div class="chips" role="group" aria-label="fields">
 			{#if $editing.field !== ''}
-				<button type="button" class="new" on:click={() => go('')}>+ new field</button>
+				<button type="button" class="new" onclick={() => go('')}>+ new field</button>
 			{/if}
 			{#each tracked.filter((f) => f.field.toLowerCase().includes(find.trim().toLowerCase())) as f (f.field)}
 				<button
@@ -278,7 +284,7 @@
 					data-chip={f.field}
 					aria-current={f.field === $editing.field}
 					style:--c={f.color}
-					on:click={() => go(f.field)}><span aria-hidden="true">{glyphOf(f)}</span> {f.field}</button
+					onclick={() => go(f.field)}><span aria-hidden="true">{glyphOf(f)}</span> {f.field}</button
 				>
 			{/each}
 		</div>

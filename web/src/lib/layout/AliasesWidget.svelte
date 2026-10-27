@@ -7,6 +7,7 @@
 	forming.
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { browser } from '$app/env';
 	import Pane from '$lib/Pane.svelte';
 	import { run } from '$lib/run.js';
@@ -14,14 +15,17 @@
 	import type { Alias } from '$lib/commands.js';
 	import { fields } from './engine.js';
 
-	export let epoch = 0;
+	let { epoch = 0 }: { epoch?: number } = $props();
 
-	let listed: Alias[] | null = null;
+	let listed = $state.raw<Alias[] | null>(null);
 	/** Listings started and the newest one on screen: last started wins (see CliPane.svelte). */
 	let started = 0;
 	let shown = -1;
 
-	$: if (browser) void list(epoch);
+	$effect.pre(() => {
+		const at = epoch;
+		if (browser) untrack(() => void list(at));
+	});
 
 	async function list(_epoch: number): Promise<void> {
 		const at = ++started;
@@ -35,13 +39,15 @@
 		}
 	}
 
-	$: user = (listed ?? []).filter((a) => a.source === 'user');
-	$: derived = [
-		...(listed ?? [])
-			.filter((a) => a.source === 'derived')
-			.reduce((m, a) => m.set(a.field ?? '', [...(m.get(a.field ?? '') ?? []), a]), new Map<string, Alias[]>())
-	].sort(([a], [b]) => a.localeCompare(b));
-	$: colors = new Map($fields.map((w) => [w.field, w.color]));
+	const user = $derived((listed ?? []).filter((a) => a.source === 'user'));
+	const bySpec = $derived(
+		[
+			...(listed ?? [])
+				.filter((a) => a.source === 'derived')
+				.reduce((m, a) => m.set(a.field ?? '', [...(m.get(a.field ?? '') ?? []), a]), new Map<string, Alias[]>())
+		].sort(([a], [b]) => a.localeCompare(b))
+	);
+	const colors = $derived(new Map($fields.map((w) => [w.field, w.color])));
 </script>
 
 <Pane title="aliases">
@@ -55,7 +61,7 @@
 			{#each user as a (a.name)}<li><b>{a.name}</b> → {a.expansion}</li>{/each}
 		</ul>
 	{/if}
-	{#each derived as [field, aliases] (field)}
+	{#each bySpec as [field, aliases] (field)}
 		<section style:color={colors.get(field)}>
 			<h3>{field}</h3>
 			<ul>

@@ -39,15 +39,17 @@
 	import { shellJoin, shellSplit } from '$lib/shellSplit.js';
 	import { fields, grammar, pressWithPills, standings } from './engine.js';
 
-	export let switchLabel: SwitchLabel = 'field';
-	/** Where the buttons stand: in rows, or where their fields are drawn (da-omw4n). */
-	export let align: Align = 'rows';
-	/**
-	 * Whether the ignored fields get a button too (da-xhio) — this
-	 * session's option, merged over the tree's settings by the renderer,
-	 * so from here it is an ordinary prop like any other.
-	 */
-	export let showIgnored = false;
+	let {
+		switchLabel = 'field',
+		/** Where the buttons stand: in rows, or where their fields are drawn (da-omw4n). */
+		align = 'rows',
+		/**
+		 * Whether the ignored fields get a button too (da-xhio) — this
+		 * session's option, merged over the tree's settings by the renderer,
+		 * so from here it is an ordinary prop like any other.
+		 */
+		showIgnored = false
+	}: { switchLabel?: SwitchLabel; align?: Align; showIgnored?: boolean } = $props();
 
 	/**
 	 * A press under the pending verb runs the LINE with the field after it
@@ -86,8 +88,8 @@
 		{align}
 		{switchLabel}
 		{showIgnored}
-		on:run={(e) => run(e.detail)}
-		on:fill={(e) => fill(e.detail)}
+		onrun={run}
+		onfill={fill}
 	/>
 </div>
 

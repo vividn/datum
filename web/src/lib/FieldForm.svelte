@@ -67,7 +67,7 @@
 	handed up as `run` and leaving the form open.
 -->
 <script lang="ts">
-	import { createEventDispatcher, tick } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
 	import { act } from './act.js';
 	import DataKeys from './DataKeys.svelte';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
@@ -99,57 +99,84 @@
 		type Verb
 	} from './track.js';
 
-	/** The field name it opens with — the CLI's refusal names one. */
-	export let field = '';
-	/** The verb it opens with, chosen; none unless the door that opened it preset one. */
-	export let verb: Verb | null = null;
-	/** The ignored fields (`fields --json`), which get no button until they are re-tracked. */
-	export let ignored: string[] = [];
-	/** The spec to edit (`setup F --json`); null declares a new field instead. */
-	export let spec: Spec | null = null;
-	/** The fields there are already: an example of that name would re-declare one, so it is not offered. */
-	export let taken: string[] = [];
-	/** Whether it differs from what it opened as: what leaving it now would lose. */
-	export let dirty = false;
-	/** A spec's edits as the save leaving it runs (da-hda4j), or null while there are none. */
-	export let pending: Save | null = null;
-	/** Whether Revert, at a save point, has a saved version to step back to, and Redo one to step forward to. */
-	export let back = false;
-	export let ahead = false;
-	/** Whether the person was brought here from another pane, so Cancel and a spec's Save go back there (da-wz84y). */
-	export let away = false;
-	/** Whether a save that stayed is being said under Save. */
-	export let saved = false;
+	let {
+		/** The field name it opens with — the CLI's refusal names one. */
+		field = '',
+		/** The verb it opens with, chosen; none unless the door that opened it preset one. */
+		verb = null,
+		/** The ignored fields (`fields --json`), which get no button until they are re-tracked. */
+		ignored = [],
+		/** The spec to edit (`setup F --json`); null declares a new field instead. */
+		spec = null,
+		/** The fields there are already: an example of that name would re-declare one, so it is not offered. */
+		taken = [],
+		/** Whether it differs from what it opened as: what leaving it now would lose. */
+		dirty = $bindable(false),
+		/** A spec's edits as the save leaving it runs (da-hda4j), or null while there are none. */
+		pending = $bindable(null),
+		/** Whether Revert, at a save point, has a saved version to step back to, and Redo one to step forward to. */
+		back = false,
+		ahead = false,
+		/** Whether the person was brought here from another pane, so Cancel and a spec's Save go back there (da-wz84y). */
+		away = false,
+		/** Whether a save that stayed is being said under Save. */
+		saved = false,
+		/** Beside the field's name: the widget's own buttons. */
+		pick,
+		/** Hand a save up to run, or null to run nothing and leave. */
+		onclose,
+		/** Run a command and stay: tracking or ignoring the field. */
+		onrun,
+		onrevert,
+		onredo,
+		/** Go to another field: an anchor's link in the placement. */
+		onopen
+	}: {
+		field?: string;
+		verb?: Verb | null;
+		ignored?: string[];
+		spec?: Spec | null;
+		taken?: string[];
+		dirty?: boolean;
+		pending?: Save | null;
+		back?: boolean;
+		ahead?: boolean;
+		away?: boolean;
+		saved?: boolean;
+		pick?: Snippet;
+		onclose: (save: Save | null) => void;
+		onrun: (save: Save) => void;
+		onrevert: () => void;
+		onredo: () => void;
+		onopen: (field: string) => void;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{ close: Save | null; run: Save; revert: null; redo: null }>();
-
-	let color = spec?.color ?? '';
-	let description = spec?.description ?? '';
-	let states: StateRow[] = spec ? stateRows(spec) : [];
-	let glyph = spec?.glyph ?? '';
-	let keys: KeyRow[] = spec ? keyRows(spec) : [];
-	let autoalias = !spec?.no_autoalias;
-	let neverFalse = !!spec?.never_false;
-	let aliases: DerivedAlias[] = (spec?.derived_aliases ?? []).map((a) => ({ ...a }));
-	let place: Place = spec ? placeOf(spec) : {};
-	let icon = spec?.icon ?? '';
+	// The form is drawn from the spec it opened with; a new spec mounts a new form.
+	const opening = untrack(() => spec);
+	let color = $state(opening?.color ?? '');
+	let description = $state(opening?.description ?? '');
+	let states: StateRow[] = $state(opening ? stateRows(opening) : []);
+	let glyph = $state(opening?.glyph ?? '');
+	let keys: KeyRow[] = $state(opening ? keyRows(opening) : []);
+	let autoalias = $state(!opening?.no_autoalias);
+	let neverFalse = $state(!!opening?.never_false);
+	let aliases: DerivedAlias[] = $state((opening?.derived_aliases ?? []).map((a) => ({ ...a })));
+	let place: Place = $state(opening ? placeOf(opening) : {});
+	let icon = $state(opening?.icon ?? '');
 	/** The field a bare state names an entry of (`state_lookup_field`), or none. */
-	let lookup = spec?.state_lookup_field ?? '';
+	let lookup = $state(opening?.state_lookup_field ?? '');
 	/** The shape whose examples are open, if any. */
-	let catalog: Verb | null = null;
-	if (spec) verb = spec.verb;
+	let catalog: Verb | null = $state(null);
+	if (opening) verb = opening.verb;
 
 	// What the name would do if it were submitted, before the press rather
 	// than after it: `my coffee` is what a person naturally types and the
 	// parser refuses it (da-b049).
-	$: hint = spec || field.trim() === '' ? null : fieldNameHint(field.trim());
-	$: fixed = hint === null ? null : suggestFieldName(field.trim());
-	$: ready = field.trim() !== '' && hint === null && verb !== null;
-	// Reactive rather than called from the markup: Svelte tracks the names
-	// an expression mentions, so a preview built inside a function would sit
-	// at the first argv while the form said otherwise — and a preview that
-	// disagrees with the command teaches a lie.
-	$: edits = {
+	const hint = $derived(spec || field.trim() === '' ? null : fieldNameHint(field.trim()));
+	const fixed = $derived(hint === null ? null : suggestFieldName(field.trim()));
+	const ready = $derived(field.trim() !== '' && hint === null && verb !== null);
+	// The form's edits as one value, which the draft, the save and `dirty` all read.
+	const edits = $derived({
 		verb: verb ?? spec?.verb ?? 'occur',
 		color,
 		description,
@@ -162,22 +189,23 @@
 		place,
 		icon,
 		lookup
-	};
+	});
 	/** The spec a save would store, which the placement draws. */
-	$: drafted = spec ? editedSpec(spec, edits) : draftSpec(field.trim(), edits);
-	$: save = { argv: spec ? specArgv(editedSpec(spec, edits)) : declareArgv(field.trim(), edits) };
+	const drafted = $derived(spec ? editedSpec(spec, edits) : draftSpec(field.trim(), edits));
+	const save: Save = $derived({ argv: spec ? specArgv(editedSpec(spec, edits)) : declareArgv(field.trim(), edits) });
 	let opened: string | undefined;
-	$: {
+	$effect.pre(() => {
 		const now = JSON.stringify([field, verb, edits]);
 		opened ??= now;
-		dirty = now !== opened;
-	}
-	$: pending = spec && dirty && ready ? save : null;
+		const changed = now !== opened;
+		dirty = changed;
+		pending = spec && changed && ready ? save : null;
+	});
 	// What `auto` paints: the name's colour, and none while there is no name.
-	$: auto = field.trim() ? defaultColor(field.trim()) : 'transparent';
-	$: named = states.filter((s) => s.name.trim());
-	$: keyed = keys.map((k) => k.name.trim()).filter(Boolean);
-	$: examples = EXAMPLES.filter((e) => e.verb === catalog && !taken.includes(e.field));
+	const auto = $derived(field.trim() ? defaultColor(field.trim()) : 'transparent');
+	const named = $derived(states.filter((s) => s.name.trim()));
+	const keyed = $derived(keys.map((k) => k.name.trim()).filter(Boolean));
+	const examples = $derived(EXAMPLES.filter((e) => e.verb === catalog && !taken.includes(e.field)));
 	const offers = (shape: Verb) => !spec && EXAMPLES.some((e) => e.verb === shape && !taken.includes(e.field));
 
 	/**
@@ -200,10 +228,10 @@
 	}
 
 	// ---- the states' order (da-puzij), as the data keys are moved (DataKeys.svelte) ----
-	let stateList: HTMLUListElement;
+	let stateList: HTMLUListElement | undefined = $state();
 	/** The state a handle is dragging, and the one whose options are open. */
-	let held: StateRow | null = null;
-	let shown: StateRow | null = null;
+	let held: StateRow | null = $state(null);
+	let shown: StateRow | null = $state(null);
 
 	// A drag follows the pointer on the window: the row moves in the DOM as it goes, which would end a capture on the handle.
 	function grab(e: PointerEvent, state: StateRow) {
@@ -223,7 +251,7 @@
 	function drag(e: PointerEvent) {
 		if (!held) return;
 		const from = states.indexOf(held);
-		const to = draggedTo([...stateList.querySelectorAll(':scope > li.state')], from, e.clientY);
+		const to = draggedTo([...stateList!.querySelectorAll(':scope > li.state')], from, e.clientY);
 		if (to !== from) states = moved(states, from, to);
 	}
 
@@ -234,15 +262,20 @@
 		e.preventDefault();
 		states = moved(states, i, to);
 		await tick();
-		stateList.querySelectorAll<HTMLElement>(':scope > li.state .handle')[to]?.focus();
+		stateList!.querySelectorAll<HTMLElement>(':scope > li.state .handle')[to]?.focus();
 	}
 
 	/** Hand `next` up to run, or null to run nothing. */
-	const finish = (next: Save | null) => dispatch('close', next);
+	const finish = (next: Save | null) => onclose(next);
 </script>
 
 <div class="field-form" role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
-	<form on:submit|preventDefault={() => ready && finish(save)}>
+	<form
+		onsubmit={(e) => {
+			e.preventDefault();
+			if (ready) finish(save);
+		}}
+	>
 		<div class="verbs" role="radiogroup" aria-label="what a press logs">
 			{#each VERBS as choice (choice.verb)}
 				<div class="shape" class:split={offers(choice.verb)}>
@@ -253,7 +286,7 @@
 						role="radio"
 						aria-checked={verb === choice.verb}
 						data-verb={choice.verb}
-						on:click={() => (verb = choice.verb)}
+						onclick={() => (verb = choice.verb)}
 					>
 						<span class="glyph">{choice.glyph}</span>
 						<span class="name">{choice.what}</span>
@@ -267,7 +300,7 @@
 							data-examples={choice.verb}
 							aria-haspopup="dialog"
 							aria-label="examples of {choice.what}"
-							on:click={() => (catalog = choice.verb)}>ex.</button
+							onclick={() => (catalog = choice.verb)}>ex.</button
 						>
 					{/if}
 				</div>
@@ -282,7 +315,7 @@
 		>
 			<div class="examples" role="group" aria-label="examples">
 				{#each examples as example (example.field)}
-					<button type="button" data-example={example.field} on:click={() => fill(example)}>
+					<button type="button" data-example={example.field} onclick={() => fill(example)}>
 						<span class="icon" style:color={example.color}>{example.glyph}</span>
 						<span class="name">{example.field}</span>
 						<span class="what">{example.shows}</span>
@@ -306,12 +339,12 @@
 					autocomplete="off"
 				/>
 			{/if}
-			<slot name="pick" />
+			{@render pick?.()}
 		</div>
 		{#if hint}
 			<p class="hint">
 				{hint}{#if fixed}
-					{' '}<button type="button" class="fix" on:click={() => (field = fixed ?? '')}>use {fixed}</button
+					{' '}<button type="button" class="fix" onclick={() => (field = fixed ?? '')}>use {fixed}</button
 					>{/if}
 			</p>
 		{/if}
@@ -352,7 +385,7 @@
 									? 'a switch needs another state before off can go'
 									: 'off disabled, the fields widget leaves a gap where end would stand'}
 							disabled={listsFalse || (!neverFalse && named.length === 0)}
-							on:click={() => (neverFalse = !neverFalse)}>✕</button
+							onclick={() => (neverFalse = !neverFalse)}>✕</button
 						>
 					</li>
 					{#each states as state, i (state)}
@@ -366,8 +399,8 @@
 								class="handle"
 								data-pans="x"
 								aria-label="move {which}: drag, or the arrow keys"
-								on:pointerdown={(e) => grab(e, state)}
-								on:keydown={(e) => nudge(e, i)}>⠿</button
+								onpointerdown={(e) => grab(e, state)}
+								onkeydown={(e) => nudge(e, i)}>⠿</button
 							>
 							<Swatch bind:value={state.color} fallback={defaultColor(state.name.trim())} label="the color of {which}" />
 							<input
@@ -383,13 +416,13 @@
 								class="remove more"
 								aria-label="the options of {which}"
 								aria-expanded={shown === state}
-								on:click={() => (shown = shown === state ? null : state)}>…</button
+								onclick={() => (shown = shown === state ? null : state)}>…</button
 							>
 							<button
 								type="button"
 								class="remove"
 								aria-label="remove {state.name}"
-								on:click={() => (states = states.filter((_, j) => j !== i))}>✕</button
+								onclick={() => (states = states.filter((_, j) => j !== i))}>✕</button
 							>
 							{#if shown === state}
 								<div class="options">
@@ -404,7 +437,7 @@
 						</li>
 					{/each}
 				</ul>
-				<button type="button" class="add" on:click={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
+				<button type="button" class="add" onclick={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
 					>+ state</button
 				>
 				<label class="row" title="a bare state names the entry FIELD:<state>, as switch reading dune names book:dune">
@@ -413,7 +446,7 @@
 				</label>
 			{/if}
 			{#if verb && verb !== 'add'}
-				{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={field.trim() ? drafted : null} on:open />{/key}
+				{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={field.trim() ? drafted : null} {onopen} />{/key}
 			{/if}
 			<!-- Beneath the placement, each shut until tapped (da-4t0yn); a card's data is always open, being what a card is. -->
 			{#if verb === 'add'}
@@ -462,7 +495,7 @@
 									type="button"
 									class="remove"
 									aria-label="remove {alias.state}"
-									on:click={() => (aliases = aliases.filter((a) => a !== alias))}>✕</button
+									onclick={() => (aliases = aliases.filter((a) => a !== alias))}>✕</button
 								>
 							{/if}
 						</li>
@@ -474,7 +507,7 @@
 					<button
 						type="button"
 						class="add"
-						on:click={() => (aliases = [...aliases, { state: '', expands_to: '' }])}>+ alias</button
+						onclick={() => (aliases = [...aliases, { state: '', expands_to: '' }])}>+ alias</button
 					>
 				{/if}
 			</details>
@@ -489,7 +522,7 @@
 						type="button"
 						use:act={'run'}
 						title={shellJoin([off ? 'track' : 'ignore', field])}
-						on:click={() => dispatch('run', { argv: [off ? 'track' : 'ignore', field] })}>{off ? 'track' : 'ignore'}</button
+						onclick={() => onrun({ argv: [off ? 'track' : 'ignore', field] })}>{off ? 'track' : 'ignore'}</button
 					>
 				</p>
 			{/if}
@@ -498,16 +531,16 @@
 		<div class="buttons">
 			{#if spec}
 				{#if away}
-					<button type="button" class="cancel" data-away on:click={() => finish(null)}>Cancel</button>
+					<button type="button" class="cancel" data-away onclick={() => finish(null)}>Cancel</button>
 				{/if}
-				<button type="button" class="revert" use:act={dirty ? undefined : 'run'} disabled={!dirty && !back} on:click={() => dispatch('revert', null)}>Revert</button>
+				<button type="button" class="revert" use:act={dirty ? undefined : 'run'} disabled={!dirty && !back} onclick={onrevert}>Revert</button>
 				<span class="save">
 					<button class="commit" use:act={'run'} data-away={away || undefined} type="submit" disabled={!ready || !dirty}>Save</button>
 					{#if saved}<span class="saved" role="status">saved</span>{/if}
 				</span>
-				<button type="button" class="redo" use:act={'run'} disabled={dirty || !ahead} on:click={() => dispatch('redo', null)}>Redo</button>
+				<button type="button" class="redo" use:act={'run'} disabled={dirty || !ahead} onclick={onredo}>Redo</button>
 			{:else}
-				<button type="button" class="cancel" data-away={away || undefined} on:click={() => finish(null)}>Cancel</button>
+				<button type="button" class="cancel" data-away={away || undefined} onclick={() => finish(null)}>Cancel</button>
 				<button class="commit" use:act={'run'} type="submit" disabled={!ready}>Save</button>
 			{/if}
 		</div>
@@ -517,7 +550,7 @@
 			<div class="ignored">
 				<span class="label">ignored</span>
 				{#each ignored as name (name)}
-					<button type="button" use:act={'run'} data-ignored={name} title={shellJoin(['track', name])} on:click={() => finish({ argv: ['track', name] })}
+					<button type="button" use:act={'run'} data-ignored={name} title={shellJoin(['track', name])} onclick={() => finish({ argv: ['track', name] })}
 						>{name}</button
 					>
 				{/each}

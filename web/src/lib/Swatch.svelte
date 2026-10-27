@@ -17,7 +17,7 @@
 	the default somehow else (dashed border perhaps)». Dashed is what the
 	bar already says «not the field's own» with; a picked colour is solid.
 -->
-<script context="module" lang="ts">
+<script module lang="ts">
 	/** `hsl(h, s%, l%)` as `#rrggbb`, which is what a spec stores. */
 	function hex(h: number, s: number, l: number): string {
 		const a = s * Math.min(l, 1 - l);
@@ -39,14 +39,18 @@
 	import { act } from './act.js';
 	import Sheet from './Sheet.svelte';
 
-	/** The colour, `#rrggbb`; empty for `auto`. */
-	export let value = '';
-	/** What it is the colour of, for a reader that cannot see it. */
-	export let label: string;
-	/** What `auto` paints: `defaultColor` of the field's or the state's name, `transparent` for no name. */
-	export let fallback: string;
+	interface Props {
+		/** The colour, `#rrggbb`; empty for `auto`. */
+		value?: string;
+		/** What it is the colour of, for a reader that cannot see it. */
+		label: string;
+		/** What `auto` paints: `defaultColor` of the field's or the state's name, `transparent` for no name. */
+		fallback: string;
+	}
 
-	let open = false;
+	let { value = $bindable(''), label, fallback }: Props = $props();
+
+	let open = $state(false);
 
 	function pick(next: string) {
 		value = next;
@@ -64,7 +68,7 @@
 	aria-haspopup="dialog"
 	data-color={value}
 	use:act={'open'}
-	on:click={() => (open = true)}
+	onclick={() => (open = true)}
 ></button>
 <Sheet title={label} bind:open>
 	<span class="set" role="listbox" aria-label="{label}, choose">
@@ -76,7 +80,7 @@
 			aria-label="auto, {fallback}"
 			data-color=""
 			style:background={fallback}
-			on:click={() => pick('')}
+			onclick={() => pick('')}
 		></button>
 		{#each SWATCHES as color (color)}
 			<button
@@ -87,7 +91,7 @@
 				aria-label={color}
 				data-color={color}
 				style:background={color}
-				on:click={() => pick(color)}
+				onclick={() => pick(color)}
 			></button>
 		{/each}
 	</span>
