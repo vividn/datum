@@ -423,6 +423,9 @@ CREATE TABLE IF NOT EXISTS sync_local (
 -- where a join cut short resumes (da-38eye).
 -- `datum` / `schema`: the build and schema version it last said it runs, in
 -- its handshake (da-3zqyv); NULL for a copy that says neither.
+-- `last_synced`: when a session with it last ended well; `last_seen` is
+-- written at every handshake too, so a session cut short after one moves it
+-- (da-cthk5).
 CREATE TABLE IF NOT EXISTS sync_peers (
     endpoint_id       TEXT NOT NULL PRIMARY KEY,
     label             TEXT NOT NULL,
@@ -438,7 +441,8 @@ CREATE TABLE IF NOT EXISTS sync_peers (
     last_error_offline INTEGER NOT NULL DEFAULT 0,
     redeemed_at       TEXT,
     datum             TEXT,
-    schema            INTEGER
+    schema            INTEGER,
+    last_synced       TEXT
 );
 
 -- A filtered reader's marks (da-u81u1): a member that served it sent every

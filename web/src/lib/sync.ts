@@ -37,7 +37,8 @@
 //   page opened says when, until the session's first sync lands or its
 //   first round of dials is over, an offline peer's failing at the wire's
 //   timeout; the day view dims the stretch since. When it last synced is
-//   the CLI's, its members' `last_seen` in `sync status`.
+//   the CLI's, its members' `last_synced` in `sync status`: not `last_seen`,
+//   which a handshake moves, so a session cut short read as a sync (da-cthk5).
 // - A tab that is not the leader forwards `offer` and `connect` to it.
 //   Pairing is the chain's (da-6177s): `offer` writes a chain invite —
 //   starting an open chain when there is none — and `connect` redeems one.
@@ -322,7 +323,7 @@ class Leader {
 		this.paused = status?.paused ?? undefined;
 		this.notices = status?.notices ?? [];
 		this.peers = (status?.members ?? []).filter((p): p is Peer => !p.revoked && !!p.addr);
-		this.lastSynced = Math.max(0, ...(status?.members ?? []).map((m) => Date.parse(m.last_seen ?? '') || 0));
+		this.lastSynced = Math.max(0, ...(status?.members ?? []).map((m) => Date.parse(m.last_synced ?? '') || 0));
 		if (listed) await this.start();
 		// It joined as the name its admit records: one it was told stays, the
 		// suggestion goes for the assembled label, as after a join not cut short.

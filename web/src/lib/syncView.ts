@@ -46,6 +46,8 @@ export interface Member {
 	state: 'synced' | 'pending' | 'never' | 'offline' | 'error';
 	to_send: number;
 	last_seen?: string | null;
+	/** When a session with it last ended well; `last_seen` moves at a handshake too (da-cthk5). */
+	last_synced?: string | null;
 	error?: string | null;
 	error_at?: string | null;
 }

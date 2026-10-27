@@ -75,10 +75,9 @@ async function paired(body, { online = true } = {}) {
 
 /**
  * What another device wrote meanwhile: `n` entries the native copy pushes
- * as it writes them, waited for until the open tab applies them, so its
- * handshake is recorded before the clock moves on, and the reload cuts
- * that session short. Moved first, the handshake was a sync a moment
- * ago, and nothing dimmed (da-vjhju).
+ * as it writes them, waited for until the open tab applies them, so the
+ * reload cuts that session short. Its handshake is no sync: read as one,
+ * the last sync was a moment ago and nothing dimmed (da-vjhju, da-cthk5).
  */
 async function wrote(app, native, n) {
 	assert.equal((await native.run(['db', 'restore', '-', '--merge', '-y'], backup(n))).code, 0);
@@ -87,9 +86,9 @@ async function wrote(app, native, n) {
 
 test('over an hour since the last sync: that stretch is dimmed until the first sync lands, then not', async () => {
 	await paired(async (app, native) => {
+		await app.clock.forward(2 * HOUR);
 		// Enough that its sync takes a while.
 		await wrote(app, native, 600);
-		await app.clock.forward(2 * HOUR);
 		await app.reload();
 		await until(() => countOf(app, 'tea'), (n) => n === 200, 90_000);
 		const seen = await until(() => dims(app), (s) => s.length && !s.at(-1).length);

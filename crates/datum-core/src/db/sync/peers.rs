@@ -375,6 +375,31 @@ mod tests {
         assert_eq!(a.conn.total_changes() - changes, 1);
     }
 
+    /// A handshake is seeing a member, not syncing with it (da-cthk5): a
+    /// session cut short after one leaves `last_synced` as it was, and only
+    /// one that ends well moves it.
+    #[test]
+    fn a_handshake_alone_is_no_sync() {
+        let [a, b] = [(); 2].map(|()| Db::open_in_memory().unwrap());
+        genesis(&a, "a");
+        admit(&a, &b, "b", json!({}));
+        let times = || {
+            let p = a
+                .sync_status()
+                .unwrap()
+                .into_iter()
+                .find(|p| p.endpoint == id(&b));
+            p.map(|p| (p.last_seen.is_some(), p.last_synced))
+        };
+        assert_eq!(times(), Some((true, None)));
+        a.sync_record_session(&id(&b), None, None, Some("connection lost"), false)
+            .unwrap();
+        assert_eq!(times(), Some((true, None)));
+        a.sync_record_session(&id(&b), None, None, None, false)
+            .unwrap();
+        assert!(times().unwrap().1.is_some());
+    }
+
     /// `from` sends `to` what it lacks, as a session does.
     fn send(from: &Db, to: &Db) {
         let ops = from.sync_ops_since(&to.sync_vector().unwrap(), false, Some(&id(to)));

@@ -1395,7 +1395,7 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                         "endpoint": p.endpoint, "client": p.client, "label": p.label,
                         "kind": p.kind, "revoked": p.revoked, "purged": p.purged, "reader": p.reader,
                         "filter": filter_json(p.filter.as_ref()), "state": p.state,
-                        "to_send": p.to_send, "last_seen": p.last_seen,
+                        "to_send": p.to_send, "last_seen": p.last_seen, "last_synced": p.last_synced,
                         "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
                         "error": p.error, "error_at": p.error_at, "addr": p.addr,
                     })

@@ -5,7 +5,7 @@
 
 use rusqlite::Connection;
 
-use super::support::table_exists;
+use super::support::{has_column, table_exists};
 
 use crate::db::SETTING_FIELD;
 use crate::error::{DatumError, Result};
@@ -40,5 +40,30 @@ pub(super) fn m70_to_71_setting_is_reserved(conn: &Connection) -> Result<()> {
 /// Reverse v70→v71. The `setting:<name>` entries stay: to a v70 binary they
 /// are plain logs of a field named `setting`.
 pub(super) fn down_71_to_70_setting_is_reserved(_conn: &Connection) -> Result<()> {
+    Ok(())
+}
+
+/// da-cthk5: `sync_peers.last_synced`, when a session with the peer last
+/// ended well. Nothing in the row says when that was, so it starts as
+/// `last_seen`, which a handshake moves too: the dim may start late after a
+/// session cut short, as before this column. Every row, a failed one too: a
+/// member out of reach at the last dial has an error, and an empty time
+/// turns the dim off. The next session that ends well writes it truly.
+pub(super) fn m71_to_72_sync_peer_last_synced(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "sync_peers")? {
+        return Ok(());
+    }
+    if !has_column(conn, "sync_peers", "last_synced")? {
+        conn.execute_batch("ALTER TABLE sync_peers ADD COLUMN last_synced TEXT;")?;
+    }
+    conn.execute_batch("UPDATE sync_peers SET last_synced = last_seen WHERE last_synced IS NULL;")?;
+    Ok(())
+}
+
+/// Reverse v71→v72. Local: the time goes, the peers stay.
+pub(super) fn down_72_to_71_sync_peer_last_synced(conn: &Connection) -> Result<()> {
+    if has_column(conn, "sync_peers", "last_synced")? {
+        conn.execute_batch("ALTER TABLE sync_peers DROP COLUMN last_synced;")?;
+    }
     Ok(())
 }

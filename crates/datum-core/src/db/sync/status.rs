@@ -33,6 +33,9 @@ pub struct PeerStatus {
     pub state: &'static str,
     pub to_send: i64,
     pub last_seen: Option<String>,
+    /// When a session with it last ended well; a handshake alone moves
+    /// `last_seen`, not this (da-cthk5).
+    pub last_synced: Option<String>,
     /// When the last verify ran, and whether the hashes matched.
     pub last_verify: Option<(String, bool)>,
     pub error: Option<String>,
@@ -109,6 +112,7 @@ type Session = (
     Option<String>,
     Option<String>,
     Option<String>,
+    Option<String>,
 );
 
 impl Db {
@@ -181,7 +185,8 @@ impl Db {
                last_error = ?4,
                last_error_at = CASE WHEN ?4 IS NULL THEN NULL ELSE ?5 END,
                last_error_offline = ?6,
-               last_seen = CASE WHEN ?4 IS NULL THEN ?5 ELSE last_seen END
+               last_seen = CASE WHEN ?4 IS NULL THEN ?5 ELSE last_seen END,
+               last_synced = CASE WHEN ?4 IS NULL THEN ?5 ELSE last_synced END
              WHERE endpoint_id = ?1",
                     params![endpoint, vector, verify, error, now, offline],
                 )?;
@@ -268,7 +273,8 @@ impl Db {
                 .conn
                 .query_row(
                     "SELECT last_seen, last_vector, last_verify_at, last_verify_match,
-                            last_error, last_error_at, NULLIF(addrs, ''), last_error_offline
+                            last_error, last_error_at, NULLIF(addrs, ''), last_error_offline,
+                            last_synced
                      FROM sync_peers WHERE endpoint_id = ?1",
                     [&m.endpoint],
                     |r| {
@@ -281,6 +287,7 @@ impl Db {
                             r.get(4)?,
                             r.get(5)?,
                             r.get(6)?,
+                            r.get(8)?,
                         ))
                     },
                 )
@@ -294,6 +301,7 @@ impl Db {
                 mut error,
                 mut error_at,
                 addr,
+                last_synced,
             ) = row.unwrap_or_default();
             let theirs: BTreeMap<String, i64> = vector
                 .and_then(|v| serde_json::from_str(&v).ok())
@@ -352,6 +360,7 @@ impl Db {
                 state,
                 to_send,
                 last_seen,
+                last_synced,
                 last_verify,
                 error,
                 error_at,
@@ -452,6 +461,7 @@ mod tests {
             state: if addr { "synced" } else { "never" },
             to_send: 0,
             last_seen: None,
+            last_synced: None,
             last_verify: None,
             error: None,
             error_at: None,

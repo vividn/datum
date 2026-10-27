@@ -218,6 +218,7 @@ fn every_pair_has_a_roundtrip_test() {
         (68, 69),
         (69, 70),
         (70, 71),
+        (71, 72),
     ];
     assert_eq!(
         covered.len(),
@@ -3367,4 +3368,27 @@ fn v70_to_v71_refuses_a_field_already_named_setting() {
     )
     .unwrap();
     apply_migrations(conn, MIGRATIONS, 70, 71).unwrap();
+}
+
+/// da-cthk5: `last_synced` starts as `last_seen` on every row, a failed one
+/// too (an empty time turns the dim off), and goes on the way down.
+#[test]
+fn roundtrip_v71_to_v72_sync_peer_last_synced() {
+    let db = fresh_at(71);
+    let conn = db.conn();
+    conn.execute_batch(
+        "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at, last_seen, last_error)
+         VALUES ('ok', 'ok', '', 't', 'seen', NULL), ('cut', 'cut', '', 't', 'seen', 'lost')",
+    )
+    .unwrap();
+    apply_one_up(conn, 71);
+    let synced = |id: &str| -> Option<String> {
+        let sql = "SELECT last_synced FROM sync_peers WHERE endpoint_id = ?1";
+        conn.query_row(sql, [id], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(synced("ok").as_deref(), Some("seen"));
+    assert_eq!(synced("cut").as_deref(), Some("seen"));
+    apply_one_down(conn, 72);
+    assert!(!column_exists(conn, "sync_peers", "last_synced"));
+    assert!(table_exists(conn, "sync_peers"));
 }

@@ -62,7 +62,7 @@ use v71_v80::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 71;
+pub const CURRENT_SCHEMA_VERSION: u32 = 72;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -577,5 +577,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "`setting` is reserved: a database setting is the entry `setting:<name>`, synced (da-w6pp2)",
         apply: m70_to_71_setting_is_reserved,
         down: down_71_to_70_setting_is_reserved,
+    },
+    Migration {
+        from: 71,
+        to: 72,
+        summary: "sync_peers.last_synced: when a session with a member last ended well, which a handshake alone does not move (da-cthk5)",
+        apply: m71_to_72_sync_peer_last_synced,
+        down: down_72_to_71_sync_peer_last_synced,
     },
 ];
