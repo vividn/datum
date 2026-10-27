@@ -234,29 +234,19 @@ describe('the time cursor', () => {
 		});
 	});
 
-	// Off UTC, the nowview's centre label is still the pill's time: under WASI
-	// `chrono::Local` is UTC, and a 12:26 cursor was labeled 10:26 (da-y6qj).
-	test("Europe/Berlin: the nowview's centre label is the pill's time", async () => {
+	// Off UTC, the nowview's label for its instant is still the pill's time:
+	// under WASI `chrono::Local` is UTC, and a 12:26 cursor was labeled 10:26
+	// (da-y6qj). It is written under the section the pill's instant is drawn
+	// as (da-zccjs).
+	test("Europe/Berlin: the nowview's label for the pill's instant is the pill's time", async () => {
 		await withDay(
 			async ({ page }) => {
 				const at = await spot(page, TODAY, 0.52);
 				await page.mouse.click(at.x, at.y);
 				const text = await pillText(page);
 				assert.match(text ?? '', /^-t \d\d:\d\d$/, `the pill: ${text}`);
-				// On screen: the labels sit in the plot's translated group, the
-				// cursor line on the svg itself.
 				const label = await page.waitForFunction(
-					(scope) => {
-						const svg = document.querySelector(`${scope} svg.svg`);
-						const mid = (el) => {
-							const r = el?.getBoundingClientRect();
-							return r ? r.left + r.width / 2 : NaN;
-						};
-						const x = mid(svg?.querySelector('line.cursor'));
-						const ticks = [...(svg?.querySelectorAll('text.tick-label') ?? [])];
-						const centre = ticks.find((t) => Math.abs(mid(t) - x) < 1);
-						return centre?.textContent;
-					},
+					(scope) => document.querySelector(`${scope} svg.svg .instant-label`)?.textContent,
 					NOWVIEW
 				);
 				assert.equal(await label.jsonValue(), text.slice(3));

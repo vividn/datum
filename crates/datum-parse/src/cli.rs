@@ -1686,10 +1686,15 @@ pub struct NowviewArgs {
     /// there, and what is logged for later is drawn. A window ending at
     /// now only; the SVG path's alone.
     pub ahead: Option<String>,
-    /// `-t/-d/-q/-y`, the shared time flags, centre the window on the instant
-    /// they name instead of ending it at now; `-z` only reframes them
-    /// (da-5flt). Resolved at each render, so `--watch` follows the clock.
+    /// `-t/-d/-q/-y`, the shared time flags, name the instant the now
+    /// section is about instead of now (da-zccjs), and centre the window on
+    /// it instead of ending it at now; `-z` only reframes them (da-5flt).
+    /// Resolved at each render, so `--watch` follows the clock.
     pub time: TimeArgs,
+    /// `--center <TIME>` — centre the window here instead, any `-t` value,
+    /// the instant's section standing where the instant is, or pinned to
+    /// the edge it lies beyond (da-zccjs). The SVG path's alone.
+    pub center: Option<String>,
     /// SVG width in pixels. None → scale from `history` (datum behavior).
     pub width: Option<f64>,
     /// SVG height in pixels. None → 300 horizontal, and the history-scaled
@@ -1740,6 +1745,7 @@ impl Default for NowviewArgs {
             surround: None,
             ahead: None,
             time: TimeArgs::default(),
+            center: None,
             width: None,
             height: None,
             margin: 2.0,

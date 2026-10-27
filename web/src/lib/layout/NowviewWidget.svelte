@@ -91,6 +91,16 @@
 	state, and it stands where now is: at now while the window holds now,
 	at the right edge of a window in the past and pinned to the left of one
 	wholly in the future, a gap between it and the timeline either side.
+	With a time pill it is the PILL's instant's instead (da-zccjs, vividn:
+	«when a time pill is selected, the "now" part of the nowview should show
+	the state at that exact instant»): the CLI is handed the pill as `-t`
+	and the window's middle as `--center`, and draws the states then, a dot
+	at it and a state changing at it, the section standing at the instant
+	or pinned the same way, and the ticks — and so the handles — counting
+	from it. The pill sits right over the section, and the button under it
+	reads «reset». A tap here moves the section and not the window: one on
+	now stops where it is for as long as the pill lasts. A stretch scales
+	about the section's instant, wherever the window is.
 	vividn: «any time the view is panned off the default, the "now" label
 	under the now section becomes a filled in yellow button with black now
 	written on it. Clicking that button restores the default.» So off now
@@ -119,7 +129,7 @@
 	import Pill from '$lib/Pill.svelte';
 	import { pills, selected } from '$lib/bar.js';
 	import { clockLabel } from '$lib/clock.js';
-	import { cursor, SPAN_ID, pointAt, pointed, type Cursor } from '$lib/cursor.js';
+	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '$lib/cursor.js';
 	import { inspectMark, instantOn, msPerPx, selectedTip, timeAxis } from '$lib/hover.js';
 	import { markOf, pressSpent } from '$lib/inspect.js';
 	import { readLanes } from '$lib/lanes.js';
@@ -128,7 +138,7 @@
 
 	/** How far back the window reaches: a step of NOWVIEW_STEPS, or any length a handle's drag left it at. */
 	export let history = NOWVIEW_HISTORY;
-	/** The instant the window is centred on (`-t`); none is now. */
+	/** The instant the window is centred on (`--center`); none is now. */
 	export let at: string | undefined = undefined;
 	/**
 	 * Time runs down the page (da-78evn). Every gesture below is measured
@@ -168,19 +178,53 @@
 
 	/** The window in minutes; a history datum would not read is the default's. */
 	$: minutes = stepMinutes(history) > 0 ? stepMinutes(history) : stepMinutes(NOWVIEW_HISTORY);
-	$: instant = centre?.arg;
+	/** `-t`'s spelling of `m` minutes before now, to the second: `-15`, `-22m30s`, `-20s`. */
+	const backArg = (m: number) => {
+		const s = Math.round(m * 60);
+		const [whole, sec] = [Math.floor(s / 60), s % 60];
+		return sec ? `-${whole ? `${whole}m` : ''}${sec}s` : `-${whole}`;
+	};
+	/** The window's middle as the CLI is handed it (`--center`); none is on now. */
+	$: middle = centre?.arg;
+	/**
+	 * The instant the now section is about (da-zccjs): the time pill's, when
+	 * there is one; none is now. vividn: «when a time pill is selected, the
+	 * "now" part of the nowview should show the state at that exact
+	 * instant». A range is about its end; one ending now (`rel: 0`) is about
+	 * now.
+	 */
+	$: pill = $pointed && $pointed.rel !== 0 ? $pointed : null;
+	/**
+	 * The pill as the CLI's `-t`: the instant the page draws it at, so its
+	 * line and its section agree. A relative one's moves on with the minute
+	 * (`pointed`), and so is asked for again with it.
+	 */
+	$: pillArg = pill?.at.toISOString();
 	/** How finely a tap here says its time, in seconds. */
 	$: grain = tapStep(minutes);
 
 	/**
-	 * The `-t` the picture on screen was asked for, which is the window's
-	 * only until a pan moves it inside what that picture drew (da-61nm8):
+	 * The `--center` the picture on screen was asked for — the window's
+	 * middle, never the pill's instant, which is `-t` (da-zccjs) — and the
+	 * window's only until a pan moves it inside what that picture drew (da-61nm8):
 	 * the picture is drawn a window's worth past its box either side, and
 	 * a pan that stays in it slides the picture along (`rest`) and asks
 	 * datum for nothing. Everything else that moves the window asks.
 	 */
-	let askedFor = instant;
-	$: spec = nowviewSpec(showHistory ? history : '0', askedFor, vertical);
+	let askedFor = middle;
+	// A new step or orientation is a new picture, of where the window is.
+	// Above `spec`, which reads what it asks for: a stretch moves the window
+	// as it changes its length (`rescale`), and a statement below would set
+	// `askedFor` after `spec` had been worked out for the same change.
+	$: ask(history, vertical, showHistory);
+	// A window on now with a pill is centred half its length back from now,
+	// relative too: it is not drawn ahead, there being an instant to draw.
+	$: spec = nowviewSpec(
+		showHistory ? history : '0',
+		askedFor ?? (pillArg ? backArg(minutes / 2) : undefined),
+		vertical,
+		pillArg
+	);
 
 	// Above `ask`, which the cursor's subscription below calls as the
 	// component is set up, and which reads the picture on screen.
@@ -203,12 +247,12 @@
 		void tick().then(place);
 	}
 
-	// A new step or orientation is a new picture, of where the window is.
-	$: ask(history, vertical, showHistory);
 	/** The axis a drag along the band travels, for the pane's tab swipe. */
 	$: pans = vertical ? 'y' : 'x';
 	/** Whether the window has left now — and so whether a tap makes an absolute pill. */
-	$: offNow = !!instant;
+	$: offNow = !!middle;
+	/** Whether the button under the section shows: «now» off now, «reset» at a pill (da-zccjs). */
+	$: homeward = offNow || !!pill;
 
 	// A selection made somewhere ELSE points this window; one made here does
 	// not, and neither does a RELATIVE one — that is measured from now, and
@@ -254,7 +298,7 @@
 		ask();
 	}
 
-	/** Back to now, and the time-based pills — and so the selection — with it. */
+	/** Back to now, and the time-based pills — and so the selection — with it: the «now» button, and the «reset» one at a pill. */
 	function toNow(): void {
 		centre = null;
 		ask();
@@ -310,17 +354,38 @@
 	 * box's middle is the window's only where the strip happens to balance.
 	 * NaN for a hand-written `at` that is no instant the page can read.
 	 */
-	const middleOf = (at: string | undefined) => (at ? Date.parse(at) : nowMs() - minutes * 30_000);
+	const middleOf = (at: string | undefined) =>
+		at ? (timeArgAt(at)?.getTime() ?? Date.parse(at)) : nowMs() - minutes * 30_000;
 	const windowAbout = (middle: number): [number, number] => [middle - minutes * 30_000, middle + minutes * 30_000];
 
+	/**
+	 * Every stretch of the picture's axis on screen, as `axis` is read: a
+	 * strip standing inside the window cuts it in two at its instant
+	 * (da-9g3bf, da-zccjs), the time after it drawn a strip further on.
+	 */
+	let stretches: NonNullable<ReturnType<typeof timeAxis>>[] = [];
+
+	/** The stretch a point `pos` along the axis is over, or the nearest: a point on the strip is its instant. */
+	function stretchAt(pos: number): typeof axis {
+		const off = (a: NonNullable<ReturnType<typeof timeAxis>>) => Math.max(a.lo - pos, pos - a.hi);
+		return stretches.length > 1 ? stretches.reduce((a, b) => (off(b) < off(a) ? b : a)) : axis;
+	}
+
+	/** The instant `pos` px along the axis is, by the picture's own geometry, as it is slid now. */
+	function instantAlong(pos: number): number {
+		const a = stretchAt(pos);
+		return a ? instantOn(a, pos) + slid : NaN;
+	}
+
 	/** The instant a point on screen is, by the picture's own geometry, as it is slid now. */
-	const instantAt = (x: number, y: number) => (axis ? instantOn(axis, along(x, y)) + slid : NaN);
+	const instantAt = (x: number, y: number) => instantAlong(along(x, y));
 
 	/**
-	 * The window's own idea of NOW: where its span ends while it is on now —
-	 * the now-line's instant, as far on as the picture has flowed.
+	 * The window's own idea of NOW: while it is on now, the now-line's
+	 * instant, as far on as the picture has flowed; the clock's in a picture
+	 * that does not flow, the one of a pill's section (da-zccjs).
 	 */
-	const nowMs = () => (offNow || !axis ? Date.now() : (drawn ? drawn.now + slid : axis.to));
+	const nowMs = () => (offNow || !drawn ? Date.now() : drawn.now + slid);
 
 	/**
 	 * The instants the whole picture on screen is drawn between: past the
@@ -568,7 +633,7 @@
 
 	/** A tap: the selection lands where it fell, and the window is left alone. */
 	function tap(x: number, y: number): void {
-		const at = axis ? instantOn(axis, snapTo(along(x, y), gridlines())) + slid : null;
+		const at = axis ? instantAlong(snapTo(along(x, y), gridlines())) : null;
 		if (at !== null) pointAt(selection(at));
 		lanesAt(x, y, at);
 	}
@@ -600,19 +665,22 @@
 	 */
 	function commitPan(): void {
 		if (!axis) return drop();
-		const was = middleOf(instant);
+		const was = middleOf(middle);
 		const [lo, hi] = Number.isFinite(was)
 			? windowAbout(was - panned * msPerPx(axis))
 			: ends().map((p) => instantOn(axis!, p - panned) + slid);
 		centre = { arg: new Date((lo + hi) / 2).toISOString(), by: 'pan' };
 		rest += panned;
 		panned = 0;
-		if (lo < drawnFrom() || hi > drawnTo() || !holdsNow([lo, hi]) || (view && !holdsNow(view))) ask();
+		if (lo < drawnFrom() || hi > drawnTo() || !holdsInstant([lo, hi]) || (view && !holdsInstant(view))) ask();
 		else void tick().then(place);
 	}
 
-	/** Whether now is inside a window's two ends, a second's slack either side. */
-	const holdsNow = ([lo, hi]: [number, number]) => lo - EDGE_MS <= Date.now() && Date.now() <= hi + EDGE_MS;
+	/** The instant the now section is about, in ms: the pill's, or now. */
+	const instantMs = () => (pill ? +pill.at : Date.now());
+
+	/** Whether the section's instant is inside a window's two ends, a second's slack either side. */
+	const holdsInstant = ([lo, hi]: [number, number]) => lo - EDGE_MS <= instantMs() && instantMs() <= hi + EDGE_MS;
 
 	function finish(event: PointerEvent): void {
 		if (!press) return;
@@ -663,22 +731,21 @@
 	/**
 	 * Where the anchor is drawn, in px across the picture's own box.
 	 *
-	 * A window with `-t` is centred on its instant (da-5flt: the yellow
-	 * line there is now, wherever now falls, not the instant), drawn where
-	 * the picture puts it — the middle of the window, which the now strip
-	 * beside it moves off the box's (da-6csum). One without
-	 * ends at now, which datum draws as the now-line (`current-time-line`,
+	 * The anchor is the section's instant (da-zccjs): the pill's, or now,
+	 * where the picture puts it — read off the stretch holding it, as the
+	 * strip cuts the axis there — and past the window's edge when the window
+	 * does not hold it. On now it is the now-line (`current-time-line`,
 	 * dayview_svg.rs) wherever its geometry puts it; the snapshot draws
 	 * none, and its anchor is the right edge.
 	 */
-	function anchorX(svg: Element): number {
+	function anchorX(svg: SVGSVGElement): number {
 		const box = svg.getBoundingClientRect();
 		const start = axis?.y ? box.y : box.x;
 		const line = svg.querySelector('.current-time-line');
-		const [lo, hi] = ends();
-		const at = Date.parse(instant ?? '');
-		if (instant && axis && Number.isFinite(at)) return axis.lo + (at - axis.from) / msPerPx(axis) - start;
-		if (instant || !line) return (instant ? (lo + hi) / 2 : hi) - start;
+		const at = instantMs();
+		const own = homeward ? timeAxis(svg, at) : null;
+		if (own) return own.lo + (at - own.from) / msPerPx(own) - start;
+		if (!line) return ends()[1] - start;
 		const marker = line.getBoundingClientRect();
 		return (axis?.y ? marker.y + marker.height / 2 : marker.x + marker.width / 2) - start;
 	}
@@ -701,8 +768,25 @@
 	function commit(): void {
 		const scale = zoom?.scale ?? 1;
 		zoom = null;
-		const next = zoomHistory(history, scale);
-		if (next !== history) dispatch('change', next);
+		rescale(zoomHistory(history, scale));
+	}
+
+	/**
+	 * The window to `next` minutes, scaled about the section's instant
+	 * (da-zccjs, vividn: «when the view is panned away, scale about where the
+	 * "now" would actually be, not the center of the window»): its middle
+	 * moves so the instant keeps its place. A window on now with no pill ends
+	 * at now, and keeps ending there; one with a pill leaves now for as long
+	 * as the pill lasts, as a dayview's click moves it (`sel`).
+	 */
+	function rescale(next: string): void {
+		if (next === history) return;
+		const [at, was] = [instantMs(), middleOf(middle)];
+		if ((centre || pill) && Number.isFinite(was)) {
+			const by = stepMinutes(next) / minutes;
+			centre = { by: centre?.by ?? 'sel', arg: new Date(at + (was - at) * by).toISOString() };
+		}
+		dispatch('change', next);
 	}
 
 	// ── two fingers ────────────────────────────────────────────────────
@@ -883,9 +967,9 @@
 	 * on-now picture that moves with the clock does not take a panned
 	 * window along.
 	 */
-	function restFor(unmoved: NonNullable<typeof axis>): number {
-		const target = Date.parse(instant ?? '');
-		if (instant === askedFor || !Number.isFinite(target)) return 0;
+	function restFor(unmoved: NonNullable<ReturnType<typeof timeAxis>>): number {
+		const target = Date.parse(middle ?? '');
+		if (middle === askedFor || !Number.isFinite(target)) return 0;
 		// From the middle of the window the picture was drawn for, at its
 		// scale: what a slide moves is time.
 		const drewAbout = askedFor ? Date.parse(askedFor) : (readDrawn(svgEl())?.now ?? NaN) - minutes * 30_000;
@@ -900,10 +984,21 @@
 	 * two (da-6csum) — all of a window the strip is pinned left of.
 	 */
 	function unmovedAxis(svg: SVGSVGElement): typeof axis {
+		return unmoved(svg, () => timeAxis(svg, Date.parse(askedFor ?? '')));
+	}
+
+	/** Every stretch of the picture's axis as it is drawn before any slide or gesture moves it. */
+	function unmovedStretches(svg: SVGSVGElement): NonNullable<ReturnType<typeof timeAxis>>[] {
+		const starts = [...svg.querySelectorAll('[data-lo]')].map((g) => Date.parse(g.getAttribute('data-from') ?? ''));
+		return unmoved(svg, () => [...new Set(starts)].flatMap((at) => timeAxis(svg, at) ?? []));
+	}
+
+	/** `read` with the picture's own slide taken off it. */
+	function unmoved<T>(svg: SVGSVGElement, read: () => T): T {
 		const moved = svg.style.transform;
 		svg.style.transform = 'none';
 		try {
-			return timeAxis(svg, Date.parse(askedFor ?? ''));
+			return read();
 		} finally {
 			svg.style.transform = moved;
 		}
@@ -941,9 +1036,10 @@
 		const unmoved = svg && unmovedAxis(svg);
 		const moved = unmoved && svg !== stale ? restFor(unmoved) : rest;
 		axis = unmoved && { ...unmoved, lo: unmoved.lo + moved, hi: unmoved.hi + moved };
-		const stretches = svg?.querySelectorAll('[data-lo]') ?? [];
+		stretches = svg ? unmovedStretches(svg).map((a) => ({ ...a, lo: a.lo + moved, hi: a.hi + moved })) : [];
+		const groups = svg?.querySelectorAll('[data-lo]') ?? [];
 		const edge = (el: Element | undefined, name: string) => Date.parse(el?.getAttribute(name) ?? '');
-		spanned = [edge(stretches[0], 'data-from'), edge(stretches[stretches.length - 1], 'data-to')];
+		spanned = [edge(groups[0], 'data-from'), edge(groups[groups.length - 1], 'data-to')];
 		// What is read off the picture below is read where it will be drawn.
 		if (Math.abs(moved - rest) >= 0.5) {
 			rest = moved;
@@ -951,7 +1047,7 @@
 		}
 		drawn = readDrawn(svg);
 		flow();
-		const about = middleOf(instant);
+		const about = middleOf(middle);
 		view = !axis
 			? null
 			: Number.isFinite(about)
@@ -961,7 +1057,7 @@
 		// on-now picture out from under it: a picture of the window, then.
 		// Asked once: `ask` makes `askedFor` the window's, and from then on
 		// this `place` and every one after it has nothing left to ask for.
-		if (view && axis && instant !== askedFor && (view[0] < drawnFrom() - EDGE_MS || view[1] > drawnTo() + EDGE_MS)) ask();
+		if (view && axis && middle !== askedFor && (view[0] < drawnFrom() - EDGE_MS || view[1] > drawnTo() + EDGE_MS)) ask();
 		// Before the early returns below: a snapshot draws no tick labels
 		// and leaves by the first of them, and a selection is drawn there
 		// too.
@@ -981,14 +1077,18 @@
 			const lo = Math.min(half, home.width / 2);
 			return Math.max(lo, Math.min(Math.max(home.width - half, home.width / 2), x));
 		};
+		// The time pill stands right over the section its instant is drawn
+		// as (da-zccjs, vividn: «show the time pill right above this now
+		// section»), where the CLI wrote its time under it.
+		const section = svg?.querySelector('.instant-label') ? centreOf('svg.svg .instant-label') : null;
 		spots = {
-			time: held(centreOf('svg.svg .cursor-head'), '.nowview-margin .pill.time'),
+			time: held(section ?? centreOf('svg.svg .cursor-head'), '.nowview-margin .pill.time'),
 			dur: held(centreOf('svg.svg .cursor-span'), '.nowview-margin .pill.dur')
 		};
-		const word = svg?.querySelector<SVGElement>('.now-label');
+		const word = svg?.querySelector<SVGElement>('.now-label, .instant-label');
 		const at = word?.getBoundingClientRect();
 		nowAt = at?.width ? { x: at.left + at.width / 2 - home.x, y: at.top + at.height / 2 - home.y } : null;
-		if (word) word.style.visibility = offNow ? 'hidden' : '';
+		if (word) word.style.visibility = homeward ? 'hidden' : '';
 		const labels = [...(svg?.querySelectorAll<SVGElement>('.tick-label') ?? [])];
 		for (const l of labels) {
 			l.removeAttribute('transform');
@@ -1092,7 +1192,7 @@
 		const to = stepMinutes(step);
 		const next = historyArg((minutes * to) / wheel.minutes);
 		wheel = { ...wheel, minutes: to, text: wheel.sign + step, pick: 0 };
-		if (next !== history) dispatch('change', next);
+		rescale(next);
 	}
 
 	/**
@@ -1208,8 +1308,7 @@
 		if (was.mode === 'scale') {
 			const scale = zoom?.scale ?? 1;
 			zoom = null;
-			const next = historyArg(minutes / scale);
-			if (next !== history) dispatch('change', next);
+			rescale(historyArg(minutes / scale));
 		} else if (was.mode === 'wheel' && wheel) {
 			const pick = wheel.pick;
 			stepTo(pick > 0 ? around.up[pick - 1] : pick < 0 ? around.down[-pick - 1] : undefined);
@@ -1466,7 +1565,7 @@
 	     without a single stopPropagation. They still declare the band's
 	     axis, so a drag that starts on one is not a tab swipe either
 	     (da-ndzl's test says so of the steps). -->
-	{#if offNow && nowAt && !zoom}
+	{#if homeward && nowAt && !zoom}
 		<button
 			type="button"
 			class="nowview-now"
@@ -1474,7 +1573,7 @@
 			title="back to now, and the time pills away"
 			style:left="{nowAt.x + (vertical ? 0 : panned)}px"
 			style:top="{nowAt.y + (vertical ? panned : 0)}px"
-			on:click={toNow}>now</button
+			on:click={toNow}>{pill ? 'reset' : 'now'}</button
 		>
 	{/if}
 	{#if roomy && away && !zoom}

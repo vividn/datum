@@ -168,7 +168,10 @@ function placeOf(svg: SVGSVGElement, c: Cursor) {
 			return { ...day, along: now - (c.rel ?? 0) * 60_000 * day.perMs };
 		}
 	}
-	const i = days.findIndex((d) => d.from <= +c.at && +c.at < d.to && d.hi > d.lo);
+	// A nowview's strip about the selection cuts its axis AT it (da-zccjs):
+	// the stretch before ends there, and the selection is that end.
+	const within = (d: Day) => d.hi > d.lo && d.from <= +c.at && +c.at < d.to;
+	const i = Math.max(days.findIndex(within), days.findIndex((d) => d.hi > d.lo && d.to === +c.at));
 	if (i < 0) return null;
 	const day = at(i);
 	return { ...day, along: day.lo + (+c.at - day.from) * day.perMs };

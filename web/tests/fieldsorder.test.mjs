@@ -183,7 +183,8 @@ describe('a click on the picture puts the fields drawn there first', () => {
 	});
 
 	test('a dot is reached by its HEIGHT, wherever along the row the press fell', async () => {
-		await withFields(async ({ page }) => {
+		await withFields(async (app) => {
+			const { page } = app;
 			const dot = await markOf(page, 'coffee', '[data-at]');
 			await clickAt(page, dot);
 			await until(
@@ -210,8 +211,13 @@ describe('a click on the picture puts the fields drawn there first', () => {
 
 			// Height still gates it, so the dot is not dragged into every
 			// press: `mood`'s own block is a lane and a half below it, and
-			// the press that lands squarely there does not reach it.
-			await clickAt(page, await markOf(page, 'mood'));
+			// the press that lands squarely there does not reach it — at
+			// the coffee's time, inside the window: the last press's time
+			// pill cut `mood`'s block at its section (da-zccjs), and the
+			// first half's middle is before the window.
+			await app.idle();
+			const lane = await markOf(page, 'mood');
+			await clickAt(page, { x: (await markOf(page, 'coffee', '[data-at]')).x, y: lane.y });
 			await until(
 				() => marked(page),
 				(seen) => seen.promoted.length > 0 && !seen.promoted.includes('coffee')

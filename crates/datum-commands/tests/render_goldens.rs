@@ -49,8 +49,8 @@ use datum_layout::{
         DayviewFieldInput, DayviewPoint, Orientation,
     },
     dayview_svg::render_dayview_svg,
-    nowview::{nowview_axis_ticks, NowviewCurrentState},
-    nowview_svg::render_nowview_svg,
+    nowview::{nowview_axis_ticks, nowview_config, NowviewCurrentState, NowviewGeometry},
+    nowview_svg::{render_nowview_at_svg, render_nowview_svg},
 };
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -865,6 +865,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
         axis_ticks_override,
         right_panel_width: panel_width,
         panel_at_ms: None,
+        instant_ms: None,
     };
     let layout = compute_dayview(&cfg);
     let current_states = vec![NowviewCurrentState {
@@ -937,6 +938,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         axis_ticks_override,
         right_panel_width: panel_width,
         panel_at_ms: None,
+        instant_ms: None,
     };
     let layout = compute_dayview(&cfg);
     let current_states = vec![NowviewCurrentState {
@@ -946,6 +948,80 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         id: None,
     }];
     let svg = render_nowview_svg(&layout, "14:30", &current_states, false, false);
+    DayviewLayoutResult { svg }
+}
+
+fn nowview_scene_at_instant() -> DayviewLayoutResult {
+    // da-zccjs: `nowview -t 14:30` an hour before now — the section in the
+    // middle of the window, at the instant, `mood` changing state there
+    // (calm left in the half facing the past, focused entered in the other),
+    // a coffee logged at the instant in it, and `14:30` written under it.
+    let at = DAY_START_MS + 14 * HOUR_MS + 30 * MIN_MS;
+    let point = |ms: i64| DayviewPoint {
+        time_ms: ms,
+        fg_color: "#cc4444".into(),
+        state_label: None,
+        id: None,
+        title: None,
+        glyph: None,
+        icon: false,
+        moment: false,
+    };
+    let block = |from: i64, to: i64, c: &str| DayviewBlock {
+        start_ms: from,
+        end_ms: to,
+        fill: BlockFill::Single(c.into()),
+        state_label: Some(c.into()),
+        id: None,
+        title: None,
+    };
+    let fields = vec![
+        DayviewFieldInput {
+            field: "mood".into(),
+            y_frac: 0.5,
+            height_frac: 0.5,
+            z_index: 0.5,
+            blocks: vec![
+                block(at - 40 * MIN_MS, at, "#4488cc"),
+                block(at, at + HOUR_MS, "#cc8844"),
+            ],
+            points: vec![],
+            icon: None,
+            glyph_size: Default::default(),
+        },
+        DayviewFieldInput {
+            field: "coffee".into(),
+            y_frac: 0.0,
+            height_frac: 0.5,
+            z_index: 0.0,
+            blocks: vec![],
+            points: vec![point(at - 10 * MIN_MS), point(at)],
+            icon: None,
+            glyph_size: Default::default(),
+        },
+    ];
+    let geom = NowviewGeometry {
+        width: Some(400.0),
+        height: 200.0,
+        centred: true,
+        ..NowviewGeometry::default()
+    };
+    let layout = compute_dayview(&nowview_config(fields, at, at + HOUR_MS, Some(at), &geom));
+    let state = |label: &str, color: &str| NowviewCurrentState {
+        field: "mood".into(),
+        state_label: Some(label.into()),
+        colors: vec![color.into()],
+        id: None,
+    };
+    let svg = render_nowview_at_svg(
+        &layout,
+        "14:30",
+        Some(at),
+        &[state("focused", "#cc8844")],
+        &[state("calm", "#4488cc")],
+        false,
+        true,
+    );
     DayviewLayoutResult { svg }
 }
 
@@ -961,6 +1037,7 @@ fn svg_scenes() -> Vec<(&'static str, DayviewLayoutResult)> {
         ("dayview_today_now_line", dayview_scene_today_now_line()),
         ("nowview_30min", nowview_scene_30min()),
         ("nowview_leading_state", nowview_scene_leading_state()),
+        ("nowview_at_instant", nowview_scene_at_instant()),
     ]
 }
 

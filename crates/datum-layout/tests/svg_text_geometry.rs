@@ -268,6 +268,7 @@ fn dayview_at(width: f64, orientation: Orientation) -> String {
         axis_ticks_override: None,
         right_panel_width: 0.0,
         panel_at_ms: None,
+        instant_ms: None,
     };
     render_dayview_svg(&compute_dayview(&config))
 }
@@ -278,6 +279,7 @@ fn nowview_at(width: f64, history_minutes: f64) -> String {
         day_fields(start_ms, NOW_MS),
         NOW_MS,
         NOW_MS,
+        None,
         &NowviewGeometry {
             history_minutes,
             width: Some(width),

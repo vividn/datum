@@ -223,6 +223,8 @@ struct NowComputed {
     /// The instant the picture is about: the time flags', or now.
     anchor: DateTime<Utc>,
     at: Option<DateTime<Utc>>,
+    /// Where `--center` put the window's middle, when it did (da-zccjs).
+    center: Option<DateTime<Utc>>,
     history_minutes: f64,
     /// The window's two ends, in ms.
     window: (i64, i64),
@@ -251,6 +253,21 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     let at = (!built.unmodified)
         .then(|| built.time.map(|t| t.utc))
         .flatten();
+    // da-zccjs: `--center` is any `-t` value, read in the same zone.
+    let center = match &args.center {
+        Some(v) => {
+            let flags = datum_parse::input::time_args::TimeArgs {
+                time: Some(v.clone()),
+                timezone: args.time.timezone.clone(),
+                ..Default::default()
+            };
+            let built = flags
+                .build(&now)
+                .with_context(|| format!("invalid --center: '{v}'"))?;
+            Some(built.time.context("--center names no instant")?.utc)
+        }
+        None => None,
+    };
     let now = now.utc;
     let anchor = at.unwrap_or(now);
     // Geometry lives in `datum_layout::nowview` so the PWA reaches the same
@@ -274,7 +291,7 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         height,
         margin: args.margin,
         time_axis_height: args.time_axis_height,
-        centred: at.is_some(),
+        centred: at.is_some() || center.is_some(),
         orientation,
         surround_minutes: match &args.surround {
             Some(s) => duration_minutes(s).with_context(|| format!("invalid --surround: '{s}'"))?,
@@ -295,7 +312,8 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     let (pad, pad_after) = surround(&geometry);
     let ahead = ahead(&geometry);
     let minutes = |m: f64| chrono::Duration::milliseconds((m * 60_000.0) as i64);
-    let window_end = anchor + minutes(after + pad_after + ahead);
+    let middle = center.unwrap_or(anchor);
+    let window_end = middle + minutes(after + pad_after + ahead);
     // The snapshot's window is an instant; a minute of lookback still
     // gives every field in a state a band for its state to be read from.
     let lookback = history_minutes + pad + pad_after + ahead;
@@ -305,8 +323,9 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     let fields = build_dayview_fields(db, window_end, lookback.max(1.0), ahead > 0.0)?;
     let config = nowview_config(
         fields,
-        anchor.timestamp_millis(),
+        middle.timestamp_millis(),
         now.timestamp_millis(),
+        at.map(|t| t.timestamp_millis()),
         &geometry,
     );
     let window = (
@@ -336,6 +355,7 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         now_ms: now.timestamp_millis(),
         anchor,
         at,
+        center,
         history_minutes,
         window,
         flow,
@@ -359,19 +379,24 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     };
     let c = compute_now(args, db)?;
     let clock = format_local_hh_mm(c.anchor);
-    let svg = if c.at.is_some() && c.history_minutes > 0.0 {
-        // Its now strip, when now is in it, carries the states at now
-        // (da-9g3bf).
-        let now = Utc
-            .timestamp_millis_opt(c.now_ms)
-            .single()
-            .unwrap_or(c.anchor);
-        let now_states = build_current_states(db, now, &c.layout);
+    let svg = if (c.at.is_some() || c.center.is_some()) && c.history_minutes > 0.0 {
+        // Its strip carries the states at the instant (da-zccjs): read to the
+        // end of its second, as a time is named no finer, and against the
+        // states just before it, so a field changing state there is drawn
+        // as the change.
+        let (after, before) = match c.at {
+            Some(at) => (
+                build_current_states(db, at + chrono::Duration::milliseconds(999), &c.layout),
+                build_current_states(db, at - chrono::Duration::milliseconds(1), &c.layout),
+            ),
+            None => (c.current_states.clone(), Vec::new()),
+        };
         render_nowview_at_svg(
             &c.layout,
-            &clock,
-            &c.current_states,
-            &now_states,
+            &instant_label(c.anchor),
+            c.at.map(|t| t.timestamp_millis()),
+            &after,
+            &before,
             args.labels,
             args.now_label,
         )
@@ -908,6 +933,16 @@ fn push_switch_region_terminal(
 /// in the browser is the page's `TZ` (`chrono::Local` is UTC there, da-y6qj).
 pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
     crate::render::action::clock_label(&Zone::host().local_naive(t))
+}
+
+/// The clock under a selected instant's section (da-zccjs): `HH:MM`, and
+/// its seconds when it has any, as the web's pill says it.
+fn instant_label(t: DateTime<Utc>) -> String {
+    use chrono::Timelike;
+    match Zone::host().local_naive(t).second() {
+        0 => format_local_hh_mm(t),
+        s => format!("{}:{s:02}", format_local_hh_mm(t)),
+    }
 }
 
 #[cfg(test)]

@@ -190,7 +190,7 @@ const SAMPLES = {
 	bandArgv: [[400, 40], [400, 40, 3]],
 	geometryArgv: [[400, 40]],
 	picturesArgv: [[400, 40, [0, 3]]],
-	nowviewSpec: [['30m'], ['0', new Date().toISOString(), true]],
+	nowviewSpec: [['30m'], ['0', new Date().toISOString(), true], ['30m', new Date().toISOString(), false, new Date(Date.now() - 600_000).toISOString()]],
 	pressArgv: [
 		[{ field: 'coffee', shape: { kind: 'point' } }],
 		[{ field: 'walk', shape: { kind: 'state' }, current: true }],

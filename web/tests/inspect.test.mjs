@@ -290,7 +290,12 @@ describe('a tap in the nowview selects the entry behind the mark', () => {
 			assert.equal(pills.length, 1, `a tap made ${JSON.stringify(pills)}`);
 			assert.match(pills[0], /^time:/, 'a tap on the axis did not select time');
 			assert.deepEqual(await litUp(page, NOWVIEW), [], 'a tap on the axis brought an entry out');
-			assert.deepEqual(await windows(page), [], 'the tap moved the window');
+			// The window stays on now: asked for again only to draw the
+			// section at the pill (da-zccjs), centred no instant of its own.
+			for (const argv of await windows(page)) {
+				const center = argv[argv.indexOf('--center') + 1];
+				assert.ok(!argv.includes('--center') || /^-/.test(center), `the tap moved the window: ${argv.join(' ')}`);
+			}
 
 			// And a drag with no wait is the pan it has always been: the
 			// window off now — slid inside what is drawn, so asked of nobody

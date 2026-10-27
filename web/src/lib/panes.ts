@@ -92,7 +92,9 @@ export function wantsBox(argv: string[]): boolean {
  * the past — the strip's own bands are asked for that way. `--end-date` by
  * the flag alone, not its value, so `--end-date 0` — today, spelled the long
  * way, which nothing in the app writes — is pinned too; nowview's `-t` only
- * when its value is not an offset (`-t -7` moves with the clock, da-5flt).
+ * when its value is not an offset (`-t -7` moves with the clock, da-5flt),
+ * and its `--center` the same way where it has one (da-zccjs): the window
+ * is where the picture is pinned, `-t` naming only its section's instant.
  *
  * And unless it is drawn AHEAD (`--ahead`, da-hklaz): that picture already
  * holds what the next minutes look like, and its viewer slides it along
@@ -110,7 +112,7 @@ export function dependsOnNow(argv: string[]): boolean {
 		!argv.some(
 			(word, i) =>
 				PINNED.test(word) ||
-				(argv[0] === 'nowview' && word === '-t' && !/^[+-]/.test(argv[i + 1] ?? '-'))
+				(argv[0] === 'nowview' && word === (argv.includes('--center') ? '--center' : '-t') && !/^[+-]/.test(argv[i + 1] ?? '-'))
 		)
 	);
 }
@@ -549,10 +551,11 @@ export function ladderAround(minutes: number, history: number): { up: string[]; 
 }
 
 /**
- * NOWVIEW at a window of `history`, centred on `at` when there is one
- * (da-pcis), and drawn with time running down the page when `vertical`
+ * NOWVIEW at a window of `history`, centred on `center` when there is one
+ * (da-pcis), its now section about the instant `at` names when there is
+ * one (da-zccjs) and drawn with time running down the page when `vertical`
  * (da-78evn). A small «now» under the now strip stands in for the clock
- * (da-9g3bf).
+ * (da-9g3bf); under an instant's, the CLI writes its time.
  *
  * With SURROUND windows' worth more drawn either side of it, past the
  * picture's box (`--surround`): a pan or a stretch shows what is there
@@ -568,7 +571,7 @@ export function ladderAround(minutes: number, history: number): { up: string[]; 
  */
 const SURROUND = 8;
 
-export const nowviewSpec = (history: string, at?: string, vertical = false): PaneSpec => ({
+export const nowviewSpec = (history: string, center?: string, vertical = false, at?: string): PaneSpec => ({
 	...NOWVIEW,
 	argv: [
 		...NOWVIEW.argv,
@@ -577,7 +580,9 @@ export const nowviewSpec = (history: string, at?: string, vertical = false): Pan
 		history,
 		'--surround',
 		stepMinutes(history) > 0 ? historyArg(SURROUND * stepMinutes(history)) : history,
-		...(at ? ['-t', at] : history === '0' ? [] : ['--ahead', history]),
+		...(center ? ['--center', center] : []),
+		...(at ? ['-t', at] : []),
+		...(center || at || history === '0' ? [] : ['--ahead', history]),
 		...(vertical ? ['--orientation', 'vertical'] : [])
 	]
 });

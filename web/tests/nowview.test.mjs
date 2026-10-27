@@ -16,6 +16,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, pastTheWindow, settled, swipe } from './support/layout.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -566,18 +567,9 @@ describe('the nowview widget zooms', () => {
 		);
 	});
 
-	test('with -t set the pinch keeps that instant, not now', async () => {
-		// The instant is where the picture's own geometry puts 09:00 — it
-		// draws no clock under it (da-61nm8); the yellow line is now
-		// (da-5flt), and 12:00 is not in 08:45–09:15.
-		const instantX = (page) =>
-			page.locator(`${PANE} svg.svg`).evaluate((svg, at) => {
-				const day = svg.querySelector('[data-lo]');
-				const [from, to] = ['data-from', 'data-to'].map((n) => Date.parse(day.getAttribute(n)));
-				const [lo, hi] = ['data-lo', 'data-hi'].map((n) => Number(day.getAttribute(n)));
-				const ctm = svg.getScreenCTM();
-				return new DOMPoint(lo + ((at - from) / (to - from)) * (hi - lo), 0).matrixTransform(ctm).x;
-			}, todayAt(9, 0));
+	// vividn, 2026-10-26: «when the view is panned away, scale about where
+	// the "now" would actually be, not the center of the window» (da-zccjs).
+	test('a window centred elsewhere scales about now, wherever now is', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -588,27 +580,20 @@ describe('the nowview widget zooms', () => {
 					.locator(`${PANE} svg.svg .current-time-line`)
 					.evaluateAll((ls) => ls.map((l) => l.getBoundingClientRect().left));
 				assert.ok(lines.every((x) => x >= box.x + box.width), `the now line is in the window: ${lines} of ${JSON.stringify(box)}`);
-				const before = await instantX(page);
-				// A centred window: the anchor is the middle of the window,
-				// which is the band less its now strip, a tenth at the right
-				// edge since now is after it (da-6csum) — and nowhere near the
-				// right edge where a window ending at now would draw it.
-				assert.ok(
-					Math.abs(before - (box.x + box.width * 0.45)) <= 4,
-					`09:00 is not the middle of the window: ${before} of ${JSON.stringify(box)}`
-				);
+				// Its ticks count from now, three hours on: the far one is -195m.
+				await farIs(page, '-195m');
 
 				await pinch(page, box, 80, 120);
 				await asked(page, '20m');
 				await app.idle();
-				await farIs(page, '-10m');
-				const after = await instantX(page);
-				assert.ok(Math.abs(after - before) <= 2, `09:00 moved: ${before} → ${after}`);
-				// And the window is still that instant's, not the clock's.
-				const argv = (await page.evaluate(() => window.__datumSeen))
-					.filter((a) => a[0] === 'nowview')
-					.at(-1);
-				assert.equal(argv[argv.indexOf('-t') + 1], '09:00');
+				// 08:45–09:15 two thirds as long about 12:00 is 09:50–10:10.
+				const centreOf = async () => {
+					const argv = (await page.evaluate(() => window.__datumSeen)).filter((a) => a[0] === 'nowview').at(-1);
+					return { argv, centre: Date.parse(argv[argv.indexOf('--center') + 1]) };
+				};
+				const { argv, centre } = await until(centreOf, ({ centre }) => Math.abs(centre - todayAt(10, 0)) <= 60_000);
+				assert.ok(Math.abs(centre - todayAt(10, 0)) <= 60_000, `asked for ${argv.join(' ')}`);
+				assert.equal(argv.includes('-t'), false, 'a pinch made an instant');
 				assert.deepEqual(app.errors, []);
 			},
 			{

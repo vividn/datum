@@ -777,37 +777,58 @@ fn nowview_centred_window_draws_no_yellow_for_its_instant() {
     // Now (15:00) is outside 13:45–14:15: no yellow line at all.
     assert_eq!(lines(&svg), 0, "{svg}");
     assert!(!svg.contains("#ffcc00"), "{svg}");
+    // The window takes the 360px its strip leaves of 400, the 15 minutes
+    // before the instant the first 180 of them, and its first switch
+    // (13:50) a third of the way in.
     let blocks = field_rects(&svg, "mood", "block");
-    assert_eq!(blocks.len(), 2, "both switches inside the window: {svg}");
-    // The window takes the 360px its now strip leaves of 400.
-    assert!(
-        blocks[0].x + 2.0 < 182.0 && blocks[1].x + 2.0 > 182.0,
-        "{svg}"
-    );
-    // ... and the strip stands at its end, now being after it (da-6csum):
-    // a gap, then the state mood is in now, to the edge.
+    assert_eq!(blocks.len(), 1, "{svg}");
+    assert!((blocks[0].x - 60.0).abs() < 1e-6, "{svg}");
+    // da-zccjs: the section is the instant's, in the middle of the window:
+    // a gap either side, and the state mood was in then.
     let chunk = field_rects(&svg, "mood", "now-chunk");
     assert_eq!(chunk.len(), 1, "{svg}");
     assert!(
-        (chunk[0].x - 366.0).abs() < 1e-6 && (chunk[0].x + chunk[0].w - 400.0).abs() < 1e-6,
+        (chunk[0].x - 186.0).abs() < 1e-6 && (chunk[0].x + chunk[0].w - 214.0).abs() < 1e-6,
         "{svg}"
     );
+    assert_eq!(chunk[0].fill, blocks[0].fill, "{svg}");
+    // ... and its time written under it.
     let local = at
         .parse::<chrono::DateTime<Utc>>()
         .unwrap()
         .with_timezone(&chrono::Local);
     let clock = format!("{:02}:{:02}", local.hour(), local.minute());
+    let label = tags(&svg, r#"<text class="instant-label""#);
+    assert_eq!(label.len(), 1, "{svg}");
+    assert!((num(label[0], "x") - 200.0).abs() < 1e-6, "{svg}");
     assert!(
         svg.contains(&format!(">{clock}</text>")),
         "no {clock}: {svg}"
     );
+    assert!(!svg.contains("now-label"), "{svg}");
 
-    // A centred window that still holds now draws its now strip AT now:
-    // ten minutes back, a 30m window runs five minutes past now, so the
-    // chunk is between two lines, the future past the second (da-9g3bf).
-    // The window's 30 minutes take the 360px the strip leaves of 400.
+    // `-qq` is an instant too: its section in the middle, and now, five
+    // minutes after it in the window, a plain line with no section of its
+    // own (da-zccjs).
     let svg = at_clock("2026-09-10T14:10:00Z", || {
         nowview_out(&db, &["-qq", "--history", "30m", "--width", "404"], ".svg")
+    });
+    assert_eq!(lines(&svg), 1, "{svg}");
+    assert!(!svg.contains("current-time-line-end"), "{svg}");
+    let chunk = field_rects(&svg, "mood", "now-chunk");
+    assert!((chunk[0].x - 186.0).abs() < 1e-6, "{svg}");
+
+    // A window centred elsewhere that still holds now draws its now strip
+    // AT now: centred ten minutes back, a 30m window runs five minutes past
+    // now, so the chunk is between two lines, the future past the second
+    // (da-9g3bf). The window's 30 minutes take the 360px the strip leaves
+    // of 400.
+    let svg = at_clock("2026-09-10T14:10:00Z", || {
+        nowview_out(
+            &db,
+            &["--center", "-10", "--history", "30m", "--width", "404"],
+            ".svg",
+        )
     });
     assert_eq!(lines(&svg), 1, "{svg}");
     assert_eq!(svg.matches(r#"class="current-time-line-end""#).count(), 1);
@@ -838,6 +859,67 @@ fn nowview_centred_window_draws_no_yellow_for_its_instant() {
     );
     assert!(field_rects(&empty, "mood", "block").is_empty(), "{empty}");
     assert_eq!(lines(&empty), 0, "{empty}");
+}
+
+/// da-zccjs: `--center` puts the window elsewhere and leaves the section
+/// the instant's — the time flags', or now — standing at it, or pinned to
+/// the edge it lies beyond, with the ticks counted from it.
+#[test]
+fn nowview_center_moves_the_window_and_not_the_instant() {
+    let db = two_switch_db();
+    let svg = |args: &[&str]| {
+        let mut argv = args.to_vec();
+        argv.extend_from_slice(&["--history", "30m", "--width", "404", "-z", "UTC"]);
+        at_clock("2026-09-10T15:00:00Z", || nowview_out(&db, &argv, ".svg"))
+    };
+    let labels = |svg: &str| -> Vec<String> {
+        svg.split(r#"<text class="tick-label""#)
+            .skip(1)
+            .map(|t| t[t.find('>').unwrap() + 1..t.find('<').unwrap()].to_string())
+            .collect()
+    };
+    let fills = |svg: &str| -> Vec<String> {
+        field_rects(svg, "mood", "now-chunk")
+            .into_iter()
+            .map(|r| r.fill)
+            .collect()
+    };
+    let before = fills(&svg(&["-t", "14:00"]));
+
+    // An instant before the window: pinned left, its state, ticks after it.
+    let left = svg(&["-t", "14:00", "--center", "14:30"]);
+    let chunk = field_rects(&left, "mood", "now-chunk");
+    assert_eq!(chunk.len(), 1, "{left}");
+    assert!(
+        chunk[0].x.abs() < 1e-6 && (chunk[0].w - 34.0).abs() < 1e-6,
+        "{left}"
+    );
+    assert_eq!(fills(&left), before, "{left}");
+    // (The first, +15m at the strip, gives way to the time written there.)
+    let l = labels(&left);
+    assert!(l.iter().all(|l| l.starts_with('+')), "{l:?}");
+    assert_eq!(l.last().map(String::as_str), Some("+45m"));
+    assert!(left.contains(r#"class="instant-label""#), "{left}");
+
+    // Now, after a window in the past: pinned right, now's state, ticks
+    // counted back from now.
+    let right = svg(&["--center", "14:00"]);
+    let chunk = field_rects(&right, "mood", "now-chunk");
+    assert_eq!(chunk.len(), 1, "{right}");
+    assert!(
+        (chunk[0].x - 366.0).abs() < 1e-6 && (chunk[0].x + chunk[0].w - 400.0).abs() < 1e-6,
+        "{right}"
+    );
+    assert_ne!(fills(&right), before, "{right}");
+    let l = labels(&right);
+    assert_eq!((l[0].as_str(), l[l.len() - 1].as_str()), ("-75m", "-45m"));
+
+    // `--center` reads any `-t` value, and refuses what is none.
+    assert!(!svg(&["--center", "-60"]).is_empty());
+    let mut argv = vec!["nowview", "--center", "zz", "-o"];
+    let out = std::env::temp_dir().join("datum-center-zz.svg");
+    argv.push(out.to_str().unwrap());
+    assert!(run_cli(&argv, &db).is_err());
 }
 
 #[test]
@@ -1021,7 +1103,8 @@ fn nowview_context_and_history_are_one_flag() {
         context
     );
     // And it is a real window, not the snapshot.
-    assert_eq!(field_rects(&context, "mood", "block").len(), 2, "{context}");
+    assert!(context.contains("tick-label"), "{context}");
+    assert_eq!(field_rects(&context, "mood", "block").len(), 1, "{context}");
 }
 
 /// The terminal band reads the same flag (da-7q8r), so `--context` means
