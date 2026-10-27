@@ -24,6 +24,12 @@ const sessions = (run) =>
 		.filter((l) => /: sent \d+, got \d+/.test(l))
 		.map((line) => ({ line, kept: line.endsWith('(on the connection kept)') }));
 
+/** The first session `run` printed past its `from`th that sent something. A
+ * copy applies a round before the verify its peer prints the line after, so
+ * the receiver can hold a write before the sender has said the session. */
+const carried = (run, from) =>
+	until(() => sessions(run).slice(from).find((s) => !/: sent 0,/.test(s.line)), Boolean);
+
 /** `a` and `b` in one chain, each with its `sync run`, settled. */
 async function pair() {
 	const [a, b] = [await nativeCopy(relay), await nativeCopy(relay)];
@@ -75,16 +81,19 @@ describe('a kept connection', () => {
 			assert.equal((await a.run(['occur', 'coffee'])).code, 0);
 			// The push fails on the dead connection's stream, then connects afresh and reaches no one.
 			await until(() => runs.a.stderr, (e) => /could not reach/.test(e));
+			const gone = sessions(runs.a).length;
 			const back = b.spawn(['sync', 'run'], env);
 			await until(() => b.count('coffee'), (n) => n === 1);
 			// b's process is new: whichever session brought it, b had no connection to keep.
 			const [first] = await until(() => sessions(back), (s) => s.length > 0);
 			assert.ok(!first.kept, first.line);
-			// And the connection it made is kept for the next.
+			// And the connection it made is kept for the next: counted past a's
+			// line for the session that brought coffee, which can print after b holds it.
+			await carried(runs.a, gone);
 			const pushed = sessions(runs.a).length;
 			await arrives(a, b, 'water');
-			await until(() => sessions(runs.a).length, (n) => n > pushed);
-			assert.ok(sessions(runs.a).at(-1).kept, runs.a.stdout);
+			const water = await carried(runs.a, pushed);
+			assert.ok(water.kept, runs.a.stdout);
 		} finally {
 			await a.close();
 			await b.close();
