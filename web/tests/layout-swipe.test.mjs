@@ -391,7 +391,7 @@ describe('the strip: never a blank between two tabs', () => {
 					// may be what moves (it was, before the strip).
 					const [lo, hi] = span(el.getBoundingClientRect()).map((v) => v - shift(el));
 					const spans = [...el.querySelectorAll(drawn)]
-						.filter((d) => getComputedStyle(d).visibility === 'visible')
+						.filter((d) => getComputedStyle(d).visibility === 'visible' && !d.closest('.tab-body.kept.behind:not(.beside)'))
 						.map((d) => span(d.getBoundingClientRect()))
 						.map(([a, b]) => [Math.max(a, lo), Math.min(b, hi)])
 						.filter(([a, b]) => b > a)
@@ -508,18 +508,27 @@ describe('the strip: never a blank between two tabs', () => {
 					0,
 					body
 				);
-				// Kept, inert and hidden (da-tajsm): a return shows it drawn.
+				// Kept, clipped and refusing (da-tajsm, da-p77nk): a return shows it
+				// drawn, and nothing in it is seen, pressed, focused or read meanwhile.
 				const left = page.locator('section.root > .content > .tab-body.behind');
 				assert.deepEqual(
 					await left.evaluateAll((els) =>
-						els.map((el) => ({
-							inert: el.inert,
-							visibility: getComputedStyle(el).visibility,
-							titles: [...el.querySelectorAll('section.pane')].map((p) => p.dataset.title)
-						}))
+						els.map((el) => {
+							const button = el.querySelector('button');
+							button?.focus();
+							const box = el.getBoundingClientRect();
+							const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+							return {
+								clip: getComputedStyle(el).clipPath,
+								hidden: el.getAttribute('aria-hidden'),
+								focused: button !== null && document.activeElement === button,
+								hit: el.contains(hit),
+								titles: [...el.querySelectorAll('section.pane')].map((p) => p.dataset.title)
+							};
+						})
 					),
-					[{ inert: true, visibility: 'hidden', titles: ['dayview', 'repl', 'tail', 'fields'] }],
-					'the layout left behind is kept, inert and hidden'
+					[{ clip: 'inset(50%)', hidden: 'true', focused: false, hit: false, titles: ['dayview', 'repl', 'tail', 'fields'] }],
+					'the layout left behind is kept, clipped, and takes no focus or press'
 				);
 			},
 			{ ...PHONE, prepare: twoLayouts }
@@ -547,6 +556,74 @@ describe('the strip: never a blank between two tabs', () => {
 					await panes.evaluateAll((els) => els.map((el) => el.dataset.kept ?? 'new')),
 					['yes', 'yes', 'yes', 'yes'],
 					'the layout came back built anew'
+				);
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	// da-p77nk: an inherited change reaching a dayview's SVG has Chrome lay
+	// it out again, so a switch that flipped `visibility` and `inert` on the
+	// layout going behind and the one coming on laid out the whole of `main`
+	// twice (63–80 ms on a phone at 4×, from 4 dirty boxes). A layout behind
+	// is skipped instead, and everything in it keeps what it inherited in front.
+	test('a root switch changes nothing any element of a layout inherits (da-p77nk)', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const root = async (name) => {
+					await page.locator('.root-bar [role="tab"]', { hasText: name }).click();
+					await until(() => shown(page), (shownName) => shownName === name);
+					await app.idle();
+				};
+				await root('tail');
+				await root('main');
+				const mainBody = page.locator('section.root > .content > .tab-body:not(.behind)');
+				await mainBody.evaluate((el) => (el.dataset.probe = 'main'));
+				const inherited = () =>
+					page.locator('section.root > .content > .tab-body[data-probe="main"]').evaluate((el) =>
+						[...el.querySelectorAll('*')].map((d) => {
+							const style = getComputedStyle(d);
+							return `${style.visibility} ${style.pointerEvents} ${d.closest('[inert]') !== null}`;
+						})
+					);
+				const front = await inherited();
+				assert.ok(front.length > 100, `too few elements in main to judge: ${front.length}`);
+				await root('tail');
+				const behind = await inherited();
+				const changed = behind.filter((v, i) => v !== front[i]);
+				assert.deepEqual([behind.length, changed.length, changed.slice(0, 3)], [front.length, 0, []], 'main behind inherits otherwise than in front');
+				// What `inert` kept out, the keyboard included: Tab and Shift+Tab
+				// pass over main, and still go everywhere else.
+				const stops = [];
+				for (const key of [...Array(40).fill('Tab'), ...Array(40).fill('Shift+Tab')]) {
+					await page.keyboard.press(key);
+					stops.push(
+						await page.evaluate(() =>
+							document.activeElement?.closest('[data-probe="main"]') ? 'main' : (document.activeElement?.tagName ?? 'none')
+						)
+					);
+				}
+				assert.ok(!stops.includes('main'), `a key stopped in main behind: ${stops.join(' ')}`);
+				assert.ok(new Set(stops).size > 2, `the keys went nowhere: ${stops.join(' ')}`);
+				await root('main');
+				assert.deepEqual(await inherited(), front, 'main back in front inherits otherwise than before');
+				// And focus inside main as it goes behind by a switch that moves no
+				// focus (a swipe, a script) is let go, as `inert` let it go.
+				const held = await page.evaluate(() => {
+					const button = document.querySelector('[data-probe="main"] button');
+					button?.focus();
+					return button !== null && document.activeElement === button;
+				});
+				assert.ok(held, 'no control in main took focus to begin with');
+				await page.evaluate(() =>
+					[...document.querySelectorAll('.root-bar [role="tab"]')].find((t) => t.textContent.includes('tail')).click()
+				);
+				await until(() => shown(page), (shownName) => shownName === 'tail');
+				assert.equal(
+					await page.evaluate(() => document.activeElement?.closest('[data-probe="main"]') !== null && document.activeElement !== null),
+					false,
+					'focus stayed in main behind'
 				);
 			},
 			{ ...PHONE, prepare: twoLayouts }

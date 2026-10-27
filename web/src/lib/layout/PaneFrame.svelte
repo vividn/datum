@@ -1592,6 +1592,7 @@
 	   away, whatever the box. */
 	.content.moving > :global(.tab-body.beside) {
 		visibility: visible;
+		clip-path: none;
 		margin: var(--shy);
 		transform: var(--beside);
 	}

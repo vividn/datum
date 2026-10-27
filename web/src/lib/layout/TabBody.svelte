@@ -16,6 +16,15 @@
 	(PaneFrame.svelte). It hears the epoch and the minute tick as the tab
 	in front does, so a swipe shows a picture already drawn.
 
+	A root tab behind (`kept`) is neither hidden nor inert (da-p77nk): an
+	inherited change on a tab's box restyles everything in it, and for
+	`main` on a phone at 4× each of the two flags cost about 50 ms of every
+	switch, once for the tab going behind and once for the one coming on.
+	So the root's tabs change nothing inherited as they come and go: one
+	behind is clipped to nothing, which draws nothing and hits nothing, is
+	`aria-hidden`, and hands on whatever focus reaches it (`refuse`). An
+	inner pane's tabs keep the two flags.
+
 	The frame's context is passed down through a gate: what a widget sends
 	up to its frame — its own title controls (da-ndjo's `.own` box) and its
 	alarm — reaches the frame from the tab in front only. Every tab is
@@ -34,7 +43,9 @@
 		 * front (`lands`, PaneFrame.svelte): behind, it keeps the box it is drawn
 		 * in up front, so nothing in it is drawn again as it comes and goes. A
 		 * larger one is grown inside its box, which clips it: a layout behind
-		 * never widens the page's scroll.
+		 * never widens the page's scroll. It is -1, 0 or 1 (`lands` is 0 or 1),
+		 * so the growth is a class and not a custom property: one set on the
+		 * tab's box restyled everything in it at every switch (da-p77nk).
 		 */
 		shy?: number;
 		/**
@@ -46,6 +57,8 @@
 		 * lays out the box and not the layout in it again (da-1acrc).
 		 */
 		least?: { width: number; height: number } | undefined;
+		/** A root tab: behind, it is clipped rather than hidden or inert. */
+		kept?: boolean;
 		children?: Snippet;
 	}
 
@@ -54,6 +67,7 @@
 		beside = false,
 		shy = 0,
 		least = undefined,
+		kept = false,
 		children
 	}: Props = $props();
 
@@ -77,10 +91,38 @@
 	$effect.pre(() => {
 		if (active) frame.hosted.set($hosted);
 	});
+	const TABBABLE = 'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable]';
+	let body: HTMLElement | undefined = $state();
+	/**
+	 * What `inert` does for an inner tab, for a root tab behind: focus that
+	 * lands in it goes on to the nearest control outside it the way it was
+	 * going — before it, if it came from after — or nowhere.
+	 */
+	function refuse(event: FocusEvent) {
+		const from = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+		const back = from !== null && (body!.compareDocumentPosition(from) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+		const side = back ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING;
+		const open = [...document.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+			(el) =>
+				el.tabIndex >= 0 &&
+				!el.matches(':disabled') &&
+				body!.compareDocumentPosition(el) & side &&
+				!el.closest('[inert], [aria-hidden="true"]') &&
+				el.checkVisibility({ visibilityProperty: true })
+		);
+		const to = back ? open.at(-1) : open[0];
+		if (to) to.focus();
+		else (event.target as HTMLElement).blur();
+	}
+	// And focus already in it as it goes behind, by a swipe or a script, is let go.
+	$effect(() => {
+		if (!active && kept && body?.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+	});
 	setContext('layout-frame', {
 		alarm,
 		hosted,
-		// A tab behind is inert, so the frame's close only ever hears the one in front.
+		// A tab behind is inert, or clipped and refusing focus, so the frame's
+		// close only ever hears the one in front.
 		close: frame.close,
 		titleHost: derived([frame.titleHost, front], ([host, on]) => (on ? host : null))
 	});
@@ -91,11 +133,14 @@
 	class:behind={!active}
 	class:beside
 	class:grown={!active && shy < 0}
-	inert={!active}
+	class:kept
+	bind:this={body}
+	inert={!active && !kept}
+	aria-hidden={!active && kept ? 'true' : undefined}
+	onfocusin={!active && kept ? refuse : undefined}
 	style:min-width={active && least ? `${least.width}px` : null}
 	style:min-height={active && least ? `${least.height}px` : null}
 	style:margin={!active && shy > 0 ? `${shy}px` : null}
-	style:--grown={!active && shy < 0 ? `${shy}px` : null}
 >{@render children?.()}</div>
 
 <style>
@@ -110,7 +155,14 @@
 		position: absolute;
 		inset: 0;
 		padding: inherit;
+	}
+	.behind:not(.kept) {
 		visibility: hidden;
+	}
+	/* Drawn nowhere and hit by nothing, the neighbour too until the strip
+	   moves it (PaneFrame.svelte). */
+	.kept.behind {
+		clip-path: inset(50%);
 	}
 	/* The tab body's clip is what bounds a grown layout: its children are
 	   larger than it and not clipped themselves. */
@@ -118,6 +170,6 @@
 		overflow: clip;
 	}
 	.grown:not(.beside) > :global(*) {
-		margin: var(--grown);
+		margin: -1px;
 	}
 </style>

@@ -390,6 +390,7 @@
 			beside={tab === pane.tabs[peek]}
 			shy={pane.id === rootId ? lands(tab) - lands(active) : 0}
 			{least}
+			kept={pane.id === rootId}
 		>
 			{#if isSplit(content)}
 				{@const split = content}
