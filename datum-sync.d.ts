@@ -96,7 +96,9 @@ export class Pending {
 
 /**
  * What a ticket or join link says of itself ([`About`], as JSON): what a
- * page asks before it redeems one (da-l9kdr). Never the secret.
+ * page asks before it redeems one (da-l9kdr). Never the secret. `relay`
+ * says whether the inviter's address names its relay: one that does not,
+ * made before the page reached it, no other device reaches (da-y9voq).
  */
 export function about(ticket: string): string;
 
@@ -130,15 +132,15 @@ export interface InitOutput {
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: number) => number;
     readonly ring_core_0_17_14__bn_mul_mont: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly __wasm_bindgen_func_elem_14791: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_14793: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_6091: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_3577: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_7797: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_5889: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_6999: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7063: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_14647: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14809: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_14811: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_6109: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_3595: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_7815: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_5907: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_7017: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_7081: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14665: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
