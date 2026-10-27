@@ -21,6 +21,11 @@
 //! (da-n1rcs). It is retired (da-vk747): a template given or declared with
 //! one is refused ([`refuse_name_only_marker`]), and one already stored reads
 //! as `%key%` does, so no name or slug moves.
+//!
+//! `%::key%` reads the field's own record (`get <field>::`) at that dotted
+//! path, and `%::%` the record's value of the key the template is the value
+//! of (da-3se7a). The caller hands the record in
+//! ([`InterpolationContext::record`]); with none, they read nothing.
 
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
@@ -80,6 +85,12 @@ pub struct InterpolationContext<'a> {
     /// name placeholder: a name can change, and a template is expanded when
     /// the entry is written, so a rename would split the history.
     pub client_id: &'a str,
+    /// da-3se7a: the field's record, which `%::key%` reads; `None` reads
+    /// nothing. Filled by a caller only for a template that reads it, with
+    /// the keys it names ([`record_keys`]).
+    pub record: Option<&'a JsonValue>,
+    /// The key whose value the template is, which `%::%` reads in the record.
+    pub record_key: Option<&'a str>,
 }
 
 impl<'a> InterpolationContext<'a> {
@@ -97,6 +108,8 @@ impl<'a> InterpolationContext<'a> {
             create_time: Some(&entry.create_time),
             modify_time: Some(&entry.modify_time),
             client_id: &entry.client_id,
+            record: None,
+            record_key: None,
         }
     }
 }
@@ -218,6 +231,13 @@ pub fn unfilled(template: &str, ctx: &InterpolationContext) -> Vec<String> {
         .collect()
 }
 
+fn placeholders(template: &str) -> impl Iterator<Item = String> {
+    split_raw_and_fields(template)
+        .into_iter()
+        .skip(1)
+        .step_by(2)
+}
+
 fn split_raw_and_fields(template: &str) -> Vec<String> {
     // Replace unescaped `%` with NUL then split. `\%` → literal `%`.
     let mut buf = String::with_capacity(template.len());
@@ -311,6 +331,9 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
             .map(|t| format!("{}c", entry_id::render_stamp(t)))
             .unwrap_or_default(),
         "modify_time" => prefix_when_present(ctx.modify_time.map(entry_id::render_stamp), 'm'),
+        _ if key.starts_with("::") => record_value(key, ctx)
+            .map(json_to_plain_string)
+            .unwrap_or_default(),
         _ => match key.strip_prefix("hid:").map(str::parse::<usize>) {
             Some(Ok(n)) if n >= SHORT_HID_LEN => ctx.hid.chars().take(n).collect(),
             Some(_) => String::new(),
@@ -335,6 +358,11 @@ fn prefix_when_present(rendered: Option<String>, marker: char) -> String {
 /// A segment names an object's key or an array's index, `-1` the last
 /// element (da-7nv8r). Returns None if any segment is missing.
 fn lookup_extra_data(extra: Option<&JsonValue>, key: &str) -> Option<String> {
+    // da-ult68: one comment slugs as itself, so `--id %comment%` still does.
+    walk(extra, key).map(|v| json_to_plain_string(crate::entry::shown_data_value(key, v)))
+}
+
+fn walk<'v>(extra: Option<&'v JsonValue>, key: &str) -> Option<&'v JsonValue> {
     let mut cur = extra?;
     for segment in key.split('.') {
         cur = match cur {
@@ -346,10 +374,85 @@ fn lookup_extra_data(extra: Option<&JsonValue>, key: &str) -> Option<String> {
             _ => return None,
         };
     }
-    // da-ult68: one comment slugs as itself, so `--id %comment%` still does.
-    Some(json_to_plain_string(crate::entry::shown_data_value(
-        key, cur,
-    )))
+    Some(cur)
+}
+
+/// What `::path` (a canonical key) reads in the record: `::` alone the
+/// template's own key. Null is nothing.
+fn record_value<'v>(key: &str, ctx: &InterpolationContext<'v>) -> Option<&'v JsonValue> {
+    let path = match &key[2..] {
+        "" => ctx.record_key?,
+        path => path,
+    };
+    walk(ctx.record, path).filter(|v| !v.is_null())
+}
+
+/// True iff `template` has a `%::key%` placeholder: a value read from the
+/// field's record.
+pub fn reads_record(template: &str) -> bool {
+    placeholders(template).any(|k| canonical_key(&k).starts_with("::"))
+}
+
+/// The record's keys `template` reads, each once: `%::a.b%` reads `a`, and
+/// `%::%` `own`, the key the template is the value of.
+pub fn record_keys(template: &str, own: &str) -> Vec<String> {
+    let mut keys: Vec<String> = Vec::new();
+    for k in placeholders(template) {
+        let key = match canonical_key(&k).strip_prefix("::") {
+            Some("") => own,
+            Some(path) => path.split('.').next().unwrap_or(path),
+            None => continue,
+        };
+        if !keys.iter().any(|k| k == key) {
+            keys.push(key.into());
+        }
+    }
+    keys
+}
+
+/// A value template that reads the record (da-3se7a), resolved against
+/// `ctx`: one `%::key%` alone is the record's value as it is, a list a list;
+/// anything else the text with each placeholder's. `None` for an optional
+/// one alone that reads nothing; a plain one that does refuses, naming it.
+pub fn copy_from_record(template: &str, ctx: &InterpolationContext) -> Result<Option<JsonValue>> {
+    let parts = split_raw_and_fields(template);
+    if let [before, key, after] = parts.as_slice() {
+        if before.is_empty() && after.is_empty() && canonical_key(key).starts_with("::") {
+            return match record_value(canonical_key(key), ctx) {
+                Some(v) => Ok(Some(v.clone())),
+                None if is_optional(key) => Ok(None),
+                None => Err(no_record_value(key, ctx)),
+            };
+        }
+    }
+    let missing = |k: &&String| {
+        let key = canonical_key(k);
+        key.starts_with("::") && !is_optional(k) && record_value(key, ctx).is_none()
+    };
+    if let Some(k) = parts.iter().skip(1).step_by(2).find(missing) {
+        return Err(no_record_value(k, ctx));
+    }
+    let mut out = String::new();
+    for (idx, part) in parts.iter().enumerate() {
+        match idx % 2 {
+            0 => out.push_str(part),
+            _ => out.push_str(&lookup_field(part, ctx)),
+        }
+    }
+    Ok(Some(out.into()))
+}
+
+fn no_record_value(key: &str, ctx: &InterpolationContext) -> DatumError {
+    let path = match canonical_key(key) {
+        "::" => ctx.record_key.unwrap_or_default(),
+        k => k.trim_start_matches(':'),
+    };
+    DatumError::Other(format!(
+        "%{key}%: {}'s record holds no {path}, so nothing is written. \
+         Mark it optional with %?{}%.",
+        ctx.field,
+        canonical_key(key)
+    ))
 }
 
 fn json_to_plain_string(v: &JsonValue) -> String {
@@ -443,6 +546,8 @@ mod tests {
             create_time: None,
             modify_time: None,
             client_id: "",
+            record: None,
+            record_key: None,
         }
     }
 
@@ -541,6 +646,42 @@ mod tests {
         );
     }
 
+    /// da-3se7a: `%::key%` reads the record handed in, at a dotted path, and
+    /// `%::%` the template's own key; with no record, nothing, so a field
+    /// template refuses it as before. One alone copies the value whole.
+    #[test]
+    fn record_placeholders_read_the_record_handed_in() {
+        let own = serde_json::json!({"title": "own"});
+        let record = serde_json::json!({"title": "T", "meta": {"n": 2}, "by": ["a", "b"]});
+        let bare = occur_ctx("f", Some(&own), "a1b2c3d4e5f6");
+        assert!(interpolate_field("x__%::title%", &bare, "__")
+            .unwrap_err()
+            .to_string()
+            .contains("%::title%"));
+        let ctx = InterpolationContext {
+            record: Some(&record),
+            record_key: Some("by"),
+            ..occur_ctx("f", Some(&own), "a1b2c3d4e5f6")
+        };
+        assert!(reads_record("x %::title%") && !reads_record("%title% \\%::%"));
+        assert_eq!(record_keys("%::% %::a.b% %::a% %b%", "own"), ["own", "a"]);
+        assert_eq!(
+            interpolate("%::title%:%::meta.n%:%title%", &ctx, ":"),
+            "T:2:own"
+        );
+        let copy = |t: &str| copy_from_record(t, &ctx);
+        assert_eq!(copy("%::%").unwrap(), Some(serde_json::json!(["a", "b"])));
+        assert_eq!(copy("%::meta%").unwrap(), Some(serde_json::json!({"n": 2})));
+        assert_eq!(copy("on %::title%").unwrap(), Some("on T".into()));
+        assert_eq!(copy("%?::nope%").unwrap(), None);
+        assert_eq!(copy("[%?::nope%]").unwrap(), Some("[]".into()));
+        let err = copy("a %::nope%").unwrap_err().to_string();
+        assert!(
+            err.contains("%::nope%") && err.contains("f's record holds no nope"),
+            "{err}"
+        );
+    }
+
     #[test]
     fn interpolate_state_from_extra_data() {
         // Legacy fallback: %state% pulls from extra_data.state when the
@@ -564,6 +705,8 @@ mod tests {
             create_time: None,
             modify_time: None,
             client_id: "",
+            record: None,
+            record_key: None,
         };
         let got = interpolate("%field%:%state%", &switch_ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "mood:focused");
@@ -605,6 +748,8 @@ mod tests {
             create_time: None,
             modify_time: None,
             client_id: "",
+            record: None,
+            record_key: None,
         };
         let got = interpolate("%field%:%srcLang%:%pos%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "word:pt:verb");
@@ -643,6 +788,8 @@ mod tests {
             create_time: create,
             modify_time: modify,
             client_id: "",
+            record: None,
+            record_key: None,
         }
     }
 
@@ -678,6 +825,8 @@ mod tests {
             create_time: None,
             modify_time: None,
             client_id: "",
+            record: None,
+            record_key: None,
         };
         let got = interpolate("%occur_time%", &ctx, "__");
         assert_eq!(got, "2026-05-13T15:00:00.000Z");
@@ -732,6 +881,8 @@ mod tests {
             create_time: Some(&t),
             modify_time: None,
             client_id: "",
+            record: None,
+            record_key: None,
         };
         let got = interpolate("%a%__%create_time%", &ctx, "__");
         assert_eq!(got, "x__2026-05-13T15:00:00.000Zc");
@@ -876,6 +1027,8 @@ mod tests {
             create_time: None,
             modify_time: None,
             client_id: "",
+            record: None,
+            record_key: None,
         };
         let got = interpolate("%occurTime%", &ctx, "__");
         assert_eq!(got, "2026-05-13T15:00:00.000Z");

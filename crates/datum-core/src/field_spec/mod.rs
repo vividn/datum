@@ -43,8 +43,9 @@ pub use alias::{
     DerivedAliasKind, SpecAliasCollision, SpecAliasIndex, SpecRegistry,
 };
 pub use interpolation::{
-    contains_template, interpolate, interpolate_field, names_time, refuse_name_only_marker,
-    strip_field_prefix, unfilled, InterpolationContext, DEFAULT_ID_DELIMITER,
+    contains_template, copy_from_record, interpolate, interpolate_field, names_time, reads_record,
+    record_keys, refuse_name_only_marker, strip_field_prefix, unfilled, InterpolationContext,
+    DEFAULT_ID_DELIMITER,
 };
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};
 pub use presentation::{GlyphBy, PresentationSpec, Render, ResolvedPosition, DEFAULT_FIELD_HEIGHT};

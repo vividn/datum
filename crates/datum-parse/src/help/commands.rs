@@ -1445,6 +1445,12 @@ pub const TOPICS: &[TopicSpec] = &[
                 record the merged history now gives otherwise, an add winning over a\n\
                 removal that never saw it, and `--fix` writes the history's value.\n\
                 \n\
+                A value may copy from that record where the entry lands:\n\
+                `was=%::title%` stores the record's title, `%::a.b%` is a path into\n\
+                a key, and `%::%` the key's own, so `blocked_by=%::% blocked_by+=x`\n\
+                adds to the record's list. A key the record lacks refuses, naming\n\
+                it, unless written `%?::key%`, and `\\%::` is a literal `%::`.\n\
+                \n\
                 Every form -t, -d and a duration take: `datum help time`.\n",
     },
     TopicSpec {

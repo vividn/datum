@@ -56,6 +56,9 @@ a top-level `migrations/` folder.)
   the value read kept as `extra_metadata.asserted_base`. `datum check keys` replays the history
   as an add-wins set (a removal takes out only the adds its create op's `deps` saw, `record.rs`),
   and `--fix` writes its value as a note on the field.
+  A value may copy from that record where the entry lands (da-3se7a): `was=%::title%`, `%::%` the
+  key's own (`blocked_by=%::% blocked_by+=x`), the plain value stored, never the template;
+  a key the record lacks refuses unless `%?::key%`.
   datum has no units anywhere, in specs, subfields or entries.
   The only planned form is a typed value (`u://`/`unit://`), not built.
 - `occur_time` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.

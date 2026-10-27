@@ -1023,9 +1023,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         );
     }
     if let (Some(edit), true) = (key_edits.first(), crate::args::in_multi_window()) {
+        let label = match &edit.copy {
+            Some(template) if edit.add.is_empty() && edit.remove.is_empty() => template.clone(),
+            _ => format!("{}+= / -=", edit.key),
+        };
         anyhow::bail!(
-            "{}+= / -= reads the value it changes in its own write; a multi-entry line is not one",
-            edit.key
+            "{label} reads its field's record in its own write; a multi-entry line is not one"
         );
     }
     if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
@@ -2089,10 +2092,14 @@ impl StateEdit {
 /// on the line (`key=a key+=b`) they change that value; otherwise the
 /// record's, read where the entry lands, and the value read is recorded as
 /// its `asserted_base`, which `check` holds the merged history to.
+/// da-3se7a: a key whose value reads the record (`title=%::title%`,
+/// `blocked_by=%::%`) is one too, its value copied from the record where the
+/// entry lands and any operator applied to what it copied.
 struct KeyEdit {
     key: String,
     add: Vec<JsonValue>,
     remove: Vec<JsonValue>,
+    copy: Option<String>,
 }
 
 impl KeyEdit {
@@ -2102,12 +2109,31 @@ impl KeyEdit {
         let Some(JsonValue::Object(map)) = data.as_mut() else {
             return Ok(Vec::new());
         };
+        let copies: Vec<String> = map
+            .iter()
+            .filter(|(_, v)| v.as_str().is_some_and(field_spec::reads_record))
+            .map(|(k, _)| k.clone())
+            .collect();
+        let mut edits: Vec<Self> = copies
+            .into_iter()
+            .map(|key| Self {
+                copy: map.remove(&key).and_then(|v| v.as_str().map(String::from)),
+                key,
+                add: Vec::new(),
+                remove: Vec::new(),
+            })
+            .collect();
+        // `\%::` is how a value says `%::` and copies nothing.
+        for v in map.values_mut() {
+            if let Some(text) = v.as_str().filter(|t| t.contains("\\%::")) {
+                *v = text.replace("\\%::", "%::").into();
+            }
+        }
         let ops: Vec<String> = map
             .keys()
             .filter(|k| k.len() > 1 && k.ends_with(['+', '-']))
             .cloned()
             .collect();
-        let mut edits: Vec<Self> = Vec::new();
         for op in ops {
             // `key+=a,b` is a list, and a repeated one a list of what each gave.
             let given = datum_core::db::members(map.remove(&op).as_ref());
@@ -2120,6 +2146,7 @@ impl KeyEdit {
                         key: key.into(),
                         add: Vec::new(),
                         remove: Vec::new(),
+                        copy: None,
                     });
                     edits.len() - 1
                 }
@@ -2173,14 +2200,44 @@ impl KeyEdit {
 
     /// Apply `edits` to `entry` against what `read` gives each key in its
     /// field's record just before it ([`datum_core::db::key_before`] in the
-    /// transaction), recording each value read.
+    /// transaction), recording each value an operator read. A copy reads
+    /// only the keys it names.
     fn apply_all(
         edits: &[Self],
         entry: &mut Entry,
         read: impl Fn(&Entry, &str) -> datum_core::error::Result<Option<JsonValue>>,
     ) -> datum_core::error::Result<()> {
         for edit in edits {
-            let base = read(entry, &edit.key)?;
+            let base = match &edit.copy {
+                Some(template) => {
+                    let mut record = serde_json::Map::new();
+                    for key in field_spec::record_keys(template, &edit.key) {
+                        if let Some(v) = read(entry, &key)? {
+                            record.insert(key, v);
+                        }
+                    }
+                    field_spec::copy_from_record(
+                        template,
+                        &InterpolationContext {
+                            record: Some(&JsonValue::Object(record)),
+                            record_key: Some(&edit.key),
+                            ..InterpolationContext::from_entry(entry)
+                        },
+                    )?
+                }
+                None => read(entry, &edit.key)?,
+            };
+            if edit.add.is_empty() && edit.remove.is_empty() {
+                // A copy alone, which an optional one reading nothing leaves out.
+                let data = entry.data.get_or_insert_with(|| json!({}));
+                match base {
+                    Some(v) => data[&edit.key] = v,
+                    None => {
+                        data.as_object_mut().map(|m| m.remove(&edit.key));
+                    }
+                }
+                continue;
+            }
             let value = edit
                 .apply(base.as_ref(), &entry.field)
                 .map_err(datum_core::error::DatumError::Other)?;

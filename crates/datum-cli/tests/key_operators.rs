@@ -2,7 +2,8 @@
 //! `key-`, add to a key's list and take out of it — beside the key on the
 //! line, that value; otherwise the field's record where the entry lands,
 //! recording the value read as `asserted_base`, which `check keys` holds the
-//! history to.
+//! history to. And `%::key%` / `%::%` (da-3se7a), which copy a value from the
+//! field's record into the line where the entry lands.
 
 use std::process::{Command, Output};
 
@@ -143,4 +144,61 @@ fn a_backdated_edit_reads_the_record_at_its_time_and_check_fixes_the_one_after()
         notes,
         "a second fix writes nothing"
     );
+}
+
+/// An alias line's `%::title%` stores the record's title as it stands, plain;
+/// in text, the text; a backdated line reads the record at its own time.
+#[test]
+fn a_record_copy_stores_the_records_value_where_the_entry_lands() {
+    let env = Env::new();
+    env.ok(&["occur", "iss", "title=first", "-t", "-30"]);
+    env.ok(&["occur", "iss", "title=second", "-t", "-10"]);
+    env.ok(&[
+        "alias",
+        "set",
+        "iwas",
+        "note iss was=%::title% said=on_%::title%",
+    ]);
+    env.ok(&["iwas"]);
+    let record = env.record("iss");
+    assert_eq!(
+        (&record["was"], &record["said"]),
+        (&json!("second"), &json!("on_second"))
+    );
+    assert_eq!(env.asserted(), Value::Null, "a copy alone asserts nothing");
+    env.ok(&["occur", "iss", "then=%::title%", "-t", "-20"]);
+    assert_eq!(env.record("iss")["then"], json!("first"));
+}
+
+/// `%::%` is the key's own record value, and an operator beside it changes
+/// what it copied: the merged list is stored with the value read.
+#[test]
+fn a_copy_of_the_keys_own_value_under_an_operator_stores_the_list_and_its_base() {
+    let env = Env::new();
+    env.ok(&["note", "iss", "blocked_by=a,b"]);
+    env.ok(&["note", "iss", "blocked_by=%::%", "blocked_by+=c"]);
+    assert_eq!(env.record("iss")["blocked_by"], json!(["a", "b", "c"]));
+    assert_eq!(env.asserted(), json!({"blocked_by": ["a", "b"]}));
+    assert!(env.ok(&["check", "keys"]).contains("No consistency issues"));
+}
+
+/// A key the record does not hold refuses, naming it, and nothing is
+/// written; `%?::key%` alone leaves the key out.
+#[test]
+fn a_copy_of_a_key_the_record_lacks_refuses_unless_optional() {
+    let env = Env::new();
+    env.ok(&["note", "iss", "title=t"]);
+    let out = env.out(&["note", "iss", "x=%::nope%"]);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{said}");
+    assert!(
+        said.contains("%::nope%: iss's record holds no nope"),
+        "{said}"
+    );
+    env.ok(&["note", "iss", "x=%?::nope%", "y=1"]);
+    assert_eq!(env.record("iss"), json!({"title": "t", "y": 1}));
+    env.ok(&["note", "iss", r"note=\%::x", r"z=50\% \%::x"]);
+    let record = env.record("iss");
+    assert_eq!(record["note"], json!("%::x"), "escaped, it copies nothing");
+    assert_eq!(record["z"], json!(r"50\% %::x"), r"only \%:: is unescaped");
 }

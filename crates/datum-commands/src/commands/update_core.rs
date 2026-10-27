@@ -873,6 +873,8 @@ fn fill_entry_template(
         create_time: None,
         modify_time: None,
         client_id: "",
+        record: None,
+        record_key: None,
     };
     let empty = unfilled(pattern, &ctx);
     if !empty.is_empty() {
