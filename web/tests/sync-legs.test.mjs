@@ -9,7 +9,7 @@
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp } from './support/app.mjs';
-import { countOf, nativeCopy, relayed, startRelay, verifyOf, withWallClock } from './support/sync.mjs';
+import { countOf, freePort, nativeCopy, relayed, startRelay, verifyOf, withWallClock } from './support/sync.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -104,5 +104,32 @@ test('a terminal redeeming a link already used is told by the page to ask for a 
 	} finally {
 		await Promise.all([first.close(), second.close()]);
 		await own.stop();
+	}
+});
+
+// A page's endpoint waits 10 s for its relay as it binds, and a loaded
+// machine can take longer: the invite it then made named no relay, an
+// address no terminal reaches («No addressing information available»,
+// da-kfhty). The relay here comes up only after those 10 s, and the invite
+// waits for it.
+test('an invite made before the page reaches its relay names the relay once it is up', { timeout: 120_000 }, async () => {
+	const port = await freePort();
+	const url = `http://127.0.0.1:${port}`;
+	const native = await nativeCopy({ url });
+	let late;
+	try {
+		await withWallClock(
+			async (app) => {
+				const offered = app.page.evaluate(() => window.datum.sync.offer('datum'));
+				await new Promise((resolve) => setTimeout(resolve, 12_000));
+				late = await startRelay(port);
+				const joined = await native.run(['sync', 'chain', 'connect', await offered]);
+				assert.equal(joined.code, 0, joined.stderr);
+			},
+			{ prepare: relayed({ url }) }
+		);
+	} finally {
+		await native.close();
+		await late?.stop();
 	}
 });

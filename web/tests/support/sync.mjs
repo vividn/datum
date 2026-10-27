@@ -68,7 +68,7 @@ export const tied = (() => {
 })();
 const tie = (bin, argv) => (tied ? ['setpriv', ['--pdeathsig', 'KILL', '--', bin, ...argv]] : [bin, argv]);
 
-function freePort() {
+export function freePort() {
 	return new Promise((resolve, reject) => {
 		const s = createServer().listen(0, '127.0.0.1', () => {
 			const { port } = s.address();
@@ -78,11 +78,11 @@ function freePort() {
 	});
 }
 
-/** A relay of this file's own: `{ url, pid, stop }`. */
-export async function startRelay() {
+/** A relay of this file's own: `{ url, pid, stop }`, at `port` when given (a test bringing it up late). */
+export async function startRelay(port) {
 	const bin = await relayBinary();
 	const dir = await mkdtemp(join(tmpdir(), 'datum-relay-'));
-	const port = await freePort();
+	port ??= await freePort();
 	const config = join(dir, 'relay.toml');
 	writeFileSync(config, `http_bind_addr = "127.0.0.1:${port}"\nenable_metrics = false\n`);
 	const proc = spawn(...tie(bin, ['--dev', '--config-path', config]), { stdio: 'ignore' });

@@ -445,13 +445,17 @@ impl Node {
 
     /// The ticket for an invite whose secret is `secret` — this endpoint's
     /// address, then `also`'s (a JSON list of addresses, a chain's members),
-    /// and `about` (JSON, [`About`]).
-    pub fn ticket(
+    /// and `about` (JSON, [`About`]). This address names the relay once the
+    /// endpoint has reached it, which [`bind`] waits only 10 s for and a
+    /// loaded machine can miss: a bare address, which no redeemer reaches
+    /// without discovery (da-kfhty).
+    pub async fn ticket(
         &self,
         secret: String,
         also: Option<String>,
         about: Option<String>,
     ) -> Result<String, JsError> {
+        let _ = timeout(Duration::from_secs(30), self.ep.online()).await;
         let mut addrs = vec![self.ep.addr()];
         if let Some(also) = also {
             addrs.extend(serde_json::from_str::<Vec<EndpointAddr>>(&also).map_err(js)?);
