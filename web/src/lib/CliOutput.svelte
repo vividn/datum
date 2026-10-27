@@ -111,6 +111,16 @@
 		width: 100%;
 	}
 
+	/* A clip's id is its geometry (`flow_clip` in datum-layout), so two
+	   pictures of one size share it, and `url(#…)` finds the first on the
+	   page: maybe one in a tab behind, which is `visibility: hidden`. A
+	   clip's shape that is not visible clips everything away, so the tab in
+	   front drew no history at all (da-wvdz2). Never painted itself, it is
+	   always visible. */
+	.picture :global(clipPath *) {
+		visibility: visible;
+	}
+
 	/* Gridlines and the now-line are drawn over the marks; a pointer
 	   passes through them to the mark beneath. */
 	.picture :global(line) {
