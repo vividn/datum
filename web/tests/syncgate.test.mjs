@@ -54,7 +54,7 @@ test('a member dialing a page whose join is applying is refused as busy (da-dwm2
 				assert.ok(await syncWithin(b, 60_000), 'b synced with a');
 				const r = await syncWithin(b, 60_000);
 				assert.ok(r, 'b waited on the page');
-				assert.match(r.stdout + r.stderr, /datum\.day.*busy applying another sync's changes/);
+				assert.match(r.stdout + r.stderr, /datum\.day.*refused: is in another sync session and runs one at a time; sync again once it is over/);
 				// The page hears of the refusal once its connection closes, 5 s at most.
 				await new Promise((r) => setTimeout(r, 6000));
 				const applying = await app.page.evaluate(() => window.datum.sync.states().datum?.applying);

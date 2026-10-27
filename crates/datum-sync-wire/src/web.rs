@@ -187,6 +187,13 @@ impl Store for Cli {
         self.open.get() > 1
     }
 
+    /// The session open may be a dial still connecting, applying nothing,
+    /// and a copy that dialed without serving (a bare `datum sync`) is
+    /// dialed back by no one: the native words promised both (da-qlffb).
+    fn busy_why(&self) -> &'static str {
+        "is in another sync session and runs one at a time; sync again once it is over"
+    }
+
     /// A page's dial has waited its turn ([`Node::turn`]): a session served
     /// since is the one refused, never the dial (da-tqg19).
     fn dial_busy(&self) -> bool {

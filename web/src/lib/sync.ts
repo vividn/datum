@@ -472,9 +472,12 @@ class Leader {
 			this.done(report.id, report);
 			// Admitted to a chain, it says what it is (`datum sync chain connect`):
 			// a name it was told as told, else none: the chain assembles one (da-xijlw).
+			// Its peers hear on the next sync, as natively: pushed on, it dialed
+			// the inviter, whose invite has ended, and held the page's one
+			// session until the dial timed out (da-qlffb).
 			await this.refresh();
 			const named = c.label ? renameArgv(c.label) : unsetRenameArgv();
-			if (this.chain) await cli(['--db', this.db, ...named]);
+			if (this.chain) await cli(['--db', this.db, ...named], undefined, true);
 			return report;
 		}
 		// An invite the page wrote already (the Sync widget, approved with a

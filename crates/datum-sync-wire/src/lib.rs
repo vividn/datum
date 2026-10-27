@@ -189,6 +189,11 @@ pub trait Store {
     fn applying(&self) -> bool {
         false
     }
+    /// Why a session begun while this copy is [`applying`](Store::applying)
+    /// is refused, in words the dialer prints after `refused:`.
+    fn busy_why(&self) -> &'static str {
+        BUSY_WHY
+    }
     /// Whether a dial is refused as busy before it connects: while this copy
     /// is [`applying`](Store::applying), unless its dials wait a turn of
     /// their own first.
@@ -1355,7 +1360,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let verdict = loop {
         let verdict = match conn.remote_id() == ep.id() {
             true => Err((Why::Other, anyhow!(COPY))),
-            false if !diff && store.applying() => Err((Why::Busy, anyhow!(BUSY_WHY))),
+            false if !diff && store.applying() => Err((Why::Busy, anyhow!(store.busy_why()))),
             false if !diff && carried && hello.busy => Err((Why::Busy, anyhow!(CARRIED_WHY))),
             false => store
                 .handshake(
