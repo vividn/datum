@@ -176,6 +176,12 @@
 	 * pane inside the frame's 1px outline (`.pane`), a split on it.
 	 */
 	export const lands = (tab: Tab | undefined) => (tab && !isSplit(tab.content) ? 1 : 0);
+
+	/** The strip's transforms while it moves: the tab in front's, and its neighbour's. */
+	export interface Strip {
+		front: string;
+		beside: string;
+	}
 </script>
 
 <script lang="ts">
@@ -217,7 +223,7 @@
 		 * still find a pane's insides.
 		 */
 		kind = undefined,
-		/** What the pane holds, handed the tab a swipe is bringing on (`peek`). */
+		/** What the pane holds, handed the tab a swipe is bringing on (`peek`) and the strip's transforms. */
 		children
 	}: {
 		pane: Pane;
@@ -225,7 +231,7 @@
 		root?: boolean;
 		locked?: boolean;
 		kind?: string | undefined;
-		children?: Snippet<[number]>;
+		children?: Snippet<[number, Strip | null]>;
 	} = $props();
 
 	/** A swipe shorter than this is a touch, not a swipe. */
@@ -587,6 +593,27 @@
 	 * land in rather than measured at one and drawn again at the other.
 	 */
 	const shy = $derived(root && peek >= 0 ? lands(pane.tabs[peek]) - lands(active) : 0);
+
+	/**
+	 * Where the strip stands while it is moving, or null at rest: handed to
+	 * the two tab bodies, which each take theirs as an inline transform
+	 * (da-7etnf). It was a custom property on the content box, which is
+	 * inherited, so every move of the finger restyled everything in both
+	 * layouts. `beside`'s 100% is the neighbour's own box, which is the
+	 * content's padding box because `.behind` is `inset: 0` in it
+	 * (TabBody.svelte), less `shy` either side: the box it lands in, where
+	 * the root's in front is another kind (da-466lv). 100% and both margins
+	 * is one box away, whatever the box.
+	 */
+	const moves: Strip | null = $derived.by(() => {
+		if (offset === 0 && !gliding && !arriving) return null;
+		const axis = vertical ? 'Y' : 'X';
+		const sign = peek > pane.active ? '+' : '-';
+		return {
+			front: `translate${axis}(${offset}px)`,
+			beside: `translate${axis}(calc(${offset}px ${sign} (100% + ${2 * shy}px)))`
+		};
+	});
 
 	/**
 	 * Whether a swipe moves between this pane's tabs: not the root's in
@@ -994,13 +1021,10 @@
 	<div
 		class="content"
 		class:gliding
-		class:moving={offset !== 0 || gliding || arriving}
+		class:moving={moves !== null}
 		class:fading
 		onanimationend={() => (fading = false)}
 		bind:this={contentEl}
-		style:--front="translate{vertical ? 'Y' : 'X'}({offset}px)"
-		style:--beside="translate{vertical ? 'Y' : 'X'}(calc({offset}px {peek > pane.active ? '+' : '-'} (100% + {2 * shy}px)))"
-		style:--shy="{shy}px"
 		style:--slide="{SLIDE_MS}ms"
 		onpointerdowncapture={swipes ? (e) => (finger = e.pointerId) : undefined}
 		ontouchstart={swipes ? onTouchStart : undefined}
@@ -1009,7 +1033,7 @@
 		ontouchend={swipes ? onTouchEnd : undefined}
 		ontouchcancel={swipes ? cancel : undefined}
 	>
-		{@render children?.(peek)}
+		{@render children?.(peek, moves)}
 	</div>
 </section>
 </div>
@@ -1580,21 +1604,12 @@
 	   of the content's size (TabBody.svelte), and its neighbour a box
 	   away. Under the finger they follow it with no transition at all;
 	   the slide the release finishes and the snap back of one too short
-	   are the same strip, moved with one. Under `prefers-reduced-motion` nothing is ever
+	   are the same strip, moved with one, which each tab body takes inline
+	   (`moves`). Under `prefers-reduced-motion` nothing is ever
 	   `moving` (the handlers), so the swap is the instant one it was. */
-	.content.moving > :global(.tab-body:not(.behind)) {
-		transform: var(--front);
-	}
-	/* `--beside`'s 100% is the neighbour's own box, which is the content's
-	   padding box because `.behind` is `inset: 0` in it (TabBody.svelte),
-	   less `--shy` either side: the box it lands in, where the root's in
-	   front is another kind (da-466lv). 100% and both margins is one box
-	   away, whatever the box. */
 	.content.moving > :global(.tab-body.beside) {
 		visibility: visible;
 		clip-path: none;
-		margin: var(--shy);
-		transform: var(--beside);
 	}
 	.content.gliding > :global(.tab-body:is(:not(.behind), .beside)) {
 		transition: transform var(--slide) ease-out;

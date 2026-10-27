@@ -73,16 +73,23 @@ const shown = async (page) =>
  *
  * The motion is over in 150ms, so a test that reads the transform after
  * the swipe is a test of how fast the runner is. The box is watched
- * instead — its tab in front is moved by `--front` while it is `moving`
- * (da-24fgb), and not at all otherwise — and what it took is read once
- * the tab has landed.
+ * instead — its tab in front takes an inline transform while the box is
+ * `moving` (da-24fgb, da-7etnf), and none otherwise — and what it took is
+ * read once the tab has landed.
  */
 const watch = (locator) =>
 	locator.evaluate((el) => {
 		window.__transforms = [];
-		new MutationObserver(() =>
-			window.__transforms.push(el.classList.contains('moving') ? el.style.getPropertyValue('--front') : '')
-		).observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+		window.__boxStyles = new Set([el.style.cssText]);
+		const front = () => el.querySelector(':scope > .tab-body:not(.behind)')?.style.transform ?? '';
+		new MutationObserver(() => {
+			window.__transforms.push(el.classList.contains('moving') ? front() : '');
+			window.__boxStyles.add(el.style.cssText);
+		}).observe(el, {
+			attributes: true,
+			attributeFilter: ['style', 'class'],
+			subtree: true
+		});
 	});
 const moved = async (page) => (await page.evaluate(() => window.__transforms ?? [])).filter(Boolean);
 
@@ -334,6 +341,11 @@ describe('the motion', () => {
 				seen.some((t) => /translateX\(-\d/.test(t)),
 				`nothing followed the finger the way it went: ${JSON.stringify(seen)}`
 			);
+			// Moved on the tab bodies alone: a style on the content box is
+			// inherited by both layouts, and restyled all of them on every
+			// move of the finger (da-7etnf).
+			const box = await page.evaluate(() => [...window.__boxStyles]);
+			assert.equal(box.length, 1, `the content box's own style changed as it moved: ${JSON.stringify(box)}`);
 			await atRest(content);
 			// And the tail behind it counted its rows in the same box it had:
 			// a transform moves what is drawn, never what is laid out, and the

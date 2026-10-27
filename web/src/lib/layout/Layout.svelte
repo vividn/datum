@@ -372,7 +372,7 @@
 	locked={locked}
 	kind={isSplit(content) ? undefined : content.kind}
 >
-	{#snippet children(peek)}
+	{#snippet children(peek, moves)}
 		<!-- Every tab of the pane is mounted, the one in front and the ones
 		     behind it (da-rjmg), so a swipe moves a picture already drawn.
 		     The root's: the layouts it has opened (`opened`), and the one a
@@ -388,6 +388,7 @@
 		<TabBody
 			active={tab === active}
 			beside={tab === pane.tabs[peek]}
+			moved={tab === active ? moves?.front : tab === pane.tabs[peek] ? moves?.beside : undefined}
 			shy={pane.id === rootId ? lands(tab) - lands(active) : 0}
 			{least}
 			kept={pane.id === rootId}

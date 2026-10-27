@@ -39,6 +39,12 @@
 		/** The tab a swipe in hand is bringing on. */
 		beside?: boolean;
 		/**
+		 * Where the swipe's strip has moved this tab, while it moves
+		 * (PaneFrame.svelte): an inline transform, so a move restyles this
+		 * box alone and nothing inherits it (da-7etnf).
+		 */
+		moved?: string;
+		/**
 		 * How much smaller, each side, a root tab's layout lands than the one in
 		 * front (`lands`, PaneFrame.svelte): behind, it keeps the box it is drawn
 		 * in up front, so nothing in it is drawn again as it comes and goes. A
@@ -65,6 +71,7 @@
 	let {
 		active,
 		beside = false,
+		moved = undefined,
 		shy = 0,
 		least = undefined,
 		kept = false,
@@ -140,7 +147,8 @@
 	onfocusin={!active && kept ? refuse : undefined}
 	style:min-width={active && least ? `${least.width}px` : null}
 	style:min-height={active && least ? `${least.height}px` : null}
-	style:margin={!active && shy > 0 ? `${shy}px` : null}
+	style:transform={moved}
+	style:margin={(!active && shy > 0) || (beside && moved) ? `${shy}px` : null}
 >{@render children?.()}</div>
 
 <style>

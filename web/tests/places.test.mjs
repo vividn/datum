@@ -56,14 +56,15 @@ async function openPlace(page, kind) {
 	await atRest(rootContent(page));
 }
 
-/** Every `--front` the root's strip takes from now on, while it is `moving`, and whether it faded. */
+/** Every transform the root's tab in front takes from now on, while it is `moving`, and whether it faded. */
 const watch = (page) =>
 	rootContent(page).evaluate((el) => {
 		window.__strip = { moved: [], faded: false };
 		new MutationObserver(() => {
-			if (el.classList.contains('moving')) window.__strip.moved.push(el.style.getPropertyValue('--front'));
+			if (el.classList.contains('moving'))
+				window.__strip.moved.push(el.querySelector(':scope > .tab-body:not(.behind)')?.style.transform ?? '');
 			if (el.classList.contains('fading')) window.__strip.faded = true;
-		}).observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+		}).observe(el, { attributes: true, attributeFilter: ['style', 'class'], subtree: true });
 	});
 const strip = (page) => page.evaluate(() => window.__strip);
 
