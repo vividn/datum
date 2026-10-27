@@ -42,9 +42,9 @@
 	const here = currentDb();
 
 	/** Which debug widget this is: the kind, and the heading and component it draws. */
-	export let kind: 'debug' | 'seed' = 'debug';
+	let { kind = 'debug' }: { kind?: 'debug' | 'seed' } = $props();
 	const TOOLS = { debug: ['bar', DebugBar], seed: ['sample data', DebugSeed] } as const;
-	$: [heading, tool] = TOOLS[kind];
+	const [heading, Tool] = $derived(TOOLS[kind]);
 </script>
 
 <!-- `.debug-widget` is how this widget is FOUND, here and in the tests: a
@@ -55,7 +55,7 @@
 	<div class="debug-widget" data-kind={kind}>
 		{#if here === DEBUG_DB}
 			<h3>{heading}</h3>
-			<svelte:component this={tool} />
+			<Tool />
 		{:else}
 			<p class="elsewhere">
 				the debug widgets live in the <code>{DEBUG_DB}</code> database — this page is on

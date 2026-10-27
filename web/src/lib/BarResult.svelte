@@ -29,18 +29,18 @@
 	import { parseEcho } from '$lib/echo.js';
 	import type { RunResult } from '$lib/run.js';
 
-	export let result: RunResult | null = null;
+	let { result = null }: { result?: RunResult | null } = $props();
 
 	/** How many lines of raw output the band holds. */
 	const LINES = 4;
 
-	$: docs = result ? parseEcho(result.stdout) : null;
-	$: error = !!result && result.code !== 0;
+	const docs = $derived(result ? parseEcho(result.stdout) : null);
+	const error = $derived(!!result && result.code !== 0);
 	// stdout while there is any: a warning on stderr beside a good answer is
 	// not the answer. With nothing on stdout — an error, a command that only
 	// reports progress — stderr is all the CLI said, so it is what is shown.
 	// Both are datum's; neither is rewritten.
-	$: raw = result ? (result.stdout.trim() ? result.stdout : result.stderr) : '';
+	const raw = $derived(result ? (result.stdout.trim() ? result.stdout : result.stderr) : '');
 </script>
 
 <div class="result" class:error role="status">

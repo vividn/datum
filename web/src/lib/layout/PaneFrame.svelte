@@ -135,7 +135,7 @@
 	mounts only its layout in front, and the neighbour for as long as a
 	gesture is in hand (`peek`).
 -->
-<script lang="ts" context="module">
+<script lang="ts" module>
 	import { readable } from 'svelte/store';
 	import type { BarAlign, BarEdge, Pane, Tab } from './types.js';
 	import { isSplit } from './types.js';
@@ -179,7 +179,8 @@
 </script>
 
 <script lang="ts">
-	import { setContext, tick } from 'svelte';
+	import { setContext, tick, untrack, type Snippet } from 'svelte';
+	import { on } from 'svelte/events';
 	import { act } from '$lib/act.js';
 	import { ask } from '$lib/confirm.js';
 	import { holds } from '$lib/hold.js';
@@ -195,26 +196,37 @@
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 
-	export let pane: Pane;
-	/** False on the last pane: the close item is greyed, not hidden. */
-	export let canClose = true;
-	/** The layout's root: the one pane whose content box is the scroller. */
-	export let root = false;
-	/**
-	 * NORMAL MODE (da-vvcxc): the page is not in layout mode. Then there is
-	 * no `+` and no `×`, the name opens what the pane IS, and the tab strip
-	 * still switches; in layout mode the name opens what is DONE to the
-	 * pane, the outline is drawn in the accent, and the maximize is the
-	 * bar's handle.
-	 */
-	export let locked = false;
-	/**
-	 * The active widget's kind. Its title goes on a wrapper round the frame
-	 * as a class — `.repl`, `.tail`, `.dayview` — which is how the old
-	 * grid's areas were named and how the rest of the app and its tests
-	 * still find a pane's insides.
-	 */
-	export let kind: string | undefined = undefined;
+	let {
+		pane,
+		/** False on the last pane: the close item is greyed, not hidden. */
+		canClose = true,
+		/** The layout's root: the one pane whose content box is the scroller. */
+		root = false,
+		/**
+		 * NORMAL MODE (da-vvcxc): the page is not in layout mode. Then there is
+		 * no `+` and no `×`, the name opens what the pane IS, and the tab strip
+		 * still switches; in layout mode the name opens what is DONE to the
+		 * pane, the outline is drawn in the accent, and the maximize is the
+		 * bar's handle.
+		 */
+		locked = false,
+		/**
+		 * The active widget's kind. Its title goes on a wrapper round the frame
+		 * as a class — `.repl`, `.tail`, `.dayview` — which is how the old
+		 * grid's areas were named and how the rest of the app and its tests
+		 * still find a pane's insides.
+		 */
+		kind = undefined,
+		/** What the pane holds, handed the tab a swipe is bringing on (`peek`). */
+		children
+	}: {
+		pane: Pane;
+		canClose?: boolean;
+		root?: boolean;
+		locked?: boolean;
+		kind?: string | undefined;
+		children?: Snippet<[number]>;
+	} = $props();
 
 	/** A swipe shorter than this is a touch, not a swipe. */
 	const SWIPE_PX = 40;
@@ -254,13 +266,17 @@
 	 */
 	const close = writable<(() => void) | null>(null);
 	setContext('layout-frame', { alarm, titleHost, hosted, close });
-	let h2: HTMLElement | null = null;
-	$: titleHost.set(h2);
+	let h2: HTMLElement | null = $state(null);
+	$effect.pre(() => {
+		const host = h2;
+		untrack(() => titleHost.set(host));
+	});
 
-	$: active = pane.tabs[pane.active];
-	$: close.set(
-		(locked && !root) || !canClose ? null : () => apply((l) => closeTab(l, pane.id, pane.active))
-	);
+	const active = $derived(pane.tabs[pane.active]);
+	$effect.pre(() => {
+		const act = (locked && !root) || !canClose ? null : () => apply((l) => closeTab(l, pane.id, pane.active));
+		untrack(() => close.set(act));
+	});
 	/**
 	 * Scaffolding, not a thing: a split someone made by splitting. A tab
 	 * carrying a LAYOUT is not one however its content is shaped (da-9puz)
@@ -269,13 +285,13 @@
 	 * The page root is the exception at the other end: the shell draws its
 	 * identity (its tabs, its name, its acts), so the root is never a box.
 	 */
-	$: holder = isSplit(active.content) && (root || active.layout === undefined);
+	const holder = $derived(isSplit(active.content) && (root || active.layout === undefined));
 	/** A frame round a LAYOUT's panes: they are inset from it, so the two outlines read as two. */
-	$: nested = isSplit(active.content) && !holder;
-	$: many = pane.tabs.length > 1;
+	const nested = $derived(isSplit(active.content) && !holder);
+	const many = $derived(pane.tabs.length > 1);
 	/** What this frame's menu calls the thing it acts on: with one tab, the tab is the pane. */
-	$: thing = many ? 'tab' : 'pane';
-	$: vertical = pane.bar.edge === 'left' || pane.bar.edge === 'right';
+	const thing = $derived(many ? 'tab' : 'pane');
+	const vertical = $derived(pane.bar.edge === 'left' || pane.bar.edge === 'right');
 	/**
 	 * `labelOf` (registry.ts), the one rule — except at the root, which
 	 * wears no name of its own: its tab always carries a layout, and the
@@ -283,25 +299,25 @@
 	 * is called what it SHOWS, which is what `data-title` means everywhere
 	 * the shell is not the one naming the pane.
 	 */
-	$: title = labelOf(root ? { ...active, layout: undefined } : active);
+	const title = $derived(labelOf(root ? { ...active, layout: undefined } : active));
 	/** No bar at all: the root's is the shell's, a lone holder's is its children's. */
-	$: bare = root || (!many && holder);
+	const bare = $derived(root || (!many && holder));
 	/** Whether this pane has a group to leave: everything but the root's own pane. */
-	$: canBreak = canBreakOut($layout, pane.id);
+	const canBreak = $derived(canBreakOut($layout, pane.id));
 
 	/**
 	 * What this session has set on the tab in front (da-vhwq): the option
 	 * items' state. `keyOf` walks the tab's own path, which is the ONE
 	 * derivation the renderer and the store use too — see Layout.svelte.
 	 */
-	$: sessionOf = keyOf($layout, active.id);
-	$: held = $session[sessionOf] ?? {};
+	const sessionOf = $derived(keyOf($layout, active.id));
+	const held = $derived($session[sessionOf] ?? {});
 	/**
 	 * The widget's own options, inline (da-vhwq): drawn from the registry's
 	 * declarations and changed in the menu, and — with something held —
 	 * ending in «Save options with layout».
 	 */
-	$: options = widgetOptions(active, held, sessionOf, $offers);
+	const options = $derived(widgetOptions(active, held, sessionOf, $offers));
 
 	/**
 	 * Whether this pane is the one filling the root (da-00am) — which is
@@ -309,7 +325,7 @@
 	 * not the answer: a maximize belongs to the root tab it was made in, and
 	 * stops applying when another is in front (`isMaximized`).
 	 */
-	$: big = $inForce?.pane === pane.id;
+	const big = $derived($inForce?.pane === pane.id);
 
 	/**
 	 * A failed act: reported where a developer sees it. The root bar has a
@@ -325,7 +341,7 @@
 	 * layout` among them where the name has a shipped tree (da-luwe), which
 	 * is a fact about the LAYOUT and so is the same in either menu.
 	 */
-	$: acts =
+	const acts = $derived(
 		active.layout === undefined
 			? undefined
 			: {
@@ -337,7 +353,8 @@
 						const to = prompt('Save this layout as:', '')?.trim();
 						if (to) attempt(saveAs(active.id, to));
 					}
-				};
+				}
+	);
 
 	/**
 	 * The menu, from the one builder the root bar uses too (`menu.ts`). In
@@ -347,7 +364,7 @@
 	 * `Widget options` (vividn: «Widget Options > (rather than being the
 	 * primary menu, this goes in a secondary menu when in layout mode»).
 	 */
-	$: all = menuItems({
+	const all = $derived(menuItems({
 		choose: () => void fillTab(active.id),
 		// About the widget in front.
 		reset: resetWidget(active),
@@ -372,8 +389,8 @@
 		},
 		acts,
 		saveAs: holder && !root ? saveAsLayout(active.id) : undefined
-	});
-	$: own = locked ? named(all) : arranged(all);
+	}));
+	const own = $derived(locked ? named(all) : arranged(all));
 
 	/**
 	 * THE SECOND DOOR ON `Change Widget` (da-efr4i). vividn, 2026-09-22:
@@ -388,7 +405,7 @@
 	 * right-clicking a pane's CONTENT still gets the browser's own menu,
 	 * which is where text is selected and copied.
 	 */
-	$: changeWidget = locked ? undefined : () => void fillTab(active.id);
+	const changeWidget = $derived(locked ? undefined : () => void fillTab(active.id));
 
 	/**
 	 * `Rename tab` / `Rename pane` (da-6ji5, da-s7sdm): the answer is the
@@ -400,16 +417,20 @@
 	 * It edits the tree, so it dirties the layout like any other edit
 	 * (`isModified`, draft.ts, which compares everything but the lock).
 	 */
-	const rename = (tab: Tab) => () =>
-		void ask(`Rename this ${thing} (empty: its own name again):`, 'rename', labelOf(tab), true).then((to) => {
-			if (to !== null && to !== labelOf(tab)) apply((l) => setTitle(l, tab.id, to || undefined));
-		});
+	function rename(tab: Tab): () => void {
+		return () =>
+			void ask(`Rename this ${thing} (empty: its own name again):`, 'rename', labelOf(tab), true).then((to) => {
+				if (to !== null && to !== labelOf(tab)) apply((l) => setTitle(l, tab.id, to || undefined));
+			});
+	}
 
 	/** `Save as layout` (da-6ji5): only when asked — a split is never saved by splitting. */
-	const saveAsLayout = (tabId: string) => () =>
-		void ask('Save this tab as the layout:', 'save').then((to) => {
-			if (to) attempt(saveAs(tabId, to));
-		});
+	function saveAsLayout(tabId: string): () => void {
+		return () =>
+			void ask('Save this tab as the layout:', 'save').then((to) => {
+				if (to) attempt(saveAs(tabId, to));
+			});
+	}
 
 	/**
 	 * The `+`: the chooser, then a tab holding what it came back with —
@@ -438,9 +459,9 @@
 	 * The arrows move it to an edge from the keyboard. A tap does nothing.
 	 */
 	let section: HTMLElement;
-	let handle: { id: number; x: number; y: number } | null = null;
+	let handle: { id: number; x: number; y: number } | null = $state(null);
 	/** Where a drop would put the bar now, drawn on that edge while the handle is held. */
-	let dropAt: { edge: BarEdge; align: BarAlign } | null = null;
+	let dropAt: { edge: BarEdge; align: BarAlign } | null = $state(null);
 
 	function placeAt(x: number, y: number): { edge: BarEdge; align: BarAlign } {
 		const r = section.getBoundingClientRect();
@@ -484,7 +505,7 @@
 	}
 
 	/** The tab strip, to put the focus back on the tab switched to. */
-	let strip: HTMLElement | null = null;
+	let strip: HTMLElement | null = $state(null);
 
 	/**
 	 * Arrow keys walk the tab strip; the tab focused is the tab shown.
@@ -527,7 +548,7 @@
 	};
 	let touch: Swipe | null = null;
 	/** The finger's pointer id, for the cancel a window's claim sends what is under it. */
-	let finger = -1;
+	let finger = $state(-1);
 
 	/**
 	 * Any change of the tab in front — a swipe landing, a tap, the root bar
@@ -536,40 +557,42 @@
 	 * instead (da-bgve9).
 	 */
 	const self = {};
-	let shown = pane.active;
+	let shown = $state(untrack(() => pane.active));
 	/** The tab the shell's slide is bringing on. */
-	let asked: string | null = null;
-	// svelte-ignore reactive_declaration_module_script_dependency
-	$: if (pane.active !== shown) {
-		shown = pane.active;
-		switched = pane.tabs[shown]?.id === asked ? null : { frame: self, until: performance.now() + AGAIN_MS };
-		asked = null;
-	}
+	let asked: string | null = $state(null);
+	$effect.pre(() => {
+		if (pane.active === shown) return;
+		untrack(() => {
+			shown = pane.active;
+			switched = pane.tabs[shown]?.id === asked ? null : { frame: self, until: performance.now() + AGAIN_MS };
+			asked = null;
+		});
+	});
 
 	/** The content box: the window the strip moves in, and what says how far off is off. */
-	let contentEl: HTMLElement | null = null;
+	let contentEl: HTMLElement | null = $state(null);
 	/** How far the strip is from home along the bar's axis, in px. */
-	let offset = 0;
+	let offset = $state(0);
 	/**
 	 * The tab drawn beside the one in front — the one the finger is
 	 * bringing on — or -1. Handed to the slot, so the root mounts it.
 	 */
-	let peek = -1;
+	let peek = $state(-1);
 	/** Whether that offset is moving on its own — the slide, or the snap back. */
-	let gliding = false;
+	let gliding = $state(false);
 	/**
 	 * How much smaller the neighbour lands than the tab in front, each side
 	 * (da-466lv): its box is the front's, so it is drawn in the box it will
 	 * land in rather than measured at one and drawn again at the other.
 	 */
-	$: shy = root && peek >= 0 ? lands(pane.tabs[peek]) - lands(active) : 0;
+	const shy = $derived(root && peek >= 0 ? lands(pane.tabs[peek]) - lands(active) : 0);
 
 	/**
 	 * Whether a swipe moves between this pane's tabs: not the root's in
 	 * layout mode, whose tabs are the layouts and which is left only by
 	 * asking how (`leave`, mode.ts — the root bar's tabs do).
 	 */
-	$: swipes = many && (locked || !root);
+	const swipes = $derived(many && (locked || !root));
 
 	const inRange = (index: number) => index >= 0 && index < pane.tabs.length;
 	/** The reader asked for no motion: the swap is instant, as it was. */
@@ -725,9 +748,9 @@
 	}
 
 	/** A slide the shell asked for is under way: the strip stands a box apart before it moves. */
-	let arriving = false;
+	let arriving = $state(false);
 	/** The crossfade that stands in for a slide under reduced motion. */
-	let fading = false;
+	let fading = $state(false);
 	/** The tab asked for while a slide was under way: slid to when it lands. */
 	let queued: string | null = null;
 
@@ -739,7 +762,10 @@
 	 * One at a time: a request during a slide waits for it, and is found by
 	 * its id once the slide's own close has moved the indices.
 	 */
-	$: if (root && $sliding !== null) void goTo($sliding);
+	$effect.pre(() => {
+		const id = $sliding;
+		if (root && id !== null) untrack(() => void goTo(id));
+	});
 
 	async function goTo(id: string) {
 		sliding.set(null);
@@ -823,7 +849,7 @@
 				aria-label="{big ? 'restore' : 'maximize'} the {title} pane"
 				title={big ? 'restore' : 'maximize'}
 				aria-pressed={big}
-				on:click={() => toggleMaximize(pane.id)}
+				onclick={() => toggleMaximize(pane.id)}
 			>
 				<!-- No `width`/`height` of its own: the CSS insets it inside
 				     the button, which a fixed 16px could not be. -->
@@ -844,11 +870,11 @@
 				class="control badge maximize handle"
 				aria-label="move the {title} pane's bar"
 				title="drag to another edge to move the bar"
-				on:pointerdown={grabBar}
-				on:pointermove={dragBar}
-				on:pointerup={dropBar}
-				on:pointercancel={() => ((handle = null), (dropAt = null))}
-				on:keydown={keyBar}
+				onpointerdown={grabBar}
+				onpointermove={dragBar}
+				onpointerup={dropBar}
+				onpointercancel={() => ((handle = null), (dropAt = null))}
+				onkeydown={keyBar}
 			>
 				<!-- Four arrows out of the middle: this moves. -->
 				<svg viewBox="0 0 16 16" aria-hidden="true">
@@ -887,8 +913,8 @@
 								title={labelOf(tab)}
 								aria-selected={i === pane.active}
 								tabindex={i === pane.active ? 0 : -1}
-								on:click={() => activate(i)}
-								on:keydown={(e) => onTabKey(e, i)}
+								onclick={() => activate(i)}
+								onkeydown={(e) => onTabKey(e, i)}
 								>{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}</button
 							>
 						{/if}
@@ -932,7 +958,7 @@
 					use:act={'open'}
 					aria-label="add a tab to the {title} pane"
 					title="add a tab"
-					on:click={() => void addChosen()}>+</button
+					onclick={() => void addChosen()}>+</button
 				>
 				<!-- And the × that closes what the title names (da-efr4i).
 				     vividn, 2026-09-22: «in unlocked mode, add an x to the
@@ -954,32 +980,32 @@
 					disabled={!canClose}
 					aria-label="close the {title} {thing}"
 					title="close this {thing}"
-					on:click={() => apply((l) => closeTab(l, pane.id, pane.active))}>{CLOSE}</button
+					onclick={() => apply((l) => closeTab(l, pane.id, pane.active))}>{CLOSE}</button
 				>
 			{/if}
 		</div>
 	</div>
 	{/if}
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="content"
 		class:gliding
 		class:moving={offset !== 0 || gliding || arriving}
 		class:fading
-		on:animationend={() => (fading = false)}
+		onanimationend={() => (fading = false)}
 		bind:this={contentEl}
 		style:--front="translate{vertical ? 'Y' : 'X'}({offset}px)"
 		style:--beside="translate{vertical ? 'Y' : 'X'}(calc({offset}px {peek > pane.active ? '+' : '-'} (100% + {2 * shy}px)))"
 		style:--shy="{shy}px"
 		style:--slide="{SLIDE_MS}ms"
-		on:pointerdown|capture={swipes ? (e) => (finger = e.pointerId) : undefined}
-		on:touchstart={swipes ? onTouchStart : undefined}
-		on:touchmove|capture|nonpassive={swipes ? (e) => onTouchMove(e, true) : undefined}
-		on:touchmove|nonpassive={swipes ? onTouchMove : undefined}
-		on:touchend={swipes ? onTouchEnd : undefined}
-		on:touchcancel={swipes ? cancel : undefined}
+		onpointerdowncapture={swipes ? (e) => (finger = e.pointerId) : undefined}
+		ontouchstart={swipes ? onTouchStart : undefined}
+		{@attach (el) => (swipes ? on(el, 'touchmove', (e) => onTouchMove(e, true), { capture: true, passive: false }) : undefined)}
+		{@attach (el) => (swipes ? on(el, 'touchmove', onTouchMove, { passive: false }) : undefined)}
+		ontouchend={swipes ? onTouchEnd : undefined}
+		ontouchcancel={swipes ? cancel : undefined}
 	>
-		<slot {peek} />
+		{@render children?.(peek)}
 	</div>
 </section>
 </div>

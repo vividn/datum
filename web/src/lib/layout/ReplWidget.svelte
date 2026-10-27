@@ -7,17 +7,16 @@
 	(registry.ts, da-gvdc).
 -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
 	import Repl from '$lib/Repl.svelte';
 	import { ran, registerRepl } from './engine.js';
 
-	export let reversed = false;
+	let { reversed = false }: { reversed?: boolean } = $props();
 
-	let repl: Repl;
-	let unregister: (() => void) | undefined;
+	let repl = $state<Repl>();
 
-	$: if (repl && !unregister) unregister = registerRepl(repl);
-	onDestroy(() => unregister?.());
+	$effect(() => {
+		if (repl) return registerRepl(repl);
+	});
 </script>
 
-<Repl bind:this={repl} {reversed} on:ran={(e) => void ran(e.detail)} />
+<Repl bind:this={repl} {reversed} onran={(result) => void ran(result)} />

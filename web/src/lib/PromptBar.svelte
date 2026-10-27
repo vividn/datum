@@ -82,7 +82,7 @@
 	title is the storage sentence.
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import Brand from '$lib/Brand.svelte';
 	import ReplEntry from '$lib/ReplEntry.svelte';
 	import { repl } from '$lib/replStore.js';
@@ -95,7 +95,10 @@
 
 	let field: HTMLElement;
 
-	$: if ($prefill !== null) take($prefill);
+	$effect.pre(() => {
+		const asked = $prefill;
+		if (asked !== null) untrack(() => void take(asked));
+	});
 
 	/**
 	 * The one-shot `prefill` signal is taken HERE because the bar is the one
@@ -125,9 +128,9 @@
 	}
 
 	/** The newest command, which is row one — see the output section below. */
-	$: newest = $repl.scrollback.at(-1) ?? null;
+	const newest = $derived($repl.scrollback.at(-1) ?? null);
 
-	$: degraded = isDegraded($storage);
+	const degraded = $derived(isDegraded($storage));
 
 	/**
 	 * WHO GETS AN ESCAPE, first to last (da-al892). One key, one meaning:
@@ -165,7 +168,7 @@
 
 </script>
 
-<svelte:window on:keydown={onKey} />
+<svelte:window onkeydown={onKey} />
 
 <!-- `grip` is the DRAG, and a drag has no keyboard equivalent to offer:
      everything it reaches — the box, the mark, `close history`, Escape — is
@@ -227,7 +230,7 @@
 							type="button"
 							class="failed"
 							style="--fade: {ERROR_MS}ms"
-							on:click={openOutput}><span class="chip">ERROR</span></button
+							onclick={openOutput}><span class="chip">ERROR</span></button
 						>
 					{:else}
 						<div class="marks" style="--fade: {ACTION_MS}ms">
@@ -312,7 +315,7 @@
 		aria-label={$output ? 'close the output section' : 'open the output section'}
 		aria-expanded={$output}
 		title={$output ? 'close the output section' : 'open the output section'}
-		on:click={toggle}><span class="chevron">^</span></button
+		onclick={toggle}><span class="chevron">^</span></button
 	>
 </footer>
 

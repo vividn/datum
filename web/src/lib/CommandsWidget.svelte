@@ -94,7 +94,7 @@
 -->
 
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import type { Pill } from './bar.js';
 	import type { FieldButton } from './fields.js';
 	import ButtonRows from './ButtonRows.svelte';
@@ -124,45 +124,66 @@
 	import { withPills } from './selection.js';
 	import { shellJoin } from './shellSplit.js';
 
-	export let disabled = false;
-	export let grammar: Grammar | null = null;
-	export let pills: Pill[] = [];
-	/** The fields widget's buttons: what a field pill's verbs are read off. */
-	export let fields: FieldButton[] = [];
-	/** Would `redo` move anything? The CLI's own answer, from the pane. */
-	export let redoable = false;
-	/** How many entries have sync conflicts: the CLI's count, from the pane. */
-	export let conflicts = 0;
-	/** Whose bar this is: what it was showing is kept under it across a remount. */
-	export let key = '';
-	/** The prototype (da-u79wl): sections that scroll, and «conflicts» pinned while there are any. */
-	export let sections = false;
+	let {
+		disabled = false,
+		grammar = null,
+		pills = [],
+		/** The fields widget's buttons: what a field pill's verbs are read off. */
+		fields = [],
+		/** Would `redo` move anything? The CLI's own answer, from the pane. */
+		redoable = false,
+		/** How many entries have sync conflicts: the CLI's count, from the pane. */
+		conflicts = 0,
+		/** Whose bar this is: what it was showing is kept under it across a remount. */
+		key = '',
+		/** The prototype (da-u79wl): sections that scroll, and «conflicts» pinned while there are any. */
+		sections = false,
+		/** A press that runs: the argv. */
+		onrun,
+		/** A press that writes the line instead: what to write, and what it spends. */
+		online,
+		/** A flag from a held command's list (da-st2xl). */
+		onflag
+	}: {
+		disabled?: boolean;
+		grammar?: Grammar | null;
+		pills?: Pill[];
+		fields?: FieldButton[];
+		redoable?: boolean;
+		conflicts?: number;
+		key?: string;
+		sections?: boolean;
+		onrun?: (argv: string[]) => void;
+		online?: (line: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }) => void;
+		onflag?: (flag: { command: string; flag: string; keyboard: boolean }) => void;
+	} = $props();
 
 	/** The presses whose kind is theirs whatever is loaded. */
 	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', backups: 'open', place: 'open' };
 
-	const dispatch = createEventDispatcher<{
-		run: string[];
-		line: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean };
-		flag: { command: string; flag: string; keyboard: boolean };
-	}>();
-
 	/** The command whose subcommands the bar shows, if any. Gone with the command, if its pills hide it. */
-	let open = (inProgress.get(key)?.open as string | undefined) ?? null;
+	const kept = untrack(() => inProgress.get(key));
+	let open = $state((kept?.open as string | undefined) ?? null);
 	/** The command whose flags the bar shows, if any (da-st2xl). The same. */
-	let flagged = (inProgress.get(key)?.flagged as string | undefined) ?? null;
-	$: inProgress.set(key, { open, flagged });
-	let bar: HTMLElement | undefined;
+	let flagged = $state((kept?.flagged as string | undefined) ?? null);
+	$effect.pre(() => {
+		inProgress.set(key, { open, flagged });
+	});
+	let bar: HTMLElement | undefined = $state();
 	/** Either bar: SectionPages takes ButtonRows' items, key, section and slot. */
-	$: Bar = (sections ? SectionPages : ButtonRows) as typeof ButtonRows<CommandButton>;
+	const Bar = $derived((sections ? SectionPages : ButtonRows) as typeof ButtonRows<CommandButton>);
 	/** What SectionPages takes beyond them: its columns, and «conflicts» kept in sight while there are any. */
-	$: paged = sections ? { columns: COLUMNS, pinned: (command: CommandButton) => conflicts > 0 && command.name === 'conflicts' } : {};
-	$: listed = commandsUnder(grammar, pills, fields);
-	$: if (open && !listed.some((command) => command.name === open)) open = null;
-	$: if (flagged && !listed.some((command) => command.name === flagged)) flagged = null;
-	$: shown = flagged ? flagsOf(grammar, flagged) : open ? subcommandsOf(grammar, open) : listed;
+	const paged = $derived(sections ? { columns: COLUMNS, pinned: (command: CommandButton) => conflicts > 0 && command.name === 'conflicts' } : {});
+	const listed = $derived(commandsUnder(grammar, pills, fields));
+	$effect.pre(() => {
+		if (open && !listed.some((command) => command.name === open)) open = null;
+	});
+	$effect.pre(() => {
+		if (flagged && !listed.some((command) => command.name === flagged)) flagged = null;
+	});
+	const shown = $derived(flagged ? flagsOf(grammar, flagged) : open ? subcommandsOf(grammar, open) : listed);
 	/** What a tap on `command` does: the press below and the outline are both this. */
-	$: kindOf = (command: CommandButton): ActKind =>
+	const kindOf = $derived((command: CommandButton): ActKind =>
 		FIXED[command.press] ??
 		(opensField(command.name, pills)
 			? 'open'
@@ -170,7 +191,7 @@
 				? 'show'
 				: fires(grammar?.get(command.name), pills) || fieldVerb(command.name, pills, fields)?.runs
 					? 'run'
-					: 'fill');
+					: 'fill'));
 
 	/**
 	 * A hold fills the bare command and opens its flags — even where a tap
@@ -180,7 +201,7 @@
 	function hold(el: HTMLElement): void {
 		const name = el.dataset.command!;
 		flagged = name;
-		dispatch('line', { name, line: `${name} `, keyboard: false, held: true });
+		online?.({ name, line: `${name} `, keyboard: false, held: true });
 	}
 
 	onMount(() => holds(bar!, { within: 'button[data-holds]', run: hold }).destroy);
@@ -195,9 +216,9 @@
 		if (command.press === 'back') back();
 		else if (command.press === 'backups') void openBackups(command.name === 'db restore' ? 'restore' : 'plans');
 		else if (command.press === 'place') void openPlace(command.name);
-		else if (command.press === 'flag') dispatch('flag', { command: flagged!, flag: command.name, keyboard: command.next === 'type' });
+		else if (command.press === 'flag') onflag?.({ command: flagged!, flag: command.name, keyboard: command.next === 'type' });
 		else if (kindOf(command) === 'show') open = command.name;
-		else if (kindOf(command) === 'run') dispatch('run', [command.name]);
+		else if (kindOf(command) === 'run') onrun?.([command.name]);
 		else {
 			// Words TYPED next go after the field and hid pills, so those are
 			// written into their slots first and spent (da-8ru0m): a pill left
@@ -210,8 +231,8 @@
 			// The command's own words stay bare (`db migrate` is two); what follows is quoted.
 			const line = [argv[0], shellJoin(argv.slice(1))].join(' ').trimEnd();
 			// Straight into the first key's frame, where a bare word fills it (da-31d1d, da-p3hxn).
-			if (keyed) dispatch('line', { name: command.name, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: used });
-			else dispatch('line', { name: command.name, line: `${line} `, keyboard: command.next !== 'tap', spend: used });
+			if (keyed) online?.({ name: command.name, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: used });
+			else online?.({ name: command.name, line: `${line} `, keyboard: command.next !== 'tap', spend: used });
 		}
 	}
 
@@ -224,89 +245,91 @@
 	}
 </script>
 
-<svelte:window on:keydown={onKeyDown} />
+<svelte:window onkeydown={onKeyDown} />
 
-<svelte:component
-	this={Bar}
+<Bar
 	class="commands"
 	items={shown}
 	key={(command) => command.name}
 	section={open || flagged ? undefined : (command) => command.section}
 	{...paged}
 	bind:bar
-	let:item={command}
 >
-	<button slot="probe" class="command" tabindex="-1">probe</button>
-	{#if command.name === 'undo'}
-		<span class="undo">
-			<button class="command" use:act={'run'} {disabled} data-command="undo" data-glyph={ICONS.undo} aria-label="undo" title="run undo" on:click={() => press(command)}>
+	{#snippet probe()}
+		<button class="command" tabindex="-1">probe</button>
+	{/snippet}
+	{#snippet children({ item: command }: { item: CommandButton })}
+		{#if command.name === 'undo'}
+			<span class="undo">
+				<button class="command" use:act={'run'} {disabled} data-command="undo" data-glyph={ICONS.undo} aria-label="undo" title="run undo" onclick={() => press(command)}>
+					{command.label}
+				</button>
+				<button
+					class="command redo"
+					use:act={'run'}
+					disabled={disabled || !redoable}
+					data-command="redo"
+					aria-label="redo"
+					title={redoable ? 'run redo' : 'nothing to redo'}
+					onclick={() => onrun?.(['redo'])}
+				>
+					↷
+				</button>
+			</span>
+		{:else if command.press === 'help'}
+			<!-- Never disabled: it runs nothing until it is asked about something. -->
+			<button
+				class="command help"
+				use:act={'arm'}
+				class:armed={$helping}
+				data-command="help"
+				aria-pressed={$helping}
+				title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
+				onclick={arm}
+			>
+				<!-- `Help` alone sizes the button; armed, it is hidden and the
+				     armed label is drawn over the same box, so arming it moves
+				     nothing on the bar. -->
+				<span class="label" class:hidden={$helping}>{command.label}</span>
+				{#if $helping}<span class="label armed">? on what<small>(tap: all)</small></span>{/if}
+			</button>
+		{:else if command.press === 'back'}
+			<button class="command" use:act={'show'} {disabled} data-back title="back to every command" onclick={() => press(command)}>
 				{command.label}
 			</button>
+		{:else if command.press === 'flag'}
 			<button
-				class="command redo"
-				use:act={'run'}
-				disabled={disabled || !redoable}
-				data-command="redo"
-				aria-label="redo"
-				title={redoable ? 'run redo' : 'nothing to redo'}
-				on:click={() => dispatch('run', ['redo'])}
+				class="command"
+				use:act={'fill'}
+				{disabled}
+				data-flag={`${flagged} ${command.name}`}
+				data-help={command.help}
+				title={command.help}
+				onclick={() => press(command)}
 			>
-				↷
+				{command.label}
 			</button>
-		</span>
-	{:else if command.press === 'help'}
-		<!-- Never disabled: it runs nothing until it is asked about something. -->
-		<button
-			class="command help"
-			use:act={'arm'}
-			class:armed={$helping}
-			data-command="help"
-			aria-pressed={$helping}
-			title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
-			on:click={arm}
-		>
-			<!-- `Help` alone sizes the button; armed, it is hidden and the
-			     armed label is drawn over the same box, so arming it moves
-			     nothing on the bar. -->
-			<span class="label" class:hidden={$helping}>{command.label}</span>
-			{#if $helping}<span class="label armed">? on what<small>(tap: all)</small></span>{/if}
-		</button>
-	{:else if command.press === 'back'}
-		<button class="command" use:act={'show'} {disabled} data-back title="back to every command" on:click={() => press(command)}>
-			{command.label}
-		</button>
-	{:else if command.press === 'flag'}
-		<button
-			class="command"
-			use:act={'fill'}
-			{disabled}
-			data-flag={`${flagged} ${command.name}`}
-			data-help={command.help}
-			title={command.help}
-			on:click={() => press(command)}
-		>
-			{command.label}
-		</button>
-	{:else}
-		{@const icon = ICONS[command.name] ?? ''}
-		{@const clashing = command.name === 'conflicts' ? conflicts : 0}
-		<button
-			class="command"
-			use:act={kindOf(command)}
-			class:opens={kindOf(command) === 'open'}
-			class:drawn={icon.length > 1}
-			class:clashing
-			{disabled}
-			data-command={command.name}
-			data-glyph={icon.length === 1 ? icon : undefined}
-			data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
-			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'backups' ? 'open Backups' : command.press === 'place' ? `open ${command.label}` : `${command.name} …`}
-			on:click={() => press(command)}
-		>
-			{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}{command.label}{clashing ? ` ${clashing}` : ''}
-		</button>
-	{/if}
-</svelte:component>
+		{:else}
+			{@const icon = ICONS[command.name] ?? ''}
+			{@const clashing = command.name === 'conflicts' ? conflicts : 0}
+			<button
+				class="command"
+				use:act={kindOf(command)}
+				class:opens={kindOf(command) === 'open'}
+				class:drawn={icon.length > 1}
+				class:clashing
+				{disabled}
+				data-command={command.name}
+				data-glyph={icon.length === 1 ? icon : undefined}
+				data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
+				title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'backups' ? 'open Backups' : command.press === 'place' ? `open ${command.label}` : `${command.name} …`}
+				onclick={() => press(command)}
+			>
+				{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}{command.label}{clashing ? ` ${clashing}` : ''}
+			</button>
+		{/if}
+	{/snippet}
+</Bar>
 
 <style>
 	/* The look itself is `button.command`, shared with the Sync widget

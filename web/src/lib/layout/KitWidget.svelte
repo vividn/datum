@@ -23,6 +23,7 @@
 	does and the epoch it bumps redraws the list.
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { browser } from '$app/env';
 	import Pane from '$lib/Pane.svelte';
 	import { kitWidgetArgv, type KitWidgetRow } from '$lib/calls.js';
@@ -31,16 +32,21 @@
 	import { pressWithPills } from './engine.js';
 	import { kitWidget, refreshKits, type KitWidget } from './store.js';
 
-	export let settings: Record<string, unknown> = {};
-	export let epoch = 0;
+	let {
+		settings = {},
+		epoch = 0
+	}: {
+		settings?: Record<string, unknown>;
+		epoch?: number;
+	} = $props();
 
-	$: kit = String(settings.kit ?? '');
-	$: name = String(settings.widget ?? '');
+	const kit = $derived(String(settings.kit ?? ''));
+	const name = $derived(String(settings.widget ?? ''));
 
-	let def: KitWidget | null = null;
-	let rows: KitWidgetRow[] | null = null;
+	let def = $state.raw<KitWidget | null>(null);
+	let rows = $state.raw<KitWidgetRow[] | null>(null);
 	/** What to show instead of rows: the command's words, or why there are none. */
-	let words = '';
+	let words = $state('');
 	/** Reads started and the newest one on screen: last started wins (see CliPane.svelte). */
 	let started = 0;
 	let shown = -1;
@@ -50,7 +56,10 @@
 	/** The command's words for no rows, and the command they are for. */
 	let empty: { command: string; words: string } | null = null;
 
-	$: if (browser) void read(kit, name, epoch);
+	$effect.pre(() => {
+		const asked = [kit, name, epoch] as const;
+		if (browser) untrack(() => void read(...asked));
+	});
 
 	async function read(kit: string, name: string, _epoch: number): Promise<void> {
 		const at = ++started;
@@ -94,7 +103,7 @@
 	const actionOf = (action: string, row: KitWidgetRow): string[] =>
 		shellSplit(action).map((word) => word.replace(/\{(\w+)\}/g, (_, column: string) => cell(row[column])));
 
-	$: columns = Math.max(0, ...(rows ?? []).map((r) => r.row_cells.length));
+	const columns = $derived(Math.max(0, ...(rows ?? []).map((r) => r.row_cells.length)));
 </script>
 
 <Pane title={def?.title ?? name}>
@@ -103,7 +112,7 @@
 			<div class="rows" style:--columns={columns}>
 				{#each rows as row, i (i)}
 					{#if def?.row_action}
-						<button type="button" class="row" style:color={row.row_color} on:click={() => void pressWithPills(actionOf(def?.row_action ?? '', row))}>
+						<button type="button" class="row" style:color={row.row_color} onclick={() => void pressWithPills(actionOf(def?.row_action ?? '', row))}>
 							{#each row.row_cells as c}<span>{c}</span>{/each}
 						</button>
 					{:else}

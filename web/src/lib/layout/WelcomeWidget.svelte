@@ -46,6 +46,6 @@
 <Pane title="welcome">
 	<WelcomeText />
 	{#if $close}
-		<button type="button" class="command" use:act={'run'} on:click={$close}>Close welcome</button>
+		<button type="button" class="command" use:act={'run'} onclick={$close}>Close welcome</button>
 	{/if}
 </Pane>

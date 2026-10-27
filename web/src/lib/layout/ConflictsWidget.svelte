@@ -41,9 +41,9 @@
 	const HOWS: Choice['how'][] = ['', ...STRATEGIES];
 
 	/** What is chosen for each entry, and what the CLI said to its last resolve, by hid. */
-	let chosen: Record<string, Choice> = {};
-	let refused: Record<string, string> = {};
-	let busy = false;
+	let chosen: Record<string, Choice> = $state({});
+	let refused: Record<string, string> = $state({});
+	let busy = $state(false);
 
 	const choose = (hid: string, change: Partial<Choice>) =>
 		(chosen = { ...chosen, [hid]: { ...(chosen[hid] ?? UNCHOSEN), ...change } });
@@ -80,7 +80,7 @@
 							class:on={picked === letter}
 							aria-pressed={picked === letter}
 							data-side={letter}
-							on:click={() => pick(entry.hid, key, picked === letter ? '' : letter.toLowerCase())}
+							onclick={() => pick(entry.hid, key, picked === letter ? '' : letter.toLowerCase())}
 						>
 							<b>{letter}</b>
 							<span class="value">{said(key, side.value)}</span>
@@ -91,7 +91,7 @@
 						aria-label={`${key}: a side's letter, or a value`}
 						placeholder="a, b or a value"
 						value={choice.picks[key] ?? ''}
-						on:input={(e) => pick(entry.hid, key, e.currentTarget.value)}
+						oninput={(e) => pick(entry.hid, key, e.currentTarget.value)}
 					/>
 				</div>
 			{/each}
@@ -103,12 +103,12 @@
 						class:on={choice.how === how}
 						aria-checked={choice.how === how}
 						data-how={how}
-						on:click={() => choose(entry.hid, { how })}>{how ? `--${how}` : 'keep as shown'}</button
+						onclick={() => choose(entry.hid, { how })}>{how ? `--${how}` : 'keep as shown'}</button
 					>
 				{/each}
 			</div>
 			<div class="run">
-				<button type="button" class="command" use:act={'run'} disabled={busy || !$ready} on:click={() => resolve(entry.hid, argv)}>Resolve</button>
+				<button type="button" class="command" use:act={'run'} disabled={busy || !$ready} onclick={() => resolve(entry.hid, argv)}>Resolve</button>
 				<code>{shellJoin(argv)}</code>
 			</div>
 			{#if refused[entry.hid]}<p class="refused">{refused[entry.hid]}</p>{/if}

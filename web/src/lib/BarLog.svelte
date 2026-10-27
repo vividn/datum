@@ -40,22 +40,30 @@
 	button is simply at the bottom of the box.
 -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import Repl from '$lib/Repl.svelte';
 	import { repl } from '$lib/replStore.js';
 	import { armed, closeLog, inLog, scrolled, toNewest, trackLog } from '$lib/log.js';
 	import { grip } from '$lib/grip.js';
 
 	/** The box the rows are in — the ONE NUMBER's to scroll, and nobody else's. */
-	let scroller: HTMLDivElement | undefined;
-	$: trackLog(scroller ?? null);
+	let scroller: HTMLDivElement | undefined = $state();
+	$effect.pre(() => {
+		const box = scroller ?? null;
+		untrack(() => trackLog(box));
+	});
 	// PHASE 2, and it is the same pull as phase 1: past the ceiling the bar
 	// cannot open further, so the number becomes the list moving ($lib/log.ts).
-	$: if (scroller) scroller.scrollTop = $scrolled;
+	$effect.pre(() => {
+		if (scroller) scroller.scrollTop = $scrolled;
+	});
 	// A command that lands is row one again, so the list comes back to its
 	// newest — the same pin `Repl.svelte` does after a run, said to the
 	// number, so the two cannot disagree about where the list is.
-	$: $repl.scrollback, toNewest();
+	$effect.pre(() => {
+		void $repl.scrollback;
+		untrack(toNewest);
+	});
 	onDestroy(() => trackLog(null));
 </script>
 
@@ -67,7 +75,7 @@
 		<Repl reversed bare skip={1} bind:body={scroller} />
 	{/if}
 	{#if $inLog}
-		<button type="button" class="top" on:click={closeLog}>close history</button>
+		<button type="button" class="top" onclick={closeLog}>close history</button>
 	{/if}
 </div>
 

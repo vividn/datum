@@ -18,7 +18,7 @@
 	import CliPane from './CliPane.svelte';
 	import { commandArgv, type PaneSpec } from './panes.js';
 
-	export let epoch = 0;
+	let { epoch = 0 }: { epoch?: number } = $props();
 
 	// The keys predate the name: the kind was `command` until da-zqop
 	// renamed it `custom`, and a reader's saved line must survive that.
@@ -27,11 +27,12 @@
 	const HINT = 'type a datum command, e.g. tail -n 5 — nowview runs as nowview -o -, the picture';
 
 	/** The command as typed. */
-	let line = '';
-	let spec = specFor(line);
+	let line = $state('');
+	// Raw: CliPane tells the spec that wrote by identity, which a proxy is not.
+	let spec = $state.raw(specFor(''));
 	/** The line being edited, or null when the title bar shows the command. */
-	let draft: string | null = null;
-	let edit: HTMLButtonElement | undefined;
+	let draft: string | null = $state(null);
+	let edit: HTMLButtonElement | undefined = $state();
 
 	// A fresh object every time, the same line re-applied included: a new
 	// spec is what tells CliPane it is a new command, due one run.
@@ -45,7 +46,7 @@
 	}
 
 	/** The spec CliPane has seen write; see `guard` there. */
-	let writer: PaneSpec | null = null;
+	let writer = $state.raw<PaneSpec | null>(null);
 
 	// A store the browser blocks throws on the property itself; the pane
 	// then starts empty and keeps its command for the visit.
@@ -67,7 +68,9 @@
 		}
 	}
 
-	$: if (writer === spec) save(WRITES_KEY, line);
+	$effect.pre(() => {
+		if (writer === spec) save(WRITES_KEY, line);
+	});
 
 	async function close(next: string | null): Promise<void> {
 		if (next !== null) {
@@ -91,7 +94,7 @@
 </script>
 
 <CliPane {spec} {epoch} guard bind:writer>
-	<svelte:fragment slot="title">
+	{#snippet title()}
 		{#if draft === null}
 			{spec.title}
 			<button
@@ -100,7 +103,7 @@
 				title="edit the command"
 				aria-label="edit the command"
 				bind:this={edit}
-				on:click={() => (draft = line)}
+				onclick={() => (draft = line)}
 				>✎</button
 			>
 		{:else}
@@ -111,11 +114,11 @@
 				spellcheck="false"
 				autocomplete="off"
 				bind:value={draft}
-				on:keydown={key}
+				onkeydown={key}
 				use:focus
 			/>
 		{/if}
-	</svelte:fragment>
+	{/snippet}
 </CliPane>
 
 <style>

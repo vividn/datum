@@ -79,7 +79,7 @@
 	behind it (`+N`), so Enter, once it is fixed, goes on from there.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { act } from '$lib/act.js';
 	import { clearLine, ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
 	import { roleOf, valuedFlags } from '$lib/commands.js';
@@ -88,11 +88,13 @@
 	import { advance, complete, framesOf, type Frame } from '$lib/keyframes.js';
 	import { repl } from '$lib/replStore.js';
 
-	/**
-	 * True in an input widget. It is where a focus that nobody clicked
-	 * goes while one is on screen (`focusLine` in $lib/bar.ts).
-	 */
-	export let widget = false;
+	let {
+		/**
+		 * True in an input widget. It is where a focus that nobody clicked
+		 * goes while one is on screen (`focusLine` in $lib/bar.ts).
+		 */
+		widget = false
+	}: { widget?: boolean } = $props();
 
 	/** The air between what is typed and the first pill. */
 	const GAP = 10;
@@ -103,15 +105,15 @@
 	let cursor = -1;
 	let draft = '';
 	/** A pasted block's lines after the one in the box, which Enter runs next. */
-	let held: string[] = [];
+	let held: string[] = $state([]);
 
 	let box: HTMLInputElement;
 	/** The scrollport: `.field`, which the run is longer than. */
 	let port: HTMLElement;
 	/** The scrollport's width: what the run has before it goes off the edge. */
-	let boxWidth = 0;
-	let textWidth = 0;
-	let pillsWidth = 0;
+	let boxWidth = $state(0);
+	let textWidth = $state(0);
+	let pillsWidth = $state(0);
 
 	onMount(() => registerLine(box, widget));
 
@@ -123,26 +125,30 @@
 	 * and whenever the line is empty again.
 	 */
 	const keyboard = () => box?.removeAttribute('inputmode');
-	$: if (!$text) keyboard();
-	$: if (!$text) held = [];
+	$effect.pre(() => {
+		if (!$text) untrack(keyboard);
+	});
+	$effect.pre(() => {
+		if (!$text) held = [];
+	});
 
 	/**
 	 * The pills by ROLE (da-tu30m): context stands before the box like a
 	 * breadcrumb — where the line is, not what is in it — and the
 	 * arguments ride after the text, where they go into the argv.
 	 */
-	$: context = $pills.filter((p) => roleOf(p, $pills) === 'context');
-	$: args = $pills.filter((p) => !context.includes(p));
+	const context = $derived($pills.filter((p) => roleOf(p, $pills) === 'context'));
+	const args = $derived($pills.filter((p) => !context.includes(p)));
 
 	/** The flags whose next word is their value, which no key's frame takes. */
-	$: valued = valuedFlags($grammar?.get($text.trimStart().split(/\s/)[0]));
-	$: frames = framesOf($text, $fields, valued);
+	const valued = $derived(valuedFlags($grammar?.get($text.trimStart().split(/\s/)[0])));
+	const frames = $derived(framesOf($text, $fields, valued));
 	/** The keys still to write, waiting in their frames after the text. */
-	$: waiting = frames?.filter((f) => f.from === undefined) ?? [];
+	const waiting = $derived(frames?.filter((f) => f.from === undefined) ?? []);
 	/** An optional key written with nothing in it yet, at the end: its default is ghosted after it. */
-	$: trailing = frames?.find((f) => f.value === '' && f.default !== undefined && f.to === $text.length);
+	const trailing = $derived(frames?.find((f) => f.value === '' && f.default !== undefined && f.to === $text.length));
 	/** The line cut at the frames, for the copy that draws them. */
-	$: pieces = cut($text, frames ?? []);
+	const pieces = $derived(cut($text, frames ?? []));
 
 	function cut(line: string, frames: Frame[]): { text: string; frame?: Frame }[] {
 		const out: { text: string; frame?: Frame }[] = [];
@@ -167,7 +173,7 @@
 	}
 
 	/** What the pills follow: what is typed, or the ghost while one is up. */
-	$: mirrored = $text ? $text + (trailing?.default ?? '') : $ghost ? $ghost.line : '';
+	const mirrored = $derived($text ? $text + (trailing?.default ?? '') : $ghost ? $ghost.line : '');
 	/**
 	 * THE LINE IS ONE SCROLLING RUN: the box, a gap, then the pills.
 	 *
@@ -204,11 +210,14 @@
 	 * never scrolls — the ONE scroll is the run's, which is what makes the
 	 * pills part of the same gesture.
 	 */
-	$: inputWidth = Math.max(textWidth + CARET, boxWidth);
+	const inputWidth = $derived(Math.max(textWidth + CARET, boxWidth));
 	/** The pills, straight after the typed text, and the run they end. */
-	$: pillsLeft = textWidth + GAP;
-	$: runWidth = pillsWidth ? Math.max(inputWidth, pillsLeft + pillsWidth) : inputWidth;
-	$: void follow(inputWidth);
+	const pillsLeft = $derived(textWidth + GAP);
+	const runWidth = $derived(pillsWidth ? Math.max(inputWidth, pillsLeft + pillsWidth) : inputWidth);
+	$effect.pre(() => {
+		const width = inputWidth;
+		untrack(() => void follow(width));
+	});
 
 	/**
 	 * Keep the caret on the screen after the box has been RESIZED.
@@ -312,7 +321,7 @@
 	}
 </script>
 
-<form class="line" on:submit|preventDefault={submit}>
+<form class="line" onsubmit={(event) => (event.preventDefault(), submit())}>
 	<span class="prompt">❯</span>
 	<!-- After the `❯`, not before it: the `❯` stays where it always stood,
 	     and the ACTION words that start under it (PromptBar.svelte) too. -->
@@ -331,11 +340,11 @@
 			style="width: {inputWidth}px"
 			bind:this={box}
 			bind:value={$text}
-			on:keydown={recall}
-			on:beforeinput={space}
-			on:paste={paste}
-			on:pointerdown={keyboard}
-			on:blur={keyboard}
+			onkeydown={recall}
+			onbeforeinput={space}
+			onpaste={paste}
+			onpointerdown={keyboard}
+			onblur={keyboard}
 			disabled={!$ready}
 			placeholder={$ready ? '' : 'opening database…'}
 			spellcheck="false"
@@ -401,8 +410,8 @@
 			use:act={'fill'}
 			aria-label="clear the input"
 			title="clear the input"
-			on:mousedown|preventDefault
-			on:click={clearLine}>×</button
+			onmousedown={(event) => event.preventDefault()}
+			onclick={clearLine}>×</button
 		>
 	{/if}
 	<!-- SEND (da-1pzwl): Enter without a keyboard. vividn: «Let's add a
@@ -432,8 +441,8 @@
 			class:idle={!$text.trim()}
 			aria-label="run the line"
 			title="run the line"
-			on:mousedown|preventDefault
-			on:click={submit}>➤</button
+			onmousedown={(event) => event.preventDefault()}
+			onclick={submit}>➤</button
 		>
 	{/if}
 </form>

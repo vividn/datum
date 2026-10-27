@@ -35,7 +35,7 @@
 	import { now, stampLabel } from '$lib/clock.js';
 	import { repl, record } from '$lib/replStore.js';
 	import { isDegraded, storage } from '$lib/storageState.js';
-	import { createEventDispatcher, onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import Pane from './Pane.svelte';
 	import ReplEntry from './ReplEntry.svelte';
 	import { asking, fileCommand, progress } from './dbio.js';
@@ -46,59 +46,65 @@
 	import { shellJoin } from './shellSplit.js';
 	import { syncCommand } from './sync.js';
 
-	/** Newest entry first, the view pinned to the top. */
-	export let reversed = false;
+	let {
+		/** Newest entry first, the view pinned to the top. */
+		reversed = false,
+		/**
+		 * Draw the body alone — no title strip, no outline (Pane's `bare`).
+		 *
+		 * The bar's log is the caller. vividn, 2026-09-21: "Remove the 'repl'
+		 * header line."
+		 */
+		bare = false,
+		/**
+		 * How many of the newest entries this view does NOT draw.
+		 *
+		 * The bar's log passes 1, because the bar's own output section is row
+		 * one and dragging the log up must not meet it again (vividn, 2026-09-21:
+		 * "it shouldn't be repeated when you drag it up"). One list, and the two
+		 * surfaces show different slices of it.
+		 */
+		skip = 0,
+		/**
+		 * The scrolling box, bindable.
+		 *
+		 * The bar's log is the caller (da-tj6m): down there the ONE NUMBER owns
+		 * this box's vertical scroll, so it has to be able to reach it.
+		 */
+		body = $bindable(),
+		/** Each run, once it has landed in the scrollback. */
+		onran
+	}: {
+		reversed?: boolean;
+		bare?: boolean;
+		skip?: number;
+		body?: HTMLDivElement | undefined;
+		onran?: (result: RunResult) => void;
+	} = $props();
 
-	/**
-	 * Draw the body alone — no title strip, no outline (Pane's `bare`).
-	 *
-	 * The bar's log is the caller. vividn, 2026-09-21: "Remove the 'repl'
-	 * header line."
-	 */
-	export let bare = false;
-
-	/**
-	 * How many of the newest entries this view does NOT draw.
-	 *
-	 * The bar's log passes 1, because the bar's own output section is row
-	 * one and dragging the log up must not meet it again (vividn, 2026-09-21:
-	 * "it shouldn't be repeated when you drag it up"). One list, and the two
-	 * surfaces show different slices of it.
-	 */
-	export let skip = 0;
-
-	const dispatch = createEventDispatcher<{ ran: RunResult }>();
-
-	let pane: Pane;
-	/**
-	 * The scrolling box, bindable.
-	 *
-	 * The bar's log is the caller (da-tj6m): down there the ONE NUMBER owns
-	 * this box's vertical scroll, so it has to be able to reach it.
-	 */
-	export let body: HTMLDivElement | undefined = undefined;
+	let pane = $state<Pane>();
 	/** The scrollback's content width, in whole pixels, once measured. */
-	let width: number | null = null;
+	let width = $state<number | null>(null);
 	/** Resolved by the first measurement, which a command run before it waits for (da-2flub). */
 	let measured: () => void;
 	const measuring = new Promise<void>((done) => (measured = done));
 
-	$: ordered = reversed ? [...$repl.scrollback].reverse() : $repl.scrollback;
+	const ordered = $derived(reversed ? [...$repl.scrollback].reverse() : $repl.scrollback);
 	// `skip` takes from the NEWEST end whichever way the list runs.
-	$: entries = skip ? (reversed ? ordered.slice(skip) : ordered.slice(0, -skip)) : ordered;
+	const entries = $derived(skip ? (reversed ? ordered.slice(skip) : ordered.slice(0, -skip)) : ordered);
 
 	// AS MANY ENTRIES SIDE BY SIDE AS THE BOX HOLDS (da-5iyo, $lib/scrollback.ts).
 	// The same `width` a drawn command is asked for is what says how many:
 	// it is the body's CONTENT box, which is the room the columns have.
-	$: columns = columnsIn(width);
+	const columns = $derived(columnsIn(width));
 	// An entry whose command answered with its own printed text rather than
 	// an action echo — a table, a picture, an error — takes the whole row.
-	$: wide = entries.map((entry) => !parseEcho(entry.result.stdout));
-	$: rows = rowsOf(wide, columns);
+	const wide = $derived(entries.map((entry) => !parseEcho(entry.result.stdout)));
+	const rows = $derived(rowsOf(wide, columns));
 	// The hairline stands on a SEAM (da-qdm7), so it is drawn above every
 	// row but the first — and above that one too when this view begins at
 	// `skip`, because then there is a row above that it does not draw.
-	$: ruled = rows.map((row) => row > 0 || skip > 0);
+	const ruled = $derived(rows.map((row) => row > 0 || skip > 0));
 
 	/** The view to the newest entry: the bottom, or the top when reversed. */
 	function pin(): void {
@@ -109,9 +115,14 @@
 	// The scrollback is restored before the first paint ($lib/replStore.ts);
 	// pin the view to its newest entry the way a run does, once the pane is
 	// mounted — and again when the order flips.
-	$: reversed, pane && tick().then(pin);
+	$effect.pre(() => {
+		void reversed;
+		if (pane) untrack(() => tick().then(pin));
+	});
 	// A progress line lands beside the newest entry; keep it in view.
-	$: if ($progress && pane) tick().then(pin);
+	$effect.pre(() => {
+		if ($progress && pane) untrack(() => tick().then(pin));
+	});
 
 	// What a drawn command has to be told (`fitArgv`): the content box, not
 	// the element's own width — the body is padded, and an image a fraction
@@ -171,7 +182,7 @@
 		record(line, ranAt, result);
 		await tick();
 		pin();
-		dispatch('ran', result);
+		onran?.(result);
 	}
 </script>
 

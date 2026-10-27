@@ -63,10 +63,10 @@
 	import { toStore } from 'svelte/store';
 
 	const url = toStore(() => page.url);
-	$: db = $url ? currentDb() : DEFAULT_DB;
+	const db = $derived($url ? currentDb() : DEFAULT_DB);
 
 	/** The pool, as the menu last read it. */
-	let pool: string[] = [];
+	let pool: string[] = $state([]);
 
 	onMount(refresh);
 
@@ -80,12 +80,12 @@
 	 * that EXIST, and a database named in the URL has none until something
 	 * writes to it.
 	 */
-	$: names = [...new Set([DEFAULT_DB, db, ...pool])]
+	const names = $derived([...new Set([DEFAULT_DB, db, ...pool])]
 		.filter((name) => name !== INTERNAL_DB)
-		.sort();
+		.sort());
 
 	/** The tick is the paint; `checked` is the fact (PaneMenu's `menuitemradio`). */
-	$: items = [
+	const items = $derived([
 		...names.map(
 			(name): Item => ({
 				label: name,
@@ -95,7 +95,7 @@
 			})
 		),
 		{ label: 'new database', glyph: ' ', act: 'open' as const, run: () => void create() }
-	] satisfies Item[];
+	] satisfies Item[]);
 
 	/** This page, on `name`. A load, not a `goto` — see the note above. */
 	function open(name: string): void {

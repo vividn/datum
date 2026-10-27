@@ -14,6 +14,7 @@
 	arranges them.
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { browser } from '$app/env';
 	import Pane from '$lib/Pane.svelte';
 	import { run, runKey } from '$lib/run.js';
@@ -33,16 +34,24 @@
 	import { fields } from './engine.js';
 	import { offers } from './options.js';
 
-	export let settings: ChartSettings = DEFAULT_CHART;
-	export let epoch = 0;
+	let {
+		settings = DEFAULT_CHART,
+		epoch = 0
+	}: {
+		settings?: ChartSettings;
+		epoch?: number;
+	} = $props();
 
-	let rows: Row[] = [];
+	let rows = $state.raw<Row[]>([]);
 	let started = 0;
 	let shown = -1;
 	const keys = new Map<string, string>();
 	const keyOf = (field: string) => keys.get(field) ?? keys.set(field, runKey()).get(field)!;
 
-	$: if (browser) void load(settings.fields, settings.range, epoch);
+	$effect.pre(() => {
+		const asked = [settings.fields, settings.range, epoch] as const;
+		if (browser) untrack(() => void load(...asked));
+	});
 
 	async function load(asked: string[], range: string, _epoch: number): Promise<void> {
 		const at = ++started;
@@ -64,43 +73,47 @@
 		rows = read.flat();
 	}
 
-	$: offers.update((o) => ({
-		...o,
-		[FIELDS_OFFER]: $fields.map(({ field }) => ({ value: field, label: field })),
-		[keysOffer(settings.fields)]: [
-			{ value: '', label: 'first number key' },
-			...keysOf(rows).map((k) => ({ value: k, label: k }))
-		]
-	}));
+	$effect.pre(() => {
+		const offered = {
+			[FIELDS_OFFER]: $fields.map(({ field }) => ({ value: field, label: field })),
+			[keysOffer(settings.fields)]: [
+				{ value: '', label: 'first number key' },
+				...keysOf(rows).map((k) => ({ value: k, label: k }))
+			]
+		};
+		untrack(() => offers.update((o) => ({ ...o, ...offered })));
+	});
 
-	$: colors = Object.fromEntries($fields.map((f) => [f.field, f.color]));
-	$: stateColors = Object.fromEntries($fields.map((f) => [f.field, f.stateColors]));
-	$: chart = chartOf(rows, settings, nowX(), colors, stateColors);
+	const colors = $derived(Object.fromEntries($fields.map((f) => [f.field, f.color])));
+	const stateColors = $derived(Object.fromEntries($fields.map((f) => [f.field, f.stateColors])));
+	const chart = $derived(chartOf(rows, settings, nowX(), colors, stateColors));
 
-	let width = 0;
-	let height = 0;
+	let width = $state(0);
+	let height = $state(0);
 	const PAD = { left: 34, right: 6, top: 6, bottom: 16 };
-	$: plotW = Math.max(0, width - PAD.left - PAD.right);
-	$: plotH = Math.max(0, height - PAD.top - PAD.bottom);
-	$: sx = (x: number) => PAD.left + ((x - chart.from) / (chart.to - chart.from)) * plotW;
-	$: [lo, hi] =
+	const plotW = $derived(Math.max(0, width - PAD.left - PAD.right));
+	const plotH = $derived(Math.max(0, height - PAD.top - PAD.bottom));
+	const sx = $derived((x: number) => PAD.left + ((x - chart.from) / (chart.to - chart.from)) * plotW);
+	const [lo, hi] = $derived(
 		chart.kind === 'numeric'
 			? chart.min === chart.max
 				? [chart.min - 1, chart.max + 1]
 				: [chart.min, chart.max]
-			: [0, chart.kind === 'categorical' ? chart.max : 1];
-	$: sy = (y: number) => PAD.top + (1 - (y - lo) / (hi - lo)) * plotH;
-	$: ticks = chart.kind === 'categorical' ? [0, hi] : [lo, (lo + hi) / 2, hi];
+			: [0, chart.kind === 'categorical' ? chart.max : 1]
+	);
+	const sy = $derived((y: number) => PAD.top + (1 - (y - lo) / (hi - lo)) * plotH);
+	const ticks = $derived(chart.kind === 'categorical' ? [0, hi] : [lo, (lo + hi) / 2, hi]);
 	const fmt = (v: number) => String(Number(v.toPrecision(3)));
-	$: points = settings.show !== 'average';
-	$: means = settings.show !== 'points';
-	$: legend =
+	const points = $derived(settings.show !== 'average');
+	const means = $derived(settings.show !== 'points');
+	const legend = $derived(
 		chart.kind === 'numeric'
 			? chart.series.map(({ name, color }) => ({ name, color }))
 			: chart.kind === 'categorical'
 				? chart.names
-				: [];
-	$: what = chart.kind === 'categorical' ? 'count' : means ? 'mean' : 'each';
+				: []
+	);
+	const what = $derived(chart.kind === 'categorical' ? 'count' : means ? 'mean' : 'each');
 </script>
 
 <Pane title="chart">

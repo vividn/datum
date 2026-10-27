@@ -1189,9 +1189,12 @@ function app(page, errors, query, clean, internal) {
 		 * navigate next.
 		 */
 		async wipe() {
+			// All but which device this is: a boot decides that once (`device`, shell.ts), and
+			// this is no boot. The frames' acts asked it again as they were drawn, and as
+			// `$derived`s they ask only when a menu reads them (da-g9qi2).
 			await page.evaluate(() => {
 				for (const key of Object.keys(localStorage))
-					if (key.startsWith('datum.layout.')) localStorage.removeItem(key);
+					if (key.startsWith('datum.layout.') && key !== 'datum.layout.device.v1') localStorage.removeItem(key);
 			});
 			// The reader's saves, and their HISTORY with them — a delete
 			// leaves a save's versions behind, which a layout saved again

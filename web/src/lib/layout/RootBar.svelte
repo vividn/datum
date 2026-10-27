@@ -141,30 +141,30 @@
 	import type { BarEdge, Tab } from './types.js';
 	import type { Toward } from './tree.js';
 
-	let busy = false;
-	let error = '';
+	let busy = $state(false);
+	let error = $state('');
 	/** The active save's versions, newest first, while the list is open. */
-	let trail: { version: number; modifyTime: string }[] | null = null;
+	let trail: { version: number; modifyTime: string }[] | null = $state(null);
 
 	/** The root's `Split`: an arrow is a side of the whole layout (`addEdge`). */
 	const SIDE: Record<Toward, BarEdge> = { left: 'left', right: 'right', up: 'top', down: 'bottom' };
 
-	$: tabs = $layout.root.tabs;
-	$: active = tabs[$layout.root.active] as Tab | undefined;
-	$: name = active?.layout;
+	const tabs = $derived($layout.root.tabs);
+	const active = $derived(tabs[$layout.root.active] as Tab | undefined);
+	const name = $derived(active?.layout);
 	/** The acts work on THIS COPY of the layout (da-crp5): its tab id, not its name. */
-	$: id = active?.id;
-	$: dirty = id !== undefined && $modified.has(id);
+	const id = $derived(active?.id);
+	const dirty = $derived(id !== undefined && $modified.has(id));
 	/**
 	 * A PREVIEW (da-xamd): seeded from a link and italic, and written
 	 * NOWHERE yet — not this device's open list, not a draft, not the layout
 	 * store — so it is gone on a reload. `Keep tab` below is what writes it.
 	 */
-	$: preview = name !== undefined && $previews.has(name);
+	const preview = $derived(name !== undefined && $previews.has(name));
 	/** When this database's sync was paused, while it is (da-wlbyx). */
-	$: paused = $syncStates[currentDb()]?.paused;
+	const paused = $derived($syncStates[currentDb()]?.paused);
 	/** How far a sync session's apply is, while one runs (da-a7oa4). */
-	$: applying = $syncStates[currentDb()]?.applying;
+	const applying = $derived($syncStates[currentDb()]?.applying);
 	/**
 	 * The sync notices nobody has acknowledged (da-8fucg), of every database
 	 * a tab is on: each one's sync leader reads them and says so to every
@@ -172,9 +172,9 @@
 	 * running, so nothing joins it unseen, and its old notices are said
 	 * again when it is opened.
 	 */
-	$: noticed = Object.values($syncStates).flatMap((s) => (s.notices ?? []).map((n) => ({ db: s.db, n })));
+	const noticed = $derived(Object.values($syncStates).flatMap((s) => (s.notices ?? []).map((n) => ({ db: s.db, n }))));
 	/** The members a copy found on joining are not news (da-o9xdd): an ⓘ, unless something else is. */
-	$: alarming = noticed.some(({ n }) => n.kind !== 'member');
+	const alarming = $derived(noticed.some(({ n }) => n.kind !== 'member'));
 
 	/**
 	 * The widget's own options, inline (da-vhwq), for a root tab that SHOWS
@@ -182,11 +182,11 @@
 	 * the only door to them. The scope a session setting is held against is
 	 * the layout this tab names, which is the outermost there is.
 	 */
-	$: sessionOf = keyOf($layout, id ?? '');
-	$: held = $session[sessionOf] ?? {};
-	$: options = widgetOptions(active, held, sessionOf, $offers);
+	const sessionOf = $derived(keyOf($layout, id ?? ''));
+	const held = $derived($session[sessionOf] ?? {});
+	const options = $derived(widgetOptions(active, held, sessionOf, $offers));
 	/** Loaded, and no act in flight: what a test waits for before pressing. */
-	$: ready = $loaded && !busy && active !== undefined;
+	const ready = $derived($loaded && !busy && active !== undefined);
 
 	/**
 	 * The `+`: the chooser, and what it came back with. A layout opens as a
@@ -247,7 +247,7 @@
 	 * layout instead, so it keeps its acts (da-y2f6). The same rule a
 	 * pane's frame reads.
 	 */
-	$: acts =
+	const acts = $derived(
 		name === undefined
 			? undefined
 			: {
@@ -259,13 +259,14 @@
 					// here at all (da-luwe).
 					reset: shippedTree(name) ? doReset : undefined,
 					saveAs: doSaveAs
-				};
+				}
+	);
 
 	/**
 	 * `Keep tab` (da-xamd): only a preview has it, because only a preview is
 	 * not kept already. Keeping writes nothing into the tree.
 	 */
-	$: keep = preview ? [{ label: 'Keep tab', run: () => void attempt(async () => id !== undefined && keepTab(id)) }] : [];
+	const keep = $derived(preview ? [{ label: 'Keep tab', run: () => void attempt(async () => id !== undefined && keepTab(id)) }] : []);
 
 	/**
 	 * What the open tab's name opens. In NORMAL MODE, what the tab shows and
@@ -280,19 +281,19 @@
 	 * three ways out of the mode (`mode.ts`): Accept, Save layout where the
 	 * tab holds one, Discard changes. Close last, as ever.
 	 */
-	$: arrange = [
+	const arrange = $derived([
 		{ label: CHANGE, act: 'open' as const, run: () => id !== undefined && void fillTab(id) },
 		{ label: 'Split', row: aimed('split: a new pane', (t) => apply((l) => addEdge(l, SIDE[t]))) },
 		{ label: 'Accept', run: accept },
 		...(name === undefined ? [] : [{ label: 'Save layout', act: 'run' as const, run: () => void attempt(saveMode) }]),
 		{ label: 'Discard changes', run: discard },
 		{ label: 'Close tab', glyph: CLOSE, disabled: tabs.length < 2, run: () => close($layout.root.active) }
-	] satisfies Item[];
+	] satisfies Item[]);
 
-	$: reset = resetWidget(active);
-	$: items = $editing
+	const reset = $derived(resetWidget(active));
+	const items = $derived($editing
 		? arrange
-		: [...(reset ? [{ label: 'Reset widget', run: reset }] : []), ...options, ...(acts ? layoutActs(acts) : []), ...keep];
+		: [...(reset ? [{ label: 'Reset widget', run: reset }] : []), ...options, ...(acts ? layoutActs(acts) : []), ...keep]);
 
 	/**
 	 * Escape in layout mode asks how to leave it (vividn: «Esc Esc reverts,
@@ -376,13 +377,13 @@
 	 * what makes this menu the page's and not a tab's: only the storage
 	 * sentence moves it.
 	 */
-	$: settings = [
+	const settings = $derived([
 		{ label: 'Backups', act: 'open' as const, run: () => void openBackups() },
 		{ label: 'Sync', act: 'open' as const, run: () => void openPlace('sync') },
 		{ label: 'Reset default layouts', act: 'open' as const, run: doResetDefaults },
 		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true },
 		{ label: `datum.day is early software. ${$storageSentence}`, note: true as const }
-	];
+	]);
 
 	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
 	async function onTabKey(event: KeyboardEvent, index: number) {
@@ -396,7 +397,7 @@
 		strip?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
 	}
 
-	let strip: HTMLElement | null = null;
+	let strip: HTMLElement | null = $state(null);
 
 	/** A tab's marks: the dot's class, and the italics of a preview. */
 	const marks = (tab: Tab, dots: Set<string>, shown: Set<string>) =>
@@ -408,7 +409,7 @@
 	const TEETH = [0, 45, 90, 135, 180, 225, 270, 315];
 </script>
 
-<svelte:window on:keydown={onEscape} />
+<svelte:window onkeydown={onEscape} />
 
 <nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts" data-layout-mode={$editing ? '' : undefined}>
 	<!-- A hold on the OPEN tab, let go where it was, or its context menu —
@@ -450,8 +451,8 @@
 					class:preview={tab.layout !== undefined && $previews.has(tab.layout)}
 					aria-selected={i === $layout.root.active}
 					tabindex={i === $layout.root.active ? 0 : -1}
-					on:click={() => go(i)}
-					on:keydown={(e) => onTabKey(e, i)}
+					onclick={() => go(i)}
+					onkeydown={(e) => onTabKey(e, i)}
 				>
 					{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}
 				</button>
@@ -465,20 +466,20 @@
 					aria-label="close the {labelOf(tab)} tab"
 					title="close this tab"
 					disabled={tabs.length < 2}
-					on:click={() => close(i)}>{CLOSE}</button
+					onclick={() => close(i)}>{CLOSE}</button
 				>
 			{/if}
 		{/each}
 	</div>
 	<button type="button" class="control badge add" use:act={'open'} aria-label="open a layout" title="open a layout"
 		data-help="A layout is a page of panes, each holding a widget. Opens one as a new tab — a saved layout, or a single widget on its own; the tabs switch between them."
-		on:click={add}>+</button
+		onclick={add}>+</button
 	>
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
 	<!-- Sync paused (da-wlbyx) is loud: vividn calls it risky. Every tab hears
 	     it from the database's sync leader, and a tap resumes. -->
 	{#if paused}
-		<button type="button" class="control paused" title="sync paused since {paused} — tap to resume" on:click={() => run(pausedArgv(false))}
+		<button type="button" class="control paused" title="sync paused since {paused} — tap to resume" onclick={() => run(pausedArgv(false))}
 			>sync paused</button
 		>
 	{/if}
@@ -497,7 +498,7 @@
 			aria-label="sync notices"
 			title="a device joined, or the sync chain changed: tap to read"
 			data-help="Something changed in a sync chain: a device joined, an admin was added, or the chain was unlocked. Tap to read it and acknowledge it."
-			on:click={doNotices}>{alarming ? '⚠' : 'ⓘ'}</button
+			onclick={doNotices}>{alarming ? '⚠' : 'ⓘ'}</button
 		>
 	{/if}
 	<span class="end">
@@ -510,7 +511,7 @@
 		aria-pressed={$helping}
 		aria-label="help"
 		title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
-		on:click={arm}>?</button
+		onclick={arm}>?</button
 	>
 	{/if}
 	<PaneMenu
@@ -530,13 +531,13 @@
 	{#if trail && !dirty}
 		<ul class="versions">
 			{#if trail.length}
-				<li><button type="button" on:click={() => pick()}>→ forward</button></li>
+				<li><button type="button" onclick={() => pick()}>→ forward</button></li>
 			{:else}
 				<li>not saved yet</li>
 			{/if}
 			{#each trail as v (v.version)}
 				<li>
-					<button type="button" on:click={() => pick(v.version)}
+					<button type="button" onclick={() => pick(v.version)}
 						>v{v.version} · {new Date(v.modifyTime).toLocaleString()}</button
 					>
 				</li>

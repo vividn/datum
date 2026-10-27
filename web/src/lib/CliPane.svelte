@@ -5,12 +5,12 @@
 	shows the text that comes back. No parsing, no formatting, no database
 	— everything it displays was produced by datum itself.
 -->
-<script context="module" lang="ts">
+<script module lang="ts">
 	let panes = 0;
 </script>
 
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack, type Snippet } from 'svelte';
 	import { browser } from '$app/env';
 	import Pane from './Pane.svelte';
 	import { act } from './act.js';
@@ -24,39 +24,56 @@
 	import { dependsOnNow, paneArgv, wantsBox, type PaneBox, type PaneSpec } from './panes.js';
 	import { settle } from './layout/resizing.js';
 
-	export let spec: PaneSpec;
-	/** Any change re-runs the command. The frame bumps it after each run. */
-	export let epoch = 0;
-	/**
-	 * Stop re-running a command once a run of it has WRITTEN (da-wb2n).
-	 *
-	 * For a pane whose command the reader types: `occur coffee` there would
-	 * log a coffee on every epoch, and with other tabs refreshing on a write,
-	 * two tabs would feed each other. So the first run is the one the reader
-	 * asked for, and a run the worker reports as `changed` puts the pane on
-	 * ▶ from then on. By effect, never by verb — the frame's own rule
-	 * (+page.svelte) — so `get`, which moves the last-docs pointer, is on ▶
-	 * too. A new `spec` is a new command, and runs once again. So is a run
-	 * the CLI stopped to ask about (da-f5pg2, a stale `_LAST` under `retime`):
-	 * ▶ asks it in a confirm, which a refresh must not do on every epoch.
-	 */
-	export let guard = false;
-	/**
-	 * The body's type, as a scale on the pane's 0.85rem (da-hkjp). The tail
-	 * kind declares it as an option and the registry resolves the name to
-	 * this number; every other CLI pane is 1.
-	 */
-	export let scale = 1;
+	let {
+		spec,
+		/** Any change re-runs the command. The frame bumps it after each run. */
+		epoch = 0,
+		/**
+		 * Stop re-running a command once a run of it has WRITTEN (da-wb2n).
+		 *
+		 * For a pane whose command the reader types: `occur coffee` there would
+		 * log a coffee on every epoch, and with other tabs refreshing on a write,
+		 * two tabs would feed each other. So the first run is the one the reader
+		 * asked for, and a run the worker reports as `changed` puts the pane on
+		 * ▶ from then on. By effect, never by verb — the frame's own rule
+		 * (+page.svelte) — so `get`, which moves the last-docs pointer, is on ▶
+		 * too. A new `spec` is a new command, and runs once again. So is a run
+		 * the CLI stopped to ask about (da-f5pg2, a stale `_LAST` under `retime`):
+		 * ▶ asks it in a confirm, which a refresh must not do on every epoch.
+		 */
+		guard = false,
+		/**
+		 * The body's type, as a scale on the pane's 0.85rem (da-hkjp). The tail
+		 * kind declares it as an option and the registry resolves the name to
+		 * this number; every other CLI pane is 1.
+		 */
+		scale = 1,
+		/**
+		 * The spec whose run wrote: while it is `spec`, the pane runs on ▶ only.
+		 * A prop so a pane that keeps its command across a mount can keep this
+		 * with it — known, not learned again by writing once more (da-v36y).
+		 */
+		writer = $bindable(null),
+		/** The caller's title controls, forwarded into the pane's title slot. */
+		title: titled
+	}: {
+		spec: PaneSpec;
+		epoch?: number;
+		guard?: boolean;
+		scale?: number;
+		writer?: PaneSpec | null;
+		title?: Snippet;
+	} = $props();
 
-	let result: RunResult | null = null;
+	let result = $state.raw<RunResult | null>(null);
 	/** The argv on screen, as its words. */
-	let shown = '';
+	let shown = $state('');
 	/** This pane in the worker's queue: its newer run drops its older, unstarted one. */
 	const key = `pane:${++panes}`;
 
-	let body: HTMLDivElement | undefined;
+	let body: HTMLDivElement | undefined = $state();
 	/** The body's content box, once measured. See `paneArgv`. */
-	let box: PaneBox | null = null;
+	let box = $state.raw<PaneBox | null>(null);
 
 	// The content box, not the element's own width: the body is padded, and
 	// a band authored 19px wider than the box it is shown in is scaled back
@@ -90,45 +107,6 @@
 		};
 	});
 
-	// Not on mount: the static build prerenders this page, and there is no
-	// database (or `run`) outside the browser. The request is rebuilt from
-	// the epoch and the box together, so a resize re-runs a drawn view the
-	// same way a write does — and only a drawn view: for any other command
-	// `sized` stays null, and an unchanged null invalidates nothing.
-	// The tail table reads its own listing, sized to the box (see
-	// TailTable.svelte); every other pane is one command through the seam.
-	//
-	// By the spec's WORDS, not the spec: the layout hands a pane its spec
-	// afresh on every change to the tree (a spread prop), and Svelte counts
-	// an object handed over again as changed — so a request built from
-	// `spec` itself re-ran every drawn pane on every nudge of a border
-	// (da-jgrn). Strings and booleans are compared by value, and stay put.
-	$: words = JSON.stringify(spec.argv);
-	$: table = spec.view === 'tail-table';
-	$: drawn = wantsBox(spec.argv);
-	$: sized = drawn ? box : null;
-	// A pane whose picture is of NOW re-runs when the minute turns
-	// (da-r61i): nowview's durations grow, dayview's now-line moves, and
-	// until this they stood still between writes. The clock is the app's
-	// one timer ($lib/clock.ts) and every such pane shares it; a pane
-	// running anything else — the tail, a `get` — folds in a constant and
-	// so is not invalidated by the tick at all. nowview's snapshot moves
-	// on a ten-second beat instead (da-fprk0); a nowview with a window is
-	// drawn `--ahead` and slid by its widget, and ticks not at all (da-hklaz).
-	$: ticks = !dependsOnNow(spec.argv) ? 0 : spec.argv[0] === 'nowview' ? $tenSeconds : $minute;
-	$: request = { argv: table ? null : paneArgv(JSON.parse(words) as string[], sized), epoch, ticks };
-	$: manual = guard && writer === spec;
-	$: if (browser && request.argv && !manual) void refresh();
-	// The picture on screen is not the one asked for: the cursor moved, and
-	// the new one is on its way. Dimmed rather than presented as current.
-	$: behind = !!result && !manual && !!request.argv && JSON.stringify(request.argv) !== shown;
-
-	/**
-	 * The spec whose run wrote: while it is `spec`, the pane runs on ▶ only.
-	 * A prop so a pane that keeps its command across a mount can keep this
-	 * with it — known, not learned again by writing once more (da-v36y).
-	 */
-	export let writer: PaneSpec | null = null;
 	/** Whether a run is out, and whether a newer one was asked for meanwhile. */
 	let out = false;
 	let waiting = false;
@@ -172,6 +150,41 @@
 		shown = JSON.stringify(argv);
 		record(shellJoin(argv), ranAt, result);
 	}
+	// Not on mount: the static build prerenders this page, and there is no
+	// database (or `run`) outside the browser. The request is rebuilt from
+	// the epoch and the box together, so a resize re-runs a drawn view the
+	// same way a write does — and only a drawn view: for any other command
+	// `sized` stays null, and an unchanged null invalidates nothing.
+	// The tail table reads its own listing, sized to the box (see
+	// TailTable.svelte); every other pane is one command through the seam.
+	//
+	// By the spec's WORDS, not the spec: the layout hands a pane its spec
+	// afresh on every change to the tree (a spread prop), and Svelte counts
+	// an object handed over again as changed — so a request built from
+	// `spec` itself re-ran every drawn pane on every nudge of a border
+	// (da-jgrn). Strings and booleans are compared by value, and stay put.
+	let words = $derived(JSON.stringify(spec.argv));
+	let table = $derived(spec.view === 'tail-table');
+	let drawn = $derived(wantsBox(spec.argv));
+	let sized = $derived(drawn ? box : null);
+	// A pane whose picture is of NOW re-runs when the minute turns
+	// (da-r61i): nowview's durations grow, dayview's now-line moves, and
+	// until this they stood still between writes. The clock is the app's
+	// one timer ($lib/clock.ts) and every such pane shares it; a pane
+	// running anything else — the tail, a `get` — folds in a constant and
+	// so is not invalidated by the tick at all. nowview's snapshot moves
+	// on a ten-second beat instead (da-fprk0); a nowview with a window is
+	// drawn `--ahead` and slid by its widget, and ticks not at all (da-hklaz).
+	let ticks = $derived(!dependsOnNow(spec.argv) ? 0 : spec.argv[0] === 'nowview' ? $tenSeconds : $minute);
+	let request = $derived({ argv: table ? null : paneArgv(JSON.parse(words) as string[], sized), epoch, ticks });
+	let manual = $derived(guard && writer === spec);
+	$effect.pre(() => {
+		const asked = request;
+		if (browser && asked.argv && !manual) untrack(() => void refresh());
+	});
+	// The picture on screen is not the one asked for: the cursor moved, and
+	// the new one is on its way. Dimmed rather than presented as current.
+	let behind = $derived(!!result && !manual && !!request.argv && JSON.stringify(request.argv) !== shown);
 </script>
 
 <!--
@@ -180,12 +193,13 @@
 	frame's to draw (da-ndjo). Its default fills the unframed pane's h2,
 	which is where `spec.title` is still wanted.
 -->
-<Pane title={spec.title} ownTitle={!!$$slots.title} {scale} bind:body>
-	<slot name="title" slot="title">{spec.title}</slot>
+<Pane title={spec.title} ownTitle={!!titled} {scale} bind:body>
+	<!-- A `slot=` and not a snippet: Pane's `title` is a prop too, which a snippet of that name would replace. -->
+	<svelte:fragment slot="title">{#if titled}{@render titled()}{:else}{spec.title}{/if}</svelte:fragment>
 	{#if manual}
 		<p class="quiet">
 			this command writes — it runs only when you press
-			<button type="button" class="play" use:act={'run'} title="run it" aria-label="run it" on:click={press}>▶</button>
+			<button type="button" class="play" use:act={'run'} title="run it" aria-label="run it" onclick={press}>▶</button>
 		</p>
 	{/if}
 	{#if spec.view === 'tail-table'}

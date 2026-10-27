@@ -16,7 +16,7 @@
 	now», «Back up all now»), SINGLE opens something (a picker, a confirm).
 -->
 <script lang="ts">
-	import { onDestroy, onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import Pane from '$lib/Pane.svelte';
 	import { act } from '$lib/act.js';
 	import { restoreArgv } from '$lib/calls.js';
@@ -56,22 +56,22 @@
 	} from '$lib/backups.js';
 	import type { StepResult } from '$lib/probe.js';
 
-	let body: HTMLElement | undefined;
-	let note = '';
-	let dbs: string[] = [];
+	let body: HTMLElement | undefined = $state();
+	let note = $state('');
+	let dbs: string[] = $state([]);
 	/** One gzipped backup's size, by database. */
 	let sizes: Record<string, number> = {};
 	/** Each plan's reach after a day, a month and a year — and the new plan's, under ''. */
-	let reach: Record<string, Reach[]> = {};
+	let reach: Record<string, Reach[]> = $state({});
 
-	let fresh: Plan = draft(currentDb());
-	let slotsText = '';
+	let fresh: Plan = $state(draft(currentDb()));
+	let slotsText = $state('');
 	/** What the new plan's destination already holds, once asked. */
-	let found: Backup[] | null = null;
+	let found: Backup[] | null = $state(null);
 	/** «Test connection»'s steps, once run. */
-	let probe: StepResult[] | null = null;
+	let probe: StepResult[] | null = $state(null);
 	/** What the new plan's destination needs to allow this page. */
-	$: cors = KINDS[fresh.kind]?.cors;
+	const cors = $derived(KINDS[fresh.kind]?.cors);
 
 	const EVERY: [number, string][] = [
 		[15 * 60, 'every 15 minutes'],
@@ -80,13 +80,15 @@
 		[24 * HOUR, 'daily']
 	];
 
-	let ready = false;
+	let ready = $state(false);
 	onMount(() => void opened().then(() => (ready = true)));
 	// `db restore` scrolls to the first plan's backups, however the place was
 	// reached. `scrollToRestore` clears the request, so this fires once per
 	// request; a widget gone before it was ready clears it too, or the next
 	// Backups to mount would scroll unasked.
-	$: if (ready && $toRestore) void scrollToRestore();
+	$effect.pre(() => {
+		if (ready && $toRestore) untrack(() => void scrollToRestore());
+	});
 	onDestroy(() => toRestore.set(false));
 
 	async function scrollToRestore(): Promise<void> {
@@ -224,8 +226,8 @@
 		<section class="local">
 			<h3>A file on this device</h3>
 			<div class="row">
-				<button type="button" use:act={'open'} data-backup="save" on:click={saveLocal}>Save a backup file</button>
-				<button type="button" use:act={'open'} data-backup="restore-file" on:click={restoreLocal}>Restore from a file</button>
+				<button type="button" use:act={'open'} data-backup="save" onclick={saveLocal}>Save a backup file</button>
+				<button type="button" use:act={'open'} data-backup="restore-file" onclick={restoreLocal}>Restore from a file</button>
 			</div>
 		</section>
 
@@ -254,10 +256,10 @@
 							? `${plan.slots} slots`
 							: 'no cap'}</span
 					>
-					<button type="button" use:act={'run'} data-backup="now" disabled={s?.running} on:click={() => perform(() => backUp(plan))}
+					<button type="button" use:act={'run'} data-backup="now" disabled={s?.running} onclick={() => perform(() => backUp(plan))}
 						>{s?.running ? 'Backing up…' : 'Back up now'}</button
 					>
-					<button type="button" use:act={'open'} data-backup="delete" on:click={() => removePlan(plan)}>Delete plan</button>
+					<button type="button" use:act={'open'} data-backup="delete" onclick={() => removePlan(plan)}>Delete plan</button>
 				</div>
 				{#if reach[plan.name]}
 					<p class="quiet explain">{reachText(plan, reach[plan.name])}. {spaceText(plan, reach[plan.name])}</p>
@@ -280,7 +282,7 @@
 									<span class="quiet"
 										>slot {backup.slot} · {backup.entry_count} entries · {bytes(backup.size)}{backup.mine ? '' : ` · from ${backup.owner}`}</span
 									>
-									<button type="button" use:act={'open'} on:click={() => restoreSlot(plan, db, backup)}>Restore</button>
+									<button type="button" use:act={'open'} onclick={() => restoreSlot(plan, db, backup)}>Restore</button>
 								</li>
 							{/each}
 						</ul>
@@ -290,7 +292,7 @@
 		{/each}
 
 		{#if $plans.length > 1}
-			<button type="button" use:act={'run'} data-backup="all" on:click={() => perform(async () => { for (const p of $plans) await backUp(p); })}
+			<button type="button" use:act={'run'} data-backup="all" onclick={() => perform(async () => { for (const p of $plans) await backUp(p); })}
 				>Back up all now</button
 			>
 		{/if}
@@ -304,7 +306,7 @@
 					<select
 						data-plan-field="kind"
 						value={fresh.kind}
-						on:change={(e) => setFresh({ kind: e.currentTarget.value, config: defaults(e.currentTarget.value) })}
+						onchange={(e) => setFresh({ kind: e.currentTarget.value, config: defaults(e.currentTarget.value) })}
 					>
 						{#each offered(currentDb()) as kind}<option value={kind}>{KINDS[kind].label}</option>{/each}
 					</select>
@@ -318,7 +320,7 @@
 							autocomplete="off"
 							placeholder={field.placeholder ?? ''}
 							value={fresh.config[field.key] ?? ''}
-							on:change={(e) => setFresh({ config: { ...fresh.config, [field.key]: e.currentTarget.value } })}
+							onchange={(e) => setFresh({ config: { ...fresh.config, [field.key]: e.currentTarget.value } })}
 						/></label
 					>
 					{#if field.note}<p class="quiet note-field">{field.note}</p>{/if}
@@ -333,12 +335,12 @@
 				<fieldset>
 					<legend>Databases</legend>
 					{#each dbs as db}
-						<label class="check"><input type="checkbox" checked={fresh.dbs.includes(db)} on:change={() => toggleDb(db)} />{db}</label>
+						<label class="check"><input type="checkbox" checked={fresh.dbs.includes(db)} onchange={() => toggleDb(db)} />{db}</label>
 					{/each}
 				</fieldset>
 				<label
 					>Frequency
-					<select value={fresh.every} on:change={(e) => setFresh({ every: Number(e.currentTarget.value) })}>
+					<select value={fresh.every} onchange={(e) => setFresh({ every: Number(e.currentTarget.value) })}>
 						{#each EVERY as [secs, label]}<option value={secs}>{label}</option>{/each}
 					</select>
 				</label>
@@ -349,7 +351,7 @@
 						min="1"
 						placeholder="none — grows with time"
 						bind:value={slotsText}
-						on:change={() => setFresh({ slots: Number(slotsText) > 0 ? Math.floor(Number(slotsText)) : null })}
+						onchange={() => setFresh({ slots: Number(slotsText) > 0 ? Math.floor(Number(slotsText)) : null })}
 					/></label
 				>
 				{#if reach['']}<p class="quiet explain">{reachText(fresh, reach[''])}. {spaceText(fresh, reach[''])}</p>{/if}
@@ -365,10 +367,10 @@
 				{/if}
 				<div class="row">
 					{#if KINDS[fresh.kind]?.test}
-						<button type="button" use:act={'run'} data-backup="test" on:click={testIt}>Test connection</button>
+						<button type="button" use:act={'run'} data-backup="test" onclick={testIt}>Test connection</button>
 					{/if}
-					<button type="button" use:act={'show'} on:click={look}>Look for backups there</button>
-					<button type="button" use:act={'run'} data-backup="add" on:click={add}>Add plan</button>
+					<button type="button" use:act={'show'} onclick={look}>Look for backups there</button>
+					<button type="button" use:act={'run'} data-backup="add" onclick={add}>Add plan</button>
 				</div>
 			</section>
 		{/if}

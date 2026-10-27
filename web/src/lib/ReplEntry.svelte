@@ -29,38 +29,43 @@
 	import { parseEcho } from '$lib/echo.js';
 	import type { Command } from '$lib/replStore.js';
 
-	export let entry: Command;
-	/**
-	 * Show every document a multi-document command echoed.
-	 *
-	 * The history has the room and shows them all; the bar's output section
-	 * is a fixed height and shows what fits with a `+N` for the rest
-	 * (Docs.svelte). Same component, same row, one number of difference.
-	 */
-	export let all = false;
-
-	/**
-	 * How many lines of RAW output a surface that cannot scroll has room for,
-	 * or 0 for all of it.
-	 *
-	 * The other number of difference between the two surfaces. A command with
-	 * no action echo — a `tail` table, `stats`, an error — is whole in the
-	 * history, where the pane scrolls; in the bar's row it is the LAST few
-	 * lines, because vividn asked for that before this row existed: "If it fits
-	 * in 3-4 lines, then just display, otherwise … show the last 4 lines."
-	 * A fixed-height box that simply clipped would show the FIRST lines,
-	 * which for a table is the oldest rows and for an error is the preamble.
-	 */
-	export let cap = 0;
+	let {
+		entry,
+		/**
+		 * Show every document a multi-document command echoed.
+		 *
+		 * The history has the room and shows them all; the bar's output section
+		 * is a fixed height and shows what fits with a `+N` for the rest
+		 * (Docs.svelte). Same component, same row, one number of difference.
+		 */
+		all = false,
+		/**
+		 * How many lines of RAW output a surface that cannot scroll has room for,
+		 * or 0 for all of it.
+		 *
+		 * The other number of difference between the two surfaces. A command with
+		 * no action echo — a `tail` table, `stats`, an error — is whole in the
+		 * history, where the pane scrolls; in the bar's row it is the LAST few
+		 * lines, because vividn asked for that before this row existed: "If it fits
+		 * in 3-4 lines, then just display, otherwise … show the last 4 lines."
+		 * A fixed-height box that simply clipped would show the FIRST lines,
+		 * which for a table is the oldest rows and for an error is the preamble.
+		 */
+		cap = 0
+	}: {
+		entry: Command;
+		all?: boolean;
+		cap?: number;
+	} = $props();
 
 	/** A command's documents, when it echoed any ($lib/echo.ts). */
-	$: docs = parseEcho(entry.result.stdout);
+	const docs = $derived(parseEcho(entry.result.stdout));
 	// stdout while there is any: a warning on stderr beside a good answer is
 	// not the answer. With nothing on stdout — an error, a command that only
 	// reports progress — stderr is all the CLI said, so it is what is shown.
 	// Both are datum's; neither is rewritten.
-	$: raw = entry.result.stdout.trim() ? entry.result.stdout : entry.result.stderr;
-	$: failed = entry.result.code !== 0 && !!entry.result.stderr.trim();
+	const raw = $derived(entry.result.stdout.trim() ? entry.result.stdout : entry.result.stderr);
+	const failed = $derived(entry.result.code !== 0 && !!entry.result.stderr.trim());
 </script>
 
 <div class="head" class:capped={!!cap} class:all>

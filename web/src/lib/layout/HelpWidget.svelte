@@ -20,6 +20,7 @@
 	screen could just be the front page of the help widget in general»).
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { ansiSpans } from '$lib/ansi.js';
 	import AnsiText from '$lib/AnsiText.svelte';
 	import { explained, fitHelp } from '$lib/help.js';
@@ -30,7 +31,7 @@
 
 	/** The headings of the folds this device keeps open: a per-viewer convenience. */
 	const KEY = 'datum-help-open';
-	let opened: string[] = [];
+	let opened: string[] = $state([]);
 	try {
 		opened = JSON.parse(localStorage.getItem(KEY) ?? '[]');
 	} catch {
@@ -47,9 +48,12 @@
 	}
 
 	/** The explanation, whose width in characters a help page is asked for at (da-nrjze). */
-	let box: HTMLDivElement | undefined;
-	let width = 0;
-	$: fitHelp(box && width ? charactersIn(box.querySelector('pre') ?? box, width) : null);
+	let box: HTMLDivElement | undefined = $state();
+	let width = $state(0);
+	$effect.pre(() => {
+		const characters = box && width ? charactersIn(box.querySelector('pre') ?? box, width) : null;
+		untrack(() => fitHelp(characters));
+	});
 
 	/** `GLOBAL OPTIONS` → `Global options`. */
 	const label = (heading: string) => heading.charAt(0) + heading.slice(1).toLowerCase();
@@ -58,7 +62,7 @@
 <Pane title="help">
 	{#if $explained}
 		<div bind:this={box} bind:clientWidth={width}>
-			<button type="button" class="front" on:click={() => explained.set(null)}>← front page</button>
+			<button type="button" class="front" onclick={() => explained.set(null)}>← front page</button>
 			<h3 class="asked">{$explained.title}</h3>
 			{#if $explained.guide === 'sync'}
 				<SyncGuide widget={$explained.text} />
@@ -70,7 +74,7 @@
 						<details
 							data-section={section.heading}
 							open={opened.includes(section.heading)}
-							on:toggle={(e) => toggled(section.heading, e.currentTarget.open)}
+							ontoggle={(e) => toggled(section.heading, e.currentTarget.open)}
 						>
 							<summary>{label(section.heading)}</summary>
 							<pre class="section">{section.text}</pre>

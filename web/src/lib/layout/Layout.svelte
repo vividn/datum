@@ -48,6 +48,8 @@
 	widget with more in it than its box holds scrolls inside it.
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import Layout from './Layout.svelte';
 	import Pane from '$lib/Pane.svelte';
 	import { act } from '$lib/act.js';
 	import PaneFrame, { ROW, badge, lands } from './PaneFrame.svelte';
@@ -66,12 +68,19 @@
 	import { keyOf, session, setSession, withSession } from './session.js';
 	import { settled } from '$lib/run.js';
 
-	export let pane: PaneNode;
-	export let epoch = 0;
-	/** The root pane's id: the one pane whose last tab cannot be closed. */
-	export let rootId: NodeId;
-	/** Normal mode: the page is not in layout mode, so nothing here moves the tree. */
-	export let locked = false;
+	let {
+		pane,
+		epoch = 0,
+		/** The root pane's id: the one pane whose last tab cannot be closed. */
+		rootId,
+		/** Normal mode: the page is not in layout mode, so nothing here moves the tree. */
+		locked = false
+	}: {
+		pane: PaneNode;
+		epoch?: number;
+		rootId: NodeId;
+		locked?: boolean;
+	} = $props();
 
 	/**
 	 * The border between two children, in pixels — the gap between panes,
@@ -92,9 +101,9 @@
 	const SNAP_PX = 8;
 	const NONE = { width: 0, height: 0 };
 
-	$: active = pane.tabs[pane.active];
-	$: content = active.content;
-	$: canClose = !(pane.id === rootId && pane.tabs.length === 1);
+	const active = $derived(pane.tabs[pane.active]);
+	const content = $derived(active.content);
+	const canClose = $derived(!(pane.id === rootId && pane.tabs.length === 1));
 	/**
 	 * The maximized pane (da-00am), resolved HERE and nowhere else: the root
 	 * render is the one place that substitutes a subtree, so there is no
@@ -102,7 +111,7 @@
 	 * root, the state belongs to the tab in front, and the pane is still in
 	 * its tree — which is how a closed or broken-out pane heals itself.
 	 */
-	$: big = pane.id === rootId ? maximizedIn($maximized, active) : null;
+	const big = $derived(pane.id === rootId ? maximizedIn($maximized, active) : null);
 
 	/**
 	 * The root's layouts once opened, the latest first (da-tajsm): each stays
@@ -113,17 +122,22 @@
 	 * over one. A test's shared app keeps one (`__datumKeptLayouts`).
 	 */
 	const KEPT = (globalThis as { __datumKeptLayouts?: number }).__datumKeptLayouts ?? 3;
-	let opened: NodeId[] = [];
+	let opened = $state.raw<NodeId[]>([]);
 	// Called here, declared below: `opened` is reassigned, never mutated, so
 	// Svelte sees each change.
-	$: if (pane.id === rootId) remember(active.id);
+	$effect.pre(() => {
+		const id = active.id;
+		if (pane.id === rootId) untrack(() => remember(id));
+	});
 	function remember(id: NodeId): void {
 		if (opened[0] !== id) opened = [id, ...opened.filter((o) => o !== id)].slice(0, KEPT);
 	}
 	// A maximize draws its pane in place of the whole tree (da-00am), so the
 	// layouts behind unmount with it: let them go, and the restore mounts the
 	// one in front alone, as it did before they were kept.
-	$: if (big) opened = [active.id];
+	$effect.pre(() => {
+		if (big) opened = [active.id];
+	});
 
 	/**
 	 * The epoch the layouts behind are drawn at: the page's, once every
@@ -135,9 +149,12 @@
 	 * brought to the front catches up then.
 	 */
 	const QUIET_MS = 1000;
-	let behind = epoch;
+	let behind = $state(untrack(() => epoch));
 	let lagging = 0;
-	$: if (pane.id === rootId) lag(epoch);
+	$effect.pre(() => {
+		const next = epoch;
+		if (pane.id === rootId) untrack(() => void lag(next));
+	});
 	async function lag(next: number): Promise<void> {
 		const mine = ++lagging;
 		await settled();
@@ -175,7 +192,7 @@
 	 * half-row already lies. The root's chrome cancels itself in
 	 * `rootFloorOf`, so neither test need except it.
 	 */
-	$: chromeOf = (p: PaneNode) => {
+	const chromeOf = $derived((p: PaneNode) => {
 		const tab = p.tabs[p.active];
 		const nested = isSplit(tab.content) && tab.layout !== undefined;
 		const widget = !isSplit(tab.content);
@@ -190,7 +207,7 @@
 		return p.bar.edge === 'left' || p.bar.edge === 'right'
 			? { width: outline + bar, height: outline + across }
 			: { width: outline + across, height: outline + bar };
-	};
+	});
 	/**
 	 * The settings a tab's widget is DRAWN from (da-vhwq): the tree's with
 	 * this session's over them, the same merge the widget itself is handed.
@@ -215,15 +232,15 @@
 
 	// One function, two callers, two `minOf`s — keep them apart: the drag's
 	// floor is the frame alone, the root's is every pane legible.
-	$: floor = (child: PaneNode) => floorOf(child, () => NONE, BORDER, chromeOf);
+	const floor = $derived((child: PaneNode) => floorOf(child, () => NONE, BORDER, chromeOf));
 	/** The root split's least box: its panes' legible boxes, laid out as the tree lays them. */
-	$: legible = (root: PaneNode) =>
+	const legible = $derived((root: PaneNode) =>
 		rootFloorOf(
 			root,
 			(tab) => (isSplit(tab.content) ? NONE : legibleOfKind(tab.content.kind, shownOf(tab))),
 			BORDER,
 			chromeOf
-		);
+		));
 	/** A child's snaps as extents along the split: its widget tabs' snaps, plus its frame. */
 	const snapsOf = (child: PaneNode, split: Split): number[] => {
 		const axis = split.direction === 'row' ? 'width' : 'height';
@@ -248,7 +265,7 @@
 		stops: number[];
 	} | null = null;
 	/** The ratios being dragged, shown on the cells and not yet in the tree. */
-	let preview: number[] | null = null;
+	let preview = $state.raw<number[] | null>(null);
 
 	function cells(split: Split): HTMLElement[] {
 		const el = splitEls[split.id];
@@ -356,136 +373,136 @@
 	root={pane.id === rootId}
 	locked={locked}
 	kind={isSplit(content) ? undefined : content.kind}
-	let:peek
 >
-	{#if big}
-		<!-- The pane alone, under the root bar and in place of the whole
-		     tree — a pane inside a nested layout tab included, since a
-		     maximize into a small box is not one. It keeps its own frame,
-		     and nothing in the tree changed, so the press that puts it back
-		     puts everything back with it. -->
-		<svelte:self pane={big} {epoch} {rootId} {locked} />
-	{:else}
-		<!-- Every tab of the pane is mounted, the one in front and the ones
-		     behind it (da-rjmg), so a swipe moves a picture already drawn.
-		     The root's: the layouts it has opened (`opened`), and the one a
-		     swipe in hand is bringing on (da-24fgb). In the tree's order, so
-		     a switch moves no element, and a moved one loses its scroll. By
-		     id and with `pane.active` too: the slot can be updated with a
-		     newer `pane` than its `active`, and the tab in front must not
-		     drop out for a frame and remount. -->
-		{#each pane.id === rootId ? pane.tabs.filter((t, i) => i === peek || i === pane.active || opened.includes(t.id)) : pane.tabs as tab (tab.id)}
-		{@const content = tab.content}
-		{@const at = pane.id === rootId ? drawnAt(tab, tab === active || tab === pane.tabs[peek], epoch, behind) : epoch}
-		{@const least = pane.id === rootId && isSplit(content) ? legible(pane) : undefined}
-		<TabBody
-			active={tab === active}
-			beside={tab === pane.tabs[peek]}
-			shy={pane.id === rootId ? lands(tab) - lands(active) : 0}
-			{least}
-		>
-			{#if isSplit(content)}
-				{@const split = content}
-				{@const grow = (tab === active && preview) || split.ratios}
-				<div
-					class="split {split.direction}"
-					bind:this={splitEls[split.id]}
-					data-split={split.id}
-					style:--border="{BORDER}px"
-					style:min-width={least && `${least.width}px`}
-					style:min-height={least && `${least.height}px`}
-				>
-					{#each split.children as child, i (child.id)}
-						{#if i > 0}
-							{#if locked}
-								<div class="border static" aria-hidden="true"></div>
-							{:else}
-								<!-- A focusable separator is a widget in ARIA (it carries a
-								     value), which is what the keyboard needs it to be. -->
-								<!-- svelte-ignore a11y-no-noninteractive-tabindex a11y-no-noninteractive-element-interactions -->
-								<div
-									class="border"
-									role="separator"
-									tabindex="0"
-									aria-orientation={split.direction === 'row' ? 'vertical' : 'horizontal'}
-									aria-valuenow={Math.round(grow[i - 1] * 100)}
-									aria-valuemin="0"
-									aria-valuemax="100"
-									aria-label="resize"
-									on:pointerdown={(e) => down(e, split, i - 1)}
-									on:pointermove={(e) => move(e, split)}
-									on:pointerup={() => up(split)}
-									on:pointercancel={() => up(split)}
-									on:keydown={(e) => nudge(e, split, i - 1)}
-								></div>
+	{#snippet children(peek)}
+		{#if big}
+			<!-- The pane alone, under the root bar and in place of the whole
+			     tree — a pane inside a nested layout tab included, since a
+			     maximize into a small box is not one. It keeps its own frame,
+			     and nothing in the tree changed, so the press that puts it back
+			     puts everything back with it. -->
+			<Layout pane={big} {epoch} {rootId} {locked} />
+		{:else}
+			<!-- Every tab of the pane is mounted, the one in front and the ones
+			     behind it (da-rjmg), so a swipe moves a picture already drawn.
+			     The root's: the layouts it has opened (`opened`), and the one a
+			     swipe in hand is bringing on (da-24fgb). In the tree's order, so
+			     a switch moves no element, and a moved one loses its scroll. By
+			     id and with `pane.active` too: the slot can be updated with a
+			     newer `pane` than its `active`, and the tab in front must not
+			     drop out for a frame and remount. -->
+			{#each pane.id === rootId ? pane.tabs.filter((t, i) => i === peek || i === pane.active || opened.includes(t.id)) : pane.tabs as tab (tab.id)}
+			{@const content = tab.content}
+			{@const at = pane.id === rootId ? drawnAt(tab, tab === active || tab === pane.tabs[peek], epoch, behind) : epoch}
+			{@const least = pane.id === rootId && isSplit(content) ? legible(pane) : undefined}
+			<TabBody
+				active={tab === active}
+				beside={tab === pane.tabs[peek]}
+				shy={pane.id === rootId ? lands(tab) - lands(active) : 0}
+				{least}
+			>
+				{#if isSplit(content)}
+					{@const split = content}
+					{@const grow = (tab === active && preview) || split.ratios}
+					<div
+						class="split {split.direction}"
+						bind:this={splitEls[split.id]}
+						data-split={split.id}
+						style:--border="{BORDER}px"
+						style:min-width={least && `${least.width}px`}
+						style:min-height={least && `${least.height}px`}
+					>
+						{#each split.children as child, i (child.id)}
+							{#if i > 0}
+								{#if locked}
+									<div class="border static" aria-hidden="true"></div>
+								{:else}
+									<!-- A focusable separator is a widget in ARIA (it carries a
+									     value), which is what the keyboard needs it to be. -->
+									<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+									<div
+										class="border"
+										role="separator"
+										tabindex="0"
+										aria-orientation={split.direction === 'row' ? 'vertical' : 'horizontal'}
+										aria-valuenow={Math.round(grow[i - 1] * 100)}
+										aria-valuemin="0"
+										aria-valuemax="100"
+										aria-label="resize"
+										onpointerdown={(e) => down(e, split, i - 1)}
+										onpointermove={(e) => move(e, split)}
+										onpointerup={() => up(split)}
+										onpointercancel={() => up(split)}
+										onkeydown={(e) => nudge(e, split, i - 1)}
+									></div>
+								{/if}
 							{/if}
-						{/if}
-						<div
-							class="cell {named(child)}"
-							style:--ratio={grow[i]}
-							style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
-						>
-							<svelte:self pane={child} epoch={at} {rootId} {locked} />
-						</div>
-					{/each}
-				</div>
-			{:else if content.kind === EMPTY_KIND}
-				{@const tabId = tab.id}
-				<Pane title="empty">
-					<div class="choose">
-						<button type="button" class="control" use:act={'open'} on:click={() => void fillTab(tabId)}
-							>{CHANGE}</button
-						>
+							<div
+								class="cell {named(child)}"
+								style:--ratio={grow[i]}
+								style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
+							>
+								<Layout pane={child} epoch={at} {rootId} {locked} />
+							</div>
+						{/each}
 					</div>
-				</Pane>
-			{:else if KINDS[content.kind]}
-				{@const widget = content}
-				{@const kind = KINDS[content.kind]}
-				{@const fold = kind.onChange}
-				{@const key = keyOf($layout, tab.id)}
-				<!-- What the widget is DRAWN from: the tree's settings with this
-				     session's over them (da-vhwq, session.ts). A session setting
-				     never reaches the tree, so a widget asks for neither — it is
-				     handed one set of settings and cannot tell which is which. -->
-				{@const settings = withSession(widget.settings, $session[key])}
-				<!-- A widget that changes a setting of its own (nowview's − / +,
-				     the strip's handle, the stats widget's range chips) says so
-				     with `change`, and it lands in THIS SESSION, exactly where the menu's option
-				     rows land — through the kind's `onChange`, which knows what
-				     the event's detail is. The layout hears of it only when the
-				     reader asks («Save options with layout»), which is what makes
-				     the layout safe from a widget's own in-body controls without
-				     a guard on every one of them.
+				{:else if content.kind === EMPTY_KIND}
+					{@const tabId = tab.id}
+					<Pane title="empty">
+						<div class="choose">
+							<button type="button" class="control" use:act={'open'} onclick={() => void fillTab(tabId)}
+								>{CHANGE}</button
+							>
+						</div>
+					</Pane>
+				{:else if KINDS[content.kind]}
+					{@const widget = content}
+					{@const kind = KINDS[content.kind]}
+					{@const fold = kind.onChange}
+					{@const key = keyOf($layout, tab.id)}
+					<!-- What the widget is DRAWN from: the tree's settings with this
+					     session's over them (da-vhwq, session.ts). A session setting
+					     never reaches the tree, so a widget asks for neither — it is
+					     handed one set of settings and cannot tell which is which. -->
+					{@const settings = withSession(widget.settings, $session[key])}
+					<!-- A widget that changes a setting of its own (nowview's − / +,
+					     the strip's handle, the stats widget's range chips) says so
+					     with `change`, and it lands in THIS SESSION, exactly where the menu's option
+					     rows land — through the kind's `onChange`, which knows what
+					     the event's detail is. The layout hears of it only when the
+					     reader asks («Save options with layout»), which is what makes
+					     the layout safe from a widget's own in-body controls without
+					     a guard on every one of them.
 
-				     `fold` is given the settings as SHOWN, so a change folds onto
-				     what this session already set rather than onto the tree
-				     underneath it; `setSession` keeps only what differs from the
-				     tree, so a setting moved back leaves nothing held. -->
-				<!-- The tree is drawn before the CLI has answered (da-bhudz), with each
-				     widget's last output over it; the widget itself mounts once the
-				     bar can take a command, so the bar's own reads are not queued
-				     behind every pane's. A `live` kind, which asks nothing, is
-				     mounted at once and takes no copy (da-ch6oc): the copy,
-				     dimmed, stayed over it until the queue ran dry, on the boot
-				     and on every return to its root tab. -->
-				{#if !kind.live}<Stale id={widget.id} live={$ready} />{/if}
-				{#if $ready || kind.live}
-					<svelte:component
-						this={kind.component}
-						{...kind.props ? kind.props(settings) : { settings }}
-						epoch={at}
-						{key}
-						on:change={(e) => fold && setSession(key, widget.settings, fold(settings, e.detail))}
-					/>
+					     `fold` is given the settings as SHOWN, so a change folds onto
+					     what this session already set rather than onto the tree
+					     underneath it; `setSession` keeps only what differs from the
+					     tree, so a setting moved back leaves nothing held. -->
+					<!-- The tree is drawn before the CLI has answered (da-bhudz), with each
+					     widget's last output over it; the widget itself mounts once the
+					     bar can take a command, so the bar's own reads are not queued
+					     behind every pane's. A `live` kind, which asks nothing, is
+					     mounted at once and takes no copy (da-ch6oc): the copy,
+					     dimmed, stayed over it until the queue ran dry, on the boot
+					     and on every return to its root tab. -->
+					{#if !kind.live}<Stale id={widget.id} live={$ready} />{/if}
+					{#if $ready || kind.live}
+						<kind.component
+							{...kind.props ? kind.props(settings) : { settings }}
+							epoch={at}
+							{key}
+							on:change={(e) => fold && setSession(key, widget.settings, fold(settings, e.detail))}
+						/>
+					{/if}
+				{:else}
+					<Pane title={content.kind}>
+						<p class="quiet">no widget of kind “{content.kind}” in this build</p>
+					</Pane>
 				{/if}
-			{:else}
-				<Pane title={content.kind}>
-					<p class="quiet">no widget of kind “{content.kind}” in this build</p>
-				</Pane>
-			{/if}
-		</TabBody>
-		{/each}
-	{/if}
+			</TabBody>
+			{/each}
+		{/if}
+	{/snippet}
 </PaneFrame>
 
 <style>

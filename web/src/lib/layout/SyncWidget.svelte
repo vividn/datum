@@ -39,7 +39,7 @@
 -->
 <script lang="ts">
 	import { browser } from '$app/env';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import Pane from '$lib/Pane.svelte';
 	import { onAnyChange } from '$lib/changes.js';
 	import { currentDb, INTERNAL_DB, withDb } from '$lib/database.js';
@@ -90,7 +90,11 @@
 	import { explainGuide } from '$lib/help.js';
 	import { grammar } from './engine.js';
 
-	export let epoch = 0;
+	let {
+		epoch = 0
+	}: {
+		epoch?: number;
+	} = $props();
 
 	const SYMBOL: Record<Mark, string> = { synced: '✓', syncing: '↻', pending: '◔', offline: '○', error: '!', none: '—' };
 	const WORD: Record<Mark, string> = { synced: 'synced', syncing: 'syncing', pending: 'pending', offline: 'offline', error: 'error', none: 'not syncing' };
@@ -105,28 +109,28 @@
 
 	/** The page's database: the one this widget is about. */
 	const db = browser ? currentDb() : '';
-	let dbs: DbSync[] = [];
+	let dbs = $state.raw<DbSync[]>([]);
 	let reading = false;
 	let again = false;
 	let stops: (() => void)[] = [];
 	/** An act under way, and how the last one failed. */
-	let busy = false;
-	let failure = '';
+	let busy = $state(false);
+	let failure = $state('');
 	/** What an act under way waits on, in words. */
-	let waiting = '';
+	let waiting = $state('');
 	/** More's acts shown, and the whole legend. */
-	let more = false;
-	let key = false;
+	let more = $state(false);
+	let key = $state(false);
 	/** The join link of the last device invited, its QR, until when it works, and its invite's id. */
-	let offer: { db: string; link: string; svg: string; until: string; expires: number; id: string } | null = null;
+	let offer = $state<{ db: string; link: string; svg: string; until: string; expires: number; id: string } | null>(null);
 	/** The approval card's outcome: written here, or the code to paste. */
-	let approval: { done?: string; code?: string } = {};
+	let approval: { done?: string; code?: string } = $state({});
 	/**
 	 * The card's record resolved against the held copy of its chain, before
 	 * the passkey is offered: which database (none held: the code), and what
 	 * approving it does, in words.
 	 */
-	let card: { link: string; db?: string; words: string[] } | null = null;
+	let card = $state<{ link: string; db?: string; words: string[] } | null>(null);
 
 	/**
 	 * The join card (da-l9kdr): the ticket of the link the page was opened
@@ -134,30 +138,43 @@
 	 * cannot — in words, before anything is dialed — and the name it joins
 	 * as, the suggestion filled in (da-uyyyg).
 	 */
-	let join: { ticket: string; db: string; name: string; words: string[]; refused?: string; done?: string } | null = null;
+	let join = $state<{ ticket: string; db: string; name: string; words: string[]; refused?: string; done?: string } | null>(null);
 
-	$: if (browser) void resolve($approving);
-	$: if (browser) void resolveJoin($joining);
+	$effect.pre(() => {
+		const asked = $approving;
+		if (browser) untrack(() => void resolve(asked));
+	});
+	$effect.pre(() => {
+		const asked = $joining;
+		if (browser) untrack(() => void resolveJoin(asked));
+	});
 	// `sync chain invite` typed on the page (da-5g0nk): the offer [Add device] makes.
-	$: if (browser && $inviting) {
-		void addDevice($inviting);
-		inviting.set(null);
-	}
+	$effect.pre(() => {
+		const asked = $inviting;
+		if (browser && asked)
+			untrack(() => {
+				void addDevice(asked);
+				inviting.set(null);
+			});
+	});
 
 	// A used or expired invite admits no one (da-2bvxq): its panel says so in place of the QR.
-	$: joined = offer && redeemer(dbs.find((d) => d.db === offer?.db), offer.id);
-	$: expired = !!offer && !joined && +$now >= offer.expires;
+	const joined = $derived(offer && redeemer(dbs.find((d) => d.db === offer?.db), offer.id));
+	const expired = $derived(!!offer && !joined && +$now >= offer.expires);
 
-	$: if (browser) void read(epoch);
-	$: cur = dbs.find((d) => d.db === db) ?? { db, chain: null, members: [] };
-	$: others = dbs.filter((d) => d.db !== db);
-	$: rows = cur.chain ? table([cur], $syncStates) : [];
-	$: overall = standing(cur, $syncStates);
+	$effect.pre(() => {
+		const at = epoch;
+		if (browser) untrack(() => void read(at));
+	});
+	const cur = $derived(dbs.find((d) => d.db === db) ?? { db, chain: null, members: [] });
+	const others = $derived(dbs.filter((d) => d.db !== db));
+	const rows = $derived(cur.chain ? table([cur], $syncStates) : []);
+	const overall = $derived(standing(cur, $syncStates));
 	// A revoked device has no line, only a count of them: «More» lists them (da-73gyz).
-	$: live = rows.filter((r) => !r.revoked);
-	$: hidden = rows.filter((r) => r.revoked).length;
-	$: shown = [...live.map((r) => r.cells[db]), ...others.map((d) => standing(d, $syncStates))];
-	$: used = MARKS.filter((m) => shown.some((c) => c.mark === m));
+	const live = $derived(rows.filter((r) => !r.revoked));
+	const hidden = $derived(rows.filter((r) => r.revoked).length);
+	const shown = $derived([...live.map((r) => r.cells[db]), ...others.map((d) => standing(d, $syncStates))]);
+	const used = $derived(MARKS.filter((m) => shown.some((c) => c.mark === m)));
 
 	/** How `d` stands as a whole: the worst of its devices, which this copy's cell already is. */
 	function standing(d: DbSync, states: Record<string, SyncState>): { mark: Mark; reader?: boolean; filter?: unknown } {
@@ -263,13 +280,15 @@
 		return r;
 	}
 
-	const addDevice = (db: string) =>
-		doing(async () => {
+	// A declaration, hoisted: the effect above runs as it is created, before this line.
+	function addDevice(db: string): Promise<void> {
+		return doing(async () => {
 			const invite = await newInvite(db);
 			const link = joinLink(await syncOffer(db, invite));
 			const expires = Date.parse(invite.expires);
 			offer = { db, link, svg: await qr(link), until: hm(expires), expires, id: invite.id };
 		});
+	}
 
 	const share = (link: string) => navigator.share({ title: 'Join a datum sync chain', url: link }).catch(() => {});
 
@@ -403,9 +422,9 @@
 				{/if}
 				<div class="actions">
 					{#if !approval.done && !approval.code}
-						<button type="button" class="command" use:act={'run'} disabled={busy || !card} on:click={() => card && approveHere(card)}>Approve with passkey</button>
+						<button type="button" class="command" use:act={'run'} disabled={busy || !card} onclick={() => card && approveHere(card)}>Approve with passkey</button>
 					{/if}
-					<button type="button" class="command close" use:act={'show'} on:click={dismiss}>Dismiss</button>
+					<button type="button" class="command close" use:act={'show'} onclick={dismiss}>Dismiss</button>
 				</div>
 			</section>
 		{/if}
@@ -429,9 +448,9 @@
 				{/if}
 				<div class="actions">
 					{#if join && !join.done && !join.refused}
-						<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => join && joinHere(join)}>Join</button>
+						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => join && joinHere(join)}>Join</button>
 					{/if}
-					<button type="button" class="command close" use:act={'show'} on:click={() => joining.set(null)}>Dismiss</button>
+					<button type="button" class="command close" use:act={'show'} onclick={() => joining.set(null)}>Dismiss</button>
 				</div>
 			</section>
 		{/if}
@@ -442,7 +461,7 @@
 				>{SYMBOL[overall.mark]} {cur.chain && cur.paused ? 'paused' : overall.mark === 'synced' ? 'all synced' : WORD[overall.mark]}</span
 			>
 			<!-- The guide to all of this, in plain words (da-oyvsz): the Help place opens it. -->
-			<button type="button" class="info guide" use:act={'show'} aria-label="how to sync" title="how to sync" on:click={() => explainGuide('sync')}>?</button>
+			<button type="button" class="info guide" use:act={'show'} aria-label="how to sync" title="how to sync" onclick={() => explainGuide('sync')}>?</button>
 		</header>
 		{#if cur.chain}
 			<ul class="devices">
@@ -493,7 +512,7 @@
 				{#each used as mark (mark)}<span class={mark}>{SYMBOL[mark]} {WORD[mark]}</span>{/each}
 				{#if shown.some((c) => c.filter)}<span class="filter" title="a reader sent only some fields">{FILTER} partial</span>{/if}
 				{#if shown.some((c) => c.reader)}<span class="reader">{READER} read-only</span>{/if}
-				<button type="button" class="info" use:act={'show'} aria-label="what the marks mean" aria-expanded={key} on:click={() => (key = !key)}>ⓘ</button>
+				<button type="button" class="info" use:act={'show'} aria-label="what the marks mean" aria-expanded={key} onclick={() => (key = !key)}>ⓘ</button>
 			</p>
 		{/if}
 		{#if key}
@@ -509,7 +528,7 @@
 			{#each d.notices ?? [] as n (n.subject + n.kind)}
 				<p class="notice" data-db={d.db}>
 					{n.kind === 'member' ? '' : '⚠ '}{d.db}: {n.text}
-					<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => ack(d.db, n)}>OK</button>
+					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => ack(d.db, n)}>OK</button>
 				</p>
 			{/each}
 			{#each d.clock ?? [] as c (c.endpoint)}
@@ -535,43 +554,43 @@
 				{/if}
 				<div class="actions">
 					{#if joined || expired}
-						<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => offer && addDevice(offer.db)}>Add another device</button>
+						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => offer && addDevice(offer.db)}>Add another device</button>
 					{:else}
-						<button type="button" class="command" use:act={'run'} on:click={() => navigator.clipboard?.writeText(offer?.link ?? '')}>Copy link</button>
-						{#if canShare}<button type="button" class="command" use:act={'open'} on:click={() => offer && share(offer.link)}>Share</button>{/if}
+						<button type="button" class="command" use:act={'run'} onclick={() => navigator.clipboard?.writeText(offer?.link ?? '')}>Copy link</button>
+						{#if canShare}<button type="button" class="command" use:act={'open'} onclick={() => offer && share(offer.link)}>Share</button>{/if}
 					{/if}
-					<button type="button" class="command" use:act={'show'} on:click={() => (offer = null)}>Done</button>
+					<button type="button" class="command" use:act={'show'} onclick={() => (offer = null)}>Done</button>
 				</div>
 			</section>
 		{:else}
 			<div class="actions" data-db={db}>
 				{#if !cur.chain}
-					<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => addDevice(db)}>Turn on sync</button>
+					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => addDevice(db)}>Turn on sync</button>
 				{:else}
-					<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => addDevice(db)}>Add device</button>
-					<button type="button" class="command" use:act={'open'} disabled={busy} on:click={renameHere}>Rename this device</button>
-					<button type="button" class="command" use:act={'show'} aria-expanded={more} on:click={() => (more = !more)}>More <span aria-hidden="true">{more ? '▾' : '▸'}</span></button>
+					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => addDevice(db)}>Add device</button>
+					<button type="button" class="command" use:act={'open'} disabled={busy} onclick={renameHere}>Rename this device</button>
+					<button type="button" class="command" use:act={'show'} aria-expanded={more} onclick={() => (more = !more)}>More <span aria-hidden="true">{more ? '▾' : '▸'}</span></button>
 				{/if}
 			</div>
 			{#if more && cur.chain}
 				<section class="more">
 					<div class="actions">
-						<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => pause(cur)}>{cur.paused ? 'Resume sync' : 'Pause sync'}</button>
-						<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => leave(cur)}>Leave chain</button>
+						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => pause(cur)}>{cur.paused ? 'Resume sync' : 'Pause sync'}</button>
+						<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => leave(cur)}>Leave chain</button>
 					</div>
 					{#each live.filter((r) => !r.here) as row (row.key)}
 						<div class="actions device" data-client={row.key}>
 							<span class="name">{row.label}</span>
-							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => rename(row)}>Rename</button>
-							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => revoke(row)}>Revoke</button>
-							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => purge(row.label, row.endpoints[db])}>Revert</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => rename(row)}>Rename</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => revoke(row)}>Revoke</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => purge(row.label, row.endpoints[db])}>Revert</button>
 						</div>
 					{/each}
 					{#each cur.members.filter((m) => m.revoked) as m (m.endpoint)}
 						<div class="actions device" data-endpoint={m.endpoint}>
 							<span class="name">{m.label} · {m.purged ? 'reverted' : 'revoked'}</span>
 							{#if !m.purged}
-								<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => purge(m.label, m.endpoint)}>Revert</button>
+								<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => purge(m.label, m.endpoint)}>Revert</button>
 							{/if}
 						</div>
 					{/each}
@@ -579,14 +598,14 @@
 						{#if cur.admins?.length}
 							<span>locked by</span>
 							{#each cur.admins as a (a.key)}
-								<button type="button" class="command admin" use:act={cur.admins.length === 1 ? 'open' : 'run'} disabled={busy} aria-label="remove {a.label}" on:click={() => removeAdmin(cur, a)}
+								<button type="button" class="command admin" use:act={cur.admins.length === 1 ? 'open' : 'run'} disabled={busy} aria-label="remove {a.label}" onclick={() => removeAdmin(cur, a)}
 									>{a.label} ×</button
 								>
 							{/each}
-							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => addAdmin(cur)}>Add passkey</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add passkey</button>
 						{:else}
 							<span>no admin: any device can add devices</span>
-							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => addAdmin(cur)}>Add admin</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add admin</button>
 						{/if}
 					</div>
 					<div class="actions advanced">
@@ -596,7 +615,7 @@
 								class="command"
 								use:act={'fill'}
 								data-command="sync {sub}"
-								on:click={() => prefill.set({ line: `sync ${sub} `, keyboard: true })}>sync {sub}</button
+								onclick={() => prefill.set({ line: `sync ${sub} `, keyboard: true })}>sync {sub}</button
 							>
 						{/each}
 					</div>

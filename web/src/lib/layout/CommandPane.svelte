@@ -40,6 +40,7 @@
 	and the page never re-derives what counts as something to redo.
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import CommandsWidget from '$lib/CommandsWidget.svelte';
 	import { clearUnlockedPills, pills, prefill, text, type Pill } from '$lib/bar.js';
 	import { argumentsOf, opensField, withFlag } from '$lib/commands.js';
@@ -49,13 +50,19 @@
 	import { withPills } from '$lib/selection.js';
 	import { conflicts, fields, grammar, pressWithPills, ready } from './engine.js';
 
-	export let epoch = 0;
-	/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
-	export let key = '';
-	/** The widget's «scrolling sections» option (da-u79wl). */
-	export let sections = false;
+	let {
+		epoch = 0,
+		/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
+		key = '',
+		/** The widget's «scrolling sections» option (da-u79wl). */
+		sections = false
+	}: {
+		epoch?: number;
+		key?: string;
+		sections?: boolean;
+	} = $props();
 
-	let redoable = false;
+	let redoable = $state(false);
 	let asked = 0;
 
 	/** Would a press on redo move anything? The newest question's answer wins. */
@@ -65,7 +72,12 @@
 		if (mine === asked) redoable = code === 0;
 	}
 
-	$: if ($ready) void ask(withPills($grammar, redoArgv(), $pills).argv, epoch);
+	$effect.pre(() => {
+		if (!$ready) return;
+		const argv = withPills($grammar, redoArgv(), $pills).argv;
+		const at = epoch;
+		untrack(() => void ask(argv, at));
+	});
 
 	function runNow(argv: string[]): void {
 		// A thumb that tapped the command before its pills were all loaded
@@ -101,9 +113,9 @@
 			{redoable}
 			conflicts={$conflicts.length}
 			{key}
-			on:run={(e) => runNow(e.detail)}
-			on:line={(e) => fill(e.detail)}
-			on:flag={(e) => prefill.set({ line: withFlag($text, e.detail.command, e.detail.flag), keyboard: e.detail.keyboard })}
+			onrun={runNow}
+			online={fill}
+			onflag={(flag) => prefill.set({ line: withFlag($text, flag.command, flag.flag), keyboard: flag.keyboard })}
 		/>
 	{/key}
 </div>

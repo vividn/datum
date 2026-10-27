@@ -18,20 +18,20 @@
 	import { KINDS } from './registry.js';
 	import { closeModalPlace, modalPlace, openPlace } from './shell.js';
 
-	let settings: Record<string, unknown> = {};
-
-	$: kind = $modalPlace === null ? undefined : KINDS[$modalPlace.widget.kind];
-	$: settings = $modalPlace?.widget.settings ?? {};
+	const kind = $derived($modalPlace === null ? undefined : KINDS[$modalPlace.widget.kind]);
+	// The place's own until the widget moves one (a derived written to), and the place's again once it changes.
+	let settings: Record<string, unknown> = $derived($modalPlace?.widget.settings ?? {});
 </script>
 
 {#if kind && $modalPlace}
 	{@const place = $modalPlace.name}
 	<Sheet title={place} widget open data-place={place} onclose={closeModalPlace}>
-		<button slot="head" type="button" class="as-tab" use:act={'open'} on:click={() => void openPlace(place, true)}
-			>Open as tab</button
-		>
-		<svelte:component
-			this={kind.component}
+		{#snippet head()}
+			<button type="button" class="as-tab" use:act={'open'} onclick={() => void openPlace(place, true)}
+				>Open as tab</button
+			>
+		{/snippet}
+		<kind.component
 			{...kind.props ? kind.props(settings) : { settings }}
 			epoch={$epoch}
 			on:change={(e) => kind?.onChange && (settings = kind.onChange(settings, e.detail))}

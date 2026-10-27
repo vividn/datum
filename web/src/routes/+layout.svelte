@@ -21,7 +21,7 @@
 	viewport change and once more after load.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import '../app.css';
 	import { schedule } from '$lib/backups.js';
 	import { installConsole } from '$lib/console.js';
@@ -42,12 +42,14 @@
 	import { browser } from '$app/env';
 	import { page } from '$app/state';
 
+	let { children }: { children?: Snippet } = $props();
+
 	// `?db=<name>` (da-vk1x). Off `page.url` rather than `location`, so a
 	// client-side navigation that changes the query re-renders the title and
 	// the refusal with it; the seam reads the same query for itself.
 	const url = toStore(() => page.url);
-	$: db = $url ? currentDb() : DEFAULT_DB;
-	$: refused = $url ? refusedDb() : null;
+	const db = $derived($url ? currentDb() : DEFAULT_DB);
+	const refused = $derived($url ? refusedDb() : null);
 
 	// The page's base colour says which database it is (da-y992): one hue,
 	// derived from the name, and every accent in app.css is drawn from it.
@@ -57,7 +59,9 @@
 	// chooser and a confirm dialog are all moved out to `document.body`
 	// (PaneMenu's `portal`), where a custom property set on the shell does
 	// not reach.
-	$: if (browser) document.documentElement.style.setProperty('--hue', String(hueOf(db)));
+	$effect.pre(() => {
+		if (browser) document.documentElement.style.setProperty('--hue', String(hueOf(db)));
+	});
 
 	// `window.datum` — the command seam at the browser's own prompt. Mounted
 	// here rather than at module scope because there is no window during
@@ -187,7 +191,7 @@
 					showing <code>{DEFAULT_DB}</code> instead. <a href="/">home</a>
 				</p>
 			{:else}
-				<slot />
+				{@render children?.()}
 			{/if}
 		</main>
 

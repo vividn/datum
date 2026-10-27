@@ -93,7 +93,7 @@ describe('the double outline is the action’s alone', () => {
 	test('a button whose tap opens a place or a sheet says open', () => {
 		const opens = /openPlace\(|\(open = true\)/;
 		const openers = files.flatMap((file) =>
-			[...markupOf(file).matchAll(/<button\b([^>]*?\bon:click=\{[^}]*\})[^>]*>/gs)]
+			[...markupOf(file).matchAll(/<button\b([^>]*?\bon:?click=\{[^}]*\})[^>]*>/gs)]
 				.filter((m) => opens.test(m[1]))
 				.map((m) => ({ f: file.f, tag: m[0] }))
 		);

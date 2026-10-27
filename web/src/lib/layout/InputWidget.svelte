@@ -36,7 +36,7 @@
 	import Prompt from '$lib/Prompt.svelte';
 
 	/** The prompt row on top, the receipt under it. */
-	export let reversed = false;
+	let { reversed = false }: { reversed?: boolean } = $props();
 </script>
 
 <section class="input-widget" class:reversed>

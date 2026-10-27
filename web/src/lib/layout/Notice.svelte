@@ -6,8 +6,8 @@
 <script lang="ts">
 	import Pane from '$lib/Pane.svelte';
 
-	export let settings: Record<string, unknown> = {};
-	$: text = typeof settings.text === 'string' ? settings.text : '';
+	let { settings = {} }: { settings?: Record<string, unknown> } = $props();
+	const text = $derived(typeof settings.text === 'string' ? settings.text : '');
 </script>
 
 <Pane title="notice">
