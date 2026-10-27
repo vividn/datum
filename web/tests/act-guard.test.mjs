@@ -46,15 +46,16 @@ describe('the double outline is the action’s alone', () => {
 		);
 	});
 
-	// Its sibling mark (da-vteda): a tap that opens a modal wears a `›`.
-	test('a chevron is drawn only on [data-act=open]', () => {
+	// Its sibling mark (da-vteda): a tap that opens a modal wears a `›`, and so
+	// does one that takes the person back to another pane (`data-away`, da-wz84y).
+	test('a chevron is drawn only on [data-act=open] or [data-away]', () => {
 		const chevrons = files.flatMap((file) =>
 			rules(styleOf(file))
 				.filter((r) => /content:[^;]*›/.test(r.body))
 				.map((r) => ({ f: file.f, ...r }))
 		);
 		assert.ok(chevrons.length >= 1, 'found no chevron rule');
-		const stray = chevrons.filter((r) => !r.selector.split(',').every((s) => s.includes("[data-act='open']")));
+		const stray = chevrons.filter((r) => !r.selector.split(',').every((s) => s.includes("[data-act='open']") || s.trim() === '[data-away]::after'));
 		assert.deepEqual(
 			stray.map((r) => `${r.f}: ${r.selector}`),
 			[],

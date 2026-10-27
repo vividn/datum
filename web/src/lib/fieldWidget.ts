@@ -34,6 +34,19 @@ const FIELD = 'setup';
  */
 export const editing = writable<{ field: string; verb?: Verb | null }>({ field: '' });
 
+/** Whether the widget's place is open: the desktop's modal, or a root tab (da-jozgv). */
+const placeOpen = derived([layout, modalPlace], ([l, m]) => m?.name === FIELD || l.root.tabs.some((t) => t.layout === FIELD));
+
+/**
+ * Whether the person was BROUGHT to the widget from another pane (da-wz84y):
+ * `openField` opened its place. Its Cancel and a spec's Save then go back
+ * there, and wear the chevron; reached by the person's own pick in its list
+ * of fields, it is false, and Save stays. vividn, 2026-10-26: «maybe it
+ * should depend on how you got there?». The place left, it is false again.
+ */
+export const away = writable(false);
+placeOpen.subscribe((here) => here || away.set(false));
+
 /** Who waits on the place: answered once, by a save or by its leaving. */
 let waiting: ((result: RunResult | null) => void) | null = null;
 
@@ -61,22 +74,23 @@ export function answerField(result: RunResult | null): void {
  */
 export async function openField(field = '', verb: Verb | null = null): Promise<RunResult | null> {
 	answerField(null);
+	away.set(false);
 	editing.set({ field, verb });
 	// A pane's tabs behind the front one stay mounted, hidden (TabBody.svelte): not in view.
 	const hosts = [...document.querySelectorAll(`.host[data-widget="${FIELD}"]`)];
 	if (hosts.some((host) => !host.closest('.tab-body.behind'))) return null;
 	await openPlace(FIELD);
 	if (get(modalPlace)?.name !== FIELD && !isPreview(FIELD)) return null;
+	away.set(true);
 	let answer!: (result: RunResult | null) => void;
 	const left = new Promise<RunResult | null>((resolve) => (answer = resolve));
 	waiting = answer;
-	// Left is the place gone from both hosts, the desktop's modal and a
-	// root tab (da-jozgv) — not a widget unmounting, which the copy a tab
-	// slides in as does when it lands (da-6du3o). `Open as tab` is a
-	// leaving too: the modal closes before the tab is built. Only this
-	// open's own waiter, since a later open answers this one itself.
-	const open = derived([layout, modalPlace], ([l, m]) => m?.name === FIELD || l.root.tabs.some((t) => t.layout === FIELD));
-	const stop = open.subscribe((here) => {
+	// Left is the place gone from both hosts — not a widget unmounting,
+	// which the copy a tab slides in as does when it lands (da-6du3o).
+	// `Open as tab` is a leaving too: the modal closes before the tab is
+	// built. Only this open's own waiter, since a later open answers this
+	// one itself.
+	const stop = placeOpen.subscribe((here) => {
 		if (!here && waiting === answer) answerField(null);
 	});
 	return left.finally(stop);

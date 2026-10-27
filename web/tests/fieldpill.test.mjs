@@ -812,6 +812,36 @@ describe('`setup` under the pill', () => {
 		});
 	});
 
+	// Brought from another pane (da-wz84y): Cancel and Save go back, and wear the chevron; Revert stays.
+	test('long press, tap `setup`: its row is Cancel › · Revert · Save › · Redo, and Cancel and Save go back to the page', async () => {
+		await seeded(async (app) => {
+			const { page } = app;
+			const dialog = page.locator('dialog.sheet[data-place="setup"]');
+			const button = (name) => page.locator(`${MODAL} .buttons button.${name}`);
+			const description = page.locator(`${MODAL} input.description`);
+			for (const leave of ['cancel', 'commit']) {
+				await longPress(page, 'mood');
+				await fieldPill(page).waitFor();
+				await specButton(page).click();
+				await page.locator(`${MODAL}[aria-label="the spec of mood"]`).waitFor();
+				const row = await page
+					.locator(`${MODAL} .buttons button`)
+					.evaluateAll((all) => all.map((b) => [b.textContent.trim(), getComputedStyle(b, '::after').content.includes('›')]));
+				assert.deepEqual(row, [['Cancel', true], ['Revert', false], ['Save', true], ['Redo', false]]);
+				await description.fill(`by ${leave}`);
+				await button('revert').click();
+				await until(() => description.inputValue(), (v) => v === '');
+				assert.equal(await dialog.isVisible(), true, 'Revert left');
+				await description.fill(`by ${leave}`);
+				await button(leave).click();
+				await dialog.waitFor({ state: 'detached' });
+				await app.idle();
+			}
+			assert.equal(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).description, 'by commit', 'Cancel saved, or Save did not');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	test('a field with no spec opens on the verb question, its name already in', async () => {
 		await seeded(async (app) => {
 			const { page } = app;

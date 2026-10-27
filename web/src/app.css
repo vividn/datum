@@ -112,8 +112,13 @@
    name, which says what the button is and not where it leads.
    A `+` face wears none (da-pmmgm): the `+` already says something
    opens to add to, and vividn found `+›` «rather ugly». The root bar's and
-   a pane's `+` (`.add`). */
-[data-act='open']:not(.add)::after {
+   a pane's `+` (`.add`).
+   So does a tap that takes the person back to another pane (`data-away`,
+   da-wz84y: the setup widget's Cancel and Save when it was brought there),
+   vividn: «if hitting save or cancel takes you somewhere else it should
+   have a little chevron on it». */
+[data-act='open']:not(.add)::after,
+[data-away]::after {
 	content: '›' / '';
 	margin-inline-start: 0.35em;
 }

@@ -59,7 +59,10 @@
 	the widget to run; null runs nothing. A field's is `pending` too while it
 	differs, which the widget runs when the form is left, and its buttons are
 	Revert · Save · Redo, Revert and Redo handed up for the widget to walk the
-	spec's history (da-hda4j); a new field's are Cancel · Save. At the foot of a field's form,
+	spec's history (da-hda4j); a new field's are Cancel · Save. Brought from
+	another pane (`away`, da-wz84y), a spec's row starts with Cancel, and
+	Cancel and a spec's Save wear the chevron, for they go back there; a Save
+	that stays says «saved» under it for a moment. At the foot of a field's form,
 	tracked or ignored, whose button runs `ignore F` or `track F` at once,
 	handed up as `run` and leaving the form open.
 -->
@@ -113,6 +116,10 @@
 	/** Whether Revert, at a save point, has a saved version to step back to, and Redo one to step forward to. */
 	export let back = false;
 	export let ahead = false;
+	/** Whether the person was brought here from another pane, so Cancel and a spec's Save go back there (da-wz84y). */
+	export let away = false;
+	/** Whether a save that stayed is being said under Save. */
+	export let saved = false;
 
 	const dispatch = createEventDispatcher<{ close: Save | null; run: Save; revert: null; redo: null }>();
 
@@ -490,11 +497,17 @@
 
 		<div class="buttons">
 			{#if spec}
+				{#if away}
+					<button type="button" class="cancel" data-away on:click={() => finish(null)}>Cancel</button>
+				{/if}
 				<button type="button" class="revert" use:act={dirty ? undefined : 'run'} disabled={!dirty && !back} on:click={() => dispatch('revert', null)}>Revert</button>
-				<button class="commit" use:act={'run'} type="submit" disabled={!ready || !dirty}>Save</button>
+				<span class="save">
+					<button class="commit" use:act={'run'} data-away={away || undefined} type="submit" disabled={!ready || !dirty}>Save</button>
+					{#if saved}<span class="saved" role="status">saved</span>{/if}
+				</span>
 				<button type="button" class="redo" use:act={'run'} disabled={dirty || !ahead} on:click={() => dispatch('redo', null)}>Redo</button>
 			{:else}
-				<button type="button" class="cancel" on:click={() => finish(null)}>Cancel</button>
+				<button type="button" class="cancel" data-away={away || undefined} on:click={() => finish(null)}>Cancel</button>
 				<button class="commit" use:act={'run'} type="submit" disabled={!ready}>Save</button>
 			{/if}
 		</div>
@@ -898,6 +911,7 @@
 
 	.buttons {
 		display: flex;
+		align-items: flex-start;
 		justify-content: flex-end;
 		gap: 0.5rem;
 	}
@@ -944,6 +958,34 @@
 	.redo:global([data-act='run']) {
 		border: 3px double var(--rule);
 		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
+	}
+
+	/* «saved», under Save, fading (da-wz84y): in a line kept under the row always, so the row stays still when it shows. */
+	.save {
+		position: relative;
+		display: flex;
+		padding-block-end: 0.9rem;
+	}
+
+	.saved {
+		position: absolute;
+		inset-block-end: 0;
+		inset-inline: 0;
+		text-align: center;
+		font-size: 0.75rem;
+		line-height: 1.2;
+		color: var(--accent);
+		animation: said 2s ease-in forwards;
+		pointer-events: none;
+	}
+
+	@keyframes said {
+		60% {
+			opacity: 1;
+		}
+		to {
+			opacity: 0;
+		}
 	}
 
 	.buttons button:disabled,

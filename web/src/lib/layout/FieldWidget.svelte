@@ -45,6 +45,17 @@
 	the one it is at as `datum history` numbers them, every copy's and kit's
 	included, and Redo the one after, back up to where the walk began. The
 	walk is this widget's: `redo SPEC` steps forward once, and a save drops it.
+
+	What Save and Cancel do depends on how the person came (da-wz84y),
+	vividn, 2026-10-26: «maybe it should depend on how you got there?».
+	Reached by their own pick in its list of fields, a spec's row is Revert ·
+	Save · Redo, and Save stays, a brief «saved» under it. Brought from
+	another pane (`away`: a hold on a field, then the setup command), it is
+	Cancel › · Revert · Save › · Redo: «a "cancel" button, that always goes
+	back to where you came from. And then revert always just reverts to the
+	last state without going back … if hitting save or cancel takes you
+	somewhere else it should have a little chevron on it». Cancel drops the
+	edits and goes back, Save saves and goes back; Revert and Redo never leave.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -57,7 +68,7 @@
 	import { stripAnsi } from '$lib/ansi.js';
 	import { ask, choose, confirm } from '$lib/confirm.js';
 	import type { FieldButton } from '$lib/fields.js';
-	import { answerField, editing } from '$lib/fieldWidget.js';
+	import { answerField, away, editing } from '$lib/fieldWidget.js';
 	import { run } from '$lib/run.js';
 	import Sheet from '$lib/Sheet.svelte';
 	import { begin } from '$lib/tour.js';
@@ -83,9 +94,16 @@
 	let pending: Save | null = null;
 	/** The spec's walk along its history: its entry, the version the walk began at, and the one it is at. */
 	let walk: { hid: string; top: number; at: number } | null = null;
+	/** A save that stayed, said under Save for a moment (da-wz84y). */
+	let saved = false;
+	let unsay: ReturnType<typeof setTimeout> | undefined;
 
 	$: tracked = $fields.filter((f) => !f.ignored);
-	$: if (browser) void load($editing);
+	// Another field: what was said of the last one's save is not said of it.
+	$: if (browser) {
+		saved = false;
+		void load($editing);
+	}
 
 	// Only a pill minted while this is here: one that was there already is not an ask.
 	let pilled = $fieldPill;
@@ -128,7 +146,10 @@
 		if (save) await press(save.argv);
 	}
 
-	onDestroy(() => void flush());
+	onDestroy(() => {
+		clearTimeout(unsay);
+		void flush();
+	});
 
 	/** Revert: the edits dropped, their save with them, or with none, the spec a version back. */
 	function revert(): void {
@@ -150,6 +171,7 @@
 	async function go(field: string): Promise<void> {
 		if (dirty && !spec && !(await confirm(`Leave ${$editing.field || 'the new field'} without saving what you changed?`, 'leave'))) return;
 		picking = false;
+		$away = false;
 		$editing = { field };
 	}
 
@@ -177,9 +199,11 @@
 		const [asked, made] = [$editing, spec === null && save && save.argv[1]];
 		// The person's first field, tracked: the tour follows its save (da-ii8lo).
 		const first = made && tracked.length === 0 && !save?.argv.includes('--ignore');
-		// The form's own save of its edits is cleared, so the read after it does not run it again;
-		// another command (an ignored field's `track`) leaves them pending, for that read to save.
-		if (save === pending) pending = null;
+		// A spec's own Save, as against another command (an ignored field's `track`).
+		const saving = save !== null && save === pending;
+		// The form's own save of its edits is cleared, so the read after it does not run it again,
+		// and Cancel drops them; another command leaves them pending, for that read to save.
+		if (!save || saving) pending = null;
 		const result = save && (await press(save.argv));
 		answerField(result);
 		// Refused, the form stays as it was, to be put right; and a reader who
@@ -190,9 +214,16 @@
 			if (first) void begin(made);
 			return;
 		}
-		// Cancel leaves; a save stays, at a save point.
-		if (!save) leavePlace();
-		void load($editing);
+		// Cancel leaves, and so does a spec's Save for a person brought here; else a save stays, at a save point, and says so.
+		const leaving = !save || (saving && $away);
+		if (leaving) leavePlace();
+		await load($editing);
+		// Said once the read has drawn the form afresh, so its fade and its end start together.
+		if (saving && !leaving && asked === $editing) {
+			saved = true;
+			clearTimeout(unsay);
+			unsay = setTimeout(() => (saved = false), 2000);
+		}
 	}
 </script>
 
@@ -209,6 +240,8 @@
 					taken={$fields.map((f) => f.field)}
 					bind:dirty
 					bind:pending
+					away={$away}
+					{saved}
 					back={!!walk && walk.at > 1}
 					ahead={!!walk && walk.at < walk.top}
 					on:close={(e) => close(e.detail)}

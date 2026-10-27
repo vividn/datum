@@ -28,6 +28,9 @@
 // Except a `+` face (da-pmmgm): it says `open` and wears none, the `+`
 // saying it already. Read here off the FACE, not off app.css's `.add`, so
 // a `+` that lost the class is named as well as a chevron that came back.
+// And a tap that takes the person back to another pane wears one too
+// (`data-away`, da-wz84y: the setup widget's Cancel and Save when it was
+// brought there), whatever its kind, and opens no modal.
 //
 // The sweeps run on staging and main pushes, NOT on a PR (da-v7y8x, vividn
 // 2026-10-19): 151 s over the six act-taps files, and a red on staging is
@@ -95,7 +98,7 @@ const survey = (page, { within, mark, layer } = {}) =>
 				const chevron = getComputedStyle(b, '::after').content.includes('›');
 				const plus = b.textContent.trim().endsWith('+');
 				if (key === mark) b.dataset.tap = '';
-				out.push({ key, double, chevron, plus, kind: b.dataset.act ?? null });
+				out.push({ key, double, chevron, plus, away: 'away' in b.dataset, kind: b.dataset.act ?? null });
 			}
 			return out;
 		},
@@ -255,8 +258,8 @@ async function watchModals(page) {
  * stray rule drew on a button that opens nothing is named as well.
  */
 const chevronWrong = (t) =>
-	t.chevron !== (t.kind === 'open' && !t.plus)
-		? `${t.chevron ? 'wears a ›' : 'wears no ›'} as ${t.kind ?? 'no kind'}${t.plus ? ' with a + face' : ''}`
+	t.chevron !== ((t.kind === 'open' && !t.plus) || t.away)
+		? `${t.chevron ? 'wears a ›' : 'wears no ›'} as ${t.kind ?? 'no kind'}${t.plus ? ' with a + face' : ''}${t.away ? ', going back' : ''}`
 		: (t.kind === 'open') === t.modal
 			? null
 			: t.modal
