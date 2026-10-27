@@ -1085,6 +1085,8 @@ fn closed_busy(e: &anyhow::Error) -> bool {
 const BUSY_WHY: &str = "is busy applying another sync's changes; it syncs again once done";
 
 /// Why one of two sessions between the same copies at once gives way.
+/// datum.day reads a dial given way by these words too (`CARRIED` in
+/// `web/src/lib/sync.ts`, da-vjhju): reworded, its first sync stops waiting.
 const CARRIED_WHY: &str = "is in a session with this copy already";
 
 async fn session(

@@ -61,6 +61,8 @@ const PULL_MS = 30_000;
 /** How soon a leader that could not read its setup first reads it again,
  * doubling each time up to `PULL_MS` (da-olsuv). */
 const RETRY_MS = 2_000;
+/** How a dial given way to a session between the two copies ends: the wire crate's `CARRIED_WHY`. */
+const CARRIED = 'is in a session with this copy already';
 /** How many of a leader's next reads of its setup fail: a test's lever. */
 const FAIL_KEY = 'datum.syncFailRefresh';
 /** While set, the worker's `sync pipe apply` is never answered: a test's
@@ -276,6 +278,8 @@ class Leader {
 	busy = new Map<string, Promise<void>>();
 	/** Per peer: the sessions it dialed that this endpoint is serving now (da-eglw0). */
 	serves = new Map<string, number>();
+	/** Per peer: who waits for this endpoint to stop serving it. */
+	unserved = new Map<string, (() => void)[]>();
 	again = new Set<string>();
 	seen = new Map<string, number>();
 	errors = new Map<string, string>();
@@ -387,8 +391,25 @@ class Leader {
 		if (!this.endpoint || this.paused) return;
 		await Promise.all(
 			this.peers.map(async (p) => {
-				await this.busy.get(p.endpoint);
-				await (this.busy.get(p.endpoint) ?? this.dial(p));
+				// A dial given way to a session between the two copies waits that
+				// session out and dials again, as `datum sync` does (da-221fe), so
+				// the day view's dim lasts until the sync lands (da-vjhju): the
+				// peer's session may be served here, or one it still holds with
+				// this copy before a reload, until that connection times out.
+				// The wait is bounded, and the next dial is what says the session
+				// is over: an end never heard (a dead worker, a rekey) is found
+				// out by a dial that no longer gives way.
+				const endpoint = this.endpoint;
+				for (;;) {
+					await this.busy.get(p.endpoint);
+					await (this.busy.get(p.endpoint) ?? this.dial(p));
+					if (this.paused || this.endpoint !== endpoint || !this.errors.get(p.endpoint)?.endsWith(CARRIED)) return;
+					const served = this.serves.has(p.endpoint);
+					await new Promise<void>((r) => {
+						setTimeout(r, served ? PULL_MS : RETRY_MS);
+						if (served) this.unserved.set(p.endpoint, [...(this.unserved.get(p.endpoint) ?? []), r]);
+					});
+				}
 			})
 		);
 	}
@@ -417,7 +438,11 @@ class Leader {
 	serving(peer: string, on: boolean): void {
 		const n = (this.serves.get(peer) ?? 0) + (on ? 1 : -1);
 		if (n > 0) this.serves.set(peer, n);
-		else this.serves.delete(peer);
+		else {
+			this.serves.delete(peer);
+			this.unserved.get(peer)?.forEach((r) => r());
+			this.unserved.delete(peer);
+		}
 		this.post();
 	}
 

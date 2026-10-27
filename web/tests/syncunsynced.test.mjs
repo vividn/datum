@@ -73,10 +73,22 @@ async function paired(body, { online = true } = {}) {
 	}
 }
 
+/**
+ * What another device wrote meanwhile: `n` entries the native copy pushes
+ * as it writes them, waited for until the open tab applies them, so its
+ * handshake is recorded before the clock moves on, and the reload cuts
+ * that session short. Moved first, the handshake was a sync a moment
+ * ago, and nothing dimmed (da-vjhju).
+ */
+async function wrote(app, native, n) {
+	assert.equal((await native.run(['db', 'restore', '-', '--merge', '-y'], backup(n))).code, 0);
+	await until(() => app.page.evaluate(() => window.datum.sync.states().datum?.applying), Boolean);
+}
+
 test('over an hour since the last sync: that stretch is dimmed until the first sync lands, then not', async () => {
 	await paired(async (app, native) => {
-		// What another device wrote meanwhile: enough that its sync takes a while.
-		assert.equal((await native.run(['db', 'restore', '-', '--merge', '-y'], backup(600))).code, 0);
+		// Enough that its sync takes a while.
+		await wrote(app, native, 600);
 		await app.clock.forward(2 * HOUR);
 		await app.reload();
 		await until(() => countOf(app, 'tea'), (n) => n === 200, 90_000);
@@ -134,7 +146,7 @@ test('while the first sync runs, every pane stays whole and answers (da-xzty6)',
 		// vividn: «while syncing tail is dimmed and unusable. the only thing that
 		// should be dimmed is the part of the dayview/nowview since the last
 		// sync. However the two widgets should still be useable and act as normal».
-		assert.equal((await native.run(['db', 'restore', '-', '--merge', '-y'], backup(3000))).code, 0);
+		await wrote(app, native, 3000);
 		await app.clock.forward(2 * HOUR);
 		await app.reload();
 		const syncing = async (what) => {
@@ -144,6 +156,10 @@ test('while the first sync runs, every pane stays whole and answers (da-xzty6)',
 		// Under way: the first of what the other device wrote has landed.
 		await until(() => countOf(app, 'tea'), (n) => n > 0, 60_000);
 		await syncing('the sync began');
+		// And dimmed while it lands: not lifted by a dial of this copy's given
+		// way to a session the other device holds with it (da-vjhju).
+		await until(() => dims(app), (s) => s.at(-1)?.length);
+		await syncing('the dayview dimmed');
 
 		assert.deepEqual(await look(app, 'tail'), { opacity: 1, inert: false, stale: false });
 		await app.submit('occur coffee');
