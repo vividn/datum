@@ -53,7 +53,7 @@
 	import Pane from '$lib/Pane.svelte';
 	import { act } from '$lib/act.js';
 	import PaneFrame, { ROW, badge, lands } from './PaneFrame.svelte';
-	import TabBody from './TabBody.svelte';
+	import TabBody, { refuse } from './TabBody.svelte';
 	import Stale from './Stale.svelte';
 	import { ready } from './engine.js';
 	import { fillTab } from './chooser.js';
@@ -252,6 +252,34 @@
 
 	/** Every mounted tab's split, by id: a hidden tab keeps its own (da-rjmg). */
 	const splitEls: Record<NodeId, HTMLDivElement> = {};
+	/**
+	 * What a maximize hides (da-961be): every box beside the way from the
+	 * big pane up to the root's split, so nothing that holds it. Hidden as
+	 * a root tab behind is (TabBody.svelte): clipped to nothing
+	 * (`[data-under]`, below), `aria-hidden`, and refusing focus (`hold`).
+	 * Not `visibility` on the root's content: being inherited, it restyled
+	 * the whole layout in front at every maximize and every restore.
+	 */
+	$effect(() => {
+		const split = big && isSplit(content) ? splitEls[content.id] : undefined;
+		const shown = split?.querySelector(`section[data-pane="${CSS.escape(big!.id)}"]`);
+		if (!split || !shown) return;
+		const under: Element[] = [];
+		for (let el: Element = shown; el !== split; el = el.parentElement!)
+			for (const beside of el.parentElement!.children) if (beside !== el) under.push(beside);
+		const muted = under.filter((el) => !el.hasAttribute('aria-hidden'));
+		for (const el of under) el.setAttribute('data-under', '');
+		for (const el of muted) el.setAttribute('aria-hidden', 'true');
+		if (under.some((el) => el.contains(document.activeElement))) (document.activeElement as HTMLElement).blur();
+		return () => {
+			for (const el of under) el.removeAttribute('data-under');
+			for (const el of muted) el.removeAttribute('aria-hidden');
+		};
+	});
+	function hold(event: FocusEvent) {
+		const under = (event.target as Element).closest('[data-under]');
+		if (under) refuse(under, event);
+	}
 	let drag: {
 		index: number;
 		origin: number;
@@ -399,6 +427,7 @@
 				<div
 					class="split {split.direction}"
 					class:maximized={tab === active && big !== null}
+					onfocusin={tab === active && big !== null ? hold : undefined}
 					bind:this={splitEls[split.id]}
 					data-split={split.id}
 					style:--border="{BORDER}px"
@@ -511,23 +540,25 @@
 		flex-direction: column;
 	}
 
-	/* A maximize (da-x7xjg): the root's content is hidden, the tree in it
-	   laid out as it was, and the big pane shown over the root's whole box —
-	   a pane inside a nested layout included, since a maximize into a small
-	   box is not one. Its containing block is the root's section: every
-	   frame between them is unpositioned while it is big, and the root's
-	   scroller too, which neither scrolls nor clips it then. */
-	:global(.root > .content:has(> .tab-body > .split.maximized)) {
-		position: static;
-		visibility: hidden;
-	}
+	/* A maximize (da-x7xjg): the tree in the root's content laid out as it
+	   was, all but the big pane's way up clipped to nothing (da-961be), and
+	   the big pane shown over the root's whole box — a pane inside a nested
+	   layout included, since a maximize into a small box is not one. Its
+	   containing block is the root's section: every frame between them is
+	   unpositioned while it is big, and the root's scroller too, which
+	   neither scrolls nor clips it then. Its own ground covers the frames
+	   that hold it. */
+	:global(.root > .content:has(> .tab-body > .split.maximized)),
 	.maximized :global(:is(section, .content):has(section.big)) {
 		position: static;
 	}
 	.maximized :global(section.big) {
 		position: absolute;
 		inset: 0;
-		visibility: visible;
+		background: var(--ground);
+	}
+	.maximized :global([data-under]) {
+		clip-path: inset(50%);
 	}
 
 	.cell {

@@ -30,6 +30,32 @@
 	alarm — reaches the frame from the tab in front only. Every tab is
 	mounted, but only one is ACTIVE, and the portal keys on that.
 -->
+<script lang="ts" module>
+	const TABBABLE = 'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable]';
+	/**
+	 * What `inert` does, for a box clipped rather than inert (a root tab
+	 * behind, or what a maximize hides, Layout.svelte): focus that lands in
+	 * `within` goes on to the nearest control outside it the way it was
+	 * going — before it, if it came from after — or nowhere.
+	 */
+	export function refuse(within: Element, event: FocusEvent) {
+		const from = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+		const back = from !== null && (within.compareDocumentPosition(from) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+		const side = back ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING;
+		const open = [...document.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+			(el) =>
+				el.tabIndex >= 0 &&
+				!el.matches(':disabled') &&
+				within.compareDocumentPosition(el) & side &&
+				!el.closest('[inert], [aria-hidden="true"]') &&
+				el.checkVisibility({ visibilityProperty: true })
+		);
+		const to = back ? open.at(-1) : open[0];
+		if (to) to.focus();
+		else (event.target as HTMLElement).blur();
+	}
+</script>
+
 <script lang="ts">
 	import { getContext, setContext, untrack, type Snippet } from 'svelte';
 	import { derived, writable, type Writable } from 'svelte/store';
@@ -98,29 +124,7 @@
 	$effect.pre(() => {
 		if (active) frame.hosted.set($hosted);
 	});
-	const TABBABLE = 'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable]';
 	let body: HTMLElement | undefined = $state();
-	/**
-	 * What `inert` does for an inner tab, for a root tab behind: focus that
-	 * lands in it goes on to the nearest control outside it the way it was
-	 * going — before it, if it came from after — or nowhere.
-	 */
-	function refuse(event: FocusEvent) {
-		const from = event.relatedTarget instanceof Node ? event.relatedTarget : null;
-		const back = from !== null && (body!.compareDocumentPosition(from) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-		const side = back ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING;
-		const open = [...document.querySelectorAll<HTMLElement>(TABBABLE)].filter(
-			(el) =>
-				el.tabIndex >= 0 &&
-				!el.matches(':disabled') &&
-				body!.compareDocumentPosition(el) & side &&
-				!el.closest('[inert], [aria-hidden="true"]') &&
-				el.checkVisibility({ visibilityProperty: true })
-		);
-		const to = back ? open.at(-1) : open[0];
-		if (to) to.focus();
-		else (event.target as HTMLElement).blur();
-	}
 	// And focus already in it as it goes behind, by a swipe or a script, is let go.
 	$effect(() => {
 		if (!active && kept && body?.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
@@ -144,7 +148,7 @@
 	bind:this={body}
 	inert={!active && !kept}
 	aria-hidden={!active && kept ? 'true' : undefined}
-	onfocusin={!active && kept ? refuse : undefined}
+	onfocusin={!active && kept ? (e) => refuse(body!, e) : undefined}
 	style:min-width={active && least ? `${least.width}px` : null}
 	style:min-height={active && least ? `${least.height}px` : null}
 	style:transform={moved}

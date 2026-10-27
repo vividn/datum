@@ -213,6 +213,92 @@ describe('the maximize badge', () => {
 		});
 	});
 
+	// da-961be: a maximize hid the root's content with `visibility`, which
+	// every element in the layout inherits, so a maximize and a restore each
+	// restyled the whole of it. What it hides now is the box beside each box
+	// on the big pane's way up, clipped, `aria-hidden` and refusing focus, and
+	// nothing in the layout inherits otherwise. A nested layout's pane, so
+	// the frames that hold it are hidden too.
+	test('hides all but the big pane, and changes nothing any element of the layout inherits (da-961be)', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await page.evaluate((mine) => window.datum.layouts.saveLayout(mine), MINE);
+			await manage(page, 'tail', 'split: a new pane to the right');
+			await fill(page, 'mine');
+			await pane(page, 'm-a').waitFor();
+			await leaveLayoutMode(page);
+			await settled(page);
+			const front = page.locator('section.root > .content > .tab-body:not(.behind)');
+			// What each element inherits, against what it inherited when the
+			// layout was whole: by element, since the badge draws another glyph.
+			const changed = () =>
+				front.evaluate((el) =>
+					[...el.querySelectorAll('*')]
+						.map((d) => {
+							const style = getComputedStyle(d);
+							const now = `${style.visibility} ${style.pointerEvents} ${d.closest('[inert]') !== null}`;
+							d.__was ??= now;
+							return d.__was === now ? null : `${d.tagName} ${d.className}: ${d.__was} → ${now}`;
+						})
+						.filter(Boolean)
+				);
+			const muted = () => page.evaluate(() => [...document.querySelectorAll('[aria-hidden="true"]')].map((e) => e.outerHTML.slice(0, 60)));
+			assert.deepEqual(await changed(), []);
+			const mutedBefore = await muted();
+
+			await press(page, 'm-a');
+			assert.deepEqual(await titles(page), ['nowview']);
+			const under = await changed();
+			assert.deepEqual(under.slice(0, 3), [], `${under.length} elements inherit otherwise under the maximize`);
+			// Every control outside the big pane, the nested layout's own bar
+			// included, is clipped to nothing and hidden from assistive technology.
+			const open = await front.evaluate((el) =>
+				[...el.querySelectorAll('button, [tabindex], h2')]
+					.filter((c) => !c.closest('section[data-pane="m-a"]') && !c.closest('[inert]'))
+					.map((c) => {
+						let clipped = false;
+						for (let a = c; a && a !== el; a = a.parentElement) clipped ||= getComputedStyle(a).clipPath !== 'none';
+						return clipped && c.closest('[aria-hidden="true"]') !== null ? null : c.outerHTML.slice(0, 80);
+					})
+			);
+			assert.ok(open.length > 10, `too few controls outside the big pane to judge: ${open.length}`);
+			assert.deepEqual(open.filter(Boolean), [], 'a control outside the big pane is still drawn or read');
+			// Wherever the root's box is pressed, the big pane takes it.
+			const hits = await page.evaluate(() => {
+				const box = document.querySelector('[data-split="main"]').getBoundingClientRect();
+				const misses = [];
+				for (let i = 1; i < 10; i++)
+					for (let j = 1; j < 10; j++) {
+						const [x, y] = [box.left + (box.width * i) / 10, box.top + (box.height * j) / 10];
+						if (!document.elementFromPoint(x, y)?.closest('section[data-pane="m-a"]')) misses.push(`${Math.round(x)},${Math.round(y)}`);
+					}
+				return misses;
+			});
+			assert.deepEqual(hits, [], 'a press in the root went past the big pane');
+			// The keyboard passes over what is hidden, and still goes somewhere.
+			const stops = [];
+			for (const key of [...Array(30).fill('Tab'), ...Array(30).fill('Shift+Tab')]) {
+				await page.keyboard.press(key);
+				stops.push(
+					await page.evaluate(() => {
+						const at = document.activeElement;
+						if (at?.closest('section[data-pane="m-a"]')) return 'big';
+						return at?.closest('[data-split="main"]') ? 'hidden' : (at?.tagName ?? 'none');
+					})
+				);
+			}
+			assert.ok(!stops.includes('hidden'), `a key stopped under the maximize: ${stops.join(' ')}`);
+			assert.ok(stops.includes('big'), `the keys never reached the big pane: ${stops.join(' ')}`);
+
+			await press(page, 'm-a');
+			assert.ok((await titles(page)).includes('nowview'));
+			assert.deepEqual(await changed(), [], 'the layout inherits otherwise after the restore');
+			assert.equal(await page.locator('[data-under]').count(), 0, 'the restore left a box hidden');
+			assert.deepEqual(await muted(), mutedBefore, 'the restore left a box aria-hidden');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	// Normal mode keeps the LAYOUT from changing (da-vvcxc); maximizing
 	// changes nothing saved, so it is the one badge that stays.
 	test('normal mode keeps the badge and has no `+` and no `×`', async () => {
