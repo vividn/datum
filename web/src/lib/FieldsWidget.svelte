@@ -732,6 +732,7 @@
 	items={entries}
 	{arrange}
 	maxRows={Infinity}
+	center={!picture && !picking && buttons.length > 0}
 	key={keyOf}
 	bind:bar
 	onpointerenter={() => (over = true)}

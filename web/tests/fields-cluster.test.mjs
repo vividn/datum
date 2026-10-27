@@ -533,13 +533,23 @@ describe('a switch field’s states around the tap', () => {
 	// fill the bar's rows and none scrolls.
 	test('in an 8-row bar on a phone, the states fill its rows before any scrolls', async () => {
 		const many = Array.from({ length: 34 }, (_, i) => `s${i}`);
+		// Enough fields more to overrun eight rows, so the bar scrolls and the
+		// tap is at its middle: fewer stand centered (da-syu4f), where the tap
+		// falls by chance on a spot `ringOf` packs one state short of the
+		// rows (da-65210).
+		const more = Array.from({ length: 20 }, (_, i) => `x${i}`);
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				await seedLines(app, [...OTHERS.map((f) => `setup ${f} --verb occur`), `setup mood --verb switch --states false,${many.join(',')}`]);
+				await seedLines(app, [
+					...[...OTHERS, ...more].map((f) => `setup ${f} --verb occur`),
+					`setup mood --verb switch --states false,${many.join(',')}`
+				]);
 				await page.locator(`${BAR} [data-field="mood"]`).waitFor();
 				await atRows(page, 'bar', 8, Infinity);
 				const t = await tapAt(page, 0.5);
+				const box = await page.locator(BAR).boundingBox();
+				assert.ok(Math.abs(t.tap.x - (box.x + box.width / 2)) < 2, `the tap is not at the bar's middle: ${t.tap.x}`);
 				const end = t.find('false');
 				const states = many.map(t.find);
 				const row = end.bottom - end.top + GAP;

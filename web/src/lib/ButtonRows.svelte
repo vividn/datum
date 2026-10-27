@@ -26,6 +26,13 @@
 	and set apart from the next by a divider — the commands widget's kinds
 	of action. The runs share the one scroll and the one count of rows.
 
+	CENTERED (da-syu4f, vividn, 2026-10-27: «fields should appear more in
+	the center of the fields widget when there are few, to give space
+	around them»): a widget that passes `center` has a bar its buttons do
+	not fill hold them in the middle of its box — along the axis while they
+	do not reach its end, and across it while there are fewer lines than
+	the box fits. A full bar is laid out as without it.
+
 	A widget hands in its `items`, a `key` for each, and `children`, a
 	snippet that draws one (`{ item }`); its buttons keep its own classes, which
 	style them where they are written.
@@ -44,6 +51,8 @@
 		section?: (item: T) => unknown;
 		/** The most rows drawn, whatever the box fits; `Infinity` for every row it fits. */
 		maxRows?: number;
+		/** Hold buttons that do not fill the box in its middle. */
+		center?: boolean;
 		/** The scroller itself, for a widget that has to put a scroll back. */
 		bar?: HTMLElement;
 		class?: string;
@@ -61,6 +70,7 @@
 		arrange = lanesOf,
 		section = undefined,
 		maxRows = MAX_ROWS,
+		center = false,
 		bar = $bindable(),
 		class: classes = '',
 		onpointerenter,
@@ -95,6 +105,8 @@
 <div
 	class="bar {classes} {axis}"
 	bind:this={bar}
+	class:center
+	class:short={center && lines < rows}
 	data-rows={rows}
 	data-axis={axis}
 	{onpointerenter}
@@ -138,6 +150,30 @@
 		flex-direction: column;
 		overflow-x: hidden;
 		overflow-y: auto;
+	}
+
+	/* Auto margins, not `justify-content: center`: they come to nothing
+	   once the buttons overrun the box, so the scroll still starts at its
+	   first button. */
+	.center.x > .section:first-child {
+		margin-inline-start: auto;
+	}
+
+	.center.x > .section:last-child {
+		margin-inline-end: auto;
+	}
+
+	.center.y > .section:first-child {
+		margin-block-start: auto;
+	}
+
+	.center.y > .section:last-child {
+		margin-block-end: auto;
+	}
+
+	/* Across the axis the lines are their own height, not shares of the box. */
+	.short {
+		align-items: center;
 	}
 
 	/* A section's lines each take an equal share of the box, however few it
