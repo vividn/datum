@@ -1005,7 +1005,12 @@ binary.
   yesterday back down. A change re-draws today alone: each earlier day on
   screen is checked by one `dayview --digests` run, the SHA-256 of each
   day's picture, and asked for again only when its held picture differs
-  (da-efxk5).
+  (da-efxk5). Each finished day's picture is kept past a reload too, in
+  IndexedDB (`$lib/heldDays.ts`) by database, band argv and date, a month
+  of days at the last three sizes: a reload draws the earlier days from
+  there and asks for today, and the same digest check redraws a kept day
+  only once it is on screen and its picture changed, a newer datum's
+  drawing included (da-crq76).
 
 ## Migration from original datum
 

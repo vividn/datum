@@ -261,6 +261,7 @@
 	import { on } from 'svelte/events';
 	import { browser } from '$app/env';
 	import { currentDb } from './database.js';
+	import { keepDay, keptDays, keptNow, type Kept } from './heldDays.js';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import IntegrityMark from './IntegrityMark.svelte';
@@ -709,14 +710,66 @@
 
 	let geometry: Geometry | null = $state.raw(was?.geometry ?? null);
 
+	/**
+	 * This database's pictures kept past a reload ($lib/heldDays.ts,
+	 * da-crq76), once read: the first draw waits for them, so a day kept is
+	 * not asked for.
+	 */
+	const db = currentDb();
+	const keptAtMount = browser ? keptNow(db) : undefined;
+	let stored: Kept | undefined = $state.raw(keptAtMount);
+	if (browser && !keptAtMount) void keptDays(db).then((days) => (stored = days));
+	/** Is `onDay` the browser's guess, which no geometry has answered yet (`seed`)? */
+	let guessed = false;
+	/** The pictures `seed` put in, which are not kept again. */
+	const fromStore = new WeakSet<RunResult>();
+
 	// Not on mount: the static build prerenders this page, and there is no
 	// database (or `run`) outside the browser. At the band's width whatever
 	// the window: the window is how the band shows the picture (`mapFor`).
 	const request = $derived({ width: bandWidth, dayHeight: day, epoch, midnights });
 	$effect.pre(() => {
 		const [at, all] = [request, ends];
-		if (browser && measured && at.width > 0) untrack(() => redraw(at, all));
+		if (browser && measured && stored && at.width > 0) untrack(() => redraw(at, all));
 	});
+
+	/**
+	 * Put the kept pictures of `at`'s size into the cache, each day not held
+	 * already, as of no epoch: drawn at once, and checked by `refreshVisible`
+	 * once on screen, as a day of an older epoch is — which is what redraws a
+	 * picture a write, a sync or a newer datum changed. Today is never kept.
+	 * Dated by the CLI's today, or by the browser's until the geometry says:
+	 * a wrong guess is a midnight (`draw`), which drops them all.
+	 */
+	function seed(at: typeof request): void {
+		const days = stored?.get(bandArgv(at.width, at.dayHeight).join(' '));
+		if (!days) return;
+		const today = onDay ?? localDate();
+		for (const [date, svg] of days) {
+			const end = daysBetween(date, today);
+			const argv = bandArgv(at.width, at.dayHeight, end);
+			if (end < 1 || end > MONTH || cache.runs.has(argv.join(' '))) continue;
+			const result: RunResult = { argv, code: 0, stdout: svg, stderr: '' };
+			fromStore.add(result);
+			cache.runs.set(argv.join(' '), { epoch: -1, end, run: Promise.resolve(result) });
+			if (!onDay) [onDay, guessed] = [today, true];
+		}
+	}
+
+	/** The browser's date, as the CLI writes one. */
+	function localDate(): string {
+		const now = new Date();
+		return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((n) => String(n).padStart(2, '0')).join('-');
+	}
+
+	/** Whole days from ISO date `from` to ISO date `to`. */
+	function daysBetween(from: string, to: string): number {
+		return Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+	}
+	/** The ISO date `back` days before ISO date `iso`. */
+	function dateBack(iso: string, back: number): string {
+		return new Date(Date.parse(iso) - back * 86_400_000).toISOString().slice(0, 10);
+	}
 
 	/**
 	 * Draw the stack at `at`. A day showing a picture of another size, and
@@ -727,6 +780,7 @@
 	 */
 	function redraw(at: typeof request, ends: number[]): void {
 		cacheFor(at);
+		seed(at);
 		const atThisSize = (end: number) => cache.runs.has(bandArgv(at.width, at.dayHeight, end).join(' '));
 		draw(at, ends.filter((end) => end === 0 || drawn[end]?.midnights !== at.midnights || atThisSize(end)));
 		// The days on screen are read once the newest is pinned again: a
@@ -809,6 +863,7 @@
 			// Today moved: every cached picture is a day out (see `midnights`).
 			if (onDay && fresh.today && fresh.today !== onDay) midnights += 1;
 			onDay = fresh.today ?? onDay;
+			guessed &&= !fresh.today;
 			geometry = fresh;
 			geometryBox = at.width;
 		});
@@ -823,6 +878,9 @@
 				from[end] = token;
 				shown = { ...shown, [end]: result };
 				drawn = { ...drawn, [end]: { width: at.width, dayHeight: at.dayHeight, midnights: at.midnights } };
+				// A finished day, kept past a reload by the date it is of.
+				if (end !== 0 && result.code === 0 && result.stdout && !fromStore.has(result) && onDay && !guessed && at.midnights === midnights)
+					keepDay(db, bandArgv(at.width, at.dayHeight).join(' '), dateBack(onDay, end), result.stdout);
 				void anchor();
 			});
 		}
@@ -1071,7 +1129,7 @@
 		refreshing = requestAnimationFrame(() => {
 			refreshing = 0;
 			const at = request;
-			if (at.width <= 0 || !measured) return;
+			if (at.width <= 0 || !measured || !stored) return;
 			const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
 			const visible = visibleDays() ?? [];
 			const stale = visible.filter((end) => (cache.runs.get(id(end))?.epoch ?? at.epoch) < at.epoch);

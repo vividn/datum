@@ -92,6 +92,42 @@ async function drawBackTo(app, back) {
 
 const open = (fn) => withApp(fn, { ...PHONE, clock: AT, prepare: twoLayouts });
 
+/** The kept rows: each one's band argv, date and SVG, after `edit` has had its way with the store. */
+const keptRows = (app, edit = '') =>
+	app.page.evaluate(
+		(edit) =>
+			new Promise((resolve, reject) => {
+				const open = indexedDB.open('datum-held-days');
+				open.onerror = () => reject(open.error);
+				open.onsuccess = () => {
+					const tx = open.result.transaction('days', 'readwrite');
+					const store = tx.objectStore('days');
+					if (edit === 'clear') store.clear();
+					const all = store.getAll();
+					all.onsuccess = () => {
+						if (edit === 'tamper')
+							for (const row of all.result) store.put({ ...row, svg: row.svg.replace('</svg>', '<!-- an older datum --></svg>') });
+						// Past both bounds: forty dates of 2020 at the size drawn, and four sizes used before any.
+						if (edit === 'pad') {
+							const { db, size, svg } = all.result[0];
+							for (let day = 1; day <= 40; day++)
+								store.put({ db, size, date: new Date(Date.UTC(2020, 0, day)).toISOString().slice(0, 10), svg, at: 0 });
+							for (const width of [1, 2, 3, 4]) store.put({ db, size: size.replace(/--width \d+/, `--width ${width}`), date: '2020-01-01', svg, at: 0 });
+						}
+					};
+					tx.oncomplete = () => {
+						open.result.close();
+						resolve(all.result.map(({ size, date, svg }) => ({ size, date, svg })));
+					};
+				};
+			}),
+		edit
+	);
+
+/** Every day of `before` but today, kept ($lib/heldDays.ts). */
+const allKept = (app, before) =>
+	until(() => keptRows(app), (rows) => rows.length === Object.keys(before).length - 1);
+
 describe('the day strip across a swipe', () => {
 	test('back from another layout, the strip shows what it drew and asks for none of it again', async () => {
 		await open(async (app) => {
@@ -147,11 +183,15 @@ describe('the day strip across a swipe', () => {
 		});
 	});
 
-	test('a midnight while away re-draws every day', async () => {
+	// A kept picture is of its date, not of its place in the stack
+	// (da-crq76): after a midnight each is drawn one day further back, and
+	// only today and yesterday, the today it never kept, are drawn again.
+	test('a midnight while away draws today and yesterday, and moves every kept day back one', async () => {
 		await open(async (app) => {
 			await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3']);
-			const held = Object.keys(await pictures(app)).length;
+			const before = await pictures(app);
 			await app.idle();
+			await allKept(app, before);
 
 			let seen;
 			await awayAndBack(app, async () => {
@@ -165,9 +205,15 @@ describe('the day strip across a swipe', () => {
 			);
 			await pictures(app);
 			await app.idle();
+			assert.deepEqual([...new Set(await viewsOf(seen))], [0, 1], 'not today and yesterday drawn again');
 
-			const asked = new Set(await viewsOf(seen));
-			assert.equal(asked.size, held, `after a midnight ${asked.size} of ${held} days were re-drawn`);
+			// The check goes out a frame after the scroll, and under the held
+			// clock that frame is Playwright's: wait for it, not for idle.
+			await scrollToDay(app, 2);
+			await until(seen, (argvs) => argvs.some((argv) => argv.includes('--digests')));
+			await app.idle();
+			assert.ok(!(await viewsOf(seen)).includes(2), 'the day before yesterday was drawn again');
+			assert.equal(await band(app, 2), before[1], 'the day before yesterday is not the picture of its date');
 		});
 	});
 
@@ -261,6 +307,144 @@ describe('the day strip across a write (da-efxk5)', () => {
 
 			assert.deepEqual(await viewsOf(seen), [0, 1]);
 			assert.ok(!(await marked(app, 1)), "yesterday kept the picture from before the write");
+		});
+	});
+});
+
+// vividn, 2026-10-26: «will the website have easy access to the cache for
+// quick rendering without having to go through the cli?» — «yes». Each
+// finished day's picture is kept in IndexedDB ($lib/heldDays.ts), so a reload
+// draws the earlier days from there and asks the CLI only for today and one
+// `dayview --digests` check. Every dayview argv the page sends its database
+// worker is recorded from the boot on, a reload's included.
+describe('the day strip across a reload (da-crq76)', () => {
+	const recordBoot = (context) =>
+		context.addInitScript(() => {
+			window.__booted = [];
+			const post = Worker.prototype.postMessage;
+			Worker.prototype.postMessage = function (message, ...rest) {
+				if (message?.argv?.[0] === 'dayview') window.__booted.push(message.argv);
+				return post.call(this, message, ...rest);
+			};
+		});
+	const booted = (app) => () => app.page.evaluate(() => window.__booted);
+
+	/**
+	 * The page after a reload asked for it holds the store's read behind a
+	 * busy transaction until `__keptHeld` is cleared: a read slower than its
+	 * patience, as a big store's on a slow phone is.
+	 */
+	const holdRead = (context) =>
+		context.addInitScript(() => {
+			if (!sessionStorage.getItem('datum-test-hold-kept')) return;
+			sessionStorage.removeItem('datum-test-hold-kept');
+			window.__keptHeld = true;
+			const open = indexedDB.open('datum-held-days');
+			open.onsuccess = () => {
+				const store = open.result.transaction('days', 'readwrite').objectStore('days');
+				const spin = () => window.__keptHeld && (store.count().onsuccess = spin);
+				spin();
+			};
+		});
+
+	/** Draw the strip, and wait for every day but today to be kept. */
+	async function drawnAndKept(app) {
+		await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3', 'switch mood happy -y -t 10']);
+		const before = await pictures(app);
+		await app.idle();
+		await allKept(app, before);
+		return before;
+	}
+
+	const opened = (fn) =>
+		withApp(fn, { ...PHONE, clock: AT, prepare: (context) => Promise.all([twoLayouts(context), recordBoot(context), holdRead(context)]) });
+
+	test('a reload draws the earlier days from the store, asking only for today and the check', async () => {
+		await opened(async (app) => {
+			const before = await drawnAndKept(app);
+
+			await app.reload();
+			const after = await pictures(app);
+			await app.idle();
+
+			assert.deepEqual(await viewsOf(booted(app)), [0], 'the reload asked the CLI for an earlier day');
+			assert.ok((await booted(app)()).some((argv) => argv.includes('--digests')), 'nothing checked the kept days');
+			for (const end of Object.keys(before).filter((end) => end !== '0'))
+				assert.equal(after[end], before[end], `day ${end} is not the picture it was`);
+		});
+	});
+
+	// What a write on another tab, a sync or a newer datum leaves: a kept
+	// picture that is not the one the CLI draws now.
+	test('a kept picture the CLI no longer draws is redrawn after the check, and kept again', async () => {
+		await opened(async (app) => {
+			const before = await drawnAndKept(app);
+			await keptRows(app, 'tamper');
+
+			await app.reload();
+			await pictures(app);
+			const visible = (await inView(app)).filter((end) => end !== 0);
+			await app.page.waitForFunction(
+				(ends) => ends.every((end) => !document.querySelector(`.band[data-days-ago="${end}"]`)?.innerHTML.includes('an older datum')),
+				visible
+			);
+			await app.idle();
+
+			assert.deepEqual(await viewsOf(booted(app)), [0, ...visible], 'not today and the days on screen, redrawn');
+			for (const end of visible) assert.equal(await band(app, end), before[end], `day ${end} is not drawn as before`);
+			const rows = await keptRows(app);
+			assert.equal(
+				rows.filter(({ svg }) => svg.includes('an older datum')).length,
+				rows.length - visible.length,
+				'the redrawn days were not kept again, or the rest were'
+			);
+		});
+	});
+
+	// vremya, review of #1225: a read that missed its patience left the rows
+	// of earlier sessions out of eviction for good.
+	test('a read that misses its patience still lands, and the store is trimmed to its bounds', async () => {
+		await opened(async (app) => {
+			await drawnAndKept(app);
+			await keptRows(app, 'pad');
+			await app.page.evaluate(() => sessionStorage.setItem('datum-test-hold-kept', '1'));
+
+			await app.reload();
+			await pictures(app);
+			await app.idle();
+			assert.ok(
+				(await viewsOf(booted(app))).some((end) => end > 0),
+				'the read did not miss: no earlier day was drawn through the CLI'
+			);
+			await app.page.evaluate(() => (window.__keptHeld = false));
+
+			const bounded = (rows) => {
+				const sizes = Map.groupBy(rows, (row) => row.size);
+				return sizes.size <= 3 && [...sizes.values()].every((days) => days.length <= 31);
+			};
+			const rows = await until(async () => (await keptRows(app)).map(({ size, date }) => ({ size: size.slice(0, 24), date })), bounded);
+			assert.ok(rows.length > 0, 'nothing kept at all');
+		});
+	});
+
+	test('a cleared store draws every day through the CLI, as before', async () => {
+		await opened(async (app) => {
+			const before = await drawnAndKept(app);
+			await keptRows(app, 'clear');
+
+			await app.reload();
+			const after = await pictures(app);
+			await app.idle();
+
+			assert.deepEqual(
+				[...new Set(await viewsOf(booted(app)))],
+				Object.keys(before).map(Number).sort((a, b) => a - b),
+				'not every day drawn again'
+			);
+			// A day off screen keeps a picture from before the last write
+			// until it is scrolled to, kept and drawn again alike: so the days
+			// are compared by the run, not to `before`.
+			assert.deepEqual(Object.keys(after), Object.keys(before));
 		});
 	});
 });
