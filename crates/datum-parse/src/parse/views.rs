@@ -159,11 +159,20 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
             }
             FlagSplit::Long("digests") => {
                 let (v, ni) = take_value(tail, i, None, "--digests")?;
-                out.digests = parse_days_back(v)?;
+                out.digests = parse_days_back(v, "--digests")?;
                 i = ni;
             }
             FlagSplit::LongAttached("digests", v) => {
-                out.digests = parse_days_back(v)?;
+                out.digests = parse_days_back(v, "--digests")?;
+                i += 1;
+            }
+            FlagSplit::Long("pictures") => {
+                let (v, ni) = take_value(tail, i, None, "--pictures")?;
+                out.pictures = parse_days_back(v, "--pictures")?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("pictures", v) => {
+                out.pictures = parse_days_back(v, "--pictures")?;
                 i += 1;
             }
             FlagSplit::Long("context") => {
@@ -186,9 +195,9 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
     Ok(out)
 }
 
-/// `--digests`' list: days back, comma-separated.
-fn parse_days_back(v: &str) -> Result<Vec<u32>> {
-    v.split(',').map(|n| parse_u32(n, "--digests")).collect()
+/// `--digests`' and `--pictures`' list: days back, comma-separated.
+fn parse_days_back(v: &str, flag: &str) -> Result<Vec<u32>> {
+    v.split(',').map(|n| parse_u32(n, flag)).collect()
 }
 
 pub(crate) fn parse_orientation(s: &str) -> Result<DayviewOrientation> {

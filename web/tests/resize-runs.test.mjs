@@ -13,7 +13,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, maximizeButton, settled } from './support/layout.mjs';
-import { inView } from './support/daystrip.mjs';
+import { inView, picturesAsked } from './support/daystrip.mjs';
 
 before(startApp);
 after(stopApp);
@@ -59,6 +59,7 @@ test('a maximize asks for the days on screen, and a restore and a maximize again
 		const runs = await runsOf(app, press);
 		assert.deepEqual(twice(runs), [], runs.join(' | '));
 		const asked = days(runs);
+		assert.deepEqual(twice(asked), [], `a day asked twice: ${runs.join(' | ')}`);
 		assert.ok(asked.includes(0), `the maximize re-drew no today: ${runs.join(' | ')}`);
 		const visible = await inView(app);
 		assert.deepEqual(asked.filter((end) => !visible.includes(end)), [], `days off screen asked for (on screen: ${visible})`);
@@ -67,9 +68,9 @@ test('a maximize asks for the days on screen, and a restore and a maximize again
 	}, DESKTOP);
 });
 
-/** The days back each band run asks for, the geometry's JSON run aside. */
+/** The days back the strip's runs ask pictures of, in all. */
 const days = (runs) =>
 	runs
-		.filter((argv) => argv.startsWith('dayview ') && !argv.includes('json'))
-		.map((argv) => Number(argv.match(/--end-date (-?\d+)/)?.[1] ?? 0) * -1 || 0)
+		.filter((argv) => argv.startsWith('dayview '))
+		.flatMap((argv) => picturesAsked(argv.split(' ')))
 		.sort((a, b) => a - b);

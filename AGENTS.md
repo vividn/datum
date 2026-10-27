@@ -989,8 +989,9 @@ binary.
   at least, however short the box, which is the past the reader scrolls
   back through (the two numbers were one, so the whole scroll
   range was the single partly-revealed day and the strip moved 38px and
-  stopped), one `dayview` render per band through the seam (`bandArgv` in
-  `web/src/lib/panes.ts`). Every band asks for the same `--width` and
+  stopped), a picture of one day per band through the seam (`bandArgv` in
+  `web/src/lib/panes.ts`), the days it lacks and the geometry asked in one
+  `dayview --pictures` run (`picturesArgv`, da-p5lyt). Every band asks for the same `--width` and
   `--day-height`, which is what pins `label_width` and so makes the hour
   gridlines of one band land on those of the next; all but today's
   suppress the axis strip with `--time-axis-height 0`. When the band above

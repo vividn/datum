@@ -1092,6 +1092,49 @@ fn digests_are_each_days_own_picture() {
     assert_eq!(after[0], picture("-1"));
 }
 
+/// da-p5lyt: `--pictures` gives, with the layout, each named day's SVG as
+/// its own `--days 1 --end-date` run draws it, so one run answers the
+/// bands a strip lacks.
+#[test]
+fn pictures_are_each_days_own_picture() {
+    let db = fresh_db();
+    // The second coffee on day 20 repeats the first: a finding there.
+    for at in [1, 3, 20]
+        .map(noon_utc)
+        .into_iter()
+        .chain([noon_utc(20) + chrono::Duration::hours(1)])
+    {
+        entry_builder("coffee")
+            .verb(Verb::Point)
+            .state(serde_json::json!(1))
+            .time_start_utc(at)
+            .insert(&db);
+    }
+    let band = ["--width", "300", "--day-height", "40", "--margin", "0"];
+    let out = |argv: &[&str]| {
+        let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+        let path = tmp.path().to_str().unwrap();
+        run_cli(&[&["dayview", "-o", path][..], &band, argv].concat(), &db).expect("dayview");
+        std::fs::read_to_string(path).unwrap()
+    };
+    let json: serde_json::Value =
+        serde_json::from_str(&out(&["--show", "json", "--pictures", "3,20,1,2"])).unwrap();
+    // A day far from the others reads what `check integrity` finds apart.
+    for back in ["1", "2", "3", "20"] {
+        let own = out(&["--end-date", &format!("-{back}")]);
+        assert!(
+            back != "20" || own.contains("integrity-error"),
+            "day 20: no finding"
+        );
+        assert_eq!(
+            json["pictures"][back].as_str(),
+            Some(own.as_str()),
+            "day {back}"
+        );
+    }
+    assert!(json["hours"].is_array(), "the layout went missing: {json}");
+}
+
 /// Today's band around a `--sample` of `spec`, drawn `--context ctx`.
 fn around(db: &datum_core::db::Db, spec: &str, ctx: &str) -> String {
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
@@ -1226,6 +1269,7 @@ fn a_window_context_refuses_what_it_would_drop() {
         &["--end-date", "-1"],
         &["--start-date", "-2"],
         &["--digests", "1"],
+        &["--pictures", "1"],
         &["--orientation", "vertical"],
     ] {
         for ctx in ["now", "12h"] {

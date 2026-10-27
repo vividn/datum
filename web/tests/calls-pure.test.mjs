@@ -189,6 +189,7 @@ const SAMPLES = {
 	renameFieldArgv: [['coffee', 'drink', true], ['mood', 'feeling']],
 	bandArgv: [[400, 40], [400, 40, 3]],
 	geometryArgv: [[400, 40]],
+	picturesArgv: [[400, 40, [0, 3]]],
 	nowviewSpec: [['30m'], ['0', new Date().toISOString(), true]],
 	pressArgv: [
 		[{ field: 'coffee', shape: { kind: 'point' } }],

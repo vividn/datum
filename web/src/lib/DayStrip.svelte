@@ -7,12 +7,13 @@
 	the days before today with today under it, and the whole column reads
 	as ONE picture.
 
-	How it is drawn (da-iu9i). Each day is its own `dayview` — one day,
+	How it is drawn (da-iu9i). Each day is its own picture — one day,
 	no date column, no ruler, no outer margin (`bandArgv` in $lib/panes.ts)
 	— so what comes back is a band exactly as wide as the column and
-	exactly `dayHeight` tall, all of it data area. A day lands as soon as
-	it is drawn instead of the whole past arriving at once, which is the
-	snappiness; the stitching is then the web's job and it has four parts:
+	exactly `dayHeight` tall, all of it data area. Only the days a draw
+	lacks are asked, together in one `dayview --pictures` run (da-p5lyt),
+	instead of the whole past arriving at once, which is the snappiness;
+	the stitching is then the web's job and it has four parts:
 
 	- every band is asked at the SAME width and day height, so the hour
 	  gridlines fall at the same x in each;
@@ -293,6 +294,7 @@
 		dayPitch,
 		dayUnderSliver,
 		geometryArgv,
+		picturesArgv,
 		type DayviewJson,
 		todayBox,
 		wholeDay,
@@ -760,16 +762,25 @@
 	): void {
 		cacheFor(at);
 		const token = ++started;
-		const ask = (argv: string[], band: number | 'geometry'): Promise<RunResult> => {
-			const id = argv.join(' ');
-			let pending = cache.runs.get(id);
-			if (!pending) cache.runs.set(id, (pending = { epoch: at.epoch, end: band, run: run(argv, undefined, undefined, `${queueKey}:${band}`, undefined, undefined, true) }));
-			return pending.run;
-		};
+		const geometryId = geometryArgv(at.width, at.dayHeight).join(' ');
+		const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
+		// What is not held is asked in ONE run, the geometry and each band
+		// as `--pictures` answers it: a process and its read are most of a
+		// band's cost (da-p5lyt). Each is still held by its own argv.
+		const missing = ends.filter((end) => !cache.runs.has(id(end)));
+		const bare = !cache.runs.has(geometryId);
+		if (missing.length || bare) {
+			const argv = missing.length ? picturesArgv(at.width, at.dayHeight, missing) : geometryArgv(at.width, at.dayHeight);
+			const label = [...(bare ? ['geometry'] : []), ...missing].join(',');
+			const asked = run(argv, undefined, undefined, `${queueKey}:${label}`, undefined, undefined, true);
+			if (bare) cache.runs.set(geometryId, { epoch: at.epoch, end: 'geometry', run: asked });
+			const band = asked.then(picturesOf);
+			for (const end of missing) cache.runs.set(id(end), { epoch: at.epoch, end, run: band.then((of) => of(end)) });
+		}
 
 		// The geometry first: the gridlines, the ruler and the date stamps
 		// all hang off it, and it is one small JSON rather than a picture.
-		void ask(geometryArgv(at.width, at.dayHeight), 'geometry').then((result) => {
+		void cache.runs.get(geometryId)!.run.then((result) => {
 			if (result.superseded || token < geometryFrom) return;
 			geometryFrom = token;
 			const fresh = readGeometry(result.stdout);
@@ -782,7 +793,7 @@
 		});
 
 		for (const end of ends) {
-			void ask(bandArgv(at.width, at.dayHeight, end), end).then((result) => {
+			void cache.runs.get(id(end))!.run.then((result) => {
 				// A resize while a draw is in flight and two draws overlap;
 				// they can finish out of order, and the loser would paint the
 				// older answer over the newer one. Last started wins, band by
@@ -794,6 +805,18 @@
 				void anchor();
 			});
 		}
+	}
+
+	/** Each band's answer out of a `--pictures` run: its SVG as its own `--days 1` run prints it. */
+	function picturesOf(result: RunResult): (end: number) => RunResult {
+		if (result.superseded || result.code !== 0) return () => result;
+		let pictures: Record<string, string> = {};
+		try {
+			pictures = JSON.parse(result.stdout).pictures ?? {};
+		} catch {
+			// No answer is no picture.
+		}
+		return (end) => ({ ...result, stdout: end in pictures ? `${pictures[end]}\n` : '' });
 	}
 
 	/**

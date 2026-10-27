@@ -27,7 +27,7 @@ import type { Admins, ChainList, PurgePreview, SyncStatus } from './syncView.js'
 import type { TailListing, TailPage } from './tail.js';
 import type { Spec } from './track.js';
 
-export { bandArgv, geometryArgv, nowviewSpec } from './panes.js';
+export { bandArgv, geometryArgv, nowviewSpec, picturesArgv } from './panes.js';
 export { statsArgv } from './stats.js';
 export { pressArgv } from './fields.js';
 export { declareArgv, specArgv } from './track.js';
@@ -388,6 +388,8 @@ export interface Reads {
 	conflictsArgv: Conflicted[];
 	tailArgv: TailListing;
 	geometryArgv: DayviewJson;
+	/** Each day's SVG, by days back. */
+	picturesArgv: DayviewJson & { pictures: Record<string, string> };
 	showAllArgv: AllFieldsStats | FieldStats;
 	specShowArgv: Spec;
 	specHistoryArgv: SpecVersion[];

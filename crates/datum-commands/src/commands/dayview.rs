@@ -22,6 +22,7 @@ use datum_core::db::Db;
 use datum_core::dur::Dur;
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
+use datum_core::integrity::Finding;
 use datum_core::time::{DatumTime, Zone, ZoneTimeline};
 use datum_layout::dayview::{
     compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewError,
@@ -130,14 +131,18 @@ fn today(db: &Db, now: &DatumTime) -> Result<NaiveDate> {
 }
 
 fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
-    let (layout, end_date) = layout_of(args, db)?;
+    let (layout, end_date) = layout_of(args, db, None)?;
     if args.show == ShowFlag::None {
         return Ok(());
     }
     if args.show == ShowFlag::Json {
         let mut json = serde_json::to_value(&layout)?;
         if !args.digests.is_empty() {
-            json["digests"] = digests(args, db, end_date)?;
+            let hash = |svg: String| format!("{:x}", Sha256::digest(svg)).into();
+            json["digests"] = by_day(args, db, end_date, &args.digests, hash)?;
+        }
+        if !args.pictures.is_empty() {
+            json["pictures"] = by_day(args, db, end_date, &args.pictures, JsonValue::from)?;
         }
         let json = serde_json::to_string_pretty(&json)?;
         return write_payload(args.output_file.as_deref(), &json, OutputKind::Json);
@@ -147,31 +152,62 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     write_payload(args.output_file.as_deref(), &svg, OutputKind::Svg)
 }
 
-/// `--digests`: each day's picture as `--days 1 --end-date` that day would
-/// draw it, by days back from `end_date`, as SHA-256 hex of the SVG (the
-/// stdout less its newline), so a viewer holding a band knows whether its
-/// picture still stands without asking for it (da-efxk5).
-fn digests(args: &DayviewArgs, db: &Db, end_date: NaiveDate) -> Result<JsonValue> {
+/// `--digests` and `--pictures`: each day's picture as `--days 1
+/// --end-date` that day would draw it (the stdout less its newline), by
+/// days back from `end_date`, as `each` gives it: its SHA-256 hex, so a
+/// viewer holding a band knows whether its picture still stands without
+/// asking for it (da-efxk5), or the SVG itself, so the bands a viewer
+/// lacks come in one run and not one process a day (da-p5lyt).
+fn by_day(
+    args: &DayviewArgs,
+    db: &Db,
+    end_date: NaiveDate,
+    backs: &[u32],
+    each: impl Fn(String) -> JsonValue,
+) -> Result<JsonValue> {
+    let midnight = |back: u32| {
+        (end_date - Duration::days(back.into()))
+            .and_time(Default::default())
+            .and_utc()
+    };
+    // What `check integrity` finds, most of a day's cost, read once for
+    // days a week apart or less (`layout_of`'s window, each side): a read
+    // costs its window, so a day far from the others reads its own.
+    let mut sorted = backs.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut read = std::collections::HashMap::new();
+    for run in sorted.chunk_by(|a, b| b - a <= 7) {
+        let since = midnight(run[run.len() - 1]) - Duration::days(3);
+        let until = midnight(run[0]) + Duration::days(3);
+        let findings = std::rc::Rc::new(
+            datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default(),
+        );
+        read.extend(run.iter().map(|&back| (back, findings.clone())));
+    }
     let mut out = serde_json::Map::new();
-    for &back in &args.digests {
+    for &back in backs {
         let day = DayviewArgs {
             start_date: None,
             end_date: Some((end_date - Duration::days(back.into())).to_string()),
             n_days: Some(1),
             digests: Vec::new(),
+            pictures: Vec::new(),
             ..args.clone()
         };
-        let svg = render_dayview_svg(&layout_of(&day, db)?.0);
-        out.insert(
-            back.to_string(),
-            format!("{:x}", Sha256::digest(svg)).into(),
-        );
+        let svg = render_dayview_svg(&layout_of(&day, db, Some(&read[&back]))?.0);
+        out.insert(back.to_string(), each(svg));
     }
     Ok(out.into())
 }
 
-/// The layout `args` draws, and the last day it draws.
-fn layout_of(args: &DayviewArgs, db: &Db) -> Result<(DayviewLayout, NaiveDate)> {
+/// The layout `args` draws, and the last day it draws. `findings`, when
+/// given, are what `check integrity` finds around its days, read already.
+fn layout_of(
+    args: &DayviewArgs,
+    db: &Db,
+    findings: Option<&[Finding]>,
+) -> Result<(DayviewLayout, NaiveDate)> {
     // 1. Resolve the visible day window. One reading of the clock for the
     // days and the now-line both, so they cannot disagree about which day
     // is today, not even across midnight (da-tyggo).
@@ -230,9 +266,10 @@ fn layout_of(args: &DayviewArgs, db: &Db) -> Result<(DayviewLayout, NaiveDate)> 
     // What `check integrity` finds in the window, bucketed below by the day
     // each flagged entry happened on (da-0lful). Empty result is fine; just
     // no error marks, and none around a sample (da-jc8ic).
-    let findings = match args.context {
-        Some(_) => Vec::new(),
-        None => {
+    let findings = match (args.context.as_ref(), findings) {
+        (Some(_), _) => Vec::new(),
+        (None, Some(read)) => read.to_vec(),
+        (None, None) => {
             datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default()
         }
     };
@@ -258,11 +295,12 @@ fn layout_of(args: &DayviewArgs, db: &Db) -> Result<(DayviewLayout, NaiveDate)> 
         && (args.start_date.is_some()
             || args.end_date.is_some()
             || args.n_days.is_some_and(|n| n != 1)
-            || !args.digests.is_empty())
+            || !args.digests.is_empty()
+            || !args.pictures.is_empty())
     {
         anyhow::bail!(
             "--context now or a duration draws one window before now: \
-             no --start-date, --end-date, --digests, or --days but 1"
+             no --start-date, --end-date, --digests, --pictures, or --days but 1"
         );
     }
     // Its ticks are measured along a horizontal band.
@@ -935,6 +973,7 @@ mod tests {
             orientation: DayviewOrientation::default(),
             sample: None,
             digests: Vec::new(),
+            pictures: Vec::new(),
             context: None,
         }
     }

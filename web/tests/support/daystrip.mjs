@@ -418,6 +418,10 @@ export const waitForHeights = ({ page }, height) =>
 		return svgs.length > 0 && svgs.every((svg) => svg?.getAttribute('height') === String(want));
 	}, height);
 
+/** The days back a strip's `dayview` run, as argv, asks the pictures of: its `--pictures` (da-p5lyt). */
+export const picturesAsked = (argv) =>
+	argv.includes('--pictures') ? argv[argv.indexOf('--pictures') + 1].split(',').map(Number) : [];
+
 /** Today, and every day whose band shows at all in the stack: what a resize or a refresh draws. */
 export const inView = ({ page }) =>
 	page.locator('.stack').first().evaluate((stack) => {
@@ -519,15 +523,11 @@ export async function scrolledFrom({ page }, top, seen) {
 	});
 }
 
-/**
- * Which days the `dayview` PICTURES a spy saw were for, as days ago — the
- * geometry's `--show json` is not a picture, and today carries no
- * `--end-date` because it is the argv every other band is an offset from.
- */
+/** Which days the `dayview` PICTURES a spy saw were for, as days ago (`picturesAsked`). */
 export const viewsOf = async (seen) =>
 	(await seen())
-		.filter((argv) => argv[0] === 'dayview' && !argv.includes('json'))
-		.map((argv) => (argv.includes('--end-date') ? -Number(argv[argv.indexOf('--end-date') + 1]) : 0))
+		.filter((argv) => argv[0] === 'dayview')
+		.flatMap(picturesAsked)
 		.sort((a, b) => a - b);
 
 /** The box today's band occupies on the screen — it is not to move. */

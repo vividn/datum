@@ -393,7 +393,7 @@ export const dayUnderSliver = (height: number): number =>
 /**
  * One picture of the day strip, as argv: the single day `end` days back.
  *
- * One `dayview` per DAY (da-iu9i), and each one bands only — no date
+ * One picture per DAY (da-iu9i), and each one bands only — no date
  * column (`--label-width 0`), no ruler (`--time-axis-height 0`), no outer
  * margin (`--margin 0`). What comes back is a picture exactly `width` by
  * `dayHeight`, all of it data area, so the days tile the column and the
@@ -403,6 +403,9 @@ export const dayUnderSliver = (height: number): number =>
  * Every band is asked at the same width and day height, which is what
  * pins the x of every hour: `time_axis_extent` is the width, and the
  * gridlines fall at the same fractions of it in each.
+ *
+ * The strip holds each picture by this argv, and asks the days it lacks
+ * together, by `picturesArgv` (da-p5lyt).
  */
 export function bandArgv(width: number, dayHeight: number, end = 0): string[] {
 	const argv = [
@@ -436,6 +439,18 @@ export const geometryArgv = (width: number, dayHeight: number): string[] => [
 	...bandArgv(width, dayHeight),
 	'--show',
 	'json'
+];
+
+/**
+ * The geometry and the pictures of the days `ends` back, as argv: one run
+ * answering what one `bandArgv` a day would, each picture under its days
+ * back in `pictures` (da-p5lyt). A process and its read are most of a
+ * band's cost, so three days in one run cost a third of three runs.
+ */
+export const picturesArgv = (width: number, dayHeight: number, ends: number[]): string[] => [
+	...geometryArgv(width, dayHeight),
+	'--pictures',
+	ends.join(',')
 ];
 
 /** `geometryArgv`'s answer, as much of it as the strip draws with. */

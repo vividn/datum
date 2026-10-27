@@ -1622,6 +1622,11 @@ pub struct DayviewArgs {
     /// the strip keeps a band whose picture is unchanged and asks for no
     /// other run.
     pub digests: Vec<u32>,
+    /// `--pictures 0,3,4`, unlisted, beside `--digests` (da-p5lyt): with
+    /// `--show json`, the SVG each day that many back would get as
+    /// `--days 1` with the same flags, so the strip asks the bands it needs
+    /// in one run rather than one process a day.
+    pub pictures: Vec<u32>,
     /// `--context none|now|<DUR>`, unlisted, beside `--sample` (da-jc8ic):
     /// what is drawn around the sample. `none` the sample's field alone,
     /// sampled; `now` every field's state now across the band, the sample
@@ -1648,6 +1653,7 @@ impl Default for DayviewArgs {
             orientation: DayviewOrientation::default(),
             sample: None,
             digests: Vec::new(),
+            pictures: Vec::new(),
             context: None,
         }
     }

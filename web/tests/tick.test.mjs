@@ -205,13 +205,17 @@ describe('the minute tick', () => {
 				await until(() => ranOf(seen, 'dayview'), (ran) => ran.length > 0);
 				await app.idle();
 
-				// dayview twice, which is today's band and the geometry beside
-				// it — the strip's other bands are finished days and keep the
-				// pictures they have, however deep the stack is. Whatever the
-				// depth, and whatever is in the tail. nowview not at all: it
-				// slides (da-hklaz).
+				// dayview once, today's band and the geometry beside it in one
+				// run (da-p5lyt) — the strip's other bands are finished days
+				// and keep the pictures they have, however deep the stack is.
+				// Whatever the depth, and whatever is in the tail. nowview not
+				// at all: it slides (da-hklaz).
 				assert.equal((await ranOf(seen, 'nowview')).length, 0, 'nowview was run by the clock');
-				assert.equal((await ranOf(seen, 'dayview')).length, 2, 'the strip re-drew more than today');
+				assert.deepEqual(
+					(await ranOf(seen, 'dayview')).map((argv) => argv.slice(-2).join(' ')),
+					['--pictures 0'],
+					'the strip re-drew more than today'
+				);
 				// The tick is not the frame's epoch: a pane whose render does
 				// not depend on now is not re-run, and the widget bar — one
 				// `fields --json` per refresh ($lib/layout/engine.ts) — is not
@@ -248,7 +252,7 @@ describe('the minute tick', () => {
 				// Today's band and its geometry, once: one tick's worth.
 				assert.equal(
 					(await ranOf(seen, 'dayview')).length,
-					2,
+					1,
 					'coming back cost one run per minute away, not one run'
 				);
 				assert.deepEqual(app.errors, []);

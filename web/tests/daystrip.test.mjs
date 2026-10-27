@@ -88,6 +88,7 @@ import {
 	stackScroll,
 	jagged,
 	pinch,
+	picturesAsked,
 	PHONE
 } from './support/daystrip.mjs';
 
@@ -180,10 +181,11 @@ describe('the day strip', () => {
 		});
 	});
 
-	// The bead's own case (da-iu9i): five days of the reader's data, and
-	// five separate `dayview` runs of ONE day each — the snappiness is
-	// that a band lands on its own, not that the past arrives at once.
-	test('five days is five one-day dayviews, each asked bands-only', async () => {
+	// The bead's own case (da-iu9i): five days of the reader's data, and a
+	// picture of ONE day each. Asked together (da-p5lyt): a process and its
+	// read are most of a band's cost, so today comes with the geometry and
+	// the days on screen in one run after it.
+	test('five days is five one-day pictures, each asked bands-only', async () => {
 		await clocked.solo(
 			async (app) => {
 				await seedLines(app, [...[1, 2, 3, 4].map((back) => `occur coffee -d -${back}`), 'occur coffee']);
@@ -212,11 +214,10 @@ describe('the day strip', () => {
 				await app.idle();
 
 				const views = (await seen()).filter((argv) => argv[0] === 'dayview');
-				const pictures = views.filter((argv) => !argv.includes('json'));
 				const flag = (argv, name) => argv[argv.indexOf(name) + 1];
 				// Every picture is one day, drawn bands-only: no date column,
 				// no ruler, no outer margin — the web draws all three.
-				for (const argv of pictures) {
+				for (const argv of views) {
 					assert.equal(flag(argv, '--days'), '1', `not one day: ${argv.join(' ')}`);
 					assert.equal(flag(argv, '--label-width'), '0', `a date column: ${argv.join(' ')}`);
 					assert.equal(flag(argv, '--time-axis-height'), '0', `a ruler: ${argv.join(' ')}`);
@@ -224,15 +225,13 @@ describe('the day strip', () => {
 				}
 				// The days on screen, and today, each exactly once: a day off
 				// screen keeps its picture until it is scrolled to (da-8khuw).
-				const ends = pictures
-					.map((argv) => (argv.includes('--end-date') ? Number(flag(argv, '--end-date')) : 0))
-					.sort((a, b) => b - a);
-				const visible = (await inView(app)).map((end) => (end ? -end : 0)).sort((a, b) => b - a);
+				const ends = views.flatMap(picturesAsked).sort((a, b) => a - b);
+				const visible = (await inView(app)).sort((a, b) => a - b);
 				assert.ok(visible.length > 2, `only ${visible} on screen`);
 				assert.deepEqual(ends, visible, 'not one picture per day on screen');
-				// And ONE geometry run for all of them: the gridlines, the
-				// ruler and the stamps come off a single `--show json`.
-				assert.equal(views.length - pictures.length, 1, 'the geometry was asked for more than once');
+				// Today with the geometry, the rest in one run after: never a
+				// process a day.
+				assert.ok(views.length <= 2, `${views.length} runs: ${views.map((argv) => argv.join(' ')).join(' | ')}`);
 			}
 		);
 	});
@@ -503,11 +502,8 @@ describe('the day strip', () => {
 				// Every dayview the strip ran for the taller box: the ONE day
 				// it gained. Every other day, and today, and the geometry, are
 				// the same argv as before and came out of the cache.
-				const flag = (argv, name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
-				const views = (await seen())
-					.filter((argv) => argv[0] === 'dayview')
-					.map((argv) => [flag(argv, '--days'), flag(argv, '--end-date')]);
-				assert.deepEqual(views, [['1', '-16']]);
+				const views = (await seen()).filter((argv) => argv[0] === 'dayview').map(picturesAsked);
+				assert.deepEqual(views, [[16]]);
 			}
 		);
 	});
