@@ -3,10 +3,11 @@
 //! sync …` command the worker runs through the page's database runner, so
 //! no storage logic exists in the browser apart from the CLI's own.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use anyhow::Result;
+use futures_util::future::{AbortHandle, Abortable};
 use js_sys::{Array, Function, Promise, Reflect};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
@@ -35,10 +36,30 @@ struct Cli {
     /// The endpoint its node is bound as.
     id: String,
     /// What its Hello says it is: a join's name from then on (da-uyyyg).
-    label: std::cell::RefCell<String>,
+    label: RefCell<String>,
     version: Version,
     /// The sessions open, dialed and served: one at a time ([`Node::turn`]).
     open: Rc<Cell<usize>>,
+    /// The page's own dial ([`Node::dial`]), while there is one.
+    dialing: RefCell<Option<Dialing>>,
+}
+
+/// The page's own dial, holding its turn. Until it is past its handshake a
+/// session served takes the turn from it (da-gvia0): a dial arriving is a
+/// peer online with something to send, and this one may be connecting to a
+/// copy that is offline. Of two copies dialing each other the lower
+/// endpoint id's dial goes on, as natively (da-vj3ly).
+struct Dialing {
+    peer: String,
+    /// Past its handshake: never given way.
+    carried: bool,
+    /// Once it reached the peer: closed as busy, which the peer records
+    /// as nothing (da-h31wt).
+    conn: Option<Connection>,
+    abort: AbortHandle,
+    /// Who it gave way to.
+    by: Rc<RefCell<Option<String>>>,
+    _turn: Turn,
 }
 
 /// How long a join refused as busy goes on trying ([`Node::connect`]).
@@ -203,7 +224,42 @@ impl Store for Cli {
     fn serving(&self, peer: &str, on: bool) {
         let open = self.open.get();
         self.open.set(if on { open + 1 } else { open - 1 });
+        let gives_way = |d: &Dialing| !d.carried && (d.peer != peer || self.id.as_str() > peer);
+        if on && self.dialing.borrow().as_ref().is_some_and(gives_way) {
+            let d = self.dialing.take().expect("a dial");
+            if let Some(conn) = &d.conn {
+                conn.close(0u32.into(), CLOSED_BUSY);
+            }
+            d.by.replace(Some(peer.to_string()));
+            d.abort.abort();
+        }
         let _ = self.serving.call2(&JsValue::NULL, &peer.into(), &on.into());
+    }
+
+    /// The page's dial to `peer`, when it is the one of two crossed that
+    /// goes on, or is past its handshake: the peer's is refused as given way.
+    fn carries(&self, peer: &str) -> bool {
+        let dialing = self.dialing.borrow();
+        dialing
+            .as_ref()
+            .is_some_and(|d| d.peer == peer && (d.carried || self.id.as_str() < peer))
+    }
+
+    fn carrying(&self, peer: &str, on: bool) {
+        if let Some(d) = self
+            .dialing
+            .borrow_mut()
+            .as_mut()
+            .filter(|d| d.peer == peer)
+        {
+            d.carried |= on;
+        }
+    }
+
+    fn reached(&self, conn: &Connection) {
+        if let Some(d) = self.dialing.borrow_mut().as_mut() {
+            d.conn = Some(conn.clone());
+        }
     }
 
     fn progress(&self, done: usize, of: usize) {
@@ -389,6 +445,7 @@ impl Node {
                 label: label.into(),
                 version: Version { datum, schema },
                 open: Rc::default(),
+                dialing: RefCell::default(),
             },
             ep,
         })
@@ -414,11 +471,36 @@ impl Node {
     }
 
     /// Sync with the peer at `addr` (the JSON `sync_peers` keeps); the
-    /// report, as JSON.
+    /// report, as JSON. A session served before this one is past its
+    /// handshake takes its turn ([`Dialing`]), and it fails as busy.
     pub async fn dial(&self, addr: String) -> Result<String, JsError> {
         let addr: EndpointAddr = serde_json::from_str(&addr).map_err(js)?;
-        let _turn = self.turn().await;
-        report(dial(&self.cli, &self.ep, addr, None).await)
+        let peer = addr.id.to_string();
+        let turn = self.turn().await;
+        let (abort, registration) = AbortHandle::new_pair();
+        let by = Rc::default();
+        self.cli.dialing.replace(Some(Dialing {
+            peer: peer.clone(),
+            carried: false,
+            conn: None,
+            abort,
+            by: Rc::clone(&by),
+            _turn: turn,
+        }));
+        let dialed = dial(&self.cli, &self.ep, addr, None);
+        let Ok(rep) = Abortable::new(dialed, registration).await else {
+            let by = by.take().unwrap_or_default();
+            return report(Err(match by == peer {
+                true => closed_carried(short(&peer)),
+                false => Failed(
+                    Failure::Refused(Why::Busy),
+                    format!("gave way to the session {} dialed meanwhile", short(&by)),
+                )
+                .into(),
+            }));
+        };
+        self.cli.dialing.take();
+        report(rep)
     }
 
     /// `datum sync chain connect [--label]`: redeem `ticket` as `label`,

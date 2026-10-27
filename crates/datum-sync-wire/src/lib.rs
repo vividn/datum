@@ -231,6 +231,10 @@ pub trait Store {
     fn carries(&self, _peer: &str) -> bool {
         false
     }
+    /// A session this copy dials reached its peer, over `conn`: datum.day
+    /// closes it as busy when a session served first takes its turn
+    /// (da-gvia0).
+    fn reached(&self, _conn: &Connection) {}
     /// The session's ops are all applied, and its verify begins.
     fn verifying(&self) {}
     /// The state hash, over what a session with `peer` shares: summed, or
@@ -1103,6 +1107,7 @@ async fn session(
     ensure!(addr.id != ep.id(), COPY);
     let id = addr.id.to_string();
     let conn = connect(ep, addr, ALPN).await?;
+    store.reached(&conn);
     let (mut s, mut r) = conn.open_bi().await?;
     let left = invite.and_then(|r| r.leaves.clone());
     let holds = match invite {
@@ -1360,8 +1365,10 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let verdict = loop {
         let verdict = match conn.remote_id() == ep.id() {
             true => Err((Why::Other, anyhow!(COPY))),
-            false if !diff && store.applying() => Err((Why::Busy, anyhow!(store.busy_why()))),
+            // Before the busy verdict: the session this copy holds may be its
+            // dial to that peer, which carries both ways (da-gvia0).
             false if !diff && carried && hello.busy => Err((Why::Busy, anyhow!(CARRIED_WHY))),
+            false if !diff && store.applying() => Err((Why::Busy, anyhow!(store.busy_why()))),
             false => store
                 .handshake(
                     &id,

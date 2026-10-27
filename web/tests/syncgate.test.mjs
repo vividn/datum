@@ -221,3 +221,168 @@ test('two pages joining one chain at once both join (da-tqg19)', async () => {
 		{ prepare }
 	);
 });
+
+/**
+ * An init script: a dial to an endpoint in `window.__unsent` never reaches
+ * the sync worker, so the page dials only the members a test leaves it.
+ */
+function steerDials() {
+	window.__unsent = [];
+	const post = Worker.prototype.postMessage;
+	Worker.prototype.postMessage = function (m, ...rest) {
+		if (m?.op === 'dial' && window.__unsent.some((id) => m.addr.includes(id))) return;
+		return post.call(this, m, ...rest);
+	};
+}
+
+const endpointOf = async (copy) => JSON.parse((await copy.run(['sync', 'status', '--json'])).stdout).this.endpoint;
+const unsend = async (app, copy) => app.page.evaluate((id) => window.__unsent.push(id), await endpointOf(copy));
+/** Whether `app` has a session with `copy` in flight: a dial waiting, connecting or under way, or one served. */
+const inFlight = async (app, copy) =>
+	app.page.evaluate((id) => window.datum.sync.states().datum?.peers?.[id]?.reach === 'online', await endpointOf(copy));
+const steered = async (context) => (await relayed(relay)(context), context.addInitScript(steerDials));
+
+// A page's dial to a member that is offline held its one session until its
+// connect timed out, and refused every member that dialed it meanwhile as
+// busy (da-gvia0). A dial arriving is a member online with something to
+// send: it takes the turn of a dial still connecting, which dials again at
+// its next.
+test('a member dialing a page whose own dial is still connecting syncs (da-gvia0)', async () => {
+	const [a, c] = [await nativeCopy(relay), await nativeCopy(relay)];
+	try {
+		await withWallClock(
+			async (app) => {
+				// Each joins through the page, and goes offline as its connect
+				// ends. The page dials c alone: a dial to a, offline, would
+				// hold the page's turn through c's join.
+				for (const copy of [a, c]) {
+					const joined = await copy.run(['sync', 'chain', 'connect', await offer(app)]);
+					assert.equal(joined.code, 0, joined.stdout + joined.stderr);
+					if (copy !== a) continue;
+					await unsend(app, a);
+					await quiet(app);
+				}
+				await app.run(['occur', 'tea', '-t', '0800']);
+				await until(() => inFlight(app, c), Boolean);
+				await new Promise((r) => setTimeout(r, 1000));
+				const r = await a.run(['sync']);
+				assert.match(r.stdout + r.stderr, /datum\.day.*verify ok/, r.stdout + r.stderr);
+				assert.doesNotMatch(r.stdout + r.stderr, /datum\.day.*refused/, r.stdout + r.stderr);
+				assert.equal(await a.count('tea'), 1);
+			},
+			{ prepare: steered, syncTimeout: 30 }
+		);
+	} finally {
+		await a.close();
+		await c.close();
+	}
+});
+
+// The session that takes a dial's turn is one served before the dial is
+// past its handshake: a member dialing a page whose own dial is applying is
+// refused as busy, and the dial goes on.
+test('a page dial past its handshake is not given way (da-gvia0)', async () => {
+	const [a, b] = [await nativeCopy(relay), await nativeCopy(relay)];
+	try {
+		const first = a.spawn(['sync', 'chain', 'invite']);
+		const [, ticket] = await until(() => /datum sync chain connect '([^']+)'/.exec(first.stdout), Boolean);
+		assert.equal((await b.run(['sync', 'chain', 'connect', ticket])).code, 0);
+		await withWallClock(
+			async (app) => {
+				assert.equal((await pairWith(app, a)).verified, true);
+				await unsend(app, b);
+				await quiet(app);
+				const restored = await a.run(['db', 'restore', '-', '--merge'], backup(200));
+				assert.equal(restored.code, 0, restored.stderr);
+				// An invite serves and dials no one: what reaches the page is its own dial.
+				const serving = a.spawn(['sync', 'chain', 'invite']);
+				await until(() => serving.stdout, (s) => s.includes('datum sync chain connect'));
+				await app.page.evaluate(() => localStorage.setItem('datum.syncHoldApplyAfter', '1'));
+				await app.run(['occur', 'tea', '-t', '0800']);
+				const applying = () => app.page.evaluate(() => window.datum.sync.states().datum?.applying?.done);
+				await until(applying, (n) => n === 64);
+				// The first hears of the page from a, the second dials it.
+				assert.ok(await syncWithin(b, 60_000), 'b synced with a');
+				const r = await syncWithin(b, 60_000);
+				assert.ok(r, 'b waited on the page');
+				assert.match(r.stdout + r.stderr, /datum\.day.*refused: is in another sync session and runs one at a time/);
+				await new Promise((r) => setTimeout(r, 6000));
+				assert.equal(await applying(), 64);
+			},
+			{ prepare: steered }
+		);
+	} finally {
+		await a.close();
+		await b.close();
+	}
+});
+
+/** An init script: while `window.__dials.on`, a page's dials wait for `window.__dials.release()`. */
+function holdDials() {
+	const hold = (window.__dials = { on: false, held: [] });
+	hold.release = () => {
+		hold.on = false;
+		hold.held.splice(0).forEach((f) => f());
+	};
+	const post = Worker.prototype.postMessage;
+	Worker.prototype.postMessage = function (m, ...rest) {
+		if (hold.on && m?.op === 'dial') return void hold.held.push(() => post.call(this, m, ...rest));
+		return post.call(this, m, ...rest);
+	};
+}
+
+/** An init script: `window.__busy` lists each session the page saw refused as busy, dialed or served. */
+function busyRefusals() {
+	window.__busy = [];
+	const d = Object.getOwnPropertyDescriptor(Worker.prototype, 'onmessage');
+	Object.defineProperty(Worker.prototype, 'onmessage', {
+		...d,
+		set(fn) {
+			d.set.call(this, function (e) {
+				if (/runs one at a time/.test(e.data?.error ?? '')) window.__busy.push(e.data.error);
+				return fn.call(this, e);
+			});
+		}
+	});
+}
+
+// Two pages that dial each other at once each hold a turn, and the first
+// hello to arrive found both dials open: refused as busy, and the pages
+// synced only if the other hello came after that refusal. Each dial
+// reaches the other and waits there, before its hello; the lower endpoint
+// id's goes on, as natively (da-vj3ly), and carries both ways (da-gvia0).
+test('two pages dialing each other at once converge, neither refused as busy (da-gvia0)', async () => {
+	const prepare = async (context) => (
+		await relayed(relay)(context),
+		await context.addInitScript(holdStatus),
+		await context.addInitScript(holdDials),
+		context.addInitScript(busyRefusals)
+	);
+	await withWallClock(
+		(a) =>
+			withWallClock(
+				async (b) => {
+					await a.run(['occur', 'left', '-t', '0800']);
+					assert.equal(await join(b, await offer(a)), 'joined');
+					await until(() => countOf(b, 'left'), (n) => n === 1);
+					await quiet(a, b);
+					const both = (f) => Promise.all([a, b].map((app) => app.page.evaluate(f)));
+					await both(() => (window.__hold.on = window.__dials.on = true));
+					await Promise.all([a.run(['occur', 'east', '-t', '0900']), b.run(['occur', 'west', '-t', '0900'])]);
+					// Each page takes its turn for its dial before the other's reaches it.
+					await until(() => both(() => window.__dials.held.length), (n) => n.every(Boolean));
+					await both(() => window.__dials.release());
+					await until(async () => (await holding(a)) + (await holding(b)), (n) => n > 0);
+					await new Promise((r) => setTimeout(r, 2000));
+					await both(() => window.__release());
+					await until(
+						() => Promise.all([countOf(a, 'west'), countOf(b, 'east')]),
+						([x, y]) => x === 1 && y === 1
+					);
+					for (const app of [a, b]) assert.deepEqual(await app.page.evaluate(() => window.__busy), []);
+				},
+				{ prepare }
+			),
+		{ prepare }
+	);
+});
