@@ -49,7 +49,7 @@
 	the fields a length can be spent on — the blocks — and composes with a
 	pending verb, both filters applying. And a press on a PICTURE gives
 	the fields drawn near that height the rows to themselves, at the head
-	of them (`rowsUnder`, $lib/lanes.ts): that one only ORDERS, so
+	of them (`rowsUnder`, #lib/lanes.ts): that one only ORDERS, so
 	everything is still there, with a hairline after the promoted few to
 	say why the bar changed. Nothing moves under a finger: while a pointer
 	is over the bar the order is held until it leaves.
@@ -76,10 +76,10 @@
 	vividn: «long pressing or right clicking on a field again after a pill is
 	added should remove the pill/filter»). The panel's jobs are reached
 	elsewhere: a TIME or a DURATION comes from the time cursor as a `-t` /
-	`dur=` pill (a click or a drag on any drawn picture, $lib/cursor.ts)
+	`dur=` pill (a click or a drag on any drawn picture, #lib/cursor.ts)
 	or is typed,
 	and both ride after the field pill into the very argv a press composes
-	(`withPills` in $lib/selection.ts); a multi-state field's states are
+	(`withPills` in #lib/selection.ts); a multi-state field's states are
 	the list a PLAIN press already fills the bar with (da-g635); and `note`
 	is typed — `note <field> <words>`, the CLI routing the bare words into
 	the comment (da-py5w).
@@ -180,7 +180,7 @@
 		duration = false,
 		/**
 		 * What a press on a picture landed on or near, field by rank
-		 * (`nearest` in $lib/lanes.ts), or null.
+		 * (`nearest` in #lib/lanes.ts), or null.
 		 *
 		 * Those fields come FIRST. Nothing is hidden by it: a person who
 		 * clicked empty space still finds every field, in its usual order.
@@ -195,10 +195,10 @@
 		 * way to see it, never a way to stop it being ignored.
 		 *
 		 * This session's, not the layout's: the option is declared `session`
-		 * in the registry and held in $lib/layout/session.ts.
+		 * in the registry and held in #lib/layout/session.ts.
 		 */
 		showIgnored = false,
-		/** Where each field stood at the last sort (`standings` in $lib/layout/engine.ts, da-xtkcp). */
+		/** Where each field stood at the last sort (`standings` in #lib/layout/engine.ts, da-xtkcp). */
 		standings = new Map(),
 		/** Run a press's line. */
 		onrun,
@@ -219,7 +219,7 @@
 	} = $props();
 
 	let bar: HTMLElement | undefined = $state.raw();
-	// The hold's action ($lib/hold.ts) on the bar ButtonRows draws — an
+	// The hold's action (#lib/hold.ts) on the bar ButtonRows draws — an
 	// action cannot be handed through a component, so it is attached here.
 	// So are the picture layout's pinch, pan and wheel.
 	onMount(() => {
@@ -468,7 +468,7 @@
 
 	/**
 	 * A press on a picture, while zoomed: the view pans to the height of the
-	 * field it landed nearest (`closer` in $lib/lanes.ts).
+	 * field it landed nearest (`closer` in #lib/lanes.ts).
 	 */
 	$effect.pre(() => {
 		const near = rank;
@@ -697,7 +697,7 @@
 	}
 
 	/**
-	 * The hold, from the app's ONE implementation of it ($lib/hold.ts): the
+	 * The hold, from the app's ONE implementation of it (#lib/hold.ts): the
 	 * timer, the right click, the menu key and shift+click are all in the
 	 * action, on the BAR rather than on each button, and `data-field` is
 	 * what says which of its children can be held. A press that turns out
@@ -1062,7 +1062,7 @@
 	}
 
 	/* A button a tap RUNS (`pressKind`, da-z8z40) is drawn in a DOUBLE
-	   outline, as the commands widget's are ($lib/act.ts) — in the
+	   outline, as the commands widget's are (#lib/act.ts) — in the
 	   field's own colour, since that is already the button's line. The
 	   padding gives back what the wider border takes. The fill stops at
 	   the border (da-0lmb7): a double's gap shows the background, and a

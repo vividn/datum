@@ -362,7 +362,7 @@ function drawUnsynced(svg: SVGSVGElement | null, since: number | undefined): voi
  * The snapshot's line: the same white dashes, drawn through the middle of
  * the chips rather than at an instant, because the snapshot HAS no axis to
  * put one on. A selection at now is not drawn at all (it is not a
- * selection, $lib/cursor.ts), so a line here always means «not now».
+ * selection, #lib/cursor.ts), so a line here always means «not now».
  *
  * The chips are the CLI's own `.now-chunk` rects, so their middle is read
  * off the picture rather than guessed from a canvas width.
@@ -478,7 +478,7 @@ function fetches(value: string): boolean {
  * `data-pilled` on the CLI's own `.field[data-field]` groups, and the halo
  * is CSS (`CliOutput.svelte`). No geometry is invented and no field name is
  * guessed: the group already says which field it is, exactly as
- * $lib/lanes.ts reads it.
+ * #lib/lanes.ts reads it.
  */
 function highlight(svg: SVGSVGElement | null, field: string | null): void {
 	svg?.querySelectorAll('.field[data-pilled]').forEach((g) => g.removeAttribute('data-pilled'));
@@ -609,7 +609,7 @@ const ownsPointer = (node: HTMLElement) => !!node.closest('[data-points="own"]')
  * pointer, a tap and the keyboard with a label — the time and what the
  * mark is. Nothing is shown over empty space.
  *
- * And the time cursor (da-wnt2, $lib/cursor.ts): a tap on a day's ground,
+ * And the time cursor (da-wnt2, #lib/cursor.ts): a tap on a day's ground,
  * a right click, or a tap on the entry already selected points the page at
  * the time under it — a tap on a mark selects its entry (da-xg1vi) — Enter
  * on a mark at the mark's own time, and wherever the cursor falls

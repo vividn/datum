@@ -1,4 +1,4 @@
-// «Backups» (da-9ow8m, $lib/backups.ts, layout/BackupsWidget.svelte): the
+// «Backups» (da-9ow8m, #lib/backups.ts, layout/BackupsWidget.svelte): the
 // gear's place of Tower of Hanoi plans (da-ea5q2), driven here against `memory` — a
 // bucket in the tab, offered on the DEBUG database alone (vremya on #217),
 // which is why the plan tests open `?db=DEBUG`. The S3 destination is

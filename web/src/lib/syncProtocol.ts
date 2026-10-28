@@ -1,4 +1,4 @@
-// The messages between $lib/sync.ts (the page) and $lib/sync.worker.ts.
+// The messages between #lib/sync.ts (the page) and #lib/sync.worker.ts.
 
 /** How one session went, as the wire crate reports it (`Report`). */
 export interface SyncReport {

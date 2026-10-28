@@ -1,4 +1,4 @@
-// The argv a file command runs in the browser ($lib/dbio.ts, da-1vz2):
+// The argv a file command runs in the browser (#lib/dbio.ts, da-1vz2):
 // every option and its value as typed, in order, with only the input
 // source — the positional FILE, or `--from`'s value — as `-`. Pure and
 // import-free, so node tests it as it is.

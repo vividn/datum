@@ -3,7 +3,7 @@
 //
 // vividn, 2026-10-08: «a (quick) extra test to make sure every wasm call that
 // the frontend is valid … could prevent drift when for example the rust api
-// changes». The calls are `$lib/calls.ts`'s exports; each runs, with the
+// changes». The calls are `#lib/calls.ts`'s exports; each runs, with the
 // samples below, through the same wasm CLI the page runs, on a copy of one
 // seeded database, as `runners/wasi.ts` runs it. A usage error — a flag,
 // subcommand or argument the CLI no longer takes — fails it, and so does a
@@ -25,7 +25,7 @@ import { File as MemFile, OpenFile, WASI } from '@bjorn3/browser_wasi_shim';
 import ts from 'typescript';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const calls = await import('../src/lib/calls.ts');
 const { DB_FILES, MemoryHandle, opfsDirectory, Sink, staged } = await import('../src/lib/wasiFs.ts');
 const { paneArgv } = await import('../src/lib/panes.ts');
@@ -81,7 +81,7 @@ function readsOf(file) {
 		target: ts.ScriptTarget.ESNext,
 		module: ts.ModuleKind.ESNext,
 		moduleResolution: ts.ModuleResolutionKind.Bundler,
-		paths: { '$lib/*': [join(web, 'src/lib/*')] }
+		allowImportingTsExtensions: true
 	});
 	const checker = program.getTypeChecker();
 	const exported = checker.getExportsOfModule(checker.getSymbolAtLocation(program.getSourceFile(file)));

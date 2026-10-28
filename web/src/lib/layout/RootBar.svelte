@@ -117,16 +117,16 @@
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { currentDb } from '$lib/database.js';
-	import { run } from '$lib/run.js';
-	import { pausedArgv } from '$lib/calls.js';
-	import { syncStates } from '$lib/sync.js';
-	import { ackNotice, expelDevice, noticeWords } from '$lib/syncView.js';
-	import { act } from '$lib/act.js';
-	import { storageSentence } from '$lib/storageState.js';
-	import { openBackups } from '$lib/backups.js';
-	import { choose as chooseAnswer, confirm } from '$lib/confirm.js';
-	import { arm, helping } from '$lib/help.js';
+	import { currentDb } from '#lib/database.ts';
+	import { run } from '#lib/run.ts';
+	import { pausedArgv } from '#lib/calls.ts';
+	import { syncStates } from '#lib/sync.ts';
+	import { ackNotice, expelDevice, noticeWords } from '#lib/syncView.ts';
+	import { act } from '#lib/act.ts';
+	import { storageSentence } from '#lib/storageState.ts';
+	import { openBackups } from '#lib/backups.ts';
+	import { choose as chooseAnswer, confirm } from '#lib/confirm.ts';
+	import { arm, helping } from '#lib/help.ts';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, editing, layout, loaded } from './current.js';
 	import { CHANGE, CLOSE, aimed, layoutActs, type Item } from './menu.js';
@@ -725,7 +725,7 @@
 
 	/* The ⚠ (da-8fucg) rides at the end too, ahead of the gear, so while it
 	   is drawn the `auto` is its own. A pill and not a badge: it opens a
-	   dialog, and so wears the `›` ($lib/act.ts). */
+	   dialog, and so wears the `›` (#lib/act.ts). */
 	.notices {
 		margin-left: auto;
 		flex: none;

@@ -8,9 +8,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { withDb } from '$lib/database.js';
-	import { openPlace } from '$lib/layout/shell.js';
-	import { approving } from '$lib/syncView.js';
+	import { withDb } from '#lib/database.ts';
+	import { openPlace } from '#lib/layout/shell.ts';
+	import { approving } from '#lib/syncView.ts';
 
 	onMount(async () => {
 		if (location.hash.length > 1) approving.set(`https://datum.day/sync/approve${location.hash}`);

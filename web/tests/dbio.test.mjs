@@ -1,4 +1,4 @@
-// The REPL's file commands (da-podv, $lib/dbio.ts): `db backup` is a
+// The REPL's file commands (da-podv, #lib/dbio.ts): `db backup` is a
 // download, `db restore` / `db v2import` read the file the browser's dialog
 // hands them, `db purge` asks for the database's name first, and `kit
 // install` shows what the chosen kit brings and asks before it installs

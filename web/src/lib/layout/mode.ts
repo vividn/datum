@@ -17,7 +17,7 @@
 // in the middle of the mode keeps the edit, as Accept would.
 
 import { get } from 'svelte/store';
-import { choose } from '$lib/confirm.js';
+import { choose } from '#lib/confirm.ts';
 import { editing, layout } from './current.js';
 import { save as saveLayout } from './shell.js';
 

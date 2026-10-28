@@ -188,7 +188,7 @@ export const HELD_AT = todayAt(15);
  * browser's own, because Playwright's fake clock replaces
  * `requestAnimationFrame` with a timer and every test that waits on frames
  * would silently wait on something else (measured on PR 27: 14 of 80
- * wheel reads unmoved). And the minute tick ($lib/clock.ts) compares
+ * wheel reads unmoved). And the minute tick (#lib/clock.ts) compares
  * minutes, so a `Date` that never moves never ticks — no redraw can land
  * inside a test's window by the wall clock turning.
  *
@@ -417,7 +417,7 @@ export const focusTop = (page) =>
  *
  * `syncTimeout` (`SYNC_TIMEOUT_S`) is the seconds the page's sync waits
  * where production waits a minute on a silent peer and 20 s for a departure
- * to be delivered (`shortTimeout` in $lib/sync.ts, da-eqjri), as
+ * to be delivered (`shortTimeout` in #lib/sync.ts, da-eqjri), as
  * `DATUM_SYNC_TIMEOUT_S` shortens the CLI's; `syncTimeout: null` is
  * production's.
  *
@@ -743,7 +743,7 @@ const pageDb = (page) => page.evaluate(() => new URLSearchParams(location.search
 
 /**
  * Database `db`'s files gone from OPFS, under the worker's own lock: no
- * handle is open there ($lib/cli.ts), and the next command makes it anew.
+ * handle is open there (#lib/cli.ts), and the next command makes it anew.
  */
 function removeDb(page, db) {
 	return page.evaluate(
@@ -818,7 +818,7 @@ export async function ready(page) {
 	// door's, which mounts the tree only as it goes home — until then there
 	// is no pane for the waits below to wait on (da-z6nsq).
 	await page.evaluate(() => window.datum.shell.settledTree());
-	// Every pane is a command that runs on mount ($lib/panes.ts) and shows
+	// Every pane is a command that runs on mount (#lib/panes.ts) and shows
 	// `…` until it answers. Waiting them out means a command a test runs
 	// next is the next command the runner sees, not a race with the frame
 	// still settling.
@@ -866,7 +866,7 @@ function app(page, errors, query, clean, internal) {
 		 * (`window.datum.run`, which goes through `engine.press`) is what
 		 * console.test.mjs asserts. Quiet also keeps `db backup -` /
 		 * `db restore -` literal: the loud door hands a file command to the
-		 * browser's dialog ($lib/dbio.ts), which is not what a test wants.
+		 * browser's dialog (#lib/dbio.ts), which is not what a test wants.
 		 */
 		run: (argv, stdin) => page.evaluate(([a, s]) => window.datum.runQuiet(a, s), [argv, stdin]),
 
@@ -1081,7 +1081,7 @@ function app(page, errors, query, clean, internal) {
 		/**
 		 * What one of the day frame's panes is showing, by its title.
 		 *
-		 * Each pane is one datum command rendered as text ($lib/panes.ts),
+		 * Each pane is one datum command rendered as text (#lib/panes.ts),
 		 * so this is the command's own output as the reader sees it. A
 		 * pane's title is its `data-title` (da-jdop): the h2 when it has one
 		 * tab, the active tab's label when it has several — so a pane
@@ -1099,7 +1099,7 @@ function app(page, errors, query, clean, internal) {
 		 * A pane's table, as the reader sees it: header words and cell text.
 		 *
 		 * The tail pane is an HTML `<table>` of the CLI's own cells
-		 * ($lib/TailTable.svelte), so this is where a test reads what it
+		 * (#lib/TailTable.svelte), so this is where a test reads what it
 		 * shows. Cell text only — the colour is read separately, off the
 		 * spans, because it is a different claim.
 		 */
@@ -1199,7 +1199,7 @@ function app(page, errors, query, clean, internal) {
 			// The reader's saves, and their HISTORY with them — a delete
 			// leaves a save's versions behind, which a layout saved again
 			// under the name would list: `_internal` holds the saves alone and
-			// nothing caches them ($lib/layout/store.ts), so its file goes, as
+			// nothing caches them (#lib/layout/store.ts), so its file goes, as
 			// `empty` takes the page's database. Only if something was saved
 			// since the last wipe, by the same witness `empty` reads; the
 			// listing after makes it anew, so the counter it leaves is one no
@@ -1300,10 +1300,10 @@ function app(page, errors, query, clean, internal) {
 		 * (da-6b3dj): what a fresh context gave a test, without a boot.
 		 *
 		 * The worker opens its files per burst and gives them back under the
-		 * `datum-cli-files` Web Lock ($lib/cli.ts), so under that lock no
+		 * `datum-cli-files` Web Lock (#lib/cli.ts), so under that lock no
 		 * handle is open and the file can go; the next command makes an
 		 * empty one, as on a first visit. The panes hear it the way they
-		 * hear another tab's write — the change channel ($lib/changes.ts) —
+		 * hear another tab's write — the change channel (#lib/changes.ts) —
 		 * and this waits for that refresh to start and then to finish.
 		 *
 		 * Only if something WROTE since it was last empty — or opened: SQLite
@@ -1356,7 +1356,7 @@ function app(page, errors, query, clean, internal) {
 		 * a boot (da-s4i98): for a test that seeded through the QUIET door,
 		 * which moves nothing, and wants the panes to show what it stored.
 		 *
-		 * Announced on the change channel ($lib/changes.ts) as another tab's
+		 * Announced on the change channel (#lib/changes.ts) as another tab's
 		 * write is, which the page answers as it answers a command of its own
 		 * — the epoch bumped and the widget bar rebuilt — so the panes draw
 		 * what a reload would have drawn them, on a page that keeps its
@@ -1418,7 +1418,7 @@ function app(page, errors, query, clean, internal) {
 			const back = page.locator('.bar.commands button[data-back]');
 			while ((await back.count()) > 0) await back.first().click();
 			// And the bar's line empty: what a test left typed there filters
-			// the fields widget for the next one ($lib/bar.ts's `text`).
+			// the fields widget for the next one (#lib/bar.ts's `text`).
 			const line = page.locator('.prompt-bar input');
 			if ((await line.inputValue()) !== '') await line.fill('');
 			await line.blur();

@@ -3,7 +3,7 @@
 	widget kind — opened as a root tab (added if absent, brought to the
 	front) and then the page is `/` again, so the URL is the way IN and the
 	root bar is where you are. A reload lands on the same tab: which tabs
-	are open, and which is active, is this device's ($lib/layout/draft.ts).
+	are open, and which is active, is this device's (#lib/layout/draft.ts).
 
 	`/now` and `/stats` still work: they are the layouts of those names,
 	and `/input` — a widget that went (da-22vg) — is the REPL, which is
@@ -34,8 +34,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { arriving, open, openPreview } from '$lib/layout/shell.js';
-	import { withDb } from '$lib/database.js';
+	import { arriving, open, openPreview } from '#lib/layout/shell.ts';
+	import { withDb } from '#lib/database.ts';
 
 	// Every way out of this page stays in the database the reader is in
 	// (da-vk1x): `?db` is the page's whole state, so a navigation that drops

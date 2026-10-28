@@ -16,23 +16,23 @@
 
 import { tick } from 'svelte';
 import { get, writable } from 'svelte/store';
-import { clearUnlockedPills, commandsOpen, dropHids, focusLine, pills, showGhost } from '$lib/bar.js';
-import { openOutput } from '$lib/log.js';
-import { grammarOf, type Grammar, type GrammarEntry } from '$lib/commands.js';
-import { withPills } from '$lib/selection.js';
-import { shellJoin } from '$lib/shellSplit.js';
-import { initDb } from '$lib/db.js';
-import { asking, fileCommand } from '$lib/dbio.js';
-import { syncCommand } from '$lib/sync.js';
-import { parseEcho, runEchoed } from '$lib/echo.js';
-import { record } from '$lib/replStore.js';
-import { run, type RunResult } from '$lib/run.js';
-import { FROZEN_AT } from '$lib/dbProtocol.js';
-import { currentDb } from '$lib/database.js';
-import { conflictsArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '$lib/calls.js';
-import { listsConflicts, type Conflicted } from '$lib/conflicts.js';
-import { verbAsked } from '$lib/track.js';
-import { openField, specOpens } from '$lib/fieldWidget.js';
+import { clearUnlockedPills, commandsOpen, dropHids, focusLine, pills, showGhost } from '#lib/bar.ts';
+import { openOutput } from '#lib/log.ts';
+import { grammarOf, type Grammar, type GrammarEntry } from '#lib/commands.ts';
+import { withPills } from '#lib/selection.ts';
+import { shellJoin } from '#lib/shellSplit.ts';
+import { initDb } from '#lib/db.ts';
+import { asking, fileCommand } from '#lib/dbio.ts';
+import { syncCommand } from '#lib/sync.ts';
+import { parseEcho, runEchoed } from '#lib/echo.ts';
+import { record } from '#lib/replStore.ts';
+import { run, type RunResult } from '#lib/run.ts';
+import { FROZEN_AT } from '#lib/dbProtocol.ts';
+import { currentDb } from '#lib/database.ts';
+import { conflictsArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '#lib/calls.ts';
+import { listsConflicts, type Conflicted } from '#lib/conflicts.ts';
+import { verbAsked } from '#lib/track.ts';
+import { openField, specOpens } from '#lib/fieldWidget.ts';
 import { openPlace, settledTree } from './shell.js';
 import { FIELDS } from './draft.js';
 import {
@@ -42,7 +42,7 @@ import {
 	type NowActive,
 	type NowListing,
 	type Standings
-} from '$lib/fields.js';
+} from '#lib/fields.ts';
 
 /** Bumped after every command; the panes re-run theirs when it changes. */
 export const epoch = writable(0);
@@ -263,7 +263,7 @@ function guess(result: RunResult): void {
  * `stdin` is what the command reads on its standard input, for a caller
  * that has the bytes already (`db restore -` from the console). Supplying
  * it is also what says the browser's file dialog is not wanted: a file
- * command is only rewritten ($lib/dbio.ts) when the file is still to be
+ * command is only rewritten (#lib/dbio.ts) when the file is still to be
  * chosen.
  *
  * `typed` says the reader typed this at a prompt — only the bottom bar's
@@ -377,7 +377,7 @@ async function alone(argv: string[], line?: string, stdin?: string, env?: string
 
 /**
  * A command from the bottom bar's line or the widgets, with the bar's pills
- * — the ones its grammar takes (`withPills` in $lib/selection.ts): a `-t
+ * — the ones its grammar takes (`withPills` in #lib/selection.ts): a `-t
  * 14:30` cursor after the words, the selected hids right after the
  * command's name. The one path they all take (da-c7u8), so a pill lands on
  * a press exactly as on a typed line. A typed `line` is echoed as typed,
@@ -389,7 +389,7 @@ async function alone(argv: string[], line?: string, stdin?: string, env?: string
  * DELETED leaves the selection, locked or not, even when the run failed.
  *
  * The GHOST is the argv alone: the pills that went with it are drawn as
- * pills beside it and fade with it (da-xfa4, `spent` in $lib/bar.ts).
+ * pills beside it and fade with it (da-xfa4, `spent` in #lib/bar.ts).
  */
 export const pressWithPills = async (argv: string[], line?: string): Promise<RunResult> => {
 	// A run closes the command widget over the output, which then shows it (da-xw655).

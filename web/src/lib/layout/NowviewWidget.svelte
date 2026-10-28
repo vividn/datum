@@ -27,13 +27,13 @@
 	device pixel at a time where a second moves them a unit or more, less
 	often where it does not. datum is asked again on a write, as ever, and
 	once half of what it drew ahead is spent; never per tick
-	(`dependsOnNow`, $lib/panes.ts).
+	(`dependsOnNow`, #lib/panes.ts).
 	Every instant read off the band below is read as the picture is drawn
 	NOW, slid by `slid`.
 
 	THE BAND IS A PLACE YOU POINT INTO (da-rskp). Its gestures live over a
 	pane that swipes between tabs and a page that scrolls, so the state
-	machine is written down in `$lib/nowpoint.ts` and this component only
+	machine is written down in `#lib/nowpoint.ts` and this component only
 	runs it. vividn's table, 2026-10-22 (da-xg1vi), the dayview's too:
 
 	  tap on a mark           → INSPECT: the entry behind it, as an hid pill
@@ -64,13 +64,13 @@
 
 	An inspect, wherever it is made, floats a TOOLTIP over the mark: the
 	field, the state and the two instants (vividn's «bare info»). Not the
-	comment — a mark does not carry one, and see $lib/inspect.ts.
+	comment — a mark does not carry one, and see #lib/inspect.ts.
 
 	What a tap MEANS depends on where the window is. On now the axis is
 	RELATIVE, so the selection is too: the −5 / −10 / −15 / −20 gridlines
 	spell themselves `-q` … `-qqqq` and everywhere else is the relative
 	`-t -7`, and the white line stays on its gridline as the minutes pass
-	(`$lib/cursor.ts`). Panned away the axis is absolute, and so is the
+	(`#lib/cursor.ts`). Panned away the axis is absolute, and so is the
 	pill: `-t HH:MM`, the one the dayview has always made (vividn, 17:01:
 	«off-now, yes use absolute time»).
 
@@ -127,18 +127,18 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { on } from 'svelte/events';
-	import CliPane from '$lib/CliPane.svelte';
-	import Pill from '$lib/Pill.svelte';
-	import { pills, selected } from '$lib/bar.js';
-	import { clockLabel } from '$lib/clock.js';
-	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '$lib/cursor.js';
-	import { inspectMark, instantOn, msPerPx, selectedTip, timeAxis } from '$lib/hover.js';
-	import { markOf, pressSpent } from '$lib/inspect.js';
-	import { readLanes } from '$lib/lanes.js';
-	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '$lib/nowpoint.js';
-	import { bandOf, compose } from '$lib/nowcrop.js';
-	import { historyArg, ladderAround, layerArgv, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '$lib/panes.js';
-	import { run } from '$lib/run.js';
+	import CliPane from '#lib/CliPane.svelte';
+	import Pill from '#lib/Pill.svelte';
+	import { pills, selected } from '#lib/bar.ts';
+	import { clockLabel } from '#lib/clock.ts';
+	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '#lib/cursor.ts';
+	import { inspectMark, instantOn, msPerPx, selectedTip, timeAxis } from '#lib/hover.ts';
+	import { markOf, pressSpent } from '#lib/inspect.ts';
+	import { readLanes } from '#lib/lanes.ts';
+	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
+	import { bandOf, compose } from '#lib/nowcrop.ts';
+	import { historyArg, ladderAround, layerArgv, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '#lib/panes.ts';
+	import { run } from '#lib/run.ts';
 
 	interface Props {
 		/** How far back the window reaches: a step of NOWVIEW_STEPS, or any length a handle's drag left it at. */
@@ -734,12 +734,12 @@
 	/** The fields drawn at this height, for the fields widget to put first. */
 	function lanesAt(x: number, y: number, at: number | null): void {
 		// The lanes the press crossed, for the fields widget to answer
-		// (da-qu16, $lib/lanes.ts): the band takes the pointer itself, so
+		// (da-qu16, #lib/lanes.ts): the band takes the pointer itself, so
 		// nothing else on the page would hear the press.
 		//
 		// AFTER the selection, and not before it: a selection cleared
 		// clears the lanes, and a tap at now IS a cleared selection
-		// ($lib/cursor.ts) — yet it still re-orders the fields by its
+		// (#lib/cursor.ts) — yet it still re-orders the fields by its
 		// height. The snapshot has no axis and so selects no time at all;
 		// there the height is the whole of what a press says (vividn, 17:01).
 		const svg = svgEl();
@@ -817,7 +817,7 @@
 	 * (da-hmtoq, DayStrip.svelte — WebKit draws a CSS `transform` on a
 	 * pattern without it). On each step of the gesture, and on each picture
 	 * `place` reads: a ctrl+wheel holds no press, so a picture may land
-	 * under it (one under a finger waits for the lift, $lib/hover.ts).
+	 * under it (one under a finger waits for the lift, #lib/hover.ts).
 	 */
 	function unstretch(): void {
 		// Not the strip's own copies (`compose`): the strip is scaled back whole, below.
@@ -1135,7 +1135,7 @@
 	 * Where each margin pill sits, in px across the widget's box: over the
 	 * mark the selection was drawn as.
 	 *
-	 * Read off the DRAWN marks (`$lib/hover.ts` puts the arrow at the
+	 * Read off the DRAWN marks (`#lib/hover.ts` puts the arrow at the
 	 * selection and the band over the range), so a pill in the margin and
 	 * the line under it cannot disagree by a pixel — including for a
 	 * relative selection, which is placed against the picture's own
@@ -1503,12 +1503,12 @@
 	//
 	// Whatever SELECTED it: a tap here, a row tapped
 	// in the tail. The picture is asked which of its marks name the
-	// selected entries (`selectedTip`, $lib/hover.ts) and the tooltip
+	// selected entries (`selectedTip`, #lib/hover.ts) and the tooltip
 	// floats over them, so a selection this window does not draw shows
 	// nothing — «and nowview if that particular piece of data is
 	// represented there».
 	//
-	// The COMMENT is left out, and $lib/inspect.ts says why: a mark carries
+	// The COMMENT is left out, and #lib/inspect.ts says why: a mark carries
 	// its field, its state and its instants and nothing else, so a comment
 	// would be a whole `datum get` per gesture.
 
@@ -2068,7 +2068,7 @@
 	   wait is something the thumb can WATCH rather than something it finds
 	   out about at the end. Held, the ring fills and a dashed stem runs
 	   through the band at the press: the selection's own dashes
-	   ($lib/hover.ts), because what a drag from here makes is a range, and
+	   (#lib/hover.ts), because what a drag from here makes is a range, and
 	   the mark should look like the thing it is about to become. */
 	.hold-mark {
 		position: absolute;

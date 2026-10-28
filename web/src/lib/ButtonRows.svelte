@@ -9,7 +9,7 @@
 	widget takes all its box fits, da-arms4), never a wrap onto the other axis. The rows are counted
 	from the box the layout gave the bar and the size of the `probe` snippet
 	— one of the widget's own buttons, drawn and hidden — so the bar's own
-	content never enters the question (`watchRows` in $lib/commands.ts).
+	content never enters the question (`watchRows` in #lib/commands.ts).
 
 	THE ROWS PACK ON THEIR OWN (vividn, 2026-09-21: «each row gets
 	independent spacing but buttons automatically flow into the left most

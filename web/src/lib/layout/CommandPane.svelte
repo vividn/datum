@@ -6,14 +6,14 @@
 	scroll rule is about the bar's rows and the axis it scrolls on.
 
 	A tap that RUNS — `Undo`, its redo icon, and whatever the loaded pills
-	complete (`fires` in $lib/commands.ts, da-3lxol: `delete` with an hid
+	complete (`fires` in #lib/commands.ts, da-3lxol: `delete` with an hid
 	selected) — goes through `pressWithPills`, which hands the command only
 	the pills its grammar takes: a selected hid (`undo <hid>`), a time for
 	`retime`. Everything else only writes a line into the bottom bar's
 	prompt, unrun, for a person to finish. The loaded pills decide which
 	buttons are active and in what order (da-r13j). A line whose next step
 	is a tap is focused without a phone's keyboard (`next` in
-	$lib/commands.ts, da-k34p).
+	#lib/commands.ts, da-k34p).
 
 	`track` opens the setup widget on a new field (da-fu29p), and `track`
 	or `setup` with a FIELD pill loaded opens it on that field at once
@@ -41,13 +41,13 @@
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import CommandsWidget from '$lib/CommandsWidget.svelte';
-	import { clearUnlockedPills, commandsOpen, pills, prefill, text, type Pill } from '$lib/bar.js';
-	import { argumentsOf, opensField, withFlag } from '$lib/commands.js';
-	import { openField } from '$lib/fieldWidget.js';
-	import { run } from '$lib/run.js';
-	import { redoArgv } from '$lib/calls.js';
-	import { withPills } from '$lib/selection.js';
+	import CommandsWidget from '#lib/CommandsWidget.svelte';
+	import { clearUnlockedPills, commandsOpen, pills, prefill, text, type Pill } from '#lib/bar.ts';
+	import { argumentsOf, opensField, withFlag } from '#lib/commands.ts';
+	import { openField } from '#lib/fieldWidget.ts';
+	import { run } from '#lib/run.ts';
+	import { redoArgv } from '#lib/calls.ts';
+	import { withPills } from '#lib/selection.ts';
 	import { conflicts, fields, grammar, pressWithPills, ready } from './engine.js';
 
 	let {

@@ -16,7 +16,7 @@
 //
 // ONE STAMP FOR THE WHOLE GESTURE (da-31464). An event is stamped when it
 // is constructed, so "no time between them" held only while the loop ran
-// inside `MIN_MS` ($lib/grip.ts, 8ms). On a starved thread the dozen
+// inside `MIN_MS` (#lib/grip.ts, 8ms). On a starved thread the dozen
 // dispatches — each a `moveTo` and a store write — took longer than that,
 // the release read 40px over ~10ms as a 4 px/ms throw, and a drag meant to
 // open the output flung the bar to the ceiling: every pane cut (da-1x6ro),

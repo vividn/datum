@@ -3,7 +3,7 @@
 // Every datum command the web app runs goes through `run(argv)` and comes
 // back as a [`RunResult`] — an exit code plus captured stdout/stderr. The UI
 // never reaches into the database directly: behind the seam is the real
-// `datum` CLI compiled to wasm, one process per command ($lib/runners/
+// `datum` CLI compiled to wasm, one process per command (#lib/runners/
 // wasi.ts, da-g8o8), so what a pane shows is what the CLI printed.
 //
 // `argv` carries the command words *without* the program name, matching what
@@ -26,7 +26,7 @@ export interface RunResult {
 	/**
 	 * The databases the process wrote to (`datum`, `_internal`), by effect:
 	 * the worker reads each file's SQLite change counter either side of it
-	 * ($lib/cli.ts), so no list of verbs is consulted. Absent where nothing
+	 * (#lib/cli.ts), so no list of verbs is consulted. Absent where nothing
 	 * ran.
 	 */
 	changed?: string[];
@@ -43,7 +43,7 @@ export interface RunResult {
  * `onStderr` hears the process's stderr as it is written, before the result.
  * `key` names who is asking (a pane): a newer command with the same key drops
  * this one if it has not started yet. Without a key a command always runs.
- * `env` is added to the process's environment (`DATUM_SHOW`, $lib/echo.ts;
+ * `env` is added to the process's environment (`DATUM_SHOW`, #lib/echo.ts;
  * `DATUM_DB`, `dbEnv`).
  * `pane`: a pane's refresh, which waits behind every other command and is
  * run cheapest first (da-icmo1).
@@ -76,7 +76,7 @@ export const cliError = (stderr: string, fallback = ''): Error =>
  * the reader's behalf — the panes, the bar's line, the widgets, the day
  * strip's bands — passes through `run`, so none of them carries the query
  * itself. A caller that names its own database keeps it, which is what
- * leaves the layout store's `--db _internal` alone ($lib/layout/store.ts).
+ * leaves the layout store's `--db _internal` alone (#lib/layout/store.ts).
  *
  * `DATUM_DB`, not `--db`: the CLI reads it below the flag, and a flag in
  * argv lands in every entry's `raw_input`, so `why` quoted «--db work occur
@@ -93,7 +93,7 @@ export function dbEnv(argv: string[], db: string = currentDb()): string[] {
  *
  * For the caller that has to SAY which database it is about before the
  * command runs: `db purge`'s dialog stands in for the CLI's TTY prompt
- * ($lib/dbio.ts), and a prompt that names a different database than the
+ * (#lib/dbio.ts), and a prompt that names a different database than the
  * flag does is worse than no prompt at all.
  */
 export function dbOf(argv: string[], db: string = currentDb()): string {

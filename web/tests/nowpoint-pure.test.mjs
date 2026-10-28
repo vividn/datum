@@ -1,6 +1,6 @@
 // The nowview's gestures and the argv a selection is, in node (da-rskp).
 //
-// `advance` is the truth table at the head of $lib/nowpoint.ts — what a
+// `advance` is the truth table at the head of #lib/nowpoint.ts — what a
 // press becomes after how many ms and how many px, and what cannot become
 // what — and `snapTo` is the finger's width around a gridline. `relArg`
 // is the other half: what a relative selection PUTS on the command line,

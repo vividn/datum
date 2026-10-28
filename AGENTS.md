@@ -724,7 +724,7 @@ handshake's storage side — members, invites, admission — is datum-core's, so
 datum.day syncs too: `web/src/lib/sync.worker.ts` runs the wire crate built for
 wasm32-unknown-unknown (relay-only iroh) with the CLI as its store (hidden `sync
 handshake` / `new-invite` / `endpoint-key` / `record-session`), and
-`$lib/sync.ts` elects ONE tab per database to run the endpoint by a Web Lock
+`#lib/sync.ts` elects ONE tab per database to run the endpoint by a Web Lock
 (`datum-sync:<db>`), which pushes on every tab's writes (`onAnyChange`).
 
 A session is its copy's only while the file's endpoint key is the one it began
@@ -762,10 +762,10 @@ binary.
   crop of the day's data layer (`dayview --data-layer`, asked at its box
   alone) under the CLI's overlay (`nowview --overlay`: the picture with no
   data, no database opened) and paints its now strip with the block each
-  lane holds at now (`$lib/nowcrop.ts`), so a stretch or a pan
+  lane holds at now (`#lib/nowcrop.ts`), so a stretch or a pan
   asks for the overlay and no data. What TypeScript does
   hold is the transport: carrying those files to an S3-compatible bucket
-  (`$lib/s3.ts`, SigV4 by aws4fetch, the browser straight to the bucket
+  (`#lib/s3.ts`, SigV4 by aws4fetch, the browser straight to the bucket
   under its CORS), each device under a folder of its own,
   `client-<client id>/`, with its own index, so no two devices write one;
   restore lists every device's folder and the older backups at the top
@@ -791,17 +791,17 @@ binary.
   answers with its ACTION words along the bottom of it STARTING AT THE `❯`,
   in the color the CLI paints the tag (`Outcome::hex`, carried as
   `action_color` on `--show json`), fading, or a red `ERROR` that opens the
-  output on a tap. The `❯` is a button (`commandsOpen` in `$lib/bar.ts`,
+  output on a tap. The `❯` is a button (`commandsOpen` in `#lib/bar.ts`,
   da-xw655): pressed, it turns a quarter, fills, and slides the command
   widget up over the output section at its height; the `❯` again, Escape,
   a run (`pressWithPills`, the output then showing it) or a choice that
   fills the line takes it away. OVER the bar is the history, oldest first and the
-  newest nearest the input (`$lib/BarLog.svelte`), its rows scrolling as
+  newest nearest the input (`#lib/BarLog.svelte`), its rows scrolling as
   a terminal's do. The CLI widget (`cli`; the `repl` kind until da-mwp4m,
   which a stored layout still opens as it) is that history as a pane, and
   a root tab that is the CLI alone (`/cli`, `/repl`) draws no output
   section at all: the widget is the output there.
-- THE SCROLLBACK STANDS IN COLUMNS (`$lib/scrollback.ts`) in the CLI
+- THE SCROLLBACK STANDS IN COLUMNS (`#lib/scrollback.ts`) in the CLI
   widget; the bar's log is one command a line (Repl's `lines`, da-0b2vy) — the aim:
   "the output of a single entry should be narrow enough to comfortably fit
   2 on mobile side by side". As many entries abreast as fit at the width an
@@ -825,10 +825,10 @@ binary.
   rides the top of whatever is open (`.bar-handle`): a tap goes closed → row
   → full → row, and a drag on it, anywhere on the bar, or a wheel over it
   moves a state the way it went. HOW FAR OPEN the bar is, is ONE number of
-  pixels (`reveal` in `$lib/log.ts`) that three boxes are sized from — the
+  pixels (`reveal` in `#lib/log.ts`) that three boxes are sized from — the
   page itself never scrolls; the NOTCH is `--output-height`, the CEILING the
   top of the page. A release glides by `speed * TAU` (`rest` in
-  `$lib/detent.ts`, no fling threshold) and rests in a state: one within
+  `#lib/detent.ts`, no fling threshold) and rests in a state: one within
   `DETENT` (24px) of the notch or the ceiling takes it, a coast never crosses
   a state either way — the SNAG, so a throw down from full stops at the row
   and a throw up from closed opens it — and otherwise the gesture's
@@ -1014,7 +1014,7 @@ binary.
   load-bearing: the CLI's slot is a painted SPACE, and a lone space in a
   `<td>` collapses to zero width with its background set and nothing drawn.
   `web/tests/statecell.test.mjs`.
-- The chart widget (`layout/ChartWidget.svelte`, `$lib/chart.ts`, da-xv7ti)
+- The chart widget (`layout/ChartWidget.svelte`, `#lib/chart.ts`, da-xv7ti)
   draws one key of the fields chosen over time, from `tail F --json` a
   field: a number key as a series a field, points and a line of their mean
   per day, week or month; any other key its values counted per bucket,
@@ -1034,7 +1034,7 @@ binary.
   over the same clock times, and the layout gives each a lane
   (`RenderedSpan::lane`), which blocks narrow into as `<path>`s. Each end
   inside the day is labelled `UTC+n`. The SVG is one `g.day-data` per span,
-  each a straight axis, so `timeAt` (`$lib/hover.ts`) reads a press against
+  each a straight axis, so `timeAt` (`#lib/hover.ts`) reads a press against
   the span it is over (`stretchAt`), and each says its clock, `data-offset`
   in seconds east of UTC, which the hover tip tells a mark's time by and
   not the browser's (da-3ctgr). `web/tests/dayjump.test.mjs`.
@@ -1061,7 +1061,7 @@ binary.
   screen is checked by one `dayview --digests` run, the SHA-256 of each
   day's picture, and asked for again only when its held picture differs
   (da-efxk5). Each finished day's picture is kept past a reload too, in
-  IndexedDB (`$lib/heldDays.ts`) by database, band argv and date, a month
+  IndexedDB (`#lib/heldDays.ts`) by database, band argv and date, a month
   of days at the last three sizes: a reload draws the earlier days from
   there and asks for today, and the same digest check redraws a kept day
   only once it is on screen and its picture changed, a newer datum's

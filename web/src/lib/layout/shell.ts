@@ -82,10 +82,10 @@
 // id and reporting the outer layout as modified.
 
 import { derived, get, writable } from 'svelte/store';
-import { onExternalChange } from '$lib/changes.js';
-import { confirm } from '$lib/confirm.js';
-import { currentDb } from '$lib/database.js';
-import { initDb } from '$lib/db.js';
+import { onExternalChange } from '#lib/changes.ts';
+import { confirm } from '#lib/confirm.ts';
+import { currentDb } from '#lib/database.ts';
+import { initDb } from '#lib/db.ts';
 import type { Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
 import { LAYOUT_VERSION, isSplit, isWidget } from './types.js';
 import { apply, layout, loaded, replay } from './current.js';
@@ -696,7 +696,7 @@ export function boot(): Promise<void> {
 		// `?db=other` the kit layouts are `other`'s.
 		onExternalChange(refreshKits, currentDb());
 		// Every tab takes part; one per database leads it (da-6kpj5).
-		void import('$lib/sync.js').then(({ startSync }) => startSync(currentDb()));
+		void import('#lib/sync.ts').then(({ startSync }) => startSync(currentDb()));
 		void offerDefaults(stored === null);
 	})());
 }

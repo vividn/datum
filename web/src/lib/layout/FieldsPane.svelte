@@ -26,17 +26,17 @@
 
 	`showIgnored` (da-xhio) arrives as a prop too, though its value is the
 	SESSION's rather than the layout's: the renderer merges the two before
-	it draws (Layout.svelte, $lib/layout/session.ts), so neither this pane
+	it draws (Layout.svelte, #lib/layout/session.ts), so neither this pane
 	nor the widget below it knows the difference.
 -->
 <script lang="ts">
-	import FieldsWidget from '$lib/FieldsWidget.svelte';
-	import { clearPending, pending, pills, prefill, text } from '$lib/bar.js';
-	import { flagLine, hasDuration } from '$lib/commands.js';
-	import { advance } from '$lib/keyframes.js';
-	import type { Align, SwitchLabel } from '$lib/fields.js';
-	import { lanes } from '$lib/lanes.js';
-	import { shellJoin, shellSplit } from '$lib/shellSplit.js';
+	import FieldsWidget from '#lib/FieldsWidget.svelte';
+	import { clearPending, pending, pills, prefill, text } from '#lib/bar.ts';
+	import { flagLine, hasDuration } from '#lib/commands.ts';
+	import { advance } from '#lib/keyframes.ts';
+	import type { Align, SwitchLabel } from '#lib/fields.ts';
+	import { lanes } from '#lib/lanes.ts';
+	import { shellJoin, shellSplit } from '#lib/shellSplit.ts';
 	import { fields, grammar, pressWithPills, standings } from './engine.js';
 
 	let {

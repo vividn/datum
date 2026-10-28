@@ -1,6 +1,6 @@
 // The layout tree's operations, in node, with no browser.
 //
-// `$lib/layout/tree.ts` is pure and imports only types, so node loads it
+// `#lib/layout/tree.ts` is pure and imports only types, so node loads it
 // as it is (node strips the types). What is checked here is the canon the
 // file promises: after any operation — and after any SEQUENCE of them —
 // there is no split with one child, no pane with no tabs, the ratios sum
@@ -686,9 +686,9 @@ describe('floorOf', () => {
 // The strip's snap (da-zh2o): one whole day at the height its days are
 // drawn, plus the body's padding — read from the real registry, whose
 // components node cannot load, so each `.svelte` import is an empty stub
-// and `$lib/x.js` is the source's `x.ts`.
+// and `./x.js` is the source's `x.ts`.
 describe('snapsOfKind', () => {
-	resolveLibAsSource(import.meta.url);
+	resolveLibAsSource();
 	const todayBox = (dayHeight) => dayHeight + 15; // panes.ts: the day, and the ruler row the strip draws under it
 
 	test('is one day at the strip\'s day height, plus 16px of padding, and nothing for the others', async () => {

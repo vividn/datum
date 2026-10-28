@@ -1,11 +1,11 @@
 // The runner behind the seam: the real `datum` CLI (da-1vat, da-g8o8).
 //
-// One WASI process per command in the database worker ($lib/cli.ts). What
+// One WASI process per command in the database worker (#lib/cli.ts). What
 // the native CLI reads from its host, the page supplies: the zone (WASI has
 // no zone database of the host's), this browser's client id and device
 // key, color,
 // since there is no tty to detect, and that an empty stdin answers no
-// question (da-f5pg2, `asking` in $lib/dbio.ts).
+// question (da-f5pg2, `asking` in #lib/dbio.ts).
 
 import { runCli } from '../db.js';
 import { clientId, deviceKey } from '../clientId.js';

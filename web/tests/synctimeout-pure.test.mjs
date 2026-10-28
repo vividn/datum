@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { deliverMs } = await import('../src/lib/sync.ts');
 
 const stored = (value) =>

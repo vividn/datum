@@ -518,7 +518,7 @@
 	/* A finger's 24px where the pointer is COARSE (da-vhwq). The options are
 	   items of this menu now, and a switch is a thing a thumb presses again
 	   and again; the modal they came out of gave its rows a finger's height
-	   and these have to have one too. The same number `$lib/lanes.ts` calls
+	   and these have to have one too. The same number `#lib/lanes.ts` calls
 	   `REACH_PX` and the bar's badges are drawn at. A mouse's rows are left
 	   as they were. */
 	@media (pointer: coarse) {

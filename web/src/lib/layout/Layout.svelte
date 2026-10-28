@@ -50,8 +50,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import Layout from './Layout.svelte';
-	import Pane from '$lib/Pane.svelte';
-	import { act } from '$lib/act.js';
+	import Pane from '#lib/Pane.svelte';
+	import { act } from '#lib/act.ts';
 	import PaneFrame, { ROW, badge, lands } from './PaneFrame.svelte';
 	import TabBody, { refuse } from './TabBody.svelte';
 	import Stale from './Stale.svelte';
@@ -66,7 +66,7 @@
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
 	import { keyOf, session, setSession, withSession } from './session.js';
-	import { settled } from '$lib/run.js';
+	import { settled } from '#lib/run.ts';
 
 	let {
 		pane,

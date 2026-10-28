@@ -1,6 +1,6 @@
 // The main thread's handle on the database worker.
 //
-// The CLI itself runs in $lib/db.worker.ts, because OPFS is reachable only
+// The CLI itself runs in #lib/db.worker.ts, because OPFS is reachable only
 // from a dedicated worker (da-5iqw). This file is the client side of that:
 // one command out, one process's outcome back, and the storage it ran on.
 
@@ -47,7 +47,7 @@ export function onDurableWrite(watcher: () => void): () => void {
 /**
  * Whether entries survive a reload. Null before the database is open.
  *
- * The UI states this rather than assuming it — see $lib/BetaBanner.svelte.
+ * The UI states this rather than assuming it — see #lib/BetaBanner.svelte.
  */
 export function storageKind(): StorageKind | null {
 	return storage;
@@ -141,13 +141,13 @@ export function initDb(): Promise<void> {
 }
 
 /**
- * Run `datum <argv>` in the worker ($lib/cli.ts).
+ * Run `datum <argv>` in the worker (#lib/cli.ts).
  *
  * A process that wrote is news: for every other tab, which re-runs its panes
  * on it, and — when the write is durable — for the persistence request.
  * `null` when a newer command with the same `key` superseded it unrun.
  * `session`: a sync session's own run, announced as one (`announceChange`)
- * and queued behind the panes ($lib/cli.ts).
+ * and queued behind the panes (#lib/cli.ts).
  */
 export async function runCli(
 	argv: string[],

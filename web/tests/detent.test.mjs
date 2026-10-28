@@ -1,6 +1,6 @@
 // WHERE A RELEASE COMES TO REST, in node, with no browser (da-tj6m).
 //
-// `$lib/detent.ts` is the bar's whole momentum rule and it is pure, so the
+// `#lib/detent.ts` is the bar's whole momentum rule and it is pure, so the
 // table at its head can be asked directly rather than thrown at a phone.
 // What it CANNOT settle is the numbers: vremya's instrument adds latency to
 // a synthetic touch, so a velocity measured in a drive is approximate, and

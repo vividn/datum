@@ -11,7 +11,7 @@ import { resolveLibAsSource } from './support/libhook.mjs';
 import { nativeCopy, startRelay } from './support/sync.mjs';
 import { until } from './support/until.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { unjoinWords } = await import('../src/lib/syncView.ts');
 
 let relay;

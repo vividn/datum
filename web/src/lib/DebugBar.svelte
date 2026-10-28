@@ -20,7 +20,7 @@
 	he will get lost and getting back must be free.
 
 	A change lands on the very NEXT release and needs no reload: `settle`
-	in $lib/log.ts reads the store at the moment a finger lets go. That
+	in #lib/log.ts reads the store at the moment a finger lets go. That
 	loop — slide, throw, slide, throw — is the instrument.
 -->
 <script lang="ts">
@@ -31,7 +31,7 @@
 	 * The knobs, in the order they are read.
 	 *
 	 * The RANGES are not here: they live beside the clamp that enforces
-	 * them ($lib/tuning.ts), so what this offers and what the store allows
+	 * them (#lib/tuning.ts), so what this offers and what the store allows
 	 * are one pair of numbers. `meaning` is the sentence the name carries
 	 * as its tooltip; `unit` is what the number is counted in.
 	 */

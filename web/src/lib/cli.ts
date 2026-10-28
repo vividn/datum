@@ -1,11 +1,11 @@
 // The real `datum` CLI, one process per command (da-1vat, da-g8o8).
 //
-// Runs inside $lib/db.worker.ts, the only place OPFS sync access handles
+// Runs inside #lib/db.worker.ts, the only place OPFS sync access handles
 // exist. The module is `datum-cli` built for wasm32-wasip1
 // (scripts/build-cli-wasm.mjs): compiled once per worker, instantiated
 // afresh for every command, with argv, env, stdin, stdout and stderr
 // exactly as a shell would give them, and `/data` preopened over the
-// database files in $lib/wasiFs.ts. What it prints is what the CLI prints;
+// database files in #lib/wasiFs.ts. What it prints is what the CLI prints;
 // there is nothing here that knows what a command means.
 //
 // EVERY BURST TAKES THE FILES FOR ITSELF. A sync access handle on each
@@ -100,7 +100,7 @@ let memory: Map<string, Handle> | null = null;
  * The databases this worker keeps files for: `datum` and `_internal`, plus
  * every name a command has since asked for (da-vk1x).
  *
- * A page on `?db=other` sets `DATUM_DB=other` at the seam ($lib/run.ts), and
+ * A page on `?db=other` sets `DATUM_DB=other` at the seam (#lib/run.ts), and
  * without this the CLI would make `/data/other.db` inside the process's own
  * in-memory filesystem and lose it at exit — the entry would be stored and
  * gone. So the worker reads the name out of argv and env the way the CLI does and
@@ -117,7 +117,7 @@ let databases: readonly string[] = DATABASES;
 /**
  * The database `argv` and `env` name, if they name one by NAME.
  *
- * The CLI's own resolution, in TypeScript: the `--db` flag ($lib/dbFlag.ts),
+ * The CLI's own resolution, in TypeScript: the `--db` flag (#lib/dbFlag.ts),
  * else `DATUM_DB`, and a value that is a name rather than a path
  * (`extract_global_db_flag`, `locate` and `looks_like_path`,
  * `crates/datum-commands/src/config.rs`). A path is left to the process's
@@ -470,7 +470,7 @@ async function exec(
 	const fds: Fd[] = [new OpenFile(new MemFile(new TextEncoder().encode(stdin))), stdout, stderr, data];
 	// HOME inside the preopen: datum makes its config dir there, in memory
 	// for the length of the process. The database is DATUM_DB, unless `env`
-	// names one (the page's, $lib/run.ts `dbEnv`) — and datum's
+	// names one (the page's, #lib/run.ts `dbEnv`) — and datum's
 	// data dir is the preopen itself, so `--db <name>` lands on
 	// `/data/<name>.db` by the CLI's own rule, and `--db _internal` is the
 	// other persisted file with nothing here parsing argv for it.

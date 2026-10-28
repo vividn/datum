@@ -25,9 +25,9 @@
 -->
 <script module lang="ts">
 	import { get } from 'svelte/store';
-	import { currentDb } from '$lib/database.js';
-	import { dry } from '$lib/db.js';
-	import { first, idle } from '$lib/waiting.js';
+	import { currentDb } from '#lib/database.ts';
+	import { dry } from '#lib/db.ts';
+	import { first, idle } from '#lib/waiting.ts';
 	import { STALE } from './draft.js';
 
 	/**

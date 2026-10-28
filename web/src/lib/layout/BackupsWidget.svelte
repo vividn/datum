@@ -1,7 +1,7 @@
 <!--
 	«Backups» (da-9ow8m): the gear's Backups, and the commands widget's
 	`db backup` / `db restore`. It is a PLACE (da-ea5q2): each of those
-	opens it through `openBackups` ($lib/backups.ts) — a modal on a
+	opens it through `openBackups` (#lib/backups.ts) — a modal on a
 	desktop, a tab on a phone — and dropped into a pane it is just this
 	widget.
 
@@ -10,21 +10,21 @@
 	what a plan is and what it is not (encrypted, or running while the
 	browser is closed); each plan, with its backups by database, newest
 	first, each restorable; and a new plan. Every number is the CLI's —
-	`$lib/backups.ts` says which command answers which.
+	`#lib/backups.ts` says which command answers which.
 
 	The design language's two outlines: DOUBLE acts at once («Back up
 	now», «Back up all now»), SINGLE opens something (a picker, a confirm).
 -->
 <script lang="ts">
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
-	import Pane from '$lib/Pane.svelte';
-	import { act } from '$lib/act.js';
-	import { restoreArgv } from '$lib/calls.js';
-	import { confirm } from '$lib/confirm.js';
-	import { currentDb, INTERNAL_DB } from '$lib/database.js';
-	import { listDatabases } from '$lib/databases.js';
-	import { restore as restoreFile, saveBackup } from '$lib/dbio.js';
-	import type { RunResult } from '$lib/run.js';
+	import Pane from '#lib/Pane.svelte';
+	import { act } from '#lib/act.ts';
+	import { restoreArgv } from '#lib/calls.ts';
+	import { confirm } from '#lib/confirm.ts';
+	import { currentDb, INTERNAL_DB } from '#lib/database.ts';
+	import { listDatabases } from '#lib/databases.ts';
+	import { restore as restoreFile, saveBackup } from '#lib/dbio.ts';
+	import type { RunResult } from '#lib/run.ts';
 	import { ran } from './engine.js';
 	import {
 		ago,
@@ -53,8 +53,8 @@
 		type Backup,
 		type Plan,
 		type Reach
-	} from '$lib/backups.js';
-	import type { StepResult } from '$lib/probe.js';
+	} from '#lib/backups.ts';
+	import type { StepResult } from '#lib/probe.ts';
 
 	let body: HTMLElement | undefined = $state();
 	let note = $state('');
@@ -505,7 +505,7 @@
 		cursor: pointer;
 	}
 
-	/* The design language ($lib/act.ts): a DOUBLE outline acts at once, a
+	/* The design language (#lib/act.ts): a DOUBLE outline acts at once, a
 	   SINGLE one of the accent opens something. */
 	button:global([data-act='run']) {
 		border: 3px double var(--accent);

@@ -17,7 +17,7 @@ import {
 	onStorageChange,
 	storageKind,
 	type StorageKind
-} from '$lib/db.js';
+} from '#lib/db.ts';
 
 /**
  * `null` is "not determined yet"; `'failed'` is "we tried and it did not

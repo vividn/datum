@@ -4,26 +4,26 @@
 	It used to be a CSS grid with four fixed areas, laid out as the
 	wireframe (da-hrz0) drew it. It is a layout tree now (da-jdop): panes
 	holding widgets, split and tabbed and resized from each pane's `…`
-	menu, with today's arrangement as the default (`$lib/layout/defaults`)
-	and the reader's own kept as a draft (`$lib/layout/current`). Its root
-	pane's tabs are the page's top bar (da-0a5o, `$lib/layout/RootBar`),
-	each one a layout, and the shell (`$lib/layout/shell`) fills the tree
+	menu, with today's arrangement as the default (`#lib/layout/defaults`)
+	and the reader's own kept as a draft (`#lib/layout/current`). Its root
+	pane's tabs are the page's top bar (da-0a5o, `#lib/layout/RootBar`),
+	each one a layout, and the shell (`#lib/layout/shell`) fills the tree
 	on boot — from `+layout.svelte`, so `loaded` is already on its way by
 	the time this mounts.
 
-	Every widget still talks to datum through `run(argv)` in $lib/run.ts
+	Every widget still talks to datum through `run(argv)` in #lib/run.ts
 	and nothing else. What this page owns is the one refresh beat: the
 	engine's epoch, bumped after every command here that wrote and every write
 	another tab makes, flows down the tree as a prop to every pane.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import Layout from '$lib/layout/Layout.svelte';
-	import { editing, layout, loaded } from '$lib/layout/current.js';
-	import { epoch, ran } from '$lib/layout/engine.js';
-	import { onExternalChange } from '$lib/changes.js';
-	import { currentDb } from '$lib/database.js';
-	import { settled } from '$lib/run.js';
+	import Layout from '#lib/layout/Layout.svelte';
+	import { editing, layout, loaded } from '#lib/layout/current.ts';
+	import { epoch, ran } from '#lib/layout/engine.ts';
+	import { onExternalChange } from '#lib/changes.ts';
+	import { currentDb } from '#lib/database.ts';
+	import { settled } from '#lib/run.ts';
 
 	// Another tab wrote. Same treatment as a local command finishing — bump
 	// the epoch the panes hang off and rebuild the widget bar — so there is
@@ -31,18 +31,18 @@
 	//
 	// `ran`'s own promise, not a call wrapped in `void`: it is how the
 	// channel knows this refresh is still out, and a burst next door is
-	// coalesced behind it (da-s3pt, $lib/changes.ts). Out until the panes it
+	// coalesced behind it (da-s3pt, #lib/changes.ts). Out until the panes it
 	// set off have answered too (`settled`): the bar's reads go ahead of
 	// them (da-icmo1), so `ran` alone ends before the refresh does.
 	//
 	// Subscribed here rather than from `onMount`: Svelte takes a teardown from
 	// a SYNCHRONOUS onMount only, and an async one returns a promise it cannot
 	// call. Safe during init because `onExternalChange` opens nothing outside
-	// a browser (see $lib/changes.ts) and returns an empty teardown there.
+	// a browser (see #lib/changes.ts) and returns an empty teardown there.
 	// Keyed by THIS page's database (da-vk1x): a write in a `?db=other` tab
 	// is no reason for a `datum` tab to re-run its panes, and the other way
 	// about. `announceChange` already carries which databases a process
-	// wrote to, measured off their change counters ($lib/cli.ts).
+	// wrote to, measured off their change counters (#lib/cli.ts).
 	onDestroy(onExternalChange(() => ran().then(settled), currentDb()));
 </script>
 

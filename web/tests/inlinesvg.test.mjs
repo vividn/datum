@@ -1,4 +1,4 @@
-// `inlineSvg` ($lib/hover.ts) is the page's last layer between an SVG the
+// `inlineSvg` (#lib/hover.ts) is the page's last layer between an SVG the
 // CLI printed and the DOM. Since da-45wgz that SVG can carry a person's own
 // icon, which the CLI vets when it is saved and again when it is drawn; this
 // holds the page to the same rules, in a real browser's DOMParser, for

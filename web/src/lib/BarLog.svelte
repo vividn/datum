@@ -42,15 +42,15 @@
 -->
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import Repl from '$lib/Repl.svelte';
-	import { repl } from '$lib/replStore.js';
-	import { armed, closeLog, full, inLog } from '$lib/log.js';
+	import Repl from '#lib/Repl.svelte';
+	import { repl } from '#lib/replStore.ts';
+	import { armed, closeLog, full, inLog } from '#lib/log.ts';
 
 	let body: HTMLDivElement | undefined = $state();
 
-	/** A wheel this soon after the last is the same gesture ($lib/grip.ts's `INERTIA_MS`). */
+	/** A wheel this soon after the last is the same gesture (#lib/grip.ts's `INERTIA_MS`). */
 	const SAME_MS = 150;
-	/** How far a finger moves before it is a swipe ($lib/grip.ts's `DRAG_START`). */
+	/** How far a finger moves before it is a swipe (#lib/grip.ts's `DRAG_START`). */
 	const SWIPE = 8;
 	let wheeled = -Infinity;
 	/** Where a touch that began at the top of the history began, or null. */

@@ -1,4 +1,4 @@
-// The browser console's two doors ($lib/console.ts, da-6918).
+// The browser console's two doors (#lib/console.ts, da-6918).
 //
 // `window.datum.run` is the one a hand reaches for, so it does what a hand
 // at the prompt does: the command goes through `engine.press` — the mounted

@@ -1,10 +1,10 @@
 <!--
 	A quiet notice where a widget would be: what a tab shows when the layout
 	it names cannot be inlined — it is already open above it, or nothing is
-	saved under that name (`$lib/layout/shell.ts`).
+	saved under that name (`#lib/layout/shell.ts`).
 -->
 <script lang="ts">
-	import Pane from '$lib/Pane.svelte';
+	import Pane from '#lib/Pane.svelte';
 
 	let { settings = {} }: { settings?: Record<string, unknown> } = $props();
 	const text = $derived(typeof settings.text === 'string' ? settings.text : '');

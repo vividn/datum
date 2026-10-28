@@ -3,8 +3,8 @@
 //
 // Its reader here is `window.datum.entries`, which reads what got stored
 // the way the CLI itself would report it. A backup as a FILE is
-// $lib/dbio.ts's (`download`, `saveBackup`), and backup plans are
-// $lib/backups.ts's.
+// #lib/dbio.ts's (`download`, `saveBackup`), and backup plans are
+// #lib/backups.ts's.
 
 import { backupArgv } from './calls.js';
 import { cliError, run } from './run.js';

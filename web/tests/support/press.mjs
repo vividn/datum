@@ -1,5 +1,5 @@
 // A press that travels, on a band that tells a pan from a range by WHEN it
-// first does (`advance`, $lib/nowpoint.ts): the nowview's, and a dayview
+// first does (`advance`, #lib/nowpoint.ts): the nowview's, and a dayview
 // strip's — where a finger that has waited no longer scrolls the stack either.
 
 import { swipe } from './layout.mjs';
@@ -42,7 +42,7 @@ export const pageWait = (page, ms) => page.evaluate((ms) => new Promise((done) =
  * before the first move when `hold`.
  *
  * With no `hold` the press is one that travels BEFORE the long press's wait
- * is up (`LONG_MS`, $lib/nowpoint.ts), and how long the first move takes to
+ * is up (`LONG_MS`, #lib/nowpoint.ts), and how long the first move takes to
  * arrive is the box's to say: on a loaded runner it came after the 400ms,
  * and a drag asked for as a pan was a range (da-9ol3b). So that press has no
  * wait to beat (`noWait`); one with a `hold` waits for the wait's mark.

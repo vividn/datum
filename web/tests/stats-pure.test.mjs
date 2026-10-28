@@ -17,7 +17,7 @@ import test, { after, before, describe, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { fieldTiles, formatDur, statsArgv, summaryTiles, windowLabel } = await import('../src/lib/stats.ts');
 
 describe('a span in the CLI’s own spelling', () => {

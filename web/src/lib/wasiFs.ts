@@ -34,7 +34,7 @@ import type { Stage } from './dbProtocol.js';
  * saved layouts (da-wpgy).
  *
  * A page opened on `?db=<name>` (da-vk1x) runs every command with that
- * name's `--db`, and the worker persists whatever a command names: $lib/cli
+ * name's `--db`, and the worker persists whatever a command names: #lib/cli
  * keeps the list this seeds and opens a file for each. A `--db` that is a
  * PATH rather than a name still lives in memory for one process, as every
  * other file here does — there is no filesystem out there for it to be a

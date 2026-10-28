@@ -1,9 +1,9 @@
 // The pool of databases on this device (da-y992).
 //
 // The worker keeps every database as a file in ONE directory in OPFS
-// ($lib/cli.ts, $lib/wasiFs.ts), so the list of databases the app has is
+// (#lib/cli.ts, #lib/wasiFs.ts), so the list of databases the app has is
 // the list of `<name>.db` in that directory. That is what the logo's menu
-// offers ($lib/Brand.svelte).
+// offers (#lib/Brand.svelte).
 //
 // Read from the PAGE, not through the worker, and by NAME only: a
 // directory listing takes no lock, where reading a file's contents would
@@ -28,7 +28,7 @@ function nameOf(file: string): string | null {
  * since excluding it is the menu's rule and not the pool's.
  *
  * Empty when this browser has no OPFS, or refuses it: a tab that fell back
- * to a database in memory ($lib/cli.ts) has no pool to list, and a menu
+ * to a database in memory (#lib/cli.ts) has no pool to list, and a menu
  * with nothing in it is still handed the page's own database by its caller.
  */
 export async function listDatabases(): Promise<string[]> {

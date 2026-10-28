@@ -33,18 +33,18 @@
 	or says why it cannot — are the same shape, on top. Notices of new
 	members and unlocks stand with the acts until acknowledged.
 
-	Every CLI read and act is $lib/syncView.ts's. Every button is the
+	Every CLI read and act is #lib/syncView.ts's. Every button is the
 	commands widget's `button.command` (app.css): the browser's own grey
 	under the page's pale ink had been a contrast of 1.1.
 -->
 <script lang="ts">
 	import { browser } from '$app/env';
 	import { onDestroy, untrack } from 'svelte';
-	import Pane from '$lib/Pane.svelte';
-	import { onAnyChange } from '$lib/changes.js';
-	import { currentDb, INTERNAL_DB, withDb } from '$lib/database.js';
-	import { listDatabases } from '$lib/databases.js';
-	import { deliverMs, inviting, joinLink, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
+	import Pane from '#lib/Pane.svelte';
+	import { onAnyChange } from '#lib/changes.ts';
+	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
+	import { listDatabases } from '#lib/databases.ts';
+	import { deliverMs, inviting, joinLink, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -69,10 +69,10 @@
 		type Notice,
 		type PurgePreview,
 		type Row
-	} from '$lib/syncView.js';
-	import { approve, approveRecord, createPasskey } from '$lib/passkey.js';
-	import { ask, confirm } from '$lib/confirm.js';
-	import { cliError, type RunResult } from '$lib/run.js';
+	} from '#lib/syncView.ts';
+	import { approve, approveRecord, createPasskey } from '#lib/passkey.ts';
+	import { ask, confirm } from '#lib/confirm.ts';
+	import { cliError, type RunResult } from '#lib/run.ts';
 	import {
 		adminAddArgv,
 		adminListArgv,
@@ -83,11 +83,11 @@
 		unjoinArgv,
 		renameArgv,
 		expelArgv
-	} from '$lib/calls.js';
-	import { act } from '$lib/act.js';
-	import { now } from '$lib/clock.js';
-	import { prefill } from '$lib/bar.js';
-	import { explainGuide } from '$lib/help.js';
+	} from '#lib/calls.ts';
+	import { act } from '#lib/act.ts';
+	import { now } from '#lib/clock.ts';
+	import { prefill } from '#lib/bar.ts';
+	import { explainGuide } from '#lib/help.ts';
 	import { grammar } from './engine.js';
 
 	let {

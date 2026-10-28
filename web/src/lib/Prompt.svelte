@@ -5,7 +5,7 @@
 	It is drawn in two places and it is ONE line (da-3zon): the bottom bar
 	(PromptBar.svelte) and every `input` widget on the page
 	(layout/InputWidget.svelte). The box binds straight to `text` in
-	$lib/bar.ts and Enter calls `submitLine` there, so nothing here is a
+	#lib/bar.ts and Enter calls `submitLine` there, so nothing here is a
 	copy of anything — type in either and both show it, Enter in either
 	runs it, and both empty together. Two local strings synced by effects is
 	how two boxes drift by a keystroke.
@@ -15,7 +15,7 @@
 	clock, they are different colors so they can be almost touching".
 
 	Enter empties the box the way a shell consumes a line. Up and down walk
-	the history every prompt shares ($lib/replStore.ts), shell-style: the
+	the history every prompt shares (#lib/replStore.ts), shell-style: the
 	draft you were typing is kept and handed back when you walk past the
 	newest entry — kept per BOX, since it is what this reader was in the
 	middle of typing here.
@@ -59,7 +59,7 @@
 	both: parking the pills at the box's right edge, and letting them reach
 	back over the `❯`.)
 
-	THE KEY FRAMES (da-31d1d, $lib/keyframes.ts): on `occur|start|add
+	THE KEY FRAMES (da-31d1d, #lib/keyframes.ts): on `occur|start|add
 	<field>` or `switch <field> <state>` (never `end`, da-o4jaa) for a field
 	whose spec declares keys, each key written on the line — a bare value,
 	which the CLI binds in order (da-p3hxn), or a `key=value` — is outlined
@@ -87,18 +87,18 @@
 -->
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
-	import { act } from '$lib/act.js';
-	import { clearLine, commandsOpen, ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
-	import { roleOf, valuedFlags } from '$lib/commands.js';
-	import Pill from '$lib/Pill.svelte';
-	import { fields, grammar, ready } from '$lib/layout/engine.js';
-	import { advance, complete, framesOf, type Frame } from '$lib/keyframes.js';
-	import { repl } from '$lib/replStore.js';
+	import { act } from '#lib/act.ts';
+	import { clearLine, commandsOpen, ghost, pills, registerLine, spent, submitLine, text } from '#lib/bar.ts';
+	import { roleOf, valuedFlags } from '#lib/commands.ts';
+	import Pill from '#lib/Pill.svelte';
+	import { fields, grammar, ready } from '#lib/layout/engine.ts';
+	import { advance, complete, framesOf, type Frame } from '#lib/keyframes.ts';
+	import { repl } from '#lib/replStore.ts';
 
 	let {
 		/**
 		 * True in an input widget. It is where a focus that nobody clicked
-		 * goes while one is on screen (`focusLine` in $lib/bar.ts).
+		 * goes while one is on screen (`focusLine` in #lib/bar.ts).
 		 */
 		widget = false
 	}: { widget?: boolean } = $props();
@@ -441,7 +441,7 @@
 	     `submit`. NOT a submit button: that turns every Enter into a
 	     synthetic click on it, and with one here Enter after dragging the
 	     log open ran nothing (barlog.test.mjs; a click after a drag is
-	     what $lib/grip.ts swallows). Shown only when Enter would run
+	     what #lib/grip.ts swallows). Shown only when Enter would run
 	     something — the verb is always typed, so pills alone are not a
 	     line. It acts at once, so the DOUBLE outline; the mousedown
 	     is prevented as the ×'s is, so the focus and the keyboard stay put.
@@ -452,7 +452,7 @@
 	     second tap there would clear it (vremya on PR #213).
 	     Like the ×, it is inside the bar's drag handle, so a tap within
 	     300ms of letting go of a drag is taken as that drag's click and
-	     does nothing ($lib/grip.ts). Every input widget draws one too: it
+	     does nothing (#lib/grip.ts). Every input widget draws one too: it
 	     is the same line in a second place, so its Send runs it. -->
 	{#if $text || $pills.length}
 		<button
@@ -584,7 +584,7 @@
 		cursor: pointer;
 	}
 
-	/* Runs at once, so the double outline ($lib/act.ts). */
+	/* Runs at once, so the double outline (#lib/act.ts). */
 	.send:global([data-act='run']) {
 		border: 3px double var(--accent);
 	}
@@ -775,7 +775,7 @@
 	   and then quickly fade rather than starting to fade immediately". So
 	   400ms at full strength and an ease-in over the rest, which keeps it
 	   near full and drops it at the end. The SHAPE only: the whole is still
-	   GHOST_MS ($lib/bar.ts), which the timers taking it away keep to. */
+	   GHOST_MS (#lib/bar.ts), which the timers taking it away keep to. */
 	@keyframes ghost-fade {
 		0%,
 		40% {
@@ -804,7 +804,7 @@
 	}
 
 	/* No fade for a reader who asked for no motion: it is shown, and the
-	   store's own timer takes it away at the same moment ($lib/bar.ts). */
+	   store's own timer takes it away at the same moment (#lib/bar.ts). */
 	@media (prefers-reduced-motion: reduce) {
 		.ghost,
 		.spent {

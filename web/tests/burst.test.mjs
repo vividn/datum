@@ -241,7 +241,7 @@ describe('a burst of writes in another tab', () => {
 		await withApp(async (first) => {
 			const second = await first.newTab();
 			const seen = await second.spyOnRunner();
-			// The channel the write is announced on ($lib/changes.ts). Counted
+			// The channel the write is announced on (#lib/changes.ts). Counted
 			// from a second handle in this tab, which hears every message the
 			// page's own listener hears and does nothing else with it.
 			await second.page.evaluate(() => {
@@ -284,7 +284,7 @@ describe('a burst of writes in another tab', () => {
 
 			const told = await second.page.evaluate(() => window.__told);
 			// `fields --json` is the widget bar's, run exactly once per
-			// refresh ($lib/layout/engine.ts) — and this tab wrote nothing
+			// refresh (#lib/layout/engine.ts) — and this tab wrote nothing
 			// itself, so each one of them is one external refresh.
 			const refreshes = (await seen()).filter((argv) => argv[0] === 'fields').length;
 			assert.ok(told >= 10, `a burst of ${told} announcements is no burst`);

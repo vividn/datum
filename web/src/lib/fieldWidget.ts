@@ -3,13 +3,13 @@
 // vividn, 2026-10-08: «let's fully combine track/spec widgets into just 1 …
 // make it so that you can switch the field you're editing inside of it more
 // easy and intuitive». So there is ONE widget (`setup`,
-// $lib/layout/FieldWidget.svelte) and one answer to «which field?»:
+// #lib/layout/FieldWidget.svelte) and one answer to «which field?»:
 // `editing`, a store every copy of the widget draws rather than a setting
 // of each — so two copies on one page cannot be on two fields: a chip
 // pressed in one moves the other. Its chips write it, a field pill minted beside it writes it, and
 // `openField` writes it and brings the widget into view — which is what the
 // fields widget's `+`, the commands widget's `track` and `setup`, and the
-// CLI's «which verb?» refusal ($lib/layout/engine.ts) all call. The empty
+// CLI's «which verb?» refusal (#lib/layout/engine.ts) all call. The empty
 // name is a NEW field, with its kind chosen when the door knew one.
 //
 // There is no modal that asks (da-94q1's was the last): a field is made and

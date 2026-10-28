@@ -125,7 +125,7 @@
 		padding: 0.2rem 0.8rem;
 	}
 
-	/* The action runs at once, so the double outline ($lib/act.ts). */
+	/* The action runs at once, so the double outline (#lib/act.ts). */
 	button:global([data-act='run']) {
 		border: 3px double var(--act);
 		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);

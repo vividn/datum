@@ -7,7 +7,7 @@
 // survives a reload, it is what a link carries, and nothing is stored.
 //
 // The name reaches the CLI as its `DATUM_DB`, set at the one seam every
-// command goes through ($lib/run.ts `dbEnv`), and never in argv: argv is what
+// command goes through (#lib/run.ts `dbEnv`), and never in argv: argv is what
 // an entry records as typed (da-7xne1). What a reader sees of it is the
 // page — the title.
 //
@@ -15,7 +15,7 @@
 // layouts live (da-wpgy), and a page that ran the panes against it would be
 // reading its own furniture as data. Layouts are the device's, not the
 // database's: the layout store keeps its explicit `--db _internal`
-// ($lib/layout/store.ts) and is untouched by any of this.
+// (#lib/layout/store.ts) and is untouched by any of this.
 
 import { browser } from '$app/env';
 

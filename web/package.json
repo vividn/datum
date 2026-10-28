@@ -34,5 +34,8 @@
     "aws4fetch": "1.0.20"
   },
   "type": "module",
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
   "packageManager": "pnpm@11.4.0"
 }

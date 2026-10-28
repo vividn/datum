@@ -11,7 +11,7 @@
  * `?db=other` page looked like a command that had already chosen its
  * database, got no `DATUM_DB=other`, and logged the day to `datum`.
  *
- * The one scanner: $lib/run.ts reads it for the page's database, $lib/cli.ts
+ * The one scanner: #lib/run.ts reads it for the page's database, #lib/cli.ts
  * (the worker) for which file to open. `tests/fixtures/db-flag.json` holds it
  * and the CLI's to the same cases.
  */

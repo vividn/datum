@@ -25,8 +25,8 @@
 //
 // `last` is every command run anywhere — a widget-bar press, a command
 // pane's ▶, the bar itself — because every one
-// of them goes through `record` in $lib/replStore.ts, which tells this
-// store. It is what the bar's result area is drawn from ($lib/BarResult
+// of them goes through `record` in #lib/replStore.ts, which tells this
+// store. It is what the bar's result area is drawn from (#lib/BarResult
 // .svelte): the CLI's own documents, or its own lines when it echoed
 // none. Not restored across a reload, unlike the scrollback: a result is
 // about the command just run, and on a fresh page none has been.
@@ -147,7 +147,7 @@ function storedPills(): string | null {
  *
  * `sections` are never stored, because nothing that draws them keeps its
  * state in them: the `hid` pill's are redrawn from its text by the
- * subscriber below, and the cursor's pills are the CURSOR's — `$lib/cursor
+ * subscriber below, and the cursor's pills are the CURSOR's — `#lib/cursor
  * .ts` reconciles them against it on this same load, which is what drops a
  * `time` pill whose cursor did not come back. So bar.ts needs no list of
  * which kinds may be restored; each owner still answers for its own.
@@ -224,7 +224,7 @@ export const removePill = (id: string): void => pills.update((all) => all.filter
  * A press on one section of a pill: the pill becomes that section's `rest`,
  * or goes when it has none (da-ui4i). The producer of the pill says what a
  * section leaves behind; whoever derives the pill follows it from here (the
- * time cursor re-reads its instant off the text, $lib/cursor.ts).
+ * time cursor re-reads its instant off the text, #lib/cursor.ts).
  */
 export const dropSection = (id: string, index: number): void =>
 	pills.update((all) =>
@@ -249,7 +249,7 @@ export const toggleLockPill = (id: string): void =>
 // asking every reader what two of them would mean. Its `text` is the bare
 // field name, the word a command's field positional takes — where
 // that word lands in an argv, and which commands may have it at all, is
-// `fits` and `withPills` ($lib/commands.ts, $lib/selection.ts).
+// `fits` and `withPills` (#lib/commands.ts, #lib/selection.ts).
 //
 // UNLOCKED, because vividn said it behaves like the others: a successful
 // press spends it, so running a command drops the filter (`clearUnlockedPills`).
@@ -279,7 +279,7 @@ export const setFieldPill = (field: string | null, color?: string): void =>
  *
  * A SEPARATE store, not a flag on `pills`: a spent pill is no longer in
  * the argv a press builds and no longer the time cursor's other face
- * ($lib/cursor.ts) — it is a receipt fading beside the ghost of the
+ * (#lib/cursor.ts) — it is a receipt fading beside the ghost of the
  * command it went into. Keeping it out of `pills` is what lets both of
  * those readers stay exactly as they were.
  */
@@ -341,7 +341,7 @@ export function clearLine(): void {
 
 /**
  * The selected entries' hids — the `hid` pill's, and none without one
- * (da-r13j, $lib/selection.ts). Every surface that draws an entry reads it,
+ * (da-r13j, #lib/selection.ts). Every surface that draws an entry reads it,
  * so a selection is shown in tail and on the documents at once.
  */
 export const selected = derived(pills, (all) => {
@@ -350,7 +350,7 @@ export const selected = derived(pills, (all) => {
 });
 
 // A section dropped from the `hid` pill leaves the others as text alone
-// (`hidPill` in $lib/selection.ts): draw them as sections again.
+// (`hidPill` in #lib/selection.ts): draw them as sections again.
 pills.subscribe((all) => {
 	const pill = all.find((p) => p.kind === 'hid' && !p.sections);
 	if (pill) setHids(hidsOf(pill), !!pill.locked);
@@ -375,7 +375,7 @@ function setHids(hids: string[], locked: boolean): void {
  *
  * The MODIFIERS and not the event: a picture's inspect gesture takes
  * shift for itself and hands this the same press with shift off
- * (`inspectMods`, $lib/inspect.ts), and there is nothing else of an event
+ * (`inspectMods`, #lib/inspect.ts), and there is nothing else of an event
  * a selection ever read.
  */
 export function select(

@@ -22,12 +22,12 @@
 	invented here would be a third format rather than the end of the second.
 -->
 <script lang="ts">
-	import CliOutput from '$lib/CliOutput.svelte';
-	import Docs from '$lib/Docs.svelte';
-	import RawLines from '$lib/RawLines.svelte';
-	import { now, stampLabel } from '$lib/clock.js';
-	import { parseEcho } from '$lib/echo.js';
-	import type { Command } from '$lib/replStore.js';
+	import CliOutput from '#lib/CliOutput.svelte';
+	import Docs from '#lib/Docs.svelte';
+	import RawLines from '#lib/RawLines.svelte';
+	import { now, stampLabel } from '#lib/clock.ts';
+	import { parseEcho } from '#lib/echo.ts';
+	import type { Command } from '#lib/replStore.ts';
 
 	let {
 		entry,
@@ -58,7 +58,7 @@
 		cap?: number;
 	} = $props();
 
-	/** A command's documents, when it echoed any ($lib/echo.ts). */
+	/** A command's documents, when it echoed any (#lib/echo.ts). */
 	const docs = $derived(parseEcho(entry.result.stdout));
 	// stdout while there is any: a warning on stderr beside a good answer is
 	// not the answer. With nothing on stdout — an error, a command that only

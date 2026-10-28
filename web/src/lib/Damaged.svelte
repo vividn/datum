@@ -8,7 +8,7 @@
 	image is malformed», `db purge` too, since it is SQLite as well. So this
 	says where the file is, which the error's `/data/…` never could, and
 	offers the two ways out that need nothing else in the app to work: a copy
-	of the raw bytes, and the file's removal ($lib/damaged.ts).
+	of the raw bytes, and the file's removal (#lib/damaged.ts).
 -->
 <script lang="ts">
 	import { act } from './act.js';

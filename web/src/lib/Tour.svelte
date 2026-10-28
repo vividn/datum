@@ -1,5 +1,5 @@
 <!--
-	The first field's tour (da-ii8lo, $lib/tour.ts): the stop in front
+	The first field's tour (da-ii8lo, #lib/tour.ts): the stop in front
 	ringed — a pulse, or a still ring under prefers-reduced-motion — and its
 	sentence beside it. A tap anywhere is the next stop, as «next» is;
 	«skip» and Escape end it. The page under it takes no tap meanwhile, so a
@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { shown, tour } from '$lib/tour.js';
+	import { shown, tour } from '#lib/tour.ts';
 
 	/** Where the stop's element is drawn, read every frame: a pane may still be settling. */
 	let box = $state<DOMRect | null>(null);

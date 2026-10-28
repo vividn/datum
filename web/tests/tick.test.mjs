@@ -2,7 +2,7 @@
 //
 // dayview reads the clock inside the wasm process and draws what it says —
 // the now-line — so run once by its pane it shows the minute it was run in
-// and then stands still. One shared minute clock ($lib/clock.ts) re-runs it
+// and then stands still. One shared minute clock (#lib/clock.ts) re-runs it
 // on each wall-clock minute, and nothing else: the tail is not a view of
 // now and neither is the widget bar.
 //
@@ -31,7 +31,7 @@ after(stopApp);
 const AT = todayAt(15);
 const MINUTE = 60_000;
 const TEN_SECONDS = 10_000;
-/** Long enough for a box to settle ($lib/layout/resizing.ts), short of a minute. */
+/** Long enough for a box to settle (#lib/layout/resizing.ts), short of a minute. */
 const SETTLE = 200;
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 const TODAY = '.band[data-days-ago="0"] svg.svg';
@@ -109,7 +109,7 @@ describe('the minute tick', () => {
 				// Settled first, and SEEN to be settled: a pane still finding
 				// its box re-runs on the box. A held clock does not settle by
 				// itself — the box arrives through a 150ms timer
-				// ($lib/layout/resizing.ts) — so the clock is run out to it,
+				// (#lib/layout/resizing.ts) — so the clock is run out to it,
 				// well short of the minute.
 				await page.clock.runFor(SETTLE);
 				await app.idle();
@@ -219,7 +219,7 @@ describe('the minute tick', () => {
 				);
 				// The tick is not the frame's epoch: a pane whose render does
 				// not depend on now is not re-run, and the widget bar — one
-				// `fields --json` per refresh ($lib/layout/engine.ts) — is not
+				// `fields --json` per refresh (#lib/layout/engine.ts) — is not
 				// rebuilt.
 				assert.equal((await ranOf(seen, 'tail')).length, 0, 'the tail was re-run by the clock');
 				assert.equal((await ranOf(seen, 'fields')).length, 0, 'the widget bar was rebuilt by the clock');
@@ -266,7 +266,7 @@ describe('the minute tick', () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				// A press on the day band sets the time cursor ($lib/cursor.ts)
+				// A press on the day band sets the time cursor (#lib/cursor.ts)
 				// and the nowview is centred on that instant from then on
 				// (`-t`): a picture with no now in it, and so nothing for a
 				// minute to move.

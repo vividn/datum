@@ -1,5 +1,5 @@
 // The double outline is decided in ONE place (da-y0ocz): a button says what
-// its tap does with `use:act={kind}` ($lib/act.ts), the action writes
+// its tap does with `use:act={kind}` (#lib/act.ts), the action writes
 // `data-act`, and the double is drawn on `[data-act='run']` and nowhere
 // else. vividn: «like hooking up a button to do something automatically gives
 // it a double line». This holds the source to it — so a component can no
@@ -77,7 +77,7 @@ describe('the double outline is the action’s alone', () => {
 		assert.ok(uses >= 15, `found only ${uses} use:act`);
 	});
 
-	test('only $lib/act.ts sets the attribute from script', () => {
+	test('only #lib/act.ts sets the attribute from script', () => {
 		const writers = files
 			.filter((file) => file.f !== 'lib/act.ts' && /dataset\.act\b|['"]data-act['"]/.test(file.text))
 			.map((file) => file.f);

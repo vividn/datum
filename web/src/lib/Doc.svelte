@@ -35,7 +35,7 @@
 	are that narrow is Docs.svelte's to say: it is the surface that
 	measures.
 
-	Every string here is datum's own, out of `--show json` ($lib/echo.ts):
+	Every string here is datum's own, out of `--show json` (#lib/echo.ts):
 	the web places them and lets CSS truncate them, and composes none of
 	them (docs/web-conventions.md #6).
 
@@ -54,12 +54,12 @@
 	until it is tapped again.
 -->
 <script lang="ts">
-	import { act } from '$lib/act.js';
-	import type { EchoDoc, InfoSegment } from '$lib/echo.js';
-	import Sheet from '$lib/Sheet.svelte';
-	import { select, selected } from '$lib/bar.js';
-	import { isSelected } from '$lib/selection.js';
-	import { tapped } from '$lib/tap.js';
+	import { act } from '#lib/act.ts';
+	import type { EchoDoc, InfoSegment } from '#lib/echo.ts';
+	import Sheet from '#lib/Sheet.svelte';
+	import { select, selected } from '#lib/bar.ts';
+	import { isSelected } from '#lib/selection.ts';
+	import { tapped } from '#lib/tap.ts';
 
 	interface Props {
 		doc: EchoDoc;

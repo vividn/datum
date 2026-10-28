@@ -124,7 +124,7 @@ const keptRows = (app, edit = '') =>
 		edit
 	);
 
-/** Every day of `before` but today, kept ($lib/heldDays.ts). */
+/** Every day of `before` but today, kept (#lib/heldDays.ts). */
 const allKept = (app, before) =>
 	until(() => keptRows(app), (rows) => rows.length === Object.keys(before).length - 1);
 
@@ -313,7 +313,7 @@ describe('the day strip across a write (da-efxk5)', () => {
 
 // vividn, 2026-10-26: «will the website have easy access to the cache for
 // quick rendering without having to go through the cli?» — «yes». Each
-// finished day's picture is kept in IndexedDB ($lib/heldDays.ts), so a reload
+// finished day's picture is kept in IndexedDB (#lib/heldDays.ts), so a reload
 // draws the earlier days from there and asks the CLI only for today and one
 // `dayview --digests` check. Every dayview argv the page sends its database
 // worker is recorded from the boot on, a reload's included.

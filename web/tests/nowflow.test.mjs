@@ -22,7 +22,7 @@ after(stopApp);
 
 /** Today at 15:00 sharp: a whole minute, so the minute marks fall on known instants. */
 const AT = todayAt(15);
-/** Long enough for a box to settle ($lib/layout/resizing.ts). */
+/** Long enough for a box to settle (#lib/layout/resizing.ts). */
 const SETTLE = 200;
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 

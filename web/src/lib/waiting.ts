@@ -5,7 +5,7 @@
 // behind it. The shell draws at once from the last visit regardless; these
 // are what lets it say what it is waiting for (`Waiting.svelte`) and tell a
 // pane's copy from the last visit when its fresh answer has landed
-// (`Stale.svelte`). Set by $lib/db.ts, from the worker's own messages.
+// (`Stale.svelte`). Set by #lib/db.ts, from the worker's own messages.
 
 import { writable } from 'svelte/store';
 

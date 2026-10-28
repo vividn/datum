@@ -4,7 +4,7 @@
 // be driven and inspected from a prompt the way the CLI is, plus two reads
 // of what got stored. It adds no behaviour: both reads are CLI commands the
 // app already runs, `db backup -` and `tail --json`, and `layouts` is the
-// layout store ($lib/layout/store.ts), itself nothing but CLI commands.
+// layout store (#lib/layout/store.ts), itself nothing but CLI commands.
 //
 // `run`/`runLine` are the page's own path, `engine.press` (da-6918): the
 // command goes through the mounted REPL, is echoed into the scrollback and
@@ -115,7 +115,7 @@ export interface DatumConsole {
 	 * place's next save ran, or null when it is left without one.
 	 */
 	field(field?: string, verb?: Verb | null): Promise<RunResult | null>;
-	/** The backup destinations' kinds ($lib/backups.ts), by name: what a plan's `kind` opens. */
+	/** The backup destinations' kinds (#lib/backups.ts), by name: what a plan's `kind` opens. */
 	backupKinds: Record<string, DestinationKind>;
 	/** `datum help <name>` in the Help place, as a «Learn more» link opens it (da-efruz). */
 	help(name?: string): Promise<void>;

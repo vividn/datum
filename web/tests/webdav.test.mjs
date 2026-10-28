@@ -1,4 +1,4 @@
-// «Backups» to a WebDAV folder (da-bmxbb, $lib/webdav.ts), against a fake
+// «Backups» to a WebDAV folder (da-bmxbb, #lib/webdav.ts), against a fake
 // WebDAV server on another origin (support/webdav.mjs) that does real CORS
 // and checks every request's Basic auth.
 

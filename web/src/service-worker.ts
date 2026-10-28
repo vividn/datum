@@ -5,7 +5,7 @@
 
 import { version } from '$app/env';
 import { assets, immutable } from '$app/manifest';
-import { workerAssets } from '$lib/workerAssets.generated.js';
+import { workerAssets } from '#lib/workerAssets.generated.ts';
 
 const CACHE_NAME = `datum-${version}`;
 

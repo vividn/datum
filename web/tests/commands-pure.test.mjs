@@ -1,6 +1,6 @@
 // The commands widget's rules, in node, with no browser (da-ltux).
 //
-// `$lib/commands.ts` is pure but for its last function, and imports only
+// `#lib/commands.ts` is pure but for its last function, and imports only
 // a type, so node loads it as it is. What is checked here is the part a
 // browser adds nothing to: the order the buttons come in, which verb a
 // line is pending, what that verb leaves showing, what a press under it
@@ -368,7 +368,7 @@ describe('the scroll rule', () => {
 // kind has (da-y2f6's rule, held generally by `tree.test.mjs`). `command`
 // is the id da-zqop freed by renaming the old one-line widget to `custom`.
 describe('the `command` kind', () => {
-	resolveLibAsSource(import.meta.url);
+	resolveLibAsSource();
 
 	test('exists, is pickable, and has a built-in layout of its own', async () => {
 		const { KINDS, PICKABLE, titleOf } = await import('../src/lib/layout/registry.ts');

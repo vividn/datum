@@ -1,9 +1,9 @@
 // The time cursor (da-wnt2): the one instant the page is pointed at.
 //
-// A tap on a drawn day sets it (the `picture` action, $lib/hover.ts) where
+// A tap on a drawn day sets it (the `picture` action, #lib/hover.ts) where
 // it falls on ground or the time axis, or on the entry already selected, or
 // as a long tap or a right click; a tap on a mark selects that entry
-// instead (da-xg1vi, the table at the head of $lib/nowpoint.ts). Then
+// instead (da-xg1vi, the table at the head of #lib/nowpoint.ts). Then
 // every picture draws a dotted line where it falls, the nowview widget
 // centres on it, and the bar holds it as ONE `time` pill — the argv the
 // CLI reads it as, so a line typed after it is logged at it. The pill is
@@ -280,7 +280,7 @@ export const pointed = derived([cursor, minute], ([c]) =>
 
 cursor.subscribe((c) => {
 	// The lanes a press published are the selection's other half, and a
-	// selection CLEARED clears them (da-qu16, $lib/lanes.ts): the pill's
+	// selection CLEARED clears them (da-qu16, #lib/lanes.ts): the pill's
 	// ×, `now →` and the reconciler below are every door out of one, and
 	// all three pass through here. A press that lands at now clears the
 	// selection and still re-orders — which is why the pictures publish

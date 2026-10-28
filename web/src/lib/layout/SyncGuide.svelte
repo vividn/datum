@@ -4,7 +4,7 @@
 	should be made as well to describe how to use it», and the CLI's
 	subcommands in an expandable section at the end, not in the body.
 
-	The Help place draws it ($lib/help.ts `GUIDES`): the welcome's «Syncing
+	The Help place draws it (#lib/help.ts `GUIDES`): the welcome's «Syncing
 	your devices», the Help button on the Sync widget and the widget's own `?`
 	open it. Every control it names is a `b.ui` in the words the widget shows,
 	and `tests/syncguide.test.mjs` walks the widget and finds each one there.
@@ -13,11 +13,11 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { act } from '$lib/act.js';
-	import { ansiSpans } from '$lib/ansi.js';
-	import AnsiText from '$lib/AnsiText.svelte';
-	import { helpArgv } from '$lib/calls.js';
-	import { run } from '$lib/run.js';
+	import { act } from '#lib/act.ts';
+	import { ansiSpans } from '#lib/ansi.ts';
+	import AnsiText from '#lib/AnsiText.svelte';
+	import { helpArgv } from '#lib/calls.ts';
+	import { run } from '#lib/run.ts';
 	import { openPlace } from './shell.js';
 
 	interface Props {

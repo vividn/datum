@@ -1,7 +1,7 @@
 // A field tap when the field has a REQUIRED key (da-chml5). vividn, 09-27:
 // «occur/start/end run at once with a double outline, unless there are
 // required keys only, in which case fill the line and focus it». The rule
-// is `typesKeys` in $lib/commands.ts; the verb under a field PILL, which
+// is `typesKeys` in #lib/commands.ts; the verb under a field PILL, which
 // had it first (da-lxqqz), is `commands.test.mjs`'s.
 //
 // Its own file, as fields-press.test.mjs's budget asks of a new group.

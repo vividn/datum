@@ -3,7 +3,7 @@
 
 	vividn: «Commands widget, which lists all commands. First one is Undo.
 	Then let's have occur, start, end, switch, add, then other commands.»
-	The order and what each press means are `$lib/commands.ts`; this is
+	The order and what each press means are `#lib/commands.ts`; this is
 	the bar that draws them.
 
 	Three kinds of press, and the widget itself runs none of them — it
@@ -20,13 +20,13 @@
 	- a command the loaded pills COMPLETE runs at once too (da-3lxol):
 	  `delete` with an hid selected deletes it. `fires` in commands.ts
 	  decides, and the same answer (`kindOf`) draws the button with a DOUBLE
-	  outline (`use:act`, $lib/act.ts), so what looks as if it fires is
+	  outline (`use:act`, #lib/act.ts), so what looks as if it fires is
 	  what fires. So does `occur`, `start` or `end` under a FIELD pill
 	  (da-lxqqz, `fieldVerb`) — unless the field has a key with no
 	  default and the verb is not `end` (da-o4jaa), when the tap writes `occur <field> ` with the first key's
 	  `key=` (da-31d1d) and opens the keyboard for the keys, and the pill
 	  is spent onto the line.
-	- `Help` (da-vjwid) ARMS the page — `$lib/help.ts`: the next tap on a
+	- `Help` (da-vjwid) ARMS the page — `#lib/help.ts`: the next tap on a
 	  command, a widget or a pill is explained instead of acted on, and a
 	  second press on Help is `datum help`, and the answer opens in a modal.
 	  Armed, its label says so — `? on what`, over how to get the general
@@ -47,7 +47,7 @@
 	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
 	  tap on one fills `db migrate `. `< Back` and Escape return to the list.
 	  `db backup` and `db restore` open the «Backups» place instead
-	  (da-9ow8m, da-ea5q2, $lib/backups.ts) — drawn, as Help is, in a
+	  (da-9ow8m, da-ea5q2, #lib/backups.ts) — drawn, as Help is, in a
 	  SINGLE outline of the accent: they open something, and run nothing.
 	- `Sync` opens the sync PLACE (da-6du3o, `openPlace`): a modal on a
 	  desktop, a tab beside this one on a phone (da-jozgv), rather than drilling into its nineteen subcommands,
@@ -55,7 +55,7 @@
 	- `conflicts` opens its place the same way (da-6cutb), and is RED, with
 	  their count, while `datum conflicts --json` lists any (`conflicts`,
 	  from the pane): it blocks nothing, and goes plain with the last one.
-	- HOLDING a command with flags (da-st2xl, `$lib/hold.ts`) fills it as a
+	- HOLDING a command with flags (da-st2xl, `#lib/hold.ts`) fills it as a
 	  tap does, and the bar becomes `< Back`, Help and its flags
 	  (`flagsOf`). A flag's tap appends it to the line; one that takes a
 	  value (`-t`) opens the keyboard for it, one that does not (`-q`)
@@ -88,7 +88,7 @@
 	flags — outlives the widget (da-ria1a): on a phone a place opens as a
 	root tab and unmounts the tab it left, and coming back must find the bar
 	where the reader left it. So it is kept by `key`, the widget's own, in
-	the session's `inProgress` ($lib/layout/session.ts), which goes with the
+	the session's `inProgress` (#lib/layout/session.ts), which goes with the
 	tab or the widget as a session setting does; Back, Escape and pills that
 	hide the command clear it as they always did, and a reload starts afresh.
 -->
@@ -99,7 +99,7 @@
 	import type { FieldButton } from './fields.js';
 	import ButtonRows from './ButtonRows.svelte';
 	import SectionPages from './SectionPages.svelte';
-	import { advance } from '$lib/keyframes.js';
+	import { advance } from '#lib/keyframes.ts';
 	import {
 		COLUMNS,
 		commandsUnder,

@@ -1,5 +1,5 @@
 // The Sync widget's one reader of the CLI (da-x4t0a): every `datum sync`
-// the widget reads or runs goes through here, built in $lib/calls.ts, so a
+// the widget reads or runs goes through here, built in #lib/calls.ts, so a
 // renamed command (da-aam46's `members` → `chain list`) changes that file
 // and no other.
 //
@@ -9,12 +9,12 @@
 // code it would not take.
 //
 // `sync chain list` goes first: it writes nothing, where `sync status` in a
-// database in no chain would mint an endpoint key (as $lib/sync.ts says of
+// database in no chain would mint an endpoint key (as #lib/sync.ts says of
 // its own read). So only a copy that syncs (`syncs`), which has its key, is
 // asked it.
 //
 // `table` is the rest, and pure: the CLI's rows and the sync worker's
-// broadcast reachability ($lib/sync.ts `syncStates`) into clients × databases.
+// broadcast reachability (#lib/sync.ts `syncStates`) into clients × databases.
 
 import { writable } from 'svelte/store';
 import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, expelArgv, syncStatusArgv } from './calls.js';

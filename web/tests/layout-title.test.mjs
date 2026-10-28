@@ -23,7 +23,7 @@
 //     own menu; a right click on the pane's CONTENT does neither, because
 //     that is where a reader selects and copies text.
 //   - a long press by a FINGER does what the right click does, over real
-//     milliseconds — the gesture is a timer ($lib/hold.ts), so a
+//     milliseconds — the gesture is a timer (#lib/hold.ts), so a
 //     synthesised pair would be a test of the test.
 //   - a pane whose widget declares no options has NO title menu in normal
 //     mode (`custom`, `aliases` — da-z8klv), and the hold works there in
@@ -240,7 +240,7 @@ describe('the hold on the widget title', () => {
 				await longPress(page, titleBox(page, 'repl'), chooser(page));
 				assert.match(await chooser(page).innerText(), /Change Widget/);
 				// The press that held is not also the press that opens the
-				// title's own menu ($lib/hold.ts swallows the click behind it).
+				// title's own menu (#lib/hold.ts swallows the click behind it).
 				assert.equal(await page.locator('[role="menu"]').count(), 0, 'the hold also opened the title’s menu');
 			},
 			{

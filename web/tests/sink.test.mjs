@@ -1,6 +1,6 @@
 // What a process writes, in node, with no browser.
 //
-// `Sink` ($lib/wasiFs.ts) is what the CLI's stdout and stderr are, and it
+// `Sink` (#lib/wasiFs.ts) is what the CLI's stdout and stderr are, and it
 // replaced the shim's `File` behind an `OpenFile` — which reallocated the
 // whole stream on every write that extended it, so a 13.6 MB `db backup -`
 // (20k entries) took 6.1 s in chromium where it now takes 1.3 s (da-0lxu).

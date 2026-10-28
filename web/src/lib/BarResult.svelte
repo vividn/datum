@@ -4,8 +4,8 @@
 
 	Two shapes, and the first is the one the bar is for:
 
-	- A command with an action echo (`--show json`, $lib/echo.js) is drawn
-	  as SECTIONS, one per document ($lib/Docs.svelte).
+	- A command with an action echo (`--show json`, #lib/echo.ts) is drawn
+	  as SECTIONS, one per document (#lib/Docs.svelte).
 	- A command with none — a `tail` table, `stats`, an error — shows its
 	  own output: whole while it fits in four lines, otherwise the LAST
 	  four. vividn: "If it fits in 3-4 lines, then just display, otherwise …
@@ -24,10 +24,10 @@
 	printed a long answer.
 -->
 <script lang="ts">
-	import Docs from '$lib/Docs.svelte';
-	import RawLines from '$lib/RawLines.svelte';
-	import { parseEcho } from '$lib/echo.js';
-	import type { RunResult } from '$lib/run.js';
+	import Docs from '#lib/Docs.svelte';
+	import RawLines from '#lib/RawLines.svelte';
+	import { parseEcho } from '#lib/echo.ts';
+	import type { RunResult } from '#lib/run.ts';
 
 	let { result = null }: { result?: RunResult | null } = $props();
 

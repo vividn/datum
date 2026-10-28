@@ -1,7 +1,7 @@
 <!--
 	A modal sheet, as the `+N` chips open one (da-f4mw).
 
-	A real `<dialog>`, as $lib/Confirm.svelte uses: the browser's own modal
+	A real `<dialog>`, as #lib/Confirm.svelte uses: the browser's own modal
 	brings Escape, the backdrop and the focus trap with it, and none of
 	them is a keyboard handler written here a second time. A tap on the
 	backdrop closes it too, which the browser's modal does not: the tap
@@ -10,8 +10,8 @@
 	dragged out of the body does not close the sheet under it.
 
 	Two chips open one — the documents' `+N`, which lists every document
-	($lib/Docs.svelte), and a document's own, which lists every key of its
-	data ($lib/Doc.svelte) — and the second reads as the first because it
+	(#lib/Docs.svelte), and a document's own, which lists every key of its
+	data (#lib/Doc.svelte) — and the second reads as the first because it
 	is the same sheet and not a second one built to look like it.
 
 	A PLACE on a desktop opens in one too (da-jozgv, layout/PlaceModal.svelte):

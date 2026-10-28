@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { unjoinWords } = await import('../src/lib/syncView.ts');
 
 const none = { created: 0, edited: 0, deleted: 0, first: null, last: null };

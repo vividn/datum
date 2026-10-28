@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { shellJoin, shellSplit } = await import('../src/lib/shellSplit.ts');
 const { fieldNameOk, suggestFieldName } = await import('../src/lib/fieldName.ts');
 

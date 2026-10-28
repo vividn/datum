@@ -71,7 +71,7 @@ const desktop = async (fn) => {
  *
  * Two things a test leaves are NOT put back, and they decide the order of
  * the tests that care: the log stays MOUNTED once a drag has pulled the bar
- * (`armed`, $lib/log.ts), and the scrollback keeps every command. So the
+ * (`armed`, #lib/log.ts), and the scrollback keeps every command. So the
  * test that a tap mounts no log comes before any drag, and the test that
  * reads the log's rows before any other that submits. A describe with one
  * test on a phone still opens its own.
@@ -120,7 +120,7 @@ const where = (page) =>
 /**
  * Wait until the bar has stopped moving.
  *
- * It settles on an animation frame curve ($lib/log.ts) rather than by a
+ * It settles on an animation frame curve (#lib/log.ts) rather than by a
  * scroll, so what a test waits for is the number holding still — two reads
  * the same, a few frames apart: the output's height, the log's, and where
  * the log's rows are scrolled to.
@@ -149,10 +149,10 @@ const settled = (page) =>
 /**
  * The bar shut: a drag with no speed in it, down further than any list is
  * long. A drag down mounts no log: the log mounts the first time the bar
- * opens past the notch ($lib/log.ts's `armed`).
+ * opens past the notch (#lib/log.ts's `armed`).
  *
  * And the click a drag ends in, spent: the drag before this — a test's, or
- * the one above — may have armed the 300ms swallow ($lib/grip.ts), which
+ * the one above — may have armed the 300ms swallow (#lib/grip.ts), which
  * would otherwise take the next test's first click. On the bar's own box,
  * which nothing listens to, so a click the swallow lets through does nothing.
  */
@@ -380,7 +380,7 @@ describe('the bar is the way in', () => {
 			);
 
 			// A notch per wheel — from a desktop's open output, one opens the log.
-			// Sent past `INERTIA_MS` (150, $lib/grip.ts) after the pane's, or
+			// Sent past `INERTIA_MS` (150, #lib/grip.ts) after the pane's, or
 			// the bar takes it for that wheel's inertia: a gap between the
 			// events' timestamps, stamped as they are sent, so Node's clock.
 			await page.waitForTimeout(200);
@@ -583,7 +583,7 @@ describe('a fling keeps going', () => {
 	 * The clock is the point (da-wucn6). `swipe` awaits every CDP round trip,
 	 * and unstamped, each event is timed as the browser receives it — while a
 	 * release reads its speed off the moves of its last 80ms (`WINDOW_MS`,
-	 * $lib/grip.ts). At a runner's pace, some 60ms a move, the moves sit at
+	 * #lib/grip.ts). At a runner's pace, some 60ms a move, the moves sit at
 	 * that window's edge: one round trip over 80ms before the last move left
 	 * it the window's only sample, the lift is where that move was, and the
 	 * release read a speed of exactly 0 — the bar stayed where the finger put

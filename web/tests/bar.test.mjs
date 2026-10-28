@@ -854,7 +854,7 @@ describe('the arrow folds the output, and a drag does too', () => {
 			// Folded, as a reader who dragged it shut has it.
 			await output.waitFor();
 			await foldBar(page);
-			// The drag's click swallow spent ($lib/grip.ts), or it takes the first tap.
+			// The drag's click swallow spent (#lib/grip.ts), or it takes the first tap.
 			await page.locator(BAR).dispatchEvent('click');
 			const seen = await page.evaluate(() => {
 				const el = document.querySelector('.prompt-bar .bar-handle');
@@ -1482,7 +1482,7 @@ describe('the pills ride with the text', () => {
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
 			assert.deepEqual(app.errors, []);
 			// The wall clock: how far into its fade the pill joins is the
-			// time the command took, on `Date` ($lib/bar.ts), which a held
+			// time the command took, on `Date` (#lib/bar.ts), which a held
 			// clock says was none.
 		}, { ...DAY, clock: null });
 	});
@@ -1506,7 +1506,7 @@ describe('the pills ride with the text', () => {
 	});
 });
 
-/** How long the ghost stays, and so a spent pill with it ($lib/bar.ts). */
+/** How long the ghost stays, and so a spent pill with it (#lib/bar.ts). */
 const GHOST_MS = 1000;
 
 /**

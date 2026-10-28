@@ -5,7 +5,7 @@
 	the web interface»; 2026-10-19 (da-rpfws): it is called a «symbol», and
 	it «should pop up rather than push down», so the set is a sheet.
 
-	The set is a curated grid in groups (`GLYPHS` in $lib/track.ts), and a box that takes any one
+	The set is a curated grid in groups (`GLYPHS` in #lib/track.ts), and a box that takes any one
 	character — one, because the CLI takes one (`check_glyph` in its
 	spec.rs). `none` stores nothing and draws the ordinary circle.
 

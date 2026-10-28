@@ -1,4 +1,4 @@
-// «Test connection» for a backup destination ($lib/s3.ts, $lib/webdav.ts):
+// «Test connection» for a backup destination (#lib/s3.ts, #lib/webdav.ts):
 // everything a plan does, done once to a small probe file. Kept free of the
 // app, so node can import it.
 

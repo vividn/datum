@@ -5,7 +5,7 @@
 // and it behaves as one unit, so it will just pull the input section up
 // more." So the bar and the log under it are not two surfaces with two
 // gestures — they are one handle, and this action is what makes them one:
-// `use:grip`, one drag, one number ($lib/log.ts). It is on the bar alone
+// `use:grip`, one drag, one number (#lib/log.ts). It is on the bar alone
 // since the log moved above it and took a terminal's scroll (da-mwp4m).
 //
 // The state below is at MODULE scope and not per node, which is the point:
@@ -123,7 +123,7 @@ function speed(y: number, t: number): number {
 function unpause(): void {
 	if (!settling) return;
 	settling = false;
-	// Where the glide WAS GOING, not "shut" ($lib/log.ts's `aim`): a tap
+	// Where the glide WAS GOING, not "shut" (#lib/log.ts's `aim`): a tap
 	// that lands inside a settle is not a request to undo what started it.
 	resume();
 }
@@ -180,7 +180,7 @@ function onPointerMove(event: PointerEvent): void {
 	);
 	// ONE NUMBER, THREE PHASES. Nothing here knows which phase it is in:
 	// past the ceiling the same pull becomes the list scrolling, and back
-	// at the list's top the same pull becomes the bar closing ($lib/log.ts).
+	// at the list's top the same pull becomes the bar closing (#lib/log.ts).
 	moveTo(from.open + moved);
 }
 
@@ -194,7 +194,7 @@ function onPointerUp(event: PointerEvent): void {
 	swallowUntil = event.timeStamp + SWALLOW_MS;
 	swallowOn = from0.node;
 	// Where it comes to rest is `settle`'s to say, and how fast the finger
-	// was going when it let go is half of that answer ($lib/detent.ts).
+	// was going when it let go is half of that answer (#lib/detent.ts).
 	settle(from0.y - event.clientY > 0, speed(event.clientY, event.timeStamp));
 }
 
@@ -216,7 +216,7 @@ function onPointerCancel(): void {
 	// leave the bar somewhere it is ALLOWED to be, and it decided nothing —
 	// so it settles as a release with no speed in it, heading down: back to
 	// the row from above the notch, and shut from below it — unless it is
-	// within a detent of the notch or the ceiling (da-0b2vy, $lib/detent.ts).
+	// within a detent of the notch or the ceiling (da-0b2vy, #lib/detent.ts).
 	settle(false);
 }
 

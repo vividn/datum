@@ -3,7 +3,7 @@
 // general help. The answer lands in the Help PLACE (da-z955f): a Help pane
 // in view, else the place `openPlace` hosts — a transient tab beside this
 // one on a phone, which back closes, a modal on a desktop (da-jozgv).
-// `$lib/help.ts`, `layout/HelpWidget.svelte`.
+// `#lib/help.ts`, `layout/HelpWidget.svelte`.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';

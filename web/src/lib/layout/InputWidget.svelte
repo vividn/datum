@@ -6,7 +6,7 @@
 	the input box somewhere else on desktop, it's too invisible there. But
 	keep the fixed input bar on the bottom still for now.» So this is about
 	PLACEMENT and nothing else — it is not a second command line. The box is
-	`text` in $lib/bar.ts and the Enter is `submitLine`, the very stores and
+	`text` in #lib/bar.ts and the Enter is `submitLine`, the very stores and
 	function the bottom bar's prompt uses (Prompt.svelte): type here and the
 	bar shows it, type there and this shows it, and a line runs once from
 	whichever box the reader pressed Enter in.
@@ -31,9 +31,9 @@
 	Enter, only where the rows sit.
 -->
 <script lang="ts">
-	import BarResult from '$lib/BarResult.svelte';
-	import { last } from '$lib/bar.js';
-	import Prompt from '$lib/Prompt.svelte';
+	import BarResult from '#lib/BarResult.svelte';
+	import { last } from '#lib/bar.ts';
+	import Prompt from '#lib/Prompt.svelte';
 
 	/** The prompt row on top, the receipt under it. */
 	let { reversed = false }: { reversed?: boolean } = $props();

@@ -2,7 +2,7 @@
 	/*
 	 * One run of CLI output, painted.
 	 *
-	 * `$lib/ansi.ts` decides what a span IS; this decides how it LOOKS, and
+	 * `#lib/ansi.ts` decides what a span IS; this decides how it LOOKS, and
 	 * it is the only place that does. The loop used to be written out three
 	 * times — `CliOutput` once, `TailTable` twice — and the copies had
 	 * already drifted apart in which attributes they set: the tail's header

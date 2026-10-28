@@ -18,7 +18,7 @@
 	where it is made.
 -->
 <script lang="ts">
-	import { stripAnsi } from '$lib/ansi.js';
+	import { stripAnsi } from '#lib/ansi.ts';
 
 	interface Props {
 		/** What the command printed: stdout while there is any, else stderr. */

@@ -15,7 +15,7 @@
 
 import type { Layout, Pane, Split, Tab } from './types.js';
 import { LAYOUT_VERSION } from './types.js';
-import { DEFAULT_LABEL_WIDTH, HOUR_FROM, HOUR_TO } from '$lib/panes.js';
+import { DEFAULT_LABEL_WIDTH, HOUR_FROM, HOUR_TO } from '#lib/panes.ts';
 
 const bar = { edge: 'top', align: 'start' } as const;
 

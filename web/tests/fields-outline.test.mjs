@@ -1,6 +1,6 @@
 // The fields widget's outlines (da-z8z40): a button a tap RUNS is drawn
 // in the DOUBLE outline, and one that opens or fills is not — rule 1 of
-// the design language, derived from `pressKind` in $lib/commands.ts, the
+// the design language, derived from `pressKind` in #lib/commands.ts, the
 // same answer the press itself takes. The pure table is in
 // `commands-pure.test.mjs`; here is what a reader sees, and what a tap on
 // each button then does.

@@ -8,7 +8,7 @@
 	as ONE picture.
 
 	How it is drawn (da-iu9i). Each day is its own picture — one day,
-	no date column, no ruler, no outer margin (`bandArgv` in $lib/panes.ts)
+	no date column, no ruler, no outer margin (`bandArgv` in #lib/panes.ts)
 	— so what comes back is a band exactly as wide as the column and
 	exactly `dayHeight` tall, all of it data area. Only the days a draw
 	lacks are asked, together in one `dayview --pictures` run (da-p5lyt),
@@ -52,7 +52,7 @@
 	(da-8rqb9; it was a double tap until that bead). Every band at once,
 	because they share the x-axis. A band is drawn once, for the whole day at
 	the band's width, and a window is that picture shown through the band:
-	one offset-and-scale (`windowMap` in $lib/panes.ts) puts the hours in
+	one offset-and-scale (`windowMap` in #lib/panes.ts) puts the hours in
 	it, and the strip's own gridlines and ruler are drawn from the same map.
 	What the map stretches is TIME, so it is undone on every mark that is
 	not a duration (da-dqbso, vividn: «occur dots (and lettering, icons,
@@ -91,7 +91,7 @@
 	distance from the BOTTOM, which adding days above cannot change.
 
 	A BAND IS A PLACE YOU POINT INTO TOO (da-ku7y). The nowview's
-	recogniser is reused whole (`$lib/nowpoint.ts`) rather than written a
+	recogniser is reused whole (`#lib/nowpoint.ts`) rather than written a
 	second time, and this is the table it runs here — a band lies over a
 	stack that scrolls, inside a pane that may swipe between tabs, so what
 	belongs to whom is written down before the code:
@@ -125,8 +125,8 @@
 	pass the swipe to the container … long tap and drag → select a time
 	period … swiping left/right must not select time», and «for quickly
 	selecting a time, a user can touch in the time axis». The machine is
-	$lib/nowpoint.ts; a tap and a right click are the `picture` action's
-	($lib/hover.ts), because every drawn picture has it.
+	#lib/nowpoint.ts; a tap and a right click are the `picture` action's
+	(#lib/hover.ts), because every drawn picture has it.
 
 	The 400ms does not COMMIT (da-pzzoz): a still long press is a time and
 	only a travelling one is a range. `.hold-mark` — a ring closing over
@@ -138,7 +138,7 @@
 	still changes tabs. The bands say so themselves with `data-pans="x"`,
 	and `data-pan-stop` names the ends the window is at.
 
-	A range made here is the page's one selection ($lib/cursor.ts), marked
+	A range made here is the page's one selection (#lib/cursor.ts), marked
 	`from: 'daystrip'`, which is how it comes to spell itself
 	`start_time=09:00 end_time=10:30` rather than `-t` and `dur=`: a range
 	on a day is long and is read as two clock times, and the two words on
@@ -148,7 +148,7 @@
 	which a drag along an 85px band mostly does — keeps selecting on its
 	own day, at the hours it crossed. Dragged off either END of the band
 	it stops at that day's midnight, which is `timeAt`'s own clamp
-	($lib/hover.ts) and not a rule of this file's. The nowview draws the
+	(#lib/hover.ts) and not a rule of this file's. The nowview draws the
 	range, and the strip draws the nowview's, because `drawCursor` draws
 	the one selection on every picture; neither re-spells the other's
 	pills.
@@ -183,7 +183,7 @@
 	A PAN NEVER SELECTS AND NEVER LABELS (da-xg1vi). A press that traveled
 	— the stack's scroll, a pan of the hours, a pinch — selects nothing
 	with its click and shows no tooltip; a finger's label waits for its
-	lift (`pressTraveled`, $lib/inspect.ts, which every picture asks, the
+	lift (`pressTraveled`, #lib/inspect.ts, which every picture asks, the
 	nowview's too). What selects is what the tree above says: a tap, a
 	long tap, a long tap's drag, the ruler.
 
@@ -711,7 +711,7 @@
 	let geometry: Geometry | null = $state.raw(was?.geometry ?? null);
 
 	/**
-	 * This database's pictures kept past a reload ($lib/heldDays.ts,
+	 * This database's pictures kept past a reload (#lib/heldDays.ts,
 	 * da-crq76), once read: the first draw waits for them, so a day kept is
 	 * not asked for.
 	 */
@@ -789,7 +789,7 @@
 		refreshVisible();
 	}
 
-	// The minute turned (da-r61i, `$lib/clock.ts`): today's band is the one
+	// The minute turned (da-r61i, `#lib/clock.ts`): today's band is the one
 	// picture in the stack with a now in it, so the tick asks for that one
 	// and for the geometry, and for nothing else — two processes a minute,
 	// whatever the depth of the stack. The days above today are finished
@@ -1558,7 +1558,7 @@
 
 	// ── pointing into a band: a range, or a pan (da-ku7y) ──────────────
 	//
-	// The recogniser is the nowview's, whole (`$lib/nowpoint.ts`); the
+	// The recogniser is the nowview's, whole (`#lib/nowpoint.ts`); the
 	// table it runs here is in this file's header. What is the strip's own
 	// is the window's ENDS — a pan pushing past one is the pane's swipe —
 	// and the vertical guard, the stack's scroll being a real gesture a
@@ -1582,7 +1582,7 @@
 	/**
 	 * The DAY the press went down in — the picture's own group, whose
 	 * `data-from` / `data-to` every instant of this gesture is read
-	 * against (`timeAt`, $lib/hover.ts).
+	 * against (`timeAt`, #lib/hover.ts).
 	 *
 	 * Which is the whole of «a range is one day's»: held for the length of
 	 * the gesture, so wherever the finger goes it is asking THIS day what
@@ -1680,7 +1680,7 @@
 		if (!a || !b) return;
 		// Both ENDS to the minute before the length is taken, because the
 		// length is what the start pill is read back from (`startOf`,
-		// $lib/cursor.ts) and a length rounded on its own disagrees with
+		// #lib/cursor.ts) and a length rounded on its own disagrees with
 		// them: 08:59:43 to 10:30:22 is 90.6 minutes, and «10:30 less 91»
 		// is an 08:59 pill over a band the reader dropped on 09:00.
 		const [from, to] = +a <= +b ? [onTheMinute(a), onTheMinute(b)] : [onTheMinute(b), onTheMinute(a)];
@@ -1731,7 +1731,7 @@
 	/**
 	 * The end of a one-pointer gesture. A press that committed to nothing
 	 * is left alone: it is the CLICK the `picture` action takes — the entry
-	 * under it, or the time where there is none ($lib/hover.ts).
+	 * under it, or the time where there is none (#lib/hover.ts).
 	 *
 	 * Except a STILL LONG TAP, which is a TIME wherever it lands, a mark
 	 * included (da-xg1vi, vividn: «long tap / right click → select a
@@ -1768,7 +1768,7 @@
 	 * the edge it names and the pair can never collide. A selection with no
 	 * length is one pill, and that one IS centred on its line.
 	 *
-	 * Read off the DRAWN marks (`drawCursor`, $lib/hover.ts), so a pill and
+	 * Read off the DRAWN marks (`drawCursor`, #lib/hover.ts), so a pill and
 	 * the mark under it cannot disagree by a pixel. Only one band draws them
 	 * — the one whose day holds the instant — whichever day of the stack the
 	 * press fell in.

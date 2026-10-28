@@ -68,7 +68,7 @@ const shared = Object.fromEntries(
  * And ONE APP per width the tail and the shell are held to (da-3b8vn),
  * 1280's being the first screen's. Per WIDTH, not one app resized to each:
  * `main` is the phone tree or the desktop tree by the width it FIRST LOADED
- * at ($lib/layout/defaults.ts), so a desktop narrowed to 360px is a desktop
+ * at (#lib/layout/defaults.ts), so a desktop narrowed to 360px is a desktop
  * tree at 360px — not what a phone opens. The tail's taller screen is the
  * same width, and so the same tree, resized in height alone.
  */
@@ -120,7 +120,7 @@ const logADay = (app) => seedLines(app, A_DAY);
 /**
  * Bring a pane to the front, where it is a tab.
  *
- * The phone's default layout ($lib/layout/defaults.ts) puts nowview
+ * The phone's default layout (#lib/layout/defaults.ts) puts nowview
  * behind tail as two tabs of one pane, so a phone measures nowview by
  * showing it first. On a desktop there is no such tab and this is a
  * no-op. A pane's title is its `data-title` (the h2 with one tab, the

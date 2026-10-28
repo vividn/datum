@@ -2,7 +2,7 @@
 // tracked field shaped by its kind and filled by what it is now, the
 // untracked ones dim after them.
 //
-// The logic is pure (`$lib/fields.ts`) and node loads it as it is; the
+// The logic is pure (`#lib/fields.ts`) and node loads it as it is; the
 // rest is the built app, driven through the bottom bar's prompt — the way
 // a person types — and asserted as computed colours, radii and roles,
 // never as "different from before".
@@ -254,7 +254,7 @@ describe('the logic', () => {
 	});
 
 	// What a new field is declared WITH is the field form's (da-94q1):
-	// `declareArgv` in $lib/track.ts, held to the CLI in tests/track.test.mjs.
+	// `declareArgv` in #lib/track.ts, held to the CLI in tests/track.test.mjs.
 });
 
 /** What the widget's entry for `field` looks like, as computed. */

@@ -47,7 +47,7 @@
 
 		So every colour below down to `--ink-bright` is ONE hue — they were
 		all hue 240, the page's blue, already — and only that hue moves:
-		`hueOf` in $lib/database.ts derives it from the database's name and
+		`hueOf` in #lib/database.ts derives it from the database's name and
 		the shell writes it here (routes/+layout.svelte). Each keeps the
 		saturation and lightness it had, which is why `datum`, at 240, is
 		today's palette to the byte (#0a0a1a … #adadff).
@@ -108,7 +108,7 @@
 
 /* A tap that OPENS a modal, a sheet or a confirm wears a trailing chevron
    (da-vteda, rule 22): drawn here and nowhere else, on the kind `use:act`
-   writes ($lib/act.ts). `/ ''` keeps it out of the button's accessible
+   writes (#lib/act.ts). `/ ''` keeps it out of the button's accessible
    name, which says what the button is and not where it leads.
    A `+` face wears none (da-pmmgm): the `+` already says something
    opens to add to, and vividn found `+›` «rather ugly». The root bar's and

@@ -772,7 +772,7 @@ describe('the bottom bar', () => {
 
 	// REFUSED rather than never settled: both leave the app in memory, and a
 	// handle that never settles holds the boot for `ACQUIRE_DEADLINE_MS`
-	// (5 s, $lib/cli.ts) first. That path is storage.test.mjs's (`NEVER`);
+	// (5 s, #lib/cli.ts) first. That path is storage.test.mjs's (`NEVER`);
 	// what this test reads is the bar once memory is where the rows are.
 	test('memory-only storage turns the bar orange, with the storage sentence as its title', async () => {
 		await withApp(

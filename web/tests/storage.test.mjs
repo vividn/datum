@@ -382,7 +382,7 @@ describe('two tabs', () => {
 // Counted, not timed: the open is the cost, so the tests count opens at the
 // platform and read `ms.tries` back off the seam.
 
-/** The cap in $lib/cli.ts — `BURST_HOLD_MS`, mirrored here. */
+/** The cap in #lib/cli.ts — `BURST_HOLD_MS`, mirrored here. */
 const HOLD_MS = 250;
 
 /**
@@ -640,7 +640,7 @@ describe('asking the browser to keep it', () => {
 	/**
 	 * The describe's app in a session that has asked nothing, where `persist()`
 	 * answers `answer`. A session that HAS asked is over, and a reload is the
-	 * next: `asked` is the page's own, once per session ($lib/storageState.ts).
+	 * next: `asked` is the page's own, once per session (#lib/storageState.ts).
 	 */
 	const session = (fn, answer) =>
 		alone(async (app) => {

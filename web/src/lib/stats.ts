@@ -8,7 +8,7 @@
 // field selector in there, and just show general stats across all fields
 // until a field filter is applied via another widget"). A bare `stats` is
 // the whole database — every field, ranked by the time it was tracked —
-// and the FIELD PILL another widget mints ($lib/bar.ts) is the only thing
+// and the FIELD PILL another widget mints (#lib/bar.ts) is the only thing
 // that narrows it. So the argv takes the field as an argument rather than
 // reading it out of the settings: what the widget shows is the reader's
 // filter, not a selection of its own, and there is nothing left to save.

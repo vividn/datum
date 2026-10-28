@@ -1,4 +1,4 @@
-// SigV4 for the S3 destination ($lib/s3.ts, da-pstzw), against AWS's own
+// SigV4 for the S3 destination (#lib/s3.ts, da-pstzw), against AWS's own
 // published S3 examples: «Examples of how to calculate an Authorization
 // header» in the S3 API reference (sig-v4-header-based-auth), whose key is
 // AKIAIOSFODNN7EXAMPLE and whose bucket is `examplebucket`. The signature
@@ -8,7 +8,7 @@ import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { sign, corsRules } = await import('../src/lib/s3.ts');
 
 const KEY = { key: 'AKIAIOSFODNN7EXAMPLE', secret: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', region: 'us-east-1' };

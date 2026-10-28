@@ -32,13 +32,13 @@ export type Press =
 	| 'verb'
 	/** Put `<name> ` on the command line; there is nothing to pend. */
 	| 'fill'
-	/** Arm the page: the next tap is explained, not acted on ($lib/help.ts). */
+	/** Arm the page: the next tap is explained, not acted on (#lib/help.ts). */
 	| 'help'
 	/** Leave a command's subcommands or flags for the whole list (da-803mk). */
 	| 'back'
 	/** Append the flag to the line (da-st2xl). */
 	| 'flag'
-	/** Open the «Backups» place ($lib/backups.ts, da-9ow8m, da-ea5q2): `db backup`, and `db restore` at its list. */
+	/** Open the «Backups» place (#lib/backups.ts, da-9ow8m, da-ea5q2): `db backup`, and `db restore` at its list. */
 	| 'backups'
 	/** Open the command's PLACE, a modal on a desktop and a tab on a phone (`openPlace`, da-6du3o, da-jozgv): `sync`, `conflicts`. */
 	| 'place';
@@ -104,7 +104,7 @@ const fills = (section: Section, names: string[]): CommandButton[] =>
  * cursor should go automatically to the end after all the pills when any
  * command requiring typing is clicked since these pills depend on
  * positionality»). Left loaded, the pill would lose the field slot to the
- * first word typed (`fieldSlotOpen`, $lib/selection.ts) and Enter would
+ * first word typed (`fieldSlotOpen`, #lib/selection.ts) and Enter would
  * log a field called `too`, which is why `note` was off this list.
  */
 export const COMMANDS: CommandButton[] = [
@@ -176,7 +176,7 @@ export const ICONS: Record<string, string> = {
  *
  * The FIRST WORD, whole: a tap on `occur` puts `occur ` in the box and a
  * person typing the same word reaches the same state, because both are
- * read back off the one buffer ($lib/bar.ts's `text`) rather than from a
+ * read back off the one buffer (#lib/bar.ts's `text`) rather than from a
  * second store a tap would have to remember to set.
  */
 export function pendingVerb(line: string): Verb | null {
@@ -228,7 +228,7 @@ export const fieldsUnder = (buttons: FieldButton[], verb: Verb | null): FieldBut
  * Does the bar hold a DURATION — a length waiting to be spent (da-qu16)?
  *
  * The pill a RANGE carries, whichever view made it (`SPAN_ID` in
- * $lib/cursor.ts): `dur=25m` from the nowview, `start_time=09:00` from the
+ * #lib/cursor.ts): `dur=25m` from the nowview, `start_time=09:00` from the
  * day strip (da-ku7y). The two spellings are one pill of one KIND, so this
  * needs no clause for the second — which is what asking the kind rather
  * than reading the text buys.
@@ -357,7 +357,7 @@ export interface Takes {
 	 * The slot and not a flag, because a field pill's word has to land IN
 	 * it: the field is a line's first positional, so a field appended to an argv that
 	 * already carries one is read as that field's STATE — silently, as data
-	 * (`fieldSlotOpen` in $lib/selection.ts is the other half of this).
+	 * (`fieldSlotOpen` in #lib/selection.ts is the other half of this).
 	 */
 	field: false | 1 | 2;
 	/**

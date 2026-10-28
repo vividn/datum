@@ -17,7 +17,7 @@
 // scrollback carries the same documents the bar does, and a
 // multi-document result gets the same treatment in both.
 //
-// The web's own flags (`--width`, $lib/panes.ts `fitArgv`) are NOT part of
+// The web's own flags (`--width`, #lib/panes.ts `fitArgv`) are NOT part of
 // what a press teaches: the scrollback echoes the argv the caller asked
 // for, not the one the runner received (Repl.svelte, engine.press).
 
@@ -139,7 +139,7 @@ const SHOW_JSON = 'DATUM_SHOW=json';
 /**
  * The command word an argv runs, past the global flags in front of it.
  *
- * `--db _internal tail` is a `tail` ($lib/layout/store.ts runs that shape),
+ * `--db _internal tail` is a `tail` (#lib/layout/store.ts runs that shape),
  * and a `-` on its own is `db backup`'s stdout argument, not a flag.
  */
 function commandOf(argv: string[]): string | undefined {

@@ -36,7 +36,7 @@
 	ON A PAGE THAT IS THE CLI WIDGET ALONE (`/cli`, `/repl`) there is no
 	output section: vividn, 2026-10-27, «the output bar is then completely
 	gone on this full screen widget, since it basically becomes the output
-	section» (`outputless`, $lib/log.ts).
+	section» (`outputless`, #lib/log.ts).
 
 	Both are `--input-height` / `--output-height`, declared together on the
 	shell (routes/+layout.svelte) because the dashboard's own height is the
@@ -45,30 +45,30 @@
 
 	THE OUTPUT FOLDS AWAY, and the GESTURE is what folds it. Every screen
 	starts open, and after that it is whatever this device last chose
-	($lib/log.ts). Each state's height is fixed, so the
+	(#lib/log.ts). Each state's height is fixed, so the
 	dashboard reflows when a PERSON moves the bar and never because a command
 	answered something long.
 
 	THREE STATES, AND A HANDLE (da-0b2vy): CLOSED, the SINGLE ROW, and
 	FULLSCREEN, where the history fills the page one command a line and the
-	strip gives way to it ($lib/log.ts). vividn, 2026-10-27: «the top of the
+	strip gives way to it (#lib/log.ts). vividn, 2026-10-27: «the top of the
 	output bar should show a very clear handle toggle. Clicking or swiping up
 	on this makes it full screen». The handle rides the top of whatever is
 	open — over the input when closed, over the strip, at the top of the page
 	full — and a tap on it goes closed → row → full → row; a drag on it, or
-	anywhere on the bar, goes a state the way it went ($lib/detent.ts).
+	anywhere on the bar, goes a state the way it went (#lib/detent.ts).
 
 	FOLDED, A COMMAND STILL ANSWERS: its ACTION words — one per document,
 	in the CLI's order and in the colour a document draws its action in —
 	stand at the right of the input row and fade over `ACTION_MS`
-	($lib/bar.ts). A failed command puts one red `ERROR` there instead,
+	(#lib/bar.ts). A failed command puts one red `ERROR` there instead,
 	for `ERROR_MS`, and a tap on it unfolds the output onto the error text.
 	Nothing unfolds by itself.
 
 	THE LOG IS REACHED THROUGH THE BAR. How far open the bar is, is ONE
-	number of pixels ($lib/log.ts has the arithmetic and the notch); the
+	number of pixels (#lib/log.ts has the arithmetic and the notch); the
 	page itself never scrolls. The two gestures that move that number — a
-	drag and a wheel — are `use:grip` ($lib/grip.ts), on this bar; the
+	drag and a wheel — are `use:grip` (#lib/grip.ts), on this bar; the
 	log's rows scroll as a terminal's do.
 
 	Escape comes back too. Entering the log from the keyboard is not built:
@@ -93,20 +93,20 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import Brand from '$lib/Brand.svelte';
-	import ReplEntry from '$lib/ReplEntry.svelte';
-	import { repl, type Command } from '$lib/replStore.js';
-	import { parseEcho } from '$lib/echo.js';
-	import { ACTION_MS, ERROR_MS, commandsOpen, focusLine, marks, peel, pills, prefill, text } from '$lib/bar.js';
-	import CommandPane from '$lib/layout/CommandPane.svelte';
-	import { epoch } from '$lib/layout/engine.js';
-	import { clockSecondsLabel, now } from '$lib/clock.js';
-	import { closeLog, full, inLog, openOutput, output, outputless, pressHandle, shown } from '$lib/log.js';
-	import { layout } from '$lib/layout/current.js';
-	import { isWidget } from '$lib/layout/types.js';
-	import { grip } from '$lib/grip.js';
-	import Prompt from '$lib/Prompt.svelte';
-	import { isDegraded, storage, storageSentence } from '$lib/storageState.js';
+	import Brand from '#lib/Brand.svelte';
+	import ReplEntry from '#lib/ReplEntry.svelte';
+	import { repl, type Command } from '#lib/replStore.ts';
+	import { parseEcho } from '#lib/echo.ts';
+	import { ACTION_MS, ERROR_MS, commandsOpen, focusLine, marks, peel, pills, prefill, text } from '#lib/bar.ts';
+	import CommandPane from '#lib/layout/CommandPane.svelte';
+	import { epoch } from '#lib/layout/engine.ts';
+	import { clockSecondsLabel, now } from '#lib/clock.ts';
+	import { closeLog, full, inLog, openOutput, output, outputless, pressHandle, shown } from '#lib/log.ts';
+	import { layout } from '#lib/layout/current.ts';
+	import { isWidget } from '#lib/layout/types.ts';
+	import { grip } from '#lib/grip.ts';
+	import Prompt from '#lib/Prompt.svelte';
+	import { isDegraded, storage, storageSentence } from '#lib/storageState.ts';
 
 	let field: HTMLElement;
 
@@ -285,7 +285,7 @@
 	 *      command's subcommands (CommandsWidget);
 	 *   4. the log, here;
 	 *   5. layout mode asks how to leave it (RootBar.svelte, da-vvcxc);
-	 *   6. LAST, the input peels one layer (`peel` in $lib/bar.ts).
+	 *   6. LAST, the input peels one layer (`peel` in #lib/bar.ts).
 	 * The window's listeners run in mount order, not in this one, so the
 	 * last two wait for the dispatch to finish and read what it left —
 	 * and the peel takes only the line the key was pressed on, never one
@@ -323,7 +323,7 @@
 <!-- `grip` is the DRAG, and a drag has no keyboard equivalent to offer:
      everything it reaches — the box, the mark, `close history`, Escape — is
      a control or a key of its own. The same action is on the log
-     ($lib/BarLog.svelte): one handle, one gesture, one number. -->
+     (#lib/BarLog.svelte): one handle, one gesture, one number. -->
 <footer
 	class="prompt-bar"
 	class:alarm={degraded}
@@ -332,7 +332,7 @@
 >
 	{#if $shown > 0}
 		<!-- It OPENS: its height is the first slice of how far the bar is
-		     pulled ($lib/log.ts), so a drag grows it smoothly and the notch
+		     pulled (#lib/log.ts), so a drag grows it smoothly and the notch
 		     is where it has finished. Clipped while it is part-way, from the
 		     top: what shows first is the foot of the row, next to the input. -->
 		<div class="section output">
@@ -406,7 +406,7 @@
 			<!-- Folded, this is the whole of what a command says. Keyed on the
 			     object so a second command restarts the fade rather than joining
 			     the first one's; the store's own timer takes it away at the
-			     moment the fade ends ($lib/bar.ts). Not on a page that is the
+			     moment the fade ends (#lib/bar.ts). Not on a page that is the
 			     CLI alone: the widget says it there, and ERROR has no output
 			     to open. -->
 			{#if !$output && !$outputless && $marks}
@@ -436,7 +436,7 @@
 	</div>
 
 	<!-- THE HANDLE (da-0b2vy): a tab on the top edge of whatever is open,
-	     its grip drawn in it. A tap moves the bar a state ($lib/log.ts's
+	     its grip drawn in it. A tap moves the bar a state (#lib/log.ts's
 	     `pressHandle`); a drag on it is the bar's own drag (`use:grip`).
 
 	     Two older asks still hold. vividn, 2026-09-18: "Hitting ^ should not

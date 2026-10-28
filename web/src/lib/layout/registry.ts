@@ -42,11 +42,11 @@
 import type { Component } from 'svelte';
 import type { Tab, WidgetKindMeta, WidgetOption } from './types.js';
 import { nameOf, type Floor } from './tree.js';
-import CliPane from '$lib/CliPane.svelte';
+import CliPane from '#lib/CliPane.svelte';
 import CommandPane from './CommandPane.svelte';
-import CustomPane from '$lib/CustomPane.svelte';
-import DebugPane from '$lib/DebugPane.svelte';
-import Stats from '$lib/Stats.svelte';
+import CustomPane from '#lib/CustomPane.svelte';
+import DebugPane from '#lib/DebugPane.svelte';
+import Stats from '#lib/Stats.svelte';
 import {
 	DEFAULT_LABEL_WIDTH,
 	HOUR_FROM,
@@ -57,11 +57,11 @@ import {
 	NOWVIEW_STEPS,
 	TAIL,
 	todayBox
-} from '$lib/panes.js';
-import { REACH_PX } from '$lib/lanes.js';
+} from '#lib/panes.ts';
+import { REACH_PX } from '#lib/lanes.ts';
 import { DEBUG_DB } from './defaults.js';
-import { DEFAULT_STATS, type StatsRange } from '$lib/stats.js';
-import { BUCKETS, DEFAULT_CHART, FIELDS_OFFER, RANGES, SHOWS, chartSettings, keysOffer } from '$lib/chart.js';
+import { DEFAULT_STATS, type StatsRange } from '#lib/stats.ts';
+import { BUCKETS, DEFAULT_CHART, FIELDS_OFFER, RANGES, SHOWS, chartSettings, keysOffer } from '#lib/chart.ts';
 import AliasesWidget from './AliasesWidget.svelte';
 import ChartWidget from './ChartWidget.svelte';
 import BackupsWidget from './BackupsWidget.svelte';
@@ -95,7 +95,7 @@ export interface WidgetKind {
 	onChange?: (settings: Record<string, unknown>, moved: unknown) => Record<string, unknown>;
 	/**
 	 * What the Help button says about this kind (da-vjwid): what it shows,
-	 * what a tap does, what a hold does — a line each ($lib/help.ts).
+	 * what a tap does, what a hold does — a line each (#lib/help.ts).
 	 * Required, so a kind cannot ship
 	 * without one; `tree.test.mjs` asks the same of every kind.
 	 */
@@ -145,13 +145,13 @@ const SVG_MARGIN_PX = 2;
  * means. The floor is therefore what a labelless block needs to be SEEN
  * and AIMED AT, not read.
  *
- * Aiming is the larger of the two, and `$lib/lanes.ts` already has its
+ * Aiming is the larger of the two, and `#lib/lanes.ts` already has its
  * number: `REACH_PX` is «a fingertip's half-width», and `NOW_PX` in
- * $lib/nowpoint.ts is the same 24 for the same reason. A block one whole
+ * #lib/nowpoint.ts is the same 24 for the same reason. A block one whole
  * fingertip across is a target a finger can land on; narrower and the
  * press is aimed at something smaller than the thing pressing it. The
  * pane hands its content box to the CLI as `--width` (`wantsBox`,
- * $lib/panes.ts) and the CLI insets by `SVG_MARGIN_PX` each side, so the
+ * #lib/panes.ts) and the CLI insets by `SVG_MARGIN_PX` each side, so the
  * box must carry the fingertip plus both margins.
  *
  * Which is 52 — well under the 84–99px the shipped `mobile` row gives a
@@ -510,7 +510,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// a line each, then the other databases, then the acts. Legible at a
 	// device's line wrapped once, two lines more and the acts' row, plus
 	// padding. Its help is not shown alone: the Help button opens the sync
-	// guide ($lib/help.ts `GUIDES`, da-oyvsz), where it is «Reading the widget».
+	// guide (#lib/help.ts `GUIDES`, da-oyvsz), where it is «Reading the widget».
 	sync: {
 		meta: meta('sync', 'sync'),
 		component: SyncWidget,
@@ -521,7 +521,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		].join('\n'),
 		legible: { width: 140, height: 100 }
 	},
-	// The Help place (da-z955f): the Help button's last answer ($lib/help.ts).
+	// The Help place (da-z955f): the Help button's last answer (#lib/help.ts).
 	// Legible at the title line and two lines of the explanation (18.4px
 	// each) plus padding; the rest scrolls.
 	help: {
@@ -575,7 +575,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// The setup widget (da-fu29p, named `field` until da-rgyq8): where a field
 	// is made and changed — the Track dialog and the spec widget (da-hbrfg,
 	// kinds `spec` and `field`: `RETIRED_KINDS` in shell.ts) as one. Which field it is on is `editing`
-	// ($lib/fieldWidget.ts), every copy's, so it has no setting. Legible at
+	// (#lib/fieldWidget.ts), every copy's, so it has no setting. Legible at
 	// its sentence, the form's name line and its buttons' row, with
 	// their gaps and padding — about 180px, estimated from the 28px controls
 	// rather than measured; a pane shorter scrolls the widget.

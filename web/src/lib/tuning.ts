@@ -1,6 +1,6 @@
 // THE BAR'S FEEL, AS A LIVE PAIR OF NUMBERS (da-o2wm8).
 //
-// `TAU` and `DETENT` decide how the bottom bar feels, and `$lib/detent.ts`
+// `TAU` and `DETENT` decide how the bottom bar feels, and `#lib/detent.ts`
 // says in its own words why nobody here can judge them: "vremya's
 // instrument adds latency to a synthetic touch, so a velocity measured in
 // a drive is approximate, and where a real thumb lands relative to a
@@ -11,8 +11,8 @@
 // moved since it was written.
 //
 // So this is the override: one store, read at the moment a release is
-// settled (`settle` in $lib/log.ts), written by the debug widget's `bar`
-// tool ($lib/DebugBar.svelte). Nothing here is ambient state the RULE
+// settled (`settle` in #lib/log.ts), written by the debug widget's `bar`
+// tool (#lib/DebugBar.svelte). Nothing here is ambient state the RULE
 // reads — `rest()` stays pure and takes its tuning as an argument, which
 // is what keeps `tests/detent.test.mjs` answerable in node.
 //
@@ -78,7 +78,7 @@ function kept(): Tuning {
 /** The live pair. Read at every release, so a change lands on the next throw. */
 export const tuning = writable<Tuning>(kept());
 
-/** The pair as a plain value, for the imperative side of $lib/log.ts. */
+/** The pair as a plain value, for the imperative side of #lib/log.ts. */
 export const tuningNow = (): Tuning => get(tuning);
 
 /** Move one knob, or both, and remember it. Out-of-range is brought in. */

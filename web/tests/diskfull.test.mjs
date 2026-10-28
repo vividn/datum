@@ -2,7 +2,7 @@
 //
 // OPFS `write` throws `QuotaExceededError` when the origin's storage is
 // full, and the shim let that unwind through the wasm import: the process
-// trapped mid-write and SQLite never heard. `opfsDirectory` ($lib/wasiFs.ts)
+// trapped mid-write and SQLite never heard. `opfsDirectory` (#lib/wasiFs.ts)
 // now hands SQLite a short write instead, which it reads as SQLITE_FULL.
 // These hold that to what matters: the command fails cleanly, and the
 // database the next command opens is the one from before.
@@ -34,7 +34,7 @@ function disk(fail = () => new DOMException('storage is full', 'QuotaExceededErr
 	return { handles: files, quota, used };
 }
 
-/** `datum <argv>` against `handles`, as $lib/cli.ts runs it. */
+/** `datum <argv>` against `handles`, as #lib/cli.ts runs it. */
 function run(handles, argv, stdin = '') {
 	const stdout = new Sink();
 	const stderr = new Sink();

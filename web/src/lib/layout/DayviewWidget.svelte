@@ -9,9 +9,9 @@
 -->
 <script lang="ts">
 	import type { ComponentProps } from 'svelte';
-	import { DAYVIEW_VERTICAL } from '$lib/calls.js';
-	import CliPane from '$lib/CliPane.svelte';
-	import DayStrip from '$lib/DayStrip.svelte';
+	import { DAYVIEW_VERTICAL } from '#lib/calls.ts';
+	import CliPane from '#lib/CliPane.svelte';
+	import DayStrip from '#lib/DayStrip.svelte';
 
 	type Props = ComponentProps<typeof DayStrip> & { orientation?: string };
 

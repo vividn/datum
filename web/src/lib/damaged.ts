@@ -9,7 +9,7 @@
 // kept as evidence, and their removal. No CLI process runs for either.
 //
 // Both take `datum-cli-files`, the Web Lock every tab's worker holds while
-// it has the files open ($lib/cli.ts), so neither reads or removes a file
+// it has the files open (#lib/cli.ts), so neither reads or removes a file
 // under a running command. A tab that keeps it past `WAIT_MS` is one the
 // reader has to close, and they are told so.
 

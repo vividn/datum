@@ -75,7 +75,7 @@ const queue = (slow) => `
 			const code = get(pointers, buffer);
 			const argv = new TextDecoder().decode(new Uint8Array(instance.exports.memory.buffer, buffer, size)).split('\\0');
 			channel.postMessage({ started: argv.slice(1).join(' ') });
-			// By the word the queue ranks by (\`wordOf\`, $lib/cli.ts): the nowview's day's
+			// By the word the queue ranks by (\`wordOf\`, #lib/cli.ts): the nowview's day's
 			// data layer is a \`dayview\` with a cost of its own (da-0e06p).
 			const ms = slow[argv.includes('--data-layer') ? 'dayview --data-layer' : argv[1]];
 			if (ms) for (const end = performance.now() + ms; performance.now() < end; );

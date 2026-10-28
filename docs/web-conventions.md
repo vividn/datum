@@ -19,7 +19,7 @@ writing it down.
 
 ## The seam: the CLI is the app
 
-1. **Every read and every write is a datum command.** `run(argv, stdin?)` (`$lib/run.ts`) is the
+1. **Every read and every write is a datum command.** `run(argv, stdin?)` (`#lib/run.ts`) is the
    one door; behind it `db.ts` → `db.worker.ts` → `cli.ts` runs the real CLI as one WASI process
    per command against the SQLite file on OPFS.
    **No TypeScript reads or writes a database's CONTENTS.** The CLI is the only thing that does;
@@ -65,13 +65,13 @@ writing it down.
    passed to `onExternalChange` must be the whole refresh and must be awaitable. Do not invent a
    second refresh path, and do not try to decide which verbs write — `changed` is by effect, and a
    list of verbs would drift from the CLI's.
-   The one beat BESIDE it is the minute clock (da-r61i, `minute` in `$lib/clock.ts`): nowview and
+   The one beat BESIDE it is the minute clock (da-r61i, `minute` in `#lib/clock.ts`): nowview and
    dayview are pictures of NOW — an open block's elapsed duration, the now-line — and a pane runs
    its command once, so they stood still between writes. One timer for the app (a `readable`,
    started by its first subscriber), on the wall-clock minute rather than 60 s from load, stopped
    while the document is hidden and ticking once on return if the minute turned. It is NOT the
    epoch: a pane folds the tick into its own request only when `dependsOnNow(argv)`
-   (`$lib/panes.ts`) says the command reads the clock — `now`, `nowview`, `dayview`, unless pinned
+   (`#lib/panes.ts`) says the command reads the clock — `now`, `nowview`, `dayview`, unless pinned
    with an absolute `-t` or `--end-date` — and the day strip re-draws today's band and the geometry beside
    it. nowview's snapshot alone runs on `tenSeconds` instead, the same timer at ten seconds (da-fprk0);
    a nowview with a window is drawn `--ahead` of now and slid along with the clock by its widget, and
@@ -103,7 +103,7 @@ writing it down.
    module's: `cursor.ts` reconciles its `time` and `dur` pills against the cursor on the same
    load, so bar.ts needs no list of which kinds may come back.
 6. **The web asks every command it runs for its echo as data** — `--show json` appended the way
-   `fitArgv` appends `--width` (`echoArgv` in `$lib/echo.ts`, at `Repl.runArgv` and
+   `fitArgv` appends `--width` (`echoArgv` in `#lib/echo.ts`, at `Repl.runArgv` and
    `engine.alone`). The bottom bar and the CLI widget then PLACE the CLI's own strings — action, hid,
    id, info, and its `data` items one to a row in a brace beside the two lines (da-f4mw) — and
    compose none of them; `data_inline` is the terminal's own join and the web does not use it. The document carries the CLI's
@@ -118,7 +118,7 @@ writing it down.
    with no document in it falls back to the lines the CLI printed.
 
 6b. **Where the page composes a cell, it composes the CLI's own parts — never its own**
-   (da-fknn8, `$lib/StateCell.svelte`). The tail's STATE cell is the one cell not taken whole
+   (da-fknn8, `#lib/StateCell.svelte`). The tail's STATE cell is the one cell not taken whole
    from `tail --json`'s `columns`: a state transition is three values in the row —
    `previous_state`, `state`, `following_state` — and on a terminal the two edges are ONE
    PAINTED SPACE each, which is a compact encoding on a character grid and padding in a browser.
@@ -167,7 +167,7 @@ writing it down.
    directions and its next was stale within a week.
    A module reaching a `.svelte` import or `$app/environment` is no obstacle:
    `tests/support/libhook.mjs` stubs the first out, gives the second `browser = false` — the
-   honest value in node — and rewrites `$lib/x.js` to the source's `x.ts`, which is how
+   honest value in node — and rewrites `./x.js` under `src/lib/` to the source's `x.ts`, which is how
    `registry.ts` is node-testable at all, and how `cursor.ts`, `tail.ts` and `bar.ts` became so
    (da-mgxdt; `tests/cursor-pure.test.mjs`).
    ⚠ *Importing is not the predicate.* With `$app` stubbed, 63 of the 66 tracked `.ts` under
@@ -396,7 +396,7 @@ rule is decided but not yet everywhere, it names the bead.
     the commands widget and `pressKind()` for the fields widget, both in `commands.ts`, so a
     button cannot act without looking as if it does. An ignored field that runs keeps its
     dashes and doubles them (da-nmna0). A button says its kind through one door, `use:act`
-    (`$lib/act.ts`, held by `act-guard.test.mjs`); a menu item says it as its `Item`'s `act`
+    (`#lib/act.ts`, held by `act-guard.test.mjs`); a menu item says it as its `Item`'s `act`
     (`menu.ts`), so «Save layout», which writes at once, is double and «Reset default
     layouts», which opens a confirm, is not (da-kk0vr). Tap-everything tests hold double ⇔ the
     tap wrote or ran: on the page (`act-taps-desktop`, `act-taps-phone`, da-y0ocz, and `act-taps-commands` for the
@@ -457,7 +457,7 @@ rule is decided but not yet everywhere, it names the bead.
     to reach it. It brings forward the root tab already holding that kind. Failing that, the host
     is the screen's (da-jozgv; vividn: «I think this is good on mobile, but the experience on
     desktop is not great … I would still have it be a modal on desktop»). On a DESKTOP the widget
-    opens in `layout/PlaceModal.svelte`, a `$lib/Sheet.svelte` sized for a widget, whose head
+    opens in `layout/PlaceModal.svelte`, a `#lib/Sheet.svelte` sized for a widget, whose head
     carries `Open as tab` beside the ×. On a PHONE (`max-width: PHONE_WIDTH`, what picks `mobile`)
     and after `Open as tab`, it is a TRANSIENT tab immediately right of the tab you are on, slid
     onto (a fade under `prefers-reduced-motion`). A transient tab is italic and written nowhere,
@@ -469,7 +469,7 @@ rule is decided but not yet everywhere, it names the bead.
     into a pane is just the widget. A place's tab tests run on a phone viewport.
     A place takes no parameter: where a field is made and edited is the ONE `field` widget
     (da-fu29p, which merged the Track dialog and da-hbrfg's `spec:<field>` places into it), and
-    which field it is on is a store every copy of it draws (`editing`, `$lib/fieldWidget.ts`),
+    which field it is on is a store every copy of it draws (`editing`, `#lib/fieldWidget.ts`),
     so `openField` says «this field» and then opens or focuses the place. No dialog asks «which
     verb?» any more — the CLI's refusal opens the same place with the field named.
 

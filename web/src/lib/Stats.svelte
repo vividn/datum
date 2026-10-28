@@ -7,7 +7,7 @@
 	is no picker here at all: the body is what `datum stats` prints — the
 	ranked table of fields with no selector, one field's own states with
 	one — and the only thing that chooses between them is the FIELD PILL
-	the fields widget mints (`da-8810n`, $lib/bar.ts).
+	the fields widget mints (`da-8810n`, #lib/bar.ts).
 
 	What the range chips choose is the WINDOW, which is the widget's whole
 	settings now (`StatsSettings`). `onchange` hands a new one out and it

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 export const GAP = 6.4;
 
-/** The most rows a bar draws unless its widget lifts it (`MAX_ROWS` in $lib/commands.ts). */
+/** The most rows a bar draws unless its widget lifts it (`MAX_ROWS` in #lib/commands.ts). */
 export const MAX_ROWS = 3;
 
 /**

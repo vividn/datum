@@ -1,7 +1,7 @@
 <!--
 	`seed` — a sample week (da-6ecm5), written into the database this page
 	is on, which DebugPane.svelte has already checked is `DEBUG`. The
-	commands are $lib/sample.ts's, and so is the sample KIT (da-1mkej) —
+	commands are #lib/sample.ts's, and so is the sample KIT (da-1mkej) —
 	`kits/sample.toml`, specs and aliases for the same fields, which
 	installing and uninstalling change and nothing else.
 
@@ -105,7 +105,7 @@
 		border-radius: 4px;
 		cursor: pointer;
 	}
-	/* Each writes the database at once, so the double outline ($lib/act.ts). */
+	/* Each writes the database at once, so the double outline (#lib/act.ts). */
 	.tool:global([data-act='run']) {
 		border: 3px double var(--accent);
 		padding: calc(0.1rem - 2px) calc(0.5rem - 2px);

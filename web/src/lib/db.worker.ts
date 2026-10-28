@@ -6,7 +6,7 @@
 // never be anything but in-memory, and every entry died on reload (da-5iqw).
 //
 // What runs here is the real `datum` CLI, one process per command — see
-// $lib/cli.ts. This file is only the door: a request in, a process's
+// #lib/cli.ts. This file is only the door: a request in, a process's
 // outcome out, and a word to the page when storage changes under it.
 
 import { onBlocked, onStorage, probe, runCli, storageNow } from './cli.js';

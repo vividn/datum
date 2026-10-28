@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { dbFlag } = await import('../src/lib/dbFlag.ts');
 const { dbEnv, dbOf } = await import('../src/lib/run.ts');
 

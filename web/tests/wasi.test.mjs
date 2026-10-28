@@ -86,7 +86,7 @@ describe('the wasi CLI', () => {
 	});
 
 	// @bjorn3/browser_wasi_shim sizes argv in UTF-16 units and writes UTF-8,
-	// so the argument after a non-ASCII one arrived mangled ($lib/cli.ts).
+	// so the argument after a non-ASCII one arrived mangled (#lib/cli.ts).
 	test('a non-ASCII argument arrives intact, and so does the next one', async () => {
 		await onSeam(async (app) => {
 			const set = await app.run(['setup', '日本語', '--verb', 'occur']);

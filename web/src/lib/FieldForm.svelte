@@ -1,12 +1,12 @@
 <!--
 	The form a field is declared and edited in (da-94q1, da-ci85o), the body
-	of the setup widget ($lib/layout/FieldWidget.svelte, da-fu29p): vividn,
+	of the setup widget (#lib/layout/FieldWidget.svelte, da-fu29p): vividn,
 	2026-10-08 — «let's fully combine track/spec widgets into just 1».
 	There is no dialog: a field is made and edited in a place.
 
 	A field cannot be born without a verb (da-c8mh), and the four pictograms
 	are the whole of that question. The glyphs are the CLI's own (`VERBS` in
-	$lib/track.ts, `track_action_label` in datum-core): the row this form
+	#lib/track.ts, `track_action_label` in datum-core): the row this form
 	is about to write will print `TRACK●` in every action column there is,
 	so what a person presses here is the shape they will meet again. Each is
 	named as the welcome names it — occurrence, on/off, switch, card — with
@@ -980,7 +980,7 @@
 		color: var(--accent);
 	}
 
-	/* Save writes the spec at once, so the double outline ($lib/act.ts). */
+	/* Save writes the spec at once, so the double outline (#lib/act.ts). */
 	.commit:global([data-act='run']) {
 		border: 3px double var(--accent);
 		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);

@@ -2,7 +2,7 @@
 //
 // This is route C of da-1vat, datum.day's only runner since da-g8o8: the
 // whole CLI, run in the browser one process per command under a WASI shim
-// ($lib/cli.ts). It needs a C compiler — rusqlite's `bundled` compiles
+// (#lib/cli.ts). It needs a C compiler — rusqlite's `bundled` compiles
 // SQLite's C, and for wasm32-wasip1 that means clang plus a wasi sysroot —
 // and it is shrunk with wasm-opt.
 //

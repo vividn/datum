@@ -26,11 +26,11 @@
 	narrower one draws the brace as the key count alone.
 -->
 <script lang="ts">
-	import { act } from '$lib/act.js';
-	import Doc from '$lib/Doc.svelte';
-	import Docs from '$lib/Docs.svelte';
-	import type { EchoDoc } from '$lib/echo.js';
-	import Sheet from '$lib/Sheet.svelte';
+	import { act } from '#lib/act.ts';
+	import Doc from '#lib/Doc.svelte';
+	import Docs from '#lib/Docs.svelte';
+	import type { EchoDoc } from '#lib/echo.ts';
+	import Sheet from '#lib/Sheet.svelte';
 
 	interface Props {
 		docs: EchoDoc[];

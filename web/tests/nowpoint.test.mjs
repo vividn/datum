@@ -43,7 +43,7 @@ const TODAY = '.band[data-days-ago="0"]';
  * The clock is pinned on both sides — the page's and the worker's, where
  * the CLI reads it — without `holdTimers`: every gesture here is a real
  * press over real milliseconds, and the long press is a TIMER
- * ($lib/nowpoint.ts), which held timers would freeze.
+ * (#lib/nowpoint.ts), which held timers would freeze.
  */
 async function withBand(fn, { ready, ...options } = {}) {
 	const body = async (app, room) => {
@@ -429,7 +429,7 @@ describe('the keyboard can still select in the band', () => {
 			// A mark's time is a fact of the drawing, so the pill is absolute
 			// even while the window is on now — and for a block that began
 			// before the window it is where the block is DRAWN from
-			// (`drawnStart` in $lib/hover.ts) — which, the picture being
+			// (`drawnStart` in #lib/hover.ts) — which, the picture being
 			// drawn a window's worth before its box (da-61nm8), is the
 			// block's own 14:00 rather than the window's 14:30.
 			await saysPills(page, ['time:-t 14:00']);
@@ -746,7 +746,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 	// cursor was still set, a white line was still drawn, and the next plain
 	// `occur` was logged at it. A command spends both of a range's pills at
 	// once, and the reconciler answered the missing `dur=` before the missing
-	// time pill ($lib/cursor.ts).
+	// time pill (#lib/cursor.ts).
 	test('a command spends BOTH of a range’s pills: nothing is left, and the NEXT entry is logged at now', async () => {
 		await withBand(async (app) => {
 			const { page } = app;

@@ -11,7 +11,7 @@ import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { cursor, cursorArg, dateLabel, pillSections, pointAt, timeArg, timeArgAt } = await import('../src/lib/cursor.ts');
 const { get } = await import('svelte/store');
 

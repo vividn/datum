@@ -10,14 +10,14 @@
 	OFFERS that menu (`offers`, options.ts), since only it has read them.
 
 	Every row is `datum tail F --json`'s, a field read page by page back to
-	the window's start (`readField`), again on every beat; `$lib/chart.ts`
+	the window's start (`readField`), again on every beat; `#lib/chart.ts`
 	arranges them.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { browser } from '$app/env';
-	import Pane from '$lib/Pane.svelte';
-	import { run, runKey } from '$lib/run.js';
+	import Pane from '#lib/Pane.svelte';
+	import { run, runKey } from '#lib/run.ts';
 	import {
 		DEFAULT_CHART,
 		FIELDS_OFFER,
@@ -30,7 +30,7 @@
 		startOf,
 		type ChartSettings,
 		type Row
-	} from '$lib/chart.js';
+	} from '#lib/chart.ts';
 	import { fields } from './engine.js';
 	import { offers } from './options.js';
 

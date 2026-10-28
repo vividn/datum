@@ -7,7 +7,7 @@
 // `app.mjs`; nothing here opens a browser.
 //
 // Panes are found by the id the default layout gives them
-// (`$lib/layout/defaults.ts`: `tail`, `repl`, `strip`, …) or by their
+// (`#lib/layout/defaults.ts`: `tail`, `repl`, `strip`, …) or by their
 // `data-title`, which is the h2 with one tab and the active tab's label
 // with more.
 
@@ -643,7 +643,7 @@ export const along = (direction, ...children) => ({
  * A draft of one CLI pane for the `main` tab, written before the app loads.
  *
  * The CLI alone at the root, so the bar draws NO output section on it
- * (`outputless`, $lib/log.ts, da-mwp4m): for a test that reads the widget.
+ * (`outputless`, #lib/log.ts, da-mwp4m): for a test that reads the widget.
  */
 export const ONE_PANE = JSON.stringify({
 	version: 1,

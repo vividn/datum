@@ -13,13 +13,13 @@
 // → select a piece of data», and a time is the long tap's, the right
 // click's, the tap on ground and the time axis's — «for quickly selecting a
 // time, a user can touch in the time axis, so that won't slow them down».
-// The whole table is at the head of $lib/nowpoint.ts. (It replaces
+// The whole table is at the head of #lib/nowpoint.ts. (It replaces
 // da-pzzoz's, where a plain tap always meant TIME and the inspect was a
 // double tap or a still long press.)
 //
 // Pure and DOM-only: no store is touched here, so the truth table is
 // `tests/inspect-pure.test.mjs` in node. The gesture that SPENDS a press
-// is `inspectMark` in $lib/hover.ts, where the bar's selection lives.
+// is `inspectMark` in #lib/hover.ts, where the bar's selection lives.
 
 /**
  * The mark an event landed on: the nearest element naming an entry, or
@@ -47,9 +47,9 @@ export const marksIn = (root: ParentNode): Element[] => [...root.querySelectorAl
  * The modifiers an inspect selects WITH, which is the event's own with
  * shift taken off it.
  *
- * In the tail and on a document shift picks a RANGE ($lib/selection.ts),
+ * In the tail and on a document shift picks a RANGE (#lib/selection.ts),
  * but on a picture shift+drag is a range of TIME (`atOnce`,
- * $lib/nowpoint.ts), and a shift+click that never traveled is a click
+ * #lib/nowpoint.ts), and a shift+click that never traveled is a click
  * like any other. Ctrl/⌘ still toggles, and a LOCKED hid pill still accumulates,
  * which is the way vividn named for gathering several: «locking the hid pill
  * lets you select other pieces of data, so you can manipulate them
@@ -116,7 +116,7 @@ export function tipOf(marks: MarkData[]): Tip | null {
 //
 // One gesture, several listeners. A widget that has taken a press — the
 // strip's long tap, which selects a time — and the `click` the browser
-// sends after it ($lib/hover.ts) would both answer the same finger, and
+// sends after it (#lib/hover.ts) would both answer the same finger, and
 // the click's answer over a mark is the entry, not the time.
 //
 // So the press is marked SPENT where it is answered, and the later

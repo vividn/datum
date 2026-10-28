@@ -7,13 +7,13 @@
 	The body is the one widget the place's layout holds — its kind's own
 	component with its settings, what the tab would show — so there is one
 	widget and one set of tests and only the frame differs. A place is a
-	NAME, not a kind: `dayview` is a `daystrip`. The frame is $lib/Sheet.svelte:
+	NAME, not a kind: `dayview` is a `daystrip`. The frame is #lib/Sheet.svelte:
 	Escape, the backdrop and the × close it, and `Open as tab` hands it to
 	the transient tab a phone gets, from where `Keep tab` keeps it.
 -->
 <script lang="ts">
-	import Sheet from '$lib/Sheet.svelte';
-	import { act } from '$lib/act.js';
+	import Sheet from '#lib/Sheet.svelte';
+	import { act } from '#lib/act.ts';
 	import { epoch } from './engine.js';
 	import { KINDS } from './registry.js';
 	import { closeModalPlace, modalPlace, openPlace } from './shell.js';

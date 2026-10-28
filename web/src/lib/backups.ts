@@ -10,7 +10,7 @@
 // --dry-run`). Nothing here knows which slot a period lands in.
 //
 // THE DESTINATION IS THE ROTATION. The CLI keeps it in a directory, and a
-// process's directory is its stage (`Stage`, $lib/dbProtocol.ts), which
+// process's directory is its stage (`Stage`, #lib/dbProtocol.ts), which
 // lives for that one process: the destination's `index.json` goes in, the
 // CLI writes the period's slot file and a new index beside it, and exactly
 // the files it names as written are put back, the slot first and the index
@@ -21,8 +21,8 @@
 // there, before the index names it and before anything is removed.
 //
 // A destination is three calls (`Destination`). The real kinds are an
-// S3-compatible bucket (da-pstzw, $lib/s3.ts) and a WebDAV folder
-// (da-bmxbb, $lib/webdav.ts); `memory`, a bucket in this
+// S3-compatible bucket (da-pstzw, #lib/s3.ts) and a WebDAV folder
+// (da-bmxbb, #lib/webdav.ts); `memory`, a bucket in this
 // tab, is offered on the DEBUG database alone (vremya on #217): a plan
 // survives a reload and a tab's bucket does not, so offered anywhere else
 // it would look like protection and hold nothing. NOT ENCRYPTED in v1
@@ -534,7 +534,7 @@ export function bytes(n: number): string {
 export const toRestore = writable(false);
 
 /**
- * Open «Backups» ($lib/layout/BackupsWidget.svelte), a PLACE (da-ea5q2):
+ * Open «Backups» (#lib/layout/BackupsWidget.svelte), a PLACE (da-ea5q2):
  * a modal on a desktop, a tab on a phone, by `openPlace` — `restore` at the backups
  * to restore from. The shell is imported on use: through the registry, it
  * imports this module.

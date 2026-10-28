@@ -33,7 +33,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { CHANGE } from './menu.js';
-	import { currentDb } from '$lib/database.js';
+	import { currentDb } from '#lib/database.ts';
 	import { pickableIn, titleOf } from './registry.js';
 	import type { Choice, Offer } from './chooser.js';
 	import type { KitWidget } from './store.js';

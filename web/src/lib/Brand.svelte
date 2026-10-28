@@ -32,10 +32,10 @@
 	  there and only its ink comes and goes, so the name never moves; and it
 	  sits OUTSIDE the ellipsizing box, so a cut name and the arrow never
 	  compete for the same pixels.
-	- it OPENS the pool: every database this device has ($lib/databases.ts),
+	- it OPENS the pool: every database this device has (#lib/databases.ts),
 	  the page's own marked, and `new database` under them. `_internal` is
 	  not offered — it is the app's own furniture, and `?db` refuses it
-	  anyway ($lib/database.ts).
+	  anyway (#lib/database.ts).
 	- it is DRAWN IN the database's colour, which is the whole page's accent
 	  and the tint of its grounds (`--hue`, routes/+layout.svelte, app.css).
 
@@ -54,11 +54,11 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import PaneMenu from '$lib/layout/PaneMenu.svelte';
-	import type { Item } from '$lib/layout/menu.js';
-	import { currentDb, DEFAULT_DB, INTERNAL_DB, withDb } from '$lib/database.js';
-	import { ask } from '$lib/confirm.js';
-	import { listDatabases } from '$lib/databases.js';
+	import PaneMenu from '#lib/layout/PaneMenu.svelte';
+	import type { Item } from '#lib/layout/menu.ts';
+	import { currentDb, DEFAULT_DB, INTERNAL_DB, withDb } from '#lib/database.ts';
+	import { ask } from '#lib/confirm.ts';
+	import { listDatabases } from '#lib/databases.ts';
 	import { page } from '$app/state';
 	import { toStore } from 'svelte/store';
 

@@ -6,8 +6,8 @@
 	the output over the input (da-ckw3, da-mwp4m). The document itself still never scrolls, and neither does
 	this box under any gesture of the browser's: it is `overflow: hidden`
 	and the only thing that moves it is the bar's own drag and wheel
-	($lib/log.ts, which has the arithmetic that makes the two rest states
-	exact). Panes inside the page scroll individually (see $lib/Pane.svelte),
+	(#lib/log.ts, which has the arithmetic that makes the two rest states
+	exact). Panes inside the page scroll individually (see #lib/Pane.svelte),
 	so at rest the bottom bar — the prompt, the brand, the receipt — stays
 	put whatever the page does, on a phone too.
 
@@ -23,22 +23,22 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import '../app.css';
-	import { schedule } from '$lib/backups.js';
-	import { installConsole } from '$lib/console.js';
-	import BarLog from '$lib/BarLog.svelte';
-	import { attach, logHeight, shown } from '$lib/log.js';
-	import PromptBar from '$lib/PromptBar.svelte';
-	import Waiting from '$lib/Waiting.svelte';
-	import Damaged from '$lib/Damaged.svelte';
-	import { damaged } from '$lib/damaged.js';
-	import RootBar from '$lib/layout/RootBar.svelte';
-	import PlaceModal from '$lib/layout/PlaceModal.svelte';
-	import Tour from '$lib/Tour.svelte';
-	import { boot as bootEngine } from '$lib/layout/engine.js';
-	import { boot as bootShell, openPlace } from '$lib/layout/shell.js';
-	import { approving, joining } from '$lib/syncView.js';
+	import { schedule } from '#lib/backups.ts';
+	import { installConsole } from '#lib/console.ts';
+	import BarLog from '#lib/BarLog.svelte';
+	import { attach, logHeight, shown } from '#lib/log.ts';
+	import PromptBar from '#lib/PromptBar.svelte';
+	import Waiting from '#lib/Waiting.svelte';
+	import Damaged from '#lib/Damaged.svelte';
+	import { damaged } from '#lib/damaged.ts';
+	import RootBar from '#lib/layout/RootBar.svelte';
+	import PlaceModal from '#lib/layout/PlaceModal.svelte';
+	import Tour from '#lib/Tour.svelte';
+	import { boot as bootEngine } from '#lib/layout/engine.ts';
+	import { boot as bootShell, openPlace } from '#lib/layout/shell.ts';
+	import { approving, joining } from '#lib/syncView.ts';
 	import { get, toStore } from 'svelte/store';
-	import { currentDb, DEFAULT_DB, hueOf, INTERNAL_DB, refusedDb } from '$lib/database.js';
+	import { currentDb, DEFAULT_DB, hueOf, INTERNAL_DB, refusedDb } from '#lib/database.ts';
 	import { browser } from '$app/env';
 	import { page } from '$app/state';
 
@@ -65,14 +65,14 @@
 
 	// `window.datum` — the command seam at the browser's own prompt. Mounted
 	// here rather than at module scope because there is no window during
-	// prerendering. See $lib/console.ts. Then the two boots: the engine's
+	// prerendering. See #lib/console.ts. Then the two boots: the engine's
 	// (the database, the bar's fields) and the shell's (the root tabs),
 	// which every route needs — a `/<name>` opens a tab into a booted shell.
 	onMount(() => {
 		installConsole(window as unknown as Record<string, unknown>);
 		void bootEngine();
 		void bootShell();
-		// Backup plans run while a tab is open (da-9ow8m, $lib/backups.ts).
+		// Backup plans run while a tab is open (da-9ow8m, #lib/backups.ts).
 		schedule();
 		reloadOnceForIsolation();
 		// A join or approve link still waiting for its card (da-amhrv): the
@@ -84,7 +84,7 @@
 
 	/**
 	 * Hand the page's scroller to the bar, which is the only thing that
-	 * moves it (da-ckw3, $lib/log.ts).
+	 * moves it (da-ckw3, #lib/log.ts).
 	 */
 	const page_scroller = (el: HTMLElement) => ({ destroy: attach(el) });
 
@@ -242,7 +242,7 @@
 		--bar-rule: 1px;
 		/* The bar is the input row, the rule, and HOWEVER MUCH of the output
 		   section is open right now — `--shown`, which the drag moves and
-		   which is 0 shut and `--output-height` at the notch ($lib/log.ts).
+		   which is 0 shut and `--output-height` at the notch (#lib/log.ts).
 		   The dashboard is the page less the bar and less the log, so all
 		   three follow one number and none of them can disagree. */
 		--bar-height: calc(var(--input-height) + var(--shown, 0px) + var(--bar-rule));
@@ -263,7 +263,7 @@
 	   (a rubber-band, a flick, a focus), and a container because the three
 	   heights inside are shares of it and `cqh` is the one unit that says
 	   so without a percentage chain. The bar's own code moves it
-	   ($lib/log.ts).
+	   (#lib/log.ts).
 
 	   TWO SIZE CONTAINERS, NESTED, ON PURPOSE (a canary on PR #46 asked why).
 	   `cqh` resolves against the NEAREST one, so `100cqh` in `main` and in
@@ -294,7 +294,7 @@
 
 	/* The dashboard: the page less the bar. That number is also the whole of
 	   the travel into the log, which is what puts the bar's top on the top
-	   of the screen exactly when the scroll runs out ($lib/log.ts). */
+	   of the screen exactly when the scroll runs out (#lib/log.ts). */
 	main {
 		flex: none;
 		height: calc(100cqh - var(--bar-height) - var(--log-height, 0px));

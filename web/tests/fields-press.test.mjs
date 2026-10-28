@@ -133,7 +133,7 @@ describe('a press', () => {
 	// ⛔ THE ROUTE THAT REPLACES THE HOLD PANEL (da-e78x6). The panel's `-t`
 	// and `dur` bubbles were one way to put a time and a length on a press;
 	// removing it leaves the bar's own pills, which the time cursor mints
-	// from a click or a drag on any drawn picture ($lib/cursor.ts) and which
+	// from a click or a drag on any drawn picture (#lib/cursor.ts) and which
 	// a person can also type. The test above shows a TIME reaching a press;
 	// this shows a LENGTH, and the two together, on the field pill's own
 	// field — because "you can still set it, just elsewhere" is a claim
@@ -196,7 +196,7 @@ describe('a press', () => {
 	// in the hold panel used to put `note coffee ` in the bar to save the
 	// first two words; da-e78x6 removed the panel, and NOTHING REPLACED
 	// THAT BUTTON — `note` is typed whole now, and deliberately stayed off
-	// the commands widget (see `COMMANDS` in $lib/commands.ts: a `note `
+	// the commands widget (see `COMMANDS` in #lib/commands.ts: a `note `
 	// prefill beside a field pill composes the wrong command once the
 	// comment's words are typed after it). So this is the route that
 	// remains, and it is the half that was always the point: `note` routes

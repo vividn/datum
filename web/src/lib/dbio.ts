@@ -16,9 +16,9 @@
 // bottom bar's through `press` — and nothing else: `run` is the seam and
 // stays literal. These are the whole table, on purpose: anything else
 // typed runs as typed, and this is not the start of a shell. A main menu
-// on the bottom bar ($lib/PromptBar.svelte) would call `upload` /
+// on the bottom bar (#lib/PromptBar.svelte) would call `upload` /
 // `download` / `purge` directly. They run through `run`, so the page's
-// own database is already in front of them (da-vk1x, $lib/database.ts):
+// own database is already in front of them (da-vk1x, #lib/database.ts):
 // `db backup -` on a `?db=other` page exports `other`.
 
 import { writable } from 'svelte/store';

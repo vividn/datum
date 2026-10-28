@@ -13,7 +13,7 @@
 // empty space still finds every field, in the order they always were.
 //
 // This store exists because the nowview's band takes the pointer itself
-// (`data-points="own"`, $lib/hover.ts), so a press there reaches nothing
+// (`data-points="own"`, #lib/hover.ts), so a press there reaches nothing
 // else on the page; without it the widget that has to answer could not
 // know a press had happened at all.
 //
@@ -26,7 +26,7 @@
 // compute it.
 //
 // Cleared with the selection, because one press sets both: the clear
-// itself lives in $lib/cursor.ts, which every door out of a selection
+// itself lives in #lib/cursor.ts, which every door out of a selection
 // already passes through.
 
 import { writable } from 'svelte/store';
@@ -75,7 +75,7 @@ export const ROW_PX = 4;
  * How far from a dot's HEIGHT a press may fall and still reach it, in px —
  * measured from the mark's own box, as `ROW_PX` is.
  *
- * A fingertip's half-width — `NOW_PX` in $lib/nowpoint.ts is the same 24px
+ * A fingertip's half-width — `NOW_PX` in #lib/nowpoint.ts is the same 24px
  * for the same reason.
  *
  * It was once the radius of a circle round the dot's centre, so x counted
@@ -173,7 +173,7 @@ export function nearest(drawn: Drawn[], at: At): Map<string, Near> | null {
 
 /**
  * `buttons` with the fields a press landed on or near brought to the
- * FRONT, nearest first (`nearest` in $lib/lanes.ts) and everything else in
+ * FRONT, nearest first (`nearest` in #lib/lanes.ts) and everything else in
  * its usual order.
  *
  * Nothing is removed — the press prioritises, it does not hide.
@@ -187,7 +187,7 @@ export function nearest(drawn: Drawn[], at: At): Map<string, Near> | null {
  * ordered by distance like any other mark. It is answered HERE, against
  * the buttons, because a mark the picture drew carries no state and a
  * button does — `active` is the CLI's own answer to «is it on», carried
- * on it by `buttonsFor` in $lib/fields.ts. Nothing is fetched for this and
+ * on it by `buttonsFor` in #lib/fields.ts. Nothing is fetched for this and
  * no renderer changed.
  *
  * A stable sort, so marks the rule cannot separate (several rows a few px

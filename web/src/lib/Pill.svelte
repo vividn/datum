@@ -31,7 +31,7 @@
 	interface Props {
 		pill: Pill;
 		/**
-		 * Drawn as CONTEXT (da-tu30m, `roleOf` in $lib/commands.ts): it narrows
+		 * Drawn as CONTEXT (da-tu30m, `roleOf` in #lib/commands.ts): it narrows
 		 * the panes and is in no command, so it is the smaller outline with a
 		 * filter mark, and a press on it is the only thing it offers.
 		 */

@@ -122,7 +122,7 @@ export const svgHeight = (svg) => Number(svg.match(/<svg[^>]*\sheight="([\d.]+)"
  *
  * One day's box, the pitch each further day adds, the ruler's row and the
  * divider are what the past COSTS in strip height, so the tests never
- * restate a constant that lives in $lib/panes.ts. `chrome` is what the
+ * restate a constant that lives in #lib/panes.ts. `chrome` is what the
  * page's box spends around the strip — the pane's title bar, borders and
  * padding — which is what separates the height a test sets from the
  * height the strip gets.

@@ -7,7 +7,7 @@
 //
 // The selection is stored nowhere but the pill: its `text` is the hids,
 // comma-joined, and its sections are one per hid, each ✕-able. Everything
-// here is pure; `select` in $lib/bar.ts applies it to the store.
+// here is pure; `select` in #lib/bar.ts applies it to the store.
 
 import type { Pill, PillSection } from './bar.js';
 import { argumentsOf, fits, type Grammar, type Takes } from './commands.js';
@@ -61,7 +61,7 @@ const short = (hid: string): string => hid.slice(0, 5);
 
 /**
  * One section per hid, each dropping its own: what it leaves is the others
- * as TEXT, and `select`'s store redraws their sections ($lib/bar.ts) — a
+ * as TEXT, and `select`'s store redraws their sections (#lib/bar.ts) — a
  * `rest` carrying its own sections would nest every order of every subset.
  */
 const drawn = (hids: string[]): PillSection[] =>

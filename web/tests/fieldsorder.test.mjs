@@ -118,7 +118,7 @@ const pillsOf = (page) =>
 
 /**
  * Select a RANGE on the band — shift+drag, the desktop's long press
- * ($lib/nowpoint.ts) — and wait for the `dur=` pill it carries.
+ * (#lib/nowpoint.ts) — and wait for the `dur=` pill it carries.
  *
  * Backwards along `sleep`'s block, which runs the whole window across, so
  * the drag stays inside the picture whatever width the pane is given.

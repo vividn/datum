@@ -811,7 +811,7 @@
 	 * ctrl/cmd+click toggles. A press that traveled — a scroll — holds
 	 * nothing, and taps nothing either (da-xg1vi).
 	 *
-	 * Its own timer and not the `holds` action ($lib/hold.ts), whose length
+	 * Its own timer and not the `holds` action (#lib/hold.ts), whose length
 	 * it shares: that action also takes a right click and shift+click, where
 	 * a row's mouse belongs to its text, and knows no `pressTraveled`.
 	 */

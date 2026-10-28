@@ -26,7 +26,7 @@
 /**
  * How long a press has to last before it counts as a long press — this
  * action's, the tail's and a root tab's, and the dayview's and nowview's,
- * whose `LONG_MS` ($lib/nowpoint.ts) is this one under its old name
+ * whose `LONG_MS` (#lib/nowpoint.ts) is this one under its old name
  * (da-0gxd7: it was 400 there, so a 420 ms press was long on a band and a
  * tap on a field).
  */
@@ -126,7 +126,7 @@ export function holds(node: HTMLElement, spec: Holding) {
 	/**
 	 * The right button, and the menu key, arrive as `contextmenu` — the one
 	 * event of the press with a default to suppress, so it is the one the
-	 * gesture is taken on ($lib/inspect.ts says the same of a picture).
+	 * gesture is taken on (#lib/inspect.ts says the same of a picture).
 	 * Only within the container: a reader right-clicking a pane's CONTENT
 	 * still gets the browser's own menu, which is where text is selected
 	 * and copied.

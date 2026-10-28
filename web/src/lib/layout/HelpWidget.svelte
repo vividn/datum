@@ -1,13 +1,13 @@
 <!--
 	The Help place (da-z955f): what the Help button was last asked about,
 	explained. It was a sheet of its own (da-35f23); it is a PLACE now, so
-	$lib/help.ts lands the answer here: in a pane showing this widget if the
+	#lib/help.ts lands the answer here: in a pane showing this widget if the
 	page has one in view, else wherever `openPlace('help')` hosts it — a tab
 	on a phone, a modal on a desktop (da-jozgv).
 
 	The explanation is TEXT, painted as the CLI painted it: a widget's or a
 	pill's is plain prose, the general help `datum help`'s stdout — but a
-	GUIDE ($lib/help.ts `GUIDES`), which is a page of its own. A command's
+	GUIDE (#lib/help.ts `GUIDES`), which is a page of its own. A command's
 	or a topic's is its PAGE, `datum help <name> --json` (da-efruz), drawn
 	intro first: its usage forms and flag tables fold into <details>, closed
 	until opened, and an opened one stays open on every page after, on this
@@ -21,11 +21,11 @@
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { ansiSpans } from '$lib/ansi.js';
-	import AnsiText from '$lib/AnsiText.svelte';
-	import { explained, fitHelp } from '$lib/help.js';
-	import { charactersIn } from '$lib/panes.js';
-	import Pane from '$lib/Pane.svelte';
+	import { ansiSpans } from '#lib/ansi.ts';
+	import AnsiText from '#lib/AnsiText.svelte';
+	import { explained, fitHelp } from '#lib/help.ts';
+	import { charactersIn } from '#lib/panes.ts';
+	import Pane from '#lib/Pane.svelte';
 	import SyncGuide from './SyncGuide.svelte';
 	import WelcomeText from './WelcomeText.svelte';
 

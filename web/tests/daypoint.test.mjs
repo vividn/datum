@@ -13,7 +13,7 @@
 //
 // Delta-blind, as `nowpoint.test.mjs` is: every instant is read off the
 // band's own `data-from` / `data-to` over `data-lo` / `data-hi` through
-// the picture's `getScreenCTM` — the same reading `$lib/hover.ts` makes —
+// the picture's `getScreenCTM` — the same reading `#lib/hover.ts` makes —
 // so the times the pills are expected to say are the times the pixels the
 // test pressed ARE, and never a guess at what a minute is worth in px.
 // The state machine the gestures run is `nowpoint-pure.test.mjs`, in node.
@@ -38,7 +38,7 @@ const TODAY = '.band[data-days-ago="0"]';
 const YESTERDAY = '.band[data-days-ago="1"]';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 const BAR = 'section.pane[data-title="fields"] .bar';
-/** How long `$lib/nowpoint.ts` waits before a press is a range, with room to spare. */
+/** How long `#lib/nowpoint.ts` waits before a press is a range, with room to spare. */
 const HOLD = 650;
 
 /**
@@ -135,7 +135,7 @@ const msAt = (g, h, m = 0) => g.from + (h * 60 + m) * MINUTE;
 const xOf = (g, ms) => Math.round(g.lo + ((ms - g.from) / (g.to - g.from)) * (g.hi - g.lo));
 /** And back: the instant a pixel IS, which is what the app will read there. */
 const instantOf = (g, x) => g.from + ((x - g.lo) / (g.hi - g.lo)) * (g.to - g.from);
-/** To the minute, as every selection is ($lib/cursor.ts). */
+/** To the minute, as every selection is (#lib/cursor.ts). */
 const toMinute = (ms) => Math.round(ms / MINUTE) * MINUTE;
 /** `mins` as the ISO duration the CLI stores. */
 const isoDur = (mins) =>
@@ -483,7 +483,7 @@ describe('zoomed in, a drag pans and a long press selects', () => {
 	// da-pzzoz moved the wait's FEEDBACK. The bar used to drop the moment
 	// the press was long enough, because the press committed to a range
 	// there and then; it no longer commits — a still long press is an
-	// INSPECT and only a travelling one is a range ($lib/nowpoint.ts) — so
+	// INSPECT and only a travelling one is a range (#lib/nowpoint.ts) — so
 	// what the finger is shown at 400ms is the `.hold-mark`, and the bar
 	// drops on the first pixel of travel after it.
 	test('a long press marks the wait before any movement; the drag after it is a range', async () => {

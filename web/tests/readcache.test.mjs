@@ -4,7 +4,7 @@
 // a command made hundreds: SQLite let go of its lock after every statement,
 // and took it again by re-reading the file's header and size. Now the CLI
 // holds its lock for the connection's life on wasm, and the worker keeps
-// what it has read ($lib/wasiFs.ts `cached`). These hold both to what they
+// what it has read (#lib/wasiFs.ts `cached`). These hold both to what they
 // are for — fewer reads — and to what they must not cost: what a command
 // prints, and another tab's writes.
 
@@ -46,7 +46,7 @@ const release = (held) => {
 	for (const handle of held.values()) handle.close();
 };
 
-/** `datum <argv>` against `handles`, as $lib/cli.ts runs it. */
+/** `datum <argv>` against `handles`, as #lib/cli.ts runs it. */
 function run(handles, argv) {
 	const stdout = new Sink();
 	const stderr = new Sink();

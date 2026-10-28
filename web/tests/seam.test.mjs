@@ -367,7 +367,7 @@ describe('the visual views', () => {
 	test('a switch, an occur and a switch to nothing draw band, dot and nothing', async () => {
 		// The three shapes `render_shape` distinguishes, asserted through
 		// the seam. Until da-t7ud this dispatch was a hand-written copy of
-		// the table in the browser ($lib/visuals.ts); it is now the CLI's
+		// the table in the browser (#lib/visuals.ts); it is now the CLI's
 		// own, so what this test guards is that the wiring reaches it.
 		await onSeam(async ({ run }) => {
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-10'])).code, OK);

@@ -239,12 +239,12 @@ describe('on a phone-sized screen', () => {
 			};
 			await atEachScreen(t, page, SCREENS, async () => {
 				await onScreen('closed');
-				// The bar GLIDES (da-ckw3, $lib/log.ts): what has to be on the
+				// The bar GLIDES (da-ckw3, #lib/log.ts): what has to be on the
 				// screen is where it comes to REST — which is what `unfold` waits for.
 				await unfold(page);
 				await assertOnScreen(page, '.prompt-bar .section.output', 'the output it shows');
 				await onScreen('at the row');
-				// The drag's click swallow spent ($lib/grip.ts), then full.
+				// The drag's click swallow spent (#lib/grip.ts), then full.
 				await page.locator('.prompt-bar').dispatchEvent('click');
 				await page.locator('.prompt-bar .bar-handle').click();
 				await page.locator('.prompt-bar .bar-handle[aria-label="collapse the history to one row"]').waitFor();
@@ -291,7 +291,7 @@ describe('on a phone-sized screen', () => {
 					send('pointerup', y - 200);
 				});
 				// The log is OPEN when the bar has been pulled past the notch.
-				// The page itself never scrolls (da-ckw3, $lib/log.ts sizes three
+				// The page itself never scrolls (da-ckw3, #lib/log.ts sizes three
 				// boxes off one number), so `--log-height` is the only truth
 				// there is — a `scrollTop` check here would pass on a page that
 				// never moved at all.

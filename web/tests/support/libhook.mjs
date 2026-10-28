@@ -1,7 +1,7 @@
-// Importing `$lib/layout/registry.ts` into node, where its components
-// cannot be loaded: every `.svelte` import becomes an empty stub, `$lib/x.js`
-// becomes the source's `x.ts`, and a relative `./x.js` under our own `src/`
-// becomes `./x.ts`.
+// Importing `#lib/layout/registry.ts` into node, where its components
+// cannot be loaded: every `.svelte` import becomes an empty stub, and a
+// relative `./x.js` under our own `src/` becomes `./x.ts`. `#lib/x.ts` needs
+// nothing: node reads it from package.json's `imports`.
 //
 // ⚠ The `.js` → `.ts` rewrite applies to OUR sources ONLY, which is what
 // `context.parentURL` decides. A package's own relative imports are really
@@ -24,17 +24,14 @@ import { registerHooks } from 'node:module';
 const EMPTY_MODULE = 'data:text/javascript,export default {}';
 const APP_ENV = 'data:text/javascript,export const browser = false';
 
-/** Register the resolve hook. `base` is the calling test's `import.meta.url`. */
-export function resolveLibAsSource(base) {
-	const lib = new URL('../src/lib/', base);
+/** Register the resolve hook. */
+export function resolveLibAsSource() {
 	registerHooks({
 		resolve(specifier, context, next) {
 			if (specifier.endsWith('.svelte')) return { url: EMPTY_MODULE, shortCircuit: true };
 			if (specifier === '$app/env') return { url: APP_ENV, shortCircuit: true };
-			if (!/^(\.|\$lib\/)/.test(specifier)) return next(specifier, context);
-			const url = new URL(specifier.replace(/^\$lib\//, lib.href), context.parentURL);
-			const ours = context.parentURL?.includes('/src/lib/');
-			return next(ours ? url.href.replace(/\.js$/, '.ts') : url.href, context);
+			const ours = specifier.startsWith('.') && context.parentURL?.includes('/src/lib/');
+			return next(ours ? specifier.replace(/\.js$/, '.ts') : specifier, context);
 		}
 	});
 }

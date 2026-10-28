@@ -1,6 +1,6 @@
 // One `<AnsiText>` for every span on screen (da-mv90).
 //
-// `$lib/ansi.ts` turns the CLI's escapes into spans, and the markup that
+// `#lib/ansi.ts` turns the CLI's escapes into spans, and the markup that
 // PAINTS them used to be written out three times — `CliOutput` once,
 // `TailTable` twice. The copies had already drifted: the tail's header cell
 // set neither underline nor italic, its body cell no italic, so the same

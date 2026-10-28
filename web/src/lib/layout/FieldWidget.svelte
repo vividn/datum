@@ -8,7 +8,7 @@
 	intuitive … It should also be clearer what "field" actually is».
 
 	So, top to bottom: what a field IS, in one sentence, always; and the form
-	($lib/FieldForm.svelte) for whichever is chosen. Beside its `field:` line,
+	(#lib/FieldForm.svelte) for whichever is chosen. Beside its `field:` line,
 	once there is a field, «fields» opens a sheet of every tracked field in
 	its own colour and glyph, the one being edited marked, narrowed by typing
 	once there are more than a glance takes in. One word, vividn on #944:
@@ -22,7 +22,7 @@
 	OLD NEW --dry-run`'s counts (a refusal asks again, saying why), runs
 	`rename OLD NEW` and reopens the form on NEW.
 
-	Which field is `editing` ($lib/fieldWidget.ts), one store for every copy
+	Which field is `editing` (#lib/fieldWidget.ts), one store for every copy
 	of the widget, so anything that opens it on a field has one place to
 	say so. A field pill minted while this is on the page says so too: a
 	hold on a field in the fields widget brings that field here. A new field
@@ -30,7 +30,7 @@
 
 	Save on a new field runs its one command (da-2pbvd) and STAYS, on the
 	field it made — but for the person's first, which goes on to the tour of
-	where it is logged ($lib/tour.ts); Cancel leaves the place running nothing.
+	where it is logged (#lib/tour.ts); Cancel leaves the place running nothing.
 	A save the CLI refuses leaves the form as it was typed, to be put right.
 
 	A field's spec saves when it is left (da-hda4j), vividn, 2026-10-26: «if
@@ -60,19 +60,19 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { browser } from '$app/env';
-	import FieldForm from '$lib/FieldForm.svelte';
-	import Pane from '$lib/Pane.svelte';
-	import { act } from '$lib/act.js';
-	import { fieldPill } from '$lib/bar.js';
-	import { renameFieldArgv, specHistoryArgv, specShowArgv, undoToVersionArgv, type SpecVersion } from '$lib/calls.js';
-	import { stripAnsi } from '$lib/ansi.js';
-	import { ask, choose, confirm } from '$lib/confirm.js';
-	import type { FieldButton } from '$lib/fields.js';
-	import { answerField, away, editing } from '$lib/fieldWidget.js';
-	import { run } from '$lib/run.js';
-	import Sheet from '$lib/Sheet.svelte';
-	import { begin } from '$lib/tour.js';
-	import { VERBS, type Save, type Spec, type Verb } from '$lib/track.js';
+	import FieldForm from '#lib/FieldForm.svelte';
+	import Pane from '#lib/Pane.svelte';
+	import { act } from '#lib/act.ts';
+	import { fieldPill } from '#lib/bar.ts';
+	import { renameFieldArgv, specHistoryArgv, specShowArgv, undoToVersionArgv, type SpecVersion } from '#lib/calls.ts';
+	import { stripAnsi } from '#lib/ansi.ts';
+	import { ask, choose, confirm } from '#lib/confirm.ts';
+	import type { FieldButton } from '#lib/fields.ts';
+	import { answerField, away, editing } from '#lib/fieldWidget.ts';
+	import { run } from '#lib/run.ts';
+	import Sheet from '#lib/Sheet.svelte';
+	import { begin } from '#lib/tour.ts';
+	import { VERBS, type Save, type Spec, type Verb } from '#lib/track.ts';
 	import { fields, press } from './engine.js';
 	import { leavePlace } from './shell.js';
 

@@ -183,7 +183,7 @@
 	// A pane whose picture is of NOW re-runs when the minute turns
 	// (da-r61i): nowview's durations grow, dayview's now-line moves, and
 	// until this they stood still between writes. The clock is the app's
-	// one timer ($lib/clock.ts) and every such pane shares it; a pane
+	// one timer (#lib/clock.ts) and every such pane shares it; a pane
 	// running anything else — the tail, a `get` — folds in a constant and
 	// so is not invalidated by the tick at all. nowview's snapshot moves
 	// on a ten-second beat instead (da-fprk0); a nowview with a window is
@@ -244,7 +244,7 @@
 		border-radius: 4px;
 		cursor: pointer;
 	}
-	/* It runs the command at once, so the double outline ($lib/act.ts). */
+	/* It runs the command at once, so the double outline (#lib/act.ts). */
 	.play:global([data-act='run']) {
 		border: 3px double var(--accent);
 	}

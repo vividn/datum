@@ -1,4 +1,4 @@
-// `settle` ($lib/layout/resizing.ts) in node, on a mock clock: what a drag
+// `settle` (#lib/layout/resizing.ts) in node, on a mock clock: what a drag
 // ASKS a pane to draw. The browser tests cannot count that — they count the
 // CLI's runs, and a pane keeps one run out (CliPane's `refresh`), so on a
 // loaded box a second's drag is one run however often it asked (da-i1ok).

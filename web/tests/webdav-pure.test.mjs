@@ -1,4 +1,4 @@
-// Which folder URLs the WebDAV destination ($lib/webdav.ts, da-bmxbb) refuses
+// Which folder URLs the WebDAV destination (#lib/webdav.ts, da-bmxbb) refuses
 // before asking: the fake server is http, as the app under test is, so a
 // mixed-content block cannot be shown in the browser tests (vremya on #750).
 
@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { unusable } = await import('../src/lib/webdav.ts');
 
 const MIXED = /^folder URL: an https page can't reach an http:\/\/ folder/;

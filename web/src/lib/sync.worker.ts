@@ -5,7 +5,7 @@
 // relay-only in a browser — with one endpoint per synced database. It only
 // moves bytes: every read and write of a session is a `datum sync …` command
 // it hands back to the page, which runs it in the database worker like any
-// other ($lib/sync.ts). There is no storage logic here, nor in TypeScript.
+// other (#lib/sync.ts). There is no storage logic here, nor in TypeScript.
 //
 // The page decides when to dial; this file serves whatever comes in, and
 // says so.

@@ -220,13 +220,13 @@ describe('a drawn view', () => {
 	// The snapshot's floor, which da-7q8r re-derived: with the labels gone
 	// there is nothing left to READ along a block, so what the width must
 	// buy is a target a finger can land on. `SNAPSHOT_WIDTH` in
-	// `$lib/layout/registry.ts` is `2 * REACH_PX + 2 * SVG_MARGIN_PX`;
+	// `#lib/layout/registry.ts` is `2 * REACH_PX + 2 * SVG_MARGIN_PX`;
 	// this is that arithmetic measured on the band the CLI actually draws,
 	// rather than the constant read back to itself.
 	test('at the snapshot’s floor a block is still a whole fingertip across', async () => {
 		// registry.ts reaches Svelte components node cannot load; the hook
-		// stubs them and reads `$lib/x.js` as the source's `x.ts`.
-		resolveLibAsSource(import.meta.url);
+		// stubs them and reads `./x.js` as the source's `x.ts`.
+		resolveLibAsSource();
 		const { KINDS } = await import('../src/lib/layout/registry.ts');
 		const { REACH_PX } = await import('../src/lib/lanes.ts');
 		const floor = KINDS.nowview.legible({ history: '0' }).width;

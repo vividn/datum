@@ -84,7 +84,7 @@ export interface Press {
 
 /**
  * How long a still press takes to become a range: the app's one hold,
- * `HOLD_MS` ($lib/hold.ts), so a press long on a band is long everywhere.
+ * `HOLD_MS` (#lib/hold.ts), so a press long on a band is long everywhere.
  */
 export { HOLD_MS as LONG_MS } from './hold.js';
 

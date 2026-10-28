@@ -10,7 +10,7 @@
  * `opfs` is the file in the origin's private file system, which survives a
  * reload. `memory` is this browser refusing the worker a sync access handle:
  * the tab keeps a database of its own in memory until it can have the file,
- * and says so (see $lib/BetaBanner.svelte).
+ * and says so (see #lib/BetaBanner.svelte).
  */
 export type StorageKind = 'opfs' | 'memory';
 
@@ -26,7 +26,7 @@ export type Stage = Record<string, Uint8Array>;
  * The env word that freezes a process's wall clock (da-szzgy): `FROZEN_AT`
  * and an epoch ms, the instant the person tapped or pressed Enter. The worker
  * takes it out of the env, so the CLI never sees it, and answers REALTIME with
- * it for that one process ($lib/cli.ts); every other clock stays the shim's.
+ * it for that one process (#lib/cli.ts); every other clock stays the shim's.
  */
 export const FROZEN_AT = 'DATUM_WEB_FROZEN_AT=';
 

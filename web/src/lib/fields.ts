@@ -54,7 +54,7 @@ export interface FieldButton {
 	 * What the field is in now, by `datum now --json`: `true` for an open
 	 * block, the state's name for a switch; absent when it is off. Until
 	 * that answers after a write, by the write's own echo (`guess` in
-	 * $lib/layout/engine.ts).
+	 * #lib/layout/engine.ts).
 	 */
 	current?: true | string;
 	/**
@@ -67,7 +67,7 @@ export interface FieldButton {
 	 *
 	 * Not the same question as `current`, which is the field's state as a
 	 * COLOUR and so is absent for a field whose active state paints
-	 * nothing. A press ranks by this one (`promoted` in $lib/lanes.ts).
+	 * nothing. A press ranks by this one (`promoted` in #lib/lanes.ts).
 	 */
 	active: boolean;
 	/** Where the field's band sits in the pictures, 0 at the top — `fields --json`'s `y`. */
@@ -231,7 +231,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
  * Where each field stood when the bar was last sorted (da-xtkcp): its `y`,
  * which picks its row, and its `frecency` (`datum fields --sort
  * frecency`), which places it along the row. Taken only on load and when
- * the app comes back to the foreground (`resort` in $lib/layout/engine.ts)
+ * the app comes back to the foreground (`resort` in #lib/layout/engine.ts)
  * — never while it is in use, so nothing a press sets off can move a
  * button.
  */
@@ -475,7 +475,7 @@ export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Loo
  * The COMMAND and nothing else. It used to take an `Adjust` as well — a
  * `-t` and a `dur=` the hold panel's bubbles set — and da-e78x6 removed
  * that panel, leaving the bar's own pills as the one way anything is
- * added to a press (`withPills` in $lib/selection.ts). A press composes
+ * added to a press (`withPills` in #lib/selection.ts). A press composes
  * what it means; the line composes what it carries.
  */
 export function pressArgv(button: FieldButton, state?: string): string[] {

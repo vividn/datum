@@ -21,7 +21,7 @@
 //
 // `OUT` is the output section's own height, so the point where the output
 // has just finished opening is a place on the line — the NOTCH. Where a
-// release comes to rest on the line is $lib/detent.ts.
+// release comes to rest on the line is #lib/detent.ts.
 //
 // THE BAR OPENS UPWARD (da-mwp4m). vividn, 2026-10-27: «keep the input bar
 // on the bottom, and put the output/return bar above it again». So the input
@@ -31,7 +31,7 @@
 // there. The log scrolls on its own, like a terminal's history, newest at
 // the bottom next to the input.
 //
-// AND THE BAR RESTS IN THREE STATES (da-0b2vy, $lib/detent.ts): CLOSED at 0,
+// AND THE BAR RESTS IN THREE STATES (da-0b2vy, #lib/detent.ts): CLOSED at 0,
 // the SINGLE ROW at the notch, and FULLSCREEN at the ceiling. Full, the strip
 // gives way: the output section is 0 and the log takes its room, so the
 // newest command is the log's last line, next to the input, and the commands
@@ -295,7 +295,7 @@ export function moveTo(px: number): void {
 /**
  * Come to rest after a gesture that went `up` (or did not), at `speed`.
  *
- * All of the rule is `$lib/detent.ts` — momentum at any speed, a notch and
+ * All of the rule is `#lib/detent.ts` — momentum at any speed, a notch and
  * a ceiling that catch, a direction that decides below the notch, and a
  * coast that snags at a threshold it came from above. What is left here is
  * the two numbers the table needs and the curve that carries the bar there.

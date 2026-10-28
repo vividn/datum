@@ -85,7 +85,7 @@ export function wantsBox(argv: string[]): boolean {
  * inside the wasm process and draw what it says — nowview's elapsed
  * durations, dayview's now-line, `now`'s "for 25m". Run once, they show
  * the minute they were run in, so a pane running one of them re-runs on
- * the minute clock (da-r61i, `$lib/clock.ts`).
+ * the minute clock (da-r61i, `#lib/clock.ts`).
  *
  * Unless it is PINNED: `-t <instant>` centres nowview on an instant the
  * reader chose (the time cursor) and `--end-date` asks dayview for a day of

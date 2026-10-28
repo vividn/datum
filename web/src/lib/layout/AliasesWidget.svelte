@@ -9,10 +9,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { browser } from '$app/env';
-	import Pane from '$lib/Pane.svelte';
-	import { run } from '$lib/run.js';
-	import { aliasesArgv } from '$lib/calls.js';
-	import type { Alias } from '$lib/commands.js';
+	import Pane from '#lib/Pane.svelte';
+	import { run } from '#lib/run.ts';
+	import { aliasesArgv } from '#lib/calls.ts';
+	import type { Alias } from '#lib/commands.ts';
 	import { fields } from './engine.js';
 
 	let { epoch = 0 }: { epoch?: number } = $props();

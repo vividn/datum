@@ -254,7 +254,7 @@ describe('the cross-tab refresh is keyed by database', () => {
 			const heardElsewhere = await elsewhere.spyOnRunner();
 			// The channel object the app opens is made before this one, so by
 			// the time this has counted a message the app's listener has had
-			// it and decided (see $lib/changes.ts).
+			// it and decided (see #lib/changes.ts).
 			await countAnnouncements(elsewhere);
 			await peer.idle();
 			await elsewhere.idle();

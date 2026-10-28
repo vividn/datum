@@ -3,7 +3,7 @@
 	the REPL to be CLI, I think that is a more commonly understood acronym»)
 	— the day frame's large pane: the scrollback, and nothing to
 	type into. The bottom bar's prompt is the page's command line
-	($lib/PromptBar.svelte, da-rfs9: "Remove the input box at the bottom of
+	(#lib/PromptBar.svelte, da-rfs9: "Remove the input box at the bottom of
 	the REPL widget it is redundant now").
 
 	`runArgv` is exported so the bar's line and a widget-bar press (da-nz29)
@@ -23,7 +23,7 @@
 	clock is the same label, live.
 
 	The scrollback and the history are not this component's: they are the
-	one store every prompt shares ($lib/replStore.ts, da-0dhc), which is
+	one store every prompt shares (#lib/replStore.ts, da-0dhc), which is
 	also what keeps them across a reload. A command typed into the input
 	widget is in this scrollback too, output and all.
 
@@ -34,9 +34,9 @@
 	drawn first with them.
 -->
 <script lang="ts">
-	import { now, stampLabel } from '$lib/clock.js';
-	import { repl, record } from '$lib/replStore.js';
-	import { isDegraded, storage } from '$lib/storageState.js';
+	import { now, stampLabel } from '#lib/clock.ts';
+	import { repl, record } from '#lib/replStore.ts';
+	import { isDegraded, storage } from '#lib/storageState.ts';
 	import { onMount, tick, untrack } from 'svelte';
 	import Pane from './Pane.svelte';
 	import ReplEntry from './ReplEntry.svelte';
@@ -103,7 +103,7 @@
 	// `skip` takes from the NEWEST end whichever way the list runs.
 	const entries = $derived(skip ? (reversed ? ordered.slice(skip) : ordered.slice(0, -skip)) : ordered);
 
-	// AS MANY ENTRIES SIDE BY SIDE AS THE BOX HOLDS (da-5iyo, $lib/scrollback.ts).
+	// AS MANY ENTRIES SIDE BY SIDE AS THE BOX HOLDS (da-5iyo, #lib/scrollback.ts).
 	// The same `width` a drawn command is asked for is what says how many:
 	// it is the body's CONTENT box, which is the room the columns have.
 	const columns = $derived(lines ? 1 : columnsIn(width));
@@ -124,7 +124,7 @@
 		else pane?.scrollToBottom();
 	}
 
-	// The scrollback is restored before the first paint ($lib/replStore.ts);
+	// The scrollback is restored before the first paint (#lib/replStore.ts);
 	// pin the view to its newest entry the way a run does, once the pane is
 	// mounted — and again when the order flips.
 	$effect.pre(() => {
@@ -172,10 +172,10 @@
 	 * own on the way through (`--width`; `--show json` goes in the env),
 	 * and those are the web's plumbing, not a command to teach.
 	 *
-	 * A file command ($lib/dbio.ts) goes the browser's way, before any
+	 * A file command (#lib/dbio.ts) goes the browser's way, before any
 	 * await: its dialog needs the keypress — unless the caller brought
 	 * `stdin` itself, which is a file already chosen (`engine.press`). So
-	 * does `sync chain connect`, to the sync worker ($lib/sync.ts).
+	 * does `sync chain connect`, to the sync worker (#lib/sync.ts).
 	 *
 	 * `env` is the press's own: its frozen clock (`gesture` in engine.ts).
 	 */

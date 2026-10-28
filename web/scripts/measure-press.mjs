@@ -13,7 +13,7 @@
 //    asked), when it SETTLED, and the worker's own phase breakdown
 //    (compile / acquire / instantiate / run / flush) for the process itself.
 //    The gap between dispatch and the start of the process is queue wait:
-//    one WASI process at a time per worker ($lib/cli.ts `enqueue`).
+//    one WASI process at a time per worker (#lib/cli.ts `enqueue`).
 //  · when each region of the page redrew — the bottom bar's output section,
 //    the tail pane, the nowview pane, and the ghost in the input box.
 //

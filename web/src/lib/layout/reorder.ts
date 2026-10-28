@@ -6,7 +6,7 @@
 // what a press that never got that far stays. A FINGER is different,
 // because the strip scrolls sideways under it on a phone (RootBar.svelte)
 // and a sideways finger has to stay a scroll — so a finger picks the tab up
-// by holding it still for the app's one hold (`HOLD_MS`, $lib/hold.ts), and
+// by holding it still for the app's one hold (`HOLD_MS`, #lib/hold.ts), and
 // one that moves first was scrolling. Once a tab is up, the browser's own
 // scroll is refused (`touchmove`) and the strip scrolls itself instead,
 // while the pointer is near either end of it.
@@ -24,7 +24,7 @@
 // nowview's pattern (`nowpoint.ts`): HOLD, then a drag on a move or the
 // hold's own act on the lift.
 
-import { HOLD_MS, swallowTail } from '$lib/hold.js';
+import { HOLD_MS, swallowTail } from '#lib/hold.ts';
 
 /** How far a mouse moves before a press is a drag, and a finger before it is a scroll. */
 const SLOP = 6;

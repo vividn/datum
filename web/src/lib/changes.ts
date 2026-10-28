@@ -2,7 +2,7 @@
  * "The database changed" — one channel, whoever caused it.
  *
  * SQLite gives consistency, not notification: with every tab on one
- * database (see $lib/db.worker.ts), tab B's write is durable and tab A
+ * database (see #lib/db.worker.ts), tab B's write is durable and tab A
  * does not know it happened. vividn hit that within a minute of the site
  * going up, and it reads as data loss even when nothing was lost.
  *

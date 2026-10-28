@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { syncs } = await import('../src/lib/sync.ts');
 
 const answer = (out, code = 0) => ({ argv: [], code, stdout: JSON.stringify(out), stderr: '' });

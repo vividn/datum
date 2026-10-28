@@ -36,8 +36,8 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import type { Readable } from 'svelte/store';
-	import { act } from '$lib/act.js';
-	import Pane from '$lib/Pane.svelte';
+	import { act } from '#lib/act.ts';
+	import Pane from '#lib/Pane.svelte';
 	import WelcomeText from './WelcomeText.svelte';
 
 	const close = getContext<{ close: Readable<(() => void) | null> } | undefined>('layout-frame')?.close;

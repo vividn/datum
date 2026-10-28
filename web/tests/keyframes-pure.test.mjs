@@ -7,7 +7,7 @@ import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
-resolveLibAsSource(import.meta.url);
+resolveLibAsSource();
 const { advance, complete, framesOf } = await import('../src/lib/keyframes.ts');
 const { keysOf, stateKeysOf } = await import('../src/lib/fields.ts');
 const { shellSpans, shellSplit } = await import('../src/lib/shellSplit.ts');

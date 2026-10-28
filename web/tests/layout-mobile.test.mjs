@@ -103,9 +103,9 @@ const screen = (page) =>
 // itself is the pane `bar` inside it.
 const fieldsBar = (page) => pane(page, 'bar').locator('.bar').first();
 
-/** The hour ruler under today's band (`AXIS_HEIGHT`, $lib/panes.ts). */
+/** The hour ruler under today's band (`AXIS_HEIGHT`, #lib/panes.ts). */
 const AXIS = 15;
-/** The line between the past and a pinned today (`SEAM`, $lib/panes.ts). */
+/** The line between the past and a pinned today (`SEAM`, #lib/panes.ts). */
 const SEAM = 3;
 
 /**

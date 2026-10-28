@@ -24,7 +24,7 @@
 	HANDLE, dragged to the edge the bar should be on. A HOLD on the name
 	in layout mode opens `Change Widget` (da-efr4i, vividn: «Long pressing or
 	right clicking on a widget title opens the change widget menu»). It is
-	the app's ONE hold ($lib/hold.ts), and the `contextmenu` it swallows
+	the app's ONE hold (#lib/hold.ts), and the `contextmenu` it swallows
 	is the title's alone: a reader right-clicking a pane's CONTENT still
 	gets the browser's menu, which is where text is selected and copied.
 
@@ -187,9 +187,9 @@
 <script lang="ts">
 	import { setContext, tick, untrack, type Snippet } from 'svelte';
 	import { on } from 'svelte/events';
-	import { act } from '$lib/act.js';
-	import { ask } from '$lib/confirm.js';
-	import { holds } from '$lib/hold.js';
+	import { act } from '#lib/act.ts';
+	import { ask } from '#lib/confirm.ts';
+	import { holds } from '#lib/hold.ts';
 	import { writable } from 'svelte/store';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
@@ -406,7 +406,7 @@
 	 * with more.
 	 *
 	 * Layout mode's alone, like the item itself (da-vvcxc): undefined in
-	 * normal mode, which turns the gesture off entirely ($lib/hold.ts). The
+	 * normal mode, which turns the gesture off entirely (#lib/hold.ts). The
 	 * gesture is the app's ONE hold — the same 450ms, the same right click,
 	 * the same menu key — and it is `preventDefault`ed only here: a reader
 	 * right-clicking a pane's CONTENT still gets the browser's own menu,

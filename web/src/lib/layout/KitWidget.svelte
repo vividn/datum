@@ -25,10 +25,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { browser } from '$app/env';
-	import Pane from '$lib/Pane.svelte';
-	import { kitWidgetArgv, type KitWidgetRow } from '$lib/calls.js';
-	import { run } from '$lib/run.js';
-	import { shellSplit } from '$lib/shellSplit.js';
+	import Pane from '#lib/Pane.svelte';
+	import { kitWidgetArgv, type KitWidgetRow } from '#lib/calls.ts';
+	import { run } from '#lib/run.ts';
+	import { shellSplit } from '#lib/shellSplit.ts';
 	import { pressWithPills } from './engine.js';
 	import { kitWidget, refreshKits, type KitWidget } from './store.js';
 

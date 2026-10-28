@@ -3,7 +3,7 @@
 // The pages are written at 73 columns, and a phone's REPL holds about 43:
 // `help occur` was a 597px `pre` in a 351px column, read by scrolling the
 // whole history sideways. The REPL now asks for help at its own width in
-// characters (`COLUMNS`, `helpEnv` in $lib/panes.ts) and the CLI fits the
+// characters (`COLUMNS`, `helpEnv` in #lib/panes.ts) and the CLI fits the
 // page to it (`datum_parse::help::fit`): no line wider than the pane, and a
 // table's columns still lined up.
 

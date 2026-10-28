@@ -22,11 +22,11 @@
 	of the CLI what it will take.
 -->
 <script lang="ts">
-	import Pane from '$lib/Pane.svelte';
-	import { act } from '$lib/act.js';
-	import { stripAnsi } from '$lib/ansi.js';
-	import { letterOf, resolveArgv, said, STRATEGIES, when, type Strategy } from '$lib/conflicts.js';
-	import { shellJoin } from '$lib/shellSplit.js';
+	import Pane from '#lib/Pane.svelte';
+	import { act } from '#lib/act.ts';
+	import { stripAnsi } from '#lib/ansi.ts';
+	import { letterOf, resolveArgv, said, STRATEGIES, when, type Strategy } from '#lib/conflicts.ts';
+	import { shellJoin } from '#lib/shellSplit.ts';
 	import { conflicts, press, ready } from './engine.js';
 
 	interface Choice {

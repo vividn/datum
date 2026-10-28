@@ -6,7 +6,7 @@
 // that runs it. The browser releases the lock when that tab closes, and the
 // next tab in the lock's queue takes over by itself.
 //
-// The elected tab — the LEADER — starts $lib/sync.worker.ts, and binds an
+// The elected tab — the LEADER — starts #lib/sync.worker.ts, and binds an
 // endpoint there if the database syncs: it is in a sync chain. Its store is
 // the CLI: the worker asks for `datum sync …` commands
 // and they run here, in the database worker, like every other command.

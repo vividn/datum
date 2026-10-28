@@ -83,7 +83,7 @@ export type Item = {
 	disabled?: boolean;
 	marked?: boolean;
 	/**
-	 * What its tap does, for the outline (`$lib/act.ts`, rule 22): `run`
+	 * What its tap does, for the outline (`#lib/act.ts`, rule 22): `run`
 	 * where it WRITES at once, which draws the double (da-kk0vr); `open`
 	 * where it opens a modal, a sheet or a confirm, which wears the `›`
 	 * (da-vteda). Absent everywhere else.

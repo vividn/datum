@@ -5,7 +5,7 @@
 // the output of a single entry should be narrow enough to comfortably fit
 // 2 on mobile side by side.»
 //
-// `$lib/scrollback.ts` answers that with two numbers, and a number in a
+// `#lib/scrollback.ts` answers that with two numbers, and a number in a
 // file is only as good as the measurement behind it — a breakpoint chosen
 // by eye reads exactly the same. So this file TAKES BOTH MEASUREMENTS
 // AGAIN, against the built app, and holds the constants to what it finds:

@@ -11,7 +11,7 @@
 // not the box it was in, because a maximize into a small box is not one.
 //
 // The second is that it is VIEW STATE and nothing else
-// (`$lib/layout/maximize.ts`): the tree is not touched, so no draft is
+// (`#lib/layout/maximize.ts`): the tree is not touched, so no draft is
 // written, no layout wears the modified dot, the ratios come back exactly,
 // and the state is gone on a reload, on leaving the layout and coming back,
 // and whenever the pane it names is no longer there. That is what «not too

@@ -10,11 +10,11 @@
 	its end.
 -->
 <script lang="ts">
-	import { act } from '$lib/act.js';
-	import { openField } from '$lib/fieldWidget.js';
-	import { explainCommand, explainGuide, GUIDES } from '$lib/help.js';
+	import { act } from '#lib/act.ts';
+	import { openField } from '#lib/fieldWidget.ts';
+	import { explainCommand, explainGuide, GUIDES } from '#lib/help.ts';
 	// Each shape's name and line are `VERBS`'s, shared with the Track form.
-	import { VERBS } from '$lib/track.js';
+	import { VERBS } from '#lib/track.ts';
 
 	/*
 	 * One working day, 0 to 120, shared by the three timelines so they line up (vividn, 2026-10-14: «a bit more

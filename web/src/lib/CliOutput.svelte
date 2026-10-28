@@ -2,7 +2,7 @@
 	One block of CLI output, rendered the way a terminal would.
 
 	Monospace, whitespace preserved, and ANSI translated into spans rather
-	than dumped as escape bytes (see $lib/ansi.ts). Lines are NOT wrapped:
+	than dumped as escape bytes (see #lib/ansi.ts). Lines are NOT wrapped:
 	datum sizes its tables to a column count, and a pane that reflowed them
 	on every resize would shuffle the columns under the reader. A block
 	wider than its pane scrolls sideways inside it instead — and only then:
@@ -18,7 +18,7 @@
 	`datum dayview` is the exception that proves the pane is rendering CLI
 	output faithfully: its stdout is an SVG document, so it is shown as a
 	picture. Inline, so its marks are elements a pointer, a finger and the
-	keyboard can ask what they are (da-s5da, $lib/hover.ts) — and sanitised
+	keyboard can ask what they are (da-s5da, #lib/hover.ts) — and sanitised
 	on the way in, so the runner's stdout does not become an injection
 	point the day it carries synced data.
 -->
@@ -101,7 +101,7 @@
 		   a table may not — scrolling sideways to a day loses the day —
 		   but scaling shrinks the text with it, and at a pane's width that
 		   is what made the dayview's axis illegible (da-m0cj). A pane that
-		   tells datum its size (`wantsBox` in $lib/panes.ts) gets a band that
+		   tells datum its size (`wantsBox` in #lib/panes.ts) gets a band that
 		   already fits, and this cap then does nothing; one that does not,
 		   like nowview's 520px canvas, still shrinks to the box. */
 		max-width: 100%;
@@ -130,7 +130,7 @@
 	}
 
 	/* A FIELD PILL on the bar brings that field's marks out (da-8810n,
-	   `highlight` in $lib/hover.ts). vividn: "maybe a highlight outline, so
+	   `highlight` in #lib/hover.ts). vividn: "maybe a highlight outline, so
 	   that all the occurences or data of that field is brought out a little
 	   bit. nothing too intense, it must still be possible to see all the
 	   other data well."
@@ -147,7 +147,7 @@
 	   one rule says both, and a reader who has learned what the glow means
 	   for a field has learned it for an entry. The difference is only what
 	   it is ON: a field's whole group, or the one mark that names the
-	   entry (`bringOut` in $lib/hover.ts). */
+	   entry (`bringOut` in #lib/hover.ts). */
 	.picture :global(.field[data-pilled]),
 	.picture :global([data-selected]) {
 		filter: drop-shadow(0 0 1px var(--ink-bright)) drop-shadow(0 0 1px var(--ink-bright));

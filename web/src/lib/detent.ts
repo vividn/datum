@@ -74,7 +74,7 @@ export const DETENT = 24;
  * ONE OBJECT AND NOT TWO MORE POSITIONAL ARGUMENTS (da-o2wm8): `rest`
  * already takes five, and `rest(now, speed, up, notch, ceiling, 900, 0)`
  * is a line nobody can read. The pair also travels together everywhere —
- * the debug widget moves them as a pair, `$lib/tuning.ts` keeps them as
+ * the debug widget moves them as a pair, `#lib/tuning.ts` keeps them as
  * a pair — so it is one thing, not two.
  */
 export interface Tuning {
