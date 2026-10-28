@@ -1673,10 +1673,12 @@ pub struct DayviewArgs {
     /// over it; a duration the band as that long before now, no integrity
     /// marks, the field's own entries in it drawn in place of a sample.
     pub context: Option<String>,
-    /// `--data-layer`, unlisted: datum.day's nowview (da-0e06p). The bands'
-    /// data alone, for a viewer that draws its own axis, gridlines and now
-    /// over a crop of it: no gridlines and no now-line, and a state still
-    /// running drawn on to its day's end, for the viewer to cut at its now.
+    /// `--data-layer`, unlisted: datum.day's day strip and nowview
+    /// (da-0e06p, da-m6i2a). The bands' data alone, for a viewer that draws
+    /// its own axis, gridlines and now over a crop of it: no gridlines and
+    /// no now-line, a state still running drawn on to its day's end, for
+    /// the viewer to cut at its now, and each day one stretch by instant at
+    /// a second a unit, whatever `--width`, so any view scales it.
     pub data_layer: bool,
 }
 

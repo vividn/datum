@@ -918,6 +918,13 @@ describe('the nowview crops the day’s data under its overlay', () => {
 	const BAND = 'section[data-pane="nowview"] .nowview-band';
 	const phone = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
 	const seen = (page) => page.evaluate(() => (window.__datumSeen ?? []).map((a) => a.join(' ')));
+	/** The dates a data layer run drew, by its `--end-date` and `--pictures` (#lib/dayLayers.ts). */
+	const layerDates = (argv) => {
+		const words = argv.split(' ');
+		const end = words[0] === 'dayview' && words.includes('--data-layer') && words[words.indexOf('--end-date') + 1];
+		const backs = end && words.includes('--pictures') ? words[words.indexOf('--pictures') + 1].split(',') : [];
+		return backs.map((back) => new Date(Date.parse(end) - Number(back) * 86_400_000).toISOString().slice(0, 10));
+	};
 
 	test('a pinch in to a fifth asks for the new window’s overlay on the release, and for no data', async () => {
 		await withApp(async (app) => {
@@ -961,7 +968,12 @@ describe('the nowview crops the day’s data under its overlay', () => {
 				await late.waitFor({ state: 'attached' });
 				const [r, b] = await late.evaluate((l, band) => [l.getBoundingClientRect(), document.querySelector(band).getBoundingClientRect()].map((x) => x.toJSON()), BAND);
 				assert.ok(r.width > 1 && r.left >= b.left && r.right <= b.right, `yesterday's block is at ${JSON.stringify(r)} in ${JSON.stringify(b)}`);
-				assert.ok((await seen(page)).some((a) => /^dayview --data-layer .*--end-date -1$/.test(a)), 'yesterday was not asked');
+				const yesterday = await page.evaluate(() => {
+					const d = new Date();
+					d.setDate(d.getDate() - 1);
+					return [d.getFullYear(), d.getMonth() + 1, d.getDate()].map((n) => String(n).padStart(2, '0')).join('-');
+				});
+				assert.ok((await seen(page)).some((a) => layerDates(a).includes(yesterday)), 'yesterday was not asked');
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...phone, clock: todayAt(0, 10) }

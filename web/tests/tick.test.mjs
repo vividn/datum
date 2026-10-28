@@ -206,16 +206,17 @@ describe('the minute tick', () => {
 				await until(() => ranOf(seen, 'dayview'), (ran) => ran.length > 0);
 				await app.idle();
 
-				// dayview once, today's band and the geometry beside it in one
-				// run (da-p5lyt) — the strip's other bands are finished days
-				// and keep the pictures they have, however deep the stack is.
-				// Whatever the depth, and whatever is in the tail. nowview not
-				// at all: it slides (da-hklaz).
+				// dayview once, the geometry, which says what day it is: today's
+				// band is cut at the new now from the day's data layer it holds
+				// (#lib/dayLayers.ts, da-m6i2a), and the strip's other bands are
+				// finished days and keep the pictures they have, however deep
+				// the stack is. Whatever the depth, and whatever is in the tail.
+				// nowview not at all: it slides (da-hklaz).
 				assert.equal((await ranOf(seen, 'nowview')).length, 0, 'nowview was run by the clock');
 				assert.deepEqual(
 					(await ranOf(seen, 'dayview')).map((argv) => argv.slice(-2).join(' ')),
-					['--pictures 0'],
-					'the strip re-drew more than today'
+					['--show json'],
+					'the strip re-drew more than the geometry'
 				);
 				// The tick is not the frame's epoch: a pane whose render does
 				// not depend on now is not re-run, and the widget bar — one

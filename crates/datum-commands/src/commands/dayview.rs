@@ -281,11 +281,8 @@ fn layout_of(
     // What `check integrity` finds in the window, bucketed below by the day
     // each flagged entry happened on (da-0lful). Empty result is fine; just
     // no error marks, and none around a sample (da-jc8ic).
-    // A data layer has none either: the nowview it is cropped for never drew
-    // them, and reading them is most of a day's cost (da-0e06p).
     let findings = match (args.context.as_ref(), findings) {
         (Some(_), _) => Vec::new(),
-        (None, _) if args.data_layer => Vec::new(),
         (None, Some(read)) => read.to_vec(),
         (None, None) => {
             datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default()
@@ -360,9 +357,27 @@ fn layout_of(
     for date in if windowed { &[][..] } else { &day_dates[..] } {
         // The day's window is every instant its date was read on a clock.
         // A date no clock read (Samoa's 2011-12-30) is an empty band.
-        let spans = day_spans(&zones, *date);
+        let mut spans = day_spans(&zones, *date);
         let day_start_ms = spans.iter().map(|s| s.start_ms).min().unwrap_or_default();
         let day_end_ms = spans.iter().map(|s| s.end_ms).max().unwrap_or_default();
+        // A data layer is the day by instant (da-m6i2a): one stretch, so a
+        // view crops it across a clock change as if there were none. Its
+        // clock is named only when one clock read the whole day, so a
+        // viewer drawing a day as it was lived knows to ask for its picture.
+        if args.data_layer && day_start_ms < day_end_ms {
+            spans = vec![DayviewSpan {
+                start_ms: day_start_ms,
+                end_ms: day_end_ms,
+                lo: 0.0,
+                hi: 1.0,
+                label: String::new(),
+                offset_s: spans
+                    .iter()
+                    .map(|s| s.offset_s)
+                    .reduce(|a, b| a.filter(|_| a == b))
+                    .flatten(),
+            }];
+        }
         let label_lines = format_day_label(*date);
 
         let errors = (findings.iter())
@@ -412,7 +427,19 @@ fn layout_of(
         DayviewOrientation::Vertical => Orientation::Vertical,
         DayviewOrientation::Horizontal => Orientation::Horizontal,
     };
-    let width = args.width.unwrap_or(DEFAULT_WIDTH);
+    // A data layer is drawn at a second a unit (da-m6i2a): its day's
+    // instants, and no margin, label or axis around them.
+    let layer_day =
+        (days_input.first()).map(|d| ((d.end_ms - d.start_ms) as f64 / 1000.0).max(1.0));
+    let (width, height) = match (layer_day.filter(|_| args.data_layer), orientation) {
+        (Some(seconds), Orientation::Horizontal) => (seconds, args.height),
+        (Some(seconds), Orientation::Vertical) => (DEFAULT_WIDTH, Some(seconds)),
+        (None, _) => (args.width.unwrap_or(DEFAULT_WIDTH), args.height),
+    };
+    let (margin, time_axis_height) = match args.data_layer {
+        true => (0.0, 0.0),
+        false => (args.margin, args.time_axis_height),
+    };
     let day_height_default = args.day_height.unwrap_or(DEFAULT_DAY_HEIGHT);
     // If the user gave --height (horizontal mode) or --width (vertical mode)
     // without an explicit --day-height, derive day_height to fit the
@@ -424,8 +451,8 @@ fn layout_of(
     let day_height = match (stack_extent, args.day_height) {
         (Some(total), None) => day_height_for_extent(
             total,
-            args.margin,
-            args.time_axis_height,
+            margin,
+            time_axis_height,
             DEFAULT_INTERDAY_MARGIN,
             n_days as usize,
         )
@@ -438,9 +465,9 @@ fn layout_of(
     // day's 24 hourly ticks, which a minute's band must not draw.
     let window_ticks = match context {
         Some(Around::Window(ms)) => Some(datum_layout::nowview::nowview_axis_ticks(
-            width - 2.0 * args.margin,
+            width - 2.0 * margin,
             ms as f64 / 60_000.0,
-            args.time_axis_height,
+            time_axis_height,
         )),
         Some(Around::Now) => Some(Vec::new()),
         _ => None,
@@ -449,13 +476,13 @@ fn layout_of(
         days: days_input,
         now_ms,
         width,
-        height: args.height,
+        height,
         day_height,
         interday_margin: DEFAULT_INTERDAY_MARGIN,
-        time_axis_height: args.time_axis_height,
-        margin: args.margin,
-        // A window has no date to label.
-        label_width: if windowed {
+        time_axis_height,
+        margin,
+        // A window has no date to label, and a data layer no room for one.
+        label_width: if windowed || args.data_layer {
             Some(0.0)
         } else {
             args.label_width

@@ -406,8 +406,9 @@ export const dayUnderSliver = (height: number): number =>
  * pins the x of every hour: `time_axis_extent` is the width, and the
  * gridlines fall at the same fractions of it in each.
  *
- * The strip holds each picture by this argv, and asks the days it lacks
- * together, by `picturesArgv` (da-p5lyt).
+ * The strip holds each picture by this argv. It asks for this one only for
+ * a day the clock changed in: every other is its data layer scaled to the
+ * band (#lib/dayLayers.ts, da-m6i2a).
  */
 export function bandArgv(width: number, dayHeight: number, end = 0): string[] {
 	const argv = [
@@ -441,18 +442,6 @@ export const geometryArgv = (width: number, dayHeight: number): string[] => [
 	...bandArgv(width, dayHeight),
 	'--show',
 	'json'
-];
-
-/**
- * The geometry and the pictures of the days `ends` back, as argv: one run
- * answering what one `bandArgv` a day would, each picture under its days
- * back in `pictures` (da-p5lyt). A process and its read are most of a
- * band's cost, so three days in one run cost a third of three runs.
- */
-export const picturesArgv = (width: number, dayHeight: number, ends: number[]): string[] => [
-	...geometryArgv(width, dayHeight),
-	'--pictures',
-	ends.join(',')
 ];
 
 /** `geometryArgv`'s answer, as much of it as the strip draws with. */
@@ -595,38 +584,32 @@ export const nowviewSpec = (history: string, center?: string, vertical = false, 
 	]
 });
 
-/**
- * How many of the nowview's pixels along time a day's data layer is drawn
- * at, a pixel of the overlay's: a day at the scale of a 30m window. The
- * layer is asked at the nowview's box alone, never its window, so a stretch
- * or a pan crops the same picture and asks for nothing but the overlay.
- */
-const LAYER_DAY = (24 * 60) / stepMinutes(NOWVIEW_HISTORY);
+/** How tall a day's data layer is drawn: any view scales it to its own (#lib/dayLayers.ts, da-m6i2a). */
+export const LAYER_HEIGHT = 100;
 
 /**
- * The day `back` days before today as the nowview's data layer, as argv
- * (da-0e06p): the dayview's bands of it and nothing else (`--data-layer`),
- * `cross` across as the overlay's band is and the day `along` its time axis
- * at the scale `LAYER_DAY` names.
+ * The data layers of the ISO dates `dates` asked as one run (da-m6i2a): each
+ * day by instant, a second a unit, by days back from the newest, absolute so
+ * every widget names a day alike. `--pictures` draws them, `--digests` checks
+ * those held.
  */
-export const layerArgv = (along: number, cross: number, vertical: boolean, back: number): string[] => [
-	'dayview',
-	'--data-layer',
-	vertical ? '--height' : '--width',
-	String(Math.round(along * LAYER_DAY)),
-	'--day-height',
-	String(cross),
-	'--margin',
-	'0',
-	'--label-width',
-	'0',
-	'--time-axis-height',
-	'0',
-	'--days',
-	'1',
-	...(vertical ? ['--orientation', 'vertical'] : []),
-	...(back ? ['--end-date', String(-back)] : [])
-];
+export const layersArgv = (dates: string[], vertical: boolean, digests = false): string[] => {
+	const newest = [...dates].sort().at(-1)!;
+	const back = (date: string) => Math.round((Date.parse(newest) - Date.parse(date)) / 86_400_000);
+	return [
+		'dayview',
+		'--data-layer',
+		'--day-height',
+		String(LAYER_HEIGHT),
+		'--end-date',
+		newest,
+		...(vertical ? ['--orientation', 'vertical'] : []),
+		'--show',
+		'json',
+		digests ? '--digests' : '--pictures',
+		dates.map(back).join(',')
+	];
+};
 
 export const TAIL: PaneSpec = {
 	title: 'tail',

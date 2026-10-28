@@ -13,7 +13,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, maximizeButton, settled } from './support/layout.mjs';
-import { inView, picturesAsked } from './support/daystrip.mjs';
+import { pageToday, picturesAsked } from './support/daystrip.mjs';
 
 before(startApp);
 after(stopApp);
@@ -49,28 +49,25 @@ test('a width-only resize runs each drawn view once, and no tail', async () => {
 
 // da-8khuw: the day strip asked for its whole base stack at every new
 // size, fifteen processes on five years of data, the last 1.5 s behind the
-// resize. A new size asks for today and the days on screen, the rest kept
-// until they are; and the sizes before it are held, so a restore asks
-// nothing, nor a maximize again.
-test('a maximize asks for the days on screen, and a restore and a maximize again ask nothing', async () => {
+// resize. Each band is now its day's data layer scaled to the band
+// (da-m6i2a, #lib/dayLayers.ts), held whatever the size: so a maximize asks
+// for no day's data, only the geometry at the new width, and a restore and a
+// maximize again ask nothing.
+test('a maximize asks for no day, and a restore and a maximize again ask nothing', async () => {
 	await withApp(async (app) => {
 		await app.idle();
 		const press = () => maximizeButton(app.page, 'strip').click();
 		const runs = await runsOf(app, press);
 		assert.deepEqual(twice(runs), [], runs.join(' | '));
-		const asked = days(runs);
-		assert.deepEqual(twice(asked), [], `a day asked twice: ${runs.join(' | ')}`);
-		assert.ok(asked.includes(0), `the maximize re-drew no today: ${runs.join(' | ')}`);
-		const visible = await inView(app);
-		assert.deepEqual(asked.filter((end) => !visible.includes(end)), [], `days off screen asked for (on screen: ${visible})`);
+		assert.deepEqual(await days(app, runs), [], `the maximize asked for a day: ${runs.join(' | ')}`);
+		assert.ok(runs.some((argv) => argv.startsWith('dayview ') && argv.includes('--show json')), `no geometry at the new width: ${runs.join(' | ')}`);
 		for (const step of ['restore', 'maximize again'])
-			assert.deepEqual(days(await runsOf(app, press)), [], `${step} drew a day again`);
+			assert.deepEqual(await days(app, await runsOf(app, press)), [], `${step} drew a day again`);
 	}, DESKTOP);
 });
 
 /** The days back the strip's runs ask pictures of, in all. */
-const days = (runs) =>
-	runs
-		.filter((argv) => argv.startsWith('dayview '))
-		.flatMap((argv) => picturesAsked(argv.split(' ')))
-		.sort((a, b) => a - b);
+const days = async (app, runs) => {
+	const today = await pageToday(app);
+	return runs.flatMap((argv) => picturesAsked(argv.split(' '), today)).sort((a, b) => a - b);
+};

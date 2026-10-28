@@ -790,11 +790,16 @@ binary.
   are CLI commands through `run(argv)`. The CLI decides what is drawn, and
   the page may draw what it decided (vividn agreed, 2026-10-26, da-0e06p):
   the day strip's ruler from `axis_ticks`, and the nowview, which lays a
-  crop of the day's data layer (`dayview --data-layer`, asked at its box
-  alone) under the CLI's overlay (`nowview --overlay`: the picture with no
-  data, no database opened) and paints its now strip with the block each
-  lane holds at now (`#lib/nowcrop.ts`), so a stretch or a pan
-  asks for the overlay and no data. What TypeScript does
+  crop of the day's data layer (`dayview --data-layer`: the day by
+  instant, a second a unit, at no box's size) under the CLI's overlay
+  (`nowview --overlay`: the picture with no data, no database opened) and
+  paints its now strip with the block each lane holds at now
+  (`#lib/nowcrop.ts`), so a stretch or a pan asks for the overlay and no
+  data. The strip draws its rows from the same layers, scaled to the band
+  (`bandOf`), held outside both widgets by date in `#lib/dayLayers.ts`
+  (da-m6i2a), so neither asks for a day the other drew; a day the clock
+  changed in is the CLI's own picture of its row, its lanes bent along the
+  change. What TypeScript does
   hold is the transport: carrying those files to an S3-compatible bucket
   (`#lib/s3.ts`, SigV4 by aws4fetch, the browser straight to the bucket
   under its CORS), each device under a folder of its own,
@@ -1084,19 +1089,21 @@ binary.
   at least, however short the box, which is the past the reader scrolls
   back through (the two numbers were one, so the whole scroll
   range was the single partly-revealed day and the strip moved 38px and
-  stopped), a picture of one day per band through the seam (`bandArgv` in
-  `web/src/lib/panes.ts`), the days it lacks and the geometry asked in one
-  `dayview --pictures` run (`picturesArgv`, da-p5lyt). Every band asks for the same `--width` and
-  `--day-height`, which is what pins `label_width` and so makes the hour
-  gridlines of one band land on those of the next; all but today's
-  suppress the axis strip with `--time-axis-height 0`. When the band above
+  stopped), a picture of one day per band through the seam: the day's
+  data layer scaled to the band (`#lib/dayLayers.ts`, da-m6i2a), the days
+  it lacks asked in one `dayview --data-layer --pictures` run with the
+  nowview's (da-p5lyt), a scroll up a fortnight beyond the top with them,
+  and the geometry beside them. Every band is drawn at the same width and
+  day height, so the hour gridlines, the strip's own, land on every band;
+  a day the clock changed in is the CLI's own picture of it (`bandArgv` in
+  `web/src/lib/panes.ts`). When the band above
   today is not the day before it, a jagged `<button>` between them scrolls
   yesterday back down. A change re-draws today alone: each earlier day on
-  screen is checked by one `dayview --digests` run, the SHA-256 of each
-  day's picture, and asked for again only when its held picture differs
-  (da-efxk5). Each finished day's picture is kept past a reload too, in
-  IndexedDB (`#lib/heldDays.ts`) by database, band argv and date, a month
-  of days at the last three sizes: a reload draws the earlier days from
+  screen is checked by one `dayview --data-layer --digests` run, the
+  SHA-256 of each day's layer, and asked for again only when its held layer
+  differs (da-efxk5). Each finished day's layer is kept past a reload too, in
+  IndexedDB (`#lib/heldDays.ts`) by database and date, a month of days:
+  a reload draws the earlier days from
   there and asks for today, and the same digest check redraws a kept day
   only once it is on screen and its picture changed, a newer datum's
   drawing included (da-crq76).

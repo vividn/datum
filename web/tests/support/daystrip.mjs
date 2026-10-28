@@ -110,10 +110,6 @@ export const stamps = ({ page }) =>
 			rows.map((row) => [...row.querySelectorAll('.stamp span')].map((s) => s.textContent))
 		);
 
-/** Where every hourly gridline sits along a band's own x-axis. */
-export const gridlines = (svg) =>
-	[...svg.matchAll(/<line class="gridline"[^>]*\sx1="([\d.]+)"/g)].map((m) => Number(m[1]));
-
 /** How tall datum actually drew the picture, off the document it wrote. */
 export const svgHeight = (svg) => Number(svg.match(/<svg[^>]*\sheight="([\d.]+)"/)[1]);
 
@@ -419,9 +415,30 @@ export const waitForHeights = ({ page }, height) =>
 		return svgs.length > 0 && svgs.every((svg) => svg?.getAttribute('height') === String(want));
 	}, height);
 
-/** The days back a strip's `dayview` run, as argv, asks the pictures of: its `--pictures` (da-p5lyt). */
-export const picturesAsked = (argv) =>
-	argv.includes('--pictures') ? argv[argv.indexOf('--pictures') + 1].split(',').map(Number) : [];
+/**
+ * The days back from ISO date `today` a strip's `dayview` run, as argv,
+ * draws: a data layer run's `--pictures`, counted from its `--end-date`
+ * (#lib/dayLayers.ts, da-m6i2a), or the one day a band's own picture is of,
+ * which a day the clock changed in asks for. The geometry and a check draw
+ * none.
+ */
+export const picturesAsked = (argv, today) => {
+	if (argv[0] !== 'dayview' || argv.includes('--digests')) return [];
+	const flag = (name) => argv[argv.indexOf(name) + 1];
+	if (argv.includes('--data-layer')) {
+		const from = Math.round((Date.parse(today) - Date.parse(flag('--end-date'))) / 86_400_000);
+		return argv.includes('--pictures') ? flag('--pictures').split(',').map((back) => from + Number(back)) : [];
+	}
+	if (argv.includes('--show')) return [];
+	return [argv.includes('--end-date') ? -Number(flag('--end-date')) : 0];
+};
+
+/** The local ISO date the page's (held) clock is on. */
+export const pageToday = ({ page }) =>
+	page.evaluate(() => {
+		const d = new Date();
+		return [d.getFullYear(), d.getMonth() + 1, d.getDate()].map((n) => String(n).padStart(2, '0')).join('-');
+	});
 
 /** Today, and every day whose band shows at all in the stack: what a resize or a refresh draws. */
 export const inView = ({ page }) =>
@@ -524,12 +541,11 @@ export async function scrolledFrom({ page }, top, seen) {
 	});
 }
 
-/** Which days the `dayview` PICTURES a spy saw were for, as days ago (`picturesAsked`). */
-export const viewsOf = async (seen) =>
-	(await seen())
-		.filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer'))
-		.flatMap(picturesAsked)
-		.sort((a, b) => a - b);
+/** Which days the `dayview` runs a spy saw drew, as days ago from the page's today (`picturesAsked`). */
+export const viewsOf = async (seen, app) => {
+	const today = await pageToday(app);
+	return (await seen()).flatMap((argv) => picturesAsked(argv, today)).sort((a, b) => a - b);
+};
 
 /** The box today's band occupies on the screen — it is not to move. */
 export const todayBand = ({ page }) => page.locator('.band[data-days-ago="0"]').boundingBox();

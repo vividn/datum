@@ -1353,3 +1353,63 @@ fn dayview_data_layer_is_the_bands_alone() {
         "a data layer draws a running state on to the day's end"
     );
 }
+
+/// da-m6i2a: a data layer is its day by instant, at a second a unit,
+/// whatever `--width`: so a view scales one picture of it to any box. A
+/// day the clock went back in is one stretch 25 hours long, a dot an hour
+/// after the other drawn 3600 units on from it, and no clock is named,
+/// which tells datum.day to draw that day's row as the CLI's own picture.
+/// A day one clock read names it, as the lived picture does.
+#[test]
+fn a_data_layer_is_its_day_by_instant_at_a_second_a_unit() {
+    let db = fresh_db();
+    dot_in(&db, "2026-10-25T00:20:00Z", "Europe/Berlin");
+    dot_in(&db, "2026-10-25T01:20:00Z", "Europe/Berlin");
+    dot_in(&db, "2026-10-27T09:00:00Z", "Europe/Berlin");
+    let layer = |date: &str| {
+        let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let argv = [
+            "dayview",
+            "--data-layer",
+            "--width",
+            "700",
+            "--end-date",
+            date,
+            "-o",
+            &path,
+        ];
+        run_cli(&argv, &db).expect("dayview dispatch");
+        let svg = std::fs::read_to_string(&path).expect("read svg");
+        // Each `tag`'s attribute `name`, where it has one.
+        let attrs = |tag: &str, name: &str| -> Vec<Option<String>> {
+            (svg.match_indices(tag))
+                .map(|(i, _)| {
+                    let el = &svg[i..i + svg[i..].find('>').unwrap()];
+                    let at = el.find(&format!(r#" {name}=""#))? + name.len() + 3;
+                    Some(el[at..at + el[at..].find('"').unwrap()].to_string())
+                })
+                .collect()
+        };
+        let span = r#"class="day-data""#;
+        let spans: Vec<_> = (attrs(span, "data-hi").into_iter().flatten())
+            .zip(attrs(span, "data-offset"))
+            .collect();
+        let dots: Vec<f64> = (attrs(r#"<circle class="point-bg""#, "cx").into_iter())
+            .map(|cx| cx.unwrap().parse().unwrap())
+            .collect();
+        (spans, dots)
+    };
+
+    let (spans, dots) = layer("2026-10-25");
+    assert_eq!(
+        spans,
+        vec![("90000".to_string(), None)],
+        "one stretch, 25 hours, no one clock"
+    );
+    assert_eq!(dots.len(), 2);
+    assert!((dots[1] - dots[0] - 3600.0).abs() < 1e-6, "{dots:?}");
+
+    let (spans, _) = layer("2026-10-27");
+    assert_eq!(spans, vec![("86400".to_string(), Some("3600".to_string()))]);
+}

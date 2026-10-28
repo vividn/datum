@@ -6,7 +6,9 @@
 // jarring». A swipe to another layout unmounts the strip; the swipe back
 // mounts a new one. So each case swipes away and back, and counts the
 // `dayview` runs the return asks for: none when nothing changed, the days
-// on screen after a write, and every day after a midnight.
+// on screen after a write, and only the new today after a midnight. The
+// days' data layers are held outside the strip (#lib/dayLayers.ts,
+// da-m6i2a), so what the strip drops past a month it draws again from them.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -112,7 +114,7 @@ const keptRows = (app, edit = '') =>
 							const { db, size, svg } = all.result[0];
 							for (let day = 1; day <= 40; day++)
 								store.put({ db, size, date: new Date(Date.UTC(2020, 0, day)).toISOString().slice(0, 10), svg, at: 0 });
-							for (const width of [1, 2, 3, 4]) store.put({ db, size: size.replace(/--width \d+/, `--width ${width}`), date: '2020-01-01', svg, at: 0 });
+							for (const width of [1, 2, 3, 4]) store.put({ db, size: `${size} ${width}`, date: '2020-01-01', svg, at: 0 });
 						}
 					};
 					tx.oncomplete = () => {
@@ -124,9 +126,9 @@ const keptRows = (app, edit = '') =>
 		edit
 	);
 
-/** Every day of `before` but today, kept (#lib/heldDays.ts). */
+/** Every day of `before` but today, kept (#lib/heldDays.ts): a layer, and those asked above the top too. */
 const allKept = (app, before) =>
-	until(() => keptRows(app), (rows) => rows.length === Object.keys(before).length - 1);
+	until(() => keptRows(app), (rows) => rows.length >= Object.keys(before).length - 1);
 
 describe('the day strip across a swipe', () => {
 	test('back from another layout, the strip shows what it drew and asks for none of it again', async () => {
@@ -169,7 +171,7 @@ describe('the day strip across a swipe', () => {
 			);
 			await app.idle();
 
-			const asked = await viewsOf(seen);
+			const asked = await viewsOf(seen, app);
 			const visible = await inView(app);
 			assert.ok(asked.includes(0), 'today was not re-drawn');
 			assert.ok(
@@ -185,8 +187,9 @@ describe('the day strip across a swipe', () => {
 
 	// A kept picture is of its date, not of its place in the stack
 	// (da-crq76): after a midnight each is drawn one day further back, and
-	// only today and yesterday, the today it never kept, are drawn again.
-	test('a midnight while away draws today and yesterday, and moves every kept day back one', async () => {
+	// only the new today is asked: yesterday's layer, drawn as today's, is
+	// the day's whole data already, a running state drawn to its end.
+	test('a midnight while away draws today, and moves every held day back one', async () => {
 		await open(async (app) => {
 			await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3']);
 			const before = await pictures(app);
@@ -205,19 +208,19 @@ describe('the day strip across a swipe', () => {
 			);
 			await pictures(app);
 			await app.idle();
-			assert.deepEqual([...new Set(await viewsOf(seen))], [0, 1], 'not today and yesterday drawn again');
+			assert.deepEqual([...new Set(await viewsOf(seen, app))], [0], 'not today alone drawn again');
 
-			// The check goes out a frame after the scroll, and under the held
-			// clock that frame is Playwright's: wait for it, not for idle.
+			// Under the held clock the frame a scroll is answered in is
+			// Playwright's: wait for the picture, not for idle.
 			await scrollToDay(app, 2);
-			await until(seen, (argvs) => argvs.some((argv) => argv.includes('--digests')));
+			await until(() => band(app, 2), (svg) => svg === before[1]);
 			await app.idle();
-			assert.ok(!(await viewsOf(seen)).includes(2), 'the day before yesterday was drawn again');
-			assert.equal(await band(app, 2), before[1], 'the day before yesterday is not the picture of its date');
+			assert.ok(!(await viewsOf(seen, app)).includes(2), 'the day before yesterday was drawn again');
+			assert.ok(!(await seen()).some((argv) => argv.includes('--digests')), 'a day held at this epoch was checked');
 		});
 	});
 
-	test('the strip holds a month of its days, and asks again for the days before it', async () => {
+	test('the strip holds a month of its days, and draws the days before it from the held layers', async () => {
 		await open(async (app) => {
 			await seedLines(app, ['occur coffee -d -40']);
 			await pictures(app);
@@ -227,11 +230,8 @@ describe('the day strip across a swipe', () => {
 			await awayAndBack(app, async () => (seen = await app.spyOnRunner()));
 			await drawBackTo(app, 40);
 
-			assert.deepEqual(
-				[...new Set(await viewsOf(seen))],
-				Array.from({ length: 40 - 31 }, (_, i) => 32 + i),
-				'not the days past a month, each asked again'
-			);
+			assert.deepEqual(await viewsOf(seen, app), [], 'a day past a month was asked again');
+			assert.ok((await band(app, 40)).includes('point-bg'), 'day 40 is not drawn');
 		});
 	});
 
@@ -287,7 +287,7 @@ describe('the day strip across a write (da-efxk5)', () => {
 			await painted(app, 0, colorOf('happy'));
 			await app.idle();
 
-			assert.deepEqual(await viewsOf(seen), [0], 'a day besides today was drawn again');
+			assert.deepEqual(await viewsOf(seen, app), [0], 'a day besides today was drawn again');
 			assert.ok((await seen()).some((argv) => argv.includes('--digests')), 'nothing checked the days on screen');
 			assert.ok(await marked(app, 1), "yesterday's picture was replaced");
 		});
@@ -305,7 +305,7 @@ describe('the day strip across a write (da-efxk5)', () => {
 			await painted(app, 1, colorOf('happy'));
 			await app.idle();
 
-			assert.deepEqual(await viewsOf(seen), [0, 1]);
+			assert.deepEqual(await viewsOf(seen, app), [0, 1]);
 			assert.ok(!(await marked(app, 1)), "yesterday kept the picture from before the write");
 		});
 	});
@@ -367,7 +367,7 @@ describe('the day strip across a reload (da-crq76)', () => {
 			const after = await pictures(app);
 			await app.idle();
 
-			assert.deepEqual(await viewsOf(booted(app)), [0], 'the reload asked the CLI for an earlier day');
+			assert.deepEqual(await viewsOf(booted(app), app), [0], 'the reload asked the CLI for an earlier day');
 			assert.ok((await booted(app)()).some((argv) => argv.includes('--digests')), 'nothing checked the kept days');
 			for (const end of Object.keys(before).filter((end) => end !== '0'))
 				assert.equal(after[end], before[end], `day ${end} is not the picture it was`);
@@ -390,7 +390,8 @@ describe('the day strip across a reload (da-crq76)', () => {
 			);
 			await app.idle();
 
-			assert.deepEqual(await viewsOf(booted(app)), [0, ...visible], 'not today and the days on screen, redrawn');
+			const drawn = await viewsOf(booted(app), app);
+			assert.deepEqual(drawn, [0, ...visible], 'not today and the days on screen, redrawn');
 			for (const end of visible) assert.equal(await band(app, end), before[end], `day ${end} is not drawn as before`);
 			const rows = await keptRows(app);
 			assert.equal(
@@ -413,7 +414,7 @@ describe('the day strip across a reload (da-crq76)', () => {
 			await pictures(app);
 			await app.idle();
 			assert.ok(
-				(await viewsOf(booted(app))).some((end) => end > 0),
+				(await viewsOf(booted(app), app)).some((end) => end > 0),
 				'the read did not miss: no earlier day was drawn through the CLI'
 			);
 			await app.page.evaluate(() => (window.__keptHeld = false));
@@ -436,9 +437,10 @@ describe('the day strip across a reload (da-crq76)', () => {
 			const after = await pictures(app);
 			await app.idle();
 
+			const drawn = await viewsOf(booted(app), app);
 			assert.deepEqual(
-				[...new Set(await viewsOf(booted(app)))],
-				Object.keys(before).map(Number).sort((a, b) => a - b),
+				Object.keys(before).map(Number).filter((end) => !drawn.includes(end)),
+				[],
 				'not every day drawn again'
 			);
 			// A day off screen keeps a picture from before the last write

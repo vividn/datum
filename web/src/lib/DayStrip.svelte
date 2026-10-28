@@ -8,14 +8,19 @@
 	as ONE picture.
 
 	How it is drawn (da-iu9i). Each day is its own picture — one day,
-	no date column, no ruler, no outer margin (`bandArgv` in #lib/panes.ts)
-	— so what comes back is a band exactly as wide as the column and
-	exactly `dayHeight` tall, all of it data area. Only the days a draw
-	lacks are asked, together in one `dayview --pictures` run (da-p5lyt),
-	instead of the whole past arriving at once, which is the snappiness;
-	the stitching is then the web's job and it has four parts:
+	no date column, no ruler, no outer margin — a band exactly as wide as
+	the column and exactly `dayHeight` tall, all of it data area. It is
+	the day's DATA LAYER scaled to the band (da-m6i2a, #lib/dayLayers.ts):
+	the one picture of the day's data the nowview crops too, held outside
+	both widgets, so neither asks for a day the other drew. Only the days a
+	draw lacks are asked, together in one run (da-p5lyt), and a scroll up
+	asks a fortnight beyond the top with them, instead of the whole past
+	arriving at once, which is the snappiness. A day the clock changed in
+	is the CLI's own picture of it (`bandArgv` in #lib/panes.ts): its lanes
+	bend along the change, which no scaling of a layer drawn by instant
+	makes. The stitching is then the web's job and it has four parts:
 
-	- every band is asked at the SAME width and day height, so the hour
+	- every band is drawn at the SAME width and day height, so the hour
 	  gridlines fall at the same x in each;
 	- the strip draws its own gridlines across the whole stack, from the
 	  x positions `--show json` reports (`hours[]`), so the lines run
@@ -200,8 +205,11 @@
 <script module lang="ts">
 	import type { RunResult } from './run.js';
 
-	/** A band's picture or the geometry, by the epoch it was asked at (see `cache`). */
-	type Asked = { epoch: number; end: number | 'geometry'; run: Promise<RunResult> };
+	/**
+	 * A band's picture or the geometry, by the epoch it was asked at (see
+	 * `cache`), and the day's data layer a band was drawn from (da-m6i2a).
+	 */
+	type Asked = { epoch: number; end: number | 'geometry'; run: Promise<RunResult>; layer?: Promise<Layer> };
 	/** Every picture asked at one size, by its argv (see `cache`). */
 	type Cache = { key: string; size: string; runs: Map<string, Asked> };
 	/** The size a band's picture was drawn at: one of another stands in, stretched, until it is seen. */
@@ -261,7 +269,8 @@
 	import { on } from 'svelte/events';
 	import { browser } from '$app/env';
 	import { currentDb } from './database.js';
-	import { keepDay, keptDays, keptNow, type Kept } from './heldDays.js';
+	import { keptDays, keptNow, type Kept } from './heldDays.js';
+	import { bandOf, heldLayer, layers, oneClock, type Layer } from './dayLayers.js';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import IntegrityMark from './IntegrityMark.svelte';
@@ -296,7 +305,6 @@
 		dayPitch,
 		dayUnderSliver,
 		geometryArgv,
-		picturesArgv,
 		type DayviewJson,
 		todayBox,
 		wholeDay,
@@ -711,18 +719,16 @@
 	let geometry: Geometry | null = $state.raw(was?.geometry ?? null);
 
 	/**
-	 * This database's pictures kept past a reload (#lib/heldDays.ts,
-	 * da-crq76), once read: the first draw waits for them, so a day kept is
-	 * not asked for.
+	 * This database's days kept past a reload (#lib/heldDays.ts, da-crq76),
+	 * once read: the first draw waits for them, so a day kept is not asked
+	 * for (#lib/dayLayers.ts seeds its layers from them).
 	 */
 	const db = currentDb();
 	const keptAtMount = browser ? keptNow(db) : undefined;
 	let stored: Kept | undefined = $state.raw(keptAtMount);
 	if (browser && !keptAtMount) void keptDays(db).then((days) => (stored = days));
-	/** Is `onDay` the browser's guess, which no geometry has answered yet (`seed`)? */
+	/** Is `onDay` the browser's guess, which no geometry has answered yet? */
 	let guessed = false;
-	/** The pictures `seed` put in, which are not kept again. */
-	const fromStore = new WeakSet<RunResult>();
 
 	// Not on mount: the static build prerenders this page, and there is no
 	// database (or `run`) outside the browser. At the band's width whatever
@@ -733,42 +739,33 @@
 		if (browser && measured && stored && at.width > 0) untrack(() => redraw(at, all));
 	});
 
-	/**
-	 * Put the kept pictures of `at`'s size into the cache, each day not held
-	 * already, as of no epoch: drawn at once, and checked by `refreshVisible`
-	 * once on screen, as a day of an older epoch is — which is what redraws a
-	 * picture a write, a sync or a newer datum changed. Today is never kept.
-	 * Dated by the CLI's today, or by the browser's until the geometry says:
-	 * a wrong guess is a midnight (`draw`), which drops them all.
-	 */
-	function seed(at: typeof request): void {
-		const days = stored?.get(bandArgv(at.width, at.dayHeight).join(' '));
-		if (!days) return;
-		const today = onDay ?? localDate();
-		for (const [date, svg] of days) {
-			const end = daysBetween(date, today);
-			const argv = bandArgv(at.width, at.dayHeight, end);
-			if (end < 1 || end > MONTH || cache.runs.has(argv.join(' '))) continue;
-			const result: RunResult = { argv, code: 0, stdout: svg, stderr: '' };
-			fromStore.add(result);
-			cache.runs.set(argv.join(' '), { epoch: -1, end, run: Promise.resolve(result) });
-			if (!onDay) [onDay, guessed] = [today, true];
-		}
-	}
-
 	/** The browser's date, as the CLI writes one. */
 	function localDate(): string {
 		const now = new Date();
 		return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((n) => String(n).padStart(2, '0')).join('-');
 	}
 
-	/** Whole days from ISO date `from` to ISO date `to`. */
-	function daysBetween(from: string, to: string): number {
-		return Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
-	}
 	/** The ISO date `back` days before ISO date `iso`. */
 	function dateBack(iso: string, back: number): string {
 		return new Date(Date.parse(iso) - back * 86_400_000).toISOString().slice(0, 10);
+	}
+
+	/** The date of the day `end` back: by the CLI's today, or the browser's until the geometry says (a wrong guess is a midnight). */
+	function dateOf(end: number): string {
+		if (!onDay) [onDay, guessed] = [localDate(), true];
+		return dateBack(onDay, end);
+	}
+
+	/**
+	 * A day's band from its data layer (da-m6i2a): the layer scaled to the
+	 * band, today's cut at now, or, a day the clock changed in, the CLI's own
+	 * picture of it, whose lanes bend along the change as no scaling can.
+	 */
+	async function bandFrom(layer: Layer, at: { width: number; dayHeight: number }, end: number): Promise<RunResult> {
+		const argv = bandArgv(at.width, at.dayHeight, end);
+		if (layer.error || !layer.doc()) return { argv, code: 1, stdout: '', stderr: layer.error ?? '' };
+		if (!oneClock(layer)) return run(argv, undefined, undefined, `${queueKey}:${end}`, undefined, undefined, true);
+		return { argv, code: 0, stdout: `${bandOf(layer, at.width, at.dayHeight, end === 0 ? Date.now() : undefined)}\n`, stderr: '' };
 	}
 
 	/**
@@ -780,7 +777,6 @@
 	 */
 	function redraw(at: typeof request, ends: number[]): void {
 		cacheFor(at);
-		seed(at);
 		const atThisSize = (end: number) => cache.runs.has(bandArgv(at.width, at.dayHeight, end).join(' '));
 		draw(at, ends.filter((end) => end === 0 || drawn[end]?.midnights !== at.midnights || atThisSize(end)));
 		// The days on screen are read once the newest is pinned again: a
@@ -839,18 +835,22 @@
 		const token = ++started;
 		const geometryId = geometryArgv(at.width, at.dayHeight).join(' ');
 		const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
-		// What is not held is asked in ONE run, the geometry and each band
-		// as `--pictures` answers it: a process and its read are most of a
-		// band's cost (da-p5lyt). Each is still held by its own argv.
+		// What is not held comes from the data layers, every day missing in
+		// one batch with whatever the nowview asks meanwhile (da-m6i2a), and
+		// the geometry in a run of its own. Each is still held by its argv.
 		const missing = ends.filter((end) => !cache.runs.has(id(end)));
-		const bare = !cache.runs.has(geometryId);
-		if (missing.length || bare) {
-			const argv = missing.length ? picturesArgv(at.width, at.dayHeight, missing) : geometryArgv(at.width, at.dayHeight);
-			const label = [...(bare ? ['geometry'] : []), ...missing].join(',');
-			const asked = run(argv, undefined, undefined, `${queueKey}:${label}`, undefined, undefined, true);
-			const parts = asked.then(picturesOf);
-			if (bare) cache.runs.set(geometryId, { epoch: at.epoch, end: 'geometry', run: parts.then((of) => of('geometry')) });
-			for (const end of missing) cache.runs.set(id(end), { epoch: at.epoch, end, run: parts.then((of) => of(end)) });
+		if (!cache.runs.has(geometryId)) {
+			const asked = run(geometryArgv(at.width, at.dayHeight), undefined, undefined, `${queueKey}:geometry`, undefined, undefined, true);
+			cache.runs.set(geometryId, { epoch: at.epoch, end: 'geometry', run: asked });
+		}
+		// A day held of an earlier epoch is drawn from what is held, and
+		// checked once it is on screen (`refreshVisible`); today is always asked.
+		const fresh = missing.filter((end) => end === 0 || !heldLayer(dateOf(end)));
+		const answers = layers(fresh.map(dateOf), at.epoch);
+		for (const end of missing) {
+			const i = fresh.indexOf(end);
+			const { epoch, run: layer } = i < 0 ? heldLayer(dateOf(end))! : { epoch: at.epoch, run: answers[i] };
+			cache.runs.set(id(end), { epoch: Math.min(epoch, at.epoch), end, layer, run: layer.then((layer) => bandFrom(layer, at, end)) });
 		}
 
 		// The geometry first: the gridlines, the ruler and the date stamps
@@ -878,35 +878,9 @@
 				from[end] = token;
 				shown = { ...shown, [end]: result };
 				drawn = { ...drawn, [end]: { width: at.width, dayHeight: at.dayHeight, midnights: at.midnights } };
-				// A finished day, kept past a reload by the date it is of.
-				if (end !== 0 && result.code === 0 && result.stdout && !fromStore.has(result) && onDay && !guessed && at.midnights === midnights)
-					keepDay(db, bandArgv(at.width, at.dayHeight).join(' '), dateBack(onDay, end), result.stdout);
 				void anchor();
 			});
 		}
-	}
-
-	/**
-	 * Each band's answer out of a `--pictures` run, its SVG as its own
-	 * `--days 1` run prints it, and the geometry's, the run with the
-	 * pictures dropped: the bands hold them, and holding them twice
-	 * doubled what the strip keeps (da-xemyx).
-	 */
-	function picturesOf(result: RunResult): (end: number | 'geometry') => RunResult {
-		if (result.superseded || result.code !== 0) return () => result;
-		let pictures: Record<string, string> = {};
-		let geometry = result.stdout;
-		try {
-			const { pictures: of = {}, ...rest } = JSON.parse(result.stdout);
-			pictures = of;
-			geometry = JSON.stringify(rest);
-		} catch {
-			// No answer is no picture.
-		}
-		return (end) =>
-			end === 'geometry'
-				? { ...result, stdout: geometry }
-				: { ...result, stdout: end in pictures ? `${pictures[end]}\n` : '' };
 	}
 
 	/**
@@ -940,58 +914,40 @@
 
 	/**
 	 * Do the pictures held for `ends`, asked before `at`'s epoch, still
-	 * stand? One `dayview --digests` answers for all of them (da-efxk5):
-	 * vividn, «The data really shouldn't update much so we don't need to
-	 * redraw from scratch everytime». A day whose picture hashes to its
-	 * digest is kept, its element and all, as of this epoch; any other is
-	 * asked again. Not by which instants a write moved: a block's title
-	 * names where it ends, so a write a day later changes its picture too.
+	 * stand? The data layers answer for them (#lib/dayLayers.ts, da-efxk5,
+	 * da-m6i2a): vividn, «The data really shouldn't update much so we don't
+	 * need to redraw from scratch everytime». A day whose layer is the one
+	 * its band was drawn from keeps its band, its element and all, as of this
+	 * epoch; any other is drawn again from the new one. Not by which instants
+	 * a write moved: a block's title names where it ends, so a write a day
+	 * later changes its picture too.
 	 */
 	function check(at: typeof request, ends: number[]): void {
 		const mine = cache;
 		const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
 		const held = ends.map((end) => mine.runs.get(id(end))!);
-		// A day already out for this epoch is not asked for again; a new one
-		// asks for them all, since the newer check drops the older while it
-		// waits, keyed as a band is.
+		// A day already out for this epoch is not asked for again.
 		if (held.every((asked) => checking.get(asked) === at.epoch)) return;
 		for (const asked of held) checking.set(asked, at.epoch);
-		const argv = [...geometryArgv(at.width, at.dayHeight), '--digests', ends.join(',')];
-		void run(argv, undefined, undefined, `${queueKey}:check`, undefined, undefined, true).then(async (result) => {
-			if (result.superseded) return;
-			for (const asked of held) if (checking.get(asked) === at.epoch) checking.delete(asked);
-			let digests: Record<string, string> = {};
-			try {
-				digests = JSON.parse(result.stdout).digests ?? {};
-			} catch {
-				// No answer is no digest: each day is asked again.
-			}
-			const again: number[] = [];
-			for (const [i, end] of ends.entries()) {
+		const fresh = layers(ends.map(dateOf), at.epoch);
+		void Promise.all(
+			ends.map(async (end, i) => {
 				const asked = held[i];
-				const same = digests[end] !== undefined && digests[end] === (await sha256((await asked.run).stdout));
-				if (cache !== mine) return;
-				if (mine.runs.get(id(end)) !== asked || asked.epoch >= at.epoch) continue;
-				if (same) asked.epoch = at.epoch;
-				else {
-					mine.runs.delete(id(end));
-					again.push(end);
-				}
-			}
-			if (again.length) draw(at, again);
+				const [now, was] = await Promise.all([fresh[i], asked.layer]);
+				if (checking.get(asked) === at.epoch) checking.delete(asked);
+				if (cache !== mine || mine.runs.get(id(end)) !== asked || asked.epoch >= at.epoch) return null;
+				if (!now.error && now.text === was?.text) return void (asked.epoch = at.epoch), null;
+				mine.runs.delete(id(end));
+				return end;
+			})
+		).then((again) => {
+			const ends = again.filter((end): end is number => end !== null);
+			if (ends.length && cache === mine) draw(at, ends);
 		});
 	}
 
 	/** Each held picture a `check` is out for, and the epoch it is checked at. */
 	const checking = new Map<Asked, number>();
-
-	/** The SHA-256 of a picture as `--digests` takes it: the stdout less its newline. */
-	async function sha256(stdout: string): Promise<string | null> {
-		if (!crypto.subtle) return null;
-		const bytes = new TextEncoder().encode(stdout.replace(/\n$/, ''));
-		const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-		return Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
-	}
 
 	/** `dayview --show json`, as much of it as the strip draws with. */
 	function readGeometry(stdout: string): Geometry | null {
@@ -1132,11 +1088,21 @@
 			if (at.width <= 0 || !measured || !stored) return;
 			const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
 			const visible = visibleDays() ?? [];
-			const stale = visible.filter((end) => (cache.runs.get(id(end))?.epoch ?? at.epoch) < at.epoch);
-			if (stale.includes(0)) cache.runs.delete(id(0));
-			check(at, stale.filter((end) => end !== 0));
+			const stale = (end: number) => (cache.runs.get(id(end))?.epoch ?? at.epoch) < at.epoch;
+			if (stale(0)) cache.runs.delete(id(0));
 			const unseen = visible.filter((end) => !shown[end] || !cache.runs.has(id(end)));
+			// A day on screen the store has no layer of is a scroll past what
+			// was asked: a fortnight above the top goes in the same batch, so
+			// the next scroll up is drawn from what is held (da-m6i2a).
+			const unknown = unseen.some((end) => end > 0 && !heldLayer(dateOf(end)));
 			if (unseen.length) draw(at, unseen);
+			// After the draw: a day it drew from a layer held of an earlier
+			// epoch is checked with the rest.
+			check(at, visible.filter((end) => end !== 0 && stale(end)));
+			if (!unknown) return;
+			const top = Math.max(...visible);
+			const above = Array.from({ length: FORTNIGHT }, (_, i) => top + 1 + i).filter((end) => !cache.runs.has(id(end)));
+			void layers(above.map(dateOf), at.epoch);
 		});
 	}
 

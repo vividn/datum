@@ -96,7 +96,10 @@ const aMark = (page, scope, selector = '[data-id]') =>
 		const seen = [...el.querySelectorAll(`svg.svg ${sel}`)]
 			.map((n) => ({ n, r: clip(n) }))
 			.filter(({ r }) => r.width >= 2 && r.height >= 2)
-			.sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
+			// In whole square pixels, so two lanes of one height tie and the
+			// first drawn wins: a band scaled to the box (da-m6i2a) puts a
+			// float's noise between them.
+			.sort((a, b) => Math.round(b.r.width * b.r.height) - Math.round(a.r.width * a.r.height));
 		const hit = seen[0];
 		if (!hit) return null;
 		const { n, r } = hit;

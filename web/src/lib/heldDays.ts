@@ -1,13 +1,13 @@
-// The day strip's pictures, kept past a reload (da-crq76).
+// The days' data layers, kept past a reload (da-crq76, da-m6i2a).
 //
 // vividn, 2026-10-26: «will the website have easy access to the cache for
-// quick rendering without having to go through the cli?». The strip holds
-// each day's picture in page memory (`held` in DayStrip.svelte), so a reload
-// started it empty and asked the CLI for every day. Here each finished day's
-// SVG is kept in IndexedDB, by database, band argv (the geometry) and date,
-// and a strip with nothing in memory starts from it; the one `dayview
-// --digests` check the strip already makes then redraws the days whose
-// picture changed, a new datum's drawing included.
+// quick rendering without having to go through the cli?». The day strip and
+// the nowview hold each day's data layer in page memory (#lib/dayLayers.ts),
+// so a reload started them empty and asked the CLI for every day. Here each
+// finished day's SVG is kept in IndexedDB, by database, kind (`layer`, or
+// `layer-v` drawn down the page) and date, and the layers start from it; the
+// one `dayview --digests` check then redraws the days whose layer changed, a
+// new datum's drawing included.
 //
 // IndexedDB and not OPFS: OPFS is the database worker's, under the
 // `datum-cli-files` lock with sync access handles, and a picture kept there
@@ -15,7 +15,7 @@
 // truth: a store that will not open, a row that does not read or a write
 // refused for quota is a day the CLI draws, as before.
 
-/** A database's kept days: by band argv, the most recently used last; each by date, its SVG. */
+/** A database's kept days: by kind, the most recently used last; each by date, its SVG. */
 export type Kept = Map<string, Map<string, string>>;
 
 type Row = { db: string; size: string; date: string; svg: string; at: number };

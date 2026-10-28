@@ -141,8 +141,9 @@
 	import { markOf, pressSpent } from '#lib/inspect.ts';
 	import { readLanes } from '#lib/lanes.ts';
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
-	import { bandOf, compose } from '#lib/nowcrop.ts';
-	import { historyArg, ladderAround, layerArgv, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '#lib/panes.ts';
+	import { compose } from '#lib/nowcrop.ts';
+	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '#lib/panes.ts';
+	import { dateBack, layers, type Layer } from '#lib/dayLayers.ts';
 	import { run } from '#lib/run.ts';
 
 	interface Props {
@@ -432,51 +433,41 @@
 	// ── the data (da-0e06p) ────────────────────────────────────────────
 
 	/**
-	 * The days the picture crops, by days back from today, as the CLI drew
-	 * their data layer for this box: the days the overlay on screen reaches,
-	 * asked again after a write. `fresh` are the days drawn for `key`; one
-	 * drawn for another box or epoch still stands in, mapped by its
-	 * instants, until the new one lands.
+	 * The days the picture crops, by date, as the CLI drew their data layer
+	 * (#lib/dayLayers.ts, da-m6i2a): the days the overlay on screen reaches,
+	 * asked again after a write, from the store the day strip draws from
+	 * too, so neither asks for a day the other holds. One of an older epoch
+	 * stands in, mapped by its instants, until the new one lands, and one that
+	 * failed is said over the band.
 	 */
-	let layer = $state.raw<{ key: string; fresh: Set<number>; days: Map<number, string> }>({
-		key: '',
-		fresh: new Set(),
-		days: new Map()
-	});
-	/** The days asked for and not yet answered, by what they were asked as, and the newest `key` asked. */
-	const layering = new Set<string>();
+	let layer = $state.raw<{ days: Map<string, Layer>; failed: Map<string, Layer> }>({ days: new Map(), failed: new Map() });
+	/** The days last asked, and at which epoch. */
 	let wanted = '';
-	/** This widget's in the worker's queue, for its layer runs. */
-	const layerKey = `nowview-layer:${Math.random().toString(36).slice(2)}`;
 	/** How many days back a pan takes the data: a week. */
 	const MAX_BACK = 7;
 
 	/** Ask for the days of data the overlay `svg` reaches that `layer` does not hold. */
 	function needLayer(svg: SVGSVGElement): void {
 		if (labels || !svg.querySelector('[data-lo]')) return;
-		const along = Number(svg.getAttribute(vertical ? 'height' : 'width'));
-		const cross = bandOf(svg, vertical).extent;
-		if (!(along > 0 && cross > 0)) return;
 		const midnight = new Date().setHours(0, 0, 0, 0);
 		// Rounded up: a drawing that starts even a millisecond before a
 		// midnight reaches the day before it, so it is asked for too.
 		const reach = Math.max(0, Math.min(MAX_BACK, Math.ceil((midnight - drawnFrom()) / 86_400_000) || 0));
-		// Not the box's length along time: a day drawn at another is mapped
-		// by its instants all the same.
-		const key = `${cross} ${vertical} ${epoch} ${midnight}`;
+		const dates = Array.from({ length: reach + 1 }, (_, back) => dateBack(back));
+		const key = `${vertical} ${epoch} ${dates.join(' ')}`;
+		if (key === wanted) return;
 		wanted = key;
-		for (let back = 0; back <= reach; back++) {
-			const asked = `${key} ${back}`;
-			if ((key === layer.key && layer.fresh.has(back)) || layering.has(asked)) continue;
-			layering.add(asked);
-			// Keyed by the widget and the day, so a newer ask drops an older one not yet started.
-			void run(layerArgv(along, cross, vertical, back), undefined, undefined, `${layerKey}:${back}`, undefined, undefined, true).then((r) => {
-				layering.delete(asked);
-				if (r.superseded || key !== wanted || r.code !== 0 || !r.stdout.trim()) return;
-				const fresh = new Set(key === layer.key ? layer.fresh : []);
-				layer = { key, fresh: fresh.add(back), days: new Map(layer.days).set(back, r.stdout) };
+		for (const [i, asked] of layers(dates, epoch, vertical).entries())
+			void asked.then((day) => {
+				if (key !== wanted) return;
+				const [days, failed] = [layer.days, layer.failed].map((of) => new Map([...of].filter(([date]) => dates.includes(date))));
+				if (day.error) failed.set(dates[i], day);
+				else {
+					days.set(dates[i], day);
+					failed.delete(dates[i]);
+				}
+				layer = { days, failed };
 			});
-		}
 	}
 
 	// A write asks for the data again, whether or not the overlay it also
@@ -496,7 +487,7 @@
 	/** The overlay datum drew, with the days' data laid under it: its strip is now's (da-dv45l). */
 	const crop = (overlay: string, argv: string[]) => {
 		drewFor = argv;
-		return compose(overlay, labels ? [] : [...layer.days.values()], Date.now());
+		return compose(overlay, labels ? [] : [...layer.days.values(), ...layer.failed.values()], Date.now());
 	};
 
 	/**
@@ -944,10 +935,12 @@
 	function unstretch(): void {
 		// Not the strip's own copies (`compose`): the strip is scaled back whole, below.
 		for (const pattern of el?.querySelectorAll<SVGPatternElement>('.nowview-band svg.svg pattern:not([id$="-strip"])') ?? []) {
-			// And by what the crop stretched the day's data by (da-0e06p).
+			// And by what the crop stretched the day's data by, along time and
+			// across (da-0e06p, da-m6i2a).
 			const back = 1 / ((zoom?.scale || 1) * Number(pattern.getAttribute('data-scale') ?? 1));
+			const across = 1 / Number(pattern.getAttribute('data-cross') ?? 1);
 			pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
-			pattern.setAttribute('patternTransform', `scale(${vertical ? `1 ${back}` : `${back} 1`}) ${pattern.dataset.drawn}`);
+			pattern.setAttribute('patternTransform', `scale(${vertical ? `${across} ${back}` : `${back} ${across}`}) ${pattern.dataset.drawn}`);
 		}
 		// And the strip at now, with its line and its word, about now (`compose`).
 		const back = 1 / (zoom?.scale || 1);
@@ -2015,9 +2008,15 @@
 	/* And a mark keeps its size (da-6fdaf), as on the day strip (da-dqbso):
 	   a block is as long as its minutes, and every other mark is scaled
 	   back about its own anchor, so only its place moves. */
+	/* A mark is as big as the band makes the day's layer across (`--sc`,
+	   #lib/nowcrop.ts), and a moment's line as wide as it was drawn: after
+	   the rule above, which it ties. */
 	.nowview-band :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *)) {
 		transform-box: fill-box;
 		transform-origin: center;
+		scale: calc(var(--sc, 1) / (var(--zoom) * var(--sx, 1))) 1;
+	}
+	.nowview-band :global(svg.svg line.moment:not(defs *)) {
 		scale: calc(1 / (var(--zoom) * var(--sx, 1))) 1;
 	}
 	.nowview-band :global(svg.svg text[text-anchor='end']:not(defs *)) {
@@ -2027,6 +2026,9 @@
 		transform-origin: left;
 	}
 	.vertical .nowview-band :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *)) {
+		scale: 1 calc(var(--sc, 1) / (var(--zoom) * var(--sx, 1)));
+	}
+	.vertical .nowview-band :global(svg.svg line.moment:not(defs *)) {
 		scale: 1 calc(1 / (var(--zoom) * var(--sx, 1)));
 	}
 	/* But what stands at now is scaled back as one, about now (`unstretch`):

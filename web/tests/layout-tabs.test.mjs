@@ -65,7 +65,10 @@ describe('every tab of a pane is mounted', () => {
 				(html) => html.includes('kettle')
 			);
 			await second.idle();
-			const runs = (await seen()).map((argv) => (argv.includes('--data-layer') ? 'data-layer' : argv[0]));
+			// A day's data layer drawn (`--pictures`) is the nowview's and the
+			// strip's at once (da-m6i2a); a check (`--digests`) is the strip's of
+			// the days before today, as it ever was.
+			const runs = (await seen()).map((argv) => (argv.includes('--pictures') ? 'data-layer' : argv[0]));
 			const count = (name) => runs.filter((r) => r === name).length;
 			assert.equal(count('fields'), 1, `not one refresh: ${runs}`);
 			// tail's `tail --json -n N`, the nowview's day's data layer (its overlay holds

@@ -23,9 +23,7 @@ import {
 	NARROW,
 	settledRoom,
 	labelFor,
-	band,
 	stamps,
-	gridlines,
 	metrics,
 	grown,
 	boxTo,
@@ -350,10 +348,23 @@ describe("the day strip's day height and its pin", () => {
 			await waitForDays(app, heldAt(up));
 
 			// And the thing the stack is for still holds at the new height:
-			// the same hour is the same column in every band.
-			const today = gridlines(await band(app, 0));
-			assert.ok(today.length >= 4, `today's band drew ${today.length} gridlines`);
-			assert.deepEqual(gridlines(await band(app, 1)), today, 'the past is on a different x-axis after a resize');
+			// the same hour is the same column in every band: the strip's own
+			// gridline lands on that hour of each band's axis (`data-lo` …
+			// `data-hi`, a day's data layer scaled to the band, da-m6i2a).
+			const columns = await app.page.evaluate(() =>
+				[6, 12, 18].map((hour) => ({
+					hour,
+					strip: document.querySelector(`svg.gridlines line.gridline[data-hour="${hour}"]`)?.getBoundingClientRect().x,
+					bands: [0, 1].map((back) => {
+						const g = document.querySelector(`.band[data-days-ago="${back}"] svg.svg .day-data`);
+						const [lo, hi] = ['data-lo', 'data-hi'].map((name) => Number(g?.getAttribute(name)));
+						return g && new DOMPoint(lo + ((hi - lo) * hour) / 24, 0).matrixTransform(g.getScreenCTM()).x;
+					})
+				}))
+			);
+			for (const { hour, strip, bands } of columns)
+				for (const x of bands)
+					assert.ok(strip !== undefined && x && Math.abs(x - strip) <= 1, `after a resize ${hour}:00 is at ${bands} in the bands, ${strip} in the strip`);
 
 			// And DOWN is shorter, by the same 40, from the same start —
 			// and more days fit.

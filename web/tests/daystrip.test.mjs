@@ -59,7 +59,6 @@ import {
 	colorOf,
 	band,
 	stamps,
-	gridlines,
 	svgHeight,
 	metrics,
 	pastHeight,
@@ -88,7 +87,6 @@ import {
 	stackScroll,
 	jagged,
 	pinch,
-	picturesAsked,
 	PHONE
 } from './support/daystrip.mjs';
 
@@ -182,10 +180,10 @@ describe('the day strip', () => {
 	});
 
 	// The bead's own case (da-iu9i): five days of the reader's data, and a
-	// picture of ONE day each. Asked together (da-p5lyt): a process and its
-	// read are most of a band's cost, so today comes with the geometry and
-	// the days on screen in one run after it.
-	test('five days is five one-day pictures, each asked bands-only', async () => {
+	// picture of ONE day each, drawn bands-only. Each is the day's data layer
+	// scaled to the band (da-m6i2a), held whatever the size: so a new size
+	// asks the geometry alone, and no day's data.
+	test('five days is five one-day pictures, and a new size asks no data', async () => {
 		await clocked.solo(
 			async (app) => {
 				await seedLines(app, [...[1, 2, 3, 4].map((back) => `occur coffee -d -${back}`), 'occur coffee']);
@@ -213,25 +211,20 @@ describe('the day strip', () => {
 				});
 				await app.idle();
 
-				const views = (await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer'));
+				const views = (await seen()).filter((argv) => argv[0] === 'dayview');
 				const flag = (argv, name) => argv[argv.indexOf(name) + 1];
-				// Every picture is one day, drawn bands-only: no date column,
-				// no ruler, no outer margin — the web draws all three.
-				for (const argv of views) {
+				// The geometry is one day, bands-only: no date column, no
+				// ruler, no outer margin — the web draws all three.
+				for (const argv of views.filter((argv) => !argv.includes('--data-layer'))) {
 					assert.equal(flag(argv, '--days'), '1', `not one day: ${argv.join(' ')}`);
 					assert.equal(flag(argv, '--label-width'), '0', `a date column: ${argv.join(' ')}`);
 					assert.equal(flag(argv, '--time-axis-height'), '0', `a ruler: ${argv.join(' ')}`);
 					assert.equal(flag(argv, '--margin'), '0', `an outer margin: ${argv.join(' ')}`);
 				}
-				// The days on screen, and today, each exactly once: a day off
-				// screen keeps its picture until it is scrolled to (da-8khuw).
-				const ends = views.flatMap(picturesAsked).sort((a, b) => a - b);
-				const visible = (await inView(app)).sort((a, b) => a - b);
-				assert.ok(visible.length > 2, `only ${visible} on screen`);
-				assert.deepEqual(ends, visible, 'not one picture per day on screen');
-				// Today with the geometry, the rest in one run after: never a
-				// process a day.
-				assert.ok(views.length <= 2, `${views.length} runs: ${views.map((argv) => argv.join(' ')).join(' | ')}`);
+				// No day's data: every band is drawn from its held layer.
+				assert.ok((await inView(app)).length > 2, 'too few days on screen');
+				assert.deepEqual(await viewsOf(seen, app), [], 'a new size asked for a day');
+				assert.equal(views.length, 1, `${views.length} runs: ${views.map((argv) => argv.join(' ')).join(' | ')}`);
 			}
 		);
 	});
@@ -326,17 +319,17 @@ describe('the day strip', () => {
 				);
 
 			// On the screen, in EVERY band: the strip's noon line lands on
-			// the noon gridline datum drew inside each picture.
+			// noon in each picture, the middle of its day's axis (`data-lo` …
+			// `data-hi`), which is a day's data layer scaled to the band
+			// (da-m6i2a) and draws no gridlines of its own.
 			const noon = await app.page.evaluate(() => {
 				const web = document
 					.querySelector('svg.gridlines line.gridline[data-hour="12"]')
 					.getBoundingClientRect().x;
 				const bands = [...document.querySelectorAll('.band')].map((b) => {
-					const lines = [...b.querySelectorAll('svg.svg line.gridline')];
-					return {
-						daysAgo: b.dataset.daysAgo,
-						x: lines[12]?.getBoundingClientRect().x ?? null
-					};
+					const g = b.querySelector('svg.svg .day-data');
+					const at = g && new DOMPoint((Number(g.getAttribute('data-lo')) + Number(g.getAttribute('data-hi'))) / 2, 0);
+					return { daysAgo: b.dataset.daysAgo, x: at ? at.matrixTransform(g.getScreenCTM()).x : null };
 				});
 				return { web, bands };
 			});
@@ -502,8 +495,9 @@ describe('the day strip', () => {
 				// Every dayview the strip ran for the taller box: the ONE day
 				// it gained. Every other day, and today, and the geometry, are
 				// the same argv as before and came out of the cache.
-				const views = (await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer')).map(picturesAsked);
-				assert.deepEqual(views, [[16]]);
+				const views = (await seen()).filter((argv) => argv[0] === 'dayview');
+				assert.equal(views.length, 1, views.map((argv) => argv.join(' ')).join(' | '));
+				assert.deepEqual(await viewsOf(seen, app), [16]);
 			}
 		);
 	});
@@ -543,7 +537,7 @@ describe('the day strip', () => {
 			// And exactly the band that came into view was asked for: not
 			// the fortnight above it, and not the geometry, which is at this
 			// epoch already.
-			assert.deepEqual(await viewsOf(seen), [10]);
+			assert.deepEqual(await viewsOf(seen, app), [10]);
 		});
 	});
 
@@ -606,7 +600,7 @@ describe('the day strip', () => {
 			// does not ask for is worth nothing if nothing scrolled.
 			assert.ok(moved.top < rest.top, `the wheel moved the stack ${rest.top - moved.top}px`);
 
-			assert.deepEqual(await viewsOf(seen), []);
+			assert.deepEqual(await viewsOf(seen, app), []);
 		});
 	});
 
@@ -662,7 +656,7 @@ describe('the day strip', () => {
 			// No day that was added has been drawn: none is on screen.
 			const ran = await seen();
 			assert.ok(
-				!(await viewsOf(async () => ran)).some((back) => back > FORTNIGHT),
+				!(await viewsOf(async () => ran, app)).some((back) => back > FORTNIGHT),
 				'an added day ran off screen'
 			);
 			assert.equal(ran.filter((argv) => argv[0] === 'head').length, 1, 'the first entry was not asked once');
@@ -678,13 +672,18 @@ describe('the day strip', () => {
 			}, m.pitch / 2);
 			await app.page.locator('.band[data-days-ago="20"] svg.svg').waitFor();
 			await app.idle();
-			const drawn = await viewsOf(later);
+			const drawn = await viewsOf(later, app);
 			assert.equal(drawn.filter((back) => back === 20).length, 1, `day 20 ran ${drawn}`);
+			// And with it, in the same run, the fortnight above the top day on
+			// screen, so the next scroll up is drawn from what is held (da-m6i2a).
 			const visible = await inBox();
-			assert.ok(
-				drawn.every((back) => visible.includes(back)),
+			const top = Math.max(...visible);
+			assert.deepEqual(
+				drawn.filter((back) => !visible.includes(back)),
+				Array.from({ length: FORTNIGHT }, (_, i) => top + 1 + i),
 				`off-screen days ran: ${drawn} with ${visible} on screen`
 			);
+			assert.equal((await later()).filter((argv) => argv.includes('--pictures')).length, 1, 'not one batch');
 
 			// And to the top, again and again: the stack ends at the first
 			// entry's day, 40 back, and says so.
