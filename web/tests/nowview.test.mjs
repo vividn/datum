@@ -1041,8 +1041,16 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 		return keys.length ? keys.reduce((s, k) => s + b.at[k] - a.at[k], 0) / keys.length : NaN;
 	};
 
-	/** One finger through CDP: down at `from`, moved `by` px in `steps`, lifted at once unless `hold`. */
-	async function flick(page, from, by, { steps = 6, midway } = {}) {
+	/** One finger through CDP, or the mouse: down at `from`, moved `by` px in `steps`, lifted at once. */
+	async function flick(page, from, by, { steps = 6, midway, mouse = false } = {}) {
+		if (mouse) {
+			await page.mouse.move(from.x, from.y);
+			await page.evaluate(noWait);
+			await page.mouse.down();
+			for (let i = 1; i <= steps; i++) await page.mouse.move(from.x + (by * i) / steps, from.y);
+			await midway?.();
+			return page.mouse.up();
+		}
 		const cdp = await page.context().newCDPSession(page);
 		const at = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ id: 1, x, y: from.y }] });
 		try {
@@ -1056,39 +1064,62 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 		}
 	}
 
-	test('a flick into the past keeps the window moving after the lift, then settles, with one nowview asked at the end', async () => {
+	// da-w57do, vividn: «yes, it should feel smooth for both»: the mouse's drag coasts as the finger's flick does.
+	for (const mouse of [false, true])
+		test(`a flick into the past by ${mouse ? 'the mouse' : 'a finger'} keeps the window moving after the lift, then settles, with one nowview asked at the end`, async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					const box = await seeded(app);
+					// A flick at a time: the first several coast inside what the
+					// picture drew past its box (`--surround`) and ask for nothing,
+					// and then one leaves it and asks, once it has come to rest.
+					for (let flicks = 1; ; flicks++) {
+						await page.evaluate(() => (window.__datumSeen = []));
+						await record(page);
+						await flick(page, { x: box.x + 40, y: box.y + box.height / 2 }, 160, { mouse });
+						const frames = await settle(page);
+						const up = frames.findLastIndex((f) => f.down) + 1;
+						const after = frames.slice(up - 1);
+						const coasted = shift(after[0], after.at(-1));
+						assert.ok(coasted > 40, `flick ${flicks}: the window moved on ${coasted}px after the lift`);
+						// Over several frames, slowing: a coast, not a jump.
+						const steps = after.slice(1).map((f, i) => shift(after[i], f));
+						const moving = steps.filter((d) => d > 0.5);
+						assert.ok(moving.length >= 5, `flick ${flicks}: the coast moved in ${moving.length} frames: ${steps}`);
+						assert.ok(moving[0] > moving.at(-1), `flick ${flicks}: the coast did not slow: ${moving}`);
+						// Nothing asked while it moved, and at most one picture once it stopped.
+						const last = steps.findLastIndex((d) => d > 0.5);
+						assert.equal(after[last].asks, 0, `flick ${flicks}: a nowview asked mid-coast`);
+						const asked = frames.at(-1).asks;
+						assert.ok(asked <= 1, `flick ${flicks}: ${asked} nowviews asked`);
+						if (asked) break;
+						assert.ok(flicks < 12, 'twelve flicks back and nothing asked');
+					}
+					assert.deepEqual(app.errors, []);
+				},
+				{ ...(mouse ? { viewport: TOUCH.viewport } : TOUCH), prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+			);
+		});
+
+	test('a mouse drag held still before its release stops where it is let go', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				const box = await seeded(app);
-				// A flick at a time: the first several coast inside what the
-				// picture drew past its box (`--surround`) and ask for nothing,
-				// and then one leaves it and asks, once it has come to rest.
-				for (let flicks = 1; ; flicks++) {
-					await page.evaluate(() => (window.__datumSeen = []));
-					await record(page);
-					await flick(page, { x: box.x + 40, y: box.y + box.height / 2 }, 160);
-					const frames = await settle(page);
-					const up = frames.findLastIndex((f) => f.down) + 1;
-					const after = frames.slice(up - 1);
-					const coasted = shift(after[0], after.at(-1));
-					assert.ok(coasted > 40, `flick ${flicks}: the window moved on ${coasted}px after the lift`);
-					// Over several frames, slowing: a coast, not a jump.
-					const steps = after.slice(1).map((f, i) => shift(after[i], f));
-					const moving = steps.filter((d) => d > 0.5);
-					assert.ok(moving.length >= 5, `flick ${flicks}: the coast moved in ${moving.length} frames: ${steps}`);
-					assert.ok(moving[0] > moving.at(-1), `flick ${flicks}: the coast did not slow: ${moving}`);
-					// Nothing asked while it moved, and at most one picture once it stopped.
-					const last = steps.findLastIndex((d) => d > 0.5);
-					assert.equal(after[last].asks, 0, `flick ${flicks}: a nowview asked mid-coast`);
-					const asked = frames.at(-1).asks;
-					assert.ok(asked <= 1, `flick ${flicks}: ${asked} nowviews asked`);
-					if (asked) break;
-					assert.ok(flicks < 12, 'twelve flicks back and nothing asked');
-				}
+				await record(page);
+				await flick(page, { x: box.x + 40, y: box.y + box.height / 2 }, 160, { mouse: true, midway: () => page.waitForTimeout(100) });
+				const frames = await settle(page);
+				const up = frames.findLastIndex((f) => f.down) + 1;
+				assert.ok(shift(frames[0], frames[up - 1]) > 100, 'the drag did not move the band');
+				const later = frames.slice(up).map((f) => shift(frames[up - 1], f));
+				assert.ok(
+					later.every((d) => Math.abs(d) <= 0.5),
+					`the band moved after the release: ${later.filter((d) => Math.abs(d) > 0.5)}`
+				);
 				assert.deepEqual(app.errors, []);
 			},
-			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+			{ viewport: TOUCH.viewport, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 		);
 	});
 

@@ -39,7 +39,9 @@ export const pageWait = (page, ms) => page.evaluate((ms) => new Promise((done) =
 
 /**
  * A press, a drag and a lift with the mouse, held past the long press
- * before the first move when `hold`.
+ * before the first move when `hold`, and held still before the lift: a
+ * mouse let go mid-move coasts on (da-w57do), and this drag lands where
+ * it is put.
  *
  * With no `hold` the press is one that travels BEFORE the long press's wait
  * is up (`LONG_MS`, #lib/nowpoint.ts), and how long the first move takes to
@@ -54,6 +56,8 @@ export async function drag(page, from, to, { hold = false, shift = false } = {})
 	await page.mouse.down();
 	if (hold) await longPressed(page);
 	await page.mouse.move(to.x, to.y, { steps: 8 });
+	// Real time, not the page's timers: a test may hold those (`holdTimers`), and its frozen clock carries no speed anyway.
+	await page.waitForTimeout(100);
 	await page.mouse.up();
 	if (shift) await page.keyboard.up('Shift');
 }

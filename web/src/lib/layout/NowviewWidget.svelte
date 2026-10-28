@@ -835,7 +835,7 @@
 		return limit - over / (1 + over / STRETCH_PX);
 	}
 
-	/** The speed of the last tenth of a second before the lift, in px per ms; none for a finger held still. */
+	/** The speed of the last tenth of a second before the lift, in px per ms; none for a pointer held still. */
 	function speed(): number {
 		const end = moves.at(-1);
 		if (!end || performance.now() - end.t > 60) return 0;
@@ -887,9 +887,9 @@
 	function finish(event: PointerEvent): void {
 		if (!press) return;
 		const still = Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP_PX;
-		// A finger's flick coasts on; a mouse's drag stops where it is let go.
+		// A flick coasts on, a finger's or a mouse's (da-w57do); one held still first stops where it is let go.
 		if (mode === 'pan') {
-			const v = event.pointerType === 'mouse' ? 0 : speed();
+			const v = speed();
 			drop();
 			return glide(v);
 		}
