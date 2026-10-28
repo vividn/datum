@@ -463,7 +463,7 @@
 					</label>
 				{/if}
 				{#if verb && verb !== 'add'}
-					{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={field.trim() ? drafted : null} {onopen} />{/key}
+					{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={drafted} {onopen} />{/key}
 				{/if}
 				{#if verb === 'add'}
 					<!-- vividn: «for card, embed the data widget directly on the basics»; the data tab shows the same rows. -->

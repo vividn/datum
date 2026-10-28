@@ -603,6 +603,41 @@ describe('the Placement tab', () => {
 		});
 	});
 
+	// da-sbxz1, vividn, 2026-10-28: «the context/eye button on the placement section doesn't seem to do anything».
+	// A new field not yet named drew today's day with no sample, which no context is drawn around.
+	test('each click of the eye changes what the band draws, on a field with entries and on a new one', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			await app.run(['switch', 'mood', 'happy', '-t', '-300']);
+			await app.run(['start', 'work', '-t', '-120']);
+			for (const t of ['-900', '-60', '-20']) await app.run(['occur', 'coffee', '-t', t]);
+
+			/** What the band was drawn around, and each field's marks in it. */
+			const picture = () =>
+				page.locator(`${MODAL} .placement .band svg`).evaluate((svg) => ({
+					context: svg.dataset.context,
+					marks: [...svg.querySelectorAll('g.field')].map((g) => `${g.dataset.field}:${g.querySelectorAll('rect.block, .point-fg').length}`).sort()
+				}));
+
+			for (const [field, verb] of [['coffee'], ['', 'occur']]) {
+				const { saved } = await (field ? openPlacement(page, field) : openField(page, '', verb));
+				await page.locator(`${MODAL} .placement .band[data-drawn] svg`).waitFor();
+				let last = await picture();
+				assert.equal(last.context, 'none', `«${field}» opens on context`);
+				for (const [label, context] of [['now', 'now'], ['12 hours', '12h'], ['context', 'none']]) {
+					await turn(page, label);
+					const seen = await picture();
+					assert.equal(seen.context, context);
+					assert.notDeepEqual(seen.marks, last.marks, `«${field}», ${label}: the band changed`);
+					last = seen;
+				}
+				assert.deepEqual(last.marks, [`${field}:8`], `«${field}»: the sample alone`);
+				await leaveField(page);
+				assert.equal(await saved, null);
+			}
+		});
+	});
+
 	test('a block field has no size to set', async () => {
 		await onSeam(async (app) => {
 			await app.run(['track', 'work', '--verb', 'start']);

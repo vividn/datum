@@ -65,7 +65,7 @@
 		place = $bindable(),
 		/** Whether the field is an occur field, the one whose dots are sized here. */
 		occur = false,
-		/** The spec a save would store, which the band draws; none while the field has no name. */
+		/** The spec a save would store, which the band draws: a new field's with no name yet too, whose sample the CLI draws as `""`'s. */
 		spec = null,
 		/** Go to the field whose setup a link names. */
 		onopen
