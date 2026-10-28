@@ -33,6 +33,8 @@ struct Part {
     name: &'static str,
     /// The data key, for a `data` part.
     key: Option<String>,
+    /// The ANSI color a new time, duration or value is painted: the action's.
+    color: &'static str,
     before: Option<String>,
     after: Option<String>,
 }
@@ -61,7 +63,7 @@ impl Part {
     fn painted_new(&self, s: &str) -> String {
         match self.name {
             "field" | "state" | "state_line" => s.to_string(),
-            _ => paint(Outcome::Update.ansi_color(), &strip_ansi(s)),
+            _ => paint(self.color, &strip_ansi(s)),
         }
     }
 
@@ -118,6 +120,7 @@ fn parts(
     after: &Entry,
     registry: Option<&SpecRegistry>,
     now: &DatumTime,
+    color: &'static str,
 ) -> (Vec<Part>, Vec<Part>) {
     let spec = |e: &Entry| registry.and_then(|r| r.fields.get(&e.field));
     let ctx = RenderContext::default();
@@ -128,6 +131,7 @@ fn parts(
         .map(|(name, (before, after))| Part {
             name,
             key: None,
+            color,
             before,
             after,
         })
@@ -141,6 +145,7 @@ fn parts(
     let mut lines = vec![Part {
         name: "state_line",
         key: None,
+        color,
         before: state_line(before),
         after: state_line(after),
     }];
@@ -157,6 +162,7 @@ fn parts(
     lines.extend(keys.map(|(k, _)| Part {
         name: "data",
         key: Some(k.clone()),
+        color,
         before: value(&b, k),
         after: value(&a, k),
     }));
@@ -173,7 +179,7 @@ fn draw(parts: &(Vec<Part>, Vec<Part>)) -> (String, Vec<String>) {
     )
 }
 
-/// Turn `lines`, `after`'s UPDATE echo, into the echo of `before` →
+/// Turn `lines`, `after`'s echo as `action`, into the echo of `before` →
 /// `after`: its info line and data view drawn as the diff, `changes` set.
 pub(crate) fn apply(
     lines: &mut ActionLines,
@@ -181,14 +187,16 @@ pub(crate) fn apply(
     after: &Entry,
     registry: Option<&SpecRegistry>,
     now: &DatumTime,
+    action: Outcome,
 ) {
-    let plain = parts(before, after, registry, now);
+    let color = action.ansi_color();
+    let plain = parts(before, after, registry, now, color);
     let (info, data) = draw(&plain);
     // Painted again with the gate open, as `action_lines_at` does, so the
     // segments' texts are `info` stripped.
     let painted = {
         let _on = ColorOverride::set(true);
-        draw(&parts(before, after, registry, now)).0
+        draw(&parts(before, after, registry, now, color)).0
     };
     lines.info = info;
     // The stamp `info` starts with is the time part as drawn (da-7xp82):
@@ -212,6 +220,24 @@ pub(crate) fn apply(
             })
             .collect(),
     );
+}
+
+/// Strike `lines`' info line and data view through, each line's indent
+/// kept: an entry an `undo` took away (da-3mryj). `info_segments` keep the
+/// entry's own colors, their texts still `info` stripped: a surface that is
+/// not a terminal reads `undid` and marks the entry gone itself (da-25q3k).
+pub(crate) fn strike(lines: &mut ActionLines) {
+    fn struck(s: &str) -> String {
+        let s = strip_ansi(s);
+        let body = s.trim_start();
+        format!("{}{}", &s[..s.len() - body.len()], paint(STRUCK, body))
+    }
+    lines.info = struck(&lines.info);
+    lines.data = lines
+        .data
+        .iter()
+        .map(|block| block.split('\n').map(struck).collect::<Vec<_>>().join("\n"))
+        .collect();
 }
 
 #[cfg(test)]

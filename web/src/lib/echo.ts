@@ -65,7 +65,7 @@ export interface EchoDoc {
 	 * `#rrggbb` for the ACTION word — the colour the terminal paints the tag
 	 * (da-ckw3, `Outcome::hex`): green a CREATE, red a DELETE or a FAILED,
 	 * yellow an EXISTS, cyan an UPDATE/RENAME/RETIME, blue an OWRITE, orange
-	 * a NODIFF. Absent from a module too old to carry it, which is why every
+	 * a NODIFF, lavender an UNDONE. Absent from a module too old to carry it, which is why every
 	 * surface falls back to its own accent.
 	 */
 	action_color?: string;
@@ -80,6 +80,11 @@ export interface EchoDoc {
 	 * too old to carry them, which is why the renderer falls back to `info`.
 	 */
 	info_segments?: InfoSegment[];
+	/**
+	 * What an UNDONE took back (da-3mryj): the action it was — UPDATE, CREATE
+	 * (the entry is gone) or DELETE (it is back) — and when it was made.
+	 */
+	undid?: { action: 'UPDATE' | 'CREATE' | 'DELETE'; time: string };
 }
 
 /**

@@ -24,7 +24,7 @@ import { shellJoin } from '#lib/shellSplit.ts';
 import { initDb } from '#lib/db.ts';
 import { asking, fileCommand } from '#lib/dbio.ts';
 import { syncCommand } from '#lib/sync.ts';
-import { parseEcho, runEchoed } from '#lib/echo.ts';
+import { parseEcho, runEchoed, type EchoDoc } from '#lib/echo.ts';
 import { record } from '#lib/cliStore.ts';
 import { run, type RunResult } from '#lib/run.ts';
 import { FROZEN_AT } from '#lib/dbProtocol.ts';
@@ -418,7 +418,9 @@ export const pressWithPills = async (argv: string[], line?: string): Promise<Run
 	}
 	// Whatever the exit: a run that wrote and then failed still echoes its
 	// writes (da-0uvyr), and `del <good>,<bad>` has deleted the good one.
-	dropHids((parseEcho(result.stdout) ?? []).filter((d) => d.action === 'DELETE').map((d) => d.hid));
+	// An undone create is gone as a delete is (da-3mryj).
+	const gone = (d: EchoDoc) => d.action === 'DELETE' || d.undid?.action === 'CREATE';
+	dropHids((parseEcho(result.stdout) ?? []).filter(gone).map((d) => d.hid));
 	return result;
 };
 

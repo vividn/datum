@@ -275,7 +275,7 @@ fn the_first_log_undoes_in_one() {
 
     let undone = env.run(&["undo"]);
     assert_eq!(
-        undone.lines().filter(|l| l.starts_with("DELETE ")).count(),
+        undone.lines().filter(|l| l.starts_with("UNDONE ")).count(),
         2,
         "one `undo`, the entry and its spec: {undone:?}"
     );
@@ -578,7 +578,7 @@ fn spec_set_track_declares_in_one_and_undoes_in_one() {
 
     let undone = env.run(&["undo"]);
     assert_eq!(
-        undone.lines().filter(|l| l.starts_with("DELETE ")).count(),
+        undone.lines().filter(|l| l.starts_with("UNDONE ")).count(),
         2,
         "one `undo`, the TRACK row and the spec: {undone:?}"
     );

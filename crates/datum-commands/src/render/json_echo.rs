@@ -80,6 +80,13 @@ fn document(lines: &ActionLines) -> JsonValue {
             .map(|c| json!({ "part": c.part, "key": c.key, "before": c.before, "after": c.after }))
             .collect();
     }
+    // What an undo took back: the action it was and when (da-3mryj).
+    if let Some(undid) = &lines.undid {
+        doc["undid"] = json!({
+            "action": undid.action,
+            "time": undid.time.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        });
+    }
     doc
 }
 
@@ -147,6 +154,7 @@ mod tests {
             state_color: None,
             info_segments: vec![],
             changes: None,
+            undid: None,
         }
     }
 

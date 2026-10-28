@@ -115,6 +115,8 @@ pub enum Outcome {
     /// `--if-changed` found the field already in that state (da-hxmtg).
     IsLast,
     Failed,
+    /// What an `undo` took back (da-3mryj).
+    Undone,
 }
 
 thread_local! {
@@ -155,6 +157,7 @@ impl Outcome {
             Outcome::NoDiff => "NODIFF",
             Outcome::IsLast => "ISLAST",
             Outcome::Failed => "FAILED",
+            Outcome::Undone => "UNDONE",
         }
     }
 
@@ -165,8 +168,9 @@ impl Outcome {
     /// [`colors::Rgb::GREY`] is `#888888` for bright black: a terminal's
     /// own theme decides what its green looks like, and nothing outside one
     /// has a green until somebody names it. These are legible on a dark
-    /// ground, which is every surface that asks for them. `NoDiff` is the one
-    /// that is not a choice — it is already truecolor orange in the escape.
+    /// ground, which is every surface that asks for them. `NoDiff`, `IsLast`
+    /// and `Undone` (lavender) are not choices — they are already truecolor
+    /// in the escape.
     ///
     /// Published as `action_color` by `--show json` (da-ckw3, vividn:
     /// "Make sure these ACTIONs are colored appropriately"), beside
@@ -184,10 +188,12 @@ impl Outcome {
             Outcome::OWrite => "#3584e4",                   // blue
             Outcome::NoDiff => "#ffa500",                   // orange, as emitted
             Outcome::IsLast => "#b8860b",                   // dark amber, as emitted
+            Outcome::Undone => "#9a8cff",                   // lavender, as emitted
         }
     }
 
-    /// Foreground ANSI color for the action tag.
+    /// Foreground ANSI color for the action tag: the basic colors, and
+    /// truecolor for NODIFF, ISLAST and UNDONE (lavender), which have none.
     fn ansi_color(self) -> &'static str {
         if QUEUED.get() {
             return "\x1b[35m"; // magenta
@@ -200,6 +206,7 @@ impl Outcome {
             Outcome::OWrite => "\x1b[34m",                   // blue
             Outcome::NoDiff => "\x1b[38;2;255;165;0m",       // orange
             Outcome::IsLast => "\x1b[38;2;184;134;11m",      // dark amber
+            Outcome::Undone => "\x1b[38;2;154;140;255m",     // lavender
         }
     }
 }
@@ -441,6 +448,18 @@ pub struct ActionLines {
     /// `None` for every other echo. [`Self::info`] and [`Self::data`] then
     /// draw the change itself.
     pub changes: Option<Vec<diff::Change>>,
+    /// What an `UNDONE` took back (da-3mryj); `None` for every other echo.
+    pub undid: Option<Undid>,
+}
+
+/// The change an `undo` took back: the action it was and when it was made.
+pub struct Undid {
+    /// `UPDATE`, `CREATE` or `DELETE`.
+    pub action: &'static str,
+    pub time: chrono::DateTime<chrono::Utc>,
+    /// What the header says after the slug: `(the UPDATE of 09:01:00+1)`,
+    /// and `, gone` for a create taken back, `, back` for a delete.
+    pub note: String,
 }
 
 /// Build [`ActionLines`] against an explicit `now`, so a caller that renders
@@ -524,6 +543,7 @@ pub fn action_lines_at(
             .and_then(|v| self::colors::state_hex(v, &entry.field, spec)),
         info_segments,
         changes: None,
+        undid: None,
     }
 }
 
@@ -559,7 +579,53 @@ pub fn update_lines_at(
     now: &DatumTime,
 ) -> ActionLines {
     let mut lines = action_lines_at(after, Outcome::Update, registry, None, now);
-    self::diff::apply(&mut lines, before, after, registry, now);
+    self::diff::apply(&mut lines, before, after, registry, now, Outcome::Update);
+    lines
+}
+
+/// `UNDONE`: what an `undo` took back from `before` to leave `after`
+/// (da-3mryj), the change made at `time`. A taken-back update is drawn as
+/// UPDATE's diff, before the undo → after it; a create taken back is the
+/// entry struck through, «gone»; a delete taken back is the entry, «back».
+pub fn show_undone(
+    before: &Entry,
+    after: &Entry,
+    time: chrono::DateTime<chrono::Utc>,
+    registry: Option<&SpecRegistry>,
+    args: &OutputArgs,
+) {
+    show_lines(after, args, |now| {
+        undone_lines_at(before, after, time, registry, now)
+    });
+}
+
+/// [`action_lines_at`] for an `undo` of `before` into `after`.
+pub fn undone_lines_at(
+    before: &Entry,
+    after: &Entry,
+    time: chrono::DateTime<chrono::Utc>,
+    registry: Option<&SpecRegistry>,
+    now: &DatumTime,
+) -> ActionLines {
+    let mut lines = action_lines_at(after, Outcome::Undone, registry, None, now);
+    let (action, end) = match (before.deleted_at.is_some(), after.deleted_at.is_some()) {
+        (false, true) => {
+            self::diff::strike(&mut lines);
+            ("CREATE", ", gone")
+        }
+        (true, false) => ("DELETE", ", back"),
+        _ => {
+            self::diff::apply(&mut lines, before, after, registry, now, Outcome::Undone);
+            ("UPDATE", "")
+        }
+    };
+    let stamp =
+        self::action::format_timestamp(&self::action::synthesize_local_datumtime(time), now, None);
+    lines.undid = Some(Undid {
+        action,
+        time,
+        note: format!("(the {action} of {}{end})", strip_ansi(&stamp)),
+    });
     lines
 }
 
@@ -587,7 +653,10 @@ fn show_lines(entry: &Entry, args: &OutputArgs, lines: impl FnOnce(&DatumTime) -
         return;
     }
 
-    println!("{}", lines.header);
+    match &lines.undid {
+        Some(undid) => println!("{}   {}", lines.header, paint(GREY_FG, &undid.note)),
+        None => println!("{}", lines.header),
+    }
 
     if args.show == Show::Minimal {
         return;

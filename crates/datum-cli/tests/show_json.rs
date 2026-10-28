@@ -339,3 +339,102 @@ fn an_update_of_several_entries_carries_each_ones_before_and_after() {
         "only an update carries changes"
     );
 }
+
+/// `undo` echoes UNDONE (da-3mryj): the change it took back, before the
+/// undo → after it, the header naming the command it undid, and `--show
+/// json` carrying that command's action and time as `undid`.
+#[test]
+fn an_undone_update_is_the_change_taken_back() {
+    let env = Env::new();
+    env.run(&["occur", "tea", "-t", "9:00", "size=large", "shop=corner"]);
+    let update = env.docs(&["update", "_LAST", "size=small", "--show", "json"]);
+    let hid = update[0]["hid"].as_str().unwrap();
+
+    let docs = env.docs(&["undo", "--show", "json"]);
+    assert_eq!(docs.len(), 1, "{docs:?}");
+    assert_eq!(docs[0]["action"], "UNDONE");
+    assert_eq!(docs[0]["action_color"], "#9a8cff");
+    assert_eq!(docs[0]["hid"], hid);
+    assert_eq!(
+        docs[0]["data"],
+        serde_json::json!(["size: \"small\" → \"large\"", "shop: \"corner\""])
+    );
+    assert_eq!(docs[0]["changes"][0]["before"], "\"small\"");
+    assert_eq!(docs[0]["undid"]["action"], "UPDATE");
+    assert!(docs[0]["undid"]["time"].as_str().unwrap().ends_with('Z'));
+
+    // The terminal says the same, naming the command in the header.
+    env.run(&["redo"]);
+    let printed = strip_ansi(&env.run(&["undo"]));
+    let header = printed.lines().next().unwrap();
+    assert!(
+        header.starts_with(&format!("UNDONE {hid} tea:")) && header.contains("(the UPDATE of "),
+        "{printed}"
+    );
+    assert!(printed.contains("size: \"small\" → \"large\""), "{printed}");
+}
+
+/// An undone create is the entry struck through, «gone»; an undone delete
+/// the entry plain, «back» (da-3mryj).
+#[test]
+fn an_undone_create_is_gone_and_an_undone_delete_back() {
+    let env = Env::new();
+    env.run(&["occur", "tea", "-t", "9:00", "size=large"]);
+    env.run(&["occur", "tea", "-t", "9:30", "size=small"]);
+
+    let printed = env.run(&["undo"]);
+    let header = strip_ansi(printed.lines().next().unwrap());
+    assert!(
+        header.starts_with("UNDONE ") && header.ends_with(", gone)"),
+        "{printed}"
+    );
+    assert!(
+        printed.contains("\x1b[2;9m"),
+        "the entry is struck through: {printed:?}"
+    );
+    env.run(&["redo"]);
+    let docs = env.docs(&["undo", "--show", "json"]);
+    assert_eq!(docs[0]["undid"]["action"], "CREATE");
+
+    env.run(&["redo"]);
+    env.run(&["delete", "_LAST"]);
+    let printed = env.run(&["undo"]);
+    let header = strip_ansi(printed.lines().next().unwrap());
+    assert!(header.ends_with(", back)"), "{printed}");
+    assert!(!printed.contains("\x1b[2;9m"), "back, plain: {printed:?}");
+    env.run(&["redo"]);
+    let docs = env.docs(&["undo", "--show", "json"]);
+    assert_eq!(docs[0]["undid"]["action"], "DELETE");
+    assert_eq!(docs[0]["data"], serde_json::json!(["size: \"small\""]));
+}
+
+/// A bare undo of a comma-list command echoes each entry it took back,
+/// all naming the one command; `redo` echoes each as the UPDATE it puts
+/// back, in the diff form (da-3mryj).
+#[test]
+fn a_bare_undo_of_a_list_echoes_each_entry_and_redo_the_update() {
+    let env = Env::new();
+    let a = env.docs(&["occur", "tea", "-t", "9:00", "n=1", "--show", "json"]);
+    let b = env.docs(&["occur", "tea", "-t", "9:30", "n=2", "--show", "json"]);
+    let (a, b) = (a[0]["hid"].as_str().unwrap(), b[0]["hid"].as_str().unwrap());
+    env.run(&["update", &format!("{a},{b}"), "n=5"]);
+
+    let docs = env.docs(&["undo", "--show", "json"]);
+    assert_eq!(docs.len(), 2, "{docs:?}");
+    let hids: Vec<_> = docs.iter().map(|d| d["hid"].as_str().unwrap()).collect();
+    assert!(hids.contains(&a) && hids.contains(&b), "{hids:?}");
+    for doc in &docs {
+        assert_eq!(doc["action"], "UNDONE");
+        assert_eq!(doc["undid"], docs[0]["undid"], "one command undone");
+        assert_eq!(doc["undid"]["action"], "UPDATE");
+        assert_eq!(doc["changes"][0]["before"], "5");
+    }
+
+    let redone = env.docs(&["redo", "--show", "json"]);
+    assert_eq!(redone.len(), 2, "{redone:?}");
+    for doc in &redone {
+        assert_eq!(doc["action"], "UPDATE");
+        assert!(doc.get("undid").is_none(), "{doc}");
+        assert_eq!(doc["changes"][0]["after"], "5");
+    }
+}

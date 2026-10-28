@@ -36,7 +36,7 @@ use crate::{
         drop_orphaned_bare_specs, for_each_id, is_id_list, load_registry_opt,
         resolve_prefix_or_tombstone, warn_if_stale,
     },
-    render::{show_create, show_delete, show_update, OutputArgs},
+    render::{show_create, show_delete, show_undone, show_update_from, OutputArgs},
 };
 
 pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
@@ -80,7 +80,7 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
         // Undoing a first log takes the spec it wrote with it (da-elv6d).
         let (specs, dropped) =
             drop_orphaned_bare_specs(db, &tombstoned_by(&steps), ChangeKind::Undo);
-        show_steps(&steps, &specs, registry.as_ref(), &output);
+        show_steps(&steps, &specs, Echo::Undo(None), registry.as_ref(), &output);
         dropped?;
         resolved
     } else {
@@ -144,7 +144,7 @@ fn undo_stack(
         // Every entry was left as it is, which the skip already said.
         return Ok(());
     }
-    finish_stack(db, &steps, "undo", registry, output)
+    finish_stack(db, &steps, Echo::Undo(Some(time)), registry, output)
 }
 
 /// Bare `redo`: put every entry the oldest undone action wrote back as it
@@ -200,7 +200,7 @@ fn redo_stack(
         );
         return Ok(());
     }
-    finish_stack(db, &steps, "redo", registry, output)
+    finish_stack(db, &steps, Echo::Redo, registry, output)
 }
 
 /// A member's entry as it is now, or `None` when it is gone since
@@ -288,19 +288,23 @@ fn refuse_if_moved(
 fn finish_stack(
     db: &Db,
     steps: &[(Entry, Entry)],
-    verb: &str,
+    echo: Echo,
     registry: &Option<SpecRegistry>,
     output: &OutputArgs,
 ) -> Result<()> {
     let moved = moved_hids(steps, &[]);
     if moved.is_empty() {
+        let verb = match echo {
+            Echo::Undo(_) => "undo",
+            Echo::Redo => "redo",
+        };
         eprintln!(
             "{verb}: nothing moved — that command's entries were already as it would leave them"
         );
     } else {
         let _ = last_docs::set_last_docs(db, &pointer_after_step(db, moved));
     }
-    show_steps(steps, &[], registry.as_ref(), output);
+    show_steps(steps, &[], echo, registry.as_ref(), output);
     Ok(())
 }
 
@@ -402,7 +406,7 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
     // `_LAST` follows the entries that moved, the way undo's does, so a
     // second `undo` after a `redo` lands on the same rows.
     let _ = last_docs::set_last_docs(db, &pointer_after_step(db, moved_hids(&steps, &specs)));
-    show_steps(&steps, &specs, registry.as_ref(), &output);
+    show_steps(&steps, &specs, Echo::Redo, registry.as_ref(), &output);
     dropped?;
     resolved
 }
@@ -452,15 +456,33 @@ fn redo_target_version(db: &Db, hid: &str) -> Result<Option<u32>> {
     })
 }
 
-/// The echo for one step names the action the step PERFORMS, not the command
-/// that asked for it: bringing a tombstone back is a CREATE, tombstoning is a
-/// DELETE, and anything else is an UPDATE. The same three words the write
-/// commands print, so the bar reads the same either way.
-fn show_step(before: &Entry, after: &Entry, registry: Option<&SpecRegistry>, output: &OutputArgs) {
+/// How a batch of steps is echoed.
+#[derive(Clone, Copy)]
+enum Echo {
+    /// UNDONE, naming the change taken back (da-3mryj): made at the stack
+    /// action's time, or for a named entry at its own last change's.
+    Undo(Option<chrono::DateTime<chrono::Utc>>),
+    /// The change put back, as the forward action it was: bringing a
+    /// tombstone back is a CREATE, tombstoning is a DELETE, and anything
+    /// else is an UPDATE drawn as what changed.
+    Redo,
+}
+
+fn show_step(
+    before: &Entry,
+    after: &Entry,
+    echo: Echo,
+    registry: Option<&SpecRegistry>,
+    output: &OutputArgs,
+) {
+    if let Echo::Undo(time) = echo {
+        let time = time.unwrap_or(before.modify_time);
+        return show_undone(before, after, time, registry, output);
+    }
     match (before.deleted_at.is_some(), after.deleted_at.is_some()) {
         (_, true) => show_delete(after, registry, output),
         (true, false) => show_create(after, registry, output),
-        (false, false) => show_update(after, registry, output),
+        (false, false) => show_update_from(before, after, registry, output),
     }
 }
 
@@ -488,13 +510,25 @@ fn moved_hids(steps: &[(Entry, Entry)], specs: &[Entry]) -> Vec<Hid> {
 fn show_steps(
     steps: &[(Entry, Entry)],
     specs: &[Entry],
+    echo: Echo,
     registry: Option<&SpecRegistry>,
     output: &OutputArgs,
 ) {
     for (before, after) in steps {
-        show_step(before, after, registry, output);
+        show_step(before, after, echo, registry, output);
     }
+    // A bare spec goes with the first log it was made by: undone, the
+    // create taken back with it.
     for spec in specs {
-        show_delete(spec, registry, output);
+        match echo {
+            Echo::Undo(_) => {
+                let was = Entry {
+                    deleted_at: None,
+                    ..spec.clone()
+                };
+                show_undone(&was, spec, spec.create_time, registry, output);
+            }
+            Echo::Redo => show_delete(spec, registry, output),
+        }
     }
 }
