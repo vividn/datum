@@ -85,6 +85,13 @@
 	in the rows under it as scrolling up does those above. A range is a
 	filter like the field pill's, `--since` and `-t`. Cleared, a tail the
 	selection moved goes back to the live end.
+
+	And when its body changes HEIGHT — the keyboard opening, a pane resized
+	(da-vcdil, vividn: «if it's at "now", it should generally keep now
+	visible … if there is a selected time visible … it should resize around
+	the selected time») — a body at the end stays at the end, the selected
+	time's line on screen stays at the same share of the body's height, and
+	otherwise the row in the middle stays in the middle (`resized`).
 -->
 <script lang="ts">
 	import { onDestroy, tick, untrack } from 'svelte';
@@ -475,6 +482,19 @@
 	const nearBottom = () =>
 		!scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 2;
 
+	// A new box draws a new slack before the listing for it lands: at the
+	// end before it, at the end after it, or that listing reads the body as
+	// scrolled up and keeps the place instead of the live end (da-vcdil).
+	let ended = false;
+	$effect.pre(() => {
+		void slack;
+		ended = untrack(nearBottom);
+	});
+	$effect(() => {
+		void slack;
+		untrack(() => ended && scroller && scrollTo(scroller.scrollHeight));
+	});
+
 	/** The first row on screen and where it is, to put it back there after a change. */
 	function anchor(): { hid: string; y: number } | null {
 		if (!scroller || !tbody) return null;
@@ -618,10 +638,13 @@
 			adopt(table.columns, false);
 			// Drawn `DRAW` rows a task, the nearest first, so no one frame
 			// waits on a whole page (da-j6frl); the place is the one before
-			// the first, so a scroll offset's rounding is not carried on.
-			const a = anchor();
+			// the first, so a scroll offset's rounding is not carried on —
+			// unless the body was resized meanwhile, which chose a place of
+			// its own (da-vcdil).
+			let a = anchor(), sized = resizes;
 			for (let done = 0; done < fresh.length; done += DRAW) {
 				if (of !== generation) return;
+				if (sized !== resizes) [a, sized] = [anchor(), resizes];
 				const end = fresh.length - done;
 				rows = down
 					? [...rows, ...fresh.slice(done, done + DRAW)]
@@ -752,6 +775,8 @@
 		el.addEventListener('wheel', onWheel, { passive: true });
 		el.addEventListener('touchstart', onTouchStart, { passive: true });
 		el.addEventListener('touchmove', onTouchMove, { passive: true });
+		height = el.clientHeight;
+		(sizes ??= new ResizeObserver(resized)).observe(el);
 	}
 
 	function detach(): void {
@@ -760,7 +785,38 @@
 		attached.removeEventListener('wheel', onWheel);
 		attached.removeEventListener('touchstart', onTouchStart);
 		attached.removeEventListener('touchmove', onTouchMove);
+		sizes?.unobserve(attached);
 		attached = undefined;
+	}
+
+	/** The body's height as last observed, and how many times it has changed. */
+	let height = 0;
+	let resizes = 0;
+	let sizes: ResizeObserver | undefined;
+
+	/**
+	 * The body's height changed (da-vcdil): the browser keeps `scrollTop`,
+	 * so the top rows stay and a shrink comes off the newest. Put the place
+	 * back by where it was — `last`, since a growth's clamp is not heard yet
+	 * — in the old height: at the end, the end; else a point of the content
+	 * at the same share of the height, the selected time's line when it was
+	 * on screen and the middle otherwise. A hidden body (0) keeps nothing.
+	 */
+	function resized(): void {
+		if (!scroller) return;
+		const was = height;
+		height = scroller.clientHeight;
+		if (!was || !height || was === height) return;
+		resizes++;
+		if (scroller.scrollHeight - last - was <= 2) return scrollTo(scroller.scrollHeight);
+		let share = 0.5;
+		const tr = tbody?.querySelector<HTMLTableRowElement>('tr.line, tr.line-under');
+		if (tr) {
+			const r = tr.getBoundingClientRect();
+			const y = (tr.classList.contains('line') ? r.top : r.bottom) - scroller.getBoundingClientRect().top + scroller.scrollTop;
+			if (y >= last && y <= last + was) share = (y - last) / was;
+		}
+		scrollTo(last + share * (was - height));
 	}
 
 	function onScroll(): void {
