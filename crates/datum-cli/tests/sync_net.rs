@@ -2519,6 +2519,10 @@ fn without_keepalives_the_first_sync_after_an_import_loses_its_peer() {
 
 // ─── The sync chain (da-odwc7) ──────────────────────────────────────────────
 
+/// c's dial to a reaches no one in 6s, and b admits it. Not 3s: b's
+/// handshake, the one stretch before its `Welcome` with nothing sent, took
+/// under 200ms on two loaded cores, and a CI runner starved it past 3s
+/// (da-c5b2b, as da-hd9sx's and da-3njqh's).
 #[test]
 fn a_member_admits_an_invites_redeemer_while_the_inviter_is_offline() {
     let (a, b) = paired();
@@ -2530,7 +2534,7 @@ fn a_member_admits_an_invites_redeemer_while_the_inviter_is_offline() {
     let _b_runs = b.serve(&["sync", "run"]);
 
     let mut c = Copy::new();
-    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "6")];
     c.ok(&["occur", "from-c"]);
     let joined = c.ok(&["sync", "chain", "connect", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
