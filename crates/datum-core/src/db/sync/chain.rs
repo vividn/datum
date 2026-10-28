@@ -78,6 +78,13 @@
 //!     device. A bad or missing one binds nothing; a describe of another
 //!     member leaves its binding as it was.
 //!
+//!   - `grant {to, eph, sealed}` (da-n0uj1.4): a message to the device
+//!     whose key is `to`, sealed so only it opens it ([`seal_grant`]): an
+//!     invite to ANOTHER chain, which a device it shares this one with
+//!     joins without a ticket carried by hand. Any live member that is no
+//!     reader writes one, unsigned by an admin even in a locked chain: it
+//!     changes nothing in this one.
+//!
 //!   - `leave {endpoint}` (da-dsob1): a member's departure, which it signs
 //!     itself before it forgets the chain — unsigned by an admin, and the
 //!     one act a reader writes but its describe. From its HLC on the member
@@ -243,6 +250,54 @@ fn bound_device(r: &Value) -> Option<String> {
     let signed = binding(r["chain"].as_str()?, r["endpoint"].as_str()?);
     key.verify_strict(&signed, &sig).ok()?;
     Some(hex(key.as_bytes()))
+}
+
+/// The key a grant to `to` from the ephemeral `eph` is sealed with: X25519
+/// of the two Ed25519 keys, through SHA-256. One key signs and agrees here,
+/// which is sound for a KEM (eprint.iacr.org/2021/509); `eph` is fresh per
+/// grant, so the key is too, and its nonce may be fixed.
+fn grant_key(shared: [u8; 32], eph: &[u8], to: &[u8]) -> aes_gcm::Key<aes_gcm::Aes256Gcm> {
+    let mut h = Sha256::new();
+    h.update(b"datum grant\n");
+    h.update(shared);
+    h.update(eph);
+    h.update(to);
+    h.finalize()
+}
+
+/// `eph` and `sealed` for a grant to the device key `to`: `payload` sealed
+/// so that only the holder of `to`'s secret opens it ([`open_grant`]).
+pub fn seal_grant(to: &str, payload: &Value) -> std::result::Result<(String, String), String> {
+    use aes_gcm::aead::{Aead, KeyInit};
+    let key = unhex::<32>(to).ok_or("not a device key")?;
+    let to_key = ed25519_dalek::VerifyingKey::from_bytes(&key).map_err(|_| "not a device key")?;
+    let eph = SigningKey::generate(&mut rand::rngs::OsRng);
+    let shared = (to_key.to_montgomery() * eph.to_scalar()).to_bytes();
+    let eph_key = eph.verifying_key().to_bytes();
+    let sealed = aes_gcm::Aes256Gcm::new(&grant_key(shared, &eph_key, &key))
+        .encrypt(&Default::default(), payload.to_string().as_bytes())
+        .map_err(|_| "sealing failed")?;
+    Ok((hex(&eph_key), BASE64URL_NOPAD.encode(&sealed)))
+}
+
+/// What a grant to this install's device says, when it is to it: none for a
+/// grant to another, or one this device's key does not open.
+pub fn open_grant(g: &Grant) -> Option<Value> {
+    use aes_gcm::aead::{Aead, KeyInit};
+    let secret = SigningKey::from_bytes(&device_secret()?);
+    let to = secret.verifying_key().to_bytes();
+    if unhex::<32>(&g.to)? != to {
+        return None;
+    }
+    // A small-order `eph` would make the shared secret all zeros.
+    let eph = ed25519_dalek::VerifyingKey::from_bytes(&unhex::<32>(&g.eph)?).ok();
+    let eph = eph.filter(|k| !k.is_weak())?;
+    let shared = (eph.to_montgomery() * secret.to_scalar()).to_bytes();
+    let sealed = BASE64URL_NOPAD.decode(g.sealed.as_bytes()).ok()?;
+    let opened = aes_gcm::Aes256Gcm::new(&grant_key(shared, eph.as_bytes(), &to))
+        .decrypt(&Default::default(), sealed.as_slice())
+        .ok()?;
+    serde_json::from_slice(&opened).ok()
 }
 
 /// The hash an invite record carries of its secret.
@@ -569,6 +624,17 @@ pub struct Wipe {
     pub restore: bool,
 }
 
+/// A `grant` record (da-n0uj1.4): sealed to the device key `to`.
+#[derive(Debug, Clone)]
+pub struct Grant {
+    pub to: String,
+    pub eph: String,
+    pub sealed: String,
+    /// Its HLC, and the endpoint that wrote it.
+    pub hlc: String,
+    pub by: String,
+}
+
 #[derive(Debug)]
 struct Invite {
     secret_hash: String,
@@ -596,6 +662,8 @@ pub struct Chain {
     pub unlocks: Vec<(String, String)>,
     /// The purge orders taken, oldest first (da-qzrj9).
     pub wipes: Vec<Wipe>,
+    /// The grants taken, oldest first (da-n0uj1.4).
+    pub grants: Vec<Grant>,
 }
 
 /// The wall time of an HLC, as RFC 3339.
@@ -908,9 +976,10 @@ impl Chain {
                 filter,
             );
         }
-        // An endpoint describes itself and leaves unsigned; anything else
-        // takes an admin, once there is one: its writer is a live member already.
-        if !self.is_open() && !own {
+        // An endpoint describes itself and leaves unsigned, and a grant is a
+        // message to a device; anything else takes an admin, once there is
+        // one: its writer is a live member already.
+        if !self.is_open() && !own && kind != "grant" {
             admin_signed(&self.admins, &d, &s("sig"))?;
         }
         match kind.as_str() {
@@ -967,6 +1036,20 @@ impl Chain {
                         filter,
                     },
                 );
+                Ok(())
+            }
+            "grant" => {
+                let (to, eph) = (s("to"), s("eph"));
+                if unhex::<32>(&to).is_none() || unhex::<32>(&eph).is_none() {
+                    return Err("a grant names a device key and an ephemeral key".into());
+                }
+                self.grants.push(Grant {
+                    to,
+                    eph,
+                    sealed: s("sealed"),
+                    hlc: op.hlc.clone(),
+                    by: op.endpoint.clone(),
+                });
                 Ok(())
             }
             "role" => {
@@ -1815,6 +1898,98 @@ mod tests {
             add(&a, json!({"type": "describe", "endpoint": a, "label": "x"})),
             None
         );
+    }
+
+    /// A grant (da-n0uj1.4) is a member's message to a device, sealed to its
+    /// key: unsigned by an admin even in a locked chain, refused of a
+    /// reader, and opened by that device's key alone, the payload whole.
+    #[test]
+    fn a_grant_opens_for_its_device_alone() {
+        let admin = [3u8; 32];
+        let [a, b, c] = ["a1", "b2", "c3"].map(|h| h.repeat(32));
+        let mut ops = Vec::new();
+        let mut add = |by: &str, mut rec: Value| {
+            let t = ops.len() + 1;
+            rec["chain"] = "c1".into();
+            if by == a && rec["type"] != "admit" {
+                rec["sig"] = sign_ed25519(&rec, &admin).into();
+            }
+            let op = json!({
+                "endpoint": by, "seq": t, "hlc": format!("2026-10-28T00:00:{t:02}.000Z/0000"),
+                "hid": CHAIN_HID, "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
+            });
+            ops.push(Op::parse(&op.to_string()).unwrap());
+            Chain::fold(ops.clone())
+        };
+        let admins = json!([{"key": ed25519_admin_key(&admin), "label": "k"}]);
+        add(
+            &a,
+            json!({"type": "genesis", "admins": admins, "label": "a"}),
+        );
+        for (who, id, caps) in [(&b, "i1", json!({"role": "reader"})), (&c, "i2", json!({}))] {
+            let invite = json!({"type": "invite", "invite_id": id, "secret_hash": sha256_hex(id),
+                "expires": "2099-01-01T00:00:00Z", "caps": caps});
+            add(&a, invite);
+            add(
+                &a,
+                json!({"type": "admit", "endpoint": who, "label": id, "via": id, "secret": id}),
+            );
+        }
+        fn seven() -> Option<String> {
+            Some("07".repeat(32))
+        }
+        fn eight() -> Option<String> {
+            Some("08".repeat(32))
+        }
+        let to = hex(SigningKey::from_bytes(&[7u8; 32])
+            .verifying_key()
+            .as_bytes());
+        let payload = json!({"ticket": "t", "chain": "c2"});
+        let (eph, sealed) = seal_grant(&to, &payload).unwrap();
+        let grant = json!({"type": "grant", "to": to, "eph": eph, "sealed": sealed});
+        let chain = add(&c, grant.clone());
+        assert!(chain.rejected.is_empty(), "{:?}", chain.rejected);
+        let g = &chain.grants[0];
+        assert_eq!((g.to.as_str(), g.by.as_str()), (to.as_str(), c.as_str()));
+        let mut again = grant.clone();
+        again["created"] = "later".into();
+        let chain = add(&b, again);
+        assert_eq!(chain.grants.len(), 1, "a reader's grant is refused");
+        super::super::set_device_source(seven);
+        assert_eq!(open_grant(g), Some(payload.clone()));
+        let mut torn = g.clone();
+        torn.sealed.replace_range(
+            ..2,
+            if torn.sealed.starts_with("AA") {
+                "BB"
+            } else {
+                "AA"
+            },
+        );
+        assert_eq!(open_grant(&torn), None, "a sealed grant is tamper-evident");
+        // Sealed under a small-order `eph`, whose shared secret is all
+        // zeros: anyone could make it, and it opens nothing.
+        let mut weak = g.clone();
+        let identity = {
+            let mut p = [0u8; 32];
+            p[0] = 1;
+            p
+        };
+        let key = grant_key([0u8; 32], &identity, &unhex::<32>(&to).unwrap());
+        let forged = {
+            use aes_gcm::aead::{Aead, KeyInit};
+            let c = aes_gcm::Aes256Gcm::new(&key);
+            c.encrypt(&Default::default(), payload.to_string().as_bytes())
+                .unwrap()
+        };
+        (weak.eph, weak.sealed) = (hex(&identity), BASE64URL_NOPAD.encode(&forged));
+        assert_eq!(
+            open_grant(&weak),
+            None,
+            "a small-order ephemeral key opens nothing"
+        );
+        super::super::set_device_source(eight);
+        assert_eq!(open_grant(g), None, "another device's key opens nothing");
     }
 
     /// The last admin goes only with `unlock` (da-aam46), and the chain is

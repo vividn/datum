@@ -58,6 +58,8 @@ pub mod sync;
 #[cfg(feature = "net")]
 pub mod sync_daemon;
 pub mod sync_diagnose;
+#[cfg(feature = "net")]
+pub mod sync_grant;
 pub mod sync_grid;
 pub mod tail;
 pub mod tail_state;

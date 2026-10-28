@@ -60,6 +60,9 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std", "f
 # (P-256 ECDSA), verified by every peer offline (da-odwc7).
 p256 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8"] }
 data-encoding = "2"
+# A grant's invite rides sealed to its device in a chain record (da-n0uj1.4):
+# already in the build, through iroh's QUIC.
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
 
 # Text
 regex-lite = "0.1"

@@ -58,7 +58,7 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
     let columns = chains(db)?;
     let mine = datum_core::db::device_id();
     let mut rows: Vec<Row> = Vec::new();
-    for (j, (_, chain)) in columns.iter().enumerate() {
+    for (j, (_, _, chain)) in columns.iter().enumerate() {
         for m in &chain.members {
             let Some(cell) = Cell::of(m) else { continue };
             // A bound member is its device's row whatever its endpoint, so a
@@ -74,11 +74,7 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
                     rows.push(Row {
                         device: m.device.clone(),
                         endpoint: m.endpoint.clone(),
-                        // Its host, not the database's name a chain may add.
-                        label: match (&m.host, m.auto) {
-                            (Some(host), true) => chain::assembled(m.user.as_deref(), host, None),
-                            _ => m.label.clone(),
-                        },
+                        label: device_label(m),
                         cells: vec![None; columns.len()],
                     });
                     rows.last_mut().unwrap()
@@ -94,13 +90,13 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
     if json {
         let out = json!({
             "device": mine,
-            "chains": columns.iter().map(|(name, c)| json!({"chain": c.id, "db": name})).collect::<Vec<_>>(),
+            "chains": columns.iter().map(|(name, _, c)| json!({"chain": c.id, "db": name})).collect::<Vec<_>>(),
             "devices": rows.iter().map(|r| json!({
                 "device": r.device,
                 "endpoint": r.device.is_none().then_some(&r.endpoint),
                 "label": r.label,
                 "this": this(r),
-                "cells": columns.iter().zip(&r.cells).map(|((_, c), cell)| (
+                "cells": columns.iter().zip(&r.cells).map(|((_, _, c), cell)| (
                     c.id.clone(),
                     cell.as_ref().map_or(Value::Null, |(cell, e)| json!({"state": cell.word(), "endpoint": e})),
                 )).collect::<serde_json::Map<_, _>>(),
@@ -132,7 +128,7 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
     // A chain id is a ULID, whose head is only its time: shown whole.
     let widths: Vec<usize> = columns
         .iter()
-        .map(|(name, c)| name.chars().count().max(c.id.chars().count()))
+        .map(|(name, _, c)| name.chars().count().max(c.id.chars().count()))
         .collect();
     let line = |first: &str, cells: Vec<&str>| {
         let cells: Vec<String> = cells
@@ -144,11 +140,11 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
     };
     println!(
         "{}",
-        line("", columns.iter().map(|(n, _)| n.as_str()).collect()).trim_end()
+        line("", columns.iter().map(|(n, _, _)| n.as_str()).collect()).trim_end()
     );
     println!(
         "{}",
-        line("", columns.iter().map(|(_, c)| c.id.as_str()).collect()).trim_end()
+        line("", columns.iter().map(|(_, _, c)| c.id.as_str()).collect()).trim_end()
     );
     for (r, name) in rows.iter().zip(&names) {
         let cells = r
@@ -164,11 +160,20 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// Every chain this install holds, once each, by the local database's name:
-/// `db`'s first, then each other database datum knows of, in name order.
-/// One in no chain, or a dissolved one, has no column; one that cannot be
-/// read is said on stderr.
-fn chains(db: &Db) -> Result<Vec<(String, Chain)>> {
+/// How a device's row is labelled by a member of it: its host, not the
+/// database's name a chain may add.
+pub(super) fn device_label(m: &Member) -> String {
+    match (&m.host, m.auto) {
+        (Some(host), true) => chain::assembled(m.user.as_deref(), host, None),
+        _ => m.label.clone(),
+    }
+}
+
+/// Every chain this install holds, once each, by the local database's name
+/// and its path: `db`'s first, then each other database datum knows of, in
+/// name order. One in no chain, or a dissolved one, has no column; one that
+/// cannot be read is said on stderr.
+pub(super) fn chains(db: &Db) -> Result<Vec<(String, PathBuf, Chain)>> {
     let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
     let here = db.path().map(canon);
     let known: Vec<(String, PathBuf)> = config::known_dbs().into_iter().collect();
@@ -185,17 +190,17 @@ fn chains(db: &Db) -> Result<Vec<(String, Chain)>> {
             stem.unwrap_or_else(|| path.display().to_string())
         })
     };
-    let mut out: Vec<(String, Chain)> = Vec::new();
-    let mut take = |name: String, chain: Chain| {
+    let mut out: Vec<(String, PathBuf, Chain)> = Vec::new();
+    let mut take = |name: String, path: PathBuf, chain: Chain| {
         if chain.exists()
             && chain.dissolved().is_none()
-            && out.iter().all(|(_, c)| c.id != chain.id)
+            && out.iter().all(|(_, _, c)| c.id != chain.id)
         {
-            out.push((name, chain));
+            out.push((name, path, chain));
         }
     };
     if let Some(here) = &here {
-        take(name_of(here), db.sync_chain()?);
+        take(name_of(here), here.clone(), db.sync_chain()?);
     }
     let mut seen: Vec<PathBuf> = here.into_iter().collect();
     for (_, path) in &known {
@@ -206,7 +211,7 @@ fn chains(db: &Db) -> Result<Vec<(String, Chain)>> {
         seen.push(path.clone());
         let name = name_of(&path);
         match Db::open_read_only(&path.to_string_lossy()).and_then(|d| d.sync_chain()) {
-            Ok(chain) => take(name, chain),
+            Ok(chain) => take(name, path, chain),
             Err(e) => eprintln!("⚠ {name} could not be read: {e:#}"),
         }
     }

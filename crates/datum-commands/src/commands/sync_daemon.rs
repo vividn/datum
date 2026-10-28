@@ -493,7 +493,9 @@ fn run() -> Result<()> {
                     // A `connect` or an `invite` taking it up meanwhile has it
                     // to itself (da-8sah2): this endpoint would serve its
                     // joiner too. Retried at a look that finds it free.
+                    let grants = super::sync_grant::Watch::default();
                     let aside = || {
+                        grants.tick(&db);
                         ensure!(!in_first_sync(&path), ASIDE);
                         Ok(())
                     };

@@ -626,11 +626,30 @@ A dialer still refused is told so by name, with what fixes it: sync the refusing
 copy with the copy that invited the other. datum.day's store does the same
 through the hidden `sync pipe records` and `sync handshake --records`.
 
+### Grants: a device joins with no ticket carried
+
+`datum --db X sync grant <DEVICE> member|reader [--as <NAME>]` (da-n0uj1.4)
+writes an invite in X's chain, as `chain invite` does, and its join link in a
+`grant {to, eph, sealed}` record of another chain this install shares with the
+device (the carrier): sealed to the device's key (X25519 of the Ed25519 keys,
+AES-256-GCM, `chain::seal_grant`), so only it opens it, and relayed by every
+member, so it waits for a device that is offline (default `--expires 7d`). A
+grant is a message, written by any live member that is no reader, unsigned by
+an admin even in a locked carrier. The device, after a bare `sync` of the
+carrier or on a `sync run` tick that brought a chain record, opens each grant
+to it that no live copy of its own came into that chain by (its admission's
+`via` is the grant's invite, so an expelled copy, never told, is admitted
+again), and runs `chain connect` in a
+process of its own, the link on stdin, into `--as` or the granter's database
+name; where that name holds data or another chain, `<name>-2` and on, never
+touching it. An expired grant is said and joins nothing: grant again. `expel`
+and `unjoin` take a member's device key prefix too.
+
 ### The command tree
 
 The tree: `sync`, `status`, `grid` (every device against every chain this
 install's databases are in, by device key and chain id, read only, da-n0uj1.3),
-`pause | resume`, `diff <WHO>`, `refold`, `chain
+`grant <DEVICE> member|reader [--as <NAME>]` (below), `pause | resume`, `diff <WHO>`, `refold`, `chain
 invite | connect | leave | list | rename | expel | unjoin | ack | rekey`,
 `admin list | add | remove`, `daemon install | uninstall | status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync

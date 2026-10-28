@@ -32,6 +32,26 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 show: Show::Default,
             }
         }
+        "grant" => {
+            let mut o = opts(&mut rest, &["as", "expires", "admin-key"], &[], 2..=2)?;
+            let reader = match o.positional.pop().as_deref() {
+                Some("reader") => true,
+                Some("member") => false,
+                r => {
+                    return Err(ParseError::InvalidArg(format!(
+                        "a grant is of member or reader, not {}",
+                        r.unwrap_or_default()
+                    )))
+                }
+            };
+            SyncCommand::Grant {
+                device: o.positional.remove(0),
+                reader,
+                expires_secs: o.expires_or(7 * 24 * 3600)?,
+                name: o.get("as"),
+                admin_key: o.get("admin-key"),
+            }
+        }
         "resume" => SyncCommand::Resume,
         "diff" => SyncCommand::Diff {
             who: opts(&mut rest, &[], &[], 1..=1)?.positional.remove(0),
@@ -157,7 +177,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             return Err(unknown(
                 "sync",
                 other,
-                "status|diff|refold|chain|admin|daemon|pause|resume|help",
+                "status|grid|grant|diff|refold|chain|admin|daemon|pause|resume|help",
             ))
         }
     };
@@ -428,8 +448,12 @@ impl Opts {
 
     /// `--expires`, 10 minutes by default.
     fn expires(&self) -> Result<u64> {
+        self.expires_or(600)
+    }
+
+    fn expires_or(&self, default: u64) -> Result<u64> {
         let Some(value) = self.values.get("expires") else {
-            return Ok(600);
+            return Ok(default);
         };
         u64::try_from(crate::time::parse_duration(value)?.num_seconds())
             .ok()
@@ -880,6 +904,34 @@ mod tests {
         assert!(parse_sync_cmd(&["chain", "invite", "--expires", "0s"]).is_err());
         assert!(parse_sync_cmd(&["pipe", "vector", "extra"]).is_err());
         assert!(parse_sync_cmd(&["status", "extra"]).is_err());
+    }
+
+    /// `grant` (da-n0uj1.4): a device and a role, a week's expiry unless
+    /// `--expires` says otherwise.
+    #[test]
+    fn grant_takes_a_device_and_a_role() {
+        assert_eq!(
+            p(&["grant", "9ae6", "reader", "--as", "work"]),
+            SyncCommand::Grant {
+                device: "9ae6".into(),
+                reader: true,
+                name: Some("work".into()),
+                expires_secs: 7 * 24 * 3600,
+                admin_key: None,
+            }
+        );
+        assert_eq!(
+            p(&["grant", "9ae6", "member", "--expires", "1h"]),
+            SyncCommand::Grant {
+                device: "9ae6".into(),
+                reader: false,
+                name: None,
+                expires_secs: 3600,
+                admin_key: None,
+            }
+        );
+        assert!(parse_sync_cmd(&["grant", "9ae6"]).is_err());
+        assert!(parse_sync_cmd(&["grant", "9ae6", "admin"]).is_err());
     }
 
     /// Every spelling the regrouping retired is gone (da-aam46), as are

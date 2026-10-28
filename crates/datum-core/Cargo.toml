@@ -30,6 +30,7 @@ indexmap = { workspace = true }
 ed25519-dalek = { workspace = true }
 p256 = { workspace = true }
 data-encoding = { workspace = true }
+aes-gcm = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 # `gethostname`, for the host an op names as its origin (da-zjc9w).

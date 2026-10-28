@@ -141,6 +141,7 @@ mod subcommand_flag_as_name;
 mod switch_cmd;
 mod sync_chain;
 mod sync_daemon;
+mod sync_grant;
 mod sync_net;
 mod sync_ops;
 mod tail_cmd;

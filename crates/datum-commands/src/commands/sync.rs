@@ -131,13 +131,18 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             }
             bind_device(db);
             #[cfg(feature = "net")]
+            let records = super::sync_grant::records(db);
+            #[cfg(feature = "net")]
             let synced = datum_sync::now_all(db, verbose);
             #[cfg(not(feature = "net"))]
             let synced: Result<()> = Err(anyhow::anyhow!(NO_NET));
             if let Some(line) = summary(db)? {
                 println!("{line}");
             }
-            synced?
+            synced?;
+            // What it brought for this device (da-n0uj1.4).
+            #[cfg(feature = "net")]
+            super::sync_grant::redeem(db, records)?
         }
         SyncCommand::Pause => {
             ensure!(db.sync_chain()?.exists(), NO_CHAIN);
@@ -615,7 +620,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             if let Some(f) = caps.get("fields") {
                 eprintln!("the redeemer is a reader sent only {f}, each with its spec");
             }
-            let (secret, expires_at) = invite(
+            let (secret, expires_at, _) = invite(
                 db,
                 expires,
                 admin_key.as_deref(),
@@ -660,6 +665,21 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             super::sync_diagnose::diff(db, &m, label, show == ShowFlag::Json)?
         }
         #[cfg(feature = "net")]
+        SyncCommand::Grant {
+            device,
+            reader,
+            name,
+            expires_secs,
+            admin_key,
+        } => super::sync_grant::grant(
+            db,
+            &device,
+            reader,
+            name.as_deref(),
+            std::time::Duration::from_secs(expires_secs),
+            admin_key.as_deref(),
+        )?,
+        #[cfg(feature = "net")]
         SyncCommand::Run => {
             db.sync_refuse_debug()?;
             bind_device(db);
@@ -668,7 +688,9 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 .path()
                 .filter(|p| !p.is_empty())
                 .map(std::path::PathBuf::from);
+            let grants = super::sync_grant::Watch::default();
             datum_sync::run_aside(db, || {
+                grants.tick(db);
                 path.as_deref()
                     .is_some_and(super::sync_daemon::in_first_sync)
             })?
@@ -724,7 +746,7 @@ fn resolve(db: &Db, filter: Option<SyncFilter>) -> Result<Option<chain::Filter>>
 }
 
 /// An invite's `caps`: a member's `{}`, a reader's role, and its filter.
-fn caps(db: &Db, reader: bool, filter: Option<SyncFilter>) -> Result<Value> {
+pub(super) fn caps(db: &Db, reader: bool, filter: Option<SyncFilter>) -> Result<Value> {
     let mut caps = if reader {
         json!({"role": "reader"})
     } else {
@@ -739,20 +761,20 @@ fn caps(db: &Db, reader: bool, filter: Option<SyncFilter>) -> Result<Value> {
 
 /// Write an invite any member admits the redeemer of, starting an open
 /// chain with this copy its first member when it is in none: its secret,
-/// which only the ticket carries, and when it expires. `caps`: what the
+/// which only the ticket carries, when it expires, and its id. `caps`: what the
 /// redeemer is admitted as — a reader (da-9yvb6), filtered (da-u81u1) or
 /// not. `label`: what this copy is named, in a chain it starts or the one it
 /// is in (da-ey3hz). `print`: say the secret on
 /// stdout before the record is signed, so a run that stops at an approve
 /// link has handed it over (datum.day signs with `sync approve`, da-bjxts).
-fn invite(
+pub(super) fn invite(
     db: &Db,
     expires: std::time::Duration,
     admin_key: Option<&str>,
     caps: Value,
     label: Option<&str>,
     print: bool,
-) -> Result<(String, String)> {
+) -> Result<(String, String, String)> {
     let mut chain = db.sync_chain()?;
     // A purge dissolved it (da-qzrj9): the new chain is a new copy's.
     if chain.dissolved().is_some() {
@@ -802,7 +824,7 @@ fn invite(
     if !starts && label.is_some() {
         describe();
     }
-    Ok((secret, expires_at))
+    Ok((secret, expires_at, id))
 }
 
 /// Write this copy's `describe`: `label`, or one assembled from what it
@@ -1080,13 +1102,21 @@ fn unjoin_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
     )
 }
 
-/// The chain member `who` names, by label or a prefix of its endpoint id.
+/// The chain member `who` names, by label or a prefix of its endpoint id;
+/// else by a prefix of the device key it is bound to (da-n0uj1.4), one that
+/// left aside: a device that left and joined again is its new endpoint.
 fn member(chain: &Chain, who: &str) -> Result<String> {
-    let hits: Vec<_> = chain
+    let by_device = |m: &chain::Member| {
+        m.left.is_none() && m.device.as_deref().is_some_and(|d| names(who, "", d))
+    };
+    let mut hits: Vec<_> = chain
         .members
         .iter()
         .filter(|m| names(who, &m.label, &m.endpoint))
         .collect();
+    if hits.is_empty() {
+        hits = chain.members.iter().filter(|m| by_device(m)).collect();
+    }
     match hits.as_slice() {
         [m] => Ok(m.endpoint.clone()),
         _ => bail!("{who} names {} members of this chain", hits.len()),

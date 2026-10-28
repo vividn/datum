@@ -36,7 +36,7 @@ use datum_sync_wire::{
     Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
-use iroh::Watcher;
+use iroh::{SecretKey, Watcher};
 use tokio::time::Instant;
 
 fn now() -> String {
@@ -636,26 +636,9 @@ fn print_added(rep: &Report) {
 /// `datum sync chain invite` has written the invite into the chain, so any
 /// member can admit its redeemer: the ticket lists them all.
 pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: bool) -> Result<()> {
-    let secret = secret.to_string();
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let mut addrs = vec![ep.addr()];
-        addrs.extend(known(db)?);
-        let chain = db.sync_chain()?;
-        let from = chain
-            .member(&db.sync_endpoint_id()?)
-            .map(|m| m.label.clone());
-        let about = About {
-            from,
-            chain: Some(chain.id),
-            expires: Some(unix_now() + expires.as_secs()),
-        };
-        let link = Ticket {
-            addrs,
-            secret,
-            about,
-        }
-        .link()?;
+        let link = link(db, ep.addr(), secret, expires)?;
         println!("One-time invite, until {expires_at}. On the other copy run:\n");
         // Quoted: zsh's `extendedglob` reads the `#` as a glob (da-sin5b).
         // The link is a fixed prefix and base32, so it holds no `'`.
@@ -711,6 +694,43 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
         ep.close().await;
         result
     })
+}
+
+/// The join link of the invite whose secret is `secret`: this copy's
+/// address `me` first, then every member's it knows, any of which admits
+/// the redeemer.
+fn link(db: &Db, me: EndpointAddr, secret: &str, expires: Duration) -> Result<String> {
+    let mut addrs = vec![me];
+    addrs.extend(known(db)?);
+    let chain = db.sync_chain()?;
+    let from = chain
+        .member(&db.sync_endpoint_id()?)
+        .map(|m| m.label.clone());
+    let about = About {
+        from,
+        chain: Some(chain.id),
+        expires: Some(unix_now() + expires.as_secs()),
+    };
+    let secret = secret.into();
+    Ticket {
+        addrs,
+        secret,
+        about,
+    }
+    .link()
+}
+
+/// [`link`] for a grant (da-n0uj1.4), made without binding: this copy's
+/// `sync run` may hold the endpoint. Its address is its id, found as it
+/// is online, with the one address or relay it is pinned to, if any.
+pub fn grant_link(db: &Db, secret: &str, expires: Duration) -> Result<String> {
+    let mut me = EndpointAddr::new(SecretKey::from_bytes(&db.sync_endpoint_secret()?).public());
+    if let Ok(at) = std::env::var("DATUM_SYNC_BIND") {
+        me = me.with_ip_addr(at.parse().context("DATUM_SYNC_BIND")?);
+    } else if let Ok(url) = std::env::var("DATUM_SYNC_RELAY") {
+        me = me.with_relay_url(url.parse().context("DATUM_SYNC_RELAY")?);
+    }
+    link(db, me, secret, expires)
 }
 
 const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";

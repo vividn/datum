@@ -1059,6 +1059,17 @@ pub enum SyncCommand {
     Grid {
         show: Show,
     },
+    /// `datum sync grant <DEVICE> <member|reader> [--as <NAME>] [--expires
+    /// <DUR>] [--admin-key <FILE>]` (da-n0uj1.4): an invite to this chain,
+    /// its ticket sealed to the device in a chain the two share already.
+    /// `--as` is the database's name on that device, if not this one's.
+    Grant {
+        device: String,
+        reader: bool,
+        name: Option<String>,
+        expires_secs: u64,
+        admin_key: Option<String>,
+    },
     /// Hidden: `datum sync run` — stay up: serve members and push new ops.
     Run,
     /// `datum sync daemon install | uninstall | status` (da-vd2sn): the
