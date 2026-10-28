@@ -43,7 +43,13 @@ describe('/now', () => {
 
 			await app.goto('/now');
 			assert.equal(await page.locator('.root-bar [role="tab"][aria-selected="true"]').innerText(), 'nowview');
-			await page.locator('section.pane[data-title="nowview"] svg.svg').waitFor();
+			// The overlay is drawn first and the day's data laid under it by a
+			// run of its own, which under load lands a few hundred ms later
+			// (da-ihus8): so wait for the state, not the picture.
+			await page
+				.locator('section.pane[data-title="nowview"] svg.svg g.field[data-field="mood"] .now-chunk')
+				.first()
+				.waitFor({ state: 'attached' });
 			const svg = await app.paneSvg('nowview');
 			// The field the CLI says has a state is drawn with one past the
 			// now-line (fit.test.mjs reads the same chunk), and the shapes are
