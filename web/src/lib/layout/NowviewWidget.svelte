@@ -142,8 +142,8 @@
 	import { readLanes } from '#lib/lanes.ts';
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { compose } from '#lib/nowcrop.ts';
-	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '#lib/panes.ts';
-	import { dateBack, daysBack, layers, type Layer } from '#lib/dayLayers.ts';
+	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
+	import { layers, spanDates, type Layer } from '#lib/dayLayers.ts';
 	import { run } from '#lib/run.ts';
 
 	interface Props {
@@ -180,6 +180,16 @@
 	// window's own edge, and rounding must not read that as «off it». Up
 	// here, above everything that reads it.
 	const EDGE_MS = 1000;
+
+	// The coast's (da-v8gzq), up here too: how far the picture is drawn is sized by it.
+	/** How fast a coast slows: its speed falls by e in this many ms, as a phone's list does. */
+	const GLIDE_MS = 325;
+	/** The fastest flick a coast takes, in px per ms. */
+	const FLICK_MAX = 4;
+	/** How far the fastest coast travels, in px: its speed times how fast it slows (`aheadOf`). */
+	const COAST_PX = FLICK_MAX * GLIDE_MS;
+	/** How far a narrow band's surround reaches either side at most: a week. */
+	const REACH_MS = 7 * 86_400_000;
 
 	/**
 	 * Where the window is centred, and WHY — `null` is on now.
@@ -236,6 +246,20 @@
 	 * datum for nothing. Everything else that moves the window asks.
 	 */
 	let askedFor = $state<string | undefined>();
+	/** The band's length along time, in px: see `measure`. */
+	let bandPx = $state(Infinity);
+	/**
+	 * How many windows the picture is drawn either side (da-vnfr3): SURROUND,
+	 * or three of the longest coast where a window is too short for that to
+	 * hold them — a window being the band, less the now strip's fifth — so a
+	 * picture asked where a pan lets go holds the next drag and its coast
+	 * either way (`holds`). Never past REACH_MS for that: each day it reaches
+	 * is a day of data asked, and a 12h window on a 100px band wanted 49
+	 * windows, 25 days either side.
+	 */
+	const surround = $derived(
+		Math.max(SURROUND, Math.min(Math.ceil((3 * COAST_PX) / (0.8 * bandPx)), Math.floor(REACH_MS / (minutes * 60_000))))
+	);
 	// A window on now with a pill is centred half its length back from now,
 	// relative too: it is not drawn ahead, there being an instant to draw.
 	const spec = $derived(
@@ -244,7 +268,8 @@
 			askedFor ?? (pillArg ? backArg(minutes / 2) : undefined),
 			vertical,
 			pillArg,
-			labels
+			labels,
+			surround
 		)
 	);
 
@@ -261,10 +286,14 @@
 	 */
 	let stale: Element | null = null;
 
-	function ask(): void {
+	/** Ask for the picture of the window about `to`, the window's own by default; `null` is now. */
+	function ask(to: string | null = centre?.arg ?? null): void {
 		const was = askedFor;
-		askedFor = centre?.arg;
-		stale = askedFor !== was ? svgEl() : null;
+		askedFor = to ?? undefined;
+		// The same window asked again before its picture came (a lift's ask,
+		// then its rest's, da-vnfr3) leaves the one on screen stale.
+		if (askedFor !== was) stale = svgEl();
+		else if (stale !== svgEl()) stale = null;
 		// The picture on screen may already be this one, slid: slid back.
 		void tick().then(place);
 	}
@@ -274,8 +303,21 @@
 	// up runs where it stands.
 	$effect.pre(() => {
 		void [history, vertical, showHistory, labels];
-		untrack(ask);
+		untrack(() => {
+			measure();
+			ask();
+		});
 	});
+
+	/**
+	 * Measure the band for `surround`: as it is mounted, before the pane first
+	 * asks, and wherever a new picture is asked anyway — never on a resize
+	 * alone, which would be a picture per frame of a border's drag (da-jgrn).
+	 */
+	function measure(): void {
+		const box = el?.getBoundingClientRect();
+		if (box) bandPx = (vertical ? box.height : box.width) || Infinity;
+	}
 
 	/** The axis a drag along the band travels, for the pane's tab swipe. */
 	const pans = $derived(vertical ? 'y' : 'x');
@@ -443,16 +485,20 @@
 	let layer = $state.raw<{ days: Map<string, Layer>; failed: Map<string, Layer> }>({ days: new Map(), failed: new Map() });
 	/** The days last asked, and at which epoch. */
 	let wanted = '';
-	/** How many days back a pan takes the data: a week. */
-	const MAX_BACK = 7;
+	/** The instants a picture asked for a coast's end will draw, until it does: their days are asked with it (da-vnfr3). */
+	let reach: [number, number] | null = null;
 
-	/** Ask for the days of data the overlay `svg` reaches that `layer` does not hold. */
+	/**
+	 * Ask for the days of data the overlay `svg` reaches, and the picture asked
+	 * for reaches, that `layer` does not hold: each day either draws, however
+	 * far back, and today, which holds the now strip's states.
+	 */
 	function needLayer(svg: SVGSVGElement): void {
 		if (labels || !svg.querySelector('[data-lo]')) return;
-		// The day a drawing starts in, even a millisecond before a midnight,
-		// is asked for too, a clock change between or not (da-31hhd).
-		const reach = Math.max(0, Math.min(MAX_BACK, daysBack(drawnFrom()) || 0));
-		const dates = Array.from({ length: reach + 1 }, (_, back) => dateBack(back));
+		const from = Math.min(drawnFrom(), reach?.[0] ?? Infinity);
+		const to = Math.max(Number.isFinite(spanned[1]) ? spanned[1] : drawnTo(), reach?.[1] ?? -Infinity);
+		if (!Number.isFinite(from)) return;
+		const dates = spanDates(from, to);
 		const key = `${vertical} ${epoch} ${dates.join(' ')}`;
 		if (key === wanted) return;
 		wanted = key;
@@ -784,17 +830,32 @@
 	 */
 	function commitPan(): void {
 		if (!axis) return drop();
-		const was = middleOf(middle);
 		// As far on as now, the window is on now again: it flows with the clock.
 		const home = panned <= nowPan() + 0.5;
-		const [lo, hi] = Number.isFinite(was)
-			? windowAbout(was - panned * msPerPx(axis))
-			: ends().map((p) => instantOn(axis!, p - panned) + slid);
+		const [lo, hi] = windowAt(panned);
 		centre = home ? null : { arg: new Date((lo + hi) / 2).toISOString(), by: 'pan' };
 		rest += panned;
 		panned = 0;
-		if (home || lo < drawnFrom() || hi > drawnTo()) ask();
+		if (home || !holds(lo, hi)) ask();
 		else void tick().then(place);
+	}
+
+	/** The window the band slid `pan` px from where it rests shows. */
+	function windowAt(pan: number): number[] {
+		const was = middleOf(middle);
+		return Number.isFinite(was) ? windowAbout(was - pan * msPerPx(axis!)) : ends().map((p) => instantOn(axis!, p - pan) + slid);
+	}
+
+	/**
+	 * Whether the picture on screen holds the window `lo` … `hi` and a drag
+	 * and the longest coast past it either way, short of now (da-vnfr3): a
+	 * pan that leaves less is asked for again where it lets go, ahead of the
+	 * hand.
+	 */
+	function holds(lo: number, hi: number): boolean {
+		const coast = 2 * COAST_PX * msPerPx(axis!);
+		const end = Number.isFinite(spanned[1]) ? spanned[1] : drawnTo();
+		return lo - coast >= drawnFrom() - EDGE_MS && Math.min(hi + coast, Date.now()) <= end + EDGE_MS;
 	}
 
 	// ── the stop at now, and the coast (da-v8gzq) ──────────────────────
@@ -805,10 +866,6 @@
 
 	/** How far past now a pan goes at most, in px: it resists the whole way, and springs back. */
 	const STRETCH_PX = 48;
-	/** How fast a coast slows: its speed falls by e in this many ms, as a phone's list does. */
-	const GLIDE_MS = 325;
-	/** The fastest flick a coast takes, in px per ms. */
-	const FLICK_MAX = 4;
 
 	/** The pan's slide in px as the finger alone would make it, and its last moves, for the speed a lift carries. */
 	let raw = 0;
@@ -851,6 +908,7 @@
 	function glide(v: number): void {
 		let then = performance.now();
 		const settled = () => Math.abs(v) < 0.02 && raw >= nowPan() - 0.5;
+		aheadOf(raw >= nowPan() ? raw + v * GLIDE_MS : raw);
 		const frame = (t: number) => {
 			const dt = Math.min(t - then, 64);
 			then = t;
@@ -869,6 +927,26 @@
 		if (settled()) return land();
 		panned = stopAtNow(raw);
 		coasting = requestAnimationFrame(frame);
+	}
+
+	/**
+	 * Ask at the lift for the picture of where a coast of the band to `pan`
+	 * px comes to rest, which a speed slowing by e every GLIDE_MS reaches at
+	 * that speed times it, and for the days it draws (da-vnfr3): it lands as
+	 * the coast runs, drawn about its whole path. One that ends on now asks
+	 * for the picture on now; one the picture on screen holds, for nothing.
+	 */
+	function aheadOf(pan: number): void {
+		if (!axis) return;
+		if (pan <= nowPan() + 0.5) return askedFor === undefined ? undefined : ask(null);
+		const [lo, hi] = windowAt(pan);
+		if (holds(lo, hi)) return;
+		const half = (surround * minutes + minutes / 2) * 60_000;
+		const mid = (lo + hi) / 2;
+		reach = [mid - half, mid + half];
+		const svg = svgEl();
+		if (svg) needLayer(svg);
+		ask(new Date(mid).toISOString());
 	}
 
 	/** The coast stopped, where it is — or at now, from past it: the window it left the band at. */
@@ -1276,7 +1354,8 @@
 	 * window along.
 	 */
 	function restFor(unmoved: NonNullable<ReturnType<typeof timeAxis>>): number {
-		const target = Date.parse(middle ?? '');
+		// On now, a picture asked for where a coast is going holds the window at now meanwhile.
+		const target = middle === undefined ? Date.now() - minutes * 30_000 : Date.parse(middle);
 		if (middle === askedFor || !Number.isFinite(target)) return 0;
 		// From the middle of the window the picture was drawn for, at its
 		// scale: what a slide moves is time.
@@ -1365,6 +1444,7 @@
 		const groups = svg?.querySelectorAll('[data-lo]') ?? [];
 		const edge = (el: Element | undefined, name: string) => Date.parse(el?.getAttribute(name) ?? '');
 		spanned = [edge(groups[0], 'data-from'), edge(groups[groups.length - 1], 'data-to')];
+		if (svg && current()) reach = null;
 		if (svg) needLayer(svg);
 		// What is read off the picture below is read where it will be drawn.
 		if (Math.abs(moved - rest) >= 0.5) {
@@ -1746,6 +1826,7 @@
 
 	onMount(() => {
 		if (!el) return;
+		measure();
 		const redrawn = new MutationObserver(place);
 		redrawn.observe(el, { childList: true, subtree: true });
 		const resized = new ResizeObserver(place);

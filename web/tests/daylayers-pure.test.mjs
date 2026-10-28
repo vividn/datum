@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource();
-const { dateBack, daysBack } = await import('../src/lib/dayLayers.ts');
+const { dateBack, daysBack, spanDates } = await import('../src/lib/dayLayers.ts');
 
 /** Run `fn` with the page in `zone`: node re-reads `TZ` when it is set. */
 function inZone(zone, fn) {
@@ -38,5 +38,17 @@ test('a drawing reaches back by local days, across a 23- and a 25-hour day', () 
 		// Today, and a drawing that starts ahead of it.
 		assert.equal(daysBack(fall.getTime(), fall), 0);
 		assert.ok(daysBack(Date.UTC(2026, 9, 27, 10), fall) < 0);
+	});
+});
+
+// da-vnfr3: the nowview asks the days a drawing spans, however far back, by
+// the same local days, and today with them (its now strip's states).
+test('the days a drawing spans are its local days, across a 23-hour day, and today', () => {
+	inZone('Europe/Berlin', () => {
+		const spring = new Date(Date.UTC(2026, 2, 30, 10));
+		// From 23:30 the night before 2026-03-29 on past now: 24 hours would count one day back, and leave 03-28 out.
+		assert.deepEqual(spanDates(Date.UTC(2026, 2, 28, 22, 30), Date.UTC(2026, 2, 30, 12), spring), ['2026-03-30', '2026-03-29', '2026-03-28']);
+		// A drawing days back: its own days, and today, and none between.
+		assert.deepEqual(spanDates(Date.UTC(2026, 2, 26, 10), Date.UTC(2026, 2, 28, 22, 30), spring), ['2026-03-30', '2026-03-28', '2026-03-27', '2026-03-26']);
 	});
 });

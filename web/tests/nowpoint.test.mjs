@@ -363,8 +363,9 @@ describe('a tap on a window panned off now is to the same step, said as a clock'
 				const day = document.querySelector(sel);
 				return day && Date.parse(day.dataset.to) - Date.parse(day.dataset.from) <= ms;
 			},
-			// Ten windows drawn on now: eight before it (da-6fdaf) and one ahead.
-			[`${NOWVIEW} svg.svg [data-lo]`, 12 * stepMs(history)]
+			// Drawn on now: eight windows before it (da-6fdaf), more on a narrow
+			// band (da-vnfr3), and one ahead; the default's is longer.
+			[`${NOWVIEW} svg.svg [data-lo]`, 40 * stepMs(history)]
 		);
 		await showBand(app);
 		const g = await geometry(page);

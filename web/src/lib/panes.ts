@@ -546,13 +546,12 @@ export function ladderAround(minutes: number, history: number): { up: string[]; 
  * (da-78evn). A small «now» under the now strip stands in for the clock
  * (da-9g3bf); under an instant's, the CLI writes its time.
  *
- * With SURROUND windows' worth more drawn either side of it, past the
+ * With `surround` windows' worth more drawn either side of it, past the
  * picture's box (`--surround`): a pan or a stretch shows what is there
  * before datum is asked again (da-61nm8) — on now, a stretch to nine times
- * the window, «at least a x5 stretch» (vividn, da-6fdaf). Never more than
- * the longest window, 12h, either side, which is no more than that window
- * drew before: on 300 entries a day, eight 30m windows cost what one did
- * (30ms), and a 2h window's 53ms against 33ms (native, datum-cli release).
+ * the window at SURROUND, «at least a x5 stretch» (vividn, da-6fdaf). As
+ * far as that is, whatever the window: the overlay opens no database, and
+ * drew 64 windows of 12h in 20ms, what 8 of 30s took (native, da-vnfr3).
  * And on now, a
  * window's worth more drawn AHEAD of it, behind the now line (`--ahead`),
  * which the widget slides along with the clock (da-hklaz). `0` is the
@@ -563,9 +562,9 @@ export function ladderAround(minutes: number, history: number): { up: string[]; 
  * data under labels in the same lanes, and drawn with nothing either side, so
  * the gutter is at the window's edge wherever the window is.
  */
-const SURROUND = 8;
+export const SURROUND = 8;
 
-export const nowviewSpec = (history: string, center?: string, vertical = false, at?: string, labels = false): PaneSpec => ({
+export const nowviewSpec = (history: string, center?: string, vertical = false, at?: string, labels = false, surround = SURROUND): PaneSpec => ({
 	...NOWVIEW,
 	argv: [
 		...NOWVIEW.argv,
@@ -576,7 +575,7 @@ export const nowviewSpec = (history: string, center?: string, vertical = false, 
 		'--now-label',
 		'--history',
 		history,
-		...(labels ? [] : ['--surround', stepMinutes(history) > 0 ? historyArg(SURROUND * stepMinutes(history)) : history]),
+		...(labels ? [] : ['--surround', stepMinutes(history) > 0 ? `${Math.round(surround * stepMinutes(history) * 60)}s` : history]),
 		...(center ? ['--center', center] : []),
 		...(at ? ['-t', at] : []),
 		...(center || at || history === '0' ? [] : ['--ahead', history]),

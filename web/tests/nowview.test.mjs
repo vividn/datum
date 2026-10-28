@@ -918,11 +918,12 @@ describe('the nowview crops the day’s data under its overlay', () => {
 	const BAND = 'section[data-pane="nowview"] .nowview-band';
 	const phone = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
 	const seen = (page) => page.evaluate(() => (window.__datumSeen ?? []).map((a) => a.join(' ')));
-	/** The dates a data layer run drew, by its `--end-date` and `--pictures` (#lib/dayLayers.ts). */
-	const layerDates = (argv) => {
+	/** The dates a data layer run drew, by its `--end-date` and `--pictures` (#lib/dayLayers.ts), or checked too, by `--digests`. */
+	const layerDates = (argv, flags = ['--pictures']) => {
 		const words = argv.split(' ');
 		const end = words[0] === 'dayview' && words.includes('--data-layer') && words[words.indexOf('--end-date') + 1];
-		const backs = end && words.includes('--pictures') ? words[words.indexOf('--pictures') + 1].split(',') : [];
+		const flag = flags.find((f) => words.includes(f));
+		const backs = end && flag ? words[words.indexOf(flag) + 1].split(',') : [];
 		return backs.map((back) => new Date(Date.parse(end) - Number(back) * 86_400_000).toISOString().slice(0, 10));
 	};
 
@@ -940,7 +941,10 @@ describe('the nowview crops the day’s data under its overlay', () => {
 			await pinch(page, box, apart, apart / 5);
 			await app.idle();
 			const asked = await seen(page);
-			assert.deepEqual(asked.filter((a) => a.startsWith('dayview')), [], 'the stretch asked for data');
+			// Its surroundings reach further, and a day held there from before may be
+			// checked (da-vnfr3); never a day the window it shows draws.
+			const today = await page.evaluate(() => [new Date()].map((d) => [d.getFullYear(), d.getMonth() + 1, d.getDate()].map((n) => String(n).padStart(2, '0')).join('-'))[0]);
+			assert.deepEqual(asked.filter((a) => layerDates(a, ['--pictures', '--digests']).includes(today)), [], 'the stretch asked for its window’s data');
 			assert.equal(asked.filter((a) => a.startsWith('nowview')).length, 1, `asked: ${asked.join(' | ')}`);
 			assert.match(asked.find((a) => a.startsWith('nowview')), /--overlay .*--history (?!30m)/);
 			// The ticks follow the window: its handles say the new one.
@@ -1085,14 +1089,15 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 
 	// da-w57do, vividn: «yes, it should feel smooth for both»: the mouse's drag coasts as the finger's flick does.
 	for (const mouse of [false, true])
-		test(`a flick into the past by ${mouse ? 'the mouse' : 'a finger'} keeps the window moving after the lift, then settles, with one nowview asked at the end`, async () => {
+		test(`a flick into the past by ${mouse ? 'the mouse' : 'a finger'} keeps the window moving after the lift, then settles, with one nowview asked at the lift`, async () => {
 			await withApp(
 				async (app) => {
 					const { page } = app;
 					const box = await seeded(app);
 					// A flick at a time: the first several coast inside what the
 					// picture drew past its box (`--surround`) and ask for nothing,
-					// and then one leaves it and asks, once it has come to rest.
+					// and then one would leave it, and asks at its lift for where
+					// it comes to rest, which lands as it coasts (da-vnfr3).
 					for (let flicks = 1; ; flicks++) {
 						await page.evaluate(() => (window.__datumSeen = []));
 						await record(page);
@@ -1107,9 +1112,13 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 						const moving = steps.filter((d) => d > 0.5);
 						assert.ok(moving.length >= 5, `flick ${flicks}: the coast moved in ${moving.length} frames: ${steps}`);
 						assert.ok(moving[0] > moving.at(-1), `flick ${flicks}: the coast did not slow: ${moving}`);
-						// Nothing asked while it moved, and at most one picture once it stopped.
-						const last = steps.findLastIndex((d) => d > 0.5);
-						assert.equal(after[last].asks, 0, `flick ${flicks}: a nowview asked mid-coast`);
+						// Asked as it is let go, if at all: nothing while it moved or once it stopped.
+						const lift = after[Math.min(2, after.length - 1)].asks;
+						assert.deepEqual(
+							after.slice(2).filter((f) => f.asks !== lift).length,
+							0,
+							`flick ${flicks}: a nowview asked mid-coast or at rest`
+						);
 						const asked = frames.at(-1).asks;
 						assert.ok(asked <= 1, `flick ${flicks}: ${asked} nowviews asked`);
 						if (asked) break;
@@ -1120,6 +1129,88 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 				{ ...(mouse ? { viewport: TOUCH.viewport } : TOUCH), prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 			);
 		});
+
+	// da-vnfr3, vividn: «it should be able to handle unlimited drag pretty
+	// well. Or at least far enough where any amount of flicking and panning
+	// and zooming never goes off the edge of visible data». A mood calm for a
+	// week: every frame, the band up to now is that block, never a black one.
+	test('hard flicks back and forth, pinches out to 12h and flicks there: every frame is drawn data up to now', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.runLine('switch mood calm -t -10080');
+				await app.redraw();
+				await page.locator(`${BAND} svg.svg rect.block[data-state="calm"]`).first().waitFor({ state: 'attached' });
+				await app.idle();
+				await app.spyOnRunner();
+				const box = await page.locator(BAND).boundingBox();
+				const y = box.y + box.height / 2;
+				// Each frame: the px of the band before now that no calm covers, and where the band is slid.
+				await page.evaluate((band) => {
+					const frames = (window.__gaps = []);
+					const tick = () => {
+						const b = document.querySelector(band);
+						const box = b.getBoundingClientRect();
+						// Now, where the data's own axis puts it (the stretch it ends or starts,
+						// on screen as scaled and slid): the running block stops there. Not the
+						// yellow line, which datum draws a gap past it.
+						const now = Date.now();
+						const xs = [...b.querySelectorAll('svg.svg [data-lo]')]
+							.filter((g) => Date.parse(g.dataset.from) <= now && now <= Date.parse(g.dataset.to))
+							.map((g) => {
+								const [from, to, lo, hi] = [Date.parse(g.dataset.from), Date.parse(g.dataset.to), Number(g.dataset.lo), Number(g.dataset.hi)];
+								return new DOMPoint(lo + ((now - from) * (hi - lo)) / (to - from), 0).matrixTransform(g.getScreenCTM()).x;
+							});
+						const end = Math.max(box.left, Math.min(box.right, ...xs));
+						const spans = [...b.querySelectorAll('svg.svg rect.block[data-state="calm"]')]
+							.map((r) => r.getBoundingClientRect())
+							.map((r) => [Math.max(box.left, r.left), Math.min(end, r.right)])
+							.filter(([l, r]) => r > l)
+							.sort((p, q) => p[0] - q[0]);
+						let [gap, at] = [0, box.left];
+						for (const [l, r] of spans) {
+							gap += Math.max(0, l - at);
+							at = Math.max(at, r);
+						}
+						gap += Math.max(0, end - at);
+						frames.push({ gap, pan: b.style.getPropertyValue('--pan') + b.style.getPropertyValue('--zoom') });
+						requestAnimationFrame(tick);
+					};
+					requestAnimationFrame(tick);
+				}, BAND);
+				/** Twenty frames unmoved, every command answered, and twenty more. */
+				const still = () =>
+					page.waitForFunction(() => {
+						const f = window.__gaps.slice(-20);
+						return f.length === 20 && f.every((x) => x.pan === f[0].pan);
+					});
+				const hard = (by) => () => flick(page, { x: by > 0 ? box.x + 30 : box.x + box.width - 30, y }, by, { steps: 4 });
+				const out = () => pinch(page, box, 300, 100);
+				const gestures = [
+					...[1, 2, 3, 4].map(() => ['back', hard(300)]),
+					...[1, 2, 3].map(() => ['on', hard(-300)]),
+					...[1, 2, 3].map(() => ['out', out]),
+					...[1, 2].map(() => ['back at 12h', hard(300)]),
+					['on at 12h', hard(-300)]
+				];
+				for (const [i, [name, gesture]] of gestures.entries()) {
+					const from = await page.evaluate(() => window.__gaps.length);
+					await gesture();
+					await still();
+					await app.idle();
+					await still();
+					const gaps = await page.evaluate((from) => window.__gaps.slice(from).map((f) => f.gap), from);
+					const worst = Math.max(...gaps);
+					assert.ok(worst <= 3, `gesture ${i + 1} (${name}): a frame shows ${worst.toFixed(0)}px of the band before now with no data, ${gaps.filter((g) => g > 3).length} of ${gaps.length} frames`);
+				}
+				// The control: the gestures went where they say, out to the longest window.
+				const last = (await page.evaluate(() => window.__datumSeen)).filter((a) => a[0] === 'nowview').at(-1);
+				assert.equal(last[last.indexOf('--history') + 1], '12h');
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
 
 	test('a mouse drag held still before its release stops where it is let go', async () => {
 		await withApp(

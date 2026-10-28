@@ -47,6 +47,19 @@ export function daysBack(t: number, from = new Date()): number {
 	return Math.round((new Date(from).setHours(0, 0, 0, 0) - new Date(t).setHours(0, 0, 0, 0)) / 86_400_000);
 }
 
+/**
+ * The local dates a drawing from instant `from` to `to` reaches, today's
+ * first, then each from `to`'s day back to `from`'s, counted in local days
+ * (`daysBack`) and none ahead of today (da-vnfr3): a day the drawing starts
+ * in even a millisecond before its midnight is one of them, a clock change
+ * between or not.
+ */
+export function spanDates(from: number, to: number, now = new Date()): string[] {
+	const back = (t: number) => Math.max(0, daysBack(t, now) || 0);
+	const [near, far] = [Number.isFinite(to) ? back(to) : 0, back(from)];
+	return [...new Set([0, ...Array.from({ length: far - near + 1 }, (_, i) => near + i)])].map((b) => dateBack(b, now));
+}
+
 /** Whole days from ISO date `from` back to ISO date `to`. */
 const daysBetween = (from: string, to: string) => Math.round((Date.parse(from) - Date.parse(to)) / 86_400_000);
 
