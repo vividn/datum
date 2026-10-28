@@ -2,7 +2,8 @@
 	"extends": "$app/tsconfig",
 	"compilerOptions": {
 		"sourceMap": true,
-		"strict": true
+		"strict": true,
+		"plugins": [{ "name": "typescript-svelte-plugin" }]
 	},
 	"include": ["src", "vite.config.ts"],
 	"exclude": ["src/service-worker.ts"]
