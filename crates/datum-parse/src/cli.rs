@@ -711,7 +711,7 @@ pub enum SpecCommand {
     Delete { field: String, show: Show },
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SpecSetArgs {
     pub field: String,
     /// The echo's level: `--show json` echoes the spec entry (da-ez40f).

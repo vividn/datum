@@ -63,7 +63,51 @@ pub(crate) fn begins_tracking(db: &Db, field: &str, now: &DatumTime) -> Result<b
 /// writes the status only and leaves the spec as it is. `ignore F` alone
 /// on a field with none writes its row too, and declares nothing: hiding a
 /// field asks for no verb (vremya, 10-16; vividn to rule).
+///
+/// `F` may be a list, `a,b,c`: one write each, in that order, each echoed
+/// as alone (da-klzka). Every name is checked first as a name it declares
+/// is, so a list with one refused writes nothing.
 pub fn status(args: SpecSetArgs, db: &Db) -> Result<()> {
+    let fields: Vec<String> = args.field.split(',').map(String::from).collect();
+    for field in &fields {
+        check_new(field, &args, db)?;
+    }
+    for field in fields {
+        status_one(
+            SpecSetArgs {
+                field,
+                ..args.clone()
+            },
+            db,
+        )?;
+    }
+    Ok(())
+}
+
+/// What refuses `field` alone, asked before anything of a list is written:
+/// a name no entry or spec holds yet is a name being chosen, and `track`
+/// declaring a spec asks what `setup` would.
+fn check_new(field: &str, args: &SpecSetArgs, db: &Db) -> Result<()> {
+    if db.load_spec(field)?.is_some() {
+        return Ok(());
+    }
+    if db.entries_for_field(field, Some(1))?.is_empty() {
+        datum_core::slug::validate_field_name(field)?;
+        datum_core::slug::validate_new_field_name(field)?;
+        if args.track {
+            datum_parse::field_name::check_declared(field)?;
+        }
+    }
+    if args.track {
+        super::helpers::refuse_hid_named_field(db, field)?;
+        if args.from_json.is_none() && super::spec::states_named(args).is_empty() {
+            resolve_verb(field, args.verb.as_deref(), db)?;
+        }
+    }
+    Ok(())
+}
+
+fn status_one(args: SpecSetArgs, db: &Db) -> Result<()> {
     // Bare: nothing set but the field and the status. A flag `SpecSetArgs`
     // gains is a change by this comparison with no edit here.
     let bare = args.track != args.ignore

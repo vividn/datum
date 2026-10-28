@@ -69,8 +69,9 @@ fn an_existing_comma_entry_stays_updatable() {
     assert_eq!(logged_entries(&db, "a,b").len(), 1);
 }
 
-/// Declaring a field chooses its name too: `track`, `setup` and a kit's
-/// `[[field]]` each refuse one no log could then reach.
+/// Declaring a field chooses its name too: `setup` and a kit's `[[field]]`
+/// each refuse one no log could then reach (`track x,y` is a list,
+/// `track_and_ignore_take_a_list`).
 #[test]
 fn declaring_a_comma_field_is_refused() {
     let db = fresh_db();
@@ -80,7 +81,6 @@ fn declaring_a_comma_field_is_refused() {
     std::fs::write(&path, kit).unwrap();
     let path = path.to_string_lossy().to_string();
     for (args, field) in [
-        (vec!["track", "x,y", "--verb", "occur"], "x,y"),
         (vec!["setup", "p,q", "--states", "on"], "p,q"),
         (vec!["kit", "install", &path], "k,l"),
     ] {
@@ -134,4 +134,48 @@ fn a_spaced_fields_derived_aliases_log_to_it() {
     run_cli(&["tea timee"], &db).unwrap();
     assert_eq!(logged_entries(&db, "tea time").len(), 2);
     assert!(logged_entries(&db, "tea").is_empty());
+}
+
+/// `track a,b` and `ignore a,b` are one write a field, in order, and never
+/// a field named `a,b` (da-klzka).
+#[test]
+fn track_and_ignore_take_a_list() {
+    let db = fresh_db();
+    run_cli(&["track", "a,b", "--verb", "occur"], &db).unwrap();
+    for f in ["a", "b"] {
+        assert!(db.load_spec(f).unwrap().is_some(), "{f}");
+    }
+    run_cli(&["ignore", "a,b,c"], &db).unwrap();
+    let ignored: Vec<String> = db
+        .get_tracked_fields(chrono::Utc::now())
+        .unwrap()
+        .into_iter()
+        .filter(|f| f.ignored)
+        .map(|f| f.field)
+        .collect();
+    assert_eq!(ignored.len(), 3, "{ignored:?}");
+    for f in ["a", "b", "c"] {
+        assert!(ignored.iter().any(|i| i == f), "{f}: {ignored:?}");
+    }
+    assert!(logged_entries(&db, "a,b,c").is_empty());
+    assert!(logged_entries(&db, "a,b").is_empty());
+}
+
+/// A name refused alone refuses the list before any of it is written.
+#[test]
+fn a_list_with_a_refused_name_writes_nothing() {
+    let db = fresh_db();
+    for args in [
+        &["track", "p,x:y", "--verb", "occur"][..],
+        &["track", "p,q"],
+        &["track", "p,,q", "--verb", "occur"],
+        &["ignore", "p,x:y"],
+        &["ignore", "p,"],
+    ] {
+        refusal(args, &db);
+        for f in ["p", "q"] {
+            assert!(logged_entries(&db, f).is_empty(), "{args:?}: {f}");
+            assert!(db.load_spec(f).unwrap().is_none(), "{args:?}: {f}");
+        }
+    }
 }

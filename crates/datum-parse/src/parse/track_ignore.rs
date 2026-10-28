@@ -13,9 +13,12 @@ pub(crate) fn parse_status(tail: &[&str], track: bool) -> Result<Box<SpecSetArgs
     }
     // A change declares the field, as `setup`'s does (da-b049); a bare
     // `track` or `ignore` of a bad name already in the database still puts
-    // it right.
-    if flagged {
-        crate::field_name::check(&out.field)?;
+    // it right. `a,b` is a list, each name held to the rule alone, and an
+    // empty one is none (da-klzka).
+    for name in out.field.split(',') {
+        if flagged || name.is_empty() {
+            crate::field_name::check(name)?;
+        }
     }
     out.track |= track;
     out.ignore |= !track;

@@ -289,3 +289,19 @@ fn a_template_spec_is_no_field() {
         .contains("fields:   2 tracked, 1 ignored"));
     assert!(env.run(&["setup"]).contains("  issue__%n%  (template)\n"));
 }
+
+/// A list echoes each field as `track` or `ignore` of it alone would
+/// (da-klzka).
+#[test]
+fn a_list_echoes_each_field() {
+    let env = Env::new();
+    env.run(&["setup", "declared", "--verb", "occur"]);
+    let (out, err) = env.run_both(&["ignore", "work,declared"]);
+    assert_eq!(out, "✓ Ignoring 'work'\n✓ Ignoring 'declared'\n");
+    assert_eq!(err, "");
+    let out = env.run(&["track", "work,declared"]);
+    assert_eq!(
+        out,
+        "✓ Tracking 'work' (start)\n✓ Tracking 'declared' (occur)\n"
+    );
+}

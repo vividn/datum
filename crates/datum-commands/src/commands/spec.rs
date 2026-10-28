@@ -462,7 +462,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
 }
 
 /// The states `--states` and `--add-state` name.
-fn states_named(args: &SpecSetArgs) -> Vec<&String> {
+pub(crate) fn states_named(args: &SpecSetArgs) -> Vec<&String> {
     args.states
         .iter()
         .flatten()
