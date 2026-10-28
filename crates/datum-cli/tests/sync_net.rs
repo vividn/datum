@@ -888,7 +888,17 @@ fn a_purge_with_rejoin_refetches_from_the_chain_and_verifies() {
     assert_eq!((b.id(), b.query(CHAIN)), (id, chain));
     b.ok(&["occur", "walk"]);
     let _c_runs = c.serve(&["sync", "run"]);
-    let synced = b.ok(&["sync"]);
+    // c's fresh run may be applying a session of its own (its first dial, or
+    // a's dial again) as b dials, and refuses b as busy, which is no
+    // failure: b syncs again until c answers (da-10c6e).
+    let mut synced = b.ok(&["sync"]);
+    for _ in 0..20 {
+        if !synced.contains("is busy applying") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        synced = b.ok(&["sync"]);
+    }
     assert_eq!(synced.matches("verify ok").count(), 2, "{synced}");
     for x in [&a, &b, &c] {
         assert!(x.has("walk"));
