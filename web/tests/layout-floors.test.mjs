@@ -57,11 +57,17 @@ describe('a border', () => {
 			// Measured in the step that finds it: a locator's `evaluate` finds
 			// the svg and runs on it in two round trips, and a redraw between
 			// them (the drop's run, the ten-second beat) measured the detached
-			// one — its width attribute, a box of 0 (da-swj3y).
+			// one — its width attribute, a box of 0 (da-swj3y). It waits for the
+			// picture asked at the FINAL box, `fits`' width: the first narrower
+			// one could be a tick's, asked one 20px move before the drop and
+			// held scaled until the drop's run answered (da-ompb5, 321 vs 301).
 			const narrower = await page.waitForFunction((was) => {
-				const el = document.querySelector('section[data-pane="nowview"] .picture:not(.behind) svg.svg');
+				const body = document.querySelector('section[data-pane="nowview"] .body');
+				const s = getComputedStyle(body);
+				const final = Math.floor(body.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight));
+				const el = body.querySelector('.picture:not(.behind) svg.svg');
 				const natural = el?.width.baseVal.value;
-				return natural < was && { natural, box: el.getBoundingClientRect().width };
+				return natural < was && natural === final && { natural, box: el.getBoundingClientRect().width };
 			}, drawn);
 			const shown = await narrower.jsonValue();
 			assert.ok(Math.abs(shown.natural - shown.box) <= 1, `scaled: ${JSON.stringify(shown)}`);
