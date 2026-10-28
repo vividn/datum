@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # make-images.sh: draw the README's pictures from invented days on kits/sample.toml, with where you are behind each
 # day and sleep across its middle (docs/img/readme-kit.toml). Nothing here is anyone's real record.
-# Run from the repo root, in the daytime, with `datum` on PATH:
+# Run from the repo root, in the daytime (at night, set TZ to a zone where it is day), with `datum` on PATH:
 #   docs/img/make-images.sh
 # It writes docs/img/dayview.svg (Wednesday to Friday, 14–16 October 2026) and docs/img/nowview.svg
 # (the last three hours), from a throwaway home that it removes. Today's hours are relative to now,
@@ -15,9 +15,9 @@ export HOME=$T DATUM_HOME=$T/data DATUM_CONFIG_HOME=$T/config DATUM_SYNC_NO_DAEM
 d() { datum "$@" > /dev/null; }
 d kit install docs/img/readme-kit.toml
 d kit install kits/sample.toml
-# The drinks' dots, larger than the kit draws them, so they read at README width.
-d setup coffee --glyph-scale 2.5
-d setup water --glyph-scale 2.5
+# The drinks' dots, half again the standard size (0.09 of the day), so they read at README width.
+d setup coffee --glyph-scale 1.5
+d setup water --glyph-scale 1.5
 on() { local day=$1 time=$2; shift 2; d "$@" -d "$day" -t "$time"; }   # on DAY TIME COMMAND...
 
 # Wednesday: at the office, walking there and back.
