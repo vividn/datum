@@ -343,6 +343,31 @@ describe('a help page', () => {
 			assert.equal(await options.getAttribute('open'), null);
 		}, WITH_PANE);
 	});
+
+	// da-5nlb3: after a reload a page is asked for again once the place has a
+	// width, and that answer drawn between a click and its `toggle` set the
+	// fold back open. Held here: the main thread blocked until the answer is
+	// queued, then the click, so it lands first.
+	test('a fold clicked shut as the page is drawn again stays shut', async () => {
+		await onPage(async ({ page }) => {
+			await place(page).waitFor();
+			await open(page, 'occur');
+			const options = place(page).locator('details[data-section="OPTIONS"]');
+			await options.locator('summary').click();
+			await page.reload();
+			await place(page).waitFor();
+			await open(page, 'stop');
+			assert.equal(await options.getAttribute('open'), '');
+			await page.evaluate(() => {
+				const end = performance.now() + 1500;
+				while (performance.now() < end);
+				document.querySelector('details[data-section="OPTIONS"] summary').click();
+			});
+			await open(page, 'switch');
+			assert.equal(await options.getAttribute('open'), null);
+			assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('datum-help-open'))), []);
+		}, WITH_PANE);
+	});
 });
 
 // da-hibn3: the (?) in the root bar, where the padlock was, is the Help

@@ -76,7 +76,13 @@
 							open={opened.includes(section.heading)}
 							ontoggle={(e) => toggled(section.heading, e.currentTarget.open)}
 						>
-							<summary>{label(section.heading)}</summary>
+							<!-- A click folds by `opened` at once: a page drawn again before its `toggle` (a refit) would set the old state back (da-5nlb3). -->
+							<summary
+								onclick={(e) => {
+									e.preventDefault();
+									toggled(section.heading, !(e.currentTarget.parentElement as HTMLDetailsElement).open);
+								}}>{label(section.heading)}</summary
+							>
 							<pre class="section">{section.text}</pre>
 						</details>
 					{:else}
