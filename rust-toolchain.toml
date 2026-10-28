@@ -24,5 +24,7 @@ profile = "default"
 # only if CI and developers agree on this component. Every developer with a
 # working IDE has it; CI did not, and the then-committed artifact matched only CI.
 components = ["rustfmt", "clippy", "rust-src"]
-# datum-parse builds for the browser without default features (its README).
-targets = ["wasm32-unknown-unknown"]
+# datum-parse builds for the browser without default features (its README), and
+# datum.day's sync worker for wasm32-unknown-unknown; the CLI datum.day runs is
+# wasm32-wasip1 (web/scripts/build-cli-wasm.mjs).
+targets = ["wasm32-unknown-unknown", "wasm32-wasip1"]
