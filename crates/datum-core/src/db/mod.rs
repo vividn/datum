@@ -38,6 +38,7 @@ mod rename;
 mod row_mapper;
 pub(crate) mod spec;
 mod spec_alias_index;
+mod symbol_keys;
 pub(crate) use spec_alias_index::{fill_spec_alias_names, SPEC_ALIAS_NAMES_SQL};
 mod spool;
 mod state;
@@ -453,6 +454,7 @@ impl Db {
         let _ = self.derive_kit_indices();
         self.refold_for_rule()?;
         self.rewrite_create_time_ids()?;
+        self.rename_symbol_keys()?;
 
         if applied.is_empty() {
             return Ok(None);

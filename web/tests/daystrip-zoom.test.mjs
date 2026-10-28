@@ -62,7 +62,7 @@ function sameSize(a, b, what) {
 
 async function seed(app) {
 	const setup = await app.page.evaluate(() =>
-		window.datum.runQuiet(['setup', 'coffee', '--verb', 'occur', '--glyph', '☕', '--glyph-aspect', '2'])
+		window.datum.runQuiet(['setup', 'coffee', '--verb', 'occur', '--symbol', '☕', '--symbol-aspect', '2'])
 	);
 	assert.equal(setup.code, 0, setup.stderr);
 	await seedLines(app, [

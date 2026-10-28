@@ -62,13 +62,17 @@ use v71_v80::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 72;
+pub const CURRENT_SCHEMA_VERSION: u32 = 73;
 
 /// The migrations, each by its `to`, past which a copy below their schema
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
 /// which an older copy would go on sending. Append-only, ascending: a copy
 /// has run every migration before it syncs, so its floor is the last.
-pub const SYNC_FLOORS: &[u32] = &[];
+pub const SYNC_FLOORS: &[u32] = &[
+    // da-yc5vi: a spec's `glyph` keys are `symbol` keys, and a copy before
+    // it would go on writing the old ones.
+    73,
+];
 
 /// The lowest schema a copy syncs with: a peer below it is refused, and is
 /// told to update datum, both ways (datum-sync-wire's `Why::Upgrade`).
@@ -597,5 +601,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_peers.last_synced: when a session with a member last ended well, which a handshake alone does not move (da-cthk5)",
         apply: m71_to_72_sync_peer_last_synced,
         down: down_72_to_71_sync_peer_last_synced,
+    },
+    Migration {
+        from: 72,
+        to: 73,
+        summary: "spec: glyph, state_glyphs, glyph_by, glyph_scale, glyph_aspect are symbol and the rest, the stored specs renamed as the file next opens (da-yc5vi)",
+        apply: m72_to_73_symbol_keys,
+        down: down_73_to_72_symbol_keys,
     },
 ];

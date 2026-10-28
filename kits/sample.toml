@@ -60,7 +60,7 @@ size = 0.1
 name = "coffee"
 verb = "occur"
 color = "#8d5524"
-glyph = "☕"
+symbol = "☕"
 pos = 0.86
 size = 0.06
 
@@ -68,7 +68,7 @@ size = 0.06
 name = "water"
 verb = "occur"
 color = "#339af0"
-glyph = "◆"
+symbol = "◆"
 pos = 0.93
 size = 0.06
 # Millilitres; `hydration` sums it.

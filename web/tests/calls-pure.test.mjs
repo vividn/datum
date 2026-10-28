@@ -142,16 +142,16 @@ seed(
 	calls.specArgv({
 		...SPEC,
 		field: 'coffee',
-		glyph: 'c',
+		symbol: 'c',
 		anchorable: true,
-		glyph_by: { key: 'size', map: { big: 'C' } },
+		symbol_by: { key: 'size', map: { big: 'C' } },
 		icon: '<svg viewBox="0 0 1 1"/>',
 		remainder: 'note',
 		string_remainder: true,
 		subfields: { size: SIZE }
 	})
 );
-seed(calls.specArgv({ ...SPEC, field: 'mood', verb: 'switch', never_false: true, relative_to: 'coffee', state_descriptions: { happy: 'up' }, state_glyphs: { happy: 'h' }, state_lookup_field: 'feeling', comment_remainder: true }));
+seed(calls.specArgv({ ...SPEC, field: 'mood', verb: 'switch', never_false: true, relative_to: 'coffee', state_descriptions: { happy: 'up' }, state_symbols: { happy: 'h' }, state_lookup_field: 'feeling', comment_remainder: true }));
 seed(['alias', 'set', 'cof', 'occur coffee']);
 seed(calls.savePlanArgv(PLAN, false));
 seed(calls.newLayoutArgv(LAYOUT, 'k'));

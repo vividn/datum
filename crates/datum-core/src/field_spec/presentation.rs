@@ -9,9 +9,11 @@
 //!   — chains a field's effective position off another field's resolved
 //!   position.
 //! - **`render`** — per-surface visibility (hide on `dayview` only, etc.).
-//! - **Glyph triple** (`glyph`, `state_glyphs`, `glyph_by`) — what an occur
-//!   dot draws instead of a circle (da-gzowt), in the same shape as
-//!   `color` / `state_colors`.
+//! - **Symbol triple** (`symbol`, `state_symbols`, `symbol_by`) — what an
+//!   occur dot draws instead of a circle (da-gzowt), in the same shape as
+//!   `color` / `state_colors`. Named `glyph`, `state_glyphs`, `glyph_by`
+//!   until da-yc5vi, which the ops in a history still carry (see
+//!   [`GLYPH_KEYS`]).
 //!
 //! Stored inline in [`super::FieldSpec`] via `#[serde(flatten)]` so a spec is
 //! still a single JSON blob with a single SQL row; the split is structural
@@ -88,27 +90,41 @@ pub struct PresentationSpec {
 
     /// The character an occur dot of this field draws in place of the
     /// circle (da-gzowt). `None` draws the circle, byte for byte as before.
-    /// The field-level fallback of [`PresentationSpec::glyph_for`], as
+    /// The field-level fallback of [`PresentationSpec::symbol_for`], as
     /// `color` is `state_colors`' fallback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glyph: Option<String>,
+    pub symbol: Option<String>,
 
-    /// Per-state glyph overrides, keyed by state name — `state_colors`'
+    /// Per-state symbol overrides, keyed by state name — `state_colors`'
     /// shape, for the states where the mark carries meaning.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub state_glyphs: BTreeMap<String, String>,
+    pub state_symbols: BTreeMap<String, String>,
 
-    /// A glyph chosen by the value of one data key: `coffee size=large`
+    /// A symbol chosen by the value of one data key: `coffee size=large`
     /// draws `map["large"]`. A value the map does not name falls through
-    /// to [`PresentationSpec::glyph`] — the field's glyph IS the default,
+    /// to [`PresentationSpec::symbol`] — the field's symbol IS the default,
     /// so there is one default and not two.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glyph_by: Option<GlyphBy>,
+    pub symbol_by: Option<SymbolBy>,
+
+    /// The symbol keys under their old names ([`GLYPH_KEYS`]), read and
+    /// never written: [`PresentationSpec::read`] folds them into the new
+    /// ones, so nothing else reads them.
+    #[serde(default, rename = "glyph", skip_serializing)]
+    glyph: Option<String>,
+    #[serde(default, rename = "state_glyphs", skip_serializing)]
+    state_glyphs: Option<BTreeMap<String, String>>,
+    #[serde(default, rename = "glyph_by", skip_serializing)]
+    glyph_by: Option<SymbolBy>,
+    #[serde(default, rename = "glyph_scale", skip_serializing)]
+    glyph_scale: Option<f64>,
+    #[serde(default, rename = "glyph_aspect", skip_serializing)]
+    glyph_aspect: Option<f64>,
 
     /// A custom SVG icon (da-45wgz): the whole `<svg>` element, vetted and
     /// size-capped by `setup`. The dayview draws it where the field's
-    /// glyph would stand; the terminal band cannot draw an image, so there
-    /// the dot keeps its glyph, which is `●` unless one is named.
+    /// symbol would stand; the terminal band cannot draw an image, so there
+    /// the dot keeps its symbol, which is `●` unless one is named.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
 
@@ -117,12 +133,12 @@ pub struct PresentationSpec {
     /// fraction of the day in the dayview and the nowview at any size. `None` is 1. Points only: a
     /// block's size is its lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glyph_scale: Option<f64>,
+    pub symbol_scale: Option<f64>,
 
     /// The mark's width over its height (da-c05v1): 2 draws it twice as
     /// wide at the same height. `None` is 1, and blocks ignore it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glyph_aspect: Option<f64>,
+    pub symbol_aspect: Option<f64>,
 
     /// Other fields may be placed relative to this one (da-w5ruf): datum.day's
     /// setup offers only such a field, or one already anchoring another, as
@@ -131,15 +147,27 @@ pub struct PresentationSpec {
     pub anchorable: bool,
 }
 
-/// [`PresentationSpec::glyph_by`]: the data key to read and the glyph for
+/// [`PresentationSpec::symbol_by`]: the data key to read and the symbol for
 /// each of its values.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct GlyphBy {
+pub struct SymbolBy {
     pub key: String,
     /// Sorted, so a kit exports it the same way every time.
     #[serde(default)]
     pub map: BTreeMap<String, String>,
 }
+
+/// The keys a spec's symbols were stored under before da-yc5vi, each with
+/// its new name. The v72→v73 migration has every stored spec renamed; the
+/// ops in a history keep the old names, and a copy that joins later folds
+/// them, so they are read for good.
+pub const GLYPH_KEYS: [(&str, &str); 5] = [
+    ("glyph", "symbol"),
+    ("state_glyphs", "state_symbols"),
+    ("glyph_by", "symbol_by"),
+    ("glyph_scale", "symbol_scale"),
+    ("glyph_aspect", "symbol_aspect"),
+];
 
 /// Visibility setting for a [`super::FieldSpec`] across visual surfaces.
 ///
@@ -204,6 +232,23 @@ pub(super) fn hash_y(field: &str) -> f64 {
 }
 
 impl PresentationSpec {
+    /// Read as [`super::FieldSpec`] flattens it: a key under its old name
+    /// ([`GLYPH_KEYS`]) as its new one. A row holding both — an op signed
+    /// before the rename, folded with the rename's own — reads the new, the
+    /// later of the two, and a state's symbol from the old map where the new
+    /// names none.
+    pub(super) fn read<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut p = Self::deserialize(d)?;
+        p.symbol = p.symbol.or(p.glyph.take());
+        p.symbol_by = p.symbol_by.or(p.glyph_by.take());
+        p.symbol_scale = p.symbol_scale.or(p.glyph_scale.take());
+        p.symbol_aspect = p.symbol_aspect.or(p.glyph_aspect.take());
+        for (state, symbol) in p.state_glyphs.take().unwrap_or_default() {
+            p.state_symbols.entry(state).or_insert(symbol);
+        }
+        Ok(p)
+    }
+
     /// True if any anchor field is set. Used for cycle and well-formedness
     /// checks.
     pub fn has_anchor(&self) -> bool {
@@ -258,35 +303,35 @@ impl PresentationSpec {
             .unwrap_or(true)
     }
 
-    /// The glyph an occur dot draws for an entry with this `state` and
-    /// `data`, or `None` for the circle. Precedence: the state's own glyph,
-    /// then the `glyph_by` key's mapped value, then the field's glyph.
-    pub fn glyph_for(&self, state: Option<&JsonValue>, data: Option<&JsonValue>) -> Option<&str> {
-        self.glyph_override(state, data)
-            .or(self.glyph.as_ref())
+    /// The symbol an occur dot draws for an entry with this `state` and
+    /// `data`, or `None` for the circle. Precedence: the state's own symbol,
+    /// then the `symbol_by` key's mapped value, then the field's symbol.
+    pub fn symbol_for(&self, state: Option<&JsonValue>, data: Option<&JsonValue>) -> Option<&str> {
+        self.symbol_override(state, data)
+            .or(self.symbol.as_ref())
             .map(String::as_str)
     }
 
     /// The icon an occur dot draws in the dayview (da-45wgz): the field's
-    /// icon stands where the field's glyph would, so a state's or a key's
-    /// own glyph still wins over it.
+    /// icon stands where the field's symbol would, so a state's or a key's
+    /// own symbol still wins over it.
     pub fn icon_for(&self, state: Option<&JsonValue>, data: Option<&JsonValue>) -> Option<&str> {
         self.icon
             .as_deref()
-            .filter(|_| self.glyph_override(state, data).is_none())
+            .filter(|_| self.symbol_override(state, data).is_none())
     }
 
-    /// The state's glyph, else the `glyph_by` key's mapped value.
-    fn glyph_override(
+    /// The state's symbol, else the `symbol_by` key's mapped value.
+    fn symbol_override(
         &self,
         state: Option<&JsonValue>,
         data: Option<&JsonValue>,
     ) -> Option<&String> {
         let by_state = state
             .and_then(scalar_key)
-            .and_then(|s| self.state_glyphs.get(&s));
+            .and_then(|s| self.state_symbols.get(&s));
         let by_key = || {
-            let gb = self.glyph_by.as_ref()?;
+            let gb = self.symbol_by.as_ref()?;
             let v = data?.get(&gb.key).and_then(scalar_key)?;
             gb.map.get(&v)
         };
@@ -294,7 +339,7 @@ impl PresentationSpec {
     }
 }
 
-/// A scalar JSON value as the word a glyph map is keyed by — a string as
+/// A scalar JSON value as the word a symbol map is keyed by — a string as
 /// itself, a number or bool as it prints. Arrays and objects name nothing.
 fn scalar_key(v: &JsonValue) -> Option<String> {
     match v {
@@ -499,9 +544,9 @@ mod tests {
 
     fn coffee() -> PresentationSpec {
         PresentationSpec {
-            glyph: Some("●".into()),
-            state_glyphs: BTreeMap::from([("decaf".into(), "○".into())]),
-            glyph_by: Some(GlyphBy {
+            symbol: Some("●".into()),
+            state_symbols: BTreeMap::from([("decaf".into(), "○".into())]),
+            symbol_by: Some(SymbolBy {
                 key: "size".into(),
                 map: BTreeMap::from([("small".into(), "•".into()), ("large".into(), "☕".into())]),
             }),
@@ -510,10 +555,10 @@ mod tests {
     }
 
     #[test]
-    fn glyph_for_is_none_without_a_glyph() {
+    fn symbol_for_is_none_without_a_symbol() {
         let pres = PresentationSpec::default();
         assert_eq!(
-            pres.glyph_for(
+            pres.symbol_for(
                 Some(&"x".into()),
                 Some(&serde_json::json!({"size": "large"}))
             ),
@@ -522,57 +567,98 @@ mod tests {
     }
 
     #[test]
-    fn glyph_for_maps_the_named_key_and_an_unmapped_value_draws_the_field_glyph() {
+    fn symbol_for_maps_the_named_key_and_an_unmapped_value_draws_the_field_symbol() {
         let pres = coffee();
         let data = |v: JsonValue| serde_json::json!({ "size": v });
         assert_eq!(
-            pres.glyph_for(None, Some(&data("large".into()))),
+            pres.symbol_for(None, Some(&data("large".into()))),
             Some("☕")
         );
-        assert_eq!(pres.glyph_for(None, Some(&data("small".into()))), Some("•"));
         assert_eq!(
-            pres.glyph_for(None, Some(&data("medium".into()))),
+            pres.symbol_for(None, Some(&data("small".into()))),
+            Some("•")
+        );
+        assert_eq!(
+            pres.symbol_for(None, Some(&data("medium".into()))),
             Some("●")
         );
         assert_eq!(
-            pres.glyph_for(None, Some(&serde_json::json!({}))),
+            pres.symbol_for(None, Some(&serde_json::json!({}))),
             Some("●")
         );
-        assert_eq!(pres.glyph_for(None, None), Some("●"));
-        // With no field glyph, the unmapped value draws the circle.
+        assert_eq!(pres.symbol_for(None, None), Some("●"));
+        // With no field symbol, the unmapped value draws the circle.
         let bare = PresentationSpec {
-            glyph: None,
+            symbol: None,
             ..coffee()
         };
-        assert_eq!(bare.glyph_for(None, Some(&data("medium".into()))), None);
+        assert_eq!(bare.symbol_for(None, Some(&data("medium".into()))), None);
     }
 
     #[test]
-    fn glyph_for_state_override_wins_and_other_states_draw_the_field_glyph() {
+    fn symbol_for_state_override_wins_and_other_states_draw_the_field_symbol() {
         let pres = coffee();
         let large = serde_json::json!({ "size": "large" });
         assert_eq!(
-            pres.glyph_for(Some(&"decaf".into()), Some(&large)),
+            pres.symbol_for(Some(&"decaf".into()), Some(&large)),
             Some("○")
         );
-        assert_eq!(pres.glyph_for(Some(&"espresso".into()), None), Some("●"));
+        assert_eq!(pres.symbol_for(Some(&"espresso".into()), None), Some("●"));
     }
 
     #[test]
-    fn glyph_keys_round_trip_and_an_old_spec_loads_without_them() {
+    fn symbol_keys_round_trip_and_an_old_spec_loads_without_them() {
         let pres = coffee();
         let json = serde_json::to_value(&pres).unwrap();
-        assert_eq!(json["glyph_by"]["map"]["large"], "☕");
+        assert_eq!(json["symbol_by"]["map"]["large"], "☕");
         assert_eq!(
             serde_json::from_value::<PresentationSpec>(json).unwrap(),
             pres
         );
         let old: PresentationSpec = serde_json::from_str(r#"{"y": 0.5}"#).unwrap();
-        assert_eq!(old.glyph_for(None, None), None);
+        assert_eq!(old.symbol_for(None, None), None);
         let back = serde_json::to_string(&old).unwrap();
         assert_eq!(
             back, r#"{"y":0.5}"#,
-            "no glyph key is written for an unglyphed field"
+            "no symbol key is written for a field with none"
+        );
+    }
+
+    /// da-yc5vi: the old keys read as the new, whichever ops a row was
+    /// folded from; a row holding both reads the new; none is written.
+    #[test]
+    fn the_old_symbol_keys_read_as_the_new() {
+        let read = |mut json: JsonValue| {
+            json["field"] = "coffee".into();
+            json["verb"] = "occur".into();
+            serde_json::from_value::<super::super::FieldSpec>(json)
+                .unwrap()
+                .presentation
+        };
+        let old = serde_json::json!({"glyph": "●",
+            "state_glyphs": {"decaf": "○"},
+            "glyph_by": {"key": "size", "map": {"large": "☕", "small": "•"}},
+            "glyph_scale": 2.0, "glyph_aspect": 0.5});
+        let want = PresentationSpec {
+            symbol_scale: Some(2.0),
+            symbol_aspect: Some(0.5),
+            ..coffee()
+        };
+        assert_eq!(read(old.clone()), want, "the old keys read as the new");
+        let written = serde_json::to_value(read(old.clone())).unwrap();
+        for (old_key, new_key) in GLYPH_KEYS {
+            assert_eq!(written[new_key], old[old_key], "{new_key}");
+            assert!(written.get(old_key).is_none(), "{old_key} is not written");
+        }
+        let mut both = written;
+        both["glyph"] = "▲".into();
+        both["state_glyphs"] = serde_json::json!({"decaf": "△", "espresso": "◇"});
+        let mut merged = want.clone();
+        merged.state_symbols.insert("espresso".into(), "◇".into());
+        assert_eq!(
+            read(both),
+            merged,
+            "the new keys win; a state the new map lacks is the old's"
         );
     }
 }

@@ -57,7 +57,7 @@ describe('the logic', () => {
 				{ field: 'a', spec: null, states: [true], color: '#111111', state_colors: {}, ignored: false, y: 0 },
 				{ field: 'b', spec: spec('b', { verb: 'start' }), states: [], color: '#222222', state_colors: {}, ignored: true, y: 0 },
 				{ field: 'c', spec: spec('c', { verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' }, ignored: false, y: 0 },
-				{ field: 'd', spec: spec('d', { verb: 'occur', glyph: '☕' }), states: [], color: '#555555', state_colors: {}, ignored: false, y: 1 }
+				{ field: 'd', spec: spec('d', { verb: 'occur', symbol: '☕' }), states: [], color: '#555555', state_colors: {}, ignored: false, y: 1 }
 			],
 			// `now --json`'s active rows, which are only ever the truthy ones:
 			// a field it does not name — `a` — is off.
@@ -331,7 +331,7 @@ describe('in the app', () => {
 			// No spec, logged once: a point, a button like any other.
 			assert.equal((await look(page, 'untracked')).tag, 'BUTTON');
 
-			await type(page, 'setup coffee --glyph ☕');
+			await type(page, 'setup coffee --symbol ☕');
 			await page.waitForFunction(() => document.querySelector('.bar [data-field="coffee"] .glyph')?.textContent === '☕');
 			assert.equal((await look(page, 'coffee')).text, '☕coffee', "the spec's glyph, in place of the dot");
 		});

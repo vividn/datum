@@ -105,7 +105,7 @@ fn an_icon_draws_once_in_defs_per_dot_in_the_svg_and_the_band_draws_its_fallback
     assert_eq!(svg.matches("<ellipse").count(), 1);
     assert_eq!(env.band_marks("coffee"), plain_band, "no fallback named: ●");
 
-    env.run(&["setup", "coffee", "--glyph", "▲"]);
+    env.run(&["setup", "coffee", "--symbol", "▲"]);
     assert_eq!(env.band_marks("coffee"), "▲▲▲");
     let svg = env.dayview();
     assert_eq!(svg.matches(r##"href="#icon-coffee""##).count(), 3);
@@ -124,7 +124,14 @@ fn a_state_glyph_wins_over_the_icon() {
     env.run(&["switch", "mood", "calm", "-m", "-t", "-20"]);
     let icon = env.file("m.svg", BEANS);
     env.run(&["setup", "mood", "--icon", &icon]);
-    env.run(&["setup", "mood", "--states", "sad", "--state-glyph", "sad=▼"]);
+    env.run(&[
+        "setup",
+        "mood",
+        "--states",
+        "sad",
+        "--state-symbol",
+        "sad=▼",
+    ]);
     let svg = env.dayview();
     assert_eq!(svg.matches(r##"href="#icon-mood""##).count(), 1);
     assert!(svg.contains(">▼</text>"), "{svg}");

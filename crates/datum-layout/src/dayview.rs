@@ -179,7 +179,7 @@ impl Default for GlyphSize {
     }
 }
 
-/// A dot's height, a fraction of the day, before `--glyph-scale` multiplies
+/// A dot's height, a fraction of the day, before `--symbol-scale` multiplies
 /// it (da-ijjjn): two thirds of the lane of a field whose spec names no
 /// height, datum-core's `DEFAULT_FIELD_HEIGHT` (da-sjhuj, da-a87dh). Its lane takes no part, so a lane
 /// thinner than it has the dot pass its edges: a dot marks a moment, not

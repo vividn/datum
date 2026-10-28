@@ -234,7 +234,7 @@ pub struct FieldSpec {
     /// Flattened into the same JSON object so a stored spec is a single
     /// blob. Visual surfaces consume this sub-struct directly via
     /// `spec.presentation.resolve_position(...)` / `.renders_on(...)`.
-    #[serde(default, flatten)]
+    #[serde(default, flatten, deserialize_with = "PresentationSpec::read")]
     pub presentation: PresentationSpec,
 
     /// Every key this datum does not know (da-klaf8) — a newer datum's —
@@ -403,13 +403,13 @@ impl FieldSpec {
         self.id_assign.remove(name);
     }
 
-    /// Drop what `state` carries of its own — colour, description, glyph,
+    /// Drop what `state` carries of its own — colour, description, symbol,
     /// keys, assigns — leaving the list alone (da-f9bky). Whether it had any.
     pub fn forget_state(&mut self, state: &str) -> bool {
         let own = [
             self.state_colors.remove(state).is_some(),
             self.state_descriptions.remove(state).is_some(),
-            self.presentation.state_glyphs.remove(state).is_some(),
+            self.presentation.state_symbols.remove(state).is_some(),
             self.state_keys.remove(state).is_some(),
             self.state_assign.remove(state).is_some(),
             self.archived.iter().any(|s| s == state),
@@ -543,14 +543,14 @@ impl FieldSpec {
     }
 
     /// By name, each state the list leaves out that was archived or
-    /// carries something of its own — a colour, a description, a glyph, keys.
+    /// carries something of its own — a colour, a description, a symbol, keys.
     fn unlisted_states(&self) -> Vec<&String> {
         let listed = self.allowed_states.as_deref().unwrap_or_default();
         let mut named: Vec<&String> = self
             .state_colors
             .keys()
             .chain(self.state_descriptions.keys())
-            .chain(self.presentation.state_glyphs.keys())
+            .chain(self.presentation.state_symbols.keys())
             .chain(self.state_keys.keys())
             .chain(self.state_assign.keys())
             .chain(&self.archived)
@@ -917,7 +917,7 @@ mod tests {
             "zz_future_key": {"a": [1, 2.5]}, "kit_id": "k", "displaced": {},
             "tracked": true}"#;
         let spec: FieldSpec = serde_json::from_str(json).unwrap();
-        assert_eq!(spec.presentation.glyph.as_deref(), Some("x"));
+        assert_eq!(spec.presentation.symbol.as_deref(), Some("x"));
         assert_eq!(
             spec.extra,
             serde_json::json!({"zz_future_key": {"a": [1, 2.5]}})

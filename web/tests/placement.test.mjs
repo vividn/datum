@@ -45,10 +45,10 @@ describe('the spec it saves', () => {
 	});
 
 	test("an occur dot's size is placement too: kept when set, dropped when the tab leaves it at 1", () => {
-		const sized = { ...base, glyph_scale: 2, glyph_aspect: 0.5 };
-		assert.deepEqual(placeOf(sized), { y: 0.3, height: 0.2, glyph_scale: 2, glyph_aspect: 0.5 });
-		const back = JSON.parse(JSON.stringify(editedSpec(sized, edit({ y: 0.3, height: 0.2, glyph_scale: undefined }))));
-		assert.equal('glyph_scale' in back || 'glyph_aspect' in back, false);
+		const sized = { ...base, symbol_scale: 2, symbol_aspect: 0.5 };
+		assert.deepEqual(placeOf(sized), { y: 0.3, height: 0.2, symbol_scale: 2, symbol_aspect: 0.5 });
+		const back = JSON.parse(JSON.stringify(editedSpec(sized, edit({ y: 0.3, height: 0.2, symbol_scale: undefined }))));
+		assert.equal('symbol_scale' in back || 'symbol_aspect' in back, false);
 	});
 });
 
@@ -442,8 +442,8 @@ describe('the Placement tab', () => {
 			await done(page, saved);
 			let shown = await spec(app, 'coffee');
 			assert.deepEqual([shown.y, shown.height], [0.2, 0.2], 'moving writes the lane; sizing leaves its height');
-			assert.ok(Math.abs(shown.glyph_scale - h / D) < 0.01, `scale ${shown.glyph_scale}`);
-			assert.ok(Math.abs(shown.glyph_aspect - w / h) < 0.01, `aspect ${shown.glyph_aspect}`);
+			assert.ok(Math.abs(shown.symbol_scale - h / D) < 0.01, `scale ${shown.symbol_scale}`);
+			assert.ok(Math.abs(shown.symbol_aspect - w / h) < 0.01, `aspect ${shown.symbol_aspect}`);
 
 			// Opened again, the CLI draws it at the saved size: what the box showed.
 			({ saved } = await openPlacement(page, 'coffee'));
@@ -453,7 +453,7 @@ describe('the Placement tab', () => {
 			await fits(D, D, 'reset');
 			await done(page, saved);
 			shown = await spec(app, 'coffee');
-			assert.equal('glyph_scale' in shown || 'glyph_aspect' in shown, false, JSON.stringify(shown));
+			assert.equal('symbol_scale' in shown || 'symbol_aspect' in shown, false, JSON.stringify(shown));
 		});
 	});
 

@@ -802,28 +802,28 @@ pub struct SpecSetArgs {
     /// `--auto-setup true|false|''` (da-j04cq): a template's
     /// `auto_setup`, `''` clearing it; `None` leaves the existing value.
     pub auto_setup: Option<Option<bool>>,
-    /// `--glyph <CHAR>` — what the field's occur dots draw instead of a
+    /// `--symbol <CHAR>` — what the field's occur dots draw instead of a
     /// circle (da-gzowt). An empty value clears it.
-    pub glyph: Option<String>,
-    /// `--state-glyph STATE=CHAR`, the `state_colors` shape and clear
+    pub symbol: Option<String>,
+    /// `--state-symbol STATE=CHAR`, the `state_colors` shape and clear
     /// convention.
-    pub state_glyphs: Vec<String>,
-    /// `--glyph-by <KEY>` — the data key whose value picks the glyph. An
+    pub state_symbols: Vec<String>,
+    /// `--symbol-by <KEY>` — the data key whose value picks the symbol. An
     /// empty value clears it, map and all.
-    pub glyph_by: Option<String>,
-    /// `--glyph-map VALUE=CHAR` — one entry of the `--glyph-by` map; an
+    pub symbol_by: Option<String>,
+    /// `--symbol-map VALUE=CHAR` — one entry of the `--symbol-by` map; an
     /// empty CHAR removes the entry.
-    pub glyph_map: Vec<String>,
+    pub symbol_map: Vec<String>,
     /// `--icon <FILE>` — an `.svg` the dayview draws for the field's dots
     /// (da-45wgz). An empty value clears it.
     pub icon: Option<String>,
-    /// `--glyph-scale <N>` — an occur dot's height, a multiple of the
+    /// `--symbol-scale <N>` — an occur dot's height, a multiple of the
     /// standard dot's, whatever its lane (da-c05v1, da-ijjjn). Positive;
     /// 1 clears it.
-    pub glyph_scale: Option<f64>,
-    /// `--glyph-aspect <N>` — the dot's width over its height. Positive;
+    pub symbol_scale: Option<f64>,
+    /// `--symbol-aspect <N>` — the dot's width over its height. Positive;
     /// 1 clears it.
-    pub glyph_aspect: Option<f64>,
+    pub symbol_aspect: Option<f64>,
 }
 
 /// `List { names }` prints each alias name a shell alias can take, one a

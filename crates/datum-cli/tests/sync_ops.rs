@@ -1600,7 +1600,7 @@ fn specs_merged_under_one_slug_fold_the_same_however_their_apply_is_cut() {
         let (x, y, z) = (Copy::new(), Copy::new(), Copy::new());
         make(&x, first, "#ff0000");
         make(&y, second, "#00ffff");
-        y.ok(&["setup", "tea", "--glyph", "y"]);
+        y.ok(&["setup", "tea", "--symbol", "y"]);
         z.ok(&["setup", "tea", "--verb", "occur", "--color", "#0000ff"]);
         let lines: Vec<String> = [&x, &y, &z]
             .iter()
@@ -1634,7 +1634,8 @@ fn specs_merged_under_one_slug_fold_the_same_however_their_apply_is_cut() {
         // The last-created's colour, and the edit, whichever row it is of.
         let data = whole.data(&spec);
         assert_eq!(data["color"], "#0000ff", "{data}");
-        assert_eq!(data["glyph"], "y", "{data}");
+        assert_eq!(data["symbol"], "y", "{data}");
+        assert!(data.get("glyph").is_none(), "{data}");
         let want = whole.hash();
         let reversed: Vec<String> = lines.iter().rev().cloned().collect();
         for order in [&lines, &reversed] {

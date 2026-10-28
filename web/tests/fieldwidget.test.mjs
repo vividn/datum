@@ -281,7 +281,7 @@ describe('the field widget', () => {
 				const shown = JSON.parse((await app.run(['setup', example.field, '--json'])).stdout);
 				assert.equal(shown.color, example.color);
 				assert.equal(shown.description, null);
-				assert.equal(shown.glyph, example.glyph);
+				assert.equal(shown.symbol, example.glyph);
 				assert.deepEqual(shown.state_colors, example.states ?? {});
 				assert.equal(shown.state_lookup_field, example.lookup);
 				assert.equal(shown.never_false, example.neverFalse);

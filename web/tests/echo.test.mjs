@@ -251,7 +251,7 @@ const WRITERS = [
 	['delete', '_LAST'],
 	['undo'],
 	// da-ez40f: a change to a spec echoes its entry; `setup` and `setup F` read.
-	['setup', 'coffee', '--glyph', '▲'],
+	['setup', 'coffee', '--symbol', '▲'],
 	// The flag may come first; the field is still the word that is not one.
 	['setup', '--delete', 'coffee']
 ];

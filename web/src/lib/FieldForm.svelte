@@ -42,7 +42,7 @@
 	colour, each a popup (da-rpfws); the symbol is a character or an .svg
 	(the spec's `icon`); a state is told apart by its colour alone, its own
 	symbol kept under its `…` as advanced (da-puzij). A
-	`glyph_by` (a symbol by a data key's value) is not edited here and a
+	`symbol_by` (a symbol by a data key's value) is not edited here and a
 	save leaves it as it was. A field with no name yet has no colour to
 	show: its swatch is empty, not the pink an empty name hashes to. The data keys
 	are `DataKeys.svelte`'s rows, with each key's type, on data (da-zqnt3).
@@ -157,7 +157,7 @@
 	let color = $state(opening?.color ?? '');
 	let description = $state(opening?.description ?? '');
 	let states: StateRow[] = $state(opening ? stateRows(opening) : []);
-	let glyph = $state(opening?.glyph ?? '');
+	let symbol = $state(opening?.symbol ?? '');
 	let keys: KeyRow[] = $state(opening ? keyRows(opening) : []);
 	let autoalias = $state(!opening?.no_autoalias);
 	let neverFalse = $state(!!opening?.never_false);
@@ -189,7 +189,7 @@
 		autoalias,
 		aliases,
 		neverFalse,
-		glyph,
+		symbol,
 		place,
 		icon,
 		lookup
@@ -221,7 +221,7 @@
 		verb = example.verb;
 		color = example.color;
 		description = '';
-		glyph = example.glyph ?? '';
+		symbol = example.glyph ?? '';
 		icon = '';
 		[autoalias, aliases, place] = [true, [], {}];
 		states = Object.entries(example.states ?? {}).map(([name, color]) => ({ name, color, description: '', glyph: '' }));
@@ -379,7 +379,7 @@
 					<span class="label">color</span>
 					<Swatch bind:value={color} fallback={auto} label="the field's color" />
 					<span class="label near">symbol</span>
-					<Glyph bind:value={glyph} bind:icon color={color || (field.trim() && auto)} label="the field's symbol" />
+					<Glyph bind:value={symbol} bind:icon color={color || (field.trim() && auto)} label="the field's symbol" />
 				</div>
 				{#if verb === 'switch'}
 					<!-- A switch starts with one state, off (da-i9upr): vividn, «that can be disabled as soon as you have

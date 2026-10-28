@@ -912,8 +912,8 @@ fn sample_entries(spec: &FieldSpec, start_ms: i64, end_ms: i64) -> Vec<Entry> {
 pub(crate) fn glyph_size(spec: Option<&datum_core::field_spec::FieldSpec>) -> GlyphSize {
     let factor = |n: Option<f64>| n.filter(|n| *n > 0.0 && n.is_finite());
     spec.map_or_else(Default::default, |s| GlyphSize {
-        scale: factor(s.presentation.glyph_scale).unwrap_or(1.0),
-        aspect: factor(s.presentation.glyph_aspect).unwrap_or(1.0),
+        scale: factor(s.presentation.symbol_scale).unwrap_or(1.0),
+        aspect: factor(s.presentation.symbol_aspect).unwrap_or(1.0),
     })
 }
 
@@ -1618,8 +1618,8 @@ mod tests {
         };
         let sized = |scale: f64, aspect: f64| {
             let mut spec = FieldSpec::new("coffee", Action::Occur);
-            spec.presentation.glyph_scale = Some(scale);
-            spec.presentation.glyph_aspect = Some(aspect);
+            spec.presentation.symbol_scale = Some(scale);
+            spec.presentation.symbol_aspect = Some(aspect);
             db.save_field_spec(&spec).unwrap();
             let fields =
                 build_day_fields(&db, &utc_zone(), day(0), day(24), day(24), None).unwrap();

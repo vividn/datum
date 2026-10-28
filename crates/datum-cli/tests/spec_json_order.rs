@@ -33,7 +33,7 @@ fn spec_json_is_byte_identical_across_processes() {
             [
                 format!("--state-color={n}=red"),
                 format!("--state-description={n}=it is {n}"),
-                format!("--state-glyph={n}=*"),
+                format!("--state-symbol={n}=*"),
                 format!("--state-key={n}={n}x"),
                 format!("--state-assign={n}=y=1"),
             ]

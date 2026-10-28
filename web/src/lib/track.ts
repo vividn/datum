@@ -145,10 +145,10 @@ export interface Spec {
 	state_colors: Record<string, string>;
 	/** Left out of `setup F --json` when empty, as the CLI serialises it. */
 	state_descriptions?: Record<string, string>;
-	/** The occur dot's glyph (da-gzowt) and its overrides; each left out when empty. */
-	glyph?: string;
-	state_glyphs?: Record<string, string>;
-	glyph_by?: GlyphBy;
+	/** The occur dot's symbol (da-gzowt) and its overrides; each left out when empty. */
+	symbol?: string;
+	state_symbols?: Record<string, string>;
+	symbol_by?: SymbolBy;
 	subfields?: Record<string, Subfield>;
 	derived_aliases?: DerivedAlias[];
 	no_autoalias?: boolean;
@@ -162,13 +162,13 @@ export interface Spec {
 	comment_remainder?: boolean;
 	/** The field a bare state names an entry of (`--state-lookup-field`); left out when none. */
 	state_lookup_field?: string;
-	/** The field's `<svg>` icon for the dayview (da-45wgz); the band draws `glyph` in its place. */
+	/** The field's `<svg>` icon for the dayview (da-45wgz); the band draws `symbol` in its place. */
 	icon?: string;
 	[key: string]: unknown;
 }
 
-/** A glyph picked by one data key's value; a value it does not name draws the field's glyph. */
-export interface GlyphBy {
+/** A symbol picked by one data key's value; a value it does not name draws the field's symbol. */
+export interface SymbolBy {
 	key: string;
 	map: Record<string, string>;
 }
@@ -185,7 +185,7 @@ export const GLYPHS: { group: string; glyphs: string[] }[] = [
  * Whether `glyph` is two columns wide, which the terminal band draws as
  * `●` (`push_cell_point` in datum-layout's nowview_terminal.rs, by
  * unicode-width): an emoji-presentation character, or a CJK or fullwidth
- * one. A glyph is one character (`check_glyph` in the CLI's spec.rs), so
+ * one. A glyph is one character (`check_symbol` in the CLI's spec.rs), so
  * no variation selector ever reaches this.
  */
 export const wide = (glyph: string): boolean =>
@@ -350,8 +350,8 @@ export interface Place {
 	anchor_pos_ratio?: number;
 	anchor_size_ratio?: number;
 	/** An occur dot's height over its lane's and its width over its height (da-c05v1, da-c1b6m); absent is 1. */
-	glyph_scale?: number;
-	glyph_aspect?: number;
+	symbol_scale?: number;
+	symbol_aspect?: number;
 	/** Other fields may be placed relative to this one (da-w5ruf); absent is no. */
 	anchorable?: boolean;
 }
@@ -362,8 +362,8 @@ const PLACE_KEYS = [
 	'relative_to',
 	'anchor_pos_ratio',
 	'anchor_size_ratio',
-	'glyph_scale',
-	'glyph_aspect',
+	'symbol_scale',
+	'symbol_aspect',
 	'anchorable'
 ] as const;
 
@@ -377,7 +377,7 @@ export const stateRows = (spec: Spec): StateRow[] =>
 		name,
 		color: spec.state_colors[name] ?? '',
 		description: spec.state_descriptions?.[name] ?? '',
-		glyph: spec.state_glyphs?.[name] ?? ''
+		glyph: spec.state_symbols?.[name] ?? ''
 	}));
 
 /**
@@ -424,14 +424,14 @@ function placed(rows: KeyRow[]): Partial<Spec> {
  * and aliases when the edit leaves them out.
  *
  * The states are the WHOLE list, which is `--from-json`'s shape: a
- * state removed takes its colour, description and glyph
- * with it, and an empty one clears the entry. A glyph goes only for a
- * state that LEFT the list — `state_glyphs` may name a state the list
+ * state removed takes its colour, description and symbol
+ * with it, and an empty one clears the entry. A symbol goes only for a
+ * state that LEFT the list — `state_symbols` may name a state the list
  * never did — or a row that carries an empty one; a renamed row carries
- * its glyph to the new name.
+ * its symbol to the new name.
  *
- * `glyph_by` null removes it, and left out carries it (the setup form
- * never edits it, da-rpfws); its map rows with no value or no glyph are
+ * `symbol_by` null removes it, and left out carries it (the setup form
+ * never edits it, da-rpfws); its map rows with no value or no symbol are
  * dropped.
  *
  * An `icon` given replaces the spec's and an empty one clears it; one
@@ -444,8 +444,8 @@ export function editedSpec(
 		color: string;
 		description: string;
 		states: StateRow[];
-		glyph?: string;
-		glyph_by?: GlyphBy | null;
+		symbol?: string;
+		symbol_by?: SymbolBy | null;
 		keys?: KeyRow[];
 		/** Whether datum makes the aliases (`!no_autoalias`); when not, `aliases` is the list. */
 		autoalias?: boolean;
@@ -462,31 +462,31 @@ export function editedSpec(
 	const names = [...new Set(rows.map((s) => s.name))];
 	const state_colors = { ...spec.state_colors };
 	const state_descriptions = { ...spec.state_descriptions };
-	const state_glyphs = { ...spec.state_glyphs };
+	const state_symbols = { ...spec.state_symbols };
 	for (const gone of spec.allowed_states ?? []) {
 		delete state_colors[gone];
 		delete state_descriptions[gone];
-		if (!names.includes(gone)) delete state_glyphs[gone];
+		if (!names.includes(gone)) delete state_symbols[gone];
 	}
 	for (const { name, color, description, glyph } of rows) {
 		if (color) state_colors[name] = color;
 		if (description.trim()) state_descriptions[name] = description.trim();
-		if (glyph) state_glyphs[name] = glyph;
-		else if (glyph === '') delete state_glyphs[name];
+		if (glyph) state_symbols[name] = glyph;
+		else if (glyph === '') delete state_symbols[name];
 	}
-	const key = edit.glyph_by?.key.trim() ?? '';
+	const key = edit.symbol_by?.key.trim() ?? '';
 	const map = Object.fromEntries(
-		Object.entries(edit.glyph_by?.map ?? {})
+		Object.entries(edit.symbol_by?.map ?? {})
 			.map(([v, g]) => [v.trim(), g])
 			.filter(([v, g]) => v && g)
 	);
-	const glyph = edit.glyph ?? spec.glyph ?? '';
-	const glyph_by = edit.glyph_by === undefined ? spec.glyph_by : key ? { key, map } : undefined;
+	const symbol = edit.symbol ?? spec.symbol ?? '';
+	const symbol_by = edit.symbol_by === undefined ? spec.symbol_by : key ? { key, map } : undefined;
 	const icon = edit.icon === undefined ? spec.icon : edit.icon.trim();
 	const never_false = edit.neverFalse ?? (spec.never_false === true);
 	const state_lookup_field = (edit.lookup ?? spec.state_lookup_field ?? '').trim();
 	// `keys` and `keys_by_state` are the CLI's reading of the spec, not the spec: never sent (da-p3hxn).
-	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, never_false: _n, state_lookup_field: _l, ...rest } = spec;
+	const { state_descriptions: _d, symbol: _g, state_symbols: _s, symbol_by: _b, icon: _i, keys: _k, keys_by_state: _ks, never_false: _n, state_lookup_field: _l, ...rest } = spec;
 	// The key rows are the whole answer: every place a key can live is written from them.
 	if (edit.keys)
 		for (const k of ['id_keys', 'data_keys', 'assign', 'id_assign', 'remainder', 'string_remainder', 'comment_remainder']) delete rest[k];
@@ -502,9 +502,9 @@ export function editedSpec(
 		state_colors,
 		// Each absent when empty, as `setup F --json` prints it, so what is sent is what is read back.
 		...(Object.keys(state_descriptions).length ? { state_descriptions } : {}),
-		...(glyph ? { glyph } : {}),
-		...(Object.keys(state_glyphs).length ? { state_glyphs } : {}),
-		...(glyph_by ? { glyph_by } : {}),
+		...(symbol ? { symbol } : {}),
+		...(Object.keys(state_symbols).length ? { state_symbols } : {}),
+		...(symbol_by ? { symbol_by } : {}),
 		...(icon ? { icon } : {}),
 		...(never_false ? { never_false } : {}),
 		...(state_lookup_field ? { state_lookup_field } : {}),
@@ -527,8 +527,8 @@ export const formOf = (spec: Spec): Parameters<typeof editedSpec>[1] => ({
 	color: spec.color ?? '',
 	description: spec.description ?? '',
 	states: stateRows(spec),
-	glyph: spec.glyph ?? '',
-	glyph_by: spec.glyph_by ?? null,
+	symbol: spec.symbol ?? '',
+	symbol_by: spec.symbol_by ?? null,
 	keys: keyRows(spec),
 	autoalias: !spec.no_autoalias,
 	aliases: spec.derived_aliases ?? [],

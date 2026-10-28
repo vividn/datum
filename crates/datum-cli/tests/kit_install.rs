@@ -221,16 +221,16 @@ only_listed_states = true
 remainder = "extra_data"
 no_autoalias = true
 color = "#123456"
-glyph = "●"
+symbol = "●"
 icon = '{ICON}'
-glyph_scale = 2.5
-glyph_aspect = 0.5
+symbol_scale = 2.5
+symbol_aspect = 0.5
 anchorable = true
 tags = ["feel"]
 subfields.why = {{ value_type = "string" }}
 subfields.level = {{ value_type = "number", required = true }}
 glyph_by = {{ key = "why", map = {{ work = "w" }} }}
-states.tired = {{ color = "#868e96", glyph = "z", description = "worn out" }}
+states.tired = {{ color = "#868e96", symbol = "z", description = "worn out" }}
 states.calm = {{}}
 "##
     )
@@ -258,20 +258,20 @@ fn a_kit_field_installs_what_spec_set_stores() {
         "remainder": "extra_data",
         "no_autoalias": true,
         "color": "#123456",
-        "glyph": "●",
+        "symbol": "●",
         "icon": ICON,
-        "glyph_scale": 2.5,
-        "glyph_aspect": 0.5,
+        "symbol_scale": 2.5,
+        "symbol_aspect": 0.5,
         "anchorable": true,
         "tags": ["feel"],
         "subfields": {
             "why": {"value_type": "string"},
             "level": {"value_type": "number", "required": true},
         },
-        "glyph_by": {"key": "why", "map": {"work": "w"}},
+        "symbol_by": {"key": "why", "map": {"work": "w"}},
         "allowed_states": ["tired", "calm"],
         "state_colors": {"tired": "#868e96"},
-        "state_glyphs": {"tired": "z"},
+        "state_symbols": {"tired": "z"},
         "state_descriptions": {"tired": "worn out"},
     });
     run_cli(
@@ -329,9 +329,9 @@ fn kit_export_round_trips_the_whole_field() {
         "remainder = \"extra_data\"",
         "no_autoalias = true",
         "icon",
-        "glyph_by",
-        "glyph_scale = 2.5",
-        "glyph_aspect = 0.5",
+        "symbol_by",
+        "symbol_scale = 2.5",
+        "symbol_aspect = 0.5",
         "anchorable = true",
         "subfields",
         "worn out",
@@ -420,10 +420,10 @@ fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
     assert!(err.contains("'mood'") && err.contains(&by_hand), "{err}");
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
 
-    let kit = whole_field_kit().replace(r#"glyph = "z""#, r#"glyph = "zz""#);
+    let kit = whole_field_kit().replace(r#"symbol = "z""#, r#"symbol = "zz""#);
     let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
     assert!(
-        err.contains("state 'tired' glyph expects one printable character, got 'zz'"),
+        err.contains("state 'tired' symbol expects one printable character, got 'zz'"),
         "{err}"
     );
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
@@ -432,16 +432,16 @@ fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
     let kit = whole_field_kit().replace(r#"work = "w""#, r#"work = "ww""#);
     let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
     assert!(
-        err.contains("glyph_by value 'work' glyph expects one printable character, got 'ww'"),
+        err.contains("symbol_by value 'work' symbol expects one printable character, got 'ww'"),
         "{err}"
     );
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
 
     // A size factor spec refuses, a kit refuses too (da-gah1q).
-    let kit = whole_field_kit().replace("glyph_aspect = 0.5", "glyph_aspect = 0");
+    let kit = whole_field_kit().replace("symbol_aspect = 0.5", "symbol_aspect = 0");
     let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
     assert!(
-        err.contains("'mood'") && err.contains("glyph_aspect must be a number above 0, got 0"),
+        err.contains("'mood'") && err.contains("symbol_aspect must be a number above 0, got 0"),
         "{err}"
     );
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
@@ -452,11 +452,11 @@ fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
 #[test]
 fn a_kit_factor_of_one_is_stored_unset() {
     let db = fresh_db();
-    let kit = whole_field_kit().replace("glyph_scale = 2.5", "glyph_scale = 1");
+    let kit = whole_field_kit().replace("symbol_scale = 2.5", "symbol_scale = 1");
     install(&db, &kit, &[]).unwrap();
     let spec = db.load_spec("mood").unwrap().unwrap();
-    assert_eq!(spec.presentation.glyph_scale, None);
-    assert_eq!(spec.presentation.glyph_aspect, Some(0.5));
+    assert_eq!(spec.presentation.symbol_scale, None);
+    assert_eq!(spec.presentation.symbol_aspect, Some(0.5));
 }
 
 /// `kit show` of a kit nobody installed refuses by name (da-4mu1a).

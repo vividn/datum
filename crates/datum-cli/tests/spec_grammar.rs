@@ -53,7 +53,7 @@ fn mood() -> TempDir {
             "#888888",
             "--add-tag",
             "mind",
-            "--glyph",
+            "--symbol",
             "●",
         ],
     );
@@ -100,7 +100,7 @@ fn a_change_prints_the_spec_with_what_changed_marked() {
             "#b87333",
             "--states",
             "happy,calm",
-            "--glyph",
+            "--symbol",
             "",
         ],
     );
@@ -113,13 +113,13 @@ fn a_change_prints_the_spec_with_what_changed_marked() {
     for line in [
         "~ color #888888 → #b87333",
         "~ states happy · sad → happy · calm",
-        "− glyph ●",
+        "− symbol ●",
         "tags mind",
     ] {
         assert!(out.contains(&line.to_string()), "{line}: {out:?}");
     }
 
-    let echo = ok(&dir, &["setup", "mood", "--glyph", "▲", "--json"]);
+    let echo = ok(&dir, &["setup", "mood", "--symbol", "▲", "--json"]);
     assert!(!echo.contains("\n~"), "the echo alone: {echo}");
     let echo: serde_json::Value = serde_json::from_str(&echo).unwrap();
     assert_eq!(echo["docs"][0]["action"], "UPDATE");

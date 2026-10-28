@@ -36,7 +36,7 @@ export interface FieldSpec {
 	/** Per-state colours of a switch field, by state name. */
 	state_colors?: Record<string, string>;
 	/** The character an occur of the field draws in place of the dot (da-gzowt). */
-	glyph?: string | null;
+	symbol?: string | null;
 	/** The field is never off (da-cwieh); absent when false. */
 	never_false?: boolean;
 	/** The field whose lane this one's is placed against (Placement.svelte). */

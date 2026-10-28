@@ -42,7 +42,7 @@ export interface FieldButton {
 	color: string;
 	/** Every listed state's RESOLVED colour (`#rrggbb`) — `fields --json`'s `state_colors`. */
 	stateColors: Record<string, string>;
-	/** The spec's `glyph`: what an occur of the field draws instead of `●` (da-h2io6). */
+	/** The spec's `symbol`: what an occur of the field draws instead of `●` (da-h2io6). */
 	glyph?: string;
 	/**
 	 * The spec says the field is never off (`never_false`, da-cwieh), and
@@ -214,7 +214,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				ignored,
 				color,
 				stateColors: state_colors,
-				glyph: spec?.glyph ?? undefined,
+				glyph: spec?.symbol ?? undefined,
 				neverFalse: !!spec?.never_false && !spec.allowed_states?.includes('false'),
 				active: now.has(field),
 				current: state === true || (typeof state === 'string' && state !== '') ? state : undefined,

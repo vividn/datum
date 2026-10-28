@@ -5,7 +5,7 @@ use datum_core::{
     action::Action,
     db::{Db, IGNORED_STATE_VALUE},
     entry::Entry,
-    field_spec::{parse_key_decl, FieldSpec, GlyphBy, KeyKind},
+    field_spec::{parse_key_decl, FieldSpec, KeyKind, SymbolBy},
     kit_color::resolve,
     shape::{is_ignored_state, TRACKED_STATE_VALUE},
     time::DatumTime,
@@ -266,45 +266,45 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         })?;
         set_state_assign(&mut spec, state, std::slice::from_ref(&kv.to_string()))?;
     }
-    // da-gzowt: occur-dot glyphs, in `color` / `state_colors`' shape. An
+    // da-gzowt: occur-dot symbols, in `color` / `state_colors`' shape. An
     // empty value clears, as it does for every STATE=VALUE flag.
-    if let Some(g) = &args.glyph {
+    if let Some(g) = &args.symbol {
         if !g.is_empty() {
-            check_glyph("--glyph", g)?;
+            check_symbol("--symbol", g)?;
         }
-        spec.presentation.glyph = Some(g.clone()).filter(|g| !g.is_empty());
+        spec.presentation.symbol = Some(g.clone()).filter(|g| !g.is_empty());
     }
     let pres = &mut spec.presentation;
     set_pairs(
-        &mut pres.state_glyphs,
-        &args.state_glyphs,
-        "--state-glyph",
+        &mut pres.state_symbols,
+        &args.state_symbols,
+        "--state-symbol",
         "STATE=CHAR",
-        check_glyph,
+        check_symbol,
     )?;
-    match args.glyph_by.as_deref() {
-        Some("") => pres.glyph_by = None,
+    match args.symbol_by.as_deref() {
+        Some("") => pres.symbol_by = None,
         // A new key starts a new map: the old values were another key's.
-        Some(key) if pres.glyph_by.as_ref().map(|g| g.key.as_str()) != Some(key) => {
-            pres.glyph_by = Some(GlyphBy {
+        Some(key) if pres.symbol_by.as_ref().map(|g| g.key.as_str()) != Some(key) => {
+            pres.symbol_by = Some(SymbolBy {
                 key: key.to_string(),
                 map: Default::default(),
             })
         }
         _ => {}
     }
-    if !args.glyph_map.is_empty() {
+    if !args.symbol_map.is_empty() {
         let by = pres
-            .glyph_by
+            .symbol_by
             .as_mut()
-            .context("--glyph-map needs --glyph-by <KEY> to say which data key it maps")?;
+            .context("--symbol-map needs --symbol-by <KEY> to say which data key it maps")?;
         let mut map = by.map.clone().into_iter().collect();
         set_pairs(
             &mut map,
-            &args.glyph_map,
-            "--glyph-map",
+            &args.symbol_map,
+            "--symbol-map",
             "VALUE=CHAR",
-            check_glyph,
+            check_symbol,
         )?;
         by.map = map.into_iter().collect();
     }
@@ -325,8 +325,8 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         spec.presentation.icon = Some(check_icon(svg)?);
     }
     let pres = &mut spec.presentation;
-    pres.glyph_scale = args.glyph_scale.or(pres.glyph_scale);
-    pres.glyph_aspect = args.glyph_aspect.or(pres.glyph_aspect);
+    pres.symbol_scale = args.symbol_scale.or(pres.symbol_scale);
+    pres.symbol_aspect = args.symbol_aspect.or(pres.symbol_aspect);
     check_factors(&mut spec)?;
     // da-ulc0v: a key lives in one place — each declaration takes its name
     // out of the others first.
@@ -610,18 +610,18 @@ fn set_pairs(
     Ok(())
 }
 
-/// A glyph is ONE printable character (da-gzowt): the SVG draws it as
+/// A symbol is ONE printable character (da-gzowt): the SVG draws it as
 /// given; the terminal band draws it when it is one column wide and `●`
 /// when it is two (most emoji), so no column of the band moves.
-fn check_glyph(flag: &str, glyph: &str) -> Result<()> {
-    let mut chars = glyph.chars();
+fn check_symbol(flag: &str, symbol: &str) -> Result<()> {
+    let mut chars = symbol.chars();
     match (chars.next(), chars.next()) {
         (Some(c), None)
             if !c.is_whitespace() && UnicodeWidthChar::width(c).is_some_and(|w| w > 0) =>
         {
             Ok(())
         }
-        _ => anyhow::bail!("{flag} expects one printable character, got '{glyph}'"),
+        _ => anyhow::bail!("{flag} expects one printable character, got '{symbol}'"),
     }
 }
 
@@ -686,8 +686,8 @@ fn check_icon(svg: &str) -> Result<String> {
 fn check_factors(spec: &mut FieldSpec) -> Result<()> {
     let pres = &mut spec.presentation;
     for (key, slot) in [
-        ("glyph_scale", &mut pres.glyph_scale),
-        ("glyph_aspect", &mut pres.glyph_aspect),
+        ("symbol_scale", &mut pres.symbol_scale),
+        ("symbol_aspect", &mut pres.symbol_aspect),
     ] {
         if let Some(n) = slot.filter(|n| !(*n > 0.0 && n.is_finite())) {
             anyhow::bail!("{key} must be a number above 0, got {n}");
@@ -697,20 +697,20 @@ fn check_factors(spec: &mut FieldSpec) -> Result<()> {
     Ok(())
 }
 
-/// A kit's field meets `setup`'s checks (da-dtmlv): every glyph is one
+/// A kit's field meets `setup`'s checks (da-dtmlv): every symbol is one
 /// printable character, the icon is vetted and stored as `--icon`'s is, and
 /// so are the glyph's size factors (da-gah1q).
 pub(crate) fn check_presentation(spec: &mut FieldSpec) -> Result<()> {
     let pres = &mut spec.presentation;
-    // Each glyph names what it belongs to, as spec's flags do (da-am7cq).
-    if let Some(glyph) = &pres.glyph {
-        check_glyph("glyph", glyph)?;
+    // Each symbol names what it belongs to, as spec's flags do (da-am7cq).
+    if let Some(symbol) = &pres.symbol {
+        check_symbol("symbol", symbol)?;
     }
-    for (state, glyph) in &pres.state_glyphs {
-        check_glyph(&format!("state '{state}' glyph"), glyph)?;
+    for (state, symbol) in &pres.state_symbols {
+        check_symbol(&format!("state '{state}' symbol"), symbol)?;
     }
-    for (value, glyph) in pres.glyph_by.iter().flat_map(|b| &b.map) {
-        check_glyph(&format!("glyph_by value '{value}' glyph"), glyph)?;
+    for (value, symbol) in pres.symbol_by.iter().flat_map(|b| &b.map) {
+        check_symbol(&format!("symbol_by value '{value}' symbol"), symbol)?;
     }
     if let Some(svg) = &pres.icon {
         pres.icon = Some(check_icon(svg)?);
@@ -871,8 +871,8 @@ impl Block {
         if let Some(t) = &spec.id_template {
             line("id template", t.clone());
         }
-        if let Some(g) = &pres.glyph {
-            line("glyph", g.clone());
+        if let Some(g) = &pres.symbol {
+            line("symbol", g.clone());
         }
         if let Some(icon) = &pres.icon {
             line(
@@ -880,15 +880,15 @@ impl Block {
                 format!("{:.1} kB of SVG", icon.len() as f64 / 1024.0),
             );
         }
-        if let Some(by) = &pres.glyph_by {
+        if let Some(by) = &pres.symbol_by {
             let values: Vec<_> = by.map.iter().map(|(v, g)| format!("{v}={g}")).collect();
-            line("glyph by", format!("{} {}", by.key, values.join(" ")));
+            line("symbol by", format!("{} {}", by.key, values.join(" ")));
         }
-        if let Some(n) = pres.glyph_scale {
-            line("glyph scale", format!("×{n}"));
+        if let Some(n) = pres.symbol_scale {
+            line("symbol scale", format!("×{n}"));
         }
-        if let Some(n) = pres.glyph_aspect {
-            line("glyph aspect", n.to_string());
+        if let Some(n) = pres.symbol_aspect {
+            line("symbol aspect", n.to_string());
         }
         let position: Vec<String> = [("y", pres.y), ("height", pres.height), ("z", pres.z_index)]
             .into_iter()
@@ -929,7 +929,7 @@ impl Block {
         }
         // Each state's own, listed or not, in the list's order and then by name.
         for state in spec.declared_states() {
-            let own: Vec<&str> = [spec.state_colors.get(state), pres.state_glyphs.get(state)]
+            let own: Vec<&str> = [spec.state_colors.get(state), pres.state_symbols.get(state)]
                 .into_iter()
                 .flatten()
                 .map(String::as_str)

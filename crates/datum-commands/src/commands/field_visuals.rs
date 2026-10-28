@@ -290,7 +290,7 @@ pub(crate) fn render_field_visuals(
 pub(crate) fn dot_glyph(entry: &Entry, spec: Option<&FieldSpec>) -> Option<String> {
     spec?
         .presentation
-        .glyph_for(entry.state.as_ref(), entry.data.as_ref())
+        .symbol_for(entry.state.as_ref(), entry.data.as_ref())
         .map(str::to_string)
 }
 

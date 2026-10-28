@@ -67,3 +67,23 @@ pub(super) fn down_72_to_71_sync_peer_last_synced(conn: &Connection) -> Result<(
     }
     Ok(())
 }
+
+/// da-yc5vi: a spec's `glyph` keys are its `symbol` keys. The stored specs
+/// are renamed by [`crate::db::Db`] as it opens, as signed edits every copy
+/// folds alike, which a migration has no key to sign: this marks the file
+/// as holding specs from before (`_meta` `symbol_keys`).
+pub(super) fn m72_to_73_symbol_keys(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "entries")? {
+        conn.execute_batch(
+            "INSERT OR REPLACE INTO _meta (key, value) VALUES ('symbol_keys', 'glyph');",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v73→v72. A spec already renamed stays so: a build before it
+/// keeps the new keys as unknown ones (da-klaf8) and draws no symbol.
+pub(super) fn down_73_to_72_symbol_keys(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DELETE FROM _meta WHERE key = 'symbol_keys';")?;
+    Ok(())
+}

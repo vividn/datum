@@ -219,6 +219,7 @@ fn every_pair_has_a_roundtrip_test() {
         (69, 70),
         (70, 71),
         (71, 72),
+        (72, 73),
     ];
     assert_eq!(
         covered.len(),
@@ -3391,4 +3392,24 @@ fn roundtrip_v71_to_v72_sync_peer_last_synced() {
     apply_one_down(conn, 72);
     assert!(!column_exists(conn, "sync_peers", "last_synced"));
     assert!(table_exists(conn, "sync_peers"));
+}
+
+/// da-yc5vi: v73 marks a file holding specs with the old symbol keys, for
+/// the open to rename; v72 takes the mark away.
+#[test]
+fn roundtrip_v72_to_v73_symbol_keys() {
+    let db = fresh_at(72);
+    let conn = db.conn();
+    let marked = || {
+        conn.query_row(
+            "SELECT COUNT(*) FROM _meta WHERE key = 'symbol_keys'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+    };
+    apply_one_up(conn, 72);
+    assert_eq!(marked(), 1);
+    apply_one_down(conn, 73);
+    assert_eq!(marked(), 0);
 }

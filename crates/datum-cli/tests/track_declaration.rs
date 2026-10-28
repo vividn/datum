@@ -563,11 +563,11 @@ fn v2import_declares_every_field_it_brings() {
 #[test]
 fn spec_set_track_declares_in_one_and_undoes_in_one() {
     let env = Env::new();
-    let spec = r##"{"verb":"occur","color":"#c69c6d","glyph":"☕"}"##;
+    let spec = r##"{"verb":"occur","color":"#c69c6d","symbol":"☕"}"##;
     env.run(&["setup", "coffee", "--from-json", spec, "--track"]);
 
     let shown: Value = serde_json::from_str(&env.run(&["setup", "coffee", "--json"])).unwrap();
-    assert_eq!(shown["glyph"], "☕", "{shown}");
+    assert_eq!(shown["symbol"], "☕", "{shown}");
     let rows = |env: &Env| {
         env.run(&["tail"])
             .lines()
@@ -589,7 +589,7 @@ fn spec_set_track_declares_in_one_and_undoes_in_one() {
 
     // Already tracked: the status has no change, so the spec alone.
     env.run(&["setup", "coffee", "--from-json", spec, "--track"]);
-    let again = r##"{"verb":"occur","glyph":"☕","description":"cups"}"##;
+    let again = r##"{"verb":"occur","symbol":"☕","description":"cups"}"##;
     env.run(&["setup", "coffee", "--from-json", again, "--track"]);
     assert_eq!(rows(&env), 1, "a second `--track` wrote a second TRACK row");
     // And `--ignore` likewise: one IGNORED row however often it is said.

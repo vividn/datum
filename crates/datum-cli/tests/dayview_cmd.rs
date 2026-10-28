@@ -947,7 +947,7 @@ fn a_sample_is_drawn_as_its_entries_would_be() {
     let shapes: [(&str, &str, Vec<Vec<String>>); 4] = [
         (
             "pill",
-            r##"{"field":"pill","verb":"occur","color":"#00aa00","glyph":"★","glyph_scale":1.5,"allowed_states":null,"state_colors":{}}"##,
+            r##"{"field":"pill","verb":"occur","color":"#00aa00","symbol":"★","symbol_scale":1.5,"allowed_states":null,"state_colors":{}}"##,
             [
                 "01:30", "04:30", "06:00", "10:30", "14:30", "16:30", "20:30", "22:30",
             ]

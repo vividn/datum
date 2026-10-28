@@ -23,7 +23,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{DatumError, Result};
-use crate::field_spec::{Alias, FieldSpec, GlyphBy, Render, SubfieldSpec, DEFAULT_FIELD_HEIGHT};
+use crate::field_spec::{Alias, FieldSpec, Render, SubfieldSpec, SymbolBy, DEFAULT_FIELD_HEIGHT};
 
 /// Top-level TOML schema. `[kit]` is required; `[[field]]`, `[[view]]`,
 /// `[[alias]]`, `[[index]]`, and `[[command]]` may all be empty.
@@ -152,23 +152,32 @@ pub struct FieldEntry {
     #[serde(default)]
     pub color: Option<String>,
     /// The character an occur dot draws instead of a circle — the spec's
-    /// `--glyph` (da-1mkej: a kit could colour a field but not give it one).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glyph: Option<String>,
-    /// A glyph chosen by the value of one data key — `--glyph-by` and
-    /// `--glyph-map`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glyph_by: Option<GlyphBy>,
+    /// `--symbol` (da-1mkej: a kit could colour a field but not give it one).
+    /// Each symbol key also reads under its old name (`glyph`, da-yc5vi).
+    #[serde(default, alias = "glyph", skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// A symbol chosen by the value of one data key — `--symbol-by` and
+    /// `--symbol-map`.
+    #[serde(default, alias = "glyph_by", skip_serializing_if = "Option::is_none")]
+    pub symbol_by: Option<SymbolBy>,
     /// A custom SVG icon, the whole `<svg>` element, embedded in the kit
     /// and vetted as `setup --icon` vets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     /// An occur dot's size and width-over-height, as multiples — the spec's
-    /// `--glyph-scale` / `--glyph-aspect` (da-c05v1), vetted as they are.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glyph_scale: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glyph_aspect: Option<f64>,
+    /// `--symbol-scale` / `--symbol-aspect` (da-c05v1), vetted as they are.
+    #[serde(
+        default,
+        alias = "glyph_scale",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub symbol_scale: Option<f64>,
+    #[serde(
+        default,
+        alias = "glyph_aspect",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub symbol_aspect: Option<f64>,
     /// Other fields may be placed relative to this one — the spec's
     /// `anchorable` (da-fr02k).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -537,9 +546,10 @@ pub struct ColorRuleEntry {
 pub struct StateSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
-    /// This state's own glyph, over the field's — the spec's `--state-glyph`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glyph: Option<String>,
+    /// This state's own symbol, over the field's — the spec's
+    /// `--state-symbol`.
+    #[serde(default, alias = "glyph", skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
     /// What the state means — the spec's `--state-description`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -792,11 +802,11 @@ impl FieldEntry {
         spec.never_false = self.never_false;
         spec.auto_setup = self.auto_setup;
         spec.color = color_resolved;
-        spec.presentation.glyph = self.glyph;
-        spec.presentation.glyph_by = self.glyph_by;
+        spec.presentation.symbol = self.symbol;
+        spec.presentation.symbol_by = self.symbol_by;
         spec.presentation.icon = self.icon;
-        spec.presentation.glyph_scale = self.glyph_scale;
-        spec.presentation.glyph_aspect = self.glyph_aspect;
+        spec.presentation.symbol_scale = self.symbol_scale;
+        spec.presentation.symbol_aspect = self.symbol_aspect;
         spec.presentation.anchorable = self.anchorable;
         spec.presentation.z_index = self.z_index;
         spec.id_keys = self.id_keys;
@@ -826,9 +836,9 @@ impl FieldEntry {
                 if let Some(c) = &s.color {
                     spec.state_colors.insert(name.clone(), c.clone());
                 }
-                if let Some(g) = &s.glyph {
+                if let Some(g) = &s.symbol {
                     spec.presentation
-                        .state_glyphs
+                        .state_symbols
                         .insert(name.clone(), g.clone());
                 }
                 if let Some(d) = &s.description {
@@ -866,7 +876,7 @@ impl FieldEntry {
                         name.clone(),
                         StateSpec {
                             color: spec.state_colors.get(name).cloned(),
-                            glyph: spec.presentation.state_glyphs.get(name).cloned(),
+                            symbol: spec.presentation.state_symbols.get(name).cloned(),
                             description: spec.state_descriptions.get(name).cloned(),
                             keys: spec.state_keys.get(name).cloned().unwrap_or_default(),
                             assign: spec.state_assign.get(name).cloned().unwrap_or_default(),
@@ -910,11 +920,11 @@ impl FieldEntry {
             pos,
             size,
             color: spec.color.clone(),
-            glyph: spec.presentation.glyph.clone(),
-            glyph_by: spec.presentation.glyph_by.clone(),
+            symbol: spec.presentation.symbol.clone(),
+            symbol_by: spec.presentation.symbol_by.clone(),
             icon: spec.presentation.icon.clone(),
-            glyph_scale: spec.presentation.glyph_scale,
-            glyph_aspect: spec.presentation.glyph_aspect,
+            symbol_scale: spec.presentation.symbol_scale,
+            symbol_aspect: spec.presentation.symbol_aspect,
             anchorable: spec.presentation.anchorable,
             hidden: false,
             z_index: spec.presentation.z_index,
@@ -1277,10 +1287,10 @@ states.japan = {}
         assert_eq!(f.states.len(), 2);
         let germany = f.states.get("germany").unwrap();
         assert_eq!(germany.color.as_deref(), Some("#303030"));
-        assert_eq!(germany.glyph.as_deref(), Some("D"));
+        assert_eq!(germany.symbol.as_deref(), Some("D"));
         let japan = f.states.get("japan").unwrap();
         assert_eq!(japan.color, None);
-        assert_eq!(japan.glyph, None);
+        assert_eq!(japan.symbol, None);
     }
 
     #[test]
@@ -1420,7 +1430,7 @@ name = "lang"
 name = "vibe"
 verb = "switch"
 
-states.germany = { color = "#303030", glyph = "D" }
+states.germany = { color = "#303030", symbol = "D" }
 states.japan = { color = "#aa0000" }
 states.empty = {}
 "##;
@@ -1431,10 +1441,10 @@ states.empty = {}
         assert_eq!(f.states.len(), 3);
         let germany = f.states.get("germany").unwrap();
         assert_eq!(germany.color.as_deref(), Some("#303030"));
-        assert_eq!(germany.glyph.as_deref(), Some("D"));
+        assert_eq!(germany.symbol.as_deref(), Some("D"));
         let japan = f.states.get("japan").unwrap();
         assert_eq!(japan.color.as_deref(), Some("#aa0000"));
-        assert_eq!(japan.glyph, None);
+        assert_eq!(japan.symbol, None);
         let empty = f.states.get("empty").unwrap();
         assert_eq!(empty, &StateSpec::default());
     }
@@ -1479,10 +1489,10 @@ tags = ["chore", "daily"]
         assert_eq!(back.fields[0].tags, spec.tags);
     }
 
-    /// da-1mkej: a kit gives a field and its states glyphs, and export
-    /// hands them back.
+    /// da-1mkej: a kit gives a field and its states symbols, and export
+    /// hands them back, under the names a kit wrote before da-yc5vi too.
     #[test]
-    fn glyphs_install_and_round_trip() {
+    fn symbols_install_and_round_trip() {
         let src = r##"
 [kit]
 name = "k"
@@ -1491,16 +1501,18 @@ name = "k"
 name = "mood"
 verb = "switch"
 glyph = "◆"
+glyph_scale = 2.0
 states.happy = { glyph = "▲" }
 "##;
         let spec = KitToml::from_str(src).unwrap().fields[0]
             .clone()
             .into_spec(None)
             .unwrap();
-        assert_eq!(spec.presentation.glyph.as_deref(), Some("◆"));
+        assert_eq!(spec.presentation.symbol.as_deref(), Some("◆"));
+        assert_eq!(spec.presentation.symbol_scale, Some(2.0));
         assert_eq!(
             spec.presentation
-                .state_glyphs
+                .state_symbols
                 .get("happy")
                 .map(String::as_str),
             Some("▲")
@@ -1510,8 +1522,9 @@ states.happy = { glyph = "▲" }
             .to_toml()
             .unwrap();
         let back = &KitToml::from_str(&toml).unwrap().fields[0];
-        assert_eq!(back.glyph.as_deref(), Some("◆"));
-        assert_eq!(back.states["happy"].glyph.as_deref(), Some("▲"));
+        assert_eq!(back.symbol.as_deref(), Some("◆"));
+        assert_eq!(back.states["happy"].symbol.as_deref(), Some("▲"));
+        assert!(toml.contains("symbol = \"◆\"") && !toml.contains("glyph"));
     }
 
     // ─── Render visibility (da-2zd) ───────────────────────────────────

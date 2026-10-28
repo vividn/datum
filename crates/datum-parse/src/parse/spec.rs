@@ -52,6 +52,26 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
     }
 }
 
+/// The `--glyph` flags, renamed `--symbol` (da-yc5vi): refused, naming
+/// the new one.
+const GLYPH_FLAGS: [&str; 6] = [
+    "glyph",
+    "state-glyph",
+    "glyph-by",
+    "glyph-map",
+    "glyph-scale",
+    "glyph-aspect",
+];
+
+fn refuse_glyph_flag(split: &FlagSplit) -> Result<()> {
+    match split {
+        FlagSplit::Long(n) | FlagSplit::LongAttached(n, _) if GLYPH_FLAGS.contains(n) => Err(
+            ParseError::InvalidArg(format!("--{n} is now --{}", n.replace("glyph", "symbol"))),
+        ),
+        _ => Ok(()),
+    }
+}
+
 /// The flags of a change and the field they change, whether a flag was
 /// given, and whether a field was.
 pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)> {
@@ -60,7 +80,9 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
     let mut i = 0;
     while i < tail.len() {
         let tok = tail[i];
-        match split_flag(tok) {
+        let split = split_flag(tok);
+        refuse_glyph_flag(&split)?;
+        match split {
             FlagSplit::Positional(s) => {
                 pos.push(s);
                 i += 1;
@@ -333,40 +355,40 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
                 out.list_tags.push(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("glyph") => {
-                let (v, ni) = take_value(tail, i, None, "--glyph")?;
-                out.glyph = Some(v.to_string());
+            FlagSplit::Long("symbol") => {
+                let (v, ni) = take_value(tail, i, None, "--symbol")?;
+                out.symbol = Some(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("glyph", v) => {
-                out.glyph = Some(v.to_string());
+            FlagSplit::LongAttached("symbol", v) => {
+                out.symbol = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("state-glyph") => {
-                let (v, ni) = take_value(tail, i, None, "--state-glyph")?;
-                out.state_glyphs.push(v.to_string());
+            FlagSplit::Long("state-symbol") => {
+                let (v, ni) = take_value(tail, i, None, "--state-symbol")?;
+                out.state_symbols.push(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("state-glyph", v) => {
-                out.state_glyphs.push(v.to_string());
+            FlagSplit::LongAttached("state-symbol", v) => {
+                out.state_symbols.push(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("glyph-by") => {
-                let (v, ni) = take_value(tail, i, None, "--glyph-by")?;
-                out.glyph_by = Some(v.to_string());
+            FlagSplit::Long("symbol-by") => {
+                let (v, ni) = take_value(tail, i, None, "--symbol-by")?;
+                out.symbol_by = Some(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("glyph-by", v) => {
-                out.glyph_by = Some(v.to_string());
+            FlagSplit::LongAttached("symbol-by", v) => {
+                out.symbol_by = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("glyph-map") => {
-                let (v, ni) = take_value(tail, i, None, "--glyph-map")?;
-                out.glyph_map.push(v.to_string());
+            FlagSplit::Long("symbol-map") => {
+                let (v, ni) = take_value(tail, i, None, "--symbol-map")?;
+                out.symbol_map.push(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("glyph-map", v) => {
-                out.glyph_map.push(v.to_string());
+            FlagSplit::LongAttached("symbol-map", v) => {
+                out.symbol_map.push(v.to_string());
                 i += 1;
             }
             FlagSplit::Long("icon") => {
@@ -378,22 +400,22 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
                 out.icon = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("glyph-scale") => {
-                let (v, ni) = take_value(tail, i, None, "--glyph-scale")?;
-                out.glyph_scale = Some(parse_factor(v, "--glyph-scale")?);
+            FlagSplit::Long("symbol-scale") => {
+                let (v, ni) = take_value(tail, i, None, "--symbol-scale")?;
+                out.symbol_scale = Some(parse_factor(v, "--symbol-scale")?);
                 i = ni;
             }
-            FlagSplit::LongAttached("glyph-scale", v) => {
-                out.glyph_scale = Some(parse_factor(v, "--glyph-scale")?);
+            FlagSplit::LongAttached("symbol-scale", v) => {
+                out.symbol_scale = Some(parse_factor(v, "--symbol-scale")?);
                 i += 1;
             }
-            FlagSplit::Long("glyph-aspect") => {
-                let (v, ni) = take_value(tail, i, None, "--glyph-aspect")?;
-                out.glyph_aspect = Some(parse_factor(v, "--glyph-aspect")?);
+            FlagSplit::Long("symbol-aspect") => {
+                let (v, ni) = take_value(tail, i, None, "--symbol-aspect")?;
+                out.symbol_aspect = Some(parse_factor(v, "--symbol-aspect")?);
                 i = ni;
             }
-            FlagSplit::LongAttached("glyph-aspect", v) => {
-                out.glyph_aspect = Some(parse_factor(v, "--glyph-aspect")?);
+            FlagSplit::LongAttached("symbol-aspect", v) => {
+                out.symbol_aspect = Some(parse_factor(v, "--symbol-aspect")?);
                 i += 1;
             }
             // `-weird` is a field name someone typed, not a flag they

@@ -152,47 +152,47 @@ describe('the argv it composes', () => {
 	});
 
 	// da-ogyxa: a state's glyph goes with the state when the state leaves the
-	// list, and ONLY then — `state_glyphs` may name a state the list never
+	// list, and ONLY then — `state_symbols` may name a state the list never
 	// did, and a caller whose rows carry no glyph must not wipe them.
 	test('a removed state takes its glyph with it; a kept or renamed one keeps it', () => {
 		const spec = {
 			field: 'mood', verb: 'switch', color: null, description: null,
 			allowed_states: ['up', 'down', 'flat'], state_colors: {},
-			state_glyphs: { up: '▲', down: '▼', flat: '■', logged: '○' }
+			state_symbols: { up: '▲', down: '▼', flat: '■', logged: '○' }
 		};
 		assert.deepEqual(stateRows(spec).map((r) => r.glyph), ['▲', '▼', '■']);
 		const base = { verb: 'switch', color: '', description: '' };
 		// `down` removed, `flat` renamed to `level` (the row carries its glyph), `up` cleared.
 		const [up, , flat] = stateRows(spec);
 		const edited = editedSpec(spec, { ...base, states: [{ ...up, glyph: '' }, { ...flat, name: 'level' }] });
-		assert.deepEqual(edited.state_glyphs, { level: '■', logged: '○' });
+		assert.deepEqual(edited.state_symbols, { level: '■', logged: '○' });
 		// Rows with no glyph key — the rows that re-add colours — keep every glyph of a kept state.
 		const bare = editedSpec(spec, { ...base, states: [{ name: 'up', color: '', description: '' }] });
-		assert.deepEqual(bare.state_glyphs, { up: '▲', logged: '○' });
+		assert.deepEqual(bare.state_symbols, { up: '▲', logged: '○' });
 		// None left: the key is left out, as `setup F --json` leaves it out.
-		assert.equal('state_glyphs' in editedSpec({ ...spec, state_glyphs: { down: '▼' } }, { ...base, states: [{ ...up, glyph: '' }] }), false);
+		assert.equal('state_symbols' in editedSpec({ ...spec, state_symbols: { down: '▼' } }, { ...base, states: [{ ...up, glyph: '' }] }), false);
 	});
 
 	test('one glyph, or a glyph by a key with the field\'s as the default', () => {
 		const spec = {
 			field: 'tea', verb: 'occur', color: null, description: null,
-			allowed_states: null, state_colors: {}, glyph: '●', glyph_by: { key: 'size', map: { big: '☕' } },
+			allowed_states: null, state_colors: {}, symbol: '●', symbol_by: { key: 'size', map: { big: '☕' } },
 			subfields: { size: {} }, data_keys: ['cup=mug'],
 			keys: [{ name: 'cup', kind: 'default', value: 'mug', in_slug: false }, { name: 'size', kind: 'optional', in_slug: false }]
 		};
 		const base = { verb: 'occur', color: '', description: '', states: [] };
 		// Not edited: carried as it was.
-		assert.deepEqual(editedSpec(spec, base).glyph_by, spec.glyph_by);
-		assert.equal(editedSpec(spec, base).glyph, '●');
+		assert.deepEqual(editedSpec(spec, base).symbol_by, spec.symbol_by);
+		assert.equal(editedSpec(spec, base).symbol, '●');
 		// «one glyph»: no key; an empty glyph draws the circle and is left out.
-		const one = editedSpec(spec, { ...base, glyph: '', glyph_by: null });
-		assert.equal('glyph' in one, false);
-		assert.equal('glyph_by' in one, false);
+		const one = editedSpec(spec, { ...base, symbol: '', symbol_by: null });
+		assert.equal('symbol' in one, false);
+		assert.equal('symbol_by' in one, false);
 		// A map row with no value or no glyph says nothing, and is dropped.
-		const by = editedSpec(spec, { ...base, glyph: '○', glyph_by: { key: ' cup ', map: { ' mug ': '🍵', '': '▲', tiny: '' } } });
-		assert.deepEqual(by.glyph_by, { key: 'cup', map: { mug: '🍵' } });
-		assert.equal(by.glyph, '○');
-		assert.equal('glyph_by' in editedSpec(spec, { ...base, glyph_by: { key: ' ', map: {} } }), false);
+		const by = editedSpec(spec, { ...base, symbol: '○', symbol_by: { key: ' cup ', map: { ' mug ': '🍵', '': '▲', tiny: '' } } });
+		assert.deepEqual(by.symbol_by, { key: 'cup', map: { mug: '🍵' } });
+		assert.equal(by.symbol, '○');
+		assert.equal('symbol_by' in editedSpec(spec, { ...base, symbol_by: { key: ' ', map: {} } }), false);
 	});
 
 	// The band gives each slice of time ONE column, so a glyph two wide draws
@@ -610,7 +610,7 @@ describe('in the app', () => {
 	test('an .svg picked as the symbol is the field\'s icon, drawn by the dayview and as the dot in `now`; a bad one is the CLI\'s refusal', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await app.run(['track', 'coffee', '--verb', 'occur', '--glyph', '▲']);
+			await app.run(['track', 'coffee', '--verb', 'occur', '--symbol', '▲']);
 			// The clock is held (da-ydao): a second on, or the dot lands on the TRACK and is not written.
 			await app.clock.forward(1000);
 			await app.run(['occur', 'coffee']);
@@ -628,7 +628,7 @@ describe('in the app', () => {
 			assert.equal(ok.code, 0, ok.stderr);
 			const shown = JSON.parse((await app.run(['setup', 'coffee', '--json'])).stdout);
 			assert.equal(shown.icon, beans);
-			assert.equal('glyph' in shown, false, 'the image took the glyph\'s place: the standard dot');
+			assert.equal('symbol' in shown, false, 'the image took the symbol\'s place: the standard dot');
 			const svg = (await app.run(['dayview'])).stdout;
 			assert.equal(svg.match(/<svg id="icon-coffee"/g)?.length, 1);
 			assert.match(svg, /href="#icon-coffee"/);
@@ -707,7 +707,7 @@ describe('in the app', () => {
 	test('colour and symbol share a line, the symbol in the colour, and each opens a popup that moves nothing', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await app.run(['track', 'tea', '--verb', 'occur', '--glyph', '▲']);
+			await app.run(['track', 'tea', '--verb', 'occur', '--symbol', '▲']);
 			const [listed] = JSON.parse((await app.run(['fields', '--json'])).stdout).filter((f) => f.field === 'tea');
 			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 			const { saved: shut } = await openField(page, 'tea');
@@ -1144,7 +1144,7 @@ describe('in the app', () => {
 			await app.idle();
 			const echoes = await app.echoes();
 			assert.equal(echoes.length, before + 1, `one command: ${echoes.slice(before).join(' | ')}`);
-			assert.equal(JSON.parse((await app.run(['setup', 'tea', '--json'])).stdout).glyph, '▲');
+			assert.equal(JSON.parse((await app.run(['setup', 'tea', '--json'])).stdout).symbol, '▲');
 
 			await app.clock.forward(1000);
 			const logged = await app.run(['occur', 'tea']);
@@ -1170,7 +1170,7 @@ describe('in the app', () => {
 			assert.equal(await tile(page, 'the symbol of up').getAttribute('data-glyph'), '✺');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await saved).code, 0);
-			assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).state_glyphs, { up: '✺' });
+			assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).state_symbols, { up: '✺' });
 
 			await app.clock.forward(1000);
 			const logged = await app.run(['switch', 'mood', 'up', '-m']);
@@ -1184,7 +1184,7 @@ describe('in the app', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch', '--states', 'up,down,flat']);
-			await app.run(['setup', 'mood', '--state-glyph', 'up=▲', '--state-glyph', 'down=▼', '--state-glyph', 'flat=■']);
+			await app.run(['setup', 'mood', '--state-symbol', 'up=▲', '--state-symbol', 'down=▼', '--state-symbol', 'flat=■']);
 			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
 			await page.locator(`${MODAL} button.remove[aria-label="remove down"]`).click();
@@ -1194,17 +1194,17 @@ describe('in the app', () => {
 			assert.equal((await saved).code, 0);
 			const shown = JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout);
 			assert.deepEqual(shown.allowed_states, ['up', 'level']);
-			assert.deepEqual(shown.state_glyphs, { up: '▲', level: '■' });
+			assert.deepEqual(shown.state_symbols, { up: '▲', level: '■' });
 		});
 	});
 
 	// vividn, 2026-10-19: «completely get rid of the "by a key" here … Even when there is by a key symbols,
-	// there can still be … a top-level symbol». The form neither shows a `glyph_by` nor loses it.
+	// there can still be … a top-level symbol». The form neither shows a `symbol_by` nor loses it.
 	test('a glyph by a key is not offered, survives a save, and the field\'s own symbol is still set', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
-			await app.run(['setup', 'tea', '--glyph-by', 'size', '--glyph-map', 'large=☕']);
+			await app.run(['setup', 'tea', '--symbol-by', 'size', '--symbol-map', 'large=☕']);
 			const { saved } = await openField(page, 'tea');
 			await page.locator(MODAL).waitFor();
 			assert.doesNotMatch(await page.locator(MODAL).innerText(), /by a key/);
@@ -1214,8 +1214,8 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await saved).code, 0);
 			const shown = (await app.run(['setup', 'tea', '--json'])).stdout;
-			assert.deepEqual(JSON.parse(shown).glyph_by, { key: 'size', map: { large: '☕' } });
-			assert.equal(JSON.parse(shown).glyph, '○');
+			assert.deepEqual(JSON.parse(shown).symbol_by, { key: 'size', map: { large: '☕' } });
+			assert.equal(JSON.parse(shown).symbol, '○');
 
 			// Saved with only its description changed (a save needs a change, da-hda4j), the glyphs read back as they were.
 			const { saved: again } = await openField(page, 'tea');

@@ -525,7 +525,7 @@ fn install_replaces_the_bare_spec_a_log_wrote_and_uninstall_restores_it() {
     let in_path = dir.path().join("k.toml");
     fs::write(
         &in_path,
-        "[kit]\nname = \"k\"\n\n[[field]]\nname = \"coffee\"\nverb = \"occur\"\ncolor = \"#8d5524\"\nglyph = \"☕\"\n",
+        "[kit]\nname = \"k\"\n\n[[field]]\nname = \"coffee\"\nverb = \"occur\"\ncolor = \"#8d5524\"\nsymbol = \"☕\"\n",
     )
     .unwrap();
     let argv = |words: &[&str]| -> Vec<String> {
@@ -545,7 +545,7 @@ fn install_replaces_the_bare_spec_a_log_wrote_and_uninstall_restores_it() {
     dispatch_argv(argv(&["kit", "install", &path]), &db).unwrap();
     let installed = db.load_spec("coffee").unwrap().unwrap();
     assert_eq!(installed.color.as_deref(), Some("#8d5524"));
-    assert_eq!(installed.presentation.glyph.as_deref(), Some("☕"));
+    assert_eq!(installed.presentation.symbol.as_deref(), Some("☕"));
 
     dispatch_argv(argv(&["kit", "uninstall", "k"]), &db).unwrap();
     let back = db.load_spec("coffee").unwrap().unwrap();

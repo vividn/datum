@@ -49,7 +49,7 @@ fn mood() -> TempDir {
             "happy=#00ff00",
             "--state-color",
             "sad=#0000ff",
-            "--state-glyph",
+            "--state-symbol",
             "sad=▼",
             "--state-description",
             "sad=low",
@@ -89,7 +89,7 @@ fn remove_state_drops_what_it_carries() {
         assert!(s[key].get("sad").is_none(), "{key}: {s}");
     }
     assert!(
-        s["presentation"]["state_glyphs"].get("sad").is_none(),
+        s["presentation"]["state_symbols"].get("sad").is_none(),
         "{s}"
     );
     assert_eq!(s["state_colors"]["happy"], "#00ff00");
@@ -297,11 +297,11 @@ fn archive_state_keeps_what_it_carries() {
         "state_descriptions",
         "state_keys",
         "state_assign",
-        "state_glyphs",
+        "state_symbols",
     ] {
         assert_eq!(s[key], before_spec[key], "{key}");
     }
-    assert_eq!(s["state_glyphs"]["sad"], "▼", "{s}");
+    assert_eq!(s["state_symbols"]["sad"], "▼", "{s}");
     assert_eq!(tail(&dir), before);
     assert_eq!(
         ok(&dir, &["setup", "mood", "--archive-state", "sad"]).0,

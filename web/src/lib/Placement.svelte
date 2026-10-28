@@ -28,8 +28,8 @@
 	An occur field's mark is its dot (da-c1b6m): the box is drawn round the
 	dot tapped, centred on the lane, its corners hinted; an edge or corner
 	sizes the dot about its centre, writing
-	`glyph_scale` (the dot's height over the standard dot's, so a field tied
-	to this one stays put) and `glyph_aspect`. «lock aspect» keeps width over
+	`symbol_scale` (the dot's height over the standard dot's, so a field tied
+	to this one stays put) and `symbol_aspect`. «lock aspect» keeps width over
 	height, «reset» puts back a round dot of the standard size, whatever the
 	lane (da-ijjjn) — which is how tall every view draws it, as a fraction of
 	the day.
@@ -226,7 +226,7 @@
 	function put(y: number, h: number, to = place.relative_to) {
 		const a = to ? lanes[to] : undefined;
 		// The dot's size is not the lane's, and goes along as it was.
-		const { glyph_scale, glyph_aspect, anchorable } = place;
+		const { symbol_scale, symbol_aspect, anchorable } = place;
 		const at =
 			to && a?.spec && a.height > 0
 				? {
@@ -235,7 +235,7 @@
 						anchor_size_ratio: round(h / a.height)
 					}
 				: { y: round(y), height: round(h) };
-		place = { ...at, glyph_scale, glyph_aspect, anchorable };
+		place = { ...at, symbol_scale, symbol_aspect, anchorable };
 	}
 
 	/** Anchor to `to`, the lane put inside its anchor's where it stood outside it. */
@@ -247,8 +247,8 @@
 
 	/** A size factor as stored: 1 is unset. */
 	const factor = (n: number) => (round(n) === 1 ? undefined : round(n));
-	const scale = $derived(place.glyph_scale ?? 1);
-	const aspect = $derived(place.glyph_aspect ?? 1);
+	const scale = $derived(place.symbol_scale ?? 1);
+	const aspect = $derived(place.symbol_aspect ?? 1);
 	/** The dot's box in px: the standard times its scale, about the lane's centre, in the frame. */
 	const dotH = $derived((STANDARD_DOT * scale * H) / frame.h);
 	const dotW = $derived(dotH * aspect);
@@ -303,7 +303,7 @@
 			}
 			tall = clamp(tall, MIN * H, H);
 			wide = clamp(wide, MIN * H, band!.clientWidth);
-			place = { ...place, glyph_scale: factor((tall * frame.h) / (STANDARD_DOT * H)), glyph_aspect: locked ? place.glyph_aspect : factor(wide / tall) };
+			place = { ...place, symbol_scale: factor((tall * frame.h) / (STANDARD_DOT * H)), symbol_aspect: locked ? place.symbol_aspect : factor(wide / tall) };
 		} else if (drag.mode === 'move') put(clamp(y + d, lo, hi - h), h);
 		else if (drag.mode === 'bottom') put(y, clamp(h + d, min, hi - y));
 		else {
@@ -486,7 +486,7 @@
 				type="button"
 				class="reset"
 				disabled={scale === 1 && aspect === 1}
-				onclick={() => (place = { ...place, glyph_scale: undefined, glyph_aspect: undefined })}>reset</button
+				onclick={() => (place = { ...place, symbol_scale: undefined, symbol_aspect: undefined })}>reset</button
 			>
 		</div>
 	{/if}
