@@ -1,4 +1,4 @@
-// The REPL as a terminal: a clock, a stamp per command, and a scrollback
+// The CLI widget as a terminal: a clock, a stamp per command, and a scrollback
 // that is still there tomorrow. Its prompt is the bottom bar's (da-rfs9):
 // the pane is the scrollback, and nothing in it takes typing.
 //
@@ -68,7 +68,7 @@ const brightness = (css) => {
 	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 
-describe("the REPL's prompt, the bottom bar's", () => {
+describe("the CLI widget's prompt, the bottom bar's", () => {
 	test('carries a clock, beside the logo and on the prompt’s line, that counts up', async () => {
 		// The 12-hour reader again (da-6o81): a clock is exactly the thing
 		// that goes locale-shaped when nobody pins the locale in the test.
@@ -264,7 +264,7 @@ describe('the scrollback across a reload', () => {
 		await withApp(
 			async ({ page, submit, echoes, reload, errors, toCollect }) => {
 				// Nothing remembers a visit, so each load is a first one, on
-				// `welcome` (da-u7vz8): the REPL pane is a tab away.
+				// `welcome` (da-u7vz8): the CLI widget is a tab away.
 				await toCollect();
 				// The session itself works — a blocked store must cost the
 				// scrollback, not the terminal.

@@ -1,4 +1,4 @@
-// The browser tokenizes a REPL line exactly the way the terminal does.
+// The browser tokenizes a typed line exactly the way the terminal does.
 //
 // `shellSplit` claims to mirror `datum_parse::shell_split`, and the claim
 // was false at two codepoints: U+0085 NEL split the line for the CLI and
@@ -11,7 +11,7 @@
 // `crates/datum-parse/tests/shell_split_fixture.rs` also reads: two
 // hand-written test files drift the same way two implementations do.
 //
-// The assertion goes through `runLine`, the seam the REPL itself uses, and
+// The assertion goes through `runLine`, the seam the CLI widget itself uses, and
 // reads the argv off the result — so what is checked is the tokenization
 // the app actually runs on, not a copy of the module imported beside it.
 
@@ -31,7 +31,7 @@ const fixture = JSON.parse(
 before(startApp);
 after(stopApp);
 
-describe('the REPL line splits into the same argv the CLI gets', () => {
+describe('a typed line splits into the same argv the CLI gets', () => {
 	test('the shared fixture still covers the two divergent codepoints', () => {
 		assert.ok(fixture.cases.length > 0);
 		// Written by code point: a literal invisible character in a source file

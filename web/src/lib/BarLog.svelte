@@ -4,7 +4,7 @@
 	vividn, 2026-10-27: «keep the input bar on the bottom, and put the
 	output/return bar above it again / make the CLI chronological order
 	again». So it reads as a terminal does, top to bottom: the oldest
-	command first and the newest last, nearest the input — the REPL
+	command first and the newest last, nearest the input — the CLI widget
 	COMPONENT, the same widget a layout can hold, drawn in its own order.
 
 	`bare`, because a titled box over a reader's own prompt says "this is a
@@ -88,7 +88,7 @@
 	});
 </script>
 
-<!-- `inert` is for the REPL inside: `close history` is already out of the
+<!-- `inert` is for the CLI widget inside: `close history` is already out of the
      DOM until the log is reached, and a scrollback nobody can see must not
      be in the Tab order either (canary on PR #46). -->
 <!-- The touch handlers only watch a scroll for its overscroll; Escape and

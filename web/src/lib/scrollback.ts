@@ -3,7 +3,7 @@
 //
 // vividn, 2026-09-21, reviewing PR 46: «ideally, but this can be another PR,
 // the output of a single entry should be narrow enough to comfortably fit
-// 2 on mobile side by side.» So the REPL is no longer one column of a
+// 2 on mobile side by side.» So the CLI widget is no longer one column of a
 // phone's width — it is as many columns as the box it is in holds.
 //
 // THE TWO WIDTHS BELOW ARE MEASURED AND NOT CHOSEN. A breakpoint picked
@@ -35,7 +35,7 @@
  *    to 112px and something does at 100 — the info line's longest
  *    unbreakable run, `14:59:59+0`, is 96px and the brace beside it wants
  *    the 107 that a section of two documents asks for. Above
- *    that floor the REPL loses nothing to a narrow column, because it has
+ *    that floor the CLI widget loses nothing to a narrow column, because it has
  *    the vertical room to wrap where the bar's fixed band has to clip
  *    (Doc.svelte).
  * 2. **What a 390px phone HAS: 351px** of content in the pane, once the
@@ -100,7 +100,7 @@ const fit = (width: number, each: number): number => Math.floor((width + GAP) / 
  * can give them 169, and 169 is above everything an entry's output needs
  * (`MIN`).
  *
- * `null` is a box not measured yet: one column, which is what the REPL
+ * `null` is a box not measured yet: one column, which is what the CLI widget
  * has always drawn, so nothing flashes into place on the first frame.
  */
 export function columnsIn(width: number | null): number {

@@ -48,7 +48,7 @@ const ONLY_TAIL = JSON.stringify({ version: 1, name: 'main', root: widgetPane('o
 const shared = sharedApp({ viewport: { width: 1000, height: 700 }, clock: todayAt(12, 0) });
 const onTail = (fn) => shared.solo(fn, ONLY_TAIL);
 
-/** Store `lines` through the seam's quiet door, then redraw: no REPL here to type into. */
+/** Store `lines` through the seam's quiet door, then redraw: no CLI widget here to type into. */
 async function seedLines(app, lines) {
 	for (const line of lines) {
 		const out = await app.runLine(line);

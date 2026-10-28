@@ -520,7 +520,7 @@ describe('the ways into Sync, on a fresh phone', () => {
 
 	test('a typed bare `sync` opens the Sync place', async () => {
 		await withApp(async ({ page, errors }) => {
-			// Typed, not `submit`: a fresh phone's page has no REPL to echo it in.
+			// Typed, not `submit`: a fresh phone's page has no CLI widget to echo it in.
 			const input = page.locator('.prompt-bar input');
 			await input.fill('sync');
 			await input.press('Enter');

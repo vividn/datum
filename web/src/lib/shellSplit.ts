@@ -1,7 +1,7 @@
-// Shell-style argv splitting for a REPL line.
+// Shell-style argv splitting for a typed line.
 //
 // Mirrors `crates/datum-parse/src/alias/expand.rs::shell_split`, which is
-// what the native REPL feeds to the parser. The web REPL has to tokenize
+// what the native REPL feeds to the parser. datum.day has to tokenize
 // the same way or `note word correr "to run"` means something different in
 // the browser than it does in the terminal. Stored as its own module so the
 // rule has one source per language (TS/Rust) — update in lockstep, and

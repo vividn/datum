@@ -64,7 +64,7 @@ describe('the same argv stores the same entry as the CLI', () => {
 			const db = ['--db', database];
 			// A case's `setup` runs through the same seam the case does,
 			// so the world the browser logs into is one the browser built
-			// — `alias set` in the REPL, not a row written behind it.
+			// — `alias set` in the CLI widget, not a row written behind it.
 			for (const argv of testCase.setup ?? []) {
 				const prepared = await run([...db, ...argv]);
 				assert.equal(prepared.code, 0, `setup \`datum ${argv.join(' ')}\`: ${prepared.stderr}`);

@@ -290,7 +290,7 @@ describe('before the CLI answers', () => {
 		});
 	});
 
-	// da-qhu1g: a REPL asks the CLI nothing, and through `/repl` the tree
+	// da-qhu1g: a CLI widget asks the CLI nothing, and through `/repl` the tree
 	// mounts after the boot's commands have answered, so no queue was left to
 	// run dry for it. Beside another tab, because a lone one leads the sync,
 	// and its read of the chain took the copy down by accident.

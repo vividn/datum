@@ -10,14 +10,14 @@
 	text and time of the entry text."
 
 	It used to be two renderings of one thing: the bar's output section drew
-	`BarResult`, the REPL drew its own rows, and dragging the log up met the
+	`BarResult`, the CLI widget drew its own rows, and dragging the log up met the
 	newest entry a second time in a different shape. So the row moved here,
 	and both surfaces mount THIS — the bar for the newest entry, the log for
 	the ones under it. Neither can drift from the other because there is
 	only one of them.
 
 	"The entry text and time of the entry text, in small characters" is the
-	`.stamp` and the `.echo` below, at the sizes the REPL already drew them:
+	`.stamp` and the `.echo` below, at the sizes the CLI widget already drew them:
 	he asked for the format the rest of the history has, so a smaller size
 	invented here would be a third format rather than the end of the second.
 -->

@@ -4,14 +4,14 @@
 // PAINTS them used to be written out three times — `CliOutput` once,
 // `TailTable` twice. The copies had already drifted: the tail's header cell
 // set neither underline nor italic, its body cell no italic, so the same
-// escape said different things in the REPL and in the table. One component
+// escape said different things in the CLI widget and in the table. One component
 // now holds the union.
 //
 // What is asserted is what a reader would see, on both surfaces at once:
 // the text a cell carries is the CLI's own cell with nothing added — no
 // space between the spans, none before or after them, which is the way a
 // shared component goes wrong — and the colour and weight a run is painted
-// is the same number in the REPL's block as in the tail's table. The
+// is the same number in the CLI widget's block as in the tail's table. The
 // cross-surface comparison is the point: a component that lost an attribute
 // would lose it in one place and the two would stop agreeing.
 
@@ -54,7 +54,7 @@ const tailSpans = (page) =>
 		};
 	});
 
-/** The REPL's newest output block: its text, and every run in it. */
+/** The CLI widget's newest output block: its text, and every run in it. */
 const replSpans = (page) =>
 	page.evaluate(() => {
 		const pre = [...document.querySelectorAll('.cli pre')].at(-1);
@@ -101,7 +101,7 @@ const AFTERNOON = todayAt(15);
 
 // ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
 // empties the database, so each test seeds its three entries afresh, and
-// the REPL is read from its newest block.
+// the CLI widget is read from its newest block.
 const shared = sharedApp({ clock: AFTERNOON });
 
 async function twoSurfaces(app) {
@@ -129,7 +129,7 @@ describe('the spans one component paints', () => {
 			for (const cell of [...tail.headers, ...tail.rows.flat()]) {
 				// The spans and nothing else: a newline left between them in
 				// the markup would arrive as a space in the DOM, and the
-				// tail's columns and the REPL's output are monospace.
+				// tail's columns and the CLI widget's output are monospace.
 				assert.equal(
 					cell.text,
 					cell.spans.map((s) => s.text).join(''),
@@ -168,7 +168,7 @@ describe('the spans one component paints', () => {
 		});
 	});
 
-	test("are the REPL's block, character for character", async () => {
+	test("are the CLI widget's block, character for character", async () => {
 		await shared.solo(async (app) => {
 			const { repl, listed } = await twoSurfaces(app);
 			assert.equal(repl.text, repl.spans.map((s) => s.text).join(''));
@@ -180,9 +180,9 @@ describe('the spans one component paints', () => {
 		await shared.solo(async (app) => {
 			const { tail, repl } = await twoSurfaces(app);
 			const badges = painted(repl.spans);
-			assert.ok(badges.length > 0, 'the REPL painted no background at all');
+			assert.ok(badges.length > 0, 'the CLI widget painted no background at all');
 
-			// Every background the tail pane paints is one the REPL painted
+			// Every background the tail pane paints is one the CLI widget painted
 			// for the same listing: the field badge, the state chip's three
 			// slots. Not "some colour" — the set, so a component that
 			// dropped `style:background` on one surface fails here.
@@ -190,7 +190,7 @@ describe('the spans one component paints', () => {
 			const shown = new Set(cells.flatMap((cell) => painted(cell.spans)));
 			assert.ok(shown.size > 0, 'the tail pane painted no background at all');
 			for (const colour of shown) {
-				assert.ok(badges.includes(colour), `the tail pane paints ${colour}, the REPL does not`);
+				assert.ok(badges.includes(colour), `the tail pane paints ${colour}, the CLI widget does not`);
 			}
 		});
 	});
@@ -206,7 +206,7 @@ describe('the spans one component paints', () => {
 			assert.deepEqual(
 				bold(repl.spans).map((s) => s.text.trim()),
 				['!'],
-				'the REPL did not paint the repeat marker bold'
+				'the CLI widget did not paint the repeat marker bold'
 			);
 			assert.deepEqual(
 				bold(cells.flatMap((c) => c.spans)).map((s) => s.text.trim()),
@@ -218,11 +218,11 @@ describe('the spans one component paints', () => {
 			// The tail's header copy of this loop never set it; the shared
 			// component does, so the surfaces agree.
 			const ahead = under(repl.spans).map((s) => s.text.trim());
-			assert.ok(ahead.length > 0, 'the REPL did not underline the stamp in the future');
+			assert.ok(ahead.length > 0, 'the CLI widget did not underline the stamp in the future');
 			assert.deepEqual(
 				under(cells.flatMap((c) => c.spans)).map((s) => s.text.trim()),
 				ahead,
-				'the tail pane underlines a different set of stamps than the REPL'
+				'the tail pane underlines a different set of stamps than the CLI widget'
 			);
 		});
 	});

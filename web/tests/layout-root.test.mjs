@@ -52,7 +52,7 @@ const shared = sharedApp(DESKTOP);
 const phone = sharedApp(PHONE);
 
 describe('the default layout', () => {
-	test('shows the strip, the REPL, nowview, tail and the widget bar in panes', async () => {
+	test('shows the strip, the CLI widget, nowview, tail and the widget bar in panes', async () => {
 		await shared.solo(async ({ page }) => {
 			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'custom', 'fields']);
 		});
@@ -75,7 +75,7 @@ describe('the default layout', () => {
 		});
 	});
 
-	test('a command through the REPL still reaches tail and nowview', async () => {
+	test('a command through the CLI widget still reaches tail and nowview', async () => {
 		await shared.solo(async (app) => {
 			// A minute back: the clock is held, and nowview draws up to NOW,
 			// not a switch made AT it.
@@ -218,7 +218,7 @@ describe('on a phone', () => {
 			const body = pane(page, 'repl').locator('.body:not(.behind .body)');
 			assert.ok(
 				await body.evaluate((el) => el.scrollWidth > el.clientWidth),
-				'the REPL body does not scroll sideways — this case needs a wider line'
+				'the body of the CLI widget does not scroll sideways — this case needs a wider line'
 			);
 			await body.evaluate((el) => el.scrollIntoView({ block: 'start' }));
 			box = await body.boundingBox();
@@ -604,7 +604,7 @@ function lockable() {
 	return { version: 1, name: 'main', root: { id: 'root', tabs: [tab], active: 0, bar } };
 }
 
-/** A root pane with two widget tabs, the REPL and the tail. */
+/** A root pane with two widget tabs, the CLI widget and the tail. */
 const TWO_ROOT_TABS = JSON.stringify({
 	version: 1,
 	name: 'default',

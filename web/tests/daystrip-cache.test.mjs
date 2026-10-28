@@ -63,7 +63,7 @@ async function awayAndBack(app, between = async () => {}, to = 'tail') {
 	await atRest(root);
 }
 
-/** A line typed into the bar on a layout with no REPL, whose scrollback `app.submit` waits on. */
+/** A line typed into the bar on a layout with no CLI widget, whose scrollback `app.submit` waits on. */
 async function barLine({ page }, line) {
 	await page.evaluate(() => (window.__barLast = window.datum.bar.last()));
 	await page.locator('.prompt-bar input').fill(line);

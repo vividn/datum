@@ -670,7 +670,7 @@ describe('the bottom bar', () => {
 			assert.equal(word, 'CREATE');
 			assert.ok(hid.length >= 4 && rows[0].hid.startsWith(hid), `the receipt's ${hid} is not the row's ${rows[0].hid}`);
 			assert.equal(await receipt(page).evaluate((el) => el.classList.contains('error')), false);
-			// As if typed at the REPL: it is in its scrollback.
+			// As if typed at the CLI widget: it is in its scrollback.
 			assert.deepEqual((await app.echoes()).slice(echoed), ['occur coffee']);
 
 			// A widget-bar press: the bar's field GHOSTS the command — beside
@@ -707,7 +707,7 @@ describe('the bottom bar', () => {
 
 	// The page's one command line and its status line (da-rfs9): tall
 	// enough to stand out — absolute heights, not "bigger than before" —
-	// and the REPL is only the scrollback it types into. da-xfa4 gave it a
+	// and the CLI widget is only the scrollback it types into. da-xfa4 gave it a
 	// result area above the input row and fixed the whole thing at 6rem;
 	// da-ckw3 made the two sections EQUAL (vividn: "so 50/50") at 3.6rem
 	// each, and then vividn on that build: "Decrease the height of the input
@@ -740,7 +740,7 @@ describe('the bottom bar', () => {
 
 			const repl = page.locator('section[data-pane="repl"]');
 			assert.equal(await repl.count(), 1);
-			assert.equal(await repl.locator('input, .line').count(), 0, 'the REPL still has a prompt of its own');
+			assert.equal(await repl.locator('input, .line').count(), 0, 'the CLI widget still has a prompt of its own');
 
 			// Tracked, so the fields widget has a button to press (da-c7u8).
 			await app.run(['setup', 'coffee', '--verb', 'occur']);
@@ -866,7 +866,7 @@ describe('the bottom bar', () => {
 			// broke (da-w5m40): run #649 waited 30 s on the drawn error with
 			// its neighbours fast and nothing in flight after, so the command
 			// was either never run or run and not drawn — one wait on the
-			// drawing could not tell those apart. The REPL pane's echo is the
+			// drawing could not tell those apart. The CLI widget's echo is the
 			// run; the bar's red line is the drawing; a submit that threw is
 			// a page error, which this test never read.
 			await until(

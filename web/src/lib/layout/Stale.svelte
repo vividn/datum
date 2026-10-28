@@ -11,7 +11,7 @@
 	anything takes the copy away, and so does the CLI's queue running dry:
 	a widget whose fresh answer draws exactly what it drew before has
 	nothing to change. A queue ALREADY dry two frames after the widget went
-	live is the same news (da-qhu1g): a REPL asks the CLI nothing, and on a
+	live is the same news (da-qhu1g): a CLI widget asks the CLI nothing, and on a
 	tab opened through `/repl` the tree mounts after the boot's commands have
 	answered, so nothing was coming to run dry — unless the tab led the sync,
 	whose own read took the copy down by accident, which is why it stayed

@@ -522,7 +522,7 @@ describe('a switch field’s states around the tap', () => {
 					// On the right `end` cannot stand on the tap, which is the case.
 					assert.equal(Math.abs(c - x) <= 2, centered, `${side}: end at ${c}, the tap at ${x}`);
 					assert.ok(await under(x, '[data-state="false"]'), `${side}: end is not under the tap at ${x}`);
-					// The REPL is folded on a phone: the log is read, not echoed.
+					// The CLI widget is folded on a phone: the log is read, not echoed.
 					const before = (await app.entries()).length;
 					await page.touchscreen.tap(x, y);
 					await button.waitFor();

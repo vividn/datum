@@ -2,7 +2,7 @@
 	One pane of the day frame: a titled box whose body scrolls on its own.
 
 	The frame every region sits in (da-1x72) — dayview, nowview, tail and
-	the REPL each get one. The pane owns the frame and the scroll; its
+	the CLI widget each get one. The pane owns the frame and the scroll; its
 	`children` own the content. Scrolling is per-pane and goes both
 	ways: CLI tables are wide, and a pane must be able to scroll sideways
 	without dragging the whole page with it.
@@ -13,7 +13,7 @@
 	frame's context and renders as `display: contents`, so the body scrolls
 	inside the frame's content box exactly as it scrolled inside its own.
 	The alarm goes up to the frame the same way. A widget that draws itself
-	through `Pane` (the REPL, a CLI pane, the day strip) needs no change to
+	through `Pane` (the CLI widget, a CLI pane, the day strip) needs no change to
 	live in a pane of the dashboard.
 -->
 <script lang="ts">
@@ -57,7 +57,7 @@
 		 * Draw the BODY alone: no title strip, no outline.
 		 *
 		 * For a surface that is not a pane of the dashboard and must not read as
-		 * one. The bar's log is the case (da-ckw3): it shows the REPL under the
+		 * one. The bar's log is the case (da-ckw3): it shows the CLI widget under the
 		 * command line, and vividn, 2026-09-21: "Remove the 'repl' header line."
 		 * A titled box under a reader's own prompt says "this is a widget"; what
 		 * it has to say is "this is the rest of what you just saw".
@@ -81,7 +81,7 @@
 
 	let { title, alarm = false, body = $bindable(), heading, children, bare = false, scale = 1 }: Props = $props();
 
-	/** Pin the view to the newest content. The REPL calls this after a run. */
+	/** Pin the view to the newest content. The CLI widget calls this after a run. */
 	export function scrollToBottom(): void {
 		if (body) body.scrollTop = body.scrollHeight;
 	}

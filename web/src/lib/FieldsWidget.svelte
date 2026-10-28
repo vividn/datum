@@ -109,7 +109,7 @@
 
 	The widget never runs anything itself: it composes an argv and
 	dispatches it, and the page runs it through `run()` and echoes the
-	result's own argv into the REPL. That is the teach loop, and it only
+	result's own argv into the CLI widget. That is the teach loop, and it only
 	teaches the truth because the echoed argv IS the executed argv — there
 	is no second string built for display that could drift from it.
 -->

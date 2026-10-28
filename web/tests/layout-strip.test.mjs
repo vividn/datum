@@ -178,7 +178,7 @@ describe('the title on the line', () => {
 const HELD = 100;
 
 /**
- * A root column of [a left-bar strip / a top-bar strip / the REPL] at
+ * A root column of [a left-bar strip / a top-bar strip / the CLI widget] at
  * `dayHeight`.
  *
  * ⚑ NEVER AT 85 (da-r0ydu). These trees go in as a DRAFT, so they are read
@@ -253,7 +253,7 @@ describe("the strip's notch", () => {
 		await withApp(
 			async ({ page }) => {
 				const [top] = await cellExtents(page, 'column');
-				// The border between the two strips; the REPL below them is what makes the app ready.
+				// The border between the two strips; the CLI widget below them is what makes the app ready.
 				const at = await grab(page, page.locator('.split.column > [role="separator"]').first());
 				const snapA = todayBox(HELD) + PADDING + CHROME.height;
 				await page.mouse.move(at.x, at.y - (top - snapA) + 6);

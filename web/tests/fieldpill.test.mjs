@@ -9,7 +9,7 @@
 // its word goes in an argv — are `selection-pure.test.mjs`, in node. This
 // file is what a reader does and sees, so the page is written down before
 // the app loads: the fields widget to hold from, the commands widget to be
-// narrowed, a stats widget, a tail pane, a day strip, and a REPL for the
+// narrowed, a stats widget, a tail pane, a day strip, and a CLI widget for the
 // echoes.
 //
 // Budget (da-lt0k, da-buqa): on node 22 a FILE was the test `run()` timed
@@ -307,7 +307,7 @@ describe('the gesture, and the pill it mints', () => {
 	test('shift+click mints it too, and the same gesture again takes it away', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
-			// The REPL as the seed left it: a hold logs nothing, so it stays so.
+			// The CLI widget as the seed left it: a hold logs nothing, so it stays so.
 			const logged = await app.echoes();
 			assert.equal(logged.at(-1), 'switch mood happy');
 

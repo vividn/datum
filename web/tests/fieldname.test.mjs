@@ -11,7 +11,7 @@
 // alone leaves the bug:
 //
 //   1. the modal refuses a name that cannot be logged to, and says why;
-//   2. `setup F` typed into the REPL refuses it too — otherwise the fix is
+//   2. `setup F` typed into the CLI widget refuses it too — otherwise the fix is
 //      a coat of paint on one of the two ways to declare a field;
 //   3. every name the form DOES accept logs from both surfaces, and the
 //      entry is read back out of storage. Checking only that no `error:`
@@ -60,7 +60,7 @@ after(stopApp);
 // empties the database each test wrote, so the counts below are this
 // test's, and closes the field widget a test left open.
 const shared = sharedApp();
-// `main` as a draft of the REPL and the widget bar alone: nothing here
+// `main` as a draft of the CLI widget and the widget bar alone: nothing here
 // reads the rest of the day frame, and drawing it costs what a boot did
 // (da-m1m9a).
 const BAR = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
@@ -116,7 +116,7 @@ async function chipIndex(app, field) {
 	return names.indexOf(field);
 }
 
-/** Press that chip, and wait for the REPL to echo what it ran. */
+/** Press that chip, and wait for the CLI widget to echo what it ran. */
 async function pressChip(app, field) {
 	const index = await chipIndex(app, field);
 	const echoes = await app.page.locator('.cli .echo').count();
@@ -181,7 +181,7 @@ describe('a field name the new-field form accepts', () => {
 				const rule = testCase.field === ',' ? /unexpected flag before subcommand: --verb/ : THE_RULE;
 				assert.match(result.stderr, rule, testCase.name);
 			}
-			// And through the REPL as a person reaches it, quoted so the line
+			// And through the CLI widget as a person reaches it, quoted so the line
 			// is one token: the refusal has to be on the screen, not only in
 			// the value the seam returned.
 			await submit('setup " coffee" --verb occur');

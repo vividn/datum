@@ -125,7 +125,7 @@ const marker = (page) => page.locator('section.pane[data-title="tail"] button.ne
 /**
  * `count` entries of field `seed`, one a minute ending at 2026-09-10 05:00
  * UTC, restored in one command (`db restore -`) rather than logged one at
- * a time: a page of 300 rows is not a thing to log through the REPL.
+ * a time: a page of 300 rows is not a thing to log through the CLI widget.
  * The hids are the minute's ordinal, so `seed(i)` names the i-th oldest.
  */
 async function seed(app, count, timeless = [], field = () => 'seed') {
@@ -160,7 +160,7 @@ async function seed(app, count, timeless = [], field = () => 'seed') {
 	}
 	const result = await app.run(['db', 'restore', '-', '--merge'], lines.join('\n') + '\n');
 	assert.equal(result.code, 0, result.stderr);
-	// A run through the seam is not a command the REPL ran, so the panes
+	// A run through the seam is not a command the CLI widget ran, so the panes
 	// do not know; a fresh visit shows the listing as it now stands.
 	await app.reload();
 }

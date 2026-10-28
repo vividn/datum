@@ -1,4 +1,4 @@
-// The REPL's file commands (da-podv): the only typed commands the web
+// The CLI widget's file commands (da-podv): the only typed commands the web
 // rewrites before they reach the CLI.
 //
 // A command whose stdin or stdout is a FILE never shows that file in the
@@ -12,7 +12,7 @@
 // `_LAST`'s question (da-f5pg2, `asking`) and which of a repeated hour's
 // two readings a time means (da-6i7l1, `asking`).
 //
-// Every line a person types consults it — the REPL's own runner and the
+// Every line a person types consults it — the CLI widget's own runner and the
 // bottom bar's through `press` — and nothing else: `run` is the seam and
 // stays literal. These are the whole table, on purpose: anything else
 // typed runs as typed, and this is not the start of a shell. A main menu
@@ -470,7 +470,7 @@ async function purgeChain(db: string): Promise<RunResult> {
 	return syncAct(db, dbPurgeChainArgv(true));
 }
 
-/** The REPL's scrollback and the widgets' last drawings, both the purged data's words. */
+/** The CLI widget's scrollback and the widgets' last drawings, both the purged data's words. */
 function forgetKept(): void {
 	forget();
 	try {

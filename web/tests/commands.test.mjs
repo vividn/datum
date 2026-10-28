@@ -5,9 +5,9 @@
 //
 // The rules themselves are `commands-pure.test.mjs`; this file is about
 // what a reader does and sees. The page it does it on is a column of the
-// two widgets over a REPL, written down before the app loads: both
+// two widgets over a CLI widget, written down before the app loads: both
 // widgets have to be on screen, since the whole behaviour is one talking
-// to the other through the command line they share, and the REPL is where
+// to the other through the command line they share, and the CLI widget is where
 // a press leaves its echo.
 
 import test, { before, after, describe } from 'node:test';
@@ -86,7 +86,7 @@ const drawn = async (page) => (await listed(commands(page), 'button[data-command
  */
 const showing = async (page) => (await listed(fieldsBar(page), '[data-field]')).map((b) => b.field).sort();
 
-/** Run `act` and wait for the REPL to echo the command it started. */
+/** Run `act` and wait for the CLI widget to echo the command it started. */
 async function echoed(app, act) {
 	const before = await app.page.locator('.cli .echo').count();
 	await act();

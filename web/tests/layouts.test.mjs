@@ -546,7 +546,7 @@ describe('Reset layout', () => {
 
 			assert.deepEqual((await held(app)).root, builtin.root);
 			// The phone's own tree (`defaults.ts`), not the desktop's six
-			// panes: the strip, the REPL, one pane of tabs and the fields.
+			// panes: the strip, the CLI widget, one pane of tabs and the fields.
 			assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'fields']);
 			assert.deepEqual(app.errors, []);
 		}, { viewport: { width: 390, height: 640 } });

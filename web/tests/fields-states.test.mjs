@@ -36,7 +36,7 @@ describe('a state field fills the widget with its states', () => {
 	after(stopApp);
 
 	// ONE APP at 15:00 (da-6b3dj, sharedApp in support/app.mjs): `solo`
-	// empties the database each test wrote, and the REPL is read from its
+	// empties the database each test wrote, and the CLI widget is read from its
 	// end. A test may end with the states still drawn: the field going with
 	// the database is Back (da-mv8ng), so the next test's `mood:` comes. The
 	// scroll test keeps an app of its own, the one on its screen.

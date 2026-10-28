@@ -1,7 +1,7 @@
 // Which entries are selected, as the bar's ONE `hid` pill (da-r13j).
 //
 // vividn, 2026-09-17: «Clicking on a row in the tail, or on the generated
-// document in the REPL adds a pill with the hid in the Input», and «control
+// document in the CLI widget adds a pill with the hid in the Input», and «control
 // click allows selecting multiple different hids, shift click can select a
 // range … you can lock the hid, which then enters a multi select mode».
 //

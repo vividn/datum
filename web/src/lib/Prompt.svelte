@@ -25,7 +25,7 @@
 	that doesn't add to the experience for new users and is annoying for
 	non-new users." This supersedes da-e5u7, which chose that text after
 	the one before it (`occur coffee 2 cups`) turned out not to parse: the
-	worked examples the empty REPL offers are still there, run by
+	worked examples the empty CLI widget offers are still there, run by
 	`hints.test.mjs`, and they are where a first command comes from now.
 	`opening database…` stays: that one says STATE, not example.
 

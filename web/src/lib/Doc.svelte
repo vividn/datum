@@ -1,6 +1,6 @@
 <!--
 	One document of a command's result (da-xfa4), as the bottom bar's
-	status line shows it and as the REPL and the `+N` modal show it.
+	status line shows it and as the CLI widget and the `+N` modal show it.
 
 	TWO LINES, always at the two-line size — the action with its hid, then
 	the info line — and the entry's data BESIDE them, in a brace (da-f4mw).
@@ -15,7 +15,7 @@
 	are only 2 lines") whatever the entry carries, and the data is read in
 	its own column rather than as a grey line under a shrunken one.
 
-	`all` is the form with no band to fit — the REPL the bar's `^` opens
+	`all` is the form with no band to fit — the CLI widget the bar's `^` opens
 	over its result area (da-bhvy), and the `+N` sheet: every row is drawn,
 	so a document the tier had cut to four and a `+N` is read whole there.
 
@@ -65,7 +65,7 @@
 		doc: EchoDoc;
 		/** The section is too narrow for a row to read: show the count alone. */
 		tight?: boolean;
-		/** No band to fit — the REPL, the sheet: every row, no `+N`. */
+		/** No band to fit — the CLI widget, the sheet: every row, no `+N`. */
 		all?: boolean;
 	}
 
@@ -203,7 +203,7 @@
 		white-space: pre;
 	}
 
-	/* A SURFACE WITH NO BAND TO FIT CUTS NOTHING (da-5iyo). The REPL and the
+	/* A SURFACE WITH NO BAND TO FIT CUTS NOTHING (da-5iyo). The CLI widget and the
 	   sheet have the vertical room the bar's fixed band has not, so a line
 	   too long for its column wraps there instead of ellipsizing, and the
 	   brace drops under the lines rather than squeezing them. That is what
@@ -237,7 +237,7 @@
 
 	.receipt {
 		/* Not a token: the same step between `--quiet` and `--ink` the
-		   REPL's echoed line uses (CliScrollback.svelte). */
+		   CLI widget's echoed line uses (CliScrollback.svelte). */
 		color: #8888aa;
 	}
 

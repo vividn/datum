@@ -17,7 +17,7 @@
 // — and not a sheet of its own (it was one, da-35f23), nor the bar's
 // output section, which is where a newcomer, the one asking, is least
 // likely to look (vividn, 2026-09-25: «the output is really quite buried and
-// no one will see it»). It is not recorded in the REPL:
+// no one will see it»). It is not recorded in the CLI widget:
 //
 // - a command: the CLI's own `datum help <command>`, run through the seam.
 //   No help copy for commands lives here.

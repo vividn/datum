@@ -166,7 +166,7 @@ export async function run(
 	}
 }
 
-/** Shell-split a REPL line and run it. Blank lines are a no-op success. */
+/** Shell-split a typed line and run it. Blank lines are a no-op success. */
 export function runLine(line: string): Promise<RunResult> {
 	return run(shellSplit(line));
 }

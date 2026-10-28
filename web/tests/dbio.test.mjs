@@ -1,10 +1,10 @@
-// The REPL's file commands (da-podv, #lib/dbio.ts): `db backup` is a
+// The CLI widget's file commands (da-podv, #lib/dbio.ts): `db backup` is a
 // download, `db restore` / `db v2import` read the file the browser's dialog
 // hands them, `db purge` asks for the database's name first, and `kit
 // install` shows what the chosen kit brings and asks before it installs
 // (da-axrk) — and no file ever lands in the transcript.
 //
-// Everything goes through the REPL's own input, as a reader types it:
+// Everything goes through the CLI widget's own input, as a reader types it:
 // the dialog a file command opens is the reader's, and only a keypress
 // carries the activation that opens it. (The harness's `run` is the quiet
 // seam — da-6918 — so it would neither open a dialog nor refresh a pane.)
@@ -75,7 +75,7 @@ after(() => rm(scratch, { recursive: true, force: true }));
 // still counts from zero. The legs keep an app each: their browser is a
 // persistent profile of its own, and the phone's has an init script.
 const desk = sharedApp({ viewport: { width: 1280, height: 1000 } });
-// `main` as a draft of ONE REPL pane for the tests that never read the day
+// `main` as a draft of ONE CLI widget for the tests that never read the day
 // frame, since drawing it costs what a boot did (da-m1m9a); the one that
 // waits on the tail pane takes `main` as it ships.
 const onSeam = (fn) => desk.solo(fn, ONE_PANE);
@@ -169,7 +169,7 @@ async function choose(page, line, files) {
 /** Recorded argvs, a restore's pin (da-2zqad) read as `FP`: the fingerprint of the live entries it was counted on. */
 const pinned = (argvs) => argvs.map((argv) => argv.map((a, i) => (argv[i - 1] === '--if-unchanged' ? 'FP' : a)));
 
-/** `count`, typed into the REPL; the number it printed. */
+/** `count`, typed into the CLI widget; the number it printed. */
 async function count(app) {
 	await app.submit('count');
 	return Number((await app.outputs()).at(-1));
@@ -268,7 +268,7 @@ for (const engine of [chromium, webkit]) {
 					assert.match((await app.outputs()).at(-1), /aborted/);
 					assert.equal(await count(app), 4);
 
-					// What the page keeps of the data — the REPL's scrollback and
+					// What the page keeps of the data — the CLI widget's scrollback and
 					// the widgets' last drawings, written as a tab is left — holds it.
 					const kept = () =>
 						page.evaluate(() => {
@@ -286,7 +286,7 @@ for (const engine of [chromium, webkit]) {
 					await page.waitForFunction(() => document.querySelectorAll('.cli .echo').length === 1);
 					await tailShows(page, 0);
 					assert.equal(await count(app), 0);
-					// ...and none of it is left on the device: the purge is the oldest command the REPL holds (da-3ni5m).
+					// ...and none of it is left on the device: the purge is the oldest command the CLI widget holds (da-3ni5m).
 					// Read as stored, no tab left: a pagehide would draw the
 					// widgets afresh into the cache and hide one never cleared.
 					const repl = await page.waitForFunction(() => localStorage.getItem('datum.repl.v1'));
@@ -396,7 +396,7 @@ test('an import shows its progress while it runs, and the result after', async (
 			const file = join(await mkdtemp(join(scratch, 'progress-')), 'big.json');
 			await writeFile(file, JSON.stringify({ backupTime: '2025-02-01T00:00:00Z', docs }));
 
-			// Every reading the REPL shows, and whether the command had landed by then.
+			// Every reading the CLI widget shows, and whether the command had landed by then.
 			await page.evaluate(() => {
 				window.__readings = [];
 				const echoes = () => document.querySelectorAll('.cli .echo').length;

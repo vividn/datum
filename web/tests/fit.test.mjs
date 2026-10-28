@@ -13,7 +13,7 @@
 //   drawn shorter.
 //
 //   Every CLI text block carried `min-width: 80ch` = 674px, so the tail
-//   pane and the REPL scrolled SIDEWAYS at every viewport — 1280 included
+//   pane and the CLI widget scrolled SIDEWAYS at every viewport — 1280 included
 //   — past blank space, because their lines are nothing like 80 columns
 //   long.
 //
@@ -96,7 +96,7 @@ const A_DAY = [
 /**
  * Log the day and wait for the panes to catch up: the harness's `seed`.
  *
- * The LAST line goes through the REPL, not through `run`: the panes
+ * The LAST line goes through the CLI widget, not through `run`: the panes
  * re-run their command on the frame's epoch, and the harness's `run` is
  * the quiet door (da-6918) — it stores the row and the panes never hear
  * about it. A test on the seam alone would measure four panes still
@@ -104,7 +104,7 @@ const A_DAY = [
  * where nothing overflows. One bump is enough for all five, though, and
  * that is what `seedLines` is (da-x6ea).
  *
- * And then the wait, because `submit` returns on the REPL's own echo: the
+ * And then the wait, because `submit` returns on the CLI widget's own echo: the
  * pane commands it set off are still in flight, so a measurement taken
  * straight after it can be of the pane as it was an entry ago. That is
  * not hypothetical — it read a `work: true` on a `work` this day had
@@ -197,7 +197,7 @@ describe('a pane', () => {
 	// ONE day logged per screen and every claim about it asked of that day,
 	// a subtest each (da-3b8vn): the three used to log the same day three
 	// times over, and a day is a whole frame redrawn. `never scrolls
-	// sideways` goes first, because it measures the REPL too and wants a
+	// sideways` goes first, because it measures the CLI widget too and wants a
 	// scrollback of this day's commands alone — and this is the first test
 	// on its screen's app.
 	for (const { name } of SCREENS) {
@@ -315,7 +315,7 @@ describe('a pane', () => {
 		}
 	});
 
-	// The REPL's prompt line grew two things at once (da-9ozz): a live
+	// The CLI widget's prompt line grew two things at once (da-9ozz): a live
 	// clock to the left of the caret, and a scrollback that survives a
 	// reload. Either could take the input's width on a phone — the clock
 	// by sitting beside it, the scrollback by being wide enough to widen

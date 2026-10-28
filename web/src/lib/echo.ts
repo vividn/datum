@@ -8,12 +8,12 @@
 // already owns. So the web asks datum for those strings instead.
 //
 // `--show json` is asked for at the ONE seam a reader's command passes
-// through — the REPL's `runArgv`, and `engine.alone` when no REPL is
+// through — the CLI widget's `runArgv`, and `engine.alone` when no CLI widget is
 // mounted — and asked for in the ENV, `DATUM_SHOW=json`, never in argv
 // (da-vx31e): the CLI records argv as the entry's `raw_input`, so a flag
 // appended there was quoted by `why` as part of a line nobody typed. vividn:
 // "The whole web interface can take use json as the default show and then
-// render on it's own terms which is nice separation." So the REPL's
+// render on it's own terms which is nice separation." So the CLI widget's
 // scrollback carries the same documents the bar does, and a
 // multi-document result gets the same treatment in both.
 //

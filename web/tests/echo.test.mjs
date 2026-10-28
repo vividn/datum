@@ -36,7 +36,7 @@ after(stopApp);
 // empties the database between tests, and what is read off the screen is
 // the NEWEST document, so the scrollback of the tests before is not in it.
 const shared = sharedApp();
-// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+// `main` as a draft of ONE CLI widget: nothing here reads the day frame,
 // and drawing it costs what a boot did (da-m1m9a).
 const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
@@ -79,7 +79,7 @@ describe('the record is what was typed (da-vx31e)', () => {
 			await app.submit('occur coffee');
 			const why = await app.run(['why', '_LAST']);
 			assert.match(why.stdout, /raw_input:\s+occur coffee$/m, why.stdout || why.stderr);
-			// …and the REPL drew its echo as a document, so it WAS asked for.
+			// …and the CLI widget drew its echo as a document, so it WAS asked for.
 			const hid = why.stdout.match(/hid: (\w+)/)?.[1] ?? '';
 			const drawn = await app.page.locator('.cli .doc[data-hid]').evaluateAll((all) => all.map((d) => d.dataset.hid));
 			assert.ok(drawn.some((h) => h && hid.startsWith(h)), `${hid} not among ${drawn}`);
@@ -120,7 +120,7 @@ describe('parseEcho', () => {
 /**
  * The echo arrives painted (da-yu9s).
  *
- * `--show json` strips the ANSI, so for a while the REPL's own scrollback
+ * `--show json` strips the ANSI, so for a while the CLI widget's own scrollback
  * showed `occur coffee` in grey beside a table still in datum's colours.
  * The document now carries the colours as data, and both surfaces place
  * them. Measured on the screen, and against the CLI's own numbers: the

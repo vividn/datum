@@ -43,16 +43,16 @@ const PRESSES = flag('presses', 5);
 const THROTTLE = flag('throttle', 1);
 const JSON_OUT = text('json');
 /**
- * Drop the REPL widget from the layout before measuring.
+ * Drop the CLI widget from the layout before measuring.
  *
- * Not a cosmetic variation: the REPL pane is the only thing that calls
+ * Not a cosmetic variation: the CLI widget is the only thing that calls
  * `registerCli`, and `engine.press` takes a different path without one —
  * `alone()`, which AWAITS `ran()` and so awaits the whole refresh, where
  * `CliScrollback.runArgv` does not (`on:ran={() => void ran()}` in CliWidget). The
  * ghost is shown after that await either way, so the two layouts put it in
  * two different places in the chain.
  */
-const NO_REPL = process.argv.includes('--no-repl');
+const NO_CLI = process.argv.includes('--no-cli');
 /** A layout to open by name before measuring — `mobile` is vividn's phone one. */
 const LAYOUT = text('layout');
 const WIDE = flag('width', 1280);
@@ -85,7 +85,7 @@ const report = {
 	throttle: THROTTLE,
 	viewport: `${WIDE}x${HIGH}`,
 	layout: LAYOUT ?? 'default',
-	repl: !NO_REPL,
+	cli: !NO_CLI,
 	deferBar: DEFER_BAR,
 	presses: []
 };
@@ -161,17 +161,17 @@ try {
 		await page.waitForTimeout(1500);
 	}
 
-	// Swap the repl widget for the input widget, which draws a prompt and
+	// Swap the CLI widget for the input widget, which draws a prompt and
 	// does NOT register (its own comment says so).
-	if (NO_REPL) {
+	if (NO_CLI) {
 		// After the layout store has loaded, not before: the tree is rebuilt
 		// asynchronously after a reload and a swap applied first is overwritten.
 		await page.waitForFunction(
-			() => !!document.querySelector('section.pane[data-title="repl"]'),
+			() => !!document.querySelector('section.pane[data-title="cli"]'),
 			null,
 			{ timeout: 10_000 }
 		);
-		console.log('dropping the repl widget from the layout');
+		console.log('dropping the CLI widget from the layout');
 		await page.evaluate(() => {
 			const swap = (node) =>
 				node.children
@@ -179,7 +179,7 @@ try {
 					: {
 							...node,
 							tabs: node.tabs.map((tab) =>
-								tab.content.kind === 'repl'
+								tab.content.kind === 'cli'
 									? { ...tab, content: { ...tab.content, kind: 'input' } }
 									: tab.content.children || tab.content.tabs
 										? { ...tab, content: swap(tab.content) }
@@ -189,7 +189,7 @@ try {
 			window.datum.layout.apply((layout) => ({ ...layout, root: swap(layout.root) }));
 		});
 		await page.waitForFunction(
-			() => !document.querySelector('section.pane[data-title="repl"]'),
+			() => !document.querySelector('section.pane[data-title="cli"]'),
 			null,
 			{ timeout: 10_000 }
 		);
@@ -383,7 +383,7 @@ function shape({ t0, runs, paints }) {
 
 const last = report.presses.at(-1);
 console.log(`layout: ${report.panes.join(' / ')}   (${report.bands} day bands in the strip)`);
-console.log(`layout opened: ${report.layout}   repl widget mounted: ${report.repl}   bar deferred: ${report.deferBar}`);
+console.log(`layout opened: ${report.layout}   CLI widget mounted: ${report.cli}   bar deferred: ${report.deferBar}`);
 console.log(`seeded: ${report.entries} entries   throttle: ${report.throttle}x   ${report.viewport}`);
 console.log('\n── one command alone, nothing else queued ──');
 for (const s of report.solo) {

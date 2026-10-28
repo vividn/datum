@@ -1,12 +1,12 @@
 // The desktop `main` the suite is written against (da-ncsyn): strip /
-// [REPL | nowview / tail / custom] / fields — the shipped default until
+// [CLI widget | nowview / tail / custom] / fields — the shipped default until
 // da-ncsyn moved it to the mobile shape.
 //
 // WHY IT IS PINNED. The suite finds panes by the ids this tree gives them
 // (`repl`, `custom`, `side`, …), and `app.submit`, `pressWidget`,
 // `echoes()` and `outputs()` (support/app.mjs) — and `type` in
 // support/fields.mjs — wait on or read `.cli .echo` / `.cli pre`: the
-// REPL PANE. The shipped desktop tree has no REPL pane (the REPL is the log
+// CLI WIDGET'S PANE. The shipped desktop tree has no CLI widget pane (the widget is the log
 // under the bottom bar, which mounts on the first gesture and skips the
 // newest entry), so against it every one of those waits times out — 183
 // tests in 43 files, measured when the default moved.

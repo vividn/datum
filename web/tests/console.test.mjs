@@ -2,14 +2,14 @@
 //
 // `window.datum.run` is the one a hand reaches for, so it does what a hand
 // at the prompt does: the command goes through `engine.press` — the mounted
-// REPL echoes it, the bottom bar receipts it, and the epoch it bumps is the
+// CLI widget echoes it, the bottom bar receipts it, and the epoch it bumps is the
 // beat every pane re-reads on. A silent `run` is what cost a false bug
 // report on 2026-09-11: the tail was driven from the console, nothing
 // refreshed, and the defect was in the door rather than in the pane.
 //
 // `runQuiet` is the same seam with none of that, for the caller that wants
 // a write and no refresh — the harness's own `run`, and the latency script.
-// Both are asserted here, and the loud one twice: with a REPL on screen and
+// Both are asserted here, and the loud one twice: with a CLI widget on screen and
 // with none, which are the two halves of `press`.
 
 import test, { before, after, describe } from 'node:test';
@@ -22,12 +22,12 @@ after(stopApp);
 
 // ONE desktop app for the file (da-6b3dj, sharedApp in support/app.mjs):
 // `solo` empties the database between tests, the scrollback is read from
-// where the test found it, and the page with no REPL is `main` opened from
+// where the test found it, and the page with no CLI widget is `main` opened from
 // a draft of its own.
 const shared = sharedApp(DESKTOP);
 
-/** A page with a tail pane and no REPL at all: `press`'s other half, as `main`'s draft. */
-const NO_REPL = JSON.stringify(along('column', widgetPane('tail', 'tail'), widgetPane('nowview', 'nowview')));
+/** A page with a tail pane and no CLI widget at all: `press`'s other half, as `main`'s draft. */
+const NO_CLI = JSON.stringify(along('column', widgetPane('tail', 'tail'), widgetPane('nowview', 'nowview')));
 
 const receipt = (page) => page.locator('.prompt-bar .group:last-child .receipt');
 
@@ -57,7 +57,7 @@ const markNoReload = (page) => page.evaluate(() => (window.__stillTheSamePage = 
 const samePage = (page) => page.evaluate(() => window.__stillTheSamePage === true);
 
 describe('window.datum.run — the loud door', () => {
-	test('through the mounted REPL: the pane shows the row, the bar receipts the hid, the scrollback echoes it', async () => {
+	test('through the mounted CLI widget: the pane shows the row, the bar receipts the hid, the scrollback echoes it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			// The field exists first, so the bar receipts one document: a
@@ -110,7 +110,7 @@ describe('window.datum.run — the loud door', () => {
 		});
 	});
 
-	test('with no REPL mounted it records and bumps the beat itself', async () => {
+	test('with no CLI widget mounted it records and bumps the beat itself', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			assert.equal(await page.locator('section.pane[data-title="cli"]').count(), 0);
@@ -120,7 +120,7 @@ describe('window.datum.run — the loud door', () => {
 			const result = await console_(page, 'run', ['occur', 'cocoa']);
 			assert.equal(result.code, 0, result.stderr);
 
-			// No scrollback to echo into — there is no REPL — but the beat is
+			// No scrollback to echo into — there is no CLI widget — but the beat is
 			// bumped here, so the pane still refreshes, and the bar still
 			// receipts what ran.
 			await tailShows(page, 'cocoa');
@@ -129,7 +129,7 @@ describe('window.datum.run — the loud door', () => {
 				document.querySelector('.prompt-bar .group:last-child .receipt').textContent.startsWith('CREATE ')
 			);
 			assert.deepEqual(app.errors, []);
-		}, NO_REPL);
+		}, NO_CLI);
 	});
 });
 

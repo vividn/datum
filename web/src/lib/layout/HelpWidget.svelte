@@ -101,7 +101,7 @@
 		font-weight: normal;
 		opacity: 0.7;
 	}
-	/* Wrapped, unlike the REPL's output: this is read, often on a phone,
+	/* Wrapped, unlike the CLI widget's output: this is read, often on a phone,
 	   and nothing beside it depends on its columns. */
 	.help,
 	.section {

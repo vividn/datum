@@ -1,5 +1,5 @@
 // Whether a drawn view's labels are big enough to read — in the pane it
-// has, and in the REPL it is typed into.
+// has, and in the CLI widget it is typed into.
 //
 // They were not, and every earlier pass missed it because the labels are
 // all *there*: 27 `<text>` nodes, the hour row and the three-line date
@@ -10,7 +10,7 @@
 // 1440px laptop, which is 6.28px. Both illegible; the second is the one
 // that makes this not a phone bug (da-m0cj).
 //
-// Fixing the pane did not fix the REPL — different components, and only
+// Fixing the pane did not fix the CLI widget — different components, and only
 // one of them was ever measured. `dayview` typed at the prompt still
 // arrived at 0.46 on a laptop and 0.17 on a phone: 4.12px and 1.55px
 // (da-wexl). So each surface is measured on its own here, and nowview
@@ -96,7 +96,7 @@ function paneImage({ page }, title) {
 		.last();
 }
 
-/** The drawing the newest command left in the REPL's scrollback. */
+/** The drawing the newest command left in the CLI widget's scrollback. */
 function replImage({ page }) {
 	return page.locator('.cli svg.svg').last();
 }
@@ -121,7 +121,7 @@ function assertLabelled(shown, sizes) {
 }
 
 // ONE APP per screen (da-6b3dj, sharedApp in support/app.mjs): `solo`
-// empties the database each test logged a day into, and a REPL drawing is
+// empties the database each test logged a day into, and a drawing in the CLI widget is
 // read from the end of the scrollback, which is where the newest is.
 const shared = sharedApp();
 
@@ -178,7 +178,7 @@ describe('a drawn view', () => {
 		// scaled to 0.66 on a phone, so its 14px labels still landed at
 		// 10.6. Only "still legible", though — it WAS being scaled, and
 		// da-45wt stopped scaling it, here as in its pane. It stays
-		// measured because it shares the REPL's render path with dayview,
+		// measured because it shares the CLI widget's render path with dayview,
 		// so a fix there could take it down silently. `-o -`, because bare
 		// `nowview` is the CLI's terminal band, not a picture (da-57dj).
 		test(`is legible as nowview typed into the repl on ${name}`, async () => {

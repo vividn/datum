@@ -253,7 +253,7 @@
 
 	// What `Pane.svelte` looks for: it renders body-only inside a frame and
 	// reports its alarm here, so the orange reaches whichever pane holds
-	// the REPL.
+	// the CLI widget.
 	const alarm = writable(false);
 	/**
 	 * Where a widget that draws its own title puts it (the custom pane's

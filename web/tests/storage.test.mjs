@@ -128,14 +128,14 @@ function oneApp(options) {
  * answers, the tail that has to see the other tab's write — stay where
  * they are.
  */
-const REPL = { query: 'cli' };
+const CLI = { query: 'cli' };
 
 describe('when durable storage never answers', () => {
 	test('the app opens in memory and says so', async () => {
 		await withApp(
 			async ({ run, entries, bannerText }) => {
 				// Reaching here at all is the fix: `withApp` waits for the
-				// REPL to enable and every pane to answer, which the app
+				// CLI widget to enable and every pane to answer, which the app
 				// does only once `initDb()` resolves. Before the deadline
 				// that wait never ended.
 				assert.match(await bannerText(), /held in memory only/);
@@ -201,7 +201,7 @@ describe('when durable storage arrives late', () => {
 // separate storage, so the second tab would open OPFS happily and every
 // test here would pass against a build that never learned to share.
 describe('two tabs', () => {
-	const alone = oneApp({ ...REPL, prepare: inWorker(slowFlush) });
+	const alone = oneApp({ ...CLI, prepare: inWorker(slowFlush) });
 
 	// An app of its own: the one test here that reads the DAY page — both
 	// tails — and a device that has opened `/repl` opens on it from then on.
@@ -217,7 +217,7 @@ describe('two tabs', () => {
 				'the second tab is durable, so its repl frame is not alarmed'
 			);
 
-			// Through the REPL, because that is the path a person takes and
+			// Through the CLI widget, because that is the path a person takes and
 			// the one that tells the other tabs anything happened.
 			await first.submit('occur coffee -t 0700');
 			await second.submit('occur tea -t 0800');
@@ -472,7 +472,7 @@ const writes = Array.from({ length: 10 }, (_, i) => ['occur', 'ping', '-t', `07$
 const versions = Array.from({ length: 10 }, () => ['--version']);
 
 describe('the files, held across a burst', () => {
-	const alone = oneApp({ ...REPL, prepare: inWorker(countOpens) });
+	const alone = oneApp({ ...CLI, prepare: inWorker(countOpens) });
 
 	// `--version` for the counting, because sharing is only possible between
 	// commands that fit inside the cap and this suite runs a browser per file
@@ -635,7 +635,7 @@ const KEPT = `${DURABLE} the browser has promised to keep them.`;
 const MAY_CLEAR = `${DURABLE} the browser may clear them if space runs short — install the app to keep them.`;
 
 describe('asking the browser to keep it', () => {
-	const alone = oneApp({ ...REPL, prepare: spyOnPersist });
+	const alone = oneApp({ ...CLI, prepare: spyOnPersist });
 
 	/**
 	 * The describe's app in a session that has asked nothing, where `persist()`
@@ -677,7 +677,7 @@ describe('asking the browser to keep it', () => {
 				assert.match(await app.bannerText(), /held in memory only/);
 			},
 			{
-				...REPL,
+				...CLI,
 				prepare: async (context) => {
 					await inWorker(NEVER)(context);
 					await spyOnPersist(context);
@@ -696,7 +696,7 @@ describe('asking the browser to keep it', () => {
 				assert.equal(logged.code, 0, logged.stderr);
 				await until(() => persistCalls(app), (n) => n === 1);
 			},
-			{ ...REPL, prepare: spyOnPersist }
+			{ ...CLI, prepare: spyOnPersist }
 		);
 	});
 

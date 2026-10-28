@@ -45,7 +45,7 @@ describe('with no network', () => {
 
 			await page.context().setOffline(true);
 			try {
-				// `reload` waits for the REPL to enable, which the app does
+				// `reload` waits for the CLI widget to enable, which the app does
 				// only after `initDb()` resolves — so reaching the end of it
 				// with no network *is* the database opening offline.
 				await reload();

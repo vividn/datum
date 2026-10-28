@@ -495,7 +495,7 @@ function highlight(svg: SVGSVGElement | null, field: string | null): void {
  * nowview if that particular piece of data is represented there)». So this
  * is driven by the bar's `selected` store and by nothing a picture did:
  * every surface that selects an entry — a tail row, a document in the
- * REPL, a double tap on a mark — reaches every picture through it.
+ * CLI widget, a double tap on a mark — reaches every picture through it.
  *
  * «the field outline will highlight all data in that field, the hid will
  * highlight just one block, I suppose they should look the same» — so

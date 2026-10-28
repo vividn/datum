@@ -32,7 +32,7 @@ const DESKTOP = { viewport: { width: 1280, height: 800 } };
 // support/app.mjs). What slows the runner (`slowRunner` installs one, which
 // `solo` does not take out) or asks for no motion opens an app of its own.
 const shared = sharedApp(DESKTOP);
-// `main` as a draft of the REPL and the widget bar alone: nothing here
+// `main` as a draft of the CLI widget and the widget bar alone: nothing here
 // reads the rest of the day frame, and drawing it costs what a boot did
 // (da-m1m9a).
 const BAR = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
@@ -162,7 +162,7 @@ describe('the ghost', () => {
 			const echoes = await page.locator('.cli .echo').count();
 
 			// vividn: "~1.5 s later, finally the ghost text of the command
-			// *finally* appears" (da-jrozq). The REPL's echoes counted as the
+			// *finally* appears" (da-jrozq). The CLI widget's echoes counted as the
 			// ghost is inserted: none new, so the command was still in flight.
 			//
 			// And the shape of the fade, its animation sought to two instants

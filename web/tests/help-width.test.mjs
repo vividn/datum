@@ -1,8 +1,8 @@
 // HELP AT THE WIDTH IT IS SHOWN IN (da-nt53d).
 //
-// The pages are written at 73 columns, and a phone's REPL holds about 43:
+// The pages are written at 73 columns, and a phone's CLI widget holds about 43:
 // `help occur` was a 597px `pre` in a 351px column, read by scrolling the
-// whole history sideways. The REPL now asks for help at its own width in
+// whole history sideways. The CLI widget now asks for help at its own width in
 // characters (`COLUMNS`, `helpEnv` in #lib/panes.ts) and the CLI fits the
 // page to it (`datum_parse::help::fit`): no line wider than the pane, and a
 // table's columns still lined up.
@@ -84,7 +84,7 @@ for (const name of ['occur', undefined, 'logging']) {
 				await until(() => asked.innerText().catch(() => ''), (t) => t.trim() === title);
 				await until(() => wrapped(app.page), (over) => over.length === 0);
 				if (name !== 'occur') return;
-				// Its example rows stack as the REPL's do.
+				// Its example rows stack as the CLI widget's do.
 				const intro = (await app.page.locator('.host[data-widget="help"] pre.help').innerText()).split('\n');
 				const row = intro.indexOf('  datum occur coffee');
 				assert.ok(row > 0, intro.join('\n'));
@@ -97,7 +97,7 @@ for (const name of ['occur', undefined, 'logging']) {
 
 // THE FIRST COMMAND, typed the moment the prompt takes it (da-2flub): a
 // newcomer's first `help` is typed straight away, and at `/repl` the prompt
-// takes typing before the REPL's tab is even added — it ran through no REPL,
+// takes typing before the CLI widget's tab is even added — it ran through no CLI widget,
 // so with no width, and the page came at 73 columns. Typed here by the page
 // itself in the frame the prompt is enabled, before `withApp` settles
 // anything; and `dayview` the same way, the `--width` a drawn command is

@@ -1,7 +1,7 @@
 // What the prompts remember: every command run, when, and what it printed,
 // plus the recall history Up walks.
 //
-// One store for every prompt on the page (da-0dhc). The REPL shows all of
+// One store for every prompt on the page (da-0dhc). The CLI widget shows all of
 // it; the bottom bar shows the last command's receipt and none of what
 // they printed. Both write through `record`, so however many prompts are
 // on screen there is one writer of the localStorage key — two components

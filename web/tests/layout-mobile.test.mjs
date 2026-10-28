@@ -90,7 +90,7 @@ const screen = (page) =>
 		width: innerWidth,
 		prompt: document.querySelector('.prompt-bar').getBoundingClientRect().top,
 		// The DASHBOARD's panes: `main`'s, not the page's. The log under the
-		// bar holds a REPL pane of its own, and it mounts on the first drag
+		// bar holds a CLI widget of its own, and it mounts on the first drag
 		// (da-ckw3) — which is now how the output is unfolded, since the `^`
 		// button went. A pane below the fold is not a pane on this screen.
 		panes: [...document.querySelectorAll('main section.pane')].map((p) => {

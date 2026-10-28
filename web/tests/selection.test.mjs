@@ -13,14 +13,14 @@ import { listed } from './support/rows.mjs';
 before(startApp);
 after(stopApp);
 
-/** The REPL, tail and the commands widget, all on one desktop screen. */
+/** The CLI widget, tail and the commands widget, all on one desktop screen. */
 const PAGE = JSON.stringify(
 	along('column', widgetPane('repl', 'cli'), widgetPane('tail', 'tail'), widgetPane('cmd', 'command'))
 );
 
 // ONE APP for every desktop test (da-6b3dj, sharedApp in support/app.mjs),
 // `main` opened from PAGE's draft by `solo`, which empties the database and
-// the bar's pills between them; each reads the REPL from its end. The
+// the bar's pills between them; each reads the CLI widget from its end. The
 // phone opens its own: a first visit, with `mobile`'s tree in front.
 const shared = sharedApp(DESKTOP);
 const solo = (fn) => shared.solo(fn, PAGE);
@@ -281,7 +281,7 @@ describe('selecting several', () => {
 		});
 	});
 
-	test('shift-click takes the range of four, and it is drawn in tail and on the REPL’s document', async () => {
+	test('shift-click takes the range of four, and it is drawn in tail and on the CLI widget’s document', async () => {
 		await solo(async (app) => {
 			const { page } = app;
 			await seedApart(app);
@@ -290,7 +290,7 @@ describe('selecting several', () => {
 			await four[3].click({ modifiers: ['Shift'] });
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill.hid button.remove').length === 4);
 			assert.equal(await page.evaluate(() => getSelection().isCollapsed), true, 'shift-click selected no text');
-			// The REPL drew the last seed line's document, the newest row, in the range.
+			// The CLI widget drew the last seed line's document, the newest row, in the range.
 			const doc = page.locator('.cli .doc[data-hid]').last();
 			assert.equal(await doc.evaluate((d) => d.classList.contains('selected')), true);
 
@@ -415,7 +415,7 @@ describe('on a phone', () => {
 /** The phone seeded, the ghost gone: how many tail rows it shows, at least three. */
 async function phoneRows(app) {
 	const { page } = app;
-	// No REPL on `mobile` for `seedLines` to wait on: through the loud door, then idle.
+	// No CLI widget on `mobile` for `seedLines` to wait on: through the loud door, then idle.
 	await seedApart(app, (line) => page.evaluate((l) => window.datum.runLine(l), line));
 	await app.idle();
 	// The loud door leaves the last line's ghost up for a second of real

@@ -324,7 +324,7 @@ describe('the title row, as tall as its words', () => {
 
 	test('alarmed, the title’s outline turns orange with the frame', async () => {
 		// A sync access handle that never answers: the database is held in
-		// memory, and the REPL's frame is alarmed (see storage.test.mjs).
+		// memory, and the CLI widget's frame is alarmed (see storage.test.mjs).
 		const NEVER = `FileSystemFileHandle.prototype.createSyncAccessHandle = () => new Promise(() => {});`;
 		await withApp(
 			async ({ page }) => {

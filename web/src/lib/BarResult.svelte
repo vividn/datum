@@ -9,7 +9,7 @@
 	- A command with none — a `tail` table, `stats`, an error — shows its
 	  own output: whole while it fits in four lines, otherwise the LAST
 	  four. vividn: "If it fits in 3-4 lines, then just display, otherwise …
-	  show the last 4 lines". What was cut is one tap away, in the REPL the
+	  show the last 4 lines". What was cut is one tap away, in the CLI widget the
 	  bar's own `^` opens over this area (da-bhvy) — the control is the
 	  bar's, at its top edge, and no longer also this corner's.
 

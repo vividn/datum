@@ -10,7 +10,7 @@
 	scroller would clip them, so they are hung against the screen instead
 	(`hang` in FieldsWidget.svelte). A press goes, with the bottom bar's
 	pills after it, to the engine's `press`, which routes it through
-	whichever REPL is on screen; a record's line, and a log with keys to
+	whichever CLI widget is on screen; a record's line, and a log with keys to
 	type (da-chml5), go to the bottom bar's prompt, unrun.
 
 	`pending` is the verb the command line holds (da-ltux): it filters the

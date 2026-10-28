@@ -25,7 +25,7 @@ after(stopApp);
 // one opens a second tab.
 const shared = sharedApp(DESKTOP);
 
-/** A phone's `main`: strip / REPL / [tail, nowview, custom] / fields. */
+/** A phone's `main`: strip / CLI widget / [tail, nowview, custom] / fields. */
 const PHONE_DAY = { ...PHONE, clock: todayAt(15) };
 
 /** The bodies of `id`'s tabs that are behind the one in front. */

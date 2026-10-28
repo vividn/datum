@@ -119,7 +119,7 @@
 	 * is a SPACE painted with a background colour, and a lone space in a
 	 * table cell COLLAPSES — measured: the span reported `width: 0` with its
 	 * background correctly set, so the colour block was there and drew
-	 * nothing. The REPL's surface never hit this because `CliOutput` is
+	 * nothing. The CLI widget's surface never hit this because `CliOutput` is
 	 * already `white-space: pre`; a `<td>` is not. Without this line vividn's
 	 * ruling ships as an invisible edge.
 	 *

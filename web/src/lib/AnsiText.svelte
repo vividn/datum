@@ -7,11 +7,11 @@
 	 * times — `CliOutput` once, `TailTable` twice — and the copies had
 	 * already drifted apart in which attributes they set: the tail's header
 	 * cell painted no underline, neither tail cell painted italic, so one
-	 * escape said different things in the REPL and in the table (da-mv90).
+	 * escape said different things in the CLI widget and in the table (da-mv90).
 	 * What is below is the union: every attribute an `AnsiSpan` carries.
 	 *
 	 * Nothing may come between the spans, or before or after them. The
-	 * REPL's output and the tail's columns are monospace and column-aligned,
+	 * CLI widget's output and the tail's columns are monospace and column-aligned,
 	 * and a newline in the markup is a space in the DOM — so the
 	 * `>{#each}`…`{/each}<` hugging at each call site is load-bearing, and
 	 * so is the shape of this file: the each-block is the whole template,

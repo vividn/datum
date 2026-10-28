@@ -280,7 +280,7 @@ describe('in the app', () => {
 	after(stopApp);
 
 	// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
-	// empties the database each test wrote, and the REPL is read from its end.
+	// empties the database each test wrote, and the CLI widget is read from its end.
 	const shared = sharedApp();
 
 	test('every field as high up the pictures as the CLI draws it, and no (+), each drawn by its kind', async () => {

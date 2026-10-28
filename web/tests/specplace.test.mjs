@@ -135,7 +135,7 @@ describe('a typed `setup F`', () => {
 				await until(() => shown(page), (t) => t === 'collect');
 				// A root tab that is the widget alone has no pane host around it: the form is what is kept.
 				await page.locator(`.tab-body.behind ${FIELD_FORM}`).waitFor({ state: 'attached' });
-				// Typed in the bar, which collect's page has; its REPL, where `submit` waits for the echo, it has not.
+				// Typed in the bar, which collect's page has; its CLI widget, where `submit` waits for the echo, it has not.
 				await page.locator('.prompt-bar input').fill('setup tea');
 				await page.locator('.prompt-bar input').press('Enter');
 				await until(() => shown(page), (t) => t === 'setup');

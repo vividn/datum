@@ -111,7 +111,7 @@ describe('/input', () => {
 			// in this bead hides it, and the widget is not it.
 			assert.equal(await page.locator('.prompt-bar').count(), 1);
 			assert.equal(await page.locator('.input-widget .prompt-bar').count(), 0);
-			// Not the REPL: no output pane and no scrollback of its own.
+			// Not the CLI widget: no output pane and no scrollback of its own.
 			assert.equal(await page.locator('.input-widget .cli').count(), 0);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
@@ -334,7 +334,7 @@ describe('reversed', () => {
 				const { page } = app;
 				await app.goto('/input');
 				await page.locator(WIDGET).waitFor();
-				// No REPL here to wait on: the widget's own Enter, and its receipt.
+				// No CLI widget here to wait on: the widget's own Enter, and its receipt.
 				await page.locator(WIDGET).fill('occur water');
 				await page.locator(WIDGET).press('Enter');
 				await page.locator('.input-widget .result .doc').first().waitFor();

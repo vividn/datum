@@ -4,7 +4,7 @@
 //
 // The argv built here is the argv that runs — FieldsWidget.svelte hands it
 // straight to `run()` and echoes the result's own `argv` back into the
-// REPL. Nothing reconstructs a "what you could have typed" string from the
+// CLI widget. Nothing reconstructs a "what you could have typed" string from the
 // press, because a reconstruction can drift from the command and the whole
 // point of the echo is that it teaches the truth.
 

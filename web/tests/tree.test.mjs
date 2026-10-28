@@ -499,7 +499,7 @@ describe('addTab / setActive / closeTab', () => {
 		const once = closeTab(deeper, emptyPane.id, 0);
 		// The unnest hands `left`'s tabs up into the pane that wrapped it, so
 		// it is that pane — the outer split's first child — that holds the
-		// REPL now, under its own id.
+		// CLI widget now, under its own id.
 		const holder = once.root.tabs[0].content.children[0];
 		assert.deepEqual(kinds(holder), ['cli']);
 		const after = closeTab(once, holder.id, 0);

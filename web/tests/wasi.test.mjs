@@ -19,7 +19,7 @@ after(stopApp);
 // in support/app.mjs): `solo` empties the database between them. The
 // Berlin ones open their own — a zone, and a clock of their own.
 const shared = sharedApp();
-// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+// `main` as a draft of ONE CLI widget: nothing here reads the day frame,
 // and drawing it costs what a boot did (da-m1m9a).
 const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 

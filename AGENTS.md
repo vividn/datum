@@ -965,7 +965,7 @@ binary.
   handled, `setup`, the setup widget (da-rgyq8; `track` and `field` open it), and `collect`, that page; the one live store is
   `current.ts` (`layout` + `apply`), which the header's save/restore
   controls fill from the draft or the saved layout. `engine.ts`
-  owns the epoch and routes a widget-bar press through whichever REPL is
+  owns the epoch and routes a widget-bar press through whichever CLI widget is
   mounted. `Pane.svelte` inside a frame renders body-only and hands its
   title slot and alarm up to `PaneFrame.svelte`. Tests find a pane by its
   `data-title`; the old grid's area names live on as classes of the cells.
@@ -999,7 +999,7 @@ binary.
   its box decides the row count (`tail -n <n>`, n from a hidden probe
   row's height, never from the drawn table, and never under `tail`'s own
   10: a shorter pane scrolls, pinned at the newest, and agrees
-  with the REPL's `tail`; nothing is asked until the box is taller than
+  with the CLI widget's `tail`; nothing is asked until the box is taller than
   the header), scrolling to the top pages
   the rows above in (`tail -n <page> --above <oldest row's hid>`, the
   CLI's bound in the listing's own order, `occur_time ?? create_time`,

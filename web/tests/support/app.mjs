@@ -63,7 +63,7 @@ const TODAY = new Date(process.env.DATUM_TEST_DAY ?? Date.now());
 /**
  * Log `lines` and leave the frame showing every one of them.
  *
- * Seeding through `submit` is seeding through the REPL, and each one bumps
+ * Seeding through `submit` is seeding through the CLI widget, and each one bumps
  * the frame's epoch: every pane re-runs its command on it — the day strip
  * once per band it holds — behind one database lock. A five-line day
  * therefore paid for five whole redraws, when only the last one is ever
@@ -74,7 +74,7 @@ const TODAY = new Date(process.env.DATUM_TEST_DAY ?? Date.now());
  * one redraw it buys is over all of them, because a pane re-reads the
  * database rather than accumulating what it has been told.
  *
- * Then `idle`, because `submit` returns on the REPL's own echo while the
+ * Then `idle`, because `submit` returns on the CLI widget's own echo while the
  * pane commands it set off are still in flight — a measurement taken
  * straight after it can be of the pane as it was an entry ago.
  *
@@ -561,7 +561,7 @@ async function openApp({
  *   `spyOnRunner` free to be called again.
  *
  * What they do
- * NOT put back is the rest of the page: the REPL's scrollback, a widget
+ * NOT put back is the rest of the page: the CLI widget's scrollback, a widget
  * option THIS SESSION set on `main`'s own widgets (a room's are new ids, so
  * a test that sets one wants a room), a runner a test installed, and
  * anything in `localStorage` outside the layouts. A test that reads any of
@@ -595,7 +595,7 @@ export function sharedApp(options) {
 	});
 	// One layout mounted at the root, as before da-tajsm kept the ones once
 	// opened: a room is `main`'s tree a second time, and `main` kept behind
-	// it would put every pane and the REPL on the page twice. A test of the
+	// it would put every pane and the CLI widget on the page twice. A test of the
 	// keeping opens an app of its own (`layout-swipe.test.mjs`).
 	const prepare = async (context) => {
 		await context.addInitScript(() => (window.__datumKeptLayouts = 1));
@@ -932,7 +932,7 @@ function app(page, errors, query, clean, internal) {
 
 		/**
 		 * Type a line into the bottom bar and submit it, as a user does,
-		 * and wait for it in the REPL's scrollback — the bar is the REPL's
+		 * and wait for it in the CLI widget's scrollback — the bar is the CLI widget's
 		 * prompt (da-rfs9).
 		 *
 		 * A wait that runs out says what the page held then (da-5378u): one
@@ -984,7 +984,7 @@ function app(page, errors, query, clean, internal) {
 		 * says which element, `shade` its colour beside the box's `typed`
 		 * and `placeholder`, `animations` and `age` its fade, `fade` that
 		 * fade's opacity sought to 350 and 700ms and its `total`, `echoes`
-		 * the REPL's echo count then. Seeking puts the fade back where it
+		 * the CLI widget's echo count then. Seeking puts the fade back where it
 		 * was, in the same task, so nothing is drawn of it.
 		 */
 		async watchGhosts() {
@@ -1050,14 +1050,14 @@ function app(page, errors, query, clean, internal) {
 			);
 		},
 
-		/** The REPL's echoed command lines, oldest first, `❯ ` stripped. */
+		/** The CLI widget's echoed command lines, oldest first, `❯ ` stripped. */
 		echoes: async () =>
 			(await page.locator('.cli .echo').allInnerTexts()).map((t) =>
 				t.replace(/^\s*❯\s*/, '').trim()
 			),
 
 		/**
-		 * The REPL's rendered stdout/stderr blocks, oldest first.
+		 * The CLI widget's rendered stdout/stderr blocks, oldest first.
 		 *
 		 * `pre`, because `pre` is what CliOutput renders. The selector read
 		 * `output`, an element the app has never had, so this always
@@ -1067,7 +1067,7 @@ function app(page, errors, query, clean, internal) {
 		outputs: () => page.locator('.cli pre').allInnerTexts(),
 
 		/**
-		 * The REPL's rendered stdout blocks, oldest first.
+		 * The CLI widget's rendered stdout blocks, oldest first.
 		 *
 		 * What a command PRINTED, without the progress a file command
 		 * writes to stderr as it runs (da-h9vj). `outputs()` holds both
@@ -1312,7 +1312,7 @@ function app(page, errors, query, clean, internal) {
 		 * not moved is a database that is still empty and costs nothing.
 		 * `_internal` stays: its layouts are `wipe`'s. The bar's pills and
 		 * the time cursor go too, and the clock goes back to where the app
-		 * opened (da-ydao); the REPL's scrollback does NOT, so a test reads
+		 * opened (da-ydao); the CLI widget's scrollback does NOT, so a test reads
 		 * its own commands from the end.
 		 */
 		async empty() {
@@ -1557,7 +1557,7 @@ function app(page, errors, query, clean, internal) {
 		 * how much of it is drawn. Counting the runs through the seam's own
 		 * extension point (as `spyOnRunner` does) is exact where a quiet
 		 * DOM is a guess: the runs have all started by the time `submit`
-		 * returns, because the REPL renders its echo and only then says
+		 * returns, because the CLI widget renders its echo and only then says
 		 * `ran`, and a pane's screen is a microtask behind its result —
 		 * so a poll that sees zero sees every pane drawn.
 		 */

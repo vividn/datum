@@ -132,7 +132,7 @@ function draws(argv: string[]): boolean {
 /**
  * Fit a typed command to the pixels its output will land in.
  *
- * `paneArgv`'s counterpart for the REPL (da-wexl). Fixing the pane left
+ * `paneArgv`'s counterpart for the CLI widget (da-wexl). Fixing the pane left
  * this path alone — they are different components — so `dayview` typed at
  * the prompt still went through the seam bare, arrived as the 2000px
  * canvas and was scaled to 0.46 on a laptop and 0.17 on a phone: the 9px
@@ -202,7 +202,7 @@ export const DEFAULT_DAY_HEIGHT = 85;
  * round number above it. Below that the date stamp starts dropping lines,
  * and the stamp is how a reader tells one band from another.
  *
- * The ceiling is a screen: 240px of one day still leaves the REPL and the
+ * The ceiling is a screen: 240px of one day still leaves the CLI widget and the
  * widget bar room on a laptop, and the pane the strip sits in is what
  * caps the strip's own height (da-zb0d).
  */
@@ -633,7 +633,7 @@ export const TAIL: PaneSpec = {
 /**
  * The argv of a command typed into the custom pane (da-wb2n).
  *
- * Split as the REPL splits a line, so `note "hello world"` means the same in
+ * Split as the CLI widget splits a line, so `note "hello world"` means the same in
  * both. Bare `nowview` is asked for its picture (`-o -`, as NOWVIEW is) —
  * the terminal band it prints otherwise is a worse thing to put in a pane.
  */

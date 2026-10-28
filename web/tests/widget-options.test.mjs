@@ -64,12 +64,12 @@ after(stopApp);
 // test that sets one takes a ROOM, whose widgets are new ids (`inRoom`);
 // `solo` serves a test that only reads, or whose last act hands the session
 // back (a save, or the pane closed). What still opens an app of its own
-// reloads, seeds the REPL's storage before boot, or is a screen no other
+// reloads, seeds the CLI widget's storage before boot, or is a screen no other
 // test here asks for.
 const shared = sharedApp(DESKTOP);
 
 const SAVE = 'Save options with layout';
-const REPL = 'section.pane[data-title="cli"]';
+const CLI = 'section.pane[data-title="cli"]';
 const NEWEST = 'newest first';
 
 /** Open a pane's menu, read its lines, and close it again. */
@@ -81,9 +81,9 @@ async function linesOf(page, id) {
 	return lines;
 }
 
-/** The REPL pane's echoed commands, top to bottom. */
+/** The CLI widget's echoed commands, top to bottom. */
 const replEchoes = (page) =>
-	page.locator(`${REPL} .echo`).allInnerTexts().then((ts) => ts.map((t) => t.replace(/^\s*❯\s*/, '').trim()));
+	page.locator(`${CLI} .echo`).allInnerTexts().then((ts) => ts.map((t) => t.replace(/^\s*❯\s*/, '').trim()));
 
 const dotted = async (page, name) =>
 	(await page.locator('.root-bar [role="tab"].modified').filter({ hasText: name }).count()) > 0;
@@ -245,7 +245,7 @@ describe('widget options', () => {
 			// An entry keeps its own order: the command, then what it
 			// answered. Inside its own cell since da-5iyo.
 			const first = await page
-				.locator(`${REPL} .body .entry`)
+				.locator(`${CLI} .body .entry`)
 				.first()
 				.evaluate((el) => [...el.children].map((e) => e.className));
 			assert.match(first[0], /head/, `the first entry opens with ${first[0]}`);
@@ -317,7 +317,7 @@ describe('widget options', () => {
 		await shared.room('wo-pin', async (app, room) => {
 			const { page, submit } = app;
 			await toggleOption(page, inRoom(room, 'repl'), NEWEST);
-			const body = page.locator(`${REPL} .body`);
+			const body = page.locator(`${CLI} .body`);
 			// Enough to overflow with room to spare, not exactly enough: at
 			// 16 the scrollback measured 469px in a 469px box once da-gvcen
 			// made a first log ONE document instead of two — the echoes fell
@@ -329,12 +329,12 @@ describe('widget options', () => {
 			assert.ok(dims[0] > dims[1], `the scrollback does not overflow: ${dims}`);
 			await body.evaluate((b) => (b.scrollTop = b.scrollHeight));
 			await submit('occur coffee');
-			await page.waitForFunction((sel) => document.querySelector(sel)?.scrollTop === 0, `${REPL} .body`);
+			await page.waitForFunction((sel) => document.querySelector(sel)?.scrollTop === 0, `${CLI} .body`);
 			assert.equal((await replEchoes(page))[0], 'occur coffee');
 		});
 	});
 
-	// Measured on #33's review: keyed by position, a reversed REPL of 60
+	// Measured on #33's review: keyed by position, a reversed CLI widget of 60
 	// entries rebuilt all of them for one more command (≈2 500 mutation
 	// records against ≈60 oldest-first). One command must cost about the same
 	// either way round.
@@ -344,10 +344,10 @@ describe('widget options', () => {
 			ranAt: Date.now() - (60 - i) * 1000,
 			result: { argv: ['occur', `n${i}`], code: 0, stdout: `line ${i}\nanother line ${i}`, stderr: '' }
 		}));
-		await withApp( // seeds the REPL's storage before boot
+		await withApp( // seeds the CLI widget's storage before boot
 			async (app) => {
 				const { page, submit } = app;
-				/** Mutation records under the REPL's body while `line` runs. */
+				/** Mutation records under the CLI widget's body while `line` runs. */
 				const cost = async (line) => {
 					await page.evaluate((sel) => {
 						window.__records = 0;
@@ -358,7 +358,7 @@ describe('widget options', () => {
 							characterData: true,
 							attributes: true
 						});
-					}, `${REPL} .body`);
+					}, `${CLI} .body`);
 					await submit(line);
 					await app.idle();
 					return page.evaluate(() => (window.__observer.disconnect(), window.__records));

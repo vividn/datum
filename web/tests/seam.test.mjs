@@ -24,11 +24,11 @@ after(stopApp);
  * Most of this file asks the seam a question and reads the answer back
  * through the seam, and the day frame around it is scenery that costs a
  * fortnight of `dayview` bands to draw (da-x6ea) — so `onSeam` opens `main`
- * as a draft of ONE REPL pane. The tests that DO read the page — the tail
- * table, the two drawn panes, a widget press, the REPL — take `main` as it
+ * as a draft of ONE CLI widget. The tests that DO read the page — the tail
+ * table, the two drawn panes, a widget press, the CLI widget — take `main` as it
  * ships (`onPage`), and where they seeded through the quiet door they
  * `redraw` rather than reload: a reload is a boot. `solo` empties the
- * database between tests, which is the isolation these need; the REPL's
+ * database between tests, which is the isolation these need; the CLI widget's
  * scrollback it keeps, so a test reads its own command's entry (`answer`).
  *
  * What the CLI computes from an argv is not asked here: the parity fixture
@@ -39,7 +39,7 @@ const shared = sharedApp(DESKTOP);
 const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 const onPage = (fn) => shared.solo(fn);
 
-/** The REPL entry a typed `line` made: its own output, not the scrollback's. */
+/** The CLI widget's entry a typed `line` made: its own output, not the scrollback's. */
 const answer = (page, line) =>
 	page.locator('.cli .entry').filter({ has: page.locator('.echo', { hasText: line }) }).first();
 
@@ -108,7 +108,7 @@ describe('logging verbs', () => {
 			assert.deepEqual(
 				rowTexts([table.headers, ...table.rows].map((cells) => cells.join(' ')).join('\n')),
 				[rows[0], ...rows.slice(-table.rows.length)].map(withoutAction),
-				'the pane and the REPL disagree about the same listing'
+				'the pane and the CLI widget disagree about the same listing'
 			);
 		});
 	});
@@ -494,7 +494,7 @@ describe('setup', () => {
 	});
 
 	test('typed at the prompt, a spec delete asks, and answers on the screen', async () => {
-		// The report this came from was of a blank REPL — so one case walks
+		// The report this came from was of a blank CLI widget — so one case walks
 		// the whole way a reader does, and reads the answer back off the
 		// scrollback (da-e0m6's trap).
 		await onPage(async ({ submit, page }) => {
@@ -534,7 +534,7 @@ describe('help and version', () => {
 	// The parser signals `--help` and `--version` as ParseError variants —
 	// their doc comments say the caller renders the text and exits 0. The
 	// web runner used to lump them in with real errors, so the first thing
-	// a newcomer types into the REPL answered `error: help requested` and
+	// a newcomer types into the CLI widget answered `error: help requested` and
 	// no help at all (da-e0m6).
 	//
 	// Every spelling, because they are two variants reached down two paths
@@ -576,7 +576,7 @@ describe('help and version', () => {
 		});
 	});
 
-	test('the REPL shows the help a user typed, not an error', async () => {
+	test('the CLI widget shows the help a user typed, not an error', async () => {
 		await onPage(async ({ page, submit, runLine }) => {
 			// Through the prompt itself: what the bead reported is what a
 			// person sees in the scrollback, and the scrollback paints
@@ -585,7 +585,7 @@ describe('help and version', () => {
 			const entry = answer(page, 'help');
 			await entry.locator('pre').first().waitFor();
 			const shown = await entry.locator('pre').first().innerText();
-			assert.match(shown, /USAGE:/, `the REPL showed: ${shown}`);
+			assert.match(shown, /USAGE:/, `the CLI widget showed: ${shown}`);
 			assert.doesNotMatch(shown, /help requested/);
 			assert.equal(await entry.locator('pre.error').count(), 0);
 

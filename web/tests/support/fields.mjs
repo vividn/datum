@@ -27,7 +27,7 @@ export const PURPLE = 'rgb(128, 0, 128)';
 export const GREEN = 'rgb(0, 128, 0)';
 export const CLEAR = 'rgba(0, 0, 0, 0)';
 
-/** Type `line` into the bottom bar's prompt and wait for the REPL to echo it. */
+/** Type `line` into the bottom bar's prompt and wait for the CLI widget to echo it. */
 export async function type(page, line) {
 	const before = await page.locator('.cli .echo').count();
 	const input = page.locator('.prompt-bar input');

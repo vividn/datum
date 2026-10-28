@@ -31,7 +31,7 @@ describe('a press', () => {
 	after(stopApp);
 
 	// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
-	// empties the database each test wrote, and the REPL is read from its end.
+	// empties the database each test wrote, and the CLI widget is read from its end.
 	const shared = sharedApp();
 
 	// da-emze's bug, as da-c8mh settles it. A colour needs a spec to live

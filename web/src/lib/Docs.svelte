@@ -15,7 +15,7 @@
 	section. The minimum below is a width at which the info line still
 	reads; the chip is narrow enough to leave that width at 320.
 
-	`all` is the REPL's form: no band to fit, so every document is drawn and
+	`all` is the CLI widget's form: no band to fit, so every document is drawn and
 	the row wraps. The modal uses it too — one rendering, three places.
 
 	Every section is the same two lines at the same size, whatever it
@@ -60,7 +60,7 @@
 	const capacity = $derived(Math.max(1, Math.floor(width / MIN)));
 	const over = $derived(!all && width > 0 && docs.length > capacity);
 	const shown = $derived(all || !over ? docs.length : Math.max(1, Math.floor((width - CHIP) / MIN)));
-	// Never in the REPL or the sheet: there is no band to fit there, and a
+	// Never in the CLI widget or the sheet: there is no band to fit there, and a
 	// section is at least the 14rem the row wraps at.
 	const tight = $derived(!all && width > 0 && width / shown < ROOMY);
 

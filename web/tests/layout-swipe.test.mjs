@@ -94,7 +94,7 @@ const watch = (locator) =>
 const moved = async (page) => (await page.evaluate(() => window.__transforms ?? [])).filter(Boolean);
 
 /**
- * The REPL pane, scrolling sideways: a `tail` of a sixty-character
+ * The CLI widget, scrolling sideways: a `tail` of a sixty-character
  * field name printed into it.
  *
  * The finger has to start over a scroller for this to be a test of
@@ -109,7 +109,7 @@ async function wideRepl(app) {
 	const body = pane(app.page, 'repl').locator('.body:not(.behind .body)');
 	assert.ok(
 		await body.evaluate((el) => el.scrollWidth > el.clientWidth),
-		'the REPL does not scroll sideways — this case needs a wider line'
+		'the CLI widget does not scroll sideways — this case needs a wider line'
 	);
 	return body;
 }
@@ -166,9 +166,9 @@ describe('the root swipes between layouts', () => {
 
 describe('a scroller keeps the gesture until its end', () => {
 	/**
-	 * A column of [repl | a pane whose middle tab is a REPL of its own].
+	 * A column of [repl | a pane whose middle tab is a CLI widget of its own].
 	 *
-	 * The REPL is the wide line: the tail's table wraps a long field name
+	 * The CLI widget is the wide line: the tail's table wraps a long field name
 	 * rather than overflowing (`overflow-wrap: anywhere`, TailTable.svelte),
 	 * where a `tail` PRINTED into the scrollback is as wide as it is.
 	 */
@@ -216,7 +216,7 @@ describe('a scroller keeps the gesture until its end', () => {
 				const body = pane(page, 'wide').locator('.body:not(.behind .body)');
 				assert.ok(
 					await body.evaluate((el) => el.scrollWidth > el.clientWidth),
-					'the REPL does not scroll sideways — this case needs a wider line'
+					'the CLI widget does not scroll sideways — this case needs a wider line'
 				);
 
 				// At its start, a finger going left has somewhere to take it.
@@ -953,7 +953,7 @@ describe('a run of swipes: the window after a switch', () => {
 	test('a swipe the window passes on ends it: the next one over a scroller is the scroller’s', async () => {
 		// da-bgve9: a swipe the frame does not take, with no tab that way, is
 		// the reader working in the tab, and the run is over. Under the
-		// tail, a pane whose FIRST tab is a REPL with a line wider than it.
+		// tail, a pane whose FIRST tab is a CLI widget with a line wider than it.
 		const replFirst = {
 			version: 1,
 			name: 'main',
@@ -998,7 +998,7 @@ describe('a run of swipes: the window after a switch', () => {
 				// `cli` is the first tab: a swipe right has no tab to go to.
 				await swipeOver(page, body, 120, 0, { x: 0.2, y: 0.5 });
 				const [at, most] = await body.evaluate((el) => [el.scrollLeft, el.scrollWidth - el.clientWidth]);
-				assert.ok(at < most, 'the REPL does not scroll sideways — this case needs a wider line');
+				assert.ok(at < most, 'the CLI widget does not scroll sideways — this case needs a wider line');
 				await swipeOver(page, body, -120, 0, { x: 0.8, y: 0.5 });
 				await atRest(wide.locator('> .content'));
 				assert.equal(await activeTab(page, 'wide'), 'cli', 'the window took a swipe after one it passed on');

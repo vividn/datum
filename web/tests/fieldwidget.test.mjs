@@ -142,7 +142,7 @@ describe('the field widget', () => {
 			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'coffee');
 			assert.equal(await typing(page), false, 'an example opened the keyboard');
 
-			// Saved, it is tracked: one `setup F --track`. (A phone's REPL is folded away: the save says what it ran.)
+			// Saved, it is tracked: one `setup F --track`. (A phone's CLI widget is folded away: the save says what it ran.)
 			await page.locator(`${FIELD_FORM} button.commit`).click();
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);

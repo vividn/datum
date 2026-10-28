@@ -44,7 +44,7 @@ writing it down.
    The keys, as examples (driven 2026-09-22 — ten files mention `localStorage`, seven really call
    it): the layout draft, this device's open root tabs and its per-layout locks
    (`layout/draft.ts`, da-wpgy, da-0a5o, da-gshh); the custom pane's command line
-   (`CustomPane.svelte`); the REPL scrollback (`cliStore.ts`); the client id (`clientId.ts`);
+   (`CustomPane.svelte`); the CLI widget's scrollback (`cliStore.ts`); the client id (`clientId.ts`);
    how far the output bar is open (`OUTPUT_KEY`, `log.ts`); the bar's feel — TAU and DETENT,
    which only a real thumb on a real phone can judge (`TUNING_KEY`, `tuning.ts`, da-o2wm8); and
    the bar's LOCKED pills (`PILLS_KEY`, `bar.ts`, da-1py00), which say the sentence too — a lock
@@ -374,7 +374,7 @@ writing it down.
       subtest per screen — so the report still names the size that failed — against ONE app,
       resized, two animation frames apart so the ResizeObservers have run.
     - **`seedLines(app, lines)`** (same file) for seeding: every writing `submit` bumps the frame's
-      epoch and re-runs every pane, so N lines through the REPL bought N whole redraws when
+      epoch and re-runs every pane, so N lines through the CLI widget bought N whole redraws when
       only the last one is ever looked at. `seedLines` sends all but the last through the quiet
       door and the last through the bar.
 
@@ -476,7 +476,7 @@ rule is decided but not yet everywhere, it names the bead.
     Every control that opens a place, a sheet or a modal wears rule 22's `›` (da-jozgv), a `+`
     face excepted. The
     sweep of 2026-09-29 found three without it: the commands widget's `Sync` (it was `show`), and
-    the documents' `+N` chips in the bar and the REPL (`Docs.svelte`, `Doc.svelte`). The menus,
+    the documents' `+N` chips in the bar and the CLI widget (`Docs.svelte`, `Doc.svelte`). The menus,
     the gear and the pane badges already said `open`, which the tap walks hold. The walks cannot
     reach a chip that appears only under an answer, so `act-guard.test.mjs` also holds, from the
     source, every button whose tap calls `openPlace(` or opens a Sheet (`open = true`) to

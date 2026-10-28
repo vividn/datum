@@ -877,7 +877,7 @@ describe('in the app', () => {
 	/**
 	 * Open `field`'s spec, its `section` open if one is named. What saving it ran comes
 	 * back boxed — an async function returning the bare promise would wait
-	 * for the save — beside the echoes before it, counted while the REPL is
+	 * for the save — beside the echoes before it, counted while the CLI widget is
 	 * drawn: behind the place in front, it is not.
 	 */
 	async function openFieldAt(app, field, section) {

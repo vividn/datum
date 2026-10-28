@@ -1,8 +1,8 @@
 // `datum tail --json`: the rows the tail pane lists, and the CLI's own
 // cells for them.
 //
-// The REPL's `tail` and the tail pane are two surfaces of one row set
-// (da-6ec2): the REPL shows the CLI's text table, and the pane lays the
+// The CLI widget's `tail` and the tail pane are two surfaces of one row set
+// (da-6ec2): the CLI widget shows the CLI's text table, and the pane lays the
 // same cells out in a real `<table>`. The cells come from the CLI —
 // `table_columns_with`, the cell-building `format_table_with` pads, painted
 // because the page runs it with FORCE_COLOR=1 — so nothing about what a cell

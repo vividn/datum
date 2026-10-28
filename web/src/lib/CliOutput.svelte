@@ -13,7 +13,7 @@
 	`data-pilled` and the halo below is the whole of it. A SELECTED entry
 	(da-pzzoz) is marked `data-selected` on the mark that names it and
 	wears the same halo, wherever the selection was made — a row in the
-	tail, a document in the REPL, a double tap on the mark itself.
+	tail, a document in the CLI widget, a double tap on the mark itself.
 
 	`datum dayview` is the exception that proves the pane is rendering CLI
 	output faithfully: its stdout is an SVG document, so it is shown as a
@@ -79,7 +79,7 @@
 		   to be a `min-width: 80ch` here saying the same thing a second
 		   time — which did nothing for the table it was written for and
 		   held every SHORT block open to 674px instead, so the tail pane
-		   and the REPL scrolled sideways over blank space at every
+		   and the CLI widget scrolled sideways over blank space at every
 		   viewport, 1280 included (da-45wt). */
 		white-space: pre;
 	}

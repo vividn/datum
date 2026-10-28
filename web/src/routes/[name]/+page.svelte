@@ -6,7 +6,7 @@
 	are open, and which is active, is this device's (#lib/layout/draft.ts).
 
 	`/now` and `/stats` still work: they are the layouts of those names,
-	and `/input` — a widget that went (da-22vg) — is the REPL, which is
+	and `/input` — a widget that went (da-22vg) — is the CLI widget, which is
 	what it became. A name that is none of these is a quiet notice with a
 	link home.
 

@@ -13,7 +13,7 @@
 	same cell-building `format_table_with` pads: the same columns in the
 	same order, the same `_n` ordinals, the same colours, each cell painted
 	with the CLI's own ANSI and rendered through `ansiSpans` exactly as a
-	line of REPL output is. Nothing about what a cell SAYS is decided here.
+	line of the CLI widget's output is. Nothing about what a cell SAYS is decided here.
 	The header words are the CLI's too, always whole: the CLI's `f` and `s`
 	shrinks save a terminal's columns, which a pane does not count (da-qrc6).
 

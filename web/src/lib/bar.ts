@@ -541,7 +541,7 @@ export interface Ghost {
  * press, the console (`press` in layout/engine.ts, da-jprg).
  *
  * The bar shows it where the placeholder goes, dim, and lets it fade: the
- * GUI teaches the CLI, so a press has to say what it ran, and the REPL's
+ * GUI teaches the CLI, so a press has to say what it ran, and the CLI widget's
  * scrollback is behind a tab on a phone. Never the input's value — a box
  * that refills itself after Enter reads as text the reader typed and may
  * edit, which is the bug this store replaced. A line the reader typed

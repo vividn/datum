@@ -393,7 +393,7 @@ describe('on a phone-sized screen', () => {
 });
 
 // The custom pane's controls (da-wb2n) are buttons in the tab order, not
-// click targets: from the REPL's `…` (the pane before them, now the REPL has
+// click targets: from the CLI widget's `…` (the pane before them, now the CLI widget has
 // no prompt of its own — da-rfs9), Tab reaches ✎, the keyboard types and
 // applies a command, and when that command writes, Tab reaches its ▶.
 describe('by keyboard', () => {
@@ -670,7 +670,7 @@ describe('the layout engine, by keyboard', () => {
 	});
 });
 
-/** A `main` of a root holder over [the REPL | a tabbed tail/nowview pane]. */
+/** A `main` of a root holder over [the CLI widget | a tabbed tail/nowview pane]. */
 const bar = { edge: 'top', align: 'start' };
 const TWO = JSON.stringify({
 	version: 1,

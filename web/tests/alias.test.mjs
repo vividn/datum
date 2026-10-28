@@ -1,4 +1,4 @@
-// Aliases in the REPL.
+// Aliases in the CLI widget.
 //
 // An alias is a name the user gives a command: `alias set cof 'occur
 // coffee strength=strong'`, and from then on `cof` logs a strong coffee.
@@ -20,11 +20,11 @@ import { fill, manage, ONE_PANE } from './support/layout.mjs';
 before(startApp);
 after(stopApp);
 
-// ONE APP for the REPL's tests (da-6b3dj, sharedApp in support/app.mjs):
+// ONE APP for the CLI widget's tests (da-6b3dj, sharedApp in support/app.mjs):
 // an alias is a row, and `solo` empties the database between tests. The
 // reload, the navigation and the lone test at 1280x900 keep their own.
 const shared = sharedApp();
-// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+// `main` as a draft of ONE CLI widget: nothing here reads the day frame,
 // and drawing it costs what a boot did (da-m1m9a).
 const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
@@ -35,7 +35,7 @@ async function ok(run, argv) {
 	return result.stdout;
 }
 
-describe('aliases in the REPL', () => {
+describe('aliases in the CLI widget', () => {
 	test('an alias set in one line fires on the next, with no reload', async () => {
 		await onSeam(async ({ run, entries }) => {
 			assert.equal(

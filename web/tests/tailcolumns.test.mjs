@@ -24,7 +24,7 @@ const SEED = ['switch activity working', 'start music', 'occur coffee'];
 /** The `main` tab as one tail pane, so the pane's width is the viewport's less its frame. */
 const ONLY_TAIL = JSON.stringify({ version: 1, name: 'main', root: widgetPane('only', 'tail') });
 
-/** Store `lines` through the seam's quiet door, then redraw: these layouts have no REPL to type into. */
+/** Store `lines` through the seam's quiet door, then redraw: these layouts have no CLI widget to type into. */
 async function seedLines(app, lines) {
 	for (const line of lines) await app.runLine(line);
 	await app.redraw();

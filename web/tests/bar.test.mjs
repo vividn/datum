@@ -13,7 +13,7 @@
 // da-ckw3 gave it its anatomy: INPUT over OUTPUT, each the height the
 // result tier alone used to have, the input row holding the mark, the
 // clock WITH SECONDS at every width, the `❯` and the box — and a caret
-// that folds the output away rather than opening a REPL upward. What the
+// that folds the output away rather than opening the CLI widget upward. What the
 // bar opens onto now is the log UNDER it, which is `tests/barlog.test.mjs`.
 //
 // A document is TWO lines whatever it carries (da-f4mw): its data stands
@@ -37,7 +37,7 @@ before(startApp);
 after(stopApp);
 
 /**
- * Both screens open the REPL layout rather than the day page.
+ * Both screens open `CLI_BESIDE`, the CLI widget over a note, rather than the day page.
  *
  * The bar is drawn by the app's own layout, above whatever tree is in
  * front (`+layout.svelte`), so it is the same bar on every page — and

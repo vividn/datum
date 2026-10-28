@@ -44,7 +44,7 @@ const onSeam = (query) => ({ query: `repl${query}` });
 
 // ONE APP per query for the tests that write the page's database alone
 // (da-6b3dj, sharedApp in support/app.mjs), `main` opened as a draft of one
-// REPL pane — the repl layout's scenery. `solo` empties the page's database
+// CLI widget — the `/cli` layout's scenery. `solo` empties the page's database
 // between tests and no other, so a test that writes the second one as well
 // still opens its own app, as does one that reloads, navigates, opens a
 // second tab, reads the whole scrollback, or is alone on its query.

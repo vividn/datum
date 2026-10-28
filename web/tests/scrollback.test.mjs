@@ -21,7 +21,7 @@
 //
 // And then the claim itself: at the two real phone sizes the bead names —
 // the root's declared minimum of 412×563 and the 390×844 the phone drives
-// run at — the REPL draws TWO columns and cuts nothing; at a box too
+// run at — the CLI widget draws TWO columns and cuts nothing; at a box too
 // narrow for two it draws ONE and cuts nothing there either, which is the
 // reading this started from, unchanged.
 //
@@ -53,7 +53,7 @@ after(stopApp);
  * These are what `WANT` is measured over. A field or a state long enough
  * can make an info line as wide as you like, and a column sized for the
  * longest name anyone might type would be a column nobody has room for —
- * so a long one WRAPS, which in the REPL costs nothing (Doc.svelte).
+ * so a long one WRAPS, which in the CLI widget costs nothing (Doc.svelte).
  */
 const ORDINARY = [
 	'switch mood happy',
@@ -84,7 +84,7 @@ async function seed(app, lines = LINES) {
 
 async function sized(page, viewport) {
 	await page.setViewportSize(viewport);
-	// Two frames: the REPL's own ResizeObserver fires on the frame after
+	// Two frames: the CLI widget's own ResizeObserver fires on the frame after
 	// the layout it observed, and the column count is what it carries.
 	await page.evaluate(
 		() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))

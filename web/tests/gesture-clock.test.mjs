@@ -63,7 +63,7 @@ const APART = 100;
  */
 const near = (a, b) => Math.abs(a - b) <= APART / 4;
 
-/** Wait for the REPL's `n`th echo. */
+/** Wait for the CLI widget's `n`th echo. */
 const echoed = (page, n) => page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length >= n, n);
 
 describe('the clock frozen at the gesture', () => {

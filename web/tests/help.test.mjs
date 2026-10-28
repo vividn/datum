@@ -72,7 +72,7 @@ async function explain(page, target, title, back = () => page.goBack(), button =
 	await back();
 	await until(() => rootTabs(page), (t) => t.join() === tabs.join());
 	assert.equal(await shown(page), from);
-	// Not in the bar's output section, and not in the REPL.
+	// Not in the bar's output section, and not in the CLI widget.
 	assert.deepEqual(await output(), said, 'the explanation went to the output');
 	assert.equal(await page.locator('.cli .echo').count(), echoes, 'the explanation was recorded');
 	return lines;

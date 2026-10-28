@@ -7,7 +7,7 @@
 // layout store (#lib/layout/store.ts), itself nothing but CLI commands.
 //
 // `run`/`runLine` are the page's own path, `engine.press` (da-6918): the
-// command goes through the mounted REPL, is echoed into the scrollback and
+// command goes through the mounted CLI widget, is echoed into the scrollback and
 // receipted on the bottom bar, and the epoch is bumped so every pane
 // re-reads. A hand at the console gets what a hand at the prompt gets. The
 // literal seam is still here under `runQuiet`/`runQuietLine`, for the

@@ -10,7 +10,7 @@
 	It lives on its own so that the two fixed-height surfaces share it
 	rather than each having a copy: the bar's row (`CliEntry.svelte`, where
 	the history's first line is drawn) and the input widget's receipt
-	(`BarResult.svelte`). The REPL's own rows do not use it — there the
+	(`BarResult.svelte`). The CLI widget's own rows do not use it — there the
 	output is whole and the pane scrolls, which is the difference between a
 	history and a status line.
 
@@ -42,7 +42,7 @@
 	{#if drawing}
 		<!-- The one string on this surface that is not datum's: its stdout is
 		     an SVG document, and four lines of XML is not what "show the
-		     output" means. The picture itself is in the REPL, one drag away. -->
+		     output" means. The picture itself is in the CLI widget, one drag away. -->
 		<p class="aside">a drawing</p>
 	{:else}
 		{#each shown as line, i (i)}
@@ -63,7 +63,7 @@
 		font-size: 0.68rem;
 		line-height: 1.25;
 		/* Not a token: the same step between `--quiet` and `--ink` the
-		   REPL's echoed line uses (CliScrollback.svelte). */
+		   CLI widget's echoed line uses (CliScrollback.svelte). */
 		color: #8888aa;
 	}
 
