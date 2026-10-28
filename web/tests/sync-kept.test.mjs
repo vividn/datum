@@ -30,6 +30,11 @@ const sessions = (run) =>
 const carried = (run, from) =>
 	until(() => sessions(run).slice(from).find((s) => !/: sent 0,/.test(s.line)), Boolean);
 
+/** How many sessions `run` had printed by the first past its `from`th that
+ * `sent` something, or got something: what is past it came after. */
+const past = (run, from, sent) =>
+	until(() => sessions(run).findIndex((s, i) => i >= from && !(sent ? /: sent 0,/ : /, got 0,/).test(s.line)) + 1, Boolean);
+
 /** `a` and `b` in one chain, each with its `sync run`, settled. */
 async function pair() {
 	const [a, b] = [await nativeCopy(relay), await nativeCopy(relay)];
@@ -54,8 +59,13 @@ describe('a kept connection', () => {
 	test('two sessions in a row: the second opens no new connection, and both sync', async () => {
 		const { a, b, runs } = await pair();
 		try {
+			const [fromA, fromB] = [sessions(runs.a).length, sessions(runs.b).length];
 			await arrives(a, b, 'tea');
-			const [seenA, seenB] = [sessions(runs.a).length, sessions(runs.b).length];
+			// Counted past each side's line for the session that brought tea,
+			// which can print after b holds it: read too soon, that first
+			// session, on a connection of its own, was counted as the second's
+			// (da-r29g3).
+			const [seenA, seenB] = [await past(runs.a, fromA, true), await past(runs.b, fromB, false)];
 			await arrives(a, b, 'coffee');
 			// The push that carried it says so once its verify is in.
 			await until(() => sessions(runs.a).length, (n) => n > seenA);
