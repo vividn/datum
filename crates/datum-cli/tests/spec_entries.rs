@@ -114,6 +114,33 @@ fn a_malformed_spec_is_refused_and_never_stored() {
     assert!(err.contains("reserved for field specs"), "{err}");
 }
 
+/// An anchor triple is saved whole or not at all (da-gm80m): a half one
+/// through `--from-json`, datum.day's write, is refused naming the field and
+/// the keys set, and stores nothing; a whole one and an empty one save.
+#[test]
+fn a_half_anchor_triple_is_refused_and_a_whole_or_empty_one_saves() {
+    let env = Env::new();
+    env.ok(&["occur", "body"]);
+    let spec = |json: &str| format!(r#"{{"field":"contacts","verb":"occur"{json}}}"#);
+    let half = spec(r#","relative_to":"body","anchor_pos_ratio":0.1"#);
+    let err = env.err(&["setup", "contacts", "--from-json", &half]);
+    assert!(
+        err.contains("field 'contacts': anchor triple inconsistent")
+            && err.contains("anchor_size_ratio=false"),
+        "{err}"
+    );
+    assert!(!env.ok(&["tail", "spec"]).contains("contacts"));
+
+    let whole = spec(r#","relative_to":"body","anchor_pos_ratio":0.1,"anchor_size_ratio":0.5"#);
+    env.ok(&["setup", "contacts", "--from-json", &whole]);
+    assert_eq!(env.spec("contacts")["anchor_size_ratio"], 0.5);
+    env.err(&["setup", "contacts", "--from-json", &half]);
+    assert_eq!(env.spec("contacts")["anchor_size_ratio"], 0.5);
+
+    env.ok(&["setup", "contacts", "--from-json", &spec("")]);
+    assert!(env.spec("contacts").get("relative_to").is_none());
+}
+
 /// Specs and layouts are not life data: they stay off tail, now, stats,
 /// fields and count, and come back when named or with `-A`.
 #[test]
