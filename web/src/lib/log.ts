@@ -131,8 +131,8 @@ export const inLog = derived(logHeight, (h) => h > 0.5);
  *
  * The scrollback over the bar costs a render per command, and until the
  * bar has opened PAST THE NOTCH nobody has ever seen it. So the CLI up
- * there mounts the first time it does (`put`) — a drag, a wheel or the
- * handle — and stays.
+ * there mounts the first time it does (`put`) — a drag, a wheel or a
+ * key — and stays.
  */
 export const armed = writable(false);
 
@@ -304,16 +304,8 @@ export function settle(up: boolean, speed = 0): void {
 	glide(rest(get(reveal), speed, up, out(), get(ceilingH), tuningNow()), speed);
 }
 
-/**
- * THE HANDLE's tap (da-0b2vy): closed opens the row, the row goes full, and
- * full comes back to the row. vividn, 2026-10-27: «Clicking or swiping up on
- * this makes it full screen … when the cli is fullscreen, the handle is at
- * the top of the screen and clicking or swiping there closes the cli again».
- * A tap never shuts the row: a drag down does (his answer 2).
- */
-export function pressHandle(): void {
-	glide(get(output) && !get(full) ? maxReveal() : out());
-}
+/** PageUp on the box (da-pnxug): closed opens the row, the row goes full; `closeLog` is PageDown. */
+export const raise = (): void => glide(get(output) ? maxReveal() : out());
 
 /** Open at least as far as the output — a tap on a failure's `ERROR`. */
 export const openOutput = (): void => {

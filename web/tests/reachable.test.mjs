@@ -34,7 +34,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { atEachScreen, focusTop, seedLines, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { fold, unfold } from './support/bar.mjs';
-import { chooser, enterLayoutMode, inRoom } from './support/layout.mjs';
+import { chooser, draft, enterLayoutMode, inRoom } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { FIELD_FORM, openField } from './support/field.mjs';
 
@@ -222,43 +222,50 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: NARROW });
 	});
 
-	// THE HANDLE (da-0b2vy) rides the top of whatever is open: over the input
-	// closed, over the strip, at the top of the page full. A control off the
-	// edge is no control, so it is on the screen in each of the three, at
-	// every phone width, and the output it opens is on the screen too.
-	test('the handle is on screen closed, at the row and full, and the output it opens is too', async (t) => {
-		await phone.solo(async ({ page }) => {
-			const onScreen = async (state) => {
-				await assertOnScreen(page, '.prompt-bar .bar-handle', `the handle, ${state}`);
-				const box = await page.locator('.prompt-bar .bar-handle').boundingBox();
-				const width = await page.evaluate(() => document.documentElement.clientWidth);
-				assert.ok(
-					box.x >= 0 && box.x + box.width <= width + 1,
-					`${state}, the handle is ${box.x}–${box.x + box.width} on a ${width}px screen`
-				);
-			};
-			await atEachScreen(t, page, SCREENS, async () => {
-				await onScreen('closed');
-				// The bar GLIDES (da-ckw3, #lib/log.ts): what has to be on the
-				// screen is where it comes to REST — which is what `unfold` waits for.
-				await unfold(page);
-				await assertOnScreen(page, '.prompt-bar .section.output', 'the output it shows');
-				await onScreen('at the row');
-				// The drag's click swallow spent (#lib/grip.ts), then full.
-				await page.locator('.prompt-bar').dispatchEvent('click');
-				await page.locator('.prompt-bar .bar-handle').click();
-				await page.locator('.prompt-bar .bar-handle[aria-label="collapse the history to one row"]').waitFor();
-				await page.waitForFunction(() => document.querySelector('.log.full'));
-				await onScreen('full');
-				// Back to the row, and folded again, so the next screen starts where this one did.
-				await page.keyboard.press('Escape');
-				await page.waitForFunction(
-					() => parseFloat(getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height')) < 0.5
-				);
-				await fold(page);
-			});
+	// The bar has no handle (da-pnxug), vividn, 2026-10-28: «it actually makes
+	// it difficult to grab the nowview handle currently». So a nowview right
+	// over the bar on a 390px phone, folded and at the row: every point of
+	// each of its handles takes a press itself, and the output a swipe opens
+	// is on the screen.
+	test("the nowview's handles over the bar take a press at every point of them, and the output is on screen", async () => {
+		const nowview = JSON.stringify({
+			version: 1,
+			name: 'main',
+			root: { id: 'only', tabs: [{ id: 'only-tab', content: { id: 'only-widget', kind: 'nowview', settings: {} } }], active: 0 }
 		});
+		await withApp(
+			async ({ page }) => {
+				const grabbed = async (state) => {
+					// Once the pane has its new height, a handle stands within
+					// 24px of the bar, where the bar's handle stood.
+					await page.waitForFunction(() => {
+						const top = document.querySelector('.prompt-bar').getBoundingClientRect().top;
+						const bottoms = [...document.querySelectorAll('.nowview-handles .handle')].map((h) => h.getBoundingClientRect().bottom);
+						return bottoms.length > 0 && bottoms.every((b) => b <= top) && bottoms.some((b) => top - b < 24);
+					});
+					const missed = await page.locator('.nowview-handles .handle').evaluateAll((all) =>
+						all.flatMap((h) => {
+							const r = h.getBoundingClientRect();
+							const miss = [];
+							for (let x = r.left + 2; x <= r.right - 2; x += 2)
+								for (let y = r.top + 2; y <= r.bottom - 2; y += 2)
+									if (document.elementFromPoint(x, y)?.closest('.handle') !== h)
+										miss.push(`${h.getAttribute('aria-label')} at ${Math.round(x)},${Math.round(y)}`);
+							return miss;
+						})
+					);
+					assert.deepEqual(missed, [], `${state}, a press on a nowview handle reaches something else`);
+				};
+				await fold(page);
+				await grabbed('folded');
+				await unfold(page);
+				await assertOnScreen(page, '.prompt-bar .section.output', 'the output a swipe opens');
+				await grabbed('at the row');
+			},
+			{ viewport: PHONE, prepare: (context) => context.addInitScript(draft, nowview) }
+		);
 	});
+
 
 	// And the history itself: a phone reaches it by pulling the bar up
 	// (da-ckw3), and what it must find there is the bar at the top and

@@ -118,11 +118,6 @@
 		background: var(--page);
 	}
 
-	/* Room at the top for the bar's handle, which hangs there full. */
-	.log.full {
-		padding-top: 16px;
-	}
-
 	/* And at the foot for `close history`, so the newest line is never under it. */
 	.log.full :global(.body) {
 		padding-bottom: 2.75rem;

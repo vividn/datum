@@ -855,10 +855,10 @@ binary.
   output strip over the input), and FULLSCREEN, where the strip gives way and
   the log fills the page to the top, one command a line, the newest its last
   line next to the input; entering or leaving it, the commands on screen flow
-  to their new places (FLIP), not under `prefers-reduced-motion`. A HANDLE
-  rides the top of whatever is open (`.bar-handle`): a tap goes closed → row
-  → full → row, and a drag on it, anywhere on the bar, or a wheel over it
-  moves a state the way it went. HOW FAR OPEN the bar is, is ONE number of
+  to their new places (FLIP), not under `prefers-reduced-motion`. A drag
+  anywhere on the bar, or a wheel over it, moves a state the way it went;
+  there is no handle (da-pnxug), and on the box PageUp goes closed → row →
+  full and PageDown back. HOW FAR OPEN the bar is, is ONE number of
   pixels (`reveal` in `#lib/log.ts`) that three boxes are sized from — the
   page itself never scrolls; the NOTCH is `--output-height`, the CEILING the
   top of the page. A release glides by `speed * TAU` (`rest` in

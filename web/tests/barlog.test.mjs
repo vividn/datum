@@ -1005,9 +1005,10 @@ describe('the bar and the log are one handle', () => {
 // reach the end of the history at which point scrolling up/swiping down
 // again closes the cli». And his answer 2: «clicking on the handle and
 // swiping down could close it still».
-describe('the handle and the full screen', () => {
+describe('the three states and the full screen', () => {
 	const phone = onePhone();
-	const HANDLE = `${BAR} .bar-handle`;
+	const INPUT = `${BAR} .section.input`;
+	const OUTPUT = `${BAR} .section.output`;
 
 	/** Which of the three states the bar rests in. */
 	const state = async (page) => {
@@ -1019,39 +1020,57 @@ describe('the handle and the full screen', () => {
 		return `between: shown ${shown}, log ${height}`;
 	};
 
-	test('a tap on the handle: closed → row → full → row', async () => {
+	// The handle is gone (da-pnxug), vividn, 2026-10-28: «the swiping up and
+	// down on the output section/input section is sufficient here».
+	test('a swipe on the input or the output: up from closed is the row, up from the row full, down from full the row, down from the row closed', async () => {
 		await phone(async (app) => {
 			const { page } = app;
+			// A control of the bar's that is in neither section is a handle.
+			const handles = () =>
+				page.locator(`${BAR} button`).evaluateAll((all) => all.filter((b) => !b.closest('.section')).length);
 			await app.submit('occur coffee');
-			await shut(page);
 			assert.equal(await state(page), 'closed');
-			await page.locator(HANDLE).click();
-			assert.equal(await state(page), 'row');
-			await page.locator(HANDLE).click();
-			assert.equal(await state(page), 'full');
-			// Full, the handle is at the top of the screen.
-			const top = (await page.locator(HANDLE).boundingBox()).y;
-			const pages = (await where(page)).pages.top;
-			assert.ok(Math.abs(top - pages) <= 2, `the handle is at ${top}, the page starts at ${pages}`);
-			await page.locator(HANDLE).click();
-			assert.equal(await state(page), 'row');
+			for (const [on, dy, want] of [
+				[INPUT, -60, 'row'],
+				[OUTPUT, -60, 'full'],
+				[INPUT, 60, 'row'],
+				[OUTPUT, 60, 'closed'],
+				[INPUT, -60, 'row'],
+				[INPUT, -60, 'full'],
+				[INPUT, 60, 'row'],
+				[INPUT, 60, 'closed']
+			]) {
+				assert.equal(await handles(), 0, 'a handle is drawn');
+				await dragBy(page, on, dy);
+				assert.equal(await state(page), want, `a ${dy}px swipe on ${on} did not leave the bar ${want}`);
+			}
+			assert.equal(await handles(), 0, 'a handle is drawn');
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	test('a swipe on the handle: up from closed is the row, up from the row full, down from full the row, down from the row closed', async () => {
+	// And the keyboard's way to the same three states, which the handle was.
+	test('on the box, PageUp goes closed → row → full and PageDown back, and the box keeps the caret and its line', async () => {
 		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
+			const box = page.locator(`${BAR} input`);
+			await box.click({ position: { x: 4, y: 12 } });
+			await box.type('occur cof');
 			assert.equal(await state(page), 'closed');
-			await dragBy(page, HANDLE, -60);
-			assert.equal(await state(page), 'row');
-			await dragBy(page, HANDLE, -60);
-			assert.equal(await state(page), 'full');
-			await dragBy(page, HANDLE, 60);
-			assert.equal(await state(page), 'row');
-			await dragBy(page, HANDLE, 60);
-			assert.equal(await state(page), 'closed');
+			for (const [key, want] of [
+				['PageUp', 'row'],
+				['PageUp', 'full'],
+				['PageUp', 'full'],
+				['PageDown', 'row'],
+				['PageDown', 'closed'],
+				['PageDown', 'closed']
+			]) {
+				await page.keyboard.press(key);
+				assert.equal(await state(page), want, `${key} did not leave the bar ${want}`);
+				assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'INPUT', `${key} took the caret`);
+			}
+			assert.equal(await box.inputValue(), 'occur cof');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -1159,10 +1178,10 @@ describe('the handle and the full screen', () => {
 						return animate.apply(this, args);
 					};
 				});
-				await page.locator(HANDLE).click();
+				await dragBy(page, OUTPUT, -60);
 				assert.equal(await state(page), 'full');
 				const into = await page.evaluate(() => window.__flows);
-				await page.locator(HANDLE).click();
+				await dragBy(page, INPUT, 60);
 				assert.equal(await state(page), 'row');
 				const back = await page.evaluate(() => {
 					Element.prototype.animate = window.__animate;

@@ -48,14 +48,12 @@
 	dashboard reflows when a PERSON moves the bar and never because a command
 	answered something long.
 
-	THREE STATES, AND A HANDLE (da-0b2vy): CLOSED, the SINGLE ROW, and
-	FULLSCREEN, where the history fills the page one command a line and the
-	strip gives way to it (#lib/log.ts). vividn, 2026-10-27: «the top of the
-	output bar should show a very clear handle toggle. Clicking or swiping up
-	on this makes it full screen». The handle rides the top of whatever is
-	open — over the input when closed, over the strip, at the top of the page
-	full — and a tap on it goes closed → row → full → row; a drag on it, or
-	anywhere on the bar, goes a state the way it went (#lib/detent.ts).
+	THREE STATES (da-0b2vy): CLOSED, the SINGLE ROW, and FULLSCREEN, where
+	the history fills the page one command a line and the strip gives way to
+	it (#lib/log.ts). A drag anywhere on the bar goes a state the way it went
+	(#lib/detent.ts). There is no handle (da-pnxug), vividn, 2026-10-28: «it
+	actually makes it difficult to grab the nowview handle … the swiping up
+	and down on the output section/input section is sufficient here».
 
 	FOLDED, A COMMAND STILL ANSWERS: its ACTION words — one per document,
 	in the CLI's order and in the colour a document draws its action in —
@@ -70,10 +68,8 @@
 	drag and a wheel — are `use:grip` (#lib/grip.ts), on this bar; the
 	log's rows scroll as a terminal's do.
 
-	Escape comes back too. Entering the log from the keyboard is not built:
-	vividn wants the whole app keyboard-navigable "once the shape starts to
-	take form a little more", and half a shortcut now is a shortcut to
-	unpick later.
+	The keyboard has the same three states (da-pnxug): on the box, PageUp
+	goes closed → row → full and PageDown back, and Escape comes back too.
 
 	THE COMMANDS OVER THE OUTPUT (da-xw655): the `❯` is a button
 	(Prompt.svelte), and pressed it slides the command widget (CommandPane)
@@ -100,7 +96,7 @@
 	import CommandPane from '#lib/layout/CommandPane.svelte';
 	import { epoch } from '#lib/layout/engine.ts';
 	import { clockSecondsLabel, now } from '#lib/clock.ts';
-	import { closeLog, full, inLog, openOutput, output, outputless, pressHandle, shown } from '#lib/log.ts';
+	import { closeLog, inLog, openOutput, output, outputless, raise, shown } from '#lib/log.ts';
 	import { layout } from '#lib/layout/current.ts';
 	import { isWidget } from '#lib/layout/types.ts';
 	import { grip } from '#lib/grip.ts';
@@ -126,12 +122,6 @@
 		await tick();
 		focusLine(keyboard);
 	}
-
-
-	/** What a tap on the handle will do, which is what it is called. */
-	const handleLabel = $derived(
-		!$output ? 'open the output section' : $full ? 'collapse the history to one row' : 'open the history full screen'
-	);
 
 	/**
 	 * A root tab that is the CLI widget ALONE draws no output section: the
@@ -294,6 +284,13 @@
 	const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 	function onKey(event: KeyboardEvent): void {
+		// PageUp and PageDown on the box move the bar a state, as a swipe does.
+		if ((event.key === 'PageUp' || event.key === 'PageDown') && !$outputless && field.contains(event.target as Node)) {
+			event.preventDefault();
+			if (event.key === 'PageUp') raise();
+			else closeLog();
+			return;
+		}
 		if (event.key !== 'Escape' || event.defaultPrevented) return;
 		// The commands are on top, so they go first — after the dispatch,
 		// since their own subcommands and flags (CommandsWidget) take the
@@ -320,8 +317,8 @@
 <svelte:window onkeydown={onKey} />
 
 <!-- `grip` is the DRAG, and a drag has no keyboard equivalent to offer:
-     everything it reaches — the box, the mark, `close history`, Escape — is
-     a control or a key of its own. The same action is on the log
+     everything it reaches — the box, the mark, `close history`, PageUp,
+     PageDown, Escape — is a control or a key of its own. The same action is on the log
      (#lib/BarLog.svelte): one handle, one gesture, one number. -->
 <footer
 	class="prompt-bar"
@@ -434,15 +431,6 @@
 		</div>
 	</div>
 
-	<!-- THE HANDLE (da-0b2vy): a tab on the top edge of whatever is open,
-	     its grip drawn in it. A tap moves the bar a state (#lib/log.ts's
-	     `pressHandle`); a drag on it is the bar's own drag (`use:grip`).
-
-	     Two older asks still hold. vividn, 2026-09-18: "Hitting ^ should not
-	     focus on the input bar or open the keyboard. That is jarring." — the
-	     browser leaves the focus on the button pressed, and on a phone a
-	     focus would be the keyboard. And: "The ^ button obscures the text" —
-	     the target stands above the rule, off the row's text. -->
 	{#if $commandsOpen}
 		<!-- Clipped at the input's top, so it slides out from behind it. -->
 		<div class="commands-over">
@@ -454,18 +442,6 @@
 				<CommandPane epoch={$epoch} key="bar:commands" />
 			</div>
 		</div>
-	{/if}
-
-	{#if !$outputless}
-		<button
-			type="button"
-			class="bar-handle"
-			class:full={$full}
-			aria-label={handleLabel}
-			aria-expanded={$output}
-			title={handleLabel}
-			onclick={pressHandle}><span class="tab"><span class="knob"></span></span></button
-		>
 	{/if}
 </footer>
 
@@ -894,26 +870,7 @@
 		}
 	}
 
-	/* THE HANDLE: a 24px target centered on the bar, standing on the top
-	   edge of what is open — the bar's rule, or the log's top over it
-	   (`--log-height`, set on the shell) — and overlapping the rule by a few
-	   pixels so its tab covers it: the tab and the bar read as one piece. */
-	.bar-handle {
-		position: absolute;
-		left: 50%;
-		bottom: calc(100% + var(--log-height, 0px) - 4px);
-		transform: translateX(-50%);
-		z-index: 21;
-		width: 4.5rem;
-		height: 24px;
-		padding: 0;
-		background: none;
-		border: none;
-		cursor: grab;
-	}
-
-	/* Over the output, at its height, on the input's top edge; over the
-	   handle too, which is the output's and not what is in front. */
+	/* Over the output, at its height, on the input's top edge. */
 	.commands-over {
 		position: absolute;
 		left: 0;
@@ -930,43 +887,6 @@
 		background: var(--ground);
 		border-top: 1px solid var(--accent);
 		border-bottom: 1px solid var(--tint);
-	}
-
-	.tab {
-		position: absolute;
-		inset: auto 0.5rem 4px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		height: 14px;
-		background: var(--ground);
-		border: var(--bar-rule) solid var(--rule);
-		border-bottom: none;
-		border-radius: 8px 8px 0 0;
-	}
-
-	.knob {
-		width: 2rem;
-		height: 4px;
-		border-radius: 999px;
-		background: var(--quiet);
-	}
-
-	.bar-handle:hover .knob,
-	.bar-handle:focus-visible .knob {
-		background: var(--accent-bright);
-	}
-
-	/* Full, the log's top is the page's, so the tab hangs down from it. */
-	.bar-handle.full {
-		bottom: calc(100% + var(--log-height, 0px) - 24px);
-	}
-
-	.bar-handle.full .tab {
-		inset: 0 0.5rem auto;
-		border: var(--bar-rule) solid var(--rule);
-		border-top: none;
-		border-radius: 0 0 8px 8px;
 	}
 
 	/* Shown, then gone at the same moment, for a reader who asked for no

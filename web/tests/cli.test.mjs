@@ -370,7 +370,6 @@ describe('the CLI, which was the REPL', () => {
 				assert.deepEqual(await kinds(page), ['cli']);
 				await app.submit('occur coffee');
 				assert.equal(await output.count(), 0, 'the CLI page drew the output section');
-				assert.equal(await page.locator('.prompt-bar .bar-handle').count(), 0, 'the CLI page offers to open an output it has not got');
 				// The input row is all of the bar, on the foot of the page.
 				const [bar, input] = await Promise.all(
 					['.prompt-bar', '.prompt-bar .section.input'].map((s) => page.locator(s).boundingBox())
@@ -382,13 +381,15 @@ describe('the CLI, which was the REPL', () => {
 				await app.submit('occur');
 				assert.equal(await page.locator('.prompt-bar .marks, .prompt-bar .failed').count(), 0);
 
-				// A drag on the bar here moves nothing, and writes no fold for the
-				// pages that have an output (canary-qwen on #1256).
+				// A drag on the bar here moves nothing, nor does PageUp, and neither
+				// writes a fold for the pages that have an output (canary-qwen on #1256).
 				const fold = () => page.evaluate(() => localStorage.getItem('datum.bar.output.v1'));
 				const kept = await fold();
 				await dragBar(page, 300);
 				await dragBar(page, -900);
-				assert.equal(await fold(), kept, 'a drag on the CLI page wrote the fold');
+				await page.locator('.prompt-bar input').focus();
+				await page.keyboard.press('PageUp');
+				assert.equal(await fold(), kept, 'a drag or PageUp on the CLI page wrote the fold');
 				assert.equal(await page.locator('.log section.pane').count(), 0, 'a drag on the CLI page mounted the log');
 
 				// Another tab is drawn with it again, as it was: open, and no log.
