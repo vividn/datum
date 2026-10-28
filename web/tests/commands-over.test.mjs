@@ -74,9 +74,9 @@ describe('the ❯ opens the commands over the output', () => {
 			assert.equal(open.expanded, 'true');
 			assert.equal(open.controls, 'bar-commands');
 			assert.equal(open.filled, true, 'the open ❯ is not filled');
-			// A quarter turn is matrix(cos 90°, sin 90°, -sin 90°, cos 90°, 0, 0).
+			// A quarter turn back, so the ❯ points up: matrix(cos −90°, sin −90°, −sin −90°, cos −90°, 0, 0).
 			const [a, b, c, d] = open.transform.match(/-?[\d.e-]+/g).map(Number);
-			assert.deepEqual([a, b, c, d].map((n) => Math.round(n)), [0, 1, -1, 0], open.transform);
+			assert.deepEqual([a, b, c, d].map((n) => Math.round(n)), [0, -1, 1, 0], `the open ❯ points up: ${open.transform}`);
 
 			// Over the output section exactly: its box, on the input's top edge.
 			const boxes = await page.evaluate(() => {

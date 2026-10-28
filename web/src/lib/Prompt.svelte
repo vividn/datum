@@ -502,7 +502,8 @@
 	}
 
 	/* The circle, 24px at the least (conventions #12). Open, it turns a
-	   quarter and inverts: the circle filled, the chevron the ground. */
+	   quarter back, pointing up the way the commands slide (vividn,
+	   2026-10-28), and inverts: the circle filled, the chevron the ground. */
 	button.prompt {
 		flex: none;
 		display: grid;
@@ -524,7 +525,7 @@
 	}
 
 	button.prompt.open {
-		transform: rotate(90deg);
+		transform: rotate(-90deg);
 		background: var(--accent);
 		color: var(--ground);
 	}
