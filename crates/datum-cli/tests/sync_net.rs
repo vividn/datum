@@ -2458,16 +2458,20 @@ fn two_copies_dialing_each_other_at_once_send_each_op_once() {
 }
 
 /// The first serve after a bulk import signs its baselines (da-f7mmn):
-/// 10,000 here, about 5s in a debug build, on a 2s timeout. a, dialing
+/// 10,000 here, 5 to 10s in a debug build, on a 6s timeout. a, dialing
 /// b's `sync run`, signs them in chunks of the clock's size with a `BUSY`
 /// after each, unless `keepalive` is off; it sent nothing until all were
-/// signed, and lost b. The sync's output.
+/// signed, and lost b. The sync's output. Not 2s: b applies them in chunks
+/// of a sixteenth of the timeout, a `BUSY` between each, and a loaded
+/// runner stalled one past 2s (da-3njqh, as da-hd9sx's 3s). With the
+/// keepalives off b's apply is silent too, half a minute of it, so the
+/// session is lost at 6s however fast a signs.
 fn first_sync_after_an_import(keepalive: bool) -> (Copy, Copy, Output) {
     let (mut a, mut b) = paired();
     import(&a, 10_000);
     for c in [&mut a, &mut b] {
         c.env = vec![
-            ("DATUM_SYNC_TIMEOUT_S", "2"),
+            ("DATUM_SYNC_TIMEOUT_S", "6"),
             (
                 "DATUM_SYNC_TEST_KEEPALIVE",
                 if keepalive { "1" } else { "0" },
