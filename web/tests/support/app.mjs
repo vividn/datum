@@ -662,13 +662,27 @@ function serveAt(context, origin) {
  * short of an enabled prompt while the next, in the same file, was ready in
  * under 4 — and its bare `TimeoutError` named nothing it waited on.
  * `stuck` rethrows `ready`'s timeout with all of it.
+ *
+ * And the boot's own state and timings (da-lw42s): CI run 6689 said only
+ * «shows null» — no wait line, nothing unanswered, nothing said — which a
+ * slow box and a silent stall both print. So `stuck` also says whether the
+ * page's main thread still answers, how long after its navigation, when its
+ * last request was answered, how far it got (the shell, the seam, the
+ * prompt absent, disabled or enabled and not visible, the Damaged screen),
+ * and the Web Locks held and asked for, where a worker waiting on the
+ * files' lock shows.
  */
 function watchBoot(page) {
 	const out = new Set();
 	const said = [];
+	const t0 = Date.now();
+	let last = 'no request answered';
 	const on = {
 		request: (r) => out.add(r),
-		requestfinished: (r) => out.delete(r),
+		requestfinished: (r) => {
+			out.delete(r);
+			last = `last request answered at ${Date.now() - t0} ms: ${r.url()}`;
+		},
 		requestfailed: (r) => {
 			out.delete(r);
 			said.push(`failed ${r.url()}: ${r.failure()?.errorText}`);
@@ -687,10 +701,40 @@ function watchBoot(page) {
 			.textContent({ timeout: 1000 })
 			.catch(() => null);
 		const unanswered = [...out].map((r) => `unanswered ${r.url()}`);
-		e.message += `\nthe boot: ${[`shows ${JSON.stringify(shows)}`, ...unanswered, ...said].join('; ')}`;
+		const state = await Promise.race([
+			page.evaluate(bootState).catch((e) => `the page threw: ${e.message.split('\n')[0]}`),
+			new Promise((resolve) => setTimeout(resolve, 2000, 'the page does not answer in 2 s'))
+		]);
+		const lines = [`shows ${JSON.stringify(shows)}`, `${state} (${Date.now() - t0} ms after the goto)`, last];
+		e.message += `\nthe boot: ${[...lines, ...unanswered, ...said].join('; ')}`;
 		throw e;
 	};
 	return { stop, stuck };
+}
+
+/** In the page: how far its boot got, as one line for `stuck`. */
+async function bootState() {
+	const ms = (t) => (t ? `${Math.round(t)} ms` : 'not yet');
+	const nav = performance.getEntriesByType('navigation')[0];
+	const input = document.querySelector('.prompt-bar input');
+	const prompt = !input
+		? 'absent'
+		: input.disabled
+			? 'disabled'
+			: input.checkVisibility()
+				? 'enabled'
+				: 'enabled, not visible';
+	const locks = await navigator.locks?.query().catch(() => null);
+	const named = (list) => (list ?? []).map((l) => l.name).join(', ') || 'none';
+	return [
+		`the page answers at ${ms(performance.now())}`,
+		`its DOM loaded at ${ms(nav?.domContentLoadedEventEnd)}, its load at ${ms(nav?.loadEventEnd)}`,
+		`shell ${document.querySelector('.shell') ? 'drawn' : 'absent'}`,
+		`seam ${typeof window.datum?.run === 'function' ? 'installed' : 'absent'}`,
+		`prompt ${prompt}`,
+		...(document.querySelector('.damaged') ? ['the Damaged screen up'] : []),
+		`locks held ${named(locks?.held)}, pending ${named(locks?.pending)}`
+	].join(', ');
 }
 
 /** Navigate to the day frame and wait until the database is open. */

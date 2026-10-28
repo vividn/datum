@@ -123,6 +123,11 @@ test('a boot that never becomes ready says what it was waiting on', async () => 
 		assert.match(e.message, /Timeout/);
 		assert.match(e.message, /the boot: shows "[^"]+"/);
 		assert.match(e.message, /unanswered \S+\/db\.worker-/);
+		// And how far it got, and when (da-lw42s): «shows null» alone was a
+		// slow box and a silent stall both.
+		assert.match(e.message, /the page answers at \d+ ms/);
+		assert.match(e.message, /shell drawn, seam installed, prompt disabled/);
+		assert.match(e.message, /last request answered at \d+ ms/);
 		return true;
 	});
 });
