@@ -1715,7 +1715,8 @@ pub struct NowviewArgs {
     /// each field's state, no time band, as `0` spells explicitly.
     pub history: Option<String>,
     /// `--labels` — name each field's state beside its lane, in a gutter
-    /// to the right of the picture (da-7q8r). Off by default, and the SVG
+    /// to the right of the picture (da-7q8r), in its color, with a key of
+    /// the occur dots in the window (da-8oksz). Off by default, and the SVG
     /// path's alone: the terminal band never carries labels.
     pub labels: bool,
     /// `--now-label` — a small yellow «now» under the now strip in place

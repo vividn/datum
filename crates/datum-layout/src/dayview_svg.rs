@@ -858,7 +858,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
 
 /// The `<defs>` id of `field`'s icon: the name with anything an id or a
 /// `#` reference would trip on spelled as its code point.
-fn icon_id(field: &str) -> String {
+pub(crate) fn icon_id(field: &str) -> String {
     field.chars().fold(String::from("icon-"), |mut id, c| {
         if c.is_ascii_alphanumeric() || c == '-' {
             id.push(c);

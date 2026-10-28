@@ -14,8 +14,8 @@ use std::fmt::Write;
 
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
 use crate::dayview_svg::{
-    axis_label_size, now_chunk, render_dayview_svg_with, text_width, DayviewSvgOpts, FlowMark,
-    RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR,
+    axis_label_size, icon_id, now_chunk, render_dayview_svg_with, text_width, DayviewSvgOpts,
+    FlowMark, RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR,
 };
 use crate::nowview::NowviewCurrentState;
 
@@ -299,9 +299,12 @@ fn widen_for(layout: &DayviewLayout, gutter: f64) -> Option<DayviewLayout> {
 
 /// `--labels` (da-7q8r): each field's state named beside its lane, in a
 /// gutter past the picture's far edge — right of it, or below it and
-/// written downwards when time runs down (da-78evn). Returns how much room that
-/// gutter needs and the `<g>` to inject — the caller widens the canvas by
-/// the first and injects the second, so no label ever lies over a band.
+/// written downwards when time runs down (da-78evn) — in the color its
+/// now chunk is painted (da-8oksz). Beside them, a key of the occur fields
+/// with a dot in the window, each its dot's mark and color, then its name.
+/// Returns how much room that gutter needs and the `<g>` to inject — the
+/// caller widens the canvas by the first and injects the second, so no
+/// label ever lies over a band.
 ///
 /// A gutter of `0.0` means there was nothing to label.
 fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) -> (f64, String) {
@@ -313,6 +316,7 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
     let far =
         layout.label_width + layout.time_axis_extent + layout.right_panel_width + AXIS_LABEL_GAP;
     let mut widest: f64 = 0.0;
+    let mut labelled = Vec::new();
     let mut out = String::from(r#"<g class="nowview-labels">"#);
     for state in current_states {
         let Some(label) = &state.state_label else {
@@ -321,10 +325,14 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
         let Some(f) = day.fields.iter().find(|f| f.field == state.field) else {
             continue;
         };
+        labelled.push(f.field.as_str());
         let font_size = (f.cross_extent * 0.7).min(12.0);
         let text = format!("{}: {label}", state.field);
         widest = widest.max(text_width(&text, font_size));
         let lane = day.day_offset + f.cross_offset + f.cross_extent / 2.0;
+        let color = (state.colors.iter())
+            .find(|c| c.as_str() != "none")
+            .map_or(TEXT_COLOR, String::as_str);
         let (x, y, turn) = match layout.orientation {
             Orientation::Horizontal => (far, lane, String::new()),
             Orientation::Vertical => {
@@ -334,17 +342,80 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
         };
         let _ = write!(
             &mut out,
-            r#"<text class="state-label" x="{x}" y="{y}"{turn} dy="0.35em" fill="{c}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{fs}">{t}</text>"#,
-            c = TEXT_COLOR,
-            fs = font_size,
+            r#"<text class="state-label" x="{x}" y="{y}"{turn} dy="0.35em" fill="{color}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{font_size}">{t}</text>"#,
             t = escape_xml(&text),
         );
     }
+
+    // The key: the fields with no state row whose dots the window holds, in
+    // their lanes' order, each with the first such dot as it is drawn. A
+    // moment is a dotted line, no dot, unless a glyph or icon draws it.
+    let mut dotted: Vec<_> = (day.fields.iter())
+        .filter(|f| !labelled.contains(&f.field.as_str()))
+        .filter_map(|f| {
+            let icon = (f.icon.as_deref()).is_some_and(|svg| svg.starts_with("<svg"));
+            let p =
+                (f.points.iter()).find(|p| !p.moment || p.glyph.is_some() || (p.icon && icon))?;
+            Some((f, p, p.icon && icon))
+        })
+        .collect();
+    dotted.sort_by(|a, b| a.0.cross_offset.total_cmp(&b.0.cross_offset));
+    let font_size = (layout.day_height / dotted.len().max(1) as f64 / 1.4).min(12.0);
+    let line = font_size * 1.4;
+    let r = font_size * 0.45;
+    let along = far
+        + if widest > 0.0 {
+            widest + AXIS_LABEL_GAP
+        } else {
+            0.0
+        };
+    // A key row at `along` the time axis and `cross` across it, as a state
+    // label is placed.
+    let at = |along: f64, cross: f64| match layout.orientation {
+        Orientation::Horizontal => format!("translate({along} {cross})"),
+        Orientation::Vertical => format!(
+            "translate({} {along}) rotate(90)",
+            layout.time_axis_height + cross
+        ),
+    };
+    let mut key_widest: f64 = 0.0;
+    for (i, (f, p, icon)) in dotted.iter().enumerate() {
+        let c = &p.fg_color;
+        let mark = if *icon {
+            format!(
+                r##"<use href="#{id}" x="0" y="{y}" width="{d}" height="{d}" color="{c}"/>"##,
+                id = icon_id(&f.field),
+                y = -r,
+                d = 2.0 * r,
+            )
+        } else if let Some(g) = &p.glyph {
+            format!(
+                r#"<text x="{r}" dy="0.35em" text-anchor="middle" font-size="{fs}" fill="{c}">{g}</text>"#,
+                fs = r * 1.6,
+                g = escape_xml(g),
+            )
+        } else {
+            format!(r#"<circle cx="{r}" r="{r}" fill="{c}"/>"#)
+        };
+        key_widest = key_widest.max(2.0 * r + AXIS_LABEL_GAP + text_width(&f.field, font_size));
+        let _ = write!(
+            &mut out,
+            r#"<g class="occur-key" data-field="{name}" transform="{t}">{mark}<text x="{x}" dy="0.35em" fill="{c}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{font_size}">{name}</text></g>"#,
+            name = escape_xml(&f.field),
+            t = at(along, day.day_offset + line * (i as f64 + 0.5)),
+            x = 2.0 * r + AXIS_LABEL_GAP,
+        );
+    }
     out.push_str("</g>");
-    if widest <= 0.0 {
+    let gutter = if dotted.is_empty() {
+        widest
+    } else {
+        along - far + key_widest
+    };
+    if gutter <= 0.0 {
         return (0.0, String::new());
     }
-    (AXIS_LABEL_GAP + widest, out)
+    (AXIS_LABEL_GAP + gutter, out)
 }
 
 /// Turn the resolved current states into the per-field strip fills the
@@ -788,6 +859,138 @@ mod tests {
         // No label text anywhere but the axis: the panel is gone.
         assert!(!svg.contains("mood: focused"));
         assert!(!svg.contains(">coffee<"));
+    }
+
+    /// da-8oksz: a label is painted its field's color, and beside the
+    /// labels a key names exactly the occur fields with a dot in the
+    /// window, each with its dot's mark in its color: a dot before the
+    /// window keys nothing. Either way time runs.
+    #[test]
+    fn labels_take_their_color_and_key_the_dots_in_view() {
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            labels_and_key(orientation);
+        }
+    }
+
+    fn labels_and_key(orientation: Orientation) {
+        let now_ms = 1_700_000_000_000_i64;
+        let occur = |field: &str, at: i64, color: &str, glyph: Option<&str>| DayviewFieldInput {
+            field: field.into(),
+            y_frac: 0.5,
+            height_frac: 0.1,
+            z_index: 0.5,
+            blocks: vec![],
+            points: vec![DayviewPoint {
+                time_ms: at,
+                fg_color: color.into(),
+                state_label: None,
+                id: None,
+                title: None,
+                glyph: glyph.map(Into::into),
+                icon: false,
+                moment: false,
+            }],
+            icon: None,
+            glyph_size: Default::default(),
+        };
+        let day = DayviewDayInput {
+            date: None,
+            label_lines: vec![],
+            start_ms: now_ms - 60_000,
+            end_ms: now_ms,
+            errors: Vec::new(),
+            fields: vec![
+                DayviewFieldInput {
+                    field: "mood".into(),
+                    y_frac: 0.1,
+                    height_frac: 0.2,
+                    z_index: 0.1,
+                    blocks: vec![DayviewBlock {
+                        start_ms: now_ms - 60_000,
+                        end_ms: now_ms,
+                        fill: BlockFill::Single("#abcdef".into()),
+                        state_label: Some("focused".into()),
+                        id: None,
+                        title: None,
+                    }],
+                    points: vec![],
+                    icon: None,
+                    glyph_size: Default::default(),
+                },
+                occur("coffee", now_ms - 30_000, "#123456", None),
+                occur("water", now_ms - 10_000, "#654321", Some("~")),
+                occur("tea", now_ms - 120_000, "#0f0f0f", None),
+                {
+                    let mut pic = occur("pic", now_ms - 20_000, "#00ff00", None);
+                    pic.icon =
+                        Some(r#"<svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>"#.into());
+                    pic.points[0].icon = true;
+                    pic
+                },
+            ],
+            spans: Vec::new(),
+        };
+        let cfg = DayviewConfig {
+            days: vec![day],
+            now_ms,
+            width: 100.0,
+            height: Some(300.0),
+            day_height: 250.0,
+            time_axis_height: 0.0,
+            margin: 2.0,
+            label_width: Some(0.0),
+            orientation,
+            axis_ticks_override: Some(Vec::new()),
+            right_panel_width: 96.0,
+            ..Default::default()
+        };
+        let layout = compute_dayview(&cfg);
+        let entries = vec![
+            NowviewCurrentState {
+                field: "mood".into(),
+                state_label: Some("focused".into()),
+                colors: vec!["#abcdef".into()],
+                id: None,
+            },
+            NowviewCurrentState {
+                field: "coffee".into(),
+                state_label: None,
+                colors: vec![],
+                id: None,
+            },
+        ];
+        let svg = render_nowview_svg(&layout, "", &entries, true, false);
+        let labels: Vec<&str> = svg.split(r#"<text class="state-label" "#).skip(1).collect();
+        assert_eq!(labels.len(), 1, "{svg}");
+        let label = &labels[0][..labels[0].find('>').unwrap()];
+        assert!(label.contains(r##"fill="#abcdef""##), "{label}");
+
+        let keyed: Vec<&str> = (svg.split(r#"<g class="occur-key" data-field=""#).skip(1))
+            .map(|rest| &rest[..rest.find('"').unwrap()])
+            .collect();
+        assert_eq!(keyed, ["coffee", "water", "pic"], "{svg}");
+        let row = |field: &str| {
+            let open = format!(r#"<g class="occur-key" data-field="{field}""#);
+            let at = svg.find(&open).expect("a key row");
+            svg[at..at + svg[at..].find("</g>").unwrap()].to_string()
+        };
+        let coffee = row("coffee");
+        assert!(coffee.contains(r##"<circle cx="##), "{coffee}");
+        assert!(coffee.contains(r##"fill="#123456""##), "{coffee}");
+        assert!(coffee.contains(">coffee</text>"), "{coffee}");
+        let water = row("water");
+        assert!(water.contains(r##"fill="#654321">~</text>"##), "{water}");
+        // The icon's key mark uses the icon the dot wrote in `<defs>`.
+        let pic = row("pic");
+        assert!(pic.contains(r##"<use href="#icon-pic""##), "{pic}");
+        assert!(svg.contains(r#"<svg id="icon-pic""#), "{svg}");
+        // Written downwards when time runs down, as the labels are.
+        let turned = matches!(orientation, Orientation::Vertical);
+        assert_eq!(coffee.contains("rotate(90)"), turned, "{coffee}");
+
+        // No labels asked for, no key either.
+        let bare = render_nowview_svg(&layout, "", &entries, false, false);
+        assert!(!bare.contains("occur-key"), "{bare}");
     }
 
     /// da-7q8r: the labels are `--labels`'s alone, and they sit in a
