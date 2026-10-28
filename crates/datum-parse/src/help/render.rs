@@ -133,13 +133,19 @@ fn said_of(body: &str, words: &[&str]) -> Vec<String> {
             continue;
         }
         let first = p.split_whitespace().next().unwrap_or("").trim_matches('`');
-        if words.len() == 1 && first.eq_ignore_ascii_case(w) {
+        // Prose opening with it; an indented paragraph is a table, read by row.
+        if words.len() == 1 && !p.starts_with(' ') && first.eq_ignore_ascii_case(w) {
             out.push(p.to_string());
             continue;
         }
-        // A table row, `  purge       …`, and the lines indented under it.
-        let row = format!("  {w}  ");
-        let mut lines = p.lines().skip_while(|l| !l.starts_with(&row));
+        // A table row, `  purge       …` or `  zsh|bash|fish`, and the
+        // lines indented under it.
+        let row = |l: &str| {
+            l.strip_prefix("  ")
+                .and_then(|r| r.split("  ").next())
+                .is_some_and(|name| name.split('|').any(|n| n == w))
+        };
+        let mut lines = p.lines().skip_while(|l| !row(l));
         if let Some(head) = lines.next() {
             let mut r = head.to_string();
             for l in lines.take_while(|l| l.starts_with("   ")) {

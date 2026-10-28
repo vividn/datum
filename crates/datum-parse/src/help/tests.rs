@@ -1329,9 +1329,9 @@ fn every_subcommand_page_has_its_usage() {
     }
 }
 
-/// da-1c76j: every usage line of a subcommand is on its command's page too,
-/// and on a page that says a paragraph of each (`sync`, `db`) its own
-/// `--help` shows that paragraph, not only its usage and the way to the page.
+/// da-1c76j, da-kiznh: every usage line of a subcommand is on its command's
+/// page too, and its own `--help` shows what that page says of it, not only
+/// its usage and the way to the page.
 #[test]
 fn every_subcommand_usage_is_on_its_page_and_said_of() {
     for cmd in super::COMMANDS {
@@ -1339,9 +1339,6 @@ fn every_subcommand_usage_is_on_its_page_and_said_of() {
         for sub in cmd.subcommands {
             for u in sub.usage {
                 assert!(whole.contains(u), "`datum help {}` lacks {u}", cmd.name);
-                if !["sync", "db"].contains(&cmd.name) {
-                    continue;
-                }
                 let rest = u.strip_prefix(&format!("datum {} ", cmd.name)).unwrap();
                 let mut words: Vec<&str> = rest
                     .split(' ')
