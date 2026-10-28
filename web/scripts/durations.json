@@ -48,7 +48,7 @@
 	"tests/statecell.test.mjs": 39,
 	"tests/layout-floors.test.mjs": 39,
 	"tests/dbio.test.mjs": 37,
-	"tests/repl.test.mjs": 37,
+	"tests/cli.test.mjs": 37,
 	"tests/commands.test.mjs": 34,
 	"tests/alias.test.mjs": 34,
 	"tests/fields-box.test.mjs": 31,

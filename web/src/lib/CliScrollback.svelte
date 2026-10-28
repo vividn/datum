@@ -23,7 +23,7 @@
 	clock is the same label, live.
 
 	The scrollback and the history are not this component's: they are the
-	one store every prompt shares (#lib/replStore.ts, da-0dhc), which is
+	one store every prompt shares (#lib/cliStore.ts, da-0dhc), which is
 	also what keeps them across a reload. A command typed into the input
 	widget is in this scrollback too, output and all.
 
@@ -35,11 +35,11 @@
 -->
 <script lang="ts">
 	import { now, stampLabel } from '#lib/clock.ts';
-	import { repl, record } from '#lib/replStore.ts';
+	import { cli, record } from '#lib/cliStore.ts';
 	import { isDegraded, storage } from '#lib/storageState.ts';
 	import { onMount, tick, untrack } from 'svelte';
 	import Pane from './Pane.svelte';
-	import ReplEntry from './ReplEntry.svelte';
+	import CliEntry from './CliEntry.svelte';
 	import { asking, fileCommand, progress } from './dbio.js';
 	import { parseEcho, runEchoed } from './echo.js';
 	import { charactersIn, fitArgv, helpEnv } from './panes.js';
@@ -99,7 +99,7 @@
 	let measured: () => void;
 	const measuring = new Promise<void>((done) => (measured = done));
 
-	const ordered = $derived(reversed ? [...$repl.scrollback].reverse() : $repl.scrollback);
+	const ordered = $derived(reversed ? [...$cli.scrollback].reverse() : $cli.scrollback);
 	// `skip` takes from the NEWEST end whichever way the list runs.
 	const entries = $derived(skip ? (reversed ? ordered.slice(skip) : ordered.slice(0, -skip)) : ordered);
 
@@ -124,7 +124,7 @@
 		else pane?.scrollToBottom();
 	}
 
-	// The scrollback is restored before the first paint (#lib/replStore.ts);
+	// The scrollback is restored before the first paint (#lib/cliStore.ts);
 	// pin the view to its newest entry the way a run does, once the pane is
 	// mounted — and again when the order flips.
 	$effect.pre(() => {
@@ -219,10 +219,10 @@
 	<div class="entries" data-columns={columns} style:--columns={columns} style:--gap="{GAP}px">
 		{#each entries as entry, i (entry)}
 			<div class="entry" class:ruled={ruled[i]} class:whole={wide[i]} data-ran={entry.ranAt}>
-				<!-- The row itself is `ReplEntry.svelte`, which the bar's
+				<!-- The row itself is `CliEntry.svelte`, which the bar's
 				     output section mounts too: one list, one shape for a row
 				     of it. -->
-				<ReplEntry {entry} all />
+				<CliEntry {entry} all />
 			</div>
 		{/each}
 	</div>

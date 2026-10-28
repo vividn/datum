@@ -19,7 +19,7 @@
 //
 // The web's own flags (`--width`, #lib/panes.ts `fitArgv`) are NOT part of
 // what a press teaches: the scrollback echoes the argv the caller asked
-// for, not the one the runner received (Repl.svelte, engine.press).
+// for, not the one the runner received (CliScrollback.svelte, engine.press).
 
 import type { CommandRunner, RunResult } from './run.js';
 

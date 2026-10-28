@@ -44,7 +44,7 @@ writing it down.
    The keys, as examples (driven 2026-09-22 — ten files mention `localStorage`, seven really call
    it): the layout draft, this device's open root tabs and its per-layout locks
    (`layout/draft.ts`, da-wpgy, da-0a5o, da-gshh); the custom pane's command line
-   (`CustomPane.svelte`); the REPL scrollback (`replStore.ts`); the client id (`clientId.ts`);
+   (`CustomPane.svelte`); the REPL scrollback (`cliStore.ts`); the client id (`clientId.ts`);
    how far the output bar is open (`OUTPUT_KEY`, `log.ts`); the bar's feel — TAU and DETENT,
    which only a real thumb on a real phone can judge (`TUNING_KEY`, `tuning.ts`, da-o2wm8); and
    the bar's LOCKED pills (`PILLS_KEY`, `bar.ts`, da-1py00), which say the sentence too — a lock
@@ -103,7 +103,7 @@ writing it down.
    module's: `cursor.ts` reconciles its `time` and `dur` pills against the cursor on the same
    load, so bar.ts needs no list of which kinds may come back.
 6. **The web asks every command it runs for its echo as data** — `--show json` appended the way
-   `fitArgv` appends `--width` (`echoArgv` in `#lib/echo.ts`, at `Repl.runArgv` and
+   `fitArgv` appends `--width` (`echoArgv` in `#lib/echo.ts`, at `CliScrollback.runArgv` and
    `engine.alone`). The bottom bar and the CLI widget then PLACE the CLI's own strings — action, hid,
    id, info, and its `data` items one to a row in a brace beside the two lines (da-f4mw) — and
    compose none of them; `data_inline` is the terminal's own join and the web does not use it. The document carries the CLI's

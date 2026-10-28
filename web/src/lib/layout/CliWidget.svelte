@@ -1,5 +1,5 @@
 <!--
-	The REPL as a widget kind: the REPL itself, wired to the engine.
+	The CLI as a widget kind: its scrollback, wired to the engine.
 
 	Whichever pane it sits in, it announces itself to `engine.ts` so a
 	widget-bar press finds it (`press`), and its `ran` is the engine's
@@ -7,16 +7,16 @@
 	(registry.ts, da-gvdc).
 -->
 <script lang="ts">
-	import Repl from '#lib/Repl.svelte';
-	import { ran, registerRepl } from './engine.js';
+	import CliScrollback from '#lib/CliScrollback.svelte';
+	import { ran, registerCli } from './engine.js';
 
 	let { reversed = false }: { reversed?: boolean } = $props();
 
-	let repl = $state<Repl>();
+	let scrollback = $state<CliScrollback>();
 
 	$effect(() => {
-		if (repl) return registerRepl(repl);
+		if (scrollback) return registerCli(scrollback);
 	});
 </script>
 
-<Repl bind:this={repl} {reversed} onran={(result) => void ran(result)} />
+<CliScrollback bind:this={scrollback} {reversed} onran={(result) => void ran(result)} />

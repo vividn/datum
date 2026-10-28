@@ -17,7 +17,7 @@
 	import CliOutput from './CliOutput.svelte';
 	import TailTable from './TailTable.svelte';
 	import { asking, UNANSWERED } from './dbio.js';
-	import { record } from './replStore.js';
+	import { record } from './cliStore.js';
 	import { run, type RunResult } from './run.js';
 	import { shellJoin } from './shellSplit.js';
 	import { minute, tenSeconds } from './clock.js';

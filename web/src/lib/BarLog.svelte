@@ -12,7 +12,7 @@
 	vividn, 2026-09-21: "Remove the 'repl' header line."
 
 	`skip={1}`, because the bar's OUTPUT SECTION is the newest row of this
-	same list (PromptBar.svelte draws it with the same `ReplEntry`). vividn:
+	same list (PromptBar.svelte draws it with the same `CliEntry`). vividn:
 	"the output section … should actually *be* the first line of the repl …
 	it shouldn't be repeated when you drag it up." So the log ends at the
 	row before it, and what a reader pulls up is the continuation of what
@@ -42,8 +42,8 @@
 -->
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import Repl from '#lib/Repl.svelte';
-	import { repl } from '#lib/replStore.ts';
+	import CliScrollback from '#lib/CliScrollback.svelte';
+	import { cli } from '#lib/cliStore.ts';
 	import { armed, closeLog, full, inLog } from '#lib/log.ts';
 
 	let body: HTMLDivElement | undefined = $state();
@@ -82,7 +82,7 @@
 	// A command that lands is the newest row, at the bottom: the list comes
 	// back to it, wherever the reader had scrolled.
 	$effect.pre(() => {
-		void $repl.scrollback;
+		void $cli.scrollback;
 		const box = body;
 		if (box) untrack(() => tick().then(() => (box.scrollTop = box.scrollHeight)));
 	});
@@ -96,7 +96,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="log" class:reached={$inLog} class:full={$full} inert={!$inLog} {onwheel} {ontouchstart} {ontouchmove}>
 	{#if $armed}
-		<Repl bare skip={$full ? 0 : 1} lines bind:body />
+		<CliScrollback bare skip={$full ? 0 : 1} lines bind:body />
 	{/if}
 	{#if $inLog}
 		<button type="button" class="top" onclick={closeLog}>close history</button>

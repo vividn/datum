@@ -13,7 +13,7 @@
 //
 // `$app/env` is SvelteKit's, and node cannot resolve it: it becomes
 // `browser = false`, which is the honest value there. `database.ts`,
-// `changes.ts`, `replStore.ts` and `storageState.ts` import it, so without
+// `changes.ts`, `cliStore.ts` and `storageState.ts` import it, so without
 // this nothing that reaches `run.ts` loads in node at all (da-mgxdt).
 //
 // One copy, because three files needed the same fix and a fourth wanted the

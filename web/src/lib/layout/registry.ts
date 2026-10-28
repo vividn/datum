@@ -72,7 +72,7 @@ import HelpWidget from './HelpWidget.svelte';
 import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
-import ReplWidget from './ReplWidget.svelte';
+import CliWidget from './CliWidget.svelte';
 import FieldWidget from './FieldWidget.svelte';
 import KitWidget from './KitWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
@@ -286,7 +286,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// pinned to the top; off, it reads as a terminal does.
 	cli: {
 		meta: meta('cli', 'cli', { reversed: false }, [{ key: 'reversed', label: 'newest first', type: 'boolean' }]),
-		component: ReplWidget,
+		component: CliWidget,
 		help: [
 			'Every command run on this page and what datum answered, the newest last.',
 			'Tap an entry to select it as an id pill; the bottom bar is its prompt.'

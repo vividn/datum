@@ -820,7 +820,7 @@ binary.
   a root tab that is the CLI alone (`/cli`, `/repl`) draws no output
   section at all: the widget is the output there.
 - THE SCROLLBACK STANDS IN COLUMNS (`#lib/scrollback.ts`) in the CLI
-  widget; the bar's log is one command a line (Repl's `lines`, da-0b2vy) — the aim:
+  widget; the bar's log is one command a line (CliScrollback's `lines`, da-0b2vy) — the aim:
   "the output of a single entry should be narrow enough to comfortably fit
   2 on mobile side by side". As many entries abreast as fit at the width an
   entry's lines WANT (270px, measured), and never fewer than two wherever

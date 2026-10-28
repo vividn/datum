@@ -46,9 +46,9 @@ const JSON_OUT = text('json');
  * Drop the REPL widget from the layout before measuring.
  *
  * Not a cosmetic variation: the REPL pane is the only thing that calls
- * `registerRepl`, and `engine.press` takes a different path without one —
+ * `registerCli`, and `engine.press` takes a different path without one —
  * `alone()`, which AWAITS `ran()` and so awaits the whole refresh, where
- * `repl.runArgv` does not (`on:ran={() => void ran()}` in ReplWidget). The
+ * `CliScrollback.runArgv` does not (`on:ran={() => void ran()}` in CliWidget). The
  * ghost is shown after that await either way, so the two layouts put it in
  * two different places in the chain.
  */

@@ -232,7 +232,7 @@ const receipt = (page) => page.locator('.prompt-bar .group:last-child .doc .rece
  * The output section's raw lines — what a command with no action echo shows.
  *
  * No `.result` wrapper any more: the bar's output section is ROW ONE OF THE
- * HISTORY now (da-ckw3, vividn 2026-09-21), so it is a `ReplEntry` like every
+ * HISTORY now (da-ckw3, vividn 2026-09-21), so it is a `CliEntry` like every
  * row below it, and the raw lines are `RawLines.svelte`'s own box. The input
  * widget's receipt still has the wrapper, because it is still a `BarResult`.
  */

@@ -22,9 +22,9 @@
 //    focuses it, the mark's menu still opens, and a command run then lands
 //    at the FOOT of the history.
 //
-// What the log shows is `Repl.svelte`, the same component a layout can
+// What the log shows is `CliScrollback.svelte`, the same component a layout can
 // hold, reading the same scrollback store. So this file does not re-assert
-// what the CLI draws — repl.test.mjs does that. It
+// what the CLI draws — cli.test.mjs does that. It
 // asserts where it is and how you get to it. A bare `Pane` has no `.cli`
 // class (that is the layout frame's), so the log is read through `.log`.
 
@@ -399,7 +399,7 @@ describe('the bar is the way in', () => {
 	// at all, so a `.focus()` on something inside it does nothing either. A
 	// canary on PR #46 said twice that programmatic focus gets through. It
 	// does not — measured here, both ways round, so the claim is settled by
-	// the browser rather than by either of us. (`Repl.svelte` calls `.focus()`
+	// the browser rather than by either of us. (`CliScrollback.svelte` calls `.focus()`
 	// nowhere, which is the other half of the answer.)
 	test('inert on the log refuses a programmatic focus too', async () => {
 		await phone(async (app) => {

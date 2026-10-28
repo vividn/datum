@@ -29,7 +29,7 @@ import { runEchoed } from './echo.js';
 import { fileArgv } from './fileargv.js';
 import { FIELDS, STALE } from './layout/draft.js';
 import { approve } from './passkey.js';
-import { forget } from './replStore.js';
+import { forget } from './cliStore.js';
 import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
 import type { ChainList } from './syncView.js';
 

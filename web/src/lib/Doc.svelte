@@ -237,7 +237,7 @@
 
 	.receipt {
 		/* Not a token: the same step between `--quiet` and `--ink` the
-		   REPL's echoed line uses (Repl.svelte). */
+		   REPL's echoed line uses (CliScrollback.svelte). */
 		color: #8888aa;
 	}
 

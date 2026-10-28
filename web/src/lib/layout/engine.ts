@@ -6,13 +6,13 @@
 // is one refresh path and every pane is on it (the bead's trap list).
 //
 // `press` is the module-level dispatcher for the fields widget (da-nz29):
-// the widget composes an argv and this decides where it runs. With a REPL on
+// the widget composes an argv and this decides where it runs. With a CLI widget on
 // screen the press goes THROUGH it — `runArgv` echoes the executed argv
 // into the scrollback and the recall history, which is the teach loop —
-// and the REPL's own `ran` bumps the epoch. With no REPL mounted (the
+// and the CLI widget's own `ran` bumps the epoch. With none mounted (the
 // reader closed it) the press runs through the seam directly and bumps
 // the epoch itself, so the panes still refresh; the echo is simply
-// nowhere to put, and comes back the moment a REPL is added.
+// nowhere to put, and comes back the moment a CLI widget is added.
 
 import { tick } from 'svelte';
 import { get, writable } from 'svelte/store';
@@ -25,7 +25,7 @@ import { initDb } from '#lib/db.ts';
 import { asking, fileCommand } from '#lib/dbio.ts';
 import { syncCommand } from '#lib/sync.ts';
 import { parseEcho, runEchoed } from '#lib/echo.ts';
-import { record } from '#lib/replStore.ts';
+import { record } from '#lib/cliStore.ts';
 import { run, type RunResult } from '#lib/run.ts';
 import { FROZEN_AT } from '#lib/dbProtocol.ts';
 import { currentDb } from '#lib/database.ts';
@@ -47,7 +47,7 @@ import {
 /** Bumped after every command; the panes re-run theirs when it changes. */
 export const epoch = writable(0);
 
-/** True once `initDb()` has resolved: the REPL and the bar are usable. */
+/** True once `initDb()` has resolved: the CLI widget and the bar are usable. */
 export const ready = writable(false);
 
 /**
@@ -121,17 +121,17 @@ export async function resort(): Promise<void> {
 	}
 }
 
-export interface ReplLike {
+export interface CliLike {
 	runArgv(argv: string[], line?: string, stdin?: string, env?: string[]): Promise<RunResult>;
 }
 
-let repl: ReplLike | null = null;
+let cli: CliLike | null = null;
 
-/** The REPL on screen announces itself; the newest one mounted wins. */
-export function registerRepl(instance: ReplLike): () => void {
-	repl = instance;
+/** The CLI widget on screen announces itself; the newest one mounted wins. */
+export function registerCli(instance: CliLike): () => void {
+	cli = instance;
 	return () => {
-		if (repl === instance) repl = null;
+		if (cli === instance) cli = null;
 	};
 }
 
@@ -255,7 +255,7 @@ function guess(result: RunResult): void {
 /**
  * A command from anywhere but a prompt of its own — a widget-bar press,
  * the bottom bar's line (da-0a5o), the browser console's `datum.run`
- * (da-6918) — which is echoed and recalled as typed. Through the REPL
+ * (da-6918) — which is echoed and recalled as typed. Through the CLI widget
  * when there is one; see above. Without one it is recorded here, so the
  * shared history and the bottom bar's receipt still see it, and the epoch
  * is bumped here.
@@ -298,10 +298,10 @@ export async function press(
 	// «the output section shows the command that was run again, so it is
 	// okay for it to fade before then».
 	if (!typed) showGhost(echo ?? line ?? shellJoin(argv));
-	// Typed before the tree is filled, the REPL it is for may not be
-	// mounted yet: wait for the tree, and for that REPL to announce itself.
-	if (!repl) await settledTree().then(tick);
-	const result = await (repl ? repl.runArgv(argv, line, stdin, env) : alone(argv, line, stdin, env));
+	// Typed before the tree is filled, the CLI widget it is for may not be
+	// mounted yet: wait for the tree, and for that widget to announce itself.
+	if (!cli) await settledTree().then(tick);
+	const result = await (cli ? cli.runArgv(argv, line, stdin, env) : alone(argv, line, stdin, env));
 	// The listing, typed, opens the widget they are resolved in (da-6cutb).
 	if (result.code === 0 && listsConflicts(argv)) void openPlace('conflicts');
 	// So do `setup` and `setup F` the field widget, on F (da-ez40f).
@@ -366,7 +366,7 @@ function gesture(): string[] {
 	return [`${FROZEN_AT}${Math.round(Date.now() - age)}`];
 }
 
-/** With no REPL mounted: run it, record it, and bump the epoch here. */
+/** With no CLI widget mounted: run it, record it, and bump the epoch here. */
 async function alone(argv: string[], line?: string, stdin?: string, env?: string[]): Promise<RunResult> {
 	const ranAt = Date.now();
 	const result = await ((stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ?? runEchoed(asking(run), argv, stdin, env));

@@ -13,12 +13,12 @@
 
 	What it holds is the bar's two tiers and only those: the RECEIPT of the
 	last command run anywhere (BarResult.svelte, `last`) above, and the
-	prompt row — caret, box, pills — below. Not the `^`, not the REPL
+	prompt row — caret, box, pills — below. Not the `^`, not the history
 	overlay and not an output pane: those are the bar's, and a widget
-	wanting the scrollback is the `repl` widget, which is a different kind.
+	wanting the scrollback is the `cli` widget, which is a different kind.
 
-	It does NOT register with the engine (`registerRepl`): it has nowhere to
-	put a command's output, so a widget-bar press still goes to the REPL
+	It does NOT register with the engine (`registerCli`): it has nowhere to
+	put a command's output, so a widget-bar press still goes to the CLI widget
 	when one is mounted and runs through the seam when none is. What it does
 	claim is the FOCUS — `Prompt`'s `widget` prop — so a line the fields
 	widget prefills lands in the box the reader put on the page rather than

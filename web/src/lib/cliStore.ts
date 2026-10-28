@@ -20,7 +20,7 @@ import { maskTicket } from './sync.js';
 
 export type Command = { line: string; ranAt: number; result: RunResult };
 
-export interface ReplState {
+export interface CliState {
 	scrollback: Command[];
 	history: string[];
 }
@@ -31,17 +31,19 @@ export interface ReplState {
  * The version is in the KEY, not in the value: a store written by an
  * older shape is then not read at all, rather than read and picked
  * apart. The cap is what stops a terminal left open for a month from
- * growing without bound — oldest dropped, the way scrollback goes.
+ * growing without bound — oldest dropped, the way scrollback goes. The
+ * key is named for the REPL, which the CLI widget was until da-mwp4m:
+ * renaming it would lose every device's scrollback.
  */
 const STORE_KEY = 'datum.repl.v1';
 const KEEP = 200;
 
 // Read once, when the module loads, so a prompt mounting later — or a
 // second one — finds the scrollback simply there, first paint included.
-export const repl = writable<ReplState>(restore());
+export const cli = writable<CliState>(restore());
 
 /** Read back what a previous session left, or start empty. */
-function restore(): ReplState {
+function restore(): CliState {
 	try {
 		const raw = localStorage.getItem(STORE_KEY);
 		const saved = raw ? JSON.parse(raw) : null;
@@ -76,7 +78,7 @@ export function record(line: string, ranAt: number, result: RunResult): void {
 	// Capped here, not only on the way to disk: a tab that stays open all
 	// day would otherwise keep every command in memory and in the DOM while
 	// the store on disk held the last KEEP (review threads on #156, #166).
-	repl.update(({ scrollback, history }) => ({
+	cli.update(({ scrollback, history }) => ({
 		scrollback: [...scrollback, { line, ranAt, result }].slice(-KEEP),
 		history: (history[history.length - 1] === line ? history : [...history, line]).slice(-KEEP)
 	}));
@@ -96,7 +98,7 @@ function save(): void {
 
 function persist(): void {
 	clearTimeout(pending);
-	const { scrollback, history } = get(repl);
+	const { scrollback, history } = get(cli);
 	let keep = scrollback.slice(-KEEP);
 	for (;;) {
 		try {
@@ -121,7 +123,7 @@ function persist(): void {
  */
 export function forget(): void {
 	clearTimeout(pending);
-	repl.set({ scrollback: [], history: [] });
+	cli.set({ scrollback: [], history: [] });
 	try {
 		localStorage.removeItem(STORE_KEY);
 	} catch {
@@ -134,6 +136,6 @@ if (browser) {
 	addEventListener('pagehide', persist);
 	// Another tab forgot, so this one does, or its next command writes it all back.
 	addEventListener('storage', (e) => {
-		if (e.key === STORE_KEY && e.newValue === null) repl.set({ scrollback: [], history: [] });
+		if (e.key === STORE_KEY && e.newValue === null) cli.set({ scrollback: [], history: [] });
 	});
 }

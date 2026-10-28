@@ -15,7 +15,7 @@
 	clock, they are different colors so they can be almost touching".
 
 	Enter empties the box the way a shell consumes a line. Up and down walk
-	the history every prompt shares (#lib/replStore.ts), shell-style: the
+	the history every prompt shares (#lib/cliStore.ts), shell-style: the
 	draft you were typing is kept and handed back when you walk past the
 	newest entry — kept per BOX, since it is what this reader was in the
 	middle of typing here.
@@ -93,7 +93,7 @@
 	import Pill from '#lib/Pill.svelte';
 	import { fields, grammar, ready } from '#lib/layout/engine.ts';
 	import { advance, complete, framesOf, type Frame } from '#lib/keyframes.ts';
-	import { repl } from '#lib/replStore.ts';
+	import { cli } from '#lib/cliStore.ts';
 
 	let {
 		/**
@@ -289,7 +289,7 @@
 	function recall(event: KeyboardEvent): void {
 		// The box is the reader's the moment they type in it.
 		if ($ghost) ghost.set(null);
-		const { history } = $repl;
+		const { history } = $cli;
 		if (event.key === 'ArrowUp') {
 			const next = cursor === -1 ? history.length - 1 : cursor - 1;
 			if (next < 0) return;

@@ -66,7 +66,7 @@ describe('the row an entry falls on', () => {
 
 	test('is the seam: every entry past the first row has one above it', () => {
 		// n rows of entries have n-1 seams between them, wherever the
-		// columns divide them — which is what `Repl.svelte` draws the
+		// columns divide them — which is what `CliScrollback.svelte` draws the
 		// hairline from (da-qdm7).
 		const rows = rowsOf([false, false, true, false, false], 2);
 		assert.deepEqual(

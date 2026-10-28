@@ -27,7 +27,7 @@
 	import RawLines from '#lib/RawLines.svelte';
 	import { now, stampLabel } from '#lib/clock.ts';
 	import { parseEcho } from '#lib/echo.ts';
-	import type { Command } from '#lib/replStore.ts';
+	import type { Command } from '#lib/cliStore.ts';
 
 	let {
 		entry,

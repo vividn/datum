@@ -25,7 +25,7 @@
 //
 // `last` is every command run anywhere — a widget-bar press, a command
 // pane's ▶, the bar itself — because every one
-// of them goes through `record` in #lib/replStore.ts, which tells this
+// of them goes through `record` in #lib/cliStore.ts, which tells this
 // store. It is what the bar's result area is drawn from (#lib/BarResult
 // .svelte): the CLI's own documents, or its own lines when it echoed
 // none. Not restored across a reload, unlike the scrollback: a result is

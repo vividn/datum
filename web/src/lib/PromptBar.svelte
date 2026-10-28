@@ -29,7 +29,7 @@
 	- the OUTPUT section is THE HISTORY'S LAST ROWS, side by side in one
 	  strip the full width of the bar that scrolls sideways (da-qua5g): the
 	  newest at the right end, a command a group, drawn with the same
-	  `ReplEntry.svelte` the log above draws its rows with, so the newest
+	  `CliEntry.svelte` the log above draws its rows with, so the newest
 	  command looks the same whether the log is open or shut (vividn,
 	  2026-09-21).
 
@@ -94,8 +94,8 @@
 	import { tick, untrack } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import Brand from '#lib/Brand.svelte';
-	import ReplEntry from '#lib/ReplEntry.svelte';
-	import { repl, type Command } from '#lib/replStore.ts';
+	import CliEntry from '#lib/CliEntry.svelte';
+	import { cli, type Command } from '#lib/cliStore.ts';
 	import { parseEcho } from '#lib/echo.ts';
 	import { ACTION_MS, ERROR_MS, commandsOpen, focusLine, marks, peel, pills, prefill, text } from '#lib/bar.ts';
 	import CommandPane from '#lib/layout/CommandPane.svelte';
@@ -171,7 +171,7 @@
 	 */
 	let from: Command | null = $state.raw(null);
 	const strip = $derived.by(() => {
-		const all = $repl.scrollback;
+		const all = $cli.scrollback;
 		const at = from ? all.indexOf(from) : -1;
 		return all.slice(at < 0 ? -MOUNT : Math.max(at, all.length - STRIP));
 	});
@@ -206,7 +206,7 @@
 	 */
 	function fill(): void {
 		if (!roll || track?.getAnimations().length || roll.scrollLeft >= roll.clientWidth) return;
-		const all = $repl.scrollback;
+		const all = $cli.scrollback;
 		const at = all.indexOf(strip[0]);
 		if (at > 0 && all.length - at < STRIP) from = all[Math.max(0, at - GROW, all.length - STRIP)];
 	}
@@ -342,7 +342,7 @@
 					     vividn, 2026-09-21: "the output section … should actually
 					     *be* the first line of the repl. … It should also have the
 					     same format as the rest of the repl." So each group mounts
-					     the same `ReplEntry` the log does — stamp, echo line and
+					     the same `CliEntry` the log does — stamp, echo line and
 					     all — and the log ends at the row before the newest
 					     (`skip={1}` in BarLog.svelte).
 
@@ -361,7 +361,7 @@
 					{#each strip as entry (entry)}
 						{@const docs = parseEcho(entry.result.stdout)?.length ?? 0}
 						<div class="group" class:wide={!docs} style:--docs={docs || null} data-ran={entry.ranAt}>
-							<ReplEntry {entry} cap={12} />
+							<CliEntry {entry} cap={12} />
 						</div>
 					{/each}
 				</div>
@@ -602,7 +602,7 @@
 		margin-left: auto;
 	}
 
-	/* A COLUMN, because a group is a row of the history (ReplEntry.svelte):
+	/* A COLUMN, because a group is a row of the history (CliEntry.svelte):
 	   its head — the time and the command — sits ABOVE what the command
 	   answered, exactly as it does in the log, and the entry stands on its
 	   foot, as a terminal's last answer stands on the prompt. */

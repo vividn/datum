@@ -8,7 +8,7 @@
 	rows and the end of an error is what went wrong.
 
 	It lives on its own so that the two fixed-height surfaces share it
-	rather than each having a copy: the bar's row (`ReplEntry.svelte`, where
+	rather than each having a copy: the bar's row (`CliEntry.svelte`, where
 	the history's first line is drawn) and the input widget's receipt
 	(`BarResult.svelte`). The REPL's own rows do not use it — there the
 	output is whole and the pane scrolls, which is the difference between a
@@ -63,7 +63,7 @@
 		font-size: 0.68rem;
 		line-height: 1.25;
 		/* Not a token: the same step between `--quiet` and `--ink` the
-		   REPL's echoed line uses (Repl.svelte). */
+		   REPL's echoed line uses (CliScrollback.svelte). */
 		color: #8888aa;
 	}
 
