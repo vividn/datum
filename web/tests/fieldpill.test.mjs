@@ -683,6 +683,11 @@ describe('what survives a reload', () => {
 			// And this load wrote nothing: the counter is re-made by the init
 			// script on every load, so it holds only what THIS load did.
 			assert.deepEqual(await writes(page), [], 'the load rewrote what it had just read');
+			// A pill the load brings back is not one ADDED, so the commands
+			// stay shut (da-lnirx; canary qwen-3-8-2-4t on PR #1283).
+			await frames(page);
+			assert.equal(await page.locator('#bar-commands').count(), 0, 'a restored pill opened the commands');
+			assert.equal(await page.locator('.prompt-bar button.prompt').getAttribute('aria-expanded'), 'false');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -973,6 +978,10 @@ describe('a field pill under a selected hid is context', () => {
 			await pillThenSelect(app);
 			await page.locator(BOX).focus();
 
+			// The pills opened the commands over the output (da-lnirx): the first Escape is theirs.
+			await page.locator('#bar-commands').waitFor();
+			await page.keyboard.press('Escape');
+			await page.locator('#bar-commands').waitFor({ state: 'detached' });
 			await page.keyboard.press('Escape');
 			await hidPill(page).waitFor({ state: 'detached' });
 			assert.equal(await fieldPill(page).count(), 1, 'the first Escape took the field too');

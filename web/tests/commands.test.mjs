@@ -74,7 +74,7 @@ const SEED = [
 	'switch mood good -t -30'
 ];
 
-const commands = (page) => page.locator('.bar.commands');
+const commands = (page) => page.locator('main .bar.commands');
 const fieldsBar = (page) => page.locator('section[data-pane="bar"] .bar');
 
 /** The commands widget's buttons, in the order it draws them. */
@@ -1007,7 +1007,7 @@ describe('Undo', () => {
 			/** Wait for the icon to settle lit or not, and say what it says. */
 			const lit = async (on) => {
 				await page.waitForFunction(
-					(want) => !document.querySelector('.bar.commands [data-command="redo"]').disabled === want,
+					(want) => !document.querySelector('main .bar.commands [data-command="redo"]').disabled === want,
 					on
 				);
 				await app.idle();

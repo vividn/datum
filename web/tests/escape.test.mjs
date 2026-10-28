@@ -33,6 +33,13 @@ const LOCKED = { id: 'k', kind: 'note', text: '-c two', locked: true };
 async function load(page, text, pills) {
 	await page.evaluate((all) => window.datum.bar.setPills(all), pills);
 	await page.locator(BOX).fill(text);
+	// A pill opens the commands over the output (da-lnirx), and they are the
+	// first Escape's, which leaves the line as it was.
+	if (!pills.length) return;
+	await page.locator('#bar-commands').waitFor();
+	await page.keyboard.press('Escape');
+	await page.locator('#bar-commands').waitFor({ state: 'detached' });
+	assert.equal(await page.locator(BOX).inputValue(), text);
 }
 
 /** What the line holds, as the reader sees it. */

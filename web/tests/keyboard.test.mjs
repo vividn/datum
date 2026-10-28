@@ -46,7 +46,7 @@ const onPhone = (fn, layout = page_()) =>
 const SEED = ['setup coffee --verb occur', 'setup sleep --verb start', 'setup rec --verb add'];
 
 const BAR = '.prompt-bar input';
-const commands = (page) => page.locator('.bar.commands');
+const commands = (page) => page.locator('main .bar.commands');
 const fieldsBar = (page) => page.locator('section[data-pane="bar"] .bar');
 
 /** The box's text, whether the caret is in it, and its input mode. */

@@ -30,7 +30,7 @@ const onPage = (fn, page = PAGE) =>
 		return fn(app);
 	}, page);
 
-const help = (page) => page.locator('.bar.commands button[data-command="help"]');
+const help = (page) => page.locator('.host[data-widget="command"] .bar.commands button[data-command="help"]');
 
 const rootTabs = (page) =>
 	page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim()));

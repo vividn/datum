@@ -170,6 +170,51 @@ describe('the ❯ opens the commands over the output', () => {
 		});
 	});
 
+	// vividn, 2026-10-27: «pills and filters activate the command widget to
+	// open, so you can easily see the available commands for a given filter
+	// set»; 17:39: «all pills and filters open it, clearing the last pill
+	// closes it» (da-lnirx).
+	test('a pill opens them, a second keeps them, and clearing the last closes them', async () => {
+		await onPage(async ({ page, errors }) => {
+			const set = (all) => page.evaluate((all) => window.datum.bar.setPills(all), all);
+			const drop = (id) => page.evaluate((id) => window.datum.bar.removePill(id), id);
+			const open = async () => {
+				await page.locator(OVER).waitFor();
+				assert.equal((await chevron(page)).expanded, 'true');
+			};
+			const TIME = { id: 'when', kind: 'time', text: '-t 14:30' };
+			const NOTE = { id: 'c', kind: 'note', text: '-c two' };
+
+			await set([TIME]);
+			await open();
+			await set([TIME, NOTE]);
+			await open();
+			await drop('when');
+			await page.waitForTimeout(50);
+			await open();
+			// The commands follow the pills that are left.
+			await page.locator(`${OVER} button[data-command="occur"]`).waitFor();
+			await drop('c');
+			await page.locator(OVER).waitFor({ state: 'detached' });
+			assert.equal((await chevron(page)).expanded, 'false');
+
+			// Closed by the ❯ with a pill loaded, a pill rewritten in place does
+			// not open them again; one added does.
+			await set([TIME]);
+			await open();
+			await page.locator(CHEVRON).click();
+			await page.locator(OVER).waitFor({ state: 'detached' });
+			await set([{ ...TIME, text: '-t 15:00' }]);
+			await page.waitForTimeout(50);
+			assert.equal(await page.locator(OVER).count(), 0, 'a moved pill opened the commands');
+			await set([{ ...TIME, text: '-t 15:00' }, NOTE]);
+			await open();
+			await set([]);
+			await page.locator(OVER).waitFor({ state: 'detached' });
+			assert.deepEqual(errors, []);
+		});
+	});
+
 	test('with no motion asked for, it turns and slides without animating', async () => {
 		await onPage(async ({ page, errors }) => {
 			await page.emulateMedia({ reducedMotion: 'reduce' });

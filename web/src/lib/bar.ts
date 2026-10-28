@@ -417,6 +417,21 @@ export const dropHids = (gone: string[]): void => {
  */
 export const commandsOpen = writable(false);
 
+// A pill ADDED opens it, and the last one gone closes it (da-lnirx).
+// vividn, 2026-10-27: «pills and filters activate the command widget to
+// open, so you can easily see the available commands for a given filter
+// set», and at 17:39: «all pills and filters open it, clearing the last pill
+// closes it». Added is an id the pills did not hold: a pill rewritten in
+// place (the time cursor moved, a selection grown) is not added, and the
+// locked pills a load brings back are what the pills start as.
+let held = new Set(get(pills).map((p) => p.id));
+pills.subscribe((all) => {
+	const ids = new Set(all.map((p) => p.id));
+	if (all.some((p) => !held.has(p.id))) commandsOpen.set(true);
+	else if (!all.length && held.size) commandsOpen.set(false);
+	held = ids;
+});
+
 /**
  * What is typed at the command line, wherever it is drawn. THE buffer:
  * every `Prompt.svelte` binds its box straight to this store.

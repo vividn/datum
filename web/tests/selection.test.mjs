@@ -55,10 +55,10 @@ const rowCount = (page) => page.evaluate(() => document.querySelectorAll('sectio
 const rows = (page) => page.locator('section[data-title="tail"] tbody tr[data-hid]');
 const hidPill = (page) => page.locator('.prompt-bar .pill.hid');
 const sections = (page) => hidPill(page).locator('button.remove .label').allInnerTexts();
-const button = (page, name) => page.locator(`.bar.commands button[data-command="${name}"]`);
+const button = (page, name) => page.locator(`main .bar.commands button[data-command="${name}"]`);
 
 /** The command buttons drawn, in order. */
-const drawn = async (page) => (await listed(page.locator('.bar.commands'), 'button[data-command]')).map((b) => b.command);
+const drawn = async (page) => (await listed(page.locator('main .bar.commands'), 'button[data-command]')).map((b) => b.command);
 
 /** The last `.cli .echo`'s count, before a press. */
 const echoCount = (page) => page.evaluate(() => document.querySelectorAll('.cli .echo').length);
@@ -92,7 +92,7 @@ describe('a tap on a tail row', () => {
 			assert.deepEqual(await sections(page), [hid.slice(0, 5)]);
 			assert.equal(await row.evaluate((tr) => tr.classList.contains('selected')), true);
 
-			await page.waitForFunction(() => !document.querySelector('.bar.commands [data-command="occur"]'));
+			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="occur"]'));
 			assert.deepEqual(await drawn(page), ID_COMMANDS);
 
 			await run(app, 'get');
@@ -104,7 +104,7 @@ describe('a tap on a tail row', () => {
 			await hidPill(page).waitFor();
 			await row.click();
 			await hidPill(page).waitFor({ state: 'detached' });
-			await page.locator('.bar.commands [data-command="occur"]').waitFor();
+			await page.locator('main .bar.commands [data-command="occur"]').waitFor();
 			assert.deepEqual(await drawn(page), whole, 'the dismiss brings the whole list back');
 			assert.deepEqual(app.errors, []);
 		});
@@ -132,13 +132,13 @@ describe('a tap on a tail row', () => {
 			const hid = await row.getAttribute('data-hid');
 			await row.click();
 			await hidPill(page).waitFor();
-			await page.waitForFunction(() => document.querySelector('.bar.commands [data-command="delete"]')?.dataset.act === 'run');
+			await page.waitForFunction(() => document.querySelector('main .bar.commands [data-command="delete"]')?.dataset.act === 'run');
 			assert.deepEqual([await armed('delete'), await armed('update'), await armed('get')], [true, false, true]);
 
 			await run(app, 'delete');
 			assert.equal((await app.echoes()).at(-1), `delete ${hid}`);
 			await page.waitForFunction((n) => document.querySelectorAll('section[data-title="tail"] tbody tr[data-hid]').length === n, before - 1);
-			await page.waitForFunction(() => document.querySelector('.bar.commands [data-command="delete"]')?.dataset.act !== 'run');
+			await page.waitForFunction(() => document.querySelector('main .bar.commands [data-command="delete"]')?.dataset.act !== 'run');
 
 			const [next] = await last(page, 1);
 			await next.click();
@@ -177,7 +177,7 @@ describe('a tap on a tail row', () => {
 			const whole = await drawn(page);
 			await rows(page).first().click();
 			await hidPill(page).waitFor();
-			await page.waitForFunction(() => !document.querySelector('.bar.commands [data-command="occur"]'));
+			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="occur"]'));
 			// Help takes no pill and explains every one, so no pill hides it (da-vjwid).
 			assert.deepEqual(await drawn(page), whole.filter((name) => takesId.has(name) || name === 'help'));
 		});
@@ -319,12 +319,12 @@ describe('a -t pill', () => {
 		await solo(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 10:00' }]));
-			await page.waitForFunction(() => !document.querySelector('.bar.commands [data-command="now"]'));
+			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="now"]'));
 			const names = await drawn(page);
 			for (const n of ['occur', 'start', 'end', 'switch', 'add', 'retime']) assert.ok(names.includes(n), n);
 			for (const n of ['now', 'get', 'delete', 'undo']) assert.ok(!names.includes(n), n);
 			await page.locator('.prompt-bar .pill.time button.remove').click();
-			await page.locator('.bar.commands [data-command="now"]').waitFor();
+			await page.locator('main .bar.commands [data-command="now"]').waitFor();
 		});
 	});
 });
