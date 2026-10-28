@@ -1,10 +1,11 @@
-// A swipe across the setup widget is the super tabs' (da-4t0yn). vividn,
-// 2026-10-26: «Let's completely remove the tabs on the setup widget, they are
-// just annoying and unintutive and prevent swiping between super tabs
-// easily». The form had three tabs of its own a sideways swipe moved between
-// (da-kmr29, da-nmhf2); with none, a horizontal swipe on its body goes to the
-// pane's frame (PaneFrame.svelte), which on a phone is the root's: the place
-// opens as the root's last tab, `main` before it. A drag on the placement
+// A swipe across the setup widget is the super tabs' (da-4t0yn, da-ooflv).
+// vividn, 2026-10-26: the form's tabs «prevent swiping between super tabs
+// easily», when a sideways swipe moved between them (da-kmr29, da-nmhf2); and
+// 2026-10-28: «bring the data and aliases tabs back on the setup widget, but
+// no swipe action between them». So a tap or a key changes the form's tab, and
+// a horizontal swipe on its body, on any tab, goes to the pane's frame
+// (PaneFrame.svelte), which on a phone is the root's: the place opens as the
+// root's last tab, `main` before it. A drag on the placement
 // (which drags itself) or a state's handle (which reorders) is still theirs,
 // and a vertical drag scrolls the form. Every gesture is a real touch through
 // CDP (`swipe`, support/layout.mjs) on the iPhone 12 profile.
@@ -13,7 +14,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE, swipe, swipeOver } from './support/layout.mjs';
-import { FIELD_FORM, openField, openSection } from './support/field.mjs';
+import { FIELD_FORM, PANEL, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -43,7 +44,7 @@ const bare = (page) =>
 		const r = el.getBoundingClientRect();
 		const clear = (x, y) => {
 			const hit = document.elementFromPoint(x, y);
-			return el.contains(hit) && !hit.closest('input, textarea, select, button, summary, dialog, .placement');
+			return el.contains(hit) && !hit.closest('input, textarea, select, button, dialog, .placement');
 		};
 		for (let y = r.top + 16; y < r.bottom - 16; y += 4) {
 			if ([60, innerWidth - 60].every((x) => [-16, 0, 16].every((d) => clear(x, y + d)))) return { x: r.left + r.width / 2, y };
@@ -55,18 +56,32 @@ const bare = (page) =>
 const rootShown = (page) =>
 	page.locator('.root-bar [role="tab"][aria-selected="true"]').evaluate((b) => b.textContent.replace('•', '').trim());
 
-test('on a phone a swipe across the setup widget, with data and aliases shut or open, changes the super tab', async () => {
+test('on a phone a swipe across the setup widget, on any of its tabs, changes the super tab and never the setup tab', async () => {
 	await withApp(async (app) => {
 		const { page } = app;
-		for (const opened of [[], ['data', 'aliases']]) {
+		for (const name of ['basics', 'data', 'aliases']) {
 			await open(page);
-			assert.equal(await page.locator(`${FIELD_FORM} [role="tab"]`).count(), 0, 'the form is tabbed');
-			for (const name of opened) await openSection(page, name);
+			await page.locator(`${FIELD_FORM} [role="tab"][data-tab="${name}"]`).click();
+			assert.equal(await page.locator(PANEL).getAttribute('data-panel'), name);
+			// Every change of the form's tab from here on, which a swipe must not make.
+			await page.locator(`${FIELD_FORM} [role="tablist"]`).evaluate((bar) => {
+				window.tabbed = [];
+				new MutationObserver((all) => all.forEach((m) => m.target.ariaSelected === 'true' && window.tabbed.push(m.target.dataset.tab))).observe(bar, {
+					subtree: true,
+					attributeFilter: ['aria-selected']
+				});
+			});
+			// Left, toward the tab after it as the old swipe went: the root has none that way, so nothing moves.
 			const { y } = await bare(page);
+			await swipe(page, page.viewportSize().width - 60, y, -200, 0);
+			assert.equal(await rootShown(page), 'setup');
+			assert.equal(await page.locator(PANEL).getAttribute('data-panel'), name, `a swipe left on ${name} changed the form's tab`);
+			// Right, toward `main`.
 			await swipe(page, 60, y, 200, 0);
 			await until(() => rootShown(page), (t) => t === 'main').catch((e) => {
-				throw new Error(`a swipe on the form (${opened.join(', ') || 'all shut'} open) left the super tab: ${e.message}`);
+				throw new Error(`a swipe on the form's ${name} left the super tab: ${e.message}`);
 			});
+			assert.deepEqual(await page.evaluate(() => window.tabbed), [], `a swipe on ${name} changed the form's tab`);
 		}
 		assert.deepEqual(app.errors, []);
 	}, PHONE);
@@ -110,7 +125,6 @@ test('on a phone a drag on the placement or a state\'s handle is theirs, and a v
 		assert.equal(await rootShown(page), 'setup');
 
 		// Last, since its scroll coasts on after the finger: a vertical drag scrolls, and the super tab stays.
-		for (const name of ['data', 'aliases']) await openSection(page, name);
 		const [whole, room] = await body(page).evaluate((el) => [el.scrollHeight, el.clientHeight]);
 		assert.ok(whole > room + 100, `the form does not scroll: ${whole} in ${room}`);
 		const { x, y } = await bare(page);

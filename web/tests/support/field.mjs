@@ -8,14 +8,8 @@ import { shellSplit } from '../../src/lib/shellSplit.ts';
 
 export const FIELD_FORM = '.field-form:not(.beside *)';
 
-/** A section beneath the placement, «data» or «aliases»: shut until tapped, a card's data always open (da-4t0yn). */
-export const SECTION = (name) => `${FIELD_FORM} [data-section="${name}"]`;
-
-/** Open the form's `name` section with a tap on its summary, unless it is open already. */
-export async function openSection(page, name) {
-	const section = page.locator(SECTION(name));
-	if (await section.evaluate((el) => el.matches('details:not([open])'))) await section.locator('> summary').click();
-}
+/** The panel of the tab in front, the one there is: a tap or a key changes it, never a swipe (da-ooflv). */
+export const PANEL = `${FIELD_FORM} [data-panel]`;
 
 /**
  * A new field's Save as a preview or an echo reads it — ONE `setup F

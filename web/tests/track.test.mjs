@@ -24,7 +24,7 @@ import {
 	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, stateRows, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
-import { FIELD_FORM as MODAL, SECTION, leaveField, declared, openField, openSection, pickImage } from './support/field.mjs';
+import { FIELD_FORM as MODAL, PANEL, leaveField, declared, openField, pickImage } from './support/field.mjs';
 
 const PHONE = { width: 320, height: 480 };
 
@@ -721,7 +721,7 @@ describe('in the app', () => {
 			assert.equal(await ink(symbol), rgb(listed.color), 'at auto, the colour datum paints it');
 
 			// What stands under the line: the placement, which draws the shape's sample (da-srrqd).
-			const data = page.locator(`${MODAL} .body .placement`);
+			const data = page.locator(`${PANEL} .placement`);
 			const at = (await data.boundingBox()).y;
 			for (const [opener, set] of [[swatch, '.set'], [symbol, '.picker']]) {
 				await opener.click();
@@ -811,8 +811,8 @@ describe('in the app', () => {
 
 	// da-h119q: vividn, «when tracking something new something users
 	// immediately want to do is to add in keys they care about». So Basics
-	// asks for them, in place of the field-level unit nothing read — «▸ data»,
-	// shut until tapped (da-4t0yn) — and a field being declared
+	// asks for them, in place of the field-level unit nothing read — a line
+	// that goes to the Data tab (da-i9upr) — and a field being declared
 	// carries them in its one `setup F --track` (da-2pbvd).
 	test('Basics asks for keys and not a unit, and a new field\'s keys are saved in its one `setup F --track`', async () => {
 		await shared.solo(async (app) => {
@@ -820,9 +820,10 @@ describe('in the app', () => {
 			await openIt(page);
 			await fill(page, 'coffee', 'occur');
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a new field');
-			assert.equal(await page.locator(SECTION('data')).getAttribute('open'), null, 'the keys are not shut away');
-			assert.equal((await page.locator(`${SECTION('data')} > summary .ask`).innerText()).trim(), 'want to record extra data with each entry?');
-			await openSection(page, 'data');
+			assert.equal(await page.locator(`${MODAL} [data-panel="basics"] ul.data`).count(), 0, 'the keys are on Basics');
+			assert.equal((await page.locator(`${MODAL} .data-line .ask`).innerText()).trim(), 'want to record extra data with each entry?');
+			await page.locator(`${MODAL} button[data-to-tab="data"]`).click();
+			assert.equal(await page.locator(PANEL).getAttribute('data-panel'), 'data');
 			await page.locator(`${MODAL} ul.data + button.add`).click();
 			const row = page.locator(`${MODAL} ul.data li.key`).last();
 			await row.locator('input.name').fill('cups');
@@ -844,12 +845,12 @@ describe('in the app', () => {
 
 			// Saved, Basics names its keys, and there is still no unit; and so it opens again.
 			await page.locator(`${MODAL} h2`).waitFor();
-			assert.equal((await page.locator(`${SECTION('data')} > summary .ask`).innerText()).trim(), 'each entry records cups');
+			assert.equal((await page.locator(`${MODAL} .data-line .ask`).innerText()).trim(), 'each entry records cups');
 			await leave(page);
 			const { saved: shut } = await openField(page, 'coffee');
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a spec');
-			await openSection(page, 'data');
+			await page.locator(`${MODAL} button[data-to-tab="data"]`).click();
 			assert.deepEqual(await page.locator(`${MODAL} ul.data input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
 			await leaveField(page);
 			assert.equal(await shut, null);
@@ -857,34 +858,42 @@ describe('in the app', () => {
 	});
 
 	// vividn, 2026-10-14: «Display the full widget even in + new field mode» (da-uipyt), none of it required.
-	// vividn, 2026-10-26: «completely remove the tabs on the setup widget» (da-4t0yn).
-	test('every section from the start and no tabs: a field being declared has data and aliases, and so does a saved one', async () => {
+	test('every tab from the start: a field being declared has all three, and so does a saved one', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const sections = () => page.locator(`${MODAL} [data-section]`).evaluateAll((all) => all.map((s) => s.dataset.section));
+			const tabs = async () => (await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase());
 			await openIt(page);
-			assert.deepEqual(await sections(), ['data', 'aliases']);
+			assert.deepEqual(await tabs(), ['basics', 'data', 'aliases']);
 			await fill(page, 'coffee', 'occur');
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator(`${MODAL} h2`).waitFor();
-			assert.deepEqual(await sections(), ['data', 'aliases']);
-			assert.equal(await page.locator(`${MODAL} :is([role="tablist"], [role="tab"], [role="tabpanel"])`).count(), 0, 'the form is tabbed');
+			assert.deepEqual(await tabs(), ['basics', 'data', 'aliases']);
+			// Three words across a 320px phone, none of them cut.
+			await page.setViewportSize({ width: 320, height: 640 });
+			const cut = await page.locator(`${MODAL} [role="tab"]`).evaluateAll((tabs) =>
+				tabs.filter((t) => {
+					const box = t.getBoundingClientRect();
+					const bar = t.parentElement.getBoundingClientRect();
+					return t.scrollWidth > t.clientWidth || box.left < bar.left || box.right > bar.right + 0.5;
+				}).map((t) => t.textContent)
+			);
+			assert.deepEqual(cut, []);
 			await page.keyboard.press('Escape');
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 		});
 	});
 
 	/**
-	 * Open `field`'s spec, its `section` open if one is named. What saving it ran comes
+	 * Open `field`'s spec, on `tab` if one is named. What saving it ran comes
 	 * back boxed — an async function returning the bare promise would wait
 	 * for the save — beside the echoes before it, counted while the CLI widget is
 	 * drawn: behind the place in front, it is not.
 	 */
-	async function openFieldAt(app, field, section) {
+	async function openFieldTab(app, field, tab) {
 		const before = (await app.echoes()).length;
 		const { saved } = await openField(app.page, field);
 		await app.page.locator(MODAL).waitFor();
-		if (section) await openSection(app.page, section);
+		if (tab) await app.page.locator(`${MODAL} [data-tab="${tab}"]`).click();
 		return { saved, before };
 	}
 
@@ -924,7 +933,7 @@ describe('in the app', () => {
 			const shown = async () => JSON.parse((await app.run(['setup', 'word', '--json'])).stdout);
 			await app.run(['track', 'word', '--verb', 'occur']);
 
-			let opened = await openFieldAt(app, 'word', 'data');
+			let opened = await openFieldTab(app, 'word', 'data');
 			for (const name of ['pos', 'gloss', 'reps']) {
 				await page.locator(`${MODAL} ul.data + button.add`).click();
 				await page.locator(`${MODAL} li.key input.name`).last().fill(name);
@@ -945,7 +954,7 @@ describe('in the app', () => {
 			assert.deepEqual((await app.entries(1))[0].data, { reps: 3, gloss: 'run', pos: 'verb' });
 
 			// Opened again, in the order saved.
-			opened = await openFieldAt(app, 'word', 'data');
+			opened = await openFieldTab(app, 'word', 'data');
 			assert.deepEqual(await names(page), ['reps', 'gloss', 'pos']);
 			await leaveField(page);
 			assert.deepEqual(app.errors, []);
@@ -957,11 +966,11 @@ describe('in the app', () => {
 	test('the mode button: -K says it is the id, and one row takes the rest of the line as a list, a string or a comment', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const rows = page.locator(`${MODAL} ul.data li.key`);
+			const rows = page.locator(`${PANEL} ul.data li.key`);
 			await openIt(page);
 			await fill(page, 'book', 'add');
 			for (const name of ['id', 'title', 'notes']) {
-				await page.locator(`${MODAL} ul.data + button.add`).click();
+				await page.locator(`${PANEL} ul.data + button.add`).click();
 				await rows.last().locator('input.name').fill(name);
 			}
 			const modes = () => rows.locator('.mode').allInnerTexts();
@@ -1005,7 +1014,7 @@ describe('in the app', () => {
 			const rows = page.locator(`${MODAL} ul.data li.key`);
 			await app.run(['track', 'tea', '--verb', 'occur']);
 
-			let opened = await openFieldAt(app, 'tea', 'data');
+			let opened = await openFieldTab(app, 'tea', 'data');
 			for (const [name, eq, value, fixed] of [['a'], ['b', true], ['c', true, 'hot'], ['d', true, 'acme', true]]) {
 				await page.locator(`${MODAL} ul.data + button.add`).click();
 				const row = rows.last();
@@ -1020,7 +1029,7 @@ describe('in the app', () => {
 			assert.deepEqual(spec.assign, { d: 'acme' });
 
 			// Opened again, the rows are what the CLI read back; a and d swap kinds.
-			opened = await openFieldAt(app, 'tea', 'data');
+			opened = await openFieldTab(app, 'tea', 'data');
 			assert.deepEqual(await rows.locator('button.eq').evaluateAll((els) => els.map((e) => e.getAttribute('aria-pressed'))), ['false', 'true', 'true']);
 			assert.equal(await rows.nth(3).locator('button.eq').count(), 0, 'a fixed key has no =, which would quietly unfix it');
 			assert.equal(await rows.nth(3).locator('input.value').inputValue(), 'acme');
@@ -1051,12 +1060,12 @@ describe('in the app', () => {
 			const shown = async () => JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout);
 			await app.run(['track', 'sleep', '--verb', 'start']);
 
-			let opened = await openFieldAt(app, 'sleep', 'aliases');
+			let opened = await openFieldTab(app, 'sleep', 'aliases');
 			assert.deepEqual(await page.locator(`${MODAL} .alias code.name`).allInnerTexts(), ['sleep', 'sleepe']);
 			assert.equal(await page.locator(`${MODAL} .alias input`).count(), 0, 'a made alias is not edited: the save makes it again');
 			await page.locator(`${MODAL} input.autoalias`).uncheck();
 			await page.locator(`${MODAL} button[aria-label="remove sleep"]`).click();
-			await page.locator(`${SECTION('aliases')} button.add`).click();
+			await page.locator(`${PANEL} button.add`).click();
 			await page.locator(`${MODAL} .alias input.name`).last().fill('zz');
 			await page.locator(`${MODAL} .alias input.expands`).last().fill('start sleep');
 			await save(app, opened);
@@ -1073,7 +1082,7 @@ describe('in the app', () => {
 			const bare = await app.run(['sleep']);
 			assert.notEqual(bare.code, 0, 'the removed alias still resolves');
 
-			opened = await openFieldAt(app, 'sleep', 'aliases');
+			opened = await openFieldTab(app, 'sleep', 'aliases');
 			await page.locator(`${MODAL} input.autoalias`).check();
 			await save(app, opened);
 			spec = await shown();
