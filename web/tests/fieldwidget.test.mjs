@@ -1118,3 +1118,44 @@ describe('the bottom row by how the person came', () => {
 		}, PHONE);
 	});
 });
+
+describe("the setup widget in the database's colors", () => {
+	// vividn, 2026-10-28 (da-c0laf): «many of the components (for example the
+	// buttons to select field shape) seem to take their background color from
+	// the deault db rather than the current db, so the color clashes».
+	/** The hue of an `rgb(...)` string, in degrees. */
+	const hue = (rgb) => {
+		const [r, g, b] = rgb.match(/\d+/g).map(Number);
+		const max = Math.max(r, g, b);
+		const c = max - Math.min(r, g, b);
+		const h = max === r ? (g - b) / c : max === g ? (b - r) / c + 2 : (r - g) / c + 4;
+		return (h * 60 + 360) % 360;
+	};
+	/** How far apart two hues are, around the wheel. */
+	const apart = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+	/** The page's ground and each shape button's, in `query`'s database. */
+	async function painted(query) {
+		let seen;
+		await withApp(async ({ page }) => {
+			await openField(page);
+			await page.locator(`${FIELD_FORM} .verb`).first().waitFor();
+			seen = {
+				page: await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
+				shapes: await page.locator(`${FIELD_FORM} .verb`).evaluateAll((all) => all.map((b) => getComputedStyle(b).backgroundColor))
+			};
+		}, { ...DESKTOP, query });
+		return seen;
+	}
+
+	test("the shape buttons' ground takes the page's hue, in each database", async () => {
+		const datum = await painted('');
+		const work = await painted('?db=work');
+		assert.notEqual(work.page, datum.page, 'the two databases are one colour');
+		for (const db of [datum, work]) {
+			assert.equal(db.shapes.length, VERBS.length);
+			// An 8-bit channel at this lightness holds a hue to a few degrees.
+			for (const shape of db.shapes) assert.ok(apart(hue(shape), hue(db.page)) < 8, `a shape is ${shape} on a page of ${db.page}`);
+		}
+		assert.notEqual(work.shapes[0], datum.shapes[0], "the shapes are the default database's in both");
+	});
+});

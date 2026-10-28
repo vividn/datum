@@ -459,7 +459,8 @@ const DATUM = {
 	'--muted': 'rgb(85, 85, 138)',
 	'--quiet': 'rgb(68, 68, 102)',
 	'--ink': 'rgb(200, 200, 232)',
-	'--ink-bright': 'rgb(224, 224, 255)'
+	'--ink-bright': 'rgb(224, 224, 255)',
+	'--raised': 'rgb(26, 26, 48)'
 };
 
 /** The colours that MEAN something, which no database moves. */
@@ -517,7 +518,10 @@ describe('the base colour follows the database', () => {
 			['--ink-bright', '--tint'],
 			['--accent', '--page'],
 			['--accent', '--ground'],
-			['--accent', '--tint']
+			['--accent', '--tint'],
+			['--ink', '--raised'],
+			['--ink-bright', '--raised'],
+			['--accent', '--raised']
 		];
 		const tokens = [...new Set(PAIRS.flat())];
 		await plain.solo(async ({ page }) => {
