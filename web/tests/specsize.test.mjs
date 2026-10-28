@@ -8,8 +8,9 @@
 //
 // It is a place now (da-hbrfg): a tab on a phone, the place modal on a
 // desktop (da-jozgv), and the box is the host's rather than the dialog's
-// 38rem. A tab taller than the box scrolls in its panel, and the header,
-// the tabs and Done stay where they are, so Done in view is what is held.
+// 38rem. A tab taller than the box scrolls with the shapes and name over
+// it (da-uz2td), and the tabs and Done stay where they are, so Done in view
+// is what is held.
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';

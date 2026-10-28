@@ -20,8 +20,8 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-/** The form's body, which scrolls under its head and buttons. */
-const body = (page) => page.locator(`${FIELD_FORM} .body`);
+/** What scrolls in the form: its shapes, name and tab in front, over its tabs and buttons (da-uz2td). */
+const body = (page) => page.locator(`${FIELD_FORM} .scroll`);
 
 /** A new occur field's form, its placement drawn, in its place: the root's tab `setup`. */
 async function open(page) {

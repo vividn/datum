@@ -879,6 +879,64 @@ describe('the field widget', () => {
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
+
+	// vividn, 2026-10-28: «don't freeze the shapes at the top of the setup widget allow them to scroll with everything
+	// else / pressing enter on the field text box should close the keyboard, not advance to description / likewise,
+	// pressing enter on the description box should close the keyboard, not save the field» (da-uz2td).
+	test('on a phone the shapes scroll away with the form, over the tabs and Save, which stay', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'mood', '--verb', 'switch']);
+			const spec = JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout);
+			const r = await app.run(['setup', 'mood', '--from-json', JSON.stringify({ ...spec, allowed_states: 'abcdefghijkl'.split('') })]);
+			assert.equal(r.code, 0, r.stderr);
+			await openField(page, 'mood');
+			await page.locator(`${FIELD_FORM} h2`).waitFor();
+			const seen = await page.locator(`${FIELD_FORM} .verbs`).evaluate((verbs) => {
+				let box = verbs.parentElement;
+				while (box && !['auto', 'scroll'].includes(getComputedStyle(box).overflowY)) box = box.parentElement;
+				if (!box) return null;
+				const taller = box.scrollHeight - box.clientHeight;
+				box.scrollTop = box.scrollHeight;
+				const form = verbs.closest('form');
+				return {
+					taller,
+					holds: ['[data-panel]', '.tabs', 'button.commit'].map((sel) => box.contains(form.querySelector(sel))),
+					shapes: verbs.getBoundingClientRect().bottom - box.getBoundingClientRect().top,
+					save: form.querySelector('button.commit').getBoundingClientRect().bottom - innerHeight
+				};
+			});
+			assert.ok(seen, 'nothing scrolls the shapes');
+			assert.ok(seen.taller > 0, 'the form fits the screen: nothing to scroll');
+			assert.deepEqual(seen.holds, [true, false, false], 'the shapes scroll with the panel, and the tabs and Save do not');
+			assert.ok(seen.shapes <= 0, `scrolled down, the shapes are still ${seen.shapes}px in view`);
+			assert.ok(seen.save <= 0, `scrolled down, Save is ${seen.save}px under the screen`);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	for (const box of ['input.field', 'input.description'])
+		test(`on a phone Enter in ${box} puts the keyboard away, and neither moves on nor saves`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				const { saved } = await openField(page);
+				let answered = false;
+				saved.then(() => (answered = true), () => {});
+				await page.locator(`${FIELD_FORM} input.field`).fill('tea');
+				const input = page.locator(`${FIELD_FORM} ${box}`);
+				await input.click();
+				await input.press('Enter');
+				assert.equal(await typing(page), false, 'the focus is in a box still');
+				assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'tea', 'the form is not the new field');
+				assert.equal(JSON.parse((await app.run(['fields', '--json'])).stdout).some((f) => f.field === 'tea'), false, 'Enter saved tea');
+				assert.equal(answered, false, 'Enter closed the place');
+				// A phone's key reads Done, and is Enter: «next» would move the focus without one.
+				assert.equal(await input.getAttribute('enterkeyhint'), 'done');
+				await leaveField(page);
+				assert.equal(await saved, null);
+				assert.deepEqual(app.errors, []);
+			}, PHONE);
+		});
 });
 
 // A test that throws with a place open fails with what it threw, not with
