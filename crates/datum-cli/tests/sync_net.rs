@@ -154,17 +154,21 @@ impl Copy {
     }
 
     fn query(&self, sql: &str) -> String {
-        rusqlite::Connection::open(self.db())
-            .unwrap()
-            .query_row(sql, [], |r| {
-                let v: rusqlite::types::Value = r.get(0)?;
-                Ok(match v {
-                    rusqlite::types::Value::Text(s) => s,
-                    rusqlite::types::Value::Integer(n) => n.to_string(),
-                    other => format!("{other:?}"),
-                })
+        let db = rusqlite::Connection::open(self.db()).unwrap();
+        // rusqlite's own 5 s ran out on a loaded runner while a copy's run
+        // was killed and restarted (CI 6621: a plain SQLITE_BUSY, extended
+        // code 5). A held write lock does not hold a WAL reader, so what
+        // did is open (da-hd9sx).
+        db.busy_timeout(Duration::from_secs(30)).unwrap();
+        db.query_row(sql, [], |r| {
+            let v: rusqlite::types::Value = r.get(0)?;
+            Ok(match v {
+                rusqlite::types::Value::Text(s) => s,
+                rusqlite::types::Value::Integer(n) => n.to_string(),
+                other => format!("{other:?}"),
             })
-            .unwrap()
+        })
+        .unwrap()
     }
 
     fn has(&self, field: &str) -> bool {
@@ -1973,10 +1977,12 @@ fn a_first_sync_of_many_rounds_counts_every_round() {
 
 /// A slow copy catching up from three members at once (da-h31wt): vividn's,
 /// after a purge, lost every session but one to «connection lost: timed
-/// out» or «database is locked». x applies at 20 ms an op, on a 3 s
+/// out» or «database is locked». x applies at 40 ms an op, on a 6 s
 /// timeout, while three members running `sync run` each bring it 100
 /// entries, and a command is typed on it meanwhile: all four converge, and
-/// none of them says a session failed.
+/// none of them says a session failed. Not 20 ms on 3 s: a loaded runner
+/// stalled a session 3 s (da-hd9sx); with the keepalives off
+/// (`DATUM_SYNC_TEST_KEEPALIVE=0`) it fails at either.
 #[test]
 fn a_slow_copy_catches_up_from_three_members_at_once() {
     let mut x = Copy::new();
@@ -2007,9 +2013,9 @@ fn a_slow_copy_catches_up_from_three_members_at_once() {
         }
         runs.push(child);
     };
-    let timeout = ("DATUM_SYNC_TIMEOUT_S", "3");
+    let timeout = ("DATUM_SYNC_TIMEOUT_S", "6");
     x.env
-        .extend([timeout, ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "20")]);
+        .extend([timeout, ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "40")]);
     up(&x);
     for p in &mut peers {
         p.env.extend([timeout, ("DATUM_SYNC_TEST_RETRY_MS", "200")]);
@@ -2019,7 +2025,7 @@ fn a_slow_copy_catches_up_from_three_members_at_once() {
     let start = Instant::now();
     while count() == "0" {
         assert!(
-            start.elapsed() < Duration::from_secs(30),
+            start.elapsed() < Duration::from_secs(60),
             "x applied nothing"
         );
         std::thread::sleep(Duration::from_millis(50));
@@ -2028,7 +2034,7 @@ fn a_slow_copy_catches_up_from_three_members_at_once() {
     assert_ne!(count(), "300", "the command was typed after the catch-up");
     while !peers.iter().all(|p| p.has("typed") && p.hash() == x.hash()) {
         assert!(
-            start.elapsed() < Duration::from_secs(120),
+            start.elapsed() < Duration::from_secs(240),
             "converged: {:#?}",
             said.lock().unwrap()
         );
