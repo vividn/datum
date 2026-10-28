@@ -507,12 +507,16 @@ fn render_dayview_json(db_path: &Path) -> JsonValue {
 /// da-6hg6v: every mark names the entry that generated it, and a hid is
 /// minted at random on insert — so the golden records that the id is
 /// THERE, not which one it was. Masks the value, never the key: a mark
-/// that stopped naming its entry drops the key and still fails here.
+/// that stopped naming its entry drops the key and still fails here. So
+/// with when the entry was logged (da-k16pi), which is the run's own now.
 fn mask_mark_ids(v: &mut JsonValue) {
     match v {
         JsonValue::Object(map) => {
             if let Some(id) = map.get_mut("id") {
                 *id = JsonValue::String("<hid>".into());
+            }
+            if let Some(at) = map.get_mut("created_ms") {
+                *at = JsonValue::String("<created>".into());
             }
             for (_, child) in map.iter_mut() {
                 mask_mark_ids(child);

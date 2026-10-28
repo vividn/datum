@@ -17,6 +17,8 @@
 //! push helpers, emitting `NowviewBlock`/`NowviewPoint`) is NOT duplicated —
 //! it exists once in `commands/nowview.rs` and stays there.
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use datum_core::db::IGNORED_STATE_VALUE;
 use datum_core::entry::{Entry, Verb};
@@ -26,6 +28,7 @@ use datum_core::shape::{is_inactive_state, is_off_state};
 use datum_core::state::FieldStateRows;
 use datum_core::time::ZoneTimeline;
 use datum_layout::dayview::{BlockFill, DayviewBlock, DayviewPoint};
+use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde_json::Value as JsonValue;
 
 use crate::render::action::clock_label;
@@ -264,6 +267,7 @@ pub(crate) fn render_field_visuals(
                         state_label: mark_state(entry.state.as_ref()),
                         id: Some(entry.hid.to_string()),
                         title: None,
+                        created_ms: None,
                         glyph: dot_glyph(entry, spec),
                         icon: spec.is_some_and(|s| {
                             (s.presentation)
@@ -401,6 +405,7 @@ pub(crate) fn push_block_window(
         state_label: mark_state(entry.state.as_ref()),
         id: Some(entry.hid.to_string()),
         title: None,
+        created_ms: None,
     });
 }
 
@@ -439,6 +444,7 @@ pub(crate) fn push_switch_region(
         state_label: mark_state(value),
         id: id.map(str::to_string),
         title: None,
+        created_ms: None,
     });
 }
 
@@ -480,10 +486,7 @@ pub(crate) fn title_marks(
             .map(|t| clock_label(&zones.zone_at(t).local_naive(t)))
             .unwrap_or_default()
     };
-    let name = |state: &Option<String>| match state {
-        Some(s) => format!("{field}: {s}"),
-        None => field.to_string(),
-    };
+    let name = |state: &Option<String>| mark_name(field, state);
     for b in blocks {
         let start = if b.start_ms == cut.0 {
             "…".to_string()
@@ -499,6 +502,47 @@ pub(crate) fn title_marks(
     }
     for p in points {
         p.title = Some(name(&p.state_label));
+    }
+}
+
+/// `field: state`, or the field alone for a mark with no state.
+fn mark_name(field: &str, state: &Option<String>) -> String {
+    match state {
+        Some(s) => format!("{field}: {s}"),
+        None => field.to_string(),
+    }
+}
+
+/// Name each of a dayview's marks by the entry behind it (da-k16pi,
+/// vividn: «just field: state [dur, if dur was specified on the entry
+/// that created it]»): `work: coding`, `walk: true [30m]`, and carry when
+/// that entry was logged, which datum.day's day strip marks. A mark whose
+/// entry is not among `entries` — a state carried in from before the
+/// fetch — is named by its field and state alone.
+pub(crate) fn name_marks(
+    field: &str,
+    blocks: &mut [DayviewBlock],
+    points: &mut [DayviewPoint],
+    entries: &[Entry],
+) {
+    let by_hid: HashMap<String, &Entry> = entries.iter().map(|e| (e.hid.to_string(), e)).collect();
+    let named = |state: &Option<String>, id: &Option<String>| {
+        let entry = id.as_ref().and_then(|h| by_hid.get(h));
+        let dur = entry.and_then(|e| e.duration_seconds());
+        let dur = dur.map(|d| {
+            format!(
+                " [{}]",
+                format_human_duration(d, DurationPrecision::Seconds)
+            )
+        });
+        let title = format!("{}{}", mark_name(field, state), dur.unwrap_or_default());
+        (Some(title), entry.map(|e| e.create_time.timestamp_millis()))
+    };
+    for b in blocks {
+        (b.title, b.created_ms) = named(&b.state_label, &b.id);
+    }
+    for p in points {
+        (p.title, p.created_ms) = named(&p.state_label, &p.id);
     }
 }
 

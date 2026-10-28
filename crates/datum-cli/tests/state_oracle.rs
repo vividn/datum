@@ -137,13 +137,24 @@ fn a_moment_state_resumes_the_state_before_it() {
     let view: serde_json::Value =
         serde_json::from_str(&env.ok(&[&["dayview", "--json"][..], &day].concat())).unwrap();
     let mood = &view["days"][0]["fields"][0];
-    let titles: Vec<_> = mood["blocks"]
+    let blocks: Vec<_> = mood["blocks"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|b| b["title"].as_str().unwrap())
+        .map(|b| {
+            (
+                b["title"].as_str().unwrap(),
+                b["start_ms"].as_i64(),
+                b["end_ms"].as_i64(),
+            )
+        })
         .collect();
-    assert_eq!(titles, ["mood: happy 09:00–15:00", "mood: tired 15:00 →"]);
+    let [(happy, Some(from), Some(to)), (tired, Some(next), _)] = blocks[..] else {
+        panic!("{blocks:?}");
+    };
+    // One happy block from 09:00 to 15:00, where tired begins.
+    assert_eq!((happy, tired), ("mood: happy", "mood: tired"));
+    assert_eq!((to - from, next), (6 * 3_600_000, to));
     let dots: Vec<_> = mood["points"]
         .as_array()
         .unwrap()

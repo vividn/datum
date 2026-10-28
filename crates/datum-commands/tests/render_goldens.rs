@@ -658,6 +658,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
                 state_label: Some("focused".into()),
                 id: None,
                 title: None,
+                created_ms: None,
             }],
             points: vec![DayviewPoint {
                 time_ms: DAY_START_MS + 14 * HOUR_MS + 30 * MIN_MS,
@@ -665,6 +666,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
                 state_label: Some("coffee".into()),
                 id: None,
                 title: None,
+                created_ms: None,
                 glyph: None,
                 icon: false,
                 moment: false,
@@ -711,6 +713,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
                     state_label: Some("solo".into()),
                     id: None,
                     title: None,
+                    created_ms: None,
                 },
                 DayviewBlock {
                     start_ms: DAY_START_MS + 13 * HOUR_MS,
@@ -719,6 +722,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
                     state_label: Some("multi".into()),
                     id: None,
                     title: None,
+                    created_ms: None,
                 },
                 // An OFF sub-state is a gap in the stripes, as a false
                 // block is a hole (da-x2vw4): through the real resolver.
@@ -729,6 +733,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
                     state_label: Some("deep, false".into()),
                     id: None,
                     title: None,
+                    created_ms: None,
                 },
             ],
             points: vec![],
@@ -777,6 +782,7 @@ fn dayview_scene_today_now_line() -> DayviewLayoutResult {
                 state_label: Some("focused".into()),
                 id: None,
                 title: None,
+                created_ms: None,
             }],
             points: vec![],
             icon: None,
@@ -835,6 +841,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
                 state_label: Some("focused".into()),
                 id: None,
                 title: None,
+                created_ms: None,
             }],
             points: vec![DayviewPoint {
                 time_ms: end_ms - 10 * MIN_MS,
@@ -842,6 +849,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
                 state_label: Some("coffee".into()),
                 id: None,
                 title: None,
+                created_ms: None,
                 glyph: None,
                 icon: false,
                 moment: false,
@@ -915,6 +923,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
                 state_label: Some("focused".into()),
                 id: None,
                 title: None,
+                created_ms: None,
             }],
             points: vec![],
             icon: None,
@@ -959,6 +968,7 @@ fn nowview_scene_at_instant() -> DayviewLayoutResult {
         state_label: None,
         id: None,
         title: None,
+        created_ms: None,
         glyph: None,
         icon: false,
         moment: false,
@@ -970,6 +980,7 @@ fn nowview_scene_at_instant() -> DayviewLayoutResult {
         state_label: Some(c.into()),
         id: None,
         title: None,
+        created_ms: None,
     };
     let fields = vec![
         DayviewFieldInput {

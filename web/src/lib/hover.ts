@@ -1,11 +1,11 @@
 // What a drawn view says under the pointer (da-s5da).
 //
 // datum draws dayview and nowview as SVG and names every mark in it: a
-// `<title>` that reads the row the way the tail does (`work: coding
-// 14:00–14:30`), its state and instants as `data-` attributes, and on
-// each day group the span of time the day's axis covers (`data-from` →
-// `data-to` over `data-lo` → `data-hi` user units along `data-axis`). The
-// page adds the one thing a picture cannot know, which is where the
+// `<title>` that reads the row (`work: coding 14:00–14:30` in a nowview,
+// `run: on [30m]` in a dayview, da-k16pi), its state and instants as
+// `data-` attributes, and on each day group the span of time the day's
+// axis covers (`data-from` → `data-to` over `data-lo` → `data-hi` user
+// units along `data-axis`). The page adds the one thing a picture cannot know, which is where the
 // pointer is — `timeAt` — and shows a label with it. The `<title>` does
 // not come along (da-8jb8): inline, it is the browser's own tooltip, drawn
 // over the page's, so `inlineSvg` moves its text onto the mark.
@@ -333,6 +333,52 @@ function drawCursor(svg: SVGSVGElement | null, c: Cursor | null | undefined): vo
 }
 
 /**
+ * Where the entries selected were LOGGED, on `svg` (da-k16pi, vividn: «a
+ * light tan dotted line with the time of the entry written above it»):
+ * the `data-created` of their marks anywhere in `root`, drawn on this
+ * picture where one of its days holds it in view. Not a selection — no
+ * pill, nothing points at it — and it goes with the selection.
+ */
+function drawLogged(svg: SVGSVGElement | null, root: ParentNode | null, hids: string[]): void {
+	svg?.querySelectorAll('.logged').forEach((el) => el.remove());
+	if (!svg || !root) return;
+	const chosen = marksIn(root).filter((m) => isSelected(hids, hidOf(m) ?? ''));
+	for (const created of new Set(chosen.map((m) => m.getAttribute('data-created')))) {
+		const at = new Date(created ?? NaN);
+		const place = !isNaN(+at) && placeOf(svg, { at });
+		if (!place || place === 'snapshot' || place.along < place.lo || place.along > place.hi) continue;
+		const [a, b] = place.y ? ['y', 'x'] : ['x', 'y'];
+		const offset = place.el.getAttribute('data-offset');
+		const label = mark('text', {
+			class: 'logged',
+			[a]: place.along,
+			[b]: place.start + LOGGED_FONT,
+			'text-anchor': 'middle',
+			'font-size': LOGGED_FONT,
+			fill: LOGGED
+		});
+		label.textContent = clockLabel(at, offset ? Number(offset) : undefined);
+		svg.append(
+			label,
+			mark('line', {
+				class: 'logged',
+				[`${a}1`]: place.along,
+				[`${a}2`]: place.along,
+				[`${b}1`]: place.start + LOGGED_FONT + 2,
+				[`${b}2`]: place.end,
+				stroke: LOGGED,
+				'stroke-width': 1,
+				'stroke-dasharray': '1 3',
+				'vector-effect': 'non-scaling-stroke'
+			})
+		);
+	}
+}
+
+const LOGGED = 'rgba(210, 180, 140, 0.8)';
+const LOGGED_FONT = 9;
+
+/**
  * The stretch from `since` to now dimmed on `svg` (da-g5jjp): what another
  * device may hold that this copy has not heard yet, until the session's
  * first sync lands. Over the marks, which are as uncertain as the ground,
@@ -390,14 +436,19 @@ function markTime(mark: Element): Date {
 }
 
 /**
- * The label for a mark: a time, then the mark's title. A dot's time
- * is its own; a block's is the one under `clientX`, or where it is drawn
- * from when there is no pointer — as when it has the keyboard's focus.
+ * The label for a mark: a time, then the mark's title — or, for an entry
+ * selected in a picture marked `data-labels="entry"`, the title alone. A
+ * dot's time is its own; a block's is the one under `clientX`, or where
+ * it is drawn from when there is no pointer — as when it has the
+ * keyboard's focus.
  * It is told on the clock the mark is drawn on (da-3ctgr): its stretch's
  * `data-offset`, the one a day was lived by, and the reader's own where
  * the picture names none, as nowview's does not.
  */
 export function tipText(mark: Element, clientX?: number): string {
+	// A selected entry's label in the day strip is its name alone (da-k16pi).
+	if (mark.hasAttribute('data-selected') && mark.closest('[data-labels="entry"]'))
+		return mark.getAttribute('data-title') ?? '';
 	const when = mark.hasAttribute('data-at') || clientX === undefined ? markTime(mark) : timeAt(mark, clientX);
 	const title = mark.getAttribute('data-title') ?? '';
 	const offset = mark.closest('[data-lo]')?.getAttribute('data-offset');
@@ -624,8 +675,12 @@ export function picture(node: HTMLElement, { text, unsynced }: { text: string; u
 	tip.hidden = true;
 
 	const own = () => ownsPointer(node);
+	/** Where the marks whose log time this picture draws are: the day strip's, all its bands. */
+	const logs = () => node.closest('[data-labels="entry"]');
 
 	let shown: Element | null = null;
+	/** Where the pointer was when `shown` was labeled: a block's time is the one under it. */
+	let shownX: number | undefined;
 	const marks = () => [...node.querySelectorAll('[data-state]')];
 	const markAt = (target: EventTarget | null) =>
 		target instanceof Element ? target.closest('[data-state]') : null;
@@ -636,6 +691,7 @@ export function picture(node: HTMLElement, { text, unsynced }: { text: string; u
 		tip.hidden = !mark;
 		if (!mark) return;
 		mark.setAttribute('aria-describedby', tip.id);
+		shownX = clientX;
 		tip.textContent = tipText(mark, clientX);
 		// Beside the pointer, and turned back inside the window at its
 		// edges — a phone's included.
@@ -681,6 +737,7 @@ export function picture(node: HTMLElement, { text, unsynced }: { text: string; u
 		drawCursor(svg, sel);
 		highlight(svg, pilled);
 		bringOut(svg, chosen);
+		drawLogged(svg, logs(), chosen);
 	}
 
 	/**
@@ -835,6 +892,9 @@ export function picture(node: HTMLElement, { text, unsynced }: { text: string; u
 	const unchosen = selected.subscribe((hids) => {
 		chosen = hids;
 		bringOut(node.querySelector('svg'), chosen);
+		drawLogged(node.querySelector('svg'), logs(), chosen);
+		// The label up says whether its entry is selected.
+		if (shown) tip.textContent = tipText(shown, shownX);
 	});
 	return {
 		update: (next: { text: string; unsynced?: number }) => {

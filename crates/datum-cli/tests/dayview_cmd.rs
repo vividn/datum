@@ -694,6 +694,29 @@ fn a_false_dur_block_is_a_hole_cut_out_of_the_enclosing_block() {
         "two halves of the `work` block and nothing else"
     );
 
+    // Each half's span in minutes, from the first one's start.
+    let instant = |rect: &str, key: &str| {
+        let at = rect.find(&format!(r#"data-{key}=""#)).unwrap() + key.len() + 7;
+        let iso = &rect[at..at + rect[at..].find('"').unwrap()];
+        chrono::DateTime::parse_from_rfc3339(iso)
+            .unwrap()
+            .timestamp()
+            / 60
+    };
+    let spans: Vec<(i64, i64)> = svg
+        .match_indices(r#"<rect class="block""#)
+        .map(|(i, _)| &svg[i..i + svg[i..].find('>').unwrap()])
+        .map(|r| (instant(r, "from"), instant(r, "to")))
+        .collect();
+    let first = spans[0].0;
+    assert_eq!(
+        spans
+            .iter()
+            .map(|(a, b)| (a - first, b - first))
+            .collect::<Vec<_>>(),
+        [(0, 55), (60, 180)],
+        "the hole runs [occur − dur, occur]: 09:00–09:55 and 10:00–12:00"
+    );
     let titles: Vec<&str> = svg
         .match_indices("<title>")
         .map(|(i, _)| {
@@ -703,8 +726,8 @@ fn a_false_dur_block_is_a_hole_cut_out_of_the_enclosing_block() {
         .collect();
     assert_eq!(
         titles,
-        vec!["work: on 09:00–09:55", "work: on 10:00–12:00"],
-        "the hole runs [occur − dur, occur] and both halves keep the region's label"
+        vec!["work: on", "work: on"],
+        "both halves keep the region's label"
     );
 }
 
@@ -1021,7 +1044,13 @@ fn a_sample_is_drawn_as_its_entries_would_be() {
             let line: Vec<&str> = line.iter().map(String::as_str).collect();
             run_cli(&line, &logged).unwrap();
         }
-        assert_eq!(svg, day_svg(&logged, &[]), "{field}");
+        // All but when each was logged (da-k16pi): no entry is behind a sample.
+        let mut logged = day_svg(&logged, &[]);
+        while let Some(at) = logged.find(r#" data-created=""#) {
+            let end = at + 15 + logged[at + 15..].find('"').unwrap() + 1;
+            logged.replace_range(at..end, "");
+        }
+        assert_eq!(svg, logged, "{field}");
     }
 }
 

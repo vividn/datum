@@ -36,7 +36,7 @@ use datum_parse::time::{parse_date, DateArg, TimeCtx};
 
 use crate::args::{DayviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
-    leading_edge_ms, occur_time_ms, render_field_visuals, switch_regions, title_marks,
+    leading_edge_ms, name_marks, occur_time_ms, render_field_visuals, switch_regions,
 };
 use datum_core::state::FieldStateRows;
 use serde_json::Value as JsonValue;
@@ -270,8 +270,8 @@ fn layout_of(
     let now_ms = now.utc.timestamp_millis();
     // The zones the days were lived in, read from three days before the
     // first date: a day begins up to 14 hours before its date's midnight in
-    // UTC, and a block's title reads the clock of a start as far back as
-    // the fetch's two-day buffer before that. To three days after the last,
+    // UTC, and the fetch reaches its two-day buffer before that. To three
+    // days after the last,
     // the same margin the other way, so a past day does not read on to now
     // (da-e853a).
     let midnight = |d: &NaiveDate| d.and_time(Default::default()).and_utc();
@@ -326,7 +326,6 @@ fn layout_of(
         let start_ms = now_ms - window_ms;
         let mut fields = build_day_fields(
             db,
-            &zones,
             start_ms,
             now_ms,
             now_ms,
@@ -396,7 +395,6 @@ fn layout_of(
 
         let fields = build_day_fields(
             db,
-            &zones,
             day_start_ms,
             day_end_ms,
             // A data layer's running state runs on to the day's end, for its
@@ -644,7 +642,6 @@ fn format_day_label(date: NaiveDate) -> Vec<String> {
 /// the field has (`--context`, da-jc8ic) or only where it has nothing.
 fn build_day_fields(
     db: &Db,
-    zones: &ZoneTimeline,
     day_start_ms: i64,
     day_end_ms: i64,
     now_ms: i64,
@@ -736,6 +733,7 @@ fn build_day_fields(
             day_start_ms,
             day_end_ms,
         );
+        name_marks(&field, &mut blocks, &mut points, &entries_for_field);
         // The setup form's preview (da-srrqd): nothing of the field on the
         // day, so entries in its shape that no database holds, drawn as
         // its own would be.
@@ -756,18 +754,17 @@ fn build_day_fields(
                 day_start_ms,
                 day_end_ms,
             );
-            // No entry is behind a sample's mark (da-jc8ic), so it carries
-            // no `data-id`: which is how a reader tells it from a real one.
-            blocks.iter_mut().for_each(|b| b.id = None);
-            points.iter_mut().for_each(|p| p.id = None);
+            // Named as its entries would be; but no entry is behind a
+            // sample's mark (da-jc8ic), so it carries no `data-id` and no
+            // log time: which is how a reader tells it from a real one.
+            name_marks(&field, &mut blocks, &mut points, &made);
+            blocks
+                .iter_mut()
+                .for_each(|b| (b.id, b.created_ms) = (None, None));
+            points
+                .iter_mut()
+                .for_each(|p| (p.id, p.created_ms) = (None, None));
         }
-        title_marks(
-            &field,
-            &mut blocks,
-            &mut points,
-            (fetch_start.timestamp_millis(), fallback_end_ms),
-            zones,
-        );
 
         // Per the bead spec: "Empty fields (zero entries in window) are
         // SKIPPED. Don't pollute the SVG with empty bands." The layout
@@ -925,10 +922,6 @@ mod tests {
     use datum_core::action::Action;
     use datum_parse::cli::DayviewOrientation;
     use serde_json::Value as JsonValue;
-
-    fn utc_zone() -> ZoneTimeline {
-        ZoneTimeline::single(Zone::Fixed(FixedOffset::east_opt(0).unwrap()))
-    }
 
     /// What [`day_spans`] cuts `date` into: each stretch's wall clock in
     /// minutes of the day, its length in real minutes, and its label.
@@ -1154,7 +1147,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end, None).unwrap();
         assert_eq!(fields.len(), 1);
         let mood = &fields[0];
         assert_eq!(mood.field, "mood");
@@ -1225,7 +1218,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end, None).unwrap();
         assert_eq!(fields.len(), 1);
         let mood = &fields[0];
         // Two regions: 8-12 (happy) and 16-day_end (focus). The false-switch
@@ -1289,7 +1282,7 @@ mod tests {
             .timestamp_millis();
         let t8 = utc8.timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, now_ms, None).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, now_ms, None).unwrap();
         let mood = &fields[0];
         assert_eq!(mood.blocks.len(), 1);
         assert_eq!(mood.blocks[0].start_ms, t8);
@@ -1329,15 +1322,8 @@ mod tests {
         let ms = |h| at(h).timestamp_millis();
         let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap();
 
-        let fields = build_day_fields(
-            &db,
-            &utc_zone(),
-            ms(0),
-            day_end.timestamp_millis(),
-            ms(14),
-            None,
-        )
-        .unwrap();
+        let fields =
+            build_day_fields(&db, ms(0), day_end.timestamp_millis(), ms(14), None).unwrap();
         let spans = |f: &str| {
             let field = fields.iter().find(|x| x.field == f).unwrap();
             (field.blocks.iter())
@@ -1384,7 +1370,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, now_ms, None).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, now_ms, None).unwrap();
         let mood = &fields[0];
         assert_eq!(mood.blocks.len(), 1);
         assert_eq!(mood.blocks[0].end_ms, day_end);
@@ -1428,7 +1414,7 @@ mod tests {
                 .timestamp_millis()
         };
         let lane = |db: &Db| {
-            let f = build_day_fields(db, &utc_zone(), day(0), day(23), day(23), None).unwrap();
+            let f = build_day_fields(db, day(0), day(23), day(23), None).unwrap();
             assert_eq!(f.len(), 1, "mood has no marks, only coffee draws");
             (f[0].y_frac, f[0].height_frac)
         };
@@ -1494,7 +1480,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end, None).unwrap();
         let names: Vec<&str> = fields.iter().map(|f| f.field.as_str()).collect();
         assert!(names.contains(&"coffee"), "names = {names:?}");
         assert!(
@@ -1540,7 +1526,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end, None).unwrap();
         assert!(
             fields.iter().all(|f| f.field != "stretch_routine"),
             "render.dayview=false must drop the band",
@@ -1578,7 +1564,7 @@ mod tests {
                 .unwrap()
                 .timestamp_millis()
         };
-        let fields = build_day_fields(&db, &utc_zone(), day(27), day(28), day(28), None).unwrap();
+        let fields = build_day_fields(&db, day(27), day(28), day(28), None).unwrap();
         let work = fields.iter().find(|f| f.field == "work").unwrap();
         let states: Vec<_> = work
             .blocks
@@ -1621,8 +1607,7 @@ mod tests {
             spec.presentation.symbol_scale = Some(scale);
             spec.presentation.symbol_aspect = Some(aspect);
             db.save_field_spec(&spec).unwrap();
-            let fields =
-                build_day_fields(&db, &utc_zone(), day(0), day(24), day(24), None).unwrap();
+            let fields = build_day_fields(&db, day(0), day(24), day(24), None).unwrap();
             fields
                 .into_iter()
                 .find(|f| f.field == "coffee")
@@ -1688,7 +1673,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end, None).unwrap();
         let caffeine = fields
             .iter()
             .find(|f| f.field == "caffeine")
@@ -1728,7 +1713,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end, None).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end, None).unwrap();
         let alarm = fields
             .iter()
             .find(|f| f.field == "alarm")

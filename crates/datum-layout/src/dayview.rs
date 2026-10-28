@@ -203,11 +203,16 @@ pub struct DayviewBlock {
     /// carries it out to `data-id`.
     #[serde(default)]
     pub id: Option<String>,
-    /// What the mark says on hover (da-s5da) — `work: coding 14:00–14:30`.
+    /// What the mark says on hover (da-s5da) — `work: coding 14:00–14:30`
+    /// in a nowview, `run: on [30m]` in a dayview (da-k16pi).
     /// The caller writes it, since it owns the clock; the renderer puts it
     /// in the mark's `<title>`.
     #[serde(default)]
     pub title: Option<String>,
+    /// When the entry behind the mark was logged, UTC ms (da-k16pi): the
+    /// renderer's `data-created`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_ms: Option<i64>,
 }
 
 /// Fill mode for a block. Multi-state values (arrays) render as diagonal
@@ -235,6 +240,9 @@ pub struct DayviewPoint {
     /// As [`DayviewBlock::title`].
     #[serde(default)]
     pub title: Option<String>,
+    /// As [`DayviewBlock::created_ms`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_ms: Option<i64>,
     /// The character drawn in place of the dot's circle (da-gzowt),
     /// resolved by the caller from the field's spec. `None` is the circle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -517,6 +525,9 @@ pub struct RenderedBlock {
     pub end_ms: i64,
     #[serde(default)]
     pub title: Option<String>,
+    /// As [`DayviewBlock::created_ms`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_ms: Option<i64>,
     /// Which of [`RenderedDay::spans`] this piece is drawn in. A block the
     /// clock jumped under is a piece in each.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -539,6 +550,9 @@ pub struct RenderedPoint {
     pub time_ms: i64,
     #[serde(default)]
     pub title: Option<String>,
+    /// As [`DayviewBlock::created_ms`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_ms: Option<i64>,
     /// As [`DayviewPoint::glyph`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<String>,
@@ -975,6 +989,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                         start_ms: b.start_ms,
                         end_ms: b.end_ms,
                         title: b.title.clone(),
+                        created_ms: b.created_ms,
                         span,
                     });
                 }
@@ -1000,6 +1015,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     id: p.id.clone(),
                     time_ms: p.time_ms,
                     title: p.title.clone(),
+                    created_ms: p.created_ms,
                     glyph: p.glyph.clone(),
                     icon: p.icon,
                     moment: p.moment,
@@ -1328,6 +1344,7 @@ mod tests {
                         state_label: None,
                         id: None,
                         title: None,
+                        created_ms: None,
                         glyph: None,
                         icon: false,
                         moment: false,
@@ -1368,6 +1385,7 @@ mod tests {
                 state_label: None,
                 id: None,
                 title: None,
+                created_ms: None,
             }],
             points: vec![],
             icon: None,
@@ -1418,6 +1436,7 @@ mod tests {
                     state_label: None,
                     id: None,
                     title: None,
+                    created_ms: None,
                 }],
                 points: vec![],
                 icon: None,
@@ -1494,6 +1513,7 @@ mod tests {
                     state_label: Some("happy,calm,focused".into()),
                     id: None,
                     title: None,
+                    created_ms: None,
                 }],
                 points: vec![],
                 icon: None,
@@ -1542,6 +1562,7 @@ mod tests {
                 state_label: None,
                 id: None,
                 title: None,
+                created_ms: None,
                 glyph: None,
                 icon: false,
                 moment: false,
@@ -1666,6 +1687,7 @@ mod tests {
                     state_label: None,
                     id: None,
                     title: None,
+                    created_ms: None,
                 }],
                 points: vec![],
                 icon: None,
@@ -1734,6 +1756,7 @@ mod tests {
                     state_label: None,
                     id: None,
                     title: None,
+                    created_ms: None,
                 }],
                 points: vec![DayviewPoint {
                     time_ms: at(at_h),
@@ -1741,6 +1764,7 @@ mod tests {
                     state_label: None,
                     id: None,
                     title: None,
+                    created_ms: None,
                     glyph: None,
                     icon: false,
                     moment: false,

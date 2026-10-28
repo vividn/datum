@@ -477,7 +477,11 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                             &field.field,
                             b.state_label.as_deref(),
                             b.id.as_deref(),
-                            &[("from", b.start_ms), ("to", b.end_ms)],
+                            &[
+                                ("from", Some(b.start_ms)),
+                                ("to", Some(b.end_ms)),
+                                ("created", b.created_ms),
+                            ],
                             b.title.as_deref(),
                         ),
                     );
@@ -515,7 +519,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                                 &field.field,
                                 p.state_label.as_deref(),
                                 p.id.as_deref(),
-                                &[("at", p.time_ms)],
+                                &[("at", Some(p.time_ms)), ("created", p.created_ms)],
                                 p.title.as_deref(),
                             ),
                         );
@@ -556,7 +560,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                             &field.field,
                             p.state_label.as_deref(),
                             p.id.as_deref(),
-                            &[("at", p.time_ms)],
+                            &[("at", Some(p.time_ms)), ("created", p.created_ms)],
                             p.title.as_deref(),
                         ),
                     );
@@ -966,8 +970,9 @@ fn push_fill(
 
 /// The rest of a mark's tag after its geometry (da-s5da): what it is as
 /// data — its field, its state as the CLI prints it (`∅` for none), the
-/// whole hid of the entry that generated it (da-6hg6v) and its instants —
-/// and a `<title>` child, which any SVG viewer shows on hover with no
+/// whole hid of the entry that generated it (da-6hg6v) and its instants,
+/// `data-created` among them where the entry's log time is known
+/// (da-k16pi) — and a `<title>` child, which any SVG viewer shows on hover with no
 /// script. Closes the `tag` element.
 ///
 /// `data-id` is omitted rather than emitted empty when a mark has no
@@ -981,7 +986,7 @@ fn mark_close(
     field: &str,
     state: Option<&str>,
     id: Option<&str>,
-    times: &[(&str, i64)],
+    times: &[(&str, Option<i64>)],
     title: Option<&str>,
 ) -> String {
     let mut out = format!(
@@ -992,8 +997,8 @@ fn mark_close(
     if let Some(id) = id {
         let _ = write!(out, r#" data-id="{}""#, escape_xml(id));
     }
-    for (name, ms) in times {
-        let _ = write!(out, r#" data-{name}="{}""#, iso(*ms));
+    for (name, ms) in times.iter().filter_map(|(n, ms)| Some((n, (*ms)?))) {
+        let _ = write!(out, r#" data-{name}="{}""#, iso(ms));
     }
     match title {
         Some(t) => {
@@ -1549,6 +1554,7 @@ mod tests {
                         state_label: Some("happy".into()),
                         id: None,
                         title: None,
+                        created_ms: None,
                     }],
                     points: vec![DayviewPoint {
                         time_ms: DAY_START + 8 * HOUR,
@@ -1556,6 +1562,7 @@ mod tests {
                         state_label: None,
                         id: None,
                         title: None,
+                        created_ms: None,
                         glyph: None,
                         icon: false,
                         moment: false,

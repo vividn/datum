@@ -180,6 +180,7 @@ fn block(start_ms: i64, end_ms: i64, color: &str, state: &str) -> DayviewBlock {
         state_label: Some(state.into()),
         id: None,
         title: None,
+        created_ms: None,
     }
 }
 
@@ -212,6 +213,7 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
                 state_label: None,
                 id: None,
                 title: None,
+                created_ms: None,
                 glyph: None,
                 icon: false,
                 moment: false,

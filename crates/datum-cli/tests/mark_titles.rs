@@ -102,9 +102,11 @@ fn instant(iso: &str) -> i64 {
 /// Each mark is its row as the tail reads it: same field, the tail's
 /// state label (`∅` for none), the row's instant as one of the mark's
 /// own, the row's own `hid` as `data-id`, and a title naming `field:
-/// state` and the row's own `HH:MM` — the clock the tail's time column
-/// starts with.
-fn assert_marks_are_the_tail_rows(svg: &str, rows: &[Value]) -> Vec<String> {
+/// state`. A nowview's block title goes on to the row's own `HH:MM` — the
+/// clock the tail's time column starts with; a dayview's title is that
+/// name and, where the row has one, its `[dur]`, and `data-created` is the
+/// row's create time (da-k16pi).
+fn assert_marks_are_the_tail_rows(svg: &str, rows: &[Value], dayview: bool) -> Vec<String> {
     let marks = marks(svg);
     assert!(!marks.is_empty(), "no marks in: {svg}");
     for m in &marks {
@@ -136,7 +138,25 @@ fn assert_marks_are_the_tail_rows(svg: &str, rows: &[Value]) -> Vec<String> {
             None => field.clone(),
         };
         assert!(m.title.starts_with(&name), "{m:?} is not {name}");
-        if m.tag == "rect" {
+        if dayview {
+            // The `[30m]` only where the row has a duration; the list the
+            // caller pins says how it is spelled.
+            let rest = &m.title[name.len()..];
+            let dur = row["dur_seconds"].is_number();
+            assert!(
+                if dur {
+                    rest.starts_with(" [") && rest.ends_with(']')
+                } else {
+                    rest.is_empty()
+                },
+                "{m:?}"
+            );
+            assert_eq!(
+                m.attr("data-created").map(|t| instant(&t)),
+                row["create_time"].as_str().map(instant),
+                "{m:?}"
+            );
+        } else if m.tag == "rect" {
             let clock = &row["time"].as_str().unwrap()[11..16];
             assert!(m.title.contains(clock), "{m:?} does not read {clock}");
         }
@@ -159,14 +179,14 @@ fn dayview_marks_read_as_the_tail_rows_they_came_from() {
     }
     let svg = env.run(&["dayview", "-d", "2026-01-15"]);
     assert_eq!(
-        assert_marks_are_the_tail_rows(&svg, &env.tail_rows()),
+        assert_marks_are_the_tail_rows(&svg, &env.tail_rows(), true),
         [
             "coffee",
-            "project: coding 14:00–14:30",
-            // Still running when the day ends: an open span.
-            "project: writing 14:30 →",
-            // `start run 30m` ENDS at 16:00 — the span precedes it.
-            "run: on 15:30–16:00",
+            // vividn, 2026-10-28: «just field: state [dur, if dur was
+            // specified on the entry that created it]».
+            "project: coding",
+            "project: writing",
+            "run: on [30m]",
         ]
     );
     // The day says which span its axis covers, for a viewer mapping a
@@ -186,7 +206,7 @@ fn nowview_marks_read_as_the_tail_rows_they_came_from() {
     // da-7q8r: the marks live in the time band, and bare `nowview` is the
     // snapshot — which has no band. The context window is what asks for one.
     let svg = env.run(&["nowview", "--context", "30m", "-o", "-"]);
-    let titles = assert_marks_are_the_tail_rows(&svg, &env.tail_rows());
+    let titles = assert_marks_are_the_tail_rows(&svg, &env.tail_rows(), false);
     assert_eq!(titles.len(), 3, "{titles:?}");
     assert_eq!(titles[0], "coffee");
     assert!(titles[1].starts_with("mood: happy ") && titles[1].ends_with(" →"));
@@ -206,16 +226,18 @@ fn html_output_carries_the_titles() {
     let html = std::fs::read_to_string(&path).unwrap();
     // The dot's own row, not the TRACK row the first log also wrote.
     let rows = env.tail_rows();
-    let hid = rows
+    let row = rows
         .iter()
         .find(|r| r["time"].as_str().is_some_and(|t| t.contains("T14:05")))
-        .expect("the 14:05 row")["hid"]
-        .as_str()
-        .unwrap()
-        .to_string();
+        .expect("the 14:05 row");
+    let hid = row["hid"].as_str().unwrap();
+    let created =
+        chrono::DateTime::from_timestamp_millis(instant(row["create_time"].as_str().unwrap()))
+            .unwrap()
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ");
     assert!(
         html.contains(&format!(
-            r#"data-field="coffee" data-state="∅" data-id="{hid}" data-at="2026-01-15T20:05:00.000Z"><title>coffee</title></circle>"#
+            r#"data-field="coffee" data-state="∅" data-id="{hid}" data-at="2026-01-15T20:05:00.000Z" data-created="{created}"><title>coffee</title></circle>"#
         )),
         "{html}"
     );

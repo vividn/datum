@@ -162,6 +162,7 @@
         {
           "blocks": [
             {
+              "created_ms": "<created>",
               "end_ms": 1768521600000,
               "fill": {
                 "Single": "#c4ca42"
@@ -171,7 +172,7 @@
               "state_label": "1",
               "time_extent": 1277.3333333333335,
               "time_offset": 638.6666666666666,
-              "title": "coffee: 1 08:00 →"
+              "title": "coffee: 1"
             }
           ],
           "cross_extent": 12.0,
@@ -183,6 +184,7 @@
         {
           "blocks": [
             {
+              "created_ms": "<created>",
               "end_ms": 1768471200000,
               "fill": {
                 "Single": "#d48788"
@@ -192,9 +194,10 @@
               "state_label": "meeting",
               "time_extent": 159.66666666666674,
               "time_offset": 638.6666666666666,
-              "title": "project: meeting 08:00–10:00"
+              "title": "project: meeting [2h]"
             },
             {
+              "created_ms": "<created>",
               "end_ms": 1768485600000,
               "fill": {
                 "Single": "#af67ca"
@@ -204,7 +207,7 @@
               "state_label": "emails",
               "time_extent": 159.66666666666674,
               "time_offset": 958.0,
-              "title": "project: emails 12:00–14:00"
+              "title": "project: emails [2h]"
             }
           ],
           "cross_extent": 12.0,
@@ -216,6 +219,7 @@
         {
           "blocks": [
             {
+              "created_ms": "<created>",
               "end_ms": 1768467600000,
               "fill": {
                 "Single": "#7b9adf"
@@ -225,7 +229,7 @@
               "state_label": "on",
               "time_extent": 79.83333333333337,
               "time_offset": 638.6666666666666,
-              "title": "workout: on 08:00–09:00"
+              "title": "workout: on [1h]"
             }
           ],
           "cross_extent": 12.0,
