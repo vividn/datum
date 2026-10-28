@@ -59,9 +59,11 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 				running.child.kill();
 				await app.run(['occur', 'unheard', '-t', '1200']);
 				// Read with the mark: a dial again in flight reads «syncing now: could not reach …».
-				const mark = () => line.getAttribute('data-mark').catch(() => '');
+				// Both in one read: two let the line re-render between them, a «pending» title
+				// read beside the «offline» mark that replaced it (da-xtwum).
+				const marked = () => line.evaluate((li) => [li.title, li.dataset.mark]).catch(() => ['', '']);
 				const [down] = await until(
-					async () => [await reason.innerText().catch(() => ''), await mark()],
+					marked,
 					([t, m]) => t !== '' && m === 'offline',
 					DIAL
 				);
