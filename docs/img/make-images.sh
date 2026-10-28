@@ -92,5 +92,5 @@ d start work -t -20;    d switch project admin -t -20
 d occur water amount=250 -t -10
 
 datum dayview --start-date 2026-10-14 --end-date 2026-10-16 --width 1200 -o "$OUT/dayview.svg"
-datum nowview --context 3h -o "$OUT/nowview.svg"
+datum nowview --context 3h --labels -o "$OUT/nowview.svg"
 echo "wrote $OUT/dayview.svg and $OUT/nowview.svg"

@@ -159,6 +159,8 @@
 		epoch?: number;
 		/** Whether the window reaches back at all: off is the snapshot (da-hklaz). */
 		showHistory?: boolean;
+		/** Each field's state named in a gutter past the band (da-us41f): the CLI's whole picture, no layer. */
+		labels?: boolean;
 		/** The history a pinch or a handle moved the window to. */
 		onchange?: (history: string) => void;
 	}
@@ -169,6 +171,7 @@
 		vertical = false,
 		epoch = 0,
 		showHistory = true,
+		labels = false,
 		onchange
 	}: Props = $props();
 
@@ -239,7 +242,8 @@
 			showHistory ? history : '0',
 			askedFor ?? (pillArg ? backArg(minutes / 2) : undefined),
 			vertical,
-			pillArg
+			pillArg,
+			labels
 		)
 	);
 
@@ -268,7 +272,7 @@
 	// Below `ask` and what it reads: an effect made as the component is set
 	// up runs where it stands.
 	$effect.pre(() => {
-		void [history, vertical, showHistory];
+		void [history, vertical, showHistory, labels];
 		untrack(ask);
 	});
 
@@ -449,7 +453,7 @@
 
 	/** Ask for the days of data the overlay `svg` reaches that `layer` does not hold. */
 	function needLayer(svg: SVGSVGElement): void {
-		if (!svg.querySelector('[data-lo]')) return;
+		if (labels || !svg.querySelector('[data-lo]')) return;
 		const along = Number(svg.getAttribute(vertical ? 'height' : 'width'));
 		const cross = bandOf(svg, vertical).extent;
 		if (!(along > 0 && cross > 0)) return;
@@ -492,7 +496,7 @@
 	/** The overlay datum drew, with the days' data laid under it: its strip is now's (da-dv45l). */
 	const crop = (overlay: string, argv: string[]) => {
 		drewFor = argv;
-		return compose(overlay, [...layer.days.values()], Date.now());
+		return compose(overlay, labels ? [] : [...layer.days.values()], Date.now());
 	};
 
 	/**

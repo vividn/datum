@@ -1251,6 +1251,42 @@ fn nowview_vertical_labels_sit_below_the_picture() {
     assert!(num(&v, "height") > 400.0, "{v}");
 }
 
+/// A size asked for is the SVG's with `--labels` too: their gutter comes out
+/// of the length along time, so datum.day's pane, which asks for its box,
+/// holds them (da-us41f). Either way time runs.
+#[test]
+fn nowview_labels_fit_a_size_asked_for() {
+    let db = fresh_db();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .state(serde_json::json!("focused"))
+        .time_start_utc(Utc::now() - Duration::minutes(20))
+        .insert(&db);
+    for (args, along) in [
+        (&["--width", "400", "--height", "120"][..], "width"),
+        (
+            &["--width", "120", "--height", "400", "--vertical"][..],
+            "height",
+        ),
+    ] {
+        let argv = [
+            &["--context", "30m", "--ahead", "30m", "--labels"][..],
+            args,
+        ]
+        .concat();
+        let v = nowview_out(&db, &argv, ".svg");
+        let chunk = tags(&v, r#"<rect class="now-chunk" "#)[0];
+        let label = tags(&v, r#"<text class="state-label" "#)[0];
+        let (at, end) = if along == "width" {
+            (num(label, "x"), num(chunk, "x") + num(chunk, "width"))
+        } else {
+            (num(label, "y"), num(chunk, "y") + num(chunk, "height"))
+        };
+        assert_eq!(num(&v, along), 400.0, "{v}");
+        assert!(end < at && at < 400.0, "{label} past {end} in 400: {v}");
+    }
+}
+
 /// Run `datum <cmd>` on a real terminal 100 columns by 30 rows (`script` +
 /// `stty`) and return its lines. `stty rows` matters: a pty of 0 rows fails
 /// the terminal probe, and `$COLUMNS` would then win for the wrong reason.

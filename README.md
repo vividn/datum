@@ -34,7 +34,7 @@ And as pictures:
 
 ```bash,no_run
 datum dayview --start-date 2026-10-14 --end-date 2026-10-16 -o days.svg   # three days
-datum nowview --context 3h -o now.svg                                    # the last three hours, up to now
+datum nowview --context 3h --labels -o now.svg                           # the last three hours, up to now, named
 ```
 
 ![Three days of a sample record, drawn by datum dayview](docs/img/dayview.svg)

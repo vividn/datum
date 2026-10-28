@@ -301,7 +301,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// which was the `0` at the foot of the ladder (da-hklaz) — a tree
 	// saved with that `0` is read as it (`migrated`, shell.ts).
 	nowview: {
-		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY, showHistory: true, orientation: 'horizontal' }, [
+		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY, showHistory: true, orientation: 'horizontal', labels: false }, [
 			{
 				key: 'history',
 				label: 'history',
@@ -309,7 +309,10 @@ export const KINDS: Record<string, WidgetKind> = {
 				choices: NOWVIEW_STEPS.map((value) => ({ value, label: value }))
 			},
 			{ key: 'showHistory', label: 'show history', type: 'boolean' },
-			ORIENTATION
+			ORIENTATION,
+			// Each field's state named in a gutter past the band, the CLI's
+			// `--labels` (da-us41f, vividn: «please off by default»).
+			{ key: 'labels', label: 'labels', type: 'boolean' }
 		]),
 		component: NowviewWidget,
 		help: [
@@ -319,11 +322,12 @@ export const KINDS: Record<string, WidgetKind> = {
 		].join('\n'),
 		// `'0'` is read here too, not only by the migration: a session or a
 		// hand-written tree that never went through `inline` may still say it.
-		props: ({ history, showHistory, at, orientation }) => ({
+		props: ({ history, showHistory, at, orientation, labels }) => ({
 			history: typeof history === 'string' && history !== '0' ? history : NOWVIEW_HISTORY,
 			showHistory: showHistory !== false && history !== '0',
 			at: typeof at === 'string' ? at : undefined,
-			vertical: orientation === 'vertical'
+			vertical: orientation === 'vertical',
+			labels: labels === true
 		}),
 		onChange: (settings, history) => ({ ...settings, history }),
 		// Turned on its side with the picture: the time axis wants the 160,

@@ -136,7 +136,7 @@ describe('widget options', () => {
 	test('the options are items of the name’s menu; a kind with none has none', async () => {
 		await shared.solo(async ({ page }) => {
 			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST]);
-			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history', 'show history', 'orientation']);
+			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history', 'show history', 'orientation', 'labels']);
 			assert.deepEqual(await linesOf(page, 'bar'), [
 				'Reset widget',
 				'the buttons stand',
@@ -438,6 +438,55 @@ describe('widget options', () => {
 				return argv?.[argv.indexOf('--history') + 1] === '30m';
 			});
 			assert.deepEqual(await last(), { history: '30m', ahead: true });
+			assert.equal(await dotted(page, room), false, 'a session setting dirtied the layout');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-us41f, vividn: «it can be an option in the nowview widget (but please
+	// off by default)». On, the CLI's `--labels` name each state in a gutter
+	// past the band, which the picture keeps inside the pane; off, none.
+	test('nowview: labels is a switch, off by default; on, each state is named in a gutter inside the pane', async () => {
+		await shared.room('wo-labels', async (app, room) => {
+			const { page } = app;
+			const nowview = inRoom(room, 'nowview');
+			const svg = `section.pane[data-pane="${nowview}"] svg.svg`;
+			const last = () =>
+				page.evaluate(() => {
+					const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
+					return argv && { labels: argv.includes('--labels'), overlay: argv.includes('--overlay') };
+				});
+			// Each label's words, whether it starts past the now strip, and whether it ends inside the pane.
+			const labels = () =>
+				page.locator(svg).evaluate((el) => {
+					const pane = el.closest('section.pane').getBoundingClientRect();
+					const strip = Math.max(...[...el.querySelectorAll('.now-chunk')].map((r) => r.getBoundingClientRect().right));
+					return [...el.querySelectorAll('.nowview-labels .state-label')].map((t) => {
+						const r = t.getBoundingClientRect();
+						return { text: t.textContent, past: r.left >= strip, inside: r.right <= pane.right };
+					});
+				});
+			await app.runLine('switch mood happy -t -5');
+			await app.spyOnRunner();
+			assert.equal(await optionChecked(page, nowview, 'labels'), false, 'labels are on in a fresh layout');
+			await page.locator(`${svg} .current-time-line`).waitFor({ state: 'attached' });
+			assert.equal(await page.locator(`${svg} .nowview-labels`).count(), 0, 'a label with the option off');
+
+			await toggleOption(page, nowview, 'labels');
+			await page.waitForFunction(() => window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1)?.includes('--labels'));
+			assert.deepEqual(await last(), { labels: true, overlay: false });
+			await page.locator(`${svg} .nowview-labels .state-label`).first().waitFor({ state: 'attached' });
+			const drawn = await labels();
+			assert.ok(
+				drawn.some((l) => l.text === 'mood: happy'),
+				JSON.stringify(drawn)
+			);
+			for (const l of drawn) assert.deepEqual(l, { ...l, past: true, inside: true }, JSON.stringify(drawn));
+
+			await toggleOption(page, nowview, 'labels');
+			await page.waitForFunction(() => !window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1)?.includes('--labels'));
+			assert.deepEqual(await last(), { labels: false, overlay: true });
+			await page.locator(`${svg} .nowview-labels`).waitFor({ state: 'detached' });
 			assert.equal(await dotted(page, room), false, 'a session setting dirtied the layout');
 			assert.deepEqual(app.errors, []);
 		});

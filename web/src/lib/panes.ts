@@ -568,21 +568,26 @@ export function ladderAround(minutes: number, history: number): { up: string[]; 
  * window's worth more drawn AHEAD of it, behind the now line (`--ahead`),
  * which the widget slides along with the clock (da-hklaz). `0` is the
  * snapshot, which has no time to draw past.
+ *
+ * With `labels`, each field's state named in a gutter past the band (da-us41f),
+ * which the CLI takes out of the box: the picture is then the CLI's whole, its
+ * data under labels in the same lanes, and drawn with nothing either side, so
+ * the gutter is at the window's edge wherever the window is.
  */
 const SURROUND = 8;
 
-export const nowviewSpec = (history: string, center?: string, vertical = false, at?: string): PaneSpec => ({
+export const nowviewSpec = (history: string, center?: string, vertical = false, at?: string, labels = false): PaneSpec => ({
 	...NOWVIEW,
 	argv: [
 		...NOWVIEW.argv,
 		// Its data is the day's, laid under it by the page (da-0e06p): the
 		// picture it is asked for has none, and opens no database.
-		...(history === '0' ? [] : ['--overlay']),
+		...(history === '0' || labels ? [] : ['--overlay']),
+		...(labels ? ['--labels'] : []),
 		'--now-label',
 		'--history',
 		history,
-		'--surround',
-		stepMinutes(history) > 0 ? historyArg(SURROUND * stepMinutes(history)) : history,
+		...(labels ? [] : ['--surround', stepMinutes(history) > 0 ? historyArg(SURROUND * stepMinutes(history)) : history]),
 		...(center ? ['--center', center] : []),
 		...(at ? ['-t', at] : []),
 		...(center || at || history === '0' ? [] : ['--ahead', history]),

@@ -32,8 +32,8 @@ use datum_layout::nowview::{
     NowviewGeometry, NowviewPoint, FLOW_MARKS_MINUTES,
 };
 use datum_layout::nowview_svg::{
-    inject_inside_plot_group, render_nowview_at_svg, render_nowview_svg_with, strip_slot,
-    with_xml_declaration, wrap_svg_in_html,
+    inject_inside_plot_group, label_gutter_extent, render_nowview_at_svg, render_nowview_svg_with,
+    strip_slot, with_xml_declaration, wrap_svg_in_html,
 };
 use datum_parse::cli::DayviewOrientation;
 use datum_parse::time::dur::parse_duration;
@@ -286,7 +286,7 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
             args.height.unwrap_or(0.0),
         ),
     };
-    let geometry = NowviewGeometry {
+    let mut geometry = NowviewGeometry {
         history_minutes,
         width,
         height,
@@ -349,8 +349,32 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
             .collect()
     });
 
-    let layout = compute_dayview(&config);
-    let current_states = build_current_states(db, anchor, &layout);
+    let mut layout = compute_dayview(&config);
+    let mut current_states = build_current_states(db, anchor, &layout);
+    // `--labels` beside a length asked for along time: their gutter comes
+    // out of it, so the SVG is the size asked, datum.day's pane (da-us41f).
+    let gutter = if args.labels {
+        label_gutter_extent(&layout, &current_states)
+    } else {
+        0.0
+    };
+    let along = match geometry.orientation {
+        Orientation::Horizontal => geometry.width.as_mut(),
+        Orientation::Vertical => args.height.is_some().then_some(&mut geometry.height),
+    };
+    if let Some(along) = along.filter(|_| gutter > 0.0) {
+        *along = (*along - gutter).max(1.0);
+        let fields = std::mem::take(&mut config.days[0].fields);
+        config = nowview_config(
+            fields,
+            middle.timestamp_millis(),
+            now.timestamp_millis(),
+            at.map(|t| t.timestamp_millis()),
+            &geometry,
+        );
+        layout = compute_dayview(&config);
+        current_states = build_current_states(db, anchor, &layout);
+    }
 
     Ok(NowComputed {
         now_ms: now.timestamp_millis(),

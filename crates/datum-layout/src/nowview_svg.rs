@@ -280,6 +280,13 @@ fn label_gutter(
     }
 }
 
+/// How much room `--labels` takes past the picture's far edge, along its
+/// time axis: what the canvas grows by to hold them, `0.0` with nothing to
+/// label.
+pub fn label_gutter_extent(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) -> f64 {
+    state_labels(layout, current_states).0
+}
+
 /// `layout` with room for a `gutter`-wide strip past the far end of its
 /// time axis — right of it, or below it when time runs down (da-78evn) —
 /// or `None` when there is no gutter to make room for. Only the canvas
