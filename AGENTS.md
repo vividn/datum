@@ -662,6 +662,12 @@ process of its own, the link on stdin, into `--as` or the granter's database
 name; where that name holds data or another chain, `<name>-2` and on, never
 touching it. An expired grant is said and joins nothing: grant again. `expel`
 and `unjoin` take a member's device key prefix too.
+datum.day's sync widget draws `sync grid` with a dropdown per cell and
+«copy from…» per column (da-n0uj1.7); its CLI makes no ticket, so there a
+grant seals the one the sync worker made for an invite `sync new-invite`
+wrote (hidden `--ticket`, `--invite`, refused unless the ticket's secret is
+that invite's), and `chain copy --defer` makes no grant, printing those
+left for the page to make.
 
 `datum --db X sync chain copy --from SRC [--devices <D>,…]` (da-n0uj1.5) is a
 grant per device live in SRC's chain (or each `--devices` names), with the role

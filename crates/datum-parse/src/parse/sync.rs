@@ -33,7 +33,12 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             }
         }
         "grant" => {
-            let mut o = opts(&mut rest, &["as", "expires", "admin-key"], &[], 2..=2)?;
+            let mut o = opts(
+                &mut rest,
+                &["as", "expires", "admin-key", "ticket", "invite"],
+                &[],
+                2..=2,
+            )?;
             let reader = match o.positional.pop().as_deref() {
                 Some("reader") => true,
                 Some("member") => false,
@@ -50,6 +55,15 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 expires_secs: o.expires_or(7 * 24 * 3600)?,
                 name: o.get("as"),
                 admin_key: o.get("admin-key"),
+                ticket: match (o.get("ticket"), o.get("invite")) {
+                    (Some(t), Some(i)) => Some((t, i)),
+                    (None, None) => None,
+                    _ => {
+                        return Err(ParseError::InvalidArg(
+                            "--ticket and --invite go together".into(),
+                        ))
+                    }
+                },
             }
         }
         "resume" => SyncCommand::Resume,
@@ -220,7 +234,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             let o = opts(
                 rest,
                 &["from", "devices", "expires", "admin-key"],
-                &[],
+                &["defer"],
                 0..=0,
             )?;
             let devices = o.get("devices").map(|d| {
@@ -237,6 +251,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 devices,
                 expires_secs: o.expires_or(7 * 24 * 3600)?,
                 admin_key: o.get("admin-key"),
+                defer: o.on("defer"),
             }
         }
         Some("leave") => {
@@ -963,6 +978,7 @@ mod tests {
                 name: Some("work".into()),
                 expires_secs: 7 * 24 * 3600,
                 admin_key: None,
+                ticket: None,
             }
         );
         assert_eq!(
@@ -973,8 +989,22 @@ mod tests {
                 name: None,
                 expires_secs: 3600,
                 admin_key: None,
+                ticket: None,
             }
         );
+        // datum.day's (da-n0uj1.7): the ticket its worker made, for the invite named.
+        assert_eq!(
+            p(&["grant", "9ae6", "member", "--ticket", "T", "--invite", "01j"]),
+            SyncCommand::Grant {
+                device: "9ae6".into(),
+                reader: false,
+                name: None,
+                expires_secs: 7 * 24 * 3600,
+                admin_key: None,
+                ticket: Some(("T".into(), "01j".into())),
+            }
+        );
+        assert!(parse_sync_cmd(&["grant", "9ae6", "member", "--ticket", "T"]).is_err());
         assert!(parse_sync_cmd(&["grant", "9ae6"]).is_err());
         assert!(parse_sync_cmd(&["grant", "9ae6", "admin"]).is_err());
     }
@@ -990,6 +1020,7 @@ mod tests {
                 devices: None,
                 expires_secs: 7 * 24 * 3600,
                 admin_key: None,
+                defer: false,
             }
         );
         assert_eq!(
@@ -1000,13 +1031,15 @@ mod tests {
                 "--devices",
                 "9ae6, tom",
                 "--admin-key",
-                "k"
+                "k",
+                "--defer"
             ]),
             SyncCommand::Copy {
                 from: "home".into(),
                 devices: Some(vec!["9ae6".into(), "tom".into()]),
                 expires_secs: 7 * 24 * 3600,
                 admin_key: Some("k".into()),
+                defer: true,
             }
         );
         assert!(parse_sync_cmd(&["chain", "copy"]).is_err());

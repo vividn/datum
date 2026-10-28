@@ -1069,6 +1069,10 @@ pub enum SyncCommand {
         name: Option<String>,
         expires_secs: u64,
         admin_key: Option<String>,
+        /// Hidden (da-n0uj1.7): datum.day's, whose CLI makes no ticket — the
+        /// join link its sync worker made for invite `.1`, which `sync
+        /// new-invite` wrote here, so no invite is made.
+        ticket: Option<(String, String)>,
     },
     /// `datum sync chain copy --from <DB> [--devices <D>,…] [--expires <DUR>]
     /// [--admin-key <FILE>]` (da-n0uj1.5): this database takes `--from`'s
@@ -1079,6 +1083,9 @@ pub enum SyncCommand {
         devices: Option<Vec<String>>,
         expires_secs: u64,
         admin_key: Option<String>,
+        /// Hidden (da-n0uj1.7): make no grant, and print the grants left as
+        /// JSON, for datum.day to make each with a ticket of its own.
+        defer: bool,
     },
     /// Hidden: `datum sync run` — stay up: serve members and push new ops.
     Run,

@@ -528,6 +528,107 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
     assert_eq!(theirs["chain"].as_str(), Some(chain.as_str()));
 }
 
+/// datum.day's CLI makes no ticket (da-n0uj1.7): a grant seals the one its
+/// sync worker made for an invite written first, refused unless it is that
+/// invite's, of that role; a copy `--defer`red starts the chain and leaves
+/// each grant to the page, naming them.
+#[test]
+fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_copy_leaves_its_grants() {
+    use data_encoding::BASE32_NOPAD;
+    let g = Install::new("gina");
+    let t = Install::new("tom");
+    let _home = home_chain(&g, &[&t]);
+    g.ok("work", &["occur", "coffee"]);
+    let invite = g.json("work", &["sync", "new-invite"]);
+    let (secret, id) = (
+        invite["secret"].as_str().unwrap(),
+        invite["id"].as_str().unwrap(),
+    );
+    // Where work is dialed, as its own invite's ticket says, with another secret.
+    let mut inviting = g.cmd("work", &["sync", "chain", "invite"]).spawn().unwrap();
+    let line = BufReader::new(inviting.stdout.take().unwrap())
+        .lines()
+        .find_map(|l| l.ok().filter(|l| l.contains("sync/join#")))
+        .unwrap();
+    let _ = inviting.kill();
+    let _ = inviting.wait();
+    let theirs = line
+        .rsplit('#')
+        .next()
+        .unwrap()
+        .trim_matches(|c| c == '\'' || c == ' ');
+    let addrs = serde_json::from_slice::<Value>(
+        &BASE32_NOPAD
+            .decode(theirs.to_uppercase().as_bytes())
+            .unwrap(),
+    )
+    .unwrap()["addrs"]
+        .clone();
+    let ticket = |secret: &str| {
+        BASE32_NOPAD.encode(
+            &serde_json::to_vec(&serde_json::json!({"addrs": addrs, "secret": secret})).unwrap(),
+        )
+    };
+    let tom = &t.device()[..12];
+    let grant = |role, ticket: &str| {
+        g.cmd(
+            "work",
+            &[
+                "sync", "grant", tom, role, "--ticket", ticket, "--invite", id,
+            ],
+        )
+        .output()
+        .unwrap()
+    };
+    for (out, why) in [
+        (
+            grant("member", &ticket("not-its-secret")),
+            "no ticket of invite",
+        ),
+        (
+            grant("reader", &ticket(secret)),
+            "a member's, not a reader's",
+        ),
+        (grant("member", "not a ticket"), "--ticket is not a ticket"),
+    ] {
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success() && err.contains(why), "{err}");
+    }
+    assert_eq!(records(&g, "home", "grant"), 0);
+
+    let _work = g.run("work");
+    let out = grant("member", &ticket(secret));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let synced = t.ok("home", &["sync"]);
+    assert!(synced.contains("joined «work»"), "{synced}");
+    assert!(t.has("work", "coffee"));
+
+    let out = g
+        .cmd(
+            "notes",
+            &["sync", "chain", "copy", "--from", "home", "--defer"],
+        )
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stderr).contains("started sync chain"));
+    let left: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(left["grants"].as_array().unwrap().len(), 1, "{left}");
+    assert_eq!(left["grants"][0]["device"], t.device().as_str());
+    assert_eq!(left["grants"][0]["role"], "member");
+    assert_eq!(records(&g, "notes", "genesis"), 1);
+    assert_eq!(records(&g, "notes", "invite"), 0);
+    assert_eq!(records(&g, "home", "grant"), 1);
+}
+
 /// `sync chain wipe` (da-n0uj1.6): a device online deletes its copy as the
 /// order reaches it, carried by the dial of a member's run; one offline is
 /// expelled at once, says it is asked, and deletes its copy as it next

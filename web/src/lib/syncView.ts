@@ -356,6 +356,40 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 	return all;
 }
 
+/** A device's standing in one chain, as `sync grid --json` has it (da-n0uj1.3). */
+export type Standing = 'member' | 'reader' | 'expelled' | 'unjoined' | 'wiping' | 'wiped';
+
+/** `sync grid --json`: devices × the chains this install holds, each column by chain id. */
+export interface Grid {
+	device: string | null;
+	chains: { chain: string; db: string }[];
+	devices: {
+		/** Its device key; null for a copy bound to none, which is its `endpoint` alone. */
+		device: string | null;
+		endpoint: string | null;
+		label: string;
+		this: boolean;
+		cells: Record<string, { state: Standing; endpoint: string } | null>;
+	}[];
+}
+
+/** What `sync chain copy --defer` leaves the page to grant (da-n0uj1.7). */
+export interface Deferred {
+	grants: { device: string; label: string; role: 'member' | 'reader' }[];
+}
+
+/** What a cell's dropdown offers a device standing so: a role (a grant, or a role change), or a destructive act. */
+export function cellActs(s: Standing | undefined, bound: boolean): string[] {
+	const live = s === 'member' || s === 'reader';
+	const roles = live || bound ? (['member', 'reader'] as const).filter((r) => r !== s) : [];
+	const acts = live ? ['expel', 'unjoin', 'wipe'] : s === 'expelled' ? ['unjoin', 'wipe'] : s === 'unjoined' ? ['wipe'] : [];
+	return [...roles, ...acts];
+}
+
+/** The wipe's confirm: what happens to whose data, and its limit said plainly (vividn: «a popup dialog should explain what this means»). */
+export const wipeWords = (label: string, db: string): string =>
+	`Wipe ${label}’s copy of ${db}? It is expelled now, and asked to delete its own copy of ${db} when it next reaches a device of this chain. A device that never comes back online cannot be made to delete anything: until it obeys, this is only an expel, and it keeps what it holds. What it synced stays on every other device; what it wrote since it last synced goes with its copy.`;
+
 /** What `sync chain unjoin <who> --json` says an unjoin would withdraw (da-ry11c). */
 export interface PurgePreview {
 	created: number;
@@ -409,9 +443,9 @@ export const expelDevice = (db: string, endpoint: string): Promise<RunResult> =>
 export const approveInto = (db: string, link: string, code: string): Promise<RunResult> =>
 	run(['--db', db, ...approveArgv(link)], code);
 
-/** A new invite on `db` (starting an open chain on a db in none): its secret, and when it expires. */
-export async function newInvite(db: string): Promise<Invite> {
-	const r = await syncAct(db, newInviteArgv());
+/** A new invite on `db` (starting an open chain on a db in none), a reader's if `reader`: its secret, and when it expires. */
+export async function newInvite(db: string, reader = false): Promise<Invite> {
+	const r = await syncAct(db, newInviteArgv(reader));
 	if (r.code !== 0) throw cliError(r.stderr);
 	return JSON.parse(r.stdout.split('\n')[0]);
 }

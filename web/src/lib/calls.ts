@@ -23,7 +23,7 @@ import type { DayviewJson, PaneSpec } from './panes.js';
 import type { AllFieldsStats, FieldStats } from './stats.js';
 import { shellSplit } from './shellSplit.js';
 import type { Invite } from './sync.js';
-import type { Admins, ChainList, PurgePreview, SyncStatus } from './syncView.js';
+import type { Admins, ChainList, Grid, PurgePreview, SyncStatus } from './syncView.js';
 import type { TailListing, TailPage } from './tail.js';
 import type { Spec } from './track.js';
 
@@ -139,8 +139,33 @@ export function leaveArgv(force = false): string[] {
 	return ['sync', 'chain', 'leave', ...(force ? ['--force'] : [])];
 }
 
-export function newInviteArgv(): string[] {
-	return ['sync', 'new-invite'];
+export function newInviteArgv(reader = false): string[] {
+	return ['sync', 'new-invite', ...(reader ? ['--reader'] : [])];
+}
+
+/** Every device this install's databases know of, against every chain they are in (da-n0uj1.3). */
+export function gridArgv(): string[] {
+	return ['sync', 'grid', '--json'];
+}
+
+/** `device` invited to this chain, the invite's `ticket` (the sync worker's) sealed to it in a chain both share (da-n0uj1.7). */
+export function grantArgv(device: string, role: 'member' | 'reader', ticket: string, invite: string, name?: string): string[] {
+	return ['sync', 'grant', device, role, '--ticket', ticket, '--invite', invite, ...(name ? ['--as', name] : [])];
+}
+
+/** A member's role changed. */
+export function roleArgv(endpoint: string, role: 'member' | 'reader'): string[] {
+	return ['sync', 'chain', 'role', endpoint, role];
+}
+
+/** The device expelled, and asked to delete its copy (da-n0uj1.6). */
+export function wipeArgv(endpoint: string): string[] {
+	return ['sync', 'chain', 'wipe', endpoint, '--yes'];
+}
+
+/** This chain takes `from`'s devices: it starts one with `from`'s admins if in none, and leaves each grant to the page (da-n0uj1.7). */
+export function copyArgv(from: string): string[] {
+	return ['sync', 'chain', 'copy', '--from', from, '--defer'];
 }
 
 export function endpointKeyArgv(): string[] {
@@ -399,6 +424,7 @@ export interface Reads {
 	chainListArgv: Omit<ChainList, 'joining' | 'dissolved'>;
 	adminListArgv: Admins;
 	newInviteArgv: Invite;
+	gridArgv: Grid;
 	/** The preview's: the `--yes` unjoin answers no JSON. */
 	unjoinArgv: PurgePreview;
 	restorePreviewArgv: RestorePreview;

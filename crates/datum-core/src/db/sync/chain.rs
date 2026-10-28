@@ -316,6 +316,15 @@ pub fn secret_hash(secret: &str) -> String {
     sha256_hex(secret)
 }
 
+/// The secret a ticket or join link carries (`datum_sync_wire::Ticket`:
+/// base32 of its JSON, after any `#`), for a build with no network to read.
+pub fn ticket_secret(ticket: &str) -> Option<String> {
+    let t = ticket.rsplit('#').next()?.trim().to_uppercase();
+    let json: Value =
+        serde_json::from_slice(&data_encoding::BASE32_NOPAD.decode(t.as_bytes()).ok()?).ok()?;
+    Some(json["secret"].as_str()?.to_string())
+}
+
 /// Where a passkey approves `record`: the record rides in the fragment,
 /// which never reaches a server.
 pub fn approve_link(record: &Value) -> String {
@@ -687,6 +696,19 @@ pub fn hlc_time(hlc: &str) -> &str {
 }
 
 impl Chain {
+    /// The invite `id`, while it admits: unused and not expired, and only
+    /// if `secret` is its own. Its role, whether it is filtered, and when it
+    /// expires (da-n0uj1.7).
+    pub fn open_invite(&self, id: &str, secret: &str) -> Option<(Role, bool, &str)> {
+        let i = self.invites.get(id).filter(|i| !i.used)?;
+        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        (i.expires.as_str() > now.as_str() && i.secret_hash == secret_hash(secret)).then_some((
+            i.role,
+            i.filter.is_some(),
+            &i.expires,
+        ))
+    }
+
     pub fn exists(&self) -> bool {
         !self.id.is_empty()
     }

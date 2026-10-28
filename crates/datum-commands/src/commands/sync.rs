@@ -691,13 +691,13 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             let label = chain.member(&m).map_or(who.as_str(), |m| &m.label);
             super::sync_diagnose::diff(db, &m, label, show == ShowFlag::Json)?
         }
-        #[cfg(feature = "net")]
         SyncCommand::Grant {
             device,
             reader,
             name,
             expires_secs,
             admin_key,
+            ticket,
         } => super::sync_grant::grant(
             db,
             &device,
@@ -705,19 +705,21 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             name.as_deref(),
             std::time::Duration::from_secs(expires_secs),
             admin_key.as_deref(),
+            ticket.as_ref().map(|(t, i)| (t.as_str(), i.as_str())),
         )?,
-        #[cfg(feature = "net")]
         SyncCommand::Copy {
             from,
             devices,
             expires_secs,
             admin_key,
+            defer,
         } => super::sync_grant::copy(
             db,
             &from,
             devices.as_deref(),
             std::time::Duration::from_secs(expires_secs),
             admin_key.as_deref(),
+            defer,
         )?,
         #[cfg(feature = "net")]
         SyncCommand::Run => {

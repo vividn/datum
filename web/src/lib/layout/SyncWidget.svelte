@@ -17,6 +17,16 @@
 	when it is in this one's chain. A tap switches to it as the logo does,
 	by a load (Brand.svelte says why).
 
+	Under it, the grid (da-n0uj1.7): every device this install's databases
+	know of against every database, each cell its standing there as `sync
+	grid` has it and a dropdown of what may be done to it — a role (a grant,
+	sealed to the device in a chain both share, or a role change), expel,
+	unjoin, wipe, each of the last three confirming in a dialog that says
+	what happens to whose data. A column's «copy from…» gives its database
+	another's devices (`sync chain copy`), starting its chain with that one's
+	admins when it is in none. Only the CLI's commands: the grant's ticket is
+	the sync worker's, as [Add device]'s is.
+
 	Bottom, every act together: [Turn on sync] alone for a database in no
 	chain; else [Add device], [Rename this device] and [More], which holds
 	pause, the other devices' rename, expel and unjoin, the admins (da-bjxts) and
@@ -57,6 +67,8 @@
 		newInvite,
 		ownKeys,
 		unjoinWords,
+		cellActs,
+		wipeWords,
 		qr,
 		readSync,
 		redeemer,
@@ -65,13 +77,15 @@
 		type Admin,
 		type Admins,
 		type DbSync,
+		type Deferred,
+		type Grid,
 		type Mark,
 		type Notice,
 		type PurgePreview,
 		type Row
 	} from '#lib/syncView.ts';
 	import { approve, approveRecord, createPasskey } from '#lib/passkey.ts';
-	import { ask, confirm } from '#lib/confirm.ts';
+	import { ask, choose, confirm } from '#lib/confirm.ts';
 	import { cliError, type RunResult } from '#lib/run.ts';
 	import {
 		adminAddArgv,
@@ -82,7 +96,12 @@
 		pausedArgv,
 		unjoinArgv,
 		renameArgv,
-		expelArgv
+		expelArgv,
+		copyArgv,
+		grantArgv,
+		gridArgv,
+		roleArgv,
+		wipeArgv
 	} from '#lib/calls.ts';
 	import { act } from '#lib/act.ts';
 	import { now } from '#lib/clock.ts';
@@ -110,6 +129,9 @@
 	/** The page's database: the one this widget is about. */
 	const db = browser ? currentDb() : '';
 	let dbs = $state.raw<DbSync[]>([]);
+	/** Devices × chains, as `sync grid` has it; and what the CLI said of the last grid act. */
+	let grid = $state.raw<Grid | null>(null);
+	let said = $state('');
 	let reading = false;
 	let again = false;
 	let stops: (() => void)[] = [];
@@ -174,6 +196,11 @@
 	const live = $derived(rows.filter((r) => !r.revoked));
 	const hidden = $derived(rows.filter((r) => r.revoked).length);
 	const shown = $derived([...live.map((r) => r.cells[db]), ...others.map((d) => standing(d, $syncStates))]);
+	/** The grid's columns: every chain, then each database in none, which only a copy fills. */
+	const columns = $derived([
+		...(grid?.chains ?? []),
+		...dbs.filter((d) => !d.chain && !grid?.chains.some((c) => c.db === d.db)).map((d) => ({ chain: null, db: d.db }))
+	]);
 	const used = $derived(MARKS.filter((m) => shown.some((c) => c.mark === m)));
 
 	/** How `d` stands as a whole: the worst of its devices, which this copy's cell already is. */
@@ -209,6 +236,8 @@
 				}
 				// Not the JSON asked for (a process killed mid-write): the view stays as it was.
 				dbs = await readSync(listed).catch(() => dbs);
+				// After every database is read, so the worker holds each one's file for the grid to open.
+				grid = await syncAct(db, gridArgv()).then((r) => (r.code === 0 ? (JSON.parse(r.stdout) as Grid) : grid), () => grid);
 			} while (again);
 		} finally {
 			reading = false;
@@ -316,19 +345,77 @@
 			ok(await syncAct(db, renameArgv(label, row.endpoints[db])));
 		});
 
-	const expel = (row: Row) =>
+	const expel = (label: string, endpoint: string, d = db) =>
 		doing(async () => {
-			const words = `Expel ${row.label} from ${db}? It can no longer sync ${db} until a new invite admits it again. It keeps its own copy, and what it wrote stays on every device.`;
+			const words = `Expel ${label} from ${d}? It can no longer sync ${d} until a new invite admits it again. It keeps its own copy, and what it wrote stays on every device.`;
 			if (!(await confirm(words, 'expel'))) return;
-			ok(await syncAct(db, expelArgv(row.endpoints[db])));
+			ok(await syncAct(d, expelArgv(endpoint)));
 		});
 
 	/** An unjoin previews first (da-ry11c): the confirm names the device and what goes. */
-	const unjoin = (label: string, endpoint: string) =>
+	const unjoin = (label: string, endpoint: string, d = db) =>
 		doing(async () => {
-			const preview = JSON.parse(ok(await syncAct(db, unjoinArgv(endpoint))).stdout) as PurgePreview;
-			if (!(await confirm(unjoinWords(label, db, preview), 'unjoin', label))) return;
-			ok(await syncAct(db, unjoinArgv(endpoint, true)));
+			const preview = JSON.parse(ok(await syncAct(d, unjoinArgv(endpoint))).stdout) as PurgePreview;
+			if (!(await confirm(unjoinWords(label, d, preview), 'unjoin', label))) return;
+			ok(await syncAct(d, unjoinArgv(endpoint, true)));
+		});
+
+	/** A wipe takes typing the device's name, as an unjoin does. */
+	const wipe = (label: string, endpoint: string, d: string) =>
+		doing(async () => {
+			if (!(await confirm(wipeWords(label, d), 'wipe', label))) return;
+			said = ok(await syncAct(d, wipeArgv(endpoint))).stdout.trim();
+		});
+
+	/**
+	 * `device` invited to `d` as `role`, the invite's ticket made here as [Add device]'s is: what the CLI says of it.
+	 * Each chain the device is live in here is synced, so the grant reaches it now if it is online: the
+	 * CLI picks one of them as the carrier (one this copy writes to) and does not say which, so all are
+	 * pushed, and one that fails is a device away, which the grant waits for in the chain.
+	 */
+	async function granting(d: string, device: string, role: 'member' | 'reader', name?: string): Promise<string> {
+		waiting = 'Making the invite…';
+		try {
+			const invite = await newInvite(d, role === 'reader');
+			const said = ok(await syncAct(d, grantArgv(device, role, await syncOffer(d, invite), invite.id, name))).stdout.trim();
+			const row = grid?.devices.find((r) => r.device === device);
+			for (const c of grid?.chains ?? []) if (c.db !== d && ['member', 'reader'].includes(row?.cells[c.chain]?.state ?? '')) void syncNow(c.db).catch(() => {});
+			return said;
+		} finally {
+			waiting = '';
+		}
+	}
+
+	type GridRow = Grid['devices'][number];
+
+	/** A cell's dropdown chose `what`: a role is a grant, or a role change for a live member; the rest confirm first. */
+	function cellAct(row: GridRow, col: { chain: string | null; db: string }, what: string): void {
+		const cell = col.chain ? row.cells[col.chain] : null;
+		if (what === 'expel' && cell) return void expel(row.label, cell.endpoint, col.db);
+		if (what === 'unjoin' && cell) return void unjoin(row.label, cell.endpoint, col.db);
+		if (what === 'wipe' && cell) return void wipe(row.label, cell.endpoint, col.db);
+		const role = what as 'member' | 'reader';
+		void doing(async () => {
+			if (cell && (cell.state === 'member' || cell.state === 'reader')) return void (said = ok(await syncAct(col.db, roleArgv(cell.endpoint, role))).stdout.trim());
+			if (!row.device) return;
+			const name = await ask(`Grant ${row.label} ${role === 'reader' ? 'read-only access to' : 'membership of'} ${col.db}. The name it takes on that device:`, 'grant', col.db);
+			if (name) said = await granting(col.db, row.device, role, name === col.db ? undefined : name);
+		});
+	}
+
+	/** «copy from…»: `col` takes another database's devices, each with its role there, the grants left to this page. */
+	const copyInto = (col: { chain: string | null; db: string }) =>
+		doing(async () => {
+			const sources = columns.filter((c) => c.chain && c.db !== col.db).map((c) => c.db);
+			const which = col.chain ? `Each of its devices ${col.db} lacks` : `${col.db} starts a sync chain with the same admins, and each of its devices`;
+			const from = await choose(`Copy sync settings into ${col.db} from which database? ${which} is granted the role it has there, and joins ${col.db} when it next syncs.`, sources);
+			if (!from) return;
+			const r = ok(await syncAct(col.db, copyArgv(from)));
+			// `copy --defer` prints the grants left as its one stdout line, saying all else on stderr.
+			const { grants } = JSON.parse(r.stdout.split('\n').find((l) => l.startsWith('{"grants"')) ?? '') as Deferred;
+			const lines = [r.stderr.trim()];
+			for (const g of grants) lines.push(await granting(col.db, g.device, g.role));
+			said = lines.filter(Boolean).join('\n') || `${from} has no device to copy into ${col.db}`;
 		});
 
 	const addAdmin = (d: DbSync) =>
@@ -544,6 +631,61 @@
 				<p class="notice clock" data-db={d.db}>⚠ {d.db}: {c.text}</p>
 			{/each}
 		{/each}
+		{#if columns.length && grid?.chains.length}
+			<section class="grid">
+				<p class="label">Devices × databases</p>
+				<div class="scroll">
+					<table>
+						<thead>
+							<tr>
+								<th></th>
+								{#each columns as col (col.db)}
+									<th data-db={col.db}
+										><span class="name">{col.db}</span>{#if columns.some((c) => c.chain && c.db !== col.db)}<button
+												type="button"
+												class="command copy"
+												use:act={'open'}
+												disabled={busy}
+												onclick={() => copyInto(col)}>copy from…</button
+											>{/if}</th
+									>
+								{/each}
+							</tr>
+						</thead>
+						<tbody>
+							{#each grid.devices as row (row.device ?? row.endpoint)}
+								<tr data-device={row.device ?? row.endpoint} class:here={row.this}>
+									<th title={row.this ? `${row.label}: this device` : row.label}>{row.label}</th>
+									{#each columns as col (col.db)}
+										{@const cell = col.chain ? row.cells[col.chain] : null}
+										{@const acts = row.this || !col.chain ? [] : cellActs(cell?.state, !!row.device)}
+										<td data-db={col.db} data-state={cell?.state ?? 'none'}>
+											{#if acts.length}
+												<select
+													aria-label="{row.label} in {col.db}"
+													disabled={busy}
+													onchange={(e) => {
+														const what = e.currentTarget.value;
+														e.currentTarget.value = '';
+														cellAct(row, col, what);
+													}}
+												>
+													<option value="" selected>{cell?.state ?? '—'}</option>
+													{#each acts as a (a)}<option value={a}>{a}</option>{/each}
+												</select>
+											{:else}
+												<span class="standing">{cell?.state ?? '—'}</span>
+											{/if}
+										</td>
+									{/each}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				{#if said}<p class="quiet said" role="status">{said}</p>{/if}
+			</section>
+		{/if}
 		{#if failure}<p class="failure" role="alert">{failure}</p>{/if}
 		{#if waiting}<p class="quiet waiting" role="status">{waiting}</p>{/if}
 
@@ -595,7 +737,7 @@
 						<div class="actions device" data-client={row.key}>
 							<span class="name">{row.label}</span>
 							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => rename(row)}>Rename</button>
-							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => expel(row)}>Expel</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => expel(row.label, row.endpoints[db])}>Expel</button>
 							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => unjoin(row.label, row.endpoints[db])}>Unjoin</button>
 						</div>
 					{/each}
@@ -831,5 +973,49 @@
 	}
 	.info:focus-visible {
 		outline: 1px solid var(--accent);
+	}
+	.grid .scroll {
+		overflow-x: auto;
+	}
+	.grid table {
+		border-collapse: collapse;
+		font-size: 0.85em;
+	}
+	.grid th,
+	.grid td {
+		padding: 0.2rem 0.4rem;
+		border-bottom: 1px solid var(--rule);
+		text-align: left;
+		font-weight: normal;
+		white-space: nowrap;
+	}
+	.grid thead th {
+		vertical-align: bottom;
+		color: var(--ink-bright);
+	}
+	.grid thead .name {
+		display: block;
+	}
+	.grid tbody th {
+		max-width: 14ch;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.grid .here th {
+		color: var(--ink-bright);
+	}
+	.grid select {
+		background: var(--page);
+		color: var(--ink);
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		font: inherit;
+	}
+	.grid .copy {
+		padding: 0.1rem 0.3rem;
+		font-size: 0.85em;
+	}
+	.said {
+		white-space: pre-line;
 	}
 </style>

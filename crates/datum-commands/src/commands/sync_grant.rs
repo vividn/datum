@@ -5,13 +5,23 @@
 //! members relay it like any record, so it waits there for a device that is
 //! offline. The device, syncing the carrier, opens it and redeems the link
 //! as `chain connect` does: the admission is today's, every check with it.
+//!
+//! datum.day's CLI makes no ticket, having no network (da-n0uj1.7): there
+//! the grant seals the one its sync worker made for an invite written
+//! first (`--ticket`, `--invite`), and a copy makes none but leaves them to
+//! the page (`--defer`). The rest is the same in either build.
 
 use std::path::PathBuf;
+#[cfg(feature = "net")]
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(feature = "net")]
+use std::time::Instant;
 
 use anyhow::{bail, ensure, Context, Result};
-use chrono::{DateTime, Utc};
+#[cfg(feature = "net")]
+use chrono::DateTime;
+use chrono::Utc;
 use datum_core::db::chain::{self, Chain, Member, Role};
 use datum_core::db::Db;
 use serde_json::{json, Value};
@@ -48,7 +58,8 @@ fn device(columns: &[(String, PathBuf, Chain)], who: &str) -> Result<(String, St
     }
 }
 
-/// `datum --db X sync grant <DEVICE> member|reader [--as NAME]`.
+/// `datum --db X sync grant <DEVICE> member|reader [--as NAME]`. `given`:
+/// the ticket made elsewhere for an invite already here, and that invite.
 pub fn grant(
     db: &Db,
     who: &str,
@@ -56,6 +67,7 @@ pub fn grant(
     name: Option<&str>,
     expires: Duration,
     admin_key: Option<&str>,
+    given: Option<(&str, &str)>,
 ) -> Result<()> {
     let columns = chains(db)?;
     let here = db.sync_chain()?;
@@ -102,13 +114,41 @@ pub fn grant(
              grant): `datum sync chain invite` makes a ticket to carry to it instead"
         );
     };
-    let caps = super::sync::caps(db, reader, None)?;
-    let (secret, expires_at, invite) =
-        super::sync::invite(db, expires, admin_key, caps, None, false)?;
     let role = if reader { "reader" } else { "member" };
+    let (ticket, expires_at, invite) = match given {
+        Some((ticket, id)) => {
+            let secret = chain::ticket_secret(ticket)
+                .context("--ticket is not a ticket: base32 of its JSON, a secret in it")?;
+            let Some((r, filtered, until)) = here.open_invite(id, &secret) else {
+                bail!("--ticket is no ticket of invite {id}, an unused invite of this sync chain");
+            };
+            ensure!(
+                (r == Role::Reader) == reader,
+                "invite {id} is a {}'s, not a {role}'s",
+                r.as_str()
+            );
+            ensure!(
+                !filtered,
+                "invite {id} is a filtered reader's: a grant is of all of this database"
+            );
+            (ticket.to_string(), until.to_string(), id.to_string())
+        }
+        #[cfg(feature = "net")]
+        None => {
+            let caps = super::sync::caps(db, reader, None)?;
+            let (secret, until, id) =
+                super::sync::invite(db, expires, admin_key, caps, None, false)?;
+            (datum_sync::grant_link(db, &secret, expires)?, until, id)
+        }
+        #[cfg(not(feature = "net"))]
+        None => {
+            let _ = (expires, admin_key);
+            bail!("this build makes no ticket: datum.day's sync widget grants a device")
+        }
+    };
     let as_name = name.unwrap_or(db_name);
     let payload = json!({
-        "ticket": datum_sync::grant_link(db, &secret, expires)?,
+        "ticket": ticket,
         "chain": here.id, "invite": invite, "db": as_name, "role": role, "expires": expires_at,
         "from": here.member(&db.sync_endpoint_id()?).map(|m| m.label.clone()),
     });
@@ -133,14 +173,26 @@ pub fn grant(
 /// chain starts one whose admins are SRC's (vividn: «if db2 is really new,
 /// then can auto setup admin to be the same as db1»), signed by one of them;
 /// X in a chain takes grants for the devices it lacks, signed by its own
-/// admin. A copy never starts a second chain.
+/// admin. A copy never starts a second chain. `defer`: no grant is made,
+/// and the ones left are printed as JSON, `{"grants": [{device, label,
+/// role}]}`, what was said going to stderr.
 pub fn copy(
     db: &Db,
     from: &str,
     devices: Option<&[String]>,
     expires: Duration,
     admin_key: Option<&str>,
+    defer: bool,
 ) -> Result<()> {
+    ensure!(
+        defer || cfg!(feature = "net"),
+        "this build makes no ticket: datum.day's sync widget copies a database's devices"
+    );
+    let say = |line: String| match defer {
+        true => eprintln!("{line}"),
+        false => println!("{line}"),
+    };
+    let mut left: Vec<Value> = Vec::new();
     let path = config::locate_db(Some(from)).context("Cannot determine data directory")?;
     ensure!(path.exists(), "no database {from}");
     let canon = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
@@ -239,12 +291,16 @@ pub fn copy(
         if let Err(e) = super::sync::describe_self(db, None, super::sync::kind()) {
             eprintln!("⚠ this copy could not describe itself ({e}); `datum sync chain rename <LABEL>` tries again");
         }
+        #[cfg(feature = "net")]
         super::sync_daemon::auto_install(db);
         let admins = match src.admins.len() {
             0 => format!("open, as {from}'s is"),
             n => format!("its admins {from}'s {n}"),
         };
-        println!("started sync chain {}: {admins}", db.sync_chain()?.id);
+        say(format!(
+            "started sync chain {}: {admins}",
+            db.sync_chain()?.id
+        ));
     }
     let here = db.sync_chain()?;
     for m in picked {
@@ -255,26 +311,40 @@ pub fn copy(
             .iter()
             .find(|h| h.device.as_deref() == Some(d) && live(h))
         {
-            println!("{label} is a {} here already", had.role().as_str());
+            say(format!("{label} is a {} here already", had.role().as_str()));
         } else if m.filter.is_some() {
-            println!(
+            say(format!(
                 "{label} is a reader of some of {from}'s fields, which are not this database's: \
                  `datum sync grant {} reader` makes it a reader of all of it",
                 &d[..12.min(d.len())]
-            );
+            ));
+        } else if defer {
+            left.push(json!({"device": d, "label": label, "role": m.role().as_str()}));
         } else {
-            grant(db, d, m.role() == Role::Reader, None, expires, admin_key)?;
+            grant(
+                db,
+                d,
+                m.role() == Role::Reader,
+                None,
+                expires,
+                admin_key,
+                None,
+            )?;
         }
     }
     if unbound > 0 {
-        println!(
+        say(format!(
             "{unbound} member(s) of {from} bound to no device key (an older datum's copy) \
              are not copied: `datum sync chain invite` makes a ticket to carry to each"
-        );
+        ));
+    }
+    if defer {
+        println!("{}", json!({ "grants": left }));
     }
     Ok(())
 }
 
+#[cfg(feature = "net")]
 /// A grant to this device, opened: the name it joins under, its join link
 /// and who granted it.
 struct Granted {
@@ -283,6 +353,7 @@ struct Granted {
     from: String,
 }
 
+#[cfg(feature = "net")]
 /// The grants to this device that `db`'s chain holds that no database here
 /// was admitted by: one live in their chain whose latest admission came
 /// through the grant's invite. An expelled copy is never told so, and holds
@@ -334,6 +405,7 @@ fn pending(db: &Db, say_expired: bool) -> Result<Vec<Granted>> {
     Ok(out)
 }
 
+#[cfg(feature = "net")]
 /// The name a grant of `chain` joins under here: `want`, or `want-2`, `-3`…
 /// where a database of that name holds data or another chain (it is never
 /// touched), or another join. A database already in `chain` is its own: a
@@ -362,6 +434,7 @@ fn free_name(want: &str, chain: &str) -> Result<String> {
     unreachable!()
 }
 
+#[cfg(feature = "net")]
 /// Join `g` as `chain connect` does, in a process of its own, with this
 /// one's environment, so its data directory and registry: the ticket on its
 /// stdin, which no other user reads. A bound address (the tests') gets a
@@ -407,6 +480,7 @@ pub fn records(db: &Db) -> i64 {
     count.unwrap_or(0)
 }
 
+#[cfg(feature = "net")]
 /// After a bare `datum sync` of `db`, which held `before` chain records:
 /// join every grant pending, saying so as it goes. A join that fails is
 /// said, and tried again at the next sync: the sync itself did not fail.
@@ -421,6 +495,7 @@ pub fn redeem(db: &Db, before: i64) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "net")]
 /// A `sync run`'s eye on its grants: on a tick after a chain record came,
 /// or once a failed join's wait is out (a minute, doubling to half an hour),
 /// it joins those pending, one at a time, on a thread of its own, so the run
@@ -428,6 +503,7 @@ pub fn redeem(db: &Db, before: i64) -> Result<()> {
 #[derive(Default, Clone)]
 pub struct Watch(Arc<Mutex<WatchState>>);
 
+#[cfg(feature = "net")]
 #[derive(Default)]
 struct WatchState {
     seen: i64,
@@ -436,6 +512,7 @@ struct WatchState {
     joining: bool,
 }
 
+#[cfg(feature = "net")]
 impl Watch {
     pub fn tick(&self, db: &Db) {
         let count = records(db);
