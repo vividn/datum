@@ -57,7 +57,9 @@ const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true,
 const DAY = { viewport: DESKTOP.viewport };
 
 const BAR = '.prompt-bar';
-const DOC = `${BAR} .doc`;
+/** The newest command's group in the output strip (da-qua5g): what a command just answered. */
+const OUT = `${BAR} .group:last-child`;
+const DOC = `${OUT} .doc`;
 
 // ONE APP per screen for most of this file (da-6b3dj, sharedApp in
 // support/app.mjs): the database is emptied between tests and every claim
@@ -180,7 +182,7 @@ describe('one document', () => {
 
 			await app.submit('occur coffee cups=2 roast=dark');
 			await page.waitForFunction(
-				(hid) => document.querySelector('.prompt-bar .doc .hid')?.textContent !== hid,
+				(hid) => document.querySelector('.prompt-bar .group:last-child .doc .hid')?.textContent !== hid,
 				plain.hid
 			);
 			const rich = await section(page);
@@ -258,7 +260,7 @@ describe('several documents', () => {
 			await app.declare('coffee');
 			await app.declare('mood', 'switch');
 			await app.submit('occur coffee , switch mood happy');
-			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .doc').length === 2);
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .group:last-child .doc').length === 2);
 
 			const [first, second] = [await section(page, 0), await section(page, 1)];
 			// Each side echoed its own document: `DATUM_SHOW` reaches EVERY
@@ -278,17 +280,17 @@ describe('several documents', () => {
 			const fields = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 			for (const f of fields) await app.declare(f);
 			await app.submit(fields.map((f) => `occur ${f}`).join(' , '));
-			await page.locator(`${BAR} .more`).waitFor();
+			await page.locator(`${OUT} .more`).waitFor();
 
 			const drawn = await page.locator(DOC).count();
-			const more = await page.locator(`${BAR} .more`).innerText();
+			const more = await page.locator(`${OUT} .more`).innerText();
 			assert.ok(drawn >= 1, 'not one whole section survived');
 			assert.ok(drawn < fields.length, 'every section fitted — nothing to prove');
 			// The COUNT, not an ellipsis: how many more there are is the thing
 			// worth knowing.
 			assert.equal(more, `+${fields.length - drawn}`);
 
-			await page.locator(`${BAR} .more`).click();
+			await page.locator(`${OUT} .more`).click();
 			const listed = page.locator('dialog.sheet .doc');
 			await listed.first().waitFor();
 			assert.equal(await listed.count(), fields.length, 'the modal lost a document');
@@ -308,18 +310,18 @@ describe('several documents', () => {
 			await unfold(page);
 			for (const f of ['a', 'b', 'c', 'tea']) await app.declare(f);
 			await app.submit('occur a , occur b , occur c');
-			await page.locator(`${BAR} .more`).waitFor();
+			await page.locator(`${OUT} .more`).waitFor();
 
 			// A whole section at the same size, never half of two.
 			assert.equal(await page.locator(DOC).count(), 1);
 			const only = await section(page);
 			assert.ok(only.info.trim().length > 0, 'the one section on a phone reads as nothing');
-			assert.equal(await page.locator(`${BAR} .more`).innerText(), '+2');
+			assert.equal(await page.locator(`${OUT} .more`).innerText(), '+2');
 
 			// And the input still works at this width.
 			await app.submit('occur tea');
 			await page.waitForFunction(() =>
-				document.querySelector('.prompt-bar .doc .info')?.textContent.includes('tea')
+				document.querySelector('.prompt-bar .group:last-child .doc .info')?.textContent.includes('tea')
 			);
 			assert.deepEqual(app.errors, []);
 		});
@@ -355,6 +357,211 @@ describe('several documents', () => {
 	});
 });
 
+// THE STRIP (da-qua5g). vividn, 2026-10-27: «when it's just the single row,
+// new commands can come in and push previous entries to the left forming a
+// little scrollback so that you can scroll back to see previous commands.
+// Some commands produce multiple documents, so these appear side by side, so
+// make sure that it is clear where the boundaries between different commands
+// are. As new outputs are appended, animate the old ones sliding to the left».
+describe('the output is a strip of commands, the newest at the right', () => {
+	/** The strip as drawn: what it shows, and each group's command, box, documents and rule. */
+	const strip = (page) =>
+		page.locator(`${BAR} .roll`).evaluate(async (roll) => {
+			// Read where things REST: a slide in flight is a transform.
+			await Promise.all(roll.querySelector('.track').getAnimations().map((a) => a.finished));
+			const view = roll.getBoundingClientRect();
+			const span = (el) => {
+				const r = el.getBoundingClientRect();
+				return { left: r.left, right: r.right };
+			};
+			return {
+				view: span(roll),
+				atEnd: roll.scrollLeft + roll.clientWidth >= roll.scrollWidth - 2,
+				groups: [...roll.querySelectorAll('.group')].map((g) => ({
+					line: g.querySelector('.echo').innerText.replace(/^❯ /, ''),
+					...span(g),
+					head: g.querySelector('.head').getBoundingClientRect().top - view.top,
+					docs: [...g.querySelectorAll('.doc')].map(span),
+					rule: parseFloat(getComputedStyle(g).borderLeftWidth)
+				}))
+			};
+		});
+	/** Every slide the strip plays from here on, as the keyframes it was asked for. */
+	const watchSlides = (page) =>
+		page.evaluate(() => {
+			window.__slides = [];
+			const animate = Element.prototype.animate;
+			Element.prototype.animate = function (frames, options) {
+				if (this.classList.contains('track')) window.__slides.push(frames[0].transform);
+				return animate.call(this, frames, options);
+			};
+		});
+	const inView = (s, g) => g.left >= s.view.left - 1 && g.right <= s.view.right + 1;
+
+	test('three commands in a row: oldest to newest, left to right, the newest in view, and the old ones slid left', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await watchSlides(page);
+			for (const line of ['occur coffee', 'occur water', 'occur tea']) await app.submit(line);
+			// Every arrival but the first, which had nothing to slide.
+			await page.waitForFunction(() => window.__slides.length === 2);
+
+			const s = await strip(page);
+			assert.deepEqual(s.groups.map((g) => g.line), ['occur coffee', 'occur water', 'occur tea']);
+			for (let i = 1; i < s.groups.length; i += 1)
+				assert.ok(s.groups[i].left >= s.groups[i - 1].right, `${s.groups[i].line} is not right of ${s.groups[i - 1].line}`);
+			// Three do not fit a phone, so the row scrolled to its newest end.
+			assert.ok(s.groups[0].left < s.view.left, 'the strip never overflowed — nothing to prove');
+			assert.ok(s.atEnd, 'the strip is not at its newest end');
+			assert.ok(inView(s, s.groups.at(-1)), `the newest is out of view: ${JSON.stringify(s)}`);
+			// Each arrival played the old ones sliding left, from the right.
+			for (const slide of await page.evaluate(() => window.__slides))
+				assert.ok(parseFloat(/translateX\((-?[\d.]+)px\)/.exec(slide)[1]) > 0, slide);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('a command landing mid-slide cancels the slide and slides from where the row rests', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			// Every slide a minute long, so the next arrival is sure to land inside it.
+			await page.evaluate(() => {
+				window.__played = [];
+				const animate = Element.prototype.animate;
+				Element.prototype.animate = function (frames, options) {
+					const slide = animate.call(this, frames, { ...options, duration: 60000 });
+					if (this.classList.contains('track')) window.__played.push({ slide, from: frames[0].transform });
+					return slide;
+				};
+			});
+			for (const line of ['occur coffee', 'occur water', 'occur tea']) await app.submit(line);
+			await page.waitForFunction(() => window.__played.length === 2);
+			const read = await page.evaluate(() => {
+				const [first, second] = window.__played;
+				second.slide.cancel();
+				const g = document.querySelector('.prompt-bar .group:last-child');
+				return {
+					first: first.slide.playState,
+					moved: parseFloat(/translateX\((-?[\d.]+)px\)/.exec(second.from)[1]),
+					room: g.getBoundingClientRect().width + parseFloat(getComputedStyle(g).marginLeft)
+				};
+			});
+			assert.equal(read.first, 'idle', 'the slide in flight was left playing');
+			// The row was already past its width, so the old groups moved by exactly the new one's room.
+			assert.ok(Math.abs(read.moved - read.room) <= 1, `slid ${read.moved}px for a group of ${read.room}px`);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('the strip settling after a command — mounting or dropping old groups — does not take the slide off', async () => {
+		await desktop(async (app) => {
+			const { page } = app;
+			// A long scrollback, so the strip has mounted past its first few and drops and mounts as it settles.
+			for (const line of ['occur coffee', 'occur water', 'occur tea', 'occur toast', 'occur juice', 'occur jam']) await app.submit(line);
+			await page.evaluate(() => {
+				window.__played = [];
+				const animate = Element.prototype.animate;
+				Element.prototype.animate = function (frames, options) {
+					const slide = animate.call(this, frames, { ...options, duration: 60000 });
+					if (this.classList.contains('track')) window.__played.push(slide);
+					return slide;
+				};
+			});
+			await app.submit('occur bread');
+			await page.waitForFunction(() => window.__played.length === 1);
+			await page.waitForTimeout(500);
+			const state = await page.evaluate(() => {
+				const slide = window.__played[0];
+				const was = slide.playState;
+				slide.cancel();
+				return was;
+			});
+			assert.equal(state, 'running', 'the slide was taken off before it ended');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('a reader who asked for no motion gets the same row with no slide', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.emulateMedia({ reducedMotion: 'reduce' });
+			await watchSlides(page);
+			for (const line of ['occur coffee', 'occur water', 'occur tea']) await app.submit(line);
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .group').length === 3);
+			const s = await strip(page);
+			assert.ok(s.atEnd && inView(s, s.groups.at(-1)), 'the newest is out of view');
+			assert.deepEqual(await page.evaluate(() => window.__slides), []);
+		}, PHONE);
+	});
+
+	test('a command’s documents stand side by side in one group, ruled off from the next under its own head', async () => {
+		await desktop(async (app) => {
+			const { page } = app;
+			await app.declare('coffee');
+			await app.declare('mood', 'switch');
+			await app.submit('occur coffee , switch mood happy');
+			await app.submit('occur water');
+			await page.locator(`${OUT} .doc`).waitFor();
+
+			const [both, next] = (await strip(page)).groups.slice(-2);
+			assert.equal(both.line, 'occur coffee , switch mood happy');
+			assert.equal(both.docs.length, 2, 'the two documents are not in one group');
+			for (const doc of both.docs) assert.ok(doc.left >= both.left - 0.5 && doc.right <= both.right + 0.5, 'a document is outside its group');
+			assert.ok(both.docs[1].left >= both.docs[0].right, 'the documents are not side by side');
+			// The boundary: a rule at the next group's left edge, past the
+			// last of this one's documents, and the next command's own head
+			// at the top of the row beside it.
+			assert.equal(next.line, 'occur water');
+			assert.ok(next.rule >= 1, 'no rule between two commands');
+			assert.ok(next.left > both.docs[1].right, 'the next group begins inside this one');
+			assert.ok(next.head >= 0 && next.head < 8, `the next command's head is not at the top: ${next.head}`);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('scrolled back, the older commands mount and a new one does not pull the reader forward; back at the end, it does', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const lines = ['occur coffee', 'occur water', 'occur tea', 'occur toast', 'occur juice', 'occur bread', 'occur jam'];
+			for (const line of lines) await app.submit(line);
+			const groups = () => page.evaluate(() => document.querySelectorAll('.prompt-bar .group').length);
+			// Only the newest few are mounted while the reader is at the end (vremya on #1269).
+			assert.ok((await groups()) < lines.length, `all ${lines.length} commands were mounted at the end`);
+
+			// Back to the first command, as a finger or a wheel would scroll: each time the
+			// row nears the oldest mounted, more mount, and the reader stays where they were.
+			const roll = page.locator(`${BAR} .roll`);
+			for (let i = 0; i < 10 && (await strip(page)).groups[0].line !== 'occur coffee'; i += 1) {
+				await roll.evaluate((el) => el.scrollTo({ left: 0 }));
+				await page.waitForTimeout(100);
+			}
+			await roll.evaluate((el) => el.scrollTo({ left: 0 }));
+			await page.waitForFunction(() => document.querySelector('.prompt-bar .roll').scrollLeft === 0);
+			const back = await strip(page);
+			assert.deepEqual(back.groups.map((g) => g.line), lines);
+			assert.ok(inView(back, back.groups[0]), 'scrolling back did not reach the first command');
+
+			await app.submit('occur milk');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar .group:last-child .echo').innerText.includes('milk'));
+			const kept = await strip(page);
+			assert.equal(kept.groups[0].line, 'occur coffee', 'the command being read was unmounted');
+			assert.ok(Math.abs(kept.groups[0].left - back.groups[0].left) <= 1, 'the reader was moved');
+			assert.ok(!kept.atEnd, 'the strip jumped to its end');
+
+			await roll.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+			await page.waitForFunction(() => {
+				const el = document.querySelector('.prompt-bar .roll');
+				return el.scrollLeft + el.clientWidth >= el.scrollWidth - 2;
+			});
+			await app.submit('occur egg');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar .group:last-child .echo').innerText.includes('egg'));
+			const s = await strip(page);
+			assert.ok(s.atEnd && inView(s, s.groups.at(-1)), 'back at the end, the newest is out of view');
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+});
+
 describe('a command with no echo', () => {
 	// The LAST lines, as many as the section shows: it is a share of the
 	// page now (da-mwp4m), so it holds four or more, and the lines it cannot
@@ -364,12 +571,12 @@ describe('a command with no echo', () => {
 			const { page } = app;
 			for (const f of 'abcdefghijkl') assert.equal((await app.run(['occur', f])).code, 0);
 			await app.submit('tail');
-			await page.locator(`${BAR} .raw p`).first().waitFor();
+			await page.locator(`${OUT} .raw p`).first().waitFor();
 
 			const printed = (await app.run(['tail'])).stdout.replace(ESC, '').replace(/\n+$/, '').split('\n');
 			// What is drawn whole inside the box that clips the lines, not
 			// what is in the DOM.
-			const visible = await page.locator(`${BAR} .section.output .raw`).evaluate((raw) => {
+			const visible = await page.locator(`${OUT} .raw`).evaluate((raw) => {
 				const box = raw.getBoundingClientRect();
 				return [...raw.querySelectorAll('p')]
 					.filter((p) => p.getBoundingClientRect().top >= box.top - 0.5 && p.getBoundingClientRect().bottom <= box.bottom + 0.5)
@@ -393,8 +600,8 @@ describe('a command with no echo', () => {
 			// `.raw.error` — the error mark went with the raw lines when they
 			// moved into `RawLines.svelte`, which both fixed-height surfaces
 			// now share (da-ckw3: the bar's row IS the history's first row).
-			await page.locator(`${BAR} .raw.error`).waitFor();
-			const shown = await page.locator(`${BAR} .raw p`).allInnerTexts();
+			await page.locator(`${OUT} .raw.error`).waitFor();
+			const shown = await page.locator(`${OUT} .raw p`).allInnerTexts();
 			const printed = (await app.run(['occur'])).stderr.replace(ESC, '').replace(/\n+$/, '').split('\n');
 			assert.ok(shown.length > 0);
 			assert.deepEqual(shown, printed.slice(-4));
@@ -412,22 +619,22 @@ describe('a command with no echo', () => {
 			await page.evaluate((text) => window.datum.bar.setPills([{ id: 'hid', kind: 'hid', text }]), `${hid},nope9`);
 			await page.locator(`${BAR} .pill.hid`).waitFor();
 			await app.submit('del');
-			await page.locator(`${BAR} .raw.error`).waitFor();
+			await page.locator(`${OUT} .raw.error`).waitFor();
 
 			// What the run itself said: exit 1, and the error's last line.
 			const { result } = await page.evaluate(() => window.datum.bar.last());
 			assert.equal(result.code, 1);
 			const said = result.stderr.replace(ESC, '').trim().split('\n').at(-1);
 			assert.match(said, /nope9: Entry not found/);
-			assert.deepEqual(await page.locator(`${BAR} .doc .action`).allInnerTexts(), ['DELETE']);
+			assert.deepEqual(await page.locator(`${DOC} .action`).allInnerTexts(), ['DELETE']);
 			assert.equal((await section(page)).hid, hid);
-			assert.deepEqual(await page.locator(`${BAR} .raw.error p`).allInnerTexts(), [said]);
+			assert.deepEqual(await page.locator(`${OUT} .raw.error p`).allInnerTexts(), [said]);
 			// Inside the output section, and the bar did not grow to hold it:
 			// the row is the section's height less the 1px rule under it.
 			const fit = await page.locator(`${BAR} .section.output`).evaluate((out) => {
 				const box = out.getBoundingClientRect();
 				const rule = parseFloat(getComputedStyle(out).borderBottomWidth);
-				const [head, line] = ['.head', '.raw.error p'].map((s) => out.querySelector(s).getBoundingClientRect());
+				const [head, line] = ['.group:last-child .head', '.group:last-child .raw.error p'].map((s) => out.querySelector(s).getBoundingClientRect());
 				return { head: head.top - box.top, line: box.bottom - rule - line.bottom };
 			});
 			assert.ok(fit.head >= 0 && fit.line >= -0.5, `the entry is cut out of the output section: ${JSON.stringify(fit)}`);
@@ -453,9 +660,9 @@ describe('a command with no echo', () => {
 
 			await app.declare('water');
 			await app.submit('occur water');
-			await page.locator(`${BAR} .raw p`).first().waitFor();
+			await page.locator(`${OUT} .raw p`).first().waitFor();
 			assert.equal(await page.locator(DOC).count(), 0, 'a document was drawn from no document');
-			const shown = await page.locator(`${BAR} .raw p`).allInnerTexts();
+			const shown = await page.locator(`${OUT} .raw p`).allInnerTexts();
 			assert.match(shown[0].replace(ESC, ''), /^CREATE /);
 			assert.ok(shown.some((l) => l.includes('water')), shown.join(' | '));
 			assert.deepEqual(app.errors, []);
@@ -1057,7 +1264,7 @@ describe('folded, a command still answers', () => {
 			// The opening is a settle on animation frames, which run on the held clock.
 			await page.clock.runFor(1_000);
 			await page.locator(`${BAR} .section.output`).waitFor();
-			const shown = (await page.locator(`${BAR} .raw`).innerText()).replace(ESC, '');
+			const shown = (await page.locator(`${OUT} .raw`).innerText()).replace(ESC, '');
 			const printed = (await app.run(['occur', 'nope', '--nonsense'])).stderr.replace(ESC, '');
 			assert.ok(
 				printed.split('\n').filter(Boolean).some((line) => shown.includes(line.trim().slice(0, 30))),

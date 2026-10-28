@@ -26,10 +26,12 @@
 	  not hide its seconds on a narrow screen: vividn, "On mobile too please
 	  show seconds on the clock". The mark ellipsizes rather than taking the
 	  box's room.
-	- the OUTPUT section is THE NEWEST ROW OF THE HISTORY and the full width
-	  of the bar: the same `ReplEntry.svelte` the log above draws its rows
-	  with, so the newest command looks the same whether the log is open or
-	  shut and dragging the log up never meets it twice (vividn, 2026-09-21).
+	- the OUTPUT section is THE HISTORY'S LAST ROWS, side by side in one
+	  strip the full width of the bar that scrolls sideways (da-qua5g): the
+	  newest at the right end, a command a group, drawn with the same
+	  `ReplEntry.svelte` the log above draws its rows with, so the newest
+	  command looks the same whether the log is open or shut (vividn,
+	  2026-09-21).
 
 	ON A PAGE THAT IS THE CLI WIDGET ALONE (`/cli`, `/repl`) there is no
 	output section: vividn, 2026-10-27, «the output bar is then completely
@@ -83,7 +85,8 @@
 	import { tick, untrack } from 'svelte';
 	import Brand from '$lib/Brand.svelte';
 	import ReplEntry from '$lib/ReplEntry.svelte';
-	import { repl } from '$lib/replStore.js';
+	import { repl, type Command } from '$lib/replStore.js';
+	import { parseEcho } from '$lib/echo.js';
 	import { ACTION_MS, ERROR_MS, focusLine, marks, peel, pills, prefill, text } from '$lib/bar.js';
 	import { clockSecondsLabel, now } from '$lib/clock.js';
 	import { closeLog, inLog, openOutput, output, outputless, shown, toggleOutput } from '$lib/log.js';
@@ -137,8 +140,130 @@
 		outputless.set(!!tab && isWidget(tab.content) && tab.content.kind === 'cli');
 	});
 
-	/** The newest command, the history's last row — see the output section below. */
-	const newest = $derived($repl.scrollback.at(-1) ?? null);
+	/**
+	 * THE STRIP (da-qua5g): the history's last `STRIP` commands, oldest at the
+	 * left and the newest at the right end, in one row that scrolls sideways.
+	 * vividn, 2026-10-27: «when it's just the single row, new commands can
+	 * come in and push previous entries to the left forming a little
+	 * scrollback». Little: the whole history is the log's.
+	 *
+	 * MOUNTED NEAR THE VIEW, not all thirty: the bar is on every page, and
+	 * thirty groups mounted at every load cost a phone at 4× about 230 ms
+	 * of first paint and a long task or two on every command landing
+	 * (vremya on #1269). So it mounts the newest `MOUNT`, and `GROW` more
+	 * whenever the reader comes within a row's width of the oldest mounted.
+	 */
+	const STRIP = 30;
+	const MOUNT = 4;
+	const GROW = 6;
+	/** How long an arrival's slide plays, in ms. */
+	const SLIDE_MS = 260;
+	/**
+	 * The oldest command mounted, or null for the newest `MOUNT`. An entry
+	 * and not a count, so a command landing while the reader is scrolled
+	 * back mounts one more rather than unmounting the one being read.
+	 * `raw`: a `$state` proxies the object it is given, and the proxy is
+	 * found in no list of the entries themselves.
+	 */
+	let from: Command | null = $state.raw(null);
+	const strip = $derived.by(() => {
+		const all = $repl.scrollback;
+		const at = from ? all.indexOf(from) : -1;
+		return all.slice(at < 0 ? -MOUNT : Math.max(at, all.length - STRIP));
+	});
+	/** The newest command the strip has drawn, to tell an arrival from a growth. Plain, as `pinned` is. */
+	let newest: Command | undefined;
+
+	let roll: HTMLDivElement | undefined = $state();
+	let track: HTMLDivElement | undefined = $state();
+	/**
+	 * Whether the reader is at the newest end — or has never scrolled away
+	 * from it. Plain, not `$state`, on purpose: it is read only inside the
+	 * effect below and written by the scroll handler, and a write must not
+	 * run that effect again.
+	 */
+	let pinned = true;
+
+	const atEnd = (box: HTMLElement): boolean => box.scrollLeft + box.clientWidth >= box.scrollWidth - 2;
+
+	/**
+	 * Where the reader is, read on every scroll — except during a slide:
+	 * the track's transform widens what the row can scroll over, so the
+	 * jump to the end reads as short of it. Read again as the slide ends.
+	 */
+	function reread(): void {
+		if (roll && !track?.getAnimations().length) pinned = atEnd(roll);
+	}
+
+	/**
+	 * Mount `GROW` more when less than a row's width of groups is left before
+	 * the view. Never during a slide: what it mounts runs the effect again,
+	 * and that would take the slide off.
+	 */
+	function fill(): void {
+		if (!roll || track?.getAnimations().length || roll.scrollLeft >= roll.clientWidth) return;
+		const all = $repl.scrollback;
+		const at = all.indexOf(strip[0]);
+		if (at > 0 && all.length - at < STRIP) from = all[Math.max(0, at - GROW, all.length - STRIP)];
+	}
+
+	/**
+	 * At the end, the strip settles: and once more than three rows of groups
+	 * stand before the view, the oldest goes, one at a time, off screen. The
+	 * gap between this and `fill` keeps the two from undoing each other.
+	 */
+	function rest(): void {
+		reread();
+		if (roll && pinned && from && strip.length > MOUNT && roll.scrollLeft > 3 * roll.clientWidth) from = strip[1];
+		fill();
+	}
+
+	/**
+	 * A command lands: the row moves to it, and the rest SLIDE LEFT to make
+	 * room, so it is plain what moved. Not by a smooth scroll — its own
+	 * scroll events would read as the reader scrolling away mid-glide — but
+	 * by jumping to the end and playing the jump back as a slide of the
+	 * whole track (FLIP), measured on the group that was newest before.
+	 * Scrolled back, the reader stays where they were, even as the oldest
+	 * group leaves the front of the strip.
+	 */
+	$effect.pre(() => {
+		const list = strip;
+		const arrived = list.at(-1) !== newest;
+		newest = list.at(-1);
+		const box = roll;
+		const anchor = track?.lastElementChild;
+		if (!box || !anchor) return;
+		// A slide still playing is taken off when the next command lands
+		// (canceled, so it re-reads nothing): the place measured is where the
+		// row rests, not where an earlier arrival's transform has it.
+		if (arrived) for (const slide of track?.getAnimations() ?? []) slide.cancel();
+		const before = anchor.getBoundingClientRect().left;
+		untrack(() =>
+			tick().then(() => {
+				if (!anchor.isConnected) return;
+				if (!pinned) {
+					box.scrollLeft += anchor.getBoundingClientRect().left - before;
+					return fill();
+				}
+				box.scrollLeft = box.scrollWidth;
+				const moved = before - anchor.getBoundingClientRect().left;
+				if (track && arrived && moved > 0 && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+					track
+						.animate([{ transform: `translateX(${moved}px)` }, { transform: 'none' }], {
+							duration: SLIDE_MS,
+							easing: 'ease-out'
+						})
+						.finished.then(rest, () => {});
+				else rest();
+			})
+		);
+	});
+
+	/** Opened, the row starts at its newest end. */
+	$effect(() => {
+		if (roll) roll.scrollLeft = roll.scrollWidth;
+	});
 
 	const degraded = $derived(isDegraded($storage));
 
@@ -196,27 +321,35 @@
 		     is where it has finished. Clipped while it is part-way, from the
 		     top: what shows first is the foot of the row, next to the input. -->
 		<div class="section output">
-			<div class="roll">
-				<!-- THE HISTORY'S NEWEST ROW, not a second rendering of it.
-				     vividn, 2026-09-21: "the output section … should actually
-				     *be* the first line of the repl. That is, it shouldn't be
-				     repeated when you drag it up. … It should also have the same
-				     format as the rest of the repl." So it mounts the same
-				     `ReplEntry` the log does — stamp, echo line and all — and the
-				     log ends at the row before it (`skip={1}` in BarLog.svelte).
+			<div class="roll" bind:this={roll} onscroll={() => (reread(), fill())}>
+				<div class="track" bind:this={track}>
+					<!-- ROWS OF THE HISTORY, not a second rendering of them.
+					     vividn, 2026-09-21: "the output section … should actually
+					     *be* the first line of the repl. … It should also have the
+					     same format as the rest of the repl." So each group mounts
+					     the same `ReplEntry` the log does — stamp, echo line and
+					     all — and the log ends at the row before the newest
+					     (`skip={1}` in BarLog.svelte).
 
-				     Straight from the scrollback rather than from `last`: both
-				     say the same thing (bar.ts's `noteRun` IS what `record`
-				     calls), and one list with one source cannot drift from
-				     itself. `all` is left off, so a multi-document command draws
-				     what fits here and `+N` for the rest — the history has the
-				     room and passes it. `cap` is more lines than the section
-				     holds: the raw output stands on the section's foot and the
-				     lines that do not fit are cut from the top, so a `tail` shows
-				     its newest rows at whatever height the screen gives. -->
-				{#if newest}
-					<ReplEntry entry={newest} cap={12} />
-				{/if}
+					     ONE GROUP A COMMAND, its documents side by side inside it
+					     and a rule between it and the next, under the command's
+					     own head: vividn, «make sure that it is clear where the
+					     boundaries between different commands are». A group is a
+					     document's width for each document it echoed (`--docs`),
+					     never wider than the row, where `+N` holds the rest; a
+					     command whose answer is printed text — a table, a
+					     picture, an error — takes the row's whole width, as it
+					     takes a whole row in the history (scrollback.ts). `cap`
+					     is more lines than the section holds: the raw output
+					     stands on the group's foot and the lines that do not fit
+					     are cut from the top, so a `tail` shows its newest rows. -->
+					{#each strip as entry (entry)}
+						{@const docs = parseEcho(entry.result.stdout)?.length ?? 0}
+						<div class="group" class:wide={!docs} style:--docs={docs || null}>
+							<ReplEntry {entry} cap={12} />
+						</div>
+					{/each}
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -421,22 +554,67 @@
 		border-bottom: 1px solid var(--tint);
 	}
 
-	/* A COLUMN, because what is in it is a row of the history
-	   (ReplEntry.svelte): its head — the time and the command — sits ABOVE
-	   what the command answered, exactly as it does in the log. `.section`
-	   is a flex row for the input's four things, and an entry laid out that
-	   way put its head beside its answer instead of over it: at 320px the
-	   head measured 540px wide and the document had nowhere left to be.
-
-	   ALWAYS THE ROW'S WHOLE HEIGHT — the section's, less the rule under
-	   it — and the entry stands on its foot, as a terminal's last answer
-	   stands on the prompt. */
+	/* THE STRIP (da-qua5g): one row of commands that scrolls sideways, the
+	   row's whole height — the section's, less the rule under it. A size
+	   container, so a group is sized in shares of the row (`cqw`) and
+	   never by what it holds. `pan-x` again because this is a scroll
+	   container, and `touch-action` stops at the nearest one (see `.field`
+	   above): sideways is the strip's, up and down the bar's. */
 	.roll {
+		flex: none;
+		height: calc(var(--output-height) - 1px);
+		overflow-x: auto;
+		overflow-y: hidden;
+		overscroll-behavior-x: contain;
+		scrollbar-width: thin;
+		container-type: inline-size;
+		touch-action: pan-x;
+	}
+
+	/* At least the row's width, and the groups at its RIGHT end while they
+	   do not fill it: the newest is always the last thing before the edge.
+	   An auto margin and not `justify-content: flex-end`, which would push
+	   an overflow off the left where no scroll reaches it. */
+	.track {
+		display: flex;
+		width: max-content;
+		min-width: 100%;
+		height: 100%;
+	}
+
+	.group:first-child {
+		margin-left: auto;
+	}
+
+	/* A COLUMN, because a group is a row of the history (ReplEntry.svelte):
+	   its head — the time and the command — sits ABOVE what the command
+	   answered, exactly as it does in the log, and the entry stands on its
+	   foot, as a terminal's last answer stands on the prompt. */
+	.group {
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-end;
 		flex: none;
-		height: calc(var(--output-height) - 1px);
+		/* A document is 21rem: past the width Docs.svelte draws a document's
+		   data rows at (`ROOMY`, 320px), with the rule's own padding beside. */
+		width: min(100cqw, calc(var(--docs) * 21rem + (var(--docs) - 1) * 0.6rem + 0.8rem + 1px));
+		height: 100%;
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	.group.wide {
+		width: 100cqw;
+	}
+
+	/* THE BOUNDARY between two commands: a gap and a rule the group's whole
+	   height, in `--quiet` so it reads past the `--tint` hairline between
+	   one command's own documents (Docs.svelte) — `--rule` beside it was
+	   the same line twice — with the next command's head at its top. */
+	.group + .group {
+		margin-left: 0.8rem;
+		padding-left: 0.8rem;
+		border-left: 1px solid var(--quiet);
 	}
 
 	/* The raw lines take what the head leaves and keep the LAST of them:
@@ -444,7 +622,7 @@
 	   the overflow from the top. */
 	/* `.raw.raw`: RawLines' own `.raw` centres its lines at the same
 	   specificity, and which of two equal rules wins is the bundler's order. */
-	.roll :global(.raw.raw) {
+	.group :global(.raw.raw) {
 		flex: 0 1 auto;
 		min-height: 0;
 		justify-content: flex-end;
@@ -454,7 +632,7 @@
 	/* Each line its own height: a line clips its own overflow sideways, and
 	   a flex item that clips may shrink to nothing, which squashed every line
 	   into the box instead of cutting the oldest. */
-	.roll :global(.raw p) {
+	.group :global(.raw p) {
 		flex: none;
 	}
 

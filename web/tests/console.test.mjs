@@ -29,7 +29,7 @@ const shared = sharedApp(DESKTOP);
 /** A page with a tail pane and no REPL at all: `press`'s other half, as `main`'s draft. */
 const NO_REPL = JSON.stringify(along('column', widgetPane('tail', 'tail'), widgetPane('nowview', 'nowview')));
 
-const receipt = (page) => page.locator('.prompt-bar .receipt');
+const receipt = (page) => page.locator('.prompt-bar .group:last-child .receipt');
 
 /**
  * The bar's receipt line, or '' when no command has run.
@@ -76,7 +76,7 @@ describe('window.datum.run — the loud door', () => {
 			// The receipt is the CLI's own `CREATE <hid>`, and the hid is the
 			// row's: the same assertion shell.test.mjs makes of a typed line.
 			await page.waitForFunction(() =>
-				document.querySelector('.prompt-bar .receipt').textContent.startsWith('CREATE ')
+				document.querySelector('.prompt-bar .group:last-child .receipt').textContent.startsWith('CREATE ')
 			);
 			const [word, hid] = (await receipt(page).innerText()).split(' ');
 			const { rows } = await app.tailRows();
@@ -126,7 +126,7 @@ describe('window.datum.run — the loud door', () => {
 			await tailShows(page, 'cocoa');
 			assert.equal(await samePage(page), true, 'the page reloaded');
 			await page.waitForFunction(() =>
-				document.querySelector('.prompt-bar .receipt').textContent.startsWith('CREATE ')
+				document.querySelector('.prompt-bar .group:last-child .receipt').textContent.startsWith('CREATE ')
 			);
 			assert.deepEqual(app.errors, []);
 		}, NO_REPL);

@@ -175,7 +175,7 @@ describe('the widget and the bar are two views of one command line', () => {
 			const line = page.locator('.input-widget .result .raw.error p');
 			await line.waitFor();
 			assert.deepEqual(await page.locator('.input-widget .result .doc .action').allInnerTexts(), ['DELETE']);
-			assert.equal(await line.innerText(), await page.locator('.prompt-bar .raw.error p').innerText());
+			assert.equal(await line.innerText(), await page.locator('.prompt-bar .group:last-child .raw.error p').innerText());
 			assert.match(await line.innerText(), /nope9: Entry not found/);
 			const [inside, box] = await Promise.all([line.boundingBox(), page.locator('.input-widget > .receipt').boundingBox()]);
 			assert.ok(inside.y >= box.y && inside.y + inside.height <= box.y + box.height + 0.5, 'the error is cut out of the receipt');

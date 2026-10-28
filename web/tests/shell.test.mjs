@@ -226,7 +226,7 @@ const layouts = (app, fn, ...args) =>
  * area since da-xfa4, where it used to be a span of its own that was
  * always in the DOM. There is none before the first command.
  */
-const receipt = (page) => page.locator('.prompt-bar .doc .receipt');
+const receipt = (page) => page.locator('.prompt-bar .group:last-child .doc .receipt');
 
 /**
  * The output section's raw lines — what a command with no action echo shows.
@@ -236,7 +236,7 @@ const receipt = (page) => page.locator('.prompt-bar .doc .receipt');
  * row below it, and the raw lines are `RawLines.svelte`'s own box. The input
  * widget's receipt still has the wrapper, because it is still a `BarResult`.
  */
-const rawResult = (page) => page.locator('.prompt-bar .raw');
+const rawResult = (page) => page.locator('.prompt-bar .group:last-child .raw');
 
 const PRONOUNCED = 'rgb(255, 209, 102)';
 
@@ -692,7 +692,7 @@ describe('the bottom bar', () => {
 			// own stderr lines and is marked (da-xfa4).
 			await input.fill('foo');
 			await input.press('Enter');
-			await page.locator('.prompt-bar .raw.error').waitFor();
+			await page.locator('.prompt-bar .group:last-child .raw.error').waitFor();
 			assert.equal(await receipt(page).count(), 0, 'an error drew a document');
 			const said = await app.runLine('foo');
 			const firstLine = said.stderr.replace(/\x1b\[[0-9;]*m/g, '').split('\n').find((l) => l.trim()).trim();
@@ -874,7 +874,7 @@ describe('the bottom bar', () => {
 				(seen) => seen.errors.length > 0 || seen.echoes.some((e) => e.startsWith('foo'))
 			);
 			assert.deepEqual(app.errors, []);
-			await page.locator('.prompt-bar .raw.error').waitFor();
+			await page.locator('.prompt-bar .group:last-child .raw.error').waitFor();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'a failed command keeps the pill');
 		});
 	});

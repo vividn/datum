@@ -213,12 +213,12 @@ const drawn = (page, scope) =>
  * or drew no document, from one still running, and sat its whole 30 s cap
  * three times in a row on CI with nothing to say. Now each says what it saw.
  */
-const receiptNow = () => document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
+const receiptNow = () => document.querySelector('.prompt-bar .group:last-child .doc .receipt')?.textContent ?? '';
 
 async function barRun(page, line) {
 	const before = await page.evaluate(() => {
 		window.__barRun = window.datum.bar.last();
-		return document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
+		return document.querySelector('.prompt-bar .group:last-child .doc .receipt')?.textContent ?? '';
 	});
 	await page.locator('.prompt-bar input').fill(line);
 	await page.locator('.prompt-bar input').press('Enter');
@@ -236,7 +236,7 @@ async function barRun(page, line) {
 		() => page.evaluate(receiptNow),
 		(now) => now !== before && now !== ''
 	);
-	return page.locator('.prompt-bar .doc .receipt').last().innerText();
+	return page.locator('.prompt-bar .group:last-child .doc .receipt').last().innerText();
 }
 
 /**

@@ -258,6 +258,17 @@
 		text-underline-offset: 2px;
 	}
 
+	/* Cut at the line's end, not dropped: a button is an atomic inline, and
+	   one that overflows an ellipsized line is hidden whole, so the full id
+	   tapped open in a document one column of the bar's strip wide
+	   (da-qua5g) left only the `…`. 8ch is the action word and its space. */
+	.doc:not(.all) .hid {
+		max-width: calc(100% - 8ch);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		vertical-align: top;
+	}
+
 	.hid:hover,
 	.hid:focus-visible {
 		color: var(--ink-bright);

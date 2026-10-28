@@ -257,7 +257,7 @@ describe('the bar is the way in', () => {
 			// the newest is in the BAR, and the log is the ones before it in
 			// the order they ran, the last of them just over the bar.
 			assert.deepEqual(
-				await page.locator(`${BAR} .section.output .echo`).allInnerTexts(),
+				await page.locator(`${BAR} .group:last-child .echo`).allInnerTexts(),
 				['❯ occur tea']
 			);
 			assert.deepEqual(await logEchoes(page), ['occur coffee', 'occur water']);
@@ -267,7 +267,7 @@ describe('the bar is the way in', () => {
 			await app.submit('occur toast');
 			await app.idle();
 			assert.deepEqual(
-				await page.locator(`${BAR} .section.output .echo`).allInnerTexts(),
+				await page.locator(`${BAR} .group:last-child .echo`).allInnerTexts(),
 				['❯ occur toast']
 			);
 			assert.deepEqual((await logEchoes(page)).at(-1), 'occur tea');
@@ -788,11 +788,11 @@ describe('down there it is still the bar', () => {
 			await app.declare('brew');
 			await app.submit('occur brew a=1 b=2 c=3 d=4 e=5 f=6');
 			await app.submit('occur water');
-			await page.locator(`${BAR} .section.output .echo`).waitFor();
+			await page.locator(`${BAR} .group:last-child .echo`).waitFor();
 
 			// Row one is the newest, in the bar.
 			assert.deepEqual(
-				await page.locator(`${BAR} .section.output .echo`).allInnerTexts(),
+				await page.locator(`${BAR} .group:last-child .echo`).allInnerTexts(),
 				['❯ occur water']
 			);
 
@@ -841,7 +841,7 @@ describe('the seam between the bar’s row and the log', () => {
 			const first = cells.length ? top(cells[0]) : 0;
 			const ruled = (c) => getComputedStyle(c).borderTopWidth !== '0px';
 			return {
-				barRows: document.querySelectorAll('.prompt-bar .section.output .head').length,
+				barRows: document.querySelectorAll('.prompt-bar .group:last-child .head').length,
 				logRows: document.querySelectorAll('.log .head').length,
 				firstRuled: cells.filter((c) => top(c) === first && ruled(c)).length,
 				laterUnruled: cells.filter((c) => top(c) !== first && !ruled(c)).length,

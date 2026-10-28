@@ -231,7 +231,7 @@ const instantUnder = (page, px, read = geometry) =>
 	});
 
 /** Type a line into the bottom bar and wait for its receipt — the pills ride with it. */
-const receiptNow = () => document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
+const receiptNow = () => document.querySelector('.prompt-bar .group:last-child .doc .receipt')?.textContent ?? '';
 
 async function barRun(page, line) {
 	const before = await page.evaluate(receiptNow);
@@ -240,7 +240,7 @@ async function barRun(page, line) {
 	await page.waitForFunction(
 		`(${receiptNow})() !== ${JSON.stringify(before)} && (${receiptNow})() !== ''`
 	);
-	return page.locator('.prompt-bar .doc .receipt').last().innerText();
+	return page.locator('.prompt-bar .group:last-child .doc .receipt').last().innerText();
 }
 
 // ── a tap: a selection, and the window left alone ──────────────────────

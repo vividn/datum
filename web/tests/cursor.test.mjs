@@ -140,7 +140,7 @@ async function tallStrip(page) {
  * since da-xfa4, so there is none at all before the first command — where
  * the old bar kept an empty span.
  */
-const receiptNow = () => document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
+const receiptNow = () => document.querySelector('.prompt-bar .group:last-child .doc .receipt')?.textContent ?? '';
 
 async function barRun(page, line) {
 	const before = await page.evaluate(receiptNow);
@@ -151,7 +151,7 @@ async function barRun(page, line) {
 	);
 	// The LAST receipt: a field's first log draws the TRACK document that
 	// declares it as a section of its own (da-c8mh).
-	return page.locator('.prompt-bar .doc .receipt').last().innerText();
+	return page.locator('.prompt-bar .group:last-child .doc .receipt').last().innerText();
 }
 
 describe('the time cursor', () => {
