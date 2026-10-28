@@ -322,9 +322,9 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
     // the dayview renderer drew, along the time axis.
     let far =
         layout.label_width + layout.time_axis_extent + layout.right_panel_width + AXIS_LABEL_GAP;
-    let mut widest: f64 = 0.0;
     let mut labelled = Vec::new();
-    let mut out = String::from(r#"<g class="nowview-labels">"#);
+    // (text, color, font size, lane middle) of each state label.
+    let mut rows = Vec::new();
     for state in current_states {
         let Some(label) = &state.state_label else {
             continue;
@@ -335,13 +335,39 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
         labelled.push(f.field.as_str());
         let font_size = (f.cross_extent * 0.7).min(12.0);
         let text = format!("{}: {label}", state.field);
-        widest = widest.max(text_width(&text, font_size));
         let lane = day.day_offset + f.cross_offset + f.cross_extent / 2.0;
         let color = (state.colors.iter())
             .find(|c| c.as_str() != "none")
-            .map_or(TEXT_COLOR, String::as_str);
+            .map_or(TEXT_COLOR.to_string(), |c| readable_on_black(c));
+        rows.push((text, color, font_size, lane));
+    }
+    // Lanes overlap (one a whole band, another a stripe of it), so a label
+    // at each lane's middle can lie on another's (da-vy3gy): in their lanes'
+    // order each keeps a line's room from the one before, and the run is
+    // pulled back up where it would leave the band.
+    rows.sort_by(|a, b| a.3.total_cmp(&b.3));
+    let room = |a: f64, b: f64| (a + b) / 2.0 * 1.2;
+    for i in 1..rows.len() {
+        rows[i].3 = rows[i]
+            .3
+            .max(rows[i - 1].3 + room(rows[i - 1].2, rows[i].2));
+    }
+    if let Some(last) = rows.last_mut() {
+        last.3 = last
+            .3
+            .min(day.day_offset + layout.day_height - last.2 / 2.0);
+    }
+    for i in (0..rows.len().saturating_sub(1)).rev() {
+        rows[i].3 = rows[i]
+            .3
+            .min(rows[i + 1].3 - room(rows[i].2, rows[i + 1].2));
+    }
+    let mut widest: f64 = 0.0;
+    let mut out = String::from(r#"<g class="nowview-labels">"#);
+    for (text, color, font_size, lane) in &rows {
+        widest = widest.max(text_width(text, *font_size));
         let (x, y, turn) = match layout.orientation {
-            Orientation::Horizontal => (far, lane, String::new()),
+            Orientation::Horizontal => (far, *lane, String::new()),
             Orientation::Vertical => {
                 let x = layout.time_axis_height + lane;
                 (x, far, format!(r#" transform="rotate(90 {x} {far})""#))
@@ -350,7 +376,7 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
         let _ = write!(
             &mut out,
             r#"<text class="state-label" x="{x}" y="{y}"{turn} dy="0.35em" fill="{color}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{font_size}">{t}</text>"#,
-            t = escape_xml(&text),
+            t = escape_xml(text),
         );
     }
 
@@ -407,8 +433,9 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
         key_widest = key_widest.max(2.0 * r + AXIS_LABEL_GAP + text_width(&f.field, font_size));
         let _ = write!(
             &mut out,
-            r#"<g class="occur-key" data-field="{name}" transform="{t}">{mark}<text x="{x}" dy="0.35em" fill="{c}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{font_size}">{name}</text></g>"#,
+            r#"<g class="occur-key" data-field="{name}" transform="{t}">{mark}<text x="{x}" dy="0.35em" fill="{tc}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{font_size}">{name}</text></g>"#,
             name = escape_xml(&f.field),
+            tc = readable_on_black(c),
             t = at(along, day.day_offset + line * (i as f64 + 0.5)),
             x = 2.0 * r + AXIS_LABEL_GAP,
         );
@@ -423,6 +450,39 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
         return (0.0, String::new());
     }
     (AXIS_LABEL_GAP + gutter, out)
+}
+
+/// `color` for text on the black gutter: a `#rrggbb` too dark to read
+/// there is blended toward white until its contrast with black is 4.5:1,
+/// WCAG's floor for text (da-vy3gy); any other color is kept as given.
+fn readable_on_black(color: &str) -> String {
+    let Some((r, g, b)) = crate::nowview_terminal::parse_hex(color) else {
+        return color.to_string();
+    };
+    let lin = |c: f64| {
+        let c = c / 255.0;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let mix = |c: u8, t: f64| f64::from(c) + (255.0 - f64::from(c)) * t;
+    let luminance =
+        |t: f64| 0.2126 * lin(mix(r, t)) + 0.7152 * lin(mix(g, t)) + 0.0722 * lin(mix(b, t));
+    // Contrast with black is (L + 0.05) / 0.05, so 4.5:1 is L >= 0.175.
+    let floor = 4.5 * 0.05 - 0.05;
+    let Some(t) = (0..=20)
+        .map(|i| f64::from(i) / 20.0)
+        .find(|&t| luminance(t) >= floor)
+    else {
+        return TEXT_COLOR.to_string();
+    };
+    if t == 0.0 {
+        return color.to_string();
+    }
+    let [r, g, b] = [r, g, b].map(|c| mix(c, t).round() as u8);
+    format!("#{r:02x}{g:02x}{b:02x}")
 }
 
 /// Turn the resolved current states into the per-field strip fills the
@@ -1085,6 +1145,102 @@ mod tests {
         let empty = render_nowview_svg(&layout, "", &none, true, false);
         assert!(!empty.contains("nowview-labels"), "{empty}");
         assert!(empty.contains(r#"width="100""#), "{empty}");
+    }
+
+    /// da-vy3gy: a label reads on the black gutter whatever its field's
+    /// color, and two lanes that overlap keep their labels a line apart.
+    #[test]
+    fn labels_read_on_black_and_keep_apart() {
+        assert_eq!(readable_on_black("#adb5bd"), "#adb5bd");
+        assert_eq!(readable_on_black("white"), "white");
+        let lifted = readable_on_black("#3a2e1c");
+        let (r, g, b) = crate::nowview_terminal::parse_hex(&lifted).expect("hex");
+        assert!(
+            r > 0x3a && g > 0x2e && b > 0x1c && r > g && g > b,
+            "{lifted}"
+        );
+
+        let now_ms = 1_700_000_000_000_i64;
+        let lane = |field: &str, y_frac: f64, height_frac: f64, fill: &str| DayviewFieldInput {
+            field: field.into(),
+            y_frac,
+            height_frac,
+            z_index: 0.1,
+            blocks: vec![DayviewBlock {
+                start_ms: now_ms - 60_000,
+                end_ms: now_ms,
+                fill: BlockFill::Single(fill.into()),
+                state_label: Some("on".into()),
+                id: None,
+                title: None,
+            }],
+            points: vec![],
+            icon: None,
+            glyph_size: Default::default(),
+        };
+        let day = DayviewDayInput {
+            date: None,
+            label_lines: vec![],
+            start_ms: now_ms - 60_000,
+            end_ms: now_ms,
+            errors: Vec::new(),
+            // The whole band, and a stripe just under its middle.
+            fields: vec![
+                lane("environment", 0.0, 1.0, "#3a2e1c"),
+                lane("project", 0.5, 0.2, "#adb5bd"),
+            ],
+            spans: Vec::new(),
+        };
+        let cfg = DayviewConfig {
+            days: vec![day],
+            now_ms,
+            width: 100.0,
+            height: Some(60.0),
+            day_height: 50.0,
+            time_axis_height: 0.0,
+            margin: 2.0,
+            label_width: Some(0.0),
+            orientation: Orientation::Horizontal,
+            axis_ticks_override: Some(Vec::new()),
+            right_panel_width: 96.0,
+            ..Default::default()
+        };
+        let layout = compute_dayview(&cfg);
+        let state = |field: &str, color: &str| NowviewCurrentState {
+            field: field.into(),
+            state_label: Some("on".into()),
+            colors: vec![color.into()],
+            id: None,
+        };
+        let entries = [state("environment", "#3a2e1c"), state("project", "#adb5bd")];
+        let svg = render_nowview_svg(&layout, "", &entries, true, false);
+        let attr = |tag: &str, name: &str| -> String {
+            let key = format!(r#" {name}=""#);
+            let a = tag.find(&key).expect(name) + key.len();
+            tag[a..a + tag[a..].find('"').unwrap()].to_string()
+        };
+        let labels: Vec<&str> = (svg.split(r#"<text class="state-label" "#).skip(1))
+            .map(|t| &t[..t.find("</text>").unwrap()])
+            .collect();
+        assert_eq!(labels.len(), 2, "{svg}");
+        let env = labels
+            .iter()
+            .find(|t| t.ends_with(">environment: on"))
+            .unwrap();
+        let project = labels.iter().find(|t| t.ends_with(">project: on")).unwrap();
+        assert_eq!(attr(env, "fill"), lifted, "{env}");
+        assert_eq!(attr(project, "fill"), "#adb5bd", "{project}");
+        let y = |t: &str| attr(t, "y").parse::<f64>().unwrap();
+        let size = |t: &str| attr(t, "font-size").parse::<f64>().unwrap();
+        let gap = (y(project) - y(env)).abs();
+        assert!(
+            gap >= (size(env) + size(project)) / 2.0,
+            "labels {gap} apart: {svg}"
+        );
+        // Each still inside the band.
+        for t in [env, project] {
+            assert!((0.0..=60.0).contains(&y(t)), "{t}");
+        }
     }
 
     #[test]

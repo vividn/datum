@@ -819,7 +819,7 @@ fn pick_ticks(span_minutes: f64) -> Vec<f64> {
     out
 }
 
-fn parse_hex(hex: &str) -> Option<(u8, u8, u8)> {
+pub(crate) fn parse_hex(hex: &str) -> Option<(u8, u8, u8)> {
     let h = hex.strip_prefix('#').unwrap_or(hex);
     if h.len() != 6 {
         return None;
