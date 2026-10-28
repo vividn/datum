@@ -433,27 +433,25 @@ describe('the nowview widget', () => {
 
 // ── the zoom (da-5goc) ───────────────────────────────────────────────
 //
-// Two fingers over the picture, or ctrl+wheel, scale the window and land
-// on the ladder the handles' wheels step along.
+// Two fingers over the picture scale the window, and the release asks for
+// the window they left, to the second (da-ygpto); ctrl+wheel lands on the
+// ladder the handles' wheels step along.
 //
 // The anchor is the instant the picture is about: now, or `-t`'s when a
 // tree carries one. What is held here is that the anchor does not move
-// under the gesture — the band scales about the now-line's own x, so the
-// column the fingers are anchored to is the one column that stays.
-//
-// After the release the anchor's x is datum's to place, and for a window
-// that ENDS at now it moves: nowview reserves a now strip of
-// `NOW_WIDTH_MINUTES` at the window's own scale (nowview.rs, the original
-// datum's proportions), so a shorter window spends proportionally more of
-// the band on it and the now-line slides left. A CENTRED window — `-t` —
-// has no strip and its anchor is the middle of the band whatever the
-// window, which is the case asserted to the pixel below.
+// under the gesture — the band scales about now's own x, so the column the
+// fingers are anchored to is the one column that stays. That the frame
+// after the release is the frame under the fingers is nowrelease.test.mjs.
 
-/** The x of the picture's now-line — the anchor datum drew. */
+/**
+ * The x of the picture's now — the anchor: the instant its now-line stands
+ * for (`data-now`, in the picture's own units), which datum draws a gap past
+ * it (da-ygpto).
+ */
 const anchorX = (page) =>
 	page.locator(`${PANE} svg.svg .current-time-line`).evaluate((line) => {
-		const box = line.getBoundingClientRect();
-		return box.x + box.width / 2;
+		const at = new DOMPoint(Number(line.getAttribute('data-now')), 0).matrixTransform(line.ownerSVGElement.getScreenCTM());
+		return at.x;
 	});
 
 /** The picture's own box. */
@@ -505,7 +503,7 @@ async function pinch(page, box, from, to, midway) {
 const TOUCH = { device: { hasTouch: true, isMobile: true }, viewport: { width: 390, height: 640 } };
 
 describe('the nowview widget zooms', () => {
-	test('a pinch steps the window on the ladder, about the anchor', async () => {
+	test('a pinch asks for the window under the fingers, about the anchor', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -514,7 +512,7 @@ describe('the nowview widget zooms', () => {
 				const before = await anchorX(page);
 
 				// Fingers apart by half again: the picture magnified 1.5×,
-				// which is 30m ÷ 1.5 — the ladder's own next rung down.
+				// which is 30m ÷ 1.5.
 				await pinch(page, box, 80, 120, async () => {
 					const during = await anchorX(page);
 					assert.ok(
@@ -526,7 +524,7 @@ describe('the nowview widget zooms', () => {
 				await farIs(page, '-20m');
 
 				// And back: fingers together by the same ratio is 20m × 1.5,
-				// which rounds onto 30m.
+				// which is 30m again.
 				await pinch(page, box, 120, 80);
 				await asked(page, '30m');
 				await farIs(page, '-30m');
@@ -835,7 +833,7 @@ describe('a nowview stretch moves marks, never sizes them', () => {
 			const apart = box.width - 20;
 			await pinch(page, box, apart, apart / 5, async () => {
 				during = await marks(page);
-				// The dash under the now strip runs along time: it stretches with the strip.
+				// The dash under the now strip is the strip's: scaled back with it, about now, never on its own.
 				assert.equal(
 					await page.locator(`${BAND} svg.svg line.current-time-line-far`).evaluate((l) => getComputedStyle(l).scale),
 					'none'

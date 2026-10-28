@@ -165,22 +165,12 @@ test('while the first sync runs, every pane stays whole and answers (da-xzty6)',
 		await app.page.locator('[data-title="tail"] tr', { hasText: 'coffee' }).waitFor();
 		await syncing('the typed line was listed');
 
-		// A tap's time on the nowview: its picture of it lands, undimmed.
-		const nowview = app.page.locator('[data-title="nowview"]');
-		// Asked: dimmed as the cursor moves, before any answer can land.
-		await app.page.evaluate(async (at) => {
-			const pane = document.querySelector('[data-title="nowview"]');
-			const asked = new Promise((resolve) =>
-				new MutationObserver((_, o) => pane.querySelector('.behind') && (o.disconnect(), resolve())).observe(pane, {
-					subtree: true,
-					attributes: true,
-					childList: true
-				})
-			);
-			window.datum.cursor.set(new Date(at));
-			await asked;
-		}, Date.now() - HOUR);
-		await nowview.locator('.behind').waitFor({ state: 'detached', timeout: 60_000 });
+		// A tap's time on the nowview: its picture of it lands, and the one on
+		// screen is never dimmed meanwhile (da-ygpto).
+		const old = await app.page.locator('[data-title="nowview"] svg.svg').elementHandle();
+		await app.page.evaluate((at) => window.datum.cursor.set(new Date(at)), Date.now() - HOUR);
+		assert.equal((await look(app, 'nowview')).opacity, 1);
+		await app.page.waitForFunction((svg) => !svg.isConnected, old, { timeout: 60_000 });
 		await syncing('the nowview drew the tapped time');
 		assert.equal((await look(app, 'nowview')).opacity, 1);
 

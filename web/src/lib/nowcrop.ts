@@ -157,6 +157,19 @@ export function compose(overlay: string, days: string[], now: number): string {
 		into.append(chunk);
 		slot!.before(into);
 	}
+	// What stands at now — its line, drawn a gap past it, the strip and the
+	// word under it — is one group, which the widget scales back about now
+	// under a stretch, as it does a mark: a stretch does not widen the strip
+	// that datum's picture of the window then draws as wide as ever (da-ygpto).
+	const line = root.querySelector('.current-time-line[data-now]');
+	const atNow = [...(line?.parentElement?.children ?? [])].filter((el) =>
+		el.matches('.current-time-line, .current-time-line-far, .current-time-line-end, .now-label, .now-strip, g.field')
+	);
+	if (line && atNow.length) {
+		const group = make('g', { class: 'at-now', 'data-anchor': num(line, 'data-now') - margin });
+		atNow[0].before(group);
+		group.append(...atNow);
+	}
 	return new XMLSerializer().serializeToString(doc);
 
 	/** Stripes in the strip are the overlay's size, not a stretch's: a copy of their pattern. */

@@ -479,8 +479,15 @@
 		});
 	});
 
+	/** The argv of the picture last laid out, sized: a picture of `spec` is the one asked for. */
+	let drewFor: string[] = [];
+	const current = () => spec.argv.every((word, i) => drewFor[i] === word);
+
 	/** The overlay datum drew, with the days' data laid under it: its strip is now's (da-dv45l). */
-	const crop = (overlay: string) => compose(overlay, [...layer.days.values()], Date.now());
+	const crop = (overlay: string, argv: string[]) => {
+		drewFor = argv;
+		return compose(overlay, [...layer.days.values()], Date.now());
+	};
 
 	// ── the flow ───────────────────────────────────────────────────────
 
@@ -787,8 +794,21 @@
 
 	// ── the zoom ───────────────────────────────────────────────────────
 
-	/** The gesture in hand: what the band is scaled by, about which x. */
-	let zoom = $state.raw<{ origin: number; scale: number } | null>(null);
+	/**
+	 * The gesture in hand: what the band is scaled by, about which x, and the
+	 * scale the fingers or the wheel made, which `scale` shows as the window
+	 * it would ask for. `held`, the window it asked for, once it is let go:
+	 * the picture stays scaled, exactly as it was under the fingers, until
+	 * datum's picture of that window replaces it (da-ygpto).
+	 */
+	let zoom = $state.raw<{ origin: number; scale: number; raw: number; held?: string } | null>(null);
+
+	/**
+	 * The scale that shows the window a raw scale leaves: to the second, as
+	 * `--history` reads it, and inside the ladder's ends — so the picture
+	 * under the fingers is the picture of the window the release asks for.
+	 */
+	const shows = (raw: number, to = (m: number) => historyArg(m)) => minutes / stepMinutes(to(minutes / raw));
 
 	/**
 	 * The gesture stretches TIME, never a mark (da-6fdaf): a dot, a glyph
@@ -800,11 +820,18 @@
 	 * under it (one under a finger waits for the lift, $lib/hover.ts).
 	 */
 	function unstretch(): void {
-		for (const pattern of el?.querySelectorAll<SVGPatternElement>('.nowview-band svg.svg pattern') ?? []) {
+		// Not the strip's own copies (`compose`): the strip is scaled back whole, below.
+		for (const pattern of el?.querySelectorAll<SVGPatternElement>('.nowview-band svg.svg pattern:not([id$="-strip"])') ?? []) {
 			// And by what the crop stretched the day's data by (da-0e06p).
 			const back = 1 / ((zoom?.scale || 1) * Number(pattern.getAttribute('data-scale') ?? 1));
 			pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
 			pattern.setAttribute('patternTransform', `scale(${vertical ? `1 ${back}` : `${back} 1`}) ${pattern.dataset.drawn}`);
+		}
+		// And the strip at now, with its line and its word, about now (`compose`).
+		const back = 1 / (zoom?.scale || 1);
+		for (const g of el?.querySelectorAll<SVGGElement>('.nowview-band svg.svg .at-now') ?? []) {
+			const at = Number(g.getAttribute('data-anchor'));
+			g.setAttribute('transform', vertical ? `translate(0 ${at}) scale(1 ${back}) translate(0 ${-at})` : `translate(${at} 0) scale(${back} 1) translate(${-at} 0)`);
 		}
 	}
 	$effect.pre(() => {
@@ -816,43 +843,43 @@
 	 * Where the anchor is drawn, in px across the picture's own box.
 	 *
 	 * The anchor is the pill's instant, where its dashed line is (da-zccjs,
-	 * da-dv45l), or now, where the picture puts it — read off the stretch
-	 * holding it, as the strip cuts the axis at now — and past the window's
-	 * edge when the window does not hold it. On now it is the now-line (`current-time-line`,
-	 * dayview_svg.rs) wherever its geometry puts it; the snapshot draws
-	 * none, and its anchor is the right edge.
+	 * da-dv45l), or now — read off the stretch holding it, as the strip cuts
+	 * the axis at now — and past the window's edge when the window does not
+	 * hold it. On now it is the picture's own now (`drawn.now`, its
+	 * `data-now`), as it stands before the flow slides the data to the
+	 * clock: the instant, and not the yellow line, which datum draws a gap
+	 * past it — anchored on the line, a stretch put each instant a gap
+	 * times the scale off where datum's picture of the window then drew it
+	 * (da-ygpto). The snapshot draws no axis, and its anchor is the right
+	 * edge.
 	 */
 	function anchorX(svg: SVGSVGElement): number {
 		const box = svg.getBoundingClientRect();
 		const start = axis?.y ? box.y : box.x;
-		const line = svg.querySelector('.current-time-line');
-		const at = instantMs();
-		const own = homeward ? timeAxis(svg, at) : null;
-		if (own) return own.lo + (at - own.from) / msPerPx(own) - start;
-		if (!line) return ends()[1] - start;
-		const marker = line.getBoundingClientRect();
-		return (axis?.y ? marker.y + marker.height / 2 : marker.x + marker.width / 2) - start;
+		const at = homeward || !drawn ? instantMs() : drawn.now;
+		const own = timeAxis(svg, at);
+		return own ? own.lo + (at - own.from) / msPerPx(own) - start : ends()[1] - start;
 	}
 
-	/** Begin a gesture over the picture, if there is one to scale. */
+	/** Begin a gesture over the picture, if there is one to scale and none let go of is waiting for its picture. */
 	function start(): boolean {
 		const svg = svgEl();
-		if (!svg) return false;
-		zoom = { origin: anchorX(svg), scale: 1 };
+		if (!svg || zoom?.held) return false;
+		zoom = { origin: anchorX(svg), scale: 1, raw: 1 };
 		return true;
 	}
 
 	/**
-	 * End the gesture: round the scale to a step and let go of the band.
-	 *
-	 * The scale is dropped before the answer arrives, so the picture on
-	 * screen is datum's own from here on — the transform is the gesture's
-	 * preview of a window, not a substitute for one.
+	 * End the gesture: ask for the window on screen, and hold the picture as
+	 * it is until datum's picture of it lands (`place`). vividn: «there
+	 * should never be a difference between what is seen while still holding
+	 * your finger down and then when you release».
 	 */
 	function commit(): void {
-		const scale = zoom?.scale ?? 1;
-		zoom = null;
-		rescale(zoomHistory(history, scale));
+		if (!zoom || zoom.held) return;
+		const next = historyArg(minutes / zoom.scale);
+		zoom = next === history ? null : { ...zoom, held: next };
+		rescale(next);
 	}
 
 	/**
@@ -905,6 +932,8 @@
 	}
 
 	function onPointerDown(event: PointerEvent): void {
+		// A gesture let go of is still on screen until its picture comes.
+		if (zoom?.held) return;
 		listen(true);
 		if (event.pointerType === 'mouse') return begin(event);
 		fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -920,7 +949,10 @@
 
 	function onPointerMove(event: PointerEvent): void {
 		if (fingers.has(event.pointerId)) fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-		if (zoom && fingers.size === 2) zoom = { ...zoom, scale: spread() / apart };
+		if (zoom && !zoom.held && fingers.size === 2) {
+			const raw = spread() / apart;
+			zoom = { ...zoom, raw, scale: shows(raw) };
+		}
 		if (!press) return;
 		last = { x: event.clientX, y: event.clientY };
 		step(event.clientX, event.clientY);
@@ -960,14 +992,22 @@
 	 */
 	const NOTCH = 200;
 	let settle: ReturnType<typeof setTimeout> | undefined;
+	/** What the wheel turned while a gesture let go of waited for its picture: turned once it lands. */
+	let owed = 0;
 
 	function onWheel(event: WheelEvent): void {
 		if (!event.ctrlKey) return;
 		event.preventDefault();
+		if (zoom?.held) owed += event.deltaY;
+		else turn(event.deltaY);
+	}
+
+	function turn(deltaY: number): void {
 		if (!zoom) start();
 		const held = zoom;
 		if (!held) return;
-		zoom = { ...held, scale: held.scale * Math.pow(2, -event.deltaY / NOTCH) };
+		const raw = held.raw * Math.pow(2, -deltaY / NOTCH);
+		zoom = { ...held, raw, scale: shows(raw, (m) => zoomHistory(history, minutes / m)) };
 		clearTimeout(settle);
 		settle = setTimeout(commit, 120);
 	}
@@ -1122,6 +1162,19 @@
 		roomy = home.width >= TINY_PX;
 		boxAt = { x: home.x, y: home.y };
 		const svg = svgEl();
+		// The window a let-go gesture asked for is drawn: the scale goes, in
+		// the same frame the picture of it comes. So it does once the window is
+		// no longer the one asked for — a reset, or the session forgotten,
+		// while it waited — rather than wait for a picture that never comes.
+		if (zoom?.held && (!svg || history !== zoom.held || current())) {
+			zoom = null;
+			return void tick().then(() => {
+				place();
+				const turned = owed;
+				owed = 0;
+				if (turned) turn(turned);
+			});
+		}
 		// Read unmoved, then slid by `rest` alone: a redraw mid-gesture must
 		// not cache the gesture's own offset, which `commitPan` adds again.
 		const unmoved = svg && unmovedAxis(svg);
@@ -1178,7 +1231,7 @@
 		const word = svg?.querySelector<SVGElement>('.now-label');
 		const row = (word ?? svg?.querySelector<SVGElement>('.tick-label'))?.getBoundingClientRect();
 		edges = ends().map((p) => p - (vertical ? home.y : home.x)) as [number, number];
-		const beyond = axis && Date.now() < instantAlong((ends()[0] + ends()[1]) / 2) ? -Infinity : Infinity;
+		const beyond = axis && nowMs() < instantAlong((ends()[0] + ends()[1]) / 2) ? -Infinity : Infinity;
 		nowAt = row?.width
 			? {
 					x: vertical ? row.left + row.width / 2 - home.x : word ? row.left + row.width / 2 - home.x : beyond,
@@ -1385,11 +1438,13 @@
 		if (grip.mode === 'scale' && zoom) {
 			const finger = vertical ? event.clientY : event.clientX;
 			// The picture scaled about the anchor so the handle's time is
-			// under the finger; held to a window the ladder's ends allow.
-			const s = (finger - grip.anchor) / (grip.at - grip.anchor);
-			const bound = Math.min(Math.max(s, minutes / stepMinutes('12h')), minutes / stepMinutes('30s'));
-			zoom = { ...zoom, scale: bound };
-			dragged = grip.anchor + (grip.at - grip.anchor) * bound;
+			// under the finger: `shows` holds the window inside the ladder's
+			// ends, and a finger dragged past the anchor (raw <= 0) asks for
+			// the longest.
+			const raw = (finger - grip.anchor) / (grip.at - grip.anchor);
+			const scale = shows(raw > 0 ? raw : minutes / stepMinutes('12h'));
+			zoom = { ...zoom, raw, scale };
+			dragged = grip.anchor + (grip.at - grip.anchor) * scale;
 		}
 		if (grip.mode === 'wheel' && wheel) {
 			const notch = vertical ? NOTCH_PX.y : NOTCH_PX.x;
@@ -1402,11 +1457,8 @@
 		if (!grip || event.pointerId !== grip.id) return;
 		const was = grip;
 		ungrip();
-		if (was.mode === 'scale') {
-			const scale = zoom?.scale ?? 1;
-			zoom = null;
-			rescale(historyArg(minutes / scale));
-		} else if (was.mode === 'wheel' && wheel) {
+		if (was.mode === 'scale') commit();
+		else if (was.mode === 'wheel' && wheel) {
 			const pick = wheel.pick;
 			stepTo(pick > 0 ? around.up[pick - 1] : pick < 0 ? around.down[-pick - 1] : undefined);
 			if (was.touch) wheel = null;
@@ -1572,7 +1624,7 @@
 		     half of what was drawn ahead is spent. A write re-runs only the
 		     snapshot, the one picture here drawn from data: the overlay has
 		     none, and a write asks for the day's data layer (da-0e06p). -->
-		<CliPane {spec} epoch={(showHistory ? 0 : epoch) + refills} compose={crop} />
+		<CliPane {spec} epoch={(showHistory ? 0 : epoch) + refills} compose={crop} dims={false} />
 	</div>
 
 	<!-- The wait's mark: a ring that closes over LONG_MS, and a dashed stem
@@ -1787,9 +1839,10 @@
 	.vertical .nowview-band :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *)) {
 		scale: 1 calc(1 / (var(--zoom) * var(--sx, 1)));
 	}
-	/* But the dash under the now strip runs along time, as long as the
-	   strip: it stretches with it. */
-	.nowview .nowview-band :global(svg.svg line.current-time-line-far:not(defs *)) {
+	/* But what stands at now is scaled back as one, about now (`unstretch`):
+	   the strip, the dash under it, the line and the word keep their size
+	   and their place beside now. */
+	.nowview .nowview-band :global(svg.svg .at-now :is(circle, text, use, polygon, rect, line):not(defs *)) {
 		scale: none;
 	}
 

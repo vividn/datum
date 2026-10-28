@@ -150,7 +150,9 @@ describe('a burst of changes', () => {
 				assert.equal(stalePaints, 0, `${stalePaints} of ${paints} paints followed a run that came back behind a newer request`);
 				assert.ok(paints >= 1, 'nothing was painted');
 				assert.deepEqual(ran.at(-1), requested.at(-1), 'the last run is not the last request');
-				assert.ok(burst.dimmed, 'the old picture was not dimmed while the new one was on its way');
+				// And never dimmed meanwhile: the picture on screen stays as it is
+				// until the new one replaces it (da-ygpto).
+				assert.ok(!burst.dimmed, 'the old picture was dimmed while the new one was on its way');
 				assert.equal(behind, 0, 'the final picture is still dimmed');
 
 				// The final picture is centred on the last cursor: its line sits

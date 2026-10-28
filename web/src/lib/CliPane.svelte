@@ -59,6 +59,12 @@
 		 * shown: the nowview's crop of the day's data layer (da-0e06p).
 		 */
 		compose = undefined,
+		/**
+		 * Whether a picture catching up is dimmed until the new one lands. The
+		 * nowview's is not (da-ygpto): it holds the picture a gesture left on
+		 * screen exactly as it is, and only the answer replaces it.
+		 */
+		dims = true,
 		/** The caller's title controls, forwarded as the pane's `heading`. */
 		title: titled
 	}: {
@@ -68,6 +74,7 @@
 		scale?: number;
 		writer?: PaneSpec | null;
 		compose?: (stdout: string, argv: string[]) => string;
+		dims?: boolean;
 		title?: Snippet;
 	} = $props();
 
@@ -190,7 +197,7 @@
 	});
 	// The picture on screen is not the one asked for: the cursor moved, and
 	// the new one is on its way. Dimmed rather than presented as current.
-	let behind = $derived(!!result && !manual && !!request.argv && JSON.stringify(request.argv) !== shown);
+	let behind = $derived(dims && !!result && !manual && !!request.argv && JSON.stringify(request.argv) !== shown);
 </script>
 
 <!--
