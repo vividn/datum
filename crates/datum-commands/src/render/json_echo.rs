@@ -53,7 +53,7 @@ thread_local! {
 /// three header pieces separately, then the lines verbatim, then the
 /// colours the terminal would have painted them with (da-yu9s).
 fn document(lines: &ActionLines) -> JsonValue {
-    json!({
+    let mut doc = json!({
         "action": lines.action,
         "hid": lines.hid,
         "id": lines.id,
@@ -72,7 +72,15 @@ fn document(lines: &ActionLines) -> JsonValue {
             .iter()
             .map(|s| json!({ "text": s.text, "color": s.color }))
             .collect::<Vec<_>>(),
-    })
+    });
+    // An update's parts that changed, each as it was and as it is (da-27x6p).
+    if let Some(changes) = &lines.changes {
+        doc["changes"] = changes
+            .iter()
+            .map(|c| json!({ "part": c.part, "key": c.key, "before": c.before, "after": c.after }))
+            .collect();
+    }
+    doc
 }
 
 /// Record one action echo. Called only under `Show::Json`.
@@ -138,6 +146,7 @@ mod tests {
             field_color: "#000000".into(),
             state_color: None,
             info_segments: vec![],
+            changes: None,
         }
     }
 
@@ -286,8 +295,29 @@ mod tests {
                 ),
                 ("a timeless note", timeless, &plain),
             ];
-            for (what, entry, ctx) in cases {
-                let doc = doc_for(&entry, None, ctx);
+            // An update's line is its change (da-27x6p): a moved time is the
+            // stamp, `09:00 → 10:00`, and an unmoved one the plain stamp.
+            let before = row("mood", Verb::Switch, Some(json!("calm")));
+            let mut moved = before.clone();
+            moved.occur_time = Some(at(10));
+            let mut restated = before.clone();
+            restated.state = Some(json!("tired"));
+            let update = |after: &Entry| {
+                document(&crate::render::update_lines_at(
+                    &before,
+                    after,
+                    None,
+                    &at(12),
+                ))
+            };
+            let docs = cases
+                .into_iter()
+                .map(|(what, entry, ctx)| (what, doc_for(&entry, None, ctx)))
+                .chain([
+                    ("an update that moved the time", update(&moved)),
+                    ("an update that kept the time", update(&restated)),
+                ]);
+            for (what, doc) in docs {
                 assert_eq!(
                     joined(&doc),
                     doc["info"].as_str().unwrap(),

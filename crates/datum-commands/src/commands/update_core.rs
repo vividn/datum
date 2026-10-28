@@ -19,7 +19,7 @@ use crate::{
     // da-5t94 rider: the remainder-bucket sentinel is shared with the log
     // path rather than re-declared here.
     commands::log_core::PRIMARY_VALUE_KEY,
-    render::{show_nodiff, show_rename, show_update, OutputArgs},
+    render::{show_nodiff, show_rename, show_update_from, OutputArgs},
 };
 
 /// Command-level mutation strategy for `update` / `merge` / `rekey`, and
@@ -67,6 +67,8 @@ impl UpdateStrategy {
 #[derive(Clone, Debug)]
 pub struct UpdateOutcome {
     pub entry: Entry,
+    /// The row as it was, which the echo draws the change from (da-27x6p).
+    pub before: Entry,
     pub old_slug: Option<datum_core::ids::Slug>,
     /// False when the mutation changed nothing: no write, and `NODIFF`.
     pub changed: bool,
@@ -409,15 +411,15 @@ pub fn update_batch_from_args(
 /// Print the post-mutation confirmation: `UPDATE`, after a `RENAME` when the
 /// slug moved, as v2's `updateDoc` does. The row is the same one either way.
 pub fn render_outcome(outcome: &UpdateOutcome, output: &OutputArgs, db: &Db) {
-    let registry = crate::commands::helpers::registry_of(db, [&outcome.entry]);
+    let registry = crate::commands::helpers::registry_of(db, [&outcome.entry, &outcome.before]);
+    let show_update =
+        || show_update_from(&outcome.before, &outcome.entry, registry.as_ref(), output);
     match &outcome.old_slug {
         Some(old) => {
             show_rename(old, &outcome.entry.slug, output);
-            show_update(&outcome.entry, registry.as_ref(), output);
+            show_update();
         }
-        None if outcome.changed => {
-            show_update(&outcome.entry, registry.as_ref(), output);
-        }
+        None if outcome.changed => show_update(),
         None => {
             show_nodiff(&outcome.entry, registry.as_ref(), output);
         }
@@ -624,6 +626,7 @@ fn persist_with_auto_reinterp(
     };
     if columns(&existing) == columns(&updated) {
         return Ok(UpdateOutcome {
+            before: existing.clone(),
             entry: existing,
             old_slug: None,
             changed: false,
@@ -634,6 +637,7 @@ fn persist_with_auto_reinterp(
         db.save_existing_entry_with_auto_reinterp(&existing.slug, updated, slug_delimiter)?;
     Ok(UpdateOutcome {
         entry,
+        before: existing,
         old_slug,
         changed: true,
     })

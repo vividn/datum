@@ -237,6 +237,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     render_outcome(
         &UpdateOutcome {
             entry,
+            before: existing,
             old_slug,
             changed: true,
         },

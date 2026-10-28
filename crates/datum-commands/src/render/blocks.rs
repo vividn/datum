@@ -200,7 +200,7 @@ fn render_value_body(value: &JsonValue) -> String {
 /// Rendered `(key, value)` pairs of `entry.data`, or `None` when there is
 /// no data. Value bodies are rendered once; no chipping in the data block
 /// (rule 5 applies to the state second line only).
-fn data_pairs(entry: &Entry) -> Option<Vec<(String, String)>> {
+pub(crate) fn data_pairs(entry: &Entry) -> Option<Vec<(String, String)>> {
     let map = entry.data.as_ref()?.as_object()?;
     if map.is_empty() {
         return None;

@@ -444,7 +444,7 @@ CREATE dtgnq coffee:2026-09-24T14:54:52.113Z
   comment: "decaf"
 UPDATE dtgnq coffee:2026-09-24T14:54:52.113Z
 16:54:52+2  coffee ●
-  comment: ["decaf","second cup"]
+  comment: "decaf" → ["decaf","second cup"]
 DELETE dtgnq coffee:2026-09-24T14:54:52.113Z
 16:54:52+2  coffee ●
   comment: ["decaf","second cup","deleted: wrong day"]

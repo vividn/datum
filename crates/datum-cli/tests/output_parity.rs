@@ -162,8 +162,8 @@ fn update_emits_update_action_tag() {
     let (stdout, _) = run(&db, &["update", "coffee:pin", "amount=5"]);
     assert!(stdout.contains("UPDATE"), "expected UPDATE: {stdout:?}");
     assert!(
-        stdout.contains("amount: 5"),
-        "expected new value: {stdout:?}"
+        stdout.contains("amount: 1 → 5"),
+        "expected the change, old → new: {stdout:?}"
     );
 }
 

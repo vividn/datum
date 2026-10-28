@@ -1039,15 +1039,28 @@ pub fn format_info_line_at(
     ctx: &RenderContext,
     now: &DatumTime,
 ) -> String {
-    let mut parts = vec![format_info_time_at(entry, now)];
-    parts.push(format_field_badge(&entry.field, spec));
-    if let Some(group) = format_state_group(entry, spec, ctx) {
-        if !group.is_empty() {
-            parts.push(group);
-        }
-    }
-    parts.extend(format_dur(entry));
-    parts.join(" ")
+    info_parts(entry, spec, ctx, now)
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The info line's four parts — time, field, state group, duration — each
+/// `None` where the entry has none, painted as the line paints them. The
+/// line is these joined by a space; `update` diffs them one by one.
+pub(crate) fn info_parts(
+    entry: &Entry,
+    spec: Option<&FieldSpec>,
+    ctx: &RenderContext,
+    now: &DatumTime,
+) -> [Option<String>; 4] {
+    [
+        Some(format_info_time_at(entry, now)),
+        Some(format_field_badge(&entry.field, spec)),
+        format_state_group(entry, spec, ctx).filter(|g| !g.is_empty()),
+        format_dur(entry),
+    ]
 }
 
 /// The stamp the info line starts with, and a space short of the rest of it:

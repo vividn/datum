@@ -14,6 +14,7 @@ pub mod action;
 pub(crate) mod blocks;
 pub mod characters;
 pub mod colors;
+pub(crate) mod diff;
 pub mod json_echo;
 pub mod ordinals;
 pub mod show_all;
@@ -436,6 +437,10 @@ pub struct ActionLines {
     /// field inside it — `switch mood mood` names it twice. The texts
     /// concatenated equal [`Self::info`] byte for byte.
     pub info_segments: Vec<colors::AnsiSegment>,
+    /// An `update`'s parts that changed, before and after (da-27x6p);
+    /// `None` for every other echo. [`Self::info`] and [`Self::data`] then
+    /// draw the change itself.
+    pub changes: Option<Vec<diff::Change>>,
 }
 
 /// Build [`ActionLines`] against an explicit `now`, so a caller that renders
@@ -518,6 +523,7 @@ pub fn action_lines_at(
             .as_ref()
             .and_then(|v| self::colors::state_hex(v, &entry.field, spec)),
         info_segments,
+        changes: None,
     }
 }
 
@@ -528,6 +534,36 @@ pub fn show_action_with_context(
     ctx: Option<&RenderContext>,
     args: &OutputArgs,
 ) {
+    show_lines(entry, args, |now| {
+        action_lines_at(entry, action, registry, ctx, now)
+    });
+}
+
+/// `UPDATE`, drawn as what changed from `before` to `after` (da-27x6p).
+pub fn show_update_from(
+    before: &Entry,
+    after: &Entry,
+    registry: Option<&SpecRegistry>,
+    args: &OutputArgs,
+) {
+    show_lines(after, args, |now| {
+        update_lines_at(before, after, registry, now)
+    });
+}
+
+/// [`action_lines_at`] for an `update` of `before` into `after`.
+pub fn update_lines_at(
+    before: &Entry,
+    after: &Entry,
+    registry: Option<&SpecRegistry>,
+    now: &DatumTime,
+) -> ActionLines {
+    let mut lines = action_lines_at(after, Outcome::Update, registry, None, now);
+    self::diff::apply(&mut lines, before, after, registry, now);
+    lines
+}
+
+fn show_lines(entry: &Entry, args: &OutputArgs, lines: impl FnOnce(&DatumTime) -> ActionLines) {
     if args.silent() {
         return;
     }
@@ -541,7 +577,7 @@ pub fn show_action_with_context(
     // `now_local()` is `DatumTime::now()`; the info line always took its
     // "today" from it and the header never reads `now`, so sourcing both
     // from the one builder changes nothing about what is printed.
-    let lines = action_lines_at(entry, action, registry, ctx, &self::action::now_local());
+    let lines = lines(&self::action::now_local());
 
     // `--show json`: collect, print nothing. The outermost dispatch scope
     // emits the one document (da-yc9w). `Show::None` already returned above,

@@ -279,5 +279,63 @@ fn a_partial_update_echoes_the_update_it_made() {
     assert_eq!(docs.len(), 1, "{docs:?}");
     assert_eq!(docs[0]["action"], "UPDATE");
     assert_eq!(docs[0]["hid"], hid);
-    assert_eq!(docs[0]["data"], serde_json::json!(["n: 1"]));
+    assert_eq!(docs[0]["data"], serde_json::json!(["+ n: 1"]));
+}
+
+/// An update of several entries echoes each one's change (da-27x6p): every
+/// changed part before and after under `changes`, the info line and the
+/// data view drawn as the change, the unchanged parts as they are.
+#[test]
+fn an_update_of_several_entries_carries_each_ones_before_and_after() {
+    let env = Env::new();
+    let a = env.docs(&[
+        "occur",
+        "tea",
+        "-t",
+        "9:00",
+        "size=large",
+        "shop=corner",
+        "--show",
+        "json",
+    ]);
+    let b = env.docs(&["occur", "tea", "-t", "9:30", "size=small", "--show", "json"]);
+    let (a, b) = (a[0]["hid"].as_str().unwrap(), b[0]["hid"].as_str().unwrap());
+
+    let docs = env.docs(&[
+        "update",
+        &format!("{a},{b}"),
+        "size=medium",
+        "--show",
+        "json",
+    ]);
+    assert_eq!(docs.len(), 2, "{docs:?}");
+    assert_eq!(docs[0]["hid"], a);
+    assert_eq!(
+        docs[0]["data"],
+        serde_json::json!(["size: \"large\" → \"medium\"", "shop: \"corner\""])
+    );
+    assert_eq!(
+        docs[0]["changes"],
+        serde_json::json!([{"part": "data", "key": "size", "before": "\"large\"", "after": "\"medium\""}])
+    );
+    assert_eq!(docs[1]["hid"], b);
+    assert_eq!(docs[1]["changes"][0]["before"], "\"small\"");
+
+    let moved = env.docs(&["update", a, "occur_time=10:00", "--show", "json"]);
+    let info = moved[0]["info"].as_str().unwrap();
+    assert!(info.contains(":00:00") && info.contains(" → "), "{info}");
+    assert_eq!(moved[0]["changes"][0]["part"], "time");
+    let segments: String = moved[0]["info_segments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(segments, info, "the segments are the diff line too");
+
+    let created = env.docs(&["occur", "tea", "--show", "json"]);
+    assert!(
+        created[0].get("changes").is_none(),
+        "only an update carries changes"
+    );
 }
