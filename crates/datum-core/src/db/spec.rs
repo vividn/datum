@@ -282,6 +282,27 @@ impl Db {
         }
     }
 
+    /// Refuse an edit of a spec doc (`update spec:<field>`, `merge`, `edit`)
+    /// whose spec, read through the template covering its field, holds a
+    /// half anchor triple (da-8b2ge). Run on the row as written, inside the
+    /// edit's transaction, so a refusal stores nothing. Not in
+    /// [`check_spec_entry`]: a covered field's row is only the keys it sets
+    /// over its template, and sync stores a peer's row whatever template has
+    /// arrived yet.
+    pub(super) fn check_spec_anchor(&self, entry: &Entry) -> Result<()> {
+        let field = entry.data.as_ref().and_then(|d| d.get("field")?.as_str());
+        let Some(field) = field.filter(|_| entry.field == SPEC_FIELD) else {
+            return Ok(());
+        };
+        match self.load_spec(field)? {
+            Some(spec) => spec
+                .presentation
+                .validate_anchor_triple(field)
+                .map_err(DatumError::InvalidFieldSpec),
+            None => Ok(()),
+        }
+    }
+
     /// The data of `field`'s own spec entry, as stored.
     fn own_spec_data(&self, field: &str) -> Result<Option<String>> {
         Ok(self

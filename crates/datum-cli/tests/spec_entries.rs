@@ -141,6 +141,41 @@ fn a_half_anchor_triple_is_refused_and_a_whole_or_empty_one_saves() {
     assert!(env.spec("contacts").get("relative_to").is_none());
 }
 
+/// An edit of a spec doc is held to the anchor triple of the spec it makes,
+/// read through the template covering its field (da-8b2ge): a half one is
+/// refused and stores nothing, and a covered field's row may hold part of
+/// the triple when its template holds the rest.
+#[test]
+fn a_spec_doc_edit_is_held_to_its_whole_anchor_triple() {
+    let env = Env::new();
+    env.ok(&["occur", "body"]);
+    env.ok(&["setup", "contacts", "--verb", "occur"]);
+    let err = env.err(&["update", "spec:contacts", "relative_to=body"]);
+    assert!(
+        err.contains("field 'contacts': anchor triple inconsistent"),
+        "{err}"
+    );
+    assert!(env.spec("contacts").get("relative_to").is_none());
+    env.ok(&[
+        "update",
+        "spec:contacts",
+        "relative_to=body",
+        "anchor_pos_ratio=0.1",
+        "anchor_size_ratio=0.5",
+    ]);
+    assert_eq!(env.spec("contacts")["relative_to"], "body");
+
+    let template = r#"{"field":"issue__%hid:8%","verb":"occur","relative_to":"body","anchor_pos_ratio":0.1,"anchor_size_ratio":0.5}"#;
+    env.ok(&["setup", "issue__%hid:8%", "--from-json", template]);
+    env.ok(&["setup", "issue__2qvk0dk4", "--color", "#abcdef"]);
+    env.ok(&["update", "spec:issue__2qvk0dk4", "relative_to=contacts"]);
+    let spec = env.spec("issue__2qvk0dk4");
+    assert_eq!(
+        (&spec["relative_to"], &spec["anchor_size_ratio"]),
+        (&Json::from("contacts"), &Json::from(0.5))
+    );
+}
+
 /// Specs and layouts are not life data: they stay off tail, now, stats,
 /// fields and count, and come back when named or with `-A`.
 #[test]

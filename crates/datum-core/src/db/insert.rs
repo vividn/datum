@@ -718,17 +718,16 @@ impl Db {
                 &updated,
                 change_kind,
             )?;
-            let fresh = self.get_entry(&updated.hid.0)?;
-            Ok((fresh, Some(existing_slug.clone())))
         } else {
             // updated.slug already equals existing_slug for the in-place
             // path; the row is matched by hid, but the slug is what the
             // meta-entry checks read, so make sure it isn't out of sync.
             updated.slug = existing_slug.clone();
             save_existing_entry_with_kind_in_tx(&self.conn, &updated, change_kind)?;
-            let fresh = self.get_entry(&updated.hid.0)?;
-            Ok((fresh, None))
         }
+        self.check_spec_anchor(&updated)?;
+        let fresh = self.get_entry(&updated.hid.0)?;
+        Ok((fresh, slug_changed.then(|| existing_slug.clone())))
     }
 
     /// Rekey an existing entry in place: rewrite mutable columns AND change

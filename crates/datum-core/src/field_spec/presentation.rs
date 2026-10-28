@@ -63,11 +63,13 @@ pub struct PresentationSpec {
     ///
     /// Invariant: `relative_to.is_some() == anchor_pos_ratio.is_some() ==
     /// anchor_size_ratio.is_some()`. Refused where a spec is saved (`setup`,
-    /// `--from-json` or flags, and a kit's install), by
+    /// `--from-json` or flags, and a kit's install) and where its doc is
+    /// edited (`update spec:<field>`, `merge`, `edit`), template merged, by
     /// [`PresentationSpec::validate_anchor_triple`]. A half triple stored by
-    /// other means (an older datum, `update spec:<field>`) is drawn free at
-    /// its name's hash, named in the render's [`super::PositionResolution`]
-    /// `malformed`, which no renderer prints.
+    /// other means (an older datum, a peer's row, a template's edit leaving a
+    /// field it covers half) is drawn free at its name's hash, named in the
+    /// render's [`super::PositionResolution`] `malformed`, which no renderer
+    /// prints.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relative_to: Option<String>,
 
