@@ -252,14 +252,17 @@ describe('widget options', () => {
 
 			// The bar's own log is oldest-first WHATEVER this widget's option
 			// says (da-ckw3, da-mwp4m): it is not the widget, and the option is
-			// not its. It ends before the newest, which is the bar's own row.
+			// not its. A wheel from the row goes full (#lib/detent.ts's `rest`),
+			// where the log draws every row, the newest included — read once it
+			// is there: mid-glide it was still the row's, without the newest
+			// (da-brid8).
 			const bar = await page.locator('.prompt-bar').boundingBox();
 			await page.mouse.move(bar.x + bar.width / 2, bar.y + 10);
 			await page.mouse.wheel(0, 120);
-			await page.locator('.log .echo').first().waitFor();
+			await page.locator('.log.full .echo').first().waitFor();
 			assert.deepEqual(
 				(await page.locator('.log .echo').allInnerTexts()).map((t) => t.replace(/^\s*❯\s*/, '').trim()),
-				oldestFirst.slice(0, -1)
+				oldestFirst
 			);
 			await page.keyboard.press('Escape');
 			await page.waitForFunction(
