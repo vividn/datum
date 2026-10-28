@@ -41,12 +41,21 @@ async function aligned(app, seed) {
 	await settle(app.page);
 }
 
-/** Wait until no slot is still gliding. */
+/**
+ * Wait until no slot is still moving: two frames alike, and none gliding.
+ * Read frame by frame: a slot is first placed before its size is measured,
+ * and stands where it will a frame later, with no glide (da-28k9h).
+ */
 const settle = (page) =>
-	page.waitForFunction(
-		(bar) => document.querySelector(bar)?.getAnimations({ subtree: true }).length === 0,
-		BAR
-	);
+	page.$eval(BAR, async (bar) => {
+		const boxes = () => [...bar.querySelectorAll('[data-field]')].map((el) => `${el.getBoundingClientRect().top},${el.getBoundingClientRect().left}`).join();
+		for (let was; ; ) {
+			await new Promise(requestAnimationFrame);
+			const now = boxes();
+			if (now === was && bar.getAnimations({ subtree: true }).length === 0) return;
+			was = now;
+		}
+	});
 
 /** Every field button's box, against the bar's top left corner as scrolled. */
 const boxes = (page) =>

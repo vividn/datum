@@ -56,11 +56,13 @@ export const leaveField = (page) => page.evaluate(() => window.datum.shell.leave
 /**
  * Give the open form's field the image `svg` as its symbol (da-rpfws): its
  * symbol tile opens the picker, whose «image (svg)» takes the file, and the
- * tile shows it once read.
+ * tile shows it once read: this image, since a field may show another
+ * already, and the file is read, and the picker closed, a moment later (da-28k9h).
  */
 export async function pickImage(page, name, svg) {
 	const tile = page.locator(`${FIELD_FORM} .tile[aria-expanded][aria-label^="the field's symbol:"]`);
 	await tile.click();
 	await page.locator(`${FIELD_FORM} .picker input[type="file"]`).setInputFiles({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
-	await page.locator(`${FIELD_FORM} .tile[aria-label="the field's symbol: image"][data-icon] img`).waitFor();
+	const src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+	await page.locator(`${FIELD_FORM} .tile[aria-label="the field's symbol: image"][data-icon] img[src="${src}"]`).waitFor();
 }

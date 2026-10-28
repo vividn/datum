@@ -35,6 +35,23 @@ const onPage = async (fn) => {
 	return fn(app);
 };
 
+/**
+ * Wait for the commands to rest where they slid to, read frame by frame.
+ * Svelte's intro first runs a placeholder animation of no length and starts
+ * the real slide only when that one finishes, so a wait read at once can
+ * find the placeholder alone, finished, and the buttons still below where
+ * they rest (da-28k9h).
+ */
+const slid = (page) =>
+	page.locator(OVER).evaluate(async (el) => {
+		for (;;) {
+			await new Promise(requestAnimationFrame);
+			const moving = el.getAnimations({ subtree: true }).filter((a) => a.playState !== 'finished');
+			if (!moving.length) return;
+			await Promise.all(moving.map((a) => a.finished));
+		}
+	});
+
 /** What the button says to assistive tech, and how it is drawn. */
 const chevron = (page) =>
 	page.locator(CHEVRON).evaluate((el) => {
@@ -69,7 +86,7 @@ describe('the ❯ opens the commands over the output', () => {
 
 			await page.locator(CHEVRON).click();
 			await page.locator(`${OVER} .bar.commands button[data-command="occur"]`).waitFor();
-			await page.locator(OVER).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+			await slid(page);
 			await page.locator(CHEVRON).evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
 			const open = await chevron(page);
 			assert.equal(open.expanded, 'true');
@@ -156,7 +173,7 @@ describe('the ❯ opens the commands over the output', () => {
 			await page.locator(CHEVRON).click();
 			// Where it comes to rest: a press on a button still sliding under it is no hold.
 			await page.locator(`${OVER} button[data-command="occur"]`).waitFor();
-			await page.locator(OVER).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+			await slid(page);
 			const box = await page.locator(`${OVER} button[data-command="occur"]`).boundingBox();
 			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 			await page.mouse.down();
@@ -273,7 +290,7 @@ describe('a swipe on the commands is theirs', () => {
 	const open = async (page) => {
 		await page.locator(CHEVRON).click();
 		await page.locator(`${LIST} button[data-command="occur"]`).waitFor();
-		await page.locator(OVER).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+		await slid(page);
 	};
 
 	test('on a phone, up and down scroll them and the bar stays; a swipe on the input row still moves it', async () => {
