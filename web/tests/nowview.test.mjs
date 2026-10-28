@@ -1215,3 +1215,84 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 		);
 	});
 });
+
+// ── one band of time across a clock change (da-31hhd) ───────────────
+//
+// vividn, 2026-10-28: «don't show timezone changes in the nowview. Right now
+// scrolling back I can see the DST change rendered in the nowview. It should
+// just be one continuous band of time». Its axis is instants, so a window over
+// 2026-10-25, when Berlin's clock went back at 01:00 UTC, draws the hour once.
+
+describe('the nowview is one band of time across a clock change', () => {
+	const BAND = `${PANE} .nowview-band`;
+
+	test('panned back over Berlin’s fall-back: marks spaced by their instants, the state one block, no seam or zone', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				// A coffee every 20 minutes either side of the change, and a
+				// state running through it and through Berlin's midnight (22:00Z).
+				const lines = ['switch mood calm -t 2026-10-24T21:30:00+00:00', 'switch mood ok -t 2026-10-25T02:30:00+00:00'];
+				for (let m = 21 * 60 + 10; m < 29 * 60; m += 20) {
+					const t = new Date(Date.UTC(2026, 9, 24, 0, m)).toISOString().replace('.000Z', '+00:00');
+					lines.push(`occur coffee -t ${t}`);
+				}
+				for (const line of lines) assert.equal((await app.runLine(line)).code, 0, line);
+				await app.redraw();
+				await page.locator(`${BAND} svg.svg rect.block[data-state="calm"]`).first().waitFor({ state: 'attached' });
+				await app.idle();
+
+				const band = await page.locator(BAND).evaluate((el) => {
+					const svg = el.querySelector('svg.svg');
+					const box = el.getBoundingClientRect();
+					const mid = (r) => (r.left + r.right) / 2;
+					const inBox = (r) => r.width > 0 && r.left >= box.left - 0.5 && r.right <= box.right + 0.5;
+					const axis = [...svg.querySelectorAll('[data-lo]')].find((g) => !g.closest('.crop'));
+					const x = (name) => new DOMPoint(Number(axis.getAttribute(name)), 0).matrixTransform(axis.getScreenCTM()).x;
+					const pxPerMs = (x('data-hi') - x('data-lo')) / (Date.parse(axis.getAttribute('data-to')) - Date.parse(axis.getAttribute('data-from')));
+					const coffees = {};
+					for (const m of svg.querySelectorAll('[data-field="coffee"][data-at]')) {
+						const r = m.getBoundingClientRect();
+						if (inBox(r)) coffees[m.dataset.at] = mid(r);
+					}
+					const calm = [...svg.querySelectorAll('.block[data-state="calm"]')]
+						.map((b) => b.getBoundingClientRect())
+						.filter((r) => r.width > 0)
+						.map((r) => [r.left, r.right, Math.round(r.height)]);
+					return {
+						pxPerMs,
+						box: [box.left, box.right],
+						coffees: Object.entries(coffees).map(([at, x]) => [Date.parse(at), x]).sort((a, b) => a[0] - b[0]),
+						calm: calm.sort((a, b) => a[0] - b[0]),
+						zones: svg.querySelectorAll('.zone-label, .dead-zone, .lane').length,
+						ticks: [...svg.querySelectorAll('.tick-label')].map((t) => t.textContent)
+					};
+				});
+
+				// Marks either side of 01:00Z, each the next 20 minutes on by the axis's own scale.
+				const change = Date.UTC(2026, 9, 25, 1);
+				assert.ok(band.coffees.some(([t]) => t < change) && band.coffees.some(([t]) => t > change), JSON.stringify(band));
+				assert.ok(band.coffees.length >= 6, JSON.stringify(band));
+				for (let i = 1; i < band.coffees.length; i++) {
+					const [[t0, x0], [t1, x1]] = [band.coffees[i - 1], band.coffees[i]];
+					const want = (t1 - t0) * band.pxPerMs;
+					assert.ok(Math.abs(x1 - x0 - want) < 1, `${new Date(t0).toISOString()} → ${new Date(t1).toISOString()}: ${x1 - x0}px, not ${want}px`);
+				}
+				// The state is one band, a lane's height, unbroken where the days meet.
+				assert.equal(new Set(band.calm.map((c) => c[2])).size, 1, `the state narrows: ${JSON.stringify(band.calm)}`);
+				for (let i = 1; i < band.calm.length; i++)
+					assert.ok(Math.abs(band.calm[i][0] - band.calm[i - 1][1]) < 1, `a seam in the state: ${JSON.stringify(band.calm)}`);
+				// No offset label, dead zone or lane, and no tick said twice.
+				assert.equal(band.zones, 0);
+				assert.deepEqual(band.ticks, [...new Set(band.ticks)]);
+				assert.deepEqual(app.errors, []);
+			},
+			{
+				...DESKTOP,
+				timezone: 'Europe/Berlin',
+				clock: Date.UTC(2026, 9, 27, 12),
+				prepare: (context) => context.addInitScript(draft, soloNowview({ history: '8h', at: '2026-10-25T01:00:00+00:00' }))
+			}
+		);
+	});
+});

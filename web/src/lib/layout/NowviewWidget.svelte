@@ -143,7 +143,7 @@
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { compose } from '#lib/nowcrop.ts';
 	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '#lib/panes.ts';
-	import { dateBack, layers, type Layer } from '#lib/dayLayers.ts';
+	import { dateBack, daysBack, layers, type Layer } from '#lib/dayLayers.ts';
 	import { run } from '#lib/run.ts';
 
 	interface Props {
@@ -449,10 +449,9 @@
 	/** Ask for the days of data the overlay `svg` reaches that `layer` does not hold. */
 	function needLayer(svg: SVGSVGElement): void {
 		if (labels || !svg.querySelector('[data-lo]')) return;
-		const midnight = new Date().setHours(0, 0, 0, 0);
-		// Rounded up: a drawing that starts even a millisecond before a
-		// midnight reaches the day before it, so it is asked for too.
-		const reach = Math.max(0, Math.min(MAX_BACK, Math.ceil((midnight - drawnFrom()) / 86_400_000) || 0));
+		// The day a drawing starts in, even a millisecond before a midnight,
+		// is asked for too, a clock change between or not (da-31hhd).
+		const reach = Math.max(0, Math.min(MAX_BACK, daysBack(drawnFrom()) || 0));
 		const dates = Array.from({ length: reach + 1 }, (_, back) => dateBack(back));
 		const key = `${vertical} ${epoch} ${dates.join(' ')}`;
 		if (key === wanted) return;

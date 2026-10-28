@@ -38,6 +38,15 @@ export function dateBack(back: number, from = new Date()): string {
 	return [at.getFullYear(), at.getMonth() + 1, at.getDate()].map((n) => String(n).padStart(2, '0')).join('-');
 }
 
+/**
+ * The local days from the one instant `t` falls in back to `from`'s, as
+ * `dateBack` counts them: a day a clock change is in is 23 or 25 hours, and
+ * still one day (da-31hhd).
+ */
+export function daysBack(t: number, from = new Date()): number {
+	return Math.round((new Date(from).setHours(0, 0, 0, 0) - new Date(t).setHours(0, 0, 0, 0)) / 86_400_000);
+}
+
 /** Whole days from ISO date `from` back to ISO date `to`. */
 const daysBetween = (from: string, to: string) => Math.round((Date.parse(from) - Date.parse(to)) / 86_400_000);
 
