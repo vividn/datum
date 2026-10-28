@@ -5,11 +5,11 @@
 // What it CANNOT settle is the numbers: vremya's instrument adds latency to
 // a synthetic touch, so a velocity measured in a drive is approximate, and
 // where a real thumb lands relative to a boundary is a thing only a real
-// thumb says. What is asserted here is the SHAPE — that momentum applies at
-// every speed, that no threshold divides a small push from a big one, that
-// the notch and the ceiling catch, that below the notch the gesture's
-// direction decides, and that a coast snags at an edge it came from above
-// while a finger may be dragged through it.
+// thumb says. What is asserted here is the SHAPE — that every release rests
+// closed, at the row or full (da-0b2vy), that the notch and the ceiling
+// catch, that between two states the gesture's direction decides, and that
+// a coast snags at an edge it came from while a finger may be dragged
+// through it.
 //
 // The same rules as a reader meets them are `barlog.test.mjs`.
 
@@ -32,62 +32,27 @@ const NOTCH = 58;
 const CEILING = 600;
 const at = (now, speed = 0, up = speed >= 0) => rest(now, speed, up, NOTCH, CEILING);
 
-describe('momentum at any speed', () => {
-	// THE COMPLAINT ITSELF. vividn, 2026-09-21: "right now there is only
-	// acceleration if it is enough to get it all the way up or down, it
-	// should allow little bits of acceleration sliding the section up and
-	// down". Under the old `FLING` floor every release below 1.2 px/ms
-	// snapped and every release above it went to the end, so these three
-	// pushes had two answers between them. Now they have three, and they
-	// are in the order the pushes were.
-	test('a small push slides a little, a bigger one further, with no cliff between', () => {
-		const small = at(200, 0.3);
-		const middling = at(200, 0.6);
-		const big = at(200, 1.2);
-		assert.ok(small > 200, `a push of 0.3 px/ms moved the bar to ${small}`);
-		assert.ok(middling > small, `0.6 px/ms (${middling}) did not beat 0.3 (${small})`);
-		assert.ok(big > middling, `1.2 px/ms (${big}) did not beat 0.6 (${middling})`);
-		// And PROPORTIONALLY: twice the speed is twice the glide, which is
-		// what "no cliff" means as an equation.
-		assert.equal(middling - 200, 2 * (small - 200));
+describe('three states and nothing between (da-0b2vy)', () => {
+	// vividn, 2026-10-27: «Clicking or swiping up on this makes it full
+	// screen». So every release comes to rest closed, at the row or full.
+	test('every release, at every place and speed, rests in one of the three', () => {
+		for (let now = 0; now <= CEILING; now += 7)
+			for (let v = -4; v <= 4; v += 0.25)
+				for (const up of [true, false]) {
+					const to = at(now, v, up);
+					assert.ok([0, NOTCH, CEILING].includes(to), `${now}px at ${v} px/ms (${up ? 'up' : 'down'}) rested at ${to}`);
+				}
 	});
 
-	// Swept, because a cliff is a thing that hides between two samples: the
-	// old floor was invisible to any test that only asked 0.3 and 1.7. A
-	// step of one hundredth of a px/ms may move the rest by its own glide
-	// and by at most one detent's pull — never by the hundreds of px that a
-	// threshold to "all the way up" costs.
-	test('across every speed a thumb can make, the rest never leaps to an end', () => {
-		const step = 0.02;
-		const most = DETENT + step * TAU;
-		let last = at(300, 0);
-		for (let v = step; v <= 4; v += step) {
-			const now = at(300, v);
-			assert.ok(now >= last, `${v.toFixed(2)} px/ms went backwards: ${now} after ${last}`);
-			assert.ok(now - last <= most + 1e-9, `a cliff at ${v.toFixed(2)} px/ms: ${last} → ${now}`);
-			last = now;
-		}
+	test('above the notch the gesture’s direction picks: up is full, down is the row', () => {
+		assert.equal(at(300, 0, true), CEILING, 'a swipe up from the row did not go full');
+		assert.equal(at(300, 0, false), NOTCH, 'a swipe down from full did not come back to the row');
 	});
 
-	test('a release at rest stays where the finger left it, above the notch', () => {
-		assert.equal(at(300, 0), 300, 'a height the reader chose was taken from them');
-	});
-});
-
-describe('the detents catch', () => {
-	test('a glide that would stop near a detent is taken by it', () => {
-		assert.equal(at(NOTCH + DETENT, 0), NOTCH, 'arriving just above the notch did not catch');
-		assert.equal(at(CEILING - DETENT, 0), CEILING, 'arriving just under the ceiling did not catch');
-		assert.equal(at(NOTCH + DETENT + 1, 0), NOTCH + DETENT + 1, 'the detent reached too far');
-	});
-
-	// "it scrolls smoothly but catches at the right place" — a glide that
-	// PASSES a detent slowly is a glide that stops just beyond it, so the
-	// same window is both halves of the rule.
-	test('a glide that passes a detent slowly is caught; one with real speed left is not', () => {
-		const creeping = DETENT / TAU / 2;
-		assert.equal(at(NOTCH - 4, creeping, true), NOTCH, 'a slow pass through the notch did not catch');
-		assert.equal(at(NOTCH + 4, 1.2, true), NOTCH + 4 + 1.2 * TAU, 'a fast pass was caught');
+	test('a drag shorter than a detent puts the bar back where it was', () => {
+		assert.equal(at(NOTCH + DETENT, 0, true), NOTCH);
+		assert.equal(at(CEILING - DETENT, 0, false), CEILING);
+		assert.equal(at(NOTCH + DETENT + 1, 0, true), CEILING, 'the detent reached too far');
 	});
 
 	test('landing exactly ON the notch stays on it, whichever way the gesture went', () => {
@@ -105,17 +70,12 @@ describe('below the notch there is nowhere to rest', () => {
 		assert.equal(at(4, 0, true), NOTCH, 'a nudge up from shut did not open the output');
 		assert.equal(at(NOTCH - 26, 0, false), 0, 'a nudge down from just under the notch did not shut it');
 	});
-
-	test('but a real push from down there carries past it into the log', () => {
-		const thrown = at(10, 1.5, true);
-		assert.ok(thrown > NOTCH + DETENT, `a push from shut stopped at ${thrown}`);
-	});
 });
 
 describe('a coast snags, a finger does not', () => {
 	// vividn, 2026-09-18: "When closing snag at the notch so that the output
 	// section stays open, but you can drag over this notch if you like."
-	test('a throw down from a tall log stops at the notch, not at shut', () => {
+	test('a throw down from full stops at the row, not at shut', () => {
 		assert.equal(at(500, -3, false), NOTCH, 'the throw closed the output as well');
 	});
 
@@ -125,17 +85,18 @@ describe('a coast snags, a finger does not', () => {
 		assert.equal(at(0, -3, false), 0);
 	});
 
-	// "When I get back to the top, then trying to scroll up further starts
-	// closing the input section" — so the top of the list is a place a coast
-	// STOPS at, and closing is the next thing the reader does.
-	test('a throw down from inside the list stops at the top of it', () => {
-		assert.equal(at(CEILING + 400, -3, false), CEILING, 'the throw tore the bar down as well');
+	// The bead: «From closed, a tap or swipe up on the handle reopens the
+	// single row». A throw up from shut is a swipe up from shut.
+	test('a throw up from shut stops at the row, not full', () => {
+		assert.equal(at(10, 3, true), NOTCH, 'the throw went past the row');
 	});
 
-	test('a drag that ENDS below an edge is obeyed, however fast it was going', () => {
+	test('a drag that ENDS past an edge is obeyed, however fast it was going', () => {
 		// The finger is at 20px when it lets go: it dragged THROUGH the
 		// notch, so there is no edge above it left to snag on.
 		assert.equal(at(20, -3, false), 0);
+		// And up: a finger past the notch goes full on a throw.
+		assert.equal(at(NOTCH + 30, 3, true), CEILING);
 	});
 });
 
@@ -159,22 +120,21 @@ describe('a tuning that is not the default', () => {
 		assert.equal(at(300, 0.7), tuned(TAU, DETENT)(300, 0.7));
 	});
 
-	// `speed * TAU` is the whole of what a release carries, so twice the
-	// time constant is twice the glide — at a speed whose landing is near
-	// no detent, which is the arithmetic on its own.
-	test('a longer TAU carries the same push proportionally further', () => {
-		const normal = tuned(TAU, DETENT)(300, 0.3) - 300;
-		const twice = tuned(2 * TAU, DETENT)(300, 0.3) - 300;
-		assert.equal(normal, 0.3 * TAU);
-		assert.equal(twice, 2 * normal);
+	// `speed * TAU` is what a release carries: a push that falls short of the
+	// notch's catch at one TAU is carried into it at twice the TAU.
+	test('a longer TAU carries the same push further', () => {
+		// 20px a TAU: from 30px past the catch, one TAU ends 10px outside it.
+		const push = -20 / TAU;
+		assert.equal(tuned(TAU, DETENT)(NOTCH + DETENT + 30, push, true), CEILING);
+		assert.equal(tuned(2 * TAU, DETENT)(NOTCH + DETENT + 30, push, true), NOTCH);
 	});
 
 	// "DETENT = 0 must be reachable — that is no detents at all, and
 	// feeling it is how he finds out whether he wants them."
 	test('DETENT = 0 is no detents at all, and the snag is not one of them', () => {
 		const none = tuned(TAU, 0);
-		assert.equal(none(NOTCH + 1, 0), NOTCH + 1, 'a rest one px above the notch was taken by it');
-		assert.equal(none(CEILING - 1, 0), CEILING - 1, 'a rest one px under the ceiling was taken by it');
+		assert.equal(none(NOTCH + 1, 0, true), CEILING, 'a rest one px above the notch was taken by it');
+		assert.equal(none(CEILING - 1, 0, false), NOTCH, 'a rest one px under the ceiling was taken by it');
 		// The SNAG is a separate rule and is untouched by the knob: a coast
 		// down from a tall log still stops at the notch it came from above.
 		assert.equal(none(500, -3, false), NOTCH);
@@ -182,6 +142,6 @@ describe('a tuning that is not the default', () => {
 
 	test('a wider DETENT catches from further away than the default reaches', () => {
 		assert.equal(tuned(TAU, 60)(NOTCH + 40, 0), NOTCH, 'a 60px detent did not reach 40px');
-		assert.equal(at(NOTCH + 40, 0), NOTCH + 40, 'the default caught it anyway');
+		assert.equal(at(NOTCH + 40, 0), CEILING, 'the default caught it anyway');
 	});
 });

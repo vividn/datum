@@ -222,32 +222,39 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: NARROW });
 	});
 
-	// The output folds away and a DRAG is what folds it (da-ckw3). There was
-	// a `^` button on the bar's top line until vividn, 2026-09-18: "The ^
-	// button obscures the text. Let's just get rid of this button and instead
-	// just put a little carrat above the input bar to suggest that it can be
-	// pulled up." So there is no control to be reachable any more, and what
-	// this holds instead is the pair that replaced it: the HINT is on the
-	// screen at every phone width (a mark off the edge suggests nothing), and
-	// the output the drag opens is on the screen too.
-	test('the arrow is on screen, and the output it opens is too', async (t) => {
+	// THE HANDLE (da-0b2vy) rides the top of whatever is open: over the input
+	// closed, over the strip, at the top of the page full. A control off the
+	// edge is no control, so it is on the screen in each of the three, at
+	// every phone width, and the output it opens is on the screen too.
+	test('the handle is on screen closed, at the row and full, and the output it opens is too', async (t) => {
 		await phone.solo(async ({ page }) => {
-			await atEachScreen(t, page, SCREENS, async () => {
-				await assertOnScreen(page, '.prompt-bar .caret', 'the arrow');
-				const box = await page.locator('.prompt-bar .caret').boundingBox();
+			const onScreen = async (state) => {
+				await assertOnScreen(page, '.prompt-bar .bar-handle', `the handle, ${state}`);
+				const box = await page.locator('.prompt-bar .bar-handle').boundingBox();
 				const width = await page.evaluate(() => document.documentElement.clientWidth);
 				assert.ok(
 					box.x >= 0 && box.x + box.width <= width + 1,
-					`the arrow is ${box.x}–${box.x + box.width} on a ${width}px screen`
+					`${state}, the handle is ${box.x}–${box.x + box.width} on a ${width}px screen`
 				);
-
-				// The bar GLIDES (da-ckw3, $lib/log.ts): the section is in the
-				// DOM on the first frame and grows for ~220ms after it, so what
-				// has to be on the screen is where it comes to REST — which is
-				// what `unfold` waits for.
+			};
+			await atEachScreen(t, page, SCREENS, async () => {
+				await onScreen('closed');
+				// The bar GLIDES (da-ckw3, $lib/log.ts): what has to be on the
+				// screen is where it comes to REST — which is what `unfold` waits for.
 				await unfold(page);
 				await assertOnScreen(page, '.prompt-bar .section.output', 'the output it shows');
-				// Folded again, so the next screen starts where this one did.
+				await onScreen('at the row');
+				// The drag's click swallow spent ($lib/grip.ts), then full.
+				await page.locator('.prompt-bar').dispatchEvent('click');
+				await page.locator('.prompt-bar .bar-handle').click();
+				await page.locator('.prompt-bar .bar-handle[aria-label="collapse the history to one row"]').waitFor();
+				await page.waitForFunction(() => document.querySelector('.log.full'));
+				await onScreen('full');
+				// Back to the row, and folded again, so the next screen starts where this one did.
+				await page.keyboard.press('Escape');
+				await page.waitForFunction(
+					() => parseFloat(getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height')) < 0.5
+				);
 				await fold(page);
 			});
 		});

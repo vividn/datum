@@ -68,6 +68,13 @@
 		 */
 		skip = 0,
 		/**
+		 * One command a line, however wide the box: the bar's log. vividn,
+		 * 2026-10-27: «each command get's it's own line. If a command creates
+		 * multiple entires, theose entries can be horizontally next to each
+		 * other though» (da-0b2vy).
+		 */
+		lines = false,
+		/**
 		 * The scrolling box, bindable.
 		 *
 		 * The bar's log is the caller: it pins this box to the newest row when
@@ -80,6 +87,7 @@
 		reversed?: boolean;
 		bare?: boolean;
 		skip?: number;
+		lines?: boolean;
 		body?: HTMLDivElement | undefined;
 		onran?: (result: RunResult) => void;
 	} = $props();
@@ -98,7 +106,7 @@
 	// AS MANY ENTRIES SIDE BY SIDE AS THE BOX HOLDS (da-5iyo, $lib/scrollback.ts).
 	// The same `width` a drawn command is asked for is what says how many:
 	// it is the body's CONTENT box, which is the room the columns have.
-	const columns = $derived(columnsIn(width));
+	const columns = $derived(lines ? 1 : columnsIn(width));
 	// An entry whose command answered with its own printed text rather than
 	// an action echo — a table, a picture, an error — takes the whole row.
 	const wide = $derived(entries.map((entry) => !parseEcho(entry.result.stdout)));
@@ -210,7 +218,7 @@
 	     scrollback on each one (review on #33). -->
 	<div class="entries" data-columns={columns} style:--columns={columns} style:--gap="{GAP}px">
 		{#each entries as entry, i (entry)}
-			<div class="entry" class:ruled={ruled[i]} class:whole={wide[i]}>
+			<div class="entry" class:ruled={ruled[i]} class:whole={wide[i]} data-ran={entry.ranAt}>
 				<!-- The row itself is `ReplEntry.svelte`, which the bar's
 				     output section mounts too: one list, one shape for a row
 				     of it. -->

@@ -370,7 +370,7 @@ describe('the CLI, which was the REPL', () => {
 				assert.deepEqual(await kinds(page), ['cli']);
 				await app.submit('occur coffee');
 				assert.equal(await output.count(), 0, 'the CLI page drew the output section');
-				assert.equal(await page.locator('.prompt-bar .caret').count(), 0, 'the CLI page offers to open an output it has not got');
+				assert.equal(await page.locator('.prompt-bar .bar-handle').count(), 0, 'the CLI page offers to open an output it has not got');
 				// The input row is all of the bar, on the foot of the page.
 				const [bar, input] = await Promise.all(
 					['.prompt-bar', '.prompt-bar .section.input'].map((s) => page.locator(s).boundingBox())

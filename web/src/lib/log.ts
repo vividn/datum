@@ -29,14 +29,22 @@
 // the output section first, then the log over that, growing up into the
 // dashboard until the dashboard is gone at the ceiling. The line stops
 // there. The log scrolls on its own, like a terminal's history, newest at
-// the bottom next to the input; the handle and the full screen, and how a
-// scroll past the history's end closes it again, are bead 3's (da-0b2vy).
+// the bottom next to the input.
+//
+// AND THE BAR RESTS IN THREE STATES (da-0b2vy, $lib/detent.ts): CLOSED at 0,
+// the SINGLE ROW at the notch, and FULLSCREEN at the ceiling. Full, the strip
+// gives way: the output section is 0 and the log takes its room, so the
+// newest command is the log's last line, next to the input, and the commands
+// that were side by side in the strip FLOW to their lines (`flow`). vividn,
+// 2026-10-27: «Entries animate and flow to be vertically chronological, like
+// it looks like in a cli … each command get's it's own line».
 //
 // THE PAGE STILL NEVER SCROLLS. `routes/+layout.svelte` sizes three boxes
 // from this one number; nothing here moves a scrollport, so a gesture that
 // does not start on the bar still cannot move the page. That was the bead's
 // rule and it is unchanged.
 
+import { tick } from 'svelte';
 import { derived, get, writable } from 'svelte/store';
 import { rest } from './detent.js';
 import { tuningNow } from './tuning.js';
@@ -103,11 +111,14 @@ export const outputless = writable(false);
 /** How far the bar itself is open, as far as the ceiling and no further. */
 const opened = derived([reveal, ceilingH, outputless], ([r, c, none]) => (none ? 0 : Math.min(r, c)));
 
-/** The output section's height right now — it opens as the first `OUT` px. */
-export const shown = derived([opened, outH], ([r, o]) => Math.min(r, o));
+/** FULLSCREEN: the bar at the ceiling, the history to the top of the page. */
+export const full = derived([opened, outH, ceilingH], ([r, o, c]) => c > o && r >= c - 0.5);
 
-/** The log's height right now — everything past the notch. */
-export const logHeight = derived([opened, outH], ([r, o]) => Math.max(0, r - o));
+/** The output section's height right now — it opens as the first `OUT` px, and is gone full. */
+export const shown = derived([opened, outH, full], ([r, o, f]) => (f ? 0 : Math.min(r, o)));
+
+/** The log's height right now — everything past the notch, and the whole bar full. */
+export const logHeight = derived([opened, outH, full], ([r, o, f]) => (f ? r : Math.max(0, r - o)));
 
 /** The output section is open (the `^`'s state, and what is remembered). */
 export const output = derived([opened, outH], ([r, o]) => r >= o - 0.5 && o > 0);
@@ -118,14 +129,14 @@ export const inLog = derived(logHeight, (h) => h > 0.5);
 /**
  * Whether the log has been asked for yet.
  *
- * The scrollback under the bar costs a render per command, and until a
- * finger or a wheel has actually PULLED the bar nobody has ever seen it. So
- * the REPL down there mounts on the first real gesture — a wheel, or a drag
- * past its threshold, never a tap — and stays.
+ * The scrollback over the bar costs a render per command, and until the
+ * bar has opened PAST THE NOTCH nobody has ever seen it. So the CLI up
+ * there mounts the first time it does (`put`) — a drag, a wheel or the
+ * handle — and stays.
  */
 export const armed = writable(false);
 
-export const arm = (): void => {
+const arm = (): void => {
 	// A page with no output section has no log to mount: the widget is the
 	// output there, and a gesture on its bar must not pay for a second
 	// scrollback nobody can open (canary-qwen on #1256).
@@ -157,10 +168,9 @@ export function attach(el: HTMLElement): () => void {
 		const height = probe.getBoundingClientRect().height;
 		probe.remove();
 		// The notch MOVES with the page (`--output-height` is a share of it,
-		// da-mwp4m), so an output that was open stays open, and a log above
-		// it keeps its height, rather than being left part-way at the old one.
-		const was = out();
-		if (was > 0 && get(reveal) >= was - 0.5) reveal.update((r) => r + height - was);
+		// da-mwp4m), and so does the ceiling: the bar keeps its STATE, rather
+		// than being left part-way at the old numbers.
+		const state = get(full) ? 'full' : get(output) ? 'row' : null;
 		outH.set(height);
 		const bar = el.querySelector('.prompt-bar');
 		const rule = bar ? parseFloat(getComputedStyle(bar).borderTopWidth) || 0 : 0;
@@ -170,8 +180,7 @@ export function attach(el: HTMLElement): () => void {
 		// on PR #46). The box knows its own height.
 		const input = bar?.querySelector('.section.input')?.getBoundingClientRect().height ?? 0;
 		ceilingH.set(Math.max(height, el.clientHeight - input - rule));
-		// A shorter page cannot hold what a taller one did.
-		reveal.update((r) => Math.min(r, maxReveal()));
+		if (state) reveal.set(state === 'full' ? maxReveal() : height);
 	};
 	remeasure();
 	// The remembered fold, now that `out` is known. Before `observe`, which
@@ -214,6 +223,63 @@ function remember(open: boolean): void {
 	}
 }
 
+/**
+ * Set the bar, and when that moves it into or out of the full screen, let
+ * the commands FLOW to where they are drawn now.
+ *
+ * Measured here because here is the one moment both places are known: the
+ * store has changed and the page has not yet (Svelte draws on a microtask),
+ * so what is on screen is still where each command WAS. After the draw, each
+ * one drawn again — in the log or in the strip, by its `data-ran` — plays
+ * the move back from there (FLIP). Under `prefers-reduced-motion` the bar
+ * changes state with no flow.
+ */
+function put(px: number): void {
+	if (px > out() + 0.5) arm();
+	const was = get(full);
+	reveal.set(px);
+	if (get(full) !== was && !reduced()) flow(was);
+}
+
+/** How long the commands take to flow to their new places, in ms. */
+const FLOW_MS = 300;
+
+/** Each command on screen, by when it ran: the strip's over the log's when both draw it. */
+function places(): Map<string, DOMRect> {
+	const seen = new Map<string, DOMRect>();
+	for (const box of document.querySelectorAll('.log, .prompt-bar .roll')) {
+		const frame = box.getBoundingClientRect();
+		for (const el of box.querySelectorAll<HTMLElement>('[data-ran]')) {
+			const at = el.getBoundingClientRect();
+			if (at.bottom > frame.top && at.top < frame.bottom && at.right > frame.left && at.left < frame.right)
+				seen.set(el.dataset.ran!, at);
+		}
+	}
+	return seen;
+}
+
+function flow(wasFull: boolean): void {
+	const before = places();
+	// Leaving the full screen, the log's copy of a command still in the strip
+	// would otherwise claim it: the strip is where the eye follows it to.
+	const into = wasFull ? '.prompt-bar .roll [data-ran], .log [data-ran]' : '.log [data-ran]';
+	void tick().then(() => {
+		for (const el of document.querySelectorAll<HTMLElement>(into)) {
+			const was = before.get(el.dataset.ran!);
+			if (!was) continue;
+			const now = el.getBoundingClientRect();
+			// Foot to foot: a command stands on its foot in both places.
+			const dx = was.left - now.left;
+			const dy = was.bottom - now.bottom;
+			if (Math.abs(dx) + Math.abs(dy) < 1) continue;
+			el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], {
+				duration: FLOW_MS,
+				easing: 'ease-out'
+			});
+		}
+	});
+}
+
 /** Follow a finger: no animation, no snapping — the bar is under it. */
 export function moveTo(px: number): void {
 	// A page with no output section has no bar to move, and a gesture there
@@ -223,7 +289,7 @@ export function moveTo(px: number): void {
 	// The finger is placing the bar itself, so wherever a glide was aiming is
 	// no longer where this gesture is going.
 	aim = null;
-	reveal.set(Math.max(0, Math.min(maxReveal(), px)));
+	put(Math.max(0, Math.min(maxReveal(), px)));
 }
 
 /**
@@ -239,20 +305,14 @@ export function settle(up: boolean, speed = 0): void {
 }
 
 /**
- * THE ARROW: open the output, or shut it.
- *
- * vividn, 2026-09-21: "tapping the arrow should open/close the output section".
- * It was a button, then a mark, and it is a button again — what he asked for
- * on 2026-09-18 was that pressing it must not FOCUS the input ("That is
- * jarring"), and removing the press took more than that away. The focus rule
- * stands and lives in PromptBar's handler; this is only where it goes.
- *
- * From inside the LOG it collapses to the notch rather than shutting, so the
- * two gestures agree: a fling down snags at the notch too, and a second press
- * closes from there.
+ * THE HANDLE's tap (da-0b2vy): closed opens the row, the row goes full, and
+ * full comes back to the row. vividn, 2026-10-27: «Clicking or swiping up on
+ * this makes it full screen … when the cli is fullscreen, the handle is at
+ * the top of the screen and clicking or swiping there closes the cli again».
+ * A tap never shuts the row: a drag down does (his answer 2).
  */
-export function toggleOutput(): void {
-	glide(get(output) && get(logHeight) === 0 ? 0 : out());
+export function pressHandle(): void {
+	glide(get(output) && !get(full) ? maxReveal() : out());
 }
 
 /** Open at least as far as the output — a tap on a failure's `ERROR`. */
@@ -312,7 +372,7 @@ function glide(target: number, speed = 0): void {
 	remember(to >= out() - 0.5);
 	if (reduced() || from === to) {
 		aim = null;
-		return reveal.set(to);
+		return put(to);
 	}
 	const ms = speed
 		? Math.min(glideMax(), Math.max(GLIDE_MIN_MS, (3 * Math.abs(to - from)) / Math.abs(speed)))
@@ -322,7 +382,7 @@ function glide(target: number, speed = 0): void {
 	const step = (now: number): void => {
 		const t = Math.min(1, (now - started) / ms);
 		// ease-out cubic: fastest at the start, arriving without a stop.
-		reveal.set(from + (to - from) * (1 - (1 - t) ** 3));
+		put(from + (to - from) * (1 - (1 - t) ** 3));
 		if (t < 1) {
 			frame = requestAnimationFrame(step);
 		} else {

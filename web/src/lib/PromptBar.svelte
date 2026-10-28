@@ -49,12 +49,14 @@
 	dashboard reflows when a PERSON moves the bar and never because a command
 	answered something long.
 
-	There was a `^` BUTTON at the top edge for two rounds. vividn, 2026-09-18:
-	"The ^ button obscures the text. Let's just get rid of this button and
-	instead just put a little carrat above the input bar to suggest that it
-	can be pulled up." So the chevron is a HINT now — a mark on the bar's top
-	rule that takes no pointer and is in no Tab order — and a drag or a wheel
-	is the whole of how the bar moves.
+	THREE STATES, AND A HANDLE (da-0b2vy): CLOSED, the SINGLE ROW, and
+	FULLSCREEN, where the history fills the page one command a line and the
+	strip gives way to it ($lib/log.ts). vividn, 2026-10-27: «the top of the
+	output bar should show a very clear handle toggle. Clicking or swiping up
+	on this makes it full screen». The handle rides the top of whatever is
+	open — over the input when closed, over the strip, at the top of the page
+	full — and a tap on it goes closed → row → full → row; a drag on it, or
+	anywhere on the bar, goes a state the way it went ($lib/detent.ts).
 
 	FOLDED, A COMMAND STILL ANSWERS: its ACTION words — one per document,
 	in the CLI's order and in the colour a document draws its action in —
@@ -89,7 +91,7 @@
 	import { parseEcho } from '$lib/echo.js';
 	import { ACTION_MS, ERROR_MS, focusLine, marks, peel, pills, prefill, text } from '$lib/bar.js';
 	import { clockSecondsLabel, now } from '$lib/clock.js';
-	import { closeLog, inLog, openOutput, output, outputless, shown, toggleOutput } from '$lib/log.js';
+	import { closeLog, full, inLog, openOutput, output, outputless, pressHandle, shown } from '$lib/log.js';
 	import { layout } from '$lib/layout/current.js';
 	import { isWidget } from '$lib/layout/types.js';
 	import { grip } from '$lib/grip.js';
@@ -117,18 +119,10 @@
 	}
 
 
-	/**
-	 * The arrow's press: the fold, and NOT the focus.
-	 *
-	 * vividn, 2026-09-18: "Hitting ^ should not focus on the input bar or open
-	 * the keyboard. That is jarring." On a phone a focus IS the keyboard,
-	 * taking half the screen for a press that was about the other half. So
-	 * this moves the bar and nothing else — the browser leaves the focus on
-	 * the button it was pressed on, which is where a press belongs.
-	 */
-	function toggle(): void {
-		toggleOutput();
-	}
+	/** What a tap on the handle will do, which is what it is called. */
+	const handleLabel = $derived(
+		!$output ? 'open the output section' : $full ? 'collapse the history to one row' : 'open the history full screen'
+	);
 
 	/**
 	 * A root tab that is the CLI widget ALONE draws no output section: the
@@ -345,7 +339,7 @@
 					     are cut from the top, so a `tail` shows its newest rows. -->
 					{#each strip as entry (entry)}
 						{@const docs = parseEcho(entry.result.stdout)?.length ?? 0}
-						<div class="group" class:wide={!docs} style:--docs={docs || null}>
+						<div class="group" class:wide={!docs} style:--docs={docs || null} data-ran={entry.ranAt}>
 							<ReplEntry {entry} cap={12} />
 						</div>
 					{/each}
@@ -420,37 +414,25 @@
 		</div>
 	</div>
 
-	<!-- THE ARROW, and it is a control. It was a button standing IN the row,
-	     then a mark that took no pointer, and it is a button again on the
-	     rule. The three asks, in his order:
+	<!-- THE HANDLE (da-0b2vy): a tab on the top edge of whatever is open,
+	     its grip drawn in it. A tap moves the bar a state ($lib/log.ts's
+	     `pressHandle`); a drag on it is the bar's own drag (`use:grip`).
 
-	     - 2026-09-18: "Hitting ^ should not focus on the input bar or open
-	       the keyboard. That is jarring." Still true, and `toggle` below is
-	       where that is kept.
-	     - 2026-09-18: "The ^ button obscures the text. Let's just get rid of
-	       this button and instead just put a little carrat above the input
-	       bar to suggest that it can be pulled up." The SHAPE he asked for
-	       is what it keeps: a small chevron on the bar's top rule, drawn
-	       mostly above it, not a tab standing in the row over the text.
-	     - 2026-09-21: "tapping the arrow should open/close the output
-	       section." So the press is back.
-
-	     Removing the press to answer the first of those took more than he
-	     asked for: it cost a tap target and left the fold with no accessible
-	     or keyboard way in at all. It is a real `<button>` with a label that
-	     says what it does, and its 24px hit area (conventions #12) hangs
-	     above the rule so that the ink and the target both stay off the
-	     row's text. -->
+	     Two older asks still hold. vividn, 2026-09-18: "Hitting ^ should not
+	     focus on the input bar or open the keyboard. That is jarring." — the
+	     browser leaves the focus on the button pressed, and on a phone a
+	     focus would be the keyboard. And: "The ^ button obscures the text" —
+	     the target stands above the rule, off the row's text. -->
 	{#if !$outputless}
-	<button
-		type="button"
-		class="caret"
-		class:open={$output}
-		aria-label={$output ? 'close the output section' : 'open the output section'}
-		aria-expanded={$output}
-		title={$output ? 'close the output section' : 'open the output section'}
-		onclick={toggle}><span class="chevron">^</span></button
-	>
+		<button
+			type="button"
+			class="bar-handle"
+			class:full={$full}
+			aria-label={handleLabel}
+			aria-expanded={$output}
+			title={handleLabel}
+			onclick={pressHandle}><span class="tab"><span class="knob"></span></span></button
+		>
 	{/if}
 </footer>
 
@@ -821,54 +803,59 @@
 		}
 	}
 
-	/* On the bar's top line, centred on the whole bar. */
-	/* The arrow: a small chevron on the bar's top rule, centred, and a 24px
-	   target around it. The TARGET hangs above the rule — `bottom: 100%` less
-	   a few pixels — so that neither the ink nor the hit area reaches the
-	   row's text, which is what the old in-row tab did and what vividn asked to
-	   be rid of. What it overlaps instead is the dashboard's own bottom
-	   margin, which has nothing in it. */
-	.caret {
+	/* THE HANDLE: a 24px target centered on the bar, standing on the top
+	   edge of what is open — the bar's rule, or the log's top over it
+	   (`--log-height`, set on the shell) — and overlapping the rule by a few
+	   pixels so its tab covers it: the tab and the bar read as one piece. */
+	.bar-handle {
 		position: absolute;
 		left: 50%;
-		bottom: calc(100% - 7px);
+		bottom: calc(100% + var(--log-height, 0px) - 4px);
 		transform: translateX(-50%);
 		z-index: 21;
-		display: flex;
-		align-items: flex-end;
-		justify-content: center;
-		width: 2.4rem;
+		width: 4.5rem;
 		height: 24px;
-		padding: 0 0 2px;
+		padding: 0;
 		background: none;
 		border: none;
-		color: var(--quiet);
-		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		font-size: 0.8rem;
-		line-height: 1;
-		cursor: pointer;
+		cursor: grab;
 	}
 
-	.caret:hover,
-	.caret:focus-visible {
-		color: var(--accent-bright);
-	}
-
-	/* The glyph turns over, not the button: the same mark says which way the
-	   bar will go. */
-	.chevron {
-		display: inline-block;
-		padding: 0 0.35rem;
+	.tab {
+		position: absolute;
+		inset: auto 0.5rem 4px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 14px;
 		background: var(--ground);
-		line-height: 1;
+		border: var(--bar-rule) solid var(--rule);
+		border-bottom: none;
+		border-radius: 8px 8px 0 0;
 	}
 
-	.caret.open {
-		color: var(--accent);
+	.knob {
+		width: 2rem;
+		height: 4px;
+		border-radius: 999px;
+		background: var(--quiet);
 	}
 
-	.caret.open .chevron {
-		transform: rotate(180deg);
+	.bar-handle:hover .knob,
+	.bar-handle:focus-visible .knob {
+		background: var(--accent-bright);
+	}
+
+	/* Full, the log's top is the page's, so the tab hangs down from it. */
+	.bar-handle.full {
+		bottom: calc(100% + var(--log-height, 0px) - 24px);
+	}
+
+	.bar-handle.full .tab {
+		inset: 0 0.5rem auto;
+		border: var(--bar-rule) solid var(--rule);
+		border-top: none;
+		border-radius: 0 0 8px 8px;
 	}
 
 	/* Shown, then gone at the same moment, for a reader who asked for no

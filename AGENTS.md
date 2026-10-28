@@ -770,7 +770,8 @@ binary.
   which a stored layout still opens as it) is that history as a pane, and
   a root tab that is the CLI alone (`/cli`, `/repl`) draws no output
   section at all: the widget is the output there.
-- THE SCROLLBACK STANDS IN COLUMNS (`$lib/scrollback.ts`) — the aim:
+- THE SCROLLBACK STANDS IN COLUMNS (`$lib/scrollback.ts`) in the CLI
+  widget; the bar's log is one command a line (Repl's `lines`, da-0b2vy) — the aim:
   "the output of a single entry should be narrow enough to comfortably fit
   2 on mobile side by side". As many entries abreast as fit at the width an
   entry's lines WANT (270px, measured), and never fewer than two wherever
@@ -785,29 +786,27 @@ binary.
   of every cell on a row past the first, so two entries side by side share
   one rule and never stand either side of it. `tests/scrollback.test.mjs`
   takes both measurements again against the built app.
-- THE BAR MOVES BY GESTURE ALONE — a drag anywhere on it, or a wheel over
-  it. The `^` on its top rule is a HINT and not a control (`pointer-events:
-  none`, `aria-hidden`): as the author put it, "The ^ button obscures the text… just put a
-  little carrat above the input bar to suggest that it can be pulled up."
-  HOW FAR OPEN it is, is ONE number of pixels (`reveal` in `$lib/log.ts`)
-  that three boxes are sized from — the page itself never scrolls. The
-  output opens over the first `--output-height` of it, which is the NOTCH;
-  past it the log grows upward to whatever height the finger leaves it at,
-  up to the top of the page, the input staying at the foot. A release CARRIES ITS SPEED, at any speed (`rest` in
-  `$lib/detent.ts`; there is no fling threshold): it glides on by `speed *
-  TAU` (320ms) and may rest anywhere but for three DETENTS — shut, the
-  notch, and the ceiling, the log at the top of the screen. The notch and
-  the ceiling each take a glide ending within `DETENT` (24px) of them, and
-  a coast never crosses either from above — the SNAG — so a throw down from
-  a tall log stops at the notch, the output still open, and a second one
-  shuts it; a finger drags through both. BELOW THE NOTCH there is nowhere to
-  rest, and there the gesture's direction decides, not its speed: a glide
-  ending short of the notch's catch goes to the notch from a gesture
-  heading up, and shuts from one heading down. Every settle is one
-  ease-out cubic whose duration is set to leave at the finger's own speed.
-  Every screen starts open, and the fold is remembered per device.
-  `close history` sits pinned at the foot of the log and Escape does the
-  same. NB `touch-action: pan-x` is on `.field` as well as the bar: the
+- THE BAR RESTS IN THREE STATES (da-0b2vy): CLOSED, the SINGLE ROW (the
+  output strip over the input), and FULLSCREEN, where the strip gives way and
+  the log fills the page to the top, one command a line, the newest its last
+  line next to the input; entering or leaving it, the commands on screen flow
+  to their new places (FLIP), not under `prefers-reduced-motion`. A HANDLE
+  rides the top of whatever is open (`.bar-handle`): a tap goes closed → row
+  → full → row, and a drag on it, anywhere on the bar, or a wheel over it
+  moves a state the way it went. HOW FAR OPEN the bar is, is ONE number of
+  pixels (`reveal` in `$lib/log.ts`) that three boxes are sized from — the
+  page itself never scrolls; the NOTCH is `--output-height`, the CEILING the
+  top of the page. A release glides by `speed * TAU` (`rest` in
+  `$lib/detent.ts`, no fling threshold) and rests in a state: one within
+  `DETENT` (24px) of the notch or the ceiling takes it, a coast never crosses
+  a state either way — the SNAG, so a throw down from full stops at the row
+  and a throw up from closed opens it — and otherwise the gesture's
+  direction picks between the two states either side. Every settle is one
+  ease-out cubic leaving at the finger's own speed. Every screen starts at
+  the row, and the fold is remembered per device. Full, `close history`
+  (pinned at the foot of the log), Escape, and at the top of the history a
+  wheel up or a finger swiping down that starts there each collapse it to the
+  row. NB `touch-action: pan-x` is on `.field` as well as the bar: the
   value resolves only up to the nearest scroll container, so without it the
   browser claims every drag that starts on the box.
 - `?db=<name>` names the DATABASE the page runs against (`web/src/lib/database.ts`): the name becomes the CLI's `DATUM_DB` at the

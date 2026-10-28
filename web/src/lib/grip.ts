@@ -12,7 +12,7 @@
 // a drag that starts on the log and wanders onto the bar is the same drag,
 // and only one finger is ever holding the bar.
 
-import { arm, at, moveTo, moving, notch, resume, settle, stop } from './log.js';
+import { at, moveTo, moving, notch, resume, settle, stop } from './log.js';
 
 /**
  * How far a pointer travels before it is a drag and not a tap.
@@ -161,8 +161,6 @@ function onPointerMove(event: PointerEvent): void {
 	// The first move past it, once.
 	if (!dragging) {
 		dragging = true;
-		// Not on pointerdown — see `armed` in $lib/log.ts.
-		arm();
 		// So a finger that wanders off this surface mid-pull keeps pulling.
 		// It can refuse — a synthetic pointer has no capture to give —
 		// and the drag is fine without it.
@@ -216,11 +214,9 @@ function onPointerCancel(): void {
 	//
 	// A gesture the system took away (a call, a notification) still has to
 	// leave the bar somewhere it is ALLOWED to be, and it decided nothing —
-	// so it settles as a release with no speed in it. Below the notch that
-	// is back the way it came; above it, where the reader had already
-	// pulled it to, which is a height they chose and the system interrupted
-	// (a canary on PR #46 read the old comment as promising the first of
-	// those in every case).
+	// so it settles as a release with no speed in it, heading down: back to
+	// the row from above the notch, and shut from below it — unless it is
+	// within a detent of the notch or the ceiling (da-0b2vy, $lib/detent.ts).
 	settle(false);
 }
 
@@ -241,7 +237,6 @@ function onPointerCancel(): void {
 function onWheel(event: WheelEvent): void {
 	if (event.timeStamp - foreignAt < INERTIA_MS || !event.deltaY) return;
 	event.preventDefault();
-	arm();
 	moveTo(at() + (event.deltaY > 0 ? notch() : -notch()));
 	settle(event.deltaY > 0);
 }

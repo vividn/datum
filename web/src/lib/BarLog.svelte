@@ -16,16 +16,24 @@
 	"the output section … should actually *be* the first line of the repl …
 	it shouldn't be repeated when you drag it up." So the log ends at the
 	row before it, and what a reader pulls up is the continuation of what
-	they were already looking at.
+	they were already looking at. FULL, the strip is gone and the log draws
+	every row, the newest its last line, next to the input (da-0b2vy), ONE
+	COMMAND A LINE (`lines`): vividn, 2026-10-27, «Don't but multiple
+	commands on the same line like currently, each command get's it's own
+	line».
 
 	ITS ROWS SCROLL ON THEIR OWN, pinned to the newest whenever a command
 	lands, as a terminal's do. The bar's number opens it and the number no
-	longer scrolls it (da-tj6m's phase 2 went with the order it was for):
-	the handle and the full screen are da-0b2vy's.
+	longer scrolls it (da-tj6m's phase 2 went with the order it was for).
+	AT THE TOP OF THE HISTORY, ONE MORE SCROLL UP — a wheel turned up, a
+	finger swiped down, as a gesture of its own — collapses it to the row:
+	vividn, 2026-10-27, «scrolling scrolls through the history of the CLI
+	until you reach the end of the history at which point scrolling
+	up/swiping down again closes the cli back».
 
-	It mounts on the first gesture at the bar rather than at boot: until a
-	finger or a wheel has touched the bar nobody has ever seen this box, and
-	a scrollback rendered twice on every command is a cost paid for nothing.
+	It mounts the first time the bar opens past the notch rather than at
+	boot: until then nobody has ever seen this box, and a scrollback
+	rendered twice on every command is a cost paid for nothing.
 
 	`close history` is PINNED TO THE BOTTOM OF THE BOX, just over the output
 	section — vividn, 16:25, of the name it had then: "yes, return to top is
@@ -36,9 +44,41 @@
 	import { tick, untrack } from 'svelte';
 	import Repl from '$lib/Repl.svelte';
 	import { repl } from '$lib/replStore.js';
-	import { armed, closeLog, inLog } from '$lib/log.js';
+	import { armed, closeLog, full, inLog } from '$lib/log.js';
 
 	let body: HTMLDivElement | undefined = $state();
+
+	/** A wheel this soon after the last is the same gesture ($lib/grip.ts's `INERTIA_MS`). */
+	const SAME_MS = 150;
+	/** How far a finger moves before it is a swipe ($lib/grip.ts's `DRAG_START`). */
+	const SWIPE = 8;
+	let wheeled = -Infinity;
+	/** Where a touch that began at the top of the history began, or null. */
+	let fromTop: number | null = null;
+
+	const atTop = (): boolean => $full && !!body && body.scrollTop <= 0;
+
+	/** A wheel up that STARTS at the top: the scroll that reached the top is not it. */
+	function onwheel(event: WheelEvent): void {
+		const fresh = event.timeStamp - wheeled > SAME_MS;
+		wheeled = event.timeStamp;
+		if (fresh && event.deltaY < 0 && atTop()) closeLog();
+	}
+
+	function ontouchstart(event: TouchEvent): void {
+		fromTop = atTop() ? event.touches[0].clientY : null;
+	}
+
+	function ontouchmove(event: TouchEvent): void {
+		if (fromTop === null || event.touches[0].clientY - fromTop < SWIPE) return;
+		fromTop = null;
+		closeLog();
+	}
+
+	// Gone full, the log has one more row, the newest: back to it.
+	$effect(() => {
+		if ($full && body) body.scrollTop = body.scrollHeight;
+	});
 	// A command that lands is the newest row, at the bottom: the list comes
 	// back to it, wherever the reader had scrolled.
 	$effect.pre(() => {
@@ -51,9 +91,12 @@
 <!-- `inert` is for the REPL inside: `close history` is already out of the
      DOM until the log is reached, and a scrollback nobody can see must not
      be in the Tab order either (canary on PR #46). -->
-<div class="log" class:reached={$inLog} inert={!$inLog}>
+<!-- The touch handlers only watch a scroll for its overscroll; Escape and
+     `close history` are the keyboard's way back. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="log" class:reached={$inLog} class:full={$full} inert={!$inLog} {onwheel} {ontouchstart} {ontouchmove}>
 	{#if $armed}
-		<Repl bare skip={1} bind:body />
+		<Repl bare skip={$full ? 0 : 1} lines bind:body />
 	{/if}
 	{#if $inLog}
 		<button type="button" class="top" onclick={closeLog}>close history</button>
@@ -73,6 +116,16 @@
 		overflow: hidden;
 		min-width: 0;
 		background: var(--page);
+	}
+
+	/* Room at the top for the bar's handle, which hangs there full. */
+	.log.full {
+		padding-top: 16px;
+	}
+
+	/* And at the foot for `close history`, so the newest line is never under it. */
+	.log.full :global(.body) {
+		padding-bottom: 2.75rem;
 	}
 
 	.log :global(section.pane) {

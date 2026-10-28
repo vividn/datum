@@ -834,76 +834,72 @@ describe('the arrow folds the output, and a drag does too', () => {
 		}, { ...PHONE, home: null });
 	});
 
-	// THE ARROW IS A CONTROL, and it is drawn above the row's text.
+	// THE HANDLE IS A CONTROL, and it is drawn above the row's text
+	// (da-0b2vy, where it took the arrow's place).
 	//
-	// Three asks in three rounds, and the test holds all three at once. vividn,
-	// 2026-09-18: "Hitting ^ should not focus on the input bar or open the
-	// keyboard. That is jarring." Then: "The ^ button obscures the text. Let's
-	// just get rid of this button and instead just put a little carrat above
-	// the input bar." Then, 2026-09-21: "tapping the arrow should open/close
-	// the output section."
-	//
-	// Answering the second by deleting the press took more than he asked for —
-	// it cost the tap target and left the fold with no keyboard or accessible
-	// way in. So: a real button, labelled and focusable, whose INK AND HIT
-	// AREA are both clear of the row's text, which is what "obscures" meant.
-	test('the arrow toggles the output, never focuses the box, and clears the row’s text', async () => {
+	// vividn, 2026-09-18: "Hitting ^ should not focus on the input bar or open
+	// the keyboard. That is jarring." Then: "The ^ button obscures the text."
+	// And 2026-10-27: «the top of the output bar should show a very clear
+	// handle toggle. Clicking or swiping up on this makes it full screen». So:
+	// a real button, labelled and focusable, whose INK AND HIT AREA are both
+	// clear of the row's text, and whose tap goes closed → row → full → row.
+	test('the handle moves the bar a state a tap, never focuses the box, and clears the row’s text', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			const caret = page.locator(`${BAR} .caret`);
+			const handle = page.locator(`${BAR} .bar-handle`);
 			const output = page.locator(`${BAR} .section.output`);
 			const focused = () => page.evaluate(() => document.activeElement?.tagName.toLowerCase() ?? 'none');
+			const labelled = (label) => page.locator(`${BAR} .bar-handle[aria-label="${label}"]`).waitFor();
 
+			// Folded, as a reader who dragged it shut has it.
+			await output.waitFor();
+			await foldBar(page);
+			// The drag's click swallow spent ($lib/grip.ts), or it takes the first tap.
+			await page.locator(BAR).dispatchEvent('click');
 			const seen = await page.evaluate(() => {
-				const el = document.querySelector('.prompt-bar .caret');
+				const el = document.querySelector('.prompt-bar .bar-handle');
 				const box = document.querySelector('.prompt-bar input').getBoundingClientRect();
 				const r = el.getBoundingClientRect();
 				return {
 					tag: el.tagName.toLowerCase(),
-					label: el.getAttribute('aria-label'),
 					hidden: el.getAttribute('aria-hidden'),
 					height: r.height,
 					// Its lowest pixel is above the box's highest: neither the
-					// glyph nor the target reaches what is typed.
+					// tab nor the target reaches what is typed.
 					clearsTextBy: box.top - r.bottom,
 					// And a press at its middle reaches IT, not something under it.
 					takesThePress: document
 						.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
 						?.closest('button')
-						?.classList.contains('caret')
+						?.classList.contains('bar-handle')
 				};
 			});
-			assert.equal(seen.tag, 'button', `the arrow is a <${seen.tag}>`);
-			assert.ok(seen.label, 'the arrow has no label');
-			assert.notEqual(seen.hidden, 'true', 'the arrow is hidden from a screen reader');
-			assert.ok(seen.height >= 24, `the arrow is ${seen.height}px tall`);
-			assert.ok(seen.clearsTextBy > 0, `the arrow overlaps the box's text by ${-seen.clearsTextBy}px`);
-			assert.equal(seen.takesThePress, true, 'a press at the arrow does not reach it');
+			assert.equal(seen.tag, 'button', `the handle is a <${seen.tag}>`);
+			assert.notEqual(seen.hidden, 'true', 'the handle is hidden from a screen reader');
+			assert.ok(seen.height >= 24, `the handle is ${seen.height}px tall`);
+			assert.ok(seen.clearsTextBy > 0, `the handle overlaps the box's text by ${-seen.clearsTextBy}px`);
+			assert.equal(seen.takesThePress, true, 'a press at the handle does not reach it');
 
-			// It folds, and it unfolds, and neither takes the keyboard.
+			// Closed → the row → full → the row, and none takes the keyboard.
+			await labelled('open the output section');
+			await handle.click();
 			await output.waitFor();
-			await caret.click();
+			await labelled('open the history full screen');
+			assert.notEqual(await focused(), 'input', 'the handle opened the keyboard');
+			await handle.click();
 			await output.waitFor({ state: 'detached' });
-			assert.notEqual(await focused(), 'input', 'the arrow opened the keyboard');
-			await page.locator(`${BAR} .caret[aria-expanded="false"]`).waitFor();
-
-			await caret.click();
+			await labelled('collapse the history to one row');
+			assert.notEqual(await focused(), 'input', 'the handle opened the keyboard');
+			await handle.click();
 			await output.waitFor();
-			assert.notEqual(await focused(), 'input', 'the arrow opened the keyboard');
-			// `aria-expanded` follows the bar's number, which GLIDES there over
-			// ~220ms — the section is in the DOM on the first frame of that, so
-			// waiting for the section is not waiting for the state.
-			await page.locator(`${BAR} .caret[aria-expanded="true"]`).waitFor();
-			await caret.click();
-			await output.waitFor({ state: 'detached' });
-			await page.locator(`${BAR} .caret[aria-expanded="false"]`).waitFor();
+			await labelled('open the history full screen');
 
 			// Nor when there is a half-typed line under it to come back to.
 			await page.locator(`${BAR} input`).click({ position: { x: 4, y: 12 } });
 			await page.locator(`${BAR} input`).type('occur cof');
-			await caret.click();
-			await output.waitFor();
-			assert.notEqual(await focused(), 'input', 'the arrow opened the keyboard');
+			await handle.click();
+			await labelled('collapse the history to one row');
+			assert.notEqual(await focused(), 'input', 'the handle opened the keyboard');
 			assert.equal(await page.locator(`${BAR} input`).inputValue(), 'occur cof');
 			assert.deepEqual(app.errors, []);
 		}, { ...PHONE, home: null });

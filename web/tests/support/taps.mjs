@@ -87,10 +87,10 @@ const survey = (page, { within, mark, layer } = {}) =>
 				const where = b.closest('[data-title]')?.dataset.title ?? (b.closest('.prompt-bar') ? 'bar' : 'page');
 				// Keyed by what the button IS, not by a label that tracks its state:
 				// an entry's hid toggle names whichever entry ran last, and the
-				// output caret says `open` or `close` as the section stands.
+				// output handle says what its tap will do as the bar stands.
 				const what = (b.dataset.field ?? b.dataset.command ?? b.getAttribute('aria-label') ?? b.textContent.trim())
 					.replace(/^full id .*/, 'full id')
-					.replace(/^(open|close) the output section$/, 'open/close the output section');
+					.replace(/^(open the output section|open the history full screen|collapse the history to one row)$/, 'the output handle');
 				const base = `${where}: ${what}`;
 				const n = (seen.get(base) ?? 0) + 1;
 				seen.set(base, n);
@@ -144,6 +144,12 @@ async function reset(app, line, layout = false) {
 	// root bar's (?), which is the one a page without the commands pane has
 	// (collect, da-mwp4m).
 	if ((await page.locator('.command.help.armed, .root-bar .help.armed').count()) > 0) await page.keyboard.press('Escape');
+	// The bar's handle, tapped at the row, leaves the history full screen over
+	// the page (da-0b2vy): Escape brings it back to the row.
+	if ((await page.locator('.log.full').count()) > 0) {
+		await page.keyboard.press('Escape');
+		await page.locator('.log.full').waitFor({ state: 'detached' });
+	}
 	// A widget option a tap set holds for the session, which `solo` keeps:
 	// forgotten, and the fields widget's own put back below.
 	const session = () => page.evaluate(() => JSON.stringify(window.datum.layout.session()));
