@@ -650,6 +650,101 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
+
+	// vividn, 2026-10-28: «dragging the collapsed view further to the left
+	// should eventually show an x icon with clear written under it which
+	// clears the scrollback» (da-3eczg). A real finger, through CDP: the strip
+	// scrolls natively, and only a real touch is what the browser pans with.
+	test('a drag past the newest shows an × «clear»: let go there, the scrollback is cleared and the data is not; short of it, nothing', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const commands = async () => {
+				for (const line of ['occur coffee', 'occur water', 'occur tea', 'occur toast', 'occur juice']) await app.submit(line);
+				assert.ok((await strip(page)).atEnd, 'the strip is not at its newest end');
+			};
+			await commands();
+			const tail = (await app.run(['tail'])).stdout;
+			const echoes = await page.locator('.echo').count();
+			assert.ok(echoes >= 5, `only ${echoes} commands on the page`);
+
+			const box = await page.locator(`${BAR} .roll`).boundingBox();
+			const [x, y] = [box.x + box.width - 30, box.y + box.height / 2];
+			const cdp = await page.context().newCDPSession(page);
+			const touch = (type, dx) =>
+				cdp.send('Input.dispatchTouchEvent', { type, touchPoints: dx === undefined ? [] : [{ id: 0, x: x + dx, y }] });
+			const drag = async (dx) => {
+				await touch('touchStart', 0);
+				for (let i = 1; i <= 10; i += 1) await touch('touchMove', (dx * i) / 10);
+			};
+			/** Whether the strip has come off any of the ×, and whether the × stands whole in view beside it. */
+			const shown = () =>
+				page.evaluate(() => {
+					const button = document.querySelector('.prompt-bar .clear-strip');
+					const section = button.closest('.section').getBoundingClientRect();
+					const b = button.getBoundingClientRect();
+					const roll = button.parentElement.querySelector('.roll').getBoundingClientRect();
+					return {
+						pulled: roll.right < b.right - 0.5,
+						whole: b.left >= section.left && b.right <= section.right + 0.5 && roll.right <= b.left + 0.5,
+						text: button.innerText
+					};
+				});
+			const sprungBack = () =>
+				page.waitForFunction(() => getComputedStyle(document.querySelector('.prompt-bar .roll')).transform === 'none');
+
+			assert.equal((await shown()).pulled, false, 'at rest, part of the × shows past the strip');
+
+			// Short of the threshold: the strip comes off part of the ×, and let go it springs back over it.
+			await drag(-60);
+			const short = await shown();
+			assert.ok(short.pulled && !short.whole, `a short pull: ${JSON.stringify(short)}`);
+			await touch('touchEnd');
+			await sprungBack();
+			assert.equal(await page.locator('.echo').count(), echoes, 'a short pull cleared something');
+
+			// A second finger landing mid-pull calls the gesture off, however far it had gone (canary on #1350).
+			await drag(-200);
+			const both = (type, dx) =>
+				cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [{ id: 0, x: x - 200 + dx, y }, { id: 1, x: x - 100 + dx, y: y - 10 }] });
+			await both('touchStart', 0);
+			await both('touchMove', -10);
+			await touch('touchEnd');
+			await sprungBack();
+			assert.equal(await page.locator('.echo').count(), echoes, 'a pull with a second finger on it cleared the scrollback');
+
+			// Past it: the × and «clear» whole in view, and let go, nothing of the scrollback is left.
+			await drag(-200);
+			const past = await shown();
+			assert.ok(past.whole, `the × is not whole in view: ${JSON.stringify(past)}`);
+			assert.match(past.text, /×\s*clear/);
+			await touch('touchEnd');
+			await page.waitForFunction(() => !document.querySelector('.echo'));
+			assert.equal(await page.locator(`${BAR} .group`).count(), 0, 'the strip still holds commands');
+			assert.equal((await app.run(['tail'])).stdout, tail, 'clearing the scrollback changed the data');
+			await sprungBack();
+
+			// Reduced motion: no spring, and the × is there at the threshold or not at all.
+			await page.emulateMedia({ reducedMotion: 'reduce' });
+			await commands();
+			await drag(-60);
+			assert.equal((await shown()).pulled, false, 'reduced motion pulled the strip short of the threshold');
+			await touch('touchEnd');
+			await drag(-200);
+			assert.ok((await shown()).whole, 'reduced motion: the × is not shown past the threshold');
+			await touch('touchEnd');
+			await page.waitForFunction(() => !document.querySelector('.echo'));
+
+			// A keyboard: focused, the × is shown, and pressed, it clears.
+			await commands();
+			await page.locator(`${BAR} .clear-strip`).focus();
+			assert.ok((await shown()).whole, 'focused, the × is not shown');
+			await page.keyboard.press('Enter');
+			await page.waitForFunction(() => !document.querySelector('.echo'));
+			await sprungBack();
+			await cdp.detach();
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
 });
 
 describe('a command with no echo', () => {

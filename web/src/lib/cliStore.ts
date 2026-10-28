@@ -96,6 +96,16 @@ export function record(line: string, ranAt: number, result: RunResult): void {
 	save();
 }
 
+/**
+ * The scrollback cleared, as a terminal's screen is (da-3eczg): what the
+ * commands printed goes, Up still recalls them, and the database is
+ * untouched.
+ */
+export function clearScrollback(): void {
+	cli.update(({ history }) => ({ scrollback: [], history }));
+	save();
+}
+
 let pending: ReturnType<typeof setTimeout> | undefined;
 
 /** Queue a write; commands arrive in bursts and the store is not fast. */

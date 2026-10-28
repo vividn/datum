@@ -90,7 +90,7 @@
 	import { fly } from 'svelte/transition';
 	import Brand from '#lib/Brand.svelte';
 	import CliEntry from '#lib/CliEntry.svelte';
-	import { cli, type Command } from '#lib/cliStore.ts';
+	import { clearScrollback, cli, type Command } from '#lib/cliStore.ts';
 	import { parseEcho } from '#lib/echo.ts';
 	import { ACTION_MS, ERROR_MS, commandsOpen, focusLine, marks, peel, pills, prefill, text } from '#lib/bar.ts';
 	import CommandPane from '#lib/layout/CommandPane.svelte';
@@ -312,6 +312,46 @@
 		});
 	}
 
+	/**
+	 * THE × PAST THE NEWEST (da-3eczg). vividn, 2026-10-28: «dragging the
+	 * collapsed view further to the left should eventually show an x icon
+	 * with clear written under it which clears the scrollback». A finger
+	 * going on left once the strip stands at its newest end pulls the strip
+	 * off the × behind it, ever less as it goes (the nowview's stop at now,
+	 * #1288); let go with the × whole in view, it clears the scrollback, and
+	 * short of that the strip springs back and nothing happens. No dialog:
+	 * the gesture is the act, and its threshold lies past the end, so a
+	 * scroll that only reaches the newest never clears. Focused, the × is
+	 * shown, so a keyboard reaches it.
+	 *
+	 * Read from TOUCH events: the strip scrolls natively, and the browser
+	 * cancels the pointer it pans with but goes on telling the page where
+	 * the finger is.
+	 */
+	const CLEAR_PX = 56;
+	/** The pull's limit; the finger travels this far past the end to show the × whole. */
+	const STRETCH_PX = 2 * CLEAR_PX;
+	/** Where the finger was as the strip stood at its end, or null; and how far left of it it is. */
+	let endAt: number | null = null;
+	let over = $state(0);
+	let focused = $state(false);
+	const pull = $derived(
+		focused ? CLEAR_PX : still() ? (over >= STRETCH_PX ? CLEAR_PX : 0) : over / (1 + over / STRETCH_PX)
+	);
+
+	/** A second finger calls the pull off: what it pulled goes back, and a lift clears nothing. */
+	function onTouchMove(event: TouchEvent): void {
+		if (!roll) return;
+		const x = event.touches.length === 1 ? event.touches[0].clientX : null;
+		if (x === null || endAt === null || x > endAt) endAt = x !== null && atEnd(roll) ? x : null;
+		over = x === null || endAt === null ? 0 : endAt - x;
+	}
+
+	function onTouchEnd(event: TouchEvent): void {
+		if (event.type === 'touchend' && !event.touches.length && over >= STRETCH_PX) clearScrollback();
+		endAt = null;
+		over = 0;
+	}
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -332,34 +372,67 @@
 		     is where it has finished. Clipped while it is part-way, from the
 		     top: what shows first is the foot of the row, next to the input. -->
 		<div class="section output">
-			<div class="roll" bind:this={roll} onscroll={() => (reread(), fill())}>
-				<div class="track" bind:this={track}>
-					<!-- ROWS OF THE HISTORY, not a second rendering of them.
-					     vividn, 2026-09-21: "the output section … should actually
-					     *be* the first line of the repl. … It should also have the
-					     same format as the rest of the repl." So each group mounts
-					     the same `CliEntry` the log does — stamp, echo line and
-					     all — and the log ends at the row before the newest
-					     (`skip={1}` in BarLog.svelte).
+			<!-- The × and the strip, with ONE right edge: the section's padding
+			     is outside it, so nothing of the × shows past the strip at rest. -->
+			<div class="pull">
+				<!-- Behind the strip's right end, until a pull past the newest or a
+				     focus slides the strip off it (da-3eczg). The commands on
+				     screen go, never an entry. -->
+				{#if $cli.scrollback.length}
+					<button
+						type="button"
+						class="clear-strip"
+						aria-label="clear the scrollback"
+						style:width="{CLEAR_PX}px"
+						title="clear the scrollback: the commands on screen, not your data"
+						onfocus={() => (focused = true)}
+						onblur={() => (focused = false)}
+						onclick={() => ((focused = false), clearScrollback(), focusLine(true))}
+						><span aria-hidden="true">×</span>clear</button
+					>
+				{/if}
+				<!-- The touch handlers only watch a scroll for its overscroll; the ×
+				     itself is the keyboard's way. -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="roll"
+					class:pulling={over > 0}
+					style:transform={pull ? `translateX(${-pull}px)` : undefined}
+					bind:this={roll}
+					onscroll={() => (reread(), fill())}
+					ontouchstart={onTouchMove}
+					ontouchmove={onTouchMove}
+					ontouchend={onTouchEnd}
+					ontouchcancel={onTouchEnd}
+				>
+					<div class="track" bind:this={track}>
+						<!-- ROWS OF THE HISTORY, not a second rendering of them.
+						     vividn, 2026-09-21: "the output section … should actually
+						     *be* the first line of the repl. … It should also have the
+						     same format as the rest of the repl." So each group mounts
+						     the same `CliEntry` the log does — stamp, echo line and
+						     all — and the log ends at the row before the newest
+						     (`skip={1}` in BarLog.svelte).
 
-					     ONE GROUP A COMMAND, its documents side by side inside it
-					     and a rule between it and the next, under the command's
-					     own head: vividn, «make sure that it is clear where the
-					     boundaries between different commands are». A group is as
-					     wide as the documents it echoed (da-7xp82), never wider
-					     than the row, where `+N` holds the rest; a
-					     command whose answer is printed text — a table, a
-					     picture, an error — takes the row's whole width, as it
-					     takes a whole row in the history (scrollback.ts). `cap`
-					     is more lines than the section holds: the raw output
-					     stands on the group's foot and the lines that do not fit
-					     are cut from the top, so a `tail` shows its newest rows. -->
-					{#each strip as entry (entry)}
-						{@const docs = parseEcho(entry.result.stdout)?.length ?? 0}
-						<div class="group" class:wide={!docs} data-ran={entry.ranAt}>
-							<CliEntry {entry} cap={12} />
-						</div>
-					{/each}
+						     ONE GROUP A COMMAND, its documents side by side inside it
+						     and a rule between it and the next, under the command's
+						     own head: vividn, «make sure that it is clear where the
+						     boundaries between different commands are». A group is as
+						     wide as the documents it echoed (da-7xp82), never wider
+						     than the row, where `+N` holds the rest; a
+						     command whose answer is printed text — a table, a
+						     picture, an error — takes the row's whole width, as it
+						     takes a whole row in the history (scrollback.ts). `cap`
+						     is more lines than the section holds: the raw output
+						     stands on the group's foot and the lines that do not fit
+						     are cut from the top, so a `tail` shows its newest rows. -->
+						{#each strip as entry (entry)}
+							{@const docs = parseEcho(entry.result.stdout)?.length ?? 0}
+							<div class="group" class:wide={!docs} data-ran={entry.ranAt}>
+								<CliEntry {entry} cap={12} />
+							</div>
+						{/each}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -547,6 +620,41 @@
 		border-bottom: 1px solid var(--tint);
 	}
 
+	.pull {
+		position: relative;
+		flex: none;
+	}
+
+	/* THE × PAST THE NEWEST (da-3eczg): at the strip's right edge, under
+	   it, and the strip is opaque, so it covers the × until it slides off. */
+	.clear-strip {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		height: calc(var(--output-height) - 1px);
+		padding: 0;
+		background: none;
+		border: none;
+		color: var(--quiet);
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		font-size: 0.7rem;
+		cursor: pointer;
+	}
+
+	.clear-strip span {
+		font-size: 1.6rem;
+		line-height: 1;
+	}
+
+	.clear-strip:hover,
+	.clear-strip:focus-visible {
+		color: var(--ink-bright);
+	}
+
 	/* THE STRIP (da-qua5g): one row of commands that scrolls sideways, the
 	   row's whole height — the section's, less the rule under it. A size
 	   container, so a group is sized in shares of the row (`cqw`) and
@@ -564,10 +672,19 @@
 		line-height: 1.35;
 		overflow-x: auto;
 		overflow-y: hidden;
-		overscroll-behavior-x: contain;
+		/* Past the end, the pull is the page's (da-3eczg), not the browser's stretch. */
+		overscroll-behavior-x: none;
 		scrollbar-width: thin;
 		container-type: inline-size;
 		touch-action: pan-x;
+		position: relative;
+		z-index: 1;
+		background: var(--ground);
+	}
+
+	/* Let go short of the ×, the strip springs back over it; under a finger, it follows. */
+	.roll:not(.pulling) {
+		transition: transform 0.2s ease-out;
 	}
 
 	/* At least the row's width, and the groups at its RIGHT end while they
@@ -902,6 +1019,9 @@
 	@media (prefers-reduced-motion: reduce) {
 		.marks {
 			animation: none;
+		}
+		.roll:not(.pulling) {
+			transition: none;
 		}
 	}
 
