@@ -1,0 +1,41 @@
+# The release `datum`'s sha256, stated by a runner and not by the box root installs on (da-8npnw):
+# the job's last lines are `commit <sha>` and `<sha256>  target/release/datum`, which whoever
+# installs datum as root compares with scripts/release-sha256.sh run on the box at that commit.
+# The C compiler and glibc are in the binary (rusqlite's SQLite, the crt objects), so the job
+# builds on the box's Debian, trixie, not on CI's bookworm; the script prints both versions first.
+name: release-sha256
+
+on:
+  push:
+    branches: [main]
+
+# Every main commit gets its statement: a newer push queues behind a run, never cancels it.
+concurrency:
+  group: release-sha256
+  cancel-in-progress: false
+
+jobs:
+  release-sha256:
+    runs-on: ubuntu-latest
+    container:
+      image: node:22-trixie
+    timeout-minutes: 60
+    steps:
+      # Full history: `datum --version` holds the commit height, which a shallow clone cannot count.
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      # ci.yml's install, under its lock and only when missing.
+      - name: Install rustup and the pinned toolchain
+        run: |
+          set -euo pipefail
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          mkdir -p "$HOME/.cargo" && exec 9>"$HOME/.cargo/.ci-install.lock" && flock 9
+          RUSTUP_AUTO_INSTALL=0 rustup --version >/dev/null 2>&1 ||
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+          rustup toolchain install --no-self-update
+
+      - name: scripts/release-sha256.sh
+        run: scripts/release-sha256.sh
