@@ -55,10 +55,11 @@ export class Node {
     /**
      * Bind the endpoint whose key is `key` (hex, `datum sync
      * endpoint-key`), on n0's relays or the one `relay` names. `datum`
-     * and `schema` are what the CLI runs (`sync status --json`'s `this`).
+     * `schema` and `floor` are what the CLI runs (`sync status --json`'s
+     * `this`).
      * `idle` is `DATUM_SYNC_TIMEOUT_S` for a page's tests, every node's.
      */
-    static bind(key: string, relay: string | null | undefined, idle: number | null | undefined, label: string, datum: string, schema: number, run: Function, progress: Function, serving: Function): Promise<Node>;
+    static bind(key: string, relay: string | null | undefined, idle: number | null | undefined, label: string, datum: string, schema: number, floor: number, run: Function, progress: Function, serving: Function): Promise<Node>;
     close(): Promise<void>;
     /**
      * `datum sync chain connect [--label]`: redeem `ticket` as `label`,
@@ -113,7 +114,7 @@ export interface InitOutput {
     readonly about: (a: number, b: number, c: number) => void;
     readonly node_accept: (a: number) => number;
     readonly node_addr: (a: number, b: number) => void;
-    readonly node_bind: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
+    readonly node_bind: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => number;
     readonly node_close: (a: number) => number;
     readonly node_connect: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly node_dial: (a: number, b: number, c: number) => number;
@@ -134,15 +135,15 @@ export interface InitOutput {
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: number) => number;
     readonly ring_core_0_17_14__bn_mul_mont: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly __wasm_bindgen_func_elem_14982: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_14984: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_6268: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_3753: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_7974: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_6066: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7176: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7240: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_14838: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14991: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_14993: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_6277: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_3762: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_7983: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_6075: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_7185: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_7249: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14847: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
