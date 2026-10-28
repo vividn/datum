@@ -628,7 +628,9 @@ through the hidden `sync pipe records` and `sync handshake --records`.
 
 ### The command tree
 
-The tree: `sync`, `status`, `pause | resume`, `diff <WHO>`, `refold`, `chain
+The tree: `sync`, `status`, `grid` (every device against every chain this
+install's databases are in, by device key and chain id, read only, da-n0uj1.3),
+`pause | resume`, `diff <WHO>`, `refold`, `chain
 invite | connect | leave | list | rename | expel | unjoin | ack | rekey`,
 `admin list | add | remove`, `daemon install | uninstall | status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync

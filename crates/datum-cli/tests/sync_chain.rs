@@ -12,18 +12,21 @@ use tempfile::TempDir;
 
 struct Copy {
     tmp: TempDir,
+    /// The database file in `tmp` its commands run on.
+    db: std::cell::Cell<&'static str>,
 }
 
 impl Copy {
     fn new() -> Self {
         Self {
             tmp: tempfile::tempdir().expect("create tmpdir"),
+            db: std::cell::Cell::new("data.db"),
         }
     }
 
     fn cmd(&self, args: &[&str]) -> Command {
         let mut c = Command::new(env!("CARGO_BIN_EXE_datum"));
-        c.env("DATUM_DB", self.tmp.path().join("data.db"))
+        c.env("DATUM_DB", self.tmp.path().join(self.db.get()))
             .env("DATUM_HOME", self.tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", self.tmp.path().join("config"))
             .env("NO_COLOR", "1")
@@ -120,7 +123,7 @@ impl Copy {
     }
 
     fn query(&self, sql: &str) -> String {
-        rusqlite::Connection::open(self.tmp.path().join("data.db"))
+        rusqlite::Connection::open(self.tmp.path().join(self.db.get()))
             .unwrap()
             .query_row(sql, [], |r| {
                 let v: rusqlite::types::Value = r.get(0)?;
@@ -134,7 +137,7 @@ impl Copy {
     }
 
     fn exec(&self, sql: &str) {
-        rusqlite::Connection::open(self.tmp.path().join("data.db"))
+        rusqlite::Connection::open(self.tmp.path().join(self.db.get()))
             .unwrap()
             .execute_batch(sql)
             .unwrap();
@@ -2464,7 +2467,7 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     }
     assert_eq!(
         top,
-        ["status", "pause", "resume", "diff", "refold", "chain", "admin", "daemon"]
+        ["status", "grid", "pause", "resume", "diff", "refold", "chain", "admin", "daemon"]
     );
     assert_eq!(
         complete(&["chain"]),
@@ -3475,6 +3478,7 @@ fn a_copy_whose_only_other_is_a_filtered_reader_never_warns() {
     assert!(!out.contains("reached no other device"), "{out}");
 }
 
+mod grid;
 mod list;
 mod orphans;
 mod purge;

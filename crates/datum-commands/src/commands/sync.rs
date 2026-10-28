@@ -273,6 +273,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 serde_json::from_str(&input).context("stdin is not a JSON array of hids")?;
             println!("{}", json!(db.sync_held(peer.as_deref(), &hids)?));
         }
+        SyncCommand::Grid { show } => super::sync_grid::grid(db, show == ShowFlag::Json)?,
         SyncCommand::Refold { dry_run, show } => {
             super::sync_diagnose::refold(db, dry_run, show == ShowFlag::Json)?
         }

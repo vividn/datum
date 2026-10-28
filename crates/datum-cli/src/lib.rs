@@ -301,7 +301,7 @@ fn reads(command: &Command) -> bool {
                 | Command::Db(DbCommand::Backup(_))
                 | Command::Spec(SpecCommand::List { .. } | SpecCommand::Show { .. })
                 | Command::Alias(AliasCommand::List { .. } | AliasCommand::Show { .. })
-                | Command::Sync(SyncCommand::Status { .. })
+                | Command::Sync(SyncCommand::Status { .. } | SyncCommand::Grid { .. })
         )
 }
 

@@ -1054,6 +1054,11 @@ pub enum SyncCommand {
         dry_run: bool,
         show: Show,
     },
+    /// `datum sync grid [--json]` (da-n0uj1.3): devices × the chains this
+    /// install holds, each cell the device's standing in that chain.
+    Grid {
+        show: Show,
+    },
     /// Hidden: `datum sync run` — stay up: serve members and push new ops.
     Run,
     /// `datum sync daemon install | uninstall | status` (da-vd2sn): the

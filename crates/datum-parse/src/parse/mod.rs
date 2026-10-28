@@ -519,6 +519,7 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
                 SyncCommand::Members { show: s, .. }
                 | SyncCommand::AdminList { show: s }
                 | SyncCommand::Status { show: s, .. }
+                | SyncCommand::Grid { show: s }
                 | SyncCommand::Apply { show: s }
                 | SyncCommand::Diff { show: s, .. }
                 | SyncCommand::Refold { show: s, .. }

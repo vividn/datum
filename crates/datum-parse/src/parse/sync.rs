@@ -26,6 +26,12 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             show_revoked: opts(&mut rest, &[], &["show-revoked"], 0..=0)?.on("show-revoked"),
         },
         "pause" => SyncCommand::Pause,
+        "grid" => {
+            opts(&mut rest, &[], &[], 0..=0)?;
+            SyncCommand::Grid {
+                show: Show::Default,
+            }
+        }
         "resume" => SyncCommand::Resume,
         "diff" => SyncCommand::Diff {
             who: opts(&mut rest, &[], &[], 1..=1)?.positional.remove(0),
