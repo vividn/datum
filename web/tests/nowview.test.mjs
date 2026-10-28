@@ -1041,24 +1041,31 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 		return keys.length ? keys.reduce((s, k) => s + b.at[k] - a.at[k], 0) / keys.length : NaN;
 	};
 
-	/** One finger through CDP, or the mouse: down at `from`, moved `by` px in `steps`, lifted at once. */
-	async function flick(page, from, by, { steps = 6, midway, mouse = false } = {}) {
-		if (mouse) {
-			await page.mouse.move(from.x, from.y);
-			await page.evaluate(noWait);
-			await page.mouse.down();
-			for (let i = 1; i <= steps; i++) await page.mouse.move(from.x + (by * i) / steps, from.y);
-			await midway?.();
-			return page.mouse.up();
-		}
+	/**
+	 * One finger or the mouse through CDP: down at `from`, moved `by` px in
+	 * `steps`, lifted `still` ms after the last move. The events carry their
+	 * own clock, a frame apart, so the flick is as fast however loaded the
+	 * runner is: left to the round trips, a loaded CI box spaced them past
+	 * what the page reads as a pointer held still, and nothing coasted
+	 * (da-couf7, as da-bwvuu was for the day strip's taps).
+	 */
+	async function flick(page, from, by, { steps = 6, still = 0, mouse = false } = {}) {
 		const cdp = await page.context().newCDPSession(page);
-		const at = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ id: 1, x, y: from.y }] });
+		const t0 = Date.now() / 1000;
+		const when = (i) => t0 + (i * 16 + (i > steps ? still : 0)) / 1000;
+		const x = (i) => from.x + (by * Math.min(i, steps)) / steps;
+		const touch = (type, i) =>
+			cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ id: 1, x: x(i), y: from.y }], timestamp: when(i) });
+		const mice = { touchStart: 'mousePressed', touchMove: 'mouseMoved', touchEnd: 'mouseReleased' };
+		const press = (type, i) =>
+			cdp.send('Input.dispatchMouseEvent', { type: mice[type], x: x(i), y: from.y, button: 'left', buttons: type === 'touchEnd' ? 0 : 1, clickCount: 1, timestamp: when(i) });
+		const at = mouse ? press : touch;
 		try {
+			if (mouse) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x, y: from.y, timestamp: t0 - 0.016 });
 			await page.evaluate(noWait);
-			await at('touchStart', from.x);
-			for (let i = 1; i <= steps; i++) await at('touchMove', from.x + (by * i) / steps);
-			await midway?.();
-			await at('touchEnd');
+			await at('touchStart', 0);
+			for (let i = 1; i <= steps; i++) await at('touchMove', i);
+			await at('touchEnd', steps + 1);
 		} finally {
 			await cdp.detach();
 		}
@@ -1108,7 +1115,7 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 				const { page } = app;
 				const box = await seeded(app);
 				await record(page);
-				await flick(page, { x: box.x + 40, y: box.y + box.height / 2 }, 160, { mouse: true, midway: () => page.waitForTimeout(100) });
+				await flick(page, { x: box.x + 40, y: box.y + box.height / 2 }, 160, { mouse: true, still: 100 });
 				const frames = await settle(page);
 				const up = frames.findLastIndex((f) => f.down) + 1;
 				assert.ok(shift(frames[0], frames[up - 1]) > 100, 'the drag did not move the band');

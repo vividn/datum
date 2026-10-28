@@ -722,8 +722,8 @@
 		caught = false;
 	}
 
-	/** Run the machine to where the pointer is now, and do what the mode does. */
-	function step(x: number, y: number): void {
+	/** Run the machine to where the pointer is now, at `t` (its event's own time), and do what the mode does. */
+	function step(x: number, y: number, t = performance.now()): void {
 		if (!press || !axis) return;
 		if (mode === 'scrub') return pointAt(selection(instantAt(x, y)));
 		const was = mode;
@@ -738,7 +738,7 @@
 		if (mode === 'range' && was !== 'range') pointAt(selection(instantAt(press.x, press.y)));
 		if (mode === 'pan') {
 			raw = along(x, y) - along(press.x, press.y);
-			moves = [...moves.slice(-7), { t: performance.now(), raw }];
+			moves = [...moves.slice(-7), { t, raw }];
 			panned = stopAtNow(raw);
 		}
 		if (mode === 'range') range(instantAt(press.x, press.y), instantAt(x, y));
@@ -839,10 +839,15 @@
 		return limit - over / (1 + over / STRETCH_PX);
 	}
 
-	/** The speed of the last tenth of a second before the lift, in px per ms; none for a pointer held still. */
-	function speed(): number {
+	/**
+	 * The speed of the last tenth of a second before a lift at `t`, in px per
+	 * ms; none for a pointer held still. Every time is the input's own
+	 * (`event.timeStamp`), not when its handler ran: a frame the page
+	 * stalled at the lift read a flick as held still (da-couf7).
+	 */
+	function speed(t: number): number {
 		const end = moves.at(-1);
-		if (!end || performance.now() - end.t > 60) return 0;
+		if (!end || t - end.t > 60) return 0;
 		const from = moves.find((m) => end.t - m.t <= 100) ?? end;
 		const v = end.t > from.t ? (end.raw - from.raw) / (end.t - from.t) : 0;
 		return Math.max(-FLICK_MAX, Math.min(FLICK_MAX, v));
@@ -893,7 +898,7 @@
 		const still = Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP_PX;
 		// A flick coasts on, a finger's or a mouse's (da-w57do); one held still first stops where it is let go.
 		if (mode === 'pan') {
-			const v = speed();
+			const v = speed(event.timeStamp);
 			drop();
 			return glide(v);
 		}
@@ -1127,7 +1132,7 @@
 		}
 		if (!press) return;
 		last = { x: event.clientX, y: event.clientY };
-		step(event.clientX, event.clientY);
+		step(event.clientX, event.clientY, event.timeStamp);
 	}
 
 	function onPointerUp(event: PointerEvent): void {
