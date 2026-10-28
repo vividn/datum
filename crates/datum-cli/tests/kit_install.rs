@@ -206,7 +206,7 @@ const ICON: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10
 
 /// A `[[field]]` that says everything `setup` can (da-dtmlv), states
 /// written out of alphabetical order.
-fn whole_field_kit() -> String {
+pub(crate) fn whole_field_kit() -> String {
     format!(
         r##"[kit]
 name = "k"

@@ -27,10 +27,15 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
     }
     match sub {
         SpecCommand::Show { field, show } => match db.load_spec(&field)? {
-            Some(spec) if show == Show::Json => {
-                println!("{}", serde_json::to_string_pretty(&spec_json(&spec))?)
+            Some(spec) => {
+                let raw = db.spec_entry(&field)?.and_then(|e| e.data);
+                warn_keys(&spec, raw.as_ref());
+                if show == Show::Json {
+                    println!("{}", serde_json::to_string_pretty(&spec_json(&spec))?)
+                } else {
+                    print!("{}", Block::of(&spec, ignored(db, &field)?).render(None))
+                }
             }
-            Some(spec) => print!("{}", Block::of(&spec, ignored(db, &field)?).render(None)),
             None => println!(
                 "No spec defined for field '{field}'; set one up: `datum setup {field} --verb occur` \
                  (or start, switch, add; `datum help logging` says what each is)"
@@ -390,6 +395,12 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     }
 
     spec.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
+    let raw = args
+        .from_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()?;
+    warn_keys(&spec, raw.as_ref());
 
     // Always regenerate derived aliases from the current shape.
     spec.regenerate_derived_aliases();
@@ -768,6 +779,14 @@ fn fetches(value: &str) -> bool {
                 _ => !DRAWS.contains(&name),
             }
         })
+}
+
+/// A spec's keys outside the keys a spec carries, each said on stderr
+/// (da-las9r): `raw` is the document as written, where an old key shows.
+fn warn_keys(spec: &FieldSpec, raw: Option<&JsonValue>) {
+    for w in spec.key_warnings(raw) {
+        eprintln!("{w}");
+    }
 }
 
 /// Print the `⚠ auto-alias … skipped` lines from a save report to stderr.

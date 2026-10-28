@@ -23,7 +23,9 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{DatumError, Result};
-use crate::field_spec::{Alias, FieldSpec, Render, SubfieldSpec, SymbolBy, DEFAULT_FIELD_HEIGHT};
+use crate::field_spec::{
+    Alias, FieldSpec, Render, SubfieldSpec, SymbolBy, DEFAULT_FIELD_HEIGHT, GLYPH_KEYS,
+};
 
 /// Top-level TOML schema. `[kit]` is required; `[[field]]`, `[[view]]`,
 /// `[[alias]]`, `[[index]]`, and `[[command]]` may all be empty.
@@ -733,6 +735,36 @@ fn fill(v: &mut toml::Value, values: &BTreeMap<String, String>) -> std::result::
         _ => {}
     }
     Ok(())
+}
+
+/// One warning for each old symbol key (da-yc5vi) a `[[field]]` of the kit
+/// TOML `src` or one of its states uses (da-las9r): read as its new name,
+/// so the kit installs, and said, so it is renamed.
+pub fn deprecated_keys(src: &str) -> Vec<String> {
+    let Ok(doc) = src.parse::<toml::Table>() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let fields = doc.get("field").and_then(toml::Value::as_array);
+    for f in fields
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_table)
+    {
+        let name = f.get("name").and_then(toml::Value::as_str).unwrap_or("?");
+        let states = f.get("states").and_then(toml::Value::as_table);
+        let states = states.into_iter().flatten();
+        let tables = std::iter::once((String::new(), f))
+            .chain(states.filter_map(|(s, t)| Some((format!(" state '{s}'"), t.as_table()?))));
+        for (at, t) in tables {
+            for (old, new) in GLYPH_KEYS.iter().filter(|(old, _)| t.contains_key(*old)) {
+                out.push(format!(
+                    "⚠ kit field '{name}'{at}: `{old}` is deprecated, read as `{new}`"
+                ));
+            }
+        }
+    }
+    out
 }
 
 /// `field.3.unti` → `kit TOML: [[field]] water: unknown key «unti»`: an

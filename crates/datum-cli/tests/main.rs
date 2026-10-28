@@ -118,6 +118,7 @@ mod show_env;
 mod show_flag_family;
 mod show_json;
 mod spec_cmd;
+mod spec_doc_keys;
 mod spec_entries;
 mod spec_grammar;
 mod spec_json_order;

@@ -214,6 +214,9 @@ fn install_toml(
     trust: &mut impl TrustGate,
 ) -> Result<()> {
     let kit = KitToml::from_str(src)?;
+    for w in datum_core::kit::deprecated_keys(src) {
+        eprintln!("{w}");
+    }
 
     if kit.kit.name.trim().is_empty() {
         anyhow::bail!("kit TOML at {from} is missing [kit].name");

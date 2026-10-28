@@ -20,7 +20,7 @@ use crate::action::Action;
 use crate::db::spec::{SPEC_DISPLACED_KEY, SPEC_KIT_KEY};
 pub use datum_parse::spec_keys::{parse_key_decl, DeclaredKey, KeyKind};
 
-use super::presentation::PresentationSpec;
+use super::presentation::{PresentationSpec, GLYPH_KEYS};
 use super::retired::RETIRED;
 use super::DerivedAlias;
 use super::DerivedAliasKind;
@@ -237,10 +237,12 @@ pub struct FieldSpec {
     #[serde(default, flatten, deserialize_with = "PresentationSpec::read")]
     pub presentation: PresentationSpec,
 
-    /// Every key this datum does not know (da-klaf8) — a newer datum's —
-    /// written back as read, so a save here never erases it on every copy.
-    /// After `presentation`, which takes its own keys first; a key a later
-    /// datum names is a field there and never lands here.
+    /// Every key this datum does not know (da-klaf8) — a newer datum's, or a
+    /// typo — written back as read, so a save here never erases it on every
+    /// copy. After `presentation`, which takes its own keys first; a key a
+    /// later datum names is a field there and never lands here. The keys a
+    /// spec may carry are this struct's own, so this map is the ones outside
+    /// them, which [`FieldSpec::key_warnings`] names (da-las9r).
     #[serde(default, flatten, deserialize_with = "unknown_keys")]
     pub extra: serde_json::Map<String, JsonValue>,
 
@@ -350,6 +352,24 @@ impl FieldSpec {
             extra: serde_json::Map::new(),
             template: None,
         }
+    }
+
+    /// One warning for each key of this spec outside the keys a spec carries
+    /// (da-las9r): an old symbol key `raw`, the document as written, holds
+    /// ([`GLYPH_KEYS`]), which is read as its new name, and each key in
+    /// [`Self::extra`], which is kept.
+    pub fn key_warnings(&self, raw: Option<&JsonValue>) -> Vec<String> {
+        let old = GLYPH_KEYS
+            .iter()
+            .filter(|(old, _)| raw.is_some_and(|r| r.get(old).is_some()))
+            .map(|(old, new)| format!("`{old}` is deprecated, read as `{new}`"));
+        let unknown = self
+            .extra
+            .keys()
+            .map(|k| format!("`{k}` is no key a spec has, kept as written"));
+        old.chain(unknown)
+            .map(|why| format!("⚠ spec '{}': {why}", self.field))
+            .collect()
     }
 
     /// Append `tag` to `tags` if it isn't already present. Returns true when
