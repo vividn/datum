@@ -791,7 +791,11 @@ binary.
   answers with its ACTION words along the bottom of it STARTING AT THE `❯`,
   in the color the CLI paints the tag (`Outcome::hex`, carried as
   `action_color` on `--show json`), fading, or a red `ERROR` that opens the
-  output on a tap. OVER the bar is the history, oldest first and the
+  output on a tap. The `❯` is a button (`commandsOpen` in `$lib/bar.ts`,
+  da-xw655): pressed, it turns a quarter, fills, and slides the command
+  widget up over the output section at its height; the `❯` again, Escape,
+  a run (`pressWithPills`, the output then showing it) or a choice that
+  fills the line takes it away. OVER the bar is the history, oldest first and the
   newest nearest the input (`$lib/BarLog.svelte`), its rows scrolling as
   a terminal's do. The CLI widget (`cli`; the `repl` kind until da-mwp4m,
   which a stored layout still opens as it) is that history as a pane, and

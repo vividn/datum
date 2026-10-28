@@ -409,6 +409,15 @@ export const dropHids = (gone: string[]): void => {
 };
 
 /**
+ * The command widget slid up over the output section (da-xw655), opened
+ * and closed by the `❯` (Prompt.svelte). vividn, 2026-10-27: «the ❯ become
+ * a button … When it is clicked … the command widget slides up overtop the
+ * output section»; it closes on the `❯` again, on Escape, on a run
+ * (`pressWithPills`) and on a choice that fills the line (CommandPane).
+ */
+export const commandsOpen = writable(false);
+
+/**
  * What is typed at the command line, wherever it is drawn. THE buffer:
  * every `Prompt.svelte` binds its box straight to this store.
  */

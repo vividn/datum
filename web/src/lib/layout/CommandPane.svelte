@@ -42,7 +42,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import CommandsWidget from '$lib/CommandsWidget.svelte';
-	import { clearUnlockedPills, pills, prefill, text, type Pill } from '$lib/bar.js';
+	import { clearUnlockedPills, commandsOpen, pills, prefill, text, type Pill } from '$lib/bar.js';
 	import { argumentsOf, opensField, withFlag } from '$lib/commands.js';
 	import { openField } from '$lib/fieldWidget.js';
 	import { run } from '$lib/run.js';
@@ -88,6 +88,9 @@
 	}
 
 	function fill({ name, line, keyboard, spend, held }: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }): void {
+		// A choice closes the widget over the output, as a run does (da-xw655);
+		// a hold stays, for the flags it opens.
+		if (!held) commandsOpen.set(false);
 		const field = argumentsOf($pills).find((p) => p.kind === 'field');
 		if (!held && opensField(name, $pills)) {
 			if (field) clearUnlockedPills([field]);

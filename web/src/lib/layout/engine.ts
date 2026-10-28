@@ -16,7 +16,8 @@
 
 import { tick } from 'svelte';
 import { get, writable } from 'svelte/store';
-import { clearUnlockedPills, dropHids, focusLine, pills, showGhost } from '$lib/bar.js';
+import { clearUnlockedPills, commandsOpen, dropHids, focusLine, pills, showGhost } from '$lib/bar.js';
+import { openOutput } from '$lib/log.js';
 import { grammarOf, type Grammar, type GrammarEntry } from '$lib/commands.js';
 import { withPills } from '$lib/selection.js';
 import { shellJoin } from '$lib/shellSplit.js';
@@ -391,6 +392,11 @@ async function alone(argv: string[], line?: string, stdin?: string, env?: string
  * pills beside it and fade with it (da-xfa4, `spent` in $lib/bar.ts).
  */
 export const pressWithPills = async (argv: string[], line?: string): Promise<RunResult> => {
+	// A run closes the command widget over the output, which then shows it (da-xw655).
+	if (get(commandsOpen)) {
+		commandsOpen.set(false);
+		openOutput();
+	}
 	// Pressed while datum boots (da-ch6oc), a press with pills waits for the
 	// grammar that places them; on the clock it was pressed at, either way.
 	const env = gesture();

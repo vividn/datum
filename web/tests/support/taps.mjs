@@ -144,6 +144,12 @@ async function reset(app, line, layout = false) {
 	// root bar's (?), which is the one a page without the commands pane has
 	// (collect, da-mwp4m).
 	if ((await page.locator('.command.help.armed, .root-bar .help.armed').count()) > 0) await page.keyboard.press('Escape');
+	// The `❯` leaves the commands over the output (da-xw655), the top layer,
+	// which Escape takes before the history under it.
+	if ((await page.locator('#bar-commands').count()) > 0) {
+		await page.keyboard.press('Escape');
+		await page.locator('#bar-commands').waitFor({ state: 'detached' });
+	}
 	// The bar's handle, tapped at the row, leaves the history full screen over
 	// the page (da-0b2vy): Escape brings it back to the row.
 	if ((await page.locator('.log.full').count()) > 0) {

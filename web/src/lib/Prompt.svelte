@@ -77,11 +77,18 @@
 	typed and entered, blank lines and `#` lines skipped; the first that
 	fails stops it, and stays in the box with the lines after it held
 	behind it (`+N`), so Enter, once it is fixed, goes on from there.
+
+	THE `❯` IS A BUTTON in the bar (da-xw655): a circle around the chevron.
+	vividn, 2026-10-27: «When it is clicked … it rotates 90 degress (with
+	animation please), inverts colors, (so that the button is filled in and
+	the chevron is empty), and the command widget slides up overtop the
+	output section» (`commandsOpen`, PromptBar.svelte). An input widget's
+	`❯` stays the mark it was: the widget is over nothing.
 -->
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
 	import { act } from '$lib/act.js';
-	import { clearLine, ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
+	import { clearLine, commandsOpen, ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
 	import { roleOf, valuedFlags } from '$lib/commands.js';
 	import Pill from '$lib/Pill.svelte';
 	import { fields, grammar, ready } from '$lib/layout/engine.js';
@@ -322,7 +329,21 @@
 </script>
 
 <form class="line" onsubmit={(event) => (event.preventDefault(), submit())}>
-	<span class="prompt">❯</span>
+	{#if widget}
+		<span class="prompt">❯</span>
+	{:else}
+		<!-- Not the box's: a press here never takes the caret, so a phone's
+		     keyboard stays down while the commands are up. -->
+		<button
+			type="button"
+			class="prompt"
+			class:open={$commandsOpen}
+			aria-label="Commands"
+			aria-expanded={$commandsOpen}
+			aria-controls="bar-commands"
+			onclick={() => commandsOpen.update((open) => !open)}><span>❯</span></button
+		>
+	{/if}
 	<!-- After the `❯`, not before it: the `❯` stays where it always stood,
 	     and the ACTION words that start under it (PromptBar.svelte) too. -->
 	{#if context.length}
@@ -478,6 +499,34 @@
 
 	.prompt {
 		color: var(--accent);
+	}
+
+	/* The circle, 24px at the least (conventions #12). Open, it turns a
+	   quarter and inverts: the circle filled, the chevron the ground. */
+	button.prompt {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		padding: 0;
+		border: 1.5px solid var(--accent);
+		border-radius: 50%;
+		background: none;
+		font: inherit;
+		font-size: 1rem;
+		line-height: 1;
+		cursor: pointer;
+		transition:
+			transform 160ms ease-out,
+			background-color 160ms ease-out,
+			color 160ms ease-out;
+	}
+
+	button.prompt.open {
+		transform: rotate(90deg);
+		background: var(--accent);
+		color: var(--ground);
 	}
 
 	/* Its own size, out of the scrollport: it stays put while the line
@@ -761,7 +810,8 @@
 		.spent {
 			animation: none;
 		}
-		.pills {
+		.pills,
+		button.prompt {
 			transition: none;
 		}
 	}

@@ -76,6 +76,13 @@
 	take form a little more", and half a shortcut now is a shortcut to
 	unpick later.
 
+	THE COMMANDS OVER THE OUTPUT (da-xw655): the `❯` is a button
+	(Prompt.svelte), and pressed it slides the command widget (CommandPane)
+	up over the output section, at the output's own height, over whatever
+	the bar shows there — the row, nothing, or the foot of the full log. It
+	slides away on the `❯` again, on Escape, on a run, which the output then
+	shows (`pressWithPills`), and on a choice that fills the line.
+
 	Everything the bar already did it still does: the pills, the ghost and
 	`spent` are the PROMPT's (Prompt.svelte, one buffer shared with every
 	input widget); `prefill` is taken here because the bar is the one view
@@ -85,11 +92,14 @@
 -->
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import { fly } from 'svelte/transition';
 	import Brand from '$lib/Brand.svelte';
 	import ReplEntry from '$lib/ReplEntry.svelte';
 	import { repl, type Command } from '$lib/replStore.js';
 	import { parseEcho } from '$lib/echo.js';
-	import { ACTION_MS, ERROR_MS, focusLine, marks, peel, pills, prefill, text } from '$lib/bar.js';
+	import { ACTION_MS, ERROR_MS, commandsOpen, focusLine, marks, peel, pills, prefill, text } from '$lib/bar.js';
+	import CommandPane from '$lib/layout/CommandPane.svelte';
+	import { epoch } from '$lib/layout/engine.js';
 	import { clockSecondsLabel, now } from '$lib/clock.js';
 	import { closeLog, full, inLog, openOutput, output, outputless, pressHandle, shown } from '$lib/log.js';
 	import { layout } from '$lib/layout/current.js';
@@ -281,8 +291,19 @@
 	 * and the peel takes only the line the key was pressed on, never one
 	 * written since.
 	 */
+	/** No slide for a reader who asked for no motion. */
+	const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 	function onKey(event: KeyboardEvent): void {
 		if (event.key !== 'Escape' || event.defaultPrevented) return;
+		// The commands are on top, so they go first — after the dispatch,
+		// since their own subcommands and flags (CommandsWidget) take the
+		// key before them and mounted after this listener.
+		if ($commandsOpen) {
+			if (!document.querySelector('dialog[open]'))
+				setTimeout(() => event.defaultPrevented || commandsOpen.set(false));
+			return;
+		}
 		if ($inLog) {
 			closeLog();
 			event.preventDefault();
@@ -423,6 +444,19 @@
 	     browser leaves the focus on the button pressed, and on a phone a
 	     focus would be the keyboard. And: "The ^ button obscures the text" —
 	     the target stands above the rule, off the row's text. -->
+	{#if $commandsOpen}
+		<!-- Clipped at the input's top, so it slides out from behind it. -->
+		<div class="commands-over">
+			<div
+				id="bar-commands"
+				class="commands"
+				transition:fly={{ y: '100%', opacity: 1, duration: still() ? 0 : 160 }}
+			>
+				<CommandPane epoch={$epoch} key="bar:commands" />
+			</div>
+		</div>
+	{/if}
+
 	{#if !$outputless}
 		<button
 			type="button"
@@ -819,6 +853,26 @@
 		background: none;
 		border: none;
 		cursor: grab;
+	}
+
+	/* Over the output, at its height, on the input's top edge; over the
+	   handle too, which is the output's and not what is in front. */
+	.commands-over {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: var(--input-height);
+		z-index: 22;
+		height: var(--output-height);
+		overflow: hidden;
+	}
+
+	.commands {
+		display: flex;
+		height: 100%;
+		background: var(--ground);
+		border-top: 1px solid var(--accent);
+		border-bottom: 1px solid var(--tint);
 	}
 
 	.tab {
