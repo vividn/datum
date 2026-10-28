@@ -1161,22 +1161,27 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 				const { page } = app;
 				const box = await seeded(app);
 				const y = box.y + box.height / 2;
+				const cdp = await page.context().newCDPSession(page);
+				const at = (type) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ id: 2, x: box.x + box.width / 2, y }] });
 				await record(page);
 				await flick(page, { x: box.x + 40, y }, 160);
-				// A few frames into the coast, a finger lands and stays.
+				// While the coast is measured moving, a finger lands and stays.
 				await page.waitForFunction(() => {
 					const f = window.__frames;
 					const up = f.findLastIndex((x) => x.down) + 1;
-					return up > 0 && f.length - up >= 4;
+					if (!(up > 0 && f.length - up >= 2)) return false;
+					const [a, b] = f.slice(-2);
+					const keys = Object.keys(a.at).filter((k) => k in b.at);
+					return keys.length > 0 && keys.reduce((s, k) => s + b.at[k] - a.at[k], 0) / keys.length > 1;
 				});
-				const cdp = await page.context().newCDPSession(page);
-				const at = (type) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ id: 2, x: box.x + box.width / 2, y }] });
 				await at('touchStart');
-				const caught = await page.evaluate(() => window.__frames.length);
-				await page.waitForFunction((n) => window.__frames.length >= n + 20, caught);
+				await page.waitForFunction(() => window.__frames.at(-1).down && window.__frames.length >= window.__frames.findLastIndex((x) => !x.down) + 20);
 				await at('touchEnd');
 				await cdp.detach();
 				const frames = await settle(page);
+				// The frame the finger landed in, as the page saw it, not when the test heard back.
+				const lift = frames.findIndex((f, i) => i > 0 && frames[i - 1].down && !f.down);
+				const caught = frames.findIndex((f, i) => i > lift && f.down);
 				// Moving when the finger landed, and from the next frame on, still.
 				assert.ok(shift(frames[caught - 3], frames[caught - 1]) > 1, 'the coast had stopped before the touch');
 				const later = frames.slice(caught + 1).map((f) => shift(frames[caught], f));
