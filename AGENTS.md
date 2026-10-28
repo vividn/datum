@@ -364,7 +364,12 @@ on `Hello` and `Welcome`, defaulted so a copy one version back still reads them
 — and the other records it (`sync_peers.datum` / `schema`, in `sync chain
 list`). A copy behind a member's schema syncs on and warns to upgrade, once per
 new version on stderr and for as long as it lasts in `sync status` and `datum
-check` (da-3zqyv).
+check` (da-3zqyv). A migration that changes the shape of what syncs raises the
+SYNC FLOOR instead (`SYNC_FLOORS` in `migrations/mod.rs`, da-ryhmi): each side
+says its floor in its handshake, and a copy below the other's is refused both
+ways before either writes anything, told «update datum to sync with <member>:
+it needs schema N, this copy runs M» (`Why::Upgrade`); what it wrote waits,
+unsent, until it updates.
 
 A round carries at most 8,192 ops, the lowest by HLC so each applies whole, and
 applies before the next is sent; rounds go on while full, so a big catch-up

@@ -118,9 +118,10 @@ export interface DbSync {
 		endpoint: string;
 		client: string;
 		label: string;
-		/** The build and schema this copy runs, which sync.ts says to every peer (da-3zqyv). */
+		/** The build, schema and sync floor this copy runs (da-ryhmi), which sync.ts says to every peer (da-3zqyv). */
 		datum: string;
 		schema: number;
+		floor: number;
 		reader?: boolean;
 		/** @shallow as a member's. */
 		filter?: Filter | null;

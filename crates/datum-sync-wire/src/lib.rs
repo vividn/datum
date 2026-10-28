@@ -71,7 +71,9 @@
 //!   `deny_unknown_fields`), and a new message or variant goes only to a copy
 //!   that said it reads it, as `typed` and `proves` say. A change that can't
 //!   be both bumps the ALPN, and two copies that speak different ones are
-//!   told so in words, [`Failure::Protocol`]. `tests/frames.json` holds one
+//!   told so in words, [`Failure::Protocol`]. A change to what the ops
+//!   carry raises the sync floor instead, a copy below it refused both ways
+//!   as [`Why::Upgrade`] (da-ryhmi). `tests/frames.json` holds one
 //!   frame of each kind as the previous version wrote it: this version must
 //!   read each, and write back every field it carried, or the test fails
 //!   until the ALPN is bumped on purpose. A kind or a field this version
@@ -422,6 +424,38 @@ pub struct Version {
     pub datum: String,
     #[serde(default)]
     pub schema: u32,
+    /// The lowest schema this copy syncs with (da-ryhmi): the highest a
+    /// migration it ran declared. A copy before it says none, and reads no
+    /// [`Why::Upgrade`].
+    #[serde(default)]
+    pub floor: Option<u32>,
+}
+
+/// Why `mine`, this copy's, and `theirs` can't sync (da-ryhmi): one runs a
+/// schema below the other's floor. The words this copy says, then those for
+/// the other: each names the other copy, and the one below is told to
+/// update.
+fn below_floor(mine: (&Version, &str), theirs: (&Version, &str)) -> Option<(String, String)> {
+    let upgrade = |with: &str, needs: u32, runs: u32| {
+        format!("update datum to sync with {with}: it needs schema {needs}, this copy runs {runs}")
+    };
+    let behind = |who: &str, runs: u32, needs: u32| {
+        format!("{who} runs schema {runs}, below this copy's sync floor {needs}: it must update datum to sync")
+    };
+    let floor = |v: &Version| v.floor.unwrap_or(0);
+    let ((m, me), (t, them)) = (mine, theirs);
+    if floor(t) > m.schema {
+        return Some((
+            upgrade(them, floor(t), m.schema),
+            behind(me, m.schema, floor(t)),
+        ));
+    }
+    (floor(m) > t.schema).then(|| {
+        (
+            behind(them, t.schema, floor(m)),
+            upgrade(me, floor(m), t.schema),
+        )
+    })
 }
 
 #[derive(Serialize, Deserialize)]
@@ -539,6 +573,10 @@ impl Reply {
                 why,
                 kind: Why::Other,
             },
+            (true, Why::Upgrade) if hello.version.floor.is_none() => Reply::Refusal {
+                why,
+                kind: Why::Other,
+            },
             (true, kind) => Reply::Refusal { why, kind },
         }
     }
@@ -554,7 +592,12 @@ fn refused(why: String, kind: Option<Why>) -> anyhow::Error {
         true => Why::UnknownInvite,
         false => Why::Other,
     });
-    Failed(Failure::Refused(kind), format!("refused: {why}")).into()
+    // Its words say what to do, naming the copy that refused.
+    let why = match kind {
+        Why::Upgrade => why,
+        _ => format!("refused: {why}"),
+    };
+    Failed(Failure::Refused(kind), why).into()
 }
 
 /// Sent between the chunks of a long apply; progress, and otherwise ignored.
@@ -724,6 +767,9 @@ pub enum Why {
     /// The refusing copy deleted itself, as the order the dialer carried
     /// said: only to a dialer that carried one (da-n0uj1.6).
     Wiped,
+    /// One of the two copies runs a schema below the other's sync floor
+    /// (da-ryhmi), and must update datum: the words say which.
+    Upgrade,
     Other,
 }
 
@@ -1285,6 +1331,15 @@ async fn session(
             keeps,
             version,
         } => {
+            // A copy below a floor writes nothing of the session (da-ryhmi);
+            // an acceptor that reads floors refused before it welcomed. One
+            // that welcomed reads no floors, so it has no frame for its own
+            // words: it is closed with `refused`, and they are not sent.
+            if let Some((why, _)) = below_floor((&hello.version, &hello.label), (&version, &label))
+            {
+                end(&mut s, &mut r, b"refused");
+                return Err(Failed(Failure::Refused(Why::Upgrade), why).into());
+            }
             // Welcomed, it holds no order that it delete itself: a datum
             // before it, or a chain that does not take this copy's records.
             // Nothing is sent to a copy the chain expelled.
@@ -1738,6 +1793,18 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Res
             return Err(Failed(Failure::Refused(Why::Wiped), why).into());
         }
     }
+    // Either copy below the other's sync floor (da-ryhmi): refused before
+    // the store's handshake, which writes, as either side.
+    let mine = store.version();
+    if let Some((here, there)) =
+        below_floor((&mine, &store.label()), (&hello.version, &hello.label))
+    {
+        put_json(&mut s, &Reply::refusal(&hello, Why::Upgrade, there)).await?;
+        if using.is_none() {
+            let _ = timeout(Duration::from_secs(5), conn.closed()).await;
+        }
+        return Err(Failed(Failure::Refused(Why::Upgrade), here).into());
+    }
     let mut records: Option<Vec<String>> = None;
     let verdict = loop {
         let verdict = match conn.remote_id() == ep.id() {
@@ -2034,6 +2101,7 @@ mod tests {
         let version = Version {
             datum: "3.0.0-beta (440b271)".into(),
             schema: 57,
+            floor: Some(56),
         };
         let line = r#"{"op":"set","endpoint":"e","seq":1}"#.to_string();
         let vector: Vector = [("e".to_string(), 1)].into();
@@ -2095,6 +2163,7 @@ mod tests {
                     Why::NotMember,
                     Why::Busy,
                     Why::Wiped,
+                    Why::Upgrade,
                     Why::Other,
                 ],
             ),
@@ -2289,6 +2358,19 @@ mod tests {
             ..proves
         };
         assert_eq!(said(&busy)["Refusal"]["kind"], "busy");
+        // Nor one that says nothing of a floor, a copy before da-ryhmi.
+        let said = |hello: &Hello| {
+            serde_json::to_value(Reply::refusal(hello, Why::Upgrade, "update".into())).unwrap()
+        };
+        assert_eq!(said(&busy)["Refusal"]["kind"], "other");
+        let floors = Hello {
+            version: Version {
+                floor: Some(0),
+                ..Version::default()
+            },
+            ..busy
+        };
+        assert_eq!(said(&floors)["Refusal"]["kind"], "upgrade");
         // An older acceptor's refusal reads, and «unknown invite» still
         // sends a redeemer on to the next address.
         for (words, kind) in [
@@ -2325,6 +2407,7 @@ mod tests {
             version: Version {
                 datum: "3.0.900-beta (abc1234)".into(),
                 schema: 57,
+                floor: None,
             },
             ..old
         };
@@ -2332,6 +2415,30 @@ mod tests {
         assert_eq!(said["datum"], "3.0.900-beta (abc1234)");
         assert_eq!(said["schema"], 57);
         assert_eq!(said["label"], "old");
+    }
+
+    /// A copy below the other's sync floor is told to update, from either
+    /// side, and one at the floor or past it is not (da-ryhmi).
+    #[test]
+    fn a_copy_below_a_floor_is_told_to_update() {
+        let v = |schema, floor| Version {
+            datum: String::new(),
+            schema,
+            floor,
+        };
+        let upgrade = "update datum to sync with new: it needs schema 80, this copy runs 79";
+        let behind =
+            "old runs schema 79, below this copy's sync floor 80: it must update datum to sync";
+        let (old, new) = ((&v(79, Some(70)), "old"), (&v(80, Some(80)), "new"));
+        assert_eq!(below_floor(old, new), Some((upgrade.into(), behind.into())));
+        assert_eq!(below_floor(new, old), Some((behind.into(), upgrade.into())));
+        for at in [v(80, Some(70)), v(81, None)] {
+            assert_eq!(below_floor((&at, "at"), new), None);
+            assert_eq!(below_floor(new, (&at, "at")), None);
+        }
+        // The refusal reads in its words alone: they name the other copy.
+        let e = refused(upgrade.into(), Some(Why::Upgrade));
+        assert_eq!(e.to_string(), upgrade);
     }
 
     /// A verify between copies that hold different ops is no verdict, and

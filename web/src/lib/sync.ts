@@ -273,7 +273,7 @@ class Leader {
 	unsynced?: number;
 	label = 'datum.day';
 	/** What the CLI runs (`sync status --json`'s `this`), said to every peer (da-3zqyv). */
-	version?: { datum: string; schema: number };
+	version?: { datum: string; schema: number; floor: number };
 	/** Per peer: its vector when last in step, a session in flight (settled when it ends), one more asked for. */
 	inStep = new Map<string, string>();
 	busy = new Map<string, Promise<void>>();
@@ -336,9 +336,9 @@ class Leader {
 		const key = (await must(['--db', this.db, ...endpointKeyArgv()])).trim();
 		if (this.endpoint && key === this.key) return;
 		// Held only once bound: a failed bind is tried again on the next start.
-		const { datum, schema } =
+		const { datum, schema, floor } =
 			this.version ?? (this.version = (JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])) as SyncStatus).this);
-		this.endpoint = await ask<string>(this.db, { op: 'start', key, relay: relay(), idle: shortTimeout(), label: this.label, datum, schema });
+		this.endpoint = await ask<string>(this.db, { op: 'start', key, relay: relay(), idle: shortTimeout(), label: this.label, datum, schema, floor });
 		this.key = key;
 		this.post();
 	}

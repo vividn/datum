@@ -1553,6 +1553,71 @@ fn a_copy_behind_a_members_schema_syncs_and_warns_to_upgrade() {
     assert!(!b.ok(&["sync", "status"]).contains("runs datum"));
 }
 
+/// A copy below a member's sync floor is refused, both ways, and told to
+/// update datum; neither side writes anything of the session, and what the
+/// older copy wrote meanwhile arrives once it runs a schema at the floor
+/// (da-ryhmi).
+#[test]
+fn a_copy_below_a_members_sync_floor_is_refused_both_ways_until_it_updates() {
+    let (mut a, mut b) = paired();
+    a.env.push(("DATUM_SYNC_TEST_SCHEMA", "999"));
+    a.env.push(("DATUM_SYNC_TEST_FLOOR", "999"));
+    let runs = datum_core::migrations::CURRENT_SCHEMA_VERSION;
+    // Each names the other by the label it says in its handshake.
+    let update = format!(": it needs schema 999, this copy runs {runs}");
+    let behind = format!(
+        " runs schema {runs}, below this copy's sync floor 999: it must update datum to sync"
+    );
+    let list = ["sync", "chain", "list", "--json"];
+    let schemas = || {
+        let of = |c: &Copy, id: &str| member_of_list(&c.ok(&list), id)["schema"].clone();
+        (of(&a, &b.id()), of(&b, &a.id()))
+    };
+    let before = schemas();
+    let up = |copy: &Copy| {
+        let mut run = copy.serve(&["sync", "run"]);
+        let err = lines(run.child.stderr.take().unwrap());
+        let until = move |needle: &str| loop {
+            let line = err.recv_timeout(Duration::from_secs(10)).expect(needle);
+            if line.contains(needle) {
+                break;
+            }
+        };
+        until("is up");
+        (run, until)
+    };
+
+    // The older copy dials: the newer one refuses it.
+    b.ok(&["occur", "walk"]);
+    let (a_runs, a_says) = up(&a);
+    let refused = b.fails(&["sync"], "");
+    assert!(
+        refused.contains("\nupdate datum to sync with "),
+        "{refused}"
+    );
+    assert!(refused.contains(&update), "{refused}");
+    a_says(&behind);
+    drop(a_runs);
+    assert!(b.ok(&["sync", "status"]).contains(&update));
+
+    // The newer copy dials: the older one refuses itself, and says why.
+    a.ok(&["occur", "swim"]);
+    let (b_runs, b_says) = up(&b);
+    let refused = a.fails(&["sync"], "");
+    assert!(refused.contains(&behind), "{refused}");
+    b_says(&update);
+    drop(b_runs);
+    assert!(!a.has("walk") && !b.has("swim"));
+    assert_eq!(schemas(), before, "no version recorded");
+
+    // Updated to the floor, it syncs as before, and its walk arrives.
+    b.env.push(("DATUM_SYNC_TEST_SCHEMA", "999"));
+    let _a_runs = up(&a);
+    let synced = b.ok(&["sync"]);
+    assert!(synced.contains("verify ok"), "{synced}");
+    assert!(a.has("walk") && b.has("swim"));
+}
+
 fn member_of_list(list: &str, id: &str) -> serde_json::Value {
     let list: serde_json::Value = serde_json::from_str(list).unwrap();
     list["members"]

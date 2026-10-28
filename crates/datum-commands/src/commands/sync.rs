@@ -13,7 +13,7 @@ use anyhow::{bail, ensure, Context, Result};
 use datum_core::db::chain::{self, Chain, Notice};
 use datum_core::db::Db;
 use datum_core::error::DatumError;
-use datum_core::migrations::CURRENT_SCHEMA_VERSION;
+use datum_core::migrations::{CURRENT_SCHEMA_VERSION, SYNC_FLOOR};
 use datum_core::time::on_readers_clock;
 use serde_json::{json, Value};
 
@@ -1622,7 +1622,7 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
             "this": {
                 "endpoint": mine, "client": db.sync_client_id()?, "label": label,
                 "device": datum_core::db::device_id(),
-                "datum": datum_core::build(), "schema": CURRENT_SCHEMA_VERSION,
+                "datum": datum_core::build(), "schema": CURRENT_SCHEMA_VERSION, "floor": SYNC_FLOOR,
                 "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
                 "revoked": chain.member(&mine).and_then(|m| m.revoked.as_deref()).map(chain::hlc_time),
                 "filter": filter_json(chain.filter(&mine)),

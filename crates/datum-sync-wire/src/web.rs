@@ -413,7 +413,8 @@ pub fn about(ticket: String) -> Result<String, JsError> {
 impl Node {
     /// Bind the endpoint whose key is `key` (hex, `datum sync
     /// endpoint-key`), on n0's relays or the one `relay` names. `datum`
-    /// and `schema` are what the CLI runs (`sync status --json`'s `this`).
+    /// `schema` and `floor` are what the CLI runs (`sync status --json`'s
+    /// `this`).
     /// `idle` is `DATUM_SYNC_TIMEOUT_S` for a page's tests, every node's.
     #[allow(clippy::too_many_arguments)]
     pub async fn bind(
@@ -423,6 +424,7 @@ impl Node {
         label: String,
         datum: String,
         schema: u32,
+        floor: u32,
         run: Function,
         progress: Function,
         serving: Function,
@@ -443,7 +445,11 @@ impl Node {
                 serving,
                 id: ep.id().to_string(),
                 label: label.into(),
-                version: Version { datum, schema },
+                version: Version {
+                    datum,
+                    schema,
+                    floor: Some(floor),
+                },
                 open: Rc::default(),
                 dialing: RefCell::default(),
             },

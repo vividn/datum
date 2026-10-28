@@ -19,6 +19,7 @@
     "chain": "chain",
     "datum": "3.0.0-beta (440b271)",
     "ends": true,
+    "floor": 56,
     "holds": 3,
     "invite": "secret",
     "keeps": true,
@@ -100,6 +101,7 @@
       },
       "datum": "3.0.0-beta (440b271)",
       "ends": true,
+      "floor": 56,
       "keeps": true,
       "known": [
         {
@@ -129,6 +131,7 @@
     "not-member",
     "busy",
     "wiped",
+    "upgrade",
     "other"
   ],
   "wipe": {

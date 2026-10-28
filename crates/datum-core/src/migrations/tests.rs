@@ -16,6 +16,21 @@ fn fresh_db_stamps_current_schema_version() {
     );
 }
 
+/// Each sync floor names a migration, in the order they run (da-ryhmi).
+#[test]
+fn sync_floors_name_migrations_in_order() {
+    assert!(
+        SYNC_FLOORS.windows(2).all(|w| w[0] < w[1]),
+        "{SYNC_FLOORS:?}"
+    );
+    for floor in SYNC_FLOORS {
+        assert!(
+            MIGRATIONS.iter().any(|m| m.to == *floor),
+            "no migration to {floor}"
+        );
+    }
+}
+
 /// da-bq31: fresh `Db::open_in_memory` must materialize exactly the
 /// shape declared in `schema.sql` — no extra indexes from migration
 /// rebuilds, no missing tables. Locks down the new migrate() flow

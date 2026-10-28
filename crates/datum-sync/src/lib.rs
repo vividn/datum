@@ -28,7 +28,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::peers::Peer;
 use datum_core::db::{chain, Db};
 use datum_core::error::{DatumError, Refusal as CoreRefusal};
-use datum_core::migrations::CURRENT_SCHEMA_VERSION;
+use datum_core::migrations::{CURRENT_SCHEMA_VERSION, SYNC_FLOOR};
 use datum_parse::time::Zone;
 use datum_sync_wire::{
     accept, dial, failure, gave_way, redeem, serve, unix_now, About, Applied, Diffed, Digest,
@@ -501,6 +501,8 @@ impl Store for DbStore<'_> {
             datum: datum_core::build().into(),
             // Test knob: a copy that says it is newer than it is.
             schema: env("DATUM_SYNC_TEST_SCHEMA").unwrap_or(CURRENT_SCHEMA_VERSION),
+            // And one that says its floor is higher than it is.
+            floor: Some(env("DATUM_SYNC_TEST_FLOOR").unwrap_or(SYNC_FLOOR)),
         }
     }
 
@@ -837,7 +839,8 @@ fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
              `datum sync chain invite` there) and connect again, or ask it for a fresh invite"
         ),
         // Its own words say it already.
-        Some(Failure::Late | Failure::Protocol | Failure::Refused(Why::Wiped)) | None => return e,
+        Some(Failure::Late | Failure::Protocol | Failure::Refused(Why::Wiped | Why::Upgrade))
+        | None => return e,
     };
     anyhow!("{e:#}. Next: {next}")
 }
@@ -863,6 +866,8 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
         .is_err_and(|e| failure(e) == Some(Failure::Unreachable));
     let line = match rep {
         Ok(rep) => rep.to_string(),
+        // Its words name the member, and say what to do (da-ryhmi).
+        Err(e) if failure(e) == Some(Failure::Refused(Why::Upgrade)) => e.to_string(),
         Err(e) if wiped(rep) => format!(
             "{}: {}",
             p.label,

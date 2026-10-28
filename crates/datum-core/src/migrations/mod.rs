@@ -64,6 +64,19 @@ use v71_v80::*;
 /// current shape by walking [`MIGRATIONS`] in order.
 pub const CURRENT_SCHEMA_VERSION: u32 = 72;
 
+/// The migrations, each by its `to`, past which a copy below their schema
+/// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
+/// which an older copy would go on sending. Append-only, ascending: a copy
+/// has run every migration before it syncs, so its floor is the last.
+pub const SYNC_FLOORS: &[u32] = &[];
+
+/// The lowest schema a copy syncs with: a peer below it is refused, and is
+/// told to update datum, both ways (datum-sync-wire's `Why::Upgrade`).
+pub const SYNC_FLOOR: u32 = match SYNC_FLOORS {
+    [.., floor] => *floor,
+    [] => 0,
+};
+
 /// A single forward migration between two adjacent schema versions.
 ///
 /// Migrations run inside a transaction opened by the caller. `apply` must
