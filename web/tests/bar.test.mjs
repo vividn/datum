@@ -95,7 +95,8 @@ const section = (page, i = 0) =>
 		.nth(i)
 		.evaluate((el) => ({
 			receipt: el.querySelector('.receipt')?.innerText.trim(),
-			info: el.querySelector('.info')?.innerText,
+			// The line the CLI printed, whatever lines the strip cut it into (da-7xp82).
+			info: el.querySelector('.info')?.textContent,
 			rows: [...el.querySelectorAll('.brace .row')].map((r) => r.innerText),
 			more: el.querySelector('.brace .more')?.innerText ?? null,
 			hid: el.querySelector('.hid')?.textContent,
@@ -367,8 +368,11 @@ describe('the output is a strip of commands, the newest at the right', () => {
 	/** The strip as drawn: what it shows, and each group's command, box, documents and rule. */
 	const strip = (page) =>
 		page.locator(`${BAR} .roll`).evaluate(async (roll) => {
-			// Read where things REST: a slide in flight is a transform.
+			// Read where things REST: a slide in flight is a transform, and
+			// the older groups a slide's end mounts are scrolled past in the
+			// frames after it.
 			await Promise.all(roll.querySelector('.track').getAnimations().map((a) => a.finished));
+			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 			const view = roll.getBoundingClientRect();
 			const span = (el) => {
 				const r = el.getBoundingClientRect();
@@ -398,25 +402,103 @@ describe('the output is a strip of commands, the newest at the right', () => {
 		});
 	const inView = (s, g) => g.left >= s.view.left - 1 && g.right <= s.view.right + 1;
 
-	test('three commands in a row: oldest to newest, left to right, the newest in view, and the old ones slid left', async () => {
+	test('commands in a row: oldest to newest, left to right, the newest in view, and the old ones slid left', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await watchSlides(page);
-			for (const line of ['occur coffee', 'occur water', 'occur tea']) await app.submit(line);
+			// Five: a phone holds three whole since a group is its documents'
+			// width (da-7xp82).
+			const lines = ['occur coffee', 'occur water', 'occur tea', 'occur toast', 'occur juice'];
+			for (const line of lines) await app.submit(line);
 			// Every arrival but the first, which had nothing to slide.
-			await page.waitForFunction(() => window.__slides.length === 2);
+			await page.waitForFunction((n) => window.__slides.length === n, lines.length - 1);
 
 			const s = await strip(page);
-			assert.deepEqual(s.groups.map((g) => g.line), ['occur coffee', 'occur water', 'occur tea']);
+			assert.deepEqual(s.groups.map((g) => g.line), lines.slice(-s.groups.length));
 			for (let i = 1; i < s.groups.length; i += 1)
 				assert.ok(s.groups[i].left >= s.groups[i - 1].right, `${s.groups[i].line} is not right of ${s.groups[i - 1].line}`);
-			// Three do not fit a phone, so the row scrolled to its newest end.
+			// Five do not fit a phone, so the row scrolled to its newest end.
 			assert.ok(s.groups[0].left < s.view.left, 'the strip never overflowed — nothing to prove');
 			assert.ok(s.atEnd, 'the strip is not at its newest end');
 			assert.ok(inView(s, s.groups.at(-1)), `the newest is out of view: ${JSON.stringify(s)}`);
 			// Each arrival played the old ones sliding left, from the right.
 			for (const slide of await page.evaluate(() => window.__slides))
 				assert.ok(parseFloat(/translateX\((-?[\d.]+)px\)/.exec(slide)[1]) > 0, slide);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	// da-7xp82. vividn, 2026-10-28: «it is too tall right now, it should be
+	// wide enough for a single entry to fit nicely (+ maybe space for one line
+	// for extra data) / let's make the font size a bit smaller in the output
+	// bar, and when it is collapsed, let's put a line break between the occur
+	// time and the field/state so that it is not so wide».
+	test('one entry tall: the section holds an entry’s lines and one more, in type smaller than the input’s', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.submit('occur coffee');
+			await page.locator(`${DOC} .info .what`).waitFor();
+			const m = await page.locator(`${BAR} .section.output`).evaluate((out) => {
+				const roll = out.querySelector('.roll');
+				const group = out.querySelector('.group:last-child');
+				const high = (s) => group.querySelector(s).getBoundingClientRect().height;
+				const style = getComputedStyle(roll);
+				return {
+					line: parseFloat(getComputedStyle(group.querySelector('.info')).lineHeight),
+					room: roll.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+					// The command's line, and the document's: the receipt, the time, the field and state.
+					entry: high('.head') + high('.doc .lines'),
+					font: parseFloat(getComputedStyle(group.querySelector('.doc')).fontSize),
+					input: parseFloat(getComputedStyle(document.querySelector('.prompt-bar input')).fontSize)
+				};
+			});
+			// The command, the receipt, the time, the field and state: four lines.
+			assert.ok(Math.abs(m.entry - 4 * m.line) <= 1, `the entry is ${m.entry}px, not four lines of ${m.line}px`);
+			assert.ok(Math.abs(m.room - 5 * m.line) <= 1, `the section holds ${m.room}px, not five lines of ${m.line}px`);
+			assert.ok(m.font < m.input, `the output's type is ${m.font}px against the input's ${m.input}px`);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('an entry’s time is a line of its own, above its field and state, as the CLI cut it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.declare('mood', 'switch');
+			await app.submit('switch mood happy');
+			await page.locator(`${DOC} .info .what`).waitFor();
+			const doc = await cliDoc(app, ['get', 'mood']);
+			const parts = await page.locator(`${DOC} .info`).evaluate((info) =>
+				Object.fromEntries(
+					['when', 'what'].map((p) => {
+						const el = info.querySelector(`.${p}`);
+						const r = el.getBoundingClientRect();
+						return [p, { text: el.textContent, top: r.top, bottom: r.bottom, left: r.left }];
+					})
+				)
+			);
+			assert.equal(parts.when.text, doc.info_time);
+			assert.equal(parts.what.text, doc.info.slice(doc.info_time.length).trimStart());
+			assert.match(parts.what.text, /^mood\b/);
+			assert.ok(parts.when.bottom <= parts.what.top + 0.5, `the time is not above the field: ${JSON.stringify(parts)}`);
+			assert.ok(Math.abs(parts.when.left - parts.what.left) <= 0.5, `the two lines do not start together: ${JSON.stringify(parts)}`);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	// A group was 21rem a document whatever it held, so a 390px phone showed
+	// one command whole (count it on staging: 1). Each is its documents' own
+	// width now, and at least the 22ch its head reads in.
+	test('at 390px, two commands are in view whole, the hid uncut', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of ['occur coffee', 'occur water', 'occur tea', 'occur toast']) await app.submit(line);
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .group .doc').length === 4);
+			const s = await strip(page);
+			const whole = s.groups.filter((g) => inView(s, g));
+			assert.ok(whole.length >= 2, `${whole.length} of ${s.groups.length} in view whole: ${JSON.stringify(s)}`);
+			const hid = await page.locator(`${DOC} .hid`).evaluate((el) => el.scrollWidth - el.clientWidth);
+			assert.ok(hid <= 0, `the hid is cut by ${hid}px`);
+			assert.ok(inView(s, s.groups.at(-1)), 'the newest is out of view');
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
@@ -522,10 +604,18 @@ describe('the output is a strip of commands, the newest at the right', () => {
 	test('scrolled back, the older commands mount and a new one does not pull the reader forward; back at the end, it does', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			const lines = ['occur coffee', 'occur water', 'occur tea', 'occur toast', 'occur juice', 'occur bread', 'occur jam'];
+			// More than the strip mounts at the end, which is a row's width
+			// past the view: a group is its documents' width (da-7xp82).
+			const lines = ['coffee', 'water', 'tea', 'toast', 'juice', 'bread', 'jam', 'rice', 'soup', 'pear', 'plum', 'fig', 'kiwi', 'lime'].map((f) => `occur ${f}`);
 			for (const line of lines) await app.submit(line);
 			const groups = () => page.evaluate(() => document.querySelectorAll('.prompt-bar .group').length);
-			// Only the newest few are mounted while the reader is at the end (vremya on #1269).
+			// Only the newest few are mounted while the reader is at the end (vremya on #1269),
+			// once the strip settles: a phone's four newest no longer reach a row past the view,
+			// so the last slide's end mounts more and the settling trims them to three rows
+			// (`rest`, PromptBar.svelte), 13 to 8 in the half second after (da-7xp82).
+			await page
+				.waitForFunction((n) => document.querySelectorAll('.prompt-bar .group').length < n, lines.length, { timeout: 5000 })
+				.catch(() => {});
 			assert.ok((await groups()) < lines.length, `all ${lines.length} commands were mounted at the end`);
 
 			// Back to the first command, as a finger or a wheel would scroll: each time the

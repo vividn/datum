@@ -766,9 +766,11 @@ describe('the bottom bar', () => {
 	// between the bar and the dashboard is the odd pixel. 46.4 + 57.6 + 1.
 	// da-mwp4m made the output a share of the page, «where the command
 	// widget is now by default»: 15% of it between 3.6rem and 8rem, so at
-	// 1280x800 the OPEN bar, which every screen starts on, is 46.4 + 114 +
-	// 1. The window stays absolute.
-	test('stands out at 150–175px with a ≥1.05rem prompt; the CLI has no prompt, and the bar and a chip land in its scrollback', async () => {
+	// 1280x800 the OPEN bar, which every screen starts on, was 46.4 + 114 +
+	// 1. da-7xp82 made it one entry tall, «it is too tall right now»: four
+	// lines of 0.8rem × 1.35, a line more, 2 × 0.25rem and its rule, so
+	// 46.4 + 95.4 + 1. The window stays absolute.
+	test('stands out at 140–146px with a ≥1.05rem prompt; the CLI has no prompt, and the bar and a chip land in its scrollback', async () => {
 		// The shared desktop, resized: `home` puts its own size back for the
 		// next test. The scrollback is the shared page's, so the echoes and
 		// documents read are the ones past what was there when this began.
@@ -783,7 +785,7 @@ describe('the bottom bar', () => {
 				font: parseFloat(getComputedStyle(document.querySelector('.prompt-bar input')).fontSize),
 				rem: parseFloat(getComputedStyle(document.documentElement).fontSize)
 			}));
-			assert.ok(height >= 150 && height <= 175, `the bottom bar is ${height}px tall at 1280x800`);
+			assert.ok(height >= 140 && height <= 146, `the bottom bar is ${height}px tall at 1280x800`);
 			assert.ok(font >= 1.05 * rem, `the prompt's input is ${font}px on a ${rem}px rem`);
 
 			const repl = page.locator('section[data-pane="repl"]');

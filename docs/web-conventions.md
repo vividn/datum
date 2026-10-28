@@ -109,8 +109,10 @@ writing it down.
    compose none of them; `data_inline` is the terminal's own join and the web does not use it. The document carries the CLI's
    own COLORS too (da-yu9s): `field` and `state` as logged, `field_color` and `state_color` as
    `fields --json` resolves them, and `info_segments` — `info` split into `{text, color}` runs,
-   which is what `Doc.svelte` paints the line from. The web never looks for the field inside
-   `info` (`switch mood mood` names it twice) and never derives a color of its own.
+   which is what `Doc.svelte` paints the line from, and `info_time`, the time the line starts
+   with, where the bar's strip cuts it to put the time on a line of its own (da-7xp82). The web
+   never looks for the field inside `info` (`switch mood mood` names it twice) and never derives
+   a color of its own.
    `NO_ECHO` in that file is the
    denylist of commands with no action echo: it is a denylist because an argv whose first word
    is not a command (`mood happy`, `vbp correr`: an alias) is a write under another name and must get

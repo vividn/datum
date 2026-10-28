@@ -131,7 +131,8 @@ describe('the echo is painted in datum’s colours', () => {
 	/** Every run of one surface's info line, as the browser drew it. */
 	const runs = (page, root) =>
 		page.locator(`${root} .doc .info`).last().evaluate((el) =>
-			[...el.querySelectorAll('span')].map((s) => ({
+			// The runs, inside the parts the line is cut into (da-7xp82).
+			[...el.querySelectorAll('span > span')].map((s) => ({
 				text: s.textContent,
 				color: getComputedStyle(s).color
 			}))

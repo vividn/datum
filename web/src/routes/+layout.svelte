@@ -227,14 +227,22 @@
 		   four raw lines and the two-line document it has to hold
 		   (BarResult.svelte), and it is not the row's to shrink. */
 		--input-height: 2.9rem;
-		/* vividn, 2026-10-27: «take up a bit more room, basically where the
-		   command widget is now by default» — the collect tab's command
-		   pane, which was 0.173 of its column on both trees and went to
-		   make this room. So a share of the page (`cqh` is `.pages`, the
-		   nearest size container of every box that reads this), between
-		   the 3.6rem that holds four raw lines and a ceiling that leaves a
-		   tall desktop its dashboard. */
-		--output-height: clamp(3.6rem, 15cqh, 8rem);
+		/* ONE ENTRY TALL (da-7xp82). vividn, 2026-10-28: «it is too tall right
+		   now, it should be wide enough for a single entry to fit nicely (+
+		   maybe space for one line for extra data) / let's make the font size
+		   a bit smaller in the output bar». So it is a strip entry's four lines
+		   — the command, the receipt, the time, the field and state
+		   (PromptBar.svelte) — at the strip's own type, with the strip's
+		   padding and the rule under it, and one line more wherever the
+		   share of the page it was (da-mwp4m: 15cqh, 121px on a 390×844
+		   phone) has room for it. A short phone (412×563, 15cqh 77px) gets
+		   the entry alone: the line more would take the sliver of yesterday
+		   from the day strip above (da-frewq). */
+		--output-font: 0.8rem;
+		--output-line: calc(var(--output-font) * 1.35);
+		--output-pad: 0.25rem;
+		--output-entry: calc(4 * var(--output-line) + 2 * var(--output-pad) + 1px);
+		--output-height: clamp(var(--output-entry), 15cqh, calc(var(--output-entry) + var(--output-line)));
 		/* The hairline that separates the bar from the dashboard is part of
 		   the bar's box, so it belongs in the sum: without it the sections
 		   add up to a pixel more than the bar they are in, and the output's

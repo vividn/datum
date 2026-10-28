@@ -46,8 +46,10 @@ const valueOf = (page, selector) => page.locator(selector).inputValue();
  * history now (da-ckw3) and so has no `BarResult` wrapper, while the input
  * widget's receipt still does. `.doc` is what both draw.
  */
+// What the documents SAY, not how each surface lays them out: the bar's
+// strip puts a document's time on a line of its own (da-7xp82).
 const receipt = async (page, frame) =>
-	(await page.locator(`${frame} .doc`).allInnerTexts()).join('\n');
+	(await page.locator(`${frame} .doc`).evaluateAll((docs) => docs.map((d) => d.textContent))).join('\n');
 
 /**
  * Type into a box the way a person does, one key at a time — tapping the

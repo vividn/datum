@@ -82,6 +82,31 @@
 		doc.info_segments?.length ? doc.info_segments : [{ text: doc.info, color: null }]
 	);
 
+	/**
+	 * The line in three parts, cut where the CLI says its time ends
+	 * (`info_time`, da-7xp82): the time, the spaces after it, and the field
+	 * and state. Together they are the line, so a surface draws them as one;
+	 * the bar's strip puts the time on a line of its own (PromptBar.svelte).
+	 */
+	const parts: { part: string; runs: InfoSegment[] }[] = $derived.by(() => {
+		const time = doc.info_time;
+		if (!time || !doc.info.startsWith(time)) return [{ part: 'what', runs: segments }];
+		const gap = time.length + (/^ */.exec(doc.info.slice(time.length))?.[0].length ?? 0);
+		const cut = (from: number, to: number): InfoSegment[] => {
+			let at = 0;
+			return segments.flatMap((s) => {
+				const text = s.text.slice(Math.max(0, from - at), Math.max(0, to - at));
+				at += s.text.length;
+				return text ? [{ ...s, text }] : [];
+			});
+		};
+		return [
+			{ part: 'when', runs: cut(0, time.length) },
+			{ part: 'gap', runs: cut(time.length, gap) },
+			{ part: 'what', runs: cut(gap, doc.info.length) }
+		];
+	});
+
 	/** The CLI's `key: value` strings — `data`, not the terminal's join. */
 	const rows: string[] = $derived(doc.data ?? []);
 	const visible = $derived(tight ? [] : all ? rows : rows.slice(0, ROWS));
@@ -127,9 +152,10 @@
 		     laid out with runs of spaces, and a newline in the markup is a
 		     space in the DOM — so the hugging here is load-bearing, as it is
 		     in AnsiText.svelte. -->
-		<div class="info">{#each segments as segment}<span style:color={segment.color}
-				>{segment.text}</span
-			>{/each}</div>
+		<div class="info">{#each parts as { part, runs }}<span class={part}
+					>{#each runs as segment}<span style:color={segment.color}>{segment.text}</span
+						>{/each}</span
+				>{/each}</div>
 	</div>
 	{#if rows.length}
 		<div class="brace" style:--rows={Math.max(visible.length, 1)}>

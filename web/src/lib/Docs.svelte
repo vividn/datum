@@ -53,7 +53,6 @@
 	/** What the `+N` chip takes from the row. */
 	const CHIP = 48;
 
-	let row: HTMLDivElement | undefined = $state();
 	let width = $state(0);
 	let open = $state(false);
 
@@ -71,7 +70,12 @@
 	}
 </script>
 
-<div class="docs" class:all bind:this={row} use:measure>
+<div class="docs" class:all>
+	<!-- What is MEASURED is the room the row may take, not what it takes:
+	     its own width, unless a surface sizes it to its content and says how
+	     wide it may grow (the bar's strip, da-7xp82). Out of the flow, so it
+	     sizes nothing. -->
+	<div class="room" use:measure></div>
 	{#each docs.slice(0, shown) as doc (doc.hid + doc.action)}
 		<Doc {doc} {tight} {all} />
 	{/each}
@@ -92,6 +96,7 @@
 
 <style>
 	.docs {
+		position: relative;
 		display: flex;
 		align-items: stretch;
 		gap: 0.6rem;
@@ -99,6 +104,13 @@
 		height: 100%;
 		min-width: 0;
 		overflow: hidden;
+	}
+
+	.room {
+		position: absolute;
+		width: 100%;
+		height: 0;
+		visibility: hidden;
 	}
 
 	/* Every section takes an equal share and none of them widens past it:

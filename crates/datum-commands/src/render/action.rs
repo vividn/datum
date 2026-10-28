@@ -1039,23 +1039,7 @@ pub fn format_info_line_at(
     ctx: &RenderContext,
     now: &DatumTime,
 ) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    let uncertainty = entry.occur_uncertainty();
-    if let Some(t) = &entry.occur_time {
-        parts.push(format_timestamp(t, now, uncertainty));
-    } else {
-        // Hybrid fallback: row has no occur_time, so render create_time
-        // prefixed by a gray 'c' — same convention the table renderer
-        // applies via `format_grey_prefix("c", ...)` in the
-        // `time_hybrid` extractor (render/mod.rs). create_time is a
-        // wall-clock instant, never date-only.
-        let synth = synthesize_local_datumtime(entry.create_time);
-        parts.push(format!(
-            "{}{}",
-            paint(GREY_FG, "c"),
-            format_timestamp(&synth, now, None)
-        ));
-    }
+    let mut parts = vec![format_info_time_at(entry, now)];
     parts.push(format_field_badge(&entry.field, spec));
     if let Some(group) = format_state_group(entry, spec, ctx) {
         if !group.is_empty() {
@@ -1064,6 +1048,28 @@ pub fn format_info_line_at(
     }
     parts.extend(format_dur(entry));
     parts.join(" ")
+}
+
+/// The stamp the info line starts with, and a space short of the rest of it:
+/// `--show json` carries it as `info_time`, so a surface can put the time on a
+/// line of its own without looking for where it ends in `info` (da-7xp82).
+pub fn format_info_time_at(entry: &Entry, now: &DatumTime) -> String {
+    match &entry.occur_time {
+        Some(t) => format_timestamp(t, now, entry.occur_uncertainty()),
+        // Hybrid fallback: row has no occur_time, so render create_time
+        // prefixed by a gray 'c' — same convention the table renderer
+        // applies via `format_grey_prefix("c", ...)` in the
+        // `time_hybrid` extractor (render/mod.rs). create_time is a
+        // wall-clock instant, never date-only.
+        None => {
+            let synth = synthesize_local_datumtime(entry.create_time);
+            format!(
+                "{}{}",
+                paint(GREY_FG, "c"),
+                format_timestamp(&synth, now, None)
+            )
+        }
+    }
 }
 
 /// Backwards-compatible "info line" used by the legacy show_action path,

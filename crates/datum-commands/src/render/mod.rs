@@ -395,6 +395,9 @@ pub struct ActionLines {
     pub header: String,
     /// The §2 info line, `16:17:25+2  mood  sad`; empty when there is nothing to say.
     pub info: String,
+    /// The stamp [`Self::info`] starts with (`16:17:25+2`), ANSI-free: the
+    /// rest of the line is after it and one space (da-7xp82).
+    pub info_time: String,
     /// The default show's data view: the structured-state doc line, then the
     /// user-data block. Empty for a plain string state with no extra data.
     pub data: Vec<String>,
@@ -459,6 +462,7 @@ pub fn action_lines_at(
     let default_ctx = self::action::RenderContext::default();
     let render_ctx = ctx.unwrap_or(&default_ctx);
     let info = self::action::format_info_line_at(entry, spec, render_ctx, now);
+    let info_time = strip_ansi(&self::action::format_info_time_at(entry, now));
     // The same line again with the colour gate forced open, split at its
     // own escapes (da-yu9s). Re-rendering rather than threading a second
     // return type through the renderer is what makes the two forms
@@ -496,6 +500,7 @@ pub fn action_lines_at(
     ActionLines {
         header,
         info,
+        info_time,
         data,
         // Stripped from the very fragments `header` was joined from, so the
         // two can only ever say the same thing.

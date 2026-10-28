@@ -808,15 +808,18 @@ binary.
 - The bottom bar is the page's command line AND its status line
   and the SEAM between the dashboard and the history, read as a terminal
   is: an OUTPUT section over an INPUT section on the foot of the page,
-  `--output-height` (a share of the page, `clamp(3.6rem, 15cqh, 8rem)`,
-  the room the collect tab's commands pane had) and `--input-height`
-  (2.9rem) on the shell. The input is one row — the mark,
+  `--output-height` (one strip entry tall, its four lines at the strip's
+  smaller `--output-font`, and one line more where the page has room,
+  da-7xp82) and
+  `--input-height` (2.9rem) on the shell. The input is one row — the mark,
   the clock with seconds at every width, `❯`, the box with its time-cursor
   pills, which stand to the RIGHT of the box and never over the `❯`, going
   off the screen's right edge and coming back on the box's own sideways
   scroll (text and pills are ONE strip in one scrollport, `.field` and
   `.run` in Prompt.svelte); the output is the last command's result as one
-  section per document (`+N` opens a modal when they do not fit). The row's
+  section per document (`+N` opens a modal when they do not fit), each
+  command as wide as its documents and each document's time on a line over
+  its field and state, cut where the CLI's `info_time` says (da-7xp82). The row's
   items are centered in the whole input section, and folded a command
   answers with its ACTION words along the bottom of it STARTING AT THE `❯`,
   in the color the CLI paints the tag (`Outcome::hex`, carried as

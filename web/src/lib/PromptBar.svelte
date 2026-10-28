@@ -16,9 +16,8 @@
 	on the bottom, and put the output/return bar above it again … Mimicking
 	an actual cli with the input bar on the bottom». (It was input over
 	output from 2026-09-17, da-ckw3, until then.) The input is 2.9rem; the
-	output is open by default on every screen and taller than it was,
-	«basically where the command widget is now by default» — the collect
-	tab's command pane, which went to make the room (defaults.ts).
+	output took the collect tab's command pane's room (da-mwp4m,
+	defaults.ts), and is one strip entry tall (da-7xp82, routes/+layout.svelte).
 
 	- the INPUT section is ONE ROW — the mark (Brand.svelte: the database's
 	  name, its colour, its menu), the clock WITH SECONDS, the `❯` and the
@@ -349,9 +348,9 @@
 					     ONE GROUP A COMMAND, its documents side by side inside it
 					     and a rule between it and the next, under the command's
 					     own head: vividn, «make sure that it is clear where the
-					     boundaries between different commands are». A group is a
-					     document's width for each document it echoed (`--docs`),
-					     never wider than the row, where `+N` holds the rest; a
+					     boundaries between different commands are». A group is as
+					     wide as the documents it echoed (da-7xp82), never wider
+					     than the row, where `+N` holds the rest; a
 					     command whose answer is printed text — a table, a
 					     picture, an error — takes the row's whole width, as it
 					     takes a whole row in the history (scrollback.ts). `cap`
@@ -360,7 +359,7 @@
 					     are cut from the top, so a `tail` shows its newest rows. -->
 					{#each strip as entry (entry)}
 						{@const docs = parseEcho(entry.result.stdout)?.length ?? 0}
-						<div class="group" class:wide={!docs} style:--docs={docs || null} data-ran={entry.ranAt}>
+						<div class="group" class:wide={!docs} data-ran={entry.ranAt}>
 							<CliEntry {entry} cap={12} />
 						</div>
 					{/each}
@@ -578,7 +577,13 @@
 	   above): sideways is the strip's, up and down the bar's. */
 	.roll {
 		flex: none;
+		box-sizing: border-box;
 		height: calc(var(--output-height) - 1px);
+		padding-block: var(--output-pad);
+		/* The strip's type, a step down from the input's (da-7xp82), and the
+		   line the section's height is counted in (routes/+layout.svelte). */
+		font-size: var(--output-font);
+		line-height: 1.35;
 		overflow-x: auto;
 		overflow-y: hidden;
 		overscroll-behavior-x: contain;
@@ -606,21 +611,73 @@
 	   its head — the time and the command — sits ABOVE what the command
 	   answered, exactly as it does in the log, and the entry stands on its
 	   foot, as a terminal's last answer stands on the prompt. */
+	/* AS WIDE AS WHAT IT SAYS (da-7xp82): vividn, «so that it is not so wide.
+	   That way we can fit multiple entries in view more easily on mobile».
+	   A group was 21rem a document whatever it held; it is now its
+	   documents' own width, never past the row's, and never less than
+	   22ch, which leaves its head the command's first word or two after
+	   the time and the `❯` (`15:00:00 ❯ occur wa…`) and keeps two whole on
+	   a 390px phone. A longer command does not widen it: it is cut. */
 	.group {
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-end;
 		flex: none;
-		/* A document is 21rem: past the width Docs.svelte draws a document's
-		   data rows at (`ROOMY`, 320px), with the rule's own padding beside. */
-		width: min(100cqw, calc(var(--docs) * 21rem + (var(--docs) - 1) * 0.6rem + 0.8rem + 1px));
+		width: max-content;
+		min-width: min(22ch, 100cqw);
+		max-width: 100cqw;
 		height: 100%;
-		min-width: 0;
 		overflow: hidden;
 	}
 
 	.group.wide {
 		width: 100cqw;
+	}
+
+	.group:not(.wide) :global(.head) {
+		width: 0;
+		min-width: 100%;
+	}
+
+	/* What Docs.svelte measures for its `+N` and its brace is the room the
+	   row may give, the row's width, not the documents' own. */
+	.group :global(.docs .room) {
+		width: 100cqw;
+	}
+
+	/* Each document its own width, not an equal share of the group's. */
+	.group :global(.docs > .doc) {
+		flex: 0 1 auto;
+	}
+
+	/* The strip's type, not the 1rem the history reads documents at; the
+	   brace's rows keep their own size (Doc.svelte). */
+	.group :global(.doc) {
+		font-size: inherit;
+		line-height: inherit;
+	}
+
+	/* THE TIME OVER THE FIELD AND STATE (da-7xp82): vividn, «let's put a line
+	   break between the occur time and the field/state so that it is not so
+	   wide». Doc.svelte cuts the line where the CLI says its time ends; here
+	   the time is a line of its own and the spaces after it go. */
+	.group :global(.info .when) {
+		display: block;
+	}
+
+	.group :global(.info .gap) {
+		display: none;
+	}
+
+	/* A long value is cut, rather than widening its command's group. The
+	   brace's 40% and the hid's `100% - 8ch` are shares of a width this
+	   group no longer has: it is as wide as they are. */
+	.group :global(.brace) {
+		max-width: 12rem;
+	}
+
+	.group :global(.doc:not(.all) .receipt .hid) {
+		max-width: none;
 	}
 
 	/* THE BOUNDARY between two commands: a gap and a rule the group's whole

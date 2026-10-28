@@ -48,6 +48,11 @@ export interface EchoDoc {
 	header: string;
 	/** The second line: time, field, state. */
 	info: string;
+	/**
+	 * The time `info` starts with; the rest of it follows a space (da-7xp82).
+	 * Absent from a module too old to carry it, which keeps the line whole.
+	 */
+	info_time?: string;
 	/** The data block's rendered pairs, one per line. */
 	data: string[];
 	/** The same pairs joined for one line. */

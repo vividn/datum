@@ -7,7 +7,7 @@
 //! ```json
 //! {"docs":[{"action":"CREATE","hid":"35mtf","id":"coffee:2026-09-14T16:50:09.613Z",
 //!           "header":"CREATE 35mtf coffee:2026-09-14T16:50:09.613Z",
-//!           "info":"18:50:09+2  coffee ∅●",
+//!           "info":"18:50:09+2  coffee ∅●","info_time":"18:50:09+2",
 //!           "data":["beans: \"ethiopian\"","cups: 2"],
 //!           "data_inline":"beans: \"ethiopian\", cups: 2",
 //!           "field":"coffee","state":null,"action_color":"#26a269",
@@ -59,6 +59,7 @@ fn document(lines: &ActionLines) -> JsonValue {
         "id": lines.id,
         "header": super::strip_ansi(&lines.header),
         "info": super::strip_ansi(&lines.info),
+        "info_time": lines.info_time,
         "data": lines.data_items,
         "data_inline": lines.data_inline,
         "action_color": lines.action_color,
@@ -124,6 +125,7 @@ mod tests {
         ActionLines {
             header: format!("CREATE {hid} coffee:2026-09-14T16:50:09.613Z"),
             info: "18:50:09+2  coffee".into(),
+            info_time: "18:50:09+2".into(),
             data: vec![],
             action: "CREATE".into(),
             hid: hid.into(),
@@ -290,6 +292,16 @@ mod tests {
                     joined(&doc),
                     doc["info"].as_str().unwrap(),
                     "{what}: the segments must rebuild the info line exactly"
+                );
+                // da-7xp82: the stamp leads the line, a space before the rest.
+                let time = doc["info_time"].as_str().unwrap();
+                assert!(!time.is_empty(), "{what}: no info_time");
+                assert!(
+                    doc["info"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with(&format!("{time} ")),
+                    "{what}: info does not start with info_time {time:?}"
                 );
             }
         }
