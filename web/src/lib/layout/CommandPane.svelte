@@ -43,7 +43,7 @@
 	import { untrack } from 'svelte';
 	import CommandsWidget from '#lib/CommandsWidget.svelte';
 	import { clearUnlockedPills, commandsOpen, pills, prefill, text, type Pill } from '#lib/bar.ts';
-	import { argumentsOf, opensField, withFlag } from '#lib/commands.ts';
+	import { argumentsOf, opensField, withFlag, type Axis } from '#lib/commands.ts';
 	import { openField } from '#lib/fieldWidget.ts';
 	import { run } from '#lib/run.ts';
 	import { redoArgv } from '#lib/calls.ts';
@@ -55,11 +55,14 @@
 		/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
 		key = '',
 		/** The widget's «scrolling sections» option (da-u79wl). */
-		sections = false
+		sections = false,
+		/** The axis its buttons are reached along: up and down over the bar's output (da-m9zo7). */
+		axis = 'x'
 	}: {
 		epoch?: number;
 		key?: string;
 		sections?: boolean;
+		axis?: Axis;
 	} = $props();
 
 	let redoable = $state(false);
@@ -110,6 +113,7 @@
 		<CommandsWidget
 			disabled={!$ready}
 			{sections}
+			{axis}
 			grammar={$grammar}
 			pills={$pills}
 			fields={$fields}
@@ -127,6 +131,7 @@
 	.body {
 		flex: 1;
 		min-height: 0;
+		min-width: 0;
 		display: flex;
 		padding: 0.5rem 0.6rem;
 	}

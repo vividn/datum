@@ -111,6 +111,7 @@
 		hasFlags,
 		ICONS,
 		subcommandsOf,
+		type Axis,
 		type CommandButton,
 		type Grammar,
 		type Press
@@ -138,6 +139,8 @@
 		key = '',
 		/** The prototype (da-u79wl): sections that scroll, and «conflicts» pinned while there are any. */
 		sections = false,
+		/** The axis the bar is reached along (ButtonRows). */
+		axis = 'x',
 		/** A press that runs: the argv. */
 		onrun,
 		/** A press that writes the line instead: what to write, and what it spends. */
@@ -153,6 +156,7 @@
 		conflicts?: number;
 		key?: string;
 		sections?: boolean;
+		axis?: Axis;
 		onrun?: (argv: string[]) => void;
 		online?: (line: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }) => void;
 		onflag?: (flag: { command: string; flag: string; keyboard: boolean }) => void;
@@ -252,6 +256,7 @@
 	items={shown}
 	key={(command) => command.name}
 	section={open || flagged ? undefined : (command) => command.section}
+	{axis}
 	{...paged}
 	bind:bar
 >

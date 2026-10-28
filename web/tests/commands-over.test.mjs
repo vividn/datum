@@ -13,8 +13,9 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp } from './support/app.mjs';
-import { withBar } from './support/layout.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { dragOn } from './support/bar.mjs';
+import { swipe, withBar } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -232,6 +233,97 @@ describe('the ❯ opens the commands over the output', () => {
 			} finally {
 				await page.emulateMedia({ reducedMotion: null });
 			}
+			assert.deepEqual(errors, []);
+		});
+	});
+});
+
+// vividn, 2026-10-28: «it should intercept swipes rather than going down
+// through to the output bar like currently. i.e., swiping up on the command
+// pop up bar shouldn't open the cli» (da-m9zo7). So the commands stand in
+// columns reached up and down, a swipe or a wheel on them scrolls them, and
+// the bar and the log under them stay where they were; a swipe on the input
+// row still moves the bar.
+describe('a swipe on the commands is theirs', () => {
+	const PHONE = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, prepare: withBar };
+	const LIST = `${OVER} .bar.commands`;
+
+	/** How far the bar is open, how tall the log, and how far the commands are scrolled. */
+	const state = (page) =>
+		page.evaluate((list) => {
+			const style = getComputedStyle(document.querySelector('.shell'));
+			const px = (name) => Math.round(parseFloat(style.getPropertyValue(name)) || 0);
+			const el = document.querySelector(list);
+			return { shown: px('--shown'), log: px('--log-height'), scrolled: Math.round(el?.scrollTop ?? -1), room: el ? el.scrollHeight - el.clientHeight : -1 };
+		}, LIST);
+
+	/** Wait for the scroll and the bar to stop moving: three readings alike, so a stalled frame is not a stop. */
+	const still = async (page) => {
+		let last = '';
+		let same = 0;
+		for (;;) {
+			await page.waitForTimeout(120);
+			const now = JSON.stringify(await state(page));
+			same = now === last ? same + 1 : 0;
+			if (same === 2) return JSON.parse(now);
+			last = now;
+		}
+	};
+
+	const open = async (page) => {
+		await page.locator(CHEVRON).click();
+		await page.locator(`${LIST} button[data-command="occur"]`).waitFor();
+		await page.locator(OVER).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+	};
+
+	test('on a phone, up and down scroll them and the bar stays; a swipe on the input row still moves it', async () => {
+		await withApp(async ({ page, errors }) => {
+			await open(page);
+			const before = await still(page);
+			assert.equal(before.scrolled, 0);
+			assert.ok(before.room > 40, `the commands have ${before.room}px to scroll`);
+			const box = await page.locator(LIST).boundingBox();
+			const x = box.x + box.width / 2;
+
+			// A real finger up, a frame a move: the list scrolls, the bar and the log do not move.
+			await swipe(page, x, box.y + box.height - 8, 0, -60, 10, 16);
+			const up = await still(page);
+			assert.ok(up.scrolled > 0, `a swipe up left the commands at ${up.scrolled}px`);
+			assert.deepEqual([up.shown, up.log], [before.shown, before.log], 'a swipe up on the commands moved the bar');
+
+			// And down again.
+			await swipe(page, x, box.y + 8, 0, 60, 10, 16);
+			const down = await still(page);
+			assert.ok(down.scrolled < up.scrolled, `a swipe down left the commands at ${down.scrolled}px, from ${up.scrolled}px`);
+			assert.deepEqual([down.shown, down.log], [before.shown, before.log], 'a swipe down on the commands moved the bar');
+
+			// The bar's grip never sees it, even as a drag the browser does not take.
+			await dragOn(page, OVER, -200);
+			const dragged = await still(page);
+			assert.deepEqual([dragged.shown, dragged.log], [before.shown, before.log], 'a drag on the commands moved the bar');
+			assert.equal(await page.locator(OVER).count(), 1);
+
+			// The input row is the bar's, as ever.
+			const clock = await page.locator(`${BAR} .stamp`).boundingBox();
+			await swipe(page, clock.x + clock.width / 2, clock.y + clock.height / 2, 0, -200, 10);
+			const moved = await still(page);
+			assert.ok(moved.log > 0, `a swipe up on the input row left the log at ${moved.log}px`);
+			assert.deepEqual(errors, []);
+		}, PHONE);
+	});
+
+	test('a wheel over them scrolls them and leaves the bar', async () => {
+		await onPage(async ({ page, errors }) => {
+			await open(page);
+			const before = await still(page);
+			const box = await page.locator(OVER).boundingBox();
+			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+			await page.mouse.wheel(0, 60);
+			const after = await still(page);
+			assert.ok(after.scrolled > before.scrolled, `a wheel left the commands at ${after.scrolled}px`);
+			assert.deepEqual([after.shown, after.log], [before.shown, before.log], 'a wheel on the commands moved the bar');
+			await page.locator(CHEVRON).click();
+			await page.locator(OVER).waitFor({ state: 'detached' });
 			assert.deepEqual(errors, []);
 		});
 	});

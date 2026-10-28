@@ -432,14 +432,16 @@
 	</div>
 
 	{#if $commandsOpen}
-		<!-- Clipped at the input's top, so it slides out from behind it. -->
-		<div class="commands-over">
+		<!-- Clipped at the input's top, so it slides out from behind it. Its
+		     buttons stand in columns reached up and down, and a swipe or a
+		     wheel on them is theirs: the bar's grip leaves it alone (da-m9zo7). -->
+		<div class="commands-over" data-own-gestures>
 			<div
 				id="bar-commands"
 				class="commands"
 				transition:fly={{ y: '100%', opacity: 1, duration: still() ? 0 : 160 }}
 			>
-				<CommandPane epoch={$epoch} key="bar:commands" />
+				<CommandPane epoch={$epoch} key="bar:commands" axis="y" />
 			</div>
 		</div>
 	{/if}
@@ -887,6 +889,12 @@
 		background: var(--ground);
 		border-top: 1px solid var(--accent);
 		border-bottom: 1px solid var(--tint);
+	}
+
+	/* A scroll that reaches the end of the buttons stops there, and never
+	   goes on to the page. */
+	.commands :global(.bar) {
+		overscroll-behavior: contain;
 	}
 
 	/* Shown, then gone at the same moment, for a reader who asked for no

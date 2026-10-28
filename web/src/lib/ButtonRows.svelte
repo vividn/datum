@@ -4,7 +4,7 @@
 	today, and the next one by using this rather than copying its CSS.
 
 	THE SCROLL RULE (vividn, 2026-09-22): the bar is always reached along
-	one axis — `axis`, scrolled left and right today — and a taller box buys it more rows,
+	one axis — `axis`, left and right in a pane, up and down over the bottom bar's output — and a taller box buys it more rows,
 	up to `maxRows` (three, MAX_ROWS, unless the widget lifts it: the fields
 	widget takes all its box fits, da-arms4), never a wrap onto the other axis. The rows are counted
 	from the box the layout gave the bar and the size of the `probe` snippet

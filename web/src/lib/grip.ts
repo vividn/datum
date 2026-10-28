@@ -70,6 +70,13 @@ const MAX_SPEED = 4;
 /** Every surface the grip is on — the bar, and the log under it. */
 const gripped = new Set<HTMLElement>();
 
+/**
+ * Whether a gesture began inside a box that keeps its own: the ❯'s commands
+ * over the output scroll up and down under a finger or a wheel, and the bar
+ * under them does not move (da-m9zo7).
+ */
+const theirs = (event: Event) => !!(event.target as Element).closest?.('[data-own-gestures]');
+
 /** When a wheel last turned somewhere that is not one of them. */
 let foreignAt = -Infinity;
 
@@ -129,7 +136,7 @@ function unpause(): void {
 }
 
 function onPointerDown(event: PointerEvent): void {
-	if (event.pointerType === 'mouse' && event.button !== 0) return;
+	if ((event.pointerType === 'mouse' && event.button !== 0) || theirs(event)) return;
 	// A FINGER ALWAYS WINS OVER AN ANIMATION, so a press stops whatever
 	// glide is in flight — and then it owes the bar a resting place, which
 	// is what `settling` is for: a press that turns out to be a TAP puts
@@ -235,7 +242,7 @@ function onPointerCancel(): void {
  * scroll, and not the bar's business (canary on PR #46).
  */
 function onWheel(event: WheelEvent): void {
-	if (event.timeStamp - foreignAt < INERTIA_MS || !event.deltaY) return;
+	if (event.timeStamp - foreignAt < INERTIA_MS || !event.deltaY || theirs(event)) return;
 	event.preventDefault();
 	moveTo(at() + (event.deltaY > 0 ? notch() : -notch()));
 	settle(event.deltaY > 0);
@@ -251,7 +258,7 @@ function swallow(event: MouseEvent): void {
 
 /** A wheel anywhere else is somebody else's, and its inertia is too. */
 function elsewhere(event: WheelEvent): void {
-	for (const node of gripped) if (node.contains(event.target as Node)) return;
+	if (!theirs(event)) for (const node of gripped) if (node.contains(event.target as Node)) return;
 	foreignAt = event.timeStamp;
 }
 
