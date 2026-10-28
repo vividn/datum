@@ -75,13 +75,14 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
         return Ok(());
     }
 
-    // Per spec: all sides share one occur_time. Time-flag side-scoping
-    // (da-gh0.D) will revisit this — for now the leftmost side's time
-    // wins and propagates to every other side. We rebuild slug and
-    // content_hash for any side whose occur_time changed so the
-    // identity columns reflect the canonical time.
-    let (entries, outputs): (Vec<_>, Vec<_>) = collected.into_iter().unzip();
-    let normalized = normalize_shared_occur_time(entries);
+    // A side that states its time keeps it, as its flags are scoped to it
+    // (da-gh0 Rule 4, da-x34md); every other side takes the leftmost
+    // side's time. We rebuild slug and content_hash for any side whose
+    // occur_time changed so the identity columns reflect the shared time.
+    let own_time: Vec<bool> = collected.iter().map(|(_, _, own)| *own).collect();
+    let (entries, outputs): (Vec<_>, Vec<_>) =
+        collected.into_iter().map(|(e, o, _)| (e, o)).unzip();
+    let normalized = normalize_shared_occur_time(entries, &own_time);
 
     // da-dayk: bucket per-side `OutputArgs` by `(field, occur_time)`
     // in first-appearance order — exactly how `merge_same_field_groups`
@@ -190,10 +191,10 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
     }
 }
 
-/// Force every entry in `entries` to share the leftmost entry's
-/// `occur_time` (Section B: "multi_all_sides_share_one_occur_time").
-/// Slug and content_hash both depend on occur_time, so they are
-/// rebuilt whenever we change the time. Entries with a non-templated
+/// Give every entry whose side stated no time of its own (`own_time`)
+/// the leftmost entry's `occur_time`; a side that stated one keeps it
+/// (da-gh0 Rule 4, da-x34md). Slug and content_hash both depend on
+/// occur_time, so they are rebuilt whenever we change the time. Entries with a non-templated
 /// slug get the default `<field>:<timestamp>` rebuild; entries
 /// carrying an `id_structure` template are re-interpolated against
 /// the post-mutation state via [`datum_core::field_spec::interpolate`].
@@ -204,12 +205,13 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
 /// `following_state`, so there is one kind of row to move.
 fn normalize_shared_occur_time(
     mut entries: Vec<datum_core::entry::Entry>,
+    own_time: &[bool],
 ) -> Vec<datum_core::entry::Entry> {
     let Some(shared) = entries.iter().find_map(|e| e.occur_time.clone()) else {
         return entries;
     };
-    for entry in entries.iter_mut() {
-        if entry.occur_time.as_ref().map(|t| &t.utc) == Some(&shared.utc) {
+    for (entry, &own) in entries.iter_mut().zip(own_time) {
+        if own || entry.occur_time.as_ref().map(|t| &t.utc) == Some(&shared.utc) {
             continue;
         }
         entry.occur_time = Some(shared.clone());

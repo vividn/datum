@@ -115,7 +115,10 @@ thread_local! {
     /// write time. The retained `OutputArgs` lets the post-insert
     /// render path (da-dayk) honour per-side flags (`--show none`,
     /// `--format`, etc.) for the corresponding merged row.
-    static MULTI_COLLECTOR: RefCell<Option<Vec<(datum_core::entry::Entry, OutputArgs)>>> =
+    ///
+    /// da-x34md: the window holds the one `now` every side's time is read
+    /// from, and each entry says whether its side stated a time of its own.
+    static MULTI_COLLECTOR: RefCell<Option<(datum_core::time::DatumTime, Vec<Collected>)>> =
         const { RefCell::new(None) };
     /// da-gvcen: the field declarations a multi window's sides made, to be
     /// written as specs only once the atomic insert has COMMITTED. The
@@ -161,7 +164,8 @@ pub fn peek_intent_context() -> Option<IntentContext> {
 /// inserting them. Pair with [`end_multi_collector`] to drain the
 /// buffer and atomically write at the end of the multi dispatch.
 pub fn begin_multi_collector() {
-    MULTI_COLLECTOR.with(|slot| *slot.borrow_mut() = Some(Vec::new()));
+    MULTI_COLLECTOR
+        .with(|slot| *slot.borrow_mut() = Some((datum_core::time::DatumTime::now(), Vec::new())));
     PENDING_DECLARATIONS.with(|slot| slot.borrow_mut().clear());
 }
 
@@ -208,22 +212,37 @@ pub fn in_multi_window() -> bool {
     MULTI_COLLECTOR.with(|slot| slot.borrow().is_some())
 }
 
+/// A side's buffered entry, its [`OutputArgs`], and whether the side
+/// stated a time of its own (`-t`, `-d`, `-y`, `-q`, `-D`, `-T`, or a
+/// time key).
+pub type Collected = (datum_core::entry::Entry, OutputArgs, bool);
+
+/// The `now` of the open multi window, which every side reads its time
+/// from, so two sides with the same flags name the same instant.
+pub fn window_now() -> Option<datum_core::time::DatumTime> {
+    MULTI_COLLECTOR.with(|slot| slot.borrow().as_ref().map(|(now, _)| now.clone()))
+}
+
 /// Drain the multi-collector buffer, leaving the thread-local empty.
 /// Returns `None` if no window is currently open. Each element pairs
 /// the prepared entry with the originating side's [`OutputArgs`] so
 /// downstream render code can honour per-side display flags.
-pub fn end_multi_collector() -> Option<Vec<(datum_core::entry::Entry, OutputArgs)>> {
-    MULTI_COLLECTOR.with(|slot| slot.borrow_mut().take())
+pub fn end_multi_collector() -> Option<Vec<Collected>> {
+    MULTI_COLLECTOR.with(|slot| slot.borrow_mut().take().map(|(_, buf)| buf))
 }
 
 /// Push an entry (with its side's [`OutputArgs`]) into the active
 /// multi-collector. Returns `true` when a collector is in scope (the
 /// caller should skip the normal insert path); returns `false` when
 /// there is no active window.
-pub fn push_to_multi_collector(entry: datum_core::entry::Entry, output: OutputArgs) -> bool {
+pub fn push_to_multi_collector(
+    entry: datum_core::entry::Entry,
+    output: OutputArgs,
+    own_time: bool,
+) -> bool {
     MULTI_COLLECTOR.with(|slot| {
-        if let Some(buf) = slot.borrow_mut().as_mut() {
-            buf.push((entry, output));
+        if let Some((_, buf)) = slot.borrow_mut().as_mut() {
+            buf.push((entry, output, own_time));
             true
         } else {
             false

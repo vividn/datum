@@ -18,13 +18,13 @@ Manage aliases
 
 Aliases expand argv before the parser sees it, so an alias can stand in for any prefix of a `datum` invocation — verb, field, flags, or all three.
 
-A standalone, whitespace-bounded `,` token splits one invocation into N sides that write atomically with the same occur_time. The trigger works at the top-level CLI, inside alias bodies, and through chains of alias-of-alias (multi-of-multi flattens to N flat sides). The comma must be its own token: `vertical , sit` triggers a multi. Inside a word it joins a list instead — `vertical,sit` is one parallel state, `key=a,b` one list value — and a comma touching one side only (`vertical, sit`) is refused.
+A standalone, whitespace-bounded `,` token splits one invocation into N sides that write atomically, at one occur_time unless a side names its own. The trigger works at the top-level CLI, inside alias bodies, and through chains of alias-of-alias (multi-of-multi flattens to N flat sides). The comma must be its own token: `vertical , sit` triggers a multi. Inside a word it joins a list instead — `vertical,sit` is one parallel state, `key=a,b` one list value — and a comma touching one side only (`vertical, sit`) is refused.
 
 Key slot forms (`-k` and `-K` accept the same three shapes): `-k key` is required and errors at call time if unfilled, `-k key=` is optional with no default (silently skipped), `-k key=val` defaults to `val` when no value is supplied. A `-k` or `-K` name declared on multiple sides becomes a shared slot — one call-site value propagates to every declaring side. The `.` token skips a slot on its side; for a shared slot it skips on all sides.
 
 `--` semantics in multi-entry contexts: inside an alias body, flags before `--` scope to their side and flags after `--` apply to all sides. `--` is implicit at the end of every alias body, so call-site flags apply to all sides by default. A `--` inside an alias body does not propagate past the alias boundary.
 
-Time flags at the call site compose with the ones the alias bound: `-q` and a relative `-t` add to whatever time the alias bound — on an alias bound to `-t +5`, `-t +10` writes at +15 — and `-y` and `-d` move the day of a clock it bound; beside a relative time they need one (`datum help time`). In a multi-entry alias every side writes at ONE occur_time, taken from the first side, so a later side's `-t` is dropped.
+Time flags at the call site compose with the ones the alias bound: `-q` and a relative `-t` add to whatever time the alias bound — on an alias bound to `-t +5`, `-t +10` writes at +15 — and `-y` and `-d` move the day of a clock it bound; beside a relative time they need one (`datum help time`). A time flag on one side of a `,` is that side's: `occur tea -t 9:00 , switch mood calm -t 9:10` writes tea at 9:00 and mood at 9:10, and a side naming no time takes the first side's.
 
 After a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.
 

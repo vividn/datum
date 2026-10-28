@@ -428,3 +428,74 @@ fn binary_bare_comma_side_must_be_a_command() {
     assert!(ok, "{stderr}");
     assert_eq!(body_row(&db)[0], s(r#"["run","stretch"]"#));
 }
+
+/// The minute `field`'s newest row stands at, since the epoch.
+fn minute(db: &PathBuf, field: &str) -> i64 {
+    Connection::open(db)
+        .expect("open db")
+        .query_row(
+            "SELECT strftime('%s', occur_time) / 60 FROM entries \
+             WHERE deleted_at IS NULL AND field = ?1 ORDER BY rowid DESC LIMIT 1",
+            [field],
+            |r| r.get(0),
+        )
+        .expect("a row")
+}
+
+/// da-x34md: a side's `-t` is that side's (da-gh0 Rule 4), in either
+/// order; the first side's `-t` was applied to every side, and a later
+/// side's dropped without a word.
+#[test]
+fn binary_each_side_keeps_its_own_time() {
+    for args in [
+        &[
+            "occur", "tea", "-t", "9:00", ",", "switch", "mood", "calm", "-t", "9:10",
+        ][..],
+        &[
+            "switch", "mood", "calm", "-t", "9:10", ",", "occur", "tea", "-t", "9:00",
+        ],
+    ] {
+        let db = tmp_db();
+        let (ok, _, stderr) = run(&db, args);
+        assert!(ok, "{args:?}: {stderr}");
+        assert_eq!(minute(&db, "mood") - minute(&db, "tea"), 10, "{args:?}");
+    }
+}
+
+/// A block side's own `-t` is its end, the span before it, as alone.
+#[test]
+fn binary_a_block_side_keeps_its_own_time() {
+    let db = tmp_db();
+    let args = [
+        "start", "walk", "-t", "10:00", "30m", ",", "occur", "cake", "-t", "10:05",
+    ];
+    let (ok, _, stderr) = run(&db, &args);
+    assert!(ok, "{stderr}");
+    assert_eq!(minute(&db, "cake") - minute(&db, "walk"), 5);
+}
+
+/// A side naming no time takes the first side's, wherever it stands.
+#[test]
+fn binary_a_side_with_no_time_takes_the_first_sides() {
+    let db = tmp_db();
+    let args = [
+        "occur", "tea", "-t", "9:00", ",", "occur", "cake", ",", "occur", "pie", "-t", "9:30",
+    ];
+    let (ok, _, stderr) = run(&db, &args);
+    assert!(ok, "{stderr}");
+    assert_eq!(minute(&db, "cake"), minute(&db, "tea"));
+    assert_eq!(minute(&db, "pie") - minute(&db, "tea"), 30);
+}
+
+/// A call-site `-q` reaches every side of the alias, and each reads it
+/// from the line's one `now`, so the sides stand at one instant to the
+/// nanosecond, not each at its own reading of the clock.
+#[test]
+fn binary_a_flag_every_side_has_names_one_instant() {
+    let db = aliased_db(&[("oov", "switch environment outside , occur caffeine")]);
+    let (ok, _, stderr) = run(&db, &["oov", "-q"]);
+    assert!(ok, "{stderr}");
+    let times: Vec<String> = live_rows(&db).into_iter().map(|r| r.1).collect();
+    assert_eq!(times.len(), 2, "{times:?}");
+    assert_eq!(times[0], times[1]);
+}

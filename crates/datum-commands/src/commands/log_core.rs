@@ -136,7 +136,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // is read once: a timeless entry is created at that instant and a timed
     // one placed from it, so `reparse` anchors where the log did, to the
     // millisecond a `*_time` value keeps (da-x15of).
-    let now = DatumTime::now();
+    let now = crate::args::window_now().unwrap_or_else(DatumTime::now);
     // da-h8dvi: a past instant with no `-z` is placed as if `-z` named the
     // zone the entries around it agree on, recorded and said below.
     let inferred_zone = neighbours_zone(db, &args.time, now.utc);
@@ -221,6 +221,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             obj.insert("occur_time".into(), t);
         }
     }
+    // da-x34md: a side of a multi line that states its time keeps it.
+    let own_time =
+        args.time.places() || args.time.omit_timestamp || data_occur_time(&parsed).is_some();
     let ParsedLogArgs {
         field,
         value,
@@ -1031,7 +1034,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             "{label} reads its field's record in its own write; a multi-entry line is not one"
         );
     }
-    if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
+    if crate::args::push_to_multi_collector(entry.clone(), args.output()?, own_time) {
         // The window owns the spec write, once its atomic insert lands.
         if declares_field {
             crate::args::push_pending_declaration(&entry.field, action);
