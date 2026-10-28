@@ -463,8 +463,6 @@ fn layout_of(
         orientation,
         axis_ticks_override: window_ticks,
         right_panel_width: 0.0,
-        panel_at_ms: None,
-        instant_ms: None,
     };
 
     Ok((compute_dayview(&config), end_date))

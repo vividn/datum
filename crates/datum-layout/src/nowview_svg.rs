@@ -14,8 +14,8 @@ use std::fmt::Write;
 
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
 use crate::dayview_svg::{
-    axis_label_size, now_chunk, render_dayview_svg_with, text_width, ChunkPart, DayviewSvgOpts,
-    FlowMark, RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR,
+    axis_label_size, now_chunk, render_dayview_svg_with, text_width, DayviewSvgOpts, FlowMark,
+    RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR,
 };
 use crate::nowview::NowviewCurrentState;
 
@@ -90,75 +90,87 @@ pub fn render_nowview_svg_with(
 }
 
 /// Render a window placed anywhere but ending at now: centred on a selected
-/// time (a time flag, da-pcis) or on wherever its viewer moved it, its strip
-/// about `instant_ms`, `None` being now (da-zccjs). The strip carries
-/// `current_states`, the states at the instant; a field whose state just
-/// before it, in `before_states`, is another changes state there, and its
-/// strip is drawn as the change, the state it left in the half facing the
-/// past and the one it entered in the half facing the future. A dot in the
-/// instant's second is drawn in the strip's middle. Under the strip,
-/// `strip_label`: the instant's clock, or a «now» at now with `now_label`.
-/// The now-line is dayview's own, at now if now is in the window (da-5flt).
+/// time (a time flag, da-pcis) or on wherever its viewer moved it. Its strip
+/// is now's, at now when the window draws now, carrying `current_states`;
+/// under it, `clock` or a «now» with `now_label`. The selected time,
+/// `instant_ms`, is a dashed line in a timeline continuous either side of
+/// it (da-dv45l, vividn: «For selected times, don't display the outset
+/// block, just have the nowview as it would be with a dashed line and
+/// continuous in time around it»).
 pub fn render_nowview_at_svg(
     layout: &DayviewLayout,
-    strip_label: &str,
+    clock: &str,
     instant_ms: Option<i64>,
     current_states: &[NowviewCurrentState],
-    before_states: &[NowviewCurrentState],
     labels: bool,
     now_label: bool,
 ) -> String {
-    let mut layout = layout.clone();
-    if let Some(at) = instant_ms {
-        dots_into_strip(&mut layout, at);
-    }
     // `--labels` means one thing on every nowview picture (da-7q8r): the
-    // states at the instant, in a gutter past the right edge.
-    let (gutter, label_group) = label_gutter(&layout, current_states, labels);
-    let layout = widen_for(&layout, gutter).unwrap_or(layout);
-    let fills = changing_strip_fills(current_states, before_states);
-    let label = match (instant_ms, now_label) {
-        (None, true) => NOW,
-        _ => StripLabel {
-            text: strip_label,
-            class: "instant-label",
+    // states now, in a gutter past the right edge.
+    let (gutter, label_group) = label_gutter(layout, current_states, labels);
+    let widened = widen_for(layout, gutter);
+    let layout = widened.as_ref().unwrap_or(layout);
+    let fills = now_strip_fills(current_states);
+    let label = if now_label {
+        NOW
+    } else {
+        StripLabel {
+            text: clock,
+            class: "now-clock",
             fill: TEXT_COLOR,
-        },
+        }
     };
     let opts = DayviewSvgOpts {
         axis_end_reserved: 0.0,
-        axis_keep_out: strip_label_keep_out(&layout, Some(&label)),
+        axis_keep_out: strip_label_keep_out(layout, Some(&label)),
         right_panel_fills: &fills,
         ..Default::default()
     };
-    let mut svg = render_dayview_svg_with(&layout, opts);
-    inject_inside_plot_group(&mut svg, &strip_label_overlay(&layout, &label));
+    let mut svg = render_dayview_svg_with(layout, opts);
+    inject_inside_plot_group(&mut svg, &strip_label_overlay(layout, &label));
+    if let Some(at) = instant_ms {
+        inject_inside_plot_group(&mut svg, &instant_line(layout, at));
+    }
     inject_inside_plot_group(&mut svg, &label_group);
     svg
 }
 
-/// Move each dot in the second starting at `at` into the middle of the strip
-/// about that instant (da-zccjs, vividn: «If there is an occur dot happening
-/// at exactly that moment, show it in the "now" part»). A second, because a
-/// time is never named finer: `-t 14:30` is 14:30:00, and so is the entry
-/// it logged.
-fn dots_into_strip(layout: &mut DayviewLayout, at: i64) {
-    for i in 0..layout.days.len() {
-        let Some(c) = now_chunk(layout, &layout.days[i]) else {
-            continue;
-        };
-        for field in &mut layout.days[i].fields {
-            for p in &mut field.points {
-                if (p.time_ms - at).div_euclid(1000) == 0 {
-                    p.time_pos = (c.from + c.to) / 2.0;
-                }
-            }
-        }
-    }
+/// The selected time's dashed line across the band, white over a dark
+/// casing as the page draws a selection, saying its instant as a mark
+/// does; nothing where the picture does not draw the instant. From the
+/// picture's own edge, as datum.day's selection line is, so the two dash
+/// alike where one is drawn over the other.
+fn instant_line(layout: &DayviewLayout, at: i64) -> String {
+    let Some(pos) = (layout.days.iter().flat_map(|d| &d.spans))
+        .find(|s| s.start_ms <= at && at <= s.end_ms)
+        .map(|s| {
+            s.time_offset
+                + (at - s.start_ms) as f64 / (s.end_ms - s.start_ms).max(1) as f64 * s.time_extent
+        })
+    else {
+        return String::new();
+    };
+    let cross = layout.days.len() as f64 * layout.day_pitch - layout.interday_margin;
+    let along = layout.label_width + pos;
+    let edge = -layout.margin;
+    let (x1, y1, x2, y2) = match layout.orientation {
+        Orientation::Horizontal => (along, edge, along, cross),
+        Orientation::Vertical => (edge, along, layout.time_axis_height + cross, along),
+    };
+    let iso = chrono::DateTime::from_timestamp_millis(at)
+        .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .unwrap_or_default();
+    [("rgba(0, 0, 0, 0.6)", 3.5), ("#ffffff", 1.5)]
+        .iter()
+        .map(|(stroke, width)| {
+            format!(
+                r#"<line class="instant-line" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{stroke}" stroke-width="{width}" stroke-dasharray="3,3" pointer-events="none" data-at="{iso}"/>"#
+            )
+        })
+        .collect()
 }
 
-/// The text under the strip, in the time-axis strip: a «now», or the clock
-/// of the instant the strip is about.
+/// The text under the strip, in the time-axis strip: a «now», or the clock.
 struct StripLabel<'a> {
     text: &'a str,
     class: &'static str,
@@ -335,42 +347,6 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
     (AXIS_LABEL_GAP + widest, out)
 }
 
-/// [`now_strip_fills`] of `current_states`, but a field whose state in
-/// `before_states` is another is drawn as the change: the state it left in
-/// the strip's half facing the past, the one it entered in the other.
-fn changing_strip_fills(
-    current_states: &[NowviewCurrentState],
-    before_states: &[NowviewCurrentState],
-) -> Vec<RightPanelFill> {
-    let mut fills = now_strip_fills(current_states);
-    for before in before_states {
-        let after = current_states.iter().find(|s| s.field == before.field);
-        let same = |a: &NowviewCurrentState| {
-            (a.state_label.as_ref(), &a.colors, a.id.as_ref())
-                == (
-                    before.state_label.as_ref(),
-                    &before.colors,
-                    before.id.as_ref(),
-                )
-        };
-        if after.is_some_and(same) || (after.is_none() && before.state_label.is_none()) {
-            continue;
-        }
-        for f in fills.iter_mut().filter(|f| f.field == before.field) {
-            f.part = ChunkPart::Trail;
-        }
-        fills.extend(
-            now_strip_fills(std::slice::from_ref(before))
-                .into_iter()
-                .map(|f| RightPanelFill {
-                    part: ChunkPart::Lead,
-                    ..f
-                }),
-        );
-    }
-    fills
-}
-
 /// Turn the resolved current states into the per-field strip fills the
 /// dayview renderer paints. A field in no state right now (`state_label`
 /// is `None`) gets no chunk — its lane simply stops at the now-line.
@@ -388,7 +364,6 @@ fn now_strip_fills(current_states: &[NowviewCurrentState]) -> Vec<RightPanelFill
                 field: e.field.clone(),
                 fill,
                 id: e.id.clone(),
-                part: ChunkPart::Whole,
             })
         })
         .collect()
@@ -671,8 +646,6 @@ mod tests {
                 500.0, 30.0, 15.0,
             )),
             right_panel_width: 0.0,
-            panel_at_ms: None,
-            instant_ms: None,
         };
         compute_dayview(&cfg)
     }
@@ -772,8 +745,6 @@ mod tests {
             orientation: Orientation::Horizontal,
             axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0, 20.0)),
             right_panel_width: 120.0,
-            panel_at_ms: None,
-            instant_ms: None,
         };
         let layout = compute_dayview(&cfg);
         // Right panel reserved → time axis shrinks by 120 px.
@@ -1181,7 +1152,7 @@ mod tests {
             id: None,
         }];
         let svg = if centred {
-            render_nowview_at_svg(&layout, "12:00", None, &states, &[], false, now_label)
+            render_nowview_at_svg(&layout, "12:00", None, &states, false, now_label)
         } else {
             render_nowview_svg(&layout, "12:00", &states, false, now_label)
         };
@@ -1197,7 +1168,7 @@ mod tests {
     fn the_past_stops_a_gap_short_of_a_finer_now_line() {
         let (layout, svg) = gap_picture(false, false);
         let now = layout.time_axis_extent;
-        assert_eq!(now, 400.0 * 9.0 / 10.0);
+        assert_eq!(now, 400.0 * 4.0 / 5.0);
         let past = rects(&field_group(&svg, "mood"), "block");
         let past_end = past.iter().map(|b| b.x + b.w).fold(0.0, f64::max);
         let line = num(&svg, "line", "current-time-line", "x1");
@@ -1229,12 +1200,13 @@ mod tests {
     fn a_future_drawn_past_the_chunk_between_two_lines() {
         let (layout, svg) = gap_picture(true, false);
         let (extent, strip) = (layout.time_axis_extent, layout.right_panel_width);
-        assert_eq!((extent, strip), (360.0, 40.0));
+        assert_eq!((extent, strip), (320.0, 80.0));
         // Now is 20 of the window's 30 minutes in.
         let now = extent * 20.0 / 30.0;
         let lead = num(&svg, "line", "current-time-line", "x1");
         let end = num(&svg, "line", "current-time-line-end", "x1");
-        assert_eq!((lead, end), (now + NOW_GAP, now + strip - NOW_GAP), "{svg}");
+        assert!((lead - (now + NOW_GAP)).abs() < 1e-9, "{svg}");
+        assert!((end - (now + strip - NOW_GAP)).abs() < 1e-9, "{svg}");
         assert_eq!(
             attr(&svg, "line", "current-time-line-end", "stroke-width").unwrap(),
             "1"
@@ -1245,7 +1217,7 @@ mod tests {
         // The past ends at now; the entry two minutes ahead starts past
         // the second line, 22 minutes in plus the strip.
         let blocks = rects(&svg, "block");
-        assert_eq!(blocks[0].x + blocks[0].w, now, "{svg}");
+        assert!((blocks[0].x + blocks[0].w - now).abs() < 1e-9, "{svg}");
         assert!(
             (blocks[1].x - (extent * 22.0 / 30.0 + strip)).abs() < 1e-9,
             "{svg}"
@@ -1259,36 +1231,35 @@ mod tests {
         );
     }
 
-    /// vividn, 2026-10-26 (da-6csum): a window in the past keeps the now
-    /// section «on the right side of the now view», one far enough in the
-    /// future pins it «on the left side»: the chunk at that edge, a gap
-    /// between it and the timeline, the «now» under it, and no now-line
-    /// beside it, now not being there.
+    /// vividn, 2026-10-27 (da-dv45l): «it is no longer pinned on the side,
+    /// but rather it just disappears when panning around». A window an hour
+    /// either side of now draws no strip, no «now» and no now-line, and its
+    /// one stretch of time runs the whole axis at the window's scale. One
+    /// panned until now is just past its end draws the strip at now still,
+    /// leaving the far edge with it.
     #[test]
-    fn a_window_now_is_outside_pins_its_strip_to_the_edge_now_lies_beyond() {
-        for (at, left) in [(-60, false), (60, true)] {
+    fn a_window_now_is_outside_draws_time_where_the_strip_was() {
+        for at in [-60, 60] {
             let (layout, svg) = picture_at(Some(at), true, |_| {});
-            let (extent, strip) = (layout.time_axis_extent, layout.right_panel_width);
-            assert_eq!((extent, strip), (360.0, 40.0));
-            let chunk = rect_attrs(&field_group(&svg, "mood"), "now-chunk").expect("a chunk");
-            let (from, to) = (chunk.x, chunk.x + chunk.w);
-            if left {
-                assert_eq!((from, to), (0.0, strip - NOW_GAP), "{svg}");
-            } else {
-                assert_eq!((from, to), (extent + NOW_GAP, extent + strip), "{svg}");
+            assert_eq!(layout.right_panel_width, 80.0);
+            for absent in ["now-chunk", "now-label", "current-time-line"] {
+                assert!(!svg.contains(absent), "{absent}: {svg}");
             }
-            // The timeline stops a gap short of the strip, and starts a gap
-            // past it.
-            for b in rects(&svg, "block") {
-                assert!(
-                    b.x + b.w <= from - NOW_GAP + 1e-9 || b.x >= to + NOW_GAP - 1e-9,
-                    "{svg}"
-                );
-            }
-            let label = num(&svg, "text", "now-label", "x") - layout.label_width;
-            assert!((label - (from + to) / 2.0).abs() < 1e-9, "{svg}");
-            assert!(!svg.contains("current-time-line"), "{svg}");
+            assert_eq!(svg.matches(r#"<g class="day-data""#).count(), 1, "{svg}");
+            let s = &layout.days[0].spans[0];
+            assert_eq!((s.time_offset, s.time_extent), (0.0, 400.0), "{svg}");
+            // At the window's scale: 30 minutes are its 320px.
+            let ms = (s.end_ms - s.start_ms) as f64;
+            assert!((ms - 37.5 * 60_000.0).abs() < 1.0, "{svg}");
         }
+        let (layout, svg) = picture_at(Some(-16), true, |_| {});
+        let c = now_chunk(&layout, &layout.days[0]).expect("a strip");
+        assert!((c.now - 320.0 * 31.0 / 30.0).abs() < 1e-9, "{svg}");
+        assert_eq!(c.to, c.now + 80.0, "{svg}");
+        assert!(
+            svg.contains("now-label") && svg.contains("now-chunk"),
+            "{svg}"
+        );
     }
 
     /// vividn, 2026-10-25: «the time axis numbers are way to big» (da-a2cxp).
@@ -1373,115 +1344,83 @@ mod tests {
             .collect()
     }
 
-    /// da-zccjs, vividn: «If there is an occur dot happening at exactly that
-    /// moment, show it in the "now" part. If there is a state transition,
-    /// show the state transition.» A strip about a selected instant draws a
-    /// field changing state there as the change — the state it left in the
-    /// half facing the past, the one it entered in the other — a dot in the
-    /// instant's second in its middle, one a second later where it was, and
-    /// the instant's clock under it, with no now-line beside it.
+    /// da-dv45l, vividn: «For selected times, don't display the outset
+    /// block, just have the nowview as it would be with a dashed line and
+    /// continuous in time around it». A window about a selected instant an
+    /// hour before now draws one stretch through it, a dot at it where it
+    /// falls on the timeline, a dashed line there, and no strip or label,
+    /// now not being drawn. Ten minutes before now, now's strip is at now.
     #[test]
-    fn a_strip_at_an_instant_draws_its_change_its_dot_and_its_time() {
+    fn a_selected_instant_is_a_dashed_line_in_a_continuous_timeline() {
         use crate::nowview::{nowview_config, NowviewGeometry};
         let now = 1_700_000_000_000_i64;
-        let at = now - 60 * 60_000;
-        let dot = |ms: i64, id: &str| DayviewPoint {
-            time_ms: ms,
-            fg_color: "#ff0000".into(),
-            state_label: None,
-            id: Some(id.into()),
-            title: None,
-            glyph: None,
-            icon: false,
-            moment: false,
-        };
-        let fields = vec![DayviewFieldInput {
+        let field = |at: i64| DayviewFieldInput {
             field: "coffee".into(),
             y_frac: 0.0,
             height_frac: 1.0,
             z_index: 0.0,
             blocks: vec![],
-            points: vec![dot(at + 400, "atit"), dot(at + 1_000, "after")],
+            points: vec![DayviewPoint {
+                time_ms: at,
+                fg_color: "#ff0000".into(),
+                state_label: None,
+                id: Some("atit".into()),
+                title: None,
+                glyph: None,
+                icon: false,
+                moment: false,
+            }],
             icon: None,
             glyph_size: Default::default(),
-        }];
+        };
         let geom = NowviewGeometry {
             width: Some(404.0),
             centred: true,
             ..NowviewGeometry::default()
         };
-        let layout = compute_dayview(&nowview_config(fields, at, now, Some(at), &geom));
-        let state = |label: &str, color: &str| NowviewCurrentState {
+        let state = NowviewCurrentState {
             field: "coffee".into(),
-            state_label: Some(label.into()),
-            colors: vec![color.into()],
+            state_label: Some("on".into()),
+            colors: vec!["#00ff00".into()],
             id: None,
         };
-        let svg = render_nowview_at_svg(
-            &layout,
-            "13:46",
-            Some(at),
-            &[state("on", "#00ff00")],
-            &[state("off", "#0000ff")],
-            false,
-            true,
-        );
-        let c = now_chunk(&layout, &layout.days[0]).unwrap();
-        assert!(!c.at_now);
-        let chunk = |fill: &str| {
-            let el = svg
-                .split(r#"<rect class="now-chunk""#)
-                .find(|r| r.contains(&format!(r#"fill="{fill}""#)))
-                .unwrap_or_else(|| panic!("no {fill} chunk: {svg}"));
-            let el = format!(r#"<rect class="now-chunk"{el}"#);
-            let x = num(&el, "rect", "now-chunk", "x") - layout.label_width;
-            (x, x + num(&el, "rect", "now-chunk", "width"))
-        };
-        let middle = (c.from + c.to) / 2.0;
-        let (left, right) = (chunk("#0000ff"), chunk("#00ff00"));
-        assert!((left.0 - c.from).abs() < 1e-9 && (left.1 - middle).abs() < 1e-9);
-        assert!((right.0 - middle).abs() < 1e-9 && (right.1 - c.to).abs() < 1e-9);
-        let cx = |id: &str| {
-            let el = svg
-                .split("<circle")
-                .find(|e| e.contains(&format!(r#"data-id="{id}""#)))
-                .unwrap_or_else(|| panic!("no dot {id}: {svg}"));
-            num(&format!("<circle{el}"), "circle", "point-bg", "cx") - layout.label_width
-        };
-        assert!((cx("atit") - middle).abs() < 1e-9, "{svg}");
-        assert!(cx("after") > c.to, "{svg}");
-        let x = num(&svg, "text", "instant-label", "x") - layout.label_width;
-        assert!((x - middle).abs() < 1e-9, "{svg}");
-        assert!(
-            svg.contains(">13:46</text>") && !svg.contains("now-label"),
-            "{svg}"
-        );
-        assert!(!svg.contains("current-time-line"), "{svg}");
-    }
-
-    /// da-zccjs: a field whose state ENDS at the instant is drawn as that
-    /// ending — the state it left in the half facing the past, and nothing
-    /// in the other, as a field in no state has no chunk at now — and one
-    /// that ENTERS a state there the other way about (canary kimi-k3, PR
-    /// #1202).
-    #[test]
-    fn a_state_ending_or_starting_at_the_instant_fills_its_own_half() {
-        let state = |field: &str, label: Option<&str>| NowviewCurrentState {
-            field: field.into(),
-            state_label: label.map(Into::into),
-            colors: vec!["#123456".into()],
-            id: None,
-        };
-        let fills = changing_strip_fills(
-            &[state("walk", None), state("read", Some("on"))],
-            &[state("walk", Some("on")), state("read", None)],
-        );
-        let parts: Vec<(&str, ChunkPart)> =
-            fills.iter().map(|f| (f.field.as_str(), f.part)).collect();
-        assert_eq!(
-            parts,
-            vec![("read", ChunkPart::Trail), ("walk", ChunkPart::Lead)]
-        );
+        for back in [60, 10] {
+            let at = now - back * 60_000;
+            let layout =
+                compute_dayview(&nowview_config(vec![field(at)], at, now, Some(at), &geom));
+            let svg = render_nowview_at_svg(
+                &layout,
+                "13:46",
+                Some(at),
+                std::slice::from_ref(&state),
+                false,
+                true,
+            );
+            let (extent, strip) = (layout.time_axis_extent, layout.right_panel_width);
+            assert_eq!((extent, strip), (320.0, 80.0));
+            // The instant is the window's middle, on the timeline.
+            let line = num(&svg, "line", "instant-line", "x1") - layout.label_width;
+            assert!((line - extent / 2.0).abs() < 1e-9, "{svg}");
+            assert_eq!(svg.matches(r#"class="instant-line""#).count(), 2, "{svg}");
+            let cx = num(&svg, "circle", "point-bg", "cx") - layout.label_width;
+            assert!((cx - line).abs() < 1e-9, "{svg}");
+            assert!(!svg.contains("instant-label"), "{svg}");
+            if back == 60 {
+                assert_eq!(svg.matches(r#"<g class="day-data""#).count(), 1, "{svg}");
+                assert!(
+                    !svg.contains("now-chunk") && !svg.contains("now-label"),
+                    "{svg}"
+                );
+                assert!(!svg.contains("current-time-line"), "{svg}");
+            } else {
+                let c = now_chunk(&layout, &layout.days[0]).unwrap();
+                assert!((c.now - extent * 25.0 / 30.0).abs() < 1e-9, "{svg}");
+                let chunk = rect_attrs(&field_group(&svg, "coffee"), "now-chunk").unwrap();
+                assert_eq!((chunk.x, chunk.x + chunk.w), (c.from, c.to), "{svg}");
+                let label = num(&svg, "text", "now-label", "x") - layout.label_width;
+                assert!((label - (c.from + c.to) / 2.0).abs() < 1e-9, "{svg}");
+            }
+        }
     }
 
     /// da-ljs7b: the «now» stands in for the clock, and keeps the tick

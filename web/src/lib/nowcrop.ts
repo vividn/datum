@@ -6,12 +6,12 @@
 // both halves and decides everything in them: `nowview --overlay` is the
 // nowview's picture with no data and no database opened — its axis, ticks,
 // gridlines, now-line, the words under its now strip and the strip's place
-// (`.now-strip`) — and `dayview --data-layer` is a day's bands alone, a state
-// still running drawn on to the day's end. This lays the second under the
-// first: each day mapped onto each stretch of the overlay's axis by their
-// instants (`data-from` … `data-hi`), clipped to the stretch, a running state
-// cut at now, and the strip painted with the block each lane holds at the
-// strip's instant. So a stretch or a pan asks the CLI for its overlay alone.
+// (`.now-strip`, where it draws now) — and `dayview --data-layer` is a day's
+// bands alone, a state still running drawn on to the day's end. This lays the
+// second under the first: each day mapped onto each stretch of the overlay's
+// axis by their instants (`data-from` … `data-hi`), clipped to the stretch, a
+// running state cut at now, and the strip painted with the block each lane
+// holds at now. So a stretch or a pan asks the CLI for its overlay alone.
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -30,6 +30,23 @@ const rate = (a: Axis) => (a.hi - a.lo) / (a.to - a.from);
 
 const num = (el: Element, name: string) => Number(el.getAttribute(name));
 
+/** A transform's `translate(x y)`, as numbers. */
+const shift = (el: Element | null | undefined) =>
+	(/translate\(([-\d.e]+)[ ,]+([-\d.e]+)\)/.exec(el?.getAttribute('transform') ?? '')?.slice(1) ?? [0, 0]).map(Number);
+
+/**
+ * Where the overlay `root`'s band starts across time, in its plot's units, and
+ * how far across it reaches: under the axis strip, read off where the axis's
+ * baseline stands — below the band, or right of the strip when time runs down
+ * the page — whether or not a now strip is drawn (da-dv45l).
+ */
+export function bandOf(root: Element, y: boolean): { start: number; extent: number } {
+	const axis = shift(root.querySelector('.axis'));
+	if (!y) return { start: 0, extent: axis[1] };
+	const margin = shift(root.querySelector('.plot'))[0];
+	return { start: axis[0], extent: Number(root.getAttribute('width')) - 2 * margin - axis[0] };
+}
+
 function parse(text: string): Document | null {
 	const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
 	return doc.documentElement.localName === 'svg' && !doc.querySelector('parsererror') ? doc : null;
@@ -37,24 +54,23 @@ function parse(text: string): Document | null {
 
 /**
  * The overlay `overlay` with the data of `days` laid under it, as SVG text;
- * the overlay unchanged when it has no strip to crop for (the snapshot, an
- * error). `instant` is the strip's: the pill's, or now.
+ * the overlay unchanged when it has no axis to crop for (the snapshot, an
+ * error). `now` is the strip's instant: the strip is now's (da-dv45l).
  */
-export function compose(overlay: string, days: string[], instant: number): string {
+export function compose(overlay: string, days: string[], now: number): string {
 	const doc = parse(overlay);
-	const slot = doc?.querySelector('.now-strip');
-	if (!doc || !slot) return overlay;
-	const root = doc.documentElement;
+	const root = doc?.documentElement;
+	const stretches = [...(root?.querySelectorAll('[data-lo]') ?? [])];
+	if (!doc || !root || !stretches.length) return overlay;
+	const slot = root.querySelector('.now-strip');
 	const make = (name: string, attrs: Record<string, string | number>) => {
 		const el = doc.createElementNS(NS, name);
 		for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
 		return el;
 	};
-	const stretches = [...root.querySelectorAll('[data-lo]')];
-	const y = stretches[0]?.getAttribute('data-axis') === 'y';
-	const plot = /translate\(([-\d.e]+)[ ,]+([-\d.e]+)\)/.exec(root.querySelector('.plot')?.getAttribute('transform') ?? '');
-	const margin = plot ? Number(plot[y ? 2 : 1]) : 0;
-	const cross = num(slot, y ? 'x' : 'y');
+	const y = stretches[0].getAttribute('data-axis') === 'y';
+	const margin = shift(root.querySelector('.plot'))[y ? 1 : 0];
+	const cross = bandOf(root, y).start;
 	// The picture on now slides with the clock: its data moves in a `.flow`
 	// group under the clip at the now-line, as the CLI's own did (da-hklaz).
 	const flow = root.querySelector('clipPath[id^="flow-past"]')?.id;
@@ -114,60 +130,32 @@ export function compose(overlay: string, days: string[], instant: number): strin
 	// the widget scales them back by this as it does the marks.
 	for (const [id, a] of scale) doc.getElementById(id)?.setAttribute('data-scale', String(a));
 
-	// The strip, as the CLI painted it (da-zccjs): each lane in the state its
-	// block holds at the instant, read to the end of its second; a lane
-	// changing state there, the state it left in the half facing the past
-	// and the one it entered in the other; and a dot in that second moved
-	// off the timeline into the strip's middle.
-	const holding = (t: number) =>
-		spans.find((s) => {
-			const a = axisOf(s);
-			return a.from <= t && t < a.to;
-		});
-	const blockAt = (field: Element | undefined, t: number) =>
-		[...(field?.querySelectorAll('rect.block') ?? [])].find((b) => {
-			const [from, to] = ['data-from', 'data-to'].map((n) => Date.parse(b.getAttribute(n) ?? ''));
-			return from <= t && t < to;
-		});
-	const lanes = (t: number) => new Map([...(holding(t)?.querySelectorAll('g.field') ?? [])].map((f) => [f.getAttribute('data-field') ?? '', f]));
-	const [after, before] = [lanes(instant + 999), lanes(instant - 1)];
+	// The strip, as the CLI paints it: each lane in the state its block holds
+	// at now, where the overlay draws now.
+	const holding = spans.find((s) => {
+		const a = axisOf(s);
+		return a.from <= now && now < a.to;
+	});
 	const [along, length] = y ? ['y', 'height'] : ['x', 'width'];
-	const middle = num(slot, along) + num(slot, length) / 2;
-	for (const [name, lane] of after) {
-		const into = make('g', { class: 'field', 'data-field': name });
-		const [then, now] = [blockAt(before.get(name), instant - 1), blockAt(lane, instant + 999)];
-		const parts = now && then && then.getAttribute('data-id') !== now.getAttribute('data-id') ? [then, now] : now ? [now] : [];
-		parts.forEach((block, i) => {
-			const half = num(slot, length) / parts.length;
-			const chunk = make('rect', {
-				class: 'now-chunk',
-				[y ? 'x' : 'y']: num(block, y ? 'x' : 'y') + cross,
-				[y ? 'width' : 'height']: num(block, y ? 'width' : 'height'),
-				[along]: num(slot, along) + i * half,
-				[length]: half,
-				fill: stripFill(block.getAttribute('fill') ?? 'none')
-			});
-			const hid = block.getAttribute('data-id');
-			if (hid) chunk.setAttribute('data-id', hid);
-			into.append(chunk);
+	for (const lane of slot ? (holding?.querySelectorAll('g.field') ?? []) : []) {
+		const block = [...lane.querySelectorAll('rect.block')].find((b) => {
+			const [from, to] = ['data-from', 'data-to'].map((n) => Date.parse(b.getAttribute(n) ?? ''));
+			return from <= now && now < to;
 		});
-		for (const dot of lane.querySelectorAll('.point-bg[data-at]')) {
-			const at = Date.parse(dot.getAttribute('data-at') ?? '');
-			if (!(instant <= at && at < instant + 1000)) continue;
-			const moved = make('g', {
-				transform: y ? `translate(${cross} ${middle - num(dot, 'cy')})` : `translate(${middle - num(dot, 'cx')} ${cross})`
-			});
-			moved.append(doc.importNode(dot, true));
-			const fg = dot.nextElementSibling;
-			if (fg?.classList.contains('point-fg')) moved.append(doc.importNode(fg, true));
-			into.append(moved);
-			const hid = dot.getAttribute('data-id');
-			for (const drawn of [...root.querySelectorAll('.crop .point-bg[data-id]')].filter((d) => hid && d.getAttribute('data-id') === hid)) {
-				if (drawn.nextElementSibling?.classList.contains('point-fg')) drawn.nextElementSibling.remove();
-				drawn.remove();
-			}
-		}
-		if (into.children.length) slot.before(into);
+		if (!block) continue;
+		const into = make('g', { class: 'field', 'data-field': lane.getAttribute('data-field') ?? '' });
+		const chunk = make('rect', {
+			class: 'now-chunk',
+			[y ? 'x' : 'y']: num(block, y ? 'x' : 'y') + cross,
+			[y ? 'width' : 'height']: num(block, y ? 'width' : 'height'),
+			[along]: num(slot!, along),
+			[length]: num(slot!, length),
+			fill: stripFill(block.getAttribute('fill') ?? 'none')
+		});
+		const hid = block.getAttribute('data-id');
+		if (hid) chunk.setAttribute('data-id', hid);
+		into.append(chunk);
+		slot!.before(into);
 	}
 	return new XMLSerializer().serializeToString(doc);
 

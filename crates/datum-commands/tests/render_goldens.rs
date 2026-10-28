@@ -864,8 +864,6 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
         orientation: Orientation::Horizontal,
         axis_ticks_override,
         right_panel_width: panel_width,
-        panel_at_ms: None,
-        instant_ms: None,
     };
     let layout = compute_dayview(&cfg);
     let current_states = vec![NowviewCurrentState {
@@ -937,8 +935,6 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         orientation: Orientation::Horizontal,
         axis_ticks_override,
         right_panel_width: panel_width,
-        panel_at_ms: None,
-        instant_ms: None,
     };
     let layout = compute_dayview(&cfg);
     let current_states = vec![NowviewCurrentState {
@@ -952,10 +948,10 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
 }
 
 fn nowview_scene_at_instant() -> DayviewLayoutResult {
-    // da-zccjs: `nowview -t 14:30` an hour before now — the section in the
-    // middle of the window, at the instant, `mood` changing state there
-    // (calm left in the half facing the past, focused entered in the other),
-    // a coffee logged at the instant in it, and `14:30` written under it.
+    // da-zccjs, da-dv45l: `nowview -t 14:30` an hour before now — a dashed
+    // line in the middle of the window, at the instant, `mood` changing
+    // state there and a coffee logged at it on the timeline either side of
+    // it, and no now section, now being outside the window.
     let at = DAY_START_MS + 14 * HOUR_MS + 30 * MIN_MS;
     let point = |ms: i64| DayviewPoint {
         time_ms: ms,
@@ -1015,10 +1011,9 @@ fn nowview_scene_at_instant() -> DayviewLayoutResult {
     };
     let svg = render_nowview_at_svg(
         &layout,
-        "14:30",
+        "15:30",
         Some(at),
         &[state("focused", "#cc8844")],
-        &[state("calm", "#4488cc")],
         false,
         true,
     );

@@ -234,22 +234,27 @@ describe('the time cursor', () => {
 		});
 	});
 
-	// Off UTC, the nowview's label for its instant is still the pill's time:
+	// Off UTC, the nowview's line for the pill is still the pill's instant:
 	// under WASI `chrono::Local` is UTC, and a 12:26 cursor was labeled 10:26
-	// (da-y6qj). It is written under the section the pill's instant is drawn
-	// as (da-zccjs).
-	test("Europe/Berlin: the nowview's label for the pill's instant is the pill's time", async () => {
+	// (da-y6qj). The CLI draws it as a dashed line at the instant (da-dv45l),
+	// where the page draws the selection's.
+	test("Europe/Berlin: the nowview's line for the pill is at the pill's time", async () => {
 		await withDay(
 			async ({ page }) => {
 				const at = await spot(page, TODAY, 0.52);
 				await page.mouse.click(at.x, at.y);
 				const text = await pillText(page);
 				assert.match(text ?? '', /^-t \d\d:\d\d$/, `the pill: ${text}`);
-				const label = await page.waitForFunction(
-					(scope) => document.querySelector(`${scope} svg.svg .instant-label`)?.textContent,
-					NOWVIEW
-				);
-				assert.equal(await label.jsonValue(), text.slice(3));
+				const xs = await page.waitForFunction((scope) => {
+					const mid = (el) => el && ((r) => r.left + r.width / 2)(el.getBoundingClientRect());
+					const svg = document.querySelector(`${scope} svg.svg`);
+					const [line, cursor] = [svg?.querySelector('line.instant-line'), svg?.querySelector('line.cursor')];
+					return line && cursor && [mid(line), mid(cursor), line.getAttribute('data-at')];
+				}, NOWVIEW);
+				const [line, cursor, iso] = await xs.jsonValue();
+				assert.ok(Math.abs(line - cursor) <= 1, `the CLI's line at ${line}, the selection's at ${cursor}`);
+				const berlin = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' });
+				assert.equal(berlin.format(Date.parse(iso)), text.slice(3));
 			},
 			{ timezone: 'Europe/Berlin' }
 		);

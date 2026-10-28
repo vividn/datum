@@ -735,7 +735,7 @@ binary.
   crop of the day's data layer (`dayview --data-layer`, asked at its box
   alone) under the CLI's overlay (`nowview --overlay`: the picture with no
   data, no database opened) and paints its now strip with the block each
-  lane holds at the instant (`$lib/nowcrop.ts`), so a stretch or a pan
+  lane holds at now (`$lib/nowcrop.ts`), so a stretch or a pan
   asks for the overlay and no data. What TypeScript does
   hold is the transport: carrying those files to an S3-compatible bucket
   (`$lib/s3.ts`, SigV4 by aws4fetch, the browser straight to the bucket

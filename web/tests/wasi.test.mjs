@@ -183,13 +183,13 @@ describe('the wasi CLI', () => {
 	test("the nowview's clock is the zone's", async () => {
 		await withApp(
 			async (app) => {
-				const view = await app.run(['nowview', '-o', '-', '--history', '15m', '-t', '2026-09-11T10:26:00Z']);
+				const view = await app.run(['nowview', '-o', '-', '--history', '15m']);
 				assert.equal(view.code, 0, view.stderr);
-				// Written under the section about the instant (da-zccjs).
-				const labels = [...view.stdout.matchAll(/class="instant-label"[^>]*>([^<]*)</g)].map((m) => m[1]);
+				// Written under the now section (da-dv45l).
+				const labels = [...view.stdout.matchAll(/class="current-time-text"[^>]*>([^<]*)</g)].map((m) => m[1]);
 				assert.deepEqual(labels, ['12:26']);
 			},
-			{ timezone: 'Europe/Berlin' }
+			{ clock: Date.parse('2026-09-11T10:26:00Z'), timezone: 'Europe/Berlin' }
 		);
 	});
 

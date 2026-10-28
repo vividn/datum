@@ -168,8 +168,8 @@ function placeOf(svg: SVGSVGElement, c: Cursor) {
 			return { ...day, along: now - (c.rel ?? 0) * 60_000 * day.perMs };
 		}
 	}
-	// A nowview's strip about the selection cuts its axis AT it (da-zccjs):
-	// the stretch before ends there, and the selection is that end.
+	// A nowview's strip cuts its axis at now (da-dv45l): a selection there is
+	// the end of the stretch before it.
 	const within = (d: Day) => d.hi > d.lo && d.from <= +c.at && +c.at < d.to;
 	const i = Math.max(days.findIndex(within), days.findIndex((d) => d.hi > d.lo && d.to === +c.at));
 	if (i < 0) return null;

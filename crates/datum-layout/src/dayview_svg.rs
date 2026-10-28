@@ -127,10 +127,6 @@ pub(crate) struct NowChunk {
     pub from: f64,
     pub to: f64,
     pub future: bool,
-    /// The strip stands at now, with the now-line beside it; one about
-    /// another instant (da-zccjs) or pinned to the window's edge (da-6csum)
-    /// has none.
-    pub at_now: bool,
 }
 
 /// How far along the time axis anything is drawn: its extent, or past it
@@ -154,10 +150,7 @@ fn axis_end(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>) -> f64 {
 /// `day`'s now chunk, or `None` when it draws no now strip. The snapshot,
 /// with no time axis, is all strip and no gap.
 pub(crate) fn now_chunk(layout: &DayviewLayout, day: &RenderedDay) -> Option<NowChunk> {
-    let (now, w) = (
-        day.panel_pos.or(day.now_time_pos)?,
-        layout.right_panel_width,
-    );
+    let (now, w) = (day.now_time_pos?, layout.right_panel_width);
     if w <= 0.0 {
         return None;
     }
@@ -167,19 +160,11 @@ pub(crate) fn now_chunk(layout: &DayviewLayout, day: &RenderedDay) -> Option<Now
     } else {
         0.0
     };
-    // A strip pinned to the window's edge keeps a gap on the window's side
-    // alone: the other side is the window's edge (da-6csum).
-    let (lead, trail) = match (day.panel_pinned, day.panel_at_window_end) {
-        (true, true) => (gap, 0.0),
-        (true, false) => (0.0, gap),
-        (false, _) => (gap, if future { gap } else { 0.0 }),
-    };
     Some(NowChunk {
         now,
-        from: now + lead,
-        to: now + w - trail,
+        from: now + gap,
+        to: now + w - if future { gap } else { 0.0 },
         future,
-        at_now: day.panel_pos.is_none(),
     })
 }
 
@@ -196,20 +181,6 @@ pub struct RightPanelFill {
     /// (da-6hg6v) — the chunk is that entry's open block, so it names it
     /// like any other mark. `None` when the state came from no single row.
     pub id: Option<String>,
-    /// Which part of the strip it paints: all of it, or one half where the
-    /// field changes state at the strip's instant (da-zccjs).
-    pub part: ChunkPart,
-}
-
-/// The part of the strip a [`RightPanelFill`] paints.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ChunkPart {
-    #[default]
-    Whole,
-    /// The half facing the past: the state left at the instant.
-    Lead,
-    /// The half facing the future: the state entered at it.
-    Trail,
 }
 
 /// Knobs the nowview overlay needs the dayview renderer to honour.
@@ -468,13 +439,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 // the group that moves.
                 let mut strip = String::new();
                 if let Some(c) = chunk {
-                    let half = (c.to - c.from) / 2.0;
                     for pf in &fills {
-                        let (from, len) = match pf.part {
-                            ChunkPart::Whole => (c.from, c.to - c.from),
-                            ChunkPart::Lead => (c.from, half),
-                            ChunkPart::Trail => (c.from + half, half),
-                        };
                         push_fill(
                             &mut strip,
                             &mut defs,
@@ -487,8 +452,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                                 &geom,
                                 day.day_offset + field.cross_offset,
                                 field.cross_extent,
-                                from,
-                                len,
+                                c.from,
+                                c.to - c.from,
                             ),
                             field.cross_extent,
                             &now_chunk_close(pf.id.as_deref()),
@@ -793,8 +758,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         };
         // Beside a now strip the line is finer and stands a gap past now,
         // and a second closes the chunk when the future is drawn on beyond
-        // it (da-9g3bf). A strip standing anywhere but now has none of that.
-        let chunk = now_chunk(layout, day).filter(|c| c.at_now);
+        // it (da-9g3bf).
+        let chunk = now_chunk(layout, day);
         let (stroke, dash) = if chunk.is_some() {
             (1, "2,2")
         } else {
@@ -1961,7 +1926,6 @@ mod tests {
                     field: "mood".into(),
                     fill: BlockFill::Single("#abcdef".into()),
                     id: Some("d9plbzg641as".into()),
-                    part: ChunkPart::Whole,
                 }],
                 ..Default::default()
             },
@@ -1982,7 +1946,6 @@ mod tests {
                     field: "mood".into(),
                     fill: BlockFill::Single("#abcdef".into()),
                     id: None,
-                    part: ChunkPart::Whole,
                 }],
                 ..Default::default()
             },

@@ -233,7 +233,7 @@ describe('the nowview widget', () => {
 				await app.idle();
 				assert.deepEqual(app.errors, [], 'datum did not take a window off the ladder');
 			},
-			// 460, not 400: the now strip takes a tenth of the plot (da-6csum),
+			// 460, not 400: the now strip takes its share of the plot (da-6csum),
 			// and at 400 five minutes of window were a pixel short of the room
 			// two labels need, so the 30m window ruled tens and drew no −15m.
 			{ viewport: { width: 460, height: 700 }, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }

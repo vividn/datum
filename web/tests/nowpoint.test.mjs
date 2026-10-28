@@ -197,20 +197,20 @@ const asked = async (page) => {
 };
 
 /**
- * Wait for the nowview on screen to be the picture of a section about `ms`
- * (da-zccjs), a whole minute: its time written under it, and the picture
- * the one last asked for.
+ * Wait for the nowview on screen to be the picture drawn about `ms`, a whole
+ * minute: its dashed line there (da-dv45l), and the picture the one last
+ * asked for.
  */
-const sectionDrawn = (page, ms) =>
+const instantDrawn = (page, ms) =>
 	page.waitForFunction(
 		([sel, hhmm]) => {
 			const svg = document.querySelector(sel);
-			return svg?.querySelector('.instant-label')?.textContent === hhmm && !svg.closest('.behind');
+			return svg?.querySelector('.instant-line')?.getAttribute('data-at')?.slice(11, 16) === hhmm && !svg.closest('.behind');
 		},
 		[`${NOWVIEW} svg.svg`, new Date(ms).toISOString().slice(11, 16)]
 	);
 
-/** The `-t` of the last nowview asked for — the instant its section is about (da-zccjs); `null` for now. */
+/** The `-t` of the last nowview asked for — the instant its dashed line is at (da-dv45l); `null` for now. */
 const instantAsked = async (page) => {
 	const argv = (await windows(page)).at(-1);
 	const i = argv ? argv.indexOf('-t') : -1;
@@ -255,9 +255,9 @@ describe('a tap on the band drops a selection where it fell', () => {
 
 			await saysPills(page, ['time:-qq']);
 			// The window did not move — "it should just drop a selection line
-			// right there" rather than recentre — but its section is the
-			// pill's now (da-zccjs), which datum draws: asked for the same
-			// window, on now, about the pill's instant.
+			// right there" rather than recentre — but datum draws the pill's
+			// dashed line (da-dv45l): asked for the same window, on now, about
+			// the pill's instant.
 			await until(
 				() => instantAsked(page),
 				(t) => t !== null && Date.parse(t) === NOW - 10 * MINUTE
@@ -266,7 +266,7 @@ describe('a tap on the band drops a selection where it fell', () => {
 
 			const { head } = await until(
 				() => drawn(page, NOWVIEW),
-				(d) => d.head && page.locator(`${NOWVIEW} svg.svg .instant-label`).count().then((n) => n === 1)
+				(d) => d.head && page.locator(`${NOWVIEW} svg.svg .instant-line`).count().then((n) => n > 0)
 			);
 			assert.ok(head && Math.abs(head.x - mark.x) <= 1, `the line at ${head?.x}, the −10m gridline at ${mark.x}`);
 		});
@@ -281,12 +281,12 @@ describe('a tap on the band drops a selection where it fell', () => {
 
 			// Three minutes along, to −7m: past the snap either way, and the
 			// pill is the minutes themselves — read off the picture drawn
-			// about the first pill, its section at −10m (da-zccjs).
-			await sectionDrawn(page, NOW - 10 * MINUTE);
+			// about the first pill, its line at −10m (da-dv45l).
+			await instantDrawn(page, NOW - 10 * MINUTE);
 			const between = xOf(await geometry(page), NOW - 7 * MINUTE);
 			await page.mouse.click(between, mark.y);
 			await saysPills(page, ['time:-t -7']);
-			await sectionDrawn(page, NOW - 7 * MINUTE);
+			await instantDrawn(page, NOW - 7 * MINUTE);
 			const { head } = await drawn(page, NOWVIEW);
 			const seven = xOf(await geometry(page), NOW - 7 * MINUTE);
 			assert.ok(Math.abs(head.x - seven) <= 2, `the line at ${head.x}, −7m at ${seven}`);
@@ -400,8 +400,8 @@ describe('a tap on a window panned off now is to the same step, said as a clock'
 		});
 	});
 
-	// 14:32:20, not 14:31:20 as it was: the now strip takes a tenth of a
-	// panned window too (da-6csum), and on a desktop's narrow nowview that
+	// 14:32:20, not 14:31:20 as it was: the now strip's room is taken from
+	// a panned window too (da-6csum, da-dv45l), and on a desktop's narrow nowview that
 	// put 14:31:20 within a fingertip of the 14:30 gridline.
 	test('thirty minutes: 14:32:20 is still -t 14:32, as it always was', async () => {
 		await withBand(async (app, room) => {
@@ -434,9 +434,9 @@ describe('the keyboard can still select in the band', () => {
 			// block's own 14:00 rather than the window's 14:30.
 			await saysPills(page, ['time:-t 14:00']);
 			// And the window is the band's own: a selection made in here never
-			// moves it, by the keyboard as by a finger. Its section is the
-			// pill's (da-zccjs), and the button under it says «reset».
-			await sectionDrawn(page, Date.parse('2026-09-10T14:00:00Z'));
+			// moves it, by the keyboard as by a finger. The pill's line is
+			// drawn (da-dv45l), and the button on now's «now» says «reset».
+			await instantDrawn(page, Date.parse('2026-09-10T14:00:00Z'));
 			assert.equal(await asked(page), null, 'Enter in the band moved the window');
 			assert.equal(await page.locator(`${NOWVIEW} .nowview-now`).innerText(), 'reset');
 		});
@@ -486,9 +486,8 @@ describe('a relative selection is measured from NOW, not from the press', () => 
 					() => drawn(page, TODAY).then((d) => d.head?.x ?? null),
 					(x) => x !== null && x > before.day.x + 0.1
 				);
-				// The nowview is drawn again a minute on, the section and its
-				// line where they were.
-				await sectionDrawn(page, NOW + 2 * MINUTE - 7 * MINUTE);
+				// The nowview is drawn again a minute on, its line where it was.
+				await instantDrawn(page, NOW + 2 * MINUTE - 7 * MINUTE);
 				const after = {
 					now: (await drawn(page, NOWVIEW)).head,
 					day: (await drawn(page, TODAY)).head
@@ -526,8 +525,8 @@ describe('a drag along the band pans the window', () => {
 			const mark = await gridline(page, 10);
 			await page.mouse.click(mark.x, mark.y);
 			await saysPills(page, ['time:-qq']);
-			await sectionDrawn(page, NOW - 10 * MINUTE);
-			// On now, the button under the pill's section is «reset» (da-zccjs).
+			await instantDrawn(page, NOW - 10 * MINUTE);
+			// On now, the button with a pill is «reset» (da-zccjs).
 			assert.equal(await page.locator(`${NOWVIEW} .nowview-now`).innerText(), 'reset');
 
 			const g = await geometry(page);
@@ -544,11 +543,11 @@ describe('a drag along the band pans the window', () => {
 				Math.abs(centred - ((g.from + g.to) / 2 - 10 * MINUTE)) <= 90_000,
 				`centred on ${new Date(centred).toISOString()}, not ~14:35`
 			);
-			// The section is the pill's, which the window still holds: the
-			// picture slides with its section in it (da-zccjs). The selection
-			// is untouched: the same pill, the same minute.
+			// The picture slides, now's section off its right edge with now
+			// (da-dv45l), and the button off now is the way back to it. The
+			// selection is untouched: the same pill, the same minute.
 			assert.deepEqual(await pillsOf(page), ['time:-qq']);
-			assert.equal(await page.locator(`${NOWVIEW} .nowview-now`).innerText(), 'reset');
+			assert.equal(await page.locator(`${NOWVIEW} .nowview-now`).innerText(), 'now →');
 		});
 	});
 
@@ -720,8 +719,8 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			await drag(page, at(g, 5), at(g, 30), { hold: true });
 
 			await saysPills(page, ['time:-q', 'dur:dur=25m']);
-			// Its section stands at its end (da-zccjs), the window on now.
-			await sectionDrawn(page, NOW - 5 * MINUTE);
+			// Its line stands at its end (da-dv45l), the window on now.
+			await instantDrawn(page, NOW - 5 * MINUTE);
 			const marks = await until(
 				() => drawn(page, NOWVIEW),
 				(m) => m.span && m.lines === 2
@@ -879,10 +878,10 @@ describe('the pills live in the band’s margin too', () => {
 			await margin.waitFor();
 			assert.equal(await page.locator('.prompt-bar .pill.time').count(), 1, 'the bar lost its copy');
 
-			// Over the section its instant is drawn as (da-zccjs), and clear
-			// of the band.
-			await sectionDrawn(page, NOW - 15 * MINUTE);
-			const section = page.locator(`${NOWVIEW} svg.svg .instant-label`);
+			// Over the dashed line its instant is drawn as (da-dv45l), and
+			// clear of the band.
+			await instantDrawn(page, NOW - 15 * MINUTE);
+			const section = page.locator(`${NOWVIEW} svg.svg line.instant-line`).last();
 			const [pill, label, band] = await until(
 				() => Promise.all([margin.boundingBox(), section.boundingBox(), page.locator(BAND).boundingBox()]),
 				([p, l]) => Math.abs(p.x + p.width / 2 - (l.x + l.width / 2)) <= 2
@@ -1333,12 +1332,7 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 			const g = await vgeometry(page);
 			const middle = { x: g.x, y: (g.lo + g.hi) / 2 };
 			await drag(page, middle, { x: g.x, y: middle.y + 10 * perMinute(g) });
-			// Now has left the window, so it is asked for (da-6csum): read the
-			// picture once the answer has replaced the one slid.
-			await until(
-				() => asked(page),
-				(t) => t !== null
-			);
+			// The picture slides, now's section with it (da-dv45l).
 			await app.idle();
 			const centred = await until(
 				() => instantUnder(page, middle.y, vgeometry),
@@ -1348,8 +1342,9 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 				Math.abs(centred - ((g.from + g.to) / 2 - 10 * MINUTE)) <= 90_000,
 				`centred on ${new Date(centred).toISOString()}, not ~14:35`
 			);
+			// Now is below the window, and the button held to that edge says so.
 			const home = page.locator(`${NOWVIEW} .nowview-now`);
-			assert.equal(await home.innerText(), 'now');
+			assert.equal(await home.innerText(), 'now ↓');
 			await home.click();
 			await until(
 				() => vgeometry(page).then((n) => n.nowLine),
@@ -1359,19 +1354,14 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 	});
 });
 
-// ── the now section (da-6csum) ───────────────────────────────────────────
+// ── the now section (da-6csum, da-dv45l) ─────────────────────────────────
 //
-// vividn, 2026-10-26: «Make the "now" section a bit wider with a yellow now
-// written under it. If the nowview is in the past, keep this now section on
-// the right side of the now view. Increase the gap between the timeline and
-// the now section some though to make them visually distinct. If scrolling
-// to the right into the future, and now occurs on screen on the timeline
-// show the "now" section there where it would be, with gaps on both sides.
-// If far enough in the future so that now is off screen to the left, than
-// pin the now section on the left side of the screen. any time the view is
-// panned off the default, the "now" label under the now section becomes a
-// filled in yellow button with black now written on it. Clicking that
-// button restores the default.»
+// vividn, 2026-10-27: «the pinned now on the side is kind of weird and I
+// don't end up liking it, let's remove it. Keep the yellow now button along
+// the axis, add a little -> to it.» «increase the size of the now section
+// some too, maybe twice as big». «I meant when panning, so it is no longer
+// pinned on the side, but rather it just disappears when panning around.
+// When you are reset to now, then the now section still exists».
 
 /** The now section as drawn: the band's two ends, the strip's chunk, the timeline's blocks on screen, the «now» written under it and the button. */
 const section = (page) =>
@@ -1380,20 +1370,21 @@ const section = (page) =>
 		const middle = (el) => el && ((r) => (r.left + r.right) / 2)(el.getBoundingClientRect());
 		// The picture's own box, which the band holds, as `geometry` reads it.
 		const band = root.querySelector('svg.svg').parentElement.getBoundingClientRect();
-		// Within the plot, its 2px margin either side left out: past a strip
-		// at the right edge the time after the window runs on into it.
 		const blocks = [...root.querySelectorAll('svg.svg .block')]
 			.map((b) => b.getBoundingClientRect())
 			.filter((r) => r.width > 0 && r.right > band.left + 2.5 && r.left < band.right - 2.5);
+		// The chunk where it is on screen at all: one slid off the band is none.
+		const chunk = root.querySelector('svg.svg .now-chunk')?.getBoundingClientRect();
 		const word = root.querySelector('svg.svg .now-label');
 		const button = root.querySelector('.nowview-now');
 		return {
 			band: ends(band),
-			chunk: ends(root.querySelector('svg.svg .now-chunk')?.getBoundingClientRect()),
+			chunk: chunk && chunk.right > band.left + 0.5 && chunk.left < band.right - 0.5 ? ends(chunk) : null,
 			blocks: blocks.map(ends),
 			word: word && { at: middle(word), shown: getComputedStyle(word).visibility !== 'hidden' },
 			button: button && {
 				at: middle(button),
+				half: button.getBoundingClientRect().width / 2,
 				text: button.textContent.trim(),
 				fill: getComputedStyle(button).backgroundColor,
 				ink: getComputedStyle(button).color
@@ -1411,45 +1402,55 @@ async function pan(page, minutes) {
 	await drag(page, { x, y: g.y }, { x: x + minutes * perMinute(g), y: g.y });
 }
 
-describe('the now section stands where now is (da-6csum)', () => {
+describe('the now section belongs to now (da-dv45l)', () => {
 	for (const [size, options] of [
 		['a desktop', {}],
 		['a phone', { ...PHONE, ready: toNowviewTab }]
 	]) {
-		test(`on ${size}: right of the past, at now with gaps, pinned left of the future, and «now» brings the default back`, async () => {
+		test(`on ${size}: a fifth of the band at the end, at now as it pans, gone with now, and «now →» brings the default back`, async () => {
 			await withBand(async (app) => {
 				const { page } = app;
 				await app.spyOnRunner();
 				// The plot stands its margin, 2px, inside the band.
 				const near = (a, b, what) => assert.ok(Math.abs(a - b) <= 3, `${what}: ${a} is not ${b}`);
+				const width = (s) => s.band[1] - s.band[0];
 
-				// The default: the strip at the right edge, «now» written in
-				// yellow under it, and no button.
+				// The default: the strip at the right edge, a fifth of the band
+				// (twice the tenth it was), «now» written in yellow under it,
+				// and no button.
 				const home = await section(page);
 				near(home.chunk[1], home.band[1], 'on now, the strip ends');
+				const strip = (width(home) - 4) / 5;
+				assert.ok(home.chunk[1] - home.chunk[0] >= strip - 8, `a strip of ${home.chunk[1] - home.chunk[0]}px, not ~${strip}`);
 				assert.equal(home.button, null, 'a button on the default window');
 				assert.equal(home.word?.shown, true, '«now» is not written under the strip');
 
-				// Into the past: the window 14:15–14:45, now after it. The strip
-				// stays at the right edge, a gap from the timeline, and «now»
-				// is the yellow button with black words, on the word.
-				await pan(page, 15);
+				// Three minutes into the past: now is still on screen, and the
+				// strip with it, moved off toward the right edge, the yellow
+				// button on the axis saying the way.
+				await pan(page, 3);
+				const edging = await until(
+					() => section(page),
+					(s) => s.button && s.chunk && s.chunk[0] < s.band[1] - 5 && s.chunk[1] > s.band[1] + 5
+				);
+				assert.deepEqual(
+					[edging.button.text, edging.button.fill, edging.button.ink],
+					['now →', 'rgb(255, 204, 0)', 'rgb(0, 0, 0)']
+				);
+
+				// Into the past: now off the right edge, and the strip gone with
+				// it — no section at the side — the button held at that edge.
+				await pan(page, 12);
 				const past = await until(
 					() => section(page),
-					(s) => s.button && s.chunk && Math.abs(s.chunk[1] - s.band[1]) <= 3 && clear(s)
+					(s) => s.button && !s.chunk
 				);
-				near(past.chunk[1], past.band[1], 'in the past, the strip ends');
-				assert.ok(clear(past), `the timeline runs into the strip: ${JSON.stringify(past)}`);
-				assert.deepEqual(
-					[past.button.text, past.button.fill, past.button.ink],
-					['now', 'rgb(255, 204, 0)', 'rgb(0, 0, 0)']
-				);
-				near(past.button.at, past.word.at, 'the button is not where «now» was written');
-				assert.equal(past.word.shown, false, '«now» is written under the button too');
-				assert.equal(Math.round(past.chunk[1] - past.chunk[0]) >= Math.round(home.chunk[1] - home.chunk[0]), true);
+				assert.equal(past.chunk, null, `a section in a window now is not in: ${JSON.stringify(past)}`);
+				assert.equal(past.button.text, 'now →');
+				near(past.button.at + past.button.half, past.band[1], 'the button is not at the right edge');
 
-				// Into the future with now on screen: 14:45–15:15. The strip is
-				// at now, away from both edges, the timeline a gap from it.
+				// Into the future with now on screen: the strip is at now, away
+				// from both edges, the timeline a gap from it.
 				await pan(page, -30);
 				const across = await until(
 					() => section(page),
@@ -1459,17 +1460,18 @@ describe('the now section stands where now is (da-6csum)', () => {
 				// The yellow line is the strip's edge, a gap past now (da-9g3bf).
 				assert.ok(line !== null, 'no now-line beside the strip');
 				near(line, across.chunk[0], 'the now-line');
-				assert.ok(across.button, 'no button on a window panned across now');
+				near(across.button.at, across.word.at, 'the button is not where «now» was written');
+				assert.equal(across.word.shown, false, '«now» is written under the button too');
 
-				// Far enough on that now is off the left: 15:05–15:35. The strip
-				// is pinned to the left edge.
-				await pan(page, -20);
+				// Far enough on that now is off the left: no section, and the
+				// button at the left edge, pointing back.
+				await pan(page, -25);
 				const future = await until(
 					() => section(page),
-					(s) => s.chunk && s.chunk[0] >= s.band[0] - 0.5 && s.chunk[0] <= s.band[0] + 10 && clear(s)
+					(s) => s.button && !s.chunk
 				);
-				assert.ok(future.button, 'no button on a window in the future');
-				near(future.button.at, future.word.at, 'the button is not where «now» was written');
+				assert.equal(future.button.text, '← now');
+				near(future.button.at - future.button.half, future.band[0], 'the button is not at the left edge');
 
 				// The button: the default window again, and no button.
 				await page.locator(`${NOWVIEW} .nowview-now`).click();
@@ -1515,17 +1517,15 @@ describe('the now section stands where now is (da-6csum)', () => {
 	});
 });
 
-// ── the section at a selected time (da-zccjs) ───────────────────────────
+// ── a selected time (da-zccjs, da-dv45l) ────────────────────────────────
 //
-// vividn, 2026-10-26: «when a time pill is selected, the "now" part of the
-// nowview should show the state at that exact instant. If there is an occur
-// dot happening at exactly that moment, show it in the "now" part. If there
-// is a state transition, show the state transition. show the time pill right
-// above this now section, so it is clear what time is being refered to. the
-// yellow button should in this case say "reset", which then resets to being
-// now, just like clearing the pill … when the view is panned away, scale
-// about where the "now" would actually be, not the center of the window. The
-// time handles should be relative to whatever the pill or now is».
+// vividn, 2026-10-27: «For selected times, don't display the outset block,
+// just have the nowview as it would be with a dashed line and continuous in
+// time around it». And of da-zccjs, still: «the yellow button should in this
+// case say "reset", which then resets to being now, just like clearing the
+// pill … when the view is panned away, scale about where the "now" would
+// actually be, not the center of the window. The time handles should be
+// relative to whatever the pill or now is».
 
 /** `work` since 14:00 (the band's), `mood` calm at 14:20 and focused at 14:40, and a coffee at 14:50. */
 async function withDay(fn) {
@@ -1543,27 +1543,24 @@ async function withDay(fn) {
 /** Point the page at `ms` as a tap in the nowview does: the window stays where it is. */
 const point = (page, ms) => page.evaluate((ms) => window.datum.cursor.point({ at: new Date(ms), from: 'nowview' }), ms);
 
-/** The section as drawn, and what stands over and under it, in px across the page. */
-const instantSection = (page) =>
+/** The picture about a selected time, and what stands over and under it, in px across the page. */
+const atInstant = (page) =>
 	page.locator(NOWVIEW).evaluate((root) => {
 		const svg = root.querySelector('svg.svg');
 		const band = svg.parentElement.getBoundingClientRect();
-		const mid = (el) => el && ((r) => (r.left + r.right) / 2)(el.getBoundingClientRect());
-		const chunks = (field) =>
-			[...svg.querySelectorAll(`g.field[data-field="${field}"] .now-chunk`)]
-				.map((c) => ({ l: c.getBoundingClientRect().left, r: c.getBoundingClientRect().right, fill: c.getAttribute('fill') }))
-				.sort((a, b) => a.l - b.l);
-		const fill = (state) => svg.querySelector(`.block[data-field="mood"][data-state="${state}"]`)?.getAttribute('fill') ?? null;
-		const label = svg.querySelector('.instant-label');
+		const mid = (el) => (el ? ((r) => (r.left + r.right) / 2)(el.getBoundingClientRect()) : null);
+		const onScreen = (r) => r.width > 0 && r.right > band.left + 0.5 && r.left < band.right - 0.5;
+		const rects = (sel) => [...svg.querySelectorAll(sel)].map((el) => el.getBoundingClientRect()).filter(onScreen);
+		const state = (s) => rects(`.block[data-field="mood"][data-state="${s}"]`);
 		const button = root.querySelector('.nowview-now');
 		return {
 			band: [band.left, band.right],
-			mood: chunks('mood'),
-			work: chunks('work'),
-			calm: fill('calm'),
-			focused: fill('focused'),
+			chunks: rects('.now-chunk').map((r) => [r.left, r.right]),
+			// Where calm ends and focused begins, on the timeline.
+			calmEnds: Math.max(...state('calm').map((r) => r.right)),
+			line: mid([...svg.querySelectorAll('line.instant-line')].at(-1)),
+			label: svg.querySelector('.instant-label') !== null,
 			dots: [...svg.querySelectorAll('.point-bg[data-field="coffee"]')].map((d) => ({ at: Date.parse(d.getAttribute('data-at')), x: mid(d) })),
-			label: label && { text: label.textContent, at: mid(label) },
 			pill: mid(root.querySelector('.nowview-margin .margin-pill')),
 			button: button && { text: button.textContent.trim(), at: mid(button) },
 			ticks: Object.fromEntries(
@@ -1574,83 +1571,68 @@ const instantSection = (page) =>
 		};
 	});
 
-/** The section's two ends, across every field's chunks. */
-const ends = (s) => [Math.min(...[...s.mood, ...s.work].map((c) => c.l)), Math.max(...[...s.mood, ...s.work].map((c) => c.r))];
-
 const near = (a, b, what, by = 3) => assert.ok(Math.abs(a - b) <= by, `${what}: ${a} is not ${b}`);
 
-describe('the now section at a selected time (da-zccjs)', () => {
-	test('at a transition: the change drawn, the pill over it, «reset» under it, and «reset» takes it all home', async () => {
+describe('a selected time is a dashed line in a continuous timeline (da-dv45l)', () => {
+	test('at a transition: no section there, the line where calm meets focused, the pill over it, «reset», and «reset» takes it all home', async () => {
 		await withDay(async (app) => {
 			const { page } = app;
 			await point(page, NOW - 20 * MINUTE);
-			await sectionDrawn(page, NOW - 20 * MINUTE);
+			await instantDrawn(page, NOW - 20 * MINUTE);
 			const s = await until(
-				() => instantSection(page),
-				(s) => s.mood.length === 2 && s.pill !== null && s.button !== null && s.label !== null
+				() => atInstant(page),
+				(s) => s.line !== null && s.pill !== null && s.button !== null
 			);
-			// The state left in the half facing the past, the one entered in
-			// the other; a field running on through it, one chunk.
-			const [left, right] = s.mood;
-			assert.deepEqual([left.fill, right.fill], [s.calm, s.focused]);
-			near(left.r, right.l, 'the halves do not meet');
-			assert.equal(s.work.length, 1);
-			const [lo, hi] = ends(s);
-			const middle = (lo + hi) / 2;
-			near(left.r, middle, 'the change is not in the middle');
-			// Its time under it, the pill over it, and «reset» on the time.
-			assert.equal(s.label.text, '14:40');
-			near(s.label.at, middle, 'the time');
-			near(s.pill, middle, 'the pill');
+			// The timeline runs on through the instant: calm ends at the
+			// line and focused begins there, with no section between.
+			near(s.calmEnds, s.line, 'calm does not end at the line');
+			assert.equal(s.label, false, 'a time written for the instant');
+			// The one section is now's, at the end of the window on now.
+			assert.equal(s.chunks.length, 2, `sections: ${JSON.stringify(s.chunks)}`);
+			assert.ok(s.chunks.every(([l]) => l > s.line + 20), 'a section at the instant');
+			near(s.pill, s.line, 'the pill');
 			assert.equal(s.button.text, 'reset');
-			near(s.button.at, middle, 'the button');
-			assert.ok(lo > s.band[0] + 20 && hi < s.band[1] - 20, `the section is not inside the window: ${lo}–${hi} of ${s.band}`);
 
 			await page.locator(`${NOWVIEW} .nowview-now`).click();
 			await saysPills(page, []);
 			const home = await until(
-				() => instantSection(page),
-				(s) => !s.button && !s.label && s.mood.length === 1
+				() => atInstant(page),
+				(s) => !s.button && s.line === null && s.chunks.length > 0
 			);
-			near(ends(home)[1], home.band[1], 'on now, the section ends the window');
+			near(Math.max(...home.chunks.map(([, r]) => r)), home.band[1], 'on now, the section ends the window');
 		});
 	});
 
-	test('at a dot: the dot is drawn in the section', async () => {
+	test('at a dot: the dot stays on the timeline, under the line', async () => {
 		await withDay(async (app) => {
 			const { page } = app;
 			await point(page, NOW - 10 * MINUTE);
-			await sectionDrawn(page, NOW - 10 * MINUTE);
+			await instantDrawn(page, NOW - 10 * MINUTE);
 			const s = await until(
-				() => instantSection(page),
-				(s) => s.mood.length === 1 && s.dots.some((d) => d.at === NOW - 10 * MINUTE)
+				() => atInstant(page),
+				(s) => s.line !== null && s.dots.some((d) => d.at === NOW - 10 * MINUTE)
 			);
-			assert.equal(s.mood[0].fill, s.focused);
-			const [lo, hi] = ends(s);
-			near(s.dots.find((d) => d.at === NOW - 10 * MINUTE).x, (lo + hi) / 2, 'the coffee');
+			near(s.dots.find((d) => d.at === NOW - 10 * MINUTE).x, s.line, 'the coffee');
 		});
 	});
 
-	test('at a plain instant: its states, the ticks counting from it, and a stretch about it', async () => {
+	test('at a plain instant: the ticks counting from it, and a stretch about it', async () => {
 		await withDay(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
 			const at = NOW - 22 * MINUTE;
 			await point(page, at);
-			await sectionDrawn(page, at);
+			await instantDrawn(page, at);
 			const s = await until(
-				() => instantSection(page),
-				(s) => s.mood.length === 1 && s.ticks['-5m'] !== undefined && s.ticks['+5m'] !== undefined
+				() => atInstant(page),
+				(s) => s.line !== null && s.ticks['-5m'] !== undefined && s.ticks['+5m'] !== undefined
 			);
-			assert.equal(s.mood[0].fill, s.calm);
-			assert.ok(s.dots.every((d) => d.x > ends(s)[1]), 'the coffee at 14:50 is drawn in the section');
 			// The ticks count from 14:38: five minutes either side of the
-			// section stand as far from it.
-			const [lo, hi] = ends(s);
-			near(lo - s.ticks['-5m'], s.ticks['+5m'] - hi, '−5m and +5m from the section');
+			// line stand as far from it.
+			near(s.line - s.ticks['-5m'], s.ticks['+5m'] - s.line, '−5m and +5m from the line');
 
-			// A stretch keeps the section where it is: the window scales
-			// about 14:38, not about its middle, and leaves now with the pill.
+			// A stretch keeps the line where it is: the window scales about
+			// 14:38, not about its middle, and leaves now with the pill.
 			const history = async () => {
 				const argv = (await windows(page)).at(-1);
 				return argv?.[argv.indexOf('--history') + 1];
@@ -1661,45 +1643,75 @@ describe('the now section at a selected time (da-zccjs)', () => {
 			await page.mouse.wheel(0, 200);
 			await page.keyboard.up('Control');
 			const stretched = await until(history, (h) => h !== undefined && h !== '30m');
-			await sectionDrawn(page, at);
+			await instantDrawn(page, at);
 			await app.idle();
-			const after = await instantSection(page);
-			const [lo2, hi2] = ends(after);
-			near((lo2 + hi2) / 2, (lo + hi) / 2, `the section moved on a stretch to ${stretched}`);
+			const after = await atInstant(page);
+			near(after.line, s.line, `the line moved on a stretch to ${stretched}`);
 			const centre = Date.parse(await asked(page));
 			const by = (Number.parseFloat(stretched) * (stretched.endsWith('h') ? 60 : 1)) / 30;
 			near(centre, at + 7 * MINUTE * by, 'the window about 14:38', 1000);
 		});
 	});
 
-	test('pinned to the edge the instant lies beyond, its state with it, and «reset» still home', async () => {
+	test('panned back: the line with its instant, no section at the side, and «now →» takes it home', async () => {
 		await withDay(async (app) => {
 			const { page } = app;
 			await point(page, NOW - 20 * MINUTE);
-			await sectionDrawn(page, NOW - 20 * MINUTE);
-			// Back into the past: 14:00–14:30, the instant after it.
-			await pan(page, 30);
-			const right = await until(
-				() => instantSection(page),
-				(s) => s.mood.length === 2 && Math.abs(ends(s)[1] - s.band[1]) <= 3
+			await instantDrawn(page, NOW - 20 * MINUTE);
+			// Back into the past: 14:20–14:50, the line at 14:40 inside it and
+			// now past its end.
+			await pan(page, 10);
+			const back = await until(
+				() => atInstant(page),
+				(s) => s.line !== null && s.chunks.length === 0 && s.button?.text === 'now →'
 			);
-			assert.deepEqual(
-				right.mood.map((c) => c.fill),
-				[right.calm, right.focused]
-			);
-			assert.equal(right.button?.text, 'reset');
-			// On into the future: 15:00–15:30, the instant before it.
-			await pan(page, -60);
-			const left = await until(
-				() => instantSection(page),
-				(s) => s.mood.length === 2 && Math.abs(ends(s)[0] - s.band[0]) <= 3
-			);
-			assert.equal(left.label?.text, '14:40');
+			near(back.calmEnds, back.line, 'calm does not end at the line');
+			near(back.pill, back.line, 'the pill');
 			await page.locator(`${NOWVIEW} .nowview-now`).click();
 			await saysPills(page, []);
 			await until(
-				() => instantSection(page),
-				(s) => !s.button && Math.abs(ends(s)[1] - s.band[1]) <= 3
+				() => atInstant(page),
+				(s) => !s.button && s.line === null && s.chunks.length > 0 && Math.abs(Math.max(...s.chunks.map(([, r]) => r)) - s.band[1]) <= 3
+			);
+		});
+	});
+});
+
+// vividn, 2026-10-27 20:29:09: «no field names on nowview. Those keep sneaking
+// back in and they don't look good». The CLI writes one only under
+// `--labels`, which datum.day never asks for.
+describe('the nowview names no field', () => {
+	test('on now, panned and at a selected time: no text in the picture is a field’s name, and no --labels asked', async () => {
+		await withDay(async (app) => {
+			const { page } = app;
+			await app.spyOnRunner();
+			const fields = ['work', 'mood', 'coffee'];
+			const named = () =>
+				page
+					.locator(`${NOWVIEW} svg.svg text`)
+					.allTextContents()
+					.then((texts) => texts.filter((t) => fields.some((f) => t.trim() === f || t.trim().startsWith(`${f}:`))));
+			const look = async (what) => {
+				await app.idle();
+				assert.ok((await page.locator(`${NOWVIEW} svg.svg text`).count()) > 0, `${what}: no text at all to read`);
+				assert.deepEqual(await named(), [], what);
+			};
+			await look('on now');
+			await pan(page, 10);
+			await until(
+				() => atInstant(page),
+				(s) => s.button?.text === 'now →'
+			);
+			await look('panned');
+			await page.locator(`${NOWVIEW} .nowview-now`).click();
+			await point(page, NOW - 20 * MINUTE);
+			await instantDrawn(page, NOW - 20 * MINUTE);
+			await look('at a selected time');
+			const asked = await windows(page);
+			assert.ok(asked.length > 0, 'no nowview asked');
+			assert.deepEqual(
+				asked.filter((argv) => argv.includes('--labels')),
+				[]
 			);
 		});
 	});

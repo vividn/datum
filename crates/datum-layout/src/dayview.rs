@@ -296,15 +296,6 @@ pub struct DayviewConfig {
     /// da-34w nowview uses this to stack a current-state panel beside the
     /// now-line.
     pub right_panel_width: f64,
-    /// The instant that strip stands at, when it is not the instant it is
-    /// about: a nowview window that instant is outside keeps its strip at
-    /// the edge the instant lies beyond (da-6csum). `None` is the instant.
-    #[serde(default)]
-    pub panel_at_ms: Option<i64>,
-    /// The instant that strip is about, when it is not now: a nowview at a
-    /// selected time (da-zccjs). `None` is now.
-    #[serde(default)]
-    pub instant_ms: Option<i64>,
 }
 
 impl Default for DayviewConfig {
@@ -322,8 +313,6 @@ impl Default for DayviewConfig {
             orientation: Orientation::default(),
             axis_ticks_override: None,
             right_panel_width: 0.0,
-            panel_at_ms: None,
-            instant_ms: None,
         }
     }
 }
@@ -401,19 +390,6 @@ pub struct RenderedDay {
     /// Time-axis pixel position of the now-line within the data area. Some
     /// only on the day whose window contains `now_ms`.
     pub now_time_pos: Option<f64>,
-    /// Where the reserved strip starts along the time axis when it does not
-    /// stand at now: at [`DayviewConfig::instant_ms`] (da-zccjs), or at
-    /// [`DayviewConfig::panel_at_ms`] (da-6csum).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub panel_pos: Option<f64>,
-    /// That strip stands at the window's edge, the instant it is about
-    /// lying beyond it ([`DayviewConfig::panel_at_ms`]).
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub panel_pinned: bool,
-    /// That strip ends the window, its instant being after it, rather than
-    /// starting it: which of its sides faces the window's time.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub panel_at_window_end: bool,
     /// Far end of the now-line along the day-stack/cross axis, relative to
     /// the data-area origin. For the last day of a horizontal layout this
     /// extends through the time-axis tick strip; otherwise stops at the
@@ -438,11 +414,6 @@ pub struct RenderedDay {
     pub dead_zones: Vec<[f64; 2]>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zone_labels: Vec<RenderedZoneLabel>,
-}
-
-/// For `skip_serializing_if`: a flag left unset is left out.
-fn is_false(b: &bool) -> bool {
-    !*b
 }
 
 /// A [`DayviewSpan`] placed along the time axis.
@@ -913,12 +884,10 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         // A reserved strip with time on past now sits AT now (da-9g3bf):
         // the past, then the strip, then the future, as two stretches
         // `right_panel_width` apart. The future's starts a millisecond on,
-        // so what is at now is drawn in the past's. A strip about another
-        // instant (`instant_ms`, da-zccjs) or pinned to the window's edge
-        // (`panel_at_ms`, da-6csum) cuts the day there, and one at the
-        // day's very start has no past before it.
-        let instant = config.instant_ms.unwrap_or(config.now_ms);
-        let panel_at = config.panel_at_ms.unwrap_or(instant);
+        // so what is at now is drawn in the past's. One at the day's very
+        // start has no past before it. The strip is now's alone, and a day
+        // now is outside has none (da-dv45l).
+        let panel_at = config.now_ms;
         let split = config.right_panel_width > 0.0
             && day.spans.is_empty()
             && day.start_ms <= panel_at
@@ -1065,13 +1034,6 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         // Now-line: only on the day whose window contains now_ms.
         let now = span_of(config.now_ms).map(|(i, s)| (i, time_to_pos(s, config.now_ms)));
         let now_time_pos = now.map(|(_, pos)| pos);
-        let panel_pos = (config.panel_at_ms.or(config.instant_ms))
-            .map(|_| panel_at)
-            .filter(|_| config.right_panel_width > 0.0)
-            .and_then(|t| match split {
-                true => Some(at(t) * time_axis_extent),
-                false => span_of(t).map(|(_, s)| time_to_pos(s, t)),
-            });
         let (now_near, now_far) = now.map_or((0.0, 1.0), |(i, pos)| spans[i].lane_at(pos));
         // Last day extends now-line through the axis; otherwise stops at
         // day's far edge along the cross/day-stack axis. Only horizontally:
@@ -1098,9 +1060,6 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             errors,
             fields,
             now_time_pos,
-            panel_pos,
-            panel_pinned: config.panel_at_ms.is_some(),
-            panel_at_window_end: panel_at < instant,
             now_extent_far,
             start_ms: day.start_ms,
             end_ms: day.end_ms,

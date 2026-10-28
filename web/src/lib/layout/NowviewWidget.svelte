@@ -87,27 +87,28 @@
 	swipe that starts in it changes tabs, because `data-pans` is the BAND's
 	and not the widget's.
 
-	THE NOW SECTION (da-6csum) is the CLI's strip of each field's current
-	state, and it stands where now is: at now while the window holds now,
-	at the right edge of a window in the past and pinned to the left of one
-	wholly in the future, a gap between it and the timeline either side.
-	With a time pill it is the PILL's instant's instead (da-zccjs, vividn:
-	«when a time pill is selected, the "now" part of the nowview should show
-	the state at that exact instant»): the CLI is handed the pill as `-t`
-	and the window's middle as `--center`, and draws the states then, a dot
-	at it and a state changing at it, the section standing at the instant
-	or pinned the same way, and the ticks — and so the handles — counting
-	from it. The pill sits right over the section, and the button under it
-	reads «reset». A tap here moves the section and not the window: one on
-	now stops where it is for as long as the pill lasts. A stretch scales
-	about the section's instant, wherever the window is.
+	THE NOW SECTION is the CLI's strip of each field's current state, and it
+	belongs to now (da-dv45l, vividn: «it is no longer pinned on the side,
+	but rather it just disappears when panning around»): at the timeline's
+	end on now, a fifth of the picture, and off now standing at now on the
+	timeline, moving off with it, gone once now is out of the window. A time
+	pill draws no section (vividn: «For selected times, don't display the
+	outset block, just have the nowview as it would be with a dashed line and
+	continuous in time around it»): the CLI is handed the pill as `-t` and
+	the window's middle as `--center`, draws a dashed line at it and counts
+	the ticks — and so the handles — from it, and the pill sits over the
+	line. A tap here moves the line and not the window: one on now stops
+	where it is for as long as the pill lasts. A stretch scales about the
+	pill's instant, or now, wherever the window is.
 	vividn: «any time the view is panned off the default, the "now" label
 	under the now section becomes a filled in yellow button with black now
 	written on it. Clicking that button restores the default.» So off now
-	the yellow «now» under the strip is a BUTTON laid over it, which takes
-	the window back AND the time-based pills away with it — and keeps the
-	window's length: «stretching should always leave now where it is», and
-	a stretch alone does not leave now. `← selection` appears when a
+	the yellow «now →» is a BUTTON laid over the «now» under the strip, and
+	held to the edge now lies beyond once the strip has gone off it (an
+	arrow says which way), which takes the window back AND the time-based
+	pills away with it — and keeps the window's length: «stretching should
+	always leave now where it is», and a stretch alone does not leave now.
+	On now with a pill it reads «reset». `← selection` appears when a
 	selection exists that the window does not contain (vividn's second
 	«maybe»).
 
@@ -135,7 +136,7 @@
 	import { markOf, pressSpent } from '$lib/inspect.js';
 	import { readLanes } from '$lib/lanes.js';
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '$lib/nowpoint.js';
-	import { compose } from '$lib/nowcrop.js';
+	import { bandOf, compose } from '$lib/nowcrop.js';
 	import { historyArg, ladderAround, layerArgv, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '$lib/panes.js';
 	import { run } from '$lib/run.js';
 
@@ -442,10 +443,9 @@
 
 	/** Ask for the days of data the overlay `svg` reaches that `layer` does not hold. */
 	function needLayer(svg: SVGSVGElement): void {
-		const slot = svg.querySelector('.now-strip');
-		if (!slot) return;
+		if (!svg.querySelector('[data-lo]')) return;
 		const along = Number(svg.getAttribute(vertical ? 'height' : 'width'));
-		const cross = Number(slot.getAttribute(vertical ? 'width' : 'height'));
+		const cross = bandOf(svg, vertical).extent;
 		if (!(along > 0 && cross > 0)) return;
 		const midnight = new Date().setHours(0, 0, 0, 0);
 		// Rounded up: a drawing that starts even a millisecond before a
@@ -479,14 +479,8 @@
 		});
 	});
 
-	/**
-	 * The overlay datum drew, with the days' data laid under it: its strip
-	 * about the instant the overlay was drawn for, its `-t` or now.
-	 */
-	const crop = (overlay: string, argv: string[]) => {
-		const at = argv.includes('-t') ? Date.parse(argv[argv.indexOf('-t') + 1]) : NaN;
-		return compose(overlay, [...layer.days.values()], Number.isFinite(at) ? at : Date.now());
-	};
+	/** The overlay datum drew, with the days' data laid under it: its strip is now's (da-dv45l). */
+	const crop = (overlay: string) => compose(overlay, [...layer.days.values()], Date.now());
 
 	// ── the flow ───────────────────────────────────────────────────────
 
@@ -749,11 +743,8 @@
 	 * The window the pan has dragged it to: the drag moves the content, so
 	 * the span moves the other way. The picture stays where the finger left
 	 * it, and datum is asked for another only when the window has left what
-	 * this one drew (da-61nm8) — or when either window, the one the pan left
-	 * or the one it reached, does not hold now, a pan from one past window
-	 * to another included. The now strip stands at now in a window holding
-	 * now, and slides with it; in one that does not it is pinned to an edge,
-	 * which a slide would carry off (da-6csum).
+	 * this one drew (da-61nm8). The now strip stands at now on the timeline,
+	 * and slides with it (da-dv45l).
 	 */
 	function commitPan(): void {
 		if (!axis) return drop();
@@ -764,15 +755,12 @@
 		centre = { arg: new Date((lo + hi) / 2).toISOString(), by: 'pan' };
 		rest += panned;
 		panned = 0;
-		if (lo < drawnFrom() || hi > drawnTo() || !holdsInstant([lo, hi]) || (view && !holdsInstant(view))) ask();
+		if (lo < drawnFrom() || hi > drawnTo()) ask();
 		else void tick().then(place);
 	}
 
-	/** The instant the now section is about, in ms: the pill's, or now. */
+	/** The instant a stretch is about, in ms: the pill's, where the dashed line is, or now. */
 	const instantMs = () => (pill ? +pill.at : Date.now());
-
-	/** Whether the section's instant is inside a window's two ends, a second's slack either side. */
-	const holdsInstant = ([lo, hi]: [number, number]) => lo - EDGE_MS <= instantMs() && instantMs() <= hi + EDGE_MS;
 
 	function finish(event: PointerEvent): void {
 		if (!press) return;
@@ -827,10 +815,10 @@
 	/**
 	 * Where the anchor is drawn, in px across the picture's own box.
 	 *
-	 * The anchor is the section's instant (da-zccjs): the pill's, or now,
-	 * where the picture puts it — read off the stretch holding it, as the
-	 * strip cuts the axis there — and past the window's edge when the window
-	 * does not hold it. On now it is the now-line (`current-time-line`,
+	 * The anchor is the pill's instant, where its dashed line is (da-zccjs,
+	 * da-dv45l), or now, where the picture puts it — read off the stretch
+	 * holding it, as the strip cuts the axis at now — and past the window's
+	 * edge when the window does not hold it. On now it is the now-line (`current-time-line`,
 	 * dayview_svg.rs) wherever its geometry puts it; the snapshot draws
 	 * none, and its anchor is the right edge.
 	 */
@@ -1122,6 +1110,10 @@
 	 * is too narrow for datum to write them.
 	 */
 	let nowAt = $state.raw<{ x: number; y: number } | null>(null);
+	/** The band's two ends along time across the widget's box, and the «now» button's own size, to hold it inside. */
+	let edges = $state.raw<[number, number]>([0, 0]);
+	let homeWide = $state(0);
+	let homeTall = $state(0);
 
 	function place(): void {
 		if (!el) return;
@@ -1177,17 +1169,22 @@
 			const lo = Math.min(half, home.width / 2);
 			return Math.max(lo, Math.min(Math.max(home.width - half, home.width / 2), x));
 		};
-		// The time pill stands right over the section its instant is drawn
-		// as (da-zccjs, vividn: «show the time pill right above this now
-		// section»), where the CLI wrote its time under it.
-		const section = svg?.querySelector('.instant-label') ? centreOf('svg.svg .instant-label') : null;
 		spots = {
-			time: held(section ?? centreOf('svg.svg .cursor-head'), '.nowview-margin .pill.time'),
+			time: held(centreOf('svg.svg .cursor-head'), '.nowview-margin .pill.time'),
 			dur: held(centreOf('svg.svg .cursor-span'), '.nowview-margin .pill.dur')
 		};
-		const word = svg?.querySelector<SVGElement>('.now-label, .instant-label');
-		const at = word?.getBoundingClientRect();
-		nowAt = at?.width ? { x: at.left + at.width / 2 - home.x, y: at.top + at.height / 2 - home.y } : null;
+		// The «now» under the strip, or, with none drawn, the axis's row and
+		// the side of the window now lies on (da-dv45l).
+		const word = svg?.querySelector<SVGElement>('.now-label');
+		const row = (word ?? svg?.querySelector<SVGElement>('.tick-label'))?.getBoundingClientRect();
+		edges = ends().map((p) => p - (vertical ? home.y : home.x)) as [number, number];
+		const beyond = axis && Date.now() < instantAlong((ends()[0] + ends()[1]) / 2) ? -Infinity : Infinity;
+		nowAt = row?.width
+			? {
+					x: vertical ? row.left + row.width / 2 - home.x : word ? row.left + row.width / 2 - home.x : beyond,
+					y: vertical && !word ? beyond : row.top + row.height / 2 - home.y
+				}
+			: null;
 		if (word) word.style.visibility = homeward ? 'hidden' : '';
 		const labels = [...(svg?.querySelectorAll<SVGElement>('.tick-label') ?? [])];
 		for (const l of labels) {
@@ -1672,14 +1669,22 @@
 	     axis, so a drag that starts on one is not a tab swipe either
 	     (da-ndzl's test says so of the steps). -->
 	{#if homeward && nowAt && !zoom}
+		<!-- Over the «now» under the strip, and held to the edge now lies
+		     beyond once the strip has gone off it (da-dv45l). -->
+		{@const at = (vertical ? nowAt.y : nowAt.x) + panned}
+		{@const half = (vertical ? homeTall : homeWide) / 2}
+		{@const held = Math.max(edges[0] + half, Math.min(edges[1] - half, at))}
 		<button
 			type="button"
 			class="nowview-now"
 			data-pans={pans}
 			title="back to now, and the time pills away"
-			style:left="{nowAt.x + (vertical ? 0 : panned)}px"
-			style:top="{nowAt.y + (vertical ? panned : 0)}px"
-			onclick={toNow}>{pill ? 'reset' : 'now'}</button
+			style:left="{vertical ? nowAt.x : held}px"
+			style:top="{vertical ? held : nowAt.y}px"
+			bind:offsetWidth={homeWide}
+			bind:offsetHeight={homeTall}
+			onclick={toNow}
+			>{!offNow ? 'reset' : at < edges[0] + half ? (vertical ? '↑ now' : '← now') : vertical ? 'now ↓' : 'now →'}</button
 		>
 	{/if}
 	{#if roomy && away && !zoom}

@@ -28,8 +28,8 @@ use datum_core::time::{Zone, ZoneTimeline};
 use datum_layout::dayview::{compute_dayview, DayviewFieldInput, Orientation};
 use datum_layout::dayview_svg::FlowMark;
 use datum_layout::nowview::{
-    ahead, crop_to_window, nowview_config, surround, NowviewBlock, NowviewCurrentState,
-    NowviewField, NowviewGeometry, NowviewPoint, FLOW_MARKS_MINUTES,
+    ahead, crop_to_window, nowview_config, NowviewBlock, NowviewCurrentState, NowviewField,
+    NowviewGeometry, NowviewPoint, FLOW_MARKS_MINUTES,
 };
 use datum_layout::nowview_svg::{
     inject_inside_plot_group, render_nowview_at_svg, render_nowview_svg_with, strip_slot,
@@ -303,35 +303,35 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
             None => 0.0,
         },
     };
-    // A centred window reaches half the history past the instant, and its
-    // surroundings on past that; one ending at now, what `--ahead` draws.
+    // A centred window reaches half the history past its middle.
     let after = if geometry.centred {
         history_minutes / 2.0
     } else {
         0.0
     };
-    let (pad, pad_after) = surround(&geometry);
     let ahead = ahead(&geometry);
     let minutes = |m: f64| chrono::Duration::milliseconds((m * 60_000.0) as i64);
     let middle = center.unwrap_or(anchor);
-    let window_end = middle + minutes(after + pad_after + ahead);
-    // The snapshot's window is an instant; a minute of lookback still
-    // gives every field in a state a band for its state to be read from.
-    let lookback = history_minutes + pad + pad_after + ahead;
-    // Drawn ahead, what is open now is drawn open to the picture's end: the
-    // picture is of now for as long as nothing is logged, and a write asks
-    // for another.
-    let fields = build_dayview_fields(db, window_end, lookback.max(1.0), ahead > 0.0)?;
-    let config = nowview_config(
-        fields,
+    let mut config = nowview_config(
+        Vec::new(),
         middle.timestamp_millis(),
         now.timestamp_millis(),
         at.map(|t| t.timestamp_millis()),
         &geometry,
     );
+    // The day the config draws, which reaches past the window where it
+    // draws time in the strip's room (da-dv45l). The snapshot's window is
+    // an instant; a minute of lookback still gives every field in a state a
+    // band for its state to be read from. Drawn ahead, what is open now is
+    // drawn open to the picture's end: the picture is of now for as long as
+    // nothing is logged, and a write asks for another.
+    let day = &mut config.days[0];
+    let lookback = (day.end_ms - day.start_ms) as f64 / 60_000.0;
+    let day_end = Utc.timestamp_millis_opt(day.end_ms).single().unwrap_or(now);
+    day.fields = build_dayview_fields(db, day_end, lookback.max(1.0), ahead > 0.0)?;
     let window = (
-        config.days[0].start_ms + minutes(pad).num_milliseconds(),
-        config.days[0].end_ms - minutes(pad_after + ahead).num_milliseconds(),
+        middle.timestamp_millis() - minutes(history_minutes - after).num_milliseconds(),
+        middle.timestamp_millis() + minutes(after).num_milliseconds(),
     );
     // Its whole minutes, in a window short enough to tell them apart.
     let flow = (ahead > 0.0).then(|| {
@@ -379,32 +379,28 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
         return render_terminal_once(args, db);
     };
     let c = compute_now(args, db)?;
-    let clock = format_local_hh_mm(c.anchor);
     let svg = if (c.at.is_some() || c.center.is_some()) && c.history_minutes > 0.0 {
-        // Its strip carries the states at the instant (da-zccjs): read to the
-        // end of its second, as a time is named no finer, and against the
-        // states just before it, so a field changing state there is drawn
-        // as the change.
-        let (after, before) = match c.at {
-            Some(at) => (
-                build_current_states(db, at + chrono::Duration::milliseconds(999), &c.layout),
-                build_current_states(db, at - chrono::Duration::milliseconds(1), &c.layout),
-            ),
-            None => (c.current_states.clone(), Vec::new()),
+        // Its strip is now's (da-dv45l), and a selected time a dashed line.
+        let now = Utc
+            .timestamp_millis_opt(c.now_ms)
+            .single()
+            .unwrap_or(c.anchor);
+        let states = match c.at {
+            Some(_) => build_current_states(db, now, &c.layout),
+            None => c.current_states.clone(),
         };
         render_nowview_at_svg(
             &c.layout,
-            &instant_label(c.anchor),
+            &format_local_hh_mm(now),
             c.at.map(|t| t.timestamp_millis()),
-            &after,
-            &before,
+            &states,
             args.labels,
             args.now_label,
         )
     } else {
         render_nowview_svg_with(
             &c.layout,
-            &clock,
+            &format_local_hh_mm(c.anchor),
             &c.current_states,
             args.labels,
             args.now_label,
@@ -938,16 +934,6 @@ fn push_switch_region_terminal(
 /// in the browser is the page's `TZ` (`chrono::Local` is UTC there, da-y6qj).
 pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
     crate::render::action::clock_label(&Zone::host().local_naive(t))
-}
-
-/// The clock under a selected instant's section (da-zccjs): `HH:MM`, and
-/// its seconds when it has any, as the web's pill says it.
-fn instant_label(t: DateTime<Utc>) -> String {
-    use chrono::Timelike;
-    match Zone::host().local_naive(t).second() {
-        0 => format_local_hh_mm(t),
-        s => format!("{}:{s:02}", format_local_hh_mm(t)),
-    }
 }
 
 #[cfg(test)]
