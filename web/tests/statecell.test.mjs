@@ -502,3 +502,46 @@ describe("an occur dot's declared keys follow it, as the CLI prints them (da-545
 		});
 	});
 });
+
+describe('a multi-state slot is split diagonally, as the dayview stripes it (da-pc7x7)', () => {
+	test('two cells, each one column filled corner to corner, the middle state one band', async () => {
+		await onTail(async (app) => {
+			const { page } = app;
+			// `x`'s LEAD is the set a,b,c; `calm` beside it has a plain one.
+			await seedLines(app, ['switch body a,b,c -t 0900', 'switch mood calm -t 0905', 'switch body x -t 0910']);
+			await settled(page, 3);
+			const leads = await page.evaluate((sel) => {
+				const rows = [...document.querySelectorAll(`${sel} tbody tr`)];
+				const lead = (field) => {
+					const tr = rows.findLast((r) => r.querySelector('td.field')?.textContent.trim() === field);
+					const edge = tr.querySelector('td.state .edge.from');
+					return {
+						width: edge.getBoundingClientRect().width,
+						cells: [...edge.querySelectorAll('span')].map((s) => ({
+							text: s.textContent,
+							width: s.getBoundingClientRect().width,
+							image: getComputedStyle(s).backgroundImage
+						}))
+					};
+				};
+				return { body: lead('body'), mood: lead('mood') };
+			}, TAIL);
+			const { body, mood } = leads;
+			// Two cells, each a painted space a gradient fills: a font draws
+			// `◢` smaller than its cell, and from a fallback font wider.
+			assert.equal(body.cells.length, 2, JSON.stringify(body));
+			for (const cell of body.cells) {
+				assert.equal(cell.text, ' ', JSON.stringify(body));
+				assert.match(cell.image, /^linear-gradient/, JSON.stringify(body));
+			}
+			// The slot is as wide as a plain one, so the chips still line up.
+			assert.ok(Math.abs(body.width - mood.width) < 0.5, `${body.width} vs ${mood.width}`);
+			// `◢` b over a, then `◤` b over c: b is one band across both.
+			const colors = (image) => image.match(/rgb\([^)]*\)/g);
+			const [first, second] = body.cells.map((c) => colors(c.image));
+			assert.equal(first[1], second[0], `b continues across the two cells: ${JSON.stringify(body)}`);
+			assert.notEqual(first[0], second[1], `a and c differ: ${JSON.stringify(body)}`);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+});

@@ -8,8 +8,8 @@
 //! emitted where expected.
 //!
 //! Per da-25l, the state-transition group is `[LEAD][state cell][TRAIL]`
-//! flush against itself with no whitespace inside. LEAD/TRAIL are single
-//! bg-coloured spaces; when there's no prior or continuing tracked state,
+//! flush against itself with no whitespace inside. LEAD/TRAIL are two
+//! bg-coloured spaces each (da-pc7x7); when there's no prior or continuing tracked state,
 //! the slot renders with the IGNORED grey rather than the old `∅`-glyph
 //! fallback (semantically, "no prior state" IS a state — it's IGNORED).
 //! Only an explicitly-stopped trail (`Bool(false)`) renders as an
@@ -432,12 +432,12 @@ fn fx17_switch_scalar_with_array_prior_and_dur() {
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("momentary_single"));
     assert!(out.contains("1m"), "duration: {out:?}");
-    // Per da-9vop, parallel-state LEAD/TRAIL slots render as `▞`
-    // checkerboards so both member colours stay visible. The scalar state
-    // cell itself ("momentary_single") is still solid bg-painted text —
-    // verify by checking the slots wrap the badge directly with `▞`.
+    // Per da-pc7x7, a parallel-state LEAD/TRAIL slot is two diagonally
+    // split columns, as the dayview stripes the set, so every member colour
+    // stays visible. The scalar state cell itself ("momentary_single") is
+    // still solid bg-painted text — the slots wrap the badge directly.
     assert!(
-        out.contains("▞momentary_single▞"),
+        out.contains("◢◤momentary_single◢◤"),
         "parallel-state slots wrap scalar badge: {out:?}",
     );
 }

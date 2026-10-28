@@ -201,11 +201,11 @@ fn tail_state_cell_for_start_uses_bg_slots() {
         !stripped.contains("→"),
         "no arrows in new layout: {stripped:?}"
     );
-    // Default ctx → both slots are empty → two IGNORED-bg single-space
-    // cells flanking the state body, flush against it (da-25l). Stripped
-    // form is exactly " on " — single space on each side.
+    // Default ctx → both slots are empty → two IGNORED-bg two-column
+    // slots flanking the state body, flush against it (da-25l, da-pc7x7).
+    // Stripped form is exactly "  on  " — two spaces on each side.
     assert_eq!(
-        stripped, " on ",
+        stripped, "  on  ",
         "two IGNORED slots flank the state cell flush: {stripped:?}"
     );
     assert!(
@@ -271,8 +271,8 @@ fn tail_row_without_occur_time_uses_create_time_with_grey_c_prefix() {
 // ─── da-qfv0: repeated-state `!` warning marker ─────────────────────────────
 
 /// A switch whose state matches the prior state (most often the user forgot
-/// to log an intermediate transition) paints a literal `!` in the LEAD slot
-/// so the no-op is visible at a glance.
+/// to log an intermediate transition) paints a literal `!` in the LEAD slot,
+/// its second column beside the state, so the no-op is visible at a glance.
 #[test]
 fn tail_state_repeat_emits_warning_glyph_in_lead_slot() {
     let _g = no_color_scope();
@@ -290,7 +290,7 @@ fn tail_state_repeat_emits_warning_glyph_in_lead_slot() {
     };
     let stripped = strip_ansi(&format_state_group(&e, None, &ctx).expect("state group"));
     assert!(
-        stripped.starts_with('!'),
+        stripped.starts_with(" !vertical"),
         "LEAD slot must carry the `!` marker: {stripped:?}"
     );
     assert!(

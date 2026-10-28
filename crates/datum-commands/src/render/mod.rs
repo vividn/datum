@@ -2634,7 +2634,7 @@ mod tests {
         let columns =
             table_columns_with(&entries, None, None, Some(&registry), &TableArgs::default());
         let state = columns.iter().find(|c| c.key == "state").unwrap();
-        assert_eq!(state.cells, vec!["●".to_string()]);
+        assert_eq!(state.cells, vec![" ●".to_string()]);
         let rows = tail_rows::tail_rows(&entries, None, TimeMetricCol::Hybrid, Some(&registry));
         assert_eq!(rows[0].state_body, "●");
         assert_eq!(rows[0].keys, "25 15");

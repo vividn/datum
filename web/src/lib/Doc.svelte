@@ -55,6 +55,7 @@
 -->
 <script lang="ts">
 	import { act } from '#lib/act.ts';
+	import { splitFill } from '#lib/ansi.ts';
 	import type { EchoDoc, InfoSegment } from '#lib/echo.ts';
 	import Sheet from '#lib/Sheet.svelte';
 	import { select, selected } from '#lib/bar.ts';
@@ -77,9 +78,14 @@
 	let shown = $state(false);
 	let open = $state(false);
 
-	/** The line's runs, or the unpainted line as its one run. */
+	/**
+	 * The line's runs, or the unpainted line as its one run. A run of split
+	 * slot cells is a run per cell, since each fills its own (`splitFill`).
+	 */
 	const segments: InfoSegment[] = $derived(
-		doc.info_segments?.length ? doc.info_segments : [{ text: doc.info, color: null }]
+		(doc.info_segments?.length ? doc.info_segments : [{ text: doc.info, color: null }]).flatMap((s) =>
+			s.fg && /^[◢◤]{2,}$/.test(s.text) ? [...s.text].map((text) => ({ ...s, text })) : [s]
+		)
 	);
 
 	/**
@@ -153,7 +159,9 @@
 		     space in the DOM — so the hugging here is load-bearing, as it is
 		     in AnsiText.svelte. -->
 		<div class="info">{#each parts as { part, runs }}<span class={part}
-					>{#each runs as segment}<span style:color={segment.color}>{segment.text}</span
+					>{#each runs as segment}{@const fill = splitFill(segment.text, segment.color, segment.fg)}<span
+							style:color={segment.color}
+							style:background={fill}>{fill ? ' ' : segment.text}</span
 						>{/each}</span
 				>{/each}</div>
 	</div>

@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! UPDATE gtvoz coffee:2026-10-28T08:00:00.000Z
-//! 09:00:00+1 → 09:30:00+1  coffee ●
+//! 09:00:00+1 → 09:30:00+1  coffee  ●
 //!   size: "large" → "small"
 //!   + milk: "oat"
 //!   − cups: 2
@@ -73,7 +73,7 @@ impl Part {
         match (self.changed(), &self.before, &self.after) {
             (false, _, Some(a)) => paint(DIM, &strip_ansi(a)),
             (true, Some(b), Some(a)) => {
-                // A state group's lead slot is a space of its own.
+                // A state group's lead slot is a space of its own (two).
                 let to = if strip_ansi(a).starts_with(' ') {
                     " →"
                 } else {
@@ -279,7 +279,7 @@ mod tests {
         let mut after = before.clone();
         after.data = Some(json!({"shop": "corner", "size": "small"}));
         let lines = echo(&before, &after, false);
-        assert_eq!(lines.info, "09:00:00+0  coffee ●");
+        assert_eq!(lines.info, "09:00:00+0  coffee  ●");
         assert_eq!(lines.info_time, "09:00:00+0");
         assert_eq!(
             lines.data,
@@ -328,7 +328,7 @@ mod tests {
         let mut after = before.clone();
         after.state = Some(json!("tired"));
         let lines = echo(&before, &after, false);
-        assert_eq!(lines.info.trim_end(), "09:10:00+0  mood  calm → tired");
+        assert_eq!(lines.info.trim_end(), "09:10:00+0  mood   calm →  tired");
         let change = &lines.changes.unwrap()[0];
         assert_eq!(
             (change.part, change.before.as_deref()),
@@ -343,7 +343,7 @@ mod tests {
         let mut after = before.clone();
         after.occur_time = Some(at("09:30"));
         let lines = echo(&before, &after, false);
-        assert_eq!(lines.info, "09:00:00+0 → 09:30:00+0  coffee ●");
+        assert_eq!(lines.info, "09:00:00+0 → 09:30:00+0  coffee  ●");
         assert_eq!(lines.info_time, "09:00:00+0 → 09:30:00+0");
         assert_eq!(lines.data, ["  shop: \"corner\""]);
     }

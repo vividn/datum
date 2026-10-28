@@ -18,17 +18,19 @@
 	 * ⚑ AND IT DISSOLVES THE PROBLEM THE WORDS CREATED rather than solving
 	 * it. A word is as wide as its state is long, so a row that transitioned
 	 * started its chip 70px right of a row that did not, and the column
-	 * stopped scanning vertically. A COLOUR BLOCK IS ONE CHARACTER WIDE
-	 * whatever it stands for, so every chip starts at the same x and the
+	 * stopped scanning vertically. A COLOUR BLOCK IS TWO CHARACTERS WIDE
+	 * whatever it stands for (da-pc7x7), so every chip starts at the same x and the
 	 * raggedness has nowhere to come from. No subgrid, no reserved width,
 	 * nothing padded.
 	 *
 	 * So this draws the CLI's OWN painted slots — `previous_state_cell` and
-	 * `following_state_cell`, one character each, already resolved by
+	 * `following_state_cell`, two columns each, already resolved by
 	 * `render_slot` for every shape the terminal has: a state's colour, the
-	 * grey of an untracked field, a parallel set's two-colour `▞`, the
+	 * grey of an untracked field, a parallel set's diagonally split `◢◤`, the
 	 * unpainted space of a field that has ended, the `∅` a first entry shows
-	 * and the `!` of a switch that changed nothing (da-qfv0). None of those
+	 * and the `!` of a switch that changed nothing (da-qfv0). An occur's
+	 * lead is the one column before its mark, and unpainted it is spacing,
+	 * not a state: drawn as text, with no edge and no hover. None of those
 	 * rules is re-derived here, so none of them can drift.
 	 *
 	 * What the page adds is only what a terminal cannot:
@@ -79,6 +81,7 @@
 	}
 
 	const lead = $derived(typeof row.previous_state_cell === 'string' ? row.previous_state_cell : '');
+	const spacing = $derived(/^ +$/.test(lead));
 	const trail = $derived(typeof row.following_state_cell === 'string' ? row.following_state_cell : '');
 	/**
 	 * A listing from before these keys existed — or any row the CLI did not
@@ -105,7 +108,7 @@
 	 */
 </script>
 
-{#if lead}<span class="edge from" title={hover(row.previous_state, row.previous_state_label)}
+{#if spacing}<span class="edge-space">{lead}</span>{:else if lead}<span class="edge from" title={hover(row.previous_state, row.previous_state_label)}
 		><AnsiText spans={ansiSpans(lead)} /></span
 	>{/if}<AnsiText spans={ansiSpans(body)} />{#if trail}<span
 		class="edge to"
@@ -123,15 +126,18 @@
 	 * already `white-space: pre`; a `<td>` is not. Without this line vividn's
 	 * ruling ships as an invisible edge.
 	 *
-	 * Scoped to the one-character edge, so a long state in the body still
+	 * Scoped to the two-column edge, so a long state in the body still
 	 * wraps under the cell's own `overflow-wrap: anywhere`.
 	 *
 	 * `cursor: help` is the rest of it: the span is a HOVER TARGET, and the
 	 * cursor is the only thing telling a reader that a block of colour has a
 	 * name behind it.
 	 */
-	.edge {
+	.edge,
+	.edge-space {
 		white-space: pre;
+	}
+	.edge {
 		cursor: help;
 	}
 </style>

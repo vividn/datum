@@ -15,7 +15,7 @@
 //!           "info_segments":[{"text":"18:50:09","color":null},
 //!                            {"text":"+2","color":"#888888"},
 //!                            {"text":"  ","color":null},
-//!                            {"text":"coffee","color":"#24eb05"},
+//!                            {"text":"coffee","color":"#24eb05","fg":"#000000"},
 //!                            {"text":" ","color":null},
 //!                            {"text":"∅","color":"#888888"},
 //!                            {"text":"●","color":"#24eb05"}]}]}
@@ -29,7 +29,8 @@
 //! The colours are the renderer's own too (da-yu9s): `field_color` and
 //! `state_color` are `colors::field_hex` / `colors::state_hex`, the same
 //! derivation `fields --json` publishes and the terminal paints with, and
-//! `info_segments` is the painted info line split at its own escapes. So a
+//! `info_segments` is the painted info line split at its own escapes, a run
+//! painted on a background carrying its foreground as `fg`. So a
 //! caller never needs a second palette, and never needs to look for the
 //! field inside `info` — the document says where it is.
 //!
@@ -70,7 +71,10 @@ fn document(lines: &ActionLines) -> JsonValue {
         "info_segments": lines
             .info_segments
             .iter()
-            .map(|s| json!({ "text": s.text, "color": s.color }))
+            .map(|s| match &s.fg {
+                Some(fg) => json!({ "text": s.text, "color": s.color, "fg": fg }),
+                None => json!({ "text": s.text, "color": s.color }),
+            })
             .collect::<Vec<_>>(),
     });
     // An update's parts that changed, each as it was and as it is (da-27x6p).

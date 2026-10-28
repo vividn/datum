@@ -1,1 +1,1 @@
-17:00:52+0  new_switch  repeat 
+17:00:52+0  new_switch   repeat  

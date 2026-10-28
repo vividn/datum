@@ -20,9 +20,10 @@ use datum_core::{
 use serde_json::Value as JsonValue;
 
 use super::action::{
-    compute_occur_dot_colors, render_lead_slot, render_slot, RenderContext, StateTransition,
+    format_lead_cell, render_lead_slot, render_occur_dot, render_slot, RenderContext,
+    StateTransition,
 };
-use super::characters::{DOT, IGNORED_STATE, NON_OCCUR, NULL_SET, NULL_STATE};
+use super::characters::{IGNORED_STATE, NON_OCCUR, NULL_STATE, SLOT};
 use super::colors::{
     field_rgb, paint, paint_bg, paint_bg_fg, state_rgb, state_value_rgb, structured_state_rgb,
     visible_width, Rgb, GREY_FG,
@@ -43,7 +44,7 @@ pub(crate) const FIELD_CAP: usize = 10;
 
 /// Floor for the state column — small enough to fit `a…,+9` in the worst
 /// case but large enough to be readable.
-pub(crate) const STATE_FLOOR: usize = 6;
+pub(crate) const STATE_FLOOR: usize = 8;
 
 /// Floor for the field column when the state floor can't otherwise be
 /// satisfied. Below this the field becomes unrecognisable.
@@ -69,15 +70,19 @@ pub(crate) fn truncate_state_cell(
         return paint(&field_rgb(&entry.field, spec).fg(), NON_OCCUR);
     }
     if !has_state_badge(entry.verb, entry.dur.as_ref()) {
-        // `Point` dot: 1-2 chars, can't overflow at the floors we enforce.
-        return render_occur_cell(entry, spec, ctx);
+        // `Point` dot: two columns, its LEAD column first to give way.
+        let cell = render_occur_cell(entry, spec, ctx);
+        if visible_width(&cell) > max_w {
+            return render_occur_dot(entry, spec, ctx);
+        }
+        return cell;
     }
     // State-bearing verbs render `[LEAD][body][TRAIL]`. LEAD and TRAIL
-    // are 1 visible char each — reserve them, give the rest to the body.
+    // are two visible columns each — reserve them, give the rest to the body.
     // The three are the row's transition (da-fknn8), read from the one
     // place `tail --json` reads it from.
     let t = StateTransition::of(ctx, entry);
-    let body_budget = max_w.saturating_sub(2);
+    let body_budget = max_w.saturating_sub(2 * SLOT.len());
     let body = truncate_state_body(t.current.as_ref(), &entry.field, spec, body_budget);
     let mut out = String::new();
     out.push_str(&render_lead_slot(
@@ -91,20 +96,10 @@ pub(crate) fn truncate_state_cell(
     out
 }
 
-/// Reproduces the `Point`-dot path from `action::render_occur` without
-/// needing `pub(super)` access to the helper. Kept tiny: any future
-/// elaboration belongs in `action.rs` proper.
+/// The `Point`-dot path from `action::render_occur`: its LEAD column and
+/// its mark.
 fn render_occur_cell(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
-    let mut out = String::new();
-    if ctx.prior_state_ignored {
-        out.push_str(&paint(GREY_FG, NULL_SET));
-    }
-    let (fg, bg) = compute_occur_dot_colors(entry, spec, ctx.ongoing_state.as_ref());
-    match bg {
-        Some(bg) => out.push_str(&paint_bg_fg(bg, fg, DOT)),
-        None => out.push_str(&paint(&fg.fg(), DOT)),
-    }
-    out
+    format_lead_cell(entry, spec, ctx) + &render_occur_dot(entry, spec, ctx)
 }
 
 /// Truncate the state badge body to `budget` visible chars. Mirrors
@@ -375,7 +370,7 @@ mod tests {
         let _g = no_color();
         let e = switch_entry("body", json!(["vertical", "sit"]));
         let ctx = RenderContext::default();
-        let cell = truncate_state_cell(&e, None, &ctx, 14); // body_budget = 12
+        let cell = truncate_state_cell(&e, None, &ctx, 16); // body_budget = 12
         let s = strip_ansi(&cell);
         assert!(s.contains("vertical,sit"), "natural render: {s:?}");
     }
@@ -387,8 +382,8 @@ mod tests {
         let _g = no_color();
         let e = switch_entry("body", json!(["vertical", "sit", "sofa"]));
         let ctx = RenderContext::default();
-        // max_w = 13 → body_budget = 11.
-        let cell = truncate_state_cell(&e, None, &ctx, 13);
+        // max_w = 15 → body_budget = 11.
+        let cell = truncate_state_cell(&e, None, &ctx, 15);
         let s = strip_ansi(&cell);
         // strip LEAD/TRAIL spaces by trimming
         let body = s.trim();
@@ -405,12 +400,12 @@ mod tests {
             json!(["vertical", "sit", "sofa", "office", "kitchen"]),
         );
         let ctx = RenderContext::default();
-        // body_budget = 14 (max_w 16 - 2 slots) ⇒ B = (14-4)/5 = 2; but the
+        // body_budget = 14 (max_w 18 - 2 two-column slots) ⇒ B = (14-4)/5 = 2; but the
         // bead's example treats the drop threshold as "each state < 2
         // chars budget" — and at B=2, 5 states fully expanded would need
         // 2+1+2+1+2+1+2+1+2 = 14 which is exactly the budget. Bump down
         // to body_budget=11 where drop-mode actually fires.
-        let cell = truncate_state_cell(&e, None, &ctx, 13);
+        let cell = truncate_state_cell(&e, None, &ctx, 15);
         let s = strip_ansi(&cell);
         let body = s.trim();
         assert!(body.contains("+"), "drop-mode marker present: {s:?}");
@@ -425,7 +420,7 @@ mod tests {
         let _g = no_color();
         let e = switch_entry("mood", json!("a-very-long-scalar"));
         let ctx = RenderContext::default();
-        let cell = truncate_state_cell(&e, None, &ctx, 12); // body_budget=10
+        let cell = truncate_state_cell(&e, None, &ctx, 14); // body_budget=10
         let s = strip_ansi(&cell);
         let body = s.trim();
         assert_eq!(body, "a-very-lo…", "scalar W=10: {s:?}");
@@ -460,7 +455,7 @@ mod tests {
             json!(["vertical", "sit", "sofa", "office", "kitchen"]),
         );
         let ctx = RenderContext::default();
-        let cell = truncate_state_cell(&e, None, &ctx, 13);
+        let cell = truncate_state_cell(&e, None, &ctx, 15);
         // The body field's md5-rgb bg appears around the `+k` marker —
         // we can't pin the exact RGB without duplicating the colour
         // derivation, but we *can* assert that the field's bg escape
@@ -493,7 +488,7 @@ mod tests {
         let word = paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, "null");
         assert_eq!(format_state_body(&e, None, &ctx), word);
         assert!(truncate_state_cell(&e, None, &ctx, 20).contains(&word));
-        let cut = strip_ansi(&truncate_state_cell(&e, None, &ctx, 5));
+        let cut = strip_ansi(&truncate_state_cell(&e, None, &ctx, 7));
         assert!(cut.contains("nu…") && !cut.contains('∅'), "{cut:?}");
         let mut moment = switch_entry("mood", json!(null));
         moment.verb = datum_core::entry::Verb::Point;

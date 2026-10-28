@@ -623,7 +623,8 @@ fn set_pairs(
 
 /// A symbol is ONE printable character (da-gzowt): the SVG draws it as
 /// given; the terminal band draws it when it is one column wide and `●`
-/// when it is two (most emoji), so no column of the band moves.
+/// when it is two (most emoji), so no column of the band moves; the echo and
+/// `tail` draw it in their two-column LEAD slot (da-pc7x7).
 fn check_symbol(flag: &str, symbol: &str) -> Result<()> {
     let mut chars = symbol.chars();
     match (chars.next(), chars.next()) {

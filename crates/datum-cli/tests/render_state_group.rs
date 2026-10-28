@@ -25,14 +25,24 @@ fn tmp_db() -> TmpDb {
 /// Run `datum <args>` with the colour-on test environment so the rendered
 /// rows carry truecolor bg escapes that we can assert on.
 fn run_color(db: &PathBuf, args: &[&str]) -> String {
+    run(db, args, true)
+}
+
+/// Run `datum <args>` with colour off, as a pipe gets it.
+fn run_plain(db: &PathBuf, args: &[&str]) -> String {
+    run(db, args, false)
+}
+
+fn run(db: &PathBuf, args: &[&str], color: bool) -> String {
     let bin = env!("CARGO_BIN_EXE_datum");
-    let out = Command::new(bin)
-        .env("DATUM_DB", db)
-        .env("FORCE_COLOR", "1")
-        .env_remove("NO_COLOR")
-        .args(args)
-        .output()
-        .expect("run datum");
+    let mut cmd = Command::new(bin);
+    cmd.env("DATUM_DB", db);
+    if color {
+        cmd.env("FORCE_COLOR", "1").env_remove("NO_COLOR");
+    } else {
+        cmd.env("NO_COLOR", "1").env_remove("FORCE_COLOR");
+    }
+    let out = cmd.args(args).output().expect("run datum");
     assert!(
         out.status.success(),
         "datum {:?} failed: stderr={}",
@@ -403,5 +413,141 @@ fn compound_switch_trail_is_the_state_it_switches_to() {
             line.contains(&format!("off{}", bg_escape("researching"))),
             "{what}: TRAIL must paint researching, not the interrupted writing:\n{line:?}"
         );
+    }
+}
+
+// ─── da-pc7x7: two-column slots, occur symbols, split multi-state slots ─────
+//
+// vividn, 2026-10-28, an intentional drift from v2: LEAD and TRAIL are two
+// columns; an occur draws its field's symbol, a two-column one where a
+// transition's LEAD sits and a one-column one in the LEAD's second column;
+// a multi-state slot is two cells split diagonally, up to four colours.
+
+const RESET: &str = "\x1b[0m";
+
+/// The text of every run `line` paints on `bg`, its escapes dropped.
+fn painted_on(line: &str, bg: &str) -> Vec<String> {
+    line.match_indices(bg)
+        .map(|(i, _)| {
+            let run = &line[i..];
+            let end = run.find(RESET).unwrap_or(run.len());
+            strip(&run[..end])
+        })
+        .collect()
+}
+
+fn strip(s: &str) -> String {
+    let mut out = String::new();
+    let mut esc = false;
+    for c in s.chars() {
+        match (esc, c) {
+            (false, '\x1b') => esc = true,
+            (true, 'm') => esc = false,
+            (false, c) => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+#[test]
+fn slots_are_two_columns_on_a_tty_and_plain() {
+    let db = tmp_db();
+    let line = info_line(&run_color(&db, &["switch", "mood", "happy"]));
+    assert_eq!(painted_on(&line, IGNORED_BG_ESC), ["  "], "LEAD: {line:?}");
+    assert_eq!(
+        painted_on(&line, &bg_escape("happy")),
+        ["happy", "  "],
+        "the chip, then TRAIL: {line:?}"
+    );
+    let line = info_line(&run_plain(&db, &["switch", "mood", "calm"]));
+    assert!(line.ends_with(" mood   calm  "), "{line:?}");
+    assert!(!line.contains('\x1b'), "{line:?}");
+}
+
+/// A one-column symbol stands in the LEAD's second column: after `∅` when
+/// the field was IGNORED before it, after a space when it was not.
+#[test]
+fn a_one_column_symbol_stands_in_the_second_column() {
+    let db = tmp_db();
+    run_plain(&db, &["setup", "tick", "--verb", "occur", "--symbol", "✓"]);
+    run_plain(&db, &["ignore", "tick"]);
+    let first = info_line(&run_color(&db, &["occur", "tick"]));
+    assert!(strip(&first).ends_with(" tick ∅✓"), "{first:?}");
+    let again = info_line(&run_plain(&db, &["occur", "tick"]));
+    assert!(again.ends_with(" tick  ✓"), "{again:?}");
+    assert!(!again.contains('●'), "the symbol, not the dot: {again:?}");
+}
+
+/// A two-column symbol fills both columns where a transition's LEAD sits,
+/// so it lines up with the previous state of a switch row, and draws no
+/// `∅` (vividn: okay). A one-column one stands one column in.
+#[test]
+fn an_emoji_symbol_fills_the_lead_and_lines_up_with_it() {
+    let db = tmp_db();
+    run_plain(
+        &db,
+        &["setup", "coffee", "--verb", "occur", "--symbol", "☕"],
+    );
+    run_plain(&db, &["setup", "tick", "--verb", "occur", "--symbol", "✓"]);
+    run_plain(&db, &["switch", "mood", "happy", "-t", "-20"]);
+    let echo = info_line(&run_plain(&db, &["occur", "coffee", "-t", "-10"]));
+    assert!(
+        echo.ends_with(" coffee ☕"),
+        "a first log, and no ∅: {echo:?}"
+    );
+    run_plain(&db, &["occur", "tick", "-t", "-5"]);
+
+    let tail = run_plain(&db, &["tail"]);
+    let col = |needle: &str| {
+        let row = tail.lines().find(|l| l.contains(needle)).unwrap();
+        row[..row.find(needle).unwrap()].chars().count()
+    };
+    let lead = col("happy") - 2;
+    assert_eq!(col("☕"), lead, "the emoji sits where LEAD does:\n{tail}");
+    assert_eq!(col("∅✓"), lead, "∅ in the first column:\n{tail}");
+}
+
+/// A parallel set's slot is two cells on the `/` diagonal: with two
+/// states `◢` B over A, `◤` B over A; with three `◢` B over A, `◤` B over C,
+/// B one continuous band; with four `◢` B over A, `◢` D over C.
+#[test]
+fn a_multi_state_slot_is_split_diagonally_in_up_to_four_colors() {
+    let db = tmp_db();
+    let cell = |bg: &str, fg: &str, glyph: &str| {
+        format!("{}{}{glyph}{RESET}", bg_escape(bg), fg_escape(fg))
+    };
+    for (field, set, slot, plain) in [
+        (
+            "two",
+            "a,b",
+            cell("a", "b", "◢") + &cell("a", "b", "◤"),
+            "◢◤x",
+        ),
+        (
+            "three",
+            "a,b,c",
+            cell("a", "b", "◢") + &cell("c", "b", "◤"),
+            "◢◤x",
+        ),
+        (
+            "four",
+            "a,b,c,d",
+            cell("a", "b", "◢") + &cell("c", "d", "◢"),
+            "◢◢x",
+        ),
+    ] {
+        run_plain(&db, &["switch", field, set, "-t", "-10"]);
+        let line = info_line(&run_color(&db, &["switch", field, "x", "-t", "-5"]));
+        assert!(
+            line.contains(&format!("{slot}{}", bg_escape("x"))),
+            "{field}: the LEAD before the chip:\n{line:?}"
+        );
+        let tail = run_plain(&db, &["tail", field]);
+        assert!(tail.contains(plain), "{field}: plain:\n{tail}");
+        // The set's own row carries the same slot as its TRAIL.
+        let row = run_color(&db, &["tail", field]);
+        let row = row.lines().nth(1).unwrap_or_default();
+        assert!(row.contains(&slot), "{field}: TRAIL:\n{row:?}");
     }
 }

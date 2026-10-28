@@ -381,8 +381,9 @@ pub(crate) fn paint_bg(bg: Rgb, body: &str) -> String {
     format!("{}{}{}{}", bg.bg(), fg.fg(), body, RESET)
 }
 
-/// Paint with both explicit bg + fg (no contrast derivation). Used for the
-/// checkerboard case where fg and bg are both meaningful state colors.
+/// Paint with both explicit bg + fg (no contrast derivation). Used for a
+/// parallel slot's split columns, where fg and bg are both meaningful
+/// state colors.
 pub(crate) fn paint_bg_fg(bg: Rgb, fg: Rgb, body: &str) -> String {
     if !color_enabled() {
         return body.to_string();
@@ -420,6 +421,10 @@ pub struct AnsiSegment {
     pub text: String,
     /// `#rrggbb`, or `None` where the run was left unpainted.
     pub color: Option<String>,
+    /// The foreground of a run painted on a background, which `color`
+    /// names: a chip's text, the second colour of a parallel slot's split
+    /// cell (da-pc7x7). `None` otherwise.
+    pub fg: Option<String>,
 }
 
 /// Split a painted string into runs of one colour — the renderer's own
@@ -440,7 +445,7 @@ pub fn ansi_segments(s: &str) -> Vec<AnsiSegment> {
     let (mut fg, mut bg) = (None, None);
     let mut rest = s;
     while let Some(esc) = rest.find('\x1b') {
-        push_run(&mut out, &rest[..esc], bg.clone().or_else(|| fg.clone()));
+        push_run(&mut out, &rest[..esc], &fg, &bg);
         let after = &rest[esc..];
         // Everything up to the first `m` is the sequence; an unterminated
         // one swallows the tail, as `strip_ansi` does.
@@ -452,22 +457,25 @@ pub fn ansi_segments(s: &str) -> Vec<AnsiSegment> {
             None => rest = "",
         }
     }
-    push_run(&mut out, rest, bg.or(fg));
+    push_run(&mut out, rest, &fg, &bg);
     out
 }
 
 /// Append `text` to the last run when it carries the same colour, so a
 /// sequence of escapes that does not change the colour does not split one
 /// run into several.
-fn push_run(out: &mut Vec<AnsiSegment>, text: &str, color: Option<String>) {
+fn push_run(out: &mut Vec<AnsiSegment>, text: &str, fg: &Option<String>, bg: &Option<String>) {
     if text.is_empty() {
         return;
     }
+    let color = bg.clone().or_else(|| fg.clone());
+    let fg = bg.as_ref().and(fg.clone());
     match out.last_mut() {
-        Some(last) if last.color == color => last.text.push_str(text),
+        Some(last) if last.color == color && last.fg == fg => last.text.push_str(text),
         _ => out.push(AnsiSegment {
             text: text.to_string(),
             color,
+            fg,
         }),
     }
 }
@@ -640,8 +648,9 @@ mod tests {
         assert_eq!(strip_ansi("\x1b[32mhi\x1b[0m"), "hi");
     }
 
-    /// The chip's BACKGROUND is what the run reads as; a fg-only run
-    /// reports its foreground, and unpainted text reports nothing.
+    /// The chip's BACKGROUND is what the run reads as, its foreground
+    /// beside it; a fg-only run reports its foreground, and unpainted text
+    /// reports nothing.
     #[test]
     fn ansi_segments_report_the_colour_a_run_reads_as() {
         let _painted = ColorOverride::set(true);
@@ -656,15 +665,18 @@ mod tests {
             vec![
                 AnsiSegment {
                     text: "12:00:00".into(),
-                    color: None
+                    color: None,
+                    fg: None,
                 },
                 AnsiSegment {
                     text: "+2".into(),
-                    color: Some(Rgb::GREY.hex())
+                    color: Some(Rgb::GREY.hex()),
+                    fg: None,
                 },
                 AnsiSegment {
                     text: "coffee".into(),
-                    color: Some("#010203".into())
+                    color: Some("#010203".into()),
+                    fg: Some(contrast_fg(Rgb { r: 1, g: 2, b: 3 }).hex()),
                 },
             ]
         );

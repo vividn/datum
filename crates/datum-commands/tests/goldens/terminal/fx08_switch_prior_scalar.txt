@@ -1,1 +1,1 @@
-17:00:30+0  new_switch  state2 
+17:00:30+0  new_switch   state2  

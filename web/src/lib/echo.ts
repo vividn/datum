@@ -34,6 +34,8 @@ import type { CommandRunner, RunResult } from './run.js';
 export interface InfoSegment {
 	text: string;
 	color: string | null;
+	/** The run's foreground where `color` is the background it is painted on. */
+	fg?: string;
 }
 
 /** One document of the CLI's echo — `--show json`'s own field names. */

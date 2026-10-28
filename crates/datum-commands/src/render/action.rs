@@ -9,9 +9,9 @@
 //!
 //! The state-transition group is `[LEAD][state cell][TRAIL]`, with no
 //! whitespace inside the trio. The state cell is the existing bg-coloured
-//! badge. The LEAD and TRAIL slots are single literal spaces painted with
-//! the prior / continuing state's colour, replacing the old directional
-//! arrows. When no prior or continuing state exists, or it is IGNORED or
+//! badge. The LEAD and TRAIL slots are two literal spaces each, painted
+//! with the prior / continuing state's colour (da-pc7x7), replacing the old
+//! directional arrows. When no prior or continuing state exists, or it is IGNORED or
 //! null, the slot is the grey ground alone (da-25l); a `null` state's own
 //! body is the word `null` (`NULL_STATE`, da-pqdcv).
 //!
@@ -32,6 +32,7 @@ use serde_json::Value as JsonValue;
 
 use super::characters::*;
 use super::colors::*;
+use crate::commands::field_visuals::dot_glyph;
 
 // ─── Relative-day prefix (single source of truth) ────────────────────────────
 
@@ -435,24 +436,29 @@ fn render_timeless(entry: &Entry, spec: Option<&FieldSpec>) -> String {
 }
 
 fn render_occur(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
-    let mut out = String::new();
-    // Occur: `∅` when the field's prior state is absent or IGNORED —
-    // the LEAD slot's rule, applied to the dot; otherwise no left-char.
-    // It is the PREVIOUS state speaking, not this row's (da-fknn8), which
-    // is why it is not part of the body below.
-    if ctx.prior_state_ignored {
-        out.push_str(&paint(GREY_FG, NULL_SET));
-    }
-    out.push_str(&render_occur_body(entry, spec, ctx));
-    out
+    format_lead_cell(entry, spec, ctx) + &render_occur_body(entry, spec, ctx)
+}
+
+/// What an occur draws for its dot (da-pc7x7): the symbol the dayview
+/// draws ([`dot_glyph`]: the state's, a data value's or the field's), `●`
+/// without one.
+fn occur_mark(entry: &Entry, spec: Option<&FieldSpec>) -> String {
+    dot_glyph(entry, spec).unwrap_or_else(|| DOT.to_string())
+}
+
+/// The dot alone, painted: field/state color as fg; bg encodes the field's
+/// ambient state at the row's time (ongoing block / IGNORED tracking / none).
+pub(crate) fn render_occur_dot(
+    entry: &Entry,
+    spec: Option<&FieldSpec>,
+    ctx: &RenderContext,
+) -> String {
+    let (fg, bg) = compute_occur_dot_colors(entry, spec, ctx.ongoing_state.as_ref());
+    paint_dot(fg, bg, &occur_mark(entry, spec))
 }
 
 fn render_occur_body(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
-    let mut out = String::new();
-    // Dot: field/state color as fg; bg encodes the field's ambient
-    // state at the row's time (ongoing block / IGNORED tracking / none).
-    let (fg, bg) = compute_occur_dot_colors(entry, spec, ctx.ongoing_state.as_ref());
-    out.push_str(&paint_dot(fg, bg, DOT));
+    let mut out = render_occur_dot(entry, spec, ctx);
     // Moment-state: a `Verb::Point` row that still carries a state
     // (`switch <field> <state> --moment`) renders its state name right
     // after the dot, matching datumv2's `isPoint` branch of `formatState`
@@ -489,10 +495,13 @@ pub fn format_state_body(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderCo
 /// The painted LEAD slot alone — everything [`format_state_group`] draws
 /// BEFORE the body, and nothing else.
 ///
-/// For a state-bearing verb that is the one-character slot the previous
+/// For a state-bearing verb that is the two-column slot the previous
 /// state paints, including the repeated-state `!` (da-qfv0). For the bare
-/// dot it is the grey `∅` when the field was not tracked before this row,
-/// and empty otherwise. For a timeless row it is empty.
+/// dot it is the first of the slot's two columns when its mark is one
+/// column wide, so the mark stands where a transition's state begins: the
+/// grey `∅` when the field was not tracked before this row, and a space
+/// otherwise. A two-column mark (an emoji) fills both, and has no `∅`
+/// (da-pc7x7). For a timeless row it is empty.
 ///
 /// ⚑ vividn, on da-fknn8: *"The previous and following states should just
 /// have the colors, not the full text — just like the CLI. Really mirror
@@ -510,11 +519,16 @@ pub fn format_lead_cell(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderCon
         let t = StateTransition::of(ctx, entry);
         return render_lead_slot(t.previous.as_ref(), ctx.is_state_repeat, &entry.field, spec);
     }
-    // The bare dot borrows the LEAD's rule and nothing else.
-    if ctx.prior_state_ignored {
-        return paint(GREY_FG, NULL_SET);
+    // The bare dot borrows the LEAD's rule and nothing else. It is the
+    // PREVIOUS state speaking, not this row's (da-fknn8), which is why it
+    // is not part of the body.
+    if visible_width(&occur_mark(entry, spec)) > 1 {
+        String::new()
+    } else if ctx.prior_state_ignored {
+        paint(GREY_FG, NULL_SET)
+    } else {
+        " ".to_string()
     }
-    String::new()
 }
 
 /// The painted TRAIL slot alone — everything [`format_state_group`] draws
@@ -535,14 +549,16 @@ pub fn format_trail_cell(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderCo
 /// `None` ONLY for the explicit "field has ended" sentinel, which paints
 /// nothing at all. An untracked, null or IGNORED state is grey: on this
 /// surface "nothing was tracked" is a state, not an absence. A parallel
-/// set reports its first member's colour, which is the slot's background.
+/// set reports its first member's colour, which is the slot's first
+/// background.
 pub fn slot_hex(
     state: Option<&JsonValue>,
     field: &str,
     spec: Option<&FieldSpec>,
 ) -> Option<String> {
     match resolve_slot(state, field, spec) {
-        SlotKind::State(rgb) | SlotKind::Parallel(rgb, _) => Some(rgb.hex()),
+        SlotKind::State(rgb) => Some(rgb.hex()),
+        SlotKind::Parallel(colors) => Some(colors[0].hex()),
         SlotKind::Ignored => Some(Rgb::GREY.hex()),
         SlotKind::FieldEnded => None,
     }
@@ -639,7 +655,7 @@ fn paint_dot(fg: Rgb, bg: Option<Rgb>, body: &str) -> String {
 /// Render the full `[LEAD][state cell][TRAIL]` trio for switch / start /
 /// stop / block. Per da-25l the three segments are flush against each
 /// other — no whitespace, coloured or otherwise, between LEAD/cell/TRAIL.
-/// LEAD and TRAIL are single bg-coloured cells; the cell body is the
+/// LEAD and TRAIL are two bg-coloured columns; the cell body is the
 /// state label painted with the state's bg. Outer joining to the field
 /// badge is handled by the caller.
 fn render_state_transition_group(
@@ -679,50 +695,65 @@ pub(crate) fn render_lead_slot(
     }
     match resolve_slot(previous, field, spec) {
         SlotKind::State(rgb) => paint_warning(rgb, WARNING_GLYPH),
-        SlotKind::Parallel(bg, _) => paint_warning(bg, WARNING_GLYPH),
+        SlotKind::Parallel(colors) => paint_warning(colors[0], WARNING_GLYPH),
         SlotKind::Ignored | SlotKind::FieldEnded => render_slot(previous, field, spec),
     }
 }
 
-/// Paint `body` in bold warning-yellow over `bg`. With color disabled the
-/// raw glyph is still emitted so non-TTY consumers (pipes, tests, log
-/// scrapes) can detect the marker by substring rather than by ANSI escape.
+/// Paint `body` in bold warning-yellow over `bg`, in the slot's second
+/// column, beside the state. With color disabled the raw glyph is still
+/// emitted so non-TTY consumers (pipes, tests, log scrapes) can detect the
+/// marker by substring rather than by ANSI escape.
 fn paint_warning(bg: Rgb, body: &str) -> String {
+    let body = format!(" {body}");
     if !color_enabled() {
-        return body.to_string();
+        return body;
     }
     let fg = warning_fg(bg);
     format!("{}{}{}{}{}", BOLD, bg.bg(), fg.fg(), body, RESET)
 }
 
-/// Render a LEAD or TRAIL slot — a single bg-coloured space. Per da-25l
+/// Render a LEAD or TRAIL slot — two bg-coloured spaces. Per da-25l
 /// "no prior tracked state" is itself a state (IGNORED), so the slot is
 /// painted with the IGNORED grey rather than the old `∅`-glyph fallback.
 /// Only the explicit "field has ended" case (`Bool(false)` trail after a
 /// stop) renders as an uncoloured space.
 ///
-/// Per da-9vop, a parallel state set (`["vertical","sit"]`) renders as a
-/// `▞` checkerboard glyph painted with the first state's bg + the second
-/// state's fg, so both colours are visible inside a single 1-cell slot.
+/// A parallel state set (`["vertical","sit"]`) splits each of the two
+/// columns on its diagonal, as the dayview stripes it (da-pc7x7): up to four
+/// colours, see [`render_parallel_slot`].
 pub(crate) fn render_slot(
     state: Option<&JsonValue>,
     field: &str,
     spec: Option<&FieldSpec>,
 ) -> String {
     match resolve_slot(state, field, spec) {
-        SlotKind::State(rgb) => paint_bg(rgb, " "),
-        SlotKind::Parallel(bg, fg) => paint_bg_fg(bg, fg, SHADING),
-        SlotKind::Ignored => paint_bg(Rgb::GREY, " "),
-        SlotKind::FieldEnded => " ".to_string(),
+        SlotKind::State(rgb) => paint_bg(rgb, SLOT),
+        SlotKind::Parallel(colors) => render_parallel_slot(&colors),
+        SlotKind::Ignored => paint_bg(Rgb::GREY, SLOT),
+        SlotKind::FieldEnded => SLOT.to_string(),
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A parallel set's slot, its two columns split on the `/` diagonal like
+/// the dayview's 45° stripes, so the colours read as bands left to right.
+/// With four, each column holds two: `◢` B over A, `◢` D over C. With
+/// three, the middle colour is one band across both columns: `◢` B over A,
+/// `◤` B over C. Two are three bands, A B A, as the dayview repeats them.
+fn render_parallel_slot(c: &[Rgb]) -> String {
+    let second = match c.len() {
+        4 => paint_bg_fg(c[2], c[3], LOWER_RIGHT),
+        n => paint_bg_fg(c[2 % n], c[1], UPPER_LEFT),
+    };
+    paint_bg_fg(c[0], c[1], LOWER_RIGHT) + &second
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum SlotKind {
     State(Rgb),
-    /// Parallel state set — render as a checkerboard glyph with two
-    /// state colours (bg = first, fg = second).
-    Parallel(Rgb, Rgb),
+    /// Parallel state set — two to four state colours, in order, drawn by
+    /// [`render_parallel_slot`].
+    Parallel(Vec<Rgb>),
     Ignored,
     FieldEnded,
 }
@@ -734,8 +765,9 @@ enum SlotKind {
 /// `Some(Bool(false))` — the explicit "field has ended" sentinel — maps to
 /// [`SlotKind::FieldEnded`] so the trail renders as terminal-default
 /// whitespace rather than a coloured cell. Array values with ≥2 resolvable
-/// member colours map to [`SlotKind::Parallel`]; arrays with 0–1
-/// distinguishable members fall back to single-state rendering.
+/// member colours map to [`SlotKind::Parallel`], the first four of them;
+/// arrays with 0–1 distinguishable members fall back to single-state
+/// rendering.
 fn resolve_slot(state: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> SlotKind {
     match state {
         None => SlotKind::Ignored,
@@ -743,11 +775,15 @@ fn resolve_slot(state: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>
         Some(JsonValue::Bool(false)) => SlotKind::FieldEnded,
         Some(JsonValue::String(s)) if s == IGNORED_STATE => SlotKind::Ignored,
         Some(JsonValue::Array(items)) if items.len() >= 2 => {
-            let mut iter = items.iter().filter_map(|v| state_value_rgb(v, field, spec));
-            match (iter.next(), iter.next()) {
-                (Some(c1), Some(c2)) => SlotKind::Parallel(c1, c2),
-                (Some(c1), None) => SlotKind::State(c1),
-                _ => SlotKind::Ignored,
+            let colors: Vec<Rgb> = items
+                .iter()
+                .filter_map(|v| state_value_rgb(v, field, spec))
+                .take(4)
+                .collect();
+            match colors.len() {
+                0 => SlotKind::Ignored,
+                1 => SlotKind::State(colors[0]),
+                _ => SlotKind::Parallel(colors),
             }
         }
         Some(v) => match state_value_rgb(v, field, spec) {

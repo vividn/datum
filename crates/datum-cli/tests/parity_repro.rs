@@ -75,30 +75,30 @@ fn switch_switch_tail_reproducer_matches_spec() {
 
     // Per da-25l the state-transition group renders as
     // `[LEAD][state cell][TRAIL]` flush — no inner whitespace. LEAD/TRAIL
-    // are single bg-coloured cells (no `∅` glyph); when there's no prior
-    // tracked state the LEAD is painted with the IGNORED grey. The badge
-    // gap to the state group is 1 space. ANSI-stripped, every slot
-    // collapses to a single space, so the asserts pin the layout via
-    // visible character counts.
+    // are two bg-coloured columns each (da-pc7x7; no `∅` glyph); when
+    // there's no prior tracked state the LEAD is painted with the IGNORED
+    // grey. The badge gap to the state group is 1 space. ANSI-stripped,
+    // every slot is two spaces, so the asserts pin the layout via visible
+    // character counts.
 
     // First switch on a brand-new field: LEAD = IGNORED bg-space, TRAIL
-    // = new-state bg-space. Stripped: 1 join space + 1 LEAD space before
-    // the state cell, then 1 TRAIL space (trimmed).
+    // = new-state bg-space. Stripped: 1 join space + 2 LEAD spaces before
+    // the state cell, then 2 TRAIL spaces (trimmed).
     let first = run(&db, &["switch", "myfield", "abc"]);
     let first_info = info_line_of(&first);
     assert_eq!(
         after_timestamp(&first_info),
-        "myfield  abc",
+        "myfield   abc",
         "first-switch info line mismatch:\n{first}"
     );
 
     // Second switch on the same field: LEAD = prior state colour, TRAIL
-    // = new state colour. Both slots render as a single space when stripped.
+    // = new state colour. Both slots render as two spaces when stripped.
     let second = run(&db, &["switch", "myfield", "abcdefg"]);
     let second_info = info_line_of(&second);
     assert_eq!(
         after_timestamp(&second_info),
-        "myfield  abcdefg",
+        "myfield   abcdefg",
         "second-switch info line mismatch:\n{second}"
     );
 

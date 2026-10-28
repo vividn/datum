@@ -571,7 +571,7 @@ mod tests {
             None,
         );
         let group = format_state_group(&e, None, &ctx).unwrap();
-        assert_eq!(group, format!(" {} ", rows[0].state_body));
+        assert_eq!(group, format!("  {}  ", rows[0].state_body));
     }
 
     /// The reassembly invariant on the shapes the verb/dur sweep cannot
@@ -764,14 +764,14 @@ mod tests {
                 if draws_state_badge(&e) {
                     // A badge: the cell is the two slots around the body,
                     // and the row's three values are the three of them.
-                    assert_eq!(painted, format!(" {} ", rows[0].state_body), "{what}");
+                    assert_eq!(painted, format!("  {}  ", rows[0].state_body), "{what}");
                     assert_eq!(rows[0].previous_state, json!("reading"), "{what}");
                     assert_eq!(rows[0].following_state, json!("writing"), "{what}");
                 } else {
-                    // A dot: no slots at all, so the body IS the cell, and
-                    // the row stands inside one ambient state rather than
-                    // between two.
-                    assert_eq!(painted, rows[0].state_body, "{what}");
+                    // A dot: no slots, only the LEAD's first column its
+                    // one-column mark stands after (da-pc7x7), and the row
+                    // stands inside one ambient state rather than between two.
+                    assert_eq!(painted, format!(" {}", rows[0].state_body), "{what}");
                     assert_eq!(rows[0].previous_state, rows[0].following_state, "{what}");
                 }
             }

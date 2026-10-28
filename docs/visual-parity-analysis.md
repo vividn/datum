@@ -85,7 +85,7 @@ The `∅` glyph is still rendered for `occur`'s LEAD (a tracked-but-never-seen f
 - Prior named state → cell filled with that state's color
 - Prior `false` AND this entry is `end` → **yellow `!`** glyph (repeat/overlap detection — feeds the integrity queue)
 - No prior entry exists (first tracked event for this field) → cell painted IGNORED-gray (`#888888`). The original spec called for a `∅` glyph here; the renderer uses a gray cell for consistency with the rest of the LEAD/TRAIL behavior.
-- Prior state is array → cell painted with FIRST element's color, FG = SECOND element's color, body = `▞` checkerboard glyph (per da-9vop — both colors visible in 1 cell).
+- Prior state is array → the slot's two cells split diagonally, up to four colors (da-pc7x7, below; it was one `▞` checkerboard cell, per da-9vop).
 - Prior state is `"IGNORED"` → cell painted IGNORED-gray (`#888888`)
 - Field has explicitly ended (`Bool(false)` trail after stop) → uncolored space (no bg)
 
@@ -102,7 +102,15 @@ The `∅` glyph is still rendered for `occur`'s LEAD (a tracked-but-never-seen f
 - occur (point) → cell painted with prior state's color (doesn't change state)
 - End-of-block where already ended → **yellow `!`** glyph (overlap detection)
 
-Same `da-25l` colored-cell rule applies: TRAIL is a single cell, no glyph, painted with the appropriate state color.
+Same `da-25l` colored-cell rule applies: TRAIL is a slot of two cells, no glyph, painted with the appropriate state color.
+
+### Drift from v2: two-column slots, occur symbols, split multi-state slots (da-pc7x7)
+
+vividn, 2026-10-28: «let's have the the previous and following/continuing state blocks be two characters instead of one … it actually looks nicer and suggests more about the change», and «It is intentional drift away from v2.» So, where v2 draws one cell:
+
+- **LEAD and TRAIL are two columns each**, painted as before. A repeated state's `!` (da-qfv0) stands in the second, beside the state.
+- **An occur draws its symbol**, the one the dayview draws (`dot_glyph`: the state's, a data value's, else the field's), `●` without one. vividn: «for occur dots that use emojis as their symbols will then be able to align properly with the previous state of state transition entries. For single character occur dots, those should go in the second slot.» So a two-column symbol (an emoji) fills both columns where a transition's LEAD sits, with no `∅`; a one-column symbol stands in the second, the first holding `∅` when the field was absent or IGNORED before it and a space otherwise (`∅●`, ` ●`, `☕`).
+- **A multi-state slot is split diagonally, as the dayview stripes it.** vividn: «diagonally split blocks, this allows to display up to 4 different state colors in the previous and next states. for 3 state things, the stripes can align between char1 and char 2 to form a continuous band of color across the two glyphs.» Each cell is a triangle on the `/` diagonal the dayview's 45° stripes run along, its fg one color over a bg another: with four states A–D, `◢` B over A then `◢` D over C; with three, `◢` B over A then `◤` B over C, B one band across both; with two, `◢` B over A then `◤` B over A, the stripes A B A. A fifth state onward draws no color in the slot.
 
 ## 7. Per-verb rendering
 
@@ -119,6 +127,7 @@ Same `da-25l` colored-cell rule applies: TRAIL is a single cell, no glyph, paint
   - Tracked field → field color (or state color if `-m` moment)
   - Ignored/untracked → gray bg, no field color
 - `∅` glyph in LEAD slot if first-ever tracked entry for this field (note: occur is the only verb where LEAD is still rendered as a glyph; switch/start/stop use colored cells per §6)
+- The dot is the field's symbol where it has one, standing in the LEAD's second column, or filling both when two columns wide (da-pc7x7, §6)
 
 ### `switch <field> <state>` (no duration)
 
@@ -186,7 +195,7 @@ Same `da-25l` colored-cell rule applies: TRAIL is a single cell, no glyph, paint
 | `∅` | U+2205 | First-tracked marker: the field was absent or IGNORED before (a `null` state is the word `null`, da-pqdcv) |
 | `¢` | U+00A2 | add/create marker |
 | `!` (yellow) | U+0021 + ANSI yellow fg | Repeat/overlap warning |
-| `▞` | U+259E | Checkerboard (upper-right + lower-left half) |
+| `◢` `◤` | U+25E2, U+25E4 | A multi-state slot's two cells, split on the `/` diagonal (da-pc7x7; v2's `▞` checkerboard) |
 
 ## 11. Test fixtures (20 cases)
 
@@ -237,7 +246,7 @@ Integration tests in `datum-commands/tests/render_fixtures.rs`. Assert exact ren
 - `docs/visual-parity-analysis.md` exists, matches this spec
 - All 20 test fixtures pass (ANSI-stripped asserts + with-color golden files)
 - MD5 + YIQ replaces any SHA-256 color code
-- `¢` / `∅` / `!` / `▞` characters render correctly
+- `¢` / `∅` / `!` / `◢` / `◤` characters render correctly
 - Timestamp underline only on future times
 - TZ offset dim + compressed
 - `ignore` / `track` commands write correct state values

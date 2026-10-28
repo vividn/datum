@@ -131,6 +131,23 @@ export function ansiSpans(text: string): AnsiSpan[] {
 	return spans;
 }
 
+/**
+ * A parallel slot's split cell (da-pc7x7): `◢` is its fg in the lower-right
+ * half over its bg, `◤` its fg in the upper-left. A font draws either
+ * triangle smaller than its cell, and a font without them falls back to one
+ * of another width, so the page draws the cell as a SPACE — one column wide
+ * and as tall as the chips beside it in any monospace font — painted with
+ * the two halves, corner to corner (a `to bottom right` gradient's 50% line
+ * runs through the other two corners whatever the cell's shape).
+ * `undefined` for any other run.
+ */
+export function splitFill(text: string, bg?: string | null, fg?: string | null): string | undefined {
+	if (!bg || !fg) return undefined;
+	if (text === '◢') return `linear-gradient(to bottom right, ${bg} 50%, ${fg} 50%)`;
+	if (text === '◤') return `linear-gradient(to bottom right, ${fg} 50%, ${bg} 50%)`;
+	return undefined;
+}
+
 /** The same text with every escape sequence removed. */
 export function stripAnsi(text: string): string {
 	return ansiSpans(text)

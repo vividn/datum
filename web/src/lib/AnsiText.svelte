@@ -9,6 +9,9 @@
 	 * cell painted no underline, neither tail cell painted italic, so one
 	 * escape said different things in the CLI widget and in the table (da-mv90).
 	 * What is below is the union: every attribute an `AnsiSpan` carries.
+	 * One run is drawn other than as its text: a parallel slot's split cell,
+	 * `◢` or `◤` (da-pc7x7), is a space its two colours fill (`splitFill`),
+	 * since a font draws the triangle smaller than its cell, or at another width.
 	 *
 	 * Nothing may come between the spans, or before or after them. The
 	 * CLI widget's output and the tail's columns are monospace and column-aligned,
@@ -21,7 +24,7 @@
 	 * script tag survives as a text node and every painted cell would gain a
 	 * leading space.
 	 */
-	import type { AnsiSpan } from './ansi.js';
+	import { splitFill, type AnsiSpan } from './ansi.js';
 
 	interface Props {
 		/**
@@ -35,11 +38,11 @@
 	let { spans }: Props = $props();
 </script>
 
-{#each spans as span}<span
+{#each spans as span}{@const fill = splitFill(span.text, span.bg, span.fg)}<span
 		style:color={span.fg}
-		style:background={span.bg}
+		style:background={fill ?? span.bg}
 		style:font-weight={span.bold ? 'bold' : null}
 		style:opacity={span.dim ? '0.6' : null}
 		style:font-style={span.italic ? 'italic' : null}
-		style:text-decoration={span.underline ? 'underline' : null}>{span.text}</span
+		style:text-decoration={span.underline ? 'underline' : null}>{fill ? ' ' : span.text}</span
 	>{/each}

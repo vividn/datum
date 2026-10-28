@@ -2,8 +2,14 @@
 //!
 //! See `docs/visual-parity-analysis.md` §10 for the full table.
 
-/// Point-occur / bullet glyph (filled bullet).
+/// Point-occur / bullet glyph (filled bullet): an occur's mark when its
+/// field has no symbol.
 pub const DOT: &str = "●";
+
+/// A LEAD or TRAIL slot: two columns (da-pc7x7, vividn: «it actually looks
+/// nicer and suggests more about the change»), so a two-column occur symbol
+/// sits where a transition's LEAD does.
+pub const SLOT: &str = "  ";
 
 /// `add`-verb marker — mirrors the `c` suffix in the generated slug id.
 pub const NON_OCCUR: &str = "¢";
@@ -20,8 +26,11 @@ pub const NULL_SET: &str = "∅";
 /// a glyph, and never IGNORED's `∅`.
 pub const NULL_STATE: &str = "null";
 
-/// Checkerboard fill for array states (upper-right + lower-left triangle).
-pub const SHADING: &str = "▞";
+/// A parallel set's slot halves, split on the `/` diagonal the dayview's
+/// 45° stripes run along (da-pc7x7): the fg fills the lower-right of
+/// [`LOWER_RIGHT`] and the upper-left of [`UPPER_LEFT`], the bg the rest.
+pub const LOWER_RIGHT: &str = "◢";
+pub const UPPER_LEFT: &str = "◤";
 
 /// Sentinel state-value for `datum ignore <field>` — §8.
 pub const IGNORED_STATE: &str = "IGNORED";

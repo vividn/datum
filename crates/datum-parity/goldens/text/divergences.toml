@@ -39,7 +39,7 @@ why = "No recorded reason found. (A point that follows another point of its fiel
 id = "null-lead-glyph"
 status = "open"
 what = "a state change with no earlier state: v2's leading edge is the grey box holding a dark-grey `∅`; daydumb's is the grey box, empty"
-why = "daydumb draws a change's two edges as one coloured character each, colour and no text (da-fknn8, #74). No record found of a decision to drop v2's `∅` from the box."
+why = "daydumb draws a change's two edges as coloured cells, colour and no text (da-fknn8, #74; two each since da-pc7x7). No record found of a decision to drop v2's `∅` from the box."
 
 [[rule]]
 id = "tail-n-column"
@@ -77,6 +77,12 @@ status = "open"
 what = "a boolean state reads `on` / `off`; v2 says `start` / `end`"
 why = "vividn, 2026-10-19 (da-66c3l): «I'm leaning towards on/off for these binary fields», «yes go ahead»: start/end name what you do, on/off what the field is. The verbs stay start/end."
 
+[[rule]]
+id = "two-column-slots"
+status = "open"
+what = "a state change's leading and trailing edges are two columns each, a point's mark stands in the leading edge's second column (its field's symbol where it has one), and a multi-state edge is two cells split diagonally; v2's are one column, a `●` and a `▞`"
+why = "vividn, 2026-10-28 (da-pc7x7): «let's have the the previous and following/continuing state blocks be two characters instead of one … it actually looks nicer and suggests more about the change», «It is intentional drift away from v2.»"
+
 # ─── SVG: dayview ───────────────────────────────────────────────────────────
 
 [[rule]]
@@ -111,11 +117,11 @@ rules = ["grey-date", "get-field-gap", "null-before-point"]
 
 [[fixture]]
 name = "get_switch_state"
-rules = ["grey-date", "get-field-gap", "null-lead-glyph"]
+rules = ["grey-date", "get-field-gap", "null-lead-glyph", "two-column-slots"]
 
 [[fixture]]
 name = "get_start_block"
-rules = ["grey-date", "get-field-gap", "null-lead-glyph", "on-off-states"]
+rules = ["grey-date", "get-field-gap", "null-lead-glyph", "on-off-states", "two-column-slots"]
 
 [[fixture]]
 name = "get_with_extra_data"
@@ -131,35 +137,35 @@ rules = ["grey-date", "get-field-gap", "null-before-point", "object-value-one-li
 
 [[fixture]]
 name = "get_specced_state"
-rules = ["grey-date", "get-field-gap", "null-lead-glyph"]
+rules = ["grey-date", "get-field-gap", "null-lead-glyph", "two-column-slots"]
 
 [[fixture]]
 name = "tail_default_three_entries"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point", "null-lead-glyph"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point", "null-lead-glyph", "two-column-slots"]
 
 [[fixture]]
 name = "tail_field_filter"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point", "two-column-slots"]
 
 [[fixture]]
 name = "tail_n_2"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "two-column-slots"]
 
 [[fixture]]
 name = "tail_state_transitions"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph", "two-column-slots"]
 
 [[fixture]]
 name = "tail_block_pair"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph", "on-off-states"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph", "on-off-states", "two-column-slots"]
 
 [[fixture]]
 name = "tail_mixed_fields"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point", "null-lead-glyph", "on-off-states"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point", "null-lead-glyph", "on-off-states", "two-column-slots"]
 
 [[fixture]]
 name = "tail_spec_field_color"
-rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph", "on-off-states"]
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph", "on-off-states", "two-column-slots"]
 
 [[fixture]]
 name = "dayview_single_day_svg"

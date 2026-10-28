@@ -138,7 +138,7 @@ writing it down.
    let the additions be things a terminal CANNOT do — a hover carrying a value, a selectable box.
    Where the two could differ, the CLI's shape wins. ⛔ That is also why the tail's state cell asks
    for the CLI's painted SLOTS (`previous_state_cell` / `following_state_cell`) rather than a hex
-   and a rule: every shape the terminal has — a parallel set's two-color `▞`, an ended field's
+   and a rule: every shape the terminal has — a parallel set's diagonally split `◢◤`, an ended field's
    unpainted space, the `∅`, the repeated-state `!` — arrives already resolved, so no browser
    re-derives one and none of them can drift.
 
