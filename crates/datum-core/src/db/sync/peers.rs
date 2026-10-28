@@ -418,6 +418,47 @@ mod tests {
         db.conn.query_row(sql, [], |r| r.get(0)).unwrap()
     }
 
+    /// An order that a copy delete itself (da-n0uj1.6) is carried by each
+    /// member that writes, and carried out only by the copy it names, once
+    /// that copy's own fold takes it: another copy's order deletes nothing,
+    /// nor does one rewritten to name it, which no longer carries its
+    /// writer's signature. The copy that obeys holds nothing and is in no
+    /// chain; recorded, the order is carried by no member any more.
+    #[test]
+    fn a_wipe_order_is_carried_out_only_by_the_copy_it_names() {
+        let [a, b, c] = [(); 3].map(|()| Db::open_in_memory().unwrap());
+        genesis(&a, "a");
+        admit(&a, &b, "b", json!({}));
+        admit(&a, &c, "c", json!({}));
+        log(&a, "tea");
+        send(&a, &b);
+        // Obeying, b takes a new key.
+        let bid = id(&b);
+        let erase = json!({"type": "erase", "chain": "c1", "endpoint": bid});
+        a.sync_chain_write(erase, true).unwrap();
+        send(&a, &c);
+        assert_eq!(c.sync_wiping().unwrap(), std::slice::from_ref(&bid));
+        assert_eq!(a.sync_wipe_order(&id(&c)).unwrap(), None);
+        let order = a.sync_wipe_order(&bid).unwrap().unwrap();
+        assert_eq!(c.sync_wipe_obey(&order).unwrap(), None);
+        let forged: Vec<String> = order.iter().map(|l| l.replace(&bid, &id(&c))).collect();
+        assert_eq!(c.sync_wipe_obey(&forged).unwrap(), None);
+        assert_eq!(
+            (fields(&c), c.sync_chain().unwrap().exists()),
+            ("tea".into(), true)
+        );
+        let said = b.sync_wipe_obey(&order).unwrap().unwrap();
+        assert!(said.contains("deleted its copy"), "{said}");
+        assert_eq!(
+            (fields(&b), b.sync_chain().unwrap().exists()),
+            ("".into(), false)
+        );
+        a.sync_wipe_obeyed(&bid).unwrap();
+        send(&a, &c);
+        assert!(a.sync_wiping().unwrap().is_empty());
+        assert!(c.sync_wiping().unwrap().is_empty());
+    }
+
     /// A member admitted since this copy last synced is admitted by its own
     /// chain records, and by nothing less (da-2u95o): not without them, not
     /// by another's, nor by another's rewritten to name it, not once the

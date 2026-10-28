@@ -193,7 +193,8 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|copy|leave|list|rename|expel|unjoin|purge|role|ack|rekey";
+    const SET: &str =
+        "invite|connect|copy|leave|list|rename|expel|unjoin|wipe|purge|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = ["expires", "admin-key", "fields", "kit", "label"];
@@ -298,6 +299,16 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                     yes: o.on("yes"),
                     show: Show::Default,
                 },
+                who: o.positional.remove(0),
+                label: None,
+                admin_key: o.get("admin-key"),
+                allow_unlock: false,
+            }
+        }
+        Some("wipe") => {
+            let mut o = opts(rest, &["admin-key"], &["yes"], 1..=1)?;
+            SyncCommand::Admin {
+                act: SyncAdminAct::Wipe { yes: o.on("yes") },
                 who: o.positional.remove(0),
                 label: None,
                 admin_key: o.get("admin-key"),
@@ -778,6 +789,17 @@ mod tests {
             }
         );
         assert!(parse_sync_cmd(&["chain", "unjoin"]).is_err());
+        assert_eq!(
+            p(&["chain", "wipe", "b", "--yes"]),
+            SyncCommand::Admin {
+                act: SyncAdminAct::Wipe { yes: true },
+                who: "b".into(),
+                label: None,
+                admin_key: None,
+                allow_unlock: false
+            }
+        );
+        assert!(parse_sync_cmd(&["chain", "wipe"]).is_err());
         let old = parse_sync_cmd(&["chain", "purge", "b", "--yes"]).unwrap_err();
         assert!(
             old.to_string().contains("`sync chain unjoin <WHO>`"),

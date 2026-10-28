@@ -85,6 +85,17 @@
 //!     reader writes one, unsigned by an admin even in a locked chain: it
 //!     changes nothing in this one.
 //!
+//!   - `erase {endpoint}` (da-n0uj1.6, `sync chain wipe`): an order that
+//!     the member delete its own copy of the database, and a revoke from
+//!     its HLC on, an admin act as a revoke is; no copy orders itself. Each
+//!     member that writes carries the order to it ([`Db::sync_wipe_order`]),
+//!     and the copy obeys once its own fold takes it
+//!     ([`Db::sync_wipe_obey`]). Until then it is an expel: a copy that never
+//!     comes back is never made to delete anything.
+//!   - `erased {endpoint}`: a member heard the copy say it obeyed, over a
+//!     connection the copy's key authenticated, and no member carries the
+//!     order any more. A message, as a grant is: unsigned by an admin.
+//!
 //!   - `leave {endpoint}` (da-dsob1): a member's departure, which it signs
 //!     itself before it forgets the chain — unsigned by an admin, and the
 //!     one act a reader writes but its describe. From its HLC on the member
@@ -489,6 +500,10 @@ pub struct Member {
     pub purged: Option<String>,
     /// The HLC of its departure (da-dsob1): revoked from then on too.
     pub left: Option<String>,
+    /// The HLC of the order that it delete its copy (da-n0uj1.6), and of the
+    /// record that it did.
+    pub erase: Option<String>,
+    pub erased: Option<String>,
     /// The HLC of the newest act about it: an unpurge needs it to be the purge.
     pub(super) last_act: String,
     /// The HLC of its latest re-admission (da-j8c4l), if it rejoined.
@@ -976,10 +991,10 @@ impl Chain {
                 filter,
             );
         }
-        // An endpoint describes itself and leaves unsigned, and a grant is a
-        // message to a device; anything else takes an admin, once there is
-        // one: its writer is a live member already.
-        if !self.is_open() && !own && kind != "grant" {
+        // An endpoint describes itself and leaves unsigned, and a grant or
+        // an erased is a message; anything else takes an admin, once there
+        // is one: its writer is a live member already.
+        if !self.is_open() && !own && kind != "grant" && kind != "erased" {
             admin_signed(&self.admins, &d, &s("sig"))?;
         }
         match kind.as_str() {
@@ -1109,6 +1124,28 @@ impl Chain {
                 m.last_act = op.hlc.clone();
                 Ok(())
             }
+            "erase" | "erased" => {
+                if s("endpoint") == op.endpoint {
+                    return Err("a copy does not wipe itself: it leaves".into());
+                }
+                let m = self
+                    .members
+                    .iter_mut()
+                    .find(|m| m.endpoint == s("endpoint"))
+                    .ok_or("not a member")?;
+                match (kind == "erase", &m.erase, &m.erased) {
+                    (true, Some(_), _) => return Err("ordered to delete its copy already".into()),
+                    (true, None, _) => {
+                        m.erase = Some(op.hlc.clone());
+                        m.revoked.get_or_insert_with(|| op.hlc.clone());
+                        m.last_act = op.hlc.clone();
+                    }
+                    (false, None, _) => return Err("not ordered to delete its copy".into()),
+                    (false, _, Some(_)) => return Err("its copy is deleted already".into()),
+                    (false, _, None) => m.erased = Some(op.hlc.clone()),
+                }
+                Ok(())
+            }
             "wipe" => {
                 let all = match s("scope").as_str() {
                     "data" => false,
@@ -1176,6 +1213,7 @@ impl Chain {
             let from = m.revoked.take().unwrap_or_else(|| hlc.into());
             m.purged = None;
             m.left = None;
+            (m.erase, m.erased) = (None, None);
             m.rejoined = Some(hlc.into());
             m.last_act = hlc.into();
             m.via = via.into();
@@ -1191,6 +1229,8 @@ impl Chain {
             revoked: None,
             purged: None,
             left: None,
+            erase: None,
+            erased: None,
             last_act: hlc.into(),
             rejoined: None,
             client: None,
@@ -1638,6 +1678,80 @@ impl Db {
             return Ok(());
         }
         self.write_with(forget_chain)
+    }
+
+    /// The members this copy carries an order to delete their copy to
+    /// (da-n0uj1.6): each the chain ordered to and not yet heard to have
+    /// obeyed, while this copy is a live member that writes, and so can
+    /// record the answer. `sync run` and `datum sync` dial them as members.
+    pub fn sync_wiping(&self) -> Result<Vec<String>> {
+        let chain = self.sync_chain()?;
+        let me = self.sync_endpoint_id()?;
+        let writes = chain
+            .member(&me)
+            .is_some_and(|m| m.revoked.is_none() && m.role() == Role::Member);
+        Ok(chain
+            .members
+            .iter()
+            .filter(|m| writes && m.erase.is_some() && m.erased.is_none())
+            .map(|m| m.endpoint.clone())
+            .collect())
+    }
+
+    /// The order to carry to `peer`, if this copy carries one: the chain's
+    /// records, which the copy checks as it checks any.
+    pub fn sync_wipe_order(&self, peer: &str) -> Result<Option<Vec<String>>> {
+        match self.sync_wiping()?.iter().any(|e| e == peer) {
+            true => Ok(Some(self.sync_chain_records()?)),
+            false => Ok(None),
+        }
+    }
+
+    /// Carry out an order to delete this copy, if `records`, a member's
+    /// chain records, hold one this copy's own fold takes: each signed by
+    /// its endpoint, its writer a live member then, an admin's signature in
+    /// a locked chain, and no re-admission since. Then it deletes all it
+    /// holds as `db purge` does: its file rewritten with none of the old
+    /// pages, its pre-migration snapshots and queued changes gone, and so in
+    /// no chain, with a new key. What it says of it comes back; none when
+    /// the records hold no such order.
+    pub fn sync_wipe_obey(&self, records: &[String]) -> Result<Option<String>> {
+        let (chain, _) = Chain::load_with(&self.conn, &records.join("\n"))?;
+        let me = self.sync_endpoint_id()?;
+        let Some(at) = chain.member(&me).and_then(|m| m.erase.clone()) else {
+            return Ok(None);
+        };
+        let snapshots = self
+            .path()
+            .map(crate::migrations::pre_migration_backups)
+            .unwrap_or_default();
+        let (_, queued) = self.spool_discard_after(|| self.force_recreate_schema())?;
+        let mut said = format!(
+            "deleted its copy of this database, as sync chain {} ordered ({})",
+            chain.id,
+            hlc_time(&at)
+        );
+        if queued > 0 {
+            said += &format!(", and {queued} queued change(s), never written");
+        }
+        for snapshot in snapshots {
+            if let Err(e) = std::fs::remove_file(&snapshot) {
+                said += &format!("; {} is not removed: {e}", snapshot.display());
+            }
+        }
+        Ok(Some(said))
+    }
+
+    /// `peer` said it obeyed its order: record it, so no member carries it on.
+    pub fn sync_wipe_obeyed(&self, peer: &str) -> Result<()> {
+        if !self.sync_wiping()?.iter().any(|e| e == peer) {
+            return Ok(());
+        }
+        let record = json!({
+            "type": "erased", "chain": self.sync_chain()?.id, "endpoint": peer,
+            "created": Utc::now().to_rfc3339(),
+        });
+        self.sync_chain_write(record, true)
     }
 
     /// Notices not yet printed.
@@ -2100,6 +2214,85 @@ mod tests {
             json!({"type": "admit", "endpoint": b, "label": "b", "via": "j", "secret": "t"});
         assert_eq!(step(13, admit), (Ok(()), Some((false, false)), true));
         assert_eq!(chain_err(&step(14, it("unpurge", &b))), "not purged");
+    }
+
+    /// In a locked chain an order that a member delete its copy takes an
+    /// admin and expels it at once (da-n0uj1.6); no copy orders itself, nor
+    /// is one ordered twice. Its answer, `erased`, is a member's message,
+    /// unsigned, which a reader cannot write and which needs the order. An
+    /// unjoined member may be ordered too. A fresh invite takes both away.
+    #[test]
+    fn an_order_to_wipe_takes_an_admin_and_its_answer_a_member() {
+        let [a, b, c, r] = ["ab", "cd", "ef", "01"].map(|h| h.repeat(32));
+        let at = |t: u32| format!("2026-09-29T00:00:{t:02}.000Z/0000");
+        let secret = [5u8; 32];
+        let mut chain = Chain::default();
+        let mut step = |t: u32, by: &str, signed: bool, mut rec: Value| {
+            rec["chain"] = "c1".into();
+            rec["created"] = at(t).into();
+            if signed {
+                rec["sig"] = sign_ed25519(&rec, &secret).into();
+            }
+            let op = json!({
+                "endpoint": by, "seq": t, "hlc": at(t), "hid": CHAIN_HID,
+                "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
+            });
+            let done = chain.step(&Op::parse(&op.to_string()).unwrap());
+            let m = chain
+                .member(&b)
+                .map(|m| (m.erase.is_some(), m.erased.is_some()));
+            (done, m, chain.allows(&b, &at(t)).is_ok())
+        };
+        let admins = json!([{"key": ed25519_admin_key(&secret), "label": "k"}]);
+        let genesis = json!({"type": "genesis", "admins": admins, "label": "a"});
+        assert_eq!(step(1, &a, true, genesis).0, Ok(()));
+        for (t, who, role) in [(2, &b, "member"), (4, &c, "member"), (6, &r, "reader")] {
+            let invite = json!({"type": "invite", "invite_id": who, "secret_hash": sha256_hex(who),
+                "expires": "2099-01-01T00:00:00Z", "caps": {"role": role}});
+            assert_eq!(step(t, &a, true, invite).0, Ok(()));
+            let admit =
+                json!({"type": "admit", "endpoint": who, "label": role, "via": who, "secret": who});
+            assert_eq!(step(t + 1, &a, false, admit).0, Ok(()));
+        }
+        let it = |kind: &str, who: &str| json!({"type": kind, "endpoint": who});
+        assert_eq!(
+            step(8, &a, true, it("erase", &a)).0,
+            Err("a copy does not wipe itself: it leaves".into())
+        );
+        assert!(chain_err(&step(9, &a, false, it("erase", &b))).contains("not signed by an admin"));
+        assert_eq!(
+            chain_err(&step(10, &a, true, it("erased", &b))),
+            "not ordered to delete its copy"
+        );
+        assert_eq!(
+            step(11, &a, true, it("erase", &b)),
+            (Ok(()), Some((true, false)), false)
+        );
+        assert_eq!(
+            chain_err(&step(12, &c, true, it("erase", &b))),
+            "ordered to delete its copy already"
+        );
+        assert!(chain_err(&step(13, &r, false, it("erased", &b))).contains("reader"));
+        assert_eq!(
+            step(14, &c, false, it("erased", &b)),
+            (Ok(()), Some((true, true)), false)
+        );
+        assert_eq!(
+            chain_err(&step(15, &a, false, it("erased", &b))),
+            "its copy is deleted already"
+        );
+        // An unjoined device's copy is its own still: it may be wiped too.
+        assert_eq!(step(16, &a, true, it("purge", &c)).0, Ok(()));
+        assert_eq!(step(17, &a, true, it("erase", &c)).0, Ok(()));
+        let invite = json!({"type": "invite", "invite_id": "j", "secret_hash": sha256_hex("j"),
+            "expires": "2099-01-01T00:00:00Z", "caps": {}});
+        assert_eq!(step(18, &a, true, invite).0, Ok(()));
+        let admit =
+            json!({"type": "admit", "endpoint": b, "label": "b", "via": "j", "secret": "j"});
+        assert_eq!(
+            step(19, &a, false, admit),
+            (Ok(()), Some((false, false)), true)
+        );
     }
 
     fn chain_err<T>(r: &(std::result::Result<(), String>, T, bool)) -> String {

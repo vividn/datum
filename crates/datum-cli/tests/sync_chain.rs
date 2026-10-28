@@ -2475,8 +2475,8 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     assert_eq!(
         complete(&["chain"]),
         [
-            "invite", "connect", "copy", "leave", "list", "rename", "expel", "unjoin", "purge",
-            "role", "ack", "rekey"
+            "invite", "connect", "copy", "leave", "list", "rename", "expel", "unjoin", "wipe",
+            "purge", "role", "ack", "rekey"
         ]
     );
     // `revoke` and `revert` were renamed `expel` and `unjoin`, and cut

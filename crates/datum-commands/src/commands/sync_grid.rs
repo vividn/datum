@@ -18,6 +18,8 @@ use crate::config;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Cell {
     Unjoined,
+    Wiped,
+    Wiping,
     Expelled,
     Reader,
     Member,
@@ -27,6 +29,9 @@ impl Cell {
     /// One that left is in that chain no more, as `sync status` has it.
     fn of(m: &Member) -> Option<Cell> {
         match () {
+            // An unjoined device may be wiped too: its copy is its own.
+            _ if m.erased.is_some() => Some(Cell::Wiped),
+            _ if m.erase.is_some() => Some(Cell::Wiping),
             _ if m.purged.is_some() => Some(Cell::Unjoined),
             _ if m.left.is_some() => None,
             _ if m.revoked.is_some() => Some(Cell::Expelled),
@@ -38,6 +43,8 @@ impl Cell {
     fn word(self) -> &'static str {
         match self {
             Cell::Unjoined => "unjoined",
+            Cell::Wiped => "wiped",
+            Cell::Wiping => "wiping",
             Cell::Expelled => "expelled",
             Cell::Reader => "reader",
             Cell::Member => "member",

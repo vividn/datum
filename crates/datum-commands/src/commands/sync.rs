@@ -329,6 +329,33 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                         format!("unjoined: {what}\na fresh invite brings it back, its ops with it"),
                     )
                 }
+                SyncAdminAct::Wipe { yes } => {
+                    let m = member(&chain, &who)?;
+                    ensure!(
+                        m != db.sync_endpoint_id()?,
+                        "{who} is this copy: `datum sync chain leave` takes it out of the chain, \
+                         and `datum db purge --leave` deletes it too"
+                    );
+                    let it = chain.member(&m);
+                    ensure!(
+                        it.is_some_and(|m| m.left.is_none()),
+                        "{who} left this chain: it is no copy of it any more"
+                    );
+                    ensure!(
+                        it.is_some_and(|m| m.erase.is_none()),
+                        "{who} is ordered to delete its copy already"
+                    );
+                    if !yes {
+                        println!("{who} is expelled, and asked to delete its copy of this database: {WIPE_LIMIT}");
+                        if !ask(&format!("sync chain wipe {who}"))? {
+                            return Ok(());
+                        }
+                    }
+                    (
+                        json!({"type": "erase", "endpoint": m}),
+                        format!("expelled {who}, and asked it to delete its copy of this database: {WIPE_LIMIT}"),
+                    )
+                }
                 SyncAdminAct::Role { reader, filter } => {
                     let m = member(&chain, &who)?;
                     let role = if reader { "reader" } else { "member" };
@@ -1059,6 +1086,12 @@ fn backup_words(backup: Option<std::path::PathBuf>) -> String {
     })
 }
 
+/// What `sync chain wipe` does, and the limit of it (da-n0uj1.6).
+const WIPE_LIMIT: &str = "it does when it next reaches a member of this chain, or one \
+reaches it. A device that never comes back online cannot be made to delete anything: until \
+it obeys, this is an expel, and it keeps what it holds. What it synced stays on every other \
+copy; what it wrote since it last synced goes with its copy.";
+
 /// What unjoining `who` sets aside, in words (da-ry11c): a verb agrees with
 /// its count, and a count of zero says nothing (da-sivjb).
 fn unjoin_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
@@ -1322,6 +1355,8 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
                     "purged": m.purged.as_deref().map(chain::hlc_time),
                     "left": m.left.as_deref().map(chain::hlc_time),
+                    "erase": m.erase.as_deref().map(chain::hlc_time),
+                    "erased": m.erased.as_deref().map(chain::hlc_time),
                     "rejoined": m.rejoined.as_deref().map(chain::hlc_time),
                     "role": m.role().as_str(), "this": m.endpoint == mine,
                     "filter": filter_json(chain.filter(&m.endpoint)),
@@ -1381,9 +1416,13 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                     )
                 }
                 (_, Some(l)) => format!("  LEFT {}", at(l)),
-                _ => revoked
-                    .map(|r| format!("  EXPELLED {r}"))
-                    .unwrap_or_default(),
+                _ => match (m.erased.as_deref(), m.erase.as_deref()) {
+                    (Some(w), _) => format!("  WIPED {}", at(w)),
+                    (_, Some(e)) => format!("  EXPELLED {}, asked to delete its copy", at(e)),
+                    _ => revoked
+                        .map(|r| format!("  EXPELLED {r}"))
+                        .unwrap_or_default(),
+                },
             },
             if m.endpoint == mine {
                 "  (this copy)"

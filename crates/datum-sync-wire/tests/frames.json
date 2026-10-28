@@ -36,12 +36,16 @@
       }
     ],
     "label": "laptop",
+    "obeys": true,
     "proves": true,
     "round": 8192,
     "schema": 57,
     "sums": true,
     "typed": true,
-    "waits": true
+    "waits": true,
+    "wipe": [
+      "{\"op\":\"set\",\"endpoint\":\"e\",\"seq\":1}"
+    ]
   },
   "hids": [
     "h"
@@ -124,6 +128,12 @@
     "paused",
     "not-member",
     "busy",
+    "wiped",
     "other"
-  ]
+  ],
+  "wipe": {
+    "Wipe": [
+      "{\"op\":\"set\",\"endpoint\":\"e\",\"seq\":1}"
+    ]
+  }
 }

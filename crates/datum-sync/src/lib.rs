@@ -534,6 +534,26 @@ impl Store for DbStore<'_> {
     async fn known(&self) -> Result<Vec<EndpointAddr>> {
         known(self.0)
     }
+
+    async fn wipe_order(&self, peer: &str) -> Result<Option<Vec<String>>> {
+        Ok(self.0.sync_wipe_order(peer)?)
+    }
+
+    async fn wipe(&self, _peer: &str, records: &[String]) -> Result<Option<String>> {
+        Ok(self.0.sync_wipe_obey(records)?)
+    }
+
+    async fn wiped(&self, peer: &str) -> Result<()> {
+        // Said once, by a copy no longer there to say it again: a write
+        // holding this file is waited out, not given way to.
+        for _ in 0..40 {
+            match self.0.sync_wipe_obeyed(peer) {
+                Err(e) if datum_core::db::busy(&e) => tokio::time::sleep(YIELD).await,
+                done => return Ok(done?),
+            }
+        }
+        Ok(self.0.sync_wipe_obeyed(peer)?)
+    }
 }
 
 /// The file whose lock is `db`'s one applying session (da-h31wt); none for
@@ -570,12 +590,14 @@ fn addr(p: &Peer) -> Result<EndpointAddr> {
 }
 
 /// The peers to sync with: in a chain, those still members, and whose
-/// address this copy knows.
+/// address this copy knows; and those it carries an order to delete their
+/// copy to (da-n0uj1.6), which a dial to them carries.
 fn synced_peers(db: &Db) -> Result<Vec<Peer>> {
+    let wiping = db.sync_wiping()?;
     Ok(db
         .sync_peers()?
         .into_iter()
-        .filter(|p| p.synced && addr(p).is_ok())
+        .filter(|p| (p.synced || wiping.contains(&p.id)) && addr(p).is_ok())
         .collect())
 }
 
@@ -815,7 +837,7 @@ fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
              `datum sync chain invite` there) and connect again, or ask it for a fresh invite"
         ),
         // Its own words say it already.
-        Some(Failure::Late | Failure::Protocol) | None => return e,
+        Some(Failure::Late | Failure::Protocol | Failure::Refused(Why::Wiped)) | None => return e,
     };
     anyhow!("{e:#}. Next: {next}")
 }
@@ -841,6 +863,11 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
         .is_err_and(|e| failure(e) == Some(Failure::Unreachable));
     let line = match rep {
         Ok(rep) => rep.to_string(),
+        Err(e) if wiped(rep) => format!(
+            "{}: {}",
+            p.label,
+            e.to_string().trim_start_matches("refused: ")
+        ),
         Err(_) if offline => match &p.last_seen {
             Some(at) => format!(
                 "{}: offline, last seen {}",
@@ -851,7 +878,7 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
         },
         Err(e) => format!("{}: {e:#}", p.label),
     };
-    let failed = !offline && rep.as_ref().is_err_and(|e| failure(e) != Some(BUSY));
+    let failed = !offline && !wiped(rep) && rep.as_ref().is_err_and(|e| failure(e) != Some(BUSY));
     // A dial that never connected (offline, or refused at the handshake)
     // has no route to say.
     let route = match rep {
@@ -870,12 +897,19 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
     (failed, line, format!("  {}", more.join(" · ")))
 }
 
+/// Whether a dial carried the chain's order that the peer delete its copy,
+/// and the peer did (da-n0uj1.6): what the session was for, and no failure.
+fn wiped(rep: &Result<Report>) -> bool {
+    rep.as_ref()
+        .is_err_and(|e| failure(e) == Some(Failure::Refused(Why::Wiped)))
+}
+
 /// One session's line, as `sync run` answers an ask (after a line of how
 /// many sessions it opened): whether it synced, and what `datum sync`
 /// prints of it, `-v`'s line too.
 fn answer(p: &Peer, rep: &Result<Report>, took: Duration) -> String {
     let (failed, line, verbose) = said(p, rep, took);
-    let synced = rep.is_ok();
+    let synced = rep.is_ok() || wiped(rep);
     serde_json::json!({ "ok": !failed, "synced": synced, "line": line, "verbose": verbose })
         .to_string()
         + "\n"
@@ -957,7 +991,7 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
         while let Some((p, rep, took)) = dials.next().await {
             let (lost, line, more) = said(p, &rep, took);
             failed += usize::from(lost);
-            synced += usize::from(rep.is_ok());
+            synced += usize::from(rep.is_ok() || wiped(&rep));
             println!("{line}");
             if verbose {
                 println!("{more}");
@@ -1124,6 +1158,7 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
         let mut open = Open::default();
         let (mut mine, mut seen) = (ep.watch_addr(), ep.addr());
         let mut tick = tokio::time::interval(Duration::from_millis(500));
+        let mut stopping = None;
         let ctrl_c = tokio::signal::ctrl_c();
         tokio::pin!(ctrl_c);
         loop {
@@ -1195,6 +1230,12 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                             eprintln!("{} gave way to a write: {e:#}", now());
                             pushed.clear();
                         }
+                        // It carried the chain's order that the peer delete
+                        // its copy, and the peer did (da-n0uj1.6).
+                        (Err(e), Some((id, label))) if failure(&e) == Some(Failure::Refused(Why::Wiped)) => {
+                            retry.remove(&id);
+                            println!("{} {label}: {}", now(), e.to_string().trim_start_matches("refused: "));
+                        }
                         // A copy applying refused it, here or there: no failure.
                         // The one applying pushes once done; a push is tried
                         // again after the first gap, which does not grow
@@ -1223,8 +1264,15 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                         }
                     }
                 }
+                // The sessions in flight get a few seconds first: one may
+                // have just deleted this copy, as its chain ordered, and
+                // says so to the member as it ends (da-n0uj1.6).
                 _ = tick.tick() => {
                     if let Err(e) = db.sync_endpoint_secret().map_err(Into::into).and_then(|_| stop()) {
+                        let since = *stopping.get_or_insert_with(Instant::now);
+                        if !sessions.is_empty() && since.elapsed() < Duration::from_secs(2) {
+                            continue;
+                        }
                         ep.close().await;
                         return Err(e);
                     }

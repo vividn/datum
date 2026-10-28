@@ -523,6 +523,22 @@ without them — what it made goes, its edits and deletes are undone — and exp
 it. There is no unpurge: a fresh invite brings it back (below), though an old
 chain's `unpurge` record still folds as it did.
 
+`sync chain wipe <WHO>` (da-n0uj1.6) asks the device to delete its own copy,
+then expels it: with `--yes` an `erase` record, an admin act that revokes it at
+its HLC (no copy wipes itself: `leave`). Each member that writes dials it while
+it is `wiping` (`Db::sync_wiping`), its `Hello` carrying the chain's records,
+and a member it dials refuses it with them (`Reply::Wipe`, to a dialer that
+`obeys`). The device checks them as any records (`Chain::load_with`) and, once
+its own fold holds the order, deletes all it holds as `db purge` does
+(`Db::sync_wipe_obey`), saying so (`Why::Wiped`, or `true`); the member that
+heard it writes `erased`, a member's message as a grant is, and the grid shows
+`wiped`. The limit is said wherever it is ordered: a device that never comes
+back is never made to delete anything, and until it obeys it is an expel. It
+obeys at the handshake, before any op moves, so what it wrote since it last
+synced goes with its copy, and the command says so.
+datum.day neither carries an order nor obeys one yet (its store keeps the
+wire's defaults).
+
 `sync chain purge --data | --all` (da-qzrj9) is the chain-wide hard purge (`db
 purge --chain` is `--data`, parsed to the same command, da-2bb7z), an admin act
 any member orders in an open chain: a `wipe` record each copy carries out as it
@@ -658,7 +674,7 @@ and never a second genesis.
 The tree: `sync`, `status`, `grid` (every device against every chain this
 install's databases are in, by device key and chain id, read only, da-n0uj1.3),
 `grant <DEVICE> member|reader [--as <NAME>]` (below), `pause | resume`, `diff <WHO>`, `refold`, `chain
-invite | connect | copy | leave | list | rename | expel | unjoin | ack | rekey`,
+invite | connect | copy | leave | list | rename | expel | unjoin | wipe | ack | rekey`,
 `admin list | add | remove`, `daemon install | uninstall | status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync
 run` for every chained db `known_dbs` lists; a copy's first `chain invite` /

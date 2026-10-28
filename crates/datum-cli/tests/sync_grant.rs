@@ -527,3 +527,88 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
     let theirs = o.json("work", &["sync", "status", "--json"]);
     assert_eq!(theirs["chain"].as_str(), Some(chain.as_str()));
 }
+
+/// `sync chain wipe` (da-n0uj1.6): a device online deletes its copy as the
+/// order reaches it, carried by the dial of a member's run; one offline is
+/// expelled at once, says it is asked, and deletes its copy as it next
+/// dials a member. Each then shows as wiped; this copy is never wiped.
+#[test]
+fn a_wiped_device_deletes_its_copy_online_at_once_and_offline_once_back() {
+    let g = Install::new("gina");
+    let (t, o) = (Install::new("tom"), Install::new("olga"));
+    let home = home_chain(&g, &[&t, &o]);
+    let admin = key(&g, "home.key");
+    g.ok("home", &["sync", "admin", "add", &admin]);
+    t.ok("home", &["occur", "tea"]);
+    o.ok("home", &["occur", "mate"]);
+    o.ok("home", &["sync"]);
+    let tom = t.run("home");
+    let chain = g.json("home", &["sync", "status", "--json"])["chain"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let cell = |i: &Install| {
+        let grid = g.json("home", &["sync", "grid", "--json"]);
+        let rows = grid["devices"].as_array().unwrap().clone();
+        let row = rows
+            .into_iter()
+            .find(|r| r["device"] == i.device().as_str());
+        row.and_then(|r| r["cells"][&chain]["state"].as_str().map(String::from))
+    };
+    let wipe = |who: &str| {
+        let args = ["sync", "chain", "wipe", who, "--yes", "--admin-key", &admin];
+        g.cmd("home", &args).output().unwrap()
+    };
+
+    let own = wipe(&g.device()[..12]);
+    let said = String::from_utf8_lossy(&own.stderr);
+    assert!(
+        !own.status.success() && said.contains("is this copy"),
+        "{said}"
+    );
+
+    // Online: gina's run carries the order as it dials tom, at once.
+    let said = String::from_utf8_lossy(&wipe(&t.device()[..12]).stdout).into_owned();
+    assert!(said.contains("cannot be made to delete anything"), "{said}");
+    assert!(
+        said.contains("since it last synced goes with its copy"),
+        "{said}"
+    );
+    // Its run says so whichever way the order came: carried by gina's
+    // dial, or with the refusal of its own if the two dialed at once.
+    tom.says("deleted its copy of this database");
+    // Its run stops: the copy it served is another now, in no chain.
+    let tom = std::cell::RefCell::new(tom);
+    eventually("tom's run stopping", || {
+        tom.borrow_mut().child.try_wait().unwrap().is_some()
+    });
+    assert_eq!(
+        t.query("home", "SELECT COUNT(*) || '' FROM entries")
+            .as_deref(),
+        Some("0")
+    );
+    assert_eq!(
+        t.query("home", "SELECT COUNT(*) || '' FROM ops").as_deref(),
+        Some("0")
+    );
+    eventually("tom wiped", || cell(&t).as_deref() == Some("wiped"));
+
+    // Offline: expelled at once, its copy kept until it comes back. What
+    // it wrote since it last synced, before the order too, goes with it:
+    // it obeys at the handshake, before any op moves.
+    o.ok("home", &["occur", "yerba"]);
+    wipe(&o.device()[..12]);
+    assert_eq!(cell(&o).as_deref(), Some("wiping"));
+    assert!(o.has("home", "mate") && o.has("home", "yerba"));
+    let back = o.cmd("home", &["sync"]).output().unwrap();
+    let said = String::from_utf8_lossy(&back.stdout);
+    assert!(said.contains("deleted its copy of this database"), "{said}");
+    assert!(!o.has("home", "mate") && !o.has("home", "start"));
+    let own = o.json("home", &["sync", "status", "--json"]);
+    assert!(own["chain"].is_null(), "{own}");
+    eventually("olga wiped", || cell(&o).as_deref() == Some("wiped"));
+    // What each synced stays on gina's copy; what olga had not is nowhere.
+    assert!(g.has("home", "tea") && g.has("home", "mate"));
+    assert!(!g.has("home", "yerba") && !o.has("home", "yerba"));
+    drop(home);
+}

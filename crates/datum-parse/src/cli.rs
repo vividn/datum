@@ -978,7 +978,7 @@ pub enum SyncCommand {
     /// `datum sync chain rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,
     /// `datum sync chain expel <WHO>`, `datum sync chain unjoin <WHO>
-    /// [--yes]`, `datum sync chain role <WHO> member|reader [--fields <F,…> | --kit <KIT>]`, `datum sync admin add <KEY>
+    /// [--yes]`, `datum sync chain wipe <WHO> [--yes]`, `datum sync chain role <WHO> member|reader [--fields <F,…> | --kit <KIT>]`, `datum sync admin add <KEY>
     /// [--label <L>]`, `datum sync admin remove <WHO> [--allow-unlock]`,
     /// each `[--admin-key <FILE>]` — a signed act on the chain.
     Admin {
@@ -1175,6 +1175,11 @@ pub enum SyncAdminAct {
     Unjoin {
         yes: bool,
         show: Show,
+    },
+    /// `wipe <WHO>` says what it does and its limit; `--yes` does it,
+    /// writing an `erase` record (da-n0uj1.6).
+    Wipe {
+        yes: bool,
     },
     Role {
         reader: bool,

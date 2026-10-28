@@ -35,6 +35,15 @@
 //! - **Record.** Every session this copy dials, and every one it serves past
 //!   the handshake, is recorded as it ends — the peer's vector, the verify,
 //!   or the error it failed with — for `datum sync status` (da-rcb5m).
+//! - **Wipe.** A copy the chain ordered to delete itself (da-n0uj1.6) is
+//!   expelled, and dialed still by each member that writes, its [`Hello`]
+//!   carrying the chain's records ([`Store::wipe_order`]); dialing a member,
+//!   it is refused with them ([`Reply::Wipe`]) if it said it `obeys`. It
+//!   checks them as any records ([`Store::wipe`]), and once its own fold
+//!   takes the order it deletes itself and says so: [`Why::Wiped`] to a
+//!   member that dialed it, `true` to one it dialed, which records it
+//!   ([`Store::wiped`]). A Hello's records are the reason it is read to
+//!   [`MAX_RECORDS`], as a reply is.
 //! - **Members.** Each side says in its handshake where it last saw the
 //!   chain's members, and the other keeps what it lacks once the session
 //!   has synced (da-fly3f): two copies one inviter admitted have never
@@ -102,7 +111,8 @@ pub const ALPN: &[u8] = b"datum/sync/2";
 const DIFF: &[u8] = b"datum/sync-diff/1";
 const MAX_FRAME: usize = 64 << 20;
 const MAX_HELLO: usize = 64 << 10;
-/// A chain's records, from a dialer not yet admitted.
+/// A chain's records, from a dialer not yet admitted, or in an order to
+/// delete a copy.
 const MAX_RECORDS: usize = 1 << 20;
 /// A session in which both sides keep writing still ends: after this many
 /// rounds that were not full.
@@ -296,6 +306,20 @@ pub trait Store {
     ) -> Result<()>;
     /// Where this copy last saw the members of its chain, to pass on.
     async fn known(&self) -> Result<Vec<EndpointAddr>>;
+    /// The order to carry to `peer` that it delete its copy (da-n0uj1.6),
+    /// as this copy's chain records, if it carries one.
+    async fn wipe_order(&self, _peer: &str) -> Result<Option<Vec<String>>> {
+        Ok(None)
+    }
+    /// Carry out an order `peer` brought, if `records` hold one this copy's
+    /// own chain takes, and say what it did; none when they hold none.
+    async fn wipe(&self, _peer: &str, _records: &[String]) -> Result<Option<String>> {
+        Ok(None)
+    }
+    /// `peer` said it carried out the order this copy brought it.
+    async fn wiped(&self, _peer: &str) -> Result<()> {
+        Ok(())
+    }
     /// What this copy runs, said in its handshake (da-3zqyv).
     fn version(&self) -> Version;
 }
@@ -447,6 +471,13 @@ struct Hello {
     /// next either side runs on it (da-3jcth); a copy before it closes it.
     #[serde(default)]
     keeps: bool,
+    /// The dialer reads a [`Reply::Wipe`] and answers it (da-n0uj1.6).
+    #[serde(default)]
+    obeys: bool,
+    /// An order that the acceptor delete its copy: the dialer's chain
+    /// records, which hold it. A copy before it ignores them.
+    #[serde(default)]
+    wipe: Vec<String>,
     #[serde(flatten)]
     version: Version,
 }
@@ -487,6 +518,11 @@ enum Reply {
     /// chain's records, a frame holding a list of op lines, and reads the
     /// reply to them (da-2u95o).
     Prove,
+    /// The dialer is no member: the chain ordered it to delete its copy, and
+    /// these are the acceptor's chain records, which hold the order. The
+    /// dialer answers whether it did, a frame holding `true` or `false`.
+    /// Only to a dialer that `obeys` (da-n0uj1.6).
+    Wipe(Vec<String>),
 }
 
 impl Reply {
@@ -685,6 +721,9 @@ pub enum Why {
     /// The refusing copy is applying another session's ops: try again
     /// later, which is no failure (da-h31wt).
     Busy,
+    /// The refusing copy deleted itself, as the order the dialer carried
+    /// said: only to a dialer that carried one (da-n0uj1.6).
+    Wiped,
     Other,
 }
 
@@ -1135,6 +1174,10 @@ async fn session(
         Some(_) => store.holds().await?,
         None => 0,
     };
+    let order = match invite {
+        Some(_) => None,
+        None => store.wipe_order(&id).await?,
+    };
     let hello = Hello {
         label: store.label(),
         addr: ep.addr(),
@@ -1153,6 +1196,8 @@ async fn session(
         ends: true,
         sums: true,
         keeps: true,
+        obeys: true,
+        wipe: order.clone().unwrap_or_default(),
         version: store.version(),
     };
     // The connection kept from an earlier session with the peer, while it
@@ -1173,7 +1218,7 @@ async fn session(
         let opened = async {
             let (mut s, mut r) = conn.open_bi().await?;
             put_json(&mut s, &hello).await?;
-            let reply: Reply = get_json(&mut r, MAX_HELLO).await?;
+            let reply: Reply = get_json(&mut r, MAX_RECORDS).await?;
             Ok::<_, anyhow::Error>((s, r, reply))
         };
         match opened.await {
@@ -1197,7 +1242,23 @@ async fn session(
     };
     if hello.proves && matches!(reply, Reply::Prove) {
         put_json(&mut s, &store.records().await?).await?;
-        reply = get_json(&mut r, MAX_HELLO).await?;
+        reply = get_json(&mut r, MAX_RECORDS).await?;
+    }
+    // Refused, with the chain's order that this copy delete itself: it
+    // answers whether it did, and reads on until the member has read it.
+    if let Reply::Wipe(records) = &reply {
+        let did = store.wipe(&id, records).await?;
+        put_json(&mut s, &did.is_some()).await?;
+        let _ = timeout(Duration::from_secs(5), r.read_to_end(0)).await;
+        end(&mut s, &mut r, b"refused");
+        let why = did.unwrap_or_else(|| {
+            "its records hold no order naming this copy that this copy's chain takes".into()
+        });
+        return Err(Failed(
+            Failure::Refused(Why::NotMember),
+            format!("refused by {}: {why}", short(&id)),
+        )
+        .into());
     }
     let carried;
     let (label, added, met, round, waits, ends, sums, keeps) = match reply {
@@ -1212,6 +1273,13 @@ async fn session(
             keeps,
             version,
         } => {
+            // Welcomed, it holds no order that it delete itself: a datum
+            // before it, or a chain that does not take this copy's records.
+            // Nothing is sent to a copy the chain expelled.
+            if order.is_some() {
+                end(&mut s, &mut r, b"refused");
+                bail!("{label} was ordered to delete its copy, and did not: is its datum older?");
+            }
             // Two copies that dialed each other at once (da-vj3ly): the
             // lower endpoint id's session carries both ways, and the other
             // copy closes its own as busy, which neither side records.
@@ -1262,9 +1330,14 @@ async fn session(
         }
         Reply::Refusal { why, kind } => {
             end(&mut s, &mut r, b"refused");
+            if kind == Why::Wiped {
+                store.wiped(&id).await?;
+            }
             return Err(refused(why, Some(kind)));
         }
-        Reply::Prove => bail!("{} asked for what it was not offered", short(&id)),
+        Reply::Prove | Reply::Wipe(_) => {
+            bail!("{} asked for what it was not offered", short(&id))
+        }
     };
     let mut rep = Report::new(label, id, added, invite.is_some(), met);
     rep.round = round;
@@ -1509,6 +1582,8 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
         ends: false,
         sums: true,
         keeps: false,
+        obeys: false,
+        wipe: Vec::new(),
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -1516,7 +1591,9 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
         Reply::Welcome { .. } => {}
         Reply::Refused(why) => return Err(refused(why, None)),
         Reply::Refusal { why, kind } => return Err(refused(why, Some(kind))),
-        Reply::Prove => bail!("{} asked for what it was not offered", short(&id)),
+        Reply::Prove | Reply::Wipe(_) => {
+            bail!("{} asked for what it was not offered", short(&id))
+        }
     }
     let (hash, mine) = store.digest(&id).await?;
     put_json(&mut s, &hash).await?;
@@ -1610,10 +1687,34 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Res
             (None, s, r)
         }
     };
-    let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
+    let hello: Hello = get_json(&mut r, MAX_RECORDS).await?;
     // A diff admits no one: it answers a member this copy holds, redeems
     // no invite, and asks for no records to admit one it has not heard of.
     let diff = conn.alpn() == DIFF;
+    // An order that this copy delete itself (da-n0uj1.6): carried out once
+    // its own chain takes it, and said. Otherwise the session goes on, and
+    // the dialer ends it once welcomed.
+    // A copy applying refuses as busy first, as it does any session.
+    if !hello.wipe.is_empty() && !diff && !store.applying() {
+        if let Some(why) = store.wipe(&id, &hello.wipe).await? {
+            let reply = Reply::Refusal {
+                why: why.clone(),
+                kind: Why::Wiped,
+            };
+            put_json(&mut s, &reply).await?;
+            // Until the member has read it, on a kept connection too: this
+            // copy's run stops once its key changed, and its process with it.
+            let _ = timeout(Duration::from_secs(5), async {
+                match using {
+                    Some(_) => drop(r.read_to_end(0).await),
+                    None => drop(conn.closed().await),
+                }
+            })
+            .await;
+            let why = format!("{why}: {} ({}) carried the order", hello.label, short(&id));
+            return Err(Failed(Failure::Refused(Why::Wiped), why).into());
+        }
+    }
     let mut records: Option<Vec<String>> = None;
     let verdict = loop {
         let verdict = match conn.remote_id() == ep.id() {
@@ -1649,6 +1750,30 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Res
     let known = match verdict {
         Ok(added) => !added,
         Err((kind, e)) => {
+            // The chain ordered the dialer to delete its copy: it is told
+            // so, and answers whether it did (da-n0uj1.6).
+            let order = match kind == Why::NotMember && hello.obeys && !diff {
+                true => store.wipe_order(&id).await?,
+                false => None,
+            };
+            if let Some(records) = order {
+                put_json(&mut s, &Reply::Wipe(records)).await?;
+                let did: bool = get_json(&mut r, MAX_HELLO).await?;
+                if did {
+                    store.wiped(&id).await?;
+                }
+                let _ = s.finish();
+                if using.is_none() {
+                    let _ = timeout(Duration::from_secs(5), conn.closed()).await;
+                }
+                let why = format!(
+                    "refused {} ({}), ordered to delete its copy: it {}",
+                    hello.label,
+                    short(&id),
+                    if did { "did" } else { "did not" }
+                );
+                return Err(e.context(Failed(Failure::Refused(kind), why)));
+            }
             let reply = Reply::refusal(&hello, kind, format!("{e:#}"));
             put_json(&mut s, &reply).await?;
             // On a kept connection the dialer ends the stream alone.
@@ -1908,6 +2033,8 @@ mod tests {
                     ends: true,
                     sums: true,
                     keeps: true,
+                    obeys: true,
+                    wipe: vec![line.clone()],
                     version: version.clone(),
                 },
             ),
@@ -1934,6 +2061,7 @@ mod tests {
                 },
             ),
             kind("prove", Reply::Prove),
+            kind("wipe", Reply::Wipe(vec![line.clone()])),
             kind(
                 "why",
                 [
@@ -1943,6 +2071,7 @@ mod tests {
                     Why::Paused,
                     Why::NotMember,
                     Why::Busy,
+                    Why::Wiped,
                     Why::Other,
                 ],
             ),
