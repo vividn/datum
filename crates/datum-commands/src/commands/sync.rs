@@ -563,7 +563,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         SyncCommand::Approve { link } => {
             let mut records = chain::approve_records(&link)
                 .context("not an approve link: https://datum.day/sync/approve#<record>")?;
-            // A batch may start the chain: `chain copy` into a database in
+            // A batch may start the chain: `grant --like` into a database in
             // none (da-7bjai).
             let starts = records[0]["type"] == "genesis";
             let chain = db.sync_chain()?;
@@ -730,15 +730,15 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             admin_key.as_deref(),
             ticket.as_ref().map(|(t, i)| (t.as_str(), i.as_str())),
         )?,
-        SyncCommand::Copy {
-            from,
+        SyncCommand::GrantLike {
+            like,
             devices,
             expires_secs,
             admin_key,
             defer,
-        } => super::sync_grant::copy(
+        } => super::sync_grant::grant_like(
             db,
-            &from,
+            &like,
             devices.as_deref(),
             std::time::Duration::from_secs(expires_secs),
             admin_key.as_deref(),

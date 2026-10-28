@@ -1074,12 +1074,12 @@ pub enum SyncCommand {
         /// new-invite` wrote here, so no invite is made.
         ticket: Option<(String, String)>,
     },
-    /// `datum sync chain copy --from <DB> [--devices <D>,…] [--expires <DUR>]
-    /// [--admin-key <FILE>]` (da-n0uj1.5): this database takes `--from`'s
-    /// devices, a grant each with the role it has there; in no chain, it
-    /// starts one whose admins are `--from`'s.
-    Copy {
-        from: String,
+    /// `datum sync grant --like <DB> [--devices <D>,…] [--expires <DUR>]
+    /// [--admin-key <FILE>]` (da-n0uj1.5, da-pvax0): this database takes
+    /// `--like`'s devices, a grant each with the role it has there; in no
+    /// chain, it starts one whose admins are `--like`'s.
+    GrantLike {
+        like: String,
         devices: Option<Vec<String>>,
         expires_secs: u64,
         admin_key: Option<String>,

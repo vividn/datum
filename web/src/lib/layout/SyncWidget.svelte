@@ -22,8 +22,8 @@
 	grid` has it and a dropdown of what may be done to it — a role (a grant,
 	sealed to the device in a chain both share, or a role change), expel,
 	unjoin, wipe, each of the last three confirming in a dialog that says
-	what happens to whose data. A column's «copy from…» gives its database
-	another's devices (`sync chain copy`), starting its chain with that one's
+	what happens to whose data. A column's «grant like…» gives its database
+	another's devices (`sync grant --like`), starting its chain with that one's
 	admins when it is in none. Only the CLI's commands: the grant's ticket is
 	the sync worker's, as [Add device]'s is.
 
@@ -97,7 +97,7 @@
 		unjoinArgv,
 		renameArgv,
 		expelArgv,
-		copyArgv,
+		grantLikeArgv,
 		grantArgv,
 		gridArgv,
 		roleArgv,
@@ -404,19 +404,19 @@
 		});
 	}
 
-	/** «copy from…»: `col` takes another database's devices, each with its role there, the grants left to this page: one approval for the copy's invites (da-7bjai). */
-	const copyInto = (col: { chain: string | null; db: string }) =>
+	/** «grant like…»: `col` takes another database's devices, each with its role there, the grants left to this page: one approval for all their invites (da-7bjai). */
+	const grantLike = (col: { chain: string | null; db: string }) =>
 		doing(async () => {
 			const sources = columns.filter((c) => c.chain && c.db !== col.db).map((c) => c.db);
 			const which = col.chain ? `Each of its devices ${col.db} lacks` : `${col.db} starts a sync chain with the same admins, and each of its devices`;
-			const from = await choose(`Copy sync settings into ${col.db} from which database? ${which} is granted the role it has there, and joins ${col.db} when it next syncs.`, sources);
+			const from = await choose(`Grant ${col.db} the devices of which database? ${which} is granted the role it has there, and joins ${col.db} when it next syncs.`, sources);
 			if (!from) return;
-			const r = ok(await syncAct(col.db, copyArgv(from)));
-			// `copy --defer` prints the grants left as its one stdout line, saying all else on stderr.
+			const r = ok(await syncAct(col.db, grantLikeArgv(from)));
+			// `grant --like --defer` prints the grants left as its one stdout line, saying all else on stderr.
 			const { grants } = JSON.parse(r.stdout.split('\n').find((l) => l.startsWith('{"grants"')) ?? '') as Deferred;
 			const lines = [r.stderr.trim()];
 			for (const g of grants) lines.push(await granting(col.db, g.device, g.role, undefined, g.invite));
-			said = lines.filter(Boolean).join('\n') || `${from} has no device to copy into ${col.db}`;
+			said = lines.filter(Boolean).join('\n') || `${from} has no device ${col.db} lacks`;
 		});
 
 	const addAdmin = (d: DbSync) =>
@@ -644,10 +644,10 @@
 									<th data-db={col.db}
 										><span class="name">{col.db}</span>{#if columns.some((c) => c.chain && c.db !== col.db)}<button
 												type="button"
-												class="command copy"
+												class="command like"
 												use:act={'open'}
 												disabled={busy}
-												onclick={() => copyInto(col)}>copy from…</button
+												onclick={() => grantLike(col)}>grant like…</button
 											>{/if}</th
 									>
 								{/each}
@@ -1012,7 +1012,7 @@
 		border-radius: 4px;
 		font: inherit;
 	}
-	.grid .copy {
+	.grid .like {
 		padding: 0.1rem 0.3rem;
 		font-size: 0.85em;
 	}

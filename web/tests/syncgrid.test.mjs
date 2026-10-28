@@ -1,7 +1,7 @@
 // The Sync widget's grid (da-n0uj1.7): every device against every database,
-// a dropdown per cell and «copy from…» per column, each act a CLI command —
+// a dropdown per cell and «grant like…» per column, each act a CLI command —
 // `sync grant` with the sync worker's ticket, `sync chain expel | unjoin |
-// wipe | role`, `sync chain copy --defer` — and every expel, unjoin and wipe
+// wipe | role`, `sync grant --like --defer` — and every expel, unjoin and wipe
 // confirmed in a dialog saying what happens to whose data.
 //
 // A device in the grid is a native copy paired with the page's `datum` (so
@@ -155,7 +155,7 @@ describe('the sync widget’s grid', () => {
 		}
 	});
 
-	test('«copy from…» starts a database in no chain with another’s admins, and grants it each of that one’s devices', async () => {
+	test('«grant like…» starts a database in no chain with another’s admins, and grants it each of that one’s devices', async () => {
 		const native = await nativeCopy(relay);
 		try {
 			await withWallClock(
@@ -163,9 +163,9 @@ describe('the sync widget’s grid', () => {
 					const { page } = app;
 					await cli(app, ['--db', 'notes', 'occur', 'jot']);
 					const { device } = await gridWith(app, native);
-					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'copy from…' }).click();
+					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'grant like…' }).click();
 					const dialog = page.locator('dialog.confirm');
-					assert.match(await dialog.innerText(), /^Copy sync settings into notes from which database\? notes starts a sync chain with the same admins/);
+					assert.match(await dialog.innerText(), /^Grant notes the devices of which database\? notes starts a sync chain with the same admins/);
 					await dialog.getByRole('button', { name: 'datum' }).click();
 					const said = page.locator(`${WIDGET} .grid .said`);
 					await said.waitFor();
@@ -183,7 +183,7 @@ describe('the sync widget’s grid', () => {
 		}
 	});
 
-	test('«copy from…» a passkey-locked chain asks the passkey once for the new chain and every invite (da-7bjai)', async () => {
+	test('«grant like…» a passkey-locked chain asks the passkey once for the new chain and every invite (da-7bjai)', async () => {
 		const native = await nativeCopy(relay);
 		try {
 			await withWallClock(
@@ -192,7 +192,7 @@ describe('the sync widget’s grid', () => {
 					await cli(app, ['--db', 'notes', 'occur', 'jot']);
 					const { device } = await gridWith(app, native, 'datum');
 					await cli(app, ['--db', 'datum', 'sync', 'admin', 'add', await softPasskey(page)]);
-					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'copy from…' }).click();
+					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'grant like…' }).click();
 					await page.locator('dialog.confirm').getByRole('button', { name: 'datum' }).click();
 					const said = page.locator(`${WIDGET} .grid .said`);
 					await said.waitFor();

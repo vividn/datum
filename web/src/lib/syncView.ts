@@ -373,7 +373,7 @@ export interface Grid {
 	}[];
 }
 
-/** What `sync chain copy --defer` leaves the page to grant (da-n0uj1.7), each with the invite it wrote, approved with the rest at once (da-7bjai). */
+/** What `sync grant --like --defer` leaves the page to grant (da-n0uj1.7), each with the invite it wrote, approved with the rest at once (da-7bjai). */
 export interface Deferred {
 	grants: { device: string; label: string; role: 'member' | 'reader'; invite: Invite }[];
 }

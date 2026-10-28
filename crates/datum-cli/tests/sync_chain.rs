@@ -2475,12 +2475,15 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     assert_eq!(
         complete(&["chain"]),
         [
-            "invite", "connect", "copy", "leave", "list", "rename", "expel", "unjoin", "wipe",
-            "purge", "role", "ack", "rekey"
+            "invite", "connect", "leave", "list", "rename", "expel", "unjoin", "wipe", "purge",
+            "role", "ack", "rekey"
         ]
     );
     // `revoke` and `revert` were renamed `expel` and `unjoin`, and cut
     // (da-n0uj1.1): each is unknown, naming the verbs there are.
+    // `chain copy` is `grant --like`, and cut too (da-pvax0).
+    let copy = a.fails(&["sync", "chain", "copy", "--from", "x"], "");
+    assert!(copy.contains("unknown sync chain subcommand"), "{copy}");
     for gone in ["revoke", "revert"] {
         let out = a.fails(&["sync", "chain", gone, "x"], "");
         assert!(

@@ -663,19 +663,20 @@ name; where that name holds data or another chain, `<name>-2` and on, never
 touching it. An expired grant is said and joins nothing: grant again. `expel`
 and `unjoin` take a member's device key prefix too.
 datum.day's sync widget draws `sync grid` with a dropdown per cell and
-«copy from…» per column (da-n0uj1.7); its CLI makes no ticket, so there a
+«grant like…» per column (da-n0uj1.7); its CLI makes no ticket, so there a
 grant seals the one the sync worker made for an invite `sync new-invite`
 wrote (hidden `--ticket`, `--invite`, refused unless the ticket's secret is
-that invite's), and `chain copy --defer` makes no grant, printing those
+that invite's), and `grant --like --defer` makes none, printing those
 left for the page to make.
 
-`datum --db X sync chain copy --from SRC [--devices <D>,…]` (da-n0uj1.5) is a
+`datum --db X sync grant --like SRC [--devices <D>,…]` (da-n0uj1.5, da-pvax0;
+`chain copy --from` until it was cut, no alias) is a
 grant per device live in SRC's chain (or each `--devices` names), with the role
 it has there; a filtered reader is said and left, its fields being SRC's. X in
 no chain first starts one whose `genesis` takes SRC's admins, signed by one of
 them. X in a chain takes grants only for the devices it lacks, signed by its
 own admin (an `--admin-key` of another is refused before anything is written),
-and never a second genesis. A passkey approves the copy ONCE (da-7bjai): the
+and never a second genesis. A passkey approves them ONCE (da-7bjai): the
 genesis and every invite are one batch, whose approve link carries each record's
 canonical JSON as text; the admin signs the digest of the list of their digests
 (`chain::batch`), and each record carries that list as `batch` beside the `sig`,
@@ -687,8 +688,8 @@ link's records, a genesis first into a database in no chain.
 
 The tree: `sync`, `status`, `grid` (every device against every chain this
 install's databases are in, by device key and chain id, read only, da-n0uj1.3),
-`grant <DEVICE> member|reader [--as <NAME>]` (below), `pause | resume`, `diff <WHO>`, `refold`, `chain
-invite | connect | copy | leave | list | rename | expel | unjoin | wipe | ack | rekey`,
+`grant <DEVICE> member|reader [--as <NAME>] | --like <DB>` (below), `pause | resume`, `diff <WHO>`, `refold`, `chain
+invite | connect | leave | list | rename | expel | unjoin | wipe | ack | rekey`,
 `admin list | add | remove`, `daemon install | uninstall | status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync
 run` for every chained db `known_dbs` lists; a copy's first `chain invite` /

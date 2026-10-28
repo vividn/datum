@@ -163,9 +163,9 @@ export function wipeArgv(endpoint: string): string[] {
 	return ['sync', 'chain', 'wipe', endpoint, '--yes'];
 }
 
-/** This chain takes `from`'s devices: it starts one with `from`'s admins if in none, and leaves each grant to the page (da-n0uj1.7). */
-export function copyArgv(from: string): string[] {
-	return ['sync', 'chain', 'copy', '--from', from, '--defer'];
+/** This chain takes `like`'s devices: it starts one with `like`'s admins if in none, and leaves each grant to the page (da-n0uj1.7, da-pvax0). */
+export function grantLikeArgv(like: string): string[] {
+	return ['sync', 'grant', '--like', like, '--defer'];
 }
 
 export function endpointKeyArgv(): string[] {

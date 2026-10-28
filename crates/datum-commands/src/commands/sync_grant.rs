@@ -8,8 +8,8 @@
 //!
 //! datum.day's CLI makes no ticket, having no network (da-n0uj1.7): there
 //! the grant seals the one its sync worker made for an invite written
-//! first (`--ticket`, `--invite`), and a copy makes none but leaves them to
-//! the page (`--defer`). The rest is the same in either build.
+//! first (`--ticket`, `--invite`), and `--like` makes none but leaves them
+//! to the page (`--defer`). The rest is the same in either build.
 
 use std::path::PathBuf;
 #[cfg(feature = "net")]
@@ -168,17 +168,17 @@ pub fn grant(
     Ok(())
 }
 
-/// `datum --db X sync chain copy --from SRC [--devices D,…]` (da-n0uj1.5):
+/// `datum --db X sync grant --like SRC [--devices D,…]` (da-n0uj1.5, da-pvax0):
 /// X takes SRC's devices, a grant each with the role it has in SRC. X in no
 /// chain starts one whose admins are SRC's (vividn: «if db2 is really new,
 /// then can auto setup admin to be the same as db1»), signed by one of them;
 /// X in a chain takes grants for the devices it lacks, signed by its own
-/// admin. A copy never starts a second chain. `defer`: no grant is made,
+/// admin. It never starts a second chain. `defer`: no grant is made,
 /// and the ones left are printed as JSON, `{"grants": [{device, label,
 /// role}]}`, what was said going to stderr.
-pub fn copy(
+pub fn grant_like(
     db: &Db,
-    from: &str,
+    like: &str,
     devices: Option<&[String]>,
     expires: Duration,
     admin_key: Option<&str>,
@@ -186,24 +186,24 @@ pub fn copy(
 ) -> Result<()> {
     ensure!(
         defer || cfg!(feature = "net"),
-        "this build makes no ticket: datum.day's sync widget copies a database's devices"
+        "this build makes no ticket: datum.day's sync widget grants a database's devices"
     );
     let say = |line: String| match defer {
         true => eprintln!("{line}"),
         false => println!("{line}"),
     };
-    let path = config::locate_db(Some(from)).context("Cannot determine data directory")?;
-    ensure!(path.exists(), "no database {from}");
+    let path = config::locate_db(Some(like)).context("Cannot determine data directory")?;
+    ensure!(path.exists(), "no database {like}");
     let canon = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
     ensure!(
         db.path().map(canon) != Some(canon(&path)),
-        "{from} is this database"
+        "{like} is this database"
     );
     let src_db = Db::open_read_only(&path.to_string_lossy())?;
     let src = src_db.sync_chain()?;
     ensure!(
         src.exists() && src.dissolved().is_none(),
-        "{from} is in no sync chain: it has no devices to copy"
+        "{like} is in no sync chain: it has no devices to grant"
     );
     // A grant rides SRC's chain to its device: so before anything is
     // written, this install writes there.
@@ -211,32 +211,32 @@ pub fn copy(
     ensure!(
         src.member(&src_me)
             .is_some_and(|m| live(m) && m.role() == Role::Member),
-        "this install's {from} writes nothing to its sync chain (a reader, or expelled): \
-         it carries no grant to {from}'s devices"
+        "this install's {like} writes nothing to its sync chain (a reader, or expelled): \
+         it carries no grant to {like}'s devices"
     );
     let here = db.sync_chain()?;
     let starts = !here.exists() || here.dissolved().is_some();
     ensure!(
         starts || here.id != src.id,
-        "this database is in {from}'s sync chain already"
+        "this database is in {like}'s sync chain already"
     );
     if !starts {
         let me = here.member(&db.sync_endpoint_id()?);
         ensure!(
             me.is_some_and(|m| live(m) && m.role() == Role::Member),
-            "this copy writes nothing to its sync chain (a reader, or expelled): it copies no devices"
+            "this copy writes nothing to its sync chain (a reader, or expelled): it grants no devices"
         );
     }
     // Whose admin signs: this chain's, or the one a new chain takes its admins from.
     let (signer, whose) = match starts {
-        true => (&src, from),
+        true => (&src, like),
         false => (&here, "this database"),
     };
     if let Some(k) = admin_key.filter(|_| !signer.is_open()) {
         let key = chain::ed25519_admin_key(&super::sync::key_file(k, false)?);
         ensure!(
             signer.admins.iter().any(|a| a.key == key),
-            "{k} is no admin key of {whose}'s sync chain: only its admin copies devices into it"
+            "{k} is no admin key of {whose}'s sync chain: only its admin grants devices into it"
         );
     }
 
@@ -257,23 +257,23 @@ pub fn copy(
         }
     }
     if let Some(names) = devices {
-        let column = [(from.to_string(), path.clone(), src_db.sync_chain()?)];
+        let column = [(like.to_string(), path.clone(), src_db.sync_chain()?)];
         let mut wanted = Vec::new();
         for n in names {
             let (d, label) = device(&column, n)?;
             ensure!(
                 picked.iter().any(|m| m.device.as_ref() == Some(&d)),
-                "{label} is no device of {from}'s sync chain to copy: expelled, gone, or this one"
+                "{label} is no device of {like}'s sync chain: expelled, gone, or this one"
             );
             wanted.push(d);
         }
         picked.retain(|m| m.device.as_ref().is_some_and(|d| wanted.contains(d)));
-        // The devices named are the copy: the unbound were not asked for.
+        // The devices named are the grants: the unbound were not asked for.
         unbound = 0;
     }
 
     // The genesis, if any, and an invite per device to grant, approved at
-    // once (da-7bjai): a passkey is asked one approval for the copy.
+    // once (da-7bjai): a passkey is asked one approval for them all.
     let mut records = Vec::new();
     let chain = match starts {
         true => {
@@ -306,7 +306,7 @@ pub fn copy(
             notes.push(format!("{label} is a {} here already", had.role().as_str()));
         } else if m.filter.is_some() {
             notes.push(format!(
-                "{label} is a reader of some of {from}'s fields, which are not this database's: \
+                "{label} is a reader of some of {like}'s fields, which are not this database's: \
                  `datum sync grant {} reader` makes it a reader of all of it",
                 &d[..12.min(d.len())]
             ));
@@ -344,8 +344,8 @@ pub fn copy(
         #[cfg(feature = "net")]
         super::sync_daemon::auto_install(db);
         let admins = match src.admins.len() {
-            0 => format!("open, as {from}'s is"),
-            n => format!("its admins {from}'s {n}"),
+            0 => format!("open, as {like}'s is"),
+            n => format!("its admins {like}'s {n}"),
         };
         say(format!("started sync chain {chain}: {admins}"));
     }
@@ -360,8 +360,8 @@ pub fn copy(
     }
     if unbound > 0 {
         say(format!(
-            "{unbound} member(s) of {from} bound to no device key (an older datum's copy) \
-             are not copied: `datum sync chain invite` makes a ticket to carry to each"
+            "{unbound} member(s) of {like} bound to no device key (an older datum's copy) \
+             are not granted: `datum sync chain invite` makes a ticket to carry to each"
         ));
     }
     Ok(())

@@ -327,7 +327,7 @@ fn records(i: &Install, db: &str, kind: &str) -> usize {
     n.map_or(0, |n| n.parse().unwrap())
 }
 
-/// `chain copy` into a database in no chain (da-n0uj1.5): it starts one
+/// `grant --like` into a database in no chain (da-n0uj1.5): it starts one
 /// whose admins are the source's, signed by one of them, and grants each
 /// device the role it has there.
 #[test]
@@ -353,15 +353,7 @@ fn a_new_database_copies_its_sources_admins_and_each_devices_role() {
 
     let said = g.ok(
         "work",
-        &[
-            "sync",
-            "chain",
-            "copy",
-            "--from",
-            "home",
-            "--admin-key",
-            &admin,
-        ],
+        &["sync", "grant", "--like", "home", "--admin-key", &admin],
     );
     assert!(said.contains("started sync chain"), "{said}");
     // The same keys under the same labels, each added when its chain began.
@@ -394,7 +386,7 @@ fn a_new_database_copies_its_sources_admins_and_each_devices_role() {
     });
 }
 
-/// `chain copy` into a database in a chain of its own: only its admin
+/// `grant --like` into a database in a chain of its own: only its admin
 /// copies, `--devices` takes a subset, a device it holds is not granted
 /// again, and the chain is never a second one.
 #[test]
@@ -403,8 +395,8 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
     let (t, o) = (Install::new("tom"), Install::new("olga"));
     let _home = home_chain(&g, &[&t, &o]);
     let (home_key, work_key) = (key(&g, "home.key"), key(&g, "work.key"));
-    let copy = |i: &Install, db, more: &[&str]| {
-        let args = [&["sync", "chain", "copy", "--from", "home"][..], more].concat();
+    let like = |i: &Install, db, more: &[&str]| {
+        let args = [&["sync", "grant", "--like", "home"][..], more].concat();
         i.cmd(db, &args).output().unwrap()
     };
     let refused = |out: std::process::Output, why: &str| {
@@ -430,7 +422,7 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
     );
     o.ok("home", &["sync"]);
     // It carries no grant in home: refused before its database is in a chain.
-    refused(copy(&o, "notes", &[]), "carries no grant");
+    refused(like(&o, "notes", &[]), "carries no grant");
     assert_eq!(records(&o, "notes", "genesis"), 0);
 
     g.ok("work", &["occur", "coffee"]);
@@ -444,17 +436,17 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
 
     // Home's admin is not work's: refused, nothing written.
     refused(
-        copy(&g, "work", &["--admin-key", &home_key]),
+        like(&g, "work", &["--admin-key", &home_key]),
         "no admin key of this database",
     );
     assert_eq!(records(&g, "work", "invite"), held);
     assert_eq!(records(&g, "work", "grant"), 0);
     assert_eq!(records(&g, "home", "grant"), 0);
-    // This device is not one to copy.
+    // This device is not one to grant.
     let mine = g.device();
     refused(
-        copy(&g, "work", &["--devices", &mine, "--admin-key", &work_key]),
-        "no device of home's sync chain to copy",
+        like(&g, "work", &["--devices", &mine, "--admin-key", &work_key]),
+        "no device of home's sync chain:",
     );
 
     // Its admin, one device of two.
@@ -463,9 +455,8 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
         "work",
         &[
             "sync",
-            "chain",
-            "copy",
-            "--from",
+            "grant",
+            "--like",
             "home",
             "--devices",
             tom,
@@ -488,15 +479,7 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
     eventually("tom a member of work", || {
         cell(&g, &chain, &t.device()).as_deref() == Some("member")
     });
-    let all = [
-        "sync",
-        "chain",
-        "copy",
-        "--from",
-        "home",
-        "--admin-key",
-        &work_key,
-    ];
+    let all = ["sync", "grant", "--like", "home", "--admin-key", &work_key];
     let said = g.ok("work", &all);
     assert!(said.contains("member here already"), "{said}");
     assert!(said.contains("a reader of some of home's fields"), "{said}");
@@ -550,12 +533,12 @@ fn batch_link(texts: &[String]) -> String {
     format!("https://datum.day/sync/approve#{fragment}")
 }
 
-/// `chain copy` from a passkey-locked chain (da-7bjai): the genesis and an
+/// `grant --like` from a passkey-locked chain (da-7bjai): the genesis and an
 /// invite per device are approved at once, one link and one code, and all
 /// three devices join. The code over that batch approves no other: a batch
 /// with one invite altered is refused, nothing written.
 #[test]
-fn a_passkey_approves_a_copy_of_three_devices_once() {
+fn a_passkey_approves_a_grant_like_of_three_devices_once() {
     use std::io::{Read, Write};
     let g = Install::new("gina");
     let (t, o, z) = (
@@ -571,7 +554,7 @@ fn a_passkey_approves_a_copy_of_three_devices_once() {
     g.ok("work", &["occur", "coffee"]);
 
     let mut copying = g
-        .cmd("work", &["sync", "chain", "copy", "--from", "home"])
+        .cmd("work", &["sync", "grant", "--like", "home"])
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
@@ -643,10 +626,10 @@ fn records_of(i: &Install, db: &str) -> usize {
 
 /// datum.day's CLI makes no ticket (da-n0uj1.7): a grant seals the one its
 /// sync worker made for an invite written first, refused unless it is that
-/// invite's, of that role; a copy `--defer`red starts the chain, writes an
+/// invite's, of that role; a `--like` `--defer`red starts the chain, writes an
 /// invite per device, and leaves each grant to the page, naming them.
 #[test]
-fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_copy_leaves_its_grants() {
+fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_grant_like_leaves_its_grants() {
     use data_encoding::BASE32_NOPAD;
     let g = Install::new("gina");
     let t = Install::new("tom");
@@ -721,10 +704,7 @@ fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_copy_leaves_its_grants()
     assert!(t.has("work", "coffee"));
 
     let out = g
-        .cmd(
-            "notes",
-            &["sync", "chain", "copy", "--from", "home", "--defer"],
-        )
+        .cmd("notes", &["sync", "grant", "--like", "home", "--defer"])
         .output()
         .unwrap();
     assert!(
