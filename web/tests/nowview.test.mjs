@@ -437,22 +437,59 @@ describe('the nowview widget', () => {
 // the window they left, to the second (da-ygpto); ctrl+wheel lands on the
 // ladder the handles' wheels step along.
 //
-// The anchor is the instant the picture is about: now, or `-t`'s when a
-// tree carries one. What is held here is that the anchor does not move
-// under the gesture — the band scales about now's own x, so the column the
-// fingers are anchored to is the one column that stays. That the frame
-// after the release is the frame under the fingers is nowrelease.test.mjs.
+// A pinch scales about the FINGERS (da-3zpdx, vividn, 2026-10-27: «if my
+// fingers are on the time of two different occur dots moving the two
+// fingers should track with the occur dots regardless if panning or
+// zooming, letting go should then keep those two dots exactly where they
+// are»): the instant under each finger stays under it, spread, squeezed or
+// slid, and the window the release asks for keeps them there. That the
+// frame after the release is the frame under the fingers is
+// nowrelease.test.mjs.
 
 /**
- * The x of the picture's now — the anchor: the instant its now-line stands
- * for (`data-now`, in the picture's own units), which datum draws a gap past
- * it (da-ygpto).
+ * The x of the picture's now — the anchor a handle scales about: the
+ * instant its now-line stands for (`data-now`, in the picture's own units),
+ * which datum draws a gap past it (da-ygpto).
  */
 const anchorX = (page) =>
 	page.locator(`${PANE} svg.svg .current-time-line`).evaluate((line) => {
 		const at = new DOMPoint(Number(line.getAttribute('data-now')), 0).matrixTransform(line.ownerSVGElement.getScreenCTM());
 		return at.x;
 	});
+
+/**
+ * Each coffee's centre on screen, by its instant: the copy drawn, inside its
+ * stretch. A picture the now strip cuts in two lays the day's data into each
+ * stretch, clipped to it (`compose`), so the copy past its stretch is hidden.
+ */
+const coffees = (page) =>
+	page.locator(`${PANE} svg.svg [data-field="coffee"][data-at]`).evaluateAll((ms) =>
+		Object.fromEntries(
+			ms.flatMap((m) => {
+				const r = m.getBoundingClientRect();
+				const [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
+				const g = m.closest('[data-lo]');
+				const [lo, hi] = ['lo', 'hi'].map((k) => new DOMPoint(Number(g.dataset[k]), 0).matrixTransform(g.getScreenCTM()).x);
+				return x >= Math.min(lo, hi) - 1 && x <= Math.max(lo, hi) + 1 ? [[m.dataset.at, { x, y }]] : [];
+			})
+		)
+	);
+
+/** Two fingers through CDP, landing one then the other at `from`, moved in six steps to `to`; `midway` with them still down. */
+async function fingers(page, from, to, midway) {
+	const cdp = await page.context().newCDPSession(page);
+	const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+	const step = (t) => from.map((f, i) => ({ id: i + 1, x: f.x + (to[i].x - f.x) * t, y: f.y + (to[i].y - f.y) * t }));
+	try {
+		await at('touchStart', [step(0)[0]]);
+		await at('touchStart', step(0));
+		for (let i = 1; i <= 6; i++) await at('touchMove', step(i / 6));
+		await midway?.();
+		await at('touchEnd', []);
+	} finally {
+		await cdp.detach();
+	}
+}
 
 /** The picture's own box. */
 const pictureBox = (page) => page.locator(`${PANE} svg.svg`).boundingBox();
@@ -503,31 +540,42 @@ async function pinch(page, box, from, to, midway) {
 const TOUCH = { device: { hasTouch: true, isMobile: true }, viewport: { width: 390, height: 640 } };
 
 describe('the nowview widget zooms', () => {
-	test('a pinch asks for the window under the fingers, about the anchor', async () => {
+	test('a pinch keeps the instant under each finger under it: apart, together and sideways, and after the release', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
+				for (let i = 0; i < 40; i++) await app.runLine(`occur coffee -t -${1 + 3 * i}`);
+				await app.redraw();
+				await page.locator(`${PANE} svg.svg [data-field="coffee"][data-at]`).first().waitFor({ state: 'attached' });
+				await app.idle();
 				await app.spyOnRunner();
-				const box = await pictureBox(page);
-				const before = await anchorX(page);
-
-				// Fingers apart by half again: the picture magnified 1.5×,
-				// which is 30m ÷ 1.5.
-				await pinch(page, box, 80, 120, async () => {
-					const during = await anchorX(page);
-					assert.ok(
-						Math.abs(during - before) <= 2,
-						`the anchor moved under the pinch: ${before} → ${during}`
-					);
-				});
-				await asked(page, '20m');
-				await farIs(page, '-20m');
-
-				// And back: fingers together by the same ratio is 20m × 1.5,
-				// which is 30m again.
-				await pinch(page, box, 120, 80);
-				await asked(page, '30m');
-				await farIs(page, '-30m');
+				const band = await page.locator(`${PANE} .nowview-band`).boundingBox();
+				for (const [name, to] of [
+					['apart', (a, b) => [a.x - 30, b.x + 30]],
+					['together', (a, b) => [a.x + (b.x - a.x) / 5, b.x - (b.x - a.x) / 5]],
+					['sideways', (a, b) => [a.x + 40, b.x + 40]]
+				]) {
+					// Two coffees in the window, clear of the now strip and of the band's ends.
+					const shown = Object.entries(await coffees(page)).filter(([, c]) => c.x > band.x + 40 && c.x < band.x + band.width * 0.6);
+					const pick = (x) => shown.reduce((a, b) => (Math.abs(b[1].x - x) < Math.abs(a[1].x - x) ? b : a));
+					const [a, b] = [pick(band.x + 40), pick(band.x + band.width * 0.55)];
+					assert.ok(b[1].x - a[1].x > 60, `${name}: no two coffees apart in ${JSON.stringify(shown)}`);
+					const xs = to(a[1], b[1]);
+					const ends = xs.map((x) => ({ x, y: a[1].y }));
+					const off = (when, at) =>
+						[a, b].flatMap(([key], i) =>
+							Math.abs(at[key]?.x - xs[i]) <= 1 ? [] : [`${name}, ${when}: the coffee at ${key} is at ${at[key]?.x}, its finger at ${xs[i]}`]
+						);
+					let during;
+					await fingers(page, [a[1], b[1]], ends, async () => (during = await coffees(page)));
+					assert.deepEqual(off('under the fingers', during), []);
+					// Let go: datum's picture of the window replaces the one held.
+					await page.waitForFunction((band) => document.querySelector(band).style.getPropertyValue('--zoom') === '1', `${PANE} .nowview-band`);
+					await app.idle();
+					assert.deepEqual(off('after the release', await coffees(page)), []);
+				}
+				const asked = (await page.evaluate(() => window.__datumSeen)).filter((a) => a[0] === 'nowview');
+				assert.ok(asked.length >= 2, `the pinches asked for ${asked.length} windows`);
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
@@ -565,9 +613,9 @@ describe('the nowview widget zooms', () => {
 		);
 	});
 
-	// vividn, 2026-10-26: «when the view is panned away, scale about where
-	// the "now" would actually be, not the center of the window» (da-zccjs).
-	test('a window centred elsewhere scales about now, wherever now is', async () => {
+	// Off now too: the window keeps the instant under the fingers where it
+	// is (da-3zpdx), where a handle scales about now (da-zccjs).
+	test('a window centred elsewhere scales about the fingers', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -584,13 +632,16 @@ describe('the nowview widget zooms', () => {
 				await pinch(page, box, 80, 120);
 				await asked(page, '20m');
 				await app.idle();
-				// 08:45–09:15 two thirds as long about 12:00 is 09:50–10:10.
+				// The fingers at the box's middle, a tenth of the box past the
+				// window's (the box's last fifth is the strip's room): at 09:03:45.
+				// 08:45–09:15 two thirds as long, that instant kept, is centred 09:01:15.
 				const centreOf = async () => {
 					const argv = (await page.evaluate(() => window.__datumSeen)).filter((a) => a[0] === 'nowview').at(-1);
 					return { argv, centre: Date.parse(argv[argv.indexOf('--center') + 1]) };
 				};
-				const { argv, centre } = await until(centreOf, ({ centre }) => Math.abs(centre - todayAt(10, 0)) <= 60_000);
-				assert.ok(Math.abs(centre - todayAt(10, 0)) <= 60_000, `asked for ${argv.join(' ')}`);
+				const expected = todayAt(9, 1) + 15_000;
+				const { argv, centre } = await until(centreOf, ({ centre }) => Math.abs(centre - expected) <= 5_000);
+				assert.ok(Math.abs(centre - expected) <= 5_000, `asked for ${argv.join(' ')}`);
 				assert.equal(argv.includes('-t'), false, 'a pinch made an instant');
 				assert.deepEqual(app.errors, []);
 			},
@@ -785,8 +836,8 @@ describe('the nowview draws past its box', () => {
 // rescaling dayview, so occur dots and multi state stripes don't stretch
 // with it … it would be good to load in more data into nowview, so that it
 // can handle at least a x5 stretch». A pinch in to a fifth: the dot and the
-// stripes' tile lie on the screen as they did at rest, and a coffee 130
-// minutes back, five windows out, is drawn under the fingers with no
+// stripes' tile lie on the screen as they did at rest, and a coffee 90
+// minutes back, three windows out, is drawn under the fingers with no
 // nowview asked for since the press.
 
 describe('a nowview stretch moves marks, never sizes them', () => {
@@ -816,10 +867,10 @@ describe('a nowview stretch moves marks, never sizes them', () => {
 
 	const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-3 * Math.max(1, Math.abs(b[i])));
 
-	test('a pinch in to a fifth keeps the dot and the stripes, and shows the coffee five windows back', async () => {
+	test('a pinch in to a fifth keeps the dot and the stripes, and shows the coffee three windows back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			for (const line of ['occur coffee -t -130', 'switch posture vertical,sit -t -20', 'occur tea -t -10'])
+			for (const line of ['occur coffee -t -90', 'switch posture vertical,sit -t -20', 'occur tea -t -10'])
 				await app.runLine(line);
 			await app.redraw();
 			await page.locator(`${BAND} svg.svg rect.block.multi-state`).waitFor({ state: 'attached' });
@@ -866,7 +917,7 @@ describe('the nowview crops the day’s data under its overlay', () => {
 	test('a pinch in to a fifth asks for the new window’s overlay on the release, and for no data', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			for (const line of ['occur coffee -t -130', 'switch mood calm -t -20', 'occur tea -t -10']) await app.runLine(line);
+			for (const line of ['occur coffee -t -90', 'switch mood calm -t -20', 'occur tea -t -10']) await app.runLine(line);
 			await app.redraw();
 			await page.locator(`${BAND} svg.svg rect.block[data-state="calm"]`).first().waitFor({ state: 'attached' });
 			await app.idle();
@@ -882,7 +933,7 @@ describe('the nowview crops the day’s data under its overlay', () => {
 			assert.match(asked.find((a) => a.startsWith('nowview')), /--overlay .*--history (?!30m)/);
 			// The ticks follow the window: its handles say the new one.
 			await until(() => handled(page, 'section[data-pane="nowview"]'), (h) => h.join() !== rest.join());
-			// The coffee, 130 minutes back, is drawn from the data on screen.
+			// The coffee, 90 minutes back, is drawn from the data on screen.
 			assert.ok(
 				await page.locator(`${BAND} svg.svg [data-field="coffee"]:not(g)`).first().evaluate((c, band) => {
 					const [r, b] = [c.getBoundingClientRect(), document.querySelector(band).getBoundingClientRect()];

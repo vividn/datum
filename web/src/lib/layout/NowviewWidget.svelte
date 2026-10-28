@@ -49,7 +49,8 @@
 	                            nobody's habit (MY reading, not vividn's words)
 	  long press in the NOW   → a duration ending NOW — the sentence «I have been
 	    region, then drag left  doing this for the last N minutes»
-	  two fingers / ctrl+wheel→ the window's LENGTH (da-5goc), untouched here
+	  two fingers / ctrl+wheel→ the window's LENGTH (da-5goc), about the fingers
+	                            or the pointer (da-3zpdx), untouched here
 
 	«Swiping left/right must not select time», so the duration ending now
 	waits for the long press like every other range, and «for quickly
@@ -98,8 +99,9 @@
 	the window's middle as `--center`, draws a dashed line at it and counts
 	the ticks — and so the handles — from it, and the pill sits over the
 	line. A tap here moves the line and not the window: one on now stops
-	where it is for as long as the pill lasts. A stretch scales about the
-	pill's instant, or now, wherever the window is.
+	where it is for as long as the pill lasts. A handle's stretch scales about
+	the pill's instant, or now, wherever the window is; a pinch, about the
+	fingers (da-3zpdx).
 	vividn: «any time the view is panned off the default, the "now" label
 	under the now section becomes a filled in yellow button with black now
 	written on it. Clicking that button restores the default.» So off now
@@ -489,6 +491,23 @@
 		return compose(overlay, [...layer.days.values()], Date.now());
 	};
 
+	/**
+	 * The gesture in hand: what the band is scaled by, about which x, and the
+	 * scale the fingers or the wheel made, which `scale` shows as the window
+	 * it would ask for. `held`, the window it asked for, once it is let go:
+	 * the picture stays scaled, exactly as it was under the fingers, until
+	 * datum's picture of that window replaces it (da-ygpto).
+	 *
+	 * A pinch or a ctrl+wheel scales about the fingers or the pointer
+	 * (da-3zpdx, vividn: «if my fingers are on the time of two different
+	 * occur dots moving the two fingers should track with the occur dots
+	 * regardless if panning or zooming»): `at` is the instant under them
+	 * where they landed, and `shift` how far the band is slid since, so
+	 * the instant stays under their middle and, by the scale, each finger's
+	 * under it. A handle's drag has neither: it scales about the anchor.
+	 */
+	let zoom = $state.raw<{ origin: number; scale: number; raw: number; held?: string; at?: number; shift?: number } | null>(null);
+
 	// ── the flow ───────────────────────────────────────────────────────
 
 	/**
@@ -535,6 +554,11 @@
 	 */
 	function flow(): void {
 		clearTimeout(wait);
+		// A gesture let go of holds its picture as it was slid: a pinch that
+		// took the window off now must not slide the data back under it. So
+		// nothing here runs, the reset off now included, until `place` lets
+		// the hold go as the picture of its window lands, and calls this again.
+		if (zoom?.held) return;
 		const groups = el?.querySelectorAll<SVGElement>('.nowview-band svg.svg .flow') ?? [];
 		if (!drawn || offNow) {
 			slid = 0;
@@ -794,14 +818,7 @@
 
 	// ── the zoom ───────────────────────────────────────────────────────
 
-	/**
-	 * The gesture in hand: what the band is scaled by, about which x, and the
-	 * scale the fingers or the wheel made, which `scale` shows as the window
-	 * it would ask for. `held`, the window it asked for, once it is let go:
-	 * the picture stays scaled, exactly as it was under the fingers, until
-	 * datum's picture of that window replaces it (da-ygpto).
-	 */
-	let zoom = $state.raw<{ origin: number; scale: number; raw: number; held?: string } | null>(null);
+	// `zoom`, the gesture in hand, is declared above the flow, which reads it.
 
 	/**
 	 * The scale that shows the window a raw scale leaves: to the second, as
@@ -861,11 +878,20 @@
 		return own ? own.lo + (at - own.from) / msPerPx(own) - start : ends()[1] - start;
 	}
 
-	/** Begin a gesture over the picture, if there is one to scale and none let go of is waiting for its picture. */
-	function start(): boolean {
+	/**
+	 * Begin a gesture over the picture, if there is one to scale and none let
+	 * go of is waiting for its picture: about the anchor, or about `pos`
+	 * along the axis on screen, with the band already slid `by` there (a pan
+	 * the first finger began).
+	 */
+	function start(pos?: number, by = 0): boolean {
 		const svg = svgEl();
 		if (!svg || zoom?.held) return false;
-		zoom = { origin: anchorX(svg), scale: 1, raw: 1 };
+		const box = svg.getBoundingClientRect();
+		zoom =
+			pos === undefined || !axis
+				? { origin: anchorX(svg), scale: 1, raw: 1 }
+				: { origin: pos - (axis.y ? box.y : box.x), scale: 1, raw: 1, at: instantAlong(pos - by), shift: by };
 		return true;
 	}
 
@@ -878,8 +904,25 @@
 	function commit(): void {
 		if (!zoom || zoom.held) return;
 		const next = historyArg(minutes / zoom.scale);
-		zoom = next === history ? null : { ...zoom, held: next };
-		rescale(next);
+		const { at, shift = 0 } = zoom;
+		const was = middleOf(middle);
+		if (at === undefined || !axis || !Number.isFinite(was)) {
+			zoom = next === history ? null : { ...zoom, held: next };
+			return rescale(next);
+		}
+		// The same window: the fingers moved it and no more, a pan.
+		if (next === history) {
+			zoom = null;
+			panned = shift;
+			return commitPan();
+		}
+		// The window whose instant `at` stands where the fingers left it: the
+		// middle as far from it as before, over the scale, less the slide —
+		// `shift` in screen px, turned to ms by the picture's own axis at rest.
+		const middleAt = at + (was - at - shift * msPerPx(axis)) / zoom.scale;
+		centre = { arg: new Date(middleAt).toISOString(), by: 'pan' };
+		zoom = { ...zoom, held: next };
+		onchange?.(next);
 	}
 
 	/**
@@ -904,12 +947,18 @@
 
 	/** The fingers down on the picture, by pointer id. */
 	const fingers = new Map<number, { x: number; y: number }>();
-	/** How far apart they were when the pinch began. */
+	/** How far apart they were along the axis when the pinch began, and where their middle was. */
 	let apart = 0;
+	let middleFrom = 0;
 
-	const spread = () => {
-		const [a, b] = [...fingers.values()];
-		return Math.hypot(a.x - b.x, a.y - b.y);
+	/**
+	 * Two fingers along the axis: how far apart, never under a fingertip
+	 * (`NOW_PX`), so two fingers side by side across it scale by nothing
+	 * wild — and their middle.
+	 */
+	const pair = () => {
+		const [a, b] = [...fingers.values()].map((f) => along(f.x, f.y));
+		return { spread: Math.max(Math.abs(a - b), NOW_PX), mid: (a + b) / 2 };
 	};
 
 	// The window listens, not the element: a finger that wanders off the
@@ -939,19 +988,23 @@
 		fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 		if (fingers.size === 1) return begin(event);
 		// A second finger is a pinch, and the first finger's gesture was
-		// never one: whatever it had become is dropped before the scale
-		// starts, so nothing of it is committed on the way out.
+		// never one: whatever it had become is dropped as the scale starts,
+		// so nothing of it is committed on the way out — but a pan it began
+		// stays where it slid the band, under the fingers.
+		if (fingers.size === 2) {
+			({ spread: apart, mid: middleFrom } = pair());
+			start(middleFrom, panned);
+		}
 		drop();
-		if (fingers.size !== 2) return;
-		apart = spread();
-		if (apart > 0) start();
 	}
 
 	function onPointerMove(event: PointerEvent): void {
 		if (fingers.has(event.pointerId)) fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 		if (zoom && !zoom.held && fingers.size === 2) {
-			const raw = spread() / apart;
-			zoom = { ...zoom, raw, scale: shows(raw) };
+			const { spread, mid } = pair();
+			const raw = spread / apart;
+			zoom = { ...zoom, raw, scale: shows(raw), shift: (zoom.shift ?? 0) + mid - middleFrom };
+			middleFrom = mid;
 		}
 		if (!press) return;
 		last = { x: event.clientX, y: event.clientY };
@@ -995,15 +1048,19 @@
 	/** What the wheel turned while a gesture let go of waited for its picture: turned once it lands. */
 	let owed = 0;
 
+	/** Where the pointer last turned the wheel, along the axis: what it scales about. */
+	let turnedAt = 0;
+
 	function onWheel(event: WheelEvent): void {
 		if (!event.ctrlKey) return;
 		event.preventDefault();
+		turnedAt = along(event.clientX, event.clientY);
 		if (zoom?.held) owed += event.deltaY;
 		else turn(event.deltaY);
 	}
 
 	function turn(deltaY: number): void {
-		if (!zoom) start();
+		if (!zoom) start(turnedAt);
 		const held = zoom;
 		if (!held) return;
 		const raw = held.raw * Math.pow(2, -deltaY / NOTCH);
@@ -1611,7 +1668,7 @@
 		class="nowview-band"
 		style:--zoom={zoom?.scale ?? 1}
 		style:--zoom-x="{zoom?.origin ?? 0}px"
-		style:--pan="{rest + panned}px"
+		style:--pan="{rest + panned + (zoom?.shift ?? 0)}px"
 		data-pans={pans}
 		data-points="own"
 		data-mode={mode}
@@ -1801,11 +1858,11 @@
 		overflow: clip;
 	}
 
-	/* The gesture's preview: the band scaled about the anchor, which is
-	   therefore the one column of it that does not move, and slid by the
-	   pan — and, at rest, by a pan that stayed inside the drawing. Width
-	   only — the window is a span of time, and the field rows are not
-	   part of it. */
+	/* The gesture's preview: the band scaled about the anchor or the
+	   fingers, which is therefore the one column of it that does not move
+	   (but with the fingers), and slid by the pan — and, at rest, by a pan
+	   that stayed inside the drawing. Width only — the window is a span of
+	   time, and the field rows are not part of it. */
 	.nowview-band :global(svg.svg) {
 		transform: translateX(var(--pan)) scaleX(var(--zoom));
 		transform-origin: var(--zoom-x) center;

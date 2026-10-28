@@ -1487,8 +1487,10 @@ describe('the now section belongs to now (da-dv45l)', () => {
 
 	// vividn, 15:14: «no, leave the scaling be, users can change scaling by
 	// tapping the handles and might have different preferences, stretching
-	// should always leave now where it is».
-	test('a stretch alone leaves no button, and «now» keeps the stretch', async () => {
+	// should always leave now where it is» — a handle's stretch, which scales
+	// about now. A ctrl+wheel zooms about the pointer (da-3zpdx), so one over
+	// the window's middle leaves now, and «now» takes it home at its length.
+	test('a ctrl+wheel stretch is about the pointer, and «now» keeps the stretch', async () => {
 		await withBand(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
@@ -1503,10 +1505,8 @@ describe('the now section belongs to now (da-dv45l)', () => {
 			await page.keyboard.up('Control');
 			const stretched = await until(history, (h) => h !== undefined && h !== '30m');
 			await app.idle();
-			assert.equal(await asked(page), null, 'the stretch moved the window off now');
-			assert.equal(await page.locator(`${NOWVIEW} .nowview-now`).count(), 0, 'a button after a stretch alone');
+			assert.notEqual(await asked(page), null, 'the stretch about the pointer kept the window on now');
 
-			await pan(page, 10);
 			await page.locator(`${NOWVIEW} .nowview-now`).click();
 			await until(
 				() => asked(page),
@@ -1631,14 +1631,15 @@ describe('a selected time is a dashed line in a continuous timeline (da-dv45l)',
 			// line stand as far from it.
 			near(s.line - s.ticks['-5m'], s.ticks['+5m'] - s.line, '−5m and +5m from the line');
 
-			// A stretch keeps the line where it is: the window scales about
-			// 14:38, not about its middle, and leaves now with the pill.
+			// A ctrl+wheel over the line keeps it where it is: the window
+			// scales about the pointer at 14:38 (da-3zpdx), not about its
+			// middle, and leaves now with the pill.
 			const history = async () => {
 				const argv = (await windows(page)).at(-1);
 				return argv?.[argv.indexOf('--history') + 1];
 			};
 			const g = await geometry(page);
-			await page.mouse.move((g.lo + g.hi) / 2, g.y);
+			await page.mouse.move(s.line, g.y);
 			await page.keyboard.down('Control');
 			await page.mouse.wheel(0, 200);
 			await page.keyboard.up('Control');

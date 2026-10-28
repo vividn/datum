@@ -66,9 +66,14 @@ function record(page) {
 				if (svg && !ids.has(svg)) ids.set(svg, ++next);
 				const at = {};
 				// A point says its instant (`data-at`), which keys it from one picture to the next.
+				// The copy drawn: a picture the now strip cuts in two lays the
+				// day's data into each stretch, clipped to it (`compose`).
 				for (const mark of svg?.querySelectorAll('[data-field][data-at]') ?? []) {
 					const r = mark.getBoundingClientRect();
-					at[`${mark.dataset.field}@${mark.dataset.at}`] = Math.round((r.left + r.width / 2) * 10) / 10;
+					const x = r.left + r.width / 2;
+					const g = mark.closest('[data-lo]');
+					const [lo, hi] = ['lo', 'hi'].map((k) => new DOMPoint(Number(g.dataset[k]), 0).matrixTransform(g.getScreenCTM()).x);
+					if (x >= Math.min(lo, hi) - 1 && x <= Math.max(lo, hi) + 1) at[`${mark.dataset.field}@${mark.dataset.at}`] = Math.round(x * 10) / 10;
 				}
 				// And what stands at now, which every picture of a window on now draws.
 				const x = (selector, side) => {
@@ -130,11 +135,12 @@ async function untilSettled(page, n = 20) {
 /**
  * Each frame from the lift on that differs from the last under the fingers,
  * and how: a mark inside the band moved or went, or the opacity changed.
+ * `except` are readings left out.
  */
-function seams(frames) {
+function seams(frames, except = []) {
 	const up = frames.findIndex((f) => !f.down);
 	const last = frames[up - 1];
-	const shown = Object.keys(last.at).filter((k) => last.at[k] >= last.band[0] && last.at[k] <= last.band[1]);
+	const shown = Object.keys(last.at).filter((k) => !except.includes(k) && last.at[k] >= last.band[0] && last.at[k] <= last.band[1]);
 	const off = [];
 	for (const [i, f] of frames.slice(up).entries()) {
 		const moved = shown.filter((k) => f.at[k] === undefined || Math.abs(f.at[k] - last.at[k]) > 0.5);
@@ -205,9 +211,16 @@ describe('a release is seamless', () => {
 
 	// 1.7 times as far apart and back to 0.6: no step of the ladder, so a
 	// rounding would show; and out, the strip would narrow under a stretch.
-	for (const [name, from, to] of [
-		['in', 80, 136],
-		['out', 136, 80]
+	//
+	// Out about the fingers (da-3zpdx) brings now into the window, and the
+	// time past it: a strip with a future past it ends a gap short of its
+	// room (`now_chunk`, da-9g3bf), and its word is centred in what is left,
+	// where the picture on now under the fingers draws no future. So the
+	// strip's far end and its word are left out there, and nothing else.
+	// No pan past now (da-v8gzq) keeps now at the edge, and ends the exception.
+	for (const [name, from, to, except] of [
+		['in', 80, 136, []],
+		['out', 136, 80, ['.now-strip>', '.now-label']]
 	])
 		test(`a pinch ${name}: the frame after the lift, and after the answer, is the frame under the fingers`, async () => {
 			await withApp(
@@ -222,7 +235,7 @@ describe('a release is seamless', () => {
 					await touch(page, steps(6, (t) => both(from + t * (to - from))), () => record(page));
 					const { frames, asked } = await untilSettled(page);
 					assert.ok(asked, 'the pinch asked for nothing');
-					assert.deepEqual(seams(frames), []);
+					assert.deepEqual(seams(frames, except), []);
 					assert.deepEqual(app.errors, []);
 				},
 				{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
