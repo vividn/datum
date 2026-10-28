@@ -16,6 +16,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, pastTheWindow, settled, swipe } from './support/layout.mjs';
+import { noWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -551,6 +552,10 @@ describe('the nowview widget zooms', () => {
 				await app.spyOnRunner();
 				const band = await page.locator(`${PANE} .nowview-band`).boundingBox();
 				for (const [name, to] of [
+					// Back first: together, about the fingers, would otherwise
+					// bring the time past now in, and the window stops at now
+					// (da-v8gzq).
+					['back', (a, b) => [a.x + 150, b.x + 150]],
 					['apart', (a, b) => [a.x - 30, b.x + 30]],
 					['together', (a, b) => [a.x + (b.x - a.x) / 5, b.x - (b.x - a.x) / 5]],
 					['sideways', (a, b) => [a.x + 40, b.x + 40]]
@@ -960,6 +965,198 @@ describe('the nowview crops the day’s data under its overlay', () => {
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...phone, clock: todayAt(0, 10) }
+		);
+	});
+});
+
+// ── a pan stops at now, and coasts (da-v8gzq) ────────────────────────
+//
+// vividn, 2026-10-27: «let's stop letting you pan into the future on
+// nowview, it should just elastically stop at now» and «maybe add some
+// acceleration so that you can pan with velocity/inertia». The picture is
+// read frame by frame: where each coffee stands along the band, and how
+// many nowviews were asked for by then.
+
+describe('a nowview pan stops at now, and a flick coasts', () => {
+	const BAND = `${PANE} .nowview-band`;
+
+	/** A coffee every 20 minutes for eight hours back, so the band always holds marks to follow. */
+	async function seeded(app) {
+		for (let i = 0; i < 24; i++) await app.runLine(`occur coffee -t -${5 + 20 * i}`);
+		await app.redraw();
+		await app.page.locator(`${BAND} svg.svg [data-field="coffee"][data-at]`).first().waitFor({ state: 'attached' });
+		await app.idle();
+		await app.spyOnRunner();
+		return app.page.locator(BAND).boundingBox();
+	}
+
+	/** Record each frame until stopped: whether a pointer is down, each coffee's x inside its stretch, and the nowviews asked. */
+	const record = (page) =>
+		page.evaluate((band) => {
+			const frames = (window.__frames = []);
+			let down = false;
+			addEventListener('pointerdown', () => (down = true), { capture: true });
+			addEventListener('pointerup', () => (down = false), { capture: true });
+			const tick = () => {
+				const at = {};
+				for (const m of document.querySelectorAll(`${band} svg.svg [data-field="coffee"][data-at]`)) {
+					const r = m.getBoundingClientRect();
+					const x = r.left + r.width / 2;
+					const g = m.closest('[data-lo]');
+					const [lo, hi] = ['lo', 'hi'].map((k) => new DOMPoint(Number(g.dataset[k]), 0).matrixTransform(g.getScreenCTM()).x);
+					if (r.width > 0 && x >= Math.min(lo, hi) - 1 && x <= Math.max(lo, hi) + 1) at[m.dataset.at] = x;
+				}
+				frames.push({ down, at, asks: (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview').length });
+				if (!window.__stopFrames) requestAnimationFrame(tick);
+			};
+			window.__stopFrames = false;
+			return new Promise((resolve) => requestAnimationFrame(() => resolve(tick())));
+		}, BAND);
+
+	/** Wait for `n` still frames after the last lift and after every picture asked, then stop recording. */
+	const settle = (page, n = 20) =>
+		page
+			.waitForFunction((n) => {
+				const f = window.__frames;
+				const up = f.findLastIndex((x) => x.down) + 1;
+				const asked = f.findIndex((x) => x.asks === f.at(-1).asks);
+				const from = Math.max(up, asked);
+				const still = f.slice(-n).every((x, i, all) => i === 0 || Math.abs(shift(all[i - 1], x)) <= 0.5);
+				function shift(a, b) {
+					const keys = Object.keys(a.at).filter((k) => k in b.at);
+					return keys.length ? keys.reduce((s, k) => s + b.at[k] - a.at[k], 0) / keys.length : 0;
+				}
+				return up > 0 && f.length - from >= n && still;
+			}, n)
+			.then(() =>
+				page.evaluate(() => {
+					window.__stopFrames = true;
+					return window.__frames;
+				})
+			);
+
+	/** How far the coffees moved between two frames, along the band: their mean, over those both show. */
+	const shift = (a, b) => {
+		const keys = Object.keys(a.at).filter((k) => k in b.at);
+		return keys.length ? keys.reduce((s, k) => s + b.at[k] - a.at[k], 0) / keys.length : NaN;
+	};
+
+	/** One finger through CDP: down at `from`, moved `by` px in `steps`, lifted at once unless `hold`. */
+	async function flick(page, from, by, { steps = 6, midway } = {}) {
+		const cdp = await page.context().newCDPSession(page);
+		const at = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ id: 1, x, y: from.y }] });
+		try {
+			await page.evaluate(noWait);
+			await at('touchStart', from.x);
+			for (let i = 1; i <= steps; i++) await at('touchMove', from.x + (by * i) / steps);
+			await midway?.();
+			await at('touchEnd');
+		} finally {
+			await cdp.detach();
+		}
+	}
+
+	test('a flick into the past keeps the window moving after the lift, then settles, with one nowview asked at the end', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const box = await seeded(app);
+				// A flick at a time: the first several coast inside what the
+				// picture drew past its box (`--surround`) and ask for nothing,
+				// and then one leaves it and asks, once it has come to rest.
+				for (let flicks = 1; ; flicks++) {
+					await page.evaluate(() => (window.__datumSeen = []));
+					await record(page);
+					await flick(page, { x: box.x + 40, y: box.y + box.height / 2 }, 160);
+					const frames = await settle(page);
+					const up = frames.findLastIndex((f) => f.down) + 1;
+					const after = frames.slice(up - 1);
+					const coasted = shift(after[0], after.at(-1));
+					assert.ok(coasted > 40, `flick ${flicks}: the window moved on ${coasted}px after the lift`);
+					// Over several frames, slowing: a coast, not a jump.
+					const steps = after.slice(1).map((f, i) => shift(after[i], f));
+					const moving = steps.filter((d) => d > 0.5);
+					assert.ok(moving.length >= 5, `flick ${flicks}: the coast moved in ${moving.length} frames: ${steps}`);
+					assert.ok(moving[0] > moving.at(-1), `flick ${flicks}: the coast did not slow: ${moving}`);
+					// Nothing asked while it moved, and at most one picture once it stopped.
+					const last = steps.findLastIndex((d) => d > 0.5);
+					assert.equal(after[last].asks, 0, `flick ${flicks}: a nowview asked mid-coast`);
+					const asked = frames.at(-1).asks;
+					assert.ok(asked <= 1, `flick ${flicks}: ${asked} nowviews asked`);
+					if (asked) break;
+					assert.ok(flicks < 12, 'twelve flicks back and nothing asked');
+				}
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
+	test('a drag toward the future stops at now, elastically, and springs back to it', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const box = await seeded(app);
+				const y = box.y + box.height / 2;
+				await record(page);
+				await page.mouse.move(box.x + box.width - 60, y);
+				await page.evaluate(noWait);
+				await page.mouse.down();
+				await page.mouse.move(box.x + box.width - 160, y, { steps: 8 });
+				await page.waitForTimeout(100);
+				await page.mouse.up();
+				const frames = await settle(page);
+				const up = frames.findLastIndex((f) => f.down) + 1;
+				// The finger went 100px on; the band gave less than half of it.
+				const held = shift(frames[0], frames[up - 1]);
+				assert.ok(held < -5 && held > -48, `the band gave ${held}px to a 100px drag past now`);
+				// And sprang back: through frames between, to where it was.
+				const back = frames.slice(up).map((f) => shift(frames[0], f));
+				assert.ok(Math.abs(back.at(-1)) <= 0.5, `it came to rest ${back.at(-1)}px off now`);
+				assert.ok(back.some((d) => d > held + 2 && d < -2), `no frame between: ${back}`);
+				// On now: no window centred elsewhere asked, and no «now» button.
+				const centred = (await page.evaluate(() => window.__datumSeen)).filter((a) => a[0] === 'nowview' && a.includes('--center'));
+				assert.deepEqual(centred, []);
+				assert.equal(await page.locator(`${PANE} .nowview-now`).count(), 0);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
+	test('a touch mid-coast stops it where it is, and selects nothing', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const box = await seeded(app);
+				const y = box.y + box.height / 2;
+				await record(page);
+				await flick(page, { x: box.x + 40, y }, 160);
+				// A few frames into the coast, a finger lands and stays.
+				await page.waitForFunction(() => {
+					const f = window.__frames;
+					const up = f.findLastIndex((x) => x.down) + 1;
+					return up > 0 && f.length - up >= 4;
+				});
+				const cdp = await page.context().newCDPSession(page);
+				const at = (type) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ id: 2, x: box.x + box.width / 2, y }] });
+				await at('touchStart');
+				const caught = await page.evaluate(() => window.__frames.length);
+				await page.waitForFunction((n) => window.__frames.length >= n + 20, caught);
+				await at('touchEnd');
+				await cdp.detach();
+				const frames = await settle(page);
+				// Moving when the finger landed, and from the next frame on, still.
+				assert.ok(shift(frames[caught - 3], frames[caught - 1]) > 1, 'the coast had stopped before the touch');
+				const later = frames.slice(caught + 1).map((f) => shift(frames[caught], f));
+				assert.ok(
+					later.every((d) => Math.abs(d) <= 0.5),
+					`the band moved after the touch: ${later.filter((d) => Math.abs(d) > 0.5)}`
+				);
+				assert.equal(await page.locator(`${PANE} .nowview-margin .margin-pill`).count(), 0, 'the touch that stopped the coast selected a time');
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 		);
 	});
 });

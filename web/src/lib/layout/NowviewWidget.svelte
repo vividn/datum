@@ -41,7 +41,9 @@
 	  tap on ground           → a SELECTION where it fell; the window does not move
 	  touch the time axis     → SCRUB: the time under the finger, following it
 	    and drag                to the lift — not snapped, and no pan
-	  drag sideways           → PAN in time; the selection does not move
+	  drag sideways           → PAN in time; the selection does not move,
+	                            and never past now (da-v8gzq): a finger's
+	                            flick coasts on after the lift
 	  long press, then drag   → a RANGE
 	  long press, then LIFT   → the same SELECTION, a mark or not
 	  right click             → the same selection, on a desk
@@ -322,6 +324,7 @@
 
 	/** Back to now, and the time-based pills — and so the selection — with it: the «now» button, and the «reset» one at a pill. */
 	function toNow(): void {
+		if (coasting) land();
 		centre = null;
 		ask();
 		pointAt(null);
@@ -709,6 +712,8 @@
 		mode = 'press';
 		long = false;
 		panned = 0;
+		moves = [];
+		caught = false;
 	}
 
 	/** Run the machine to where the pointer is now, and do what the mode does. */
@@ -725,7 +730,11 @@
 		// gesture that has committed draws its own thing.
 		if (mode !== 'press' && mode !== 'hold') waiting = null;
 		if (mode === 'range' && was !== 'range') pointAt(selection(instantAt(press.x, press.y)));
-		if (mode === 'pan') panned = along(x, y) - along(press.x, press.y);
+		if (mode === 'pan') {
+			raw = along(x, y) - along(press.x, press.y);
+			moves = [...moves.slice(-7), { t: performance.now(), raw }];
+			panned = stopAtNow(raw);
+		}
 		if (mode === 'range') range(instantAt(press.x, press.y), instantAt(x, y));
 		if (mode === 'now') pointAt({ rel: 0, span: (nowMs() - instantAt(x, y)) / 60_000, from: 'nowview' });
 	}
@@ -780,14 +789,94 @@
 	function commitPan(): void {
 		if (!axis) return drop();
 		const was = middleOf(middle);
+		// As far on as now, the window is on now again: it flows with the clock.
+		const home = panned <= nowPan() + 0.5;
 		const [lo, hi] = Number.isFinite(was)
 			? windowAbout(was - panned * msPerPx(axis))
 			: ends().map((p) => instantOn(axis!, p - panned) + slid);
-		centre = { arg: new Date((lo + hi) / 2).toISOString(), by: 'pan' };
+		centre = home ? null : { arg: new Date((lo + hi) / 2).toISOString(), by: 'pan' };
 		rest += panned;
 		panned = 0;
-		if (lo < drawnFrom() || hi > drawnTo()) ask();
+		if (home || lo < drawnFrom() || hi > drawnTo()) ask();
 		else void tick().then(place);
+	}
+
+	// ── the stop at now, and the coast (da-v8gzq) ──────────────────────
+	//
+	// vividn, 2026-10-27: «let's stop letting you pan into the future on
+	// nowview, it should just elastically stop at now» and «maybe add some
+	// acceleration so that you can pan with velocity/inertia».
+
+	/** How far past now a pan goes at most, in px: it resists the whole way, and springs back. */
+	const STRETCH_PX = 48;
+	/** How fast a coast slows: its speed falls by e in this many ms, as a phone's list does. */
+	const GLIDE_MS = 325;
+	/** The fastest flick a coast takes, in px per ms. */
+	const FLICK_MAX = 4;
+
+	/** The pan's slide in px as the finger alone would make it, and its last moves, for the speed a lift carries. */
+	let raw = 0;
+	let moves: { t: number; raw: number }[] = [];
+	/** The frame a coast or a spring back waits on, while one runs. */
+	let coasting = 0;
+	/** Whether the press in hand stopped a coast: then a still lift is no tap. */
+	let caught = false;
+
+	/** The pan, in px, that puts the window on now. */
+	const nowPan = () => (axis ? (middleOf(middle) - middleOf(undefined)) / msPerPx(axis) : -Infinity);
+
+	/** The band's slide for `raw` px: the finger's as far as now, and ever less of it past now. */
+	function stopAtNow(raw: number): number {
+		const limit = nowPan();
+		if (!(raw < limit)) return raw;
+		const over = limit - raw;
+		return limit - over / (1 + over / STRETCH_PX);
+	}
+
+	/** The speed of the last tenth of a second before the lift, in px per ms; none for a finger held still. */
+	function speed(): number {
+		const end = moves.at(-1);
+		if (!end || performance.now() - end.t > 60) return 0;
+		const from = moves.find((m) => end.t - m.t <= 100) ?? end;
+		const v = end.t > from.t ? (end.raw - from.raw) / (end.t - from.t) : 0;
+		return Math.max(-FLICK_MAX, Math.min(FLICK_MAX, v));
+	}
+
+	/**
+	 * Let the pan go at speed `v`: it coasts on, slowing, and past now brakes
+	 * hard and eases back to it. The window is committed once, where it comes
+	 * to rest; until then only the band's slide moves.
+	 */
+	function glide(v: number): void {
+		let then = performance.now();
+		const settled = () => Math.abs(v) < 0.02 && raw >= nowPan() - 0.5;
+		const frame = (t: number) => {
+			const dt = Math.min(t - then, 64);
+			then = t;
+			const limit = nowPan();
+			if (raw < limit) {
+				v *= Math.exp(-dt / 40);
+				raw = limit + (raw - limit) * Math.exp(-dt / 80) + v * dt;
+			} else {
+				v *= Math.exp(-dt / GLIDE_MS);
+				raw += v * dt;
+			}
+			if (settled()) return land();
+			panned = stopAtNow(raw);
+			coasting = requestAnimationFrame(frame);
+		};
+		if (settled()) return land();
+		panned = stopAtNow(raw);
+		coasting = requestAnimationFrame(frame);
+	}
+
+	/** The coast stopped, where it is — or at now, from past it: the window it left the band at. */
+	function land(): void {
+		cancelAnimationFrame(coasting);
+		coasting = 0;
+		raw = Math.max(raw, nowPan());
+		panned = raw;
+		commitPan();
 	}
 
 	/** The instant a stretch is about, in ms: the pill's, where the dashed line is, or now. */
@@ -796,12 +885,17 @@
 	function finish(event: PointerEvent): void {
 		if (!press) return;
 		const still = Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP_PX;
-		if (mode === 'pan') commitPan();
+		// A finger's flick coasts on; a mouse's drag stops where it is let go.
+		if (mode === 'pan') {
+			const v = event.pointerType === 'mouse' ? 0 : speed();
+			drop();
+			return glide(v);
+		}
 		// A still lift is a TAP (da-xg1vi): the entry under it, or the time
 		// where there is none. A still LONG one is the time wherever it
 		// lands. One that traveled is a scroll the browser took, and points
-		// nowhere.
-		else if (!pressSpent() && still && undecided(mode)) {
+		// nowhere. One that stopped a coast was only that.
+		if (!caught && !pressSpent() && still && undecided(mode)) {
 			const entry = mode === 'press' && inspectMark(markOf(event.target) ?? onMark, event, svgEl());
 			if (entry) lanesAt(press.x, press.y, axis ? instantAt(press.x, press.y) : null);
 			else tap(press.x, press.y);
@@ -884,6 +978,18 @@
 	 * along the axis on screen, with the band already slid `by` there (a pan
 	 * the first finger began).
 	 */
+	/**
+	 * How far the fingers or the wheel have slid the band, held so the window
+	 * they leave reaches no further on than now (da-v8gzq): past it, the
+	 * gesture scales about now instead. The window's middle is `commit`'s.
+	 */
+	function shiftOf(z: NonNullable<typeof zoom>): number {
+		const shift = z.shift ?? 0;
+		if (z.at === undefined || !axis) return shift;
+		const home = nowMs() - (minutes / z.scale) * 30_000;
+		return Math.max(shift, (middleOf(middle) - z.at - (home - z.at) * z.scale) / msPerPx(axis));
+	}
+
 	function start(pos?: number, by = 0): boolean {
 		const svg = svgEl();
 		if (!svg || zoom?.held) return false;
@@ -904,7 +1010,8 @@
 	function commit(): void {
 		if (!zoom || zoom.held) return;
 		const next = historyArg(minutes / zoom.scale);
-		const { at, shift = 0 } = zoom;
+		const { at } = zoom;
+		const shift = shiftOf(zoom);
 		const was = middleOf(middle);
 		if (at === undefined || !axis || !Number.isFinite(was)) {
 			zoom = next === history ? null : { ...zoom, held: next };
@@ -920,7 +1027,8 @@
 		// middle as far from it as before, over the scale, less the slide —
 		// `shift` in screen px, turned to ms by the picture's own axis at rest.
 		const middleAt = at + (was - at - shift * msPerPx(axis)) / zoom.scale;
-		centre = { arg: new Date(middleAt).toISOString(), by: 'pan' };
+		const home = shift > (zoom.shift ?? 0);
+		centre = home ? null : { arg: new Date(middleAt).toISOString(), by: 'pan' };
 		zoom = { ...zoom, held: next };
 		onchange?.(next);
 	}
@@ -981,6 +1089,11 @@
 	}
 
 	function onPointerDown(event: PointerEvent): void {
+		// A press stops a coast where it is.
+		if (coasting) {
+			land();
+			caught = true;
+		}
 		// A gesture let go of is still on screen until its picture comes.
 		if (zoom?.held) return;
 		listen(true);
@@ -1640,6 +1753,7 @@
 		clearTimeout(wait);
 		clearTimeout(settle);
 		clearTimeout(held);
+		cancelAnimationFrame(coasting);
 		listen(false);
 		ungrip();
 	});
@@ -1668,7 +1782,7 @@
 		class="nowview-band"
 		style:--zoom={zoom?.scale ?? 1}
 		style:--zoom-x="{zoom?.origin ?? 0}px"
-		style:--pan="{rest + panned + (zoom?.shift ?? 0)}px"
+		style:--pan="{rest + panned + (zoom ? shiftOf(zoom) : 0)}px"
 		data-pans={pans}
 		data-points="own"
 		data-mode={mode}

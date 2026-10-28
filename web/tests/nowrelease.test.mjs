@@ -194,10 +194,14 @@ describe('a release is seamless', () => {
 				const y = box.y + box.height / 2;
 				// A width back at a time: the first several stay inside what the
 				// picture drew past its box (`--surround`) and ask for nothing,
-				// and then one leaves it and asks.
+				// and then one leaves it and asks. The finger is held still
+				// before each lift, so it carries no speed (da-v8gzq).
 				for (let drag = 1; ; drag++) {
 					await page.evaluate(() => (window.__datumSeen = []));
-					await touch(page, steps(10, (t) => [{ id: 1, x: box.x + 20 + t * (box.width - 40), y }]), () => record(page));
+					await touch(page, steps(10, (t) => [{ id: 1, x: box.x + 20 + t * (box.width - 40), y }]), async () => {
+						await record(page);
+						await page.waitForTimeout(150);
+					});
 					const { frames, asked } = await untilSettled(page);
 					assert.deepEqual(seams(frames), [], `the pan ${drag}`);
 					if (asked) break;
@@ -211,16 +215,11 @@ describe('a release is seamless', () => {
 
 	// 1.7 times as far apart and back to 0.6: no step of the ladder, so a
 	// rounding would show; and out, the strip would narrow under a stretch.
-	//
-	// Out about the fingers (da-3zpdx) brings now into the window, and the
-	// time past it: a strip with a future past it ends a gap short of its
-	// room (`now_chunk`, da-9g3bf), and its word is centred in what is left,
-	// where the picture on now under the fingers draws no future. So the
-	// strip's far end and its word are left out there, and nothing else.
-	// No pan past now (da-v8gzq) keeps now at the edge, and ends the exception.
-	for (const [name, from, to, except] of [
-		['in', 80, 136, []],
-		['out', 136, 80, ['.now-strip>', '.now-label']]
+	// Out, about the fingers (da-3zpdx), would bring the time past now in:
+	// the window stops at now (da-v8gzq), and the strip stays at its edge.
+	for (const [name, from, to] of [
+		['in', 80, 136],
+		['out', 136, 80]
 	])
 		test(`a pinch ${name}: the frame after the lift, and after the answer, is the frame under the fingers`, async () => {
 			await withApp(
@@ -235,7 +234,7 @@ describe('a release is seamless', () => {
 					await touch(page, steps(6, (t) => both(from + t * (to - from))), () => record(page));
 					const { frames, asked } = await untilSettled(page);
 					assert.ok(asked, 'the pinch asked for nothing');
-					assert.deepEqual(seams(frames, except), []);
+					assert.deepEqual(seams(frames), []);
 					assert.deepEqual(app.errors, []);
 				},
 				{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }

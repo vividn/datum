@@ -556,23 +556,18 @@ describe('a drag along the band pans the window', () => {
 			const { page } = app;
 			await app.spyOnRunner();
 			let g = await geometry(page);
-			// Leftward ten minutes: past what was drawn ahead of now, so
-			// asked for, and now is still in the window.
-			await drag(page, { x: (g.lo + g.hi) / 2, y: g.y }, { x: (g.lo + g.hi) / 2 - 10 * perMinute(g), y: g.y });
-			await until(
-				() => asked(page),
-				(t) => t !== null
-			);
+			// Back ten minutes: now is still in the window.
+			await drag(page, { x: (g.lo + g.hi) / 2, y: g.y }, { x: (g.lo + g.hi) / 2 + 10 * perMinute(g), y: g.y });
+			await page.locator(`${NOWVIEW} .nowview-now`).waitFor();
 			await app.idle();
-			await app.spyOnRunner();
 			g = await geometry(page);
 			const x = (g.lo + g.hi) / 2;
 			const was = await instantUnder(page, x);
-			// Back four: now stays inside, and so does the window in what was drawn.
-			await drag(page, { x, y: g.y }, { x: x + 4 * perMinute(g), y: g.y });
+			// On four: now stays inside, and so does the window in what was drawn.
+			await drag(page, { x, y: g.y }, { x: x - 4 * perMinute(g), y: g.y });
 			await until(
 				() => instantUnder(page, x),
-				(t) => Math.abs(t - (was - 4 * MINUTE)) <= 30_000
+				(t) => Math.abs(t - (was + 4 * MINUTE)) <= 30_000
 			);
 			await app.idle();
 			assert.deepEqual(await windows(page), [], 'a slide inside the drawing asked for a window');
@@ -1052,11 +1047,10 @@ describe('on a phone', () => {
 					await settled(page);
 					assert.equal(await activeTab(page, 'side'), 'nowview', `a ${dx}px drag on the band moved the tab`);
 				}
-				// And it panned instead, which is the other half of the same rule.
-				await until(
-					() => asked(page),
-					(t) => t !== null
-				);
+				// And it panned instead, which is the other half of the same rule:
+				// on toward the future it stops at now (da-v8gzq), and back it
+				// leaves now, with the button home.
+				await page.locator(`${NOWVIEW} .nowview-now`).waitFor();
 			},
 			{ ...PHONE, ready: toNowviewTab }
 		);
@@ -1363,16 +1357,13 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 // pinned on the side, but rather it just disappears when panning around.
 // When you are reset to now, then the now section still exists».
 
-/** The now section as drawn: the band's two ends, the strip's chunk, the timeline's blocks on screen, the «now» written under it and the button. */
+/** The now section as drawn: the band's two ends, the strip's chunk, the «now» written under it and the button. */
 const section = (page) =>
 	page.locator(NOWVIEW).evaluate((root) => {
 		const ends = (r) => r && [r.left, r.right];
 		const middle = (el) => el && ((r) => (r.left + r.right) / 2)(el.getBoundingClientRect());
 		// The picture's own box, which the band holds, as `geometry` reads it.
 		const band = root.querySelector('svg.svg').parentElement.getBoundingClientRect();
-		const blocks = [...root.querySelectorAll('svg.svg .block')]
-			.map((b) => b.getBoundingClientRect())
-			.filter((r) => r.width > 0 && r.right > band.left + 2.5 && r.left < band.right - 2.5);
 		// The chunk where it is on screen at all: one slid off the band is none.
 		const chunk = root.querySelector('svg.svg .now-chunk')?.getBoundingClientRect();
 		const word = root.querySelector('svg.svg .now-label');
@@ -1380,7 +1371,6 @@ const section = (page) =>
 		return {
 			band: ends(band),
 			chunk: chunk && chunk.right > band.left + 0.5 && chunk.left < band.right - 0.5 ? ends(chunk) : null,
-			blocks: blocks.map(ends),
 			word: word && { at: middle(word), shown: getComputedStyle(word).visibility !== 'hidden' },
 			button: button && {
 				at: middle(button),
@@ -1391,9 +1381,6 @@ const section = (page) =>
 			}
 		};
 	});
-
-/** Whether the timeline keeps a gap from the strip on both sides: no block on screen reaches within `gap` px of it. */
-const clear = (s, gap = 3) => s.blocks.every(([a, b]) => b <= s.chunk[0] - gap + 0.5 || a >= s.chunk[1] + gap - 0.5);
 
 /** A drag along the band by `minutes` of the window: positive drags right, toward the past. */
 async function pan(page, minutes) {
@@ -1449,31 +1436,19 @@ describe('the now section belongs to now (da-dv45l)', () => {
 				assert.equal(past.button.text, 'now →');
 				near(past.button.at + past.button.half, past.band[1], 'the button is not at the right edge');
 
-				// Into the future with now on screen: the strip is at now, away
-				// from both edges, the timeline a gap from it.
+				// On past now (da-v8gzq): the window stops at now, the default
+				// again, with no button.
 				await pan(page, -30);
-				const across = await until(
+				const stopped = await until(
 					() => section(page),
-					(s) => s.chunk && s.chunk[0] > s.band[0] + 20 && s.chunk[1] < s.band[1] - 20 && clear(s)
+					(s) => !s.button && s.chunk && Math.abs(s.chunk[1] - s.band[1]) <= 3
 				);
-				const line = await geometry(page).then((g) => g.nowLine);
-				// The yellow line is the strip's edge, a gap past now (da-9g3bf).
-				assert.ok(line !== null, 'no now-line beside the strip');
-				near(line, across.chunk[0], 'the now-line');
-				near(across.button.at, across.word.at, 'the button is not where «now» was written');
-				assert.equal(across.word.shown, false, '«now» is written under the button too');
+				assert.equal(await asked(page), null, 'a pan on past now left the window off now');
+				assert.equal(stopped.word?.shown, true);
 
-				// Far enough on that now is off the left: no section, and the
-				// button at the left edge, pointing back.
-				await pan(page, -25);
-				const future = await until(
-					() => section(page),
-					(s) => s.button && !s.chunk
-				);
-				assert.equal(future.button.text, '← now');
-				near(future.button.at - future.button.half, future.band[0], 'the button is not at the left edge');
-
-				// The button: the default window again, and no button.
+				// Back again, and the button: the default window again, and no button.
+				await pan(page, 12);
+				await page.locator(`${NOWVIEW} .nowview-now`).waitFor();
 				await page.locator(`${NOWVIEW} .nowview-now`).click();
 				const back = await until(
 					() => section(page),
@@ -1501,7 +1476,9 @@ describe('the now section belongs to now (da-dv45l)', () => {
 			const g = await geometry(page);
 			await page.mouse.move((g.lo + g.hi) / 2, g.y);
 			await page.keyboard.down('Control');
-			await page.mouse.wheel(0, 200);
+			// In: out would bring the time past now into the window, and it
+			// stops at now (da-v8gzq).
+			await page.mouse.wheel(0, -200);
 			await page.keyboard.up('Control');
 			const stretched = await until(history, (h) => h !== undefined && h !== '30m');
 			await app.idle();
@@ -1641,7 +1618,9 @@ describe('a selected time is a dashed line in a continuous timeline (da-dv45l)',
 			const g = await geometry(page);
 			await page.mouse.move(s.line, g.y);
 			await page.keyboard.down('Control');
-			await page.mouse.wheel(0, 200);
+			// In: out would bring the time past now into the window, and it
+			// stops at now (da-v8gzq).
+			await page.mouse.wheel(0, -200);
 			await page.keyboard.up('Control');
 			const stretched = await until(history, (h) => h !== undefined && h !== '30m');
 			await instantDrawn(page, at);
