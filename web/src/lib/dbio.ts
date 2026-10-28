@@ -51,7 +51,7 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 		if (!yes && flags.includes('--chain')) return null;
 		// A purge that ran takes what the page kept of the data with it.
 		return (yes ? runEchoed(asking(run), argv) : purge(flags)).then((r) => {
-			if (r.code === 0) forgetKept();
+			if (r.code === 0) forgetKept(dbOf(argv));
 			return r;
 		});
 	}
@@ -471,8 +471,8 @@ async function purgeChain(db: string): Promise<RunResult> {
 }
 
 /** The CLI widget's scrollback and the widgets' last drawings, both the purged data's words. */
-function forgetKept(): void {
-	forget();
+function forgetKept(db: string): void {
+	forget(db);
 	try {
 		localStorage.removeItem(STALE);
 		localStorage.removeItem(FIELDS);

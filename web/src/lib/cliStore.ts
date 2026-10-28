@@ -1,9 +1,10 @@
 // What the prompts remember: every command run, when, and what it printed,
 // plus the recall history Up walks.
 //
-// One store for every prompt on the page (da-0dhc). The CLI widget shows all of
-// it; the bottom bar shows the last command's receipt and none of what
-// they printed. Both write through `record`, so however many prompts are
+// One store for every prompt on the page (da-0dhc), and one for each
+// database (da-kb18k): a page shows its own database's commands alone. The
+// CLI widget shows all of it; the bottom bar shows the last command's
+// receipt and none of what they printed. Both write through `record`, so however many prompts are
 // on screen there is one writer of the localStorage key — two components
 // persisting their own copies would each overwrite the other's commands.
 //
@@ -17,6 +18,7 @@ import { browser } from '$app/env';
 import type { RunResult } from './run.js';
 import { noteRun } from './bar.js';
 import { maskTicket } from './sync.js';
+import { currentDb, DEFAULT_DB } from './database.js';
 
 export type Command = { line: string; ranAt: number; result: RunResult };
 
@@ -34,8 +36,14 @@ export interface CliState {
  * growing without bound — oldest dropped, the way scrollback goes. The
  * key is named for the REPL, which the CLI widget was until da-mwp4m:
  * renaming it would lose every device's scrollback.
+ *
+ * A database's own (da-kb18k). The default keeps the key every database
+ * once shared, so what it held, all of them mixed with nothing saying
+ * which, is `datum`'s, and the others start empty. The page's database is
+ * read once, as the store is: changing it is a reload (Brand.svelte).
  */
-const STORE_KEY = 'datum.repl.v1';
+const keyOf = (db: string): string => (db === DEFAULT_DB ? 'datum.repl.v1' : `datum.repl.v1:${db}`);
+const STORE_KEY = keyOf(currentDb());
 const KEEP = 200;
 
 // Read once, when the module loads, so a prompt mounting later — or a
@@ -118,14 +126,17 @@ function persist(): void {
 }
 
 /**
- * Every command and what it printed, gone (da-3ni5m): a purge leaves none
- * of the purged database on this device, its scrollback included.
+ * Every command `db` ran and what it printed, gone (da-3ni5m): a purge
+ * leaves none of the purged database on this device, its scrollback
+ * included, and no other database's (da-kb18k).
  */
-export function forget(): void {
-	clearTimeout(pending);
-	cli.set({ scrollback: [], history: [] });
+export function forget(db: string): void {
+	if (keyOf(db) === STORE_KEY) {
+		clearTimeout(pending);
+		cli.set({ scrollback: [], history: [] });
+	}
 	try {
-		localStorage.removeItem(STORE_KEY);
+		localStorage.removeItem(keyOf(db));
 	} catch {
 		// Refused: nothing was kept to forget.
 	}

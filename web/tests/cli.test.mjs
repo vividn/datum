@@ -404,3 +404,48 @@ describe('the CLI, which was the REPL', () => {
 			});
 		});
 });
+
+describe('the scrollback is its database’s own (da-kb18k)', () => {
+	// vividn, 2026-10-28: «the CLI should be per database, right now it seems
+	// to show everything in every database». And a purge of one, the
+	// tutorial's reset, took every database's with it.
+	test('a database shows its own commands, and a purge of another leaves them', async () => {
+		await withApp(
+			async (app) => {
+				// The store every database shared before is the default's.
+				assert.deepEqual(await app.echoes(), ['note from before']);
+				await app.submit('occur coffee');
+
+				await app.goto('/?db=other');
+				assert.deepEqual(await app.echoes(), []);
+				await app.submit('occur tea');
+
+				await app.goto('/');
+				assert.deepEqual(await app.echoes(), ['note from before', 'occur coffee']);
+				await app.goto('/?db=other');
+				assert.deepEqual(await app.echoes(), ['occur tea']);
+
+				// A tab on `other` hears its purge from a tab on `datum`; the
+				// `datum` tab keeps its own.
+				const peer = await app.newTab('');
+				await peer.submit('db purge --db other --yes');
+				await app.page.waitForFunction(() => document.querySelectorAll('.cli .echo').length === 0);
+				assert.deepEqual(await peer.echoes(), ['note from before', 'occur coffee', 'db purge --db other --yes']);
+				assert.equal(await app.page.evaluate(() => localStorage.getItem('datum.repl.v1:other')), null);
+				assert.match(await app.page.evaluate(() => localStorage.getItem('datum.repl.v1')), /occur coffee/);
+				assert.deepEqual(app.errors, []);
+			},
+			{
+				prepare: (context) =>
+					context.addInitScript(() => {
+						if (localStorage.getItem('datum.repl.v1')) return;
+						const result = { argv: ['note', 'from', 'before'], code: 0, stdout: '', stderr: '' };
+						localStorage.setItem(
+							'datum.repl.v1',
+							JSON.stringify({ scrollback: [{ line: 'note from before', ranAt: 0, result }], history: ['note from before'] })
+						);
+					})
+			}
+		);
+	});
+});
