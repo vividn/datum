@@ -528,10 +528,123 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
     assert_eq!(theirs["chain"].as_str(), Some(chain.as_str()));
 }
 
+/// The challenge a passkey signs for a batch approve link (da-7bjai): the
+/// digest of the list of each record's digest, as the page computes it.
+fn batch_challenge(link: &str) -> (Vec<String>, Vec<u8>) {
+    use data_encoding::{BASE64URL_NOPAD, HEXLOWER};
+    use sha2::{Digest, Sha256};
+    let fragment = link.trim().rsplit('#').next().unwrap();
+    let texts: Vec<String> =
+        serde_json::from_slice(&BASE64URL_NOPAD.decode(fragment.as_bytes()).unwrap()).unwrap();
+    let digests: Vec<String> = texts
+        .iter()
+        .map(|t| HEXLOWER.encode(&Sha256::digest(t.as_bytes())))
+        .collect();
+    let list = serde_json::to_string(&digests).unwrap();
+    (texts, Sha256::digest(list.as_bytes()).to_vec())
+}
+
+fn batch_link(texts: &[String]) -> String {
+    let fragment =
+        data_encoding::BASE64URL_NOPAD.encode(serde_json::to_string(texts).unwrap().as_bytes());
+    format!("https://datum.day/sync/approve#{fragment}")
+}
+
+/// `chain copy` from a passkey-locked chain (da-7bjai): the genesis and an
+/// invite per device are approved at once, one link and one code, and all
+/// three devices join. The code over that batch approves no other: a batch
+/// with one invite altered is refused, nothing written.
+#[test]
+fn a_passkey_approves_a_copy_of_three_devices_once() {
+    use std::io::{Read, Write};
+    let g = Install::new("gina");
+    let (t, o, z) = (
+        Install::new("tom"),
+        Install::new("olga"),
+        Install::new("zed"),
+    );
+    let _home = home_chain(&g, &[&t, &o, &z]);
+    g.ok(
+        "home",
+        &["sync", "admin", "add", &crate::sync_chain::passkey_json()],
+    );
+    g.ok("work", &["occur", "coffee"]);
+
+    let mut copying = g
+        .cmd("work", &["sync", "chain", "copy", "--from", "home"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut err = BufReader::new(copying.stderr.take().unwrap());
+    let (mut asked, mut line) = (String::new(), String::new());
+    while !line.contains("/sync/approve#") {
+        asked.push_str(&line);
+        line.clear();
+        assert!(
+            err.read_line(&mut line).unwrap() > 0,
+            "no approve link: {asked}"
+        );
+    }
+    assert!(asked.contains("these 4, at once"), "{asked}");
+    let (texts, challenge) = batch_challenge(&line);
+    let records: Vec<Value> = texts
+        .iter()
+        .map(|t| serde_json::from_str(t).unwrap())
+        .collect();
+    let kinds: Vec<&str> = records
+        .iter()
+        .map(|r| r["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["genesis", "invite", "invite", "invite"]);
+    let code = crate::sync_chain::approval_code(&challenge);
+
+    // One invite altered: the code approves the batch it was made for alone.
+    let mut altered = records.clone();
+    altered[3]["caps"] = serde_json::json!({"role": "reader"});
+    let texts2: Vec<String> = altered.iter().map(|r| r.to_string()).collect();
+    let mut approving = g
+        .cmd("notes", &["sync", "approve", &batch_link(&texts2)])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(approving.stdin.take().unwrap(), "{code}").unwrap();
+    let out = approving.wait_with_output().unwrap();
+    let why = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && why.contains("not signed by an admin"),
+        "{why}"
+    );
+    assert_eq!(records_of(&g, "notes"), 0);
+
+    writeln!(copying.stdin.take().unwrap(), "{code}").unwrap();
+    let mut rest = String::new();
+    err.read_to_string(&mut rest).unwrap();
+    let out = copying.wait_with_output().unwrap();
+    assert!(out.status.success(), "{rest}");
+    assert!(
+        !rest.contains("/sync/approve#"),
+        "a second approval asked: {rest}"
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("started sync chain"));
+
+    let _work = g.run("work");
+    for i in [&t, &o, &z] {
+        let synced = i.ok("home", &["sync"]);
+        assert!(synced.contains("joined «work»"), "{synced}");
+        assert!(i.has("work", "coffee"));
+    }
+}
+
+/// Every chain record `i`'s `db` holds.
+fn records_of(i: &Install, db: &str) -> usize {
+    let n = i.query(db, "SELECT COUNT(*) || '' FROM ops WHERE hid = '~chain'");
+    n.map_or(0, |n| n.parse().unwrap())
+}
+
 /// datum.day's CLI makes no ticket (da-n0uj1.7): a grant seals the one its
 /// sync worker made for an invite written first, refused unless it is that
-/// invite's, of that role; a copy `--defer`red starts the chain and leaves
-/// each grant to the page, naming them.
+/// invite's, of that role; a copy `--defer`red starts the chain, writes an
+/// invite per device, and leaves each grant to the page, naming them.
 #[test]
 fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_copy_leaves_its_grants() {
     use data_encoding::BASE32_NOPAD;
@@ -624,8 +737,19 @@ fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_copy_leaves_its_grants()
     assert_eq!(left["grants"].as_array().unwrap().len(), 1, "{left}");
     assert_eq!(left["grants"][0]["device"], t.device().as_str());
     assert_eq!(left["grants"][0]["role"], "member");
+    // Its invite written with the genesis, approved with it at once (da-7bjai).
+    let made = &left["grants"][0]["invite"];
+    assert!(
+        made["secret"].is_string() && made["expires"].is_string(),
+        "{left}"
+    );
     assert_eq!(records(&g, "notes", "genesis"), 1);
-    assert_eq!(records(&g, "notes", "invite"), 0);
+    assert_eq!(records(&g, "notes", "invite"), 1);
+    let held = g.query(
+        "notes",
+        "SELECT group_concat(body) FROM ops WHERE hid = '~chain'",
+    );
+    assert!(held.unwrap().contains(made["id"].as_str().unwrap()));
     assert_eq!(records(&g, "home", "grant"), 1);
 }
 

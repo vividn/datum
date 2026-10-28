@@ -373,9 +373,9 @@ export interface Grid {
 	}[];
 }
 
-/** What `sync chain copy --defer` leaves the page to grant (da-n0uj1.7). */
+/** What `sync chain copy --defer` leaves the page to grant (da-n0uj1.7), each with the invite it wrote, approved with the rest at once (da-7bjai). */
 export interface Deferred {
-	grants: { device: string; label: string; role: 'member' | 'reader' }[];
+	grants: { device: string; label: string; role: 'member' | 'reader'; invite: Invite }[];
 }
 
 /** What a cell's dropdown offers a device standing so: a role (a grant, or a role change), or a destructive act. */
@@ -515,6 +515,10 @@ export function approvalWords(r: Record<string, unknown>, d: DbSync | undefined,
 			const words = [`Remove admin ${admin ? `«${admin.label}»` : 'an unknown key'} (${print}) ${where}`];
 			if (r.unlock) words.push('This unlocks the chain: any device can add, expel or rename devices.');
 			return words;
+		}
+		case 'genesis': {
+			const admins = (r.admins as { label?: string }[] | undefined) ?? [];
+			return [`Start sync chain ${String(r.chain ?? '').slice(0, 10)}, its admins ${admins.map((a) => `«${a.label}»`).join(', ') || 'none'}`];
 		}
 		case 'invite': {
 			const caps = r.caps as { role?: string } | undefined;

@@ -206,13 +206,22 @@ pub const ORIGIN: &str = "https://datum.day";
 
 // ─── Admin keys and their signatures ────────────────────────────────────────
 
-/// What an admin signs: the record without its `sig`.
+/// What an admin signs: the record without its `sig` or `batch`.
 pub fn record_digest(record: &Value) -> [u8; 32] {
     let mut unsigned = record.clone();
     if let Some(m) = unsigned.as_object_mut() {
         m.remove("sig");
+        m.remove("batch");
     }
     digest(&unsigned)
+}
+
+/// `batch` for records an admin approves at once (da-7bjai): each one's
+/// [`record_digest`], hex. The admin signs the list's digest, and each
+/// record carries the list beside that `sig`, so the chain takes a record
+/// only as the list names it.
+pub fn batch(records: &[Value]) -> Value {
+    records.iter().map(|r| hex(&record_digest(r))).collect()
 }
 
 /// The admin key of an Ed25519 secret held in a file.
@@ -334,10 +343,42 @@ pub fn approve_link(record: &Value) -> String {
     )
 }
 
-/// The record an approve link carries (or its fragment alone).
-pub fn approve_record(link: &str) -> Option<Value> {
+/// Where a passkey approves `records` at once: the fragment is a list of
+/// each one's canonical JSON, as text, so the page signs the [`batch`] of
+/// exactly what it shows (`approve` in `web/src/lib/passkey.ts`).
+pub fn approve_batch_link(records: &[Value]) -> String {
+    let texts: Value = records.iter().map(super::canonical_json).collect();
+    format!(
+        "{ORIGIN}/sync/approve#{}",
+        BASE64URL_NOPAD.encode(texts.to_string().as_bytes())
+    )
+}
+
+/// What an approve link's fragment (or the fragment alone) reads as.
+fn approve_fragment(link: &str) -> Option<Value> {
     let fragment = link.rsplit('#').next()?.trim();
     serde_json::from_slice(&BASE64URL_NOPAD.decode(fragment.as_bytes()).ok()?).ok()
+}
+
+/// The record an approve link carries: none for a batch's.
+pub fn approve_record(link: &str) -> Option<Value> {
+    approve_fragment(link).filter(Value::is_object)
+}
+
+/// Every record an approve link carries: its one, or a batch's.
+pub fn approve_records(link: &str) -> Option<Vec<Value>> {
+    match approve_fragment(link)? {
+        Value::Array(texts) => texts
+            .iter()
+            .map(|t| {
+                serde_json::from_str(t.as_str()?)
+                    .ok()
+                    .filter(Value::is_object)
+            })
+            .collect::<Option<Vec<Value>>>()
+            .filter(|r| !r.is_empty()),
+        v => v.is_object().then(|| vec![v]),
+    }
 }
 
 /// The admin key of a passkey, from what the browser hands over at creation:
@@ -951,7 +992,7 @@ impl Chain {
                 return Err("a genesis names a chain id".into());
             }
             if !admins.is_empty() {
-                admin_signed(&admins, &d, &s("sig"))?;
+                approved(&admins, r, &d)?;
             }
             self.id = s("chain");
             self.admins = admins;
@@ -1017,7 +1058,7 @@ impl Chain {
         // an erased is a message; anything else takes an admin, once there
         // is one: its writer is a live member already.
         if !self.is_open() && !own && kind != "grant" && kind != "erased" {
-            admin_signed(&self.admins, &d, &s("sig"))?;
+            approved(&self.admins, r, &d)?;
         }
         match kind.as_str() {
             "describe" => {
@@ -1267,6 +1308,20 @@ impl Chain {
         });
         Ok(())
     }
+}
+
+/// `r`, whose digest is `d`, approved by one of `admins`: signed alone, or
+/// in a [`batch`] that names it.
+fn approved(admins: &[Admin], r: &Value, d: &[u8; 32]) -> std::result::Result<(), String> {
+    let sig = r["sig"].as_str().unwrap_or_default();
+    let Some(batch) = r.get("batch") else {
+        return admin_signed(admins, d, sig);
+    };
+    let names = batch.as_array().is_some_and(|b| b.contains(&hex(d).into()));
+    if !names {
+        return Err("a batch's approval that does not name this record".into());
+    }
+    admin_signed(admins, &digest(batch), sig)
 }
 
 /// Signed by one of `admins`, or why not.
@@ -2170,6 +2225,60 @@ mod tests {
         assert!(chain.is_open());
         assert_eq!(chain.unlocks.len(), 1);
         assert_eq!(chain.unlocks[0].0, "k");
+    }
+
+    /// One approval for a batch (da-7bjai): each record carrying the batch
+    /// and the admin's signature over it is taken, the genesis too; a record
+    /// altered after, or one the batch does not name, is refused, as is a
+    /// batch the admin did not sign.
+    #[test]
+    fn a_batchs_approval_takes_each_record_it_names_and_no_other() {
+        let secret = [3u8; 32];
+        let key = ed25519_admin_key(&secret);
+        let invite = |id: &str| {
+            json!({"type": "invite", "chain": "c1", "invite_id": id, "secret_hash": "h",
+                   "expires": "2099-01-01T00:00:00Z", "caps": {}})
+        };
+        let approved = vec![
+            json!({"type": "genesis", "chain": "c1", "admins": [{"key": key, "label": "k"}], "label": "a"}),
+            invite("one"),
+            invite("two"),
+        ];
+        let b = batch(&approved);
+        let sig = hex(&SigningKey::from_bytes(&secret).sign(&digest(&b)).to_bytes());
+        let signed = |r: &Value, b: &Value, sig: &str| {
+            let mut r = r.clone();
+            (r["batch"], r["sig"]) = (b.clone(), sig.into());
+            r
+        };
+        let mut altered = signed(&approved[2], &b, &sig);
+        altered["caps"] = json!({"role": "reader"});
+        let unnamed = signed(&invite("three"), &b, &sig);
+        let mut padded = b.clone();
+        padded
+            .as_array_mut()
+            .unwrap()
+            .push(hex(&record_digest(&invite("four"))).into());
+        let forged = signed(&invite("four"), &padded, &sig);
+        let (chain, done) = fold(&[
+            (1, signed(&approved[0], &b, &sig), None),
+            (2, signed(&approved[1], &b, &sig), None),
+            (3, altered, None),
+            (4, unnamed, None),
+            (5, forged, None),
+            (6, signed(&approved[2], &b, &sig), None),
+        ]);
+        assert_eq!(done[0], Ok(()));
+        assert_eq!(done[1], Ok(()));
+        let names = "a batch's approval that does not name this record";
+        assert_eq!(done[2], Err(names.into()));
+        assert_eq!(done[3], Err(names.into()));
+        assert!(done[4]
+            .as_ref()
+            .unwrap_err()
+            .contains("not signed by an admin"));
+        assert_eq!(done[5], Ok(()));
+        assert!(chain.holds(&invite("two")) && !chain.holds(&invite("three")));
     }
 
     /// A purge (da-ry11c) refuses every op of its endpoint, whenever made,

@@ -54,7 +54,7 @@
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
-	import { deliverMs, inviting, joinLink, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '#lib/sync.ts';
+	import { deliverMs, inviting, joinLink, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -84,7 +84,7 @@
 		type PurgePreview,
 		type Row
 	} from '#lib/syncView.ts';
-	import { approve, approveRecord, createPasskey } from '#lib/passkey.ts';
+	import { approve, approveRecords, createPasskey } from '#lib/passkey.ts';
 	import { ask, choose, confirm } from '#lib/confirm.ts';
 	import { cliError, type RunResult } from '#lib/run.ts';
 	import {
@@ -250,10 +250,11 @@
 		// A new link is a new card: the last one's outcome goes with it.
 		card = null;
 		approval = {};
-		const record = link && approveRecord(link);
-		if (!link || !record) return;
-		const d = (await readSync(await databases())).find((d) => d.chain && d.chain === record.chain);
-		if (link === $approving) card = { link, db: d?.db, words: approvalWords(record, d, ownKeys()) };
+		const records = link && approveRecords(link);
+		if (!link || !records) return;
+		// A batch approves at once (da-7bjai): every record's words. One starting a chain is held by no copy here.
+		const d = (await readSync(await databases())).find((d) => d.chain && d.chain === records[0].chain && records[0].type !== 'genesis');
+		if (link === $approving) card = { link, db: d?.db, words: records.flatMap((r) => approvalWords(r, d, ownKeys())) };
 	}
 
 	async function resolveJoin(ticket: string | null): Promise<void> {
@@ -373,10 +374,10 @@
 	 * CLI picks one of them as the carrier (one this copy writes to) and does not say which, so all are
 	 * pushed, and one that fails is a device away, which the grant waits for in the chain.
 	 */
-	async function granting(d: string, device: string, role: 'member' | 'reader', name?: string): Promise<string> {
+	async function granting(d: string, device: string, role: 'member' | 'reader', name?: string, made?: Invite): Promise<string> {
 		waiting = 'Making the invite…';
 		try {
-			const invite = await newInvite(d, role === 'reader');
+			const invite = made ?? (await newInvite(d, role === 'reader'));
 			const said = ok(await syncAct(d, grantArgv(device, role, await syncOffer(d, invite), invite.id, name))).stdout.trim();
 			const row = grid?.devices.find((r) => r.device === device);
 			for (const c of grid?.chains ?? []) if (c.db !== d && ['member', 'reader'].includes(row?.cells[c.chain]?.state ?? '')) void syncNow(c.db).catch(() => {});
@@ -403,7 +404,7 @@
 		});
 	}
 
-	/** «copy from…»: `col` takes another database's devices, each with its role there, the grants left to this page. */
+	/** «copy from…»: `col` takes another database's devices, each with its role there, the grants left to this page: one approval for the copy's invites (da-7bjai). */
 	const copyInto = (col: { chain: string | null; db: string }) =>
 		doing(async () => {
 			const sources = columns.filter((c) => c.chain && c.db !== col.db).map((c) => c.db);
@@ -414,7 +415,7 @@
 			// `copy --defer` prints the grants left as its one stdout line, saying all else on stderr.
 			const { grants } = JSON.parse(r.stdout.split('\n').find((l) => l.startsWith('{"grants"')) ?? '') as Deferred;
 			const lines = [r.stderr.trim()];
-			for (const g of grants) lines.push(await granting(col.db, g.device, g.role));
+			for (const g of grants) lines.push(await granting(col.db, g.device, g.role, undefined, g.invite));
 			said = lines.filter(Boolean).join('\n') || `${from} has no device to copy into ${col.db}`;
 		});
 
@@ -507,7 +508,7 @@
 					<ul class="what">
 						{#each card.words as line}<li>{line}</li>{/each}
 					</ul>
-				{:else if !approveRecord($approving)}
+				{:else if !approveRecords($approving)}
 					<p class="failure">Not an approve link: it carries no record.</p>
 				{/if}
 				{#if approval.done}

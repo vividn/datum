@@ -561,15 +561,28 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             invite(db, expires, admin_key.as_deref(), caps, None, true)?;
         }
         SyncCommand::Approve { link } => {
-            let chain = db.sync_chain()?;
-            ensure!(chain.exists(), NO_CHAIN);
-            let mut record = chain::approve_record(&link)
+            let mut records = chain::approve_records(&link)
                 .context("not an approve link: https://datum.day/sync/approve#<record>")?;
+            // A batch may start the chain: `chain copy` into a database in
+            // none (da-7bjai).
+            let starts = records[0]["type"] == "genesis";
+            let chain = db.sync_chain()?;
+            ensure!(starts || chain.exists(), NO_CHAIN);
             let mut code = String::new();
             std::io::stdin().read_line(&mut code)?;
             ensure!(!code.trim().is_empty(), "no approval code");
-            record["sig"] = code.trim().into();
-            let what = record["type"].as_str().unwrap_or("record").to_string();
+            let batch = (records.len() > 1).then(|| chain::batch(&records));
+            for r in &mut records {
+                if let Some(b) = &batch {
+                    r["batch"] = b.clone();
+                }
+                r["sig"] = code.trim().into();
+            }
+            let what: Vec<&str> = records
+                .iter()
+                .map(|r| r["type"].as_str().unwrap_or("record"))
+                .collect();
+            let what = what.join(", ");
             // A wipe approved here is ordered by this copy, which writes its
             // backup first as `order_wipe` does: datum.day's order was
             // refused for its signature, and removed its own (da-459uh).
@@ -577,11 +590,21 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 true => Some(wipe_backup(db)?),
                 false => None,
             };
-            if let Err(e) = db.sync_chain_write(record, true) {
-                if let Some(Some(to)) = &backup {
-                    let _ = std::fs::remove_file(to);
+            if starts && chain.dissolved().is_some() {
+                db.sync_chain_leave()?;
+            }
+            for r in records {
+                if let Err(e) = db.sync_chain_write(r, true) {
+                    if let Some(Some(to)) = &backup {
+                        let _ = std::fs::remove_file(to);
+                    }
+                    return Err(e.into());
                 }
-                return Err(e.into());
+            }
+            if starts {
+                if let Err(e) = describe_self(db, None, kind()) {
+                    eprintln!("⚠ this copy could not describe itself ({e}); `datum sync chain rename <LABEL>` tries again");
+                }
             }
             match backup {
                 Some(backup) => println!("approved: wipe; backup: {}", backup_words(backup)),
@@ -844,22 +867,13 @@ pub(super) fn invite(
             chain.id
         );
     }
-    let (secret, expires_at) = datum_core::db::peers::invite_secret(expires);
-    // The id names the invite in its redeemer's `via` (da-2bvxq).
-    let id = ulid::Ulid::new().to_string().to_lowercase();
+    let (secret, expires_at, id, record) = invite_record(&chain.id, expires, caps);
     if print {
         println!(
             "{}",
             json!({"secret": secret, "expires": expires_at, "id": id})
         );
     }
-    let record = json!({
-        "type": "invite", "chain": chain.id,
-        "invite_id": id,
-        "secret_hash": chain::secret_hash(&secret), "expires": expires_at,
-        "caps": caps,
-        "created": chrono::Utc::now().to_rfc3339(),
-    });
     sign(db, record, &chain, admin_key)?;
     // In a chain it was in, only once the invite is signed: a refused
     // invite renames nothing.
@@ -867,6 +881,26 @@ pub(super) fn invite(
         describe();
     }
     Ok((secret, expires_at, id))
+}
+
+/// A new invite of chain `chain`, unsigned: its secret, when it expires, its
+/// id and its record.
+pub(super) fn invite_record(
+    chain: &str,
+    expires: std::time::Duration,
+    caps: Value,
+) -> (String, String, String, Value) {
+    let (secret, expires_at) = datum_core::db::peers::invite_secret(expires);
+    // The id names the invite in its redeemer's `via` (da-2bvxq).
+    let id = ulid::Ulid::new().to_string().to_lowercase();
+    let record = json!({
+        "type": "invite", "chain": chain,
+        "invite_id": id,
+        "secret_hash": chain::secret_hash(&secret), "expires": expires_at,
+        "caps": caps,
+        "created": chrono::Utc::now().to_rfc3339(),
+    });
+    (secret, expires_at, id, record)
 }
 
 /// Write this copy's `describe`: `label`, or one assembled from what it
@@ -1211,38 +1245,83 @@ pub(super) fn key_file(path: &str, create: bool) -> Result<[u8; 32]> {
 /// An admin's signature, when the chain is locked, on a record that has none:
 /// one approved before it came here carries its own (da-sd7xt), which the
 /// chain checks as it writes the record, refusing it unless an admin signed.
-pub(super) fn sign(
+pub(super) fn sign(db: &Db, record: Value, chain: &Chain, admin_key: Option<&str>) -> Result<()> {
+    sign_all(db, vec![record], chain, admin_key)
+}
+
+/// [`sign`] for records written together, in order: a key file signs each,
+/// and a passkey approves them all at once (da-7bjai), each record carrying
+/// the `batch` its one approval names.
+pub(super) fn sign_all(
     db: &Db,
-    mut record: Value,
+    mut records: Vec<Value>,
     chain: &Chain,
     admin_key: Option<&str>,
 ) -> Result<()> {
-    if !chain.is_open() && record.get("sig").is_none() {
-        let sig = match admin_key {
-            Some(path) => chain::sign_ed25519(&record, &key_file(path, false)?),
+    let unsigned = !chain.is_open() && records.iter().any(|r| r.get("sig").is_none());
+    if unsigned {
+        match admin_key {
+            Some(path) => {
+                let secret = key_file(path, false)?;
+                for r in &mut records {
+                    r["sig"] = chain::sign_ed25519(r, &secret).into();
+                }
+            }
             None => {
+                let (link, batch) = match records.as_slice() {
+                    [one] => (chain::approve_link(one), None),
+                    all => (chain::approve_batch_link(all), Some(chain::batch(all))),
+                };
+                let what = match &batch {
+                    None => "this".to_string(),
+                    Some(_) => {
+                        let each: Vec<String> = records.iter().map(approving).collect();
+                        format!("these {}, at once: {}", records.len(), each.join("; "))
+                    }
+                };
                 eprintln!(
-                    "Approve this with your passkey:\n\n  {}\n\nthen paste the approval code here, or press Enter once a browser holding this database has approved it:",
-                    chain::approve_link(&record)
+                    "Approve {what} with your passkey:\n\n  {link}\n\nthen paste the approval code here, or press Enter once a browser holding this database has approved it:"
                 );
                 let mut code = String::new();
                 std::io::stdin().read_line(&mut code)?;
                 if code.trim().is_empty() && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
                     #[cfg(feature = "net")]
                     datum_sync::now_all(db, false)?;
+                    let held = db.sync_chain()?;
                     ensure!(
-                        db.sync_chain()?.holds(&record),
+                        records.iter().all(|r| held.holds(r)),
                         "not approved yet: no approval code, and no sync brought it"
                     );
                     return Ok(());
                 }
                 ensure!(!code.trim().is_empty(), "no approval code");
-                code.trim().to_string()
+                for r in &mut records {
+                    if let Some(b) = &batch {
+                        r["batch"] = b.clone();
+                    }
+                    r["sig"] = code.trim().into();
+                }
             }
-        };
-        record["sig"] = sig.into();
+        }
     }
-    Ok(db.sync_chain_write(record, true)?)
+    for r in records {
+        db.sync_chain_write(r, true)?;
+    }
+    Ok(())
+}
+
+/// A record of a batch to approve, in a few words.
+fn approving(r: &Value) -> String {
+    let kind = r["type"].as_str().unwrap_or("record");
+    match kind {
+        "invite" if r["caps"]["role"] == "reader" => "an invite as a reader".into(),
+        "invite" => "an invite as a member".into(),
+        "genesis" => format!(
+            "a new sync chain {}",
+            r["chain"].as_str().unwrap_or_default()
+        ),
+        kind => format!("a {kind}"),
+    }
 }
 
 /// The chain's admins, as `chain list --json` and `admin list --json` have

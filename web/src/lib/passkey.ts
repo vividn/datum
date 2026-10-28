@@ -18,13 +18,44 @@ const unb64url = (s: string): Uint8Array<ArrayBuffer> =>
 /** The fragment of an approve link: the record, canonical JSON, base64url. */
 const fragment = (link: string): string => link.slice(link.lastIndexOf('#') + 1).trim();
 
-/** The record an approve link carries. */
-export function approveRecord(link: string): Record<string, unknown> | null {
+/** What an approve link's fragment reads as: a record, or a batch's list of records as canonical JSON text (da-7bjai). */
+function carried(link: string): unknown {
 	try {
 		return JSON.parse(new TextDecoder().decode(unb64url(fragment(link))));
 	} catch {
 		return null;
 	}
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** Every record an approve link carries: its one, or a batch's. */
+export function approveRecords(link: string): Record<string, unknown>[] | null {
+	const v = carried(link);
+	if (isRecord(v)) return [v];
+	if (!Array.isArray(v) || !v.length || !v.every((t) => typeof t === 'string')) return null;
+	try {
+		const records = v.map((t) => JSON.parse(t));
+		return records.every(isRecord) ? records : null;
+	} catch {
+		return null;
+	}
+}
+
+const hex = (b: ArrayBuffer): string => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+
+/**
+ * The challenge for `link`: a record's digest, SHA-256 of the fragment's bytes, the link carrying the
+ * canonical record; a batch's, SHA-256 of the JSON list of each record text's SHA-256, hex
+ * (`chain::batch`), so one approval names exactly the records shown.
+ */
+async function challengeOf(link: string): Promise<ArrayBuffer> {
+	const bytes = unb64url(fragment(link));
+	const v = carried(link);
+	if (!Array.isArray(v)) return crypto.subtle.digest('SHA-256', bytes);
+	const enc = new TextEncoder();
+	const digests = await Promise.all(v.map(async (t: string) => hex(await crypto.subtle.digest('SHA-256', enc.encode(t)))));
+	return crypto.subtle.digest('SHA-256', enc.encode(JSON.stringify(digests)));
 }
 
 /** The approve link in what a command wrote, if it stopped at one. */
@@ -59,11 +90,10 @@ export async function createPasskey(label: string): Promise<string> {
  * Approve the record of `link` with a passkey: the approval code the CLI
  * takes, base64url of `u16 len ‖ authenticatorData ‖ u16 len ‖
  * clientDataJSON ‖ signature` (lengths big-endian), as
- * `chain::verify_assertion` parses it. The challenge is the record's digest, which
- * is SHA-256 of the fragment's bytes: the link carries the canonical record.
+ * `chain::verify_assertion` parses it. The challenge is `challengeOf` the link.
  */
 export async function approve(link: string): Promise<string> {
-	const challenge = await crypto.subtle.digest('SHA-256', unb64url(fragment(link)));
+	const challenge = await challengeOf(link);
 	const cred = (await navigator.credentials.get({
 		publicKey: { rpId: RP_ID, challenge, userVerification: 'required' }
 	})) as PublicKeyCredential | null;

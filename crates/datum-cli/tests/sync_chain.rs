@@ -1555,7 +1555,7 @@ fn an_admin_act_without_a_valid_signature_is_refused_by_name() {
 
 /// A software passkey: a fixed P-256 key answering `navigator.credentials.get`
 /// for datum.day, packed as the approve page packs it.
-fn approval_code(challenge: &[u8]) -> String {
+pub(crate) fn approval_code(challenge: &[u8]) -> String {
     let sk = p256::ecdsa::SigningKey::from_slice(&[9u8; 32]).unwrap();
     let mut auth = Sha256::digest(b"datum.day").to_vec();
     auth.extend([0x05, 0, 0, 0, 0]);
@@ -1575,7 +1575,7 @@ fn approval_code(challenge: &[u8]) -> String {
     BASE64URL_NOPAD.encode(&out)
 }
 
-fn passkey_json() -> String {
+pub(crate) fn passkey_json() -> String {
     let sk = p256::ecdsa::SigningKey::from_slice(&[9u8; 32]).unwrap();
     let spki = [
         &data_encoding::HEXLOWER

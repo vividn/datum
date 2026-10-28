@@ -675,7 +675,13 @@ it has there; a filtered reader is said and left, its fields being SRC's. X in
 no chain first starts one whose `genesis` takes SRC's admins, signed by one of
 them. X in a chain takes grants only for the devices it lacks, signed by its
 own admin (an `--admin-key` of another is refused before anything is written),
-and never a second genesis.
+and never a second genesis. A passkey approves the copy ONCE (da-7bjai): the
+genesis and every invite are one batch, whose approve link carries each record's
+canonical JSON as text; the admin signs the digest of the list of their digests
+(`chain::batch`), and each record carries that list as `batch` beside the `sig`,
+so the fold takes a record only as the list names it (`approved` in
+`chain.rs`). A key file still signs each record. `sync approve` writes a batch
+link's records, a genesis first into a database in no chain.
 
 ### The command tree
 

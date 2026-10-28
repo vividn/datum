@@ -192,7 +192,6 @@ pub fn copy(
         true => eprintln!("{line}"),
         false => println!("{line}"),
     };
-    let mut left: Vec<Value> = Vec::new();
     let path = config::locate_db(Some(from)).context("Cannot determine data directory")?;
     ensure!(path.exists(), "no database {from}");
     let canon = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
@@ -273,21 +272,72 @@ pub fn copy(
         unbound = 0;
     }
 
-    if starts {
-        if here.dissolved().is_some() {
-            db.sync_chain_leave()?;
+    // The genesis, if any, and an invite per device to grant, approved at
+    // once (da-7bjai): a passkey is asked one approval for the copy.
+    let mut records = Vec::new();
+    let chain = match starts {
+        true => {
+            let admins: Vec<Value> = src
+                .admins
+                .iter()
+                .map(|a| json!({"key": a.key, "label": a.label}))
+                .collect();
+            let genesis = json!({
+                "type": "genesis", "chain": ulid::Ulid::new().to_string().to_lowercase(),
+                "admins": admins, "label": super::sync::copy_label(),
+                "created": Utc::now().to_rfc3339(),
+            });
+            let id = genesis["chain"].as_str().unwrap_or_default().to_string();
+            records.push(genesis);
+            id
         }
-        let admins: Vec<Value> = src
-            .admins
+        false => here.id.clone(),
+    };
+    let mut notes = Vec::new();
+    let mut invited = Vec::new();
+    for m in picked {
+        let d = m.device.as_deref().unwrap_or_default();
+        let label = device_label(m);
+        let had = here
+            .members
             .iter()
-            .map(|a| json!({"key": a.key, "label": a.label}))
+            .find(|h| !starts && h.device.as_deref() == Some(d) && live(h));
+        if let Some(had) = had {
+            notes.push(format!("{label} is a {} here already", had.role().as_str()));
+        } else if m.filter.is_some() {
+            notes.push(format!(
+                "{label} is a reader of some of {from}'s fields, which are not this database's: \
+                 `datum sync grant {} reader` makes it a reader of all of it",
+                &d[..12.min(d.len())]
+            ));
+        } else {
+            let reader = m.role() == Role::Reader;
+            let caps = super::sync::caps(db, reader, None)?;
+            let (secret, until, id, record) = super::sync::invite_record(&chain, expires, caps);
+            records.push(record);
+            invited.push((d.to_string(), label, reader, secret, until, id));
+        }
+    }
+    // Before the approval, so a run that stops at its link (datum.day's,
+    // which approves with `sync approve`) has handed every secret over.
+    if defer {
+        let grants: Vec<Value> = invited
+            .iter()
+            .map(|(device, label, reader, secret, expires, id)| {
+                json!({
+                    "device": device, "label": label,
+                    "role": if *reader { "reader" } else { "member" },
+                    "invite": {"secret": secret, "expires": expires, "id": id},
+                })
+            })
             .collect();
-        let genesis = json!({
-            "type": "genesis", "chain": ulid::Ulid::new().to_string().to_lowercase(),
-            "admins": admins, "label": super::sync::copy_label(),
-            "created": Utc::now().to_rfc3339(),
-        });
-        super::sync::sign(db, genesis, &src, admin_key)?;
+        println!("{}", json!({ "grants": grants }));
+    }
+    if starts && here.dissolved().is_some() {
+        db.sync_chain_leave()?;
+    }
+    super::sync::sign_all(db, records, signer, admin_key)?;
+    if starts {
         if let Err(e) = super::sync::describe_self(db, None, super::sync::kind()) {
             eprintln!("⚠ this copy could not describe itself ({e}); `datum sync chain rename <LABEL>` tries again");
         }
@@ -297,39 +347,15 @@ pub fn copy(
             0 => format!("open, as {from}'s is"),
             n => format!("its admins {from}'s {n}"),
         };
-        say(format!(
-            "started sync chain {}: {admins}",
-            db.sync_chain()?.id
-        ));
+        say(format!("started sync chain {chain}: {admins}"));
     }
-    let here = db.sync_chain()?;
-    for m in picked {
-        let d = m.device.as_deref().unwrap_or_default();
-        let label = device_label(m);
-        if let Some(had) = here
-            .members
-            .iter()
-            .find(|h| h.device.as_deref() == Some(d) && live(h))
-        {
-            say(format!("{label} is a {} here already", had.role().as_str()));
-        } else if m.filter.is_some() {
-            say(format!(
-                "{label} is a reader of some of {from}'s fields, which are not this database's: \
-                 `datum sync grant {} reader` makes it a reader of all of it",
-                &d[..12.min(d.len())]
-            ));
-        } else if defer {
-            left.push(json!({"device": d, "label": label, "role": m.role().as_str()}));
-        } else {
-            grant(
-                db,
-                d,
-                m.role() == Role::Reader,
-                None,
-                expires,
-                admin_key,
-                None,
-            )?;
+    notes.into_iter().for_each(say);
+    #[cfg(feature = "net")]
+    if !defer {
+        for (device, _, reader, secret, _, id) in &invited {
+            let ticket = datum_sync::grant_link(db, secret, expires)?;
+            let given = Some((ticket.as_str(), id.as_str()));
+            grant(db, device, *reader, None, expires, admin_key, given)?;
         }
     }
     if unbound > 0 {
@@ -337,9 +363,6 @@ pub fn copy(
             "{unbound} member(s) of {from} bound to no device key (an older datum's copy) \
              are not copied: `datum sync chain invite` makes a ticket to carry to each"
         ));
-    }
-    if defer {
-        println!("{}", json!({ "grants": left }));
     }
     Ok(())
 }
