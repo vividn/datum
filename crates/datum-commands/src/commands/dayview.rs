@@ -1543,13 +1543,13 @@ mod tests {
         assert_eq!(states, [Some("idle")], "the day is idle, as `now` says");
     }
 
-    /// da-ijjjn: a dot's standard is half the lane a field with no height
-    /// gets.
+    /// da-ijjjn, da-sjhuj: a dot's standard is three quarters of the lane a
+    /// field with no height gets.
     #[test]
-    fn the_standard_dot_is_half_the_default_lane() {
+    fn the_standard_dot_is_three_quarters_of_the_default_lane() {
         assert_eq!(
             datum_layout::dayview::STANDARD_DOT,
-            datum_core::field_spec::DEFAULT_FIELD_HEIGHT / 2.0
+            datum_core::field_spec::DEFAULT_FIELD_HEIGHT * 0.75
         );
     }
 

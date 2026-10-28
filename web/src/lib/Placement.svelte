@@ -75,8 +75,8 @@
 	const H = 160;
 	/** The thinnest lane a drag leaves. */
 	const MIN = 0.02;
-	/** A dot's height at a scale of 1, whatever its lane: the CLI's `STANDARD_DOT`, half a lane with no height. */
-	const STANDARD_DOT = 0.06;
+	/** A dot's height at a scale of 1, whatever its lane: the CLI's `STANDARD_DOT`, three quarters of a lane with no height. */
+	const STANDARD_DOT = 0.09;
 
 	let band: HTMLDivElement | undefined = $state.raw();
 	let svg = $state.raw<SVGSVGElement | null>(null);

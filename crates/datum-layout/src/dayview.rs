@@ -180,11 +180,11 @@ impl Default for GlyphSize {
 }
 
 /// A dot's height, a fraction of the day, before `--glyph-scale` multiplies
-/// it (da-ijjjn): half the lane of a field whose spec names no height,
-/// datum-core's `DEFAULT_FIELD_HEIGHT`. Its lane takes no part, so a lane
+/// it (da-ijjjn): three quarters of the lane of a field whose spec names no
+/// height, datum-core's `DEFAULT_FIELD_HEIGHT` (da-sjhuj). Its lane takes no part, so a lane
 /// thinner than it has the dot pass its edges: a dot marks a moment, not
 /// the lane's area.
-pub const STANDARD_DOT: f64 = 0.06;
+pub const STANDARD_DOT: f64 = 0.09;
 
 /// One block (closed or ongoing) on a field row. Blocks may extend beyond
 /// the day's window; [`compute_dayview`] clips them to the visible domain.

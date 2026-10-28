@@ -392,8 +392,8 @@ fn a_glyph_factor_of_one_from_json_is_stored_unset() {
     );
 }
 
-/// da-ijjjn: a dot is one standard size, half the height of a lane with no
-/// `--height` (0.06 of the day), however tall or thin its own lane — a thin
+/// da-ijjjn: a dot is one standard size, three quarters of the height of a
+/// lane with no `--height` (0.09 of the day, da-sjhuj), however tall or thin its own lane — a thin
 /// lane's dot passes its edges — and `--glyph-scale` multiplies it: a
 /// fraction of the day and not pixels (da-c1b6m), the same in the dayview
 /// and the nowview, at a short band and a tall one.
@@ -437,10 +437,10 @@ fn a_dot_is_the_standard_size_whatever_its_lane_and_scaled() {
         let h: f64 = h.parse().unwrap();
         for (view, svg) in [("dayview", &dayview), ("nowview", &nowview)] {
             for (field, frac) in [
-                ("plain", 0.06),
-                ("tall", 0.06),
-                ("thin", 0.06),
-                ("double", 0.12),
+                ("plain", 0.09),
+                ("tall", 0.09),
+                ("thin", 0.09),
+                ("double", 0.18),
             ] {
                 let got = tall(svg, field);
                 assert!(

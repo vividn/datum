@@ -2063,7 +2063,7 @@ mod tests {
             "{labels:?}"
         );
         // The dot an hour after the jump is at 09:00, and nothing forks.
-        assert!(groups[1].contains(r#"<circle class="point-bg" cx="900" cy="17.5" r="3""#));
+        assert!(groups[1].contains(r#"<circle class="point-bg" cx="900" cy="17.5" r="4.5""#));
         assert!(!svg.contains(r#"<path class="block""#));
     }
 
@@ -2126,7 +2126,7 @@ mod tests {
             ]
         );
         // An hour after the jump is 07:00 again, in the far lane.
-        assert!(groups[1].contains(r#"<circle class="point-bg" cx="700" cy="60.8125" r="1.42"#));
+        assert!(groups[1].contains(r#"<circle class="point-bg" cx="700" cy="60.8125" r="2.13"#));
         assert!(!svg.contains("dead-zone"));
     }
 }
