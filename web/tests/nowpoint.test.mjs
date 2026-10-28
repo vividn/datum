@@ -1463,33 +1463,64 @@ describe('the now section belongs to now (da-dv45l)', () => {
 	// vividn, 15:14: «no, leave the scaling be, users can change scaling by
 	// tapping the handles and might have different preferences, stretching
 	// should always leave now where it is» — a handle's stretch, which scales
-	// about now. A ctrl+wheel zooms about the pointer (da-3zpdx), so one over
-	// the window's middle leaves now, and «now» takes it home at its length.
-	test('a ctrl+wheel stretch is about the pointer, and «now» keeps the stretch', async () => {
+	// about now. A ctrl+wheel does the same on now, and zooms about the
+	// pointer only once the window is panned off it (da-89vsn, vividn,
+	// 2026-10-28: «if the nowview is reset to now, then I would just change
+	// the scaling of the time axis and leave it on now. If you're panned
+	// somewhere else, then zoom on the mouse cursor»).
+	const history = async (page) => {
+		const argv = (await windows(page)).at(-1);
+		return argv?.[argv.indexOf('--history') + 1];
+	};
+
+	/** One notch of ctrl+wheel in at `x`: out would bring the time past now into the window, and it stops at now (da-v8gzq). */
+	async function wheelIn(page, x, y) {
+		await page.mouse.move(x, y);
+		await page.keyboard.down('Control');
+		await page.mouse.wheel(0, -200);
+		await page.keyboard.up('Control');
+	}
+
+	test('on now, a ctrl+wheel stretch over the middle scales the window and leaves it on now', async () => {
 		await withBand(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
-			const history = async () => {
-				const argv = (await windows(page)).at(-1);
-				return argv?.[argv.indexOf('--history') + 1];
-			};
 			const g = await geometry(page);
-			await page.mouse.move((g.lo + g.hi) / 2, g.y);
-			await page.keyboard.down('Control');
-			// In: out would bring the time past now into the window, and it
-			// stops at now (da-v8gzq).
-			await page.mouse.wheel(0, -200);
-			await page.keyboard.up('Control');
-			const stretched = await until(history, (h) => h !== undefined && h !== '30m');
+			await wheelIn(page, (g.lo + g.hi) / 2, g.y);
+			await until(() => history(page), (h) => h !== undefined && h !== '30m');
 			await app.idle();
-			assert.notEqual(await asked(page), null, 'the stretch about the pointer kept the window on now');
+			assert.equal(await asked(page), null, 'the stretch on now asked for a --center');
+			const s = await until(
+				() => section(page),
+				(s) => s.chunk && Math.abs(s.chunk[1] - s.band[1]) <= 3
+			);
+			assert.equal(s.button, null, 'the stretch on now drew the «now» button');
+		});
+	});
+
+	test('panned off now, a ctrl+wheel stretch keeps the instant under the pointer, and «now» keeps the stretch', async () => {
+		await withBand(async (app) => {
+			const { page } = app;
+			await app.spyOnRunner();
+			await pan(page, 10);
+			await page.locator(`${NOWVIEW} .nowview-now`).waitFor();
+			await app.idle();
+			const g = await geometry(page);
+			const x = g.lo + (g.hi - g.lo) * 0.3;
+			const under = await instantUnder(page, x);
+			await wheelIn(page, x, g.y);
+			const stretched = await until(() => history(page), (h) => h !== undefined && h !== '30m');
+			await app.idle();
+			assert.notEqual(await asked(page), null, 'the stretch panned off now went home');
+			const after = await geometry(page);
+			near(xOf(after, under), x, `the instant under the pointer moved on a stretch to ${stretched}`);
 
 			await page.locator(`${NOWVIEW} .nowview-now`).click();
 			await until(
 				() => asked(page),
 				(t) => t === null
 			);
-			assert.equal(await history(), stretched, '«now» undid the stretch');
+			assert.equal(await history(page), stretched, '«now» undid the stretch');
 		});
 	});
 });
@@ -1608,15 +1639,16 @@ describe('a selected time is a dashed line in a continuous timeline (da-dv45l)',
 			// line stand as far from it.
 			near(s.line - s.ticks['-5m'], s.ticks['+5m'] - s.line, '−5m and +5m from the line');
 
-			// A ctrl+wheel over the line keeps it where it is: the window
-			// scales about the pointer at 14:38 (da-3zpdx), not about its
-			// middle, and leaves now with the pill.
+			// A ctrl+wheel keeps the line where it is wherever the pointer
+			// is: a window on now with a pill scales about the pill, as a
+			// handle's stretch does (da-zccjs, da-89vsn), not about the
+			// pointer or its middle, and leaves now with the pill.
 			const history = async () => {
 				const argv = (await windows(page)).at(-1);
 				return argv?.[argv.indexOf('--history') + 1];
 			};
 			const g = await geometry(page);
-			await page.mouse.move(s.line, g.y);
+			await page.mouse.move(g.lo + (g.hi - g.lo) * 0.15, g.y);
 			await page.keyboard.down('Control');
 			// In: out would bring the time past now into the window, and it
 			// stops at now (da-v8gzq).

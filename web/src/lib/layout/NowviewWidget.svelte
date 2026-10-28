@@ -52,7 +52,8 @@
 	  long press in the NOW   → a duration ending NOW — the sentence «I have been
 	    region, then drag left  doing this for the last N minutes»
 	  two fingers / ctrl+wheel→ the window's LENGTH (da-5goc), about the fingers
-	                            or the pointer (da-3zpdx), untouched here
+	                            or, panned off now, the pointer (da-3zpdx,
+	                            da-89vsn), untouched here
 
 	«Swiping left/right must not select time», so the duration ending now
 	waits for the long press like every other range, and «for quickly
@@ -501,13 +502,14 @@
 	 * the picture stays scaled, exactly as it was under the fingers, until
 	 * datum's picture of that window replaces it (da-ygpto).
 	 *
-	 * A pinch or a ctrl+wheel scales about the fingers or the pointer
-	 * (da-3zpdx, vividn: «if my fingers are on the time of two different
+	 * A pinch scales about the fingers, and a ctrl+wheel on a window
+	 * panned off now about the pointer (da-3zpdx, vividn: «if my fingers are on the time of two different
 	 * occur dots moving the two fingers should track with the occur dots
 	 * regardless if panning or zooming»): `at` is the instant under them
 	 * where they landed, and `shift` how far the band is slid since, so
 	 * the instant stays under their middle and, by the scale, each finger's
-	 * under it. A handle's drag has neither: it scales about the anchor.
+	 * under it. A handle's drag has neither, nor a ctrl+wheel on now
+	 * (da-89vsn): it scales about the anchor.
 	 */
 	let zoom = $state.raw<{ origin: number; scale: number; raw: number; held?: string; at?: number; shift?: number } | null>(null);
 
@@ -1161,7 +1163,15 @@
 	/** What the wheel turned while a gesture let go of waited for its picture: turned once it lands. */
 	let owed = 0;
 
-	/** Where the pointer last turned the wheel, along the axis: what it scales about. */
+	/**
+	 * Where the pointer last turned the wheel, along the axis: what a window
+	 * panned off now scales about. On now it scales about now and stays
+	 * there, as a handle's stretch does (da-89vsn, vividn: «if the nowview
+	 * is reset to now, then I would just change the scaling of the time axis
+	 * and leave it on now. If you're panned somewhere else, then zoom on the
+	 * mouse cursor»); with a pill up, about the pill, as a handle's stretch
+	 * does too, and the window leaves now with it (da-zccjs).
+	 */
 	let turnedAt = 0;
 
 	function onWheel(event: WheelEvent): void {
@@ -1173,7 +1183,7 @@
 	}
 
 	function turn(deltaY: number): void {
-		if (!zoom) start(turnedAt);
+		if (!zoom) start(centre ? turnedAt : undefined);
 		const held = zoom;
 		if (!held) return;
 		const raw = held.raw * Math.pow(2, -deltaY / NOTCH);
