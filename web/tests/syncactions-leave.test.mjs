@@ -122,14 +122,16 @@ describe('the sync widget’s Leave chain', () => {
 					await page.locator(`${WIDGET} .more .actions`).getByRole('button', { name: 'Leave chain' }).click();
 					const dialog = page.locator('dialog.confirm');
 					await dialog.getByRole('button', { name: 'leave' }).click();
-					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).waitFor({ timeout: 30_000 });
+					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).waitFor({ timeout: 90_000 });
 					assert.equal(await dialog.count(), 0);
 					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 					// The native member holds the departure: it lists this copy as left.
 					const { members } = JSON.parse((await native.run(['sync', 'chain', 'list', '--json'])).stdout);
 					assert.ok(members.find((m) => m.endpoint === me).left);
 				},
-				{ prepare: relayed(relay), viewport: DESKTOP }
+				// Production's 20 s to deliver the departure, not 5: past it the page asks «leave anyway»,
+				// which a session slowed by CI's load reached (da-0wovz, as da-go39y for the purge). Nothing here waits a timeout out.
+				{ prepare: relayed(relay), viewport: DESKTOP, syncTimeout: 20 }
 			);
 		} finally {
 			await native.close();
