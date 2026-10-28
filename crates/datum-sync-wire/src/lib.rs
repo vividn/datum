@@ -351,8 +351,23 @@ fn idle_of(set: u64) -> Duration {
     Duration::from_secs(set.or_else(|| env("DATUM_SYNC_TIMEOUT_S")).unwrap_or(60))
 }
 
+/// How long a dial may take to reach a member: `DATUM_SYNC_DIAL_TIMEOUT_S`,
+/// else [`idle`]. Its own, so a test can give up on an offline member fast
+/// and still give its live sessions [`idle`]'s whole limit (da-c6v27).
+fn dial_limit() -> Duration {
+    dial_limit_of(env("DATUM_SYNC_DIAL_TIMEOUT_S"))
+}
+
+fn dial_limit_of(set: Option<u64>) -> Duration {
+    set.filter(|&s| s > 0)
+        .map_or_else(idle, Duration::from_secs)
+}
+
 async fn within<T>(f: impl Future<Output = Result<T>>) -> Result<T> {
-    let limit = idle();
+    within_of(idle(), f).await
+}
+
+async fn within_of<T>(limit: Duration, f: impl Future<Output = Result<T>>) -> Result<T> {
     timeout(limit, f).await.map_err(|_| {
         let why = format!("timed out: nothing moved for {}s", limit.as_secs());
         Failed(Failure::TimedOut, why)
@@ -1279,7 +1294,13 @@ async fn session(
             let reply: Reply = get_json(&mut r, MAX_RECORDS).await?;
             Ok::<_, anyhow::Error>((s, r, reply))
         };
-        match opened.await {
+        // A kept connection's first reply is how the peer is reached: one
+        // gone since waits the dial's limit, not the session's (da-c6v27).
+        let opened = match using {
+            Some(_) => within_of(dial_limit(), opened).await,
+            None => opened.await,
+        };
+        match opened {
             Ok((s, r, reply)) => break (conn, using, s, r, reply),
             Err(_) if using.is_some() => conn.close(0u32.into(), b"stale"),
             Err(e) => return Err(e),
@@ -1682,7 +1703,7 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
 /// Connect to `addr` over `alpn`, or say why not.
 async fn connect(ep: &Endpoint, addr: EndpointAddr, alpn: &[u8]) -> Result<Connection> {
     let id = addr.id.to_string();
-    within(async { Ok(ep.connect(addr, alpn).await?) })
+    within_of(dial_limit(), async { Ok(ep.connect(addr, alpn).await?) })
         .await
         .map_err(|e| match other_protocol(&e) {
             true => Failed(Failure::Protocol, format!("{}: {OTHER}", short(&id))).into(),
@@ -2498,5 +2519,21 @@ mod tests {
         assert_eq!(idle(), Duration::from_secs(60));
         assert_eq!(idle_of(0), Duration::from_secs(60));
         assert_eq!(idle_of(4), Duration::from_secs(4));
+    }
+
+    /// A dial waits as long as a session unless a test says less, and
+    /// saying it leaves the session's limit alone (da-c6v27).
+    #[test]
+    fn a_dial_waits_as_long_as_a_session_unless_a_test_says() {
+        assert_eq!(
+            env::<u64>("DATUM_SYNC_DIAL_TIMEOUT_S"),
+            None,
+            "set for this run"
+        );
+        assert_eq!(dial_limit(), idle());
+        assert_eq!(dial_limit_of(None), idle());
+        assert_eq!(dial_limit_of(Some(0)), idle());
+        assert_eq!(dial_limit_of(Some(3)), Duration::from_secs(3));
+        assert_eq!(idle(), Duration::from_secs(60));
     }
 }

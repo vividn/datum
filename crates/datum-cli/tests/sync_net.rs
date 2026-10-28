@@ -442,7 +442,7 @@ fn sync_names_its_members_first_and_each_as_it_ends() {
     assert!(inviting.finish().0);
     let (up, down) = (member_label(&a, &b.id()), member_label(&a, &c.id()));
     let _b_runs = b.serve(&["sync", "run"]);
-    a.env.push(("DATUM_SYNC_TIMEOUT_S", "3"));
+    a.env.push(("DATUM_SYNC_DIAL_TIMEOUT_S", "3"));
     // The last seen on the reader's clock, not the stored instant (da-49tq4).
     a.env.push(("TZ", "Asia/Kathmandu"));
 
@@ -1196,7 +1196,7 @@ fn run_serves_members_and_pushes_new_ops() {
 #[test]
 fn sync_asks_the_run_serving_its_copy_and_binds_nothing_of_its_own() {
     let (a, mut b) = paired();
-    b.env.push(("DATUM_SYNC_TIMEOUT_S", "2"));
+    b.env.push(("DATUM_SYNC_DIAL_TIMEOUT_S", "2"));
     let mut a_runs = a.serve(&["sync", "run"]);
     let b_runs = b.serve(&["sync", "run"]);
     let socket = PathBuf::from(format!("{}.sync", b.db().display()));
@@ -1400,7 +1400,7 @@ impl Drop for Killed {
 fn an_unreachable_member_is_tried_less_often_and_heard_at_once_when_it_is_back() {
     let (mut a, b) = paired();
     a.env.extend([
-        ("DATUM_SYNC_TIMEOUT_S", "1"),
+        ("DATUM_SYNC_DIAL_TIMEOUT_S", "1"),
         ("DATUM_SYNC_TEST_RETRY_MS", "200"),
     ]);
     let mut a_runs = Killed(a.cmd(&["sync", "run"]).spawn().unwrap());
@@ -2584,10 +2584,10 @@ fn without_keepalives_the_first_sync_after_an_import_loses_its_peer() {
 
 // ─── The sync chain (da-odwc7) ──────────────────────────────────────────────
 
-/// c's dial to a reaches no one in 6s, and b admits it. Not 3s: b's
-/// handshake, the one stretch before its `Welcome` with nothing sent, took
-/// under 200ms on two loaded cores, and a CI runner starved it past 3s
-/// (da-c5b2b, as da-hd9sx's and da-3njqh's).
+/// c's dial to a reaches no one in 3s, and b admits it. The dial's limit,
+/// not the session's: b's handshake, the one stretch before its `Welcome`
+/// with nothing sent, took under 200ms on two loaded cores, and a CI runner
+/// starved it past 3s (da-c5b2b, as da-hd9sx's and da-3njqh's; da-c6v27).
 #[test]
 fn a_member_admits_an_invites_redeemer_while_the_inviter_is_offline() {
     let (a, b) = paired();
@@ -2599,7 +2599,7 @@ fn a_member_admits_an_invites_redeemer_while_the_inviter_is_offline() {
     let _b_runs = b.serve(&["sync", "run"]);
 
     let mut c = Copy::new();
-    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "6")];
+    c.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "3")];
     c.ok(&["occur", "from-c"]);
     let joined = c.ok(&["sync", "chain", "connect", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
@@ -2622,13 +2622,13 @@ fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
     // Only d fetches the next invite before a goes away; b is behind, and
     // not up: d, told where b is (da-fly3f), dials it too and reaches no one.
     let (inviting, ticket) = a.invite(&[]);
-    d.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    d.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "3")];
     let synced = d.ok(&["sync"]);
     assert!(synced.contains("verify ok"), "{synced}");
     drop(inviting);
     let (_b_runs, _d_runs) = (b.serve(&["sync", "run"]), d.serve(&["sync", "run"]));
     let mut c = Copy::new();
-    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    c.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "3")];
     let joined = c.ok(&["sync", "chain", "connect", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
     // c joined through b, so d hears of c only from b's `sync run` pushing
@@ -2656,8 +2656,8 @@ fn admitted_by_one_inviter() -> (Copy, Copy, Copy) {
     let (serving, _) = a.invite(&[]);
     b.ok(&["sync"]);
     drop(serving);
-    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
-    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    b.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "3")];
+    c.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "3")];
     (a, b, c)
 }
 
@@ -2991,8 +2991,8 @@ fn admitted_unheard(caps: &[&str]) -> (Copy, Copy, Copy) {
                 VALUES (?1, 'b', ?2, '2026-10-09T00:00:00Z')";
     let sql = rusqlite::Connection::open(c.db()).unwrap();
     sql.execute(told, [b.id(), a.query(&at)]).unwrap();
-    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
-    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    b.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "3")];
+    c.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "3")];
     (a, b, c)
 }
 
