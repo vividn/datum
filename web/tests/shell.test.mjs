@@ -304,7 +304,7 @@ describe('the shell', () => {
 	test('+ lists day, the widget kinds and the saved layouts; nowview opens a tab; a reload keeps it, another device starts fresh', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			assert.deepEqual(await offered(page), ['main', 'collect', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'setup', 'input']);
+			assert.deepEqual(await offered(page), ['New layout', 'main', 'collect', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'setup', 'input']);
 
 			await pick(page, 'nowview');
 			await until(() => rootTabs(page), (t) => t.includes('nowview'));
@@ -325,13 +325,61 @@ describe('the shell', () => {
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			// The chooser reads the saved layouts each time it opens, so the
 			// save is on the list the first time it is asked.
-			assert.deepEqual(await offered(page), ['main', 'collect', 'mine', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'setup', 'input']);
+			assert.deepEqual(await offered(page), ['New layout', 'main', 'collect', 'mine', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'setup', 'input']);
 		});
 
 		// Which tabs are open is per device (vividn: the selection is not synced).
 		await withApp(async ({ page }) => {
 			assert.deepEqual(await rootTabs(page), ['main']);
 		}, DESKTOP);
+	});
+});
+
+describe('a new layout', () => {
+	// da-1a9fh, vividn 2026-10-28: «hitting the + button to make a new tab
+	// should give the option of creating a new layout, which you then name
+	// which starts out blank».
+	test('+ «New layout»: cancel makes nothing, a taken name is refused saying so, a free one opens blank and survives a reload', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const ask = page.locator('dialog.ask');
+			const answer = async (name) => {
+				await ask.locator('input').fill(name);
+				await ask.getByRole('button', { name: 'create' }).click();
+			};
+
+			await pick(page, 'New layout');
+			await ask.getByRole('button', { name: 'cancel' }).click();
+			await ask.waitFor({ state: 'detached' });
+			await settled(page);
+			assert.deepEqual(await rootTabs(page), ['main']);
+			assert.deepEqual(await layouts(app, 'listLayouts').then((l) => l.filter((x) => x.source === 'user')), []);
+
+			// A name the `+` already opens — a widget kind's, an open tab's — is
+			// said to be taken and asked again, holding what was typed.
+			await pick(page, 'New layout');
+			for (const name of ['nowview', 'main']) {
+				await answer(name);
+				await until(() => ask.locator('label span').textContent(), (t) => t === `«${name}» is taken. Name the new layout:`);
+				assert.equal(await ask.locator('input').inputValue(), name);
+			}
+			assert.deepEqual(await rootTabs(page), ['main']);
+
+			await answer('blank');
+			await until(() => rootTabs(page), (t) => t.includes('blank'));
+			assert.deepEqual(await rootTabs(page), ['main', 'blank']);
+			assert.equal(await activeRootTab(page), 'blank');
+			// Blank: one pane holding nothing, not a copy of the tab it came from.
+			assert.deepEqual(await titles(page), ['empty']);
+			const saved = await layouts(app, 'loadLayout', 'blank');
+			assert.deepEqual(saved.root.tabs.map((t) => t.content.kind), ['empty']);
+
+			await app.reload();
+			assert.deepEqual(await rootTabs(page), ['main', 'blank']);
+			assert.equal(await activeRootTab(page), 'blank');
+			assert.deepEqual(await titles(page), ['empty']);
+			assert.deepEqual(app.errors, []);
+		});
 	});
 });
 
@@ -949,22 +997,23 @@ describe('the one chooser', () => {
 			// A saved layout, so the Layouts section holds more than `main`.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
 			const fromRoot = await offered(page);
-			assert.deepEqual(fromRoot, ['main', 'collect', 'mine', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'setup', 'input']);
+			assert.deepEqual(fromRoot, ['New layout', 'main', 'collect', 'mine', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'setup', 'input']);
 
 			await manage(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'empty', 'custom', 'fields']);
 			await openChooser(page);
 			// The same list, in the same order — less `main`, which is open
-			// above this pane and may not be offered inside itself.
-			assert.deepEqual(await offers(page), fromRoot.filter((n) => n !== 'main'));
+			// above this pane and may not be offered inside itself, and less
+			// «New layout», which names a root tab (da-1a9fh).
+			assert.deepEqual(await offers(page), fromRoot.filter((n) => n !== 'main' && n !== 'New layout'));
 
 			// The keyboard is inside the dialog, on its first item, and Tab
 			// walks the rest in the order they are listed.
 			const focused = () => page.evaluate(() => document.activeElement?.textContent?.trim());
 			assert.equal(await page.evaluate(() => document.activeElement?.closest('dialog.chooser') !== null), true);
-			assert.equal(await focused(), fromRoot[1]);
-			await page.keyboard.press('Tab');
 			assert.equal(await focused(), fromRoot[2]);
+			await page.keyboard.press('Tab');
+			assert.equal(await focused(), fromRoot[3]);
 
 			// Escape closes it, hands focus back to the button that opened
 			// it, and changes nothing: the pane is still empty.

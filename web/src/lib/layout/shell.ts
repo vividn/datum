@@ -127,7 +127,7 @@ import {
 	saveLayout,
 	versions
 } from './store.js';
-import { EMPTY_KIND, allIds, closeTab, findTab, newId, newWidget, normalize, setActive, setWidget, shedLayout } from './tree.js';
+import { EMPTY_KIND, allIds, closeTab, findTab, newId, newPane, newWidget, normalize, setActive, setWidget, shedLayout } from './tree.js';
 import { unmaximize } from './maximize.js';
 import { KINDS, defaultsOfKind } from './registry.js';
 import { clearSession, keyOf } from './session.js';
@@ -837,6 +837,23 @@ export async function open(name: string): Promise<boolean> {
 	if (!tab) return false;
 	apply((l) => normalize({ ...l, root: { ...l.root, tabs: [...l.root.tabs, tab], active: l.root.tabs.length } }));
 	return true;
+}
+
+/** Whether `name` already means something `open` would open: a root tab, a save, a kit's, a built-in, a kind. */
+export async function taken(name: string): Promise<boolean> {
+	await boot();
+	const n = canonicalName(name);
+	return rootTabs(get(layout)).some((t) => t.layout === n) || (await resolve(n)) !== null;
+}
+
+/**
+ * «New layout» (da-1a9fh): a BLANK layout — one pane holding one empty
+ * tab, the tree's own empty shape — saved under `name` as any layout is,
+ * then opened as a root tab. The store refuses a name a save already has.
+ */
+export async function openBlank(name: string): Promise<void> {
+	await saveAsSaved({ version: LAYOUT_VERSION, name, root: newPane() }, name);
+	await open(name);
 }
 
 /**

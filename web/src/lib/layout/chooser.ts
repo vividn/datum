@@ -21,9 +21,11 @@ import type { NodeId } from './types.js';
 
 /**
  * What the modal came back with: a layout to inline, or a widget kind to
- * fill with — a kit's widget with the settings that name it (da-gh37k).
+ * fill with — a kit's widget with the settings that name it (da-gh37k) —
+ * or, from the root bar's `+` alone, a blank layout still to be named
+ * (da-1a9fh).
  */
-export type Choice = { layout: string } | { kind: string; settings?: Record<string, unknown> };
+export type Choice = { layout: string } | { kind: string; settings?: Record<string, unknown> } | { blank: true };
 
 /** One line of the modal's layout list: the name, and where it came from. */
 export interface Offer {
@@ -66,19 +68,21 @@ async function layoutsFor(ancestors: string[]): Promise<Offer[]> {
 
 /**
  * Open the chooser; `ancestors` are the layout names it must not offer.
- * The kits' widgets are offered unless `kits` is false: the root bar's `+`
- * opens a NAMED tab, and a kit's widget has no name there but its kit's
- * layout's, which the layouts above already offer.
+ * `root` is the root bar's `+`, which opens a NAMED tab: it offers
+ * «New layout» (da-1a9fh), and no kit's widgets, since a kit's widget has
+ * no name there but its kit's layout's, which the layouts above already
+ * offer.
  */
-export async function choose(ancestors: string[] = [], kits = true): Promise<Choice | null> {
+export async function choose(ancestors: string[] = [], root = false): Promise<Choice | null> {
 	const layouts = await layoutsFor(ancestors);
-	const widgets = kits ? kitWidgets() : [];
+	const widgets = root ? [] : kitWidgets();
 	return new Promise((resolve) => {
 		const modal = mount(Chooser, {
 			target: document.body,
 			props: {
 				layouts,
 				widgets,
+				blank: root,
 				onclose: (choice) => {
 					unmount(modal);
 					resolve(choice);
@@ -100,7 +104,7 @@ export async function choose(ancestors: string[] = [], kits = true): Promise<Cho
  */
 export async function put(tabId: NodeId, picked: Choice): Promise<void> {
 	if ('layout' in picked) await inlineInto(tabId, picked.layout);
-	else await widgetInto(tabId, picked.kind, picked.settings);
+	else if ('kind' in picked) await widgetInto(tabId, picked.kind, picked.settings);
 }
 
 /**

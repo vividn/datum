@@ -9,7 +9,8 @@
 	(`menu.ts`); an inactive tab still just switches, and the arrow keys
 	walk them. After them a `+` that opens the one chooser (da-uyx1) — the
 	layouts, then the widget kinds, where a layout opens as a root tab and
-	a widget opens that kind's built-in one-widget layout.
+	a widget opens that kind's built-in one-widget layout. Its first layout
+	is «New layout» (da-1a9fh): named, then opened blank.
 
 	LAYOUT MODE (da-vvcxc, `mode.ts`) is entered HERE: a long press on the
 	open tab let go where it was, or its context menu — a right click, the
@@ -125,7 +126,7 @@
 	import { act } from '#lib/act.ts';
 	import { storageSentence } from '#lib/storageState.ts';
 	import { openBackups } from '#lib/backups.ts';
-	import { choose as chooseAnswer, confirm } from '#lib/confirm.ts';
+	import { ask, choose as chooseAnswer, confirm } from '#lib/confirm.ts';
 	import { arm, helping } from '#lib/help.ts';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, editing, layout, loaded } from './current.js';
@@ -135,7 +136,7 @@
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
-	import { activate, close, keepTab, modified, open, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, versions } from './shell.js';
+	import { activate, close, keepTab, modified, open, openBlank, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, taken, versions } from './shell.js';
 	import { reorders } from './reorder.js';
 	import { addEdge, moveTab } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
@@ -191,13 +192,31 @@
 	/**
 	 * The `+`: the chooser, and what it came back with. A layout opens as a
 	 * root tab; a widget kind opens its built-in one-widget layout, whose
-	 * name is the kind's title (defaults.ts). Nothing is above a root tab,
-	 * so nothing is refused here.
+	 * name is the kind's title (defaults.ts); «New layout» is named first.
+	 * Nothing is above a root tab, so nothing is refused here.
 	 */
 	async function add(): Promise<void> {
 		await leave();
-		const picked = await choose([], false);
-		if (picked) await attempt(() => open('layout' in picked ? picked.layout : titleOf(picked.kind)));
+		const picked = await choose([], true);
+		if (!picked) return;
+		if ('blank' in picked) return named();
+		await attempt(() => open('layout' in picked ? picked.layout : titleOf(picked.kind)));
+	}
+
+	/**
+	 * «New layout» (da-1a9fh): asked for a name until it is one nothing
+	 * answers to yet — a taken one is said and asked again — then opened
+	 * blank. Cancel creates nothing.
+	 */
+	async function named(): Promise<void> {
+		const question = 'Name the new layout:';
+		let [said, last] = [question, ''];
+		for (;;) {
+			const to = await ask(said, 'create', last);
+			if (to === null) return;
+			if (!(await taken(to))) return attempt(() => openBlank(to));
+			[said, last] = [`«${to}» is taken. ${question}`, to];
+		}
 	}
 
 	async function attempt(job: () => Promise<unknown>): Promise<void> {
@@ -491,7 +510,7 @@
 		{/each}
 	</div>
 	<button type="button" class="control badge add" use:act={'open'} aria-label="open a layout" title="open a layout"
-		data-help="A layout is a page of panes, each holding a widget. Opens one as a new tab — a saved layout, or a single widget on its own; the tabs switch between them."
+		data-help="A layout is a page of panes, each holding a widget. Opens one as a new tab — a saved layout, a new blank one you name, or a single widget on its own; the tabs switch between them."
 		onclick={add}>+</button
 	>
 	{#if error}<span class="error" role="alert">{error}</span>{/if}

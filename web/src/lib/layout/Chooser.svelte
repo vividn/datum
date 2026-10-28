@@ -20,6 +20,12 @@
 	name as a kit's layout does — none from the root bar's `+`, which opens
 	a named tab, and a kit's widget is named there by its kit's layout.
 
+	From the root bar's `+` alone, the Layouts group starts with «New layout»
+	(da-1a9fh): a layout of the reader's own, named next and blank. vividn,
+	2026-10-28: «hitting the + button to make a new tab should give the
+	option of creating a new layout, which you then name which starts out
+	blank». A pane's chooser fills a tab inside a layout, so it has none.
+
 	A layout says where it came from (da-gg0v): `data-source` is
 	`builtin`, `user` or `kit:<name>`, and a kit's layout wears the kit's
 	name beside its own, so a list that joins two stores does not read as
@@ -32,6 +38,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { act } from '#lib/act.ts';
 	import { CHANGE } from './menu.js';
 	import { currentDb } from '#lib/database.ts';
 	import { pickableIn, titleOf } from './registry.js';
@@ -43,10 +50,12 @@
 		layouts?: Offer[];
 		/** The widgets this database's kits ship (da-gh37k), each the `kit` kind. */
 		widgets?: (KitWidget & { kit: string })[];
+		/** Whether to offer «New layout» (da-1a9fh): the root bar's `+` alone. */
+		blank?: boolean;
 		onclose: (choice: Choice | null) => void;
 	}
 
-	let { layouts = [], widgets = [], onclose }: Props = $props();
+	let { layouts = [], widgets = [], blank = false, onclose }: Props = $props();
 
 	let dialog: HTMLDialogElement;
 	let chosen = $state.raw<Choice | null>(null);
@@ -73,9 +82,12 @@
 	<h2>{CHANGE}</h2>
 	<!-- Nothing to offer, nothing to head: inside `main`, with nothing else
 	     saved, the layouts section is empty and is not drawn. -->
-	{#if layouts.length}
+	{#if layouts.length || blank}
 		<h3>Layouts</h3>
 		<div class="group" role="group" aria-label="Layouts">
+			{#if blank}
+				<button type="button" class="new" use:act={'open'} onclick={() => pick({ blank: true })}>New layout</button>
+			{/if}
 			{#each layouts as { name, source } (name)}
 				<button
 					type="button"
@@ -168,6 +180,12 @@
 	/* A layout reads as a layout: the root bar's own colour. */
 	.layout {
 		color: var(--accent);
+	}
+
+	/* A layout not yet made: a layout's colour, dashed. */
+	.new {
+		color: var(--accent);
+		border-style: dashed;
 	}
 
 	/* The kit a layout came in with, quieter than the name it goes by. */
