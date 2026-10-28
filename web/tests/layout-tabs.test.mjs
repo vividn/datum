@@ -65,11 +65,12 @@ describe('every tab of a pane is mounted', () => {
 				(html) => html.includes('kettle')
 			);
 			await second.idle();
-			const runs = (await seen()).map((argv) => argv[0]);
+			const runs = (await seen()).map((argv) => (argv.includes('--data-layer') ? 'data-layer' : argv[0]));
 			const count = (name) => runs.filter((r) => r === name).length;
 			assert.equal(count('fields'), 1, `not one refresh: ${runs}`);
-			// tail's `tail --json -n N`, the nowview's `nowview`, custom's default `now --json`.
-			assert.equal(count('nowview'), 1, `the nowview behind: ${runs}`);
+			// tail's `tail --json -n N`, the nowview's day's data layer (its overlay holds
+			// no data, da-0e06p), custom's default `now --json`.
+			assert.equal(count('data-layer'), 1, `the nowview behind: ${runs}`);
 			assert.equal(count('now'), 1, `the custom pane behind: ${runs}`);
 			assert.ok(count('tail') >= 1, `the tail in front: ${runs}`);
 			assert.deepEqual(second.errors, []);

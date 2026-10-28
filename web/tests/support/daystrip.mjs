@@ -527,7 +527,7 @@ export async function scrolledFrom({ page }, top, seen) {
 /** Which days the `dayview` PICTURES a spy saw were for, as days ago (`picturesAsked`). */
 export const viewsOf = async (seen) =>
 	(await seen())
-		.filter((argv) => argv[0] === 'dayview')
+		.filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer'))
 		.flatMap(picturesAsked)
 		.sort((a, b) => a - b);
 

@@ -235,6 +235,9 @@ pub struct DayviewSvgOpts<'a> {
     /// Instants marked as they flow past (`flow` only): a dim dashed line
     /// across the bands and its label on the axis, in a `.flow` group too.
     pub flow_marks: &'a [FlowMark],
+    /// The bands' data alone (`dayview --data-layer`, da-0e06p): no
+    /// gridlines and no now-line, which its viewer draws over a crop of it.
+    pub data_layer: bool,
 }
 
 /// An instant a flowing picture marks: nowview's whole minutes, `12:25`.
@@ -757,8 +760,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
     // Hourly gridlines spanning the full data area perpendicular to time.
     // Drawn AFTER per-day bands and the axis so the semi-transparent lines
     // overlay the data (matches original datum z-order — see dayview.ts).
-    // 40% opacity every 3rd hour, 10% otherwise.
-    for tick in &layout.axis_ticks {
+    // 40% opacity every 3rd hour, 10% otherwise. A data layer has none.
+    for tick in layout.axis_ticks.iter().filter(|_| !opts.data_layer) {
         let opacity = if tick.is_major { 0.4 } else { 0.1 };
         let (x1, y1, x2, y2) = match layout.orientation {
             Orientation::Horizontal => {
@@ -782,8 +785,9 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
     }
 
     // Per-day now-lines. Emitted last so they sit above gridlines and data.
-    // A plot with no time axis (nowview's snapshot) has no line to draw.
-    for day in &layout.days {
+    // A plot with no time axis (nowview's snapshot) has no line to draw,
+    // and a data layer leaves it to its viewer.
+    for day in layout.days.iter().filter(|_| !opts.data_layer) {
         let Some(nt) = day.now_time_pos.filter(|_| layout.time_axis_extent > 0.0) else {
             continue;
         };

@@ -84,13 +84,6 @@ const SIZES = [
 const rootNames = (page) =>
 	page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout));
 
-/** Wait until the seam (`spyOnRunner`) has been handed a nowview of `--history h`. */
-const asked = (page, h) =>
-	page.waitForFunction(
-		(h) => window.__datumSeen.some((a) => a[0] === 'nowview' && a[a.indexOf('--history') + 1] === h),
-		h
-	);
-
 /** Every widget pane's box, and the top of the bottom bar. */
 const screen = (page) =>
 	page.evaluate(() => ({
@@ -191,9 +184,9 @@ describe('a fresh phone', () => {
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.collect')), null);
 
 			// The nowview beside `fields` is the default window, asked for
-			// without anything being tapped.
-			await page.evaluate(() => window.datum.run(['occur', 'coffee']));
-			await asked(page, '30m');
+			// without anything being tapped: its far handle says so. (A write
+			// asks it for its day's data alone now, not its window, da-0e06p.)
+			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle[data-at="-30m"]').waitFor();
 			assert.deepEqual(app.errors, []);
 		});
 	});

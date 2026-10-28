@@ -445,7 +445,8 @@ describe('a tap in the nowview selects the entry behind the mark', () => {
 				(locked) => locked === true
 			);
 
-			const mood = await aMark(page, `${NOWVIEW} .field[data-field="mood"]`);
+			// Its lane on the timeline, or its state in the strip: both name it.
+			const mood = await aMark(page, NOWVIEW, '.field[data-field="mood"] [data-id]');
 			assert.ok(mood?.id && mood.id !== work.id, 'no second entry to gather');
 			await page.mouse.click(early(mood).x, early(mood).y);
 			await saysPills(page, [`hid:${work.id},${mood.id}`]);

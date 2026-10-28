@@ -175,6 +175,10 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
                 out.pictures = parse_days_back(v, "--pictures")?;
                 i += 1;
             }
+            FlagSplit::Long("data-layer") => {
+                out.data_layer = true;
+                i += 1;
+            }
             FlagSplit::Long("context") => {
                 let (v, ni) = take_value(tail, i, None, "--context")?;
                 out.context = Some(v.to_string());
@@ -245,6 +249,10 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
             }
             FlagSplit::Long("now-label") => {
                 out.now_label = true;
+                i += 1;
+            }
+            FlagSplit::Long("overlay") => {
+                out.overlay = true;
                 i += 1;
             }
             FlagSplit::Long("surround") => {

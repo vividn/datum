@@ -1640,6 +1640,11 @@ pub struct DayviewArgs {
     /// over it; a duration the band as that long before now, no integrity
     /// marks, the field's own entries in it drawn in place of a sample.
     pub context: Option<String>,
+    /// `--data-layer`, unlisted: datum.day's nowview (da-0e06p). The bands'
+    /// data alone, for a viewer that draws its own axis, gridlines and now
+    /// over a crop of it: no gridlines and no now-line, and a state still
+    /// running drawn on to its day's end, for the viewer to cut at its now.
+    pub data_layer: bool,
 }
 
 impl Default for DayviewArgs {
@@ -1662,6 +1667,7 @@ impl Default for DayviewArgs {
             digests: Vec::new(),
             pictures: Vec::new(),
             context: None,
+            data_layer: false,
         }
     }
 }
@@ -1682,6 +1688,12 @@ pub struct NowviewArgs {
     /// `--now-label` — a small yellow «now» under the now strip in place
     /// of the `HH:MM` clock (da-9g3bf). The SVG path's alone.
     pub now_label: bool,
+    /// `--overlay`, unlisted: datum.day's nowview (da-0e06p). The picture
+    /// with no data and no database opened — its axis, ticks, gridlines,
+    /// now-line and the labels under its now strip, and the strip's place
+    /// as an empty `.now-strip` — for the page to lay a crop of the
+    /// dayview's data layer under. The SVG path's alone.
+    pub overlay: bool,
     /// `--surround <DUR>` — draw this much more time either side of the
     /// window (before it only, when it ends at now), past the SVG's own
     /// box, for a viewer that pans or zooms without asking again
@@ -1749,6 +1761,7 @@ impl Default for NowviewArgs {
             history: None,
             labels: false,
             now_label: false,
+            overlay: false,
             surround: None,
             ahead: None,
             time: TimeArgs::default(),

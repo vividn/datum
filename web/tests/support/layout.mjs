@@ -517,9 +517,12 @@ export async function placeBar(page, id, word) {
 export const canvasWidth = (page, id) =>
 	pane(page, id).locator('svg.svg').evaluate((svg) => svg.width.baseVal.value);
 
-/** How many times each drawn command has run, from `spyOnRunner`'s list. */
+/**
+ * How many times each drawn command has run, from `spyOnRunner`'s list. A
+ * `dayview --data-layer` is the nowview's data (da-0e06p), not the strip's.
+ */
 export const drawnRuns = (argvs) => ({
-	dayview: argvs.filter((a) => a[0] === 'dayview').length,
+	dayview: argvs.filter((a) => a[0] === 'dayview' && !a.includes('--data-layer')).length,
 	nowview: argvs.filter((a) => a[0] === 'nowview').length
 });
 

@@ -36,7 +36,8 @@ test('a write runs each pane once, and a read runs nothing past itself', async (
 		await app.idle();
 		const write = await runsAfter(app, 'occur coffee');
 		assert.match(write.typed, /^occur coffee/);
-		for (const pane of ['fields --json', 'dayview', 'nowview', 'tail --json'])
+		// The nowview's is its day's data layer (da-0e06p): the overlay it lays it under holds no data.
+		for (const pane of ['fields --json', 'dayview --width', 'dayview --data-layer', 'tail --json'])
 			assert.ok(write.refresh.some((argv) => argv.startsWith(pane)), `${pane} refreshed: ${write.refresh.join(' | ')}`);
 		assert.deepEqual(write.refresh.filter((argv, i) => write.refresh.indexOf(argv) !== i), [], write.refresh.join(' | '));
 

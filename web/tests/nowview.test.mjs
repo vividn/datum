@@ -850,3 +850,67 @@ describe('a nowview stretch moves marks, never sizes them', () => {
 		}, phone);
 	});
 });
+
+// ── a crop of the day's data (da-0e06p) ──────────────────────────────
+//
+// vividn, 2026-10-26: «the cached part could just be the data part, and then
+// dayview and nowview draw their respective axes and ui elements overtop
+// cheaply and quickly without needing any database calls». The picture is
+// the CLI's overlay (`nowview --overlay`, no data) with the day's data layer
+// (`dayview --data-layer`) laid under it: a stretch asks for the overlay of
+// its window on the release, and for no data at all.
+
+describe('the nowview crops the day’s data under its overlay', () => {
+	const BAND = 'section[data-pane="nowview"] .nowview-band';
+	const phone = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
+	const seen = (page) => page.evaluate(() => (window.__datumSeen ?? []).map((a) => a.join(' ')));
+
+	test('a pinch in to a fifth asks for the new window’s overlay on the release, and for no data', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of ['occur coffee -t -130', 'switch mood calm -t -20', 'occur tea -t -10']) await app.runLine(line);
+			await app.redraw();
+			await page.locator(`${BAND} svg.svg rect.block[data-state="calm"]`).first().waitFor({ state: 'attached' });
+			await app.idle();
+			const rest = await handled(page, 'section[data-pane="nowview"]');
+			await app.spyOnRunner();
+			const box = await page.locator(BAND).boundingBox();
+			const apart = box.width - 20;
+			await pinch(page, box, apart, apart / 5);
+			await app.idle();
+			const asked = await seen(page);
+			assert.deepEqual(asked.filter((a) => a.startsWith('dayview')), [], 'the stretch asked for data');
+			assert.equal(asked.filter((a) => a.startsWith('nowview')).length, 1, `asked: ${asked.join(' | ')}`);
+			assert.match(asked.find((a) => a.startsWith('nowview')), /--overlay .*--history (?!30m)/);
+			// The ticks follow the window: its handles say the new one.
+			await until(() => handled(page, 'section[data-pane="nowview"]'), (h) => h.join() !== rest.join());
+			// The coffee, 130 minutes back, is drawn from the data on screen.
+			assert.ok(
+				await page.locator(`${BAND} svg.svg [data-field="coffee"]:not(g)`).first().evaluate((c, band) => {
+					const [r, b] = [c.getBoundingClientRect(), document.querySelector(band).getBoundingClientRect()];
+					return r.width > 0 && r.left >= b.left && r.right <= b.right;
+				}, BAND),
+				'the coffee is not in the window'
+			);
+			assert.deepEqual(app.errors, []);
+		}, phone);
+	});
+
+	test('a window across midnight shows the end of yesterday stitched on', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.spyOnRunner();
+				for (const line of ['switch mood late -t -20', 'switch mood early -t -15']) await app.runLine(line);
+				await app.redraw();
+				const late = page.locator(`${BAND} svg.svg rect.block[data-state="late"]`).first();
+				await late.waitFor({ state: 'attached' });
+				const [r, b] = await late.evaluate((l, band) => [l.getBoundingClientRect(), document.querySelector(band).getBoundingClientRect()].map((x) => x.toJSON()), BAND);
+				assert.ok(r.width > 1 && r.left >= b.left && r.right <= b.right, `yesterday's block is at ${JSON.stringify(r)} in ${JSON.stringify(b)}`);
+				assert.ok((await seen(page)).some((a) => /^dayview --data-layer .*--end-date -1$/.test(a)), 'yesterday was not asked');
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...phone, clock: todayAt(0, 10) }
+		);
+	});
+});

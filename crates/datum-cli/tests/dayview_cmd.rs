@@ -1308,3 +1308,48 @@ fn a_window_context_refuses_what_it_would_drop() {
     ];
     run_cli(&none, &db).expect("none draws days");
 }
+
+/// `--data-layer` (da-0e06p): the bands alone, for datum.day's nowview to
+/// crop under an overlay of its own — no gridlines, no now-line, and the
+/// state still running drawn on to the day's end, where the plain picture
+/// stops it at now.
+#[test]
+fn dayview_data_layer_is_the_bands_alone() {
+    let db = fresh_db();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .state(serde_json::json!("calm"))
+        .time_start_utc(Utc::now() - chrono::Duration::minutes(10))
+        .insert(&db);
+    let picture = |extra: &[&str]| {
+        let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let mut argv = vec!["dayview", "-o", &path, "--width", "1440", "--days", "1"];
+        argv.extend_from_slice(extra);
+        run_cli(&argv, &db).expect("dayview dispatch");
+        std::fs::read_to_string(&path).expect("read svg")
+    };
+    let attr = |svg: &str, tag: &str, name: &str| {
+        let at = svg.find(tag).unwrap_or_else(|| panic!("no {tag} in {svg}"));
+        let rest = &svg[at..];
+        let from = rest.find(&format!(r#" {name}=""#)).unwrap() + name.len() + 3;
+        rest[from..from + rest[from..].find('"').unwrap()].to_string()
+    };
+
+    let whole = picture(&[]);
+    assert!(whole.contains(r#"class="gridline""#) && whole.contains("current-time-line"));
+    assert_ne!(
+        attr(&whole, r#"data-state="calm""#, "data-to"),
+        attr(&whole, r#"class="day-data""#, "data-to"),
+        "the plain picture stops a running state at now"
+    );
+
+    let layer = picture(&["--data-layer"]);
+    assert!(!layer.contains("gridline"), "{layer}");
+    assert!(!layer.contains("current-time-line"), "{layer}");
+    assert_eq!(
+        attr(&layer, r#"data-state="calm""#, "data-to"),
+        attr(&layer, r#"class="day-data""#, "data-to"),
+        "a data layer draws a running state on to the day's end"
+    );
+}

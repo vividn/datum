@@ -50,7 +50,7 @@ const hourAt = ({ page }, hour) =>
 	}, hour);
 
 /** Every `dayview` asked for, by its argv. */
-const dayviews = async (seen) => (await seen()).filter((argv) => argv[0] === 'dayview');
+const dayviews = async (seen) => (await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer'));
 
 /** `a` and `b` the same size, to a fraction of a pixel. */
 function sameSize(a, b, what) {

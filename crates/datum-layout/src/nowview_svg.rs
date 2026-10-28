@@ -72,6 +72,7 @@ pub fn render_nowview_svg_with(
         right_panel_fills: &fills,
         flow: flow.is_some(),
         flow_marks: flow.unwrap_or_default(),
+        data_layer: false,
     };
     let (gutter, label_group) = label_gutter(layout, current_states, labels);
     let widened = widen_for(layout, gutter);
@@ -197,6 +198,29 @@ fn strip_label_overlay(layout: &DayviewLayout, label: &StripLabel) -> String {
         class = label.class,
         fill = label.fill,
         text = escape_xml(label.text),
+    )
+}
+
+/// The now strip's place, empty (`nowview --overlay`, da-0e06p): a
+/// `.now-strip` rect over the whole of it, across every band, for a viewer
+/// that paints each field's state there itself. Nothing when the picture
+/// draws no strip.
+pub fn strip_slot(layout: &DayviewLayout) -> String {
+    let Some(c) = layout.days.iter().find_map(|d| now_chunk(layout, d)) else {
+        return String::new();
+    };
+    let cross = layout.days.len() as f64 * layout.day_pitch - layout.interday_margin;
+    let (x, y, w, h) = match layout.orientation {
+        Orientation::Horizontal => (layout.label_width + c.from, 0.0, c.to - c.from, cross),
+        Orientation::Vertical => (
+            layout.time_axis_height,
+            layout.label_width + c.from,
+            cross,
+            c.to - c.from,
+        ),
+    };
+    format!(
+        r#"<rect class="now-strip" x="{x}" y="{y}" width="{w}" height="{h}" fill="none" pointer-events="none"/>"#
     )
 }
 
@@ -493,7 +517,7 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
 /// rest of the dayview SVG is emitted). Returns the original `svg` unchanged
 /// when the expected closing tags can't be found (defensive — shouldn't
 /// happen against valid dayview output).
-fn inject_inside_plot_group(svg: &mut String, overlay: &str) {
+pub fn inject_inside_plot_group(svg: &mut String, overlay: &str) {
     // The dayview SVG ends with "</g></svg>" (plot-group close, then root
     // close). Inject before the closing plot-group tag.
     let needle = "</g></svg>";

@@ -32,7 +32,8 @@ use datum_layout::nowview::{
     NowviewField, NowviewGeometry, NowviewPoint, FLOW_MARKS_MINUTES,
 };
 use datum_layout::nowview_svg::{
-    render_nowview_at_svg, render_nowview_svg_with, with_xml_declaration, wrap_svg_in_html,
+    inject_inside_plot_group, render_nowview_at_svg, render_nowview_svg_with, strip_slot,
+    with_xml_declaration, wrap_svg_in_html,
 };
 use datum_parse::cli::DayviewOrientation;
 use datum_parse::time::dur::parse_duration;
@@ -410,6 +411,10 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             c.flow.as_deref(),
         )
     };
+    let mut svg = svg;
+    if args.overlay {
+        inject_inside_plot_group(&mut svg, &strip_slot(&c.layout));
+    }
     let svg = crop_to_window(&svg, &c.geometry, &c.layout);
 
     match target {

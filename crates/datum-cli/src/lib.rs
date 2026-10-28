@@ -511,7 +511,8 @@ fn dispatch_single(cli: Cli) -> Result<()> {
     // `datum config show`, `datum completions`, `datum sync daemon`,
     // `install | uninstall | upgrade` and `alias install | uninstall` run against an in-memory placeholder: they
     // do not read the entry db (the daemon opens each chained db itself, and
-    // must not create the default).
+    // must not create the default). Nor does `nowview --overlay`, a picture
+    // with no data (da-0e06p).
     if matches!(
         &cli.command,
         Command::Config(_)
@@ -521,7 +522,8 @@ fn dispatch_single(cli: Cli) -> Result<()> {
             | Command::Upgrade { .. }
             | Command::Sync(SyncCommand::Daemon(_))
             | Command::Alias(AliasCommand::Install { .. } | AliasCommand::Uninstall { .. })
-    ) {
+    ) || matches!(&cli.command, Command::Nowview(a) if a.overlay)
+    {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }

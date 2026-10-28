@@ -28,7 +28,9 @@ use datum_layout::dayview::{
     compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewError,
     DayviewFieldInput, DayviewLayout, DayviewSpan, GlyphSize, Orientation,
 };
-use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
+use datum_layout::dayview_svg::{
+    render_dayview_svg_with, wrap_dayview_svg_in_html, DayviewSvgOpts,
+};
 use datum_parse::cli::DayviewOrientation;
 use datum_parse::time::{parse_date, DateArg, TimeCtx};
 
@@ -148,8 +150,21 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         return write_payload(args.output_file.as_deref(), &json, OutputKind::Json);
     }
 
-    let svg = render_dayview_svg(&layout);
-    write_payload(args.output_file.as_deref(), &svg, OutputKind::Svg)
+    write_payload(
+        args.output_file.as_deref(),
+        &svg_of(args, &layout),
+        OutputKind::Svg,
+    )
+}
+
+/// The picture `args` asks for of `layout`: all of it, or its data layer
+/// alone (`--data-layer`, da-0e06p).
+fn svg_of(args: &DayviewArgs, layout: &DayviewLayout) -> String {
+    let opts = DayviewSvgOpts {
+        data_layer: args.data_layer,
+        ..Default::default()
+    };
+    render_dayview_svg_with(layout, opts)
 }
 
 /// `--digests` and `--pictures`: each day's picture as `--days 1
@@ -195,7 +210,7 @@ fn by_day(
             pictures: Vec::new(),
             ..args.clone()
         };
-        let svg = render_dayview_svg(&layout_of(&day, db, Some(&read[&back]))?.0);
+        let svg = svg_of(&day, &layout_of(&day, db, Some(&read[&back]))?.0);
         out.insert(back.to_string(), each(svg));
     }
     Ok(out.into())
@@ -266,8 +281,11 @@ fn layout_of(
     // What `check integrity` finds in the window, bucketed below by the day
     // each flagged entry happened on (da-0lful). Empty result is fine; just
     // no error marks, and none around a sample (da-jc8ic).
+    // A data layer has none either: the nowview it is cropped for never drew
+    // them, and reading them is most of a day's cost (da-0e06p).
     let findings = match (args.context.as_ref(), findings) {
         (Some(_), _) => Vec::new(),
+        (None, _) if args.data_layer => Vec::new(),
         (None, Some(read)) => read.to_vec(),
         (None, None) => {
             datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default()
@@ -362,7 +380,9 @@ fn layout_of(
             &zones,
             day_start_ms,
             day_end_ms,
-            now_ms,
+            // A data layer's running state runs on to the day's end, for its
+            // viewer to cut at its own now as the clock moves (da-0e06p).
+            if args.data_layer { day_end_ms } else { now_ms },
             // Any `--context` here is `none`: the sample in place of the
             // field's own entries. Without one, only where it has none (da-srrqd).
             sample.as_ref().map(|s| (s, context.is_some())),
@@ -976,6 +996,7 @@ mod tests {
             digests: Vec::new(),
             pictures: Vec::new(),
             context: None,
+            data_layer: false,
         }
     }
 

@@ -135,7 +135,9 @@
 	import { markOf, pressSpent } from '$lib/inspect.js';
 	import { readLanes } from '$lib/lanes.js';
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '$lib/nowpoint.js';
-	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '$lib/panes.js';
+	import { compose } from '$lib/nowcrop.js';
+	import { historyArg, ladderAround, layerArgv, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, zoomHistory } from '$lib/panes.js';
+	import { run } from '$lib/run.js';
 
 	interface Props {
 		/** How far back the window reaches: a step of NOWVIEW_STEPS, or any length a handle's drag left it at. */
@@ -415,6 +417,76 @@
 	const drawnFrom = () => (Number.isFinite(spanned[0]) ? spanned[0] : (axis?.from ?? NaN));
 	/** The instant the picture on screen stops drawing what is known: its now, drawn ahead. */
 	const drawnTo = () => drawn?.now ?? (Number.isFinite(spanned[1]) ? spanned[1] : (axis?.to ?? NaN));
+
+	// ── the data (da-0e06p) ────────────────────────────────────────────
+
+	/**
+	 * The days the picture crops, by days back from today, as the CLI drew
+	 * their data layer for this box: the days the overlay on screen reaches,
+	 * asked again after a write. `fresh` are the days drawn for `key`; one
+	 * drawn for another box or epoch still stands in, mapped by its
+	 * instants, until the new one lands.
+	 */
+	let layer = $state.raw<{ key: string; fresh: Set<number>; days: Map<number, string> }>({
+		key: '',
+		fresh: new Set(),
+		days: new Map()
+	});
+	/** The days asked for and not yet answered, by what they were asked as, and the newest `key` asked. */
+	const layering = new Set<string>();
+	let wanted = '';
+	/** This widget's in the worker's queue, for its layer runs. */
+	const layerKey = `nowview-layer:${Math.random().toString(36).slice(2)}`;
+	/** How many days back a pan takes the data: a week. */
+	const MAX_BACK = 7;
+
+	/** Ask for the days of data the overlay `svg` reaches that `layer` does not hold. */
+	function needLayer(svg: SVGSVGElement): void {
+		const slot = svg.querySelector('.now-strip');
+		if (!slot) return;
+		const along = Number(svg.getAttribute(vertical ? 'height' : 'width'));
+		const cross = Number(slot.getAttribute(vertical ? 'width' : 'height'));
+		if (!(along > 0 && cross > 0)) return;
+		const midnight = new Date().setHours(0, 0, 0, 0);
+		// Rounded up: a drawing that starts even a millisecond before a
+		// midnight reaches the day before it, so it is asked for too.
+		const reach = Math.max(0, Math.min(MAX_BACK, Math.ceil((midnight - drawnFrom()) / 86_400_000) || 0));
+		// Not the box's length along time: a day drawn at another is mapped
+		// by its instants all the same.
+		const key = `${cross} ${vertical} ${epoch} ${midnight}`;
+		wanted = key;
+		for (let back = 0; back <= reach; back++) {
+			const asked = `${key} ${back}`;
+			if ((key === layer.key && layer.fresh.has(back)) || layering.has(asked)) continue;
+			layering.add(asked);
+			// Keyed by the widget and the day, so a newer ask drops an older one not yet started.
+			void run(layerArgv(along, cross, vertical, back), undefined, undefined, `${layerKey}:${back}`, undefined, undefined, true).then((r) => {
+				layering.delete(asked);
+				if (r.superseded || key !== wanted || r.code !== 0 || !r.stdout.trim()) return;
+				const fresh = new Set(key === layer.key ? layer.fresh : []);
+				layer = { key, fresh: fresh.add(back), days: new Map(layer.days).set(back, r.stdout) };
+			});
+		}
+	}
+
+	// A write asks for the data again, whether or not the overlay it also
+	// asks for comes back any different.
+	$effect(() => {
+		void epoch;
+		untrack(() => {
+			const svg = svgEl();
+			if (svg) needLayer(svg);
+		});
+	});
+
+	/**
+	 * The overlay datum drew, with the days' data laid under it: its strip
+	 * about the instant the overlay was drawn for, its `-t` or now.
+	 */
+	const crop = (overlay: string, argv: string[]) => {
+		const at = argv.includes('-t') ? Date.parse(argv[argv.indexOf('-t') + 1]) : NaN;
+		return compose(overlay, [...layer.days.values()], Number.isFinite(at) ? at : Date.now());
+	};
 
 	// ── the flow ───────────────────────────────────────────────────────
 
@@ -740,8 +812,9 @@
 	 * under it (one under a finger waits for the lift, $lib/hover.ts).
 	 */
 	function unstretch(): void {
-		const back = 1 / (zoom?.scale || 1);
 		for (const pattern of el?.querySelectorAll<SVGPatternElement>('.nowview-band svg.svg pattern') ?? []) {
+			// And by what the crop stretched the day's data by (da-0e06p).
+			const back = 1 / ((zoom?.scale || 1) * Number(pattern.getAttribute('data-scale') ?? 1));
 			pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
 			pattern.setAttribute('patternTransform', `scale(${vertical ? `1 ${back}` : `${back} 1`}) ${pattern.dataset.drawn}`);
 		}
@@ -1066,6 +1139,7 @@
 		const groups = svg?.querySelectorAll('[data-lo]') ?? [];
 		const edge = (el: Element | undefined, name: string) => Date.parse(el?.getAttribute(name) ?? '');
 		spanned = [edge(groups[0], 'data-from'), edge(groups[groups.length - 1], 'data-to')];
+		if (svg) needLayer(svg);
 		// What is read off the picture below is read where it will be drawn.
 		if (Math.abs(moved - rest) >= 0.5) {
 			rest = moved;
@@ -1497,9 +1571,11 @@
 		{@attach (el) => on(el, 'touchmove', onTouchMove, { passive: false })}
 		{@attach (el) => on(el, 'wheel', onWheel, { passive: false })}
 	>
-		<!-- `refills` rides on the epoch: a bump re-runs the command, as a
-		     write's does, once half of what was drawn ahead is spent. -->
-		<CliPane {spec} epoch={epoch + refills} />
+		<!-- `refills` rides on the epoch: a bump re-runs the command once
+		     half of what was drawn ahead is spent. A write re-runs only the
+		     snapshot, the one picture here drawn from data: the overlay has
+		     none, and a write asks for the day's data layer (da-0e06p). -->
+		<CliPane {spec} epoch={(showHistory ? 0 : epoch) + refills} compose={crop} />
 	</div>
 
 	<!-- The wait's mark: a ring that closes over LONG_MS, and a dashed stem
@@ -1695,7 +1771,7 @@
 	.nowview-band :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *)) {
 		transform-box: fill-box;
 		transform-origin: center;
-		scale: calc(1 / var(--zoom)) 1;
+		scale: calc(1 / (var(--zoom) * var(--sx, 1))) 1;
 	}
 	.nowview-band :global(svg.svg text[text-anchor='end']:not(defs *)) {
 		transform-origin: right;
@@ -1704,7 +1780,7 @@
 		transform-origin: left;
 	}
 	.vertical .nowview-band :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *)) {
-		scale: 1 calc(1 / var(--zoom));
+		scale: 1 calc(1 / (var(--zoom) * var(--sx, 1)));
 	}
 	/* But the dash under the now strip runs along time, as long as the
 	   strip: it stretches with it. */

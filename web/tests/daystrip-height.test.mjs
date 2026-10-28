@@ -553,7 +553,7 @@ describe("the day strip's day height and its pin", () => {
 				`the preview shows ${during}px where ${before + 40} was asked for`
 			);
 			assert.equal(
-				(await seen()).filter((argv) => argv[0] === 'dayview').length,
+				(await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer')).length,
 				0,
 				'the strip re-drew during the drag'
 			);

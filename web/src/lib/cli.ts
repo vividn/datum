@@ -201,9 +201,12 @@ const rank = (job: Job) => (job.session ? Infinity : job.pane ? (cost.get(job.wo
 /**
  * `argv`'s command word: the first that is neither a flag nor `--db`'s value.
  * Only a pane's is ranked, and a pane's argv starts with its command; `--db`
- * is the one flag a caller puts before it.
+ * is the one flag a caller puts before it. A day's data layer is the
+ * nowview's (da-0e06p), not the day strip's: a cost of its own.
  */
-const wordOf = (argv: string[]) => argv.find((word, i) => !word.startsWith('-') && argv[i - 1] !== '--db') ?? '';
+const wordOf = (argv: string[]) =>
+	(argv.find((word, i) => !word.startsWith('-') && argv[i - 1] !== '--db') ?? '') +
+	(argv.includes('--data-layer') ? ' --data-layer' : '');
 
 /**
  * Queue `job`; resolves `null` if it was superseded before it started.

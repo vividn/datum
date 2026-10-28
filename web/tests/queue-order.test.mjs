@@ -75,7 +75,9 @@ const queue = (slow) => `
 			const code = get(pointers, buffer);
 			const argv = new TextDecoder().decode(new Uint8Array(instance.exports.memory.buffer, buffer, size)).split('\\0');
 			channel.postMessage({ started: argv.slice(1).join(' ') });
-			const ms = slow[argv[1]];
+			// By the word the queue ranks by (\`wordOf\`, $lib/cli.ts): the nowview's day's
+			// data layer is a \`dayview\` with a cost of its own (da-0e06p).
+			const ms = slow[argv.includes('--data-layer') ? 'dayview --data-layer' : argv[1]];
 			if (ms) for (const end = performance.now() + ms; performance.now() < end; );
 			return code;
 		};
@@ -122,6 +124,8 @@ const waitFor = (page, ok) => until(() => page.evaluate(() => window.__queue), o
 /** Every request heard once all of them are answered. */
 const settled = async (ear) => requests(await until(ear.heard, (log) => requests(log).every((r) => r.out !== undefined)));
 
+// The nowview's refresh after a write is its day's data layer (da-0e06p): its
+// overlay holds no data. The strip's `dayview` is the slow one.
 test('after a write, nowview answers before a slow dayview, though it was queued after it', async () => {
 	await withApp(
 		async (app) => {
@@ -134,8 +138,8 @@ test('after a write, nowview answers before a slow dayview, though it was queued
 			await app.submit('switch mood good');
 			await app.idle();
 			const reqs = await settled(ear);
-			const dayview = reqs.find((r) => /^dayview /.test(r.argv) && r.ran);
-			const nowview = reqs.find((r) => /^nowview /.test(r.argv) && r.ran);
+			const dayview = reqs.find((r) => /^dayview (?!--data-layer)/.test(r.argv) && r.ran);
+			const nowview = reqs.find((r) => /^dayview --data-layer /.test(r.argv) && r.ran);
 			assert.ok(dayview && nowview, `both panes refreshed:\n${show(reqs)}`);
 			assert.ok(dayview.in < nowview.in, `dayview was queued first:\n${show(reqs)}`);
 			assert.ok(nowview.in < dayview.out, `they waited together:\n${show(reqs)}`);

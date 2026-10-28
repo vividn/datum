@@ -54,6 +54,11 @@
 		 * with it — known, not learned again by writing once more (da-v36y).
 		 */
 		writer = $bindable(null),
+		/**
+		 * What the page lays over or under the CLI's own answer before it is
+		 * shown: the nowview's crop of the day's data layer (da-0e06p).
+		 */
+		compose = undefined,
 		/** The caller's title controls, forwarded as the pane's `heading`. */
 		title: titled
 	}: {
@@ -62,6 +67,7 @@
 		guard?: boolean;
 		scale?: number;
 		writer?: PaneSpec | null;
+		compose?: (stdout: string, argv: string[]) => string;
 		title?: Snippet;
 	} = $props();
 
@@ -208,7 +214,7 @@
 	{:else if !result}
 		<p class="quiet">…</p>
 	{:else if result.stdout}
-		<CliOutput text={result.stdout} {behind} />
+		<CliOutput text={compose ? compose(result.stdout, result.argv) : result.stdout} {behind} />
 	{:else if result.stderr}
 		<CliOutput text={result.stderr} stream="stderr" error {behind} />
 	{:else if spec.empty}

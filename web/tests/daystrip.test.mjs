@@ -213,7 +213,7 @@ describe('the day strip', () => {
 				});
 				await app.idle();
 
-				const views = (await seen()).filter((argv) => argv[0] === 'dayview');
+				const views = (await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer'));
 				const flag = (argv, name) => argv[argv.indexOf(name) + 1];
 				// Every picture is one day, drawn bands-only: no date column,
 				// no ruler, no outer margin — the web draws all three.
@@ -502,7 +502,7 @@ describe('the day strip', () => {
 				// Every dayview the strip ran for the taller box: the ONE day
 				// it gained. Every other day, and today, and the geometry, are
 				// the same argv as before and came out of the cache.
-				const views = (await seen()).filter((argv) => argv[0] === 'dayview').map(picturesAsked);
+				const views = (await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer')).map(picturesAsked);
 				assert.deepEqual(views, [[16]]);
 			}
 		);
@@ -785,7 +785,7 @@ const bandBox = ({ page }) => page.locator('.band[data-days-ago="0"]').boundingB
 /** What each `dayview` was asked for as its `--width`. */
 const askedWidths = (argvs) =>
 	argvs
-		.filter((argv) => argv[0] === 'dayview')
+		.filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer'))
 		.map((argv) => Number(argv[argv.indexOf('--width') + 1]));
 
 /** How wide a band is DRAWN — the picture's own width, in its own units. */

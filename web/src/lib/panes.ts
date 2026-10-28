@@ -575,6 +575,9 @@ export const nowviewSpec = (history: string, center?: string, vertical = false, 
 	...NOWVIEW,
 	argv: [
 		...NOWVIEW.argv,
+		// Its data is the day's, laid under it by the page (da-0e06p): the
+		// picture it is asked for has none, and opens no database.
+		...(history === '0' ? [] : ['--overlay']),
 		'--now-label',
 		'--history',
 		history,
@@ -586,6 +589,39 @@ export const nowviewSpec = (history: string, center?: string, vertical = false, 
 		...(vertical ? ['--orientation', 'vertical'] : [])
 	]
 });
+
+/**
+ * How many of the nowview's pixels along time a day's data layer is drawn
+ * at, a pixel of the overlay's: a day at the scale of a 30m window. The
+ * layer is asked at the nowview's box alone, never its window, so a stretch
+ * or a pan crops the same picture and asks for nothing but the overlay.
+ */
+const LAYER_DAY = (24 * 60) / stepMinutes(NOWVIEW_HISTORY);
+
+/**
+ * The day `back` days before today as the nowview's data layer, as argv
+ * (da-0e06p): the dayview's bands of it and nothing else (`--data-layer`),
+ * `cross` across as the overlay's band is and the day `along` its time axis
+ * at the scale `LAYER_DAY` names.
+ */
+export const layerArgv = (along: number, cross: number, vertical: boolean, back: number): string[] => [
+	'dayview',
+	'--data-layer',
+	vertical ? '--height' : '--width',
+	String(Math.round(along * LAYER_DAY)),
+	'--day-height',
+	String(cross),
+	'--margin',
+	'0',
+	'--label-width',
+	'0',
+	'--time-axis-height',
+	'0',
+	'--days',
+	'1',
+	...(vertical ? ['--orientation', 'vertical'] : []),
+	...(back ? ['--end-date', String(-back)] : [])
+];
 
 export const TAIL: PaneSpec = {
 	title: 'tail',

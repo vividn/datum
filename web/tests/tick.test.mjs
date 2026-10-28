@@ -115,8 +115,9 @@ describe('the minute tick', () => {
 				await app.idle();
 				const seen = await app.spyOnRunner();
 				const [from, to] = await span0(block);
-				// Drawn ahead: open a window's worth past now, behind the line.
-				assert.equal(Date.parse(to), AT + 30 * MINUTE, 'the block is not drawn on past now');
+				// Drawn ahead: open past now, behind the line — to the end of
+				// its day, the day's data layer (da-0e06p).
+				assert.ok(Date.parse(to) >= AT + 30 * MINUTE, 'the block is not drawn on past now');
 				const before = await underNow(page);
 				await app.clock.forward(MINUTE);
 				await app.idle();
@@ -311,7 +312,8 @@ describe('the minute tick', () => {
 				await written;
 				await app.idle();
 
-				const ran = await ranOf(seen, 'nowview');
+				// The nowview's runs: its overlay, and its day's data layer, which is what a write re-draws (da-0e06p).
+				const ran = [...(await ranOf(seen, 'nowview')), ...(await seen()).filter((argv) => argv.includes('--data-layer'))];
 				assert.ok(ran.length >= 1, 'neither the write nor the tick re-drew nowview');
 				assert.ok(ran.length <= 2, `${ran.length} nowview processes for a write and a tick`);
 				// And what is on screen is of the minute the clock is in, not

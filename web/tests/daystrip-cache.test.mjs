@@ -141,7 +141,7 @@ describe('the day strip across a swipe', () => {
 			await app.idle();
 
 			assert.deepEqual(
-				(await seen()).filter((argv) => argv[0] === 'dayview'),
+				(await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer')),
 				[],
 				'the return ran dayview again'
 			);

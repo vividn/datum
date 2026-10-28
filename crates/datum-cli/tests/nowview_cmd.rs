@@ -1469,3 +1469,40 @@ fn nowview_surround_draws_past_the_box() {
     // The window's own ticks, carried on out: -10m apart, majors labelled.
     assert!(around.contains(">-60m<") && around.contains(">-30m<") && around.contains(">-10m<"));
 }
+
+/// `--overlay` (da-0e06p): the picture with no data, for datum.day's nowview
+/// to lay the day's data layer under — read from no database, so a database
+/// holding entries draws none, and a missing one is not made — with the now
+/// strip's place marked `.now-strip`.
+#[test]
+fn nowview_overlay_draws_no_data_and_opens_no_database() {
+    let tmp = tempfile::tempdir().unwrap();
+    let datum = |db: &std::path::Path, args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+            .args(args)
+            .env("DATUM_DB", db)
+            .env("DATUM_HOME", tmp.path())
+            .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
+            .output()
+            .expect("run datum");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let overlay = ["nowview", "-o", "-", "--overlay", "--context", "30m"];
+
+    let kept = tmp.path().join("kept.db");
+    datum(&kept, &["switch", "mood", "calm", "-t", "-10"]);
+    let svg = datum(&kept, &overlay);
+    assert!(svg.contains(r#"class="now-strip""#), "{svg}");
+    assert!(svg.contains(r#"class="tick-label""#), "{svg}");
+    assert!(!svg.contains("data-field"), "the overlay drew data: {svg}");
+    assert!(!datum(&kept, &["nowview", "-o", "-", "--context", "30m"]).contains("now-strip"));
+
+    let missing = tmp.path().join("missing.db");
+    assert!(datum(&missing, &overlay).contains("now-strip"));
+    assert!(!missing.exists(), "the overlay made a database");
+}

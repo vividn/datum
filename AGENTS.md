@@ -729,7 +729,14 @@ binary.
   that row's three state values), /now (`now --bare`) and the
   gear's «Backups» (`db backup -`, and plans' `db backup --to` into a
   process's `/data/stage`, whose files a `run` hands in and gets back)
-  are CLI commands through `run(argv)`. What TypeScript does
+  are CLI commands through `run(argv)`. The CLI decides what is drawn, and
+  the page may draw what it decided (vividn agreed, 2026-10-26, da-0e06p):
+  the day strip's ruler from `axis_ticks`, and the nowview, which lays a
+  crop of the day's data layer (`dayview --data-layer`, asked at its box
+  alone) under the CLI's overlay (`nowview --overlay`: the picture with no
+  data, no database opened) and paints its now strip with the block each
+  lane holds at the instant (`$lib/nowcrop.ts`), so a stretch or a pan
+  asks for the overlay and no data. What TypeScript does
   hold is the transport: carrying those files to an S3-compatible bucket
   (`$lib/s3.ts`, SigV4 by aws4fetch, the browser straight to the bucket
   under its CORS), each device under a folder of its own,

@@ -49,7 +49,7 @@ try {
 				}
 			});
 			await app.idle();
-			const drawn = (await seen()).filter((a) => a[0] === 'dayview');
+			const drawn = (await seen()).filter((a) => a[0] === 'dayview' && !a.includes('--data-layer'));
 			console.log(
 				`resize: first band ${resize.first?.toFixed(0)}ms, all ${resize.bands} bands ${resize.last?.toFixed(0)}ms, ${drawn.length} dayview runs`
 			);
@@ -62,7 +62,7 @@ try {
 			const cost = Date.now() - began;
 			const runs = await after();
 			console.log(
-				`a command: ${cost}ms to a settled page, ${runs.filter((a) => a[0] === 'dayview').length} dayview runs of ${runs.length} runs in all`
+				`a command: ${cost}ms to a settled page, ${runs.filter((a) => a[0] === 'dayview' && !a.includes('--data-layer')).length} dayview runs of ${runs.length} runs in all`
 			);
 		},
 		{ viewport: VIEWPORT }
