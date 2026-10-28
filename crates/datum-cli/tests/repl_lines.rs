@@ -76,7 +76,9 @@ impl Env {
     }
 
     /// What a REPL printed on stdout, past its banner, and on stderr, each
-    /// hid named `<hid>`: the two sides of a comparison mint their own.
+    /// hid named `<hid>` and each undo's `(the CREATE of <time>…)` `<time>`:
+    /// the two sides of a comparison mint their own, and seed their own
+    /// database, a second apart when a second turns between them.
     fn printed(&self, out: &Output) -> (String, String) {
         let c = Connection::open(&self.db).unwrap();
         let mut s = c.prepare("SELECT hid FROM entries").unwrap();
@@ -85,10 +87,24 @@ impl Env {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
+        let unstamp = |line: &str| {
+            let Some(at) = line
+                .find("(the ")
+                .and_then(|i| line[i..].find(" of ").map(|j| i + j + 4))
+            else {
+                return line.to_string();
+            };
+            let end = at + line[at..].find([',', ')']).unwrap();
+            format!("{}<time>{}", &line[..at], &line[end..])
+        };
         let mask = |text: String| {
-            hids.iter().fold(text, |t, hid| {
-                t.replace(hid, "<hid>").replace(&hid[..5], "<hid>")
-            })
+            hids.iter()
+                .fold(text, |t, hid| {
+                    t.replace(hid, "<hid>").replace(&hid[..5], "<hid>")
+                })
+                .split_inclusive('\n')
+                .map(unstamp)
+                .collect::<String>()
         };
         let stdout = String::from_utf8_lossy(&out.stdout);
         let (_banner, stdout) = stdout
