@@ -236,7 +236,9 @@ describe('the maximize badge', () => {
 							const style = getComputedStyle(d);
 							const now = `${style.visibility} ${style.pointerEvents} ${d.closest('[inert]') !== null}`;
 							d.__was ??= now;
-							return d.__was === now ? null : `${d.tagName} ${d.className}: ${d.__was} → ${now}`;
+							return d.__was === now
+								? null
+								: `${d.tagName}.${d.getAttribute('class')} «${d.textContent?.slice(0, 12)}» in ${d.closest('section[data-pane]')?.dataset.pane}: ${d.__was} → ${now}`;
 						})
 						.filter(Boolean)
 				);
@@ -289,6 +291,17 @@ describe('the maximize badge', () => {
 			assert.ok(stops.includes('big'), `the keys never reached the big pane: ${stops.join(' ')}`);
 
 			await press(page, 'm-a');
+			// `settled` sees the boxes, not datum's answer: until the picture
+			// asked at m-a's restored box lands, the one drawn under the
+			// maximize is held scaled into it, and `place` hides the axis labels
+			// that collide there (da-l3344, 1241px drawn in a 74px box).
+			await page.waitForFunction(() => {
+				const body = document.querySelector('section[data-pane="m-a"] .body');
+				const s = getComputedStyle(body);
+				const box = Math.floor(body.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight));
+				return body.querySelector('.picture:not(.behind) svg.svg')?.width.baseVal.value === box;
+			});
+			await settled(page);
 			assert.ok((await titles(page)).includes('nowview'));
 			assert.deepEqual(await changed(), [], 'the layout inherits otherwise after the restore');
 			assert.equal(await page.locator('[data-under]').count(), 0, 'the restore left a box hidden');
