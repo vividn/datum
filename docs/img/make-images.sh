@@ -15,7 +15,7 @@ export HOME=$T DATUM_HOME=$T/data DATUM_CONFIG_HOME=$T/config DATUM_SYNC_NO_DAEM
 d() { datum "$@" > /dev/null; }
 d kit install docs/img/readme-kit.toml
 d kit install kits/sample.toml
-# The drinks' dots, half again the standard size (0.09 of the day), so they read at README width.
+# The drinks' dots, half again the standard size (0.08 of the day), so they read at README width.
 d setup coffee --glyph-scale 1.5
 d setup water --glyph-scale 1.5
 on() { local day=$1 time=$2; shift 2; d "$@" -d "$day" -t "$time"; }   # on DAY TIME COMMAND...

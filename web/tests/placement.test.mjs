@@ -421,8 +421,8 @@ describe('the Placement tab', () => {
 			};
 			/** Drag the handle on sides `sx`,`sy` by `dx`,`dy`. */
 			const size = async (sx, sy, dx, dy) => pull(page, await handle(page, `${sx},${sy}`), dx, dy);
-			// The lane is 0.2 of the 160px day; the dot the standard 0.09 of it.
-			const D = 0.09 * 160;
+			// The lane is 0.2 of the 160px day; the dot the standard 0.08 of it.
+			const D = 0.08 * 160;
 			await fits(D, D, 'as saved');
 
 			await size(0, 1, 0, 8);
