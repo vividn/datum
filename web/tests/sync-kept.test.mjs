@@ -99,11 +99,25 @@ describe('a kept connection', () => {
 			assert.ok(!first.kept, first.line);
 			// And the connection it made is kept for the next: counted past a's
 			// line for the session that brought coffee, which can print after b holds it.
-			await carried(runs.a, gone);
-			const pushed = sessions(runs.a).length;
+			const coffee = await past(runs.a, gone, true);
 			await arrives(a, b, 'water');
-			const water = await carried(runs.a, pushed);
+			const water = await carried(runs.a, coffee);
 			assert.ok(water.kept, runs.a.stdout);
+			// a's push begun while b was away was still connecting as b's own
+			// dial brought coffee: it runs on the connection that one left
+			// kept, and opens none of its own (da-qv0do). It ends after water's
+			// session, so it is read once a has said nothing for a second.
+			await until(async () => {
+				const n = sessions(runs.a).length;
+				await new Promise((r) => setTimeout(r, 1000));
+				return sessions(runs.a).length === n;
+			}, Boolean);
+			assert.ok(
+				sessions(runs.a)
+					.slice(coffee)
+					.every((s) => s.kept),
+				runs.a.stdout
+			);
 		} finally {
 			await a.close();
 			await b.close();

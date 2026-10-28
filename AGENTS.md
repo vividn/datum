@@ -350,7 +350,9 @@ A connection outlives its session (da-3jcth): two copies whose handshakes say
 `keeps` run the next session with each other, dialed or served, on a new stream
 of it, so a write's push pays no connect; it closes once idle 90 s (three of
 datum.day's 30-s pulls), and one that died costs a failed stream, then a fresh
-connect. `sync run` and `sync -v` say «on the connection kept».
+connect. A dial still connecting when a session the peer dialed leaves one
+kept runs on that one, closing its own as busy (da-qv0do). `sync run` and
+`sync -v` say «on the connection kept».
 
 `DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
 tests), `DATUM_SYNC_RELAY=<url>` one relay and nothing else.

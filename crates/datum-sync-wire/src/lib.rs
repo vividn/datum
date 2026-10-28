@@ -1204,15 +1204,27 @@ async fn session(
     // is open (da-3jcth): one that died meanwhile costs the stream it fails
     // on, and then a fresh connect.
     let (conn, using, mut s, mut r, mut reply) = loop {
-        let using = take(ep, &id);
-        let conn = match &using {
-            Some(kept) => kept.conn.clone(),
+        let mut using = take(ep, &id);
+        let conn = match using.as_ref().map(|kept| kept.conn.clone()) {
+            Some(conn) => conn,
             None => {
                 let conn = connect(ep, addr.clone(), ALPN).await?;
-                // Never a kept one: closing it would end a session served
-                // on it too (`web::Dialing`).
-                store.reached(&conn);
-                conn
+                // A connect can take seconds, and a session the peer dialed
+                // meanwhile may have left one kept: this session runs on
+                // that, and this closes as busy (da-qv0do).
+                using = take(ep, &id);
+                match &using {
+                    Some(kept) => {
+                        conn.close(0u32.into(), CLOSED_BUSY);
+                        kept.conn.clone()
+                    }
+                    None => {
+                        // Never a kept one: closing it would end a session
+                        // served on it too (`web::Dialing`).
+                        store.reached(&conn);
+                        conn
+                    }
+                }
             }
         };
         let opened = async {
@@ -1683,7 +1695,18 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Res
     let (using, mut s, mut r) = match kept {
         Some((using, s, r)) => (Some(using), s, r),
         None => {
-            let (s, r) = within(async { Ok(conn.accept_bi().await?) }).await?;
+            // A dialer that found a connection kept meanwhile closes this
+            // one as busy, before any stream (da-qv0do).
+            let (s, r) = within(async { Ok(conn.accept_bi().await?) })
+                .await
+                .map_err(|e| match closed_busy(&e) {
+                    true => Failed(
+                        Failure::Refused(Why::Busy),
+                        format!("{}: {e:#}", short(&id)),
+                    )
+                    .into(),
+                    false => e,
+                })?;
             (None, s, r)
         }
     };
