@@ -166,6 +166,9 @@ async function choose(page, line, files) {
 	await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 }
 
+/** The numbers a confirm names, in order: the facts of its sentence, not its words (rule 22). */
+const numbers = (text) => (text.match(/\d+/g) ?? []).map(Number);
+
 /** Recorded argvs, a restore's pin (da-2zqad) read as `FP`: the fingerprint of the live entries it was counted on. */
 const pinned = (argvs) => argvs.map((argv) => argv.map((a, i) => (argv[i - 1] === '--if-unchanged' ? 'FP' : a)));
 
@@ -254,7 +257,7 @@ for (const engine of [chromium, webkit]) {
 					let before = await echoes(page);
 					await type(page, 'db purge --chain');
 					await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
-					assert.match((await app.outputs()).at(-1), /in no sync chain/);
+					assert.match((await app.outputs()).at(-1), /\bchain\b/, 'refused: in no chain');
 					assert.equal(await page.locator('dialog.confirm[open]').count(), 0);
 					assert.equal(await count(app), 4);
 
@@ -279,7 +282,7 @@ for (const engine of [chromium, webkit]) {
 
 					// The right one does, and every pane follows without a reload.
 					await type(page, 'db purge');
-					assert.match(await page.locator('dialog.confirm p').innerText(), /it clears the command history and what the widgets last showed/);
+					assert.match(await page.locator('dialog.confirm p').innerText(), /\bdatum\b/, 'it names the database it destroys');
 					await name.fill('datum');
 					await name.press('Enter');
 					// The purge is the one command left in the scrollback.
@@ -331,17 +334,17 @@ for (const engine of [chromium, webkit]) {
 				async (app) => {
 					const { page } = app;
 					const said = await (await kitConfirm(page)).locator('p').innerText();
-					assert.match(said, /^Would install kit 'rest': 2 field\(s\), 1 alias\(es\), 1 view\(s\), 1 command\(s\), 0 layout\(s\), 0 widget\(s\), 0 index\/indices$/m);
-					assert.match(said, /install only kits you trust/);
+					// What it brings, by count: the kit's name, then its fields, aliases, views, commands, layouts, widgets, indices.
+					assert.match(said, /'rest'/);
+					assert.deepEqual(numbers(said), [2, 1, 1, 1, 0, 0, 0]);
 					await answer(page, 'cancel');
-					assert.equal((await app.outputs()).at(-1), 'kit not installed — nothing ran');
 					await app.submit('kit list');
-					assert.equal((await app.outputs()).at(-1), 'No kits installed.');
+					assert.doesNotMatch((await app.outputs()).at(-1), /\brest\b/, 'cancel installed nothing');
 					assert.equal(await page.locator('.bar [data-field="nap"]').count(), 0);
 
 					await kitConfirm(page);
 					await answer(page, 'install');
-					assert.match((await app.outputs()).at(-1), /^Installed kit 'rest': 2 field\(s\)/);
+					assert.match((await app.outputs()).at(-1), /'rest'/);
 					await app.submit('kit list');
 					assert.match((await app.outputs()).at(-1), /^rest\s+-\s+2\s+1\s+1\s+0\s+1\s+0$/m);
 					// The fields widget follows without a reload.
@@ -413,7 +416,7 @@ test('an import shows its progress while it runs, and the result after', async (
 			const readings = await page.evaluate(() => window.__readings);
 			const running = readings.filter((r) => !r.landed).map((r) => r.shown);
 			assert.ok(new Set(running).size >= 2, JSON.stringify(readings));
-			for (const shown of running) assert.match(shown, /^v2import: (reading|inserting) \d+\/5000$/);
+			for (const shown of running) assert.match(shown, /^v2import\b.* \d+\/5000$/, 'the command and how far of the 5000');
 			assert.ok((await app.outputs()).some((o) => /5000 imported/.test(o)));
 			assert.equal(await page.locator('.cli .progress').count(), 0);
 			assert.deepEqual(app.errors, []);
@@ -437,22 +440,22 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 			const legacy = await readFile(LEGACY, 'utf8');
 
 			await choose(page, 'db v2import --dry-run', LEGACY);
-			assert.match((await app.stdouts()).at(-1), /Migration summary: 120 would import/);
+			assert.match((await app.stdouts()).at(-1), /\b120\b/, 'the dry run counts the 120');
 			assert.equal(await count(app), 0);
 
 			await choose(page, 'db v2import --from backup.json --dry-run', LEGACY);
 			assert.deepEqual(await asked(), { argv: ['db', 'v2import', '--from', '-', '--dry-run'], stdin: legacy });
-			assert.match((await app.stdouts()).at(-1), /Migration summary: 120 would import/);
+			assert.match((await app.stdouts()).at(-1), /\b120\b/, 'the dry run counts the 120');
 			// The page's own note is the last line of stderr, after the
 			// progress the CLI wrote there as it read (da-h9vj).
 			const said = (await app.outputs()).at(-1).split('\n');
-			assert.equal(said.at(-1), 'not a file in the browser: backup.json');
+			assert.match(said.at(-1), /\bbackup\.json$/, 'the note names the path it could not read');
 			assert.equal(await count(app), 0);
 
 			// `--skip-log` keeps its path, so `-` is still the backup.
 			await choose(page, 'db v2import --skip-log skips.txt', LEGACY);
 			assert.deepEqual(await asked(), { argv: ['db', 'v2import', '--skip-log', 'skips.txt', '-'], stdin: legacy });
-			assert.match((await app.outputs()).at(-1), /not a file in the browser: skips\.txt$/);
+			assert.match((await app.outputs()).at(-1), /\bskips\.txt$/, 'the note names the path it could not write');
 			// The 120 rows and nothing beside them: each imported field is
 			// declared by its spec alone, which `count` does not count (da-r6ofr).
 			assert.equal(await count(app), 120);
@@ -519,10 +522,9 @@ test('a replacing restore confirms its deletions first; one that deletes nothing
 			await chooser.setFiles(saved);
 			const dialog = page.locator('dialog.confirm');
 			await dialog.waitFor();
-			assert.match(
-				await dialog.locator('p').innerText(),
-				/^Restore replaces datum: 2 entries will be deleted, 0 added, 0 changed\. Undo reverts the whole restore\.$/
-			);
+			const said = await dialog.locator('p').innerText();
+			assert.match(said, /\bdatum\b/, 'it names the database');
+			assert.deepEqual(numbers(said), [2, 0, 0], 'deleted, added, changed');
 			await answer(page, 'cancel');
 			assert.match((await app.outputs()).at(-1), /db restore: aborted/);
 			assert.deepEqual(await asked(), [['db', 'restore', '-', '--dry-run', '--json']]);
@@ -576,10 +578,8 @@ test('a stale _LAST question is asked in a confirm, in the CLI’s words, and on
 		await type(page, 'retime -t +5');
 		const dialog = page.locator('dialog.confirm');
 		await dialog.waitFor();
-		assert.match(
-			await dialog.locator('p').innerText(),
-			/^⚠ default `_LAST` is older than 15 minutes — showing target:\n.*\n.*coffee.*\nRetime this entry\? \[Y\/n\]$/
-		);
+		const said = await dialog.locator('p').innerText();
+		for (const fact of ['_LAST', '15', 'coffee']) assert.ok(said.includes(fact), `it names ${fact}: ${said}`);
 		await answer(page, 'cancel');
 		assert.match((await app.stdouts()).at(-1), /Aborted\.$/);
 		assert.equal(await id(), before, 'no leaves the entry where it was');
@@ -619,10 +619,7 @@ test('an answer to the stale _LAST question acts on the entry it showed, or asks
 
 		await dialog.getByRole('button', { name: 'cancel', exact: true }).click();
 		await page.waitForFunction(() => /tea/.test(document.querySelector('dialog.confirm[open] p')?.textContent ?? ''));
-		assert.match(
-			await dialog.locator('p').innerText(),
-			/^⚠ default `_LAST` has moved since — showing target:\n.*\n.*tea.*\nRetime this entry\? \[Y\/n\]$/
-		);
+		assert.doesNotMatch(await dialog.locator('p').innerText(), /coffee/, 'it shows the entry `_LAST` moved to, alone');
 		assert.equal((await doc(other, tea.hid)).id, tea.id, 'the cancel moved nothing');
 
 		// The tea is fresh: the answered run says nothing again (da-e7739),
@@ -657,16 +654,14 @@ test('a restore’s yes deletes what its confirm counted; another tab’s write 
 		await chooser.setFiles(saved);
 		const dialog = page.locator('dialog.confirm');
 		await dialog.waitFor();
-		assert.match(await dialog.locator('p').innerText(), /^Restore replaces datum: 1 entries will be deleted, /);
+		assert.equal(numbers(await dialog.locator('p').innerText())[0], 1, 'one to delete');
 		const other = await app.newTab();
 		await other.submit('occur juice');
 
 		await dialog.getByRole('button', { name: 'restore', exact: true }).click();
-		await page.waitForFunction(() => /changed since/.test(document.querySelector('dialog.confirm[open] p')?.textContent ?? ''));
-		assert.match(
-			await dialog.locator('p').innerText(),
-			/^⚠ The database changed since it was counted\. Restore replaces datum: 2 entries will be deleted, /
-		);
+		// Asked again, marked ⚠, on a recount.
+		await page.waitForFunction(() => document.querySelector('dialog.confirm[open] p')?.textContent?.startsWith('⚠'));
+		assert.equal(numbers(await dialog.locator('p').innerText())[0], 2, 'the recount counts the juice');
 		assert.equal(await count(other), 6, 'the refused yes deleted nothing');
 
 		await answer(page, 'restore');
@@ -704,10 +699,9 @@ test('a restore refused by a write since its count asks, even when the recount d
 		await chooser.setFiles(saved);
 		const dialog = page.locator('dialog.confirm');
 		await dialog.waitFor();
-		assert.equal(
-			await dialog.locator('p').innerText(),
-			'⚠ The database changed since it was counted. Restore adds 1 entries and changes 0.'
-		);
+		const said = await dialog.locator('p').innerText();
+		assert.ok(said.startsWith('⚠'), `asked, marked as a recount: ${said}`);
+		assert.deepEqual(numbers(said), [1, 0], 'added, changed');
 		await answer(page, 'cancel');
 		assert.match((await app.outputs()).at(-1), /db restore: aborted/);
 		assert.equal(await count(app), 1, 'coffee stays deleted');
@@ -788,9 +782,14 @@ test('a restore whose dry run warns asks first, even when nothing would be delet
 				return dialog.locator('p').innerText();
 			};
 			const text = await restoreCut();
-			assert.match(text, /^Restore adds \d+ entries and changes 0\. ⚠ Entry-count mismatch: header declared \d+, restored \d+\.$/);
+			// It warns, naming the header's count, one more than the lines restore.
+			assert.equal(numbers(text).length, 4, text);
+			const [, changed, declared, restored] = numbers(text);
+			assert.ok(text.includes('⚠'), text);
+			assert.equal(changed, 0, text);
+			assert.equal(declared, restored + 1, text);
 			await answer(page, 'cancel');
-			assert.equal((await app.outputs()).at(-1), 'db restore: aborted (nothing changed; --merge deletes nothing)');
+			assert.match((await app.outputs()).at(-1), /aborted/);
 			assert.deepEqual(await asked(), [['db', 'restore', '-', '--dry-run', '--json']]);
 			assert.equal(await count(app), 0);
 
@@ -834,22 +833,25 @@ test('a hard restore’s name drops what its confirm counted; another tab’s wr
 		await chooser.setFiles(saved);
 		const dialog = page.locator('dialog.confirm');
 		await dialog.waitFor();
-		const live = async () => Number((await dialog.locator('p').innerText()).match(/dropped: (\d+) live/)?.[1]);
+		// Written, then live, tombstoned and history dropped.
+		const live = async () => numbers(await dialog.locator('p').innerText())[1];
 		const counted = await live();
 		const other = await app.newTab();
 		await other.submit('occur juice');
 		const name = dialog.locator('input');
 		await name.fill('datum');
 		await name.press('Enter');
-		await page.waitForFunction(() => /changed since/.test(document.querySelector('dialog.confirm[open] p')?.textContent ?? ''));
-		assert.match(await dialog.locator('p').innerText(), /^⚠ The database changed since it was counted\. This replaces ALL data in datum /);
+		await page.waitForFunction(() => document.querySelector('dialog.confirm[open] p')?.textContent?.startsWith('⚠'));
+		assert.match(await dialog.locator('p').innerText(), /\bdatum\b/, 'asked again, naming the database');
 		assert.equal(await live(), counted + 1, 'the recount counts the juice');
 		assert.equal(await count(other), 4, 'the refused name dropped nothing');
 
+		const before = await echoes(page);
 		await name.fill('datum');
 		await name.press('Enter');
 		await page.waitForFunction(() => !document.querySelector('dialog.confirm[open]'));
-		await page.waitForFunction(() => /cannot be undone/.test(document.querySelector('.cli')?.textContent ?? ''));
+		await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
+		assert.match(await page.locator('.cli').textContent(), /cannot be undone/);
 		assert.equal(await count(other), 3);
 		await other.page.close();
 		assert.deepEqual(app.errors, []);
@@ -891,10 +893,11 @@ test('a hard restore asks with what it drops and the database’s name, even wit
 				return dialog.locator('p').innerText();
 			};
 			const text = await restoreHard('db restore --hard');
-			const [, written, live] =
-				text.match(
-					/^This replaces ALL data in datum with the backup \((\d+) written\); dropped: (\d+) live, \d+ tombstoned or superseded, \d+ in history\. It cannot be undone: the history `undo` reads goes with it\.$/
-				) ?? assert.fail(text);
+			// It names the database, and counts what it writes and what it drops: live, tombstoned, history.
+			assert.match(text, /\bdatum\b/);
+			const [written, live] = numbers(text);
+			assert.equal(numbers(text).length, 4, text);
+			assert.match(text, /cannot be undone/);
 			// The coffee since the backup is the one more it drops.
 			assert.equal(Number(live), Number(written) + 1, text);
 			// The wrong name drops nothing.
@@ -903,7 +906,7 @@ test('a hard restore asks with what it drops and the database’s name, even wit
 			await name.fill('datu');
 			await name.press('Enter');
 			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
-			assert.equal((await app.outputs()).at(-1), 'db restore --hard: aborted (input did not match datum)');
+			assert.match((await app.outputs()).at(-1), /aborted/);
 			assert.deepEqual(await asked(), [['db', 'restore', '--hard', '-', '--dry-run', '--json']]);
 			assert.equal(await count(app), 3);
 
@@ -959,8 +962,8 @@ test('a hard restore with --chain asks naming the chain whose every copy it rest
 		const dialog = page.locator('dialog.confirm');
 		await dialog.waitFor();
 		const text = await dialog.locator('p').innerText();
-		assert.ok(text.startsWith(`Every copy in sync chain ${chain} is restored to the backup (`), text);
-		assert.match(text, /made before the restore is dropped as it syncs, offline or not, and kept on that copy in <db>\.wiped-<time>\.jsonl, which `db restore <it> --merge` brings back; .* This copy drops \d+ live, /);
+		// It names the chain, and where a copy's own entries are kept and the command that brings them back.
+		for (const fact of [chain, '.wiped-', 'db restore', '--merge']) assert.ok(text.includes(fact), `it names ${fact}: ${text}`);
 		assert.equal(await dialog.getByRole('button', { name: 'restore every copy', exact: true }).count(), 1);
 
 		// The wrong name restores nothing.
@@ -968,7 +971,7 @@ test('a hard restore with --chain asks naming the chain whose every copy it rest
 		await dialog.locator('input').fill('datu');
 		await dialog.locator('input').press('Enter');
 		await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
-		assert.equal((await app.outputs()).at(-1), 'db restore --hard: aborted (input did not match datum)');
+		assert.match((await app.outputs()).at(-1), /aborted/);
 		assert.equal(await count(app), 2);
 		assert.deepEqual(app.errors, []);
 	});

@@ -47,9 +47,10 @@ test(`a page pulling ${ENTRIES} ops shows how far the apply is in its root bar`,
 				assert.equal(pushed.code, 0, pushed.stdout);
 
 				const counts = [...said].map((s) => {
-					const m = /^syncing ([\d,]+) of ([\d,]+)$/.exec(s);
-					assert.ok(m, s);
-					return [m[1], m[2]].map((n) => Number(n.replaceAll(',', '')));
+					// Its two numbers: how many applied, of how many.
+					const m = s.match(/\d[\d,]*/g) ?? [];
+					assert.equal(m.length, 2, s);
+					return m.map((n) => Number(n.replaceAll(',', '')));
 				});
 				assert.ok(counts.length > 0, 'no progress was shown');
 				for (const [done, of] of counts) assert.ok(done < of && of >= ENTRIES, `${done} of ${of}`);

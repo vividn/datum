@@ -62,17 +62,20 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 				const mark = () => line.getAttribute('data-mark').catch(() => '');
 				const [down] = await until(
 					async () => [await reason.innerText().catch(() => ''), await mark()],
-					([t, m]) => t.includes('could not reach') && m === 'offline',
+					([t, m]) => t !== '' && m === 'offline',
 					DIAL
 				);
-				assert.match(down, /is the other copy running\? A terminal syncs while `datum sync run` or its daemon runs/);
+				// The other copy's side: it names what runs a terminal's sync.
+				assert.match(down, /`datum sync run`/);
 				assert.equal(await line.locator('.reason').count(), 0);
 
 				// The relay stops: this copy is the one cut off, and it says so.
 				await relay.stop();
 				await app.run(['occur', 'offline', '-t', '1300']);
-				const cut = await until(() => reason.innerText().catch(() => ''), (t) => t.includes('relay'), DIAL);
-				assert.match(cut, /this copy is not connected to its relay \(http:\/\/127\.0\.0\.1:\d+\/?\); is it online\?/);
+				const cut = await until(() => reason.innerText().catch(() => ''), (t) => /http:\/\/127\.0\.0\.1/.test(t), DIAL);
+				// This copy's side: it names its relay, and not the other copy's `sync run`.
+				assert.match(cut, /http:\/\/127\.0\.0\.1:\d+/);
+				assert.doesNotMatch(cut, /`datum sync run`/);
 			},
 			{ prepare: relayed(relay) }
 		);
@@ -97,7 +100,10 @@ test('a terminal redeeming a link already used is told by the page to ask for a 
 				assert.equal(joined.code, 0, joined.stderr);
 				const used = await second.run(['sync', 'chain', 'connect', link]);
 				assert.notEqual(used.code, 0, used.stdout);
-				assert.match(used.stderr, /refused: invite already used\. Next: ask datum\.day for a fresh invite/);
+				// The kind, used, and the step it leads to: back to datum.day, not `sync status`.
+				assert.match(used.stderr, /refused: .*\bused\b/);
+				assert.match(used.stderr, /datum\.day/);
+				assert.doesNotMatch(used.stderr, /datum sync status/);
 			},
 			{ prepare: relayed(own) }
 		);

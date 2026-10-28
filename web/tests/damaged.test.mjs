@@ -67,7 +67,6 @@ describe('a damaged database', () => {
 			const text = await notice.textContent();
 			assert.match(text, /datum-cli/);
 			assert.match(text, /OPFS/);
-			assert.match(text, /clearing site data in the browser may not/);
 
 			const [download] = await Promise.all([
 				page.waitForEvent('download'),
@@ -103,7 +102,8 @@ describe('a damaged database', () => {
 
 			await reset(page, notice);
 			await notice.locator('.said').waitFor();
-			assert.match(await notice.locator('.said').textContent(), /Close every other datum\.day tab and window/);
+			// What it names: the other tab, which holds the files.
+			assert.match(await notice.locator('.said').textContent(), /\btab\b/);
 
 			await other.page.evaluate(() => window.letGo());
 			await Promise.all([page.waitForEvent('load'), reset(page, notice)]);

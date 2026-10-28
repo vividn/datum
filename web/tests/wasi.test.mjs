@@ -69,7 +69,7 @@ describe('the wasi CLI', () => {
 		await onSeam(async (app) => {
 			const result = await app.run(['nosuch']);
 			assert.equal(result.code, 1);
-			assert.equal(result.stderr, "Error: Invalid argument: unknown subcommand: 'nosuch'");
+			assert.match(result.stderr, /^Error: .*'nosuch'/, 'the CLI\'s error, naming the word');
 		});
 	});
 
@@ -80,7 +80,7 @@ describe('the wasi CLI', () => {
 			await app.submit('datum occur coffee');
 			const { result } = await app.page.evaluate(() => window.datum.bar.last());
 			assert.equal(result.code, 1);
-			assert.equal(result.stderr, 'Error: leave off `datum`: `occur coffee`');
+			assert.ok(result.stderr.includes('`occur coffee`'), `it gives the line without \`datum\`: ${result.stderr}`);
 			assert.deepEqual(await app.entries(), []);
 		});
 	});

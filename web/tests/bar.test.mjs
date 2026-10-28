@@ -715,7 +715,7 @@ describe('a command with no echo', () => {
 			const { result } = await page.evaluate(() => window.datum.bar.last());
 			assert.equal(result.code, 1);
 			const said = result.stderr.replace(ESC, '').trim().split('\n').at(-1);
-			assert.match(said, /nope9: Entry not found/);
+			assert.match(said, /nope9/, 'the error names the hid it did not find');
 			assert.deepEqual(await page.locator(`${DOC} .action`).allInnerTexts(), ['DELETE']);
 			assert.equal((await section(page)).hid, hid);
 			assert.deepEqual(await page.locator(`${OUT} .raw.error p`).allInnerTexts(), [said]);

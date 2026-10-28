@@ -49,19 +49,26 @@ describe('a WebDAV destination', () => {
 			assert.ok(dav.folders.has('/dav/probe/'), 'the folder was not made');
 			assert.deepEqual([...dav.files.keys()], [], 'the probe was left behind');
 
+			// One line, the step that failed, naming what to fix and the server's status.
+			const failed = async (...facts) => {
+				const lines = await press();
+				assert.equal(lines.length, 1, lines.join(' | '));
+				assert.match(lines[0], /^✗ write\b/);
+				for (const fact of facts) assert.ok(lines[0].includes(fact), `${lines[0]} does not name ${fact}`);
+			};
 			await fill(sheet, 'probe/', { password: 'wrong' });
-			assert.deepEqual(await press(), ['✗ write failed — credentials: the user or password is wrong (401)']);
+			await failed('credentials', '401');
 			await fill(sheet, 'nowhere/probe/');
-			assert.deepEqual(await press(), ['✗ write failed — folder URL: the folder above this one does not exist (409)']);
+			await failed('folder URL', '409');
 			// Refused before any request: no CORS header could help it.
 			const asked = dav.requests.length;
 			await fill(sheet, 'probe/', { url: 'nas.local/dav/' });
-			assert.deepEqual(await press(), ['✗ write failed — folder URL: not a whole URL — it starts with https://']);
+			await failed('folder URL', 'https://');
 			assert.equal(dav.requests.length, asked);
 			dav.cors = false;
 			try {
 				await fill(sheet, 'probe/');
-				assert.match((await press()).join('\n'), /^✗ write failed — CORS: the server does not allow this page/);
+				await failed('CORS');
 			} finally {
 				dav.cors = true;
 			}
@@ -74,7 +81,8 @@ describe('a WebDAV destination', () => {
 			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
 			const sheet = await openSheet(page);
 			assert.equal(await sheet.locator('input[data-plan-field="password"]').getAttribute('type'), 'password');
-			assert.match(await sheet.innerText(), /Kept in this browser, unencrypted\. Use an app password made for datum\.day/);
+			// The password says how it is kept, under it.
+			assert.match(await sheet.locator('label:has(input[data-plan-field="password"]) + p.note-field').innerText(), /unencrypted|not encrypted/, 'the note under the password says it is kept unencrypted');
 			const origin = await page.evaluate(() => location.origin);
 			assert.match(await sheet.locator('[data-cors]').textContent(), new RegExp(`^Access-Control-Allow-Origin: ${origin}$`, 'm'));
 
@@ -93,7 +101,7 @@ describe('a WebDAV destination', () => {
 			await fill(sheet, 'plan/');
 			await sheet.getByRole('button', { name: 'Look for backups there', exact: true }).click();
 			await sheet.locator('[data-found]').waitFor();
-			assert.equal(await sheet.locator('[data-found]').innerText(), '1 backup of datum found, newest 0 s ago Add plan continues that rotation.');
+			assert.match(await sheet.locator('[data-found]').innerText(), /\b1\b.*\bdatum\b.*\b0 s\b/);
 
 			// Another device lists its folder (PROPFIND) and finds it as that device's.
 			await withApp(async (other) => {
@@ -101,10 +109,8 @@ describe('a WebDAV destination', () => {
 				await fill(sheet, 'plan/');
 				await sheet.getByRole('button', { name: 'Look for backups there', exact: true }).click();
 				await sheet.locator('[data-found]').waitFor();
-				assert.match(
-					await sheet.locator('[data-found]').innerText(),
-					/^1 backup of datum from Chrome on \w+ \(this device, earlier\?\) found, newest 0 s ago Add plan keeps this device's own beside them\.$/
-				);
+				// The first device's one, under this one's label and so perhaps this device, earlier.
+				assert.match(await sheet.locator('[data-found]').innerText(), /\b1\b.*\bdatum\b.*\bChrome on \w+.*\bearlier\b.*\b0 s\b/);
 				assert.deepEqual(other.errors, []);
 			});
 			assert.deepEqual(app.errors, []);

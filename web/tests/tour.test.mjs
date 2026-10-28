@@ -23,9 +23,6 @@ const FRESH = { home: ON_SETUP, desk: null, tour: true };
 const PHONE = { ...FRESH, viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true } };
 const DESKTOP = { ...FRESH, viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' };
 
-const NOWVIEW = 'Your recent history appears here. Tap a time to enter something that happened then but you forgot to record.';
-const DAYVIEW = 'Longer history lives here. Scroll up to see earlier days. You can select times here too.';
-
 /** The root tab in front, by the layout it holds. */
 const front = (page) =>
 	page.evaluate(() => {
@@ -33,7 +30,7 @@ const front = (page) =>
 		return tabs[active].layout;
 	});
 
-/** The sentence on screen, and whether the ring stands round the drawn element `selector` names. */
+/** The sentence on screen (checked for what it names, never word for word), and whether the ring stands round the drawn element `selector` names. */
 const stop = (page, selector) =>
 	page.evaluate((selector) => {
 		const ring = document.querySelector('.tour .ring')?.getBoundingClientRect();
@@ -50,9 +47,9 @@ async function make(page, field, verb) {
 }
 
 describe('the first field\'s tour', () => {
-	for (const [what, options, field, verb, tap, pulse] of [
-		['a phone', PHONE, 'coffee', 'occur', 'A tap on coffee logs it.', true],
-		['a desktop', DESKTOP, 'sleep', 'start', 'A tap on sleep turns it on, and a second tap turns it off.', false]
+	for (const [what, options, field, verb, pulse] of [
+		['a phone', PHONE, 'coffee', 'occur', true],
+		['a desktop', DESKTOP, 'sleep', 'start', false]
 	])
 		test(`${what}: the first field's Save tours its button on collect, the nowview and the dayview; the second's shows nothing`, async () => {
 			await withApp(async (app) => {
@@ -62,7 +59,7 @@ describe('the first field\'s tour', () => {
 
 				// 1. Collect in front, the new button ringed.
 				const button = `[data-widget="widgetbar"] button[data-field="${field}"]`;
-				await until(() => stop(page, button), (s) => s.round && s.say === tap);
+				await until(() => stop(page, button), (s) => s.round && !!s.say?.includes(field));
 				assert.equal(await front(page), 'collect');
 				// A pulse, or a still ring where motion is reduced.
 				const animation = await page.locator('.tour .ring').evaluate((el) => getComputedStyle(el, '::after').animationName);
@@ -76,13 +73,13 @@ describe('the first field\'s tour', () => {
 					return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 				});
 				await page.mouse.click(at.x, at.y);
-				await until(() => stop(page, '[data-widget="nowview"] > section'), (s) => s.round && s.say === NOWVIEW);
+				await until(() => stop(page, '[data-widget="nowview"] > section'), (s) => s.round && !!s.say);
 				await app.idle();
 				assert.deepEqual(await rows(), saved);
 
 				// 3. «next»: the dayview, and «done» or Escape ends it.
 				await page.locator('.tour button.next').click();
-				await until(() => stop(page, '[data-widget="daystrip"] > section'), (s) => s.round && s.say === DAYVIEW);
+				await until(() => stop(page, '[data-widget="daystrip"] > section'), (s) => s.round && !!s.say);
 				assert.equal((await page.locator('.tour button.next').innerText()).trim(), 'done');
 				if (pulse) await page.locator('.tour button.next').click();
 				else await page.keyboard.press('Escape');
@@ -108,7 +105,7 @@ describe('the first field\'s tour', () => {
 			await openField(page);
 			await page.locator(FIELD_FORM).waitFor();
 			await make(page, 'coffee', 'occur');
-			await until(() => stop(page, '[data-widget="widgetbar"] button[data-field="coffee"]'), (s) => s.round && s.say === 'A tap on coffee logs it.');
+			await until(() => stop(page, '[data-widget="widgetbar"] button[data-field="coffee"]'), (s) => s.round && !!s.say?.includes('coffee'));
 			assert.equal(await front(page), 'main');
 			assert.equal(await page.locator('dialog[data-place="setup"]').count(), 0);
 			await page.keyboard.press('Escape');

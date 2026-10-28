@@ -151,7 +151,7 @@ describe('the sync widget', () => {
 			assert.equal(await line(page, LAPTOP).locator('.state').innerText(), '✓ synced');
 			assert.match(await line(page, LAPTOP).locator('.kind').innerText(), /CLI/);
 			assert.match(await line(page, LAPTOP).locator('.seen').innerText(), /^(now|\d+ min ago|\d+ h ago)$/);
-			assert.match(await line(page, ids.phone).getAttribute('title'), /pending, \d+ to send/);
+			assert.match(await line(page, ids.phone).getAttribute('title'), /\bpending\b.*\b\d+\b/);
 			assert.match(await line(page, ids.watch).getAttribute('title'), /never synced/);
 			assert.equal(await line(page, ids.watch).locator('.seen').innerText(), 'never');
 			// An error's reason, verbatim, under its line: no tap needed.
@@ -279,7 +279,10 @@ describe('the sync widget', () => {
 			await reader.waitFor();
 			assert.equal(await reader.locator('.reader').innerText(), '🔒︎');
 			assert.equal(await reader.locator('.filter').innerText(), '⛛');
-			assert.match(await reader.getAttribute('title'), /, read-only, filtered: 1 of 2 fields\b/);
+			// Read-only, and which part it is sent: 1 field of 2.
+			const title = await reader.getAttribute('title');
+			assert.match(title, /\bread-only\b/);
+			assert.match(title, /\b1 of 2\b/);
 			assert.equal(await line(page, 'this').locator('.filter').count(), 0);
 			assert.match(await page.locator(`${WIDGET} .legend .filter`).innerText(), /^⛛\s*partial$/);
 		}, DESKTOP);
@@ -295,7 +298,8 @@ describe('the sync widget', () => {
 			await app.goto('/sync?db=home');
 			const hidden = page.locator(`${WIDGET} p.revoked`);
 			await hidden.waitFor();
-			assert.equal(await hidden.innerText(), '1 former member hidden — More lists it');
+			// How many, and where they are listed.
+			assert.match(await hidden.innerText(), /^1\b.*\bMore\b/);
 			assert.equal(await page.locator(`${WIDGET} .devices li[data-client="${phone}"]`).count(), 0);
 			assert.deepEqual(await page.locator(`${WIDGET} .legend > span`).allInnerTexts(), ['✓ synced']);
 		}, DESKTOP);
@@ -334,10 +338,10 @@ describe('the sync widget', () => {
 					await app.goto('/sync');
 					const notice = app.page.locator(`${WIDGET} .notice.clock[data-db="home"]`);
 					await notice.waitFor();
-					assert.match(
-						await notice.innerText(),
-						/^⚠ home: \d+ changes? from laptop (is|are) waiting: its clock is 1 hour ahead\. Fix that device's clock; they apply once the time catches up\.$/
-					);
+					// The database, the device, and how far ahead its clock is.
+					const said = await notice.innerText();
+					assert.match(said, /^⚠/);
+					for (const fact of ['home', 'laptop', '1 hour']) assert.ok(said.includes(fact), `${fact}: ${said}`);
 				},
 				{ clock: Date.now() - 3_600_000 }
 			);

@@ -74,9 +74,10 @@ test(`a page joins a chain holding ${ENTRIES} entries, says how far it is, and h
 				const done = await card.locator('.done').textContent();
 				console.log(`joined ${ENTRIES} entries in ${(took / 1000).toFixed(1)} s, one status shown ${(longest / 1000).toFixed(1)} s at most: ${done}`);
 
+				// Each status's two numbers: how many ops applied, of how many.
 				const counts = [...said].flatMap((s) => {
-					const m = /^Joining: ([\d,]+) of ([\d,]+) ops applied… A command typed meanwhile waits for the step under way\.$/.exec(s);
-					return m ? [[m[1], m[2]].map((n) => Number(n.replaceAll(',', '')))] : [];
+					const m = s.match(/\d[\d,]*/g) ?? [];
+					return m.length >= 2 ? [m.slice(0, 2).map((n) => Number(n.replaceAll(',', '')))] : [];
 				});
 				assert.ok(counts.length > 0, `no progress was shown: ${[...said]}`);
 				for (const [done, of] of counts) assert.ok(done < of && of >= ENTRIES, `${done} of ${of}`);

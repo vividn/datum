@@ -104,7 +104,8 @@ describe('the maximize badge', () => {
 			sameBox(await boxOf(pane(page, 'repl')), whole, 'the maximized cli');
 
 			const badge = maximizeButton(page, 'repl');
-			assert.equal(await badge.getAttribute('aria-label'), 'restore the cli pane');
+			// Its name says which pane; its state, that the pane is maximized.
+			assert.match(await badge.getAttribute('aria-label'), /\bcli\b/);
 			assert.equal(await badge.getAttribute('aria-pressed'), 'true');
 
 			await press(page, 'repl');
@@ -112,10 +113,7 @@ describe('the maximize badge', () => {
 			assert.deepEqual(await ratios(page), before.ratios, 'the ratios moved');
 			assert.equal(await draftOf(page), before.draft, 'maximizing wrote a draft');
 			assert.equal(await dots(page), 0, 'maximizing marked a layout modified');
-			assert.equal(
-				await maximizeButton(page, 'repl').getAttribute('aria-label'),
-				'maximize the cli pane'
-			);
+			assert.equal(await maximizeButton(page, 'repl').getAttribute('aria-pressed'), 'false');
 			assert.deepEqual(errors, []);
 		});
 	});

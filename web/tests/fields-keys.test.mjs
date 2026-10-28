@@ -130,7 +130,7 @@ describe('a field with a required key', () => {
 			await type(page, 'setup "my notes" --verb add');
 			await type(page, 'setup "my mood" --verb switch --states false,good');
 			await app.idle();
-			assert.match(await chip(page, 'my notes').getAttribute('title'), /^add "my notes" … — fills the prompt/);
+			assert.match(await chip(page, 'my notes').getAttribute('title'), /add "my notes"/);
 			await chip(page, 'my mood').click();
 			const end = page.locator('.bar [data-role="end"] button');
 			assert.equal(await end.getAttribute('title'), 'end "my mood"');

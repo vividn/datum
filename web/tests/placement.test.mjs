@@ -147,7 +147,7 @@ describe('the Placement tab', () => {
 			assert.equal((await spec(app, 'coffee')).y, undefined, 'nothing chose a lane yet');
 
 			let { saved } = await openPlacement(page, 'coffee');
-			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /nobody chose this/);
+			assert.equal(await page.locator(`${MODAL} .readout .unchosen`).count(), 1, 'the lane is not said to be the hash\'s');
 			// Where the hash put it is where the lane is drawn.
 			const band = await page.locator(`${MODAL} .placement .band`).boundingBox();
 			const [top] = await extent(page, 'coffee');
@@ -156,7 +156,7 @@ describe('the Placement tab', () => {
 
 			// A tap draws a thin box round the bar, hinted at its top and bottom centre, and moves nothing.
 			await tap(page, 'coffee');
-			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /nobody chose this/);
+			assert.equal(await page.locator(`${MODAL} .readout .unchosen`).count(), 1, 'the lane is not said to be the hash\'s');
 			const look = await page.locator(BOX).evaluate((box) => {
 				const hints = [...box.querySelectorAll('.handle')].map((h) => {
 					const r = h.getBoundingClientRect();
@@ -177,7 +177,7 @@ describe('the Placement tab', () => {
 
 			const dir = hashed.y < 0.5 ? 1 : -1;
 			await drag(page, 'coffee', dir * 32);
-			assert.doesNotMatch(await page.locator(`${MODAL} .readout`).innerText(), /nobody chose/);
+			assert.equal(await page.locator(`${MODAL} .readout .unchosen`).count(), 0, 'a chosen lane is still said to be the hash\'s');
 			await done(page, saved);
 			let shown = await spec(app, 'coffee');
 			assert.equal(shown.y, round(hashed.y + dir * 0.2));
@@ -242,7 +242,7 @@ describe('the Placement tab', () => {
 			assert.ok((await boxedAt('brandnew')) > 0.05, 'not the top of the day');
 			await page.locator(`${MODAL} input.field`).fill('walkabout');
 			const y = await boxedAt('walkabout');
-			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /nobody chose this/);
+			assert.equal(await page.locator(`${MODAL} .readout .unchosen`).count(), 1, 'the lane is not said to be the hash\'s');
 
 			await done(page, saved);
 			const declared = await lane(app, 'walkabout');
@@ -293,7 +293,7 @@ describe('the Placement tab', () => {
 
 			await openPlacement(page, 'body');
 			assert.equal(await page.locator(`${MODAL} .placement input[name="anchorable"]`).count(), 0);
-			assert.match(await page.locator(`${MODAL} .anchorees`).innerText(), /⚓ anchored here: energy, mood/);
+			assert.deepEqual(await page.locator(`${MODAL} .anchorees button`).allInnerTexts(), ['energy', 'mood']);
 			await page.locator(`${MODAL} .anchorees button`, { hasText: 'mood' }).click();
 			await page.locator(FORM_OF('mood')).waitFor();
 			assert.match(await page.locator(`${MODAL} .placement .anchor`).innerText(), /⚓ body\s*×/);
@@ -366,7 +366,9 @@ describe('the Placement tab', () => {
 			await setPlace(app, 'coffee', { relative_to: 'nobody' });
 			const { saved: dismissed } = await openPlacement(page, 'coffee');
 			assert.match(await page.locator(`${MODAL} .placement .anchor`).innerText(), /⚓ nobody/);
-			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /anchored to nobody, which has no spec/);
+			// It names the anchor, and the y it is drawn at instead.
+			const readout = await page.locator(`${MODAL} .readout`).innerText();
+			for (const fact of [/\bnobody\b/, /\d\.\d\d/]) assert.match(readout, fact);
 			await leaveField(page);
 			assert.equal(await dismissed, null);
 		});

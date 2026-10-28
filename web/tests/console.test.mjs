@@ -177,7 +177,8 @@ describe('window.datum.tailRows — a read that fails', () => {
 					(e) => e.message
 				)
 			);
-			assert.equal(message, 'Entry not found: nosuchrow');
+			assert.match(message, /nosuchrow/, 'the reason names the row');
+			assert.doesNotMatch(message, /^Error: /);
 		});
 	});
 });

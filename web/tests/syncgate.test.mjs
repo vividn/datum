@@ -47,14 +47,17 @@ test('a member dialing a page whose join is applying is refused as busy (da-dwm2
 				const serving = a.spawn(['sync', 'chain', 'invite']);
 				const [, t] = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
 				const joining = app.page.evaluate((t) => window.datum.sync.connect('datum', t).catch(() => {}), t).catch(() => {});
-				await until(() => serving.stderr, (s) => s.includes('waiting for it to apply')).catch((e) => {
+				// The page holds its apply after the first chunk.
+				await until(() => app.page.evaluate(() => window.datum.sync.states().datum?.applying?.done), (n) => n === 64).catch((e) => {
 					throw new Error(`${e.message}\n${serving.stdout}\n${serving.stderr}`);
 				});
 				// The first hears of the page from a, the second dials it.
 				assert.ok(await syncWithin(b, 60_000), 'b synced with a');
 				const r = await syncWithin(b, 60_000);
 				assert.ok(r, 'b waited on the page');
-				assert.match(r.stdout + r.stderr, /datum\.day.*refused: is in another sync session and runs one at a time; sync again once it is over/);
+				// Refused, and no failure: busy (da-h31wt).
+				assert.match(r.stdout + r.stderr, /datum\.day.*refused/);
+				assert.equal(r.code, 0, r.stdout + r.stderr);
 				// The page hears of the refusal once its connection closes, 5 s at most.
 				await new Promise((r) => setTimeout(r, 6000));
 				const applying = await app.page.evaluate(() => window.datum.sync.states().datum?.applying);
@@ -305,7 +308,9 @@ test('a page dial past its handshake is not given way (da-gvia0)', async () => {
 				assert.ok(await syncWithin(b, 60_000), 'b synced with a');
 				const r = await syncWithin(b, 60_000);
 				assert.ok(r, 'b waited on the page');
-				assert.match(r.stdout + r.stderr, /datum\.day.*refused: is in another sync session and runs one at a time/);
+				// Refused, and no failure: busy (da-h31wt).
+				assert.match(r.stdout + r.stderr, /datum\.day.*refused/);
+				assert.equal(r.code, 0, r.stdout + r.stderr);
 				await new Promise((r) => setTimeout(r, 6000));
 				assert.equal(await applying(), 64);
 			},

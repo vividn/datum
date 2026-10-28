@@ -975,7 +975,7 @@ describe('Undo', () => {
 			await commands(page).locator('button[data-command="undo"]').click();
 			await page.waitForFunction(() => window.__datumInflight === 0);
 			assert.equal((await app.entries(1)).length, 0, 'the older change was refused');
-			assert.match((await app.outputs()).join('\n'), /warning: undoing a change from 11 minutes ago/);
+			assert.match((await app.outputs()).join('\n'), /warning:[^\n]*\b11\b/, 'the warning names how old the change is');
 		});
 	});
 

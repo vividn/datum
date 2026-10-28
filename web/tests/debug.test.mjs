@@ -37,6 +37,9 @@ const DEBUG = { query: '?db=DEBUG' };
  */
 const PANE = '.debug-widget[data-kind="debug"]';
 
+/** The numbers a report names, in order: its facts, not its words (rule 22). */
+const numbers = (text) => (text.match(/\d+/g) ?? []).map(Number);
+
 /** Every pane on the page, by name — said out loud before anything is measured. */
 const paneNames = (page) =>
 	page.evaluate(() => [...document.querySelectorAll('section[data-pane]')].map((s) => s.dataset.pane));
@@ -152,7 +155,7 @@ describe('the DEBUG database', () => {
 			await app.page.locator(PANE).waitFor();
 			assert.match(
 				await app.page.locator(PANE).innerText(),
-				/the debug widgets live in the DEBUG database/,
+				/\bDEBUG\b/,
 				'a debug widget outside DEBUG drew something other than its notice'
 			);
 			assert.equal(await app.page.locator(`${PANE} .pair`).count(), 0, 'the knobs were drawn anyway');
@@ -203,7 +206,7 @@ describe('the sample seeder', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const report = await press(page, 'seed the last 7 days');
-			const n = Number(/^(\d+) sample entries in this database$/.exec(report)?.[1]);
+			const [n] = numbers(report);
 			assert.ok(n > 60, `a week of sample is ${report}`);
 			assert.equal(await tagged(app), n, 'the report is not what the database holds');
 
@@ -243,12 +246,11 @@ describe('the sample seeder', () => {
 			];
 			for (const argv of hand) assert.equal((await app.run(argv)).code, 0, argv.join(' '));
 
-			const first = Number(/^(\d+) sample entries/.exec(await press(page, 'seed the last 7 days'))[1]);
+			const [first] = numbers(await press(page, 'seed the last 7 days'));
+			// The second report counts all the sample, then what an earlier seed left.
 			const again = await press(page, 'seed the last 7 days');
-			const [, total, earlier] =
-				/^(\d+) sample entries in this database — (\d+) from an earlier seed, which seeding does not remove$/.exec(
-					again
-				) ?? [];
+			const [total, earlier] = numbers(again);
+			assert.equal(numbers(again).length, 2, `no shortfall: ${again}`);
 			assert.equal(Number(earlier), first, again);
 			assert.ok(Number(total) > first * 1.5, again);
 			assert.equal(await tagged(app), Number(total));
@@ -256,7 +258,7 @@ describe('the sample seeder', () => {
 			// data (da-lc26c).
 			assert.equal(Object.values(await counts(app)).reduce((a, b) => a + b), Number(total) + hand.length);
 
-			assert.equal(await press(page, 'clear the sample'), '0 sample entries in this database');
+			assert.deepEqual(numbers(await press(page, 'clear the sample')), [0]);
 			assert.deepEqual(
 				await counts(app),
 				{ coffee: 1, mood: 1, posture: 1 },
@@ -285,7 +287,7 @@ describe('the sample seeder', () => {
 			const before = await state();
 			const plain = await day();
 
-			assert.equal(await press(page, 'install the sample kit'), 'the sample kit is installed');
+			assert.match(await press(page, 'install the sample kit'), /\binstalled\b/);
 			const drawn = await day();
 			for (const mark of ['☕', '#8d5524', '#2f9e44', '#5c7cfa']) {
 				assert.ok(!plain.includes(mark), `${mark} is in the dayview before the kit`);
@@ -295,7 +297,7 @@ describe('the sample seeder', () => {
 			const hydration = await app.run(['hydration']);
 			assert.equal(hydration.code, 0, hydration.stderr);
 
-			assert.equal(await press(page, 'uninstall the sample kit'), 'the sample kit is uninstalled');
+			assert.match(await press(page, 'uninstall the sample kit'), /\buninstalled\b/);
 			assert.deepEqual(await state(), before);
 			assert.equal(await day(), plain);
 			assert.deepEqual(app.errors, []);
@@ -319,7 +321,8 @@ describe('the sample seeder', () => {
 				);
 			});
 			const report = await press(page, 'seed the last 7 days');
-			assert.match(report, /^stopped: `datum end sleep -d [\d-]+ -t [\d:.]+ sample=true` exited 1: Error: refused$/);
+			assert.match(report, /`datum end sleep -d [\d-]+ -t [\d:.]+ sample=true`/, 'it names the command that failed');
+			assert.match(report, /Error: refused$/, 'and what the CLI said');
 			const log = await written(page);
 			assert.ok(log.at(-1).failed, 'the last command shown is not the one that failed');
 			assert.equal(log.filter((l) => l.failed).length, 1);

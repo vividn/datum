@@ -69,7 +69,10 @@ describe('the sync widget’s actions', () => {
 					await offer.getByRole('button', { name: 'Done' }).click();
 					assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Add device', 'Rename this device', 'More ▸']);
 					await more(page);
-					assert.match(await page.locator(`${WIDGET} .chain[data-db="datum"]`).innerText(), /no admin: any device can add devices/);
+					// Open: no admin to remove, and one to add.
+					const row = page.locator(`${WIDGET} .chain[data-db="datum"]`);
+					assert.equal(await row.locator('button.admin').count(), 0);
+					assert.equal(await row.getByRole('button', { name: 'Add admin' }).count(), 1);
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
 			);
@@ -88,11 +91,11 @@ describe('the sync widget’s actions', () => {
 					assert.equal(await page.locator(WIDGET).count(), 0, 'the sync widget is not on the default page');
 					// A flag the widget has no word for is the CLI's, which has no network.
 					await app.submit('sync chain invite --reader');
-					assert.match((await app.outputs()).at(-1), /not in this build/);
+					// Refused, naming what the build lacks.
+					assert.match((await app.outputs()).at(-1), /\bnetworking\b/);
 					assert.equal(await page.locator(WIDGET).count(), 0);
 
 					await app.submit('sync chain invite');
-					assert.match((await app.stdouts()).at(-1), /the invite is in the sync widget/);
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
 					await offer.locator('summary', { hasText: 'connect from a terminal' }).click();
@@ -123,7 +126,7 @@ describe('the sync widget’s actions', () => {
 			// Locked: the expel stops at an approve link, which the passkey signs.
 			await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Expel' }).click();
 			const asked = page.locator('dialog.confirm');
-			assert.match(await asked.innerText(), /Expel phone from home\? It can no longer sync home until a new invite admits it again\. It keeps its own copy, and what it wrote stays on every device\./);
+			for (const fact of ['phone', 'home']) assert.ok((await asked.innerText()).includes(fact), fact);
 			await asked.getByRole('button', { name: 'expel' }).click();
 			await page.locator(`${WIDGET} p.revoked`).waitFor();
 			assert.equal(await page.locator(`${WIDGET} .devices li[data-client="${phone}"]`).count(), 0);
@@ -144,7 +147,10 @@ describe('the sync widget’s actions', () => {
 			await page.locator('dialog.ask').getByRole('button', { name: 'rename' }).click();
 			const failure = page.locator(`${WIDGET} .failure`);
 			await failure.waitFor();
-			assert.equal(await failure.innerText(), 'a label is at most 64 characters, not 65');
+			// The limit and the length, and no «Error: ».
+			const said = await failure.innerText();
+			assert.match(said, /\b64\b.*\b65\b/);
+			assert.doesNotMatch(said, /^Error/);
 		}, { viewport: DESKTOP });
 	});
 
@@ -158,8 +164,10 @@ describe('the sync widget’s actions', () => {
 				await more(page);
 				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Unjoin', exact: true }).click();
 				const dialog = page.locator('dialog.confirm');
-				assert.match(await dialog.innerText(), /Unjoin phone from home\? It made no change to an entry: this only expels it\./);
-				assert.match(await dialog.innerText(), /It is expelled too: it syncs no more, though it keeps its own copy, until a fresh invite brings it and its changes back\./);
+				// It names the device and the database, and counts no entry: it changed none.
+				const said = await dialog.innerText();
+				for (const fact of ['phone', 'home']) assert.ok(said.includes(fact), fact);
+				assert.doesNotMatch(said, /\d+ entr(y|ies)\b/);
 				// A wrong name is a no.
 				await dialog.locator('input').fill('phon');
 				await dialog.getByRole('button', { name: 'unjoin', exact: true }).click();
@@ -191,13 +199,13 @@ describe('the sync widget’s actions', () => {
 
 			await remove.click();
 			const dialog = page.locator('dialog.confirm');
-			assert.match(await dialog.innerText(), /This unlocks the chain: any device can add, expel or rename devices/);
+			assert.equal(await dialog.getByRole('button', { name: 'unlock' }).count(), 1);
 			await dialog.getByRole('button', { name: 'cancel' }).click();
 			assert.equal((await members(app)).admins.length, 1);
 
 			await remove.click();
 			await dialog.getByRole('button', { name: 'unlock' }).click();
-			await page.getByText('no admin: any device can add devices').waitFor();
+			await page.locator(`${WIDGET} .chain[data-db="home"]`).getByRole('button', { name: 'Add admin' }).waitFor();
 			assert.deepEqual((await members(app)).admins, []);
 			// Every copy keeps the notice until it is acknowledged.
 			const notice = page.locator(`${WIDGET} .notice[data-db="home"]`, { hasText: 'unlocked' });
@@ -225,10 +233,9 @@ describe('the sync widget’s actions', () => {
 			await warn.click();
 			const said = await dialog.innerText();
 			// By label, on this page's clock, with an expel one step away (da-o9xdd).
-			assert.match(said, /«home»: Another device joined: phone, at \d\d:\d\d$/m);
+			assert.match(said, /«home».*\bphone\b.*\b\d\d:\d\d\b/);
 			assert.doesNotMatch(said, /via|Z\b|[0-9a-f]{10}/);
-			assert.match(said, /Not yours\? Expel it/);
-			assert.match(said, /To manage devices, open the Sync widget/);
+			assert.match(said, /Sync widget/);
 			assert.equal(await warn.innerText(), '⚠');
 			await dialog.getByRole('button', { name: 'expel phone' }).waitFor();
 			// Closed without an OK, nothing is acknowledged.
@@ -243,7 +250,7 @@ describe('the sync widget’s actions', () => {
 			// With the page open: no reload brings the next one.
 			await openChain(app, 'tablet');
 			await warn.click();
-			assert.match(await dialog.innerText(), /Another device joined: tablet, at /);
+			assert.match(await dialog.innerText(), /\btablet\b.*\b\d\d:\d\d\b/);
 			assert.doesNotMatch(await dialog.innerText(), /phone/);
 			// Not this reader's: its expel expels it, and acknowledges what was shown.
 			await dialog.getByRole('button', { name: 'expel tablet' }).click();
@@ -282,8 +289,8 @@ describe('the sync widget’s actions', () => {
 			await told.click();
 			const dialog = page.locator('dialog.confirm');
 			const said = await dialog.innerText();
-			assert.match(said, /«away»: You joined this sync chain; its members: .*phone \(since \d\d:\d\d\)/);
-			assert.doesNotMatch(said, /Another device joined|Expel/);
+			assert.match(said, /«away».*\bphone\b.*\b\d\d:\d\d\b/);
+			assert.equal(await dialog.getByRole('button', { name: /^expel/ }).count(), 0);
 			await dialog.getByRole('button', { name: 'OK' }).click();
 			await until(() => told.count(), (n) => n === 0);
 			assert.deepEqual(await notices(), []);
@@ -306,7 +313,7 @@ describe('the sync widget’s actions', () => {
 					const said = () => page.evaluate(() => (window.datum.sync.states().datum?.notices ?? []).map((n) => n.label));
 					await until(said, (labels) => labels.includes('tablet'));
 					await page.locator('.root-bar').getByRole('button', { name: 'sync notices' }).click();
-					assert.match(await page.locator('dialog.confirm').innerText(), /«datum»: Another device joined: tablet, at /);
+					assert.match(await page.locator('dialog.confirm').innerText(), /«datum».*\btablet\b/);
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
 			);
@@ -330,11 +337,13 @@ describe('the sync widget’s actions', () => {
 			const card = page.locator(`${WIDGET} .approve`);
 			// The card names what the passkey signs: a link is anyone's to send.
 			await card.locator('.what').waitFor();
-			assert.equal(await card.locator('.what').innerText(), `Expel phone (${phone.slice(0, 10)}) in home: it syncs no more, keeping its copy; what it wrote stays`);
+			const what = await card.locator('.what').innerText();
+			assert.match(what, /^Expel\b/);
+			for (const fact of ['phone', phone.slice(0, 10), 'home']) assert.ok(what.includes(fact), `${fact}: ${what}`);
 			await card.getByRole('button', { name: 'approve with passkey' }).click();
 			await page.locator(`${WIDGET} .approve .done, ${WIDGET} .failure`).first().waitFor();
 			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0, await page.locator(`${WIDGET}`).innerText());
-			assert.match(await card.innerText(), /Approved in home\. .*nothing to paste/);
+			assert.ok((await card.locator('.done').innerText()).includes('home'));
 			assert.equal(await card.locator('.code').count(), 0);
 			assert.ok(await revokedOf(app, phone));
 
@@ -343,10 +352,11 @@ describe('the sync widget’s actions', () => {
 			record.chain = 'elsewhere';
 			await card.getByRole('button', { name: 'dismiss' }).click();
 			await app.goto(`/sync/approve#${Buffer.from(JSON.stringify(record)).toString('base64url')}`);
-			assert.equal(
-				await card.locator('.what').innerText(),
-				`Expel an unknown device (${phone.slice(0, 10)}) in a chain this browser holds no copy of: it syncs no more, keeping its copy; what it wrote stays`
-			);
+			// The device by its id alone, and no database: this browser holds none of that chain.
+			const elsewhere = await card.locator('.what').innerText();
+			assert.match(elsewhere, /^Expel\b/);
+			assert.ok(elsewhere.includes(phone.slice(0, 10)), elsewhere);
+			assert.doesNotMatch(elsewhere, /\b(phone|home)\b/);
 			await card.getByRole('button', { name: 'approve with passkey' }).click();
 			await card.locator('.code').waitFor();
 			assert.match(await card.locator('.code').innerText(), /^[A-Za-z0-9_-]{100,}$/);
@@ -368,10 +378,10 @@ describe('the sync widget’s actions', () => {
 			await app.goto(`/sync/approve#${link.split('#')[1]}`);
 			const what = page.locator(`${WIDGET} .approve .what`);
 			await what.waitFor();
-			assert.deepEqual(await what.locator('li').allInnerTexts(), [
-				`Add admin «my new phone» (es256 ${key.slice(6, 18)}…) in home`,
-				'Not a passkey made in this browser: approve only if you know whose it is.'
-			]);
+			const [adds, whose, ...more] = await what.locator('li').allInnerTexts();
+			for (const fact of ['«my new phone»', key.slice(6, 18), 'home']) assert.ok(adds.includes(fact), `${fact}: ${adds}`);
+			assert.match(whose, /\bnot\b/i, 'this browser did not make it');
+			assert.deepEqual(more, []);
 		}, AT_DATUM_DAY);
 	});
 });

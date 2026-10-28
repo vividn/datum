@@ -11,6 +11,7 @@ import { sharedApp, startApp, stopApp, seedLines } from './support/app.mjs';
 import { DESKTOP, PHONE, along, atRest, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 import { until } from './support/until.mjs';
+import { resolveLibAsSource } from './support/libhook.mjs';
 
 before(startApp);
 after(stopApp);
@@ -78,6 +79,31 @@ async function explain(page, target, title, back = () => page.goBack(), button =
 	return lines;
 }
 
+/**
+ * The CLI's own help, through the seam: a page's `--json` (its `title`, `intro` and
+ * `sections`), or with no name the general help's text. What the Help place shows of
+ * it is checked against this, never against quoted sentences (rule 22).
+ */
+async function cliHelp(page, ...name) {
+	const argv = ['help', ...name, ...(name.length ? ['--json'] : [])];
+	const { stdout } = await page.evaluate((a) => window.datum.runQuiet(a), argv);
+	return name.length ? JSON.parse(stdout) : stdout;
+}
+
+/** Text as it reads, whatever width it was wrapped at. */
+const flat = (text) => text.replace(/\s+/g, ' ').trim();
+
+let kinds;
+/** A widget kind's own help (`#lib/layout/registry.ts`), which the Help place shows for it. */
+async function kindHelp(kind) {
+	if (!kinds) {
+		// registry.ts reaches Svelte components node cannot load; the hook stubs them.
+		resolveLibAsSource();
+		({ KINDS: kinds } = await import('../src/lib/layout/registry.ts'));
+	}
+	return kinds[kind].help;
+}
+
 const label = async (page) => (await help(page).locator('.label:not(.hidden)').innerText()).trim();
 
 describe('the Help button', () => {
@@ -97,7 +123,7 @@ describe('the Help button', () => {
 			assert.equal(await label(page), 'Help');
 			const before = (await help(page).boundingBox()).width;
 			await help(page).click();
-			assert.equal(await label(page), '? on what\n(tap: all)');
+			assert.notEqual(await label(page), 'Help', 'armed, the armed label is the one shown');
 			assert.equal(await help(page).getAttribute('aria-pressed'), 'true');
 			const armed = (await help(page).boundingBox()).width;
 			assert.ok(Math.abs(armed - before) <= 3, `the width moved: ${before} -> ${armed}`);
@@ -117,7 +143,7 @@ describe('the Help button', () => {
 		await onPage(async ({ page }) => {
 			const occur = page.locator('.bar.commands button[data-command="occur"]');
 			const lines = await explain(page, occur, 'datum help occur');
-			assert.match(lines[0], /^datum occur — record a point-in-time event/);
+			assert.equal(lines[0], (await cliHelp(page, 'occur')).title);
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'occur filled the line');
 			assert.equal(await label(page), 'Help', 'one-shot: it disarms');
 
@@ -135,7 +161,8 @@ describe('the Help button', () => {
 			const backup = page.locator('.bar.commands button[data-command="db backup"]');
 			const lines = await explain(page, backup, 'datum help db backup');
 			assert.equal(lines[0], 'datum db backup');
-			assert.ok(lines.text.includes('datum db backup <PATH | ->'), lines.text);
+			const usage = (await cliHelp(page, 'db', 'backup')).sections.find((s) => s.heading === 'USAGE').text;
+			assert.ok(flat(lines.text).includes(flat(usage)), lines.text);
 			assert.ok(!lines.text.includes('datum db purge'), lines.text);
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'backup filled the line');
 		});
@@ -149,7 +176,9 @@ describe('the Help button', () => {
 			const t = page.locator('.bar.commands button[data-flag="occur -t"]');
 			await t.waitFor();
 			const lines = await explain(page, t, 'datum occur -t');
-			assert.deepEqual(lines, ['Time override (offset, HH:MM, 9:15am, a date, or both)']);
+			const grammar = JSON.parse((await page.evaluate(() => window.datum.runQuiet(['help', '--json']))).stdout);
+			const flag = grammar.find((c) => c.name === 'occur').flags.find((f) => f.short === 't');
+			assert.deepEqual(lines, [flag.help], 'its line of the CLI\'s flag table');
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), 'occur ', '-t was appended');
 		});
 	});
@@ -160,7 +189,7 @@ describe('the Help button', () => {
 			await seedLines(app, ['setup coffee --verb occur']);
 			const coffee = page.locator('section[data-pane="bar"] .bar button.widget', { hasText: 'coffee' }).first();
 			const lines = await explain(page, coffee, 'fields');
-			assert.match(lines[0], /^Every field you log/);
+			assert.equal(lines.join('\n'), await kindHelp('widgetbar'));
 			assert.equal((await app.entries(5)).length, 0, 'the press logged coffee');
 		});
 	});
@@ -171,8 +200,8 @@ describe('the Help button', () => {
 		const withField = JSON.stringify(along('column', widgetPane('setup', 'setup'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')));
 		await onPage(async ({ page }) => {
 			const lines = await explain(page, page.locator('.host[data-widget="setup"] p.what'), 'setup');
-			assert.match(lines[0], /its shape, states, data, aliases and placement\.$/);
-			assert.match(lines[1], /^Save makes a new field with one `setup F --track`, which one Undo takes back;/);
+			assert.equal(lines.join('\n'), await kindHelp('setup'));
+			assert.ok(lines.join('\n').includes('`setup F --track`'), 'it names the command a new field\'s Save runs');
 			assert.doesNotMatch(lines.join('\n'), /\bkind\b|\bkeys\b/);
 		}, withField);
 	});
@@ -182,7 +211,7 @@ describe('the Help button', () => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 14:30' }]));
 			const pill = page.locator('.prompt-bar [data-pill="t"]');
 			const lines = await explain(page, pill, '-t 14:30');
-			assert.match(lines[0], /^-t 14:30: the time cursor/);
+			assert.ok(lines[0].startsWith('-t 14:30'), `it names the pill's value: ${lines[0]}`);
 			assert.equal(await pill.count(), 1, 'the tap removed the pill');
 		});
 	});
@@ -192,7 +221,7 @@ describe('the Help button', () => {
 			const from = await shown(page);
 			const tap = () => page.locator('.root-bar [role="tab"]', { hasText: from }).click();
 			const lines = await explain(page, help(page), 'datum help', tap);
-			assert.match(lines[0], /^datum — personal data tracker/);
+			assert.equal(lines[0], (await cliHelp(page)).split('\n')[0]);
 			assert.equal(await label(page), 'Help');
 		});
 	});
@@ -209,7 +238,7 @@ describe('the Help button', () => {
 			]) {
 				const title = await control.getAttribute('title');
 				const lines = await explain(page, control, title);
-				assert.doesNotMatch(lines[0], /^datum — personal data tracker/, title);
+				assert.notEqual(lines[0], (await cliHelp(page)).split('\n')[0], title);
 				assert.equal(lines.join('\n'), await control.getAttribute('data-help'));
 			}
 		});
@@ -227,7 +256,7 @@ describe('the Help button', () => {
 			await help(page).click();
 			await page.locator('.bar.commands button[data-command="occur"]').click();
 			const lines = await read(page, 'datum help occur');
-			assert.match(lines[0], /^datum occur — record a point-in-time event/);
+			assert.equal(lines[0], (await cliHelp(page, 'occur')).title);
 			// The pane shows it at once; a tab `openPlace` opened would land a
 			// layout load later, so the tabs are watched for a while.
 			for (let i = 0; i < 10; i++, await page.waitForTimeout(100)) {
@@ -257,7 +286,7 @@ describe('the Help button', () => {
 			await page.locator('.tab-body.behind .host[data-widget="help"]').waitFor({ state: 'attached' });
 			const occur = page.locator('.bar.commands button[data-command="occur"]');
 			const lines = await explain(page, occur, 'datum help occur');
-			assert.match(lines[0], /^datum occur — record a point-in-time event/);
+			assert.equal(lines[0], (await cliHelp(page, 'occur')).title);
 		}, behind);
 	});
 	test('on a desktop, the answer opens the Help place in a modal, and Escape closes it', async () => {
@@ -267,7 +296,7 @@ describe('the Help button', () => {
 			await help(page).click();
 			await page.locator('.bar.commands button[data-command="occur"]').click();
 			await until(() => modal.locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === 'datum help occur');
-			assert.match(await modal.locator('pre.help').innerText(), /^datum occur — record a point-in-time event/);
+			assert.equal((await modal.locator('pre.help').innerText()).split('\n')[0], (await cliHelp(page, 'occur')).title);
 			assert.deepEqual(await rootTabs(page), tabs, 'a tab opened');
 			await page.keyboard.press('Escape');
 			await modal.waitFor({ state: 'detached' });
@@ -325,11 +354,13 @@ describe('a help page', () => {
 			await place(page).waitFor();
 			await open(page, 'occur');
 			const lead = await place(page).locator('pre.help').innerText();
-			assert.match(lead, /^datum occur — record a point-in-time event\n\nOccur marks a moment/);
+			const { title, intro } = await cliHelp(page, 'occur');
+			assert.equal(flat(lead), flat(`${title} ${intro}`), 'the CLI\'s title, then its intro');
 			assert.deepEqual(await place(page).locator('details summary').allInnerTexts(), ['Usage', 'Options', 'Output']);
 			const options = place(page).locator('details[data-section="OPTIONS"]');
 			await options.locator('summary').click();
-			assert.match(await options.locator('pre').innerText(), /common logging options: `datum help\s+logging`/);
+			const said = (await cliHelp(page, 'occur')).sections.find((s) => s.heading === 'OPTIONS').text;
+			assert.equal(flat(await options.locator('pre').innerText()), flat(said));
 			await open(page, 'start');
 			assert.equal(await options.getAttribute('open'), '', 'the opened fold closed on the next page');
 			assert.equal(await place(page).locator('details[data-section="USAGE"]').getAttribute('open'), null);
@@ -388,9 +419,9 @@ describe('the root bar (?)', () => {
 			assert.equal(await q.getAttribute('aria-pressed'), 'false');
 			const title = page.locator('section.pane[data-title="welcome"] .titlebox');
 			const lines = await explain(page, title, 'welcome', undefined, q);
-			assert.match(lines[0], /^What datum is/);
+			assert.equal(lines.join('\n'), await kindHelp('welcome'));
 			const general = await explain(page, q, 'datum help', undefined, q);
-			assert.match(general[0], /^datum — personal data tracker/);
+			assert.equal(general[0], (await cliHelp(page)).split('\n')[0]);
 			assert.equal(await q.getAttribute('aria-pressed'), 'false');
 		}, bare);
 	});

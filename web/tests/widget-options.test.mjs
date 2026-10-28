@@ -626,10 +626,8 @@ describe('widget options', () => {
 			// Back in the bar, and saying what it is: the word in the title, the
 			// dashes and the fade in the drawing.
 			await button.waitFor();
-			assert.equal(
-				await button.getAttribute('title'),
-				'run · ignored · press to log · hold to filter the page to it'
-			);
+			const title = await button.getAttribute('title');
+			for (const fact of [/\brun\b/, /\bignored\b/]) assert.match(title, fact);
 			assert.equal(await button.getAttribute('data-ignored'), '');
 			const lines = (b) => {
 				const s = getComputedStyle(b);

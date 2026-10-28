@@ -103,17 +103,20 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 			const card = b.page.locator('.card.join');
 			const join = card.getByRole('button', { name: 'Join', exact: true });
 			await join.waitFor();
+			// What it names: the inviter, its chain, this database, and when the link expires.
 			const words = await card.locator('.what').innerText();
-			assert.match(words, /Join the sync chain of «datum\.day» \(chain (\w{10})\) with this browser’s database «datum»/);
-			assert.equal(/\(chain (\w{10})\)/.exec(words)[1], chain.slice(0, 10));
-			assert.match(words, /The link works once, until \d\d:\d\d\./);
+			for (const fact of ['«datum.day»', chain.slice(0, 10), '«datum»']) assert.ok(words.includes(fact), `${fact}: ${words}`);
+			assert.match(words, /\b\d\d:\d\d\b/);
 			await join.click();
 			await card.locator('.done').waitFor();
 			await converged(a, b);
 
 			// Opened again, the link offers to join again, as a revoked device rejoins (da-j8c4l).
 			await b.goto(link);
-			await until(() => card.locator('.what').innerText(), (t) => /«datum» is in this chain already: joining again admits it back/.test(t));
+			// It says one thing more, of «datum»: that it is in this chain already.
+			const lines = card.locator('.what li');
+			await until(() => lines.count(), (n) => n === 3);
+			assert.ok((await lines.nth(1).innerText()).includes('«datum»'));
 			assert.equal(await join.count(), 1);
 		});
 	});
@@ -129,7 +132,10 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 			const card = b.page.locator('.card.join');
 			const join = card.getByRole('button', { name: 'Join', exact: true });
 			await join.waitFor();
-			assert.match(await card.locator('.what').innerText(), /«datum»’s own sync chain, just this browser, is replaced by this one\./);
+			// It says one thing more, of «datum»: that its own chain is replaced.
+			const lines = card.locator('.what li');
+			assert.equal(await lines.count(), 3);
+			assert.ok((await lines.nth(1).innerText()).includes('«datum»'));
 			await join.click();
 			await card.locator('.done').waitFor();
 			await converged(a, b);
@@ -227,7 +233,7 @@ describe('the name a browser joins as (da-uyyyg)', () => {
 					const { card: c, name, join } = await card(app, native);
 					await name.fill('bell\u0007');
 					await join.click();
-					await until(() => app.page.locator('.failure[role=alert]').innerText(), (t) => /a label cannot contain a control character/.test(t));
+					await until(() => app.page.locator('.failure[role=alert]').innerText(), (t) => /control character/.test(t));
 					assert.equal(JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout).chain, null);
 
 					await name.fill('kitchen');

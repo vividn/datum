@@ -43,19 +43,21 @@ async function guide(page) {
 		copy.querySelector('details')?.remove();
 		return copy.textContent;
 	});
+	const sections = await body.locator('h3').count();
+	const widget = await body.locator('p.widget').innerText();
 	const details = body.locator('details.reference');
 	assert.equal(await details.getAttribute('open'), null, 'the reference is open');
 	await details.locator('summary').click();
 	const reference = await until(() => details.locator('pre').innerText(), (t) => t.includes('sync chain invite'));
 	await page.keyboard.press('Escape');
 	await modal.waitFor({ state: 'detached' });
-	return { words, reference };
+	return { words, sections, widget, reference };
 }
 
 /** What every entrance must open: the guide's own words, the widget's help in it, the subcommands only folded. */
-function isTheGuide({ words, reference }) {
-	assert.match(words, /Connect a second device/);
-	assert.match(words, /Reading the widget\s*Every device syncing this database/);
+function isTheGuide({ words, sections, widget, reference }) {
+	assert.ok(sections > 1, `${sections} sections`);
+	assert.notEqual(widget.trim(), '', 'the widget’s help');
 	assert.doesNotMatch(words, /datum sync|sync chain (invite|connect|list|leave)|sync (status|pause|resume|admin|diff|refold)\b/, 'a subcommand in the body');
 	assert.match(reference, /^datum sync/m);
 }

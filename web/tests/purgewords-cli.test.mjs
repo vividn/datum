@@ -37,15 +37,16 @@ async function purgeOf(writes) {
 }
 
 test('a device that signed only a definition is told it goes', async () => {
-	assert.match(await purgeOf([['setup', 'coffee', '--verb', 'occur']]), /only 1 definition: this expels it and sets that aside\./);
+	const words = await purgeOf([['setup', 'coffee', '--verb', 'occur']]);
+	assert.match(words, /\b1 definition\b/);
+	assert.doesNotMatch(words, /\d+ entr(y|ies)\b/);
 });
 
 test('a device that made an entry and a definition is told both go', async () => {
-	assert.match(
-		await purgeOf([
-			['setup', 'coffee', '--verb', 'occur'],
-			['occur', 'coffee']
-		]),
-		/: 1 entry it created and 1 definition it signed, /
-	);
+	const words = await purgeOf([
+		['setup', 'coffee', '--verb', 'occur'],
+		['occur', 'coffee']
+	]);
+	assert.match(words, /\b1 entry\b/);
+	assert.match(words, /\b1 definition\b/);
 });

@@ -98,12 +98,13 @@ describe('the sync widget’s grid', () => {
 
 					await cellOf(page, device, 'work').locator('select').selectOption('member');
 					const asked = page.locator('dialog.ask');
-					assert.match(await asked.innerText(), /Grant .* membership of work\. The name it takes on that device:/);
+					assert.ok((await asked.innerText()).includes('work'));
 					assert.equal(await asked.locator('input').inputValue(), 'work');
 					await asked.getByRole('button', { name: 'grant' }).click();
 					const said = page.locator(`${WIDGET} .grid .said`);
 					await said.waitFor();
-					assert.match(await said.innerText(), /^granted .* member of this database: the invite rides sealed to it in datum's sync chain/);
+					// Granted as a member, carried by datum's chain.
+					assert.match(await said.innerText(), /^granted\b.*\bmember\b.*\bdatum\b/);
 
 					assert.match((await joins(native, 'work')).stdout, /joined «work»/);
 					// Its describe, binding the endpoint to its device, reaches the page on its next sync.
@@ -126,15 +127,14 @@ describe('the sync widget’s grid', () => {
 					const { phone } = await gridWith(app, native);
 					const select = cellOf(page, phone, 'home').locator('select');
 					const dialog = page.locator('dialog.confirm');
-					const words = {
-						expel: /^Expel phone from home\? It can no longer sync home until a new invite admits it again\. It keeps its own copy, and what it wrote stays on every device\./,
-						unjoin: /^Unjoin phone from home\? It made no change to an entry: this only expels it\. It is expelled too/,
-						wipe: /^Wipe phone’s copy of home\? It is expelled now, and asked to delete its own copy of home when it next reaches a device of this chain\. A device that never comes back online cannot be made to delete anything: until it obeys, this is only an expel/
-					};
+					// Each asks its own act, of phone's data in home.
+					const words = { expel: /^Expel\b/, unjoin: /^Unjoin\b/, wipe: /^Wipe\b/ };
 					for (const [act, said] of Object.entries(words)) {
 						await select.selectOption(act);
 						await dialog.waitFor();
-						assert.match(await dialog.innerText(), said, act);
+						const text = await dialog.innerText();
+						assert.match(text, said, act);
+						for (const fact of ['phone', 'home']) assert.ok(text.includes(fact), `${act}: ${fact}`);
 						await dialog.getByRole('button', { name: 'cancel' }).click();
 						await dialog.waitFor({ state: 'detached' });
 						assert.equal(await stateOf(page, phone, 'home'), 'member', `${act} cancelled`);
@@ -165,12 +165,16 @@ describe('the sync widget’s grid', () => {
 					const { device } = await gridWith(app, native);
 					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'grant like…' }).click();
 					const dialog = page.locator('dialog.confirm');
-					assert.match(await dialog.innerText(), /^Grant notes the devices of which database\? notes starts a sync chain with the same admins/);
+					assert.ok((await dialog.innerText()).includes('notes'));
 					await dialog.getByRole('button', { name: 'datum' }).click();
 					const said = page.locator(`${WIDGET} .grid .said`);
 					await said.waitFor();
-					assert.match(await said.innerText(), /^started sync chain \S+: open, as datum's is\ngranted .* member of this database/);
-					assert.ok(JSON.parse(await cli(app, ['--db', 'notes', 'sync', 'status', '--json'])).chain);
+					// The chain it started, then the grant, as a member.
+					const { chain } = JSON.parse(await cli(app, ['--db', 'notes', 'sync', 'status', '--json']));
+					assert.ok(chain);
+					const lines = (await said.innerText()).split('\n');
+					assert.ok(lines[0].includes(chain), lines[0]);
+					assert.match(lines[1], /^granted\b.*\bmember\b/);
 
 					assert.match((await joins(native, 'notes')).stdout, /joined «notes»/);
 					assert.equal((await native.run(['--db', 'notes', 'sync'])).code, 0);
@@ -197,7 +201,7 @@ describe('the sync widget’s grid', () => {
 					const said = page.locator(`${WIDGET} .grid .said`);
 					await said.waitFor();
 					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0, await page.locator(WIDGET).innerText());
-					assert.match(await said.innerText(), /granted .* member of this database/);
+					assert.match(await said.innerText(), /\bgranted\b.*\bmember\b/);
 					assert.equal(await page.evaluate(() => window.passkeyAsks), 1);
 					const admins = JSON.parse(await cli(app, ['--db', 'notes', 'sync', 'admin', 'list', '--json'])).admins;
 					assert.equal(admins.length, 1);

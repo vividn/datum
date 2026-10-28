@@ -468,10 +468,9 @@ describe('a URL', () => {
 			assert.equal(await activeRootTab(page), 'custom');
 			assert.deepEqual(await titles(page), ['custom']);
 			// Alone at the root the pane draws no title strip, so its ✎ is
-			// hidden; what says the widget is there is its own hint.
-			await page
-				.locator('section.pane[data-title="custom"] .body', { hasText: 'type a datum command' })
-				.waitFor();
+			// hidden; what says the widget is there is its own hint, drawn
+			// while it has no command.
+			await page.locator('section.pane[data-title="custom"] .body p.quiet').waitFor();
 
 			const kinds = await offered(page);
 			assert.ok(kinds.includes('custom'), `the chooser does not offer custom: ${kinds}`);
@@ -826,11 +825,14 @@ describe('the bottom bar', () => {
 	// what this test reads is the bar once memory is where the rows are.
 	test('memory-only storage turns the bar orange, with the storage sentence as its title', async () => {
 		await withApp(
-			async ({ page }) => {
+			async ({ page, bannerText }) => {
 				const bar = page.locator('.prompt-bar');
 				await page.waitForFunction(() => document.querySelector('.prompt-bar').classList.contains('alarm'));
 				assert.equal(await bar.evaluate((el) => getComputedStyle(el).borderTopColor), 'rgb(232, 130, 12)');
-				assert.match(await bar.getAttribute('title'), /held in memory only/);
+				// The note's claim, one store in two places: memory.
+				const title = await bar.getAttribute('title');
+				assert.match(title, /\bmemory\b/);
+				assert.ok((await bannerText()).endsWith(title), `the bar says ${title}`);
 			},
 			{
 				...DESKTOP,

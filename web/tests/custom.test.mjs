@@ -67,10 +67,7 @@ describe('the custom pane', () => {
 		await shared.solo(async (app) => {
 			await setCommand(app.page, 'occur tea');
 			await app.page.locator(`${PANE} button.play`).waitFor();
-			assert.match(
-				await app.page.locator(`${PANE} .body`).innerText(),
-				/this command writes — it runs only when you press ▶/
-			);
+			assert.equal(await app.page.locator(`${PANE} .body p.quiet button.play`).count(), 1, 'the notice that it writes holds its ▶');
 			assert.equal(await count(app, 'tea'), 1);
 
 			// An epoch bump. By the time the tail table shows the coffee the
@@ -105,7 +102,7 @@ describe('the custom pane', () => {
 			await app.page.locator(`${PANE} button.play`).click();
 			const dialog = app.page.locator('dialog.confirm');
 			await dialog.waitFor();
-			assert.match(await dialog.locator('p').innerText(), /Retime this entry\? \[Y\/n\]$/);
+			assert.match(await dialog.locator('p').innerText(), /coffee/, 'the question shows the entry it would retime');
 			await dialog.getByRole('button', { name: 'retime', exact: true }).click();
 			await until(coffee, (now) => now !== before);
 		});
@@ -186,7 +183,7 @@ describe('the custom pane', () => {
 				await app.reload();
 				await app.toCollect();
 				await app.page.locator(`${PANE} h2`, { hasText: 'custom' }).waitFor();
-				assert.match(await shows(app.page, /type a datum command/), /type a datum command/);
+				await app.page.locator(`${PANE} .body p.quiet`).waitFor(); // its empty state: nothing remembered, nothing broken
 				assert.deepEqual(app.errors, [], `the blocked store threw at the page: ${app.errors[0]}`);
 				assert.deepEqual(logged, [], `the blocked store logged an error: ${logged[0]}`);
 			},

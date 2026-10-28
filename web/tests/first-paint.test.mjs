@@ -83,14 +83,15 @@ describe('before the CLI answers', () => {
 				// Said after a second, counting, and gone with the answer.
 				const [at, line] = marks.said[0];
 				assert.ok(at >= 1000 && at < marks.prompt, `said at ${at} ms`);
-				assert.match(line, /^Opening your data… 1 s$/);
+				// Its first word says which wait; its last, the seconds.
+				assert.match(line, /^Opening\b.* 1 s$/);
 				// Counting, never ahead of the clock, and through the hold. No
 				// upper bound: how long past the hold the answer takes is the
 				// CLI's latency, which a loaded runner stretches («4 s» on CI,
 				// da-xldfb). The count trails its clock by up to a 250 ms tick,
 				// so at the hold's end it reads at least one second less.
 				const counts = marks.said.map(([at, said]) => {
-					const n = Number(said.match(/^Opening your data… (\d+) s$/)?.[1]);
+					const n = Number(said.match(/^Opening\b.* (\d+) s$/)?.[1]);
 					assert.ok(n <= at / 1000, `«${said}» at ${at} ms`);
 					return n;
 				});
@@ -194,12 +195,14 @@ describe('before the CLI answers', () => {
 				const from = lines.findIndex((line) => line.startsWith('Upgrading'));
 				assert.ok(from >= 0, `the upgrade was never named: ${lines.join(' | ')}`);
 				assert.ok(
-					lines.slice(from).every((line) => /^Upgrading your data to this version \(one time\), keeping a copy of it as it was… \d s$/.test(line)),
+					lines.slice(from).every((line) => /^Upgrading\b.* \d s$/.test(line)),
 					lines.join(' | ')
 				);
 				assert.ok(marks.quiet !== undefined, 'the line stayed after the upgrade');
 				const status = await app.run(['db', 'migrate', 'status']);
-				assert.match(status.stdout, /Current schema version: v(\d+)\s+Binary target version: {2}v\1/);
+				// Its first two lines: the schema version, then the binary's target.
+				const [current, target] = status.stdout.split('\n').slice(0, 2).map((line) => line.match(/v(\d+)/)?.[1]);
+				assert.ok(current !== undefined && current === target, status.stdout);
 				assert.equal((await app.run(['tail', '-n', '1'])).stdout.includes('coffee'), true);
 			},
 			{ prepare: async (context) => (await inWorker(held('upgrade'))(context), await watch(context)) }
@@ -267,7 +270,7 @@ describe('before the CLI answers', () => {
 			assert.ok(before.includes('datum.db') && before.some((name) => name.endsWith('.bak')), before.join(', '));
 			const purged = await app.run(['db', 'purge', '--yes']);
 			assert.equal(purged.code, 0, purged.stderr);
-			assert.match(purged.stdout, /removed: \S*datum\.db\.pre-v54-to-v\d+-\d{8}T\d{6}Z\.bak/);
+			assert.match(purged.stdout, /datum\.db\.pre-v54-to-v\d+-\d{8}T\d{6}Z\.bak/);
 			assert.deepEqual(await holding(), []);
 			assert.equal((await app.run(['count'])).stdout.trim(), '0');
 		});

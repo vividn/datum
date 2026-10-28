@@ -31,7 +31,8 @@ test('an hour that happened twice is a dialog with a button each, and the second
 			await type(page, 'occur tea -d 2026-10-25 -t 02:30');
 			const dialog = page.locator('dialog.confirm');
 			await dialog.waitFor();
-			assert.match(await dialog.locator('p').innerText(), /^2026-10-25 02:30 happens twice in Europe\/Berlin/);
+			const asked = await dialog.locator('p').innerText();
+			assert.ok(['2026-10-25 02:30', 'Europe/Berlin'].every((fact) => asked.includes(fact)), `it names the time and the zone: ${asked}`);
 			assert.deepEqual(await dialog.getByRole('button').allInnerTexts(), [FIRST, SECOND, 'cancel']);
 			assert.deepEqual(await app.entries(), [], 'asked: nothing written');
 

@@ -111,8 +111,10 @@ describe('datum.day and a native copy', () => {
 					await pairWith(app, native);
 					const web = (await endpointOf(app)).slice(0, 12);
 					// The invite's own process may still hold the native copy's key for a moment.
-					const same = await until(() => native.run(['sync', 'diff', web]), (r) => r.code === 0);
-					assert.match(same.stdout, /hold the same data \(\d+ entries compared\)$/);
+					const same = await until(() => native.run(['sync', 'diff', web, '--json']), (r) => r.code === 0);
+					const alike = JSON.parse(same.stdout);
+					assert.deepEqual(alike.differ, [], same.stdout);
+					assert.ok(alike.compared > 0, same.stdout);
 
 					// From here neither serves the other: the native copy runs nothing, so
 					// the page's push finds no one, and each keeps an entry of its own.
@@ -160,7 +162,8 @@ describe('datum.day and a native copy', () => {
 						),
 						said[1]
 					);
-					assert.match(refused, /holds 2 entries of its own; a reader writes nothing/);
+					// Refused by count: the 2 entries it holds.
+					assert.match(refused, /\b2 entries\b/);
 					assert.equal(JSON.parse((await app.run(['sync', 'status', '--json'])).stdout).chain, null);
 					assert.equal(await countOf(app, 'coffee'), 2);
 				},
@@ -268,8 +271,9 @@ describe('datum.day and a native copy', () => {
 					// nothing synced and it fails (da-9d6uy).
 					const now = await native.run(['sync', '-v'], '', { DATUM_SYNC_TIMEOUT_S: '3' });
 					assert.notEqual(now.code, 0, now.stdout);
-					assert.match(now.stdout, /: offline, last seen /);
-					assert.match(now.stdout, /could not reach/);
+					// The state and when it was last seen, then `-v`'s words: what runs the other copy's sync.
+					assert.match(now.stdout, /: offline\b.*\b\d\d:\d\d\b/);
+					assert.match(now.stdout, /`datum sync run`/);
 
 					assert.equal((await native.run(['occur', 'meanwhile', '-t', '1000'])).code, 0);
 					native.spawn(['sync', 'run']);

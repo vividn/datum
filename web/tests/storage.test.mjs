@@ -138,7 +138,7 @@ describe('when durable storage never answers', () => {
 				// CLI widget to enable and every pane to answer, which the app
 				// does only once `initDb()` resolves. Before the deadline
 				// that wait never ended.
-				assert.match(await bannerText(), /held in memory only/);
+				assert.match(await bannerText(), /\bmemory\b/);
 
 				const logged = await run(['occur', 'coffee', '-t', '0700']);
 				assert.equal(logged.code, 0, logged.stderr);
@@ -164,7 +164,7 @@ describe('when durable storage arrives late', () => {
 		const heals = Date.now() + 5000;
 		await withApp(
 			async (app) => {
-				assert.match(await app.bannerText(), /held in memory only/);
+				assert.match(await app.bannerText(), /\bmemory\b/);
 				for (const time of ['0700', '0800', '0900']) {
 					const typed = await app.run(['occur', 'coffee', '-t', time]);
 					assert.equal(typed.code, 0, typed.stderr);
@@ -183,7 +183,7 @@ describe('when durable storage arrives late', () => {
 				// answers: the entry typed while in memory was moved across.
 				await app.reload();
 				assert.deepEqual((await app.entries()).map((e) => e.hid).sort(), typed);
-				assert.doesNotMatch(await app.bannerText(), /memory only/);
+				assert.doesNotMatch(await app.bannerText(), /\bmemory\b/);
 			},
 			{ prepare: inWorker(notBefore(heals)) }
 		);
@@ -210,7 +210,7 @@ describe('two tabs', () => {
 			const second = await first.newTab();
 
 			// The second tab is not a warning any more.
-			assert.doesNotMatch(await second.bannerText(), /memory only/);
+			assert.doesNotMatch(await second.bannerText(), /\bmemory\b/);
 			assert.equal(
 				await second.page.locator('section.pane.alarm').count(),
 				0,
@@ -628,11 +628,10 @@ const persistCalls = (app) => app.page.evaluate(() => window.__persistCalls);
 // returns (da-iw3j4): wait for one, then read how many.
 const asked = (app) => until(() => persistCalls(app), (n) => n >= 1);
 
-const DURABLE =
-	'datum.day is early software. Your entries are stored in this browser only: ' +
-	'clearing site data deletes them, and';
-const KEPT = `${DURABLE} the browser has promised to keep them.`;
-const MAY_CLEAR = `${DURABLE} the browser may clear them if space runs short — install the app to keep them.`;
+// What the note claims, by the fact it names: the browser has promised to
+// keep the entries, or it may clear them.
+const KEPT = /\bpromised\b/;
+const MAY_CLEAR = /\bmay clear\b/;
 
 describe('asking the browser to keep it', () => {
 	const alone = oneApp({ ...CLI, prepare: spyOnPersist });
@@ -653,16 +652,16 @@ describe('asking the browser to keep it', () => {
 		await session(async (app) => {
 			assert.equal(await app.page.evaluate(() => navigator.storage.persisted()), false);
 			assert.equal(await persistCalls(app), 0);
-			assert.equal(await app.bannerText(), MAY_CLEAR);
+			assert.match(await app.bannerText(), MAY_CLEAR);
 		});
 	});
 
 	test('a granted request is what the banner promises', async () => {
 		await session(async (app) => {
-			assert.equal(await app.bannerText(), MAY_CLEAR);
+			assert.match(await app.bannerText(), MAY_CLEAR);
 			const logged = await app.run(['occur', 'coffee', '-t', '0700']);
 			assert.equal(logged.code, 0, logged.stderr);
-			await until(app.bannerText, (t) => t === KEPT);
+			await until(app.bannerText, (t) => KEPT.test(t));
 		}, true);
 	});
 
@@ -674,7 +673,7 @@ describe('asking the browser to keep it', () => {
 				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
 				assert.equal(logged.code, 0, logged.stderr);
 				assert.equal(await persistCalls(app), 0);
-				assert.match(await app.bannerText(), /held in memory only/);
+				assert.match(await app.bannerText(), /\bmemory\b/);
 			},
 			{
 				...CLI,
@@ -709,7 +708,7 @@ describe('asking the browser to keep it', () => {
 				['coffee']
 			);
 			assert.equal(await asked(app), 1);
-			assert.equal(await app.bannerText(), MAY_CLEAR);
+			assert.match(await app.bannerText(), MAY_CLEAR);
 			assert.deepEqual(app.errors, []);
 		}, 'throw');
 	});
@@ -729,7 +728,7 @@ describe('asking the browser to keep it', () => {
 				await window.__persistAnswer;
 				return navigator.storage.persisted();
 			});
-			await until(app.bannerText, (t) => t === (granted ? KEPT : MAY_CLEAR));
+			await until(app.bannerText, (t) => (granted ? KEPT : MAY_CLEAR).test(t));
 		});
 	});
 });

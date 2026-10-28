@@ -67,8 +67,8 @@ const holdFiles = (tab) =>
 			)
 	);
 
-const BLOCKED = (then) =>
-	new RegExp(`^Another datum\\.day tab or window is using your data\\. This one ${then} it is done, or closed\\. \\d+ s$`);
+// The line names the other tab, and counts the seconds.
+const BLOCKED = /\btab\b.* \d+ s$/;
 
 test('another tab holding the files: the line says so, and the page opens once it lets go', async () => {
 	await withApp(async (other) => {
@@ -86,7 +86,7 @@ test('another tab holding the files: the line says so, and the page opens once i
 		await holdFiles(other);
 		await phone.page.reload();
 		const line = phone.page.locator('.waiting');
-		await line.filter({ hasText: BLOCKED('opens when') }).waitFor();
+		await line.filter({ hasText: BLOCKED }).waitFor();
 		assert.equal(await phone.page.locator('.prompt-bar input').isDisabled(), true);
 
 		await other.page.evaluate(() => window.letGo());
@@ -97,13 +97,13 @@ test('another tab holding the files: the line says so, and the page opens once i
 		// change from «Opening your data…» (kimi-k3 on #493).
 		const said = await phone.page.evaluate(() => window.__said);
 		const shown = said.slice(said.findIndex(Boolean), said.findLastIndex(Boolean) + 1);
-		assert.ok(shown.some((l) => BLOCKED('opens when').test(l)), JSON.stringify([...new Set(said)]));
+		assert.ok(shown.some((l) => BLOCKED.test(l)), JSON.stringify([...new Set(said)]));
 		assert.equal(shown.indexOf(null), -1, `the line went and came back: ${JSON.stringify([...new Set(said)])}`);
 
 		// And on a page already open, a command waits, and the line says that.
 		await holdFiles(other);
 		const counted = phone.run(['count', 'kept']);
-		await line.filter({ hasText: BLOCKED('waits until') }).waitFor();
+		await line.filter({ hasText: BLOCKED }).waitFor();
 		await other.page.evaluate(() => window.letGo());
 		assert.equal((await counted).stdout, '1');
 		await line.waitFor({ state: 'detached' });
@@ -121,7 +121,7 @@ test('a boot that never becomes ready says what it was waiting on', async () => 
 	};
 	await assert.rejects(withApp(() => {}, { prepare }), (e) => {
 		assert.match(e.message, /Timeout/);
-		assert.match(e.message, /the boot: shows "[^"]*Opening your data/);
+		assert.match(e.message, /the boot: shows "[^"]+"/);
 		assert.match(e.message, /unanswered \S+\/db\.worker-/);
 		return true;
 	});

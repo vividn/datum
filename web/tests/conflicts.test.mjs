@@ -98,7 +98,9 @@ test('the button counts them in red, the widget resolves them, and the last one 
 			await three.locator('[data-how="merge"]').click();
 			ran = await resolve(three);
 			assert.notEqual(ran.result.code, 0);
-			assert.match(await three.locator('.refused').textContent(), /cannot merge true with false.*pick that key instead/);
+			const said = ran.result.stderr.replace(/\x1b\[[0-9;]*m/g, '').trim();
+			assert.ok(said, 'the CLI said why');
+			assert.equal(await three.locator('.refused').textContent(), said, 'the refusal is the CLI\'s own');
 			assert.equal(await entries.count(), 1, 'refused: still listed');
 
 			// «keep as shown» is no flag at all, and the entry stays deleted.

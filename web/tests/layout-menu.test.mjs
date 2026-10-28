@@ -80,7 +80,7 @@ describe('the menu the title opens', () => {
 		await shared.solo(async ({ page }) => {
 			const title = menuButton(page, 'tail');
 			assert.match(await title.getAttribute('class'), /\btitle\b/);
-			assert.equal(await title.getAttribute('aria-label'), 'menu of the tail pane');
+			assert.match(await title.getAttribute('aria-label'), /\btail\b/);
 			assert.equal(await pane(page, 'tail').locator('.titlebar button.more, .titlebar button.manage').count(), 0, 'a … or ▾ badge is still there');
 
 			await title.click();
@@ -91,7 +91,7 @@ describe('the menu the title opens', () => {
 			await enterLayoutMode(page);
 			await title.click();
 			assert.deepEqual(await menuLines(page), TAIL_MANAGE);
-			assert.equal(await page.locator('[role="menu"]').getAttribute('aria-label'), 'menu of the tail pane');
+			assert.match(await page.locator('[role="menu"]').getAttribute('aria-label'), /\btail\b/);
 			// Change Widget fills this tab from the one modal (da-uyx1): the
 			// pane becomes what was picked, and nothing is added beside it.
 			await page.getByRole('menuitem', { name: 'Change Widget', exact: true }).click();
@@ -365,7 +365,7 @@ describe('the menu the title opens', () => {
 			await titledPane(page, 'sleep tail').waitFor();
 			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'sleep tail', 'custom', 'fields']);
 			assert.equal(await pane(page, 'tail').locator('h2').innerText(), 'sleep tail');
-			assert.equal(await menuButton(page, 'tail').getAttribute('aria-label'), 'menu of the sleep tail pane');
+			assert.match(await menuButton(page, 'tail').getAttribute('aria-label'), /\bsleep tail\b/);
 			// It EDITS the tree, so it dirties the layout like any other edit.
 			assert.equal(await dots(), 1, 'a rename did not dirty the layout');
 			assert.equal((await tabOf()).title, 'sleep tail');
@@ -557,7 +557,7 @@ describe("the root bar's menu", () => {
 			assert.equal(await name.getAttribute('title'), 'layout menu');
 			assert.equal(await page.locator('.root-bar button.more').count(), 0, 'the … badge is still there');
 			await name.click();
-			assert.equal(await page.locator('[role="menu"]').getAttribute('aria-label'), 'menu of the main layout');
+			assert.match(await page.locator('[role="menu"]').getAttribute('aria-label'), /\bmain\b/);
 			// Change Widget is layout mode's (da-z8klv, da-vvcxc), so in
 			// normal mode the name opens on the acts.
 			assert.equal((await menuLines(page))[0], 'Save layout');
@@ -661,9 +661,12 @@ describe("the root bar's menu", () => {
 describe("the bar's handle", () => {
 	test('in normal mode it is the maximize; in layout mode a handle, named for the bar, and no Bar item anywhere', async () => {
 		await shared.solo(async ({ page }) => {
-			assert.equal(await maximizeButton(page, 'tail').getAttribute('aria-label'), 'maximize the tail pane');
+			const badge = maximizeButton(page, 'tail');
+			const said = async () => [/\bhandle\b/.test(await badge.getAttribute('class')), await badge.getAttribute('aria-pressed')];
+			assert.deepEqual(await said(), [false, 'false'], 'not the maximize toggle');
 			await enterLayoutMode(page);
-			assert.equal(await maximizeButton(page, 'tail').getAttribute('aria-label'), "move the tail pane's bar");
+			assert.deepEqual(await said(), [true, null], 'not the handle');
+			assert.match(await badge.getAttribute('aria-label'), /\btail\b/);
 			await menuButton(page, 'tail').click();
 			assert.equal(await page.getByRole('menuitem', { name: 'Bar', exact: true }).count(), 0);
 			await page.keyboard.press('Escape');
@@ -719,8 +722,13 @@ describe('the pane menu by pointer', () => {
 	// Copilot on #176: the row's own arrows, to both of its ends.
 	test('ArrowRight and ArrowLeft walk the Split row and stop at its ends', async () => {
 		await shared.solo(async ({ page }) => {
+			// An item by its text; an arrow by its row's name and its arrow.
 			const focused = () =>
-				page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim());
+				page.evaluate(() => {
+					const el = document.activeElement;
+					const row = el.closest('[role="group"]')?.getAttribute('aria-label');
+					return row ? `${row} ${el.textContent.trim()}` : el.textContent.trim();
+				});
 			// Split is layout mode's (da-vvcxc). The menu opens on its first
 			// item, which is `Change Widget` (da-z8klv), then `Rename pane`
 			// (da-s7sdm); the Split row is the next one down.
@@ -731,28 +739,21 @@ describe('the pane menu by pointer', () => {
 			await page.keyboard.press('ArrowDown');
 			assert.equal(await focused(), 'Rename pane');
 			await page.keyboard.press('ArrowDown');
-			assert.equal(await focused(), 'split: a new pane to the left');
+			assert.equal(await focused(), 'Split ←');
 			// Vim order, and the walk follows the eye: ← ↓ ↑ →.
 			const walk = [];
 			for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft']) {
 				await page.keyboard.press(key);
 				walk.push(await focused());
 			}
-			assert.deepEqual(walk, [
-				'split: a new pane to the left',
-				'split: a new pane below',
-				'split: a new pane above',
-				'split: a new pane to the right',
-				'split: a new pane to the right',
-				'split: a new pane above'
-			]);
+			assert.deepEqual(walk, ['Split ←', 'Split ↓', 'Split ↑', 'Split →', 'Split →', 'Split ↑']);
 			// And ArrowDown from the row's last button goes on to the next
 			// item — the four arrows of Break out, then Widget options, then
 			// Close pane, which is last (da-ygc9).
 			await page.keyboard.press('ArrowRight');
 			await page.keyboard.press('ArrowRight');
 			await page.keyboard.press('ArrowDown');
-			assert.equal(await focused(), 'break out: this widget to the left');
+			assert.equal(await focused(), 'Break out ←');
 			for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
 			assert.equal(await focused(), 'Widget options');
 			await page.keyboard.press('ArrowDown');
@@ -768,12 +769,10 @@ describe('the pane menu by pointer', () => {
 			await enterLayoutMode(page);
 			await menuButton(page, 'tail').click();
 			const buttons = page.getByRole('group', { name: 'Split' }).getByRole('menuitem');
-			assert.deepEqual(await buttons.evaluateAll((all) => all.map((b) => `${b.textContent.trim()} ${b.getAttribute('aria-label')}`)), [
-				'← split: a new pane to the left',
-				'↓ split: a new pane below',
-				'↑ split: a new pane above',
-				'→ split: a new pane to the right'
-			]);
+			// Each named in full for a reader: a name each, and no two alike.
+			assert.deepEqual(await buttons.evaluateAll((all) => all.map((b) => b.textContent.trim())), ['←', '↓', '↑', '→']);
+			const names = await buttons.evaluateAll((all) => all.map((b) => b.getAttribute('aria-label')));
+			assert.equal(new Set(names.filter(Boolean)).size, 4, names.join(' | '));
 			const boxes = await Promise.all([0, 1, 2, 3].map((i) => boxOf(buttons.nth(i))));
 			for (const b of boxes) {
 				assert.equal(b.y, boxes[0].y, 'the four are not on one line');

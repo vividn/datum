@@ -385,6 +385,21 @@ writing it down.
     scripted to end at 8 s is a coin toss between the 6 s try and the 14 s one — 5 s sits
     between two tries and asks the same question in half the time.
 
+22. **A test never pins prose.** Copy is edited freely, by vividn above all, and a test that
+    quotes it word for word fails on every edit while checking nothing a person relies on
+    (vividn, 2026-10-28: «seems like tests that quote word for word are kind of useless. Goes
+    against good testing policy», da-cqhk5). So a test checks what the copy DOES: a control is
+    there and acts, a link goes where it says, an element is present and in its order, a
+    message appears where and when it should and goes when it should. Where a sentence carries
+    a fact, the test checks the fact: a refusal or error a person acts on is checked for what it
+    names (the field, the flag, the database, the count, the time) and for its effect — nothing
+    written, the confirm disabled — never for its sentence. Two things are not prose and stay:
+    a rule behind a word, a decision about vocabulary, held as a rule (`welcome.test`'s «Track»
+    only as a verb, da-rgyq8), and a control's accessible name used to FIND it (rule 19). The
+    CLI's output compared against the native CLI's (`stdout.test`, `parity.test`) quotes
+    nothing either: both sides are the same code. A wording change that keeps the meaning
+    turns no test red.
+
 ## Interaction
 
 What a tap will do has to be readable BEFORE the tap. vividn, 2026-09-25: «put double outlines

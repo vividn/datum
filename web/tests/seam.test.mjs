@@ -517,7 +517,7 @@ describe('setup', () => {
 			);
 			// With no field there is nothing to ask about: the CLI refuses it.
 			await submit('setup --delete');
-			await answer(page, 'setup --delete').getByText('takes the field alone').waitFor();
+			await answer(page, 'setup --delete').locator('pre.error', { hasText: '--delete' }).waitFor();
 			assert.equal(await page.locator('dialog.confirm[open]').count(), 0, 'it asked about a field called --delete');
 			// The flag may come first, and it asks all the same. (After the line
 			// above: `answer` matches by substring, and this one holds that one.)

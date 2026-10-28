@@ -438,7 +438,6 @@ describe('in the app', () => {
 				const [h, p] = await Promise.all([hint.boundingBox(), page.locator('section.pane[data-title="fields"] .bar').boundingBox()]);
 				assert.ok(h.x >= p.x && h.x + h.width <= p.x + p.width + 0.5, `the hint spans ${h.x}–${h.x + h.width}, the pane ${p.x}–${p.x + p.width}`);
 				assert.ok(h.y >= p.y && h.y + h.height <= p.y + p.height + 0.5, `the hint spans ${h.y}–${h.y + h.height} down, the pane ${p.y}–${p.y + p.height}`);
-				assert.equal(await hint.textContent(), 'nothing tracked yet — set a field up in the setup widget, or type a command to log something');
 			},
 			{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT }
 		);

@@ -249,7 +249,7 @@ describe('the internal database', () => {
 		const heals = Date.now() + 5000;
 		await withApp(
 			async (app) => {
-				assert.match(await app.bannerText(), /held in memory only/);
+				assert.match(await app.bannerText(), /\bmemory\b/);
 				assert.ok(await app.page.locator('section.pane.alarm').count(), 'no alarm frame');
 
 				const home = tree('home', 'daystrip');
@@ -260,7 +260,7 @@ describe('the internal database', () => {
 
 				await app.page.waitForFunction(() => !document.querySelector('section.pane.alarm'));
 				await app.reload();
-				assert.doesNotMatch(await app.bannerText(), /memory only/);
+				assert.doesNotMatch(await app.bannerText(), /\bmemory\b/);
 				assert.deepEqual(
 					(await app.entries()).map((e) => e.field),
 					['coffee']

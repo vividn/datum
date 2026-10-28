@@ -75,8 +75,9 @@ describe('install.sh picks the binary for the machine', () => {
 			const run = install(box, s, m);
 			assert.equal(run.status, 0, run.stderr);
 			assert.equal(readFileSync(run.installed, 'utf8'), binary(asset));
-			assert.match(run.stdout, new RegExp(`installed datum 3\\.0\\.1-beta \\(${asset}\\) at ${run.installed}`));
-			assert.match(run.stdout, /\.local\/bin is not on your PATH/);
+			// It names what it installed and where, and that the place is not on PATH.
+			for (const fact of [`datum 3.0.1-beta (${asset})`, run.installed]) assert.ok(run.stdout.includes(fact), `${fact}: ${run.stdout}`);
+			assert.match(run.stdout, /\bPATH\b/);
 		});
 	}
 
@@ -104,7 +105,8 @@ describe('install.sh picks the binary for the machine', () => {
 			const box = scratch();
 			const run = install(box, s, m);
 			assert.notEqual(run.status, 0);
-			assert.match(run.stderr, new RegExp(`no prebuilt datum for ${s} ${m}; build it from a checkout`));
+			assert.ok(run.stderr.includes(`${s} ${m}`), `it names the machine: ${run.stderr}`);
+			assert.match(run.stderr, /\bcheckout\b/, 'and where to build one');
 			assert.equal(existsSync(run.installed), false);
 		});
 	}
@@ -118,7 +120,10 @@ describe('install.sh refuses a binary SHA256SUMS does not vouch for', () => {
 		writeFileSync(old, 'the old one');
 		const run = install(box, 'Linux', 'x86_64');
 		assert.notEqual(run.status, 0);
-		assert.match(run.stderr, /datum-x86_64-linux does not match SHA256SUMS \(sha256 [0-9a-f]{64}, expected [0-9a-f]{64}\); nothing installed/);
+		// It names the binary and both checksums: the one it got and the one SHA256SUMS lists.
+		for (const fact of ['datum-x86_64-linux', sha256(binary('datum-x86_64-linux')), sha256('something else')]) {
+			assert.ok(run.stderr.includes(fact), `${fact}: ${run.stderr}`);
+		}
 		assert.equal(readFileSync(old, 'utf8'), 'the old one');
 	});
 
@@ -126,7 +131,7 @@ describe('install.sh refuses a binary SHA256SUMS does not vouch for', () => {
 		const box = scratch({ sums: (asset) => (asset === 'datum-aarch64-macos' ? null : sha256(binary(asset))) });
 		const run = install(box, 'Darwin', 'arm64');
 		assert.notEqual(run.status, 0);
-		assert.match(run.stderr, /SHA256SUMS lists no datum-aarch64-macos; nothing installed/);
+		assert.match(run.stderr, /\bdatum-aarch64-macos\b/, 'it names the binary SHA256SUMS lacks');
 		assert.equal(existsSync(run.installed), false);
 	});
 });
@@ -151,7 +156,7 @@ describe('install.sh checks SHA256SUMS is signed by the release key, with minisi
 		writeFileSync(old, 'the old one');
 		const run = install(box, 'Linux', 'x86_64', { STUB_BAD_SIGNATURE: '1' });
 		assert.notEqual(run.status, 0);
-		assert.match(run.stderr, /SHA256SUMS's signature does not verify with the release key; nothing installed/);
+		assert.match(run.stderr, /\bSHA256SUMS\b.*\bsignature\b/, 'it names what failed to verify');
 		assert.equal(readFileSync(old, 'utf8'), 'the old one');
 	});
 
@@ -160,7 +165,7 @@ describe('install.sh checks SHA256SUMS is signed by the release key, with minisi
 		rmSync(join(box.release, 'SHA256SUMS.minisig'));
 		const run = install(box, 'Linux', 'x86_64');
 		assert.notEqual(run.status, 0);
-		assert.match(run.stderr, /SHA256SUMS is not signed: could not download \S+\/SHA256SUMS\.minisig; nothing installed/);
+		assert.match(run.stderr, /\S+\/SHA256SUMS\.minisig\b/, 'it names the signature it could not download');
 		assert.equal(existsSync(run.installed), false);
 	});
 
@@ -168,7 +173,7 @@ describe('install.sh checks SHA256SUMS is signed by the release key, with minisi
 		const box = scratch();
 		const run = install(box, 'Linux', 'x86_64', { PATH: `${box.bin}:${process.env.PATH}` });
 		assert.equal(run.status, 0, run.stderr);
-		assert.ok(run.stderr.includes(`signature was not checked (by hand: minisign -Vm SHA256SUMS -P ${KEY})`), run.stderr);
+		assert.ok(run.stderr.includes(`minisign -Vm SHA256SUMS -P ${KEY}`), `the command to check it by hand: ${run.stderr}`);
 		assert.equal(existsSync(run.installed), true);
 	});
 });

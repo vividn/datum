@@ -1280,5 +1280,7 @@ any more.
 against what the native `datum` binary stored for the same argv, and
 `tests/stdout.test.mjs` what a script of commands PRINTS, byte for byte
 after masking hids and write times. Both are hard assertions: the browser
-runs the CLI, so there is nothing for an exemption to excuse. Needs a headless browser once: `npx
+runs the CLI, so there is nothing for an exemption to excuse. No other test
+quotes copy: it checks what the words do, and a refusal for the fact it names
+(`docs/web-conventions.md` rule 22, da-cqhk5). Needs a headless browser once: `npx
 playwright install --only-shell chromium`.

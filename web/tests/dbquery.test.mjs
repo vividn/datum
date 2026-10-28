@@ -170,7 +170,9 @@ describe('a database the page may not be pointed at', () => {
 
 	test('a path is refused too — there is no filesystem out there', async () => {
 		await withApp(async (app) => { // alone on its query
-			assert.match(await app.page.locator('main .notice').innerText(), /not a database name/);
+			const notice = await app.page.locator('main .notice').innerText();
+			assert.match(notice, /\/tmp\/sneaky\.db/, 'it names what it refused');
+			assert.equal(await app.page.locator('main .notice code').innerText(), 'datum', 'and what it shows instead');
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 			assert.deepEqual(await fieldsIn(app, 'datum'), ['coffee']);
 		}, { query: '?db=%2Ftmp%2Fsneaky.db' });
@@ -366,12 +368,10 @@ describe('the seam under review', () => {
 
 			let said = ask();
 			await dialog.waitFor();
-			assert.equal(
-				await dialog.locator('p').innerText(),
-				'This will destroy ALL data in other, every entry and its history, and the copies of it kept before upgrades.\n' +
-					'On this device it clears the command history and what the widgets last showed too.'
-			);
-			assert.match(await dialog.locator('label').innerText(), /Type\s+other\s+to confirm/);
+			assert.match(await dialog.locator('p').innerText(), /\bother\b/);
+			const typed = await dialog.locator('label').innerText();
+			assert.match(typed, /\bother\b/, 'the name to type is the flag\'s');
+			assert.doesNotMatch(typed, /\bdatum\b/);
 
 			// The OTHER database's name is now the wrong answer, and refused.
 			await name.fill('datum');
@@ -404,11 +404,13 @@ describe('the seam under review', () => {
 			const dialog = page.locator('dialog.confirm');
 			const name = dialog.locator('input');
 			const button = (label) => dialog.getByRole('button', { name: label, exact: true });
+			const { chain } = JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout);
+			assert.ok(chain);
 
 			// The question comes first, with no name to type; cancel runs nothing.
 			let said = app.submit('db purge');
 			await dialog.waitFor();
-			assert.match(await dialog.locator('p').innerText(), /^This copy is in sync chain \S+: leave .*rejoin .*chain .*\nLeave, rejoin, or purge the whole chain\?$/s);
+			assert.ok((await dialog.locator('p').innerText()).includes(chain), 'it names the chain');
 			assert.equal(await name.count(), 0);
 			// Neither answer destroys (the name is asked next), so neither is red.
 			assert.ok(await inks(button('leave'), '--accent'));
@@ -417,7 +419,7 @@ describe('the seam under review', () => {
 			assert.ok(!(await inks(button('cancel'), '--error')));
 			await button('cancel').click();
 			await said;
-			assert.match((await app.outputs()).at(-1), /aborted \(none of leave, rejoin or chain\)/);
+			assert.match((await app.outputs()).at(-1), /aborted/);
 			assert.deepEqual(await fieldsIn(app, 'datum'), ['coffee']);
 
 			// Rejoin, with no other member to refetch from: the CLI's own
@@ -425,7 +427,7 @@ describe('the seam under review', () => {
 			said = app.submit('db purge');
 			await button('rejoin').click();
 			await said;
-			assert.match((await app.outputs()).at(-1), /no other member of sync chain \S+ holds everything to refetch from/);
+			assert.ok((await app.outputs()).at(-1).includes(chain), 'the refusal names the chain');
 			assert.equal(await dialog.count(), 0);
 			assert.deepEqual(await fieldsIn(app, 'datum'), ['coffee']);
 
@@ -435,12 +437,11 @@ describe('the seam under review', () => {
 			await button('chain').click();
 			await name.waitFor();
 			const warned = await dialog.locator('p').innerText();
-			assert.match(warned, /^every copy in sync chain \S+ drops every entry, op and history, each keeping a backup of its entries beside its database; its members stay:\n/);
-			assert.match(warned, /\n {2}this copy purges now, after a backup of its entries beside the database\nOn this device it clears/);
+			assert.ok(warned.includes(chain), `the warning names the chain: ${warned}`);
 			await name.fill('datum');
 			await name.press('Enter');
 			await said;
-			assert.match((await app.outputs()).at(-1), /purged: every other copy follows when it next connects/);
+			assert.match((await app.outputs()).at(-1), /purged/);
 			assert.deepEqual(await fieldsIn(app, 'datum'), []);
 			assert.equal((await app.run(['sync', 'chain', 'list'])).code, 0, 'a chain purge left the chain');
 
@@ -449,7 +450,7 @@ describe('the seam under review', () => {
 			said = app.submit('db purge');
 			await button('leave').click();
 			await name.waitFor();
-			assert.match(await dialog.locator('p').innerText(), /\nIt leaves sync chain \S+ first\.\nOn this device/);
+			assert.ok((await dialog.locator('p').innerText()).includes(chain), 'it names the chain it leaves');
 			await name.fill('datum');
 			await name.press('Enter');
 			await said;

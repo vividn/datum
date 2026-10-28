@@ -71,16 +71,23 @@ describe('an S3-compatible destination', () => {
 			assert.deepEqual(await press(), ['✓ write', '✓ list', '✓ read', '✓ delete']);
 			assert.deepEqual([...s3.objects('probe').keys()], [], 'the probe was left behind');
 
+			// One line, the step that failed, naming what to fix and the bucket's own code.
+			const failed = async (...facts) => {
+				const lines = await press();
+				assert.equal(lines.length, 1, lines.join(' | '));
+				assert.match(lines[0], /^✗ write\b/);
+				for (const fact of facts) assert.ok(lines[0].includes(fact), `${lines[0]} does not name ${fact}`);
+			};
 			await fillS3(sheet, { bucket: 'probe', secret: 'wrong' });
-			assert.deepEqual(await press(), ['✗ write failed — credentials: the access key id or secret is wrong (SignatureDoesNotMatch)']);
+			await failed('credentials', 'SignatureDoesNotMatch');
 			await fillS3(sheet, { bucket: 'probe', key: 'AKIDNOBODY' });
-			assert.deepEqual(await press(), ['✗ write failed — credentials: the access key id or secret is wrong (InvalidAccessKeyId)']);
+			await failed('credentials', 'InvalidAccessKeyId');
 			await fillS3(sheet, { bucket: 'nope' });
-			assert.deepEqual(await press(), ['✗ write failed — bucket name: there is no bucket «nope» at this endpoint']);
+			await failed('bucket', '«nope»');
 			s3.cors = false;
 			try {
 				await fillS3(sheet, { bucket: 'probe' });
-				assert.match((await press()).join('\n'), /^✗ write failed — CORS: the bucket does not allow this page/);
+				await failed('CORS');
 			} finally {
 				s3.cors = true;
 			}
@@ -115,13 +122,14 @@ describe('an S3-compatible destination', () => {
 			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
 			const sheet = await openSheet(page);
 			// The destinations on offer; the tab's memory is DEBUG's alone.
-			assert.deepEqual(await sheet.locator('select[data-plan-field="kind"] option').allInnerTexts(), [
-				'S3-compatible bucket (AWS, R2, B2, Wasabi, MinIO)',
-				'WebDAV folder (Nextcloud, ownCloud, many NAS boxes)'
+			assert.deepEqual(await sheet.locator('select[data-plan-field="kind"] option').evaluateAll((os) => os.map((o) => o.value)), [
+				's3',
+				'webdav'
 			]);
 			assert.equal(await sheet.locator('input[data-plan-field="prefix"]').inputValue(), PREFIX);
 			assert.equal(await sheet.locator('input[data-plan-field="secret"]').getAttribute('type'), 'password');
-			assert.match(await sheet.innerText(), /Kept in this browser, unencrypted\. Use a key scoped to this one bucket/);
+			// The secret says how it is kept, under it.
+			assert.match(await sheet.locator('label:has(input[data-plan-field="secret"]) + p.note-field').innerText(), /unencrypted|not encrypted/, 'the note under the secret says it is kept unencrypted');
 			const origin = await page.evaluate(() => location.origin);
 			assert.deepEqual(JSON.parse(await sheet.locator('[data-cors]').textContent())[0].AllowedOrigins, [origin]);
 
@@ -140,7 +148,7 @@ describe('an S3-compatible destination', () => {
 			await fillS3(sheet, { bucket: 'plan' });
 			await sheet.getByRole('button', { name: 'Look for backups there', exact: true }).click();
 			await sheet.locator('[data-found]').waitFor();
-			assert.equal(await sheet.locator('[data-found]').innerText(), '1 backup of datum found, newest 0 s ago Add plan continues that rotation.');
+			assert.match(await sheet.locator('[data-found]').innerText(), /\b1\b.*\bdatum\b.*\b0 s\b/);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -191,10 +199,8 @@ describe('an S3-compatible destination', () => {
 				const sheetB = await openSheet(b.page);
 				const planB = await addPlan(sheetB, 'b', 'shared');
 				await sheetB.locator('[data-found]').waitFor();
-				assert.match(
-					await sheetB.locator('[data-found]').innerText(),
-					/^1 backup of datum from Chrome on \w+ \(this device, earlier\?\) found, newest 2 h ago Add plan keeps this device's own beside them\.$/
-				);
+				// A's one, under this device's label and so perhaps this device, earlier; 2 h old.
+				assert.match(await sheetB.locator('[data-found]').innerText(), /\b1\b.*\bdatum\b.*\bChrome on \w+.*\bearlier\b.*\b2 h\b/);
 				await sheetB.locator('button[data-backup="add"]').click();
 				await held.reached;
 
@@ -209,7 +215,7 @@ describe('an S3-compatible destination', () => {
 				// B lists A's two as A's, and its own; and B's says the last backup is its own.
 				const fromA = planB.locator('li[data-from^="Chrome on "]');
 				assert.deepEqual(await fromA.evaluateAll((li) => li.map((l) => l.dataset.slot)), ['1', '0']);
-				assert.match(await planB.locator('[data-last]').innerText(), /^last backup 0 s ago$/);
+				assert.match(await planB.locator('[data-last]').innerText(), /\b0 s\b/);
 				assert.deepEqual([...a.errors, ...b.errors], []);
 			});
 		});
@@ -241,7 +247,10 @@ describe('an S3-compatible destination', () => {
 			await older.locator('button', { hasText: 'Restore' }).click();
 			const confirm = page.locator('dialog.confirm');
 			await confirm.waitFor();
-			assert.match(await confirm.innerText(), / from before devices had folders \(\d+ entries\): 1 deleted, 0 added, 0 changed\./);
+			// It names the backup it restores, by whose it is, and what it takes away.
+			const asked = await confirm.innerText();
+			assert.ok(asked.includes(await older.getAttribute('data-from')), asked);
+			assert.match(asked, /\b1 deleted\b/);
 			await confirm.getByRole('button', { name: 'restore', exact: true }).click();
 			await sheet.locator('[role="status"]', { hasText: 'datum restored' }).waitFor();
 			assert.deepEqual((await app.allEntries(500)).map((e) => e.hid).sort(), backedUp);
@@ -282,7 +291,11 @@ describe('an S3-compatible destination', () => {
 			held.release();
 			await planA.locator('li[data-slot="1"]').waitFor();
 			assert.deepEqual(whole('tabs', at), [0, 1]);
-			assert.deepEqual(await answer.allInnerTexts(), ['Another datum.day tab is backing up. Try again when it is done.']);
+			// The refusal, naming the other tab; no slot 2.
+			const said = await answer.allInnerTexts();
+			assert.equal(said.length, 1, said.join(' | '));
+			assert.equal(await planB.locator('li[data-slot="2"]').count(), 0);
+			assert.match(said[0], /\btab\b/);
 
 			// And B's turn comes: asked again, it rotates the index as A left it.
 			await planB.locator('button[data-backup="now"]').click();

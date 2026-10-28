@@ -141,7 +141,7 @@ describe('the sync widget fits its screen, legibly', () => {
 				const offer = widget.locator('.offer');
 				await offer.locator('.qr svg').waitFor();
 				assert.deepEqual(await offer.locator('.actions button').allInnerTexts(), ['Copy link', 'Share', 'Done']);
-				assert.match(await offer.locator('.head').innerText(), /until \d\d:\d\d\.$/);
+				assert.match(await offer.locator('.head').innerText(), /\b\d\d:\d\d\b/, 'the expiry time');
 				await offer.getByRole('button', { name: 'Share' }).click();
 				const shared = await page.waitForFunction(() => window.__shared);
 				assert.match((await shared.jsonValue()).url, /\/sync\/join#\S+$/);

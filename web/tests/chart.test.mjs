@@ -20,6 +20,13 @@ after(stopApp);
 
 const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('chart', 'chart')));
 
+// The head names the key it draws, how, and the fields: checked for those, not its sentence.
+async function assertHead(chart, key, facts) {
+	assert.equal(await chart.locator('.head b').textContent(), key);
+	const head = await chart.locator('.head').textContent();
+	for (const fact of facts) assert.ok(head.includes(fact), `${fact} in ${head}`);
+}
+
 test('two fields with a number key draw both series and their means; a categorical key draws its counts', async () => {
 	await withApp(
 		async (app) => {
@@ -33,7 +40,9 @@ test('two fields with a number key draw both series and their means; a categoric
 				'occur pear weight=210 color=green -d -1 -t 10:00',
 				'occur pear weight=220 color=green -d -1 -t 11:00'
 			]);
-			await chart.getByText("Choose fields from this widget's menu").waitFor();
+			// No field chosen yet: the widget says so, and draws no chart.
+			await chart.locator('p.quiet').waitFor();
+			assert.equal(await chart.locator('.head').count(), 0);
 
 			// The fields: a set, each a switch that leaves the submenu open.
 			await menuButton(page, 'chart').click();
@@ -61,7 +70,7 @@ test('two fields with a number key draw both series and their means; a categoric
 				{ series: 'pear', points: 3, means: 2, line: 2 }
 			];
 			await until(series, (s) => JSON.stringify(s) === JSON.stringify(both));
-			assert.match(await chart.locator('.head').textContent(), /weight · mean per day · apple, pear/);
+			await assertHead(chart, 'weight', ['mean', 'day', 'apple', 'pear']);
 
 			// The key is offered from what the entries carry.
 			await pickOption(page, 'chart', 'key', 'weight');
@@ -83,7 +92,7 @@ test('two fields with a number key draw both series and their means; a categoric
 				['pear', { green: 2 }]
 			]);
 			assert.deepEqual(await chart.locator('.legend li').allTextContents(), ['green', 'red']);
-			assert.match(await chart.locator('.head').textContent(), /color · count per day/);
+			await assertHead(chart, 'color', ['count', 'day']);
 
 			// A start/stop field's state is a boolean, which reads on / off (#949).
 			await seedLines(app, ['start walk -d -2 -t 10:00', 'stop walk -d -2 -t 11:00', 'start walk -d -1 -t 09:00']);
