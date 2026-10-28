@@ -6,7 +6,7 @@
 	The model was already there (`PresentationSpec`: `y`/`height` as
 	fractions of the day, or the anchor triple); this is its face. Without
 	one, a field's `y` is a hash of its NAME — a lane nobody chose — and the
-	readout says so until someone does.
+	lane's reset has nothing to undo until someone does.
 
 	No box is drawn at rest (da-r6wwe): a press and drag on any of the
 	field's marks moves its lane, and a tap on one draws a thin box round
@@ -23,16 +23,19 @@
 	instead, each a link to its setup, so it cannot be unchecked. The ⚓
 	picker offers only those, and is not drawn when there are none;
 	anchored, the line reads «⚓ body ×»: «body» opens body's setup, ×
-	frees the lane where it stands.
+	frees the lane where it stands. The checkbox is now a toggle beside the
+	eye, «⚓ be anchor», on an on/off or switch field alone, and the names
+	read «⚓ anchors: …» (da-y72v8).
 
 	An occur field's mark is its dot (da-c1b6m): the box is drawn round the
 	dot tapped, centred on the lane, its corners hinted; an edge or corner
 	sizes the dot about its centre, writing
 	`symbol_scale` (the dot's height over the standard dot's, so a field tied
-	to this one stays put) and `symbol_aspect`. «lock aspect» keeps width over
-	height, «reset» puts back a round dot of the standard size, whatever the
-	lane (da-ijjjn) — which is how tall every view draws it, as a fraction of
-	the day.
+	to this one stays put) and `symbol_aspect`. The lock, on until turned off,
+	keeps width over height, the reset puts back a round dot of the standard
+	size, whatever the lane (da-ijjjn) — which is how tall every view draws
+	it, as a fraction of the day. The lane's own reset puts back the lane it
+	has with no `y` or `height` (da-y72v8).
 
 	The band draws the field as the form holds it (da-srrqd), vividn,
 	2026-10-22: «you can see the dots/states/bars and what they look like as
@@ -44,12 +47,14 @@
 
 	What is drawn around the field is the eye's above the band (da-jc8ic),
 	cycled by a click and opened on «context» each time: «context», the
-	field's sample alone; «now», every field's state now across the band,
-	the sample over it; «12 hours», the twelve hours before now with no
-	integrity marks, where the field's own entries there are what is placed,
-	faintly outlined, and a sample only when it has none (`dayview
-	--context`). A click on it lets go of a tapped mark's box, whose mark
-	the new picture draws elsewhere.
+	field's sample alone over the day before now; «current», every field's
+	state now across the band, the sample over it; «6 hours», the six hours
+	before now with no integrity marks, where the field's own entries there
+	are what is placed, faintly outlined, and a sample only when it has none
+	(`dayview --context`). Each ends at now, at the band's right edge, and a
+	field with no name yet has no sample in any (da-y72v8). A click on it
+	lets go of a tapped mark's box, whose mark the new picture draws
+	elsewhere.
 -->
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
@@ -65,14 +70,14 @@
 		place = $bindable(),
 		/** Whether the field is an occur field, the one whose dots are sized here. */
 		occur = false,
-		/** The spec a save would store, which the band draws: a new field's with no name yet too, whose sample the CLI draws as `""`'s. */
+		/** The spec a save would store, which the band draws: none is drawn for a field with no name yet (da-y72v8). */
 		spec = null,
 		/** Go to the field whose setup a link names. */
 		onopen
 	}: { field: string; place: Place; occur?: boolean; spec?: Spec | null; onopen: (field: string) => void } = $props();
 
-	/** The day's height in pixels: tall enough to take a lane's edge with a finger. */
-	const H = 160;
+	/** The day's height in pixels: tall enough to take a lane's edge with a finger, two thirds of the 160 it was (da-y72v8). */
+	const H = 110;
 	/** The thinnest lane a drag leaves. */
 	const MIN = 0.02;
 	/** A dot's height at a scale of 1, whatever its lane: the CLI's `STANDARD_DOT`, two thirds of a lane with no height (`tests/standard-dot-pure.test.mjs`). */
@@ -102,8 +107,8 @@
 		mark?: { x: number; w: number };
 		moved?: boolean;
 	} | null = $state(null);
-	/** Whether sizing the dot keeps its width over its height. */
-	let locked = $state(false);
+	/** Whether sizing the dot keeps its width over its height: on until turned off (da-y72v8). */
+	let locked = $state(true);
 	/** The mark tapped, which the box is drawn round: its left and width along the band, in px. */
 	let sel: { x: number; w: number } | null = $state.raw(null);
 	/** The lane and dot the band was drawn at, which the marks are carried from. */
@@ -113,8 +118,8 @@
 	/** What the band draws around the field, by `dayview --context`, in the order a click turns them. */
 	const AROUND = [
 		{ context: 'none', label: 'context' },
-		{ context: 'now', label: 'now' },
-		{ context: '12h', label: '12 hours' }
+		{ context: 'now', label: 'current' },
+		{ context: '6h', label: '6 hours' }
 	] as const;
 	let around = $state(0);
 
@@ -141,14 +146,15 @@
 			const { at, sample, context } = JSON.parse(asked);
 			const picture = await run([
 				...bandArgv(Math.floor(band.clientWidth), H),
-				...(sample ? ['--sample', JSON.stringify(sample), '--context', context] : [])
+				...(sample ? ['--sample', JSON.stringify(sample)] : []),
+				'--context',
+				context
 			]);
 			// Gone while it read: the shape changed, or the tab did. A spec the CLI refuses keeps the last picture.
 			const next = picture.code === 0 && band ? inlineSvg(picture.stdout) : null;
 			if (!next) continue;
-			// What it was drawn around — `none`, `now` or `12h`, the eye's — for a reader
-			// to wait on; nothing for a band drawn with no sample, which no context is.
-			if (sample) next.dataset.context = context;
+			// What it was drawn around — `none`, `now` or `6h`, the eye's — for a reader to wait on.
+			next.dataset.context = context;
 			svg?.remove();
 			band.prepend(next);
 			[svg, shown] = [next, at];
@@ -245,6 +251,17 @@
 		put(clamp(lane.y, a.y, a.y + a.height - h), h, to);
 	}
 
+	/**
+	 * Back to the lane with no `y` or `height`: the name's, or, anchored, the
+	 * anchor's whole lane — written as the ratios 0 and 1, since the triple is
+	 * all set or none (`validate_anchor_triple`), and a half one is drawn free.
+	 */
+	const unplace = () =>
+		(place = place.relative_to ? { ...place, anchor_pos_ratio: 0, anchor_size_ratio: 1 } : { ...place, y: undefined, height: undefined });
+	const placed = $derived(
+		place.relative_to ? (place.anchor_pos_ratio ?? 0) !== 0 || (place.anchor_size_ratio ?? 1) !== 1 : place.y !== undefined || place.height !== undefined
+	);
+
 	/** A size factor as stored: 1 is unset. */
 	const factor = (n: number) => (round(n) === 1 ? undefined : round(n));
 	const scale = $derived(place.symbol_scale ?? 1);
@@ -318,7 +335,7 @@
 		if (band && listed && !drag) {
 			const at = { y: round(lane.y), h: round(lane.h), scale };
 			const free = { relative_to: undefined, anchor_pos_ratio: undefined, anchor_size_ratio: undefined, y: at.y, height: at.h };
-			want = JSON.stringify({ at, sample: spec && { ...spec, ...free }, context: AROUND[around].context });
+			want = JSON.stringify({ at, sample: field && spec && { ...spec, ...free }, context: AROUND[around].context });
 			if (want !== asked) delete band.dataset.drawn;
 			untrack(draw);
 		}
@@ -384,7 +401,7 @@
 	<div class="top">
 		<button
 			type="button"
-			class="around"
+			class="around toggle"
 			data-context={AROUND[around].context}
 			aria-label="what is drawn around {field}: {AROUND[around].label}; click for the next"
 			title="what is drawn around {field}: click for the next"
@@ -401,8 +418,20 @@
 					<circle class="pupil" cx="8" cy="8" r="2.4" />
 				{/if}
 			</svg>
-			{AROUND[around].label}
+			<!-- Every label in one cell, the others hidden, so the button is as wide whichever it reads. -->
+			<span class="labels">
+				{#each AROUND as a, i (a.context)}<span class:shown={i === around}>{a.label}</span>{/each}
+			</span>
 		</button>
+		{#if !occur && !anchored.length}
+			<button
+				type="button"
+				class="be-anchor toggle"
+				aria-pressed={!!place.anchorable}
+				title="place other fields relative to this one"
+				onclick={() => (place = { ...place, anchorable: !place.anchorable || undefined })}>⚓ be anchor</button
+			>
+		{/if}
 		<div class="tie">
 			{#if place.relative_to}
 				<span class="anchor">
@@ -411,7 +440,7 @@
 				</span>
 			{:else if anchors.length}
 				<select aria-label="anchor to a field" value="" onchange={(e) => tie(e.currentTarget.value)}>
-					<option value="">⚓</option>
+					<option value="">anchor to</option>
 					{#each anchors as name (name)}
 						<option value={name}>⚓ {name}</option>
 					{/each}
@@ -478,45 +507,50 @@
 		{/if}
 	</div>
 
+	{#snippet reset(what: string, disabled: boolean, onclick: () => void)}
+		<button type="button" class="icon" aria-label="reset {what}" title="reset {what}" {disabled} {onclick}>
+			<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8 A4.5 4.5 0 1 0 5 4.6 M5 1.8 V4.6 H2.2" /></svg>
+		</button>
+	{/snippet}
+
 	{#if occur}
-		<div class="size">
-			<span class="dims">dot ×{scale.toFixed(2)} · {aspect.toFixed(2)} wide</span>
-			<label><input type="checkbox" name="lock_aspect" bind:checked={locked} /> lock aspect</label>
+		<p class="row size">
+			{@render reset("the dot's size", scale === 1 && aspect === 1, () => (place = { ...place, symbol_scale: undefined, symbol_aspect: undefined }))}
 			<button
 				type="button"
-				class="reset"
-				disabled={scale === 1 && aspect === 1}
-				onclick={() => (place = { ...place, symbol_scale: undefined, symbol_aspect: undefined })}>reset</button
+				class="icon toggle"
+				aria-label="lock the dot's aspect"
+				title={locked ? 'aspect locked: sizing keeps its shape' : 'aspect free: each side sizes alone'}
+				aria-pressed={locked}
+				onclick={() => (locked = !locked)}
 			>
-		</div>
+				<svg viewBox="0 0 16 16" aria-hidden="true">
+					<rect x="3.5" y="7.5" width="9" height="6.5" rx="1" />
+					<path d={locked ? 'M5.5 7.5 V5 A2.5 2.5 0 0 1 10.5 5 V7.5' : 'M5.5 7.5 V5 A2.5 2.5 0 0 1 10.5 5 V5.5'} />
+				</svg>
+			</button>
+			<span class="dims">{(scale * aspect).toFixed(2)} × {scale.toFixed(2)}</span>
+		</p>
 	{/if}
+
+	<p class="row readout">
+		{@render reset('the lane', !placed, unplace)}
+		<span>
+			{#if anchor}
+				{relation} {place.relative_to} · ×{place.anchor_size_ratio ?? 1}
+			{:else if place.relative_to}
+				anchored to {place.relative_to}, which has no spec — drawn free at y {lane.y.toFixed(2)}
+			{:else}
+				y {lane.y.toFixed(2)}, h {lane.h.toFixed(2)}
+			{/if}
+		</span>
+	</p>
 
 	{#if anchored.length}
 		<p class="anchorees">
-			⚓ anchored here: {#each anchored as name, i (name)}{#if i},{' '}{/if}<button type="button" class="link" onclick={() => onopen(name)}>{name}</button>{/each}
+			⚓ anchors: {#each anchored as name, i (name)}{#if i},{' '}{/if}<button type="button" class="link" onclick={() => onopen(name)}>{name}</button>{/each}
 		</p>
-	{:else}
-		<label class="allow">
-			<input
-				type="checkbox"
-				class="anchorable"
-				name="anchorable"
-				checked={!!place.anchorable}
-				onchange={(e) => (place = { ...place, anchorable: e.currentTarget.checked || undefined })}
-			/> place other fields relative to this one?
-		</label>
 	{/if}
-
-	<p class="readout">
-		{#if anchor}
-			{relation} {place.relative_to} · ×{place.anchor_size_ratio}
-		{:else if place.relative_to}
-			anchored to {place.relative_to}, which has no spec — drawn free at y {lane.y.toFixed(2)}
-		{:else}
-			y {lane.y.toFixed(2)} &nbsp; h {lane.h.toFixed(2)}
-			{#if place.y === undefined}<span class="unchosen">· placed by its name's hash — nobody chose this</span>{/if}
-		{/if}
-	</p>
 </div>
 
 <style>
@@ -528,12 +562,15 @@
 
 	.top {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
 		gap: 0.5rem;
 	}
 
-	.around {
+	.tie {
+		margin-inline-start: auto;
+	}
+
+	.toggle {
 		display: flex;
 		gap: 0.3rem;
 		align-items: center;
@@ -546,7 +583,26 @@
 		font-size: 0.75rem;
 	}
 
-	.around svg {
+	.toggle[aria-pressed='true'] {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	.labels {
+		display: grid;
+	}
+
+	.labels > span {
+		grid-area: 1 / 1;
+		visibility: hidden;
+	}
+
+	.labels > .shown {
+		visibility: visible;
+	}
+
+	.around svg,
+	.icon svg {
 		inline-size: 16px;
 		block-size: 16px;
 		fill: none;
@@ -575,17 +631,10 @@
 	}
 
 	.anchor,
-	.anchorees,
-	.allow {
+	.anchorees {
 		margin: 0;
 		font-size: 0.75rem;
 		color: var(--ink);
-	}
-
-	.allow {
-		display: flex;
-		gap: 0.4rem;
-		align-items: center;
 	}
 
 	.link,
@@ -635,19 +684,30 @@
 		color: var(--accent);
 	}
 
-	.size {
+	/* The dot's size and the lane's place: a reset, the dot's lock, the numbers. */
+	.row {
 		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem 1rem;
+		gap: 0.4rem;
 		align-items: center;
+		margin: 0;
 		font-size: 0.75rem;
 		color: var(--ink);
 	}
 
-	.size label {
-		display: flex;
-		gap: 0.4rem;
-		align-items: center;
+	.icon {
+		display: grid;
+		place-items: center;
+		inline-size: 28px;
+		block-size: 28px;
+		padding: 0;
+		background: none;
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		color: var(--ink-bright);
+	}
+
+	.icon:disabled {
+		color: var(--quiet);
 	}
 
 	/* The mark tapped: a thin line round it, which only its hints take a press through. */
@@ -687,22 +747,4 @@
 		cursor: ns-resize;
 	}
 
-	.reset {
-		background: none;
-		border: 1px solid var(--rule);
-		border-radius: 4px;
-		color: var(--ink-bright);
-		font: inherit;
-	}
-
-	.readout {
-		margin: 0;
-		color: var(--ink);
-		font-size: 0.75rem;
-	}
-
-	.unchosen {
-		color: var(--quiet);
-		font-style: italic;
-	}
 </style>

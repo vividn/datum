@@ -298,12 +298,9 @@ fn layout_of(
         }
         None => None,
     };
-    let context = match (args.context.as_deref(), &sample) {
-        (None, _) => None,
-        (Some(_), None) => anyhow::bail!("--context is what is drawn around a --sample"),
-        (Some(c), Some(_)) => Some(parse_context(c)?),
-    };
-    let window_ms = context.and_then(Around::window_ms);
+    // With no sample, the context alone: a field not yet named (da-y72v8).
+    let context = args.context.as_deref().map(parse_context).transpose()?;
+    let window_ms = context.map(Around::window_ms);
     let windowed = window_ms.is_some();
     // One band, the window before now: a day-window flag would be dropped unsaid.
     if windowed
@@ -314,13 +311,13 @@ fn layout_of(
             || !args.pictures.is_empty())
     {
         anyhow::bail!(
-            "--context now or a duration draws one window before now: \
+            "--context draws one window before now: \
              no --start-date, --end-date, --digests, --pictures, or --days but 1"
         );
     }
     // Its ticks are measured along a horizontal band.
     if windowed && args.orientation == DayviewOrientation::Vertical {
-        anyhow::bail!("--context now or a duration is drawn horizontally");
+        anyhow::bail!("--context is drawn horizontally");
     }
 
     // A sample's context in time (da-jc8ic): one band, the window before
@@ -333,8 +330,15 @@ fn layout_of(
             start_ms,
             now_ms,
             now_ms,
-            sample.as_ref().map(|s| (s, context == Some(Around::Now))),
+            // In place of the field's own entries, but in a window of its own.
+            sample
+                .as_ref()
+                .map(|s| (s, !matches!(context, Some(Around::Window(_))))),
         )?;
+        // `none`: the sample's field and nothing else.
+        if context == Some(Around::None) {
+            fields.retain(|f| sample.as_ref().is_some_and(|s| s.field == f.field));
+        }
         if context == Some(Around::Now) {
             // Each other field's state now, not what it did in the last minute.
             let own = sample.as_ref().map(|s| s.field.as_str());
@@ -390,7 +394,7 @@ fn layout_of(
             })
             .collect();
 
-        let mut fields = build_day_fields(
+        let fields = build_day_fields(
             db,
             &zones,
             day_start_ms,
@@ -398,14 +402,9 @@ fn layout_of(
             // A data layer's running state runs on to the day's end, for its
             // viewer to cut at its own now as the clock moves (da-0e06p).
             if args.data_layer { day_end_ms } else { now_ms },
-            // Any `--context` here is `none`: the sample in place of the
-            // field's own entries. Without one, only where it has none (da-srrqd).
-            sample.as_ref().map(|s| (s, context.is_some())),
+            // No `--context` here: a sample only where the field has nothing (da-srrqd).
+            sample.as_ref().map(|s| (s, false)),
         )?;
-        // `--context none`: the sample's field and nothing else.
-        if let Some(s) = sample.as_ref().filter(|_| context.is_some()) {
-            fields.retain(|f| f.field == s.field);
-        }
 
         days_input.push(DayviewDayInput {
             date: Some(date.to_string()),
@@ -464,13 +463,13 @@ fn layout_of(
     // width. `now`'s are none, and `Some` empty, not `None`: `None` is a
     // day's 24 hourly ticks, which a minute's band must not draw.
     let window_ticks = match context {
-        Some(Around::Window(ms)) => Some(datum_layout::nowview::nowview_axis_ticks(
+        Some(Around::Now) => Some(Vec::new()),
+        Some(around) => Some(datum_layout::nowview::nowview_axis_ticks(
             width - 2.0 * margin,
-            ms as f64 / 60_000.0,
+            around.window_ms() as f64 / 60_000.0,
             time_axis_height,
         )),
-        Some(Around::Now) => Some(Vec::new()),
-        _ => None,
+        None => None,
     };
     let config = DayviewConfig {
         days: days_input,
@@ -798,7 +797,8 @@ fn build_day_fields(
 /// What `--context` draws around a `--sample` (da-jc8ic).
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Around {
-    /// The sample's field alone, on today's band, sampled.
+    /// The sample's field alone, sampled, on the day before now: now at
+    /// the band's end, as in the others (da-y72v8).
     None,
     /// Every field's state now across the band, the sample over it.
     Now,
@@ -808,13 +808,13 @@ enum Around {
 }
 
 impl Around {
-    /// The band's length, for one that is not a day. `now` is a minute,
-    /// nowview's snapshot's: enough for every field in a state to read it.
-    fn window_ms(self) -> Option<i64> {
+    /// The band's length, ending now. `now` is a minute, nowview's
+    /// snapshot's: enough for every field in a state to read it.
+    fn window_ms(self) -> i64 {
         match self {
-            Around::None => None,
-            Around::Now => Some(60_000),
-            Around::Window(ms) => Some(ms),
+            Around::None => 86_400_000,
+            Around::Now => 60_000,
+            Around::Window(ms) => ms,
         }
     }
 }

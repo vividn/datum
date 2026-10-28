@@ -1135,7 +1135,7 @@ fn pictures_are_each_days_own_picture() {
     assert!(json["hours"].is_array(), "the layout went missing: {json}");
 }
 
-/// Today's band around a `--sample` of `spec`, drawn `--context ctx`.
+/// The band ending now around a `--sample` of `spec` (none for `""`), drawn `--context ctx`.
 fn around(db: &datum_core::db::Db, spec: &str, ctx: &str) -> String {
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
     let path = tmp.path().to_str().unwrap();
@@ -1148,11 +1148,12 @@ fn around(db: &datum_core::db::Db, spec: &str, ctx: &str) -> String {
         "-o",
         path,
     ];
-    run_cli(
-        &[&argv[..], &["--sample", spec, "--context", ctx]].concat(),
-        db,
-    )
-    .expect("dayview");
+    let sample: &[&str] = if spec.is_empty() {
+        &[]
+    } else {
+        &["--sample", spec]
+    };
+    run_cli(&[&argv[..], sample, &["--context", ctx]].concat(), db).expect("dayview");
     std::fs::read_to_string(path).unwrap()
 }
 
@@ -1255,11 +1256,37 @@ fn context_window_draws_its_data_and_the_field_s_own_entries() {
     assert_eq!(own(&placed), 1, "the entry's own: {placed}");
 }
 
+/// da-y72v8: every context is a band ending now, its now-line at the right
+/// edge (600 wide, a margin of 2 each side: 596 of data), the sample there or not.
 #[test]
-fn context_needs_a_sample() {
-    let db = fresh_db();
-    let err = run_cli(&["dayview", "--context", "now"], &db).unwrap_err();
-    assert!(err.to_string().contains("--sample"), "{err}");
+fn every_context_ends_at_now() {
+    let db = neighbours();
+    for ctx in ["none", "now", "6h"] {
+        for spec in [PILL, ""] {
+            let svg = around(&db, spec, ctx);
+            let line = svg
+                .split("<line")
+                .find(|l| l.contains(r#"class="current-time-line""#))
+                .unwrap_or_else(|| panic!("{ctx} {spec}: no now-line: {svg}"));
+            assert!(line.contains(r#" x1="596""#), "{ctx} {spec}: {line}");
+        }
+    }
+}
+
+/// da-y72v8: with no `--sample`, the context alone: `none` draws nothing,
+/// `now` the states now, a duration every field's entries in it.
+#[test]
+fn a_context_with_no_sample_draws_no_sample() {
+    let db = neighbours();
+    assert!(fields_drawn(&around(&db, "", "none")).is_empty());
+    assert_eq!(fields_drawn(&around(&db, "", "now")), ["mood"]);
+    let window = around(&db, "", "6h");
+    assert_eq!(fields_drawn(&window), ["coffee", "mood"], "{window}");
+    assert_eq!(
+        window.matches("point-fg").count(),
+        1,
+        "coffee's own: {window}"
+    );
 }
 
 /// A window is one band before now: a flag naming days, or the vertical
@@ -1275,7 +1302,7 @@ fn a_window_context_refuses_what_it_would_drop() {
         &["--pictures", "1"],
         &["--orientation", "vertical"],
     ] {
-        for ctx in ["now", "12h"] {
+        for ctx in ["none", "now", "12h"] {
             let argv = [&["dayview", "--sample", PILL, "--context", ctx][..], extra].concat();
             let err = run_cli(&argv, &db).unwrap_err().to_string();
             assert!(err.starts_with("--context"), "{argv:?}: {err}");
@@ -1295,18 +1322,6 @@ fn a_window_context_refuses_what_it_would_drop() {
         path,
     ];
     run_cli(&ok, &db).expect("--days 1 is the one band");
-    let none = [
-        "dayview",
-        "--days",
-        "3",
-        "--sample",
-        PILL,
-        "--context",
-        "none",
-        "-o",
-        path,
-    ];
-    run_cli(&none, &db).expect("none draws days");
 }
 
 /// `--data-layer` (da-0e06p): the bands alone, for datum.day's nowview to

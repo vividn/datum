@@ -1668,10 +1668,12 @@ pub struct DayviewArgs {
     /// in one run rather than one process a day.
     pub pictures: Vec<u32>,
     /// `--context none|now|<DUR>`, unlisted, beside `--sample` (da-jc8ic):
-    /// what is drawn around the sample. `none` the sample's field alone,
-    /// sampled; `now` every field's state now across the band, the sample
-    /// over it; a duration the band as that long before now, no integrity
-    /// marks, the field's own entries in it drawn in place of a sample.
+    /// what is drawn around the sample, on one band ending now. `none` the
+    /// sample's field alone, sampled, the day before now; `now` every
+    /// field's state now across the band, the sample over it; a duration the
+    /// band as that long before now, no integrity marks, the field's own
+    /// entries in it drawn in place of a sample. With no `--sample`, the
+    /// context alone (da-y72v8).
     pub context: Option<String>,
     /// `--data-layer`, unlisted: datum.day's day strip and nowview
     /// (da-0e06p, da-m6i2a). The bands' data alone, for a viewer that draws
