@@ -1329,6 +1329,37 @@ fn every_subcommand_page_has_its_usage() {
     }
 }
 
+/// da-1c76j: every usage line of a subcommand is on its command's page too,
+/// and on a page that says a paragraph of each (`sync`, `db`) its own
+/// `--help` shows that paragraph, not only its usage and the way to the page.
+#[test]
+fn every_subcommand_usage_is_on_its_page_and_said_of() {
+    for cmd in super::COMMANDS {
+        let whole = command_help(cmd.name);
+        for sub in cmd.subcommands {
+            for u in sub.usage {
+                assert!(whole.contains(u), "`datum help {}` lacks {u}", cmd.name);
+                if !["sync", "db"].contains(&cmd.name) {
+                    continue;
+                }
+                let rest = u.strip_prefix(&format!("datum {} ", cmd.name)).unwrap();
+                let mut words: Vec<&str> = rest
+                    .split(' ')
+                    .take_while(|w| {
+                        !w.starts_with('-') && w.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+                    })
+                    .collect();
+                if words.is_empty() {
+                    words.push(sub.name);
+                }
+                let page = command_help(&super::page_name(cmd.name, &words));
+                // Its name, USAGE, what the page says of it, the way back.
+                assert!(page.split("\n\n").count() > 3, "{u}:\n{page}");
+            }
+        }
+    }
+}
+
 /// da-fdu1l: help says «color», never «colour» — on every page, the
 /// top level, each command, subcommand and topic, and `help --json`.
 #[test]
