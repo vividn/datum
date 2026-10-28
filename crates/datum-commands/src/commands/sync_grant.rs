@@ -128,6 +128,153 @@ pub fn grant(
     Ok(())
 }
 
+/// `datum --db X sync chain copy --from SRC [--devices D,…]` (da-n0uj1.5):
+/// X takes SRC's devices, a grant each with the role it has in SRC. X in no
+/// chain starts one whose admins are SRC's (vividn: «if db2 is really new,
+/// then can auto setup admin to be the same as db1»), signed by one of them;
+/// X in a chain takes grants for the devices it lacks, signed by its own
+/// admin. A copy never starts a second chain.
+pub fn copy(
+    db: &Db,
+    from: &str,
+    devices: Option<&[String]>,
+    expires: Duration,
+    admin_key: Option<&str>,
+) -> Result<()> {
+    let path = config::locate_db(Some(from)).context("Cannot determine data directory")?;
+    ensure!(path.exists(), "no database {from}");
+    let canon = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    ensure!(
+        db.path().map(canon) != Some(canon(&path)),
+        "{from} is this database"
+    );
+    let src_db = Db::open_read_only(&path.to_string_lossy())?;
+    let src = src_db.sync_chain()?;
+    ensure!(
+        src.exists() && src.dissolved().is_none(),
+        "{from} is in no sync chain: it has no devices to copy"
+    );
+    // A grant rides SRC's chain to its device: so before anything is
+    // written, this install writes there.
+    let src_me = src_db.sync_endpoint_id()?;
+    ensure!(
+        src.member(&src_me)
+            .is_some_and(|m| live(m) && m.role() == Role::Member),
+        "this install's {from} writes nothing to its sync chain (a reader, or expelled): \
+         it carries no grant to {from}'s devices"
+    );
+    let here = db.sync_chain()?;
+    let starts = !here.exists() || here.dissolved().is_some();
+    ensure!(
+        starts || here.id != src.id,
+        "this database is in {from}'s sync chain already"
+    );
+    if !starts {
+        let me = here.member(&db.sync_endpoint_id()?);
+        ensure!(
+            me.is_some_and(|m| live(m) && m.role() == Role::Member),
+            "this copy writes nothing to its sync chain (a reader, or expelled): it copies no devices"
+        );
+    }
+    // Whose admin signs: this chain's, or the one a new chain takes its admins from.
+    let (signer, whose) = match starts {
+        true => (&src, from),
+        false => (&here, "this database"),
+    };
+    if let Some(k) = admin_key.filter(|_| !signer.is_open()) {
+        let key = chain::ed25519_admin_key(&super::sync::key_file(k, false)?);
+        ensure!(
+            signer.admins.iter().any(|a| a.key == key),
+            "{k} is no admin key of {whose}'s sync chain: only its admin copies devices into it"
+        );
+    }
+
+    // Each device live in SRC, once, but this one; an endpoint bound to no
+    // device key (a copy before da-n0uj1.2) is counted, and left.
+    let mine = datum_core::db::device_id();
+    let mut picked: Vec<&Member> = Vec::new();
+    let mut unbound = 0;
+    for m in &src.members {
+        if !live(m) || m.left.is_some() || m.endpoint == src_me {
+            continue;
+        }
+        match &m.device {
+            None => unbound += 1,
+            Some(d) if Some(d) == mine.as_ref() => {}
+            Some(_) if picked.iter().any(|p| p.device == m.device) => {}
+            Some(_) => picked.push(m),
+        }
+    }
+    if let Some(names) = devices {
+        let column = [(from.to_string(), path.clone(), src_db.sync_chain()?)];
+        let mut wanted = Vec::new();
+        for n in names {
+            let (d, label) = device(&column, n)?;
+            ensure!(
+                picked.iter().any(|m| m.device.as_ref() == Some(&d)),
+                "{label} is no device of {from}'s sync chain to copy: expelled, gone, or this one"
+            );
+            wanted.push(d);
+        }
+        picked.retain(|m| m.device.as_ref().is_some_and(|d| wanted.contains(d)));
+        // The devices named are the copy: the unbound were not asked for.
+        unbound = 0;
+    }
+
+    if starts {
+        if here.dissolved().is_some() {
+            db.sync_chain_leave()?;
+        }
+        let admins: Vec<Value> = src
+            .admins
+            .iter()
+            .map(|a| json!({"key": a.key, "label": a.label}))
+            .collect();
+        let genesis = json!({
+            "type": "genesis", "chain": ulid::Ulid::new().to_string().to_lowercase(),
+            "admins": admins, "label": super::sync::copy_label(),
+            "created": Utc::now().to_rfc3339(),
+        });
+        super::sync::sign(db, genesis, &src, admin_key)?;
+        if let Err(e) = super::sync::describe_self(db, None, super::sync::kind()) {
+            eprintln!("⚠ this copy could not describe itself ({e}); `datum sync chain rename <LABEL>` tries again");
+        }
+        super::sync_daemon::auto_install(db);
+        let admins = match src.admins.len() {
+            0 => format!("open, as {from}'s is"),
+            n => format!("its admins {from}'s {n}"),
+        };
+        println!("started sync chain {}: {admins}", db.sync_chain()?.id);
+    }
+    let here = db.sync_chain()?;
+    for m in picked {
+        let d = m.device.as_deref().unwrap_or_default();
+        let label = device_label(m);
+        if let Some(had) = here
+            .members
+            .iter()
+            .find(|h| h.device.as_deref() == Some(d) && live(h))
+        {
+            println!("{label} is a {} here already", had.role().as_str());
+        } else if m.filter.is_some() {
+            println!(
+                "{label} is a reader of some of {from}'s fields, which are not this database's: \
+                 `datum sync grant {} reader` makes it a reader of all of it",
+                &d[..12.min(d.len())]
+            );
+        } else {
+            grant(db, d, m.role() == Role::Reader, None, expires, admin_key)?;
+        }
+    }
+    if unbound > 0 {
+        println!(
+            "{unbound} member(s) of {from} bound to no device key (an older datum's copy) \
+             are not copied: `datum sync chain invite` makes a ticket to carry to each"
+        );
+    }
+    Ok(())
+}
+
 /// A grant to this device, opened: the name it joins under, its join link
 /// and who granted it.
 struct Granted {

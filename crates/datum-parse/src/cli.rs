@@ -1070,6 +1070,16 @@ pub enum SyncCommand {
         expires_secs: u64,
         admin_key: Option<String>,
     },
+    /// `datum sync chain copy --from <DB> [--devices <D>,…] [--expires <DUR>]
+    /// [--admin-key <FILE>]` (da-n0uj1.5): this database takes `--from`'s
+    /// devices, a grant each with the role it has there; in no chain, it
+    /// starts one whose admins are `--from`'s.
+    Copy {
+        from: String,
+        devices: Option<Vec<String>>,
+        expires_secs: u64,
+        admin_key: Option<String>,
+    },
     /// Hidden: `datum sync run` — stay up: serve members and push new ops.
     Run,
     /// `datum sync daemon install | uninstall | status` (da-vd2sn): the

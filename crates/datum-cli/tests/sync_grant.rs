@@ -310,3 +310,220 @@ fn a_grant_never_takes_a_database_of_its_name_and_an_expired_one_is_granted_agai
     let own = t.json("work", &["sync", "status", "--json"]);
     assert!(own["chain"].is_null(), "{own}");
 }
+
+/// The key file `name` in `i`'s directory, its path.
+fn key(i: &Install, name: &str) -> String {
+    i.tmp.path().join(name).to_string_lossy().into_owned()
+}
+
+/// `db`'s chain records of type `kind`, as `i` holds them.
+fn records(i: &Install, db: &str, kind: &str) -> usize {
+    let n = i.query(
+        db,
+        &format!(
+            "SELECT COUNT(*) || '' FROM ops WHERE hid = '~chain' AND body LIKE '%\"type\":\"{kind}\"%'"
+        ),
+    );
+    n.map_or(0, |n| n.parse().unwrap())
+}
+
+/// `chain copy` into a database in no chain (da-n0uj1.5): it starts one
+/// whose admins are the source's, signed by one of them, and grants each
+/// device the role it has there.
+#[test]
+fn a_new_database_copies_its_sources_admins_and_each_devices_role() {
+    let g = Install::new("gina");
+    let (t, o) = (Install::new("tom"), Install::new("olga"));
+    let _home = home_chain(&g, &[&t, &o]);
+    let admin = key(&g, "home.key");
+    g.ok("home", &["sync", "admin", "add", &admin]);
+    g.ok(
+        "home",
+        &[
+            "sync",
+            "chain",
+            "role",
+            &o.device()[..12],
+            "reader",
+            "--admin-key",
+            &admin,
+        ],
+    );
+    g.ok("work", &["occur", "coffee"]);
+
+    let said = g.ok(
+        "work",
+        &[
+            "sync",
+            "chain",
+            "copy",
+            "--from",
+            "home",
+            "--admin-key",
+            &admin,
+        ],
+    );
+    assert!(said.contains("started sync chain"), "{said}");
+    // The same keys under the same labels, each added when its chain began.
+    let keys = |db| {
+        let admins = g.json(db, &["sync", "admin", "list", "--json"])["admins"].clone();
+        let pair = |a: &Value| (a["key"].to_string(), a["label"].to_string());
+        admins
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(pair)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(keys("work"), keys("home"));
+    let chain = g.json("work", &["sync", "status", "--json"])["chain"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let _work = g.run("work");
+    for i in [&t, &o] {
+        let synced = i.ok("home", &["sync"]);
+        assert!(synced.contains("joined «work»"), "{synced}");
+        assert!(i.has("work", "coffee"));
+        i.ok("work", &["sync"]);
+    }
+    eventually("tom a member and olga a reader of work", || {
+        cell(&g, &chain, &t.device()).as_deref() == Some("member")
+            && cell(&g, &chain, &o.device()).as_deref() == Some("reader")
+    });
+}
+
+/// `chain copy` into a database in a chain of its own: only its admin
+/// copies, `--devices` takes a subset, a device it holds is not granted
+/// again, and the chain is never a second one.
+#[test]
+fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
+    let g = Install::new("gina");
+    let (t, o) = (Install::new("tom"), Install::new("olga"));
+    let _home = home_chain(&g, &[&t, &o]);
+    let (home_key, work_key) = (key(&g, "home.key"), key(&g, "work.key"));
+    let copy = |i: &Install, db, more: &[&str]| {
+        let args = [&["sync", "chain", "copy", "--from", "home"][..], more].concat();
+        i.cmd(db, &args).output().unwrap()
+    };
+    let refused = |out: std::process::Output, why: &str| {
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success() && err.contains(why), "{err}");
+    };
+    g.ok("home", &["sync", "admin", "add", &home_key]);
+    // A reader of home's coffee alone: its fields are no other database's.
+    let olga = &o.device()[..12];
+    g.ok(
+        "home",
+        &[
+            "sync",
+            "chain",
+            "role",
+            olga,
+            "reader",
+            "--fields",
+            "coffee",
+            "--admin-key",
+            &home_key,
+        ],
+    );
+    o.ok("home", &["sync"]);
+    // It carries no grant in home: refused before its database is in a chain.
+    refused(copy(&o, "notes", &[]), "carries no grant");
+    assert_eq!(records(&o, "notes", "genesis"), 0);
+
+    g.ok("work", &["occur", "coffee"]);
+    g.ok("work", &["sync", "new-invite"]);
+    g.ok("work", &["sync", "admin", "add", &work_key]);
+    let chain = g.json("work", &["sync", "status", "--json"])["chain"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let held = records(&g, "work", "invite");
+
+    // Home's admin is not work's: refused, nothing written.
+    refused(
+        copy(&g, "work", &["--admin-key", &home_key]),
+        "no admin key of this database",
+    );
+    assert_eq!(records(&g, "work", "invite"), held);
+    assert_eq!(records(&g, "work", "grant"), 0);
+    assert_eq!(records(&g, "home", "grant"), 0);
+    // This device is not one to copy.
+    let mine = g.device();
+    refused(
+        copy(&g, "work", &["--devices", &mine, "--admin-key", &work_key]),
+        "no device of home's sync chain to copy",
+    );
+
+    // Its admin, one device of two.
+    let tom = &t.device()[..12];
+    let said = g.ok(
+        "work",
+        &[
+            "sync",
+            "chain",
+            "copy",
+            "--from",
+            "home",
+            "--devices",
+            tom,
+            "--admin-key",
+            &work_key,
+        ],
+    );
+    assert!(!said.contains("started"), "{said}");
+    assert_eq!(records(&g, "home", "grant"), 1);
+    let _work = g.run("work");
+    let synced = t.ok("home", &["sync"]);
+    assert!(synced.contains("joined «work»"), "{synced}");
+    t.ok("work", &["sync"]);
+    let synced = o.ok("home", &["sync"]);
+    assert!(!synced.contains("joining"), "{synced}");
+    assert!(o.query("work", "SELECT 'x'").is_none());
+
+    // Every device: the one it holds is said and left, and so is the
+    // filtered reader, granted nothing.
+    eventually("tom a member of work", || {
+        cell(&g, &chain, &t.device()).as_deref() == Some("member")
+    });
+    let all = [
+        "sync",
+        "chain",
+        "copy",
+        "--from",
+        "home",
+        "--admin-key",
+        &work_key,
+    ];
+    let said = g.ok("work", &all);
+    assert!(said.contains("member here already"), "{said}");
+    assert!(said.contains("a reader of some of home's fields"), "{said}");
+    assert_eq!(records(&g, "home", "grant"), 1);
+
+    // Unfiltered, it is copied as the reader it is.
+    g.ok(
+        "home",
+        &[
+            "sync",
+            "chain",
+            "role",
+            olga,
+            "reader",
+            "--admin-key",
+            &home_key,
+        ],
+    );
+    g.ok("work", &all);
+    assert_eq!(records(&g, "home", "grant"), 2);
+    let synced = o.ok("home", &["sync"]);
+    assert!(synced.contains("joined «work»"), "{synced}");
+    o.ok("work", &["sync"]);
+    eventually("olga a reader of work", || {
+        cell(&g, &chain, &o.device()).as_deref() == Some("reader")
+    });
+    assert_eq!(records(&g, "work", "genesis"), 1);
+    let theirs = o.json("work", &["sync", "status", "--json"]);
+    assert_eq!(theirs["chain"].as_str(), Some(chain.as_str()));
+}

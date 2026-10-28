@@ -680,6 +680,19 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             admin_key.as_deref(),
         )?,
         #[cfg(feature = "net")]
+        SyncCommand::Copy {
+            from,
+            devices,
+            expires_secs,
+            admin_key,
+        } => super::sync_grant::copy(
+            db,
+            &from,
+            devices.as_deref(),
+            std::time::Duration::from_secs(expires_secs),
+            admin_key.as_deref(),
+        )?,
+        #[cfg(feature = "net")]
         SyncCommand::Run => {
             db.sync_refuse_debug()?;
             bind_device(db);
@@ -829,7 +842,7 @@ pub(super) fn invite(
 
 /// Write this copy's `describe`: `label`, or one assembled from what it
 /// runs on (da-xijlw) — a browser, datum.day, has no user or host but that.
-fn describe_self(db: &Db, label: Option<&str>, kind: &str) -> Result<()> {
+pub(super) fn describe_self(db: &Db, label: Option<&str>, kind: &str) -> Result<()> {
     #[cfg(feature = "net")]
     return datum_sync::describe_self(db, label, kind);
     #[cfg(not(feature = "net"))]
@@ -837,7 +850,7 @@ fn describe_self(db: &Db, label: Option<&str>, kind: &str) -> Result<()> {
 }
 
 /// How this copy names itself in the chain.
-fn copy_label() -> String {
+pub(super) fn copy_label() -> String {
     #[cfg(feature = "net")]
     return datum_sync::label();
     #[cfg(not(feature = "net"))]
@@ -916,7 +929,7 @@ pub(super) fn bind_device(db: &Db) {
 
 /// What this build is to its peers: the native CLI, or datum.day's, whose
 /// wasm build has no `net` feature.
-fn kind() -> &'static str {
+pub(super) fn kind() -> &'static str {
     if cfg!(feature = "net") {
         "cli"
     } else {
@@ -1140,7 +1153,7 @@ fn file_label(path: &str) -> String {
 
 /// The Ed25519 secret in a key file; with `create`, a new one written there
 /// first when there is none.
-fn key_file(path: &str, create: bool) -> Result<[u8; 32]> {
+pub(super) fn key_file(path: &str, create: bool) -> Result<[u8; 32]> {
     if create && !std::path::Path::new(path).exists() {
         let mut f = std::fs::OpenOptions::new();
         f.write(true).create_new(true);
@@ -1163,7 +1176,12 @@ fn key_file(path: &str, create: bool) -> Result<[u8; 32]> {
 /// An admin's signature, when the chain is locked, on a record that has none:
 /// one approved before it came here carries its own (da-sd7xt), which the
 /// chain checks as it writes the record, refusing it unless an admin signed.
-fn sign(db: &Db, mut record: Value, chain: &Chain, admin_key: Option<&str>) -> Result<()> {
+pub(super) fn sign(
+    db: &Db,
+    mut record: Value,
+    chain: &Chain,
+    admin_key: Option<&str>,
+) -> Result<()> {
     if !chain.is_open() && record.get("sig").is_none() {
         let sig = match admin_key {
             Some(path) => chain::sign_ed25519(&record, &key_file(path, false)?),

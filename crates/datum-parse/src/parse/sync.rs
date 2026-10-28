@@ -193,7 +193,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|leave|list|rename|expel|unjoin|purge|role|ack|rekey";
+    const SET: &str = "invite|connect|copy|leave|list|rename|expel|unjoin|purge|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = ["expires", "admin-key", "fields", "kit", "label"];
@@ -213,6 +213,29 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             SyncCommand::Connect {
                 ticket: o.positional.pop(),
                 label: o.get("label"),
+            }
+        }
+        Some("copy") => {
+            let o = opts(
+                rest,
+                &["from", "devices", "expires", "admin-key"],
+                &[],
+                0..=0,
+            )?;
+            let devices = o.get("devices").map(|d| {
+                let d = d.split(',').map(str::trim).filter(|d| !d.is_empty());
+                d.map(Into::into).collect::<Vec<String>>()
+            });
+            if devices.as_ref().is_some_and(Vec::is_empty) {
+                return Err(ParseError::InvalidArg("--devices names no device".into()));
+            }
+            SyncCommand::Copy {
+                from: o.get("from").ok_or_else(|| {
+                    ParseError::InvalidArg("`sync chain copy` takes --from <DB>".into())
+                })?,
+                devices,
+                expires_secs: o.expires_or(7 * 24 * 3600)?,
+                admin_key: o.get("admin-key"),
             }
         }
         Some("leave") => {
@@ -932,6 +955,41 @@ mod tests {
         );
         assert!(parse_sync_cmd(&["grant", "9ae6"]).is_err());
         assert!(parse_sync_cmd(&["grant", "9ae6", "admin"]).is_err());
+    }
+
+    /// `chain copy` (da-n0uj1.5): `--from` a database, every device or
+    /// those `--devices` names, a week's expiry as a grant's.
+    #[test]
+    fn chain_copy_takes_a_database_and_devices() {
+        assert_eq!(
+            p(&["chain", "copy", "--from", "home"]),
+            SyncCommand::Copy {
+                from: "home".into(),
+                devices: None,
+                expires_secs: 7 * 24 * 3600,
+                admin_key: None,
+            }
+        );
+        assert_eq!(
+            p(&[
+                "chain",
+                "copy",
+                "--from=home",
+                "--devices",
+                "9ae6, tom",
+                "--admin-key",
+                "k"
+            ]),
+            SyncCommand::Copy {
+                from: "home".into(),
+                devices: Some(vec!["9ae6".into(), "tom".into()]),
+                expires_secs: 7 * 24 * 3600,
+                admin_key: Some("k".into()),
+            }
+        );
+        assert!(parse_sync_cmd(&["chain", "copy"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "copy", "home"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "copy", "--from", "home", "--devices", ","]).is_err());
     }
 
     /// Every spelling the regrouping retired is gone (da-aam46), as are

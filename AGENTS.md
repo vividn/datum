@@ -645,12 +645,20 @@ name; where that name holds data or another chain, `<name>-2` and on, never
 touching it. An expired grant is said and joins nothing: grant again. `expel`
 and `unjoin` take a member's device key prefix too.
 
+`datum --db X sync chain copy --from SRC [--devices <D>,…]` (da-n0uj1.5) is a
+grant per device live in SRC's chain (or each `--devices` names), with the role
+it has there; a filtered reader is said and left, its fields being SRC's. X in
+no chain first starts one whose `genesis` takes SRC's admins, signed by one of
+them. X in a chain takes grants only for the devices it lacks, signed by its
+own admin (an `--admin-key` of another is refused before anything is written),
+and never a second genesis.
+
 ### The command tree
 
 The tree: `sync`, `status`, `grid` (every device against every chain this
 install's databases are in, by device key and chain id, read only, da-n0uj1.3),
 `grant <DEVICE> member|reader [--as <NAME>]` (below), `pause | resume`, `diff <WHO>`, `refold`, `chain
-invite | connect | leave | list | rename | expel | unjoin | ack | rekey`,
+invite | connect | copy | leave | list | rename | expel | unjoin | ack | rekey`,
 `admin list | add | remove`, `daemon install | uninstall | status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync
 run` for every chained db `known_dbs` lists; a copy's first `chain invite` /

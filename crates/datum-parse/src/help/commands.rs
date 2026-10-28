@@ -220,6 +220,7 @@ const SYNC_SUBCOMMANDS: &[SubcommandSpec] = &[
         &[
             "datum sync chain invite [--reader] [--fields <F,…> | --kit <KIT>] [--qr] [--expires <DUR>] [--label <L>] [--admin-key <FILE>]",
             "datum sync chain connect [<TICKET>] [--label <L>]",
+            "datum sync chain copy --from <DB> [--devices <D>,…] [--expires <DUR>] [--admin-key <FILE>]",
             "datum sync chain leave [--force]",
             "datum sync chain list [--show-revoked] [--json]",
             "datum sync chain rename [<WHO>] (<LABEL> | --unset) [--admin-key <FILE>]",
@@ -3016,6 +3017,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             "datum sync refold [--dry-run] [--json]",
             "datum sync chain invite [--reader] [--fields <F,…> | --kit <KIT>] [--qr] [--expires <DUR>] [--label <L>] [--admin-key <FILE>]",
             "datum sync chain connect [<TICKET>] [--label <L>]",
+            "datum sync chain copy --from <DB> [--devices <D>,…] [--expires <DUR>] [--admin-key <FILE>]",
             "datum sync chain leave [--force]",
             "datum sync chain list [--show-revoked] [--json]",
             "datum sync chain rename [<WHO>] (<LABEL> | --unset) [--admin-key <FILE>]",
