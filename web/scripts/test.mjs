@@ -98,6 +98,15 @@
 // executed (tests/support/coverage.mjs), which `testmap.mjs index` makes the
 // map that choice is read from.
 //
+// A SILENT RUN IS A HANG, AND SAYS WHOSE (da-jiz9q). Node 24 bounds each test
+// and hook, never a file's process (its `FileTest` has no timeout), and prints
+// the files in the order they started: one whose process never ends, or whose
+// stdout something it started still holds, keeps every file after it unprinted.
+// CI run 6755 printed nothing for an hour after `preview server close`. No
+// finished run went quiet longer than 90 s (107 runs, 10-28), and a test or hook
+// is cut at 300 s, so after `DATUM_TEST_SILENCE_MS` (ten minutes) with nothing
+// printed the run names the file it waits on, aborts, and exits red.
+//
 // WHERE A FILE'S WALL GOES (da-gimld). A file's wall less its top-level
 // tests' durations is what it spends outside them: its process starting, its
 // imports, its `after` hooks and its exit. A root `before` hook — `startApp`
@@ -259,12 +268,33 @@ stream.on('test:summary', (s) => {
 const reporter = () => (process.stdout.isTTY ? new Spec() : tap);
 const out = stream.compose(reporter());
 out.pipe(process.stdout);
+const silence = Number(process.env.DATUM_TEST_SILENCE_MS ?? 600_000);
+let quiet;
+const arm = () => {
+	clearTimeout(quiet);
+	quiet = setTimeout(() => {
+		const waiting = files.filter((f) => started.has(f) && !(f in took));
+		console.log(
+			`test: nothing printed for ${silence / 1000} s, ` +
+				(waiting.length
+					? `waiting on ${waiting[0]} (started and unprinted: ${waiting.join(' ')}). Its tests and hooks are each cut at 300 s, so it is stuck outside them: its imports, its exit, or a process holding its stdout. Aborting.`
+					: 'and no started file is unprinted: the stall is in the runner itself. Aborting.')
+		);
+		notRun ??= files.filter((f) => !started.has(f));
+		stop.abort();
+		// What holds a file's stdout holds this process too.
+		setTimeout(() => process.exit(1), 5_000).unref();
+	}, silence);
+};
+arm(); // from the start, not from the reporter's first byte
+out.on('data', arm);
 out.on('end', async () => {
+	clearTimeout(quiet);
 	// A file the runner never reported as its own is a red run, and says which.
 	const missing = files.filter((f) => !(f in took));
 	if (notRun) {
 		process.exitCode = 1;
-		console.log(`test: stopped after ${bail} failed files (${failed.join(' ')}); NOT RUN:`);
+		console.log(`test: stopped ${failed.length < bail ? 'on the silence above' : `after ${bail} failed files (${failed.join(' ')})`}${notRun.length ? '; NOT RUN:' : ''}`);
 		for (const f of notRun) console.log(`  ${f}`);
 	}
 	if (missing.length) {

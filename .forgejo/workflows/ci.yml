@@ -576,6 +576,13 @@ jobs:
       - name: pnpm test
         if: ${{ steps.browser.outcome == 'success' }}
         working-directory: web
+        # The step's own bound (da-jiz9q): run 6755 hung silent for an hour and
+        # would have held the runner to the job's 150. Over 107 finished runs on
+        # 10-28 the step took at most 53.8 min (a PR on the loaded shared lane),
+        # staging's own 28.0–30.6 min (24 runs); 80 is half again the worst. A
+        # stuck FILE ends sooner, named by test.mjs's ten-minute silence; this is
+        # for a hang test.mjs cannot see, its own.
+        timeout-minutes: 80
         # Longest first by the testmap run's times, which cover every file
         # (da-gqwh2); the committed durations.json when there are none. Then
         # the PR's selection, if one was made.

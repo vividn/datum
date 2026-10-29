@@ -218,6 +218,24 @@ test('never reported', () => {});
 	assert.equal(code, 1, out);
 });
 
+// da-jiz9q: node bounds a file's tests, never its process, and waits for its
+// stdout to close. A process the file left running holds it here, as long as
+// a run allows, so the run is silent until the silence names the file.
+test('a run silent for DATUM_TEST_SILENCE_MS names the file it waits on, and ends red', () => {
+	const holds = `import test from 'node:test';
+import { spawn } from 'node:child_process';
+test('passes', () => {
+	spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30_000)'], { stdio: ['ignore', 'inherit', 'ignore'] }).unref();
+});
+`;
+	const after = `import test from 'node:test';\ntest('p', () => {});\n`;
+	const t0 = Date.now();
+	const { code, out } = suite({ 'after.test.mjs': after, 'holds.test.mjs': holds }, '', { DATUM_TEST_SILENCE_MS: '2000' });
+	assert.match(out, /^test: nothing printed for 2 s, waiting on tests\/holds\.test\.mjs /m, out);
+	assert.equal(code, 1, out);
+	assert.ok(Date.now() - t0 < 25_000, `ended ${Date.now() - t0} ms on, not when the held stdout let go`);
+});
+
 describe('DATUM_TEST_RETRY', () => {
 	const once = `import test from 'node:test';
 import { existsSync, writeFileSync } from 'node:fs';
