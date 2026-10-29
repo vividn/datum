@@ -745,6 +745,112 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
+
+	// vividn, 2026-10-28: «put undo buttons on the entries that cause changes in
+	// the database. And when something is undone, rather than displaying the
+	// delete/change as a new action, just grey/hash out the command that was
+	// undone … put a redo button where the undo button was», and «disable the
+	// undo button if future writes bury the change … "cannot undo. more recent
+	// changes" more recent changes is a link, which takes you to the latest
+	// entry that buries it» (da-25q3k).
+	test('undo hashes a command out where it stands and redo puts it back; a buried one says why and goes to what buried it; a reload keeps the marks', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const group = (line) => page.locator(`${BAR} .group`).filter({ has: page.locator('.echo', { hasText: line }) });
+			const hidOf = async () =>
+				JSON.parse((await page.evaluate(() => window.datum.bar.last().result.stdout)).trim().split('\n').at(-1)).docs[0].hid;
+			const listed = async (hid) => (await app.run(['tail', '-n', '50'])).stdout.includes(hid);
+			const struck = (line) => group(line).locator('.head.struck');
+
+			await app.submit('occur coffee');
+			const coffee = await hidOf();
+			await app.submit('tail');
+			assert.equal(await group('❯ tail').locator('.step').count(), 0, 'a read has an undo button');
+			const groups = await page.locator(`${BAR} .group`).count();
+
+			await group('occur coffee').getByRole('button', { name: 'undo' }).tap();
+			await struck('occur coffee').waitFor();
+			assert.equal(await listed(coffee), false, 'undone, the entry is still in the database');
+			assert.equal(await page.locator(`${BAR} .group`).count(), groups, 'the undo is a command of its own in the strip');
+			// The CLI widget is the log's own component: there, the undo is what the CLI printed, and the command it undid is struck too.
+			await page.locator('.host.cli .echo', { hasText: `❯ undo ${coffee}` }).waitFor();
+			assert.match(await page.locator('.host.cli').innerText(), /UNDONE/);
+			assert.equal(await page.locator('.host.cli .head.struck').count(), 1);
+
+			await group('occur coffee').getByRole('button', { name: 'redo' }).tap();
+			await page.waitForFunction(() => !document.querySelector('.prompt-bar .head.struck'));
+			assert.ok(await listed(coffee), 'redone, the entry is not back');
+			assert.equal(await group('occur coffee').getByRole('button', { name: 'undo' }).count(), 1);
+
+			// Buried: a later command wrote the same entry, far enough along the strip to be out of view.
+			await app.submit('occur tea');
+			const tea = await hidOf();
+			await app.submit('occur toast');
+			await app.submit('occur juice');
+			const juice = await hidOf();
+			for (const line of ['occur water', `update ${tea} cups=2`, 'tail']) await app.submit(line);
+			await page.locator(`${BAR} .roll`).evaluate(async (roll) => {
+				// The strip mounts its older groups as it is scrolled to them.
+				for (let i = 0; i < 20 && !/occur tea/.test(roll.innerText); i += 1) {
+					roll.scrollLeft = 0;
+					await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+				}
+			});
+			await group('occur tea').evaluate((g) => g.scrollIntoView({ inline: 'start' }));
+			const inView = (line) =>
+				group(line).evaluate((g) => {
+					const roll = g.closest('.roll').getBoundingClientRect();
+					const box = g.getBoundingClientRect();
+					return box.left >= roll.left - 1 && box.right <= roll.right + 1;
+				});
+			assert.equal(await inView(`update ${tea}`), false, 'the burying command is in view already');
+			const buried = group('occur tea').getByRole('button', { name: 'undo' });
+			assert.equal(await buried.getAttribute('aria-disabled'), 'true');
+			// Playwright refuses an `aria-disabled` control; the page does not, and says why.
+			await buried.tap({ force: true });
+			const note = group('occur tea').locator('.buried.told');
+			assert.match(await note.innerText(), /^cannot undo\. more recent changes$/);
+			assert.ok(await listed(tea), 'a buried undo undid');
+			await note.getByRole('button', { name: 'more recent changes' }).tap();
+			await page.waitForFunction(
+				(line) => {
+					const g = [...document.querySelectorAll('.prompt-bar .group')].find((g) => g.querySelector('.echo').textContent.includes(line));
+					const roll = g.closest('.roll').getBoundingClientRect();
+					const box = g.getBoundingClientRect();
+					return box.left >= roll.left - 1 && box.right <= roll.right + 1;
+				},
+				`update ${tea}`
+			);
+
+			// Changed where the page's scrollback cannot see — another tab, the terminal, a synced device:
+			// the press reads the entry's trail, runs nothing, and says so, with nothing to link to (vremya on #1362).
+			await app.run(['update', juice, 'cups=3']);
+			const commands = await page.locator('.host.cli .echo').count();
+			await group('occur juice').getByRole('button', { name: 'undo' }).tap();
+			const elsewhere = group('occur juice').locator('.buried.told');
+			await elsewhere.waitFor();
+			assert.equal(await elsewhere.innerText(), 'cannot undo. a change made elsewhere');
+			assert.equal(await group('occur juice').getByRole('button', { name: 'undo' }).getAttribute('aria-disabled'), 'true');
+			assert.equal(await page.locator('.host.cli .echo').count(), commands, 'a refused undo ran a command');
+			assert.match(JSON.parse((await app.run(['history', juice, '--json'])).stdout)[0].raw, /cups=3/, 'the change made elsewhere was undone');
+
+			// The marks are the scrollback's: undone, reloaded, still hashed out with redo, and the buried one still refused.
+			await group('occur water').getByRole('button', { name: 'undo' }).tap();
+			await struck('occur water').waitFor();
+			await app.reload();
+			await page.locator(`${BAR} .roll`).evaluate(async (roll) => {
+				for (let i = 0; i < 20 && !/occur tea/.test(roll.innerText); i += 1) {
+					roll.scrollLeft = 0;
+					await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+				}
+			});
+			await struck('occur water').waitFor();
+			assert.equal(await group('occur water').getByRole('button', { name: 'redo' }).count(), 1);
+			assert.equal(await group('occur tea').getByRole('button', { name: 'undo' }).getAttribute('aria-disabled'), 'true');
+			assert.equal(await page.locator(`${BAR} .group .echo`, { hasText: /❯ (undo|redo) / }).count(), 0, 'a step is a command in the strip');
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
 });
 
 describe('a command with no echo', () => {

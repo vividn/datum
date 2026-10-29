@@ -107,6 +107,16 @@ export function renameFieldArgv(old: string, to: string, dry = false): string[] 
 	return ['rename', old, to, ...(dry ? ['--dry-run'] : [])];
 }
 
+/** A command's entries stepped back, or forward again, by its button (da-25q3k). */
+export function stepArgv(verb: 'undo' | 'redo', hids: string[]): string[] {
+	return [verb, hids.join(',')];
+}
+
+/** The entries' trails, newest version first: one hid's alone, or each under its own hid. */
+export function entriesHistoryArgv(hids: string[]): string[] {
+	return ['history', hids.join(','), '--json'];
+}
+
 export function redoArgv(): string[] {
 	return ['redo', '--dry-run'];
 }
@@ -396,6 +406,11 @@ export function kitUninstallArgv(): string[] {
  */
 export type KitWidgetRow = Record<string, unknown> & { row_cells: string[]; row_color?: string };
 
+/** One version of an entry's trail: the line that wrote it, where one did. */
+export interface EntryVersion {
+	raw: string | null;
+}
+
 /** One version of a spec's history (da-hda4j): the entry, and the number `undo --to-version` takes. */
 export interface SpecVersion {
 	hid: string;
@@ -419,6 +434,7 @@ export interface Reads {
 	showAllArgv: AllFieldsStats | FieldStats;
 	specShowArgv: Spec;
 	specHistoryArgv: SpecVersion[];
+	entriesHistoryArgv: EntryVersion[] | { versions: EntryVersion[] }[];
 	syncStatusArgv: SyncStatus;
 	/** `joining` takes a join cut short, `dissolved` a chain-wide purge: no seeded database holds either. */
 	chainListArgv: Omit<ChainList, 'joining' | 'dissolved'>;

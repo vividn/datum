@@ -13,14 +13,20 @@
 // told it. Restoring is not re-running: what comes back is the text that
 // was printed, never a second execution of the command that printed it.
 
-import { get, writable } from 'svelte/store';
+import { derived, get, writable } from 'svelte/store';
 import { browser } from '$app/env';
 import type { RunResult } from './run.js';
 import { noteRun } from './bar.js';
 import { maskTicket } from './sync.js';
 import { currentDb, DEFAULT_DB } from './database.js';
+import { parseEcho } from './echo.js';
 
-export type Command = { line: string; ranAt: number; result: RunResult };
+/**
+ * `of` is the `ranAt` of the command whose undo or redo button ran this one
+ * (da-25q3k): the strip draws it as that command's mark, never as a command
+ * of its own.
+ */
+export type Command = { line: string; ranAt: number; result: RunResult; of?: number };
 
 export interface CliState {
 	scrollback: Command[];
@@ -79,15 +85,19 @@ function restore(): CliState {
  * A command has run: into the scrollback with its result and the instant
  * it was run, and into the recall history unless it repeats the last one.
  */
-export function record(line: string, ranAt: number, result: RunResult): void {
+export function record(line: string, ranAt: number, result: RunResult, of?: number): void {
 	// A sync ticket is one-time, but no secret belongs in a store kept on
 	// disk and recalled with Up (da-l9kdr).
 	line = maskTicket(line);
+	// Past the last command's, so it names this one (da-25q3k): a step's
+	// `of`, a row's `data-ran`. Two commands in one millisecond, or a held
+	// clock, would share it; a millisecond on, the stamp reads the same.
+	ranAt = Math.max(ranAt, (get(cli).scrollback.at(-1)?.ranAt ?? -Infinity) + 1);
 	// Capped here, not only on the way to disk: a tab that stays open all
 	// day would otherwise keep every command in memory and in the DOM while
 	// the store on disk held the last KEEP (review threads on #156, #166).
 	cli.update(({ scrollback, history }) => ({
-		scrollback: [...scrollback, { line, ranAt, result }].slice(-KEEP),
+		scrollback: [...scrollback, { line, ranAt, result, ...(of === undefined ? {} : { of }) }].slice(-KEEP),
 		history: (history[history.length - 1] === line ? history : [...history, line]).slice(-KEEP)
 	}));
 	// The bottom bar's echo and receipt (da-0a5o): told here, so that
@@ -105,6 +115,54 @@ export function clearScrollback(): void {
 	cli.update(({ history }) => ({ scrollback: [], history }));
 	save();
 }
+
+/**
+ * The action words that changed the database (`Outcome` in the CLI's
+ * render/mod.rs); EXISTS, NODIFF, ISLAST and FAILED moved nothing.
+ */
+const WRITES = new Set(['CREATE', 'UPDATE', 'DELETE', 'OWRITE', 'RENAME', 'RETIME', 'UNDONE']);
+const wrote = new WeakMap<Command, string[]>();
+
+/** The entries a command wrote, by hid, out of its echo (da-25q3k). */
+export function wroteBy(entry: Command): string[] {
+	let hids = wrote.get(entry);
+	if (!hids) {
+		hids = [...new Set((parseEcho(entry.result.stdout) ?? []).filter((d) => WRITES.has(d.action)).map((d) => d.hid))];
+		wrote.set(entry, hids);
+	}
+	return hids;
+}
+
+/** A button's undo or redo that moved something: drawn as the mark on the command it stepped. */
+export const stepped = (entry: Command): boolean => entry.of !== undefined && wroteBy(entry).length > 0;
+
+/**
+ * Where the undo button of a command that wrote stands (da-25q3k): `undone`
+ * when its button last stepped it back, and `buried` by the newest later
+ * command that wrote one of its entries — `undo <hid>` steps an entry back
+ * its LAST change, which is then that one's, so the button is refused.
+ */
+export interface Mark {
+	undone: boolean;
+	buried?: Command;
+}
+
+/** Every command that wrote, and its mark; read from the scrollback, so a reload keeps them. */
+export const marks = derived(cli, ({ scrollback }) => {
+	const out = new Map<Command, Mark>();
+	scrollback.forEach((entry, i) => {
+		const hids = wroteBy(entry);
+		if (entry.of !== undefined || !hids.length) return;
+		const mark: Mark = { undone: false };
+		for (const later of scrollback.slice(i + 1)) {
+			if (later.of === entry.ranAt) {
+				if (stepped(later)) mark.undone = later.line.startsWith('undo');
+			} else if (wroteBy(later).some((hid) => hids.includes(hid))) mark.buried = later;
+		}
+		out.set(entry, mark);
+	});
+	return out;
+});
 
 let pending: ReturnType<typeof setTimeout> | undefined;
 

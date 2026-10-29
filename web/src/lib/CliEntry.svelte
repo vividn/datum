@@ -27,7 +27,8 @@
 	import RawLines from '#lib/RawLines.svelte';
 	import { now, stampLabel } from '#lib/clock.ts';
 	import { parseEcho } from '#lib/echo.ts';
-	import type { Command } from '#lib/cliStore.ts';
+	import { marks, type Command } from '#lib/cliStore.ts';
+	import { step } from '#lib/layout/engine.ts';
 
 	let {
 		entry,
@@ -66,14 +67,82 @@
 	// Both are datum's; neither is rewritten.
 	const raw = $derived(entry.result.stdout.trim() ? entry.result.stdout : entry.result.stderr);
 	const failed = $derived(entry.result.code !== 0 && !!entry.result.stderr.trim());
+
+	/**
+	 * UNDO ON A COMMAND THAT WROTE, REDO ONCE IT IS UNDONE (da-25q3k). vividn,
+	 * 2026-10-28: «when something is undone, rather than displaying the
+	 * delete/change as a new action, just grey/hash out the command that was
+	 * undone … put a redo button where the undo button was», and «disable the
+	 * undo button if future writes bury the change. If you tap or hover over
+	 * the button, "cannot undo. more recent changes" more recent changes is a
+	 * link, which takes you to the latest entry that buries it».
+	 */
+	const mark = $derived($marks.get(entry));
+	const verb = $derived(mark?.undone ? 'redo' : 'undo');
+	/** Found at a press, changed since by a write this page never ran (`step`). */
+	let elsewhere = $state(false);
+	const refused = $derived(!!mark?.buried || elsewhere);
+	/** The note on a refused button, shown. */
+	let told = $state(false);
+	let busy = $state(false);
+	const note = $props.id();
+
+	/** A mouse's hover already shows the note, which its click keeps; a tap or a key toggles it. */
+	async function press(event: MouseEvent): Promise<void> {
+		if (refused) told = (event as PointerEvent).pointerType === 'mouse' || !told;
+		else if (mark && !busy) {
+			busy = true;
+			elsewhere = !(await step(entry, verb).finally(() => (busy = false)));
+			told = elsewhere;
+		}
+	}
+
+	/** To the command that buried this one: the one a button's step was of, when it was one. */
+	function follow(event: MouseEvent): void {
+		told = false;
+		const ran = mark?.buried?.of ?? mark?.buried?.ranAt;
+		const list = (event.currentTarget as HTMLElement).closest('[data-ran]')?.parentElement;
+		const row = list?.querySelector(`:scope > [data-ran="${ran}"]`) ?? document.querySelector(`[data-ran="${ran}"]`);
+		row?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+		row?.animate({ backgroundColor: ['color-mix(in srgb, var(--accent) 30%, transparent)', 'transparent'] }, 1200);
+	}
 </script>
 
-<div class="head" class:capped={!!cap} class:all>
+<div class="head" class:capped={!!cap} class:all class:struck={mark?.undone}>
 	<span class="stamp">{stampLabel(new Date(entry.ranAt), $now)}</span>
 	<!-- The stamp is a sibling of `.echo`, not a child of it: the echo's
 	     text is the command and nothing else, which is what every reader of
 	     it — a test, a copy-paste — already assumes. -->
 	<div class="echo"><span class="prompt">❯</span> {entry.line}</div>
+	{#if mark}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<span
+			class="step"
+			onpointerenter={(e) => e.pointerType === 'mouse' && (told = refused)}
+			onpointerleave={(e) => e.pointerType === 'mouse' && (told = false)}
+			onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && (told = false)}
+		>
+			<button
+				type="button"
+				class={verb}
+				aria-disabled={refused || busy}
+				aria-describedby={refused ? note : undefined}
+				onclick={press}>{verb}</button
+			>
+			<!-- In the DOM while refused, so the button is described as refused
+			     before it is pressed; drawn once it is hovered or pressed. -->
+			{#if refused}
+				<span id={note} class="buried" class:told role="status"
+					>cannot {verb}. {#if mark.buried}<button
+							type="button"
+							class="link"
+							tabindex={told ? 0 : -1}
+							onclick={follow}>more recent changes</button
+						>{:else}a change made elsewhere{/if}</span
+				>
+			{/if}
+		</span>
+	{/if}
 </div>
 {#if cap}
 	<!-- A surface that cannot scroll shows ONE box: four lines is not enough
@@ -178,5 +247,87 @@
 
 	.prompt {
 		color: var(--accent);
+	}
+
+	/* AT THE HEAD'S END, a line tall: a taller button would grow the strip's
+	   head past the row it stands in. The hit area is the larger box behind it. */
+	.step {
+		flex: none;
+		position: relative;
+	}
+
+	.step > button {
+		position: relative;
+		padding: 0 0.4em;
+		font: inherit;
+		line-height: inherit;
+		color: var(--accent-bright);
+		background: var(--ground);
+		/* An inset ring, not a border, which would make the line 2px taller. */
+		border: none;
+		box-shadow: inset 0 0 0 1px var(--accent);
+		border-radius: 0.3em;
+		cursor: pointer;
+	}
+
+	.step > button::before {
+		content: '';
+		position: absolute;
+		inset: -6px -4px;
+	}
+
+	.step > button[aria-disabled='true'] {
+		color: var(--quiet);
+		box-shadow: inset 0 0 0 1px var(--tint);
+		cursor: default;
+	}
+
+	.buried:not(.told) {
+		clip-path: inset(50%);
+		pointer-events: none;
+	}
+
+	.buried {
+		position: absolute;
+		top: 100%;
+		right: 0;
+		z-index: 3;
+		width: max-content;
+		max-width: 20ch;
+		padding: 0.2em 0.4em;
+		color: var(--ink);
+		background: var(--ground);
+		border: 1px solid var(--tint);
+		border-radius: 0.3em;
+	}
+
+	.link {
+		padding: 0;
+		font: inherit;
+		color: var(--accent-bright);
+		background: none;
+		border: none;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	/* AN UNDONE COMMAND, HASHED OUT WHERE IT STANDS: the row's own box — the
+	   strip's group, the log's cell — hatched, and all of it but its redo faded. */
+	:global(:has(> .head.struck)) {
+		background-image: repeating-linear-gradient(
+			135deg,
+			transparent 0 5px,
+			color-mix(in srgb, var(--quiet) 30%, transparent) 5px 6px
+		);
+	}
+
+	:global(:has(> .head.struck) > :not(.head)),
+	.struck .stamp,
+	.struck .echo {
+		opacity: 0.45;
+	}
+
+	.struck .echo {
+		text-decoration: line-through;
 	}
 </style>

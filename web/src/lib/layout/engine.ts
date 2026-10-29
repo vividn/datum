@@ -20,16 +20,16 @@ import { clearUnlockedPills, commandsOpen, dropHids, focusLine, pills, showGhost
 import { openOutput } from '#lib/log.ts';
 import { grammarOf, type Grammar, type GrammarEntry } from '#lib/commands.ts';
 import { withPills } from '#lib/selection.ts';
-import { shellJoin } from '#lib/shellSplit.ts';
+import { shellJoin, shellSplit } from '#lib/shellSplit.ts';
 import { initDb } from '#lib/db.ts';
 import { asking, fileCommand } from '#lib/dbio.ts';
 import { syncCommand } from '#lib/sync.ts';
 import { parseEcho, runEchoed, type EchoDoc } from '#lib/echo.ts';
-import { record } from '#lib/cliStore.ts';
+import { cli as history, record, stepped, wroteBy, type Command } from '#lib/cliStore.ts';
 import { run, type RunResult } from '#lib/run.ts';
 import { FROZEN_AT } from '#lib/dbProtocol.ts';
 import { currentDb } from '#lib/database.ts';
-import { conflictsArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '#lib/calls.ts';
+import { conflictsArgv, entriesHistoryArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv, stepArgv, type Reads } from '#lib/calls.ts';
 import { listsConflicts, type Conflicted } from '#lib/conflicts.ts';
 import { verbAsked } from '#lib/track.ts';
 import { openField, specOpens } from '#lib/fieldWidget.ts';
@@ -373,6 +373,45 @@ async function alone(argv: string[], line?: string, stdin?: string, env?: string
 	record(line ?? shellJoin(argv), ranAt, result);
 	await ran(result);
 	return result;
+}
+
+/**
+ * A command's undo or redo button (da-25q3k): every entry it wrote stepped
+ * back, or forward again, by hid — `redo <hid>` still puts back an undo a
+ * later write has followed. Recorded as OF that command, so the strip marks
+ * it there instead of showing a command of its own; the log shows what the
+ * CLI printed.
+ *
+ * Null, running nothing, when an entry's newest change is not this page's.
+ */
+export async function step(entry: Command, verb: 'undo' | 'redo'): Promise<RunResult | null> {
+	const hids = wroteBy(entry);
+	if (!(await ours(entry, hids))) return null;
+	const argv = stepArgv(verb, hids);
+	const ranAt = Date.now();
+	const result = await runEchoed(run, argv);
+	record(shellJoin(argv), ranAt, result, entry.ranAt);
+	await ran(result);
+	return result;
+}
+
+/**
+ * Whether each entry's newest change is still the one this page made: the
+ * command, or its button's last step (vremya on #1362). A second tab, the
+ * terminal or a synced device may have changed one since, which no command
+ * here buries and `undo <hid>` would step back instead. Read off the
+ * trail's newest version by the words of the line that wrote it, which the
+ * CLI quotes in its own way: two writes of the same words, here and elsewhere,
+ * are not told apart. An entry gone (`history` exits 1) went elsewhere too.
+ */
+async function ours(entry: Command, hids: string[]): Promise<boolean> {
+	const last = get(history).scrollback.findLast((c) => c.of === entry.ranAt && stepped(c)) ?? entry;
+	const { code, stdout } = await run(entriesHistoryArgv(hids));
+	if (code !== 0) return false;
+	const trails: Reads['entriesHistoryArgv'] = JSON.parse(stdout);
+	const newest = trails.map((t) => ('versions' in t ? t.versions[0] : t)).slice(0, hids.length > 1 ? undefined : 1);
+	const words = JSON.stringify(shellSplit(last.line));
+	return newest.every((v) => typeof v?.raw === 'string' && JSON.stringify(shellSplit(v.raw)) === words);
 }
 
 /**

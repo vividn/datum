@@ -90,7 +90,7 @@
 	import { fly } from 'svelte/transition';
 	import Brand from '#lib/Brand.svelte';
 	import CliEntry from '#lib/CliEntry.svelte';
-	import { clearScrollback, cli, type Command } from '#lib/cliStore.ts';
+	import { clearScrollback, cli, stepped, type Command } from '#lib/cliStore.ts';
 	import { parseEcho } from '#lib/echo.ts';
 	import { ACTION_MS, ERROR_MS, commandsOpen, focusLine, marks, peel, pills, prefill, text } from '#lib/bar.ts';
 	import CommandPane from '#lib/layout/CommandPane.svelte';
@@ -159,8 +159,10 @@
 	 * found in no list of the entries themselves.
 	 */
 	let from: Command | null = $state.raw(null);
+	/** What the strip can show: a button's undo or redo is a mark on the command it stepped (da-25q3k). */
+	const commands = $derived($cli.scrollback.filter((entry) => !stepped(entry)));
 	const strip = $derived.by(() => {
-		const all = $cli.scrollback;
+		const all = commands;
 		const at = from ? all.indexOf(from) : -1;
 		return all.slice(at < 0 ? -MOUNT : Math.max(at, all.length - STRIP));
 	});
@@ -195,7 +197,7 @@
 	 */
 	function fill(): void {
 		if (!roll || track?.getAnimations().length || roll.scrollLeft >= roll.clientWidth) return;
-		const all = $cli.scrollback;
+		const all = commands;
 		const at = all.indexOf(strip[0]);
 		if (at > 0 && all.length - at < STRIP) from = all[Math.max(0, at - GROW, all.length - STRIP)];
 	}

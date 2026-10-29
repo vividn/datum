@@ -43,7 +43,7 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import CliScrollback from '#lib/CliScrollback.svelte';
-	import { cli } from '#lib/cliStore.ts';
+	import { cli, stepped } from '#lib/cliStore.ts';
 	import { armed, closeLog, full, inLog } from '#lib/log.ts';
 
 	let body: HTMLDivElement | undefined = $state();
@@ -55,6 +55,17 @@
 	let wheeled = -Infinity;
 	/** Where a touch that began at the top of the history began, or null. */
 	let fromTop: number | null = null;
+
+	/**
+	 * The strip's newest and every button's undo or redo after it, which the
+	 * strip draws as marks on it (da-25q3k): the row before them is the log's last.
+	 */
+	const skip = $derived.by(() => {
+		const all = $cli.scrollback;
+		let n = 1;
+		while (n < all.length && stepped(all[all.length - n])) n += 1;
+		return n;
+	});
 
 	const atTop = (): boolean => $full && !!body && body.scrollTop <= 0;
 
@@ -96,7 +107,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="log" class:reached={$inLog} class:full={$full} inert={!$inLog} {onwheel} {ontouchstart} {ontouchmove}>
 	{#if $armed}
-		<CliScrollback bare skip={$full ? 0 : 1} lines bind:body />
+		<CliScrollback bare skip={$full ? 0 : skip} lines bind:body />
 	{/if}
 	{#if $inLog}
 		<button type="button" class="top" onclick={closeLog}>close history</button>

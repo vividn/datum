@@ -103,7 +103,7 @@ describe('a press', () => {
 			// for one passed before the press did, and said nothing of what
 			// stood there when it did not (da-v5ote).
 			await app.idle();
-			assert.match(await page.locator('.prompt-bar .section.output').innerText(), /❯ occur coffee\nCREATE /);
+			assert.match(await page.locator('.prompt-bar .section.output').innerText(), /❯ occur coffee\nundo\nCREATE /);
 			assert.equal((await app.tailRows()).rows.at(-1).field, 'coffee');
 
 			await type(page, 'start work');
