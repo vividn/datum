@@ -53,8 +53,11 @@ export async function atRows(page, id, want, max = MAX_ROWS) {
 	let last = null;
 	for (let i = 0; i < 14; i += 1) {
 		const { rows, row, box, tall } = await read();
-		// The rows drawn AND the room for them at their real height.
-		if (rows === want && box + 0.5 >= want * tall + (want - 1) * GAP) return;
+		// The rows drawn AND the room for them at their real height, and no
+		// room for one more: a capped bar reads `max` in any box taller than
+		// that, and another bar on the page, uncapped, would read more
+		// (da-ea02r: an overshoot left the sections bar beside it at 5).
+		if (rows === want && box + 0.5 >= want * tall + (want - 1) * GAP && box < (want + 1) * (row + GAP) - GAP) return;
 		const { width, height } = page.viewportSize();
 		const measured = last && last.height !== height ? (box - last.box) / (height - last.height) : 0;
 		const slope = measured > 0.05 ? measured : 1 / 3;
