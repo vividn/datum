@@ -1041,6 +1041,9 @@
 	 * pattern without it). On each step of the gesture, and on each picture
 	 * `place` reads: a ctrl+wheel holds no press, so a picture may land
 	 * under it (one under a finger waits for the lift, #lib/hover.ts).
+	 * About the instant its block starts (`data-origin`, #lib/nowcrop.ts):
+	 * scaled back about the day's 0, the stripes slid across the block as
+	 * the scale changed (da-rdiph).
 	 */
 	function unstretch(): void {
 		// Not the strip's own copies (`compose`): the strip is scaled back whole, below.
@@ -1049,8 +1052,12 @@
 			// across (da-0e06p, da-m6i2a).
 			const back = 1 / ((zoom?.scale || 1) * Number(pattern.getAttribute('data-scale') ?? 1));
 			const across = 1 / Number(pattern.getAttribute('data-cross') ?? 1);
+			const at = Number(pattern.getAttribute('data-origin') ?? 0);
 			pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
-			pattern.setAttribute('patternTransform', `scale(${vertical ? `${across} ${back}` : `${back} ${across}`}) ${pattern.dataset.drawn}`);
+			pattern.setAttribute(
+				'patternTransform',
+				`translate(${vertical ? `0 ${at}` : `${at} 0`}) scale(${vertical ? `${across} ${back}` : `${back} ${across}`}) ${pattern.dataset.drawn}`
+			);
 		}
 		// And the strip at now, with its line and its word, about now (`compose`).
 		const back = 1 / (zoom?.scale || 1);

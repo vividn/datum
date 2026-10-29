@@ -84,8 +84,21 @@ function record(page) {
 				x('.now-label');
 				x('.now-strip', '<');
 				x('.now-strip', '>');
+				// And each parallel state's block by its start: its left edge, its
+				// width, and where its stripes cross its top edge past that, as a
+				// phase of their period `p` there (da-rdiph).
+				const stripes = {};
+				for (const block of svg?.querySelectorAll('rect.block.multi-state[data-from]') ?? []) {
+					const pattern = document.getElementById(block.getAttribute('fill').slice('url(#'.length, -1));
+					const m = block.getScreenCTM().multiply(pattern.patternTransform.baseVal.consolidate().matrix);
+					const r = block.getBoundingClientRect();
+					// The tile's edge `u` along it, where it crosses the block's top.
+					const cross = (u) => m.a * u + (m.c * (r.top - m.f - m.b * u)) / m.d + m.e;
+					const p = Math.abs(cross(Number(pattern.getAttribute('width'))) - cross(0));
+					stripes[block.dataset.from] = { left: r.left, width: r.width, phase: (((cross(0) - r.left) % p) + p) % p, p };
+				}
 				const b = document.querySelector(band).getBoundingClientRect();
-				frames.push({ down, svg: svg ? ids.get(svg) : 0, at, opacity: svg ? opacity(svg) : 0, band: [b.left, b.right] });
+				frames.push({ down, svg: svg ? ids.get(svg) : 0, at, stripes, opacity: svg ? opacity(svg) : 0, band: [b.left, b.right] });
 				if (!window.__stopFrames) requestAnimationFrame(tick);
 			};
 			window.__stopFrames = false;
@@ -150,14 +163,17 @@ function seams(frames, except = []) {
 	return shown.length ? off : ['no mark inside the band under the fingers'];
 }
 
-/** CDP touches: `moves` is a list of finger lists, the first one where they land. */
-async function touch(page, moves, midway) {
+/** CDP touches: `moves` is a list of finger lists, the first one where they land; `each` is awaited after each move. */
+async function touch(page, moves, midway, each) {
 	const cdp = await page.context().newCDPSession(page);
 	const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
 	try {
 		await at('touchStart', [moves[0][0]]);
 		if (moves[0].length > 1) await at('touchStart', moves[0]);
-		for (const m of moves.slice(1)) await at('touchMove', m);
+		for (const m of moves.slice(1)) {
+			await at('touchMove', m);
+			await each?.();
+		}
 		await midway?.();
 		await at('touchEnd', []);
 	} finally {
@@ -240,6 +256,58 @@ describe('a release is seamless', () => {
 				{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 			);
 		});
+
+	// vividn, 2026-10-28: «the multi state stripes also go crazy while you
+	// are zooming. they should be better anchored so that the stripes don't
+	// move up and down while you are zooming» (da-rdiph). A parallel state
+	// well inside the window, pinched in frame by frame: its stripes cross
+	// its top edge where they did past its left edge, however far it has
+	// stretched, and the release draws them there.
+	test('a pinch over a parallel state: its stripes go with its block, and the release draws them where they were', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				for (const line of ['switch posture vertical,sit -t -20', 'switch posture stand -t -12']) await app.runLine(line);
+				const box = await seeded(app);
+				await page.locator(`${BAND} svg.svg rect.block.multi-state`).waitFor({ state: 'attached' });
+				const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+				const both = (apart) => [
+					{ id: 1, x: x - apart / 2, y },
+					{ id: 2, x: x + apart / 2, y }
+				];
+				let recording = false;
+				const start = async () => {
+					if (!recording) await record(page);
+					recording = true;
+					await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+				};
+				await touch(page, steps(12, (t) => both(80 + t * 56)), undefined, start);
+				const { frames } = await untilSettled(page);
+				const up = frames.findIndex((f) => !f.down);
+				const key = Object.keys(frames[up - 1].stripes)[0];
+				assert.ok(key, `no parallel state under the fingers: ${JSON.stringify(frames[up - 1])}`);
+				const drift = (a, b) => {
+					const d = Math.abs(a.phase - b.phase) % a.p;
+					return Math.min(d, a.p - d);
+				};
+				const under = frames.slice(0, up).map((f) => f.stripes[key]);
+				// The control: the block stretched and moved, inside the band, under the fingers.
+				assert.ok(under.length >= 6, `${under.length} frames under the fingers`);
+				assert.ok(under.at(-1).width / under[0].width > 1.4, `the block went from ${under[0].width}px to ${under.at(-1).width}px`);
+				assert.ok(under.every((s) => s.left > box.x && s.left + s.width < box.x + box.width), 'the block left the band');
+				for (const [i, s] of under.entries())
+					assert.ok(drift(s, under[0]) <= 1.5, `frame ${i}: the stripes are ${drift(s, under[0])}px from where they were past the block's edge`);
+				const last = under.at(-1);
+				for (const [i, f] of frames.slice(up).entries()) {
+					const s = f.stripes[key];
+					assert.ok(s && Math.abs(s.left - last.left) <= 0.5 && drift(s, last) <= 0.5, `frame ${i} after the lift: ${JSON.stringify(s)}, under the fingers ${JSON.stringify(last)}`);
+				}
+				assert.deepEqual(seams(frames), []);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
 
 	// vremya on #1280: a hold that never lets go is worse than a flash. The
 	// window moved from outside while the picture is held (the session that

@@ -133,21 +133,27 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 			// Units of the day's picture to the overlay's: its instants where the overlay draws them.
 			const a = rate(into) / rate(from);
 			const b = lo + (from.from - into.from) * rate(into) - a * from.lo;
-			// Every stretch shares one rate: the strip is cut into the axis, not
-			// drawn at a scale of its own, so a pattern's is any stretch's.
-			for (const p of span.querySelectorAll('[fill^="url(#"]')) scale.set(p.getAttribute('fill')!.slice(5, -1), a);
+			const unit = (t: number) => from.lo + (t - from.from) * rate(from);
 			// A mark is as big as the band makes it (`--sc`), and as wide too.
 			const day = make('g', {
 				transform: y ? `matrix(${c} 0 0 ${a} ${cross} ${b})` : `matrix(${a} 0 0 ${c} ${b} ${cross})`,
 				style: `--sx: ${a}; --sc: ${c}`
 			});
 			for (const child of span.children) day.append(doc.importNode(child, true));
-			for (const el of day.querySelectorAll('[fill^="url(#"]')) el.setAttribute('fill', `url(#${own(el.getAttribute('fill')!.slice(5, -1))})`);
+			// A block's stripes start where it starts (da-rdiph): a copy of its
+			// pattern at its instant, which the widget scales back about it, so
+			// a stretch moves them with the block and never across it. Every
+			// stretch shares one rate: the strip is cut into the axis, not
+			// drawn at a scale of its own, so a pattern's is any stretch's.
+			for (const el of day.querySelectorAll('[fill^="url(#"]')) {
+				const id = anchored(own(el.getAttribute('fill')!.slice(5, -1)), el.hasAttribute('data-from') ? unit(Date.parse(el.getAttribute('data-from')!)) : null);
+				el.setAttribute('fill', `url(#${id})`);
+				scale.set(id, a);
+			}
 			// A block is cut to the stretch, as the CLI's own picture cut it,
 			// and a state still running at now (drawn on to the day's end),
 			// at now — on now the clip at the now-line does that as it moves.
 			const until = flow ? into.to : Math.min(into.to, Math.max(into.from, Date.now()));
-			const unit = (t: number) => from.lo + (t - from.from) * rate(from);
 			trim(day, unit(Math.max(into.from, from.from)), unit(Math.min(into.to, from.to)), unit(until), from.to, y);
 			at.append(day);
 		}
@@ -156,8 +162,8 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 	// What a stretch draws a mark at, a pattern draws stripes at (da-hmtoq):
 	// the widget scales them back by this as it does the marks.
 	for (const [id, a] of scale) {
-		doc.getElementById(own(id))?.setAttribute('data-scale', String(a));
-		doc.getElementById(own(id))?.setAttribute('data-cross', String(c));
+		doc.getElementById(id)?.setAttribute('data-scale', String(a));
+		doc.getElementById(id)?.setAttribute('data-cross', String(c));
 	}
 
 	// The strip, as the CLI paints it: each lane in the state its block holds
@@ -201,6 +207,20 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 		group.append(...atNow);
 	}
 	return new XMLSerializer().serializeToString(doc);
+
+	/** The pattern `id` laid from `origin` along time, in the day's units: a copy, `data-origin` saying where. */
+	function anchored(id: string, origin: number | null): string {
+		if (origin === null || !Number.isFinite(origin)) return id;
+		const at = `${id}-at${origin}`;
+		if (!doc!.getElementById(at)) {
+			const copy = doc!.getElementById(id)?.cloneNode(true) as Element | undefined;
+			if (!copy) return id;
+			copy.setAttribute('id', at);
+			copy.setAttribute('data-origin', String(origin));
+			defs.append(copy);
+		}
+		return at;
+	}
 
 	/** Stripes in the strip are the overlay's size, not a stretch's: a copy of their pattern. */
 	function stripFill(fill: string): string {
