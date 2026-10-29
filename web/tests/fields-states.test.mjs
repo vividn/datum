@@ -1,5 +1,5 @@
 // A state field's states, drawn in the fields widget in place of the
-// fields (da-g635).
+// fields (da-g635, da-vg8vr).
 //
 // The five: `fields` (the pure logic, and the widget as it is drawn),
 // `fields-press` (what a press runs), `fields-fit` (at a screen's size,
@@ -26,11 +26,12 @@ import { pressArgv } from '../src/lib/fields.ts';
 import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { GREEN, MOOD, seed, untilFieldStyle } from './support/fields.mjs';
 
-// A state field asks WHICH, so its button reads `name:` and a press fills
-// the widget with that field's states in place of the fields — `< Back`
-// first, then `end` (da-cwieh), `+ Add state` last (da-g635), the states around the tap (da-7q3ka). Nothing floats: the list is the widget's own
-// content, so these tests read it out of `.bar` exactly as they read the
-// fields, and the pane's box is unchanged either way.
+// A state field asks WHICH, so its button reads `name:` and a press puts
+// that field's states in place of the fields — the back icon first, then
+// `end` (da-cwieh), `+ Add state` last (da-g635), the states around `end`
+// (da-7q3ka, da-vg8vr). They are written inside the bar, over its hidden
+// rows, so these tests read them out of `.bar` as they read the fields;
+// where they stand is `fields-cluster.test.mjs`.
 describe('a state field fills the widget with its states', () => {
 	before(startApp);
 	after(stopApp);
@@ -42,11 +43,14 @@ describe('a state field fills the widget with its states', () => {
 	// scroll test keeps an app of its own, the one on its screen.
 	const shared = sharedApp({ clock: todayAt(15) });
 
-	/** Every button the bar is showing, in order, by the word on it. */
-	const bar = (page) =>
-		page.locator('.bar').evaluate((el) =>
-			[...el.querySelectorAll('button')].map((b) => b.textContent.trim())
-		);
+	/** Every button under `selector`, in order, by the word on it, the back icon by its name. */
+	const words = (page, selector) =>
+		page.locator(selector).evaluate((el) => [...el.querySelectorAll('button')].map((b) => (b.dataset.back !== undefined ? 'back' : b.textContent.trim())));
+	/** Every button the bar is showing, the window's included. */
+	const bar = (page) => words(page, '.bar');
+	/** The buttons of a field's states. */
+	const ring = (page) => words(page, '.bar .picker');
+	const closed = (page) => page.locator('.bar .picker').waitFor({ state: 'detached' });
 
 	test('the button reads `mood:`, a press fills the bar with its states, and one logs a switch', async () => {
 		await shared.solo(async (app) => {
@@ -56,8 +60,8 @@ describe('a state field fills the widget with its states', () => {
 
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="happy"]').waitFor();
-			assert.deepEqual(await bar(page), ['< Back', 'end', 'calm', 'happy', '+ Add state']);
-			assert.equal(await page.locator('.bar [data-field]').count(), 0, 'a field button is still drawn');
+			assert.deepEqual(await ring(page), ['back', 'end', 'calm', 'happy', '+ Add state']);
+			assert.equal(await page.locator('.bar [data-field="mood"]').isVisible(), false, 'the field is still drawn over its states');
 
 			const before = (await app.echoes()).length;
 			await page.locator('.bar [data-state="happy"]').click();
@@ -66,12 +70,12 @@ describe('a state field fills the widget with its states', () => {
 			// bar's pills still reach it. (The hold panel's bubbles reached it
 			// too until da-e78x6 removed them; the pills are what is left.)
 			assert.equal((await app.echoes()).at(-1), 'switch mood happy');
-			await page.locator('.bar [data-field="mood"]').waitFor();
+			await closed(page);
 			assert.deepEqual(await bar(page), ['mood:']);
 		});
 	});
 
-	test('`< Back` runs nothing and the fields are back', async () => {
+	test('the back icon runs nothing and the fields are back', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
@@ -80,7 +84,7 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-back]').click();
 
-			await page.locator('.bar [data-field="mood"]').waitFor();
+			await closed(page);
 			assert.deepEqual(await bar(page), ['mood:']);
 			assert.equal((await app.echoes()).length, before, 'Back logged something');
 		});
@@ -118,11 +122,11 @@ describe('a state field fills the widget with its states', () => {
 			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			assert.equal((await app.echoes()).at(-1), 'switch mood sad');
 
-			await page.locator('.bar [data-field="mood"]').waitFor();
+			await closed(page);
 			await app.idle();
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="sad"]').waitFor();
-			assert.deepEqual(await bar(page), ['< Back', 'end', 'calm', 'happy', 'sad', '+ Add state']);
+			assert.deepEqual(await ring(page), ['back', 'end', 'calm', 'happy', 'sad', '+ Add state']);
 		});
 	});
 
@@ -164,7 +168,7 @@ describe('a state field fills the widget with its states', () => {
 			// own chip marks it: filled with the state's colour inside the
 			// field's outline. `bad` is a light TINT of its own colour, a quarter
 			// of it, in its own outline and under the app's ink (da-7q3ka: the
-			// hollow `< Back`, `+ Add state` and `end` stand out against it).
+			// hollow back icon, `+ Add state` and `end` stand out against it).
 			// `end` first, hollow in the field's colour, on every switch field (da-cwieh).
 			assert.deepEqual(painted, [
 				{ state: 'false', bg: 'rgba(0, 0, 0, 0)', border: rgb('#800080'), color: rgb('#800080') },
@@ -174,7 +178,7 @@ describe('a state field fills the widget with its states', () => {
 		});
 	});
 
-	test('the states are in the Tab order in that sequence, and Escape is Back', async () => {
+	test('the states are in the Tab order in that sequence, and Escape closes them', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
@@ -182,24 +186,24 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="happy"]').waitFor();
 
-			const focused = () => page.evaluate(() => document.activeElement?.textContent.trim());
+			const focused = () =>
+				page.evaluate(() => (document.activeElement?.dataset.back !== undefined ? 'back' : document.activeElement?.textContent.trim()));
 			await page.locator('.bar [data-back]').focus();
 			const order = [await focused()];
 			for (let i = 0; i < 4; i++) {
 				await page.keyboard.press('Tab');
 				order.push(await focused());
 			}
-			assert.deepEqual(order, ['< Back', 'end', 'calm', 'happy', '+ Add state']);
+			assert.deepEqual(order, ['back', 'end', 'calm', 'happy', '+ Add state']);
 
 			await page.keyboard.press('Escape');
-			await page.locator('.bar [data-field="mood"]').waitFor();
+			await closed(page);
 			assert.equal((await app.echoes()).length, before, 'Escape logged something');
 		});
 	});
 
-	// The states are fewer than the fields, so the shorter list scrolls the
-	// pane's own scroller back up under the reader. Where they were is given
-	// back — otherwise Back lands somewhere they never asked for.
+	// The fields are hidden under the states, not taken out: closed, the
+	// pane is scrolled where it was.
 	test("the pane's scroll position survives Back", async () => {
 		await withApp(async (app) => {
 			const { page } = app;
@@ -222,7 +226,7 @@ describe('a state field fills the widget with its states', () => {
 			// would move the bar to where Back is meant to leave it anyway.
 			await page.locator('.bar [data-field="mood"]').dispatchEvent('click');
 			await page.locator('.bar [data-back]').dispatchEvent('click');
-			await page.locator('.bar [data-field="mood"]').waitFor();
+			await closed(page);
 			await page.waitForFunction(
 				(was) => {
 					const el = document.querySelector('section[data-pane="bar"] .bar');

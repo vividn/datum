@@ -85,24 +85,24 @@
 	the comment (da-py5w).
 
 	A multi-state field asks WHICH, so its button reads `name:` and a press
-	fills the bar with that field's states in place of the fields (da-g635)
-	— RADIALLY AROUND THE TAP (da-7q3ka, `ringOf` in fields.ts): the
-	spec's order is a rank, the first nearest the thumb, so a state is
-	always the same place relative to where the press landed, like a pie
-	menu. `end` takes the tap's own spot on every switch field (a key's
-	press, the button's center; da-rgyrj), or a gap of its width on one
-	whose spec says it is never off (da-cwieh), with `< Back` left of it
-	and `+ Add state` past the rightmost state on its line; those three are hollow,
-	the other states a light tint, the one the field is in solid and bold.
-	Near an edge `end` is moved just inside the box and the states spread
-	along the free sides (da-8mk9p); `end`'s hit target reaches the box's
-	edge, so a second tap where the first landed still ends (da-hygvc).
-	A name too long for the pane is cut with an ellipsis, the whole of it
-	still the button's text and title. Nothing floats: the ring is the
-	widget's own content, over the bar's own box, and the pane is
-	scrolled back to where it stood when Back returns the fields. A
-	press on a state runs `switch <field> <state>` — plainly, the bar's own
-	pills being the only thing that adds to it — and comes back; `+` is an
+	puts its states IN PLACE OF the fields (da-g635, da-vg8vr) — vividn:
+	«keep the states in a consistent place inside of the fields widget …
+	arranged radially, with end in the center, but back can move to the
+	top left corner of the widget, add state can go in the top right».
+	Where each state stands is the field's alone (`ringOf` in fields.ts):
+	the spec's order is a rank, the first nearest `end`, so a state is
+	always the same place, like a pie menu (da-7q3ka), whichever button was
+	tapped and wherever it stood. `end` is at the widget's centre, or a gap
+	of its width on a field whose spec says it is never off (da-cwieh); the
+	back icon and `+ Add state` are in the top corners, out of the packing,
+	and stay there while the states pan, which a drag does in both
+	directions where they run past the box; those three are hollow, the
+	other states a light tint, the one the field is in solid and bold. The
+	fields are hidden under them, not taken out, so Back and Escape find
+	the bar as it was. A name too long for the pane is cut with an
+	ellipsis, the whole of it still the
+	button's text and title. A press on a state runs `switch <field> <state>` — plainly, the bar's own
+	pills being the only thing that adds to it — and closes it; `+` is an
 	input, and Enter on it runs the same command with a state the field has
 	never been in, which is how one is learned. The gesture still pills the
 	field.
@@ -114,8 +114,9 @@
 	is no second string built for display that could drift from it.
 -->
 <script lang="ts">
-	import { onMount, tick, untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
+	import { CLICK_SLOP } from './inspect.js';
 	import {
 		FULL,
 		aligned,
@@ -239,24 +240,18 @@
 	 * went stale the moment it was picked.
 	 */
 	let picked: string | null = $state(null);
-	/**
-	 * Where the press that picked it landed, from the bar's top left corner
-	 * as drawn: the pointer's spot, so `end` is under the finger however
-	 * long the name (da-rgyrj), or the button's center for a key's press.
-	 */
-	let tap = $state.raw({ x: 0, y: 0 });
+	/** Where `end` is in the box of states, from its top left corner (`around`). */
+	let anchor = $state.raw({ x: 0, y: 0 });
+	/** How far a drag has panned the states from the centre, kept so they cannot leave the widget. */
+	let pan = $state.raw({ x: 0, y: 0 });
+	/** The size of the pane the states fill, and of the box they stand in. */
+	let paneW = $state(0);
+	let paneH = $state(0);
+	let picker: HTMLElement | undefined = $state();
+	let extent = $state.raw({ w: 0, h: 0 });
 	/** Whether the `+` at the end of that list has become its input. */
 	let addingState = $state(false);
 	let newState = $state('');
-	/** The pane's scroller and where it stood when the states took over. */
-	let scrolled: HTMLElement | null = null;
-	/**
-	 * Where the scroller stood when the states took over — BOTH axes, since
-	 * the scroll rule decides which one the bar is on (da-ltux) and a short
-	 * pane is scrolled sideways.
-	 */
-	let scrolledTo = { left: 0, top: 0 };
-
 	/** Whether a pointer — a mouse, a finger — is over the bar right now. */
 	let over = $state(false);
 	/**
@@ -291,18 +286,11 @@
 	});
 
 	/**
-	 * What the bar draws. A picked field's states (da-g635) are ONE entry,
-	 * the ring over the whole bar (da-7q3ka): `< Back`, which logs nothing,
-	 * the states around the tap, and `+ Add state`, which is how a state
-	 * never logged gets into the list at all. Otherwise the fields in their rows
-	 * (`arrange`), and on a bar with none the hint alone.
+	 * What the bar draws: the fields in their rows (`arrange`), and on a bar
+	 * with none the hint alone. A picked field's states float over it.
 	 */
-	type Entry =
-		| { kind: 'hint' }
-		| { kind: 'ring' }
-		| { kind: 'field'; button: FieldButton; promoted: boolean; edge: boolean };
+	type Entry = { kind: 'hint' } | { kind: 'field'; button: FieldButton; promoted: boolean; edge: boolean };
 	const entries = $derived.by((): Entry[] => {
-		if (picking) return [{ kind: 'ring' }];
 		if (buttons.length > 0) return [];
 		return [{ kind: 'hint' }];
 	});
@@ -314,9 +302,7 @@
 	const arrange = $derived.by(() => {
 		// Read here and not only in the functions: a new one lays the bar out again.
 		const [placed, standing, near] = [placing, standings, shown];
-		return picking
-			? (items: Entry[]): Entry[][] => [items]
-			: buttons.length === 0
+		return buttons.length === 0
 				? lanesOf
 				: picture
 					? (): Entry[][] => [placed]
@@ -336,7 +322,7 @@
 	const keyOf = (e: Entry) => (e.kind === 'field' ? `f:${e.button.field}` : e.kind);
 
 	/** Whether the buttons stand where their fields are drawn: the option, on a bar of fields. */
-	const picture = $derived(align === 'picture' && !picking && buttons.length > 0);
+	const picture = $derived(align === 'picture' && buttons.length > 0);
 	/** The fields in the order they claim their places: most used at the last sort first. */
 	const placing = $derived(
 		[...buttons]
@@ -523,26 +509,12 @@
 		].join(' · ');
 	}
 
-	/**
-	 * Leave the state list for the field list, with the pane where it was.
-	 *
-	 * The states are fewer than the fields, so the shorter list scrolls the
-	 * pane's own scroller back up under the reader — where they were is
-	 * remembered by `pick` and given back here, after the list is drawn.
-	 */
+	/** Close the field's states: the fields under them are as they were. */
 	function back() {
-		if (picked === null) return;
 		picked = null;
+		pan = { x: 0, y: 0 };
 		addingState = false;
 		newState = '';
-		const scroller = scrolled;
-		const at = scrolledTo;
-		scrolled = null;
-		if (scroller)
-			void tick().then(() => {
-				scroller.scrollLeft = at.left;
-				scroller.scrollTop = at.top;
-			});
 	}
 
 	function emit(argv: string[]) {
@@ -563,45 +535,24 @@
 	}
 
 
-	/**
-	 * Show `button`'s states in the bar, in place of the fields (da-g635).
-	 *
-	 * Nothing floats: the list is REPLACED inside the widget's own box, so
-	 * the pane keeps the height its layout gives it (da-mbz2). Where the
-	 * press landed is kept, for the states to stand around (da-7q3ka).
-	 */
-	/** `el` is the pressed button itself — the click's `currentTarget`, never a glyph inside it. */
-	function pick(button: FieldButton, el: HTMLElement, e: MouseEvent) {
-		const at = el.getBoundingClientRect();
-		const box = bar!.getBoundingClientRect();
-		// Enter or Space clicks with `detail` 0 and no position of its own.
-		const [x, y] = e.detail > 0 ? [e.clientX, e.clientY] : [at.left + at.width / 2, at.top + at.height / 2];
-		tap = { x: x - box.left, y: y - box.top };
-		scrolled = scrollerOf();
-		scrolledTo = { left: scrolled?.scrollLeft ?? 0, top: scrolled?.scrollTop ?? 0 };
+	/** Put `button`'s states in place of the fields (da-g635, da-vg8vr). */
+	function pick(button: FieldButton) {
+		pan = { x: 0, y: 0 };
 		picked = button.field;
-	}
-
-	/** What scrolls, either way: the bar itself, or an ancestor that took the overflow. */
-	function scrollerOf(): HTMLElement | null {
-		for (let node: HTMLElement | null = bar ?? null; node; node = node.parentElement) {
-			if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) return node;
-		}
-		return null;
 	}
 
 	/**
 	 * A press does what `pressKind` says — the same answer the button's
 	 * outline is drawn from, so the two cannot disagree (da-z8z40).
 	 */
-	function press(button: FieldButton, el: HTMLElement, e: MouseEvent) {
+	function press(button: FieldButton) {
 		const kind = pressKind(button, verb);
 		// With a verb pending, the press IS that verb (C1: a field tap runs
 		// at once).
 		const argv = (verb && verbPress(verb, button)) || pressArgv(button);
 		// A multi-state field can't be logged without saying which, so a
 		// plain press asks — the bar fills with its states.
-		if (kind === 'show') pick(button, el, e);
+		if (kind === 'show') pick(button);
 		// A record, or a field with keys to type: the line goes to the prompt.
 		else if (kind === 'fill') fill(argv);
 		else emit(argv);
@@ -624,64 +575,36 @@
 	}
 
 	/**
-	 * Stand the ring's buttons around the tap (da-7q3ka): `ringOf` gives the
-	 * spots from their measured sizes and the room the box leaves on each
-	 * side of the tap — at an edge `end` is moved inside the box, its hit
-	 * target reaching the box's edge so it is still under the thumb
-	 * (da-8mk9p, da-hygvc). The ring reaches every row the box shows
-	 * before anything scrolls (da-bstjx) — vividn: «Prioritize using visible
-	 * space over having to scroll»; at the left edge
-	 * `< Back` steps onto another row (da-u9nfv). When the
-	 * centre itself cannot fit sideways, or a button runs past the right
-	 * edge, the box scrolls its centre under the tap as far as it can. Two
-	 * pixels short of the box, or a border on its edge is clipped. Measured
-	 * in the box's own offsets, never on the screen, since the bar may still
-	 * be scrolled to where the fields were; and again whenever the box or a
-	 * button is resized — `+ Add state` becoming its input is one — or a
-	 * button comes or goes, as a state learned while the ring is open does.
+	 * Stand the states around `end` (da-vg8vr): `ringOf` gives the spots
+	 * from their measured sizes alone, and the box is cropped to them, with
+	 * `end`'s place in it the `anchor` the pane centres. Measured again
+	 * whenever a button is resized or comes or goes, as a state learned
+	 * while they are open does.
 	 */
-	function around(box: HTMLElement, at: { x: number; y: number }) {
-		const GAP = 6;
-		// Unrounded: `offsetWidth` rounds down, and a ring at the box's edge
-		// then loses its last pixel.
+	function around(box: HTMLElement) {
+		// Unrounded: `offsetWidth` rounds down.
 		const size = (el: HTMLElement) => el.getBoundingClientRect();
 		const place = () => {
 			const spots = [...box.children] as HTMLElement[];
-			const one = (role: string) => spots.find((s) => s.dataset.role === role);
-			const [back, add, end] = [one('back')!, one('add')!, one('end')!];
+			const end = spots.find((s) => s.dataset.role === 'end')!;
 			const states = spots.filter((s) => s.dataset.role === 'state');
 			const h = Math.max(...spots.map((s) => size(s).height));
-			const ring = ringOf(
-				{
-					back: size(back).width,
-					add: size(add).width,
-					end: size(end).width,
-					states: states.map((s) => size(s).width)
-				},
-				h,
-				{
-					up: at.y - 2,
-					down: box.clientHeight - at.y - 2,
-					left: at.x - 2,
-					right: box.clientWidth - at.x - 2
-				},
-				GAP
-			);
-			const placed: [HTMLElement, Spot][] = [
-				[back, ring.back],
-				[add, ring.add],
-				[end, ring.end],
-				...states.map((s, i): [HTMLElement, Spot] => [s, ring.states[i]])
-			];
-			for (const [el, p] of placed) {
-				el.style.left = `${at.x + p.x - size(el).width / 2}px`;
-				el.style.top = `${at.y + p.y - size(el).height / 2}px`;
+			const ring = ringOf({ end: size(end).width, states: states.map((s) => size(s).width) }, h, GAP);
+			const placed: [HTMLElement, Spot][] = [[end, ring.end], ...states.map((s, i): [HTMLElement, Spot] => [s, ring.states[i]])];
+			const edges = placed.map(([el, p]) => ({ el, left: p.x - size(el).width / 2, top: p.y - size(el).height / 2 }));
+			const [left, top] = [Math.min(...edges.map((e) => e.left)), Math.min(...edges.map((e) => e.top))];
+			for (const e of edges) {
+				e.el.style.left = `${e.left - left}px`;
+				e.el.style.top = `${e.top - top}px`;
 			}
-			box.scrollLeft = ring.end.x;
+			extent = {
+				w: Math.max(...edges.map((e) => e.left + size(e.el).width)) - left,
+				h: Math.max(...edges.map((e) => e.top + size(e.el).height)) - top
+			};
+			anchor = { x: -left, y: -top };
 		};
 		const observer = new ResizeObserver(place);
 		const watch = () => {
-			observer.observe(box);
 			for (const spot of box.children) observer.observe(spot);
 			// Placed now as well, not a frame later: the buttons are in the
 			// DOM when an action runs, and measuring them lays them out.
@@ -690,10 +613,68 @@
 		const children = new MutationObserver(watch);
 		children.observe(box, { childList: true });
 		watch();
+		return { destroy: () => (observer.disconnect(), children.disconnect()) };
+	}
+
+	/**
+	 * `pan` kept to what the states need (da-vg8vr) — vividn: «allow panning
+	 * in 2 dimensions if states run off the sides»: along an axis the states
+	 * fit, none; along one they overrun, as far as brings their far edge to
+	 * the room's and no further, like a scroll. The room starts below the
+	 * corners, a gap past them, so a pan can always bring the top row out
+	 * from under them, where a tap would press the corner instead.
+	 */
+	function kept(x: number, y: number) {
+		const axis = (at: number, from: number, to: number, start: number, size: number) =>
+			Math.min(Math.max(at, Math.min(0, to - start - size)), Math.max(0, from - start));
+		const corners = [...(picker?.querySelectorAll<HTMLElement>(':scope > .corner') ?? [])];
+		const lid = Math.max(0, ...corners.map((c) => c.offsetTop + c.offsetHeight + GAP));
 		return {
-			update: (next: { x: number; y: number }) => ((at = next), watch()),
-			destroy: () => (observer.disconnect(), children.disconnect())
+			x: axis(x, 0, paneW, paneW / 2 - anchor.x, extent.w),
+			y: axis(y, lid, paneH, paneH / 2 - anchor.y, extent.h)
 		};
+	}
+
+	/**
+	 * A drag on the states pans them: a press that travels past the slop,
+	 * even one that starts on a button, and its click is swallowed; one that
+	 * does not is a press of whatever it is on.
+	 */
+	let drag: { id: number; x: number; y: number; from: { x: number; y: number }; moving: boolean } | null = null;
+	/** A drag just ended: the click it ends in is not a press. */
+	let dragged = false;
+	function down(e: PointerEvent) {
+		// Any press ends a swallow still pending. A drag's click follows its
+		// pointerup at once, and a touch that travelled makes none, so only a
+		// second pen or mouse pressed in between could let one through.
+		dragged = false;
+		if (e.button === 0) drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: pan, moving: false };
+	}
+	function move(e: PointerEvent) {
+		if (drag?.id !== e.pointerId) return;
+		const [dx, dy] = [e.clientX - drag.x, e.clientY - drag.y];
+		if (!drag.moving && Math.hypot(dx, dy) <= CLICK_SLOP) return;
+		if (!drag.moving) (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		drag.moving = true;
+		pan = kept(drag.from.x + dx, drag.from.y + dy);
+	}
+	function up(e: PointerEvent) {
+		if (drag?.id !== e.pointerId) return;
+		dragged = drag.moving;
+		drag = null;
+	}
+	function swallow(e: MouseEvent) {
+		if (!dragged) return;
+		dragged = false;
+		e.preventDefault();
+		e.stopPropagation();
+	}
+
+	/** Escape closes the states. It marks the key taken, so the command line does not ALSO peel its pills (da-al892). */
+	function onWindowKeyDown(e: KeyboardEvent) {
+		if (e.key !== 'Escape' || e.defaultPrevented || picked === null) return;
+		e.preventDefault();
+		back();
 	}
 
 	/**
@@ -708,21 +689,6 @@
 		const button = buttons.find((b) => b.field === el.dataset.field);
 		if (button) hold(button);
 	};
-
-	function onWindowKeyDown(event: KeyboardEvent) {
-		if (event.key !== 'Escape') return;
-		// Innermost first: the input the `+` became, then the state list
-		// itself — Escape is its Back. The modal has its own Escape, and
-		// the dialog swallows it.
-		// It marks the key taken, so the command line does not ALSO peel
-		// its pills (PromptBar.svelte, da-al892).
-		if (addingState) {
-			addingState = false;
-			newState = '';
-		} else if (picked !== null) back();
-		else return;
-		event.preventDefault();
-	}
 </script>
 
 <svelte:window onkeydown={onWindowKeyDown} />
@@ -732,8 +698,9 @@
 	items={entries}
 	{arrange}
 	maxRows={Infinity}
-	center={!picture && !picking && buttons.length > 0}
+	center={!picture && buttons.length > 0}
 	key={keyOf}
+	class={picking ? 'picking' : ''}
 	bind:bar
 	onpointerenter={() => (over = true)}
 	onpointerleave={() => (over = false)}
@@ -744,95 +711,7 @@
 		<button class="widget" style="--line: transparent" tabindex="-1">probe</button>
 	{/snippet}
 	{#snippet children({ item })}
-		{#if item.kind === 'ring' && picking}
-			{@const chosen = picking}
-			{@const states = statesOf(chosen.shape)}
-			<div class="ring" use:around={tap}>
-				<div class="spot" data-role="back">
-					<button class="nav back" use:act={'show'} data-back {disabled} title="back to the fields" onclick={back}>
-						&lt; Back
-					</button>
-				</div>
-				{#if chosen.neverFalse}
-					<!-- A field that is never off (da-cwieh) leaves a GAP on the tap:
-					     `end` drawn and hidden, so it is `end`'s own width and every
-					     other button stands where it would beside it. -->
-					<div class="spot gap" data-role="end" aria-hidden="true">
-						<!-- A line colour, or `var(--line)` voids its border and the gap is narrower than `end`. -->
-						<button class="widget states end" use:act={'run'} style="--line: transparent" tabindex="-1" disabled
-							>end</button
-						>
-					</div>
-				{:else}
-					{@const color = chosen.stateColors.false ?? chosen.color}
-					<!-- `false` is off: `end`, on the tap itself on every switch field
-					     (da-cwieh), and hollow like the two ends — the one state a
-					     thumb reaches without moving. -->
-					<div class="spot" data-role="end">
-						<button
-							class="widget states end"
-							use:act={'run'}
-							style={vars({ fill: null, line: color, text: color, label: 'end' })}
-							{disabled}
-							data-state="false"
-							title={shellJoin(['end', chosen.field])}
-							onclick={() => emit(['end', chosen.field])}
-						>
-							end
-						</button>
-					</div>
-				{/if}
-				{#each states.filter((s) => s !== 'false') as state (state)}
-					{@const look = stateLook(chosen, state)}
-					<div class="spot" data-role="state">
-						<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type. -->
-						<button
-							class="widget states"
-							use:act={typesKeys('switch', chosen) ? 'fill' : 'run'}
-							class:on={chosen.current === state}
-							style={vars(look)}
-							{disabled}
-							data-state={state}
-							title={shellJoin(pressArgv(chosen, state))}
-							onclick={() => log(pressArgv(chosen, state), chosen)}
-						>
-							{state}
-						</button>
-					</div>
-				{/each}
-				<div class="spot" data-role="add">
-					{#if addingState}
-						<form
-							onsubmit={(e) => {
-								e.preventDefault();
-								addState(chosen);
-							}}
-						>
-							<!-- svelte-ignore a11y_autofocus -->
-							<input
-								class="new-state"
-								bind:value={newState}
-								placeholder="state"
-								aria-label="a new state for {chosen.field}"
-								spellcheck="false"
-								autofocus
-							/>
-						</form>
-					{:else}
-						<button
-							class="nav add-state"
-							use:act={'show'}
-							data-add-state
-							{disabled}
-							title="add a state to {chosen.field}"
-							onclick={() => (addingState = true)}
-						>
-							+ Add state
-						</button>
-					{/if}
-				</div>
-			</div>
-		{:else if item.kind === 'hint'}
+		{#if item.kind === 'hint'}
 			<!-- No direction word here on purpose: this hint said "below" while the
 			     bar was at the top of the page (da-nz29), and da-1x72 moved the
 			     bar to the bottom without the copy following. Name the thing, not
@@ -868,7 +747,7 @@
 						style={vars(look) + tallOf(button)}
 						{disabled}
 						title={titleOf(button)}
-						onclick={(e) => press(button, e.currentTarget, e)}>{button.field}</button
+						onclick={() => press(button)}>{button.field}</button
 					>
 				{:else}
 					<button
@@ -883,11 +762,124 @@
 						data-ignored={button.ignored ? '' : undefined}
 						data-pilled={$fieldPill === button.field ? '' : undefined}
 						title={titleOf(button)}
-						onclick={(e) => press(button, e.currentTarget, e)}
+						onclick={() => press(button)}
 					>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
 				{/if}
 			</div>
 		{/if}
+	{/snippet}
+	{#snippet overlay()}
+	{#if picking}
+		{@const chosen = picking}
+		{@const states = statesOf(chosen.shape)}
+		<!-- The fields' place, theirs hidden under it (da-vg8vr): a drag pans the
+		     states, the two corners stay. -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="picker"
+			bind:this={picker}
+			bind:clientWidth={paneW}
+			bind:clientHeight={paneH}
+			onpointerdown={down}
+			onpointermove={move}
+			onpointerup={up}
+			onpointercancel={up}
+			onclickcapture={swallow}
+		>
+			<div class="corner back" data-role="back">
+				<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={back}>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg>
+				</button>
+			</div>
+			<div
+				class="ring"
+				use:around
+				style:left="{paneW / 2 - anchor.x + pan.x}px"
+				style:top="{paneH / 2 - anchor.y + pan.y}px"
+				style:width="{extent.w}px"
+				style:height="{extent.h}px"
+			>
+				{#if chosen.neverFalse}
+					<!-- A field that is never off (da-cwieh) leaves a GAP at the centre:
+					     `end` drawn and hidden, so it is `end`'s own width and every
+					     other button stands where it would beside it. -->
+					<div class="spot gap" data-role="end" aria-hidden="true">
+						<!-- A line colour, or `var(--line)` voids its border and the gap is narrower than `end`. -->
+						<button class="widget states end" use:act={'run'} style="--line: transparent" tabindex="-1" disabled
+							>end</button
+						>
+					</div>
+				{:else}
+					{@const color = chosen.stateColors.false ?? chosen.color}
+					<!-- `false` is off: `end`, at the centre on every switch field
+					     (da-cwieh), and hollow like the two corners. -->
+					<div class="spot" data-role="end">
+						<button
+							class="widget states end"
+							use:act={'run'}
+							style={vars({ fill: null, line: color, text: color, label: 'end' })}
+							{disabled}
+							data-state="false"
+							title={shellJoin(['end', chosen.field])}
+							onclick={() => emit(['end', chosen.field])}
+						>
+							end
+						</button>
+					</div>
+				{/if}
+				{#each states.filter((s) => s !== 'false') as state (state)}
+					{@const look = stateLook(chosen, state)}
+					<div class="spot" data-role="state">
+						<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type. -->
+						<button
+							class="widget states"
+							use:act={typesKeys('switch', chosen) ? 'fill' : 'run'}
+							class:on={chosen.current === state}
+							style={vars(look)}
+							{disabled}
+							data-state={state}
+							title={shellJoin(pressArgv(chosen, state))}
+							onclick={() => log(pressArgv(chosen, state), chosen)}
+						>
+							{state}
+						</button>
+					</div>
+				{/each}
+			</div>
+			<div class="corner add" data-role="add">
+				{#if addingState}
+					<form
+						onsubmit={(e) => {
+							e.preventDefault();
+							addState(chosen);
+						}}
+					>
+						<!-- svelte-ignore a11y_autofocus -->
+						<input
+							class="new-state"
+							bind:value={newState}
+							placeholder="state"
+							aria-label="a new state for {chosen.field}"
+							spellcheck="false"
+							autofocus
+							onkeydown={(e) => e.key === 'Escape' && (e.preventDefault(), (addingState = false), (newState = ''))}
+						/>
+					</form>
+				{:else}
+					<button
+						class="nav add-state"
+						use:act={'show'}
+						data-add-state
+						{disabled}
+						title="add a state to {chosen.field}"
+						onclick={() => (addingState = true)}
+					>
+						+ Add state
+					</button>
+				{/if}
+			</div>
+		</div>
+	{/if}
 	{/snippet}
 </ButtonRows>
 {#if picture && zoomedIn}
@@ -1105,7 +1097,7 @@
 		cursor: default;
 	}
 
-	/* `< Back` and `+ Add state`: the two sides of the ring, and neither of
+	/* The back icon and `+ Add state`: the two ends of the states, and neither of
 	   them a state — so they are drawn hollow in the app's own ink rather
 	   than filled in any field's colour, and cannot be mistaken for
 	   something to log (da-7q3ka). */
@@ -1127,42 +1119,69 @@
 		width: 7rem;
 	}
 
-	/* A field's states over the whole bar (da-7q3ka), each button placed
-	   by `around` — nothing here decides where. Out of the bar's flex
-	   layout and over its box (`inset: 0` against the bar's
-	   `position: relative`), which is all the bar holds while it is open. */
-	.ring {
-		position: absolute;
-		inset: 0;
-		overflow-x: auto;
-		overflow-y: hidden;
+	/* While a field's states are up, the bar's rows are hidden under them,
+	   and the bar is no containing block, so the states fill the widget
+	   whatever the bar is scrolled to — and the scroll is kept for Back. */
+	.fields :global(.bar.picking) {
+		position: static;
 	}
 
+	.fields :global(.bar.picking > .section) {
+		visibility: hidden;
+	}
+
+	/* A field's states in the fields' place (da-vg8vr): the box of states
+	   placed by `around` and panned by a drag, the two corners over it. */
+	.picker {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
+		/* A finger's drag pans the states, never the page. */
+		touch-action: none;
+	}
+
+	.ring {
+		position: absolute;
+	}
+
+	.corner {
+		position: absolute;
+		top: 0.25rem;
+		z-index: 1;
+	}
+
+	.corner.back {
+		left: 0.25rem;
+	}
+
+	.corner.add {
+		right: 0.25rem;
+	}
+
+	/* The back icon: no wider than it is tall. */
+	.back .nav {
+		display: flex;
+		align-items: center;
+		padding: 0.35rem 0.5rem;
+	}
+
+	.back svg {
+		width: 1em;
+		height: 1em;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+	}
+
+	/* A flex box, so it is exactly its button's size and nothing of a line box. */
 	.spot {
 		position: absolute;
-		/* Near the box's right edge a spot would otherwise shrink to what
-		   is left of it, and `+ Add state` wrap. */
+		display: flex;
 		white-space: nowrap;
 	}
 
 	.spot.gap {
 		visibility: hidden;
-	}
-
-	/* `around` stands every spot two pixels inside the box, so a tap in
-	   those two pixels, on a field button still, had `end` moved off it and
-	   the ring's own gap under it (da-hygvc). Its hit target reaches them:
-	   two pixels past its border, which is the 3px double of a button that
-	   runs, since the box an `::after` is placed in is inside the border. */
-	.end {
-		position: relative;
-		overflow: visible;
-	}
-
-	.end::after {
-		content: '';
-		position: absolute;
-		inset: calc(-3px - 2px);
 	}
 
 	/* The state the field is in now: solid, as the field's own chip draws

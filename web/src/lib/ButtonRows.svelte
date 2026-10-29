@@ -60,6 +60,8 @@
 		onpointerleave?: (e: PointerEvent) => void;
 		/** One of the widget's own buttons, drawn hidden: what the rows are counted by. */
 		probe?: Snippet;
+		/** Drawn inside the bar after its buttons, out of their rows: the fields widget's states. */
+		overlay?: Snippet;
 		children?: Snippet<[{ item: T }]>;
 	}
 
@@ -76,6 +78,7 @@
 		onpointerenter,
 		onpointerleave,
 		probe,
+		overlay,
 		children
 	}: Props = $props();
 
@@ -123,12 +126,13 @@
 			{/each}
 		</div>
 	{/each}
+	{@render overlay?.()}
 </div>
 
 <style>
 	.bar {
-		/* What an item laid over the whole box is placed in — the fields
-		   widget's states (da-7q3ka). */
+		/* What an item placed over the whole box is placed in — the fields
+		   widget's buttons standing where their fields are drawn. */
 		position: relative;
 		flex: 1;
 		/* A flex item will not shrink under its content unless told to, and

@@ -13,12 +13,12 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, FIXTURE, MOOD, type, untilFieldStyle } from './support/fields.mjs';
 
-/** Every button the bar draws, by what it is, with its top border's style. */
-const outlines = (page) =>
-	page.locator('.bar').evaluate((el) =>
+/** Every button under `selector` — the bar, or the states' window — by what it is, with its top border's style. */
+const outlines = (page, selector = '.bar') =>
+	page.locator(selector).evaluate((el) =>
 		Object.fromEntries(
 			[...el.querySelectorAll('button')].map((b) => [
-				b.dataset.field ?? (b.dataset.state ? `=${b.dataset.state}` : b.textContent.trim()),
+				b.dataset.field ?? (b.dataset.state ? `=${b.dataset.state}` : b.dataset.back !== undefined ? 'back' : b.textContent.trim()),
 				getComputedStyle(b).borderTopStyle
 			])
 		)
@@ -70,11 +70,11 @@ describe('the outline says what a tap does', () => {
 			// The state list: every state runs; Back and + do not.
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-back]').waitFor();
-			const list = await outlines(page);
+			const list = await outlines(page, '.bar .picker');
 			const states = Object.keys(list).filter((k) => k.startsWith('='));
 			assert.ok(states.length > 0, 'no state drawn');
 			assert.deepEqual(list, {
-				'< Back': 'solid',
+				back: 'solid',
 				...Object.fromEntries(states.map((k) => [k, 'double'])),
 				'+ Add state': 'solid'
 			});
@@ -112,8 +112,19 @@ describe('the outline says what a tap does', () => {
 			assert.ok(apart(block.gap, block.fill) > 64, `work: gap ${block.gap} on fill ${block.fill}`);
 
 			await page.locator('.bar [data-field="mood"]').click();
-			const now = page.locator('.bar .states.on');
+			const now = page.locator('.bar .picker .states.on');
 			await now.waitFor();
+			// Panned into the pane first: around `end` at a short pane's centre
+			// it may stand past an edge (da-vg8vr), and the pixels are read off
+			// the screen.
+			const [pane, b] = [await page.locator('.bar .picker').boundingBox(), await now.boundingBox()];
+			const into = (lo, size, at, wide) => Math.max(lo + 4 - at, Math.min(0, lo + size - 4 - (at + wide)));
+			const [dx, dy] = [into(pane.x, pane.width, b.x, b.width), into(pane.y, pane.height, b.y, b.height)];
+			const end = await page.locator('.bar .picker [data-state="false"]').boundingBox();
+			await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
+			await page.mouse.down();
+			for (let i = 1; i <= 4; i++) await page.mouse.move(end.x + end.width / 2 + (dx * i) / 4, end.y + end.height / 2 + (dy * i) / 4);
+			await page.mouse.up();
 			assert.equal(await now.evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
 			const state = await drawn(page, now);
 			assert.ok(apart(state.gap, state.fill) > 64, `mood's state: gap ${state.gap} on fill ${state.fill}`);

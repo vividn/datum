@@ -444,9 +444,10 @@ rule is decided but not yet everywhere, it names the bead.
 25. **Everything passes through the command line.** A tap composes a visible argv, and the echo
     shows what ran. A composed line finishes without a phone's keyboard, through the Send
     button (da-1pzwl).
-26. **Drill down, then `< Back`.** A multi-state switch opens its states (radially round the
-    tap, da-7q3ka), and a command with subcommands opens those (da-803mk). `< Back` returns,
-    and so does Escape.
+26. **Drill down, then back.** A multi-state switch opens its states in the fields' place, round
+    `end` at the widget's centre (da-7q3ka, da-vg8vr), and a command with subcommands opens those
+    (da-803mk). Back returns (the switch's is a small icon in the top left corner), and so does
+    Escape.
 27. **Escape peels one layer, innermost first:** Help armed (stopped in the capture phase,
     `help.ts`), then an open dialog, a menu or a state list, the log, and last the input
     (unlocked pills, then locked pills, then the text: `peel` in `bar.ts`). The precedence is ONE

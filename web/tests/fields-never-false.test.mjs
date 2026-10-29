@@ -3,8 +3,9 @@
 // cursor when it opens is "end", unles the false state is somehow removed
 // from the field … For example environment is never false. So if false is
 // disabled, then don't put any button right under that position, but
-// rather a gap. "< Back" should always be immediately to the left of this».
-// Where the states stand around it is `fields-cluster.test.mjs`.
+// rather a gap». The centre is the widget's now, and the back icon is in
+// its top left corner (da-vg8vr); where the states stand around the
+// centre is `fields-cluster.test.mjs`.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,43 +16,36 @@ import { FIELD_FORM, leaveField, openField } from './support/field.mjs';
 
 const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 const BAR = 'section[data-pane="bar"] .bar';
-const GAP = 6;
-/** Fields around the two alphabetically, so each stands mid-row and can be scrolled to the middle. */
+/** Fields around the two alphabetically. */
 const OTHERS = 'alfa bravo charlie delta echo foxtrot golf hotel india juliet kilo lima november oscar papa'.split(' ');
 
 /**
- * Scroll the bar until `field` is at its middle, press it there, and read what is under the press, `< Back`
- * and the centre's box (`end`, or the gap); then Back.
+ * Press `field`, and read what is at the widget's centre, the back icon and
+ * the centre's box (`end`, or the gap); then Back.
  */
 async function tap(page, field) {
 	await page.locator(`${BAR} [data-field="${field}"]`).waitFor();
-	const at = await page.locator(BAR).evaluate((bar, field) => {
-		const box = bar.getBoundingClientRect();
-		const button = () => bar.querySelector(`[data-field="${field}"]`);
-		const m = button().getBoundingClientRect();
-		bar.scrollLeft += m.left + m.width / 2 - (box.left + box.width / 2);
-		const r = button().getBoundingClientRect();
-		button().click();
-		return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-	}, field);
+	await page.locator(`${BAR} [data-field="${field}"]`).dispatchEvent('click');
 	await page.locator(`${BAR} [data-add-state]`).waitFor();
-	const seen = await page.locator(BAR).evaluate((bar, at) => {
+	const seen = await page.locator(`${BAR} .picker`).evaluate((pane) => {
 		const box = (el) => {
 			const r = el.getBoundingClientRect();
-			return { left: r.left, right: r.right, y: r.top + r.height / 2, x: r.left + r.width / 2 };
+			return { left: r.left, right: r.right, top: r.top, y: r.top + r.height / 2, x: r.left + r.width / 2 };
 		};
+		const at = box(pane);
 		const under = document.elementFromPoint(at.x, at.y)?.closest('button');
 		return {
+			at,
 			under: under ? (under.dataset.state ?? under.textContent.trim()) : null,
-			centre: box(bar.querySelector('.ring [data-role="end"]')),
-			back: box(bar.querySelector('.ring [data-back]'))
+			centre: box(pane.querySelector('[data-role="end"]')),
+			back: box(pane.querySelector('[data-back]'))
 		};
-	}, at);
+	});
 	await page.locator(`${BAR} [data-back]`).dispatchEvent('click');
-	return { at, ...seen };
+	return seen;
 }
 
-describe('a switch field opens with `end` under the tap, a never-false one with a gap', () => {
+describe('a switch field opens with `end` at the centre, a never-false one with a gap', () => {
 	before(startApp);
 	after(stopApp);
 
@@ -72,15 +66,14 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					await atRows(page, 'bar', 3);
 
 					const mood = await tap(page, 'mood');
-					assert.equal(mood.under, 'false', `under the tap on mood: ${mood.under}`);
-					assert.ok(Math.abs(mood.centre.x - mood.at.x) <= 1, 'end is not on the tap');
+					assert.equal(mood.under, 'false', `at the centre on mood: ${mood.under}`);
+					assert.ok(Math.abs(mood.centre.x - mood.at.x) <= 1, 'end is not at the centre');
 
 					const env = await tap(page, 'env');
-					assert.equal(env.under, null, `under the tap on env: ${env.under}`);
-					assert.ok(Math.abs(env.centre.x - env.at.x) <= 1, 'the gap is not on the tap');
-					// `< Back` immediately left of the gap, on its line.
-					assert.ok(Math.abs(env.back.right + GAP - env.centre.left) <= 1, `< Back ends at ${env.back.right}, the gap starts at ${env.centre.left}`);
-					assert.ok(Math.abs(env.back.y - env.centre.y) <= 1, '< Back is off the gap’s line');
+					assert.equal(env.under, null, `at the centre on env: ${env.under}`);
+					assert.ok(Math.abs(env.centre.x - env.at.x) <= 1, 'the gap is not at the centre');
+					// The back icon in the top left corner, whatever is at the centre (da-vg8vr).
+					assert.ok(env.back.left - env.at.left <= 8 && env.back.top - env.at.top <= 8, `back at ${env.back.left},${env.back.top}`);
 					assert.ok(Math.abs(env.centre.right - env.centre.left - (mood.centre.right - mood.centre.left)) <= 1, 'the gap is not end’s width');
 
 					// Basics says so, off first among its states and not one of them, and turns it back on (da-i9upr).

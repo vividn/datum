@@ -87,7 +87,9 @@ describe('a field with a required key', () => {
 			const good = page.locator('.bar button[data-state="good"]');
 			assert.equal(await good.getAttribute('data-act'), 'fill');
 			const counter = await changeCounter(page);
-			await good.click();
+			// It may stand past a short pane's edge, where a drag pans it in
+			// (da-vg8vr): what a press does is the question here.
+			await good.dispatchEvent('click');
 			await lineIs(page, 'switch mood good ');
 			await app.idle();
 			assert.equal(await changeCounter(page), counter, 'the state wrote');

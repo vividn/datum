@@ -497,7 +497,7 @@ export function pressArgv(button: FieldButton, state?: string): string[] {
  *     own chip draws it (`lookOf`'s switch case), and bold (the widget's);
  *   every other state — a LIGHT TINT, a quarter of its own colour, in its
  *     own outline, under the app's ink;
- *   `< Back`, `+ Add state` and `end` — hollow, and not drawn here.
+ *   the back icon, `+ Add state` and `end` — hollow, and not drawn here.
  */
 export function stateLook(button: FieldButton, state: string): Look {
 	if (button.current === state) return lookOf(button, 'state');
@@ -511,111 +511,70 @@ export interface Spot {
 	y: number;
 }
 
-/** Where each button of an open field stands around the tap (`ringOf`). */
+/** Where each button of an open field stands around `end` (`ringOf`). */
 export interface Ring {
-	back: Spot;
-	add: Spot;
 	end: Spot;
 	states: Spot[];
 }
 
-/** How far the box reaches from the tap on each side, in pixels. */
-export interface Room {
-	up: number;
-	down: number;
-	left: number;
-	right: number;
-}
-
 /**
- * A switch field's states RADIALLY around the tap (da-7q3ka), RANKED BY
- * DISTANCE — vividn: «make sure that the top ranked states are radially
- * close to the center». The rank is the spec's `allowed_states` order,
- * set among its states in the setup widget and never by use, so a state is always the same
- * place relative to the thumb, like a pie menu.
+ * A switch field's states around `end`, PLACED BY THE FIELD ALONE
+ * (da-vg8vr) — vividn: «break them out of rows entirely … The goal here
+ * should be to reduce thumb travel. So packing things efficiently as
+ * close as possible», and then «keep the states in a consistent place
+ * inside of the fields widget. I still want them to be arranged radially,
+ * with end in the center». The rank is the spec's `allowed_states` order,
+ * set in the setup widget and never by use, so a state is always the same
+ * place, like a pie menu (da-7q3ka).
  *
- * The centre is the tapped field's own position, and it is `end`'s on
- * every switch field (da-cwieh) — vividn: «the button that should be
- * immediately under the cursor when it opens is "end"». A field whose
- * spec says it is `never_false` leaves a GAP there instead, `end`'s own
- * width, which is the widget's business: placed here as `end`, so every
- * other button stands where it would beside a drawn one. `< Back` stands
- * just left of the centre, on its line. Then each state in rank order
- * takes the nearest free spot — the least distance from the centre, and
- * among equals the first clockwise from twelve o'clock — where it clears
- * every button already placed by `gap`. Spots are every 2px across and
- * every half row up and down. `+ Add state` comes last, on the centre's
- * line past the rightmost button — «to the far right of all the states,
- * rather than taking up a premium spot close to the thumb».
+ * `end` is the centre (da-cwieh); on a field whose spec says it is
+ * `never_false` the widget draws a GAP of its width there instead, so
+ * every other button stands where it would beside a drawn one. Then each
+ * state in rank order takes the free spot NEAREST THE CENTRE: spots every
+ * 2px in both directions, no rows, nearest by the distance from the
+ * centre to the nearest point of the button, since a long button is
+ * tapped anywhere on it; among equals the nearer centre, then the first
+ * clockwise from twelve o'clock. A spot is free where the button clears
+ * every one already placed by `gap`.
  *
- * At the box's edges the ring is CAPPED, never shifted (da-8mk9p) — vividn:
- * «still radial, just capped on one side and spreading out further in the
- * non capped direction, but the center should still be end». A spot is
- * one whose button lies inside `room`, so the states spread along the
- * free sides. The centre moves only when it would itself run past the box
- * — as far as it must, the left edge winning in a box narrower than it,
- * which the box then scrolls. At the left edge a `< Back` that does not
- * fit beside it takes the nearest free spot inside instead, left of the
- * centre where one is, before any state (da-u9nfv) — vividn: «yes shift
- * those into another row if needed». A button no spot inside `room`
- * holds, and a `+ Add state` past the right edge, go past it, where the
- * box scrolls, rather than move anything — but first a second pass
- * (da-65210): a state past the edge takes the nearest row of states whose
- * room either side adds up to it, the row slid left to open that room at
- * the right edge, so a row's room is not lost by being split in two.
+ * Nothing here knows the widget's box: the same field draws the same
+ * picture whatever the box, which pans where the states run past it.
  *
  * `w` is each button's width, `h` a button's height; every spot returned
- * is from the tap.
+ * is from the centre.
  */
-export function ringOf(
-	w: { back: number; add: number; end: number; states: number[] },
-	h: number,
-	room: Room,
-	gap: number
-): Ring {
-	const half = (h + gap) / 2;
+export function ringOf(w: { end: number; states: number[] }, h: number, gap: number): Ring {
 	type Placed = Spot & { w: number };
-	const placed: Placed[] = [];
-	const apart = (a: Placed, b: Placed) => Math.abs(a.x - b.x) >= (a.w + b.w) / 2 + gap || Math.abs(a.y - b.y) >= h + gap;
-	const clear = (x: number, y: number, wide: number) => placed.every((p) => apart(p, { x, y, w: wide }));
-	const x0 = Math.max(w.end / 2 - room.left, Math.min(0, room.right - w.end / 2));
-	const y0 = Math.max(h / 2 - room.up, Math.min(0, room.down - h / 2));
-	placed.push({ x: x0, y: y0, w: w.end });
-	const cols = Math.ceil([w.end, w.back, ...w.states].reduce((a, b) => a + b + gap, 0) / 2);
-	const turn = (p: Spot) => (Math.atan2(p.x - x0, y0 - p.y) + 2 * Math.PI) % (2 * Math.PI);
-	const far = (p: Spot) => Math.hypot(p.x - x0, p.y - y0);
-	const spots: Spot[] = [];
-	const rows = (reach: number) => Math.max(0, Math.floor((reach - h / 2) / half));
-	for (let r = -rows(room.up + y0); r <= rows(room.down - y0); r++)
-		for (let c = -cols; c <= cols; c++) spots.push({ x: x0 + 2 * c, y: y0 + r * half });
-	spots.sort((a, b) => far(a) - far(b) || turn(a) - turn(b));
-	const inside = (p: Spot, wide: number) => p.x - wide / 2 >= -room.left && p.x + wide / 2 <= room.right;
-	const put = (p: Spot, wide: number) => (placed.push({ ...p, w: wide }), p);
-	const take = (wide: number, mine: (p: Spot) => boolean = () => true) => {
-		const fits = (p: Spot) => p.x - wide / 2 >= -room.left && clear(p.x, p.y, wide);
-		return put(spots.find((p) => fits(p) && inside(p, wide) && mine(p)) ?? spots.find((p) => fits(p) && inside(p, wide)) ?? spots.find(fits)!, wide);
+	const end: Placed = { x: 0, y: 0, w: w.end };
+	const placed = [end];
+	const near = (p: Spot, wide: number) => Math.hypot(Math.max(0, Math.abs(p.x) - wide / 2), Math.max(0, Math.abs(p.y) - h / 2));
+	const turn = (p: Spot) => (Math.atan2(p.x, -p.y) + 2 * Math.PI) % (2 * Math.PI);
+	// The nearest free spot, row by row out from the centre's: along a row
+	// both distances grow with |x|, so a row's best is its free spot nearest
+	// x = 0 on either side, and no row further than the best found holds a
+	// nearer one.
+	const take = (wide: number): Placed => {
+		let best = { x: 0, y: 0, d: Infinity, r: 0, t: 0 };
+		for (let j = 0; Math.max(0, 2 * j - h / 2) <= best.d; j++)
+			for (const y of j === 0 ? [0] : [-2 * j, 2 * j]) {
+				const row = placed
+					.filter((q) => Math.abs(y - q.y) < h + gap)
+					.map((q) => [q.x - (q.w + wide) / 2 - gap, q.x + (q.w + wide) / 2 + gap]);
+				const blocked = (x: number) => row.find(([a, b]) => a < x && x < b);
+				let [right, left] = [0, 0];
+				for (let hit; (hit = blocked(right)); ) right = 2 * Math.ceil(hit[1] / 2);
+				for (let hit; (hit = blocked(left)); ) left = 2 * Math.floor(hit[0] / 2);
+				for (const x of [right, left]) {
+					const p = { x, y, d: near({ x, y }, wide), r: Math.hypot(x, y), t: turn({ x, y }) };
+					if ((p.d - best.d || p.r - best.r || p.t - best.t) < 0) best = p;
+				}
+			}
+		return { x: best.x, y: best.y, w: wide };
 	};
-	const line = { x: x0 - (w.end / 2 + gap + w.back / 2), y: y0 };
-	const back = (inside(line, w.back) && put(line, w.back)) || take(w.back, (p) => p.x < x0);
-	w.states.forEach((wide) => take(wide));
-	// `end` and `< Back` are placed first, and their rows never slide.
-	const ys = [...new Set(placed.slice(2).map((p) => p.y))].sort((a, b) => Math.abs(a - y0) - Math.abs(b - y0));
-	for (const p of placed.slice(2).filter((p) => p.x + p.w / 2 > room.right))
-		ys.some((y) => {
-			const row = placed.filter((q) => q !== p && q.y === y);
-			if (!row.length || row.some((q) => placed.indexOf(q) < 2)) return false;
-			const by = Math.max(0, p.w + gap - room.right + Math.max(...row.map((q) => q.x + q.w / 2)));
-			if (Math.min(...row.map((q) => q.x - q.w / 2)) - by < -room.left) return false;
-			const moved = [...row, p];
-			const was = moved.map((q) => ({ ...q }));
-			row.forEach((q) => (q.x -= by));
-			Object.assign(p, { x: room.right - p.w / 2, y });
-			if (moved.every((m) => placed.every((q) => q === m || apart(q, m)))) return true;
-			moved.forEach((q, i) => Object.assign(q, was[i]));
-			return false;
-		});
-	const states = placed.slice(2).map(({ x, y }) => ({ x, y }));
-	const right = Math.max(...placed.map((p) => p.x + p.w / 2));
-	const add = { x: right + gap + w.add / 2, y: y0 };
-	return { back, add, end: { x: x0, y: y0 }, states };
+	const states = w.states.map((wide) => {
+		const p = take(wide);
+		placed.push(p);
+		return { x: p.x, y: p.y };
+	});
+	return { end: { x: 0, y: 0 }, states };
 }
