@@ -1491,6 +1491,13 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 						window.__centred++;
 						return new Promise((resolve) => window.__held.push(() => resolve(previous(argv, ...rest))));
 					});
+					// A finger is down until a task after its lift, when #lib/hover.ts lets a redraw through (da-hn2w6):
+					// hover's timer, cleared by a press as hover's is, and queued behind it, its listener added after.
+					let lifting;
+					window.__down = false;
+					document.addEventListener('pointerdown', () => (clearTimeout(lifting), (window.__down = true)), true);
+					for (const type of ['pointerup', 'pointercancel'])
+						document.addEventListener(type, () => (clearTimeout(lifting), (lifting = setTimeout(() => (window.__down = false)))), true);
 				});
 				// Flicks into the past, each let come to rest, until one asks for a window as it lets go; that picture
 				// is let land, so the one on screen is off now, and the flicks go on until another is asked.
@@ -1517,8 +1524,9 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 					);
 				}
 				// In a frame the coast moves the band, the button is pressed; each frame after it is read, and the held
-				// picture let go ten frames on. Not in the first frame after the lift: a picture redraws only a task
-				// after a finger leaves it (da-hn2w6, #lib/hover.ts), and no finger is on the button that soon.
+				// picture let go ten frames on. Not before a task after the lift has run: until then hover.ts holds a
+				// redraw (da-hn2w6), and a finger cannot be on the button before it is off the picture. The lift
+				// reaching the page is not counted in frames: under load it came after the fourth (da-38x0x).
 				const frames = await page.evaluate(
 					(pane) =>
 						new Promise((resolve) => {
@@ -1539,14 +1547,14 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 							const frame = () => {
 								n++;
 								const pan = band.style.getPropertyValue('--pan');
-								if (pressed < 0 && n > 3 && pan !== was) {
+								if (pressed < 0 && !window.__down && pan !== was) {
 									pressed = n;
 									frames.push({ ...read(), button: document.querySelector(`${pane} .nowview-now`)?.textContent });
 									document.querySelector(`${pane} .nowview-now`).click();
 								} else if (pressed > 0) frames.push(read());
-								if (n - pressed === 10) window.__held.splice(0).forEach((go) => go());
+								if (pressed > 0 && n - pressed === 10) window.__held.splice(0).forEach((go) => go());
 								was = pan;
-								if (pressed > 0 && n - pressed >= 70) resolve(frames);
+								if ((pressed > 0 && n - pressed >= 70) || (pressed < 0 && n > 600)) resolve(frames);
 								else requestAnimationFrame(frame);
 							};
 							const frames = [];
@@ -1556,6 +1564,7 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 				);
 				await app.idle();
 				const [press, next, ...after] = frames;
+				assert.ok(press, 'the coast stopped before the flick’s lift reached the page');
 				assert.equal(press.button, 'now →', 'pressed mid-coast, with now off the band');
 				assert.ok(press.held > 0, 'no picture of the panned window was out when «now» was pressed');
 				// The next frame: on now, the now line at the band's end, the button gone.
