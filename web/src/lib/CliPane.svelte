@@ -199,7 +199,9 @@
 				kept = { words, result: next, at, epoch };
 				keep();
 			},
-			Math.max(0, standby.every - age)
+			// Never past setTimeout's 2^31 ms, which it runs at once: a
+			// nowview of 50 days or more wants its standby every 25 (da-wd6h5).
+			Math.min(2 ** 31 - 1, Math.max(0, standby.every - age))
 		);
 	}
 	onMount(() => () => clearTimeout(keeping));

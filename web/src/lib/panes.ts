@@ -474,11 +474,11 @@ export const NOWVIEW: PaneSpec = {
 export const NOWVIEW_STEPS = ['30s', '1m', '2m', '5m', '10m', '15m', '20m', '30m', '45m', '60m', '90m', '2h', '3h', '6h', '12h'];
 export const NOWVIEW_HISTORY = '30m';
 
-/** A step of the ladder as minutes. It reads the ladder's own spellings, no more. */
+/** A step of the ladder, or an axis label's length (`2d`, `1.5h`), as minutes. */
 export function stepMinutes(step: string): number {
-	const m = /^(\d+(?:\.\d+)?)\s*([smh])?$/.exec(step);
+	const m = /^(\d+(?:\.\d+)?)\s*([smhd])?$/.exec(step);
 	if (!m) return NaN;
-	return Number(m[1]) * (m[2] === 'h' ? 60 : m[2] === 's' ? 1 / 60 : 1);
+	return Number(m[1]) * ({ s: 1 / 60, h: 60, d: 1440 }[m[2] as 's' | 'h' | 'd'] ?? 1);
 }
 
 /**
@@ -494,45 +494,40 @@ export function stepMinutes(step: string): number {
  * step it started from — a zoom is not a ratchet, and the re-ask a
  * quarter-turn of the fingers would cost is not made.
  *
- * Past either end it stays at that end: there is no snapshot on the ladder
- * to pinch into (da-hklaz).
+ * Past either end it is the scaled window itself: a zoom has no cap
+ * (da-wd6h5, vividn: «You should be able to keep zooming in/out as much
+ * as you like»).
  */
 export function zoomHistory(history: string, scale: number): string {
 	const minutes = NOWVIEW_STEPS.map(stepMinutes);
 	const own = stepMinutes(history);
 	const from = Number.isFinite(own) && own > 0 ? own : stepMinutes(NOWVIEW_HISTORY);
-	const target = from / Math.max(scale, 0.001);
+	const target = from / Math.max(scale, 1e-9);
+	if (target < minutes[0] || target > minutes.at(-1)!) return historyArg(target);
 	let best = 0;
 	const off = (i: number) => Math.abs(Math.log(minutes[i] / target));
 	for (let i = 1; i < minutes.length; i++) if (off(i) < off(best)) best = i;
 	return NOWVIEW_STEPS[best];
 }
 
-/** The shortest and the longest window a handle reaches: the ladder's ends. */
-const [WINDOW_MIN, WINDOW_MAX] = [NOWVIEW_STEPS[0], NOWVIEW_STEPS.at(-1)!].map(stepMinutes);
-
 /**
  * A window of `minutes` as `--history` reads it (da-57vj4): the ladder's own
  * word where it is one of its steps, else whole minutes, else seconds — a
- * handle dragged sideways asks for any length — held to the ladder's ends.
+ * handle dragged sideways asks for any length, as a pinch does (da-wd6h5) —
+ * and never under a second, which `--history` would read as the snapshot.
  */
 export function historyArg(minutes: number): string {
-	const m = Math.min(WINDOW_MAX, Math.max(WINDOW_MIN, minutes));
-	const s = Math.round(m * 60);
+	const s = Math.max(1, Math.round(Math.min(minutes, Number.MAX_SAFE_INTEGER) * 60) || 1);
 	return NOWVIEW_STEPS.find((step) => Math.round(stepMinutes(step) * 60) === s) ?? (s % 60 ? `${s}s` : `${s / 60}m`);
 }
 
 /**
  * The ladder's steps either side of a handle at `minutes` (da-57vj4), the
- * nearest first: `up` longer, `down` shorter. Only those a window of
- * `history` minutes, rescaled by step / minutes, keeps within the ladder.
+ * nearest first: `up` longer, `down` shorter. Whatever window they rescale
+ * to (da-wd6h5): past the ladder's ends a handle has none that way.
  */
-export function ladderAround(minutes: number, history: number): { up: string[]; down: string[] } {
-	const fits = (step: string) => {
-		const w = (history * stepMinutes(step)) / minutes;
-		return w >= WINDOW_MIN - 1e-9 && w <= WINDOW_MAX + 1e-9;
-	};
-	const steps = NOWVIEW_STEPS.filter(fits);
+export function ladderAround(minutes: number): { up: string[]; down: string[] } {
+	const steps = NOWVIEW_STEPS;
 	return {
 		up: steps.filter((s) => stepMinutes(s) > minutes + 1e-9),
 		down: steps.filter((s) => stepMinutes(s) < minutes - 1e-9).reverse()

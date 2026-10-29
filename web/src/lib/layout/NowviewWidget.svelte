@@ -259,11 +259,15 @@
 	 * picture asked where a pan lets go holds the next drag and its coast
 	 * either way (`holds`). Never past REACH_MS for that: each day it reaches
 	 * is a day of data asked, and a 12h window on a 100px band wanted 49
-	 * windows, 25 days either side.
+	 * windows, 25 days either side. Nor SURROUND's past it, a part of a
+	 * window if need be: a zoom has no cap (da-wd6h5), and eight windows of
+	 * a month either side were 510 days of data for 30 on screen.
 	 */
-	const surround = $derived(
-		Math.max(SURROUND, Math.min(Math.ceil((3 * COAST_PX) / (0.8 * bandPx)), Math.floor(REACH_MS / (minutes * 60_000))))
-	);
+	const surround = $derived.by(() => {
+		const reachable = REACH_MS / (minutes * 60_000);
+		const coast = Math.ceil((3 * COAST_PX) / (0.8 * bandPx));
+		return Math.min(Math.max(SURROUND, coast), reachable < SURROUND ? reachable : Math.floor(reachable));
+	});
 	// A window on now with a pill is centred half its length back from now,
 	// relative too: it is not drawn ahead, there being an instant to draw.
 	const spec = $derived(
@@ -1028,7 +1032,7 @@
 
 	/**
 	 * The scale that shows the window a raw scale leaves: to the second, as
-	 * `--history` reads it, and inside the ladder's ends — so the picture
+	 * `--history` reads it, however short or long (da-wd6h5) — so the picture
 	 * under the fingers is the picture of the window the release asks for.
 	 */
 	const shows = (raw: number, to = (m: number) => historyArg(m)) => minutes / stepMinutes(to(minutes / raw));
@@ -1664,7 +1668,7 @@
 	} | null>(null);
 	let wheelEl: HTMLDivElement | undefined = $state();
 
-	const around = $derived(wheel ? ladderAround(wheel.minutes, minutes) : { up: [], down: [] });
+	const around = $derived(wheel ? ladderAround(wheel.minutes) : { up: [], down: [] });
 	/** The wheel's notches as drawn around the pick: how many steps from the handle (up is longer), the step, how clear. */
 	const notches = $derived.by(() => {
 		const pick = wheel?.pick ?? 0;
@@ -1792,13 +1796,14 @@
 		if (grip.mode === 'scale' && zoom) {
 			const finger = vertical ? event.clientY : event.clientX;
 			// The picture scaled about the anchor so the handle's time is
-			// under the finger: `shows` holds the window inside the ladder's
-			// ends, and a finger dragged past the anchor (raw <= 0) asks for
-			// the longest.
+			// under the finger, to any window (da-wd6h5); a finger dragged
+			// onto or past the anchor (raw <= 0) holds the last.
 			const raw = (finger - grip.anchor) / (grip.at - grip.anchor);
-			const scale = shows(raw > 0 ? raw : minutes / stepMinutes('12h'));
-			zoom = { ...zoom, raw, scale };
-			dragged = grip.anchor + (grip.at - grip.anchor) * scale;
+			if (raw > 0) {
+				const scale = shows(raw);
+				zoom = { ...zoom, raw, scale };
+				dragged = grip.anchor + (grip.at - grip.anchor) * scale;
+			}
 		}
 		if (grip.mode === 'wheel' && wheel) {
 			const notch = vertical ? NOTCH_PX.y : NOTCH_PX.x;

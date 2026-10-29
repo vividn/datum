@@ -151,11 +151,12 @@ pub struct TickConfig {
     pub minor_minutes: Option<f64>,
 }
 
-/// The round intervals a tick steps by, in minutes. A window of two
-/// minutes or less is ruled at its own length instead.
-const TICK_STEPS: [f64; 15] = [
+/// The round intervals a tick steps by, in minutes, up to a year: a zoom
+/// has no cap (da-wd6h5). A window of two minutes or less is ruled at its
+/// own length instead.
+const TICK_STEPS: [f64; 21] = [
     1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 180.0, 360.0, 720.0, 1440.0, 2880.0, 4320.0,
-    10080.0,
+    10080.0, 20160.0, 43200.0, 86400.0, 129600.0, 259200.0, 525600.0,
 ];
 
 /// Pick the tick intervals for an axis reaching `reach` minutes from its
@@ -224,14 +225,17 @@ fn label_px(orientation: Orientation, time_axis_height: f64, reach: f64) -> f64 
     extent + AXIS_LABEL_GAP
 }
 
-/// `m` minutes as a tick spells it: whole minutes as `5m`, anything else
-/// in seconds, `30s`.
-fn relative_label(m: f64) -> String {
-    if (m - m.round()).abs() < 1e-6 {
-        format!("{}m", m.round() as i64)
-    } else {
-        format!("{}s", (m * 60.0).round() as i64)
-    }
+/// `m` minutes as a tick spells it on an axis whose majors are `major`
+/// minutes apart, the SVG's and the terminal's (da-wd6h5): in the coarsest
+/// of days, hours and minutes the major is a whole number of, else in
+/// seconds, so a minor is spelled in its major's unit (`1.5h`).
+pub fn relative_label(m: f64, major: f64) -> String {
+    let whole = |x: f64| (x - x.round()).abs() < 1e-6;
+    let (size, unit) = [(1440.0, "d"), (60.0, "h"), (1.0, "m")]
+        .into_iter()
+        .find(|(size, _)| major >= size - 1e-9 && whole(major / size))
+        .unwrap_or((1.0 / 60.0, "s"));
+    format!("{}{unit}", (m / size * 100.0).round() / 100.0)
 }
 
 /// Build the relative-minute axis ticks for a nowview-style window. The
@@ -309,7 +313,7 @@ fn ticks_spaced_for(
                     _ => format!(
                         "{}{}",
                         if k < 0 { '-' } else { '+' },
-                        relative_label(m.abs())
+                        relative_label(m.abs(), cfg.major_minutes)
                     ),
                 },
                 is_major: k == 0 || r < 1e-6 || (r - cfg.major_minutes).abs() < 1e-6,
@@ -336,7 +340,9 @@ mod tests {
     #[test]
     fn ticks_have_room_at_any_window_and_width() {
         let d = NowviewGeometry::default();
-        for window in [1.0, 15.0, 37.0, 120.0, 720.0] {
+        for window in [
+            0.25, 1.0, 15.0, 37.0, 120.0, 720.0, 4320.0, 43200.0, 525600.0,
+        ] {
             let label = label_px(d.orientation, d.time_axis_height, window);
             for extent in [200.0, 1200.0] {
                 let ticks = nowview_axis_ticks(extent, window, d.time_axis_height);
@@ -393,27 +399,75 @@ mod tests {
         assert_eq!(cfg(37.0, 40.0).major_minutes, 30.0);
     }
 
+    /// A label's length in minutes, as datum.day's `stepMinutes` reads it.
+    fn label_minutes(label: &str) -> f64 {
+        let label = label.trim_start_matches(['-', '+']);
+        let (n, unit) = label.split_at(label.len() - 1);
+        let n: f64 = n.parse().unwrap();
+        n * match unit {
+            "d" => 1440.0,
+            "h" => 60.0,
+            "m" => 1.0,
+            "s" => 1.0 / 60.0,
+            _ => panic!("{label}: no unit"),
+        }
+    }
+
     /// The far end is a major, so its label says the window (the web's
     /// − / + sit either side of it): every step of the widget's ladder
-    /// from 5m, ending at now on a phone and a wide screen, and 30m
-    /// centred, whose far end is 15m back.
+    /// from 5m, and windows of days, ending at now on a phone and a wide
+    /// screen, and 30m centred, whose far end is 15m back.
     #[test]
     fn the_far_end_of_a_window_is_a_major() {
         let h = NowviewGeometry::default().time_axis_height;
         let far = |ticks: Vec<DayviewAxisTick>| ticks.into_iter().next().unwrap();
         for window in [
-            5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 360.0, 720.0,
+            5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 360.0, 720.0, 1440.0,
+            4320.0, 10080.0, 43200.0,
         ] {
             for extent in [340.0, 1200.0] {
                 let t = far(nowview_axis_ticks(extent, window, h));
                 assert!(
-                    t.is_major && t.label == format!("-{window}m"),
+                    t.is_major && (label_minutes(&t.label) - window).abs() < 1e-9,
                     "{window}m at {extent}px: {t:?}"
                 );
             }
         }
         let t = far(nowview_axis_ticks_around(600.0, 15.0, 15.0, h));
         assert!(t.is_major && t.label == "-15m", "{t:?}");
+    }
+
+    /// da-wd6h5: the labels' unit follows the major step — seconds under a
+    /// minute, minutes under an hour, hours from an hour and days from a
+    /// day — and a minor is spelled in its major's unit.
+    #[test]
+    fn the_labels_unit_follows_the_major() {
+        assert_eq!(relative_label(0.5, 0.5), "30s");
+        assert_eq!(relative_label(1.5, 1.5), "90s");
+        assert_eq!(relative_label(45.0, 15.0), "45m");
+        assert_eq!(relative_label(90.0, 60.0), "1.5h");
+        assert_eq!(relative_label(360.0, 120.0), "6h");
+        assert_eq!(relative_label(4320.0, 1440.0), "3d");
+        assert_eq!(relative_label(720.0, 1440.0), "0.5d");
+        let h = NowviewGeometry::default().time_axis_height;
+        let units = |window: f64, extent: f64| -> Vec<char> {
+            let mut units: Vec<char> = nowview_axis_ticks(extent, window, h)
+                .iter()
+                .filter_map(|t| t.label.chars().last())
+                .collect();
+            units.dedup();
+            units
+        };
+        assert_eq!(units(0.5, 600.0), vec!['s']);
+        assert_eq!(units(30.0, 600.0), vec!['m']);
+        for extent in [340.0, 1200.0] {
+            assert_eq!(units(720.0, extent), vec!['h'], "12h at {extent}px");
+            assert_eq!(units(14.0 * 1440.0, extent), vec!['d'], "14d at {extent}px");
+        }
+        // By the pixels, not the window alone: three days on a phone is
+        // ruled in days, on a wide screen in hours.
+        assert_eq!(units(4320.0, 340.0), vec!['d']);
+        assert_eq!(units(4320.0, 1200.0), vec!['h']);
     }
 
     /// The web's `-q` … `-qqqq` snap to the −5 / −10 / −15 / −20

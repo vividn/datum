@@ -27,7 +27,7 @@
 //! ANSI escapes are embedded as plain UTF-8 — callers decide whether the
 //! destination understands them.
 
-use crate::nowview::{NowviewField, NowviewPoint};
+use crate::nowview::{relative_label, NowviewField, NowviewPoint};
 
 /// Selects the layout used by [`render_nowview_terminal`]. See the module
 /// docs for the visual differences.
@@ -504,7 +504,7 @@ fn push_flow_axis_labels(out: &mut String, cols: usize, history_minutes: f64, ti
         if x < 0 || x as usize > last_col {
             continue;
         }
-        let label = format!("-{}m", m as i64);
+        let label = format!("-{}", relative_label(m, tick_major(history_minutes)));
         // Center on `x` but bias right so the label doesn't overlap a
         // tick further left.
         let label_chars: Vec<char> = label.chars().collect();
@@ -749,7 +749,8 @@ fn push_axis_labels(
     if after_minutes > 0.0 {
         for m in pick_ticks(after_minutes) {
             let x = history_cols + (m / after_minutes * now_cols as f64).round() as usize;
-            place_label(&mut row, x, &format!("+{}m", m as i64), true);
+            let label = format!("+{}", relative_label(m, tick_major(after_minutes)));
+            place_label(&mut row, x, &label, true);
         }
     }
 
@@ -761,7 +762,7 @@ fn push_axis_labels(
             if x < 0 || x >= history_cols as i64 {
                 continue;
             }
-            let label = format!("-{}m", m as i64);
+            let label = format!("-{}", relative_label(m, tick_major(history_minutes)));
             place_label(&mut row, x as usize, &label, true);
         }
     }
@@ -801,15 +802,7 @@ fn place_label(row: &mut [char], at: usize, text: &str, center: bool) {
 /// (da-w4vfw) — only majors, so the row stays uncluttered. The clock anchors `0m`, so the list starts at the first
 /// major.
 fn pick_ticks(span_minutes: f64) -> Vec<f64> {
-    let major = if span_minutes <= 15.0 {
-        5.0
-    } else if span_minutes <= 60.0 {
-        15.0
-    } else if span_minutes <= 180.0 {
-        30.0
-    } else {
-        60.0
-    };
+    let major = tick_major(span_minutes);
     let mut out = Vec::new();
     let mut m = major;
     while m <= span_minutes + 1e-9 {
@@ -817,6 +810,23 @@ fn pick_ticks(span_minutes: f64) -> Vec<f64> {
         m += major;
     }
     out
+}
+
+/// The major step [`pick_ticks`] rules an axis spanning `span_minutes` at,
+/// on past an hour for a window of days (da-wd6h5).
+fn tick_major(span_minutes: f64) -> f64 {
+    [
+        (15.0, 5.0),
+        (60.0, 15.0),
+        (180.0, 30.0),
+        (720.0, 60.0),
+        (2880.0, 360.0),
+        (20160.0, 1440.0),
+        (100800.0, 10080.0),
+    ]
+    .into_iter()
+    .find(|(span, _)| span_minutes <= *span)
+    .map_or(43200.0, |(_, major)| major)
 }
 
 pub(crate) fn parse_hex(hex: &str) -> Option<(u8, u8, u8)> {

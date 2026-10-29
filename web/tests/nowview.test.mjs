@@ -220,7 +220,7 @@ describe('the nowview widget', () => {
 		});
 	});
 
-	test('on −15m in a 30m window, 20m makes the window 40m; the ladder ends at 30s and 12h', async () => {
+	test('on −15m in a 30m window, 20m makes the window 40m; the wheel’s steps end at 30s and 12h', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -239,9 +239,9 @@ describe('the nowview widget', () => {
 			// two labels need, so the 30m window ruled tens and drew no −15m.
 			{ viewport: { width: 460, height: 700 }, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 		);
-		// A window the ladder's ends would leave is not offered.
+		// Past the ladder's ends a handle's wheel has no step that way (da-wd6h5).
 		for (const [history, far, side] of [
-			['12h', '-720m', 'up'],
+			['12h', '-12h', 'up'],
 			['30s', '-30s', 'down']
 		]) {
 			await withApp(
@@ -1203,7 +1203,7 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 	// well. Or at least far enough where any amount of flicking and panning
 	// and zooming never goes off the edge of visible data». A mood calm for a
 	// week: every frame, the band up to now is that block, never a black one.
-	test('hard flicks back and forth, pinches out to 12h and flicks there: every frame is drawn data up to now', async () => {
+	test('hard flicks back and forth, pinches out past 12h and flicks there: every frame is drawn data up to now', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -1259,8 +1259,8 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 					...[1, 2, 3, 4].map(() => ['back', hard(300)]),
 					...[1, 2, 3].map(() => ['on', hard(-300)]),
 					...[1, 2, 3].map(() => ['out', out]),
-					...[1, 2].map(() => ['back at 12h', hard(300)]),
-					['on at 12h', hard(-300)]
+					...[1, 2].map(() => ['back past 12h', hard(300)]),
+					['on past 12h', hard(-300)]
 				];
 				for (const [i, [name, gesture]] of gestures.entries()) {
 					const from = await page.evaluate(() => window.__gaps.length);
@@ -1272,9 +1272,10 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 					const worst = Math.max(...gaps);
 					assert.ok(worst <= 3, `gesture ${i + 1} (${name}): a frame shows ${worst.toFixed(0)}px of the band before now with no data, ${gaps.filter((g) => g > 3).length} of ${gaps.length} frames`);
 				}
-				// The control: the gestures went where they say, out to the longest window.
+				// The control: the gestures went where they say, out past the ladder's 12h (da-wd6h5).
 				const last = (await page.evaluate(() => window.__datumSeen)).filter((a) => a[0] === 'nowview').at(-1);
-				assert.equal(last[last.indexOf('--history') + 1], '12h');
+				const window = /^(\d+)m$/.exec(last[last.indexOf('--history') + 1]);
+				assert.ok(window && Number(window[1]) > 720, `the last window asked was ${last[last.indexOf('--history') + 1]}`);
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }

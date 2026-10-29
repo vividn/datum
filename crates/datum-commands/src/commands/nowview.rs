@@ -556,7 +556,9 @@ pub(crate) fn build_dayview_fields(
     // `day_end_ms` would truncate nanoseconds and exclude entries
     // timestamped at "now".
     let buffer = chrono::Duration::seconds((history_minutes.max(1.0) * 60.0 * 4.0) as i64);
-    let fetch_start = day_start_utc - buffer;
+    let fetch_start = day_start_utc
+        .checked_sub_signed(buffer)
+        .context("the window reaches back past the calendar")?;
     let entries = db.list_entries(&super::render_helpers::live_window_params(fetch_start, end))?;
 
     let mut by_field: std::collections::BTreeMap<String, Vec<Entry>> =
@@ -664,8 +666,11 @@ pub(crate) fn build_fields(
     // the right edge clamps to `end`, so a future-dated entry can't
     // truncate the current region at a timestamp past the now-line (the
     // SVG path and this terminal band must agree on where "now" ends).
-    let window_start =
-        end - chrono::Duration::seconds((history_minutes.max(1.0) * 60.0 * 4.0) as i64);
+    let window_start = end
+        .checked_sub_signed(chrono::Duration::seconds(
+            (history_minutes.max(1.0) * 60.0 * 4.0) as i64,
+        ))
+        .context("the window reaches back past the calendar")?;
     let entries = db.list_entries(&super::render_helpers::live_window_params(
         window_start,
         end,

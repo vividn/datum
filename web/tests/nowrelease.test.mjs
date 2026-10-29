@@ -257,6 +257,52 @@ describe('a release is seamless', () => {
 			);
 		});
 
+	// da-wd6h5, vividn: «let's not cap the max zoom of the nowview. You
+	// should be able to keep zooming in/out as much as you like», and «after
+	// zooming out sufficiently far the nowview time axis labels should switch
+	// to hours (even eventually days) rather than minutes». Pinched past the
+	// ladder's ends, 12h and 30s, a step at a time: each release seamless,
+	// each window asked as it is, and datum's picture of it labelled in the
+	// unit its majors step by.
+	for (const [name, history, from, to, units] of [
+		['out past 12h and two days', '12h', 136, 80, ['h', 'h', 'd']],
+		['in below 30s', '30s', 80, 136, ['s', 's']]
+	])
+		test(`a pinch ${name}: each release seamless, and the axis labelled in its unit`, async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					// A window of seconds holds no coffee: a sip every two, so the band always has a mark.
+					if (from < to) for (let s = 2; s <= 40; s += 2) await app.runLine(`occur sip -t -${s}s`);
+					const box = await seeded(app);
+					const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+					const both = (apart) => [
+						{ id: 1, x: x - apart / 2, y },
+						{ id: 2, x: x + apart / 2, y }
+					];
+					const minutes = (h) => Number(h.slice(0, -1)) / (h.endsWith('s') ? 60 : 1) * (h.endsWith('h') ? 60 : 1);
+					let was = minutes(history);
+					for (const [i, unit] of units.entries()) {
+						await page.evaluate(() => (window.__datumSeen = []));
+						await touch(page, steps(6, (t) => both(from + t * (to - from))), () => record(page));
+						const { frames, asked } = await untilSettled(page);
+						assert.ok(asked, `pinch ${i + 1} asked for nothing`);
+						assert.deepEqual(seams(frames), [], `pinch ${i + 1}`);
+						const last = (await page.evaluate(() => window.__datumSeen)).filter((a) => a[0] === 'nowview').at(-1);
+						const now = minutes(last[last.indexOf('--history') + 1]);
+						assert.ok(from > to ? now > was * 1.5 : now < was / 1.5, `pinch ${i + 1}: ${was}m to ${now}m`);
+						was = now;
+						const labels = await page.locator(`${BAND} svg.svg .tick-label`).allTextContents();
+						assert.ok(labels.length > 0, `pinch ${i + 1}: no labels at ${now}m`);
+						assert.deepEqual([...new Set(labels.map((l) => l.at(-1)))], [unit], `pinch ${i + 1} to ${now}m: ${labels}`);
+					}
+					assert.ok(from > to ? was > 2880 : was < 0.5, `the pinches ended at ${was}m`);
+					assert.deepEqual(app.errors, []);
+				},
+				{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history })) }
+			);
+		});
+
 	// vividn, 2026-10-28: «the multi state stripes also go crazy while you
 	// are zooming. they should be better anchored so that the stripes don't
 	// move up and down while you are zooming» (da-rdiph). A parallel state
