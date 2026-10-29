@@ -272,7 +272,7 @@
 	import { browser } from '$app/env';
 	import { currentDb } from './database.js';
 	import { keptDays, keptNow, type Kept } from './heldDays.js';
-	import { bandOf, heldLayer, layers, oneClock, type Layer } from './dayLayers.js';
+	import { bandOf, heldLayer, layers, oneClock, standIn, type Layer } from './dayLayers.js';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import IntegrityMark from './IntegrityMark.svelte';
@@ -285,7 +285,7 @@
 	import { advance, LONG_MS, SLOP_PX, undecided, type Mode, type Press } from './nowpoint.js';
 	import { run, runKey } from './run.js';
 	import { firstEntryArgv } from './calls.js';
-	import { syncStates } from './sync.js';
+	import { syncStates, UNSYNCED_MS } from './sync.js';
 	import type { TailListing } from './tail.js';
 	import {
 		AXIS_HEIGHT,
@@ -666,11 +666,19 @@
 	/** Since when this copy may lack what another device has, while the session's first sync is under way (da-g5jjp). */
 	const unsynced = $derived($syncStates[currentDb()]?.unsynced);
 
-	const picture = (result: Band, unsynced?: number) => ({
+	/**
+	 * When today's row, a stand-in from the store (`draw`), was drawn: what
+	 * came since is dimmed as an unsynced copy's is, and past the same hour
+	 * (`UNSYNCED_MS`), so the two look the same and pass into each other
+	 * unseen (da-8xy6u). Undefined once today's own picture lands.
+	 */
+	let standing: number | undefined = $state();
+
+	const picture = (result: Band, end: number) => ({
 		text: result.stdout || result.stderr,
 		svg: result.svg,
 		error: !result.stdout && !result.svg,
-		unsynced
+		unsynced: end === 0 && standing !== undefined ? Math.min(standing, unsynced ?? standing) : unsynced
 	});
 
 	/** How many draws have been started, and which one each picture came from. */
@@ -914,7 +922,23 @@
 			cache.runs.set(geometryId, { epoch: at.epoch, end: 'geometry', run: asked });
 		}
 		// A day held of an earlier epoch is drawn from what is held, and
-		// checked once it is on screen (`refreshVisible`); today is always asked.
+		// checked once it is on screen (`refreshVisible`); today is always asked,
+		// and a row of it with nothing drawn yet, after a reload, is the store's
+		// picture of it until the answer lands (da-8xy6u): what still ran then
+		// cut at now, and the stretch since dimmed (`standing`).
+		if (ends.includes(0) && !shown[0])
+			void standIn(dateOf(0)).then(async (layer) => {
+				if (!layer || !oneClock(layer)) return;
+				const result = await bandFrom(layer, at, 0);
+				if (from[0] || shown[0]) return;
+				const since = Date.parse(layer.doc()?.querySelector('.day-data')?.getAttribute('data-drawn') ?? '');
+				// One overlay from the earlier of it and a sync pending, so neither ending changes it.
+				// Every kept today is this CLI's, which says when it drew it: NaN dims nothing.
+				standing = Date.now() - since > UNSYNCED_MS ? Math.min(since, unsynced ?? since) : undefined;
+				shown = { ...shown, 0: result };
+				drawn = { ...drawn, 0: { width: at.wide, dayHeight: at.dayHeight, midnights: at.midnights } };
+				void anchor();
+			});
 		const fresh = missing.filter((end) => end === 0 || !heldLayer(dateOf(end)));
 		const answers = layers(fresh.map(dateOf), at.epoch);
 		for (const end of missing) {
@@ -946,6 +970,7 @@
 				// band — and until it lands, the one on screen stays.
 				if (result.superseded || token < (from[end] ?? 0)) return;
 				from[end] = token;
+				if (end === 0) standing = undefined;
 				shown = { ...shown, [end]: result };
 				drawn = { ...drawn, [end]: { width: at.wide, dayHeight: at.dayHeight, midnights: at.midnights } };
 				void anchor();
@@ -2009,7 +2034,7 @@
 							style:--stand={stand(end)}
 						>
 							<div class="shot" class:previewing={!!sizing}>
-								{#if shown[end]}<CliOutput {...picture(shown[end], unsynced)} />{/if}
+								{#if shown[end]}<CliOutput {...picture(shown[end], end)} />{/if}
 							</div>
 						</div>
 					</div>
@@ -2125,7 +2150,7 @@
 					style:--stand={stand(0)}
 				>
 					<div class="shot" class:previewing={!!sizing}>
-						{#if shown[0]}<CliOutput {...picture(shown[0], unsynced)} />{:else}<p class="quiet">…</p>{/if}
+						{#if shown[0]}<CliOutput {...picture(shown[0], 0)} />{:else}<p class="quiet">…</p>{/if}
 					</div>
 				</div>
 			</div>

@@ -77,7 +77,7 @@ const HOLD_AFTER_KEY = 'datum.syncHoldApplyAfter';
 const HOLD_VERIFY_KEY = 'datum.syncHoldVerify';
 const REACHABLE_MS = 60_000;
 /** How long since this copy last synced before the day view dims the stretch since (da-g5jjp). */
-const UNSYNCED_MS = 3_600_000;
+export const UNSYNCED_MS = 3_600_000;
 const CHANNEL = 'datum-sync';
 
 export type Reach = 'online' | 'reachable' | 'offline';

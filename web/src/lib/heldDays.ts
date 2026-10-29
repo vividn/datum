@@ -4,10 +4,11 @@
 // quick rendering without having to go through the cli?». The day strip and
 // the nowview hold each day's data layer in page memory (#lib/dayLayers.ts),
 // so a reload started them empty and asked the CLI for every day. Here each
-// finished day's SVG is kept in IndexedDB, by database, kind (`layer`, or
-// `layer-v` drawn down the page) and date, and the layers start from it; the
-// one `dayview --digests` check then redraws the days whose layer changed, a
-// new datum's drawing included.
+// day's SVG is kept in IndexedDB, by database, kind (`layer`, or `layer-v`
+// drawn down the page) and date, and the layers start from it; the one
+// `dayview --digests` check then redraws the days whose layer changed, a new
+// datum's drawing included. Today's is its latest, which stands in until
+// today is drawn again (da-8xy6u).
 //
 // IndexedDB and not OPFS: OPFS is the database worker's, under the
 // `datum-cli-files` lock with sync access handles, and a picture kept there
