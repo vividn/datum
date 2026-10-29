@@ -147,7 +147,8 @@
 	   one rule says both, and a reader who has learned what the glow means
 	   for a field has learned it for an entry. The difference is only what
 	   it is ON: a field's whole group, or the one mark that names the
-	   entry (`bringOut` in #lib/hover.ts). */
+	   entry (`bringOut` in #lib/hover.ts). The nowview, which stretches its
+	   marks' units, outlines a selection over the band instead (da-67mwa). */
 	.picture :global(.field[data-pilled]),
 	.picture :global([data-selected]) {
 		filter: drop-shadow(0 0 1px var(--ink-bright)) drop-shadow(0 0 1px var(--ink-bright));

@@ -22,9 +22,7 @@ import {
 	marksIn,
 	pressSpent,
 	pressTraveled,
-	spendPress,
-	tipOf,
-	type Tip
+	spendPress
 } from './inspect.js';
 import { readLanes } from './lanes.js';
 import { isSelected } from './selection.js';
@@ -565,45 +563,15 @@ function bringOut(svg: SVGSVGElement | null, hids: string[]): void {
 /**
  * A mark's box as it is SEEN: one that flows (nowview's `--ahead`, da-hklaz)
  * is drawn on past the now-line, where its clip hides it, and its box would
- * take the tooltip there — so it stops at the line.
+ * take the nowview's outline there — so it stops at the line.
  */
-function shownBox(mark: Element): DOMRect {
+export function shownBox(mark: Element): DOMRect {
 	const box = mark.getBoundingClientRect();
 	const line = mark.closest('.flow') && mark.closest('svg')?.querySelector('.current-time-line')?.getBoundingClientRect();
 	if (!line) return box;
 	if (mark.closest('[data-axis]')?.getAttribute('data-axis') === 'y')
 		return new DOMRect(box.x, box.y, box.width, Math.max(0, Math.min(box.bottom, line.top) - box.y));
 	return new DOMRect(box.x, box.y, Math.max(0, Math.min(box.right, line.left) - box.x), box.height);
-}
-
-/**
- * The tip for the entries selected in `root`, and the box their marks
- * cover on screen; `null` when none of them is drawn here.
- *
- * What the nowview floats its tooltip over (da-pzzoz, `NowviewWidget`),
- * read here because this is the module that knows what a mark is.
- */
-export function selectedTip(root: ParentNode, hids: string[]): { tip: Tip; box: DOMRect } | null {
-	if (!hids.length) return null;
-	const marks = marksIn(root).filter((m) => {
-		const hid = hidOf(m);
-		return hid && isSelected(hids, hid);
-	});
-	if (!marks.length) return null;
-	const tip = tipOf(
-		marks.map((m) => ({
-			field: m.getAttribute('data-field') ?? m.closest('.field')?.getAttribute('data-field') ?? null,
-			state: m.getAttribute('data-state'),
-			from: m.getAttribute('data-from'),
-			to: m.getAttribute('data-to'),
-			at: m.getAttribute('data-at')
-		}))
-	);
-	if (!tip) return null;
-	const boxes = marks.map(shownBox);
-	const [left, right] = [Math.min(...boxes.map((b) => b.left)), Math.max(...boxes.map((b) => b.right))];
-	const [top, bottom] = [Math.min(...boxes.map((b) => b.top)), Math.max(...boxes.map((b) => b.bottom))];
-	return { tip, box: new DOMRect(left, top, right - left, bottom - top) };
 }
 
 /**
@@ -842,13 +810,22 @@ export function picture(node: HTMLElement, { text, unsynced }: { text: string; u
 		(e.buttons && pressTraveled()) || (e.type === 'pointerdown' && e.pointerType === 'touch')
 			? show(null)
 			: show(markAt(e.target), e.clientX, e.clientY, e.clientX);
+	// Not in a band that takes the pointer itself (the nowview's): there a tap
+	// selects, and its selection says no label (da-67mwa, vividn: «let's try
+	// getting rid of the selection labels on nowview»).
 	const tapped = (e: PointerEvent) =>
-		e.pointerType === 'touch' && !pressTraveled() && show(markAt(e.target), e.clientX, e.clientY, e.clientX);
+		e.pointerType === 'touch' &&
+		!own() &&
+		!pressTraveled() &&
+		show(markAt(e.target), e.clientX, e.clientY, e.clientX);
 	// A finger lifting leaves the element too; its label stays until the
 	// next tap lands somewhere else.
 	const leave = (e: PointerEvent) => e.pointerType !== 'touch' && show(null);
+	// The keyboard's focus alone in the nowview's band: a tap focuses the mark
+	// too, and is a selection there (`tapped`).
 	const focus = (e: FocusEvent) => {
 		const mark = markAt(e.target);
+		if (own() && !mark?.matches(':focus-visible')) return;
 		const box = mark?.getBoundingClientRect();
 		show(mark, box?.left, box?.bottom);
 	};

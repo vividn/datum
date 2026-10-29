@@ -61,57 +61,6 @@ export const inspectMods = (e: { ctrlKey: boolean; metaKey: boolean }) => ({
 	metaKey: e.metaKey
 });
 
-/** A mark as the tooltip reads it — the `data-` the CLI wrote on it. */
-export interface MarkData {
-	field: string | null;
-	state: string | null;
-	from: string | null;
-	to: string | null;
-	at: string | null;
-}
-
-/** What the tooltip says: the entry in four words. */
-export interface Tip {
-	field: string;
-	state: string;
-	/** The instants the entry's marks span; `null` where the picture drew none. */
-	from: number | null;
-	to: number | null;
-}
-
-/**
- * The tip for ONE entry, from every mark that names it.
- *
- * Several marks, one entry, on purpose: nowview draws a state's open block
- * as a band AND as the now chunk beside it, and the chunk carries an id
- * and nothing else — no field, no state, no times (da-6hg6v). So the four
- * words are gathered across the marks rather than read off whichever one
- * the finger happened to land on, and a tap on the color says as much
- * as a tap on the band it continues.
- *
- * ⛔ NO COMMENT. vividn's «+ comment (maybe?)» is the one thing a picture
- * does not carry: a mark has its field, its state and its instants and
- * nothing else, so a comment would mean a `datum get` — a whole CLI
- * process — per gesture, and a tooltip that arrives after the finger has
- * gone. It is left out until a mark carries it.
- */
-export function tipOf(marks: MarkData[]): Tip | null {
-	if (!marks.length) return null;
-	// The instants are the CLI's own `iso()` — ISO 8601, UTC, to the
-	// millisecond (dayview_svg.rs) — which is what `Date.parse` is exact
-	// for. Anything it cannot read is dropped rather than guessed at, so a
-	// format change narrows the span instead of inventing one.
-	const ms = (s: string | null) => (s ? Date.parse(s) : NaN);
-	const edges = marks.flatMap((m) => [ms(m.from), ms(m.at), ms(m.to)].filter((n) => !Number.isNaN(n)));
-	const said = (pick: (m: MarkData) => string | null) => marks.map(pick).find((v) => v) ?? '';
-	return {
-		field: said((m) => m.field),
-		state: said((m) => m.state),
-		from: edges.length ? Math.min(...edges) : null,
-		to: edges.length ? Math.max(...edges) : null
-	};
-}
-
 // ── the press an inspect has spent ─────────────────────────────────────
 //
 // One gesture, several listeners. A widget that has taken a press — the

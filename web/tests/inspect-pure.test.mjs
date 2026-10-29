@@ -17,7 +17,7 @@ registerHooks({
 	}
 });
 
-const { CLICK_SLOP, inspectMods, pressTraveled, tipOf, unwatchPresses, watchPresses } = await import(
+const { CLICK_SLOP, inspectMods, pressTraveled, unwatchPresses, watchPresses } = await import(
 	'../src/lib/inspect.ts'
 );
 
@@ -94,40 +94,3 @@ describe('what a picture’s inspect selects WITH', () => {
 	});
 });
 
-describe('what the tooltip says about an entry', () => {
-	const mark = (extra = {}) => ({ field: null, state: null, from: null, to: null, at: null, ...extra });
-
-	test('the field, the state and the span the entry’s marks cover', () => {
-		const tip = tipOf([
-			mark({ field: 'work', state: 'coding', from: '2026-09-10T12:00:00.000Z', to: '2026-09-10T12:30:00.000Z' })
-		]);
-		assert.equal(tip.field, 'work');
-		assert.equal(tip.state, 'coding');
-		assert.equal(tip.from, Date.parse('2026-09-10T12:00:00.000Z'));
-		assert.equal(tip.to, Date.parse('2026-09-10T12:30:00.000Z'));
-	});
-
-	// The now chunk carries `data-id` and NOTHING else (da-6hg6v), so the
-	// four words are gathered ACROSS the marks that name the entry rather
-	// than read off whichever one the finger landed on. A double tap on the
-	// colour must say as much as one on the band it continues.
-	test('several marks, one entry: the chunk borrows the band’s words', () => {
-		const tip = tipOf([
-			mark(),
-			mark({ field: 'work', state: 'coding', from: '2026-09-10T12:00:00.000Z', to: '2026-09-10T12:30:00.000Z' })
-		]);
-		assert.equal(tip.field, 'work');
-		assert.equal(tip.state, 'coding');
-	});
-
-	test('a dot’s one instant is both its edges', () => {
-		const tip = tipOf([mark({ field: 'coffee', state: '∅', at: '2026-09-10T09:15:00.000Z' })]);
-		assert.equal(tip.from, tip.to);
-		assert.equal(tip.from, Date.parse('2026-09-10T09:15:00.000Z'));
-	});
-
-	test('a mark with no instants at all says none, and no marks says nothing', () => {
-		assert.deepEqual(tipOf([mark({ field: 'work' })]), { field: 'work', state: '', from: null, to: null });
-		assert.equal(tipOf([]), null);
-	});
-});

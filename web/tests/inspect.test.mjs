@@ -25,7 +25,8 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, sharedApp, todayAt } from './support/app.mjs';
+import { startApp, stopApp, sharedApp, todayAt, withApp } from './support/app.mjs';
+import { pinch } from './support/daystrip.mjs';
 import { longPressed } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
@@ -144,11 +145,44 @@ const litUp = (page, scope) =>
 		...new Set([...el.querySelectorAll('svg.svg [data-id][data-selected]')].map((m) => m.getAttribute('data-id')))
 	]);
 
-/** The nowview's floating tooltip, as a reader reads it. */
-const tipText = async (page) => {
-	const tip = page.locator(`${NOWVIEW} .nowview-tip`);
-	return (await tip.count()) ? (await tip.innerText()).replace(/\s+/g, ' ').trim() : null;
-};
+/**
+ * The outlines the nowview draws around the selected entry's marks (da-67mwa),
+ * each beside the box its mark is SEEN in: cut at the now-line where it flows
+ * on past it, as `shownBox` (#lib/hover.ts) cuts it.
+ */
+const outlined = (page) =>
+	page.locator(BAND).evaluate((band) => {
+		const seen = (m) => {
+			const r = m.getBoundingClientRect();
+			const line = m.closest('.flow') && m.closest('svg').querySelector('.current-time-line')?.getBoundingClientRect();
+			return line ? { left: r.left, right: Math.min(r.right, line.left), top: r.top, bottom: r.bottom } : r;
+		};
+		const marks = [...band.querySelectorAll('svg.svg [data-selected]')]
+			.map(seen)
+			.filter((r) => r.right > r.left);
+		return [...band.querySelectorAll('.outline')].map((o) => {
+			const r = o.getBoundingClientRect();
+			const css = getComputedStyle(o);
+			return {
+				box: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+				border: [css.borderLeftWidth, css.borderTopWidth],
+				// The mark it stands around: a pixel inside it on every side.
+				on: marks.some(
+					(m) =>
+						Math.abs(m.left - 1 - r.left) < 0.6 &&
+						Math.abs(m.right + 1 - r.right) < 0.6 &&
+						Math.abs(m.top - 1 - r.top) < 0.6 &&
+						Math.abs(m.bottom + 1 - r.bottom) < 0.6
+				)
+			};
+		});
+	});
+
+/** Whether any label is up over the nowview: its own (gone, da-67mwa) or the picture's. */
+const labeled = (page) =>
+	page
+		.locator(NOWVIEW)
+		.evaluate((p) => !!p.querySelector('.nowview-tip') || [...p.querySelectorAll('.tip')].some((t) => !t.hidden));
 
 /** A press that stays where it fell past the long press, then lifts. */
 async function hold(page, at) {
@@ -355,7 +389,7 @@ describe('a tap in the nowview selects the entry behind the mark', () => {
 		});
 	});
 
-	test('the now chunk selects the entry that OPENED the open block, and the tooltip names it', async () => {
+	test('the now chunk selects the entry that OPENED the open block, and every mark of it is outlined', async () => {
 		await withMarks(async (app) => {
 			const { page } = app;
 			const chunk = await aMark(page, BAND, '.now-chunk');
@@ -364,71 +398,54 @@ describe('a tap in the nowview selects the entry behind the mark', () => {
 			await page.mouse.click(chunk.x, chunk.y);
 			await saysPills(page, [`hid:${chunk.id}`]);
 
-			// The chunk carries an id and NOTHING else (da-6hg6v), so the
-			// tooltip's words are gathered from every mark that names the same
-			// entry — the open band beside it included.
-			const said = await until(() => tipText(page), (text) => !!text);
-			assert.match(said, /work/, `the tooltip said ${JSON.stringify(said)}`);
-			assert.match(said, /coding/, `the tooltip said ${JSON.stringify(said)}`);
-			assert.match(said, /\d\d:\d\d/, `the tooltip said no time: ${JSON.stringify(said)}`);
+			// The chunk carries an id and NOTHING else (da-6hg6v): the open
+			// band beside it names the same entry, and both are outlined.
+			const lines = await until(
+				() => outlined(page),
+				(o) => o.length >= 2
+			);
+			assert.ok(lines.every((o) => o.on), `an outline is off its mark: ${JSON.stringify(lines)}`);
 		});
 	});
 
-	// canary inkling, PR #71 (REQUEST_CHANGES): «the reactive call
-	// `$: readTip($selected)` does NOT trigger on resize — only on
-	// selection change. The tooltip could float over a mark that has moved
-	// or disappeared after a resize/redraw until the selection changes
-	// again.» It is read in `place()` too, which the widget's own
-	// MutationObserver and ResizeObserver both drive — so this is that
-	// claim, run.
-	test('the tooltip follows a redraw and a resize, and goes when the window leaves the entry', async () => {
+	// canary inkling, PR #71, of the tooltip this outline replaced: read on a
+	// selection change alone, it «could float over a mark that has moved or
+	// disappeared after a resize/redraw». The outline is read in `place()`
+	// too, which the widget's own MutationObserver and ResizeObserver both
+	// drive — so this is that claim, run.
+	test('the outline follows a redraw and a resize, and goes when the selection does', async () => {
 		await withMarks(async (app) => {
 			const { page } = app;
 			const mark = await aMark(page, BAND);
 			await page.mouse.click(early(mark).x, early(mark).y);
 			await saysPills(page, [`hid:${mark.id}`]);
-			const where = async () => {
-				const box = await page.locator(`${NOWVIEW} .nowview-tip`).boundingBox();
-				return box && Math.round(box.x + box.width / 2);
-			};
-			const first = await where();
-			assert.ok(first !== null, 'no tooltip to follow');
+			// Read in ONE poll with the marks it stands around: a redraw landing
+			// between two reads replaces them (da-alyue).
+			const onIts = (o) => o.length > 0 && o.every((l) => l.on);
+			const [first] = await until(() => outlined(page), onIts);
 
 			// A REDRAW: every pane re-runs its command on a new epoch, which
 			// replaces the picture and every mark in it.
 			await page.evaluate(() => window.datum.layout.apply((l) => l));
 			await app.idle();
-			await until(where, (x) => x !== null);
-			assert.deepEqual(await litUp(page, NOWVIEW), [mark.id], 'the redraw lost the halo');
+			await until(() => outlined(page), onIts);
+			assert.deepEqual(await litUp(page, NOWVIEW), [mark.id], 'the redraw lost the selection');
 
 			// A RESIZE: the box changes, the picture is re-asked at the new
-			// width, and the tooltip has to land on the mark's new place.
+			// width, and the outline lands on the mark's new place.
 			await page.setViewportSize({ width: 900, height: 900 });
 			await app.idle();
-			// The tooltip and its mark are read in ONE poll: a redraw landing
-			// between two separate reads replaced the mark, and its box read
-			// null (da-alyue). A tooltip that never lands on the mark still
-			// fails, with both last seen.
-			const drawn = page.locator(`${NOWVIEW} svg.svg [data-id="${mark.id}"]`).first();
 			await until(
-				async () => ({ tip: await where(), box: await drawn.boundingBox() }),
-				({ tip, box }) =>
-					tip !== null && tip !== first && box !== null && Math.abs(tip - (box.x + box.width / 2)) <= box.width / 2 + 8
+				() => outlined(page),
+				(o) => onIts(o) && o[0].box.right !== first.box.right
 			);
 
-			// And a window PANNED off the entry draws none of its marks, so
-			// there is nothing left to say about it — «and nowview if that
-			// particular piece of data is represented there».
-			await page.evaluate(() => window.datum.cursor.point(null));
-			await page.locator(`${NOWVIEW} .nowview-band`).evaluate((band) => {
-				const box = band.getBoundingClientRect();
-				band.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: box.left + box.width * 0.8, clientY: box.top + box.height / 2 }));
-			});
+			// And the selection gone, the outline goes with it.
 			await page.evaluate(() => window.datum.bar.removePill('hid'));
 			await saysPills(page, []);
 			await until(
-				() => page.locator(`${NOWVIEW} .nowview-tip`).count(),
-				(n) => n === 0
+				() => outlined(page),
+				(o) => o.length === 0
 			);
 		});
 	});
@@ -529,6 +546,112 @@ describe('the same gestures on a band of the day strip', () => {
 	});
 });
 
+// ── how a selection looks in the nowview (da-67mwa) ───────────────────
+//
+// vividn, 2026-10-28: «when you select data, two separate labels show up,
+// often very long and hard to read and overlapping each other. also the
+// outline is huge and gets huger when you zoom in. Let's change the
+// highlight to be like what happens when a field pill is selected. Subtle
+// outline, we can also slightly dim everything else (but just a little bit
+// to make the selected entry/field pop) / let's try getting rid of the
+// selection labels on nowview».
+
+describe('a selection in the nowview: no label, a pixel’s outline at any zoom, the rest dimmed a little', () => {
+	/** The opacity of the selected entry's marks and of every other mark. */
+	const opacities = (page) =>
+		page.locator(BAND).evaluate((band) => {
+			const marks = [...band.querySelectorAll('svg.svg :is([data-state], [data-id])')];
+			const of = (m) => Number(getComputedStyle(m).opacity);
+			return {
+				chosen: marks.filter((m) => m.hasAttribute('data-selected')).map(of),
+				rest: marks.filter((m) => !m.hasAttribute('data-selected')).map(of),
+				halo: [...band.querySelectorAll('svg.svg [data-selected]')].map((m) => getComputedStyle(m).filter)
+			};
+		});
+
+	test('a click: no label once the pointer leaves, the halo gone, the rest of the marks dimmed slightly', async () => {
+		await withMarks(async (app) => {
+			const { page } = app;
+			const mark = await aMark(page, BAND);
+			await page.mouse.click(early(mark).x, early(mark).y);
+			await saysPills(page, [`hid:${mark.id}`]);
+			// The hover label is the pointer's, and goes with it; the selection says none.
+			await page.mouse.move(early(mark).x, early(mark).y - 300);
+			await until(
+				() => labeled(page),
+				(up) => up === false
+			);
+			const seen = await until(
+				() => opacities(page),
+				(o) => o.chosen.length > 0
+			);
+			assert.ok(seen.chosen.every((o) => o === 1), `the selection is dimmed: ${seen.chosen}`);
+			assert.ok(seen.rest.length > 0, 'no other mark to dim');
+			assert.ok(seen.rest.every((o) => o < 1 && o >= 0.5), `the rest is not dimmed a little: ${seen.rest}`);
+			assert.ok(seen.halo.every((f) => f === 'none'), `the halo is still drawn: ${seen.halo}`);
+			const lines = await outlined(page);
+			assert.ok(lines.length > 0 && lines.every((l) => l.on), `no outline on the mark: ${JSON.stringify(lines)}`);
+			assert.ok(lines.every((l) => l.border.every((w) => w === '1px')), `the outline is not a pixel: ${JSON.stringify(lines)}`);
+
+			// And nothing dimmed with nothing selected.
+			await page.evaluate(() => window.datum.bar.removePill('hid'));
+			await until(
+				() => opacities(page),
+				(o) => o.chosen.length === 0 && o.rest.every((v) => v === 1)
+			);
+		});
+	});
+
+	test('a finger’s tap says no label, and a ×3 pinch leaves the outline a pixel, around its mark', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				for (const argv of [
+					['switch', 'work', 'coding', '-t', '14:00'],
+					['switch', 'mood', 'good', '-t', '09:00'],
+					['switch', 'mood', 'great', '-t', '11:00']
+				])
+					assert.equal((await app.run(argv)).code, 0);
+				await app.redraw();
+				await page.locator(`${NOWVIEW} svg.svg`).waitFor();
+				await app.idle();
+				const mark = await aMark(page, BAND);
+				await page.touchscreen.tap(early(mark).x, early(mark).y);
+				await saysPills(page, [`hid:${mark.id}`]);
+				const rest = await until(
+					() => outlined(page),
+					(o) => o.length > 0 && o.every((l) => l.on)
+				);
+				// The picture's label waits for a finger's lift (#lib/hover.ts): a beat for it.
+				await page.waitForTimeout(150);
+				assert.equal(await labeled(page), false, 'a tap on the nowview put a label up');
+
+				const band = await page.locator(BAND).boundingBox();
+				const box = { x: early(mark).x - 100, y: band.y, width: 200, height: band.height };
+				let during;
+				await pinch(page, box, 60, 180, async () => {
+					during = {
+						zoom: Number(await page.locator(BAND).evaluate((b) => getComputedStyle(b).getPropertyValue('--zoom'))),
+						lines: await outlined(page)
+					};
+				});
+				// The control: the band is stretched three times along time.
+				assert.ok(Math.abs(during.zoom - 3) < 0.1, `the pinch stretched by ${during.zoom}`);
+				assert.ok(during.lines.length > 0, 'the outline went under the pinch');
+				assert.ok(during.lines.every((l) => l.on), `the outline left its mark: ${JSON.stringify(during.lines)}`);
+				assert.deepEqual(
+					during.lines.map((l) => l.border),
+					rest.map((l) => l.border).slice(0, during.lines.length),
+					'the outline changed width under the pinch'
+				);
+				assert.ok(during.lines.every((l) => l.border.every((w) => w === '1px')));
+				assert.deepEqual(app.errors, []);
+			},
+			{ clock: NOW, ...DESKTOP, device: { hasTouch: true } }
+		);
+	});
+});
+
 // ── one selection, every surface ───────────────────────────────────────
 
 describe('a selection made anywhere is brought out everywhere', () => {
@@ -551,7 +674,10 @@ describe('a selection made anywhere is brought out everywhere', () => {
 				() => litUp(page, TODAY),
 				(lit) => lit.join() === mark.id
 			);
-			assert.match((await tipText(page)) ?? '', /work/, 'the nowview said nothing about the selection');
+			await until(
+				() => outlined(page),
+				(o) => o.length > 0 && o.every((l) => l.on)
+			);
 		});
 	});
 });

@@ -139,10 +139,10 @@
 	import CliPane from '#lib/CliPane.svelte';
 	import Pill from '#lib/Pill.svelte';
 	import { pills, selected } from '#lib/bar.ts';
-	import { clockLabel } from '#lib/clock.ts';
 	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '#lib/cursor.ts';
-	import { inspectMark, instantOn, msPerPx, selectedTip, timeAxis } from '#lib/hover.ts';
-	import { markOf, pressSpent } from '#lib/inspect.ts';
+	import { inspectMark, instantOn, msPerPx, shownBox, timeAxis } from '#lib/hover.ts';
+	import { hidOf, markOf, marksIn, pressSpent } from '#lib/inspect.ts';
+	import { isSelected } from '#lib/selection.ts';
 	import { readLanes } from '#lib/lanes.ts';
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
@@ -641,6 +641,7 @@
 		slid = Math.max(0, Date.now() - drawn.now);
 		const by = `${vertical ? 'translateY' : 'translateX'}(${-slid / drawn.msPerUnit}px)`;
 		for (const g of groups) g.style.transform = by;
+		outline();
 		clearFar();
 		if (slid > drawn.ahead / 2 && refilled !== drawn.now) {
 			refilled = drawn.now;
@@ -1549,7 +1550,7 @@
 		// Before the early returns below: a snapshot draws no tick labels
 		// and leaves by the first of them, and a selection is drawn there
 		// too.
-		readTip($selected);
+		outline();
 		const centreOf = (selector: string) => {
 			const r = el?.querySelector(selector)?.getBoundingClientRect();
 			return r ? r.left + r.width / 2 - home.x : null;
@@ -1948,55 +1949,37 @@
 	/** The pills the selection made: the ones the margin draws beside their instants. */
 	const marginPills = $derived($pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID));
 
-	// ── the tooltip on a selected entry ────────────────────────────────
+	// ── the selected entry, outlined ───────────────────────────────────
 	//
-	// vividn: «maybe when something is selected in the nowview, it could also
-	// surface some bare info about it in a floating tooltip (start and end
-	// time as well as field and state + comment (maybe?)».
-	//
-	// Whatever SELECTED it: a tap here, a row tapped
-	// in the tail. The picture is asked which of its marks name the
-	// selected entries (`selectedTip`, #lib/hover.ts) and the tooltip
-	// floats over them, so a selection this window does not draw shows
-	// nothing — «and nowview if that particular piece of data is
-	// represented there».
-	//
-	// The COMMENT is left out, and #lib/inspect.ts says why: a mark carries
-	// its field, its state and its instants and nothing else, so a comment
-	// would be a whole `datum get` per gesture.
+	// vividn, 2026-10-28 (da-67mwa): «the outline is huge and gets huger when
+	// you zoom in. Let's change the highlight to be like what happens when a
+	// field pill is selected. Subtle outline, we can also slightly dim
+	// everything else». The picture's halo is drawn in the mark's own units,
+	// which the crop and a gesture stretch along time, so it is drawn here
+	// instead, over the band: a box a pixel wide around each mark that names
+	// a selected entry, whatever selected it, read where the mark is SEEN.
+	// So it is read again wherever a mark moves: a redraw or a resize
+	// (`place`), the slide on now (`flow`), and each step of a gesture.
 
-	/** What the tooltip says and where it floats, in the viewport's own px. */
-	let tip = $state.raw<{ field: string; state: string; when: string; x: number; y: number } | null>(null);
+	/** The selected entries' marks, in px across and down the band. */
+	let outlines = $state.raw<{ x: number; y: number; w: number; h: number; dot: boolean }[]>([]);
 
-	/** The two instants as one label: a span, or the one instant of a dot. */
-	function whenOf(from: number | null, to: number | null): string {
-		if (from === null || to === null) return '';
-		return from === to
-			? clockLabel(new Date(from))
-			: `${clockLabel(new Date(from))}–${clockLabel(new Date(to))}`;
-	}
-
-	function readTip(hids: string[]): void {
-		const svg = svgEl();
-		const found = svg && selectedTip(svg, hids);
-		if (!found) return void (tip = null);
-		const { box } = found;
-		tip = {
-			field: found.tip.field,
-			state: found.tip.state,
-			when: whenOf(found.tip.from, found.tip.to),
-			x: Math.max(8, Math.min(box.left + box.width / 2, window.innerWidth - 8)),
-			y: Math.min(box.bottom + 8, window.innerHeight - 44)
-		};
-	}
-
-	// Read again whenever the selection changes AND whenever the picture is
-	// redrawn or the box resized — `place` is the one that knows the latter,
-	// and it runs off the same MutationObserver the margin pills are placed
-	// by, so the tooltip cannot be left floating over a mark that is gone.
-	$effect.pre(() => {
+	function outline(): void {
+		const [svg, band] = [svgEl(), el?.querySelector('.nowview-band')?.getBoundingClientRect()];
 		const hids = $selected;
-		untrack(() => readTip(hids));
+		outlines =
+			!svg || !band || !hids.length
+				? []
+				: marksIn(svg)
+						.filter((m) => isSelected(hids, hidOf(m) ?? ''))
+						.map((m) => ({ r: shownBox(m), dot: m.localName === 'circle' }))
+						.filter(({ r }) => r.width > 0 && r.height > 0)
+						.map(({ r, dot }) => ({ x: r.left - band.left, y: r.top - band.top, w: r.width, h: r.height, dot }));
+	}
+
+	$effect(() => {
+		void [$selected, zoom, rest, panned];
+		untrack(outline);
 	});
 
 	/**
@@ -2080,6 +2063,9 @@
 		     snapshot, the one picture here drawn from data: the overlay has
 		     none, and a write asks for the day's data layer (da-0e06p). -->
 		<CliPane {spec} epoch={(showHistory ? 0 : epoch) + refills} compose={crop} dims={false} {standby} />
+		{#each outlines as o}
+			<span class="outline" class:dot={o.dot} style:left="{o.x}px" style:top="{o.y}px" style:width="{o.w}px" style:height="{o.h}px"></span>
+		{/each}
 	</div>
 
 	<!-- The wait's mark: a ring that closes over LONG_MS, and a dashed stem
@@ -2208,16 +2194,6 @@
 		>
 	{/if}
 
-	{#if tip}
-		<div class="nowview-tip" role="status" style:left="{tip.x}px" style:top="{tip.y}px">
-			<span class="what"
-				><span class="field">{tip.field}</span>{#if tip.state}<span class="state"
-						>{tip.state}</span
-					>{/if}</span
-			>
-			{#if tip.when}<span class="when">{tip.when}</span>{/if}
-		</div>
-	{/if}
 </div>
 
 <style>
@@ -2623,45 +2599,24 @@
 		}
 	}
 
-	/* THE SELECTED ENTRY'S TOOLTIP (da-pzzoz) — vividn: «surface some bare
-	   info about it in a floating tooltip (start and end time as well as
-	   field and state». Fixed like the picture's hover label, and for the
-	   same reason: a band clips its picture, and a tooltip inside it would
-	   be clipped with it. `pointer-events: none` — the band under it keeps
-	   every gesture. */
-	.nowview-tip {
-		position: fixed;
-		z-index: 11;
-		transform: translateX(-50%);
-		display: flex;
-		gap: 0.5em;
-		align-items: baseline;
-		max-width: calc(100vw - 16px);
-		box-sizing: border-box;
-		padding: 2px 8px;
-		border: 1px solid #ffffff;
-		border-radius: 6px;
-		background: var(--ground);
-		color: var(--ink);
-		font-size: 0.72rem;
-		line-height: 1.4;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+	/* THE SELECTED ENTRY (da-67mwa): a pixel's outline around each of its
+	   marks, the same at any scale, in place of the picture's halo, which a
+	   stretch widens; and every other mark dimmed a little, «just a little
+	   bit to make the selected entry/field pop». */
+	.nowview-band :global(svg.svg [data-selected]) {
+		filter: none;
+	}
+	.nowview-band :global(svg.svg:has([data-selected]) :is([data-state], [data-id]):not([data-selected])) {
+		opacity: 0.7;
+	}
+	.outline {
+		position: absolute;
+		box-sizing: content-box;
+		margin: -1px;
+		border: 1px solid var(--ink-bright);
 		pointer-events: none;
 	}
-
-	.nowview-tip .field {
-		font-weight: 600;
-	}
-
-	.nowview-tip .state::before {
-		content: ': ';
-		font-weight: 400;
-		color: var(--muted);
-	}
-
-	.nowview-tip .when {
-		color: var(--muted);
+	.outline.dot {
+		border-radius: 50%;
 	}
 </style>
