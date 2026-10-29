@@ -61,7 +61,7 @@ pub fn dayview(args: DayviewArgs, db: &Db) -> Result<()> {
         let contains_now = window_contains_today(&args, today, end_date)?;
         let periodic =
             dayview_periodic_refresh(contains_now, args.output_file.is_some(), stdout_is_tty());
-        crate::commands::watch::watch_loop(db, periodic, || render_once(&args, db))
+        crate::commands::watch::watch_loop(db, periodic, |db| render_once(&args, db))
     } else {
         render_once(&args, db)
     }

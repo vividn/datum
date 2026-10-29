@@ -261,10 +261,75 @@ fn a_reader_reads_through_its_writers_open_session() {
 }
 
 /// A watch reads a checkpointed file `immutable`, which SQLite trusts not
-/// to change: once its owner writes, the watch says so and ends, rather than
-/// show a file it no longer reads.
+/// to change: once its owner writes, the watch opens it again, read-only,
+/// and draws what was written, and goes on to draw the next write too
+/// (da-xwde8). One write is one reopen: a quiet file is not drawn again.
 #[test]
-fn a_readers_watch_ends_once_its_owner_writes() {
+fn a_readers_watch_draws_its_owners_writes() {
+    if root() {
+        return;
+    }
+    let env = Env::new();
+    let guard = env.read_only(&["town.db"]);
+    let mut watch = env
+        .command(&["dayview", "-w"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let drawn = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut out = watch.stdout.take().unwrap();
+    let into = drawn.clone();
+    std::thread::spawn(move || {
+        use std::io::Read;
+        let mut buf = [0u8; 4096];
+        while let Ok(n @ 1..) = out.read(&mut buf) {
+            into.lock().unwrap().extend_from_slice(&buf[..n]);
+        }
+    });
+    let shows = |field: &str| String::from_utf8_lossy(&drawn.lock().unwrap()).contains(field);
+    let wait_for = |field: &str, watch: &mut std::process::Child| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !shows(field) {
+            assert!(
+                watch.try_wait().unwrap().is_none(),
+                "the watch ended before it drew {field}"
+            );
+            assert!(Instant::now() < deadline, "the watch never drew {field}");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    wait_for("coffee", &mut watch);
+    let mut guard = Some(guard);
+    for field in ["kettle", "teapot"] {
+        assert!(!shows(field));
+        // The owner writes, past a coarse clock's tick, and the file is
+        // read-only to the watch again.
+        std::thread::sleep(Duration::from_millis(20));
+        drop(guard.take());
+        env.ok(&["occur", field]);
+        guard = Some(env.read_only(&["town.db"]));
+        wait_for(field, &mut watch);
+    }
+    // Each render ends its SVG; three polls with no write add none.
+    let renders = || {
+        String::from_utf8_lossy(&drawn.lock().unwrap())
+            .matches("</svg>")
+            .count()
+    };
+    std::thread::sleep(Duration::from_millis(200));
+    let settled = renders();
+    std::thread::sleep(Duration::from_millis(1500));
+    assert_eq!(renders(), settled, "the watch drew a file no one wrote");
+    assert!(watch.try_wait().unwrap().is_none(), "the watch ended");
+    watch.kill().unwrap();
+    watch.wait().unwrap();
+}
+
+/// What ends a reader's watch leads its error: the file it first read
+/// having changed is no cause, as the watch reads it again (da-xwde8).
+#[test]
+fn a_readers_watch_ends_on_its_own_cause() {
     if root() {
         return;
     }
@@ -277,14 +342,11 @@ fn a_readers_watch_ends_once_its_owner_writes() {
         .spawn()
         .unwrap();
     use std::io::Read;
-    // Its first render, then the rest drained, so the pipe stays open.
     let mut out = watch.stdout.take().unwrap();
     out.read_exact(&mut [0u8; 1]).unwrap();
     std::thread::spawn(move || std::io::copy(&mut out, &mut std::io::sink()));
-    // The owner writes, past a coarse clock's tick.
-    std::thread::sleep(Duration::from_millis(20));
     drop(guard);
-    env.ok(&["occur", "coffee"]);
+    std::fs::rename(env.db(), env.dir().join("moved.db")).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     let status = loop {
         if let Some(status) = watch.try_wait().unwrap() {
@@ -292,19 +354,19 @@ fn a_readers_watch_ends_once_its_owner_writes() {
         }
         if Instant::now() > deadline {
             watch.kill().unwrap();
-            panic!("the watch went on reading a file that changed");
+            panic!("the watch went on with no file to read");
         }
         std::thread::sleep(Duration::from_millis(50));
     };
     let mut stderr = String::new();
-    watch
-        .stderr
-        .take()
-        .unwrap()
+    (watch.stderr.take().unwrap())
         .read_to_string(&mut stderr)
         .unwrap();
     assert!(!status.success());
-    assert!(stderr.contains("the database changed"), "{stderr}");
+    assert!(
+        stderr.starts_with("Error: open the changed database again"),
+        "{stderr}"
+    );
 }
 
 /// A reader takes no spool lock, and a spool it cannot read is said, not

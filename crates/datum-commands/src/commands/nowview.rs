@@ -73,7 +73,7 @@ pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
     if args.output_file.is_none() {
         if args.watch {
             let periodic = nowview_terminal_periodic_refresh(stdout_is_tty());
-            return crate::commands::watch::watch_loop(db, periodic, || {
+            return crate::commands::watch::watch_loop(db, periodic, |db| {
                 render_terminal_once(&args, db)
             });
         }
@@ -87,7 +87,7 @@ pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
         // we'd be dumping SVG to a terminal, where time-tick refreshes just
         // scroll noise. There, only DB-change wakes the renderer.
         let periodic = nowview_periodic_refresh(args.output_file.is_some(), stdout_is_tty());
-        crate::commands::watch::watch_loop(db, periodic, || render_once(&args, db))
+        crate::commands::watch::watch_loop(db, periodic, |db| render_once(&args, db))
     } else {
         render_once(&args, db)
     }

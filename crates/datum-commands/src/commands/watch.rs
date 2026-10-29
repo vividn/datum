@@ -37,30 +37,52 @@ pub fn data_version(db: &Db) -> Result<i64> {
 /// advancing on an idle DB. `None` disables the time tick; the loop only
 /// wakes on a real data change.
 ///
+/// `render` is given the handle to read: a file opened `immutable` is never
+/// read again by SQLite, so on its change the loop opens it again, read-only
+/// as before, and renders from that (da-xwde8); a render a write met is
+/// drawn again at the next poll, the file having changed. A reopen that
+/// fails is tried at the next poll, and a second failure in a row ends the
+/// watch.
+///
 /// Returns `Err` if `render` returns `Err`. The default Ctrl-C handler
 /// (process exit) terminates the loop cleanly — no signal handler is
 /// installed so the user gets the usual instant SIGINT teardown.
 pub fn watch_loop<F>(db: &Db, periodic_refresh: Option<Duration>, mut render: F) -> Result<()>
 where
-    F: FnMut() -> Result<()>,
+    F: FnMut(&Db) -> Result<()>,
 {
-    render()?;
+    render(db)?;
+    let mut reopened: Option<Db> = None;
+    let mut failed = false;
     let mut last_version = data_version(db)?;
     let mut last_render = Instant::now();
     loop {
         std::thread::sleep(POLL_INTERVAL);
-        // A file opened `immutable` is never read again: its change ends
-        // the watch, as what it shows is no longer the file (da-uxfj3).
-        if db.changed_while_read() {
-            anyhow::bail!("the database changed, and this watch reads it read-only: run it again");
+        let held = reopened.as_ref().unwrap_or(db);
+        // Only a handle opened at a path says its file changed.
+        if let Some(path) = held.path().filter(|_| held.changed_while_read()) {
+            match Db::open_to_read(&path.to_string_lossy()) {
+                Ok(fresh) => {
+                    failed = false;
+                    render(&fresh)?;
+                    last_version = data_version(&fresh)?;
+                    last_render = Instant::now();
+                    reopened = Some(fresh);
+                }
+                Err(e) if failed => {
+                    return Err(e).context("open the changed database again to read it");
+                }
+                Err(_) => failed = true,
+            }
+            continue;
         }
         // If the pragma read fails transiently, fall back to the
         // periodic-refresh tick rather than aborting the watch session.
-        let version = data_version(db).unwrap_or(last_version);
+        let version = data_version(held).unwrap_or(last_version);
         let changed = version != last_version;
         let stale = periodic_refresh.is_some_and(|d| last_render.elapsed() >= d);
         if changed || stale {
-            render()?;
+            render(held)?;
             last_version = version;
             last_render = Instant::now();
         }
@@ -141,7 +163,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("watch_err.db");
         let db = Db::open(path.to_str().unwrap()).unwrap();
-        let res: Result<()> = watch_loop(&db, Some(Duration::from_secs(60)), || {
+        let res: Result<()> = watch_loop(&db, Some(Duration::from_secs(60)), |_| {
             anyhow::bail!("render exploded")
         });
         assert!(res.is_err());
@@ -154,7 +176,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("watch_err_none.db");
         let db = Db::open(path.to_str().unwrap()).unwrap();
-        let res: Result<()> = watch_loop(&db, None, || anyhow::bail!("render exploded"));
+        let res: Result<()> = watch_loop(&db, None, |_| anyhow::bail!("render exploded"));
         assert!(res.is_err());
     }
 }

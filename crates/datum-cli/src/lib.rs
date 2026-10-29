@@ -316,6 +316,17 @@ fn reader(path: &str, command: &Command) -> bool {
         && !datum_core::db::Db::writable(std::path::Path::new(path))
 }
 
+/// Does `command` watch? A watch opens the database again as it changes
+/// (da-xwde8), so the first handle's file changing is no cause of its end.
+fn watches(command: &Command) -> bool {
+    match command {
+        Command::Dayview(a) => a.watch,
+        Command::Nowview(a) => a.watch,
+        Command::View(a) => a.watch,
+        _ => false,
+    }
+}
+
 /// `result`, failed if the file a read-only `db` read changed meanwhile:
 /// a failure of its own is kept, as the change may or may not be its cause.
 fn whole(result: Result<()>, db: &datum_core::db::Db) -> Result<()> {
@@ -608,8 +619,10 @@ fn dispatch_single(cli: Cli) -> Result<()> {
     claim_behind_queue(&db, &path, &cli.command)?;
 
     let before = db.conn().total_changes();
+    let watching = watches(&cli.command);
     let result = locked_out(cmd::dispatch(cli, &db), &db, before, spools, &path);
-    name_holder(whole(result, &db), &resolved.path)
+    let result = if watching { result } else { whole(result, &db) };
+    name_holder(result, &resolved.path)
 }
 
 /// A write that waited out the lock says who held it (da-hyem1).
@@ -663,6 +676,10 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
         let _ = config::ensure_registered(&resolved);
     }
     let before = db.conn().total_changes();
+    let watching = match &invocation {
+        Invocation::Multi { sides, .. } => sides.iter().any(|c| watches(&c.command)),
+        Invocation::Single(c) => watches(&c.command),
+    };
     let result = locked_out(
         cmd::dispatch_invocation(invocation, &db),
         &db,
@@ -670,7 +687,8 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
         spools,
         &path,
     );
-    name_holder(whole(result, &db), &resolved.path)
+    let result = if watching { result } else { whole(result, &db) };
+    name_holder(result, &resolved.path)
 }
 
 fn try_kit_level2_dispatch() -> Result<Option<()>> {
