@@ -151,7 +151,7 @@ seed(
 		subfields: { size: SIZE }
 	})
 );
-seed(calls.specArgv({ ...SPEC, field: 'mood', verb: 'switch', never_false: true, relative_to: 'coffee', state_descriptions: { happy: 'up' }, state_symbols: { happy: 'h' }, state_lookup_field: 'feeling', comment_remainder: true }));
+seed(calls.specArgv({ ...SPEC, field: 'mood', verb: 'switch', never_false: true, relative_to: 'coffee', anchor_pos_ratio: 0.5, anchor_size_ratio: 0.5, state_descriptions: { happy: 'up' }, state_symbols: { happy: 'h' }, state_lookup_field: 'feeling', comment_remainder: true }));
 seed(['alias', 'set', 'cof', 'occur coffee']);
 seed(calls.savePlanArgv(PLAN, false));
 seed(calls.newLayoutArgv(LAYOUT, 'k'));
