@@ -631,6 +631,32 @@ mod tests {
         assert!(err.contains("not a valid view"), "{err}");
     }
 
+    /// A view whose literals hold a keyword, `--` or `;` installs and runs
+    /// (da-ovr35).
+    #[test]
+    fn a_view_with_code_words_in_its_literals_installs() {
+        let db = db();
+        let views: Vec<ViewEntry> = [
+            "SELECT replace(field, 'o', '0') AS f FROM entries",
+            "SELECT CASE WHEN field = 'chore' THEN 'drop-off' END AS what FROM entries",
+            "SELECT 'a -- b' AS x FROM entries",
+            "SELECT field FROM entries WHERE json_extract(data, '$.note') = 'Update due'",
+            "SELECT group_concat(field, '; ') AS g FROM entries",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, sql)| ViewEntry {
+            sql: sql.to_string(),
+            ..view(&format!("v{i}"))
+        })
+        .collect();
+        db.install_kit_views("k", &views, false).unwrap();
+        for v in &views {
+            db.execute_view(&v.sql)
+                .unwrap_or_else(|e| panic!("{}: {e}", v.sql));
+        }
+    }
+
     #[test]
     fn execute_view_runs_select_and_with() {
         let db = db();

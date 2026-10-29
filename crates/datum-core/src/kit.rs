@@ -1189,11 +1189,19 @@ pub(crate) fn starts_with_keyword(s: &str, kw: &str) -> bool {
 /// (2) statement chaining via `;` and SQL comments is blocked here;
 /// (3) DDL/DML keywords (CREATE/DROP/ATTACH/…) are rejected here.
 ///
+/// (2) and (3) read only the SQL outside quoted literals and quoted
+/// identifiers ([`code_outside_quotes`]), so `'drop-off'` or `'a -- b'` is
+/// text, as SQLite reads it (da-ovr35). `REPLACE` directly followed by `(`
+/// is the string function: the statement is `REPLACE INTO`, which only
+/// starts a statement, and (1) already allows none but a SELECT.
+///
 /// Out of scope here: resource exhaustion (da-sky7). An unbounded
 /// `WITH RECURSIVE` or a cartesian join is entirely legal SELECT SQL and
 /// no keyword blocklist can catch it; `Db::execute_view` bounds it at run
 /// time with a wall-clock budget that interrupts runaway views.
 fn validate_sql_fragment(subject: &str, s: &str) -> Result<()> {
+    let s = &code_outside_quotes(s)
+        .ok_or_else(|| DatumError::Other(format!("{subject}: a quoted literal is not closed")))?;
     if s.contains(';') {
         return Err(DatumError::Other(format!(
             "{subject}: ';' is not allowed (no statement chaining)"
@@ -1206,13 +1214,90 @@ fn validate_sql_fragment(subject: &str, s: &str) -> Result<()> {
     }
     let upper = s.to_ascii_uppercase();
     for forbidden in FORBIDDEN_DDL_KEYWORDS {
-        if contains_word(&upper, forbidden) {
+        if contains_word(&upper, forbidden, *forbidden == "REPLACE") {
             return Err(DatumError::Other(format!(
                 "{subject}: forbidden keyword '{forbidden}'"
             )));
         }
     }
     Ok(())
+}
+
+/// `s` with each quoted literal (`'…'`, `''` inside it a quote), quoted
+/// identifier (`"…"`, `` `…` ``, `[…]`) and Tcl-style parameter (`:a(…)`)
+/// replaced by a space, which keeps the words either side of it apart, each
+/// token read as SQLite's `tokenize.c` reads it (da-ovr35). None when a
+/// quote is not closed: SQLite refuses that too. A comment ends the scan,
+/// its text kept as written.
+fn code_outside_quotes(s: &str) -> Option<String> {
+    // SQLite's IdChar: a `$` inside a name is part of it, not a parameter.
+    let id = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$' || !c.is_ascii();
+    let z: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < z.len() {
+        let c = z[i];
+        let next = z.get(i + 1).copied();
+        let close = match c {
+            // A comment starts here: the rest is left as it is, for the
+            // comment check to refuse, a quote in it included.
+            '-' | '/' if next == Some(if c == '-' { '-' } else { '*' }) => {
+                out.extend(&z[i..]);
+                return Some(out);
+            }
+            '\'' | '"' | '`' => c,
+            '[' => ']',
+            // A parameter: its name, `::` in it, then a `(…)` suffix running
+            // to the first space or `)`, whatever it holds. One SQLite
+            // refuses as a token (no name, no `)`) is left as written.
+            '$' | ':' | '@' | '#' if c != '$' || i == 0 || !id(z[i - 1]) => {
+                let (mut j, mut n, mut whole) = (i + 1, 0, true);
+                while j < z.len() {
+                    if id(z[j]) {
+                        n += 1;
+                        j += 1;
+                    } else if z[j] == '(' && n > 0 {
+                        while j < z.len() && !z[j].is_whitespace() && z[j] != ')' {
+                            j += 1;
+                        }
+                        whole = j < z.len() && z[j] == ')';
+                        j += usize::from(whole);
+                        break;
+                    } else if z[j] == ':' && z.get(j + 1) == Some(&':') {
+                        j += 2;
+                    } else {
+                        break;
+                    }
+                }
+                if n > 0 && whole {
+                    out.push(' ');
+                } else {
+                    out.extend(&z[i..j]);
+                }
+                i = j;
+                continue;
+            }
+            _ => {
+                out.push(c);
+                i += 1;
+                continue;
+            }
+        };
+        i += 1;
+        loop {
+            let d = *z.get(i)?;
+            i += 1;
+            if d == close {
+                if close != ']' && z.get(i) == Some(&close) {
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        out.push(' ');
+    }
+    Some(out)
 }
 
 fn is_safe_identifier(s: &str) -> bool {
@@ -1229,8 +1314,10 @@ fn is_safe_identifier(s: &str) -> bool {
 
 /// Whole-word case-insensitive containment check on already-uppercased
 /// haystack vs uppercase needle. A "word" is bounded by non-`[A-Z0-9_]`
-/// characters, mirroring SQL identifier conventions.
-fn contains_word(upper_haystack: &str, upper_needle: &str) -> bool {
+/// characters, mirroring SQL identifier conventions. With `call_ok`, an
+/// occurrence directly followed by `(` (spaces between) is a function call
+/// and does not count.
+fn contains_word(upper_haystack: &str, upper_needle: &str, call_ok: bool) -> bool {
     let bytes = upper_haystack.as_bytes();
     let needle = upper_needle.as_bytes();
     let nlen = needle.len();
@@ -1244,7 +1331,8 @@ fn contains_word(upper_haystack: &str, upper_needle: &str) -> bool {
         if &bytes[i..i + nlen] == needle {
             let left_ok = i == 0 || !is_ident_byte(bytes[i - 1]);
             let right_ok = i + nlen == hlen || !is_ident_byte(bytes[i + nlen]);
-            if left_ok && right_ok {
+            let call = call_ok && upper_haystack[i + nlen..].trim_start().starts_with('(');
+            if left_ok && right_ok && !call {
                 return true;
             }
         }
@@ -1992,6 +2080,62 @@ script = "shellout"
             .unwrap_err()
             .to_string();
         assert!(err.contains("LOAD_EXTENSION"), "unexpected error {err:?}");
+    }
+
+    /// What is quoted is text, as SQLite reads it: a keyword, `;` or `--`
+    /// inside a literal is no code, and `replace(` is the string function
+    /// (da-ovr35). Outside a literal each is refused as before.
+    #[test]
+    fn view_validation_reads_quoted_literals_as_text() {
+        for sql in [
+            "SELECT replace(field, 'o', '0') AS f FROM entries",
+            "SELECT CASE WHEN field = 'chore' THEN 'drop-off' END AS what FROM entries",
+            "SELECT 'a -- b' AS x FROM entries",
+            "SELECT field FROM entries WHERE json_extract(data, '$.note') = 'Update due'",
+            "SELECT group_concat(state, '; ') FROM entries",
+            "SELECT 'it''s; DROP' AS x, \"drop\" FROM entries",
+            "SELECT REPLACE (field, 'a', 'b') FROM entries",
+            "SELECT a$b('; DROP') FROM entries WHERE field = :f AND state = ?1",
+        ] {
+            validate_view_entry(&view(sql)).unwrap_or_else(|e| panic!("{sql}: {e}"));
+        }
+        for (sql, said) in [
+            ("SELECT 1; DELETE FROM entries", "';'"),
+            ("SELECT 'a' -- b", "comments"),
+            ("SELECT 'x' AS y FROM entries WHERE DROP", "DROP"),
+            ("SELECT 'it''s'; DROP TABLE entries", "';'"),
+            // An identifier's quote is not a literal's: `[a'b]` hides no `;`.
+            (
+                "SELECT [a'b] AS c; DELETE FROM entries WHERE [c'] = 1",
+                "';'",
+            ),
+            (
+                "SELECT `a'b` AS c; DELETE FROM entries WHERE `c'` = 1",
+                "';'",
+            ),
+            ("SELECT 'open", "not closed"),
+            // A parameter's `(…)` suffix is one token: its quote opens no
+            // literal.
+            (
+                "SELECT :a(') AS c; DELETE FROM entries WHERE field IS NOT :b(')",
+                "';'",
+            ),
+            ("SELECT $x(') AS c; DROP TABLE entries; SELECT $y(')", "';'"),
+            (
+                "SELECT $::x(') AS c; DROP TABLE entries; SELECT @y(')",
+                "';'",
+            ),
+            ("SELECT 1 -- it's fine", "comments"),
+            ("SELECT 1 /* it's */", "comments"),
+        ] {
+            let err = validate_view_entry(&view(sql)).unwrap_err().to_string();
+            assert!(err.contains(said), "{sql}: unexpected error {err:?}");
+        }
+        // `REPLACE` that is not a call is the statement's word.
+        let err = validate_sql_fragment("i", "1 OR REPLACE INTO x")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("REPLACE"), "{err}");
     }
 
     #[test]
