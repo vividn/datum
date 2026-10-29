@@ -1305,6 +1305,163 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 		);
 	});
+
+	// da-y6jzs, vividn: «It should appear immediately when the now section is
+	// off the screen. Pressing the "now->" button at any point, even during
+	// acceleration or data redraw should immediately snap back to now and have
+	// the data be ready to go».
+	test('mid-drag, «now →» is there in every frame now is off the band, and goes in the frame the drag brings it back', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const box = await seeded(app);
+				const y = box.y + box.height / 2;
+				const cdp = await page.context().newCDPSession(page);
+				const at = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ id: 3, x, y }] });
+				/** After a frame: whether the now line is past the band's end, and the button's words. */
+				const look = () =>
+					page.evaluate(
+						(pane) =>
+							new Promise((resolve) =>
+								requestAnimationFrame(() => {
+									const p = document.querySelector(pane);
+									const band = p.querySelector('.nowview-band').getBoundingClientRect();
+									const line = p.querySelector('svg.svg .current-time-line').getBoundingClientRect();
+									resolve({ off: line.left > band.right, button: p.querySelector('.nowview-now')?.textContent ?? null });
+								})
+							),
+						PANE
+					);
+				await page.evaluate(noWait);
+				const x0 = box.x + 40;
+				await at('touchStart', x0);
+				const out = [];
+				for (let d = 12; d <= 240; d += 12) {
+					await at('touchMove', x0 + d);
+					out.push({ d, ...(await look()) });
+				}
+				const back = [];
+				for (let d = 228; d >= 0; d -= 12) {
+					await at('touchMove', x0 + d);
+					back.push({ d, ...(await look()) });
+				}
+				await at('touchEnd');
+				await cdp.detach();
+				// Off the band, and the button there in that frame and every one after it, finger still down.
+				const left = out.findIndex((f) => f.off);
+				assert.ok(left >= 0, `the drag never took now off the band: ${JSON.stringify(out)}`);
+				assert.deepEqual(
+					out.slice(left).filter((f) => f.button !== 'now →'),
+					[],
+					'a frame with now off the band and no «now →»'
+				);
+				// Brought back to where it started, the button goes in that frame.
+				assert.equal(back.at(-1).off, false);
+				assert.equal(back.at(-1).button, null, `«now» still there with the drag back on now: ${JSON.stringify(back)}`);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
+	test('«now →» pressed mid-coast, with the panned window’s picture still out: on now in the next frame, nothing asked, no picture after it', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const box = await seeded(app);
+				// Every picture off now is held until the test lets it go: the run «now» leaves behind.
+				await page.evaluate(() => {
+					window.__held = [];
+					window.__centred = 0;
+					const previous = window.datum.setRunner((argv, ...rest) => {
+						if (argv[0] !== 'nowview' || !argv.includes('--center')) return previous(argv, ...rest);
+						window.__centred++;
+						return new Promise((resolve) => window.__held.push(() => resolve(previous(argv, ...rest))));
+					});
+				});
+				// Flicks into the past, each let come to rest, until one asks for a window as it lets go; that picture
+				// is let land, so the one on screen is off now, and the flicks go on until another is asked.
+				await page.locator(`${BAND} svg.svg`).evaluate((svg) => (svg.dataset.first = ''));
+				for (let flicks = 1, landed = false; ; flicks++) {
+					assert.ok(flicks < 24, 'flick after flick back and nothing asked');
+					await flick(page, { x: box.x + 40, y: box.y + box.height / 2 }, 160);
+					if (await page.evaluate(() => window.__held.length)) {
+						if (landed) break;
+						await page.evaluate(() => window.__held.splice(0).forEach((go) => go()));
+						await page.waitForFunction((band) => document.querySelector(`${band} svg.svg`)?.dataset.first === undefined, BAND);
+						landed = true;
+					}
+					await page.waitForFunction(
+						(band) => {
+							const pan = document.querySelector(band).style.getPropertyValue('--pan');
+							const s = (window.__rest ??= { pan, n: 0 });
+							s.n = s.pan === pan ? s.n + 1 : 0;
+							s.pan = pan;
+							return s.n >= 10 && !(window.__rest = undefined);
+						},
+						BAND,
+						{ polling: 'raf' }
+					);
+				}
+				// In a frame the coast moves the band, the button is pressed; each frame after it is read, and the held
+				// picture let go ten frames on. Not in the first frame after the lift: a picture redraws only a task
+				// after a finger leaves it (da-hn2w6, #lib/hover.ts), and no finger is on the button that soon.
+				const frames = await page.evaluate(
+					(pane) =>
+						new Promise((resolve) => {
+							const band = document.querySelector(`${pane} .nowview-band`);
+							let [was, n, pressed, tag] = [band.style.getPropertyValue('--pan'), 0, -1, 0];
+							const read = () => {
+								const svg = band.querySelector('svg.svg');
+								svg.dataset.seen ??= String(++tag);
+								const [b, line] = [band.getBoundingClientRect(), svg.querySelector('.current-time-line')?.getBoundingClientRect()];
+								return {
+									svg: svg.dataset.seen,
+									line: line ? (line.left - b.left) / b.width : null,
+									button: !!document.querySelector(`${pane} .nowview-now`),
+									centred: window.__centred,
+									held: window.__held.length
+								};
+							};
+							const frame = () => {
+								n++;
+								const pan = band.style.getPropertyValue('--pan');
+								if (pressed < 0 && n > 3 && pan !== was) {
+									pressed = n;
+									frames.push({ ...read(), button: document.querySelector(`${pane} .nowview-now`)?.textContent });
+									document.querySelector(`${pane} .nowview-now`).click();
+								} else if (pressed > 0) frames.push(read());
+								if (n - pressed === 10) window.__held.splice(0).forEach((go) => go());
+								was = pan;
+								if (pressed > 0 && n - pressed >= 70) resolve(frames);
+								else requestAnimationFrame(frame);
+							};
+							const frames = [];
+							requestAnimationFrame(frame);
+						}),
+					PANE
+				);
+				await app.idle();
+				const [press, next, ...after] = frames;
+				assert.equal(press.button, 'now →', 'pressed mid-coast, with now off the band');
+				assert.ok(press.held > 0, 'no picture of the panned window was out when «now» was pressed');
+				// The next frame: on now, the now line at the band's end, the button gone.
+				assert.ok(next.line > 0.6 && next.line < 1, `the now line ${next.line} of the band along, the frame after «now»`);
+				assert.equal(next.button, false);
+				assert.notEqual(next.svg, press.svg, 'the picture the coast was on');
+				// And it stays: no other picture, the held one let go included, and no window off now asked.
+				assert.deepEqual(
+					after.filter((f) => f.svg !== next.svg || f.line !== next.line),
+					[],
+					'the picture changed after «now»'
+				);
+				assert.equal(after.at(-1).centred, press.centred, 'a window off now asked after «now»');
+				assert.equal(await page.locator(`${BAND} svg.svg`).getAttribute('data-seen'), next.svg);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
 });
 
 // ── one band of time across a clock change (da-31hhd) ───────────────

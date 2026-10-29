@@ -624,11 +624,13 @@ describe('a drag along the band pans the window', () => {
 			await app.idle();
 			assert.deepEqual(await pillsOf(page), ['time:-t 14:20']);
 
+			// On now at once, from the picture kept drawn there: nothing is asked (da-y6jzs).
 			await page.locator(`${NOWVIEW} .nowview-now`).click();
 			await until(
-				() => asked(page),
-				(t) => t === null
+				() => geometry(page).then((n) => n.nowLine),
+				(line) => line !== null
 			);
+			assert.equal(await asked(page), '2026-09-10T14:20:00.000Z', '«now» asked for a picture');
 			assert.deepEqual(await pillsOf(page), []);
 			assert.equal(await page.evaluate(() => window.datum.cursor.of()), null);
 		});
@@ -1518,10 +1520,12 @@ describe('the now section belongs to now (da-dv45l)', () => {
 
 			await page.locator(`${NOWVIEW} .nowview-now`).click();
 			await until(
-				() => asked(page),
-				(t) => t === null
+				() => geometry(page).then((n) => n.nowLine),
+				(line) => line !== null
 			);
-			assert.equal(await history(page), stretched, '«now» undid the stretch');
+			// The picture on now it shows is the one kept drawn at the stretch's window (da-y6jzs).
+			const kept = await page.evaluate(() => window.__datumStandby.filter((a) => a[0] === 'nowview').at(-1));
+			assert.equal(kept?.[kept.indexOf('--history') + 1], stretched, '«now» undid the stretch');
 		});
 	});
 });

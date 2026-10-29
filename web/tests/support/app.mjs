@@ -1613,6 +1613,13 @@ function app(page, errors, query, clean, internal) {
 		 * Uses `setRunner`, the seam's own extension point — the same hook
 		 * the wasm CLI arrives through — so the spy sees exactly what the
 		 * implementation sees and nothing has to be mocked.
+
+		 *
+		 * A pane's STANDBY (CliPane's, run under a `…:standby` key: the
+		 * nowview's picture on now, kept drawn while panned away, da-y6jzs)
+		 * goes to `__datumStandby` instead: it is no picture the pane asked
+		 * to show, and a test reading the last nowview asked as the window's
+		 * would read it.
 		 */
 		async spyOnRunner() {
 			await page.evaluate(async () => {
@@ -1629,8 +1636,9 @@ function app(page, errors, query, clean, internal) {
 				window.__datumSpied = true;
 				await window.datum.runQuiet(['tail']);
 				window.__datumSeen = [];
+				window.__datumStandby = [];
 				const previous = window.datum.setRunner((argv, ...rest) => {
-					window.__datumSeen.push(argv);
+					(String(rest[2]).endsWith(':standby') ? window.__datumStandby : window.__datumSeen).push(argv);
 					return previous(argv, ...rest);
 				});
 			});

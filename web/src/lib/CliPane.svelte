@@ -65,6 +65,13 @@
 		 * screen exactly as it is, and only the answer replaces it.
 		 */
 		dims = true,
+		/**
+		 * A second command kept drawn while `spec` is another (da-y6jzs): run
+		 * at the same size, again once its answer is `every` ms old or `epoch`
+		 * moves, and shown the moment `spec` becomes it, with no run. The
+		 * nowview's picture on now, while it is panned away.
+		 */
+		standby = undefined,
 		/** The caller's title controls, forwarded as the pane's `heading`. */
 		title: titled
 	}: {
@@ -75,6 +82,7 @@
 		writer?: PaneSpec | null;
 		compose?: (stdout: string, argv: string[]) => string;
 		dims?: boolean;
+		standby?: { spec: PaneSpec; every: number; epoch?: number };
 		title?: Snippet;
 	} = $props();
 
@@ -140,6 +148,7 @@
 		out = true;
 		const of = spec;
 		const argv = request.argv!;
+		const [ranAt, ranEpoch] = [Date.now(), standby?.epoch];
 		const next = await run(argv, undefined, undefined, guard ? undefined : key, undefined, undefined, !guard);
 		out = false;
 		if (guard && (next.changed?.length || next.code === UNANSWERED)) writer = of;
@@ -148,9 +157,52 @@
 			if (request.argv && !(guard && writer === spec)) return refresh();
 		}
 		if (next.superseded) return;
+		// The standby's answer, or one for a command the standby took over from meanwhile.
+		const words = JSON.stringify(argv);
+		if (words === keptFor) kept = { words, result: next, at: ranAt, epoch: ranEpoch };
+		if (words !== asked) return;
 		result = next;
-		shown = JSON.stringify(argv);
+		shown = words;
 	}
+
+	/**
+	 * The standby's last answer, from its own run or the pane's, which argv it
+	 * is for, and when and at what epoch it was ASKED: a slow run is the older
+	 * for it, never the fresher.
+	 */
+	let kept: { words: string; result: RunResult; at: number; epoch?: number } | null = null;
+	/** The standby's sized argv, as words. */
+	let keptFor = '';
+	/** The argv the pane last asked for, as words: a run for any other lands nowhere. */
+	let asked = '';
+	let keeping: ReturnType<typeof setTimeout> | undefined;
+
+	/**
+	 * The standby's answer, if it is still good for the command it is for:
+	 * under twice `every`, the slack a run of it under way takes. The
+	 * nowview's `every` is half what its picture draws ahead of now, so an
+	 * answer that old still holds now, and the pane's refill draws it anew.
+	 */
+	const keptGood = (words: string) =>
+		!!standby && words === keptFor && kept?.words === words && kept.epoch === standby.epoch && Date.now() - kept.at < 2 * standby.every;
+
+	/** Run the standby in the background, unless the pane shows it; again once its answer is `every` ms old. */
+	function keep(): void {
+		clearTimeout(keeping);
+		if (!standby || !keptFor || keptFor === asked) return;
+		const age = kept?.words === keptFor && kept.epoch === standby.epoch ? Date.now() - kept.at : Infinity;
+		keeping = setTimeout(
+			async () => {
+				const [words, epoch, at] = [keptFor, standby?.epoch, Date.now()];
+				const next = await run(JSON.parse(words) as string[], undefined, undefined, `${key}:standby`, undefined, undefined, true);
+				if (next.superseded || words !== keptFor) return;
+				kept = { words, result: next, at, epoch };
+				keep();
+			},
+			Math.max(0, standby.every - age)
+		);
+	}
+	onMount(() => () => clearTimeout(keeping));
 
 	// A press is a command the reader asked for, like a line typed: into
 	// the shared history and the bottom bar's receipt (da-0a5o). The
@@ -191,9 +243,31 @@
 	let ticks = $derived(!dependsOnNow(spec.argv) ? 0 : spec.argv[0] === 'nowview' ? $tenSeconds : $minute);
 	let request = $derived({ argv: table ? null : paneArgv(JSON.parse(words) as string[], sized), epoch, ticks });
 	let manual = $derived(guard && writer === spec);
+	let standbyArgv = $derived(standby && !table ? JSON.stringify(paneArgv(standby.spec.argv, sized)) : 'null');
 	$effect.pre(() => {
-		const asked = request;
-		if (browser && asked.argv && !manual) untrack(() => void refresh());
+		const next = request;
+		if (!browser || !next.argv || manual) return;
+		untrack(() => {
+			const words = JSON.stringify(next.argv);
+			// Become the standby: its answer at once, and no run (da-y6jzs).
+			if (words !== asked && keptGood(words)) {
+				asked = shown = words;
+				waiting = false;
+				result = kept!.result;
+				return keep();
+			}
+			asked = words;
+			void refresh();
+			keep();
+		});
+	});
+	$effect.pre(() => {
+		const words = standbyArgv;
+		void [standby?.every, standby?.epoch];
+		untrack(() => {
+			keptFor = words === 'null' ? '' : words;
+			keep();
+		});
 	});
 	// The picture on screen is not the one asked for: the cursor moved, and
 	// the new one is on its way. Dimmed rather than presented as current.

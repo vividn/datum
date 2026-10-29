@@ -209,11 +209,9 @@ describe('the time cursor', () => {
 			const row = tail.rows.filter((r) => r.includes('tea')).at(-1);
 			assert.ok(row?.[tail.keys.indexOf('time')].startsWith(text.slice(3)), JSON.stringify(row));
 			assert.equal(await pillText(page), null);
-			await page.waitForFunction(() => {
-				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
-				return argv && !argv.includes('-t');
-			});
-			assert.equal(await page.locator('line.cursor').count(), 0);
+			// The nowview back on now: no line at an instant (da-zccjs). From the
+			// picture on now kept drawn, so not by a nowview asked (da-y6jzs).
+			await page.locator('line.cursor').first().waitFor({ state: 'detached' });
 
 			// Click again: a press on a fresh pill also clears the cursor everywhere.
 			// Once the band has drawn the tea (da-cv8p6): its refresh runs
@@ -226,11 +224,9 @@ describe('the time cursor', () => {
 			assert.match((await pillText(page)) ?? '', /^-t \d\d:\d\d$/, 'the second click set no pill');
 			await page.locator(`${PILL} button.remove`).click();
 			assert.equal(await page.locator(PILL).count(), 0);
-			await page.waitForFunction(() => {
-				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
-				return argv && !argv.includes('-t');
-			});
-			assert.equal(await page.locator('line.cursor').count(), 0);
+			// The nowview back on now: no line at an instant (da-zccjs). From the
+			// picture on now kept drawn, so not by a nowview asked (da-y6jzs).
+			await page.locator('line.cursor').first().waitFor({ state: 'detached' });
 		});
 	});
 

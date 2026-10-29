@@ -113,6 +113,10 @@
 	arrow says which way), which takes the window back AND the time-based
 	pills away with it — and keeps the window's length: «stretching should
 	always leave now where it is», and a stretch alone does not leave now.
+	It is there from the frame a drag, a coast or a pinch takes the band off
+	now, and goes in the frame one brings it back (da-y6jzs); and the picture
+	on now is kept drawn meanwhile (CliPane's `standby`), so a press, mid-coast
+	or with a run out, shows it at once and asks for nothing.
 	On now with a pill it reads «reset». `← selection` appears when a
 	selection exists that the window does not contain (vividn's second
 	«maybe»).
@@ -273,6 +277,15 @@
 		)
 	);
 
+	/**
+	 * The picture on now, kept drawn while the window is anywhere else
+	 * (da-y6jzs, vividn: «this data should always be ready to go»): run again
+	 * as often as the one on now is (`refills`), so «now» shows it at once.
+	 */
+	const standby = $derived(
+		showHistory ? { spec: nowviewSpec(history, undefined, vertical, undefined, labels, surround), every: minutes * 30_000, epoch: labels ? epoch : 0 } : undefined
+	);
+
 	// Above `ask`, which the cursor's subscription below calls as the
 	// component is set up, and which reads the picture on screen.
 	let el: HTMLDivElement | undefined;
@@ -323,8 +336,6 @@
 	const pans = $derived(vertical ? 'y' : 'x');
 	/** Whether the window has left now — and so whether a tap makes an absolute pill. */
 	const offNow = $derived(!!middle);
-	/** Whether the button under the section shows: «now» off now, «reset» at a pill (da-zccjs). */
-	const homeward = $derived(offNow || !!pill);
 
 	// A selection made somewhere ELSE points this window; one made here does
 	// not, and neither does a RELATIVE one — that is measured from now, and
@@ -372,7 +383,14 @@
 
 	/** Back to now, and the time-based pills — and so the selection — with it: the «now» button, and the «reset» one at a pill. */
 	function toNow(): void {
-		if (coasting) land();
+		// Whatever is in hand stops where it is, and nothing of it is committed (da-y6jzs).
+		cancelAnimationFrame(coasting);
+		coasting = 0;
+		clearTimeout(settle);
+		ungrip();
+		drop();
+		zoom = null;
+		reach = null;
 		centre = null;
 		ask();
 		pointAt(null);
@@ -491,20 +509,24 @@
 	/**
 	 * Ask for the days of data the overlay `svg` reaches, and the picture asked
 	 * for reaches, that `layer` does not hold: each day either draws, however
-	 * far back, and today, which holds the now strip's states.
+	 * far back, and today, which holds the now strip's states — and the days
+	 * the picture on now draws, wherever the window is, so the standby's are
+	 * held when «now» shows it (da-y6jzs).
 	 */
 	function needLayer(svg: SVGSVGElement): void {
 		if (labels || !svg.querySelector('[data-lo]')) return;
 		const from = Math.min(drawnFrom(), reach?.[0] ?? Infinity);
 		const to = Math.max(Number.isFinite(spanned[1]) ? spanned[1] : drawnTo(), reach?.[1] ?? -Infinity);
 		if (!Number.isFinite(from)) return;
-		const dates = spanDates(from, to);
+		const home = spanDates(Date.now() - (surround + 1) * minutes * 60_000, Date.now() + minutes * 60_000);
+		const dates = [...new Set([...spanDates(from, to), ...home])];
 		const key = `${vertical} ${epoch} ${dates.join(' ')}`;
 		if (key === wanted) return;
 		wanted = key;
 		for (const [i, asked] of layers(dates, epoch, vertical).entries())
 			void asked.then((day) => {
-				if (key !== wanted) return;
+				// A day held as it is leaves the picture alone: a recompose is a redraw.
+				if (key !== wanted || (layer.days.get(dates[i]) === day && !layer.failed.has(dates[i]))) return;
 				const [days, failed] = [layer.days, layer.failed].map((of) => new Map([...of].filter(([date]) => dates.includes(date))));
 				if (day.error) failed.set(dates[i], day);
 				else {
@@ -878,6 +900,17 @@
 	/** The pan, in px, that puts the window on now. */
 	const nowPan = () => (axis ? (middleOf(middle) - middleOf(undefined)) / msPerPx(axis) : -Infinity);
 
+	/**
+	 * Whether the band on SCREEN is off now (da-y6jzs): at rest, the window;
+	 * mid-drag, mid-coast or mid-pinch, the slide on it, as its lift would
+	 * commit it — so the button is there in the frame now leaves.
+	 */
+	const slidOff = $derived(
+		zoom && !zoom.held && zoom.at !== undefined ? !scaledHome(zoom) : panned && axis ? panned > nowPan() + 0.5 : offNow
+	);
+	/** Whether the button under the section shows: «now» off now, «reset» at a pill (da-zccjs). */
+	const homeward = $derived(slidOff || !!pill);
+
 	/** The band's slide for `raw` px: the finger's as far as now, and ever less of it past now. */
 	function stopAtNow(raw: number): number {
 		const limit = nowPan();
@@ -1048,7 +1081,7 @@
 	function anchorX(svg: SVGSVGElement): number {
 		const box = svg.getBoundingClientRect();
 		const start = axis?.y ? box.y : box.x;
-		const at = homeward || !drawn ? instantMs() : drawn.now;
+		const at = offNow || pill || !drawn ? instantMs() : drawn.now;
 		const own = timeAxis(svg, at);
 		return own ? own.lo + (at - own.from) / msPerPx(own) - start : ends()[1] - start;
 	}
@@ -1069,6 +1102,12 @@
 		if (z.at === undefined || !axis) return shift;
 		const home = nowMs() - (minutes / z.scale) * 30_000;
 		return Math.max(shift, (middleOf(middle) - z.at - (home - z.at) * z.scale) / msPerPx(axis));
+	}
+
+	/** Whether a pinch or a wheel about the pointer, let go of now, leaves the window on now: `commit`'s say. */
+	function scaledHome(z: NonNullable<typeof zoom>): boolean {
+		const shift = shiftOf(z);
+		return historyArg(minutes / z.scale) === history ? shift <= nowPan() + 0.5 : shift > (z.shift ?? 0);
 	}
 
 	function start(pos?: number, by = 0): boolean {
@@ -1108,7 +1147,7 @@
 		// middle as far from it as before, over the scale, less the slide —
 		// `shift` in screen px, turned to ms by the picture's own axis at rest.
 		const middleAt = at + (was - at - shift * msPerPx(axis)) / zoom.scale;
-		const home = shift > (zoom.shift ?? 0);
+		const home = scaledHome(zoom);
 		centre = home ? null : { arg: new Date(middleAt).toISOString(), by: 'pan' };
 		zoom = { ...zoom, held: next };
 		onchange?.(next);
@@ -1414,6 +1453,20 @@
 	let edges = $state.raw<[number, number]>([0, 0]);
 	let homeWide = $state(0);
 	let homeTall = $state(0);
+	/** Where that «now» stands along time while a gesture scales the band, as it is drawn. */
+	let scaledAt = $state<number | null>(null);
+
+	// The word goes as the button comes, mid-gesture too (da-y6jzs); and
+	// under a scale it is measured where it is drawn, for the button.
+	$effect(() => {
+		const [hide, z] = [homeward, zoom];
+		untrack(() => {
+			const word = svgEl()?.querySelector<SVGElement>('.now-label');
+			if (word) word.style.visibility = hide ? 'hidden' : '';
+			const [r, home] = [z && word?.getBoundingClientRect(), el?.getBoundingClientRect()];
+			scaledAt = r?.width && home ? (vertical ? r.top + r.height / 2 - home.y : r.left + r.width / 2 - home.x) : null;
+		});
+	});
 
 	function place(): void {
 		if (!el) return;
@@ -1438,7 +1491,8 @@
 		// Read unmoved, then slid by `rest` alone: a redraw mid-gesture must
 		// not cache the gesture's own offset, which `commitPan` adds again.
 		const unmoved = svg && unmovedAxis(svg);
-		const moved = unmoved && svg !== stale ? restFor(unmoved) : rest;
+		// One that is the window's after all — «now» back onto the picture on now it was slid off — is not.
+		const moved = unmoved && (svg !== stale || current()) ? restFor(unmoved) : rest;
 		axis = unmoved && { ...unmoved, lo: unmoved.lo + moved, hi: unmoved.hi + moved };
 		stretches = svg ? unmovedStretches(svg).map((a) => ({ ...a, lo: a.lo + moved, hi: a.hi + moved })) : [];
 		const groups = svg?.querySelectorAll('[data-lo]') ?? [];
@@ -1887,7 +1941,7 @@
 		     half of what was drawn ahead is spent. A write re-runs only the
 		     snapshot, the one picture here drawn from data: the overlay has
 		     none, and a write asks for the day's data layer (da-0e06p). -->
-		<CliPane {spec} epoch={(showHistory ? 0 : epoch) + refills} compose={crop} dims={false} />
+		<CliPane {spec} epoch={(showHistory ? 0 : epoch) + refills} compose={crop} dims={false} {standby} />
 	</div>
 
 	<!-- The wait's mark: a ring that closes over LONG_MS, and a dashed stem
@@ -1983,10 +2037,11 @@
 	     without a single stopPropagation. They still declare the band's
 	     axis, so a drag that starts on one is not a tab swipe either
 	     (da-ndzl's test says so of the steps). -->
-	{#if homeward && nowAt && !zoom}
+	{#if homeward && nowAt}
 		<!-- Over the «now» under the strip, and held to the edge now lies
-		     beyond once the strip has gone off it (da-dv45l). -->
-		{@const at = (vertical ? nowAt.y : nowAt.x) + panned}
+		     beyond once the strip has gone off it (da-dv45l): from the frame
+		     a drag, a coast or a pinch takes it off now (da-y6jzs). -->
+		{@const at = zoom && scaledAt !== null ? scaledAt : (vertical ? nowAt.y : nowAt.x) + panned}
 		{@const half = (vertical ? homeTall : homeWide) / 2}
 		{@const held = Math.max(edges[0] + half, Math.min(edges[1] - half, at))}
 		<button
@@ -1999,7 +2054,7 @@
 			bind:offsetWidth={homeWide}
 			bind:offsetHeight={homeTall}
 			onclick={toNow}
-			>{!offNow ? 'reset' : at < edges[0] + half ? (vertical ? '↑ now' : '← now') : vertical ? 'now ↓' : 'now →'}</button
+			>{!slidOff ? 'reset' : at < edges[0] + half ? (vertical ? '↑ now' : '← now') : vertical ? 'now ↓' : 'now →'}</button
 		>
 	{/if}
 	{#if roomy && away && !zoom}
