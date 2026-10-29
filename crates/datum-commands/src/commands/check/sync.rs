@@ -7,16 +7,18 @@ use datum_core::db::Db;
 
 use super::{FixReport, Issue, SyncExamined};
 
-/// What was examined, the findings, and under `fix` what the repair did.
+/// What was examined, the findings, and under `fix` what the repair did:
+/// of every entry, or of `hids` alone (da-3zq6g).
 pub(super) fn collect_sync(
     db: &Db,
     fix: bool,
+    hids: Option<&[String]>,
 ) -> Result<(SyncExamined, Vec<Issue>, Option<FixReport>)> {
     let repaired = match fix {
         true => Some(db.sync_fix_orphans()?),
         false => None,
     };
-    let (found, mut issues) = crate::commands::sync_diagnose::fold_issues(db)?;
+    let (found, mut issues) = crate::commands::sync_diagnose::fold_issues(db, hids)?;
     let report = repaired.map(|detected| {
         // `found` is read after the repair: the orphans still here are the
         // ones it set out to repair and did not.

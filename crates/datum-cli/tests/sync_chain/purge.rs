@@ -177,7 +177,7 @@ fn a_chain_purge_leaves_an_offline_copy_a_backup_of_what_it_drops() {
         "{said}"
     );
     assert!(c.ok(&["sync", "status"]).contains(&merge));
-    let check = c.run(&["check"], "");
+    let check = c.run(&["check", "sync"], "");
     let check = String::from_utf8_lossy(&check.stdout);
     assert!(
         check.contains("a restore or purge of the sync chain") && check.contains(&merge),

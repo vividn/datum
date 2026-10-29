@@ -3,6 +3,8 @@
 //! Runs a battery of SQL- and Rust-level sanity queries and produces a
 //! grouped report. Errors set the process exit code to 1; warnings do not.
 
+use std::collections::BTreeSet;
+
 use anyhow::Result;
 use datum_core::db::{Db, ListParams};
 use datum_core::derive_verb;
@@ -34,6 +36,12 @@ mod tz;
 use tz::collect_tz_drift;
 mod refs;
 pub use refs::collect_dangling_refs;
+mod integrity;
+#[cfg(test)]
+use integrity::collect_integrity_warnings;
+use integrity::{integrity_issues, integrity_pending};
+mod kept;
+use kept::Plan;
 
 /// Typed API for `datum check`. Exits the process with status 1 when the
 /// report contains any [`Severity::Error`] items.
@@ -65,130 +73,141 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         return Ok(());
     }
 
-    let run_verbs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "verbs");
-    let run_aliases = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "aliases");
-    let run_slugs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "slugs");
-    let run_integrity = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "integrity");
-    let run_flags = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "flags");
-    let run_tz = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "tz");
-    let run_refs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "refs");
-    let run_stats = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "stats");
-    let run_sync = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "sync");
-    let run_spool = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "spool");
-    let run_install = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "install");
-    let run_keys = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "keys");
-    let run_default_battery = args.checkers.is_empty();
+    let run = |name: &str| args.checkers.is_empty() || args.checkers.iter().any(|c| c == name);
+    // Named, a checker lists every finding whole, with what it can say beside
+    // each; alone, `datum check` sums each up (da-3zq6g).
+    let named = !args.checkers.is_empty();
+    let plan = Plan::new(db, args.fix);
 
     // One walk of the entries, shared by every checker that reads them, so
     // the count the all-clear names is the set that was checked (da-qd9ao).
-    // A `--fix` pass re-reads it, as each checker used to read its own.
-    let walks_entries = run_default_battery || run_verbs || run_slugs || run_tz || run_refs;
+    // A second run walks only the entries one of them found last time and
+    // those changed since (da-3zq6g); one walker that must read every entry
+    // makes the walk read them all, and a `--fix` pass re-reads it whole.
+    let walkers: Vec<&str> = ["entries", "verbs", "slugs", "tz", "refs", "flags"]
+        .into_iter()
+        .filter(|c| run(c))
+        .collect();
+    let again = walkers.iter().try_fold(BTreeSet::new(), |mut all, c| {
+        all.extend(plan.again(db, c)?);
+        Some(all)
+    });
     let load = || -> Result<Vec<Entry>> {
-        Ok(if walks_entries {
-            db.list_including_deleted()?
-        } else {
-            Vec::new()
+        Ok(match &again {
+            _ if walkers.is_empty() => Vec::new(),
+            None => db.list_including_deleted()?,
+            Some(hids) => db.entries_of(&hids.iter().cloned().collect::<Vec<_>>())?,
         })
     };
     let mut entries = load()?;
     let mut examined = Examined::default();
-    let mut issues: Vec<Issue> = Vec::new();
+    let mut checks: Vec<Check> = Vec::new();
     let mut fix_reports: Vec<FixReport> = Vec::new();
-    if run_default_battery {
+    if run("entries") {
         let base = collect_issues(db, &entries)?;
         examined.specs = base.examined.specs;
-        examined.checkers.push("base");
-        issues.extend(base.issues);
         // da-adyj: legacy rows from before da-r569 carry a content_hash
-        // that disagrees with `Entry::expected_content_hash()`. The
-        // default battery already surfaces these as
-        // `content_hash_mismatch`; under `--fix` we additionally
-        // recompute and overwrite the column so dedup lookups (which
-        // use the post-r569 hash) start finding the rows.
-        //
-        // da-4c1c follow-up: the fix originally reported a single
-        // repair count and trusted the UPDATE. The new flow tracks
-        // detect → apply → verify counts separately so a regression
-        // where the rewrite silently no-ops (the bug Vremya hit on
-        // real legacy data) prints a loud diagnostic instead of
-        // pretending success.
+        // that disagrees with `Entry::expected_content_hash()`, surfaced as
+        // `content_hash_mismatch`; under `--fix` the column is recomputed
+        // so dedup lookups (which use the post-r569 hash) find the rows.
+        // da-4c1c: detect → apply → verify are counted apart, so a rewrite
+        // that silently no-ops prints a loud diagnostic.
         if args.fix {
             fix_reports.push(apply_content_hash_fixes(db)?);
             entries = load()?;
         }
+        plan.keep(db, "entries", kept::named(&base.issues));
+        checks.push(Check::of("entries", base.issues));
     }
-    if run_verbs {
-        examined.checkers.push("verbs");
+    if run("verbs") {
         let verb_report = collect_verb_drift(&entries)?;
         if args.fix {
             fix_reports.push(apply_verb_fixes(db, &verb_report.fixes)?);
             entries = load()?;
         }
-        issues.extend(verb_report.issues);
+        plan.keep(db, "verbs", kept::named(&verb_report.issues));
+        checks.push(Check::of("verbs", verb_report.issues));
     }
-    if run_aliases {
-        examined.checkers.push("aliases");
+    if run("aliases") {
         let alias_report = collect_alias_drift(db, args.fix)?;
         examined.aliases = alias_report.aliases;
-        issues.extend(alias_report.issues);
+        checks.push(Check::of("aliases", alias_report.issues));
     }
-    if run_slugs {
-        examined.checkers.push("slugs");
+    if run("slugs") {
         let delim = crate::config::resolve_id_delimiter(None);
         let slug_report = collect_slug_drift(&entries, &delim)?;
         if args.fix {
             fix_reports.push(apply_slug_fixes(db, &slug_report.fixes, &delim)?);
             entries = load()?;
         }
-        issues.extend(slug_report.issues);
+        plan.keep(db, "slugs", kept::named(&slug_report.issues));
+        checks.push(Check::of("slugs", slug_report.issues));
     }
-    if run_integrity {
-        examined.checkers.push("integrity");
-        issues.extend(collect_integrity_warnings(db)?);
+    if run("integrity") {
+        let (found, repeats) = integrity_pending(db, &plan)?;
+        let issues = integrity_issues(db, found)?;
+        plan.keep(db, "integrity", repeats);
+        checks.push(Check::of("integrity", issues));
     }
-    if run_keys {
-        examined.checkers.push("keys");
+    if run("keys") {
         let (drift, fixed) = collect_key_drift(db, args.fix)?;
-        issues.extend(drift);
         fix_reports.extend(fixed);
+        checks.push(Check::of("keys", drift));
     }
-    if run_flags {
-        examined.checkers.push("flags");
-        issues.extend(collect_pending_flags(db)?);
+    if run("flags") {
+        let issues = collect_pending_flags(db, &entries)?;
+        plan.keep(db, "flags", kept::named(&issues));
+        checks.push(Check::of("flags", issues));
     }
-    if run_tz {
-        examined.checkers.push("tz");
-        issues.extend(collect_tz_drift(db, &entries)?);
+    if run("tz") {
+        // A zone the rows around one agree is not its own is read around what
+        // changed and what the last run found, the walk's own rows (da-3zq6g).
+        let at = |e: &Entry| Some(e.occur_time.as_ref()?.utc.to_rfc3339());
+        let around = (plan.since(db, "tz").zip(again.as_ref())).map(|((_, changed), _)| {
+            let moved = changed
+                .into_iter()
+                .map(|(.., at)| at)
+                .filter(|a| !a.is_empty());
+            moved
+                .chain(entries.iter().filter_map(at))
+                .collect::<BTreeSet<_>>()
+        });
+        let issues = collect_tz_drift(db, &entries, named, around.as_ref())?;
+        plan.keep(db, "tz", kept::named(&issues));
+        checks.push(Check::of("tz", issues));
     }
-    if run_refs {
-        examined.checkers.push("refs");
-        issues.extend(collect_dangling_refs(db, &entries)?);
+    if run("refs") {
+        let (issues, referrers) = refs::dangling_refs(db, &entries)?;
+        plan.keep(db, "refs", kept::named(&issues).chain(referrers));
+        checks.push(Check::of("refs", issues));
     }
-    if run_stats {
-        examined.checkers.push("stats");
+    if run("stats") {
         let (recomputed, drift) = collect_stats_cache_drift(db, args.fix)?;
         examined.stats_days = Some(recomputed);
-        issues.extend(drift);
+        checks.push(Check::of("stats", drift.into_iter().collect()));
     }
-    if run_sync {
-        examined.checkers.push("sync");
-        let (sync, of, fixed) = collect_sync(db, args.fix)?;
+    if run("sync") {
+        let hids = plan.again(db, "sync");
+        let hids = hids.map(|h| h.into_iter().collect::<Vec<_>>());
+        let (sync, of, fixed) = collect_sync(db, args.fix, hids.as_deref())?;
         examined.sync = Some(sync);
-        issues.extend(of);
+        plan.keep(db, "sync", kept::named(&of));
         fix_reports.extend(fixed);
+        checks.push(Check::of("sync", of));
     }
-    if run_spool {
-        examined.checkers.push("spool");
-        issues.extend(spool_issues(db, args.fix)?);
+    if run("spool") {
+        checks.push(Check::of("spool", spool_issues(db, args.fix)?));
     }
-    if let Some(found) = run_install.then(|| collect_install(db)).flatten() {
-        examined.checkers.push("install");
-        issues.extend(found);
+    if let Some(found) = run("install").then(|| collect_install(db)).flatten() {
+        checks.push(Check::of("install", found));
     }
-    issues.sort_by_key(|i| i.domain);
+    examined.checkers = checks.iter().map(|c| c.name).collect();
     // Counted from the slice the last checkers walked, after any `--fix`
     // re-read, and without its tombstones.
     examined.entries = entries.iter().filter(|e| e.deleted_at.is_none()).count();
+    examined.rest_unchanged = again.is_some() && !walkers.is_empty();
+    let mut issues: Vec<Issue> = checks.iter().flat_map(|c| c.issues.clone()).collect();
+    issues.sort_by_key(|i| i.domain);
     let report = Report {
         issues,
         summary: Summary {
@@ -197,6 +216,8 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
             clean: false,
         },
         examined,
+        checks,
+        named,
     }
     .with_recomputed_summary();
 
@@ -406,12 +427,23 @@ pub struct IssueExample {
 /// Carries enough to identify the row without re-querying the DB.
 #[derive(Debug, Clone, Serialize)]
 pub struct FlaggedEntry {
-    /// Short 5-char hid prefix.
+    /// The whole hid, which a run keeps for the next (da-3zq6g); shown and
+    /// serialized as its first five characters, as `tail` shows it.
+    #[serde(serialize_with = "short_hid")]
     pub hid: String,
     pub field: String,
     /// Pre-rendered state value (`!`-prefixed for `repeated_state` rows so
     /// the marker matches the renderer's repeated-state convention).
     pub state: String,
+}
+
+fn short_hid<S: serde::Serializer>(hid: &str, s: S) -> std::result::Result<S::Ok, S::Error> {
+    s.serialize_str(&short(hid))
+}
+
+/// A hid as `tail` shows it.
+pub(crate) fn short(hid: &str) -> String {
+    hid.chars().take(datum_core::entry::SHORT_HID_LEN).collect()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -452,7 +484,7 @@ pub struct Summary {
 pub struct Examined {
     /// Live rows in the walk every entry checker shares: tombstones left
     /// out, spec and alias rows included, since they are entries and are
-    /// walked too.
+    /// walked too. Every live row, or [`Examined::rest_unchanged`].
     pub entries: usize,
     /// Field specs the base battery checked entries against.
     pub specs: usize,
@@ -465,6 +497,10 @@ pub struct Examined {
     /// What the `sync` checker read; absent when it did not run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sync: Option<SyncExamined>,
+    /// The walk read only the rows the last run found and those changed
+    /// since: the rest are unchanged, and were clean then (da-3zq6g).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub rest_unchanged: bool,
     /// The checkers that ran; `base` is the default battery.
     pub checkers: Vec<&'static str>,
 }
@@ -477,11 +513,36 @@ pub struct SyncExamined {
     pub ops: usize,
 }
 
+/// One checker's findings, which `datum check` alone sums up (da-3zq6g).
+#[derive(Debug, Clone, Serialize)]
+pub struct Check {
+    pub name: &'static str,
+    /// What its findings count, summed.
+    pub problems: usize,
+    #[serde(skip)]
+    pub issues: Vec<Issue>,
+}
+
+impl Check {
+    fn of(name: &'static str, issues: Vec<Issue>) -> Check {
+        Check {
+            name,
+            problems: issues.iter().map(|i| i.count).sum(),
+            issues,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {
     pub issues: Vec<Issue>,
     pub summary: Summary,
     pub examined: Examined,
+    /// Each checker that ran, in the order it ran.
+    pub checks: Vec<Check>,
+    /// Checkers were named: each finding is listed whole, not summed up.
+    #[serde(skip)]
+    pub named: bool,
 }
 
 impl Report {
@@ -546,6 +607,8 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
     let mut corrupt_count: usize = 0;
     let mut corrupt_example: Option<IssueExample> = None;
     let mut fixes: Vec<VerbFix> = Vec::new();
+    let mut drifted: Vec<FlaggedEntry> = Vec::new();
+    let mut corrupt: Vec<FlaggedEntry> = Vec::new();
 
     for e in entries {
         // Skip tombstones — they are historical rows, not live data;
@@ -560,6 +623,11 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
                 let expected_str = expected.to_string();
                 if stored != expected_str {
                     drift_count += 1;
+                    drifted.push(FlaggedEntry {
+                        hid: e.hid.to_string(),
+                        field: e.field.clone(),
+                        state: format!("{stored}→{expected_str}"),
+                    });
                     if drift_example.is_none() {
                         drift_example = Some(IssueExample {
                             id: Some(e.slug.to_string()),
@@ -577,6 +645,11 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
             }
             Err(err) => {
                 corrupt_count += 1;
+                corrupt.push(FlaggedEntry {
+                    hid: e.hid.to_string(),
+                    field: e.field.clone(),
+                    state: err.to_string(),
+                });
                 if corrupt_example.is_none() {
                     corrupt_example = Some(IssueExample {
                         id: Some(e.slug.to_string()),
@@ -601,7 +674,7 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
             ),
             count: drift_count,
             example: drift_example,
-            entries: Vec::new(),
+            entries: drifted,
             rendered_block: String::new(),
         });
     }
@@ -618,7 +691,7 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
             ),
             count: corrupt_count,
             example: corrupt_example,
-            entries: Vec::new(),
+            entries: corrupt,
             rendered_block: String::new(),
         });
     }
@@ -693,6 +766,7 @@ fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
     let mut drift_count: usize = 0;
     let mut drift_example: Option<IssueExample> = None;
     let mut fixes: Vec<SlugFix> = Vec::new();
+    let mut drifted: Vec<FlaggedEntry> = Vec::new();
 
     for e in entries {
         if e.deleted_at.is_some() {
@@ -730,6 +804,11 @@ fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
                         detail: Some(format!("stored={stored}  expected={expected}")),
                     });
                 }
+                drifted.push(FlaggedEntry {
+                    hid: e.hid.to_string(),
+                    field: e.field.clone(),
+                    state: format!("{stored}→{expected}"),
+                });
                 fixes.push(SlugFix {
                     existing: e.slug.clone(),
                     expected,
@@ -749,6 +828,11 @@ fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
                     detail: Some(format!("stored={stored}  expected={expected}")),
                 });
             }
+            drifted.push(FlaggedEntry {
+                hid: e.hid.to_string(),
+                field: e.field.clone(),
+                state: format!("{stored}→{expected}"),
+            });
             fixes.push(SlugFix {
                 existing: e.slug.clone(),
                 expected,
@@ -769,7 +853,7 @@ fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
             ),
             count: drift_count,
             example: drift_example,
-            entries: Vec::new(),
+            entries: drifted,
             rendered_block: String::new(),
         });
     }
@@ -809,180 +893,6 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<FixReport
                 .collect())
         },
     )
-}
-
-/// Surface pending rows from `integrity_warnings` (`resolution IS NULL`)
-/// plus the live `repeated_state` computation. These are local
-/// data-integrity findings (filed by the post-insert validator or
-/// derived live from current entries), not cross-device sync
-/// conflicts. The canonical scenario is a repeated state where the
-/// user forgot to log an intermediate transition; the fix is usually
-/// `datum switch <field> <state> -t -<n>` to backfill the missing
-/// entry.
-///
-/// Resolved rows (`resolution IS NOT NULL`) are excluded — the user
-/// already triaged them. The detection cost is already paid in the
-/// insert path; this checker just makes the queue visible alongside
-/// other `datum check` findings.
-///
-/// da-acft: `repeated_state` is computed live from the `entries`
-/// table via [`integrity::list_repeated_states`] rather than read
-/// from `integrity_warnings`. Stored same_state_repeat rows are no
-/// longer written at insert (m27→28 cleans up stale ones), so when a
-/// user backfills the missing transition or deletes the duplicate
-/// the warning vanishes on the next `datum check` — there's no
-/// stored row left behind.
-fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
-    use datum_core::integrity::{IntegrityKind, IntegrityWarning};
-    // da-0lful: what the dayview marks, read once for both.
-    let found = datum_core::integrity::pending(db.conn())?;
-    // da-m34q7: a row that does not decode is a finding of its own, and the
-    // rows that do are still checked.
-    let mut pending = Vec::new();
-    let mut unreadable = Vec::new();
-    for row in found.stored {
-        match row {
-            Ok(warning) => pending.push(warning),
-            Err((id, e)) => {
-                // The decoder's own words, without SQLite's column wrapper.
-                let why = std::error::Error::source(&e).map_or(e.to_string(), |s| s.to_string());
-                unreadable.push(format!("  {id}: {why}"));
-            }
-        }
-    }
-
-    // Group pending warnings by kind; preserve insertion order within each
-    // group so per-entry render output matches the queue order. A stored
-    // SameStateRepeat is not among them — it's computed live below
-    // (da-acft), and `pending` leaves out any row that slipped past the
-    // cleanup migration.
-    let mut by_kind: std::collections::BTreeMap<
-        (&'static str, &'static str),
-        Vec<&IntegrityWarning>,
-    > = std::collections::BTreeMap::new();
-    for w in &pending {
-        by_kind
-            .entry((w.kind.as_str(), w.detected_by.as_str()))
-            .or_default()
-            .push(w);
-    }
-
-    let mut issues = Vec::new();
-    if !unreadable.is_empty() {
-        let count = unreadable.len();
-        issues.push(Issue {
-            domain: Domain::Entries,
-            severity: Severity::Error,
-            category: "integrity_warning_unreadable",
-            message: format!(
-                "{count} stored integrity warning{s} cannot be read:\n{}",
-                unreadable.join("\n"),
-                s = if count == 1 { "" } else { "s" },
-            ),
-            count,
-            example: None,
-            entries: Vec::new(),
-            rendered_block: String::new(),
-        });
-    }
-    for (_, group) in by_kind {
-        let first = group[0];
-        let count = group.len();
-        let kind = first.kind;
-        let message = match kind {
-            IntegrityKind::SameStateRepeat => format!(
-                "{count} entr{y} repeat the prior state on their field. \
-                 Look at the surrounding data; the right fix is usually a backfill (missing transition) \
-                 or a delete (true duplicate).",
-                y = if count == 1 { "y" } else { "ies" },
-            ),
-            IntegrityKind::DoubleOpen => format!(
-                "{count} field{s} opened a second time while already open",
-                s = if count == 1 { "" } else { "s" },
-            ),
-            IntegrityKind::OrphanEnd => format!(
-                "{count} close{s} arrived on a field with no prior open",
-                s = if count == 1 { "" } else { "s" },
-            ),
-            IntegrityKind::Overlap => format!(
-                "{count} block{s} overlap another block on the same field",
-                s = if count == 1 { "" } else { "s" },
-            ),
-            IntegrityKind::LastStateMismatch => format!(
-                "{count} entr{y} carried a --last-state assertion that disagrees with history",
-                y = if count == 1 { "y" } else { "ies" },
-            ),
-        };
-        let (domain, category) = Source::Integrity(kind).section();
-        // da-mkes: collect one FlaggedEntry per warning. The state column
-        // gets a leading `!` for `repeated_state` rows so the human render
-        // shares the same marker the live renderer uses for repeated
-        // switches (qfv0).
-        let mark_repeat = matches!(kind, IntegrityKind::SameStateRepeat);
-        let entries: Vec<FlaggedEntry> = group
-            .iter()
-            .map(|w| {
-                let state_str = match w.local_entry.state.as_ref() {
-                    Some(v) => render_state_for_flag(v),
-                    None => String::new(),
-                };
-                let state = if mark_repeat {
-                    format!("!{state_str}")
-                } else {
-                    state_str
-                };
-                FlaggedEntry {
-                    hid: w.hid.clone(),
-                    field: w.local_entry.field.clone(),
-                    state,
-                }
-            })
-            .collect();
-        // da-cr4n: pre-render the flagged entries through the same table
-        // formatter `datum tail` uses, so column alignment, state-cell
-        // background colour, and the `!` repeated-state marker render
-        // identically. Re-fetch each trigger by slug so the entry carries
-        // the canonical post-pivot columns (occur_time, dur, etc.) —
-        // `IntegrityWarning::local_entry` was reconstructed from the
-        // table-stored JSON which `#[serde(skip)]`s the compat shims
-        // (`start_time`, `entry_shape`, …) the renderer's extract path
-        // still reads. `build_render_contexts` populates each row's
-        // RenderContext from the field's state-event history, so
-        // `is_state_repeat` fires on exactly the same shape as the
-        // SameStateRepeat detector. Header suppressed — issue rows live
-        // inside an already-introduced "[WARN]" block.
-        let full_entries: Vec<Entry> = group
-            .iter()
-            .filter_map(|w| db.get_entry(w.entry_slug.as_str()).ok())
-            .collect();
-        let rendered_block = render_flagged_block(db, &full_entries);
-        issues.push(Issue {
-            domain,
-            severity: Severity::Warning,
-            category,
-            message,
-            count,
-            example: Some(IssueExample {
-                id: Some(first.hid.clone()),
-                field: Some(first.local_entry.field.clone()),
-                detail: Some(format!(
-                    "trigger slug={slug}  detected={detected}",
-                    slug = first.entry_slug,
-                    detected = first.detected_at.to_rfc3339(),
-                )),
-            }),
-            entries,
-            rendered_block,
-        });
-    }
-
-    // da-acft: repeated_state is computed live so backfilling the
-    // missing transition (or deleting the duplicate) makes the
-    // warning disappear on the next run — there's no stored row to
-    // mark resolved.
-    issues.extend(collect_repeated_state_live(db, found.repeats)?);
-    issues.extend(collect_sync_conflicts(db)?);
-    Ok(issues)
 }
 
 /// da-3j6g7: changes a command queued while another held the write lock
@@ -1051,162 +961,6 @@ pub fn spool_issues(db: &Db, fix: bool) -> Result<Vec<Issue>> {
     Ok(out)
 }
 
-/// da-05rkv: the entries whose ops leave a key contested — read off their
-/// `conflicts` column, which the sync fold keeps, so it is the same on every
-/// copy and goes when an edit that saw both sides arrives.
-fn collect_sync_conflicts(db: &Db) -> Result<Option<Issue>> {
-    let conflicted = db.sync_conflicts()?;
-    let Some(first) = conflicted.first() else {
-        return Ok(None);
-    };
-    let count = conflicted.len();
-    let (domain, category) = Source::Conflicts.section();
-    let keys = |e: &Entry| {
-        let c = e.conflicts.as_ref().and_then(JsonValue::as_object);
-        let keys: Vec<&str> = c.into_iter().flatten().map(|(k, _)| k.as_str()).collect();
-        keys.join(", ")
-    };
-    Ok(Some(Issue {
-        domain,
-        severity: Severity::Warning,
-        category,
-        message: format!(
-            "{count} entr{y} hold{s} values two copies set without seeing each other's; \
-             `datum conflicts` lists each side and resolves them.",
-            y = if count == 1 { "y" } else { "ies" },
-            s = if count == 1 { "s" } else { "" },
-        ),
-        count,
-        example: Some(IssueExample {
-            id: Some(first.short_uid()),
-            field: Some(first.field.clone()),
-            detail: Some(format!("contested: {}", keys(first))),
-        }),
-        entries: conflicted
-            .iter()
-            .map(|e| FlaggedEntry {
-                hid: e.short_uid(),
-                field: e.field.clone(),
-                state: keys(e),
-            })
-            .collect(),
-        rendered_block: render_flagged_block(db, &conflicted),
-    }))
-}
-
-/// The live `repeated_state` rows (da-acft) as one issue (da-wdfsw): each
-/// repeated switch with the span it sits in, longest first, so a block left
-/// open for days stands above a double switch seconds apart (da-vwymi), then
-/// each repeated end, which is usually a duplicate.
-fn collect_repeated_state_live(
-    db: &Db,
-    repeats: Vec<datum_core::integrity::Repeat>,
-) -> Result<Option<Issue>> {
-    use datum_core::integrity::Repeat;
-    use datum_parse::time::{format_human_duration, DurationPrecision};
-    let (mut opens, closes): (Vec<Repeat>, Vec<Repeat>) =
-        repeats.into_iter().partition(|r| r.span.is_some());
-    let now = DatumTime::now().utc;
-    type Span = (
-        chrono::DateTime<chrono::Utc>,
-        Option<chrono::DateTime<chrono::Utc>>,
-    );
-    let secs = |(from, to): Span| (to.unwrap_or(now) - from).num_seconds();
-    opens.sort_by_key(|r| std::cmp::Reverse(r.span.map_or(0, secs)));
-    let clock = |t: chrono::DateTime<chrono::Utc>| {
-        datum_core::time::Zone::host()
-            .local_naive(t)
-            .format("%Y-%m-%d %H:%M")
-            .to_string()
-    };
-    let issue = |repeats: Vec<Repeat>, category, message: &dyn Fn(usize) -> String| {
-        let first = repeats.first()?;
-        let count = repeats.len();
-        let state = |e: &Entry| {
-            e.state
-                .as_ref()
-                .map(render_state_for_flag)
-                .unwrap_or_default()
-        };
-        // One line under each tail row: the span, said once for the human
-        // and once for the JSON, its state on one line as the span's is.
-        let spans: Vec<Option<String>> = repeats
-            .iter()
-            .map(|r| {
-                r.span.map(|(from, to)| {
-                    format!(
-                        "{} for {}: {} → {}",
-                        state(&r.entry).replace('\n', "\\n"),
-                        format_human_duration(secs((from, to)), DurationPrecision::Minutes),
-                        clock(from),
-                        to.map_or("now".to_string(), clock),
-                    )
-                })
-            })
-            .collect();
-        let entries: Vec<Entry> = repeats.iter().map(|r| r.entry.clone()).collect();
-        // The table aligns its rows, but a state with a newline in it takes
-        // two lines: then each entry is a table of its own, so every span
-        // still stands under its row.
-        let block = render_flagged_block(db, &entries);
-        let rows: Vec<String> = if block.lines().count() == entries.len() {
-            block.lines().map(String::from).collect()
-        } else {
-            entries
-                .iter()
-                .map(|e| render_flagged_block(db, std::slice::from_ref(e)))
-                .collect()
-        };
-        let rendered_block: String = rows
-            .iter()
-            .zip(&spans)
-            .map(|(row, span)| {
-                let row = row.trim_end_matches('\n');
-                match span {
-                    Some(span) => format!("{row}\n  ↳ {span}\n"),
-                    None => format!("{row}\n"),
-                }
-            })
-            .collect();
-        Some(Issue {
-            domain: Domain::Entries,
-            severity: Severity::Warning,
-            category,
-            message: message(count),
-            count,
-            example: Some(IssueExample {
-                id: Some(first.entry.short_uid()),
-                field: Some(first.entry.field.clone()),
-                detail: Some(format!("trigger slug={}", first.entry.slug)),
-            }),
-            entries: entries
-                .iter()
-                .zip(spans)
-                .map(|(e, span)| FlaggedEntry {
-                    hid: e.short_uid(),
-                    field: e.field.clone(),
-                    state: format!("!{}", span.unwrap_or_else(|| state(e))),
-                })
-                .collect(),
-            rendered_block,
-        })
-    };
-    let one = |count: usize| count == 1;
-    opens.extend(closes);
-    Ok(issue(opens, "repeated_state", &|count| {
-        format!(
-            "{count} entr{} repeat{} the state {} field was already in: each switch with the \
-             span it sits in, longest first, then each end. Before a repeated switch a close or \
-             switch is usually MISSING, and `stats` counts the whole span as that state until it \
-             is backfilled (`datum end <field> -t <when>`, or `datum switch <field> <state> -t \
-             <when>`). A repeated end is usually a duplicate, which changes no state or `stats`; `datum del <hid>` clears one.",
-            if one(count) { "y" } else { "ies" },
-            if one(count) { "s" } else { "" },
-            if one(count) { "its" } else { "their" },
-        )
-    }))
-}
-
 /// da-n7tp2: a sample of `stats`' cached days, each recomputed from the
 /// entries. The cache is derived, so a day that differs is a bug in what
 /// keeps it true — never in the record — and `--fix` drops it.
@@ -1259,21 +1013,14 @@ fn collect_stats_cache_drift(db: &Db, fix: bool) -> Result<(usize, Option<Issue>
 /// #flagged), with the rendered block carrying one line per flagged
 /// entry through the real tail formatter so column alignment matches
 /// the live view (da-cr4n).
-fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
-    // Pull the full set of flagged rows in one go. `include_meta = true`
-    // bypasses the default-hide filter (da-ghlx) so this query actually
-    // returns flagged rows; we still post-filter to `extra_metadata.flag
-    // = true` because `include_meta = true` *also* exposes
-    // `extra_metadata.meta = true` rows (those belong to the parallel
-    // `meta` notes surface — da-xn8j — not to the flag-review queue).
-    let params = ListParams {
-        metric: datum_core::db::TimeMetric::Hybrid,
-        include_meta: true,
-        ..Default::default()
-    };
-    let flagged: Vec<Entry> = db
-        .list_entries(&params)?
-        .into_iter()
+fn collect_pending_flags(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
+    // The live rows of the walk whose `extra_metadata.flag` is true, and
+    // not the `extra_metadata.meta = true` rows beside them (those belong to
+    // the parallel `meta` notes surface — da-xn8j — not to the flag-review
+    // queue), in the hybrid order `tail` lists them in.
+    let mut flagged: Vec<Entry> = entries
+        .iter()
+        .filter(|e| e.deleted_at.is_none() && e.superseded_by.is_none())
         .filter(|e| {
             e.extra_metadata
                 .as_ref()
@@ -1284,7 +1031,12 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
         // A flag dealt with is `done=true` in its data, and stays in the
         // record (da-wvte1).
         .filter(|e| e.data.as_ref().and_then(|d| d.get("done")) != Some(&JsonValue::Bool(true)))
+        .cloned()
         .collect();
+    flagged.sort_by_cached_key(|e| {
+        let at = e.occur_time.as_ref().map_or(e.create_time, |t| t.utc);
+        (at, e.slug.to_string())
+    });
     if flagged.is_empty() {
         return Ok(Vec::new());
     }
@@ -1305,7 +1057,7 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
     let entries: Vec<FlaggedEntry> = flagged
         .iter()
         .map(|e| FlaggedEntry {
-            hid: e.short_uid(),
+            hid: e.hid.to_string(),
             field: e.field.clone(),
             // The flag's words, where it has any: `state` is their one
             // copy (da-tgulk).
@@ -1348,6 +1100,32 @@ fn render_flagged_block(db: &Db, entries: &[Entry]) -> String {
         max_total_width: None,
     };
     format_table_with(entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl).unwrap_or_default()
+}
+
+/// [`render_flagged_block`] with a line under each row that has one. The
+/// table aligns its rows, but a state with a newline in it takes two lines:
+/// then each entry is a table of its own, so every line still stands under
+/// its row.
+fn rows_with(db: &Db, entries: &[Entry], under: &[Option<String>]) -> String {
+    let block = render_flagged_block(db, entries);
+    let rows: Vec<String> = if block.lines().count() == entries.len() {
+        block.lines().map(String::from).collect()
+    } else {
+        entries
+            .iter()
+            .map(|e| render_flagged_block(db, std::slice::from_ref(e)))
+            .collect()
+    };
+    rows.iter()
+        .zip(under)
+        .map(|(row, under)| {
+            let row = row.trim_end_matches('\n');
+            match under {
+                Some(under) => format!("{row}\n  ↳ {under}\n"),
+                None => format!("{row}\n"),
+            }
+        })
+        .collect()
 }
 
 /// Render a state JSON value into the short string used in flagged-entry
@@ -1396,7 +1174,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     }
 
     // 2. content_hash mismatches (ERROR)
-    let mut mismatches: Vec<(String, String, String, String)> = Vec::new();
+    let mut mismatches: Vec<(String, String, String, String, String)> = Vec::new();
     for e in entries {
         let expected = e.expected_content_hash();
         if expected != e.content_hash {
@@ -1405,11 +1183,12 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
                 e.field.clone(),
                 e.content_hash.clone(),
                 expected,
+                e.hid.to_string(),
             ));
         }
     }
     if !mismatches.is_empty() {
-        let (slug, field, stored, expected) = mismatches[0].clone();
+        let (slug, field, stored, expected, _) = mismatches[0].clone();
         issues.push(Issue {
             domain: Domain::Entries,
             severity: Severity::Error,
@@ -1429,7 +1208,18 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
                     &expected[..expected.len().min(12)],
                 )),
             }),
-            entries: Vec::new(),
+            entries: mismatches
+                .iter()
+                .map(|(_, field, stored, expected, hid)| FlaggedEntry {
+                    hid: hid.clone(),
+                    field: field.clone(),
+                    state: format!(
+                        "stored {}…, expected {}…",
+                        &stored[..stored.len().min(12)],
+                        &expected[..expected.len().min(12)],
+                    ),
+                })
+                .collect(),
             rendered_block: String::new(),
         });
     }
@@ -1439,16 +1229,20 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
 
     // 3. unknown fields — on a live row but in no field_spec (WARNING). A
     //    field only flag/meta rows hold is datum's own bookkeeping (da-9p08z).
-    let logged: std::collections::BTreeSet<&str> = (entries.iter())
-        .filter(|e| e.deleted_at.is_none() && e.superseded_by.is_none() && !e.is_flag_or_meta())
-        .map(|e| e.field.as_str())
-        .filter(|f| !datum_core::db::is_meta_field(f) && registry.field_spec(f).is_none())
-        .collect();
+    //    Every live field, read off the index whatever the walk (da-3zq6g).
     // A field a template spec covers is registered by it (da-38obu).
     let mut unknown: Vec<String> = Vec::new();
-    for field in logged {
-        if db.load_spec(field)?.is_none() {
-            unknown.push(field.to_string());
+    for field in db.distinct_fields()? {
+        if registry.field_spec(&field).is_some() || db.load_spec(&field)?.is_some() {
+            continue;
+        }
+        let life = ListParams {
+            fields: vec![field.clone()],
+            limit: Some(1),
+            ..Default::default()
+        };
+        if !db.list_entries(&life)?.is_empty() {
+            unknown.push(field);
         }
     }
     if !unknown.is_empty() {
@@ -1481,6 +1275,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     // shape stabilizes.
     let mut orphan_detail: Option<(String, String, String)> = None; // (id, field, key)
     let mut orphan_count = 0usize;
+    let mut orphaned: Vec<FlaggedEntry> = Vec::new();
     for e in entries {
         let Some(spec) = registry.field_spec(&e.field) else {
             continue;
@@ -1493,6 +1288,13 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
         };
         let unlisted = spec.unlisted_keys(map, e.state.as_ref().and_then(JsonValue::as_str));
         orphan_count += unlisted.len();
+        if !unlisted.is_empty() {
+            orphaned.push(FlaggedEntry {
+                hid: e.hid.to_string(),
+                field: e.field.clone(),
+                state: unlisted.join(", "),
+            });
+        }
         if let (None, Some(key)) = (&orphan_detail, unlisted.first()) {
             orphan_detail = Some((e.slug.to_string(), e.field.clone(), key.to_string()));
         }
@@ -1514,7 +1316,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
                 field: Some(field),
                 detail: Some(format!("key={key}")),
             }),
-            entries: Vec::new(),
+            entries: orphaned,
             rendered_block: String::new(),
         });
     }
@@ -1567,6 +1369,8 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
             specs: registry.fields.len(),
             ..Examined::default()
         },
+        checks: Vec::new(),
+        named: true,
     })
 }
 
@@ -1590,13 +1394,20 @@ pub fn render_human(report: &Report) -> String {
                 n(s.ops, "sync op", "sync ops")
             )
         });
+        let again = match ex.rest_unchanged {
+            true => " read again, the rest unchanged since the last check",
+            false => "",
+        };
         return format!(
-            "✓ No consistency issues found: {}, {}, {} examined{stats}{sync} (checkers: {}).\n",
+            "✓ No consistency issues found: {}{again}, {}, {} examined{stats}{sync} (checkers: {}).\n",
             n(ex.entries, "entry", "entries"),
             n(ex.specs, "field spec", "field specs"),
             n(ex.aliases, "alias", "aliases"),
             ex.checkers.join(", "),
         );
+    }
+    if !report.named {
+        return render_summary(report);
     }
     let mut out = String::new();
     let mut domain = None;
@@ -1642,18 +1453,109 @@ pub fn render_human(report: &Report) -> String {
             }
         }
     }
-    out.push_str(&format!(
-        "\nSummary: {} error{}, {} warning{}.\n",
-        report.summary.errors,
-        if report.summary.errors == 1 { "" } else { "s" },
-        report.summary.warnings,
-        if report.summary.warnings == 1 {
-            ""
-        } else {
-            "s"
-        },
-    ));
+    out.push_str(&summary_line(&report.summary));
     out
+}
+
+fn summary_line(summary: &Summary) -> String {
+    format!(
+        "\nSummary: {} error{}, {} warning{}.\n",
+        summary.errors,
+        if summary.errors == 1 { "" } else { "s" },
+        summary.warnings,
+        if summary.warnings == 1 { "" } else { "s" },
+    )
+}
+
+/// How many of a checker's findings `datum check` alone lists.
+const LISTED: usize = 5;
+
+/// `datum check` alone (da-3zq6g): a line per checker naming how many
+/// problems it found, and under it each kind of finding on one line; under
+/// one that lists [`LISTED`] or fewer items, each, and under one that lists
+/// more, the first [`LISTED`] and how many more `datum check <name>` lists.
+/// An item is an entry, or the one line of a finding that names none.
+fn render_summary(report: &Report) -> String {
+    let width = report
+        .checks
+        .iter()
+        .map(|c| c.name.len())
+        .max()
+        .unwrap_or(0);
+    let mut out = String::new();
+    for check in &report.checks {
+        let found = match check.problems {
+            0 => "ok".to_string(),
+            1 => "1 problem".to_string(),
+            n => format!("{n} problems"),
+        };
+        out.push_str(&format!("{:width$}  {found}\n", check.name));
+        let mut shown = 0;
+        let mut items = 0;
+        for issue in &check.issues {
+            let tag = match issue.severity {
+                Severity::Error => "ERROR",
+                Severity::Warning => "WARN ",
+            };
+            let says = issue.message.lines().next().unwrap_or_default();
+            out.push_str(&format!(
+                "  [{tag}] {} (x{}): {says}\n",
+                issue.category, issue.count
+            ));
+            let listed = entry_lines(issue);
+            items += listed.len();
+            for lines in listed.into_iter().take(LISTED - shown) {
+                for line in lines.lines() {
+                    out.push_str(&format!("    {line}\n"));
+                }
+                shown += 1;
+            }
+        }
+        if items > shown {
+            out.push_str(&format!(
+                "  {} more: `datum check {}` lists them all\n",
+                items - shown,
+                check.name
+            ));
+        }
+    }
+    out.push_str(&summary_line(&report.summary));
+    out
+}
+
+/// An issue's entries, each its lines: its rows of the rendered block with
+/// the `↳` lines under each, or else each one's hid, field and state. One
+/// that names no entry is the rest of its message, or else its example.
+fn entry_lines(issue: &Issue) -> Vec<String> {
+    let mut rows: Vec<String> = Vec::new();
+    for line in issue.rendered_block.lines() {
+        match rows.last_mut() {
+            Some(row) if line.starts_with("  ↳") => {
+                row.push('\n');
+                row.push_str(line);
+            }
+            _ => rows.push(line.to_string()),
+        }
+    }
+    if rows.is_empty() {
+        rows = (issue.entries.iter())
+            .map(|e| format!("{}  {}  {}", short(&e.hid), e.field, e.state))
+            .collect();
+    }
+    if rows.is_empty() {
+        let rest: Vec<&str> = issue.message.lines().skip(1).collect();
+        let example = issue.example.iter().flat_map(|ex| {
+            let id = ex.id.as_ref().map(|id| format!("example: {id}"));
+            let field = ex.field.as_ref().map(|f| format!("example field: {f}"));
+            [id, field, ex.detail.clone()].into_iter().flatten()
+        });
+        let said = match rest.is_empty() {
+            true => example.collect::<Vec<_>>().join("\n"),
+            false => rest.join("\n"),
+        };
+        rows.extend((!said.is_empty()).then_some(said));
+    }
+    rows
 }
 
 /// JSON report for machine consumption.
@@ -2972,7 +2874,7 @@ mod tests {
         e.extra_metadata = Some(serde_json::json!({ "flag": true }));
         db.insert_entry(&e).unwrap();
 
-        let issues = collect_pending_flags(&db).unwrap();
+        let issues = collect_pending_flags(&db, &all(&db)).unwrap();
         assert_eq!(issues.len(), 1, "exactly one rolled-up flag issue");
         let issue = &issues[0];
         assert_eq!(issue.category, "flagged_entry");
@@ -2995,7 +2897,7 @@ mod tests {
     #[test]
     fn flagged_entries_clean_db_returns_empty() {
         let db = Db::open_in_memory().unwrap();
-        let issues = collect_pending_flags(&db).unwrap();
+        let issues = collect_pending_flags(&db, &all(&db)).unwrap();
         assert!(issues.is_empty(), "no flagged rows → no issue: {issues:?}");
 
         // An ordinary (non-flagged) row must not surface as a flag review.
@@ -3009,7 +2911,7 @@ mod tests {
             "d1",
         );
         db.insert_entry(&e).unwrap();
-        let issues = collect_pending_flags(&db).unwrap();
+        let issues = collect_pending_flags(&db, &all(&db)).unwrap();
         assert!(
             issues.is_empty(),
             "non-flagged rows must not surface: {issues:?}"
@@ -3034,7 +2936,7 @@ mod tests {
         );
         e.extra_metadata = Some(serde_json::json!({ "meta": true }));
         db.insert_entry(&e).unwrap();
-        let issues = collect_pending_flags(&db).unwrap();
+        let issues = collect_pending_flags(&db, &all(&db)).unwrap();
         assert!(issues.is_empty(), "meta notes must not surface as flags");
     }
 

@@ -1,12 +1,13 @@
 //! The `tz` checker: a stored offset its zone disagrees with, and a zone
 //! name nothing resolves.
 
-use anyhow::Result;
-use datum_core::db::{agreed_zone, is_meta_field, Db, NEIGHBOURS};
-use datum_core::entry::Entry;
-use datum_core::time::DatumTime;
+use std::collections::{BTreeMap, BTreeSet};
 
-use super::{render_flagged_block, Domain, FlaggedEntry, Issue, IssueExample, Severity};
+use anyhow::Result;
+use datum_core::db::{agreed_zone, Db, NEIGHBOURS};
+use datum_core::entry::Entry;
+
+use super::{render_flagged_block, rows_with, Domain, FlaggedEntry, Issue, IssueExample, Severity};
 
 /// Recompute each live entry's `occur_time` offset from its `timezone` at
 /// `utc` and flag any row whose stored `offset_minutes` disagrees — the
@@ -31,7 +32,17 @@ use super::{render_flagged_block, Domain, FlaggedEntry, Issue, IssueExample, Sev
 /// Report-only: the "which field is authoritative — tz or offset?" call
 /// deserves a human, so there is deliberately no `--fix` re-derivation yet
 /// (a future `--fix` would trust `timezone` and re-run `refresh_offset`).
-pub(super) fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
+///
+/// With `around`, under each row the entries either side of it and their
+/// zones and offsets, which `datum check tz` shows (da-3zq6g). With `near`,
+/// a zone the rows around one agree is not its own is read only near those
+/// instants ([`off_zone`]).
+pub(super) fn collect_tz_drift(
+    db: &Db,
+    entries: &[Entry],
+    around: bool,
+    near: Option<&BTreeSet<String>>,
+) -> Result<Vec<Issue>> {
     // Two faults with two fixes (da-kvosn): an offset its zone disagrees
     // with, and a zone name nothing resolves, whose offset may be right.
     let mut mismatched: Vec<(Entry, String, String)> = Vec::new();
@@ -65,9 +76,23 @@ pub(super) fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>>
         }
     }
 
-    let issue = |rows: Vec<(Entry, String, String)>, severity, category, says: &str| {
-        let first = rows.first()?;
-        Some(Issue {
+    let issue = |rows: Vec<(Entry, String, String)>,
+                 severity,
+                 category,
+                 says: &str|
+     -> Result<Option<Issue>> {
+        let Some(first) = rows.first() else {
+            return Ok(None);
+        };
+        let found: Vec<Entry> = rows.iter().map(|r| r.0.clone()).collect();
+        let rendered_block = match around {
+            true => {
+                let under = found.iter().map(|e| neighbors(db, e).map(Some));
+                rows_with(db, &found, &under.collect::<Result<Vec<_>>>()?)
+            }
+            false => render_flagged_block(db, &found),
+        };
+        Ok(Some(Issue {
             domain: Domain::Entries,
             severity,
             category,
@@ -84,16 +109,13 @@ pub(super) fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>>
             entries: rows
                 .iter()
                 .map(|(e, _, state)| FlaggedEntry {
-                    hid: e.short_uid(),
+                    hid: e.hid.to_string(),
                     field: e.field.clone(),
                     state: state.clone(),
                 })
                 .collect(),
-            rendered_block: render_flagged_block(
-                db,
-                &rows.iter().map(|r| r.0.clone()).collect::<Vec<_>>(),
-            ),
-        })
+            rendered_block,
+        }))
     };
     let names: std::collections::BTreeSet<&str> = unknown
         .iter()
@@ -106,7 +128,7 @@ pub(super) fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>>
             Severity::Error,
             "tz_offset_mismatch",
             "a stored UTC offset that disagrees with their timezone at that instant",
-        ),
+        )?,
         issue(
             unknown,
             Severity::Error,
@@ -114,17 +136,50 @@ pub(super) fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>>
             &format!(
                 "a timezone name datum cannot resolve ({names}), so the offset cannot be checked"
             ),
-        ),
+        )?,
         issue(
-            off_zone(entries),
+            off_zone(db, near)?,
             Severity::Warning,
             "tz_off_neighbours",
             "a timezone the entries around them agree is not theirs",
-        ),
+        )?,
     ]
     .into_iter()
     .flatten()
     .collect())
+}
+
+/// The [`NEIGHBOURS`] entries either side of `e`, oldest first, each at its
+/// own wall clock and offset, in its zone.
+fn neighbors(db: &Db, e: &Entry) -> Result<String> {
+    let Some(at) = e.occur_time.as_ref() else {
+        return Ok("no time, so no entries around it".into());
+    };
+    let (mut before, after) = db.entries_around(at.utc)?;
+    before.reverse();
+    let said = |rows: &[Entry]| {
+        let each: Vec<String> = (rows.iter())
+            .filter_map(|n| {
+                let t = n.occur_time.as_ref()?;
+                let offset = chrono::FixedOffset::east_opt(t.offset_minutes * 60)?;
+                Some(format!(
+                    "{} {} ({})",
+                    t.utc.with_timezone(&offset).format("%Y-%m-%d %H:%M %:z"),
+                    t.timezone.as_deref().unwrap_or("—"),
+                    n.short_uid(),
+                ))
+            })
+            .collect();
+        match each.is_empty() {
+            true => "none".to_string(),
+            false => each.join(", "),
+        }
+    };
+    Ok(format!(
+        "before: {}\n  ↳ after: {}",
+        said(&before),
+        said(&after)
+    ))
 }
 
 /// The entries in a run of fewer than [`NEIGHBOURS`] in one zone, where the
@@ -133,36 +188,72 @@ pub(super) fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>>
 /// is taken for one, and a run at either end of the record, with nothing on
 /// one side, is not a spike. A warning, as a short trip logged once or twice
 /// looks the same.
-fn off_zone(entries: &[Entry]) -> Vec<(Entry, String, String)> {
-    let mut zoned: Vec<(&Entry, &DatumTime, &str)> = entries
-        .iter()
-        .filter(|e| e.deleted_at.is_none() && e.superseded_by.is_none() && !is_meta_field(&e.field))
-        .filter_map(|e| {
-            let t = e.occur_time.as_ref()?;
-            Some((e, t, t.timezone.as_deref()?))
+///
+/// Every live zoned row's zone, in time order, is read from its index, and
+/// only the rows found are read whole (da-3zq6g). With `near`, only the
+/// stretches around those instants: a row moved, gone or come there changes
+/// what is found within [`REACH`]` / 2` rows of it, and no further, and each
+/// stretch reads [`REACH`] either side, so a run and the rows either side of
+/// it are whole for every row it decides.
+fn off_zone(db: &Db, near: Option<&BTreeSet<String>>) -> Result<Vec<(Entry, String, String)>> {
+    let mut off: BTreeMap<i64, (String, String)> = BTreeMap::new();
+    match near {
+        None => {
+            let zoned = db.zone_sequence()?;
+            for (i, around) in spikes(&zoned) {
+                off.insert(zoned[i].0, (zoned[i].1.clone(), around));
+            }
+        }
+        Some(near) => {
+            for at in near {
+                let (zoned, at) = db.zone_window(at, REACH)?;
+                let decided = at.saturating_sub(REACH / 2)..at + REACH / 2;
+                for (i, around) in spikes(&zoned)
+                    .into_iter()
+                    .filter(|(i, _)| decided.contains(i))
+                {
+                    off.insert(zoned[i].0, (zoned[i].1.clone(), around));
+                }
+            }
+        }
+    }
+    let ids: Vec<i64> = off.keys().copied().collect();
+    let mut found: Vec<(Entry, String, String)> = (db.entries_at_rowids(&ids)?.into_iter())
+        .zip(off.into_values())
+        .map(|(e, (own, around))| {
+            (
+                e,
+                format!("tz={own}  around={around}"),
+                format!("{own}, around {around}"),
+            )
         })
         .collect();
-    zoned.sort_by_key(|(_, t, _)| t.utc);
-    let zones: Vec<&str> = zoned.iter().map(|(.., z)| *z).collect();
+    found.sort_by_key(|(e, ..)| e.occur_time.as_ref().map(|t| t.utc));
+    Ok(found)
+}
+
+/// How far either side of an instant [`off_zone`] reads: a row there changes
+/// the runs within `2 ×` [`NEIGHBOURS`] rows of it, each of which reads
+/// [`NEIGHBOURS`] more of itself and [`NEIGHBOURS`] either side.
+const REACH: usize = 4 * NEIGHBOURS + 2;
+
+/// The rows of `zoned` in a run of fewer than [`NEIGHBOURS`] in one zone
+/// whose neighbors agree on another, each with that zone.
+fn spikes(zoned: &[(i64, String)]) -> Vec<(usize, String)> {
+    let zones: Vec<&str> = zoned.iter().map(|(_, z)| z.as_str()).collect();
     let mut off = Vec::new();
     let mut start = 0;
-    for run in zoned.chunk_by(|a, b| a.2 == b.2) {
+    for run in zoned.chunk_by(|a, b| a.1 == b.1) {
         let end = start + run.len();
         let before = &zones[start.saturating_sub(NEIGHBOURS)..start];
         let after = &zones[end..(end + NEIGHBOURS).min(zones.len())];
-        let own = run[0].2;
+        let own = run[0].1.as_str();
         let around = (run.len() < NEIGHBOURS)
             .then(|| agreed_zone(before, after))
             .flatten()
             .filter(|z| **z != own);
         if let Some(around) = around {
-            off.extend(run.iter().map(|(e, _, own)| {
-                (
-                    (*e).clone(),
-                    format!("tz={own}  around={around}"),
-                    format!("{own}, around {around}"),
-                )
-            }));
+            off.extend((start..end).map(|i| (i, around.to_string())));
         }
         start = end;
     }
@@ -174,6 +265,89 @@ mod tests {
     use super::super::tests::{all, t_at};
     use super::*;
     use datum_core::entry::Verb;
+    use datum_core::time::DatumTime;
+
+    /// da-3zq6g: a second run reads a zone the rows around one agree is not
+    /// its own only around the instants that changed and those it found last
+    /// time. For random zone sequences and a random change (a row in, a row
+    /// gone, a row moved), what those stretches find is what the whole
+    /// sequence gives, the changed instants being what `check_changes`
+    /// logged: a moved row's old place too.
+    #[test]
+    fn stretches_around_a_change_find_what_the_whole_sequence_finds() {
+        let mut seed: u64 = 0x3e7a_91c4;
+        let mut next = |n: u64| {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) % n
+        };
+        let zones = ["Europe/Berlin", "America/New_York", "Asia/Tokyo"];
+        let base = t_at("2026-01-01T00:00:00+00:00").utc;
+        let at = |i: u64| base + chrono::Duration::minutes(10 * i as i64);
+        let hids = |found: Vec<(Entry, String, String)>| -> BTreeSet<String> {
+            found.into_iter().map(|(e, ..)| e.hid.to_string()).collect()
+        };
+        for _ in 0..150 {
+            let db = Db::open_in_memory().unwrap();
+            // Mostly one zone, in runs, so spikes and steps both happen.
+            let mut zone = 0;
+            for i in 0..40 {
+                if next(4) == 0 {
+                    zone = next(3) as usize;
+                }
+                let t = DatumTime::from_utc_and_tz(at(i), zones[zone]).unwrap();
+                db.insert_entry(&Entry::new(
+                    "walk",
+                    Verb::Point,
+                    None,
+                    None,
+                    Some(t),
+                    None,
+                    "d",
+                ))
+                .unwrap();
+            }
+            let found = off_zone(&db, None).unwrap();
+            let through = db.check_through().unwrap();
+            let row: String = db
+                .conn()
+                .query_row(
+                    "SELECT hid FROM entries ORDER BY occur_time LIMIT 1 OFFSET ?1",
+                    [next(40)],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let to = (at(next(40)) + chrono::Duration::minutes(5)).to_rfc3339();
+            match next(3) {
+                0 => {
+                    let t = at(next(40)) + chrono::Duration::minutes(3);
+                    let t = DatumTime::from_utc_and_tz(t, zones[next(3) as usize]);
+                    let e =
+                        Entry::new("walk", Verb::Point, None, None, Some(t.unwrap()), None, "d");
+                    db.insert_entry(&e).unwrap();
+                }
+                1 => {
+                    let gone = "UPDATE entries SET deleted_at = '2026-02-01T00:00:00+00:00' WHERE hid = ?1";
+                    db.conn().execute(gone, [&row]).unwrap();
+                }
+                _ => {
+                    let moved = "UPDATE entries SET occur_time = ?2 WHERE hid = ?1";
+                    db.conn().execute(moved, [&row, &to]).unwrap();
+                }
+            }
+            // The instants a second run reads around, as it reads them: what
+            // the last run found, and what the triggers logged since, a moved
+            // row's old place among them.
+            let logged = db.check_changed(through).unwrap().into_iter();
+            let near: BTreeSet<String> = (found.iter())
+                .filter_map(|(e, ..)| Some(e.occur_time.as_ref()?.utc.to_rfc3339()))
+                .chain(logged.map(|(.., at)| at).filter(|at| !at.is_empty()))
+                .collect();
+            let whole = hids(off_zone(&db, None).unwrap());
+            assert_eq!(hids(off_zone(&db, Some(&near)).unwrap()), whole);
+        }
+    }
 
     /// A row whose stored `occur_time_offset` disagrees with the offset its
     /// `occur_time_tz` produces at that instant is flagged by the `tz`
@@ -199,7 +373,7 @@ mod tests {
             )
             .unwrap();
 
-        let issues = collect_tz_drift(&db, &all(&db)).unwrap();
+        let issues = collect_tz_drift(&db, &all(&db), false, None).unwrap();
         assert_eq!(issues.len(), 1, "exactly one tz issue");
         let issue = &issues[0];
         assert_eq!(issue.category, "tz_offset_mismatch");
@@ -231,7 +405,7 @@ mod tests {
             let entry = Entry::new_legacy("work", Verb::Point, None, None, Some(occur), None, "d1");
             db.insert_entry(&entry).unwrap();
         }
-        let issues = collect_tz_drift(&db, &all(&db)).unwrap();
+        let issues = collect_tz_drift(&db, &all(&db), false, None).unwrap();
         let Some(issue) = issues.iter().find(|i| i.category == "tz_off_neighbours") else {
             return vec![];
         };
@@ -265,7 +439,9 @@ mod tests {
                 .unwrap();
         let entry = Entry::new_legacy("work", Verb::Switch, None, None, Some(occur), None, "d1");
         db.insert_entry(&entry).unwrap();
-        assert!(collect_tz_drift(&db, &all(&db)).unwrap().is_empty());
+        assert!(collect_tz_drift(&db, &all(&db), false, None)
+            .unwrap()
+            .is_empty());
     }
 
     /// An unparseable stored `occur_time_tz` can't be reconciled against the
@@ -290,7 +466,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        let issues = collect_tz_drift(&db, &all(&db)).unwrap();
+        let issues = collect_tz_drift(&db, &all(&db), false, None).unwrap();
         assert_eq!(issues.len(), 1);
         // The name is the fault, not the offset, and the message says which
         // name (da-kvosn).
@@ -317,7 +493,12 @@ mod tests {
             let entry =
                 Entry::new_legacy("walk", Verb::Switch, None, None, Some(occur), None, "d1");
             db.insert_entry(&entry).unwrap();
-            assert!(collect_tz_drift(&db, &all(&db)).unwrap().is_empty(), "{tz}");
+            assert!(
+                collect_tz_drift(&db, &all(&db), false, None)
+                    .unwrap()
+                    .is_empty(),
+                "{tz}"
+            );
         }
     }
 
@@ -349,7 +530,9 @@ mod tests {
             .unwrap();
         assert_eq!(stored, None, "an absent zone stays NULL in the column");
         assert!(
-            collect_tz_drift(&db, &all(&db)).unwrap().is_empty(),
+            collect_tz_drift(&db, &all(&db), false, None)
+                .unwrap()
+                .is_empty(),
             "offset without a zone name is not a mismatch",
         );
     }
@@ -372,7 +555,9 @@ mod tests {
             )
             .unwrap();
         assert!(
-            collect_tz_drift(&db, &all(&db)).unwrap().is_empty(),
+            collect_tz_drift(&db, &all(&db), false, None)
+                .unwrap()
+                .is_empty(),
             "desynced tombstone must not be flagged",
         );
     }

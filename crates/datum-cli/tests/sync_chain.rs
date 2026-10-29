@@ -1346,7 +1346,7 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
     let (a, b, _) = locked();
     // a admitted b at a handshake, as any member admits a redeemer: loud,
     // since the invite may have been anyone's. Its own admin key is quiet.
-    let admitted = a.ok(&["check"]);
+    let admitted = a.ok(&["check", "sync"]);
     assert!(
         admitted.contains("sync:\n[WARN ] sync_new_member (x1)")
             && admitted.contains("⚠ another device joined: b, at ")
@@ -1376,7 +1376,7 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
         .unwrap();
     assert_eq!(issue["domain"], "sync");
     a.ok(&["sync", "chain", "ack", "b"]);
-    assert!(!a.ok(&["check"]).contains("new to the sync chain"));
+    assert!(!a.ok(&["check", "sync"]).contains("new to the sync chain"));
     assert!(!a.ok(&["sync", "status"]).contains("another device joined"));
 
     // b heard of a, then of the lock: each announced once, on the first
@@ -1387,7 +1387,7 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
 
     // a was a member before b joined: named once, plainly, with no ⚠ — not
     // news of a device joining (da-o9xdd).
-    let check = b.ok(&["check"]);
+    let check = b.ok(&["check", "sync"]);
     assert!(check.contains("[WARN ] sync_joined (x1)"), "{check}");
     let a_label = member_of(&b, &a.id())["label"].as_str().unwrap().to_owned();
     let joined = format!("  you joined this sync chain; its members: {a_label} (since ");
@@ -1395,9 +1395,9 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
     assert!(!check.contains("another device joined"), "{check}");
     assert!(check.contains("new to the sync chain"), "{check}");
     b.ok(&["sync", "chain", "ack", "joined"]);
-    assert!(!b.ok(&["check"]).contains("you joined"));
+    assert!(!b.ok(&["check", "sync"]).contains("you joined"));
     b.ok(&["sync", "chain", "ack", "ed25519:"]);
-    assert!(!b.ok(&["check"]).contains("new to the sync chain"));
+    assert!(!b.ok(&["check", "sync"]).contains("new to the sync chain"));
     let none = b.fails(&["sync", "chain", "ack", "nobody"], "");
     assert!(none.contains("nothing to acknowledge"), "{none}");
 }
@@ -1424,7 +1424,7 @@ fn the_warning_names_its_ack_and_a_bare_ack_takes_the_only_notice() {
         panic!("{joined}")
     };
     run(&a, command);
-    assert!(!a.ok(&["check"]).contains("new to the sync chain"));
+    assert!(!a.ok(&["check", "sync"]).contains("new to the sync chain"));
 
     let (_a, b, _) = locked();
     // b heard of the admin key after it joined: the one it is warned of.
@@ -1435,7 +1435,7 @@ fn the_warning_names_its_ack_and_a_bare_ack_takes_the_only_notice() {
     // With a's endpoint, two are pending: a bare ack lists both, each with
     // its command, and takes neither.
     let pending = |copy: &Copy| {
-        copy.ok(&["check"])
+        copy.ok(&["check", "sync"])
             .matches("`datum sync chain ack ")
             .count()
     };
@@ -1478,7 +1478,7 @@ fn ack_all_acknowledges_every_notice_and_names_each() {
     admit(&b, &d, "d", None);
     admit(&b, &Copy::new(), "e", None);
     assert!(b.send(&d).0);
-    let check = d.ok(&["check"]);
+    let check = d.ok(&["check", "sync"]);
     assert_eq!(
         check.matches("you joined this sync chain").count(),
         1,
@@ -1498,7 +1498,7 @@ fn ack_all_acknowledges_every_notice_and_names_each() {
             .to_owned();
         assert!(lines[0].contains(&format!("{label} (since ")), "{acked}");
     }
-    assert!(!d.ok(&["check"]).contains("sync chain ack"));
+    assert!(!d.ok(&["check", "sync"]).contains("sync chain ack"));
     assert_eq!(
         d.ok(&["sync", "chain", "ack", "--all"]).trim(),
         "nothing to acknowledge"
@@ -2573,13 +2573,13 @@ fn removing_the_last_admin_unlocks_the_chain_only_on_purpose() {
         let all = json(&copy.ok(&["sync", "status", "--json"]));
         assert_eq!(all["open"], true);
         assert_eq!(all["unlocked"][0]["by"], "admin.key");
-        let check = copy.ok(&["check"]);
+        let check = copy.ok(&["check", "sync"]);
         let head = "the sync chain was unlocked: other devices may have relied on the lock; `datum sync chain ack unlock` to acknowledge:\n  ⚠ sync chain unlocked by admin.key";
         assert!(check.contains(head), "{check}");
         copy.ok(&["sync", "chain", "ack", "unlock"]);
         assert!(!copy.ok(&["sync", "status"]).contains(unlocked));
     }
-    let check = a.ok(&["check"]);
+    let check = a.ok(&["check", "sync"]);
     assert!(
         check.contains("⚠ another device joined: unlock") && !check.contains(unlocked),
         "{check}"

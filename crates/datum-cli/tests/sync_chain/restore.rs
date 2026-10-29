@@ -207,7 +207,7 @@ fn a_chain_restore_leaves_an_offline_copy_a_backup_of_what_it_drops() {
     let merge = format!("`datum db restore {file} --merge` brings it back");
     assert!(said.contains(&merge), "{said}");
     assert!(c.ok(&["sync", "status"]).contains(&merge));
-    let check = c.run(&["check"], "");
+    let check = c.run(&["check", "sync"], "");
     assert!(String::from_utf8_lossy(&check.stdout).contains(&merge));
 
     c.ok(&["db", "restore", &file, "--merge"]);

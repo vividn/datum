@@ -151,12 +151,32 @@ fn shares(conn: &Connection, r: Map<String, Value>) -> Result<Option<String>> {
     Ok(found.into_iter().next().map(|b| b.slug.0))
 }
 
-fn fold_check(conn: &Connection) -> Result<FoldCheck> {
+/// [`Db::sync_fold_check_of`]: every entry, or those of `only`.
+fn fold_check(conn: &Connection, only: Option<&[String]>) -> Result<FoldCheck> {
     let chain = Chain::load(conn)?;
+    // `only` as one JSON array, read by the hid indices; `NULL` is every hid.
+    let of = match only {
+        Some(_) => "hid IN (SELECT value FROM json_each(?2))",
+        None => "?2 IS NULL",
+    };
+    let only = only.map(serde_json::to_string).transpose()?;
+    // A row merges the rows it supersedes ([`derived`]), so its fold is
+    // read again with theirs.
+    let only = match only {
+        Some(hids) => Some(conn.query_row(
+            "SELECT json_group_array(hid) FROM (
+                 SELECT value AS hid FROM json_each(?1)
+                 UNION SELECT superseded_by FROM entries
+                  WHERE hid IN (SELECT value FROM json_each(?1)) AND superseded_by IS NOT NULL)",
+            params![hids],
+            |r| r.get::<_, String>(0),
+        )?),
+        None => None,
+    };
     let mut out = FoldCheck {
         ops: conn.query_row(
-            "SELECT COUNT(*) FROM ops WHERE applied = 1 AND hid != ?1",
-            params![CHAIN_HID],
+            &format!("SELECT COUNT(*) FROM ops WHERE applied = 1 AND hid != ?1 AND {of}"),
+            params![CHAIN_HID, only],
             |r| r.get(0),
         )?,
         // In no chain there is no reader, and a read mints no endpoint key.
@@ -164,8 +184,11 @@ fn fold_check(conn: &Connection) -> Result<FoldCheck> {
         ..FoldCheck::default()
     };
     let rows: Vec<Entry> = conn
-        .prepare("SELECT * FROM entries ORDER BY slug, hid")?
-        .query_map([], row_to_entry)?
+        .prepare(&format!(
+            "SELECT * FROM entries WHERE {} ORDER BY slug, hid",
+            of.replace("?2", "?1")
+        ))?
+        .query_map(params![only], row_to_entry)?
         .collect::<rusqlite::Result<_>>()?;
     out.entries = rows.len();
     let with = |e: &Entry, conflicts: Option<Value>| {
@@ -210,11 +233,11 @@ fn fold_check(conn: &Connection) -> Result<FoldCheck> {
     // Applied ops alone: a refused op's entry is gone on purpose (a purged
     // device's), and a waiting op's is not here yet.
     let rowless: Vec<String> = conn
-        .prepare(
-            "SELECT DISTINCT hid FROM ops WHERE applied = 1 AND hid != ?1
-               AND hid NOT IN (SELECT hid FROM entries) ORDER BY hid",
-        )?
-        .query_map(params![CHAIN_HID], |r| r.get(0))?
+        .prepare(&format!(
+            "SELECT DISTINCT hid FROM ops WHERE applied = 1 AND hid != ?1 AND {of}
+               AND hid NOT IN (SELECT hid FROM entries) ORDER BY hid"
+        ))?
+        .query_map(params![CHAIN_HID, only], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     for hid in rowless {
         // Edits with no create fold to nothing, and have no row to miss.
@@ -237,7 +260,13 @@ impl Db {
     /// the rows no op covers. A copy that applied its ops whole has none of
     /// the first two.
     pub fn sync_fold_check(&self) -> Result<FoldCheck> {
-        fold_check(&self.conn)
+        fold_check(&self.conn, None)
+    }
+
+    /// [`Db::sync_fold_check`] of the entries `hids` names alone, rows and
+    /// ops: what `datum check` reads again (da-3zq6g). `None` is every one.
+    pub fn sync_fold_check_of(&self, hids: Option<&[String]>) -> Result<FoldCheck> {
+        fold_check(&self.conn, hids)
     }
 
     /// Write every row that is not its ops' fold again from its ops, and its
@@ -249,9 +278,9 @@ impl Db {
     /// The whole database is read before the write lock and after it, and
     /// the lock is held for the stale rows alone (da-8i7f0).
     pub fn sync_refold(&self) -> Result<(FoldCheck, Vec<Stale>)> {
-        let found = self.read(|view| fold_check(view.conn()))?;
+        let found = self.read(|view| fold_check(view.conn(), None))?;
         self.refold_rows(&found.stale)?;
-        let left = self.read(|view| fold_check(view.conn()))?.stale;
+        let left = self.read(|view| fold_check(view.conn(), None))?.stale;
         Ok((found, left))
     }
 
@@ -276,7 +305,7 @@ impl Db {
     /// included, folds the entry to the same tombstone; one whose ops fold
     /// to a tombstone already needs only its row. How many it found.
     pub fn sync_fix_orphans(&self) -> Result<usize> {
-        let found = self.read(|view| fold_check(view.conn()))?.orphans;
+        let found = self.read(|view| fold_check(view.conn(), None))?.orphans;
         self.in_chunks(&found, |tx, o| {
             // A row that came back since it was found is no orphan; whether
             // a live entry holds its identity is read again under the lock.
@@ -349,7 +378,7 @@ impl Db {
             return Ok(());
         }
         let refolded = self
-            .read(|view| fold_check(view.conn()))
+            .read(|view| fold_check(view.conn(), None))
             .and_then(|found| self.refold_rows(&found.stale));
         match refolded {
             Err(e) if busy(&e) => return Ok(()),

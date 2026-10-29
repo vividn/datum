@@ -220,6 +220,7 @@ fn every_pair_has_a_roundtrip_test() {
         (70, 71),
         (71, 72),
         (72, 73),
+        (73, 74),
     ];
     assert_eq!(
         covered.len(),
@@ -3412,4 +3413,27 @@ fn roundtrip_v72_to_v73_symbol_keys() {
     assert_eq!(marked(), 1);
     apply_one_down(conn, 73);
     assert_eq!(marked(), 0);
+}
+
+/// da-3zq6g: v74 lays what `datum check` keeps, the log a write adds a row
+/// to and its triggers; v73 takes them away.
+#[test]
+fn roundtrip_v73_to_v74_check_kept() {
+    let db = fresh_at(73);
+    let conn = db.conn();
+    let objects = || {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+              WHERE name LIKE 'check\\_%' ESCAPE '\\' OR name = 'entries_asserted_base'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(objects(), 0);
+    apply_one_up(conn, 73);
+    // Two tables, six triggers and the index.
+    assert_eq!(objects(), 9);
+    apply_one_down(conn, 74);
+    assert_eq!(objects(), 0);
 }

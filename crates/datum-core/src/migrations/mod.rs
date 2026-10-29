@@ -62,7 +62,7 @@ use v71_v80::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 73;
+pub const CURRENT_SCHEMA_VERSION: u32 = 74;
 
 /// The migrations, each by its `to`, past which a copy below their schema
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
@@ -608,5 +608,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "spec: glyph, state_glyphs, glyph_by, glyph_scale, glyph_aspect are symbol and the rest, the stored specs renamed as the file next opens (da-yc5vi)",
         apply: m72_to_73_symbol_keys,
         down: down_73_to_72_symbol_keys,
+    },
+    Migration {
+        from: 73,
+        to: 74,
+        summary: "check_kept: what `datum check` found and the rows changed since, kept true by triggers on entries and ops, so a second check reads only those; entries_asserted_base for check keys (da-3zq6g)",
+        apply: m73_to_74_check_kept,
+        down: down_74_to_73_check_kept,
     },
 ];

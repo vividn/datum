@@ -140,7 +140,8 @@ impl Db {
             .query_row(
                 "SELECT COUNT(*) FROM integrity_warnings
                  WHERE resolution IS NULL
-                   AND entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL)",
+                   AND NOT EXISTS (SELECT 1 FROM entries d
+                                    WHERE d.slug = entry_slug AND d.deleted_at IS NOT NULL)",
                 [],
                 |row| row.get(0),
             )

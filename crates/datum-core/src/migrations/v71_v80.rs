@@ -87,3 +87,30 @@ pub(super) fn down_73_to_72_symbol_keys(conn: &Connection) -> Result<()> {
     conn.execute_batch("DELETE FROM _meta WHERE key = 'symbol_keys';")?;
     Ok(())
 }
+
+/// da-3zq6g: what `datum check` kept and the log of what changed since, and
+/// the index `check keys` reads (`check_kept.sql`). They start empty; the
+/// first `check` reads everything.
+pub(super) fn m73_to_74_check_kept(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? || !table_exists(conn, "ops")? {
+        return Ok(());
+    }
+    conn.execute_batch(crate::db::CHECK_KEPT_SQL)?;
+    Ok(())
+}
+
+/// Reverse v73→v74. Local and derived: the next `check` reads everything.
+pub(super) fn down_74_to_73_check_kept(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP TRIGGER IF EXISTS check_changes_insert;
+         DROP TRIGGER IF EXISTS check_changes_update;
+         DROP TRIGGER IF EXISTS check_changes_delete;
+         DROP TRIGGER IF EXISTS check_changes_op_insert;
+         DROP TRIGGER IF EXISTS check_changes_op_update;
+         DROP TRIGGER IF EXISTS check_changes_op_delete;
+         DROP INDEX IF EXISTS entries_asserted_base;
+         DROP TABLE IF EXISTS check_changes;
+         DROP TABLE IF EXISTS check_kept;",
+    )?;
+    Ok(())
+}

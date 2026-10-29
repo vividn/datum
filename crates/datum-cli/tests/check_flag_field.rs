@@ -45,7 +45,7 @@ fn a_logged_field_with_no_spec_is_still_an_unknown_field() {
     datum(&db, &["occur", "tea"]);
     datum(&db, &["setup", "tea", "--delete"]);
 
-    let check = datum(&db, &["check"]);
+    let check = datum(&db, &["check", "entries"]);
     assert!(check.contains("unknown_field (x1)"), "{check}");
     assert!(check.contains("example field: tea"), "{check}");
 }

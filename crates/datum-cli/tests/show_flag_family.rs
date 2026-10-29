@@ -147,6 +147,11 @@ fn json_is_show_json_on_every_command_that_has_one() {
         }
         with_json.push("--json");
         with_show.extend_from_slice(&["--show", "json"]);
+        // A check's second run reads only what changed since its first
+        // (da-3zq6g): run it once, so both spellings are a second run.
+        if argv[0] == "check" {
+            datum(&db, argv);
+        }
 
         let a = datum(&db, &with_json);
         let b = datum(&db, &with_show);

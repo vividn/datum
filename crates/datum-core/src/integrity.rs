@@ -537,7 +537,10 @@ fn detect_one(
 /// transition — reported as a repeat. Intersection stays where it
 /// belongs, on [`IntegrityKind::DoubleOpen`].
 pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
-    Ok(list_repeats(conn)?.into_iter().map(|r| r.entry).collect())
+    Ok(list_repeats(conn, None)?
+        .into_iter()
+        .map(|r| r.entry)
+        .collect())
 }
 
 /// One row [`list_repeated_states`] names, with what tells its two kinds
@@ -552,20 +555,27 @@ pub struct Repeat {
     pub span: Option<(DateTime<Utc>, Option<DateTime<Utc>>)>,
 }
 
-/// [`list_repeated_states`] with each row's [`Repeat::span`].
-pub fn list_repeats(conn: &Connection) -> Result<Vec<Repeat>> {
+/// [`list_repeated_states`] with each row's [`Repeat::span`], of every
+/// field or of `fields` alone: a field's repeats are read from its own rows.
+pub fn list_repeats(conn: &Connection, fields: Option<&[String]>) -> Result<Vec<Repeat>> {
     let sql = format!(
         "SELECT * FROM entries
          WHERE {participation}
            AND {transitions}
+           AND {of}
          ORDER BY field, {order}",
         participation = crate::db::STATE_PARTICIPATION_SQL,
         transitions = crate::track::NOT_A_DECLARATION_SQL,
+        of = match fields {
+            Some(_) => "field IN (SELECT value FROM json_each(?1))",
+            None => "?1 IS NULL",
+        },
         order = crate::db::STATE_ORDER_OLDEST_FIRST,
     );
     let mut stmt = conn.prepare(&sql)?;
+    let fields = fields.map(serde_json::to_string).transpose()?;
     let entries = stmt
-        .query_map([], crate::db::row_to_entry_public)?
+        .query_map(params![fields], crate::db::row_to_entry_public)?
         .collect::<rusqlite::Result<Vec<Entry>>>()
         .map_err(DatumError::Db)?;
     let mut hits = Vec::new();
@@ -704,11 +714,11 @@ pub struct Finding {
     pub what: &'static str,
 }
 
-/// [`Pending`], read.
-pub fn pending(conn: &Connection) -> Result<Pending> {
+/// [`Pending`], read: its repeats of every field, or of `fields` alone.
+pub fn pending(conn: &Connection, fields: Option<&[String]>) -> Result<Pending> {
     Ok(Pending {
         stored: pending_stored(conn)?,
-        repeats: list_repeats(conn)?,
+        repeats: list_repeats(conn, fields)?,
     })
 }
 
@@ -1098,8 +1108,10 @@ pub fn list_rows(
     // otherwise `datum check` keeps reporting (e.g.) a double-open after the
     // offending entry was deleted. Resolution by id still works: it goes
     // through `get_by_hid_or_id`, which is unfiltered.
+    // A seek per warning, not the set of every tombstone (da-3zq6g).
     clauses.push(
-        "entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL)".to_string(),
+        "NOT EXISTS (SELECT 1 FROM entries d WHERE d.slug = entry_slug AND d.deleted_at IS NOT NULL)"
+            .to_string(),
     );
     if let Some(kind) = filter.kind {
         clauses.push(format!("kind = ?{}", binds.len() + 1));
@@ -1473,7 +1485,7 @@ mod tests {
             }
             .insert(&db);
         }
-        let all = pending(db.conn()).unwrap().findings();
+        let all = pending(db.conn(), None).unwrap().findings();
         assert!(
             all.len() > 20,
             "the fixture finds enough to compare: {}",

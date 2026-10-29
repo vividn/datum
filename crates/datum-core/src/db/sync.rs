@@ -2657,7 +2657,10 @@ impl Db {
     /// Every entry with conflicts, in slug order.
     pub fn sync_conflicts(&self) -> Result<Vec<Entry>> {
         self.conn
-            .prepare("SELECT * FROM entries WHERE conflicts IS NOT NULL ORDER BY slug")?
+            .prepare(
+                "SELECT * FROM entries INDEXED BY entries_conflicts
+                  WHERE conflicts IS NOT NULL ORDER BY slug",
+            )?
             .query_map([], row_to_entry)?
             .collect::<rusqlite::Result<_>>()
             .map_err(DatumError::Db)

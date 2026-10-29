@@ -95,6 +95,23 @@ and after `schema.sql` at every open; a later migration that drops or
 rebuilds an `entries` column they name must drop them first. A span's seconds are `floor(end) − floor(start)`, which adds up
 exactly across midnights. `datum check stats` recomputes a sample of days and says how many.
 
+### `check` keeps what it found
+`datum check` keeps each checker's findings and the change it read through
+(`check_kept`), and triggers on `entries` and `ops` name every row a write
+touches, with its field and time, old and new (`check_changes`, both in
+`db/check_kept.sql`, the v73→v74 migration, laid at every open too). So a second run reads again only
+the rows a checker found and those changed since (`commands/check/kept.rs`,
+da-3zq6g): `integrity` the fields changed, `tz`'s neighbors the stretches
+around what changed, `sync` the rows and the rows they supersede.
+A field's changed spec reads that field's rows again; a template's spec, a
+kit, a chain record, another datum, schema or id delimiter, or `--fix` runs
+from scratch. Local and derived, never synced; a migration
+that rebuilds `entries` or `ops` drops the triggers, and the next open lays
+them again. `check_second_run.rs` holds a second run to reading no table
+whole. Alone, `datum check` sums each checker up (its findings where five or
+fewer); `datum check <name>` lists every one, `tz` with the entries around
+each. `entries` names the base battery.
+
 ### A command costs the same however many fields there are
 A command reads the specs of the fields it shows and no others: a renderer
 gets `registry_of` / `registry_for` its entries (`commands/helpers.rs`), and

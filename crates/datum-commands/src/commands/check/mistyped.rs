@@ -101,7 +101,7 @@ pub(super) fn collect_mistyped(
         entries: mistyped
             .iter()
             .map(|(e, detail)| FlaggedEntry {
-                hid: e.short_uid(),
+                hid: e.hid.to_string(),
                 field: e.field.clone(),
                 state: detail.clone(),
             })

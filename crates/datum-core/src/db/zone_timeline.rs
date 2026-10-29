@@ -10,9 +10,11 @@
 
 use chrono::{DateTime, Utc};
 
+use crate::entry::Entry;
 use crate::error::Result;
 use crate::time::{Zone, ZoneTimeline};
 
+use super::row_mapper::row_to_entry;
 use super::Db;
 
 /// The meta fields as `entries_zoned`'s predicate names them
@@ -146,6 +148,83 @@ impl Db {
             Ok(rows.collect::<std::result::Result<_, _>>()?)
         };
         Ok((side("<", "DESC")?, side(">", "ASC")?))
+    }
+
+    /// The rows [`Db::zones_around`] reads, whole, nearest first: what
+    /// `datum check tz` shows around a row it names (da-3zq6g).
+    pub fn entries_around(&self, at: DateTime<Utc>) -> Result<(Vec<Entry>, Vec<Entry>)> {
+        let side = |cmp: &str, order: &str| -> Result<Vec<Entry>> {
+            let sql = format!(
+                "SELECT * FROM entries
+                  WHERE deleted_at IS NULL
+                    AND superseded_by IS NULL
+                    AND occur_time {cmp} ?1
+                    AND occur_time_tz IS NOT NULL
+                    AND {NOT_ZONED_META_SQL}
+                  ORDER BY occur_time {order}
+                  LIMIT {NEIGHBOURS}"
+            );
+            let mut stmt = self.conn.prepare_cached(&sql)?;
+            let rows = stmt.query_map([at.to_rfc3339()], row_to_entry)?;
+            Ok(rows.collect::<std::result::Result<_, _>>()?)
+        };
+        Ok((side("<", "DESC")?, side(">", "ASC")?))
+    }
+
+    /// Every live zoned row's rowid and zone, oldest first, read from the
+    /// `entries_zoned` index alone and no row: what `datum check tz` walks
+    /// for a zone the rows around one agree is not its own (da-3zq6g).
+    pub fn zone_sequence(&self) -> Result<Vec<(i64, String)>> {
+        let sql = format!(
+            "SELECT rowid, occur_time_tz FROM entries
+              WHERE deleted_at IS NULL
+                AND superseded_by IS NULL
+                AND occur_time_tz IS NOT NULL
+                AND {NOT_ZONED_META_SQL}
+              ORDER BY occur_time"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// A stretch of [`Db::zone_sequence`]: the `reach` rows nearest before
+    /// `at` and the `reach` from it on, oldest first, and how many are
+    /// before it. A seek of the index either way (da-3zq6g).
+    pub fn zone_window(&self, at: &str, reach: usize) -> Result<(Vec<(i64, String)>, usize)> {
+        let side = |cmp: &str, order: &str| -> Result<Vec<(i64, String)>> {
+            let sql = format!(
+                "SELECT rowid, occur_time_tz FROM entries
+                  WHERE deleted_at IS NULL
+                    AND superseded_by IS NULL
+                    AND occur_time {cmp} ?1
+                    AND occur_time_tz IS NOT NULL
+                    AND {NOT_ZONED_META_SQL}
+                  ORDER BY occur_time {order}
+                  LIMIT ?2"
+            );
+            let mut stmt = self.conn.prepare_cached(&sql)?;
+            let rows = stmt.query_map(rusqlite::params![at, reach], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?;
+            Ok(rows.collect::<std::result::Result<_, _>>()?)
+        };
+        let mut window = side("<", "DESC")?;
+        window.reverse();
+        let before = window.len();
+        window.extend(side(">=", "ASC")?);
+        Ok((window, before))
+    }
+
+    /// The rows of `rowids`, in their order.
+    pub fn entries_at_rowids(&self, rowids: &[i64]) -> Result<Vec<Entry>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT * FROM entries WHERE rowid = ?1")?;
+        rowids
+            .iter()
+            .map(|id| Ok(stmt.query_row([id], row_to_entry)?))
+            .collect()
     }
 }
 

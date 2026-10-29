@@ -55,6 +55,8 @@ fn fresh_db_matches_schema_sql_shape() {
     tables.sort();
     let expected_tables = vec![
         "_meta",
+        "check_changes",
+        "check_kept",
         "entries",
         "entry_history",
         "integrity_warnings",
@@ -91,6 +93,7 @@ fn fresh_db_matches_schema_sql_shape() {
         .unwrap();
     indexes.sort();
     let expected_indexes = vec![
+        "entries_asserted_base",
         "entries_conflicts",
         "entries_content_hash",
         "entries_field_blocks",

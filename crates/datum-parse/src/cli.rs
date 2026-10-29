@@ -1581,6 +1581,7 @@ pub struct CheckArgs {
 /// parse crate so both the parser (typo validation) and the command
 /// dispatcher (which-categories-to-run) read from the same source.
 pub const KNOWN_CHECKERS: &[&str] = &[
+    "entries",
     "verbs",
     "aliases",
     "slugs",

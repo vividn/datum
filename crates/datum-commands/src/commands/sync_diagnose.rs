@@ -86,8 +86,9 @@ fn issue(
 /// makes this copy differ from one that applied the same ops. So are ops
 /// that fold to no row storage takes, which the check cannot read further.
 /// A row no op covers is only not yet sent.
-pub fn fold_issues(db: &Db) -> Result<(FoldCheck, Vec<Issue>)> {
-    let found = db.sync_fold_check()?;
+/// Of every entry, or of `hids` alone.
+pub fn fold_issues(db: &Db, hids: Option<&[String]>) -> Result<(FoldCheck, Vec<Issue>)> {
+    let found = db.sync_fold_check_of(hids)?;
     let mut out = Vec::new();
     if !found.orphans.is_empty() {
         let lines: Vec<String> = found
@@ -110,7 +111,7 @@ pub fn fold_issues(db: &Db) -> Result<(FoldCheck, Vec<Issue>)> {
             .orphans
             .iter()
             .map(|o| FlaggedEntry {
-                hid: short(&o.hid),
+                hid: o.hid.clone(),
                 field: o.field.clone(),
                 state: format!("{} with no row", n(o.ops.len(), "op", "ops")),
             })
@@ -138,7 +139,7 @@ pub fn fold_issues(db: &Db) -> Result<(FoldCheck, Vec<Issue>)> {
             .stale
             .iter()
             .map(|s| FlaggedEntry {
-                hid: short(&s.hid),
+                hid: s.hid.clone(),
                 field: s.field.clone(),
                 state: s.columns.keys().cloned().collect::<Vec<_>>().join(", "),
             })
@@ -167,7 +168,7 @@ pub fn fold_issues(db: &Db) -> Result<(FoldCheck, Vec<Issue>)> {
             .unfoldable
             .iter()
             .map(|(e, why)| FlaggedEntry {
-                hid: short(&e.hid),
+                hid: e.hid.clone(),
                 field: e.field.clone(),
                 state: why.clone(),
             })
@@ -197,7 +198,7 @@ pub fn fold_issues(db: &Db) -> Result<(FoldCheck, Vec<Issue>)> {
             .uncovered
             .iter()
             .map(|e| FlaggedEntry {
-                hid: short(&e.hid),
+                hid: e.hid.clone(),
                 field: e.field.clone(),
                 state: "no op".into(),
             })

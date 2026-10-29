@@ -286,7 +286,7 @@ expression = "field"
     );
     assert!(lines.contains(&"  ✓ by_field ON entries(field)"), "{shown}");
 
-    let checked = env.run_on(&here, &["check"], b"");
+    let checked = env.run_on(&here, &["check", "entries"], b"");
     assert!(
         checked.contains("kit_index_unbuilt (x1)") && checked.contains("index:k/one_coffee"),
         "{checked}"

@@ -39,7 +39,7 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
     datum(&seeded, &["alias", "set", "cf", "occur coffee"]);
 
     let all =
-        "checkers: base, verbs, aliases, slugs, integrity, keys, flags, tz, refs, stats, sync, spool";
+        "checkers: entries, verbs, aliases, slugs, integrity, keys, flags, tz, refs, stats, sync, spool";
     datum(&empty, &["db", "migrate"]);
     let on_empty = datum(&empty, &["check"]);
     let on_seeded = datum(&seeded, &["check"]);
@@ -66,14 +66,20 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
         "✓ No consistency issues found: 0 entries, 0 field specs, 1 alias examined (checkers: aliases).\n"
     );
 
+    // A second run reads again only what changed since the first, and says
+    // so (da-3zq6g): here nothing; a write makes it read that row.
     let json: Value = serde_json::from_str(&datum(&seeded, &["check", "--json"])).unwrap();
-    assert_eq!(json["examined"]["entries"], 4);
+    assert_eq!(json["examined"]["entries"], 0);
+    assert_eq!(json["examined"]["rest_unchanged"], true);
     assert_eq!(json["examined"]["specs"], 1);
     assert_eq!(json["examined"]["aliases"], 1);
     assert_eq!(json["examined"]["checkers"].as_array().unwrap().len(), 12);
+    datum(&seeded, &["occur", "coffee", "-qq"]);
+    let json: Value = serde_json::from_str(&datum(&seeded, &["check", "--json"])).unwrap();
+    assert_eq!(json["examined"]["entries"], 1);
     assert_eq!(
         json["examined"]["sync"],
-        serde_json::json!({"rows": 4, "ops": 4})
+        serde_json::json!({"rows": 1, "ops": 1})
     );
 }
 
@@ -125,7 +131,7 @@ fn a_warning_row_that_does_not_decode_is_a_finding() {
         .env("DATUM_HOME", dir.path())
         .env("DATUM_CONFIG_HOME", dir.path())
         .env("NO_COLOR", "1")
-        .arg("check")
+        .args(["check", "integrity"])
         .output()
         .unwrap();
     let (stdout, stderr) = (

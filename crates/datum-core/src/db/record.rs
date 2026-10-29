@@ -200,7 +200,7 @@ impl Db {
     /// its history reads otherwise.
     pub fn key_drift(&self) -> Result<Vec<KeyDrift>> {
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT e.field, k.key FROM entries e,
+            "SELECT DISTINCT e.field, k.key FROM entries e INDEXED BY entries_asserted_base,
                json_each(e.extra_metadata, '$.asserted_base') k
              WHERE e.deleted_at IS NULL AND e.superseded_by IS NULL
                AND json_type(e.extra_metadata, '$.asserted_base') = 'object'

@@ -229,19 +229,73 @@ impl Db {
         Ok((states, span))
     }
 
-    /// Up to `n` cached days, `(field, day)`, picked at random among the
-    /// days that held something.
+    /// `n` cached days, `(field, day)`, or every one where fewer, picked at
+    /// random among the days that held something: a cached field at random,
+    /// a date at random in its cached days, and the first day from it that
+    /// held something and is not yet taken, each a seek, so the sample costs
+    /// its size and not the cache's (da-3zq6g).
     pub fn stats_cache_sample(&self, n: usize) -> Result<Vec<(String, String)>> {
-        Ok(self
-            .conn
-            .prepare(
-                "SELECT DISTINCT c.field, c.day FROM stats_cache c
-                   JOIN stats_cache_through t
-                     ON t.field = c.field AND c.day >= t.lo AND c.day < t.day
-                  ORDER BY random() LIMIT ?1",
-            )?
-            .query_map(params![n], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<rusqlite::Result<_>>()?)
+        // Each field's cached days: its first that held something, and the
+        // day they run up to.
+        let mut fields: Vec<(String, String, String)> = Vec::new();
+        let mut spans = self.conn.prepare(
+            "SELECT t.field, (SELECT min(day) FROM stats_cache c
+                               WHERE c.field = t.field AND c.day >= t.lo), t.day
+               FROM stats_cache_through t",
+        )?;
+        for row in spans.query_map([], |r| {
+            Ok((r.get(0)?, r.get::<_, Option<String>>(1)?, r.get(2)?))
+        })? {
+            if let (field, Some(first), until) = row? {
+                if first < until {
+                    fields.push((field, first, until));
+                }
+            }
+        }
+        let mut from_on = self.conn.prepare_cached(
+            "SELECT day FROM stats_cache WHERE field = ?1 AND day >= ?2 AND day < ?3
+              ORDER BY day LIMIT 1",
+        )?;
+        let mut days = std::collections::BTreeSet::new();
+        while days.len() < n && !fields.is_empty() {
+            let r: i64 = self.conn.query_row("SELECT random()", [], |r| r.get(0))?;
+            let r = r.unsigned_abs() as usize;
+            let i = r % fields.len();
+            let (field, first, until) = &fields[i];
+            let date = |d: &str| d.parse::<chrono::NaiveDate>().ok();
+            let span = date(first)
+                .zip(date(until))
+                .map_or(1, |(a, b)| (b - a).num_days().max(1));
+            let mut from = (date(first).unwrap_or_default()
+                + chrono::Duration::days((r / fields.len()) as i64 % span))
+            .to_string();
+            let mut wrapped = false;
+            loop {
+                let day: Option<String> = from_on
+                    .query_row(params![field, from, until], |r| r.get(0))
+                    .optional()?;
+                match day {
+                    // Taken: the next after it. `~` sorts after every digit.
+                    Some(day) if days.contains(&(field.clone(), day.clone())) => {
+                        from = format!("{day}~")
+                    }
+                    Some(day) => {
+                        days.insert((field.clone(), day));
+                        break;
+                    }
+                    None if !wrapped => {
+                        from = first.clone();
+                        wrapped = true;
+                    }
+                    // Every day of it taken.
+                    None => {
+                        fields.remove(i);
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(days.into_iter().collect())
     }
 
     /// Stop trusting `field`'s days from `day` on: the next read fills them.

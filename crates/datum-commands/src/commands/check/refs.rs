@@ -5,7 +5,7 @@ use anyhow::Result;
 use datum_core::db::Db;
 use datum_core::entry::Entry;
 
-use super::{Domain, Issue, IssueExample, Severity};
+use super::{short, Domain, FlaggedEntry, Issue, IssueExample, Severity};
 
 /// da-f9jyv: state references that name no live entry — a `field:id`
 /// state, and a bare state whose `F:<state>` document is missing (the
@@ -16,6 +16,14 @@ use super::{Domain, Issue, IssueExample, Severity};
 /// tracker has thousands of rows in one state. Never an error: the
 /// document may yet arrive by sync.
 pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
+    Ok(dangling_refs(db, entries)?.0)
+}
+
+/// [`collect_dangling_refs`], and the hids of `entries` holding any
+/// reference, which a run keeps (da-3zq6g): a reference dangles when what
+/// it names goes, which changes the named row and not the one holding it.
+/// A name `entries` lacks is looked up, so they need not be every row.
+pub(super) fn dangling_refs(db: &Db, entries: &[Entry]) -> Result<(Vec<Issue>, Vec<String>)> {
     use datum_core::doc_ref::{data_refs, record_ref, state_refs};
     let registry = db.load_registry()?;
     let live: Vec<&Entry> = entries
@@ -23,6 +31,12 @@ pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
         .filter(|e| e.deleted_at.is_none() && e.superseded_by.is_none())
         .collect();
     let slugs: std::collections::HashSet<&str> = live.iter().map(|e| e.slug.as_str()).collect();
+    let mut lookup = db.conn().prepare_cached(
+        "SELECT 1 FROM entries WHERE slug = ?1 AND deleted_at IS NULL AND superseded_by IS NULL",
+    )?;
+    let mut held =
+        |slug: &str| -> Result<bool> { Ok(slugs.contains(slug) || lookup.exists([slug])?) };
+    let mut referrers = Vec::new();
     // key `None` is the state; `Some(k)` the data key `k`.
     type Missing<'a> = (&'a str, Option<&'a str>, String);
     let mut missing: std::collections::BTreeMap<Missing, Vec<String>> = Default::default();
@@ -47,14 +61,16 @@ pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
         let mut refs: Vec<_> = state.chain(data).collect();
         refs.sort();
         refs.dedup();
-        for (key, slug) in refs
-            .into_iter()
-            .filter(|(_, r)| !slugs.contains(r.as_str()))
-        {
-            missing
-                .entry((&e.field, key, slug))
-                .or_default()
-                .push(e.short_uid());
+        if !refs.is_empty() {
+            referrers.push(e.hid.to_string());
+        }
+        for (key, slug) in refs {
+            if !held(&slug)? {
+                missing
+                    .entry((&e.field, key, slug))
+                    .or_default()
+                    .push(e.hid.to_string());
+            }
         }
     }
     // A record reference names no slug: it is missing when its field is.
@@ -65,7 +81,7 @@ pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
         }
     }
     missing.retain(|(_, _, slug), _| !live.contains(slug));
-    Ok(missing
+    let issues = missing
         .into_iter()
         .map(|((field, key, slug), hids)| {
             let count = hids.len();
@@ -90,13 +106,28 @@ pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
                 message,
                 count,
                 example: Some(IssueExample {
-                    id: Some(hids[0].clone()),
+                    id: Some(short(&hids[0])),
                     field: Some(field.to_string()),
-                    detail: Some(format!("hids: {}{more}", hids[..count.min(3)].join(", "))),
+                    detail: Some(format!(
+                        "hids: {}{more}",
+                        hids[..count.min(3)]
+                            .iter()
+                            .map(|h| short(h))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
                 }),
-                entries: Vec::new(),
+                entries: hids
+                    .iter()
+                    .map(|hid| FlaggedEntry {
+                        hid: hid.clone(),
+                        field: field.to_string(),
+                        state: format!("→ {slug}"),
+                    })
+                    .collect(),
                 rendered_block: String::new(),
             }
         })
-        .collect())
+        .collect();
+    Ok((issues, referrers))
 }
