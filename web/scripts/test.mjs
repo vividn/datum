@@ -11,8 +11,8 @@
 //
 // `DATUM_TEST_CONCURRENCY` overrides the load, but not the cores: it is capped
 // at the cores less two (da-dwq7g, da-gimld). The merge queue's
-// `scripts/mq-check.sh` sets it, because the refinery's verdict is the one run
-// that must not yield to the cans'.
+// `scripts/mq-check.sh` sets it on the refinery's run alone, because its
+// verdict is the one run that must not yield to the cans' (da-5f20z).
 //
 // `--shard N/M` (or `DATUM_TEST_SHARD=N/M`, so a workflow can choose it
 // without touching the command line) runs a quarter — or a third, or an

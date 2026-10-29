@@ -25,6 +25,22 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Who runs it decides how hard it may press on the box. The refinery's verdict
+# (role `<kiez>/alchemiter`) is the one run that must not wait behind the cans',
+# so it names its own numbers. A can sharing the box runs the same gate before
+# `ct done`, and when it named them too, three cans at once took the 24-core box
+# to load 98 (10-29): so a can's web suite reads the load, and its nextest takes
+# a quarter of the cores, not all of them (da-5f20z). Anyone else, CI included
+# (which never runs this script), keeps the tools' defaults.
+role="${CT_ROLE:-${GT_ROLE:-}}"
+case "$role" in
+  */alchemiter | */refinery) refinery=1 ;;
+  *) refinery= ;;
+esac
+case "$role" in
+  */cans/*) cores="$(nproc)"; export NEXTEST_TEST_THREADS="${NEXTEST_TEST_THREADS:-$(( cores / 4 > 2 ? cores / 4 : 2 ))}" ;;
+esac
+
 # Cans branch from staging, which runs ahead of main: diffing against main
 # made a one-line change pay for every crate staging touched (da-0k6rq). So by
 # default the base is the NEARER of the two: `git merge-base HEAD A B` is the
@@ -60,10 +76,10 @@ if [ -n "$web" ]; then
   fi
   echo "mq-check: web/ changed — running the web check and suite"
   # The suite otherwise reads the box's load average and yields to it, which is
-  # right for a can sharing the box and wrong here: the refinery's verdict is
-  # the one run that must not wait behind the cans'. So the queue names its own
-  # number and everyone else reads the load (da-x38v).
-  export DATUM_TEST_CONCURRENCY=6
+  # right for a can sharing the box and wrong for the refinery's verdict. So the
+  # queue names its own number and everyone else reads the load (da-x38v,
+  # da-5f20z).
+  [ -z "$refinery" ] || export DATUM_TEST_CONCURRENCY="${DATUM_TEST_CONCURRENCY:-6}"
   # web/tests/sync*.test.mjs pair with a native `datum` from target/debug
   # (or $CARGO_TARGET_DIR/debug — datumBinary() reads it too),
   # which nothing else builds on a web-only diff (CI's cargo step does). Built
