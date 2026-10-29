@@ -54,6 +54,9 @@
 	(#lib/detent.ts). There is no handle (da-pnxug), vividn, 2026-10-28: «it
 	actually makes it difficult to grab the nowview handle … the swiping up
 	and down on the output section/input section is sufficient here».
+	Except CLOSED, where there is no output to swipe (da-d4tqt), vividn,
+	2026-10-29: «when the output section is completely hidden, show a little
+	^------^ handle in middle above the input bar that reopens it».
 
 	FOLDED, A COMMAND STILL ANSWERS: its ACTION words — one per document,
 	in the CLI's order and in the colour a document draws its action in —
@@ -564,6 +567,16 @@
 			</div>
 		</div>
 	{/if}
+
+	<!-- THE HANDLE, CLOSED ONLY (da-d4tqt): a press is PageUp's step, to
+	     the row; a swipe on it is the bar's own (`use:grip`). Its box is
+	     no taller than the gap a nowview's handles leave over the bar at
+	     390×640 (reachable.test), so it takes no press of theirs. -->
+	{#if !$outputless && $shown === 0 && !$inLog}
+		<button type="button" class="reopen" aria-label="show the output" title="show the output" onclick={raise}
+			><svg viewBox="0 0 40 6" aria-hidden="true"><path d="M1 1 4 5h32l3-4" /></svg></button
+		>
+	{/if}
 </footer>
 
 <style>
@@ -1055,6 +1068,39 @@
 	}
 
 	/* Over the output, at its height, on the input's top edge. */
+	/* 12px over the rule and 4px into the input: the nowview's handles end
+	   15px over the rule (reachable.test), and the box's text is lower. */
+	.reopen {
+		position: absolute;
+		left: 50%;
+		bottom: calc(100% - 4px);
+		transform: translateX(-50%);
+		z-index: 21;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 4.5rem;
+		height: 16px;
+		padding: 0 0 4px;
+		background: none;
+		border: none;
+		color: var(--quiet);
+		cursor: grab;
+	}
+	.reopen svg {
+		width: 2.5rem;
+		height: 6px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.reopen:hover,
+	.reopen:focus-visible {
+		color: var(--accent-bright);
+	}
+
 	.commands-over {
 		position: absolute;
 		left: 0;

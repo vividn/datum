@@ -889,8 +889,9 @@ binary.
   flow to their new places (FLIP, 200ms), not under
   `prefers-reduced-motion`. A drag
   anywhere on the bar, or a wheel over it, moves a state the way it went;
-  there is no handle (da-pnxug), and on the box PageUp goes closed → row →
-  full and PageDown back. HOW FAR OPEN the bar is, is ONE number of
+  the one handle (da-pnxug) is a small `^------^` over the input while closed
+  alone, which opens the row (da-d4tqt), and on the box PageUp goes closed →
+  row → full and PageDown back. HOW FAR OPEN the bar is, is ONE number of
   pixels (`reveal` in `#lib/log.ts`) that three boxes are sized from — the
   page itself never scrolls; the NOTCH is `--output-height`, the CEILING the
   top of the page. A release glides by `speed * TAU` (`rest` in

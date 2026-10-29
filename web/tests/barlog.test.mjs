@@ -1020,16 +1020,19 @@ describe('the three states and the full screen', () => {
 		return `between: shown ${shown}, log ${height}`;
 	};
 
+	/** A control of the bar's that is in neither section is a handle. */
+	const handles = (page) =>
+		page.locator(`${BAR} button`).evaluateAll((all) => all.filter((b) => !b.closest('.section')).length);
+
 	// The handle is gone (da-pnxug), vividn, 2026-10-28: «the swiping up and
-	// down on the output section/input section is sufficient here».
+	// down on the output section/input section is sufficient here». Only
+	// closed is there one, with no output to swipe (da-d4tqt).
 	test('a swipe on the input or the output: up from closed is the row, up from the row full, down from full the row, down from the row closed', async () => {
 		await phone(async (app) => {
 			const { page } = app;
-			// A control of the bar's that is in neither section is a handle.
-			const handles = () =>
-				page.locator(`${BAR} button`).evaluateAll((all) => all.filter((b) => !b.closest('.section')).length);
 			await app.submit('occur coffee');
 			assert.equal(await state(page), 'closed');
+			assert.equal(await handles(page), 1, 'closed, no handle is drawn');
 			for (const [on, dy, want] of [
 				[INPUT, -60, 'row'],
 				[OUTPUT, -60, 'full'],
@@ -1040,11 +1043,39 @@ describe('the three states and the full screen', () => {
 				[INPUT, 60, 'row'],
 				[INPUT, 60, 'closed']
 			]) {
-				assert.equal(await handles(), 0, 'a handle is drawn');
 				await dragBy(page, on, dy);
 				assert.equal(await state(page), want, `a ${dy}px swipe on ${on} did not leave the bar ${want}`);
+				assert.equal(await handles(page), +(want === 'closed'), `${want}, the handles are wrong`);
 			}
-			assert.equal(await handles(), 0, 'a handle is drawn');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// vividn, 2026-10-29: «when the output section is completely hidden,
+	// show a little ^------^ handle in middle above the input bar that
+	// reopens it» (da-d4tqt).
+	test('closed, a handle centered over the input opens the row; at the row and full there is none', async () => {
+		await phone(async (app) => {
+			const { page } = app;
+			await app.submit('occur coffee');
+			assert.equal(await state(page), 'closed');
+			const handle = page.getByRole('button', { name: 'show the output' });
+			await handle.waitFor();
+			const [h, input] = await Promise.all([handle.boundingBox(), page.locator(INPUT).boundingBox()]);
+			const off = h.x + h.width / 2 - (input.x + input.width / 2);
+			assert.ok(Math.abs(off) < 1, `the handle is ${off}px off the input's middle`);
+			assert.ok(h.y < input.y && h.y + h.height > input.y, `the handle ${h.y}–${h.y + h.height} is not on the input's top ${input.y}`);
+			await handle.click();
+			assert.equal(await state(page), 'row');
+			assert.equal(await handle.count(), 0, 'at the row, the handle is still there');
+			await dragBy(page, INPUT, -60);
+			assert.equal(await state(page), 'full');
+			assert.equal(await handle.count(), 0, 'full, the handle is still there');
+			await dragBy(page, INPUT, 60);
+			assert.equal(await state(page), 'row');
+			await dragBy(page, INPUT, 60);
+			assert.equal(await state(page), 'closed');
+			assert.equal(await handle.count(), 1, 'closed again, the handle is not back');
 			assert.deepEqual(app.errors, []);
 		});
 	});

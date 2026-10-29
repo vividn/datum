@@ -224,7 +224,8 @@ describe('on a phone-sized screen', () => {
 
 	// The bar has no handle (da-pnxug), vividn, 2026-10-28: «it actually makes
 	// it difficult to grab the nowview handle currently». So a nowview right
-	// over the bar on a 390px phone, folded and at the row: every point of
+	// over the bar on a 390px phone, folded (where the bar's own handle is
+	// back, da-d4tqt) and at the row: every point of
 	// each of its handles takes a press itself, and the output a swipe opens
 	// is on the screen.
 	test("the nowview's handles over the bar take a press at every point of them, and the output is on screen", async () => {
@@ -257,6 +258,9 @@ describe('on a phone-sized screen', () => {
 					assert.deepEqual(missed, [], `${state}, a press on a nowview handle reaches something else`);
 				};
 				await fold(page);
+				// The bar's one handle is drawn folded (da-d4tqt), so this is
+				// a press it could take.
+				await page.getByRole('button', { name: 'show the output' }).waitFor();
 				await grabbed('folded');
 				await unfold(page);
 				await assertOnScreen(page, '.prompt-bar .section.output', 'the output a swipe opens');
