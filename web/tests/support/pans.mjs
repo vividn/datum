@@ -216,6 +216,12 @@ export async function traceOf(page, cdp, act) {
 		layouts: is.LayoutCount - was.LayoutCount,
 		recalcs: is.RecalcStyleCount - was.RecalcStyleCount,
 		taskMs: (is.TaskDuration - was.TaskDuration) * 1000,
+		/**
+		 * The main thread's tasks in its own CPU time (`tdur`): what
+		 * `taskMs` measures less the time the thread waited to be run,
+		 * which on a loaded box is most of what it adds.
+		 */
+		threadMs: spans('RunTask').reduce((sum, e) => sum + (e.tdur ?? e.dur), 0) / 1000,
 		scriptMs: (is.ScriptDuration - was.ScriptDuration) * 1000,
 		longTasks: tasks.filter((d) => d > 50).map(Math.round),
 		mostTaskMs: Math.round(Math.max(0, ...tasks))

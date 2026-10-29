@@ -71,7 +71,11 @@ test('a horizontal pan moves the pictures and redraws none of them, under the fi
 		await page.locator('.strip').evaluate((strip, at) => {
 			strip.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -300, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }));
 		}, at);
-		await page.locator('.unzoom').waitFor();
+		// The wheel's window is a preview until its pause commits it, 120ms
+		// on, and a press before that pans nothing: the band says what the
+		// committed window cannot pan past, the whole day's `start end`
+		// until then. Then idle, for the pictures the commit asks for.
+		await page.locator(`${TODAY}[data-pan-stop=""]`).waitFor();
 		await app.idle();
 		const cdp = await page.context().newCDPSession(page);
 		const from = { x: at.x + 60, y: at.y };
@@ -91,7 +95,9 @@ test('a horizontal pan moves the pictures and redraws none of them, under the fi
 		assert.ok(trace.paints <= 8, `the pan painted ${trace.paints} times: ${trace.painted}`);
 		assert.ok(trace.restyled.most <= 50, `a step of the pan restyled ${trace.restyled.most} elements`);
 		assert.ok(trace.layouts <= 2, `the pan laid the page out ${trace.layouts} times`);
-		assert.ok(trace.taskMs / MOVES < FRAME_MS, `the main thread took ${Math.round(trace.taskMs / MOVES)}ms a move`);
+		// In the thread's own time: a wall clock's counts the runner's other
+		// files too, 18–20ms a move with four at once, 12 alone.
+		assert.ok(trace.threadMs / MOVES < FRAME_MS, `the main thread took ${Math.round(trace.threadMs / MOVES)}ms a move`);
 	}, PHONE);
 });
 
