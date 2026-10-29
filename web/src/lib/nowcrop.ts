@@ -238,6 +238,45 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 	}
 }
 
+/** What of a picture is its time axis's rule: its gridlines, ticks and their labels, in order. */
+const RULE = ['gridline', 'tick', 'tick-label'].map((c) => `.plot > .${c}`).join(', ');
+
+/**
+ * The time axis of `overlay`, datum's picture of another window, laid into
+ * the picture `into` in place of its own (da-gy4xz): each gridline, tick and
+ * label where `into` draws its instant, `by` ms on, so a gesture's preview
+ * is ruled and labelled as datum rules the window it is at, and its release
+ * moves no label. `null` takes it out again, and `into`'s own come back.
+ */
+export function graftAxis(into: SVGSVGElement, overlay: string | null, by = 0): void {
+	into.querySelector('.live-axis')?.remove();
+	into.classList.remove('axis-live');
+	const doc = overlay ? parse(overlay) : null;
+	const [from, to] = [doc?.documentElement, into].map((root) => [...(root?.querySelectorAll('[data-lo]') ?? [])].map(axisOf));
+	const plot = into.querySelector('.plot');
+	if (!doc || !from.length || !to.length || !plot) return;
+	const y = into.querySelector('[data-lo]')!.getAttribute('data-axis') === 'y';
+	const [m1, m0] = [doc.querySelector('.plot'), plot].map((p) => shift(p)[y ? 1 : 0]);
+	// A place before, after or on a strip is read off the stretch it is nearest.
+	const near = (all: Axis[], off: (a: Axis) => number) => all.reduce((a, b) => (off(b) < off(a) ? b : a));
+	const move = (u: number) => {
+		const a = near(from, (s) => Math.max(s.lo - u, u - s.hi));
+		const t = a.from + (u - a.lo) / rate(a) + by;
+		const b = near(to, (s) => Math.max(s.from - t, t - s.to));
+		return b.lo + (t - b.from) * rate(b);
+	};
+	const g = into.ownerDocument.createElementNS(NS, 'g');
+	g.setAttribute('class', 'live-axis');
+	for (const el of doc.querySelectorAll(RULE)) {
+		const copy = into.ownerDocument.importNode(el, true);
+		for (const name of y ? ['y', 'y1', 'y2'] : ['x', 'x1', 'x2'])
+			if (copy.hasAttribute(name)) copy.setAttribute(name, String(move(num(copy, name) + m1) - m0));
+		g.append(copy);
+	}
+	plot.insertBefore(g, plot.querySelector(RULE));
+	into.classList.add('axis-live');
+}
+
 /**
  * Each block of `day` cut to `lo` … `hi` along its axis, in the day's own
  * units, and dropped where nothing of it is left; one still running at the

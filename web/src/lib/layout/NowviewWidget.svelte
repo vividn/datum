@@ -145,7 +145,7 @@
 	import { markOf, pressSpent } from '#lib/inspect.ts';
 	import { readLanes } from '#lib/lanes.ts';
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
-	import { compose } from '#lib/nowcrop.ts';
+	import { compose, graftAxis } from '#lib/nowcrop.ts';
 	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
 	import { layers, spanDates, type Layer } from '#lib/dayLayers.ts';
 	import { run } from '#lib/run.ts';
@@ -263,11 +263,12 @@
 	 * window if need be: a zoom has no cap (da-wd6h5), and eight windows of
 	 * a month either side were 510 days of data for 30 on screen.
 	 */
-	const surround = $derived.by(() => {
+	const surroundOf = (minutes: number) => {
 		const reachable = REACH_MS / (minutes * 60_000);
 		const coast = Math.ceil((3 * COAST_PX) / (0.8 * bandPx));
 		return Math.min(Math.max(SURROUND, coast), reachable < SURROUND ? reachable : Math.floor(reachable));
-	});
+	};
+	const surround = $derived(surroundOf(minutes));
 	// A window on now with a pill is centred half its length back from now,
 	// relative too: it is not drawn ahead, there being an instant to draw.
 	const spec = $derived(
@@ -1140,28 +1141,34 @@
 	 */
 	function commit(): void {
 		if (!zoom || zoom.held) return;
-		const next = historyArg(minutes / zoom.scale);
-		const { at } = zoom;
-		const shift = shiftOf(zoom);
-		const was = middleOf(middle);
-		if (at === undefined || !axis || !Number.isFinite(was)) {
-			zoom = next === history ? null : { ...zoom, held: next };
-			return rescale(next);
-		}
+		const { next, centre: to, about } = landing(zoom);
 		// The same window: the fingers moved it and no more, a pan.
 		if (next === history) {
+			const shift = shiftOf(zoom);
 			zoom = null;
+			if (!about) return;
 			panned = shift;
 			return commitPan();
 		}
+		centre = to;
+		zoom = { ...zoom, held: next };
+		onchange?.(next);
+	}
+
+	/**
+	 * The window a gesture let go of now asks for: its step, where it is
+	 * centred (`centre`), and whether it was scaled about the fingers or the
+	 * pointer rather than the anchor.
+	 */
+	function landing(z: NonNullable<typeof zoom>): { next: string; centre: typeof centre; about: boolean } {
+		const next = historyArg(minutes / z.scale);
+		const was = middleOf(middle);
+		if (z.at === undefined || !axis || !Number.isFinite(was)) return { next, centre: rescaled(next), about: false };
 		// The window whose instant `at` stands where the fingers left it: the
 		// middle as far from it as before, over the scale, less the slide —
 		// `shift` in screen px, turned to ms by the picture's own axis at rest.
-		const middleAt = at + (was - at - shift * msPerPx(axis)) / zoom.scale;
-		const home = scaledHome(zoom);
-		centre = home ? null : { arg: new Date(middleAt).toISOString(), by: 'pan' };
-		zoom = { ...zoom, held: next };
-		onchange?.(next);
+		const middleAt = z.at + (was - z.at - shiftOf(z) * msPerPx(axis)) / z.scale;
+		return { next, centre: scaledHome(z) ? null : { arg: new Date(middleAt).toISOString(), by: 'pan' }, about: true };
 	}
 
 	/**
@@ -1174,12 +1181,16 @@
 	 */
 	function rescale(next: string): void {
 		if (next === history) return;
-		const [at, was] = [instantMs(), middleOf(middle)];
-		if ((centre || pill) && Number.isFinite(was)) {
-			const by = stepMinutes(next) / minutes;
-			centre = { by: centre?.by ?? 'sel', arg: new Date(at + (was - at) * by).toISOString() };
-		}
+		centre = rescaled(next);
 		onchange?.(next);
+	}
+
+	/** `centre` once the window is rescaled to `next`, as `rescale` moves it. */
+	function rescaled(next: string): typeof centre {
+		const [at, was] = [instantMs(), middleOf(middle)];
+		if (!(centre || pill) || !Number.isFinite(was)) return centre;
+		const by = stepMinutes(next) / minutes;
+		return { by: centre?.by ?? 'sel', arg: new Date(at + (was - at) * by).toISOString() };
 	}
 
 	// ── two fingers ────────────────────────────────────────────────────
@@ -1571,32 +1582,12 @@
 				}
 			: null;
 		if (word) word.style.visibility = homeward ? 'hidden' : '';
-		const labels = [...(svg?.querySelectorAll<SVGElement>('.tick-label') ?? [])];
-		for (const l of labels) {
-			l.removeAttribute('transform');
-			l.style.visibility = '';
-		}
-		const ctm = svg?.getScreenCTM();
-		if (!labels.length || !axis || !ctm) return void (handles = []);
-		// The first along time: leftmost, or topmost when time runs down.
+		// A picture landing under a gesture takes its rule too.
+		if (zoom && laid?.svg !== svg) rule();
+		const shown = inset();
+		if (!shown.length || !axis) return void (handles = []);
 		const y = axis.y;
 		const box = (l: SVGElement) => l.getBoundingClientRect();
-		const span = (r: DOMRect) => (y ? [r.top, r.bottom] : [r.left, r.right]);
-		const [lo, hi] = ends();
-		const inside = (l: SVGElement) => {
-			const [a, b] = span(box(l));
-			return (a + b) / 2 >= lo - 1 && (a + b) / 2 <= hi + 1;
-		};
-		const shown = labels.filter(inside);
-		if (!shown.length) return void (handles = []);
-		const label = shown.reduce((a, b) => (span(box(b))[0] < span(box(a))[0] ? b : a));
-		const inset = Math.max(0, lo + GAP_PX - span(box(label))[0]) / (y ? ctm.d : ctm.a);
-		if (inset) label.setAttribute('transform', y ? `translate(0 ${inset})` : `translate(${inset} 0)`);
-		const [from, to] = span(box(label));
-		for (const l of labels) {
-			const [a, b] = span(box(l));
-			if (l !== label && a < to + GAP_PX * 2 && b > from - GAP_PX * 2) l.style.visibility = 'hidden';
-		}
 		// On the label's middle, but no higher than keeps a handle's target
 		// under the axis line: the strip is only as tall as its 11px digits
 		// (da-a2cxp).
@@ -1618,6 +1609,109 @@
 				};
 			})
 			.filter((h) => h.minutes > 0);
+	}
+
+	/**
+	 * The axis's labels inside the window, the first along time — leftmost,
+	 * or topmost when time runs down — inset clear of the window's edge for
+	 * its handle, and any it then lies over hidden. A gesture's rule's
+	 * (`graftAxis`) where it has one: as the picture of its window will be.
+	 */
+	function inset(): SVGElement[] {
+		const svg = svgEl();
+		const labels = [...(svg?.querySelectorAll<SVGElement>(svg.classList.contains('axis-live') ? '.live-axis .tick-label' : '.tick-label') ?? [])];
+		for (const l of labels) {
+			l.removeAttribute('transform');
+			l.style.visibility = '';
+		}
+		const ctm = svg?.getScreenCTM();
+		if (!labels.length || !axis || !ctm) return [];
+		const y = axis.y;
+		const box = (l: SVGElement) => l.getBoundingClientRect();
+		const span = (r: DOMRect) => (y ? [r.top, r.bottom] : [r.left, r.right]);
+		const [lo, hi] = ends();
+		const inside = (l: SVGElement) => {
+			const [a, b] = span(box(l));
+			return (a + b) / 2 >= lo - 1 && (a + b) / 2 <= hi + 1;
+		};
+		const shown = labels.filter(inside);
+		if (!shown.length) return [];
+		const label = shown.reduce((a, b) => (span(box(b))[0] < span(box(a))[0] ? b : a));
+		// In the label's own units, which a stretch scales back by itself (the CSS below).
+		const by = (Math.max(0, lo + GAP_PX - span(box(label))[0]) * (zoom?.scale ?? 1)) / (y ? ctm.d : ctm.a);
+		if (by) label.setAttribute('transform', y ? `translate(0 ${by})` : `translate(${by} 0)`);
+		const [from, to] = span(box(label));
+		for (const l of labels) {
+			const [a, b] = span(box(l));
+			if (l !== label && a < to + GAP_PX * 2 && b > from - GAP_PX * 2) l.style.visibility = 'hidden';
+		}
+		return shown;
+	}
+
+	// ── the rule under a gesture (da-gy4xz) ────────────────────────────
+	//
+	// vividn, 2026-10-28: «when zooming the nowview, can we correct the time
+	// axis labels in realtime? right now after you let go they readjust
+	// themselves». A gesture stretches datum's picture, and its gridlines,
+	// ticks and labels are still the window's it was drawn for. So the
+	// gesture asks datum, one run at a time, for the picture of the window
+	// its release would ask for — the overlay opens no database — and lays
+	// that picture's rule into the one under the fingers (`graftAxis`): the
+	// rule and labels datum draws, which the release then moves none of.
+
+	/** The sized argv the gesture in hand, let go of, would ask for, as words: `null` where it would ask for none. */
+	let ruleFor = 'null';
+	/** Datum's picture of the window last asked for a gesture, by its argv's words. */
+	let ruled: { words: string; svg: string } | null = null;
+	/** Which picture holds which of them. */
+	let laid: { svg: Element; words: string } | null = null;
+	let ruling = false;
+
+	/** The sized argv the window a gesture would land on is asked with: as `spec`, once it has. */
+	function landingArgv(z: NonNullable<typeof zoom>): string[] | null {
+		const { next, centre: to } = landing(z);
+		// The size `paneArgv` put on the picture on screen: its last words, from `--width` on.
+		const size = drewFor.lastIndexOf('--width');
+		if (next === history || !showHistory || size < 0) return null;
+		const m = stepMinutes(next);
+		const { argv } = nowviewSpec(next, to?.arg ?? (pillArg ? backArg(m / 2) : undefined), vertical, pillArg, labels, surroundOf(m));
+		return [...argv, ...drewFor.slice(size)];
+	}
+
+	$effect(() => {
+		const z = zoom;
+		untrack(() => {
+			if (!z) ruled = null;
+			if (!z?.held) ruleFor = z ? JSON.stringify(landingArgv(z)) : 'null';
+			void tick().then(rule);
+		});
+	});
+
+	/**
+	 * Lay the rule of the window the gesture is at into the picture, or take
+	 * it out where there is none; and ask datum for it, where it is not the
+	 * one held. Let go of, the gesture asks nothing more: datum's picture of
+	 * the window is on its way, and only that window's rule is laid meanwhile.
+	 */
+	function rule(): void {
+		const svg = svgEl();
+		const show = zoom && ruleFor !== 'null' && (!zoom.held || ruled?.words === ruleFor) ? ruled : null;
+		if (svg && (laid?.svg !== svg || laid.words !== (show?.words ?? ''))) {
+			const had = svg.classList.contains('axis-live');
+			// Where the picture draws an instant's data: slid with the clock, on now.
+			graftAxis(svg, show?.svg ?? null, -slid);
+			laid = { svg, words: show?.words ?? '' };
+			if (had && !zoom) place();
+		}
+		if (zoom) inset();
+		if (!zoom || zoom.held || ruling || ruleFor === 'null' || ruled?.words === ruleFor) return;
+		const words = ruleFor;
+		ruling = true;
+		void run(JSON.parse(words) as string[]).then((answer) => {
+			ruling = false;
+			if (answer.code === 0 && zoom && !answer.superseded) ruled = { words, svg: answer.stdout };
+			rule();
+		});
 	}
 
 	// ── the handles' wheel and drag (da-57vj4) ─────────────────────────
@@ -2211,6 +2305,11 @@
 	}
 	.vertical .nowview-band :global(svg.svg line.moment:not(defs *)) {
 		scale: 1 calc(1 / (var(--zoom) * var(--sx, 1)));
+	}
+	/* Under a gesture, the rule of the window it is at stands in for the
+	   picture's own (`graftAxis`, da-gy4xz). */
+	.nowview-band :global(svg.svg.axis-live .plot > :is(.gridline, .tick, .tick-label)) {
+		visibility: hidden;
 	}
 	/* But what stands at now is scaled back as one, about now (`unstretch`):
 	   the strip, the dash under it, the line and the word keep their size

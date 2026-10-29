@@ -41,11 +41,13 @@ const soloNowview = (settings) =>
  * Record every frame until `untilSettled`: the centre x of each point, the
  * ends of the now strip, its line and the middle of its word, the opacity
  * everything over the picture multiplies to, the picture's own element (by
- * a number), the band's ends, and whether the pointer is still down.
+ * a number), the band's ends, and whether the pointer is still down. With
+ * `labels`, each tick label on show inside the band too, by its words: its
+ * middle along time, and its width.
  */
-function record(page) {
+function record(page, labels = false) {
 	return page.evaluate(
-		(band) => {
+		([band, labels]) => {
 			const ids = new WeakMap();
 			let next = 0;
 			const frames = (window.__frames = []);
@@ -84,6 +86,15 @@ function record(page) {
 				x('.now-label');
 				x('.now-strip', '<');
 				x('.now-strip', '>');
+				const b = document.querySelector(band).getBoundingClientRect();
+				const ys = svg?.querySelector('[data-axis]')?.getAttribute('data-axis') === 'y';
+				for (const l of labels ? (svg?.querySelectorAll('.tick-label') ?? []) : []) {
+					const r = l.getBoundingClientRect();
+					const [mid, lo, hi] = ys ? [r.top + r.height / 2, b.top, b.bottom] : [r.left + r.width / 2, b.left, b.right];
+					if (getComputedStyle(l).visibility !== 'visible' || mid < lo || mid > hi) continue;
+					at[`label ${l.textContent}`] = Math.round(mid * 10) / 10;
+					at[`width ${l.textContent}`] = Math.round(r.width * 10) / 10;
+				}
 				// And each parallel state's block by its start: its left edge, its
 				// width, and where its stripes cross its top edge past that, as a
 				// phase of their period `p` there (da-rdiph).
@@ -97,7 +108,6 @@ function record(page) {
 					const p = Math.abs(cross(Number(pattern.getAttribute('width'))) - cross(0));
 					stripes[block.dataset.from] = { left: r.left, width: r.width, phase: (((cross(0) - r.left) % p) + p) % p, p };
 				}
-				const b = document.querySelector(band).getBoundingClientRect();
 				frames.push({ down, svg: svg ? ids.get(svg) : 0, at, stripes, opacity: svg ? opacity(svg) : 0, band: [b.left, b.right] });
 				if (!window.__stopFrames) requestAnimationFrame(tick);
 			};
@@ -110,7 +120,7 @@ function record(page) {
 				})
 			);
 		},
-		BAND
+		[BAND, labels]
 	);
 }
 
@@ -153,7 +163,9 @@ async function untilSettled(page, n = 20) {
 function seams(frames, except = []) {
 	const up = frames.findIndex((f) => !f.down);
 	const last = frames[up - 1];
-	const shown = Object.keys(last.at).filter((k) => !except.includes(k) && last.at[k] >= last.band[0] && last.at[k] <= last.band[1]);
+	// A label is kept inside the band as it is recorded, along time.
+	const inside = (k) => /^(label|width) /.test(k) || (last.at[k] >= last.band[0] && last.at[k] <= last.band[1]);
+	const shown = Object.keys(last.at).filter((k) => !except.includes(k) && inside(k));
 	const off = [];
 	for (const [i, f] of frames.slice(up).entries()) {
 		const moved = shown.filter((k) => f.at[k] === undefined || Math.abs(f.at[k] - last.at[k]) > 0.5);
@@ -300,6 +312,79 @@ describe('a release is seamless', () => {
 					assert.deepEqual(app.errors, []);
 				},
 				{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history })) }
+			);
+		});
+
+	// vividn, 2026-10-28: «when zooming the nowview, can we correct the time
+	// axis labels in realtime? right now after you let go they readjust
+	// themselves, and it would be nice for that to be handled dynamically
+	// while you are zooming» (da-gy4xz). Pinched a ladder step or more at a
+	// time, out past hours and in past seconds, and held still under the
+	// fingers until the page has heard datum: the labels on show then are
+	// the ones datum's picture of the window draws, word for word and where
+	// it draws them, as wide as it draws them — no label moves at the lift
+	// or when the picture lands, and none comes or goes.
+	for (const [name, history, from, to, orientation] of [
+		['out', '30m', 136, 56],
+		['in', '12h', 56, 136],
+		['out with time running down', '30m', 136, 56, 'vertical']
+	])
+		test(`a pinch ${name} across the ladder: under the fingers the labels are datum's for the window, and the release moves none`, async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					const box = await seeded(app);
+					// Outermost, so it counts each run from where it is asked.
+					await page.evaluate(() => {
+						window.__nowviews = 0;
+						const previous = window.datum.setRunner((argv, ...rest) => {
+							if (argv[0] !== 'nowview') return previous(argv, ...rest);
+							window.__nowviews += 1;
+							return previous(argv, ...rest).finally(() => (window.__nowviews -= 1));
+						});
+					});
+					const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+					// Along time: down the band when it runs down (da-78evn).
+					const both = (apart) =>
+						orientation
+							? [
+									{ id: 1, x, y: y - apart / 2 },
+									{ id: 2, x, y: y + apart / 2 }
+								]
+							: [
+									{ id: 1, x: x - apart / 2, y },
+									{ id: 2, x: x + apart / 2, y }
+								];
+					const shown = () =>
+						page.locator(`${BAND} svg.svg .tick-label`).evaluateAll((all) => all.filter((l) => getComputedStyle(l).visibility === 'visible').map((l) => l.textContent));
+					for (let i = 1; i <= 3; i++) {
+						const before = await shown();
+						await page.evaluate(() => (window.__datumSeen = []));
+						await touch(page, steps(6, (t) => both(from + t * (to - from))), async () => {
+							// Held still until nothing is asked: the last answer is the window under the fingers.
+							await page.waitForFunction(() => window.__nowviews === 0);
+							await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+							assert.equal(await page.evaluate(() => window.__nowviews), 0, `pinch ${i}: still asking once settled`);
+							await record(page, true);
+						});
+						const { frames, asked } = await untilSettled(page);
+						assert.ok(asked, `pinch ${i} asked for nothing`);
+						const up = frames.findIndex((f) => !f.down);
+						const words = (f) => Object.keys(f.at).filter((k) => k.startsWith('label ')).sort();
+						const under = words(frames[up - 1]);
+						// The control: the labels under the fingers are not the ones the gesture began with.
+						assert.ok(under.length > 1, `pinch ${i}: ${under.length} labels under the fingers`);
+						assert.notDeepEqual(under, before.map((w) => `label ${w}`).sort(), `pinch ${i}: the labels under the fingers are the stretched picture's`);
+						// Time running down, its labels alone: a wider label widens the axis strip, and
+						// datum's picture of the window lays every lane further across (da-dz7wb).
+						const across = orientation ? Object.keys(frames[up - 1].at).filter((k) => !/^(label|width) /.test(k)) : [];
+						assert.deepEqual(seams(frames, across), [], `pinch ${i}`);
+						for (const [j, f] of frames.slice(up).entries()) assert.deepEqual(words(f), under, `pinch ${i}, frame ${j} after the lift`);
+						assert.ok(frames.at(-1).svg !== frames[up - 1].svg, `pinch ${i}: datum's picture never landed`);
+					}
+					assert.deepEqual(app.errors, []);
+				},
+				{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history, ...(orientation && { orientation }) })) }
 			);
 		});
 

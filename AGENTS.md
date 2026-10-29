@@ -800,7 +800,9 @@ binary.
   (`nowview --overlay`: the picture with no data, no database opened) and
   paints its now strip with the block each lane holds at now
   (`#lib/nowcrop.ts`), so a stretch or a pan asks for the overlay and no
-  data. The strip draws its rows from the same layers, scaled to the band
+  data. A zoom asks for its window's overlay as it goes, and its rule and
+  labels stand in for the stretched ones (`graftAxis`, da-gy4xz), so the
+  release moves no label. The strip draws its rows from the same layers, scaled to the band
   (`bandOf`), held outside both widgets by date in `#lib/dayLayers.ts`
   (da-m6i2a), so neither asks for a day the other drew; a day the clock
   changed in is the CLI's own picture of its row, its lanes bent along the

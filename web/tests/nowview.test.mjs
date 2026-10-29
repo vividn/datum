@@ -667,6 +667,8 @@ describe('the nowview widget zooms', () => {
 
 				await page.mouse.wheel(0, -100); // up: a shorter window
 				await asked(page, '20m');
+				// Drawn, not only asked: under the wheel its rule is asked too (da-gy4xz).
+				await farIs(page, '-20m');
 
 				await page.mouse.wheel(0, 100); // down: a longer one
 				await asked(page, '30m');
@@ -839,12 +841,18 @@ describe('the nowview handles stay off the picture', () => {
 // having to redraw». The picture is asked for a window's worth past its box
 // either side (`--surround`), and a gesture moves what is drawn: a coffee
 // forty minutes back, outside the thirty-minute window, is on screen
-// mid-gesture with no nowview asked for since the press.
+// mid-gesture with no nowview asked for since the press — and under a zoom,
+// whose rule follows the window (da-gy4xz), none but the overlay of the
+// window it is at, the picture under the fingers the one from before it.
 
 describe('the nowview draws past its box', () => {
 	const BAND = 'section[data-pane="nowview"] .nowview-band';
 
-	/** Whether the coffee's mark is drawn inside the band, and how many nowviews were asked for. */
+	/**
+	 * Whether the coffee's mark is drawn inside the band, how many nowviews
+	 * were asked for and how many of them were no overlay, and whether the
+	 * picture is the one from before the gesture.
+	 */
 	const midGesture = (page) =>
 		page.evaluate((band) => {
 			const box = document.querySelector(band).getBoundingClientRect();
@@ -852,7 +860,9 @@ describe('the nowview draws past its box', () => {
 				const r = m.getBoundingClientRect();
 				return r.width > 0 && r.left >= box.left && r.right <= box.right;
 			});
-			return { shown, asked: (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview').length };
+			const asked = (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview');
+			const same = document.querySelector(`${band} svg.svg`) === window.__before;
+			return { shown, asked: asked.length, data: asked.filter((a) => !a.includes('--overlay')).length, same };
 		}, BAND);
 
 	const phone = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
@@ -864,6 +874,7 @@ describe('the nowview draws past its box', () => {
 		await app.idle();
 		const before = await midGesture(app.page);
 		assert.equal(before.shown, false, 'the coffee is in the window before any gesture');
+		await app.page.evaluate((band) => (window.__before = document.querySelector(`${band} svg.svg`)), BAND);
 		await app.spyOnRunner();
 		return app.page.locator(BAND).boundingBox();
 	}
@@ -878,18 +889,18 @@ describe('the nowview draws past its box', () => {
 			await page.mouse.move(box.x + 4 + box.width, y, { steps: 8 });
 			const during = await midGesture(page);
 			await page.mouse.up();
-			assert.deepEqual(during, { shown: true, asked: 0 });
+			assert.deepEqual(during, { shown: true, asked: 0, data: 0, same: true });
 			assert.deepEqual(app.errors, []);
 		}, phone);
 	});
 
-	test('a pinch out a step shows it too, with no nowview asked for under the fingers', async () => {
+	test('a pinch out a step shows it too, with nothing asked for under the fingers but its window’s overlay', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const box = await withCoffee(app);
 			let during;
 			await pinch(page, box, 160, 80, async () => (during = await midGesture(page)));
-			assert.deepEqual(during, { shown: true, asked: 0 });
+			assert.deepEqual({ ...during, asked: during.asked > 0 }, { shown: true, asked: true, data: 0, same: true });
 			assert.deepEqual(app.errors, []);
 		}, phone);
 	});
@@ -912,13 +923,14 @@ describe('the nowview draws past its box', () => {
 // can handle at least a x5 stretch». A pinch in to a fifth: the dot and the
 // stripes' tile lie on the screen as they did at rest, and a coffee 90
 // minutes back, three windows out, is drawn under the fingers with no
-// nowview asked for since the press.
+// nowview asked for since the press but the overlay of the window it is at
+// (da-gy4xz).
 
 describe('a nowview stretch moves marks, never sizes them', () => {
 	const BAND = 'section[data-pane="nowview"] .nowview-band';
 	const phone = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
 
-	/** The tea dot's box, the stripes' tile on the screen as a 2×2, whether the coffee is in the band, and the nowviews asked for. */
+	/** The tea dot's box, the stripes' tile on the screen as a 2×2, whether the coffee is in the band, and the nowviews asked for that are no overlay. */
 	const marks = (page) =>
 		page.evaluate((band) => {
 			const box = document.querySelector(band).getBoundingClientRect();
@@ -935,7 +947,7 @@ describe('a nowview stretch moves marks, never sizes them', () => {
 				tile: [m.a, m.b, m.c, m.d],
 				block: block.getBoundingClientRect().width,
 				coffee,
-				asked: (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview').length
+				asked: (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview' && !a.includes('--overlay')).length
 			};
 		}, BAND);
 
@@ -1014,8 +1026,10 @@ describe('the nowview crops the day’s data under its overlay', () => {
 			// checked (da-vnfr3); never a day the window it shows draws.
 			const today = await page.evaluate(() => [new Date()].map((d) => [d.getFullYear(), d.getMonth() + 1, d.getDate()].map((n) => String(n).padStart(2, '0')).join('-'))[0]);
 			assert.deepEqual(asked.filter((a) => layerDates(a, ['--pictures', '--digests']).includes(today)), [], 'the stretch asked for its window’s data');
-			assert.equal(asked.filter((a) => a.startsWith('nowview')).length, 1, `asked: ${asked.join(' | ')}`);
-			assert.match(asked.find((a) => a.startsWith('nowview')), /--overlay .*--history (?!30m)/);
+			// Under the fingers too, as its rule follows the window (da-gy4xz): an overlay each.
+			const pictures = asked.filter((a) => a.startsWith('nowview'));
+			assert.ok(pictures.length >= 1, `asked: ${asked.join(' | ')}`);
+			for (const a of pictures) assert.match(a, /--overlay .*--history (?!30m)/);
 			// The ticks follow the window: its handles say the new one.
 			await until(() => handled(page, 'section[data-pane="nowview"]'), (h) => h.join() !== rest.join());
 			// The coffee, 90 minutes back, is drawn from the data on screen.
