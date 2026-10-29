@@ -209,7 +209,7 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 			await page.locator(`${PICKER} [data-add-state]`).waitFor();
 			const was = await seen(page);
 			assert.ok(was.ring.left < was.pane.left && was.ring.right > was.pane.right, 'the states fit across: the case is not tested');
-			assert.ok(was.ring.top < was.pane.top && was.ring.bottom > was.pane.bottom, 'the states fit down: the case is not tested');
+			assert.ok(was.ring.bottom - was.ring.top > was.pane.bottom - was.pane.top, 'the states fit down: the case is not tested');
 			const before = (await app.echoes()).length;
 			const drag = (dx, dy) => dragBy(page, dx, dy);
 			// Started ON a state — `end`, at the pane's middle — well past the
@@ -258,7 +258,7 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 				await field.click();
 				await page.locator(`${PICKER} [data-add-state]`).waitFor();
 				const was = await seen(page);
-				assert.ok(was.ring.top < was.pane.top && was.ring.bottom > was.pane.bottom, 'the states fit down: the case is not tested');
+				assert.ok(was.ring.bottom - was.ring.top > was.pane.bottom - was.pane.top, 'the states fit down: the case is not tested');
 				const before = (await app.echoes()).length;
 				/** Every state drawn with its centre in the pane, and what a tap at that centre would press. */
 				const hits = () =>
@@ -291,6 +291,49 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 				}
 				await app.idle();
 				assert.equal((await app.echoes()).length, before, 'a pan pressed something');
+			}, options());
+		});
+
+	// da-amd70: at rest a state that would stand under a corner, where a tap
+	// presses the corner, is moved down just clear of it, `end` as near the
+	// center as that leaves it; and a tap on each state drawn presses it.
+	for (const [count, rows] of [[22, 3], [22, 2], [8, 3], [8, 2]])
+		test(`${count} states in a ${rows}-row pane at 390px: at rest none stands under a corner, and a tap on each state drawn logs it`, async () => {
+			const many = Array.from({ length: count }, (_, i) => `a_rather_long_state_${String(i).padStart(2, '0')}`);
+			await withApp(async (app) => {
+				const { page } = app;
+				await seedLines(app, [...FIELDS.slice(0, 4).map((f) => `setup ${f} --verb occur`), `setup mood --verb switch --states false,${many.join(',')}`]);
+				const field = page.locator(`${BAR} [data-field="mood"]`);
+				await field.waitFor();
+				await atRows(page, 'bar', rows);
+				await field.click();
+				await page.locator(`${PICKER} [data-add-state]`).waitFor();
+				const t = await seen(page);
+				const corner = ['back', '+ Add state'].map((n) => t.buttons.find((b) => b.name === n));
+				const states = t.buttons.filter((b) => !corner.includes(b));
+				const across = (b, c) => b.left < c.right + GAP && b.right + GAP > c.left;
+				// A pixel's give: the widget places by whole-pixel offsets.
+				const under = (b, dy = 0) => corner.filter((c) => across(b, c) && b.top - dy < c.bottom + GAP - 1 && b.bottom - dy + GAP > c.top);
+				// How far down they rest: `end` from the center.
+				const end = t.buttons.find((b) => b.name === 'false');
+				const dy = end.y - t.pane.y;
+				assert.ok(Math.abs(end.x - t.pane.x) <= 1, `end moved across, to ${end.x - t.pane.x}`);
+				assert.ok(states.some((b) => under(b, dy).length), 'centered, no state stands under a corner: the case is not tested');
+				assert.deepEqual(states.filter((b) => under(b).length).map((b) => b.name), [], 'at rest under a corner');
+				// …and no further: one is just clear of the corner it would be under.
+				assert.ok(states.some((b) => corner.some((c) => across(b, c) && Math.abs(b.top - c.bottom - GAP) <= 1.5)), `moved down ${dy}, further than clears the corners`);
+				const drawn = states.filter((b) => b.x > t.pane.left && b.x < t.pane.right && b.y > t.pane.top && b.y < t.pane.bottom);
+				for (const { name } of drawn) {
+					// Read again: the state the field is in is drawn bold, so a tap can move the rest.
+					const b = (await seen(page)).buttons.find((b) => b.name === name);
+					await app.clock.forward(60_000);
+					await page.mouse.click(b.x, b.y);
+					await page.locator(PICKER).waitFor({ state: 'detached' });
+					await app.idle();
+					assert.equal((await app.echoes()).at(-1), name === 'false' ? 'end mood' : `switch mood ${name}`, `the tap on ${name}`);
+					await field.click();
+					await page.locator(`${PICKER} [data-add-state]`).waitFor();
+				}
 			}, options());
 		});
 

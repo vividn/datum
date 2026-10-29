@@ -242,8 +242,8 @@
 	let picked: string | null = $state(null);
 	/** Where `end` is in the box of states, from its top left corner (`around`). */
 	let anchor = $state.raw({ x: 0, y: 0 });
-	/** How far a drag has panned the states from the centre, kept so they cannot leave the widget. */
-	let pan = $state.raw({ x: 0, y: 0 });
+	/** How far a drag has panned the states from the center, kept so they cannot leave the widget; none at rest. */
+	let pan: { x: number; y: number } | null = $state.raw(null);
 	/** The size of the pane the states fill, and of the box they stand in. */
 	let paneW = $state(0);
 	let paneH = $state(0);
@@ -334,6 +334,8 @@
 	let sizes = $state.raw(new Map<string, { w: number; h: number }>());
 	/** The part of the pictures shown; this session's, never the layout's. */
 	let view: View = $state.raw(FULL);
+	/** Where the states are drawn from the center: the pan, or at rest `rest`'s. */
+	const shift = $derived(pan ?? { x: 0, y: rest() });
 	const zoomedIn = $derived(view.to - view.from < 1);
 	const GAP = 6;
 	/** Where each slot stands. */
@@ -512,7 +514,7 @@
 	/** Close the field's states: the fields under them are as they were. */
 	function back() {
 		picked = null;
-		pan = { x: 0, y: 0 };
+		pan = null;
 		addingState = false;
 		newState = '';
 	}
@@ -537,7 +539,7 @@
 
 	/** Put `button`'s states in place of the fields (da-g635, da-vg8vr). */
 	function pick(button: FieldButton) {
-		pan = { x: 0, y: 0 };
+		pan = null;
 		picked = button.field;
 	}
 
@@ -636,6 +638,26 @@
 	}
 
 	/**
+	 * How far down the states rest (da-amd70): none, `end` at the center,
+	 * unless a state would stand under a corner, where a tap presses the
+	 * corner instead; then just far enough that none does — never past the
+	 * room `kept` gives a pan, which starts below the corners.
+	 */
+	function rest() {
+		const ring = picker?.querySelector<HTMLElement>(':scope > .ring');
+		if (!ring) return 0;
+		const [left, top] = [paneW / 2 - anchor.x, paneH / 2 - anchor.y];
+		const corners = [...picker!.querySelectorAll<HTMLElement>(':scope > .corner')];
+		const spots = [...ring.children] as HTMLElement[];
+		const across = (s: HTMLElement, c: HTMLElement) =>
+			left + s.offsetLeft < c.offsetLeft + c.offsetWidth + GAP && left + s.offsetLeft + s.offsetWidth + GAP > c.offsetLeft;
+		return Math.max(
+			0,
+			...corners.flatMap((c) => spots.filter((s) => across(s, c)).map((s) => c.offsetTop + c.offsetHeight + GAP - top - s.offsetTop))
+		);
+	}
+
+	/**
 	 * A drag on the states pans them: a press that travels past the slop,
 	 * even one that starts on a button, and its click is swallowed; one that
 	 * does not is a press of whatever it is on.
@@ -648,7 +670,7 @@
 		// pointerup at once, and a touch that travelled makes none, so only a
 		// second pen or mouse pressed in between could let one through.
 		dragged = false;
-		if (e.button === 0) drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: pan, moving: false };
+		if (e.button === 0) drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: shift, moving: false };
 	}
 	function move(e: PointerEvent) {
 		if (drag?.id !== e.pointerId) return;
@@ -794,8 +816,8 @@
 			<div
 				class="ring"
 				use:around
-				style:left="{paneW / 2 - anchor.x + pan.x}px"
-				style:top="{paneH / 2 - anchor.y + pan.y}px"
+				style:left="{paneW / 2 - anchor.x + shift.x}px"
+				style:top="{paneH / 2 - anchor.y + shift.y}px"
 				style:width="{extent.w}px"
 				style:height="{extent.h}px"
 			>
