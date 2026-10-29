@@ -653,9 +653,12 @@ describe('the output is a strip of commands, the newest at the right', () => {
 
 	// vividn, 2026-10-28: «dragging the collapsed view further to the left
 	// should eventually show an x icon with clear written under it which
-	// clears the scrollback» (da-3eczg). A real finger, through CDP: the strip
-	// scrolls natively, and only a real touch is what the browser pans with.
-	test('a drag past the newest shows an × «clear»: let go there, the scrollback is cleared and the data is not; short of it, nothing', async () => {
+	// clears the scrollback» (da-3eczg), and 2026-10-29: «It should be similar
+	// to the browser pull down to refresh action, where an X in a circle slowly
+	// comes out until a certain threshold after which the circle becomes bright
+	// and then it clears on let go» (da-uqx7n). A real finger, through CDP: the
+	// strip scrolls natively, and only a real touch is what the browser pans with.
+	test('a pull from rest at the newest brings out an × in a circle, bright past 200px, and a lift clears only then; a swipe that arrives at the end clears nothing', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const commands = async () => {
@@ -667,26 +670,33 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			const echoes = await page.locator('.echo').count();
 			assert.ok(echoes >= 5, `only ${echoes} commands on the page`);
 
-			const box = await page.locator(`${BAR} .roll`).boundingBox();
+			const roll = page.locator(`${BAR} .roll`);
+			const box = await roll.boundingBox();
 			const [x, y] = [box.x + box.width - 30, box.y + box.height / 2];
 			const cdp = await page.context().newCDPSession(page);
 			const touch = (type, dx) =>
 				cdp.send('Input.dispatchTouchEvent', { type, touchPoints: dx === undefined ? [] : [{ id: 0, x: x + dx, y }] });
+			/** One finger down at x, then moved left in ten steps to x + dx. */
 			const drag = async (dx) => {
 				await touch('touchStart', 0);
 				for (let i = 1; i <= 10; i += 1) await touch('touchMove', (dx * i) / 10);
 			};
-			/** Whether the strip has come off any of the ×, and whether the × stands whole in view beside it. */
+			/** Whether the strip has come off any of the ×, whether the × stands whole beside it, and its circle,
+			 *  two frames on: a touch reaches the page a frame after CDP has sent it. */
 			const shown = () =>
-				page.evaluate(() => {
+				page.evaluate(async () => {
+					await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
 					const button = document.querySelector('.prompt-bar .clear-strip');
 					const section = button.closest('.section').getBoundingClientRect();
 					const b = button.getBoundingClientRect();
 					const roll = button.parentElement.querySelector('.roll').getBoundingClientRect();
 					return {
-						pulled: roll.right < b.right - 0.5,
+						pulled: roll.right < button.parentElement.getBoundingClientRect().right - 0.5,
 						whole: b.left >= section.left && b.right <= section.right + 0.5 && roll.right <= b.left + 0.5,
-						text: button.innerText
+						text: button.innerText,
+						bright: button.classList.contains('bright'),
+						opacity: Number(getComputedStyle(button).opacity),
+						size: button.querySelector('span').getBoundingClientRect().width
 					};
 				});
 			const sprungBack = () =>
@@ -694,43 +704,76 @@ describe('the output is a strip of commands, the newest at the right', () => {
 
 			assert.equal((await shown()).pulled, false, 'at rest, part of the × shows past the strip');
 
-			// Short of the threshold: the strip comes off part of the ×, and let go it springs back over it.
-			await drag(-60);
-			const short = await shown();
-			assert.ok(short.pulled && !short.whole, `a short pull: ${JSON.stringify(short)}`);
+			// 1. One swipe from short of the newest that reaches the end and goes on far past the threshold: nothing.
+			await roll.evaluate((el) => el.scrollTo({ left: el.scrollWidth - el.clientWidth - 100 }));
+			await page.waitForFunction(() => {
+				const el = document.querySelector('.prompt-bar .roll');
+				return el.scrollLeft + el.clientWidth < el.scrollWidth - 50;
+			});
+			await drag(-340);
+			assert.ok((await strip(page)).atEnd, 'the swipe did not reach the newest end');
+			assert.equal((await shown()).bright, false, 'a swipe that arrived at the end armed the pull');
 			await touch('touchEnd');
 			await sprungBack();
-			assert.equal(await page.locator('.echo').count(), echoes, 'a short pull cleared something');
+			assert.equal(await page.locator('.echo').count(), echoes, 'a swipe that only arrived at the end cleared the scrollback');
+
+			// 4. From rest at the end, the circle grows and fades in with the pull, and turns bright exactly at 200px.
+			await touch('touchStart', 0);
+			const at = {};
+			for (const dx of [-40, -100, -160, -199, -200]) {
+				await touch('touchMove', dx);
+				at[dx] = await shown();
+			}
+			assert.ok(at[-40].pulled && !at[-40].whole, `a short pull: ${JSON.stringify(at[-40])}`);
+			assert.ok(at[-40].opacity < at[-100].opacity && at[-100].opacity < at[-160].opacity, `the circle does not fade in: ${JSON.stringify(at)}`);
+			assert.ok(at[-40].size < at[-100].size && at[-100].size < at[-160].size, `the circle does not grow: ${JSON.stringify(at)}`);
+			assert.equal(at[-199].bright, false, 'bright short of the threshold');
+			assert.ok(at[-200].bright && at[-200].whole && at[-200].opacity === 1, `not bright and whole at the threshold: ${JSON.stringify(at[-200])}`);
+			assert.match(at[-200].text, /×\s*clear/);
+
+			// 3. Brought back under the threshold before the lift, it dims, and the lift clears nothing.
+			await touch('touchMove', -260);
+			assert.ok((await shown()).bright, 'not bright past the threshold');
+			await touch('touchMove', -150);
+			assert.equal((await shown()).bright, false, 'still bright back under the threshold');
+			await touch('touchEnd');
+			await sprungBack();
+			assert.equal(await page.locator('.echo').count(), echoes, 'a pull let go under the threshold cleared something');
 
 			// A second finger landing mid-pull calls the gesture off, however far it had gone (canary on #1350).
-			await drag(-200);
+			await drag(-240);
 			const both = (type, dx) =>
-				cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [{ id: 0, x: x - 200 + dx, y }, { id: 1, x: x - 100 + dx, y: y - 10 }] });
+				cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [{ id: 0, x: x - 240 + dx, y }, { id: 1, x: x - 100 + dx, y: y - 10 }] });
 			await both('touchStart', 0);
 			await both('touchMove', -10);
 			await touch('touchEnd');
 			await sprungBack();
 			assert.equal(await page.locator('.echo').count(), echoes, 'a pull with a second finger on it cleared the scrollback');
 
-			// Past it: the × and «clear» whole in view, and let go, nothing of the scrollback is left.
-			await drag(-200);
-			const past = await shown();
-			assert.ok(past.whole, `the × is not whole in view: ${JSON.stringify(past)}`);
-			assert.match(past.text, /×\s*clear/);
+			// 2. From rest at the end, past the threshold: bright, and the lift clears the scrollback and not the data.
+			// The two fingers scrolled the strip off its end; a pull starts only from rest there.
+			await roll.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+			await page.waitForFunction(() => {
+				const el = document.querySelector('.prompt-bar .roll');
+				return el.scrollLeft + el.clientWidth >= el.scrollWidth - 2;
+			});
+			await drag(-240);
+			assert.ok((await shown()).bright, 'not bright past the threshold');
 			await touch('touchEnd');
 			await page.waitForFunction(() => !document.querySelector('.echo'));
 			assert.equal(await page.locator(`${BAR} .group`).count(), 0, 'the strip still holds commands');
 			assert.equal((await app.run(['tail'])).stdout, tail, 'clearing the scrollback changed the data');
 			await sprungBack();
 
-			// Reduced motion: no spring, and the × is there at the threshold or not at all.
+			// Reduced motion: no spring, and the × is there, bright, at the threshold or not at all.
 			await page.emulateMedia({ reducedMotion: 'reduce' });
 			await commands();
-			await drag(-60);
+			await drag(-160);
 			assert.equal((await shown()).pulled, false, 'reduced motion pulled the strip short of the threshold');
 			await touch('touchEnd');
-			await drag(-200);
-			assert.ok((await shown()).whole, 'reduced motion: the × is not shown past the threshold');
+			await drag(-240);
+			const still = await shown();
+			assert.ok(still.whole && still.bright, `reduced motion: the × is not shown bright past the threshold: ${JSON.stringify(still)}`);
 			await touch('touchEnd');
 			await page.waitForFunction(() => !document.querySelector('.echo'));
 

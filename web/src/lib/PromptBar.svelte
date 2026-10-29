@@ -320,37 +320,59 @@
 	 * with clear written under it which clears the scrollback». A finger
 	 * going on left once the strip stands at its newest end pulls the strip
 	 * off the × behind it, ever less as it goes (the nowview's stop at now,
-	 * #1288); let go with the × whole in view, it clears the scrollback, and
-	 * short of that the strip springs back and nothing happens. No dialog:
-	 * the gesture is the act, and its threshold lies past the end, so a
-	 * scroll that only reaches the newest never clears. Focused, the × is
+	 * #1288), and short of the threshold, let go, it springs back and
+	 * nothing happens. No dialog: the gesture is the act. Focused, the × is
 	 * shown, so a keyboard reaches it.
+	 *
+	 * A PULL TO REFRESH (da-uqx7n). vividn, 2026-10-29: «it is much too
+	 * easy to clear currently. It should be similar to the browser pull down
+	 * to refresh action, where an X in a circle slowly comes out until a
+	 * certain threshold after which the circle becomes bright and then it
+	 * clears on let go». So only a touch that STARTS with the strip at rest
+	 * at its newest end arms; a swipe that only arrives there stretches it
+	 * and arms nothing. Armed, the circle grows and fades in with the
+	 * finger's travel, turns bright at `PULL_PX`, dims again back under it,
+	 * and a lift clears only while it is bright.
 	 *
 	 * Read from TOUCH events: the strip scrolls natively, and the browser
 	 * cancels the pointer it pans with but goes on telling the page where
 	 * the finger is.
 	 */
 	const CLEAR_PX = 56;
-	/** The pull's limit; the finger travels this far past the end to show the × whole. */
+	/** The pull's limit: the strip comes off the × ever less, toward this. */
 	const STRETCH_PX = 2 * CLEAR_PX;
+	/** How far an armed finger travels past the end before a lift clears: more than one ordinary swipe. */
+	const PULL_PX = 200;
 	/** Where the finger was as the strip stood at its end, or null; and how far left of it it is. */
 	let endAt: number | null = null;
 	let over = $state(0);
+	/** The touch began with one finger and the strip at rest at its end, and has not left it. */
+	let armed = $state(false);
 	let focused = $state(false);
+	const bright = $derived(armed && over >= PULL_PX);
+	/** How far the circle has come out, 0 to 1. */
+	const grown = $derived(focused ? 1 : still() ? +bright : armed ? Math.min(over / PULL_PX, 1) : 0);
 	const pull = $derived(
-		focused ? CLEAR_PX : still() ? (over >= STRETCH_PX ? CLEAR_PX : 0) : over / (1 + over / STRETCH_PX)
+		focused ? CLEAR_PX : still() ? (bright ? CLEAR_PX : 0) : over / (1 + over / STRETCH_PX)
 	);
+
+	function onTouchStart(event: TouchEvent): void {
+		armed = event.touches.length === 1 && !!roll && atEnd(roll);
+		onTouchMove(event);
+	}
 
 	/** A second finger calls the pull off: what it pulled goes back, and a lift clears nothing. */
 	function onTouchMove(event: TouchEvent): void {
 		if (!roll) return;
 		const x = event.touches.length === 1 ? event.touches[0].clientX : null;
 		if (x === null || endAt === null || x > endAt) endAt = x !== null && atEnd(roll) ? x : null;
+		if (endAt === null) armed = false;
 		over = x === null || endAt === null ? 0 : endAt - x;
 	}
 
 	function onTouchEnd(event: TouchEvent): void {
-		if (event.type === 'touchend' && !event.touches.length && over >= STRETCH_PX) clearScrollback();
+		if (event.type === 'touchend' && !event.touches.length && bright) clearScrollback();
+		armed = false;
 		endAt = null;
 		over = 0;
 	}
@@ -385,7 +407,11 @@
 						type="button"
 						class="clear-strip"
 						aria-label="clear the scrollback"
+						class:bright
 						style:width="{CLEAR_PX}px"
+						style:right="{Math.min(0, pull - CLEAR_PX)}px"
+						style:opacity={grown}
+						style:--grown={grown}
 						title="clear the scrollback: the commands on screen, not your data"
 						onfocus={() => (focused = true)}
 						onblur={() => (focused = false)}
@@ -402,7 +428,7 @@
 					style:transform={pull ? `translateX(${-pull}px)` : undefined}
 					bind:this={roll}
 					onscroll={() => (reread(), fill())}
-					ontouchstart={onTouchMove}
+					ontouchstart={onTouchStart}
 					ontouchmove={onTouchMove}
 					ontouchend={onTouchEnd}
 					ontouchcancel={onTouchEnd}
@@ -647,14 +673,33 @@
 		cursor: pointer;
 	}
 
+	/* The × in its circle, which comes out with the pull (da-uqx7n). */
 	.clear-strip span {
-		font-size: 1.6rem;
+		display: grid;
+		place-items: center;
+		box-sizing: border-box;
+		width: 1.6rem;
+		height: 1.6rem;
+		border: 1.5px solid currentColor;
+		border-radius: 50%;
+		font-size: 1.2rem;
 		line-height: 1;
+		scale: calc(0.4 + 0.6 * var(--grown));
 	}
 
 	.clear-strip:hover,
 	.clear-strip:focus-visible {
 		color: var(--ink-bright);
+	}
+
+	/* Past the threshold: let go now clears. */
+	.clear-strip.bright {
+		color: var(--accent);
+	}
+
+	.clear-strip.bright span {
+		background: var(--accent);
+		color: var(--ground);
 	}
 
 	/* THE STRIP (da-qua5g): one row of commands that scrolls sideways, the
