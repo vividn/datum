@@ -155,6 +155,8 @@ const lane = Number.isFinite(ratio) ? ratio : undefined;
 const gib = (bytes) => `${(bytes / 2 ** 30).toFixed(1)} GiB`;
 const memMax = Number(cgroup('memory.max')); // NaN for `max` or none
 const memory = `${gib(totalmem())}${Number.isFinite(memMax) ? ` (cgroup memory.max ${gib(memMax)})` : ''}`;
+// A fork past `pids.max` fails with EAGAIN (da-rf5em: run 7104, 12 files at once).
+const pidsMax = cgroup('pids.max')?.trim();
 
 const cores = Math.max(1, Math.min(availableParallelism(), Math.floor(lane ?? Infinity)));
 // Read once: a run's concurrency is fixed at its start.
@@ -162,7 +164,7 @@ const load = loadavg()[0];
 const override = process.env.DATUM_TEST_CONCURRENCY ? Number(process.env.DATUM_TEST_CONCURRENCY) : undefined;
 const concurrency = filesAtOnce(cores, load, 6, override);
 console.log(
-	`test: ${cores} cores${lane ? ` (cgroup cpu.max ${lane})` : ''}, ${memory}, load ${load.toFixed(1)} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ` (override ${override}${concurrency < Math.floor(override) ? ', capped by cores' : ''})` : ''}`
+	`test: ${cores} cores${lane ? ` (cgroup cpu.max ${lane})` : ''}, ${memory}${pidsMax ? `, pids.max ${pidsMax} (pids.current ${cgroup('pids.current')?.trim()})` : ''}, load ${load.toFixed(1)} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ` (override ${override}${concurrency < Math.floor(override) ? ', capped by cores' : ''})` : ''}`
 );
 if (Number(process.versions.node.split('.')[0]) < 24)
 	console.log(`test: node ${process.versions.node} cuts each FILE at 300 s, not each test; node 24 budgets the test (da-l5k9e)`);
@@ -206,6 +208,19 @@ if (shard) {
 }
 
 const before = cpuStat();
+// `memory.peak` counts the page cache, which grows into whatever the box has
+// (16.7 GiB of the staging ship's 32 at four files, run 7051), so what the
+// files themselves hold, anonymous memory, is sampled each second (da-7u6ig).
+let anonPeak = 0;
+// `pids.peak` and `pids.events` count from the job's start, the build's forks too,
+// so the suite's own are sampled, and the forks refused counted from here.
+const refusedForks = () => Number(/^max (\d+)$/m.exec(cgroup('pids.events') ?? '')?.[1] ?? 0);
+const refusedBefore = refusedForks();
+let pidsPeak = 0;
+setInterval(() => {
+	anonPeak = Math.max(anonPeak, Number(/^anon (\d+)$/m.exec(cgroup('memory.stat') ?? '')?.[1] ?? 0));
+	pidsPeak = Math.max(pidsPeak, Number(cgroup('pids.current') ?? 0));
+}, 1000).unref();
 const t0 = Date.now();
 const took = {};
 const inside = {}; // ms of each file's top-level tests, by absolute path
@@ -344,13 +359,16 @@ out.on('end', async () => {
 	const wall = (Date.now() - t0) / 1000;
 	const after = cpuStat();
 	const peak = cgroup('memory.peak');
+	const refused = refusedForks() - refusedBefore;
 	if (max !== undefined) {
 		const used = (after.usage_usec - before.usage_usec) / 1e6;
 		console.log(
 			`test: ${wall.toFixed(0)} s wall, lane CPU ${used.toFixed(0)} s = ${((100 * used) / wall).toFixed(0)}%` +
 				`, throttled ${after.nr_throttled - before.nr_throttled} of ${after.nr_periods - before.nr_periods} periods` +
 				` for ${((after.throttled_usec - before.throttled_usec) / 1e6).toFixed(1)} s` +
-				(peak ? `, memory peak ${gib(Number(peak))}` : '')
+				(peak ? `, memory peak ${gib(Number(peak))}` : '') +
+				(anonPeak ? `, anon peak ${gib(anonPeak)}` : '') +
+				(pidsPeak ? `, pids peak ${pidsPeak} of ${pidsMax}, ${refused} fork${refused === 1 ? '' : 's'} refused` : '')
 		);
 	}
 	if (process.env.DATUM_TEST_RECORD && !shard && !notRun && ran.length === all.length) {
