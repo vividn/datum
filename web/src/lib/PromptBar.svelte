@@ -337,12 +337,22 @@
 	 * Read from TOUCH events: the strip scrolls natively, and the browser
 	 * cancels the pointer it pans with but goes on telling the page where
 	 * the finger is.
+	 *
+	 * SIDEWAYS ONLY (da-6lqa6): a touch whose first `SLOP` px go more up or
+	 * down than across is the bar's swipe, and pulls nothing for the rest of
+	 * it. It read every touch, so a swipe up drifting left dragged the strip
+	 * along and grew the ×.
 	 */
 	const CLEAR_PX = 56;
 	/** The pull's limit: the strip comes off the × ever less, toward this. */
 	const STRETCH_PX = 2 * CLEAR_PX;
 	/** How far an armed finger travels past the end before a lift clears: more than one ordinary swipe. */
 	const PULL_PX = 200;
+	/** How far a finger goes before its axis is known: the bar's own `DRAG_START` (#lib/grip.ts). */
+	const SLOP = 8;
+	/** Where the touch began, and whether it went up or down first: then it is no pull. */
+	let began: { x: number; y: number } | null = null;
+	let upright = false;
 	/** Where the finger was as the strip stood at its end, or null; and how far left of it it is. */
 	let endAt: number | null = null;
 	let over = $state(0);
@@ -358,13 +368,20 @@
 
 	function onTouchStart(event: TouchEvent): void {
 		armed = event.touches.length === 1 && !!roll && atEnd(roll);
+		began = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+		upright = false;
 		onTouchMove(event);
 	}
 
 	/** A second finger calls the pull off: what it pulled goes back, and a lift clears nothing. */
 	function onTouchMove(event: TouchEvent): void {
 		if (!roll) return;
-		const x = event.touches.length === 1 ? event.touches[0].clientX : null;
+		const touch = event.touches[0];
+		if (began && touch && Math.hypot(touch.clientX - began.x, touch.clientY - began.y) >= SLOP) {
+			upright = Math.abs(touch.clientY - began.y) > Math.abs(touch.clientX - began.x);
+			began = null;
+		}
+		const x = event.touches.length === 1 && !upright ? touch.clientX : null;
 		if (x === null || endAt === null || x > endAt) endAt = x !== null && atEnd(roll) ? x : null;
 		if (endAt === null) armed = false;
 		over = x === null || endAt === null ? 0 : endAt - x;
@@ -373,6 +390,7 @@
 	function onTouchEnd(event: TouchEvent): void {
 		if (event.type === 'touchend' && !event.touches.length && bright) clearScrollback();
 		armed = false;
+		began = null;
 		endAt = null;
 		over = 0;
 	}

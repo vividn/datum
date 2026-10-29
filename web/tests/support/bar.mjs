@@ -115,10 +115,10 @@ export async function fold(page) {
  * gesture measures about `dy / (steps * gap)` px/ms and the bar glides on
  * after the finger.
  *
- * It settles at `now + speed * TAU`, so the GLIDE's own length is
- * `3 * distance / speed` = `3 * TAU` whatever the speed turned out to be
- * — which is how a test can ask about `TAU` without pinning a velocity
- * this machine may not produce (da-o2wm8).
+ * Where it comes to rest follows `now + speed * TAU` (#lib/detent.ts);
+ * how long the glide takes does not: it is held to 140–200ms
+ * (`GLIDE_MIN_MS` / `GLIDE_MAX_MS` in #lib/log.ts, da-6lqa6), so a test
+ * can ask about `TAU` by the place, never by the duration.
  */
 export function timedDrag(page, dy, steps = 6, gap = 16) {
 	return page.evaluate(

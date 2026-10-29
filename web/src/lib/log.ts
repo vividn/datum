@@ -15,8 +15,8 @@
 // ONE CONTINUOUS NUMBER — `reveal`, in px — and everything is a slice of it:
 //
 //   reveal          0 ─────────── OUT ──────────────────────── CEILING
-//   the output      opening 0→OUT  fully open  ─────────────────────────
-//   the log                        0 ────────────── growing ──────────
+//   the output      opening 0→OUT  gone past it (`lifted`)
+//   the log                        the whole bar, OUT → CEILING
 //   the dashboard   the rest of the page, shrinking as those two grow
 //
 // `OUT` is the output section's own height, so the point where the output
@@ -32,12 +32,20 @@
 // the bottom next to the input.
 //
 // AND THE BAR RESTS IN THREE STATES (da-0b2vy, #lib/detent.ts): CLOSED at 0,
-// the SINGLE ROW at the notch, and FULLSCREEN at the ceiling. Full, the strip
-// gives way: the output section is 0 and the log takes its room, so the
-// newest command is the log's last line, next to the input, and the commands
-// that were side by side in the strip FLOW to their lines (`flow`). vividn,
+// the SINGLE ROW at the notch, and FULLSCREEN at the ceiling. vividn,
 // 2026-10-27: «Entries animate and flow to be vertically chronological, like
 // it looks like in a cli … each command get's it's own line».
+//
+// THE STRIP GIVES WAY AS SOON AS THE BAR IS PAST THE NOTCH (`lifted`,
+// da-6lqa6), not once it reaches the ceiling: the output section is 0 and
+// the log takes its room, so the newest command is the log's last line, the
+// whole width next to the input, and the commands that were side by side in
+// the strip FLOW to their lines above it (`flow`), where the log's top edge
+// hides them until the pull reveals them. vividn, 2026-10-29: «even if you
+// only pull up a little bit, the most recent entry should expand to fill the
+// bottom and the preceding entries should go up and hide behind the app to
+// be revealed as you pull up more». It used to wait for the ceiling, so the
+// commands moved only after the glide had arrived.
 //
 // THE PAGE STILL NEVER SCROLLS. `routes/+layout.svelte` sizes three boxes
 // from this one number; nothing here moves a scrollport, so a gesture that
@@ -58,22 +66,17 @@ const SETTLE_MS = 220;
 /**
  * A glide that was thrown is never quicker than this, nor slower than that.
  *
- * The slow end is `3 * TAU`, which is what a release carrying its own
- * momentum and meeting no detent asks for: `glide` sets the duration so the
- * curve leaves at the finger's speed, and for a free glide that arithmetic
- * lands exactly there. Clamping it any nearer would put a step back into
- * the one thing vividn asked never to step — "It is jarring if it suddenly
- * changes speed".
- *
- * ⛔ A FUNCTION AND NOT A CONSTANT (da-o2wm8). It used to be `const
- * GLIDE_MAX_MS = 3 * TAU`, computed once at import from the compile-time
- * `TAU` — so a reader who raised `TAU` to 900 with the debug widget still
- * had every glide clamped at 960ms by a ceiling derived from 320, and the
- * bar did not do what the number said. A wrong answer that looks like a
- * measurement is worse than no instrument.
+ * The slow end is a SWIPE'S, not a free glide's (da-6lqa6). vividn,
+ * 2026-10-29: «With a swipe this should happen all in 200-250 ms or so».
+ * Every glide ends at a state now (#lib/detent.ts), and the one that
+ * leaves at the finger's speed — `3 * distance / speed` — took up to
+ * `3 * TAU`, 960ms, from the row to the full screen after an ordinary
+ * swipe. Capped at 200, so with the frame it waits for it is in by 250,
+ * a slow release leaves a little faster than the finger went, which is
+ * the snap he asked for; `TAU` still says where it goes.
  */
 const GLIDE_MIN_MS = 140;
-const glideMax = (): number => 3 * tuningNow().tau;
+const GLIDE_MAX_MS = 200;
 
 const reduced = (): boolean =>
 	typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -114,11 +117,14 @@ const opened = derived([reveal, ceilingH, outputless], ([r, c, none]) => (none ?
 /** FULLSCREEN: the bar at the ceiling, the history to the top of the page. */
 export const full = derived([opened, outH, ceilingH], ([r, o, c]) => c > o && r >= c - 0.5);
 
-/** The output section's height right now — it opens as the first `OUT` px, and is gone full. */
-export const shown = derived([opened, outH, full], ([r, o, f]) => (f ? 0 : Math.min(r, o)));
+/** Past the notch: the strip has given way and the log is the whole bar. */
+export const lifted = derived([opened, outH], ([r, o]) => o > 0 && r > o + 0.5);
 
-/** The log's height right now — everything past the notch, and the whole bar full. */
-export const logHeight = derived([opened, outH, full], ([r, o, f]) => (f ? r : Math.max(0, r - o)));
+/** The output section's height right now — it opens as the first `OUT` px, and is gone past them. */
+export const shown = derived([opened, outH, lifted], ([r, o, l]) => (l ? 0 : Math.min(r, o)));
+
+/** The log's height right now — the whole bar once it is past the notch, and nothing before. */
+export const logHeight = derived([opened, lifted], ([r, l]) => (l ? r : 0));
 
 /** The output section is open (the `^`'s state, and what is remembered). */
 export const output = derived([opened, outH], ([r, o]) => r >= o - 0.5 && o > 0);
@@ -224,7 +230,7 @@ function remember(open: boolean): void {
 }
 
 /**
- * Set the bar, and when that moves it into or out of the full screen, let
+ * Set the bar, and when that moves it past the notch or back under it, let
  * the commands FLOW to where they are drawn now.
  *
  * Measured here because here is the one moment both places are known: the
@@ -236,13 +242,21 @@ function remember(open: boolean): void {
  */
 function put(px: number): void {
 	if (px > out() + 0.5) arm();
-	const was = get(full);
+	const was = get(lifted);
 	reveal.set(px);
-	if (get(full) !== was && !reduced()) flow(was);
+	if (get(lifted) === was || reduced()) return;
+	// A finger held at the notch can cross it back and forth by a pixel: one
+	// flow while the last still plays, and the crossings in between jump.
+	const now = performance.now();
+	if (now - flowed < FLOW_MS) return;
+	flowed = now;
+	flow(was);
 }
 
-/** How long the commands take to flow to their new places, in ms. */
-const FLOW_MS = 300;
+/** How long the commands take to flow to their new places, in ms: inside a swipe's 250. */
+const FLOW_MS = 200;
+/** When the last flow began. */
+let flowed = -Infinity;
 
 /** Each command on screen, by when it ran: the strip's over the log's when both draw it. */
 function places(): Map<string, DOMRect> {
@@ -258,11 +272,11 @@ function places(): Map<string, DOMRect> {
 	return seen;
 }
 
-function flow(wasFull: boolean): void {
+function flow(wasLifted: boolean): void {
 	const before = places();
-	// Leaving the full screen, the log's copy of a command still in the strip
+	// Back under the notch, the log's copy of a command still in the strip
 	// would otherwise claim it: the strip is where the eye follows it to.
-	const into = wasFull ? '.prompt-bar .roll [data-ran], .log [data-ran]' : '.log [data-ran]';
+	const into = wasLifted ? '.prompt-bar .roll [data-ran], .log [data-ran]' : '.log [data-ran]';
 	void tick().then(() => {
 		for (const el of document.querySelectorAll<HTMLElement>(into)) {
 			const was = before.get(el.dataset.ran!);
@@ -354,7 +368,7 @@ export function stop(): void {
  * sets the DURATION so that the curve leaves at that same speed: an ease-out
  * cubic starts at 3·distance/duration, so duration = 3·distance/speed is the
  * one that carries on from where the finger stopped instead of restarting
- * the motion. Clamped at both ends — see `glideMax`.
+ * the motion. Clamped at both ends — see `GLIDE_MAX_MS`.
  */
 function glide(target: number, speed = 0): void {
 	if (get(outputless)) return;
@@ -367,12 +381,14 @@ function glide(target: number, speed = 0): void {
 		return put(to);
 	}
 	const ms = speed
-		? Math.min(glideMax(), Math.max(GLIDE_MIN_MS, (3 * Math.abs(to - from)) / Math.abs(speed)))
+		? Math.min(GLIDE_MAX_MS, Math.max(GLIDE_MIN_MS, (3 * Math.abs(to - from)) / Math.abs(speed)))
 		: SETTLE_MS;
 	aim = to;
 	const started = performance.now();
 	const step = (now: number): void => {
-		const t = Math.min(1, (now - started) / ms);
+		// A frame's stamp is when the frame began, which can be before
+		// `started`: under 0 the curve runs backwards, below where it began.
+		const t = Math.min(1, Math.max(0, now - started) / ms);
 		// ease-out cubic: fastest at the start, arriving without a stop.
 		put(from + (to - from) * (1 - (1 - t) ** 3));
 		if (t < 1) {

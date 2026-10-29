@@ -16,8 +16,9 @@
 	"the output section … should actually *be* the first line of the repl …
 	it shouldn't be repeated when you drag it up." So the log ends at the
 	row before it, and what a reader pulls up is the continuation of what
-	they were already looking at. FULL, the strip is gone and the log draws
-	every row, the newest its last line, next to the input (da-0b2vy), ONE
+	they were already looking at. PAST THE NOTCH (`lifted`, da-6lqa6) the
+	strip is gone and the log draws every row, the newest its last line,
+	next to the input (da-0b2vy), ONE
 	COMMAND A LINE (`lines`): vividn, 2026-10-27, «Don't but multiple
 	commands on the same line like currently, each command get's it's own
 	line».
@@ -44,7 +45,7 @@
 	import { tick, untrack } from 'svelte';
 	import CliScrollback from '#lib/CliScrollback.svelte';
 	import { cli, stepped } from '#lib/cliStore.ts';
-	import { armed, closeLog, full, inLog } from '#lib/log.ts';
+	import { armed, closeLog, full, inLog, lifted } from '#lib/log.ts';
 
 	let body: HTMLDivElement | undefined = $state();
 
@@ -86,9 +87,9 @@
 		closeLog();
 	}
 
-	// Gone full, the log has one more row, the newest: back to it.
+	// Past the notch, the log has one more row, the newest: back to it.
 	$effect(() => {
-		if ($full && body) body.scrollTop = body.scrollHeight;
+		if ($lifted && body) body.scrollTop = body.scrollHeight;
 	});
 	// A command that lands is the newest row, at the bottom: the list comes
 	// back to it, wherever the reader had scrolled.
@@ -107,7 +108,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="log" class:reached={$inLog} class:full={$full} inert={!$inLog} {onwheel} {ontouchstart} {ontouchmove}>
 	{#if $armed}
-		<CliScrollback bare skip={$full ? 0 : skip} lines bind:body />
+		<CliScrollback bare skip={$lifted ? 0 : skip} lines bind:body />
 	{/if}
 	{#if $inLog}
 		<button type="button" class="top" onclick={closeLog}>close history</button>
@@ -129,9 +130,18 @@
 		background: var(--page);
 	}
 
-	/* And at the foot for `close history`, so the newest line is never under it. */
-	.log.full :global(.body) {
+	/* And at the foot for `close history`, so the newest line is never under it.
+	   A history shorter than the box stands on that foot, as a terminal's last
+	   answer stands on the prompt: the newest next to the input from the first
+	   pixel of a pull, and the rows before it over it (da-6lqa6). */
+	.log.reached :global(.body) {
+		display: flex;
+		flex-direction: column;
 		padding-bottom: 2.75rem;
+	}
+
+	.log.reached :global(.body > :first-child) {
+		margin-top: auto;
 	}
 
 	.log :global(section.pane) {

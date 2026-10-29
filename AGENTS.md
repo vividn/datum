@@ -878,10 +878,14 @@ binary.
   one rule and never stand either side of it. `tests/scrollback.test.mjs`
   takes both measurements again against the built app.
 - THE BAR RESTS IN THREE STATES (da-0b2vy): CLOSED, the SINGLE ROW (the
-  output strip over the input), and FULLSCREEN, where the strip gives way and
-  the log fills the page to the top, one command a line, the newest its last
-  line next to the input; entering or leaving it, the commands on screen flow
-  to their new places (FLIP), not under `prefers-reduced-motion`. A drag
+  output strip over the input), and FULLSCREEN, where the log fills the page
+  to the top, one command a line, the newest its last line next to the
+  input. The strip gives way the moment the bar is past the notch (`lifted`,
+  da-6lqa6), not at the ceiling: the newest takes the whole width at the
+  log's foot and the commands before it rise behind the dashboard's edge, the
+  pull revealing them; crossing the notch either way, the commands on screen
+  flow to their new places (FLIP, 200ms), not under
+  `prefers-reduced-motion`. A drag
   anywhere on the bar, or a wheel over it, moves a state the way it went;
   there is no handle (da-pnxug), and on the box PageUp goes closed → row →
   full and PageDown back. HOW FAR OPEN the bar is, is ONE number of
@@ -893,7 +897,11 @@ binary.
   a state either way — the SNAG, so a throw down from full stops at the row
   and a throw up from closed opens it — and otherwise the gesture's
   direction picks between the two states either side. Every settle is one
-  ease-out cubic leaving at the finger's own speed. Every screen starts at
+  ease-out cubic leaving at the finger's own speed, and a thrown one lasts
+  140–200ms, so a swipe is done within 250ms of the lift (vividn,
+  2026-10-29: «With a swipe this should happen all in 200-250 ms»); a
+  pull to clear starts only on a touch whose first 8px go across, not up or
+  down. Every screen starts at
   the row, and the fold is remembered per device. Full, `close history`
   (pinned at the foot of the log), Escape, and at the top of the history a
   wheel up or a finger swiping down that starts there each collapse it to the
