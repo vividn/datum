@@ -209,7 +209,9 @@
 	 * A band's picture or the geometry, by the epoch it was asked at (see
 	 * `cache`), and the day's data layer a band was drawn from (da-m6i2a).
 	 */
-	type Asked = { epoch: number; end: number | 'geometry'; run: Promise<RunResult>; layer?: Promise<Layer> };
+	/** A band's picture: a run's, or the page's node laid out from its data layer (`bandFrom`), whose stdout is empty. */
+	type Band = RunResult & { svg?: SVGSVGElement };
+	type Asked = { epoch: number; end: number | 'geometry'; run: Promise<Band>; layer?: Promise<Layer> };
 	/** Every picture asked at one size, by its argv (see `cache`). */
 	type Cache = { key: string; size: string; runs: Map<string, Asked> };
 	/** The size a band's picture was drawn at: one of another stands in, stretched, until it is seen. */
@@ -233,7 +235,7 @@
 	type Held = {
 		cache: Cache;
 		sizes: Map<string, Cache>;
-		shown: Record<number, RunResult>;
+		shown: Record<number, Band>;
 		drawn: Record<number, Drawn>;
 		midnights: number;
 		onDay: string | null;
@@ -647,7 +649,7 @@
 	// ── the pictures ───────────────────────────────────────────────────
 
 	/** Each band on screen, by how many days back it is. 0 is today's. */
-	let shown: Record<number, RunResult> = $state.raw(was?.shown ?? {});
+	let shown: Record<number, Band> = $state.raw(was?.shown ?? {});
 	/**
 	 * And the size each of those pictures was drawn at: its width is what
 	 * it is mapped by (`mapFor`), its day height what it is stretched by
@@ -664,9 +666,10 @@
 	/** Since when this copy may lack what another device has, while the session's first sync is under way (da-g5jjp). */
 	const unsynced = $derived($syncStates[currentDb()]?.unsynced);
 
-	const picture = (result: RunResult, unsynced?: number) => ({
+	const picture = (result: Band, unsynced?: number) => ({
 		text: result.stdout || result.stderr,
-		error: !result.stdout,
+		svg: result.svg,
+		error: !result.stdout && !result.svg,
 		unsynced
 	});
 
@@ -792,11 +795,11 @@
 	 * band, today's cut at now, or, a day the clock changed in, the CLI's own
 	 * picture of it, whose lanes bend along the change as no scaling can.
 	 */
-	async function bandFrom(layer: Layer, at: { wide: number; dayHeight: number }, end: number): Promise<RunResult> {
+	async function bandFrom(layer: Layer, at: { wide: number; dayHeight: number }, end: number): Promise<Band> {
 		const argv = bandArgv(at.wide, at.dayHeight, end);
 		if (layer.error || !layer.doc()) return { argv, code: 1, stdout: '', stderr: layer.error ?? '' };
 		if (!oneClock(layer)) return run(argv, undefined, undefined, `${queueKey}:${end}`, undefined, undefined, true);
-		return { argv, code: 0, stdout: `${bandOf(layer, at.wide, at.dayHeight, end === 0 ? Date.now() : undefined)}\n`, stderr: '' };
+		return { argv, code: 0, stdout: '', svg: bandOf(layer, at.wide, at.dayHeight, end === 0 ? Date.now() : undefined), stderr: '' };
 	}
 
 	/**
@@ -1227,15 +1230,14 @@
 	 * `r&amp;d`) whatever order the attributes are written in.
 	 */
 	const flagged = $derived(
-		Object.fromEntries(Object.entries(shown).map(([end, result]) => [end, fieldsFlagged(result.stdout)])) as Record<
+		Object.fromEntries(Object.entries(shown).map(([end, result]) => [end, fieldsFlagged(result)])) as Record<
 			number,
 			string[]
 		>
 	);
-	function fieldsFlagged(svg: string): string[] {
-		if (!svg.includes('integrity-error')) return [];
-		const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
-		const groups = [...doc.querySelectorAll('.integrity-error')];
+	function fieldsFlagged({ stdout, svg }: Band): string[] {
+		if (!svg && !stdout.includes('integrity-error')) return [];
+		const groups = [...(svg ?? new DOMParser().parseFromString(stdout, 'image/svg+xml')).querySelectorAll('.integrity-error')];
 		return [...new Set(groups.map((g) => g.getAttribute('data-field') ?? ''))];
 	}
 
@@ -1863,6 +1865,12 @@
 
 	function measurePills(): void {
 		if (!stripEl) return;
+		// No selection drawn, no pill to place: a box read here lays out the
+		// bands a draw just put in, ~600 ms a re-lay of a dense day at CPU 4x (da-mi2s6).
+		if (!stripEl.querySelector('svg.svg :is(.cursor-span, .cursor-head)')) {
+			if (spots.time !== null || spots.span !== null) spots = { time: null, span: null };
+			return;
+		}
 		const home = stripEl.getBoundingClientRect();
 		const box = (selector: string) => stripEl?.querySelector(selector)?.getBoundingClientRect() ?? null;
 		const wide = (selector: string) => box(selector)?.width ?? 0;

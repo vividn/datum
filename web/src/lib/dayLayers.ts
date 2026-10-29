@@ -15,13 +15,14 @@ import { currentDb } from './database.js';
 import { keepDay, keptDays, keptNow } from './heldDays.js';
 import { LAYER_HEIGHT, layersArgv } from './panes.js';
 import { run } from './run.js';
+import { sanitizeSvg } from './svgSafe.js';
 
 export { LAYER_HEIGHT };
 
 /** The days the store holds of a database, the least recently asked dropped. */
 const HOLDS = 120;
 
-/** A day's data layer: its SVG, the run's stderr where it failed, and the SVG parsed once. */
+/** A day's data layer: its SVG, the run's stderr where it failed, and the SVG parsed and sanitized once. */
 export type Layer = { text: string; error?: string; doc: () => Document | null };
 
 /** A day held: its epoch, its answer, its text once answered, and the text it replaced, which a check compares with. */
@@ -72,6 +73,7 @@ function layerOf(text: string, error?: string): Layer {
 			if (doc === undefined) {
 				const parsed = text ? new DOMParser().parseFromString(text, 'image/svg+xml') : null;
 				doc = parsed?.documentElement.localName === 'svg' && !parsed.querySelector('parsererror') ? parsed : null;
+				if (doc) sanitizeSvg(doc.documentElement);
 			}
 			return doc;
 		}
@@ -279,11 +281,12 @@ export function layMarks(root: Element, along: number, across: number, y = false
  * --days 1` draws a band at that size — its blocks as long as their hours,
  * every other mark the size the day height gives it — and, with `now`, the
  * state still running cut there and the now-line drawn. A day of one clock
- * only: its 24 hours are the row's.
+ * only: its 24 hours are the row's. A node of the page, sanitized as the
+ * layer was, for `CliOutput` to draw as it is: serialized, a dense day was
+ * parsed again at every draw, ~300 ms of main thread (da-mi2s6).
  */
-export function bandOf(layer: Layer, width: number, dayHeight: number, now?: number): string {
-	const doc = layer.doc()!.cloneNode(true) as Document;
-	const root = doc.documentElement;
+export function bandOf(layer: Layer, width: number, dayHeight: number, now?: number): SVGSVGElement {
+	const root = document.importNode(layer.doc()!.querySelector('svg')!, true);
 	const span = root.querySelector('.day-data')!;
 	const [from, to] = ['data-from', 'data-to'].map((name) => Date.parse(span.getAttribute(name) ?? ''));
 	const num = (el: Element, name: string) => Number(el.getAttribute(name));
@@ -305,10 +308,10 @@ export function bandOf(layer: Layer, width: number, dayHeight: number, now?: num
 				block.setAttribute('data-to', at);
 			} else block.remove();
 		}
-		const line = doc.createElementNS(NS, 'line');
+		const line = document.createElementNS(NS, 'line');
 		for (const [n, v] of Object.entries({ class: 'current-time-line', x1: x, x2: x, y1: 0, y2: dayHeight, stroke: '#ffcc00', 'stroke-width': 2, 'stroke-dasharray': '4,2' }))
 			line.setAttribute(n, String(v));
 		root.querySelector('.plot')!.append(line);
 	}
-	return new XMLSerializer().serializeToString(doc);
+	return root;
 }

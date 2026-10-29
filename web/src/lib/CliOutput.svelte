@@ -43,6 +43,8 @@
 		behind?: boolean;
 		/** A picture's stretch from then to now is dimmed: this copy may not have it all yet (da-g5jjp). */
 		unsynced?: number | undefined;
+		/** The picture as a node of the page, sanitized: drawn in place of `text`, never parsed (da-mi2s6). */
+		svg?: SVGSVGElement;
 	}
 
 	let {
@@ -50,21 +52,22 @@
 		error = false,
 		stream = 'stdout',
 		behind = false,
-		unsynced = undefined
+		unsynced = undefined,
+		svg = undefined
 	}: Props = $props();
 
 	const SVG_START = /^\s*(?:<\?xml[\s?]|<svg[\s>])/;
 
-	const svg = $derived(SVG_START.test(text));
-	const spans = $derived(svg ? [] : ansiSpans(text));
+	const drawing = $derived(!!svg || SVG_START.test(text));
+	const spans = $derived(drawing ? [] : ansiSpans(text));
 </script>
 
-{#if svg}
+{#if drawing}
 	<!-- While a border is being dragged the picture is not re-asked for
 	     (layout/resizing.ts); it follows its box as one scaled image
 	     until the drop redraws it — whole, so an axis and its labels
 	     move together (da-jgrn). -->
-	<div class="picture" class:stretch={$resizing} class:behind use:picture={{ text, unsynced }}></div>
+	<div class="picture" class:stretch={$resizing} class:behind use:picture={{ text, svg, unsynced }}></div>
 {:else}
 	<pre data-stream={stream} class:error class:behind><AnsiText {spans} /></pre>
 {/if}

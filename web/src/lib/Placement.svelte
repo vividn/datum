@@ -59,7 +59,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { on } from 'svelte/events';
-	import { inlineSvg } from './hover.js';
+	import { inlineSvg } from './svgSafe.js';
 	import { bandArgv, fieldArgv, fieldsArgv } from './calls.js';
 	import { run } from './run.js';
 	import type { FieldListing } from './fields.js';

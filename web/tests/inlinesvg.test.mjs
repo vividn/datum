@@ -1,4 +1,4 @@
-// `inlineSvg` (#lib/hover.ts) is the page's last layer between an SVG the
+// `inlineSvg` (#lib/svgSafe.ts) is the page's last layer between an SVG the
 // CLI printed and the DOM. Since da-45wgz that SVG can carry a person's own
 // icon, which the CLI vets when it is saved and again when it is drawn; this
 // holds the page to the same rules, in a real browser's DOMParser, for
@@ -11,14 +11,11 @@ import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { chromium } from 'playwright';
 
-// The function's own source, and its helpers', types stripped: hover.ts's imports reach
-// SvelteKit's `$app`, which node cannot load, and `inlineSvg` needs none of
-// them — only the page's DOMParser.
-const hover = fs.readFileSync(new URL('../src/lib/hover.ts', import.meta.url), 'utf8');
-const from = hover.indexOf('export function inlineSvg');
-// With the helpers that follow it, down to the end of `fetches`.
-const to = hover.indexOf('\n}\n', hover.indexOf('function fetches', from)) + 2;
-const source = stripTypeScriptTypes(hover.slice(from, to)).replace('export ', '');
+// The module's source, types stripped, in the page: it imports nothing and
+// needs only the page's DOMParser.
+const source = stripTypeScriptTypes(
+	fs.readFileSync(new URL('../src/lib/svgSafe.ts', import.meta.url), 'utf8')
+).replaceAll('export ', '');
 
 let browser;
 before(async () => (browser = await chromium.launch()));

@@ -108,3 +108,55 @@ test('a day the clock went back in: the nowview by instant, the strip as it was 
 		FALL_BACK
 	);
 });
+
+// A band laid out from its held layer goes to the page as the node it was
+// laid out in (da-mi2s6): serialized, `inlineSvg` parsed a dense day of it
+// again at every draw, ~1.2 s of main thread at CPU 4x, on every write and
+// minute tick. The layer is sanitized once, when it is parsed, and the
+// band shows it: no `<title>`, its text on the mark. And with no selection
+// drawn there is no pill to place, so nothing reads the strip's box, which
+// laid out the bands just put in (~600 ms a re-lay at CPU 4x).
+test('a band laid out from its held layer is drawn as a node, never parsed again', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await app.idle();
+			await seedLines(app, ['switch mood calm -t -20', 'occur coffee -t -5']);
+			await page.locator(`${band(0)} [data-field="coffee"]`).first().waitFor({ state: 'attached' });
+			await app.idle();
+			await page.evaluate(() => {
+				const parse = DOMParser.prototype.parseFromString;
+				window.parsed = [];
+				DOMParser.prototype.parseFromString = function (text, type) {
+					window.parsed.push(text);
+					return parse.call(this, text, type);
+				};
+				const box = Element.prototype.getBoundingClientRect;
+				window.stripRead = 0;
+				Element.prototype.getBoundingClientRect = function () {
+					if (this.classList.contains('strip')) window.stripRead++;
+					return box.call(this);
+				};
+			});
+			await seedLines(app, ['occur tea -t -2']);
+			await page.locator(`${band(0)} [data-field="tea"]`).first().waitFor({ state: 'attached' });
+			await app.idle();
+
+			const seen = await page.locator(band(0)).evaluate((svg) => ({
+				viewBox: svg.getAttribute('viewBox'),
+				titles: svg.querySelectorAll('title').length,
+				named: [...svg.querySelectorAll('[data-state][data-title]')].map((m) => m.getAttribute('data-title')),
+				parsed: window.parsed,
+				stripRead: window.stripRead
+			}));
+			const again = seen.parsed.filter((text) => text.includes(`viewBox="${seen.viewBox}"`));
+			assert.equal(seen.parsed.length > 0, true, 'the new layer was parsed, so the spy saw the redraw');
+			assert.deepEqual(again.map((text) => text.slice(0, 120)), [], `today's band parsed again at ${seen.viewBox}`);
+			assert.equal(seen.stripRead, 0, "the strip's box was read with no selection drawn");
+			assert.equal(seen.titles, 0, 'a <title> reached the page');
+			assert.ok(seen.named.some((title) => title.includes('tea')), `no mark named tea: ${seen.named}`);
+			assert.deepEqual(app.errors, []);
+		},
+		{ ...DESKTOP, home: ON_COLLECT, clock: todayAt(12) }
+	);
+});
