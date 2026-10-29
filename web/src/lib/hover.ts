@@ -11,7 +11,7 @@
 // over the page's, so `inlineSvg` moves its text onto the mark.
 
 import { get } from 'svelte/store';
-import { fieldPill, pills, removePill, select, selected } from './bar.js';
+import { fieldPill, pills, removePill, select, selected, type Pill } from './bar.js';
 import { clockLabel } from './clock.js';
 import { pointAt, pointed, setCursor, type Cursor } from './cursor.js';
 import {
@@ -574,9 +574,18 @@ export function shownBox(mark: Element): DOMRect {
 	return new DOMRect(box.x, box.y, Math.max(0, Math.min(box.right, line.left) - box.x), box.height);
 }
 
+/** How soon a second tap makes a DOUBLE tap, in ms, and how near the first it must land, in px. */
+export const DOUBLE_MS = 300;
+const DOUBLE_SLOP = 24;
+
+/** The last tap on a picture: when, where, and the hid pill as it was before it. */
+let last: { t: number; x: number; y: number; hid: Pill | undefined } | null = null;
+
 /**
- * Select the entry `mark` names, as a tap on it in a picture does: the
- * hid pill, and the time pill it replaces taken away.
+ * A tap on a picture, at `mark` or on ground: the entry it names is
+ * selected, as a tap on it does — the hid pill, and the time pill it
+ * replaces taken away — and `true`; `false` where the caller selects the
+ * time instead.
  *
  * vividn: a tap «in dayview or nowview selects an existing piece of data
  * and creates an hid pill RATHER THAN a time pill» (da-pzzoz, where it was
@@ -584,27 +593,40 @@ export function shownBox(mark: Element): DOMRect {
  * here, and the press is marked spent so the click and the lift that
  * share this finger do not make another.
  *
- * `false` over ground that names no entry, and on an entry ALREADY
- * selected: the caller then does whatever it would have done, which
- * everywhere is «select the time», and no gesture is ever dead. The second
- * is vividn's, 2026-10-22 (da-xg1vi): «first tap selects the piece of data,
- * second tap then selects time instead». Not with ctrl or ⌘, which toggle.
+ * And vividn, 2026-10-28 (da-fzdkc): «double tapping chooses a time, but
+ * it should also leave what was selected before the double tap selected
+ * (including nothing if nothing was selected beforehand). Tapping (not
+ * double tapping) on an entry that is already selected should unselect
+ * it». So a tap on the entry selected unselects it and is spent, and a
+ * second tap within DOUBLE_MS puts back the hid pill the first found and
+ * is the time. Ctrl or ⌘ toggle, and a locked pill accumulates.
  */
 export function inspectMark(
 	mark: Element | null,
-	e: { ctrlKey: boolean; metaKey: boolean },
+	e: { ctrlKey: boolean; metaKey: boolean; clientX: number; clientY: number; timeStamp: number },
 	root: ParentNode | null = pictureOf(mark ?? document.body)
 ): boolean {
-	const hid = hidOf(mark);
-	if (!hid || !mark) return false;
-	if (!e.ctrlKey && !e.metaKey && get(selected).includes(hid)) {
-		// INSTEAD: the entry goes, unless a locked pill is holding it.
-		if (!get(pills).find((p) => p.id === 'hid')?.locked) removePill('hid');
+	const hidPill = () => get(pills).find((p) => p.kind === 'hid');
+	const plain = !e.ctrlKey && !e.metaKey;
+	if (plain && last && e.timeStamp - last.t < DOUBLE_MS && Math.hypot(e.clientX - last.x, e.clientY - last.y) <= DOUBLE_SLOP) {
+		const was = last.hid;
+		last = null;
+		pills.update((all) =>
+			all.some((p) => p.kind === 'hid')
+				? all.flatMap((p) => (p.kind !== 'hid' ? [p] : was ? [was] : []))
+				: [...all, ...(was ? [was] : [])]
+		);
 		return false;
 	}
-	const order = root ? marksIn(root).map(hidOf).filter((h): h is string => !!h) : [hid];
-	pointAt(null);
-	select(hid, inspectMods(e), order);
+	last = plain ? { t: e.timeStamp, x: e.clientX, y: e.clientY, hid: hidPill() } : null;
+	const hid = hidOf(mark);
+	if (!hid || !mark) return false;
+	if (plain && !hidPill()?.locked && get(selected).includes(hid)) removePill('hid');
+	else {
+		const order = root ? marksIn(root).map(hidOf).filter((h): h is string => !!h) : [hid];
+		pointAt(null);
+		select(hid, inspectMods(e), order);
+	}
 	spendPress();
 	return true;
 }
@@ -629,7 +651,7 @@ const ownsPointer = (node: HTMLElement) => !!node.closest('[data-points="own"]')
  * mark is. Nothing is shown over empty space.
  *
  * And the time cursor (da-wnt2, #lib/cursor.ts): a tap on a day's ground,
- * a right click, or a tap on the entry already selected points the page at
+ * a right click, or a double tap points the page at
  * the time under it — a tap on a mark selects its entry (da-xg1vi) — Enter
  * on a mark at the mark's own time, and wherever the cursor falls
  * on one of the picture's days a dotted line marks it, redrawn with the

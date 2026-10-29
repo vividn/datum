@@ -37,7 +37,8 @@
 	runs it. vividn's table, 2026-10-22 (da-xg1vi), the dayview's too:
 
 	  tap on a mark           → INSPECT: the entry behind it, as an hid pill
-	  tap it again            → the SELECTION there instead (vividn, 15:04)
+	  tap it again            → UNSELECTS it (vividn, 10-28, da-fzdkc)
+	  double tap, anywhere    → a SELECTION there; what was selected stays
 	  tap on ground           → a SELECTION where it fell; the window does not move
 	  touch the time axis     → SCRUB: the time under the finger, following it
 	    and drag                to the lift — not snapped, and no pan

@@ -3,8 +3,9 @@
 //
 // THE TABLE, vividn's, 2026-10-22 (da-xg1vi), for both views:
 //
-//   - single tap → select a piece of data (the mark under the finger), and
-//     a second tap on it the time there instead (15:04);
+//   - single tap → select a piece of data (the mark under the finger); a
+//     tap on it selected unselects it, and a double tap is the time and
+//     leaves the selection as it was (da-fzdkc, 10-28);
 //   - single tap where there is no data, or in the time axis → select a time;
 //   - long tap / right click → select a time;
 //   - simple swipe or drag → pan; or, if already at the edge, pass the

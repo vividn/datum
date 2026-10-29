@@ -700,24 +700,38 @@ describe('a finger on the strip, row by row', () => {
 			const g = await geom(page);
 			const ground = spot(g, msAt(g, 13, 30));
 			// The time joins the entry rather than replacing it: an entry and a
-			// time are what a `retime` is spelt with. Only a second tap on the
-			// entry itself takes it back (the next test).
+			// time are what a `retime` is spelt with. A second tap on the entry
+			// itself unselects it (the next test).
 			await page.touchscreen.tap(ground.x, ground.y);
 			await saysPills(page, [`hid:${mark.id}`, `time:-t ${hhmm(instantOf(g, ground.x))}`]);
 		});
 	});
 
-	// vividn, 15:04: «first tap selects the piece of data, second tap then
-	// selects time instead».
-	test('a second tap on the entry selected is the time there instead', async () => {
+	// vividn, 2026-10-28 (da-fzdkc): «double tapping chooses a time, but it
+	// should also leave what was selected before the double tap selected …
+	// Tapping (not double tapping) on an entry that is already selected
+	// should unselect it».
+	test('a second tap on the entry selected unselects it; a double tap is the time, and keeps it', async () => {
 		await onPhone(async (app) => {
 			const { page } = app;
 			const g = await geom(page);
 			const mark = await markAt(page, TODAY);
 			await page.touchscreen.tap(mark.x, mark.y);
 			await saysPills(page, [`hid:${mark.id}`]);
+			// Past a double tap's window (`DOUBLE_MS`, #lib/hover.ts).
+			await page.waitForTimeout(450);
+			await page.touchscreen.tap(mark.x, mark.y);
+			await saysPills(page, []);
+			await page.waitForTimeout(450);
+			await page.touchscreen.tap(mark.x, mark.y);
 			await page.touchscreen.tap(mark.x, mark.y);
 			await saysPills(page, [`time:-t ${hhmm(instantOf(g, mark.x))}`]);
+			await page.waitForTimeout(450);
+			await page.touchscreen.tap(mark.x, mark.y);
+			await page.waitForTimeout(450);
+			await page.touchscreen.tap(mark.x, mark.y);
+			await page.touchscreen.tap(mark.x, mark.y);
+			await saysPills(page, [`hid:${mark.id}`, `time:-t ${hhmm(instantOf(g, mark.x))}`]);
 		});
 	});
 

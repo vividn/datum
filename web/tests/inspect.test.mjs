@@ -652,6 +652,78 @@ describe('a selection in the nowview: no label, a pixel’s outline at any zoom,
 	});
 });
 
+// ── tap again, tap twice ───────────────────────────────────────────────
+
+/** Past a double tap's window, `DOUBLE_MS` in #lib/hover.ts: the next tap is a tap of its own. */
+const apart = (page) => page.waitForTimeout(450);
+
+/** A point of `scope`'s picture that is ground: in its svg, on no mark and off the time axis. */
+const groundIn = (page, scope) =>
+	page.locator(scope).evaluate((el) => {
+		const svg = el.querySelector('svg.svg');
+		const r = svg.parentElement.getBoundingClientRect();
+		for (let j = 1; j < 20; j++)
+			for (let i = 1; i < 20; i++) {
+				const [x, y] = [Math.round(r.left + (r.width * i) / 20), Math.round(r.top + (r.height * j) / 20)];
+				const at = document.elementFromPoint(x, y);
+				if (at && svg.contains(at) && !at.closest('[data-id], [data-axis="time"], .axis, .time-axis')) return { x, y };
+			}
+		return null;
+	});
+
+// vividn, 2026-10-28 (da-fzdkc): «double tapping chooses a time, but it
+// should also leave what was selected before the double tap selected
+// (including nothing if nothing was selected beforehand). Tapping (not
+// double tapping) on an entry that is already selected should unselect it».
+describe('a tap on the entry selected unselects it; a double tap is the time and keeps the selection', () => {
+	for (const [view, scope] of [
+		['nowview', BAND],
+		['dayview', TODAY]
+	]) {
+		test(`the ${view}`, async () => {
+			await withMarks(async (app) => {
+				const { page } = app;
+				const mark = await aMark(page, scope);
+				const on = early(mark);
+				const ground = await groundIn(page, scope);
+				assert.ok(mark?.id && ground, `the ${view} drew no mark, or no ground`);
+				const time = (want) =>
+					until(
+						() => pillsOf(page),
+						(seen) => seen.length === want.length + 1 && seen.slice(0, -1).join('|') === want.join('|') && seen.at(-1).startsWith('time:')
+					);
+				const clear = () => page.evaluate(() => window.datum.bar.setPills([]));
+
+				await page.mouse.click(on.x, on.y);
+				await saysPills(page, [`hid:${mark.id}`]);
+				await apart(page);
+				await page.mouse.click(on.x, on.y);
+				await saysPills(page, []);
+
+				// With nothing selected, nothing becomes selected.
+				for (const at of [ground, on]) {
+					await apart(page);
+					await clear();
+					await page.mouse.dblclick(at.x, at.y);
+					await time([]);
+					await apart(page);
+				}
+				// With the entry selected, it stays.
+				for (const at of [ground, on]) {
+					await clear();
+					await page.mouse.click(on.x, on.y);
+					await saysPills(page, [`hid:${mark.id}`]);
+					await apart(page);
+					await page.mouse.dblclick(at.x, at.y);
+					await time([`hid:${mark.id}`]);
+					await apart(page);
+				}
+				assert.deepEqual(app.errors, []);
+			});
+		});
+	}
+});
+
 // ── one selection, every surface ───────────────────────────────────────
 
 describe('a selection made anywhere is brought out everywhere', () => {

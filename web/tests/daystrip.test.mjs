@@ -1038,10 +1038,10 @@ describe('the day strip zooms onto an hour range', () => {
 			const windowed = await windowHeard(app);
 
 			// So the taps the reset used to share are spoken for: aimed at
-			// the picture the first finds a mark and inspects it, and the
-			// second on it is the time there instead (da-xg1vi, vividn: «first
-			// tap selects the piece of data, second tap then selects time
-			// instead»). The entry is read at the point the tap will land, on
+			// the picture the first finds a mark and inspects it, and a
+			// double tap on it is the time there, the selection left as it
+			// was (da-fzdkc, vividn: «double tapping chooses a time, but it
+			// should also leave what was selected before»). The entry is read at the point the tap will land, on
 			// the ZOOMED picture, rather than assumed from the one before it.
 			const mark = await page.locator(TODAY).evaluate((band) => {
 				const b = band.getBoundingClientRect();
@@ -1055,10 +1055,13 @@ describe('the day strip zooms onto an hour range', () => {
 			await page.waitForFunction(
 				`window.datum.bar.pills().some((p) => p.text === ${JSON.stringify(mark)})`
 			);
+			// Past a double tap's window (`DOUBLE_MS`, #lib/hover.ts).
+			await page.waitForTimeout(450);
+			await page.touchscreen.tap(middle.x, middle.y);
 			await page.touchscreen.tap(middle.x, middle.y);
 			await page.waitForFunction(() => {
 				const kinds = window.datum.bar.pills().map((p) => p.kind);
-				return kinds.includes('time') && !kinds.includes('hid');
+				return kinds.includes('time') && kinds.includes('hid');
 			});
 			assert.deepEqual(await windowHeard(app), windowed, 'the taps threw the window away');
 
