@@ -337,6 +337,57 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 			}, options());
 		});
 
+	// da-71p3u: the ring overruns its room, which clips it; a reveal of a
+	// state it clips — a focus, a click's scroll into view — is a pan, so
+	// neither the room nor anything around the widget is left scrolled.
+	test('22 states in a 3-row pane at 390px: focusing a state the room clips pans it toward sight, at rest and after a pan, and nothing scrolls', async () => {
+		const many = Array.from({ length: 22 }, (_, i) => `a_rather_long_state_${String(i).padStart(2, '0')}`);
+		await withApp(async (app) => {
+			const { page } = app;
+			await seedLines(app, [...FIELDS.slice(0, 4).map((f) => `setup ${f} --verb occur`), `setup mood --verb switch --states false,${many.join(',')}`]);
+			const field = page.locator(`${BAR} [data-field="mood"]`);
+			await field.waitFor();
+			await atRows(page, 'bar', 3);
+			await field.click();
+			await page.locator(`${PICKER} [data-add-state]`).waitFor();
+			/** Every box from the room up that is scrolled, and how far. */
+			const scrolled = () =>
+				page.locator(PICKER).evaluate((el) => {
+					const out = [];
+					for (let e = el; e; e = e.parentElement) if (e.scrollTop || e.scrollLeft) out.push(`${e.className}: ${e.scrollLeft},${e.scrollTop}`);
+					return out;
+				});
+			/** How far a box stands outside the pane, summed over its sides. */
+			const outside = (b, pane) =>
+				Math.max(0, pane.left - b.left) + Math.max(0, b.right - pane.right) + Math.max(0, pane.top - b.top) + Math.max(0, b.bottom - pane.bottom);
+			/** Focus a state the room clips, and read what is drawn once a frame has passed. */
+			const reveal = async (when) => {
+				const t = await seen(page);
+				const clipped = t.buttons.find((b) => many.includes(b.name) && outside(b, t.pane) > 1 && b.bottom > t.pane.top && b.top < t.pane.bottom);
+				assert.ok(clipped, `${when}: no state the room clips: the case is not tested`);
+				await page.locator(`${PICKER} [data-state="${clipped.name}"]`).focus();
+				await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+				assert.deepEqual(await scrolled(), [], `${when}: focusing ${clipped.name} scrolled`);
+				// As far as the browser's reveal took it: drawn there by the pan.
+				const now = await seen(page);
+				const after = outside(now.buttons.find((b) => b.name === clipped.name), now.pane);
+				assert.ok(after < outside(clipped, t.pane) - 1, `${when}: ${clipped.name} was not panned toward sight (${outside(clipped, t.pane)} → ${after}px out)`);
+				return clipped.name;
+			};
+			assert.deepEqual(await scrolled(), [], 'at rest');
+			await reveal('at rest');
+			await dragBy(page, 40, 60);
+			assert.deepEqual(await scrolled(), [], 'panned');
+			const name = await reveal('after a pan');
+			// The focused state presses as ever.
+			await app.clock.forward(60_000);
+			await page.keyboard.press('Enter');
+			await page.locator(PICKER).waitFor({ state: 'detached' });
+			await app.idle();
+			assert.equal((await app.echoes()).at(-1), `switch mood ${name}`);
+		}, options());
+	});
+
 	test('Escape and back put the fields back as they were, logging nothing', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

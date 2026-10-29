@@ -114,7 +114,7 @@
 	is no second string built for display that could drift from it.
 -->
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { flushSync, onMount, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
 	import { CLICK_SLOP } from './inspect.js';
 	import {
@@ -685,6 +685,17 @@
 		dragged = drag.moving;
 		drag = null;
 	}
+	/**
+	 * A reveal — a focus, a scroll into view — scrolls the room itself (da-71p3u):
+	 * taken as the pan that shows the same, so the room stays unscrolled and a
+	 * drag starts from where the states are drawn.
+	 */
+	function fold() {
+		if (!picker || !(picker.scrollLeft || picker.scrollTop)) return;
+		const [x, y] = [shift.x - picker.scrollLeft, shift.y - picker.scrollTop];
+		flushSync(() => (pan = kept(x, y)));
+		picker.scrollLeft = picker.scrollTop = 0;
+	}
 	function swallow(e: MouseEvent) {
 		if (!dragged) return;
 		dragged = false;
@@ -806,6 +817,7 @@
 			onpointermove={move}
 			onpointerup={up}
 			onpointercancel={up}
+			onscroll={fold}
 			onclickcapture={swallow}
 		>
 			<div class="corner back" data-role="back">
