@@ -172,9 +172,11 @@ fn a_write_beside_a_large_sync_apply_waits_a_chunk() {
     // spools instead (da-9q3fr), so how long a write took says nothing of
     // the chunks: a fixed cap only ever failed under load (da-d3hte). That
     // it waited a chunk and landed, not queued, does: measured, 0 of 28
-    // writes queued, and 28 of 33 with the apply's pause taken out.
+    // writes queued, and 28 of 33 with the apply's pause taken out. Load
+    // queues some (9 of 36, da-d6dec): a writer's 100 ms busy sleep can
+    // wake past the 110 ms pause and wait a second chunk, so under half.
     assert!(
-        queued * 4 < writes,
+        queued * 2 < writes,
         "{queued} of {writes} writes were queued beside the apply"
     );
     assert!(
