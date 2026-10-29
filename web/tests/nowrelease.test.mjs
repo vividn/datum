@@ -158,14 +158,13 @@ async function untilSettled(page, n = 20) {
 /**
  * Each frame from the lift on that differs from the last under the fingers,
  * and how: a mark inside the band moved or went, or the opacity changed.
- * `except` are readings left out.
  */
-function seams(frames, except = []) {
+function seams(frames) {
 	const up = frames.findIndex((f) => !f.down);
 	const last = frames[up - 1];
 	// A label is kept inside the band as it is recorded, along time.
 	const inside = (k) => /^(label|width) /.test(k) || (last.at[k] >= last.band[0] && last.at[k] <= last.band[1]);
-	const shown = Object.keys(last.at).filter((k) => !except.includes(k) && inside(k));
+	const shown = Object.keys(last.at).filter(inside);
 	const off = [];
 	for (const [i, f] of frames.slice(up).entries()) {
 		const moved = shown.filter((k) => f.at[k] === undefined || Math.abs(f.at[k] - last.at[k]) > 0.5);
@@ -375,10 +374,7 @@ describe('a release is seamless', () => {
 						// The control: the labels under the fingers are not the ones the gesture began with.
 						assert.ok(under.length > 1, `pinch ${i}: ${under.length} labels under the fingers`);
 						assert.notDeepEqual(under, before.map((w) => `label ${w}`).sort(), `pinch ${i}: the labels under the fingers are the stretched picture's`);
-						// Time running down, its labels alone: a wider label widens the axis strip, and
-						// datum's picture of the window lays every lane further across (da-dz7wb).
-						const across = orientation ? Object.keys(frames[up - 1].at).filter((k) => !/^(label|width) /.test(k)) : [];
-						assert.deepEqual(seams(frames, across), [], `pinch ${i}`);
+						assert.deepEqual(seams(frames), [], `pinch ${i}`);
 						for (const [j, f] of frames.slice(up).entries()) assert.deepEqual(words(f), under, `pinch ${i}, frame ${j} after the lift`);
 						assert.ok(frames.at(-1).svg !== frames[up - 1].svg, `pinch ${i}: datum's picture never landed`);
 					}
