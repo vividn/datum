@@ -399,9 +399,20 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             (day.spans.iter()).position(|s| c.now <= s.time_offset + s.time_extent + 1e-9)
         });
         for (si, span) in day.spans.iter().enumerate() {
+            // A data layer's stretch that holds now says when it was drawn:
+            // what still ran then is drawn on to the day's end, and a viewer
+            // standing it in later knows which stretch it has not seen (da-8xy6u).
+            let drawn = (day.now_time_pos.filter(|_| opts.data_layer))
+                .map(|pos| (pos - span.time_offset) / span.time_extent.max(f64::MIN_POSITIVE))
+                .filter(|f| (0.0..=1.0).contains(f))
+                .map_or(String::new(), |f| {
+                    let at =
+                        span.start_ms + (f * (span.end_ms - span.start_ms) as f64).round() as i64;
+                    format!(r#" data-drawn="{}""#, iso(at))
+                });
             let _ = write!(
                 &mut out,
-                r#"<g class="day-data" data-day="{i}" data-from="{from}" data-to="{to}" data-axis="{axis}" data-lo="{lo}" data-hi="{hi}"{offset}>"#,
+                r#"<g class="day-data" data-day="{i}" data-from="{from}" data-to="{to}" data-axis="{axis}" data-lo="{lo}" data-hi="{hi}"{offset}{drawn}>"#,
                 from = iso(span.start_ms),
                 to = iso(span.end_ms),
                 lo = lo + span.time_offset,
