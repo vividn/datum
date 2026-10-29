@@ -122,18 +122,6 @@ export function heldLayer(date: string, vertical = false, db = currentDb()): { e
 	return held.get(date);
 }
 
-/**
- * What the store has of `date` to draw until its answer lands, without asking
- * (da-8xy6u): the text held, of whatever epoch, or the picture kept past a
- * reload. Today's too, which `layers` always asks again: after a reload its
- * row is the picture last drawn, cut at the now drawn over it.
- */
-export async function standIn(date: string, vertical = false, db = currentDb()): Promise<Layer | undefined> {
-	const entry = stores.get(`${db}\n${vertical ? 'v' : 'h'}`)?.get(date);
-	const text = entry?.text ?? entry?.base ?? (await keptDays(db)).get(vertical ? 'layer-v' : 'layer')?.get(date);
-	return text ? layerOf(text) : undefined;
-}
-
 /** Answer the days claimed of `at` since the last flush. */
 async function flush(at: string, db: string, vertical: boolean): Promise<void> {
 	const claimed = claims.get(at) ?? [];
@@ -207,8 +195,7 @@ async function flush(at: string, db: string, vertical: boolean): Promise<void> {
 	const newest = [...missing].sort().at(-1)!;
 	for (const date of missing) {
 		const text = pictures[daysBetween(newest, date)];
-		// Today's too, each time, so a reload has a stand-in for it (`standIn`).
-		if (text) keepDay(db, kind, date, text);
+		if (text && date < today) keepDay(db, kind, date, text);
 		answer(date, text ? layerOf(text) : layerOf('', result.stderr.trim() || FAILED));
 	}
 }

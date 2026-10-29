@@ -148,7 +148,7 @@
 	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
 	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
-	import { layers, spanDates, standIn, type Layer } from '#lib/dayLayers.ts';
+	import { layers, spanDates, type Layer } from '#lib/dayLayers.ts';
 	import { run } from '#lib/run.ts';
 
 	interface Props {
@@ -529,14 +529,6 @@
 		const key = `${vertical} ${epoch} ${dates.join(' ')}`;
 		if (key === wanted) return;
 		wanted = key;
-		// A day not held is what the store has of it until its answer lands:
-		// after a reload, its kept picture, today's included (da-8xy6u).
-		for (const date of dates)
-			if (!layer.days.has(date))
-				void standIn(date, vertical).then((day) => {
-					if (!day || key !== wanted || layer.days.has(date) || layer.failed.has(date)) return;
-					layer = { days: new Map([...layer.days, [date, day]]), failed: layer.failed };
-				});
 		for (const [i, asked] of layers(dates, epoch, vertical).entries())
 			void asked.then((day) => {
 				// A day held as it is leaves the picture alone: a recompose is a redraw.

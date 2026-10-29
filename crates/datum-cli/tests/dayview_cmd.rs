@@ -1396,16 +1396,6 @@ fn dayview_data_layer_is_the_bands_alone() {
         attr(&layer, r#"class="day-data""#, "data-to"),
         "a data layer draws a running state on to the day's end"
     );
-    // And says when it was drawn, today alone (da-8xy6u).
-    let drawn =
-        chrono::DateTime::parse_from_rfc3339(&attr(&layer, r#"class="day-data""#, "data-drawn"))
-            .unwrap();
-    assert!(
-        (Utc::now() - drawn.with_timezone(&Utc)).num_seconds().abs() < 60,
-        "{drawn}"
-    );
-    let yesterday = (chrono::Local::now().date_naive() - chrono::Duration::days(1)).to_string();
-    assert!(!picture(&["--data-layer", "--end-date", &yesterday]).contains("data-drawn"));
 }
 
 /// da-m6i2a: a data layer is its day by instant, at a second a unit,

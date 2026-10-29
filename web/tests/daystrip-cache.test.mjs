@@ -12,7 +12,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ready, startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
+import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { PHONE, swipeOver, atRest } from './support/layout.mjs';
 import { band, colorOf, inView, labelFor, scrollToDay, stamps, viewsOf } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
@@ -107,10 +107,8 @@ const keptRows = (app, edit = '') =>
 					if (edit === 'clear') store.clear();
 					const all = store.getAll();
 					all.onsuccess = () => {
-						// `tamper`, or `tamper <date>` that date's alone.
-						for (const row of all.result)
-							if (edit === 'tamper' || edit === `tamper ${row.date}`)
-								store.put({ ...row, svg: row.svg.replace('</svg>', '<!-- an older datum --></svg>') });
+						if (edit === 'tamper')
+							for (const row of all.result) store.put({ ...row, svg: row.svg.replace('</svg>', '<!-- an older datum --></svg>') });
 						// Past both bounds: forty dates of 2020 at the size drawn, and four sizes used before any.
 						if (edit === 'pad') {
 							const { db, size, svg } = all.result[0];
@@ -128,12 +126,9 @@ const keptRows = (app, edit = '') =>
 		edit
 	);
 
-/** Every day of `before`, kept (#lib/heldDays.ts): a layer, and those asked above the top too. */
+/** Every day of `before` but today, kept (#lib/heldDays.ts): a layer, and those asked above the top too. */
 const allKept = (app, before) =>
-	until(() => keptRows(app), (rows) => rows.length >= Object.keys(before).length);
-
-/** The page's local date, as the CLI writes one. */
-const todayOf = (app) => app.page.evaluate(() => new Date().toLocaleDateString('sv'));
+	until(() => keptRows(app), (rows) => rows.length >= Object.keys(before).length - 1);
 
 describe('the day strip across a swipe', () => {
 	test('back from another layout, the strip shows what it drew and asks for none of it again', async () => {
@@ -398,12 +393,10 @@ describe('the day strip across a reload (da-crq76)', () => {
 			const drawn = await viewsOf(booted(app), app);
 			assert.deepEqual(drawn, [0, ...visible], 'not today and the days on screen, redrawn');
 			for (const end of visible) assert.equal(await band(app, end), before[end], `day ${end} is not drawn as before`);
-			// Today is drawn again however it was kept, and kept again (da-8xy6u).
-			const today = await todayOf(app);
 			const rows = await keptRows(app);
 			assert.equal(
 				rows.filter(({ svg }) => svg.includes('an older datum')).length,
-				rows.filter(({ date }) => date !== today).length - visible.length,
+				rows.length - visible.length,
 				'the redrawn days were not kept again, or the rest were'
 			);
 		});
@@ -433,129 +426,6 @@ describe('the day strip across a reload (da-crq76)', () => {
 			const rows = await until(async () => (await keptRows(app)).map(({ size, date }) => ({ size: size.slice(0, 24), date })), bounded);
 			assert.ok(rows.length > 0, 'nothing kept at all');
 		});
-	});
-
-	/**
-	 * Hold every `--pictures` run that draws today, from the boot on when the
-	 * page before the reload asked for it, or once `__holdToday` is set, until
-	 * `__releaseToday()`: a CLI slower than the reader, as on a busy phone.
-	 */
-	const holdToday = (context) =>
-		context.addInitScript(() => {
-			window.__holdToday = !!sessionStorage.getItem('datum-test-hold-today');
-			sessionStorage.removeItem('datum-test-hold-today');
-			window.__heldToday = [];
-			const post = Worker.prototype.postMessage;
-			window.__releaseToday = () => {
-				window.__holdToday = false;
-				for (const [worker, args] of window.__heldToday.splice(0)) post.apply(worker, args);
-			};
-			Worker.prototype.postMessage = function (message, ...rest) {
-				const argv = message?.argv ?? [];
-				const today = new Date().toLocaleDateString('sv');
-				if (window.__holdToday && argv[0] === 'dayview' && argv.includes('--pictures') && argv[argv.indexOf('--end-date') + 1] === today)
-					return void window.__heldToday.push([this, [message, ...rest]]);
-				return post.call(this, message, ...rest);
-			};
-		});
-
-	/** Today's row as drawn: the marks the test reads, in the picture's own units. */
-	const todayRow = (app) =>
-		app.page.locator('.band[data-days-ago="0"] svg.svg').evaluate((svg) => {
-			const num = (el, name) => Number(el?.getAttribute(name));
-			const span = svg.querySelector('.day-data');
-			const [from, to] = ['data-from', 'data-to'].map((name) => Date.parse(span.getAttribute(name)));
-			const [lo, hi] = [num(span, 'data-lo'), num(span, 'data-hi')];
-			const dim = svg.querySelector('rect.unsynced');
-			return {
-				kept: svg.outerHTML.includes('an older datum'),
-				now: num(svg.querySelector('.current-time-line'), 'x1'),
-				reach: Math.max(...[...svg.querySelectorAll('rect.block')].map((r) => num(r, 'x') + num(r, 'width'))),
-				dim: dim && [num(dim, 'x'), num(dim, 'x') + num(dim, 'width')],
-				dims: svg.querySelectorAll('rect.unsynced').length,
-				coffee: svg.querySelectorAll('.point-bg').length,
-				scale: { from, to, lo, hi }
-			};
-		});
-	const xAt = ({ from, to, lo, hi }, t) => lo + ((t - from) / (to - from)) * (hi - lo);
-	const near = (a, b, what) => assert.ok(Math.abs(a - b) < 1.5, `${what}: ${a}, not ${b}`);
-
-	// vividn, 2026-10-29: «on refresh all the days are present except for
-	// today … It should definitely just redraw what it had until the new draw
-	// is ready (already with the now line shifted …)», and «extend the state
-	// to the now line but dimmed like it is when waiting for a sync … in fact
-	// it should look exactly like it does when waiting for a sync».
-	test('a reload draws today from its kept picture, dimmed since it was drawn, until its run lands (da-8xy6u)', async () => {
-		await withApp(
-			async (app) => {
-				await drawnAndKept(app);
-				const today = await todayOf(app);
-				await until(() => keptRows(app), (rows) => rows.some((row) => row.date === today));
-				await app.idle();
-				await keptRows(app, `tamper ${today}`);
-				const drawnAt = app.clock.at();
-				// Past the hour a sync's dim waits for (da-g5jjp), which the stand-in's does too.
-				await app.clock.forward(2 * 3600_000);
-				const now = app.clock.at();
-				await app.page.evaluate(() => sessionStorage.setItem('datum-test-hold-today', '1'));
-
-				// Not `app.reload`: its wait for the copies from the last visit to go
-				// is a wait for the CLI's queue to run dry, which the hold keeps full.
-				await app.page.reload();
-				await app.page.waitForFunction(() => window.__heldToday?.length > 0);
-				await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
-				const standIn = await todayRow(app);
-				assert.ok(standIn.kept, "today's row is not its kept picture");
-				assert.ok(xAt(standIn.scale, now) - xAt(standIn.scale, drawnAt) > 4, 'the clock did not move the now line far enough to tell');
-				near(standIn.now, xAt(standIn.scale, now), 'the now line is not at now');
-				near(standIn.reach, standIn.now, 'the open block does not reach the now line');
-				assert.equal(standIn.dims, 1, 'not one unsynced overlay');
-				near(standIn.dim[0], xAt(standIn.scale, drawnAt), 'the overlay does not start where the kept picture was drawn');
-				near(standIn.dim[1], standIn.now, 'the overlay does not end at now');
-
-				await app.page.evaluate(() => window.__releaseToday());
-				await until(() => todayRow(app), (row) => !row.kept);
-				const fresh = await todayRow(app);
-				assert.equal(fresh.dims, 0, 'the fresh picture is still dimmed');
-				near(fresh.now, xAt(fresh.scale, now), 'the fresh now line is not at now');
-				await ready(app.page);
-
-				// Within the session, today asked again keeps its picture until the answer lands.
-				await app.page.evaluate(() => (window.__holdToday = true));
-				await barLine(app, 'occur coffee -t -5');
-				await app.page.waitForFunction(() => window.__heldToday.length > 0);
-				const waiting = await todayRow(app);
-				assert.equal(waiting.coffee, fresh.coffee, "today's row is not the picture it had");
-				await app.page.evaluate(() => window.__releaseToday());
-				await until(() => todayRow(app), (row) => row.coffee === fresh.coffee + 1);
-				assert.equal((await todayRow(app)).dims, 0, 'a write dimmed today');
-			},
-			{ ...PHONE, clock: AT, prepare: (context) => Promise.all([twoLayouts(context), holdToday(context)]) }
-		);
-	});
-
-	// The nowview asks the same store by date: after a reload its today is the kept picture too.
-	test('after a reload the nowview draws today from its kept picture until its run lands (da-8xy6u)', async () => {
-		await withApp(
-			async (app) => {
-				await seedLines(app, ['switch mood happy -t 10']);
-				await app.goto('/nowview');
-				const today = await todayOf(app);
-				const happy = app.page.locator('section.pane[data-title="nowview"] [data-state="happy"]');
-				await happy.first().waitFor({ state: 'attached' });
-				await until(() => keptRows(app), (rows) => rows.some((row) => row.date === today));
-				await app.idle();
-				await app.page.evaluate(() => sessionStorage.setItem('datum-test-hold-today', '1'));
-
-				await app.reload();
-				await app.page.waitForFunction(() => window.__heldToday.length > 0);
-				await happy.first().waitFor({ state: 'attached' });
-				assert.ok(await app.page.evaluate(() => window.__heldToday.length > 0), "today's run is not held");
-				await app.page.evaluate(() => window.__releaseToday());
-				await app.idle();
-			},
-			{ clock: AT, prepare: holdToday }
-		);
 	});
 
 	test('a cleared store draws every day through the CLI, as before', async () => {
