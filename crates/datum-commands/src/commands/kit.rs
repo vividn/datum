@@ -266,17 +266,18 @@ fn install_toml(
         let _ = validate_layout_entry(layout)?;
     }
     // A widget's command reads: a kit command it names, the kit's own or
-    // one installed here, runs a view.
+    // one installed here, runs a view, and its tap reads the columns it shows.
     let installed = db.list_kit_commands()?;
-    let kit_commands: Vec<(&str, bool)> = kit
+    let kit_commands: Vec<(&str, Option<&[String]>)> = kit
         .commands
         .iter()
-        .map(|c| (c.name.as_str(), c.view.is_some()))
-        .chain(
-            installed
-                .iter()
-                .map(|c| (c.name.as_str(), c.view_name.is_some())),
-        )
+        .map(|c| (c.name.as_str(), c.view.as_ref().map(|_| &c.columns[..])))
+        .chain(installed.iter().map(|c| {
+            (
+                c.name.as_str(),
+                c.view_name.as_ref().map(|_| &c.columns[..]),
+            )
+        }))
         .collect();
     for widget in &kit.widgets {
         validate_widget_entry(widget, &kit_commands)?;

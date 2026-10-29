@@ -758,6 +758,34 @@ fn a_kit_widget_reads_and_its_tap_only_logs() {
     }
 }
 
+/// A tap fills a placeholder from the row's `--json`, which carries only
+/// the columns a kit command shows: one outside its `columns` is refused,
+/// dry run too, naming both, rather than logged empty on every tap
+/// (da-ia7ka).
+#[test]
+fn a_widget_placeholder_outside_its_commands_columns_is_refused() {
+    let kit = |columns: &str| {
+        format!(
+            "[kit]\nname = \"k\"\n\n[[view]]\nname = \"v\"\nsql = \"SELECT 'x' AS word, 'h' AS hid\"\n\n[[command]]\nname = \"vocab\"\nview = \"v\"\ncolumns = [{columns}]\n\n[[widget]]\nname = \"w\"\ncommand = \"vocab\"\nrow_action = \"occur review of={{hid}}\"\n"
+        )
+    };
+    let db = fresh_db();
+    for extra in [&[][..], &["--dry-run"]] {
+        let err = format!("{:#}", install(&db, &kit("\"word\""), extra).unwrap_err());
+        assert!(
+            err.contains("kit widget 'w': row_action's «{hid}» is not a column vocab shows (word)"),
+            "{err}"
+        );
+    }
+    assert!(
+        db.load_kit_meta("k").unwrap().is_none(),
+        "nothing installed"
+    );
+
+    install(&db, &kit("\"word\", \"hid\""), &[]).unwrap();
+    assert_eq!(db.load_kit_widgets("k").unwrap().len(), 1);
+}
+
 /// A widget's command naming a kit command is that command: one that
 /// expands may write, and is refused, whether the same kit declares it or
 /// one installed before. A built-in's name is the built-in (da-00llj), so

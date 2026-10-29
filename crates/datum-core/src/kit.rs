@@ -377,14 +377,21 @@ pub const WIDGET_ACTIONS: [&str; 7] = ["occur", "start", "end", "stop", "switch"
 /// [`WIDGET_READS`], or a kit command that runs a view, and never
 /// `--watch`, which would not return; a `row_action` that
 /// logs ([`WIDGET_ACTIONS`]); and placeholders in it that are column names,
-/// each closed. Every `{` opens a placeholder: there is no escape for a
-/// literal brace.
+/// each closed, and each one of the `columns` the command shows when it is
+/// a kit command declaring them, since a tap fills a placeholder from the
+/// row's `--json`, which carries those alone (da-ia7ka). A built-in read's
+/// columns are not known here. Every `{` opens a placeholder: there is no
+/// escape for a literal brace.
 ///
 /// `kit_commands` is every kit command the widget could name, the kit's own
-/// and those installed, each with whether it runs a view. A built-in's name
-/// is the built-in, as it always runs in place of a kit command of its name
+/// and those installed, each with the `columns` it shows when it runs a
+/// view (empty: the view's own, not known here). A built-in's name is the
+/// built-in, as it always runs in place of a kit command of its name
 /// (da-00llj), so a kit command is asked of every other word.
-pub fn validate_widget_entry(entry: &WidgetEntry, kit_commands: &[(&str, bool)]) -> Result<()> {
+pub fn validate_widget_entry(
+    entry: &WidgetEntry,
+    kit_commands: &[(&str, Option<&[String]>)],
+) -> Result<()> {
     let refuse = |why: String| {
         Err(DatumError::Other(format!(
             "kit widget '{}': {why}",
@@ -398,17 +405,21 @@ pub fn validate_widget_entry(entry: &WidgetEntry, kit_commands: &[(&str, bool)])
     let Some(first) = words.next() else {
         return refuse("missing command".into());
     };
-    let reads = WIDGET_READS.contains(&first)
-        || kit_commands
+    let shown = if WIDGET_READS.contains(&first) {
+        Some(&[][..])
+    } else {
+        kit_commands
             .iter()
-            .any(|&(name, view)| name == first && view);
-    if !reads {
+            .find(|&&(name, _)| name == first)
+            .and_then(|&(_, columns)| columns)
+    };
+    let Some(shown) = shown else {
         return refuse(format!(
             "command «{}» may write, and a widget's command runs on every change: start it with a command that reads ({}, or a kit command that runs a view)",
             entry.command,
             WIDGET_READS.join(", ")
         ));
-    }
+    };
     if let Some(w) = words.find(|w| ["-w", "--watch"].contains(&w.split('=').next().unwrap_or(w))) {
         return refuse(format!("command «{}»: {w} never returns", entry.command));
     }
@@ -429,6 +440,12 @@ pub fn validate_widget_entry(entry: &WidgetEntry, kit_commands: &[(&str, bool)])
         let column = &rest[open + 1..open + len];
         if !crate::kit_color_rule::is_column_name(column) {
             return refuse(format!("row_action's «{{{column}}}» is not a column name"));
+        }
+        if !shown.is_empty() && !shown.iter().any(|c| c == column) {
+            return refuse(format!(
+                "row_action's «{{{column}}}» is not a column {first} shows ({})",
+                shown.join(", ")
+            ));
         }
         rest = &rest[open + len + 1..];
     }
