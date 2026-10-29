@@ -211,6 +211,29 @@ impl Db {
             self.is_table(n)
         })?;
         self.execute_view_with_budget(&sql, params, VIEW_TIME_BUDGET)
+            .map_err(|e| self.uses_hint(&view.name, e))
+    }
+
+    /// A view that reads another without `uses` fails as «no such table:
+    /// X»; when X is a view, the error says how to read it (da-korsx).
+    /// SQLite names X unquoted, in the SQL's case, and matches it to a
+    /// name whatever its case.
+    fn uses_hint(&self, reader: &str, err: DatumError) -> DatumError {
+        let said = err.to_string();
+        let Some((_, name)) = said.split_once("no such table: ") else {
+            return err;
+        };
+        let views = self.list_views().unwrap_or_default();
+        match views
+            .iter()
+            .find(|v| v.name.eq_ignore_ascii_case(name.trim()))
+        {
+            Some(v) => DatumError::Other(format!(
+                "{said}: '{0}' is a view: add `uses = [\"{0}\"]` to [[view]] '{reader}' to read it",
+                v.name
+            )),
+            None => err,
+        }
     }
 
     /// Whether `name` is a table or SQLite view a CTE of that name would
@@ -888,6 +911,41 @@ mod tests {
 
         let err = db.execute_view(&top.sql).unwrap_err().to_string();
         assert!(err.contains("no such table: base"), "{err}");
+    }
+
+    /// The same view without `uses` is told the name it reads is a view and
+    /// what to add; a missing name that is no view keeps the bare error
+    /// (da-korsx).
+    #[test]
+    fn reading_a_view_without_uses_names_uses() {
+        let db = db();
+        db.install_kit_views(
+            "k",
+            &[
+                using("base", "SELECT 1 AS v", &[]),
+                using("top", "SELECT v FROM base", &[]),
+                using("upper", "SELECT v FROM \"BASE\"", &[]),
+                using("lost", "SELECT v FROM nowhere", &[]),
+            ],
+            false,
+        )
+        .unwrap();
+        let err = run(&db, "top").unwrap_err().to_string();
+        assert!(
+            err.contains("no such table: base")
+                && err.contains("'base' is a view: add `uses = [\"base\"]` to [[view]] 'top'"),
+            "{err}"
+        );
+        let err = run(&db, "upper").unwrap_err().to_string();
+        assert!(
+            err.contains("'base' is a view: add `uses = [\"base\"]` to [[view]] 'upper'"),
+            "{err}"
+        );
+        let err = run(&db, "lost").unwrap_err().to_string();
+        assert!(
+            err.contains("no such table: nowhere") && !err.contains("uses"),
+            "{err}"
+        );
     }
 
     /// A uses B uses C: C first, then B, each once however often it is
