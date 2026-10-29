@@ -138,6 +138,12 @@ describe('the echo is painted in datum’s colours', () => {
 			}))
 		);
 
+	/**
+	 * The line the CLI printed as a frame draws it (da-hxjrk): its field and
+	 * state, then its time, the spaces between them the terminal's.
+	 */
+	const drawnAs = (doc) => doc.info.slice(doc.info_time.length).replace(/^ */, '') + doc.info_time;
+
 	/** `#rrggbb` as `getComputedStyle` gives it back. */
 	const asRgb = (hex) => {
 		const n = parseInt(hex.slice(1), 16);
@@ -156,7 +162,7 @@ describe('the echo is painted in datum’s colours', () => {
 				const drawn = await runs(app.page, root);
 				assert.equal(
 					drawn.map((r) => r.text).join(''),
-					doc.info,
+					drawnAs(doc),
 					`${root}: the painted line is not the line the CLI printed`
 				);
 				const field = drawn.filter((r) => r.text === doc.field);
@@ -182,7 +188,7 @@ describe('the echo is painted in datum’s colours', () => {
 			assert.notEqual(doc.state_color, doc.field_color);
 
 			const drawn = await runs(app.page, '.cli');
-			assert.equal(drawn.map((r) => r.text).join(''), doc.info);
+			assert.equal(drawn.map((r) => r.text).join(''), drawnAs(doc));
 			assert.ok(
 				drawn.some(
 					(r) => r.text.startsWith(doc.state) && r.color === asRgb(doc.state_color)

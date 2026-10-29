@@ -768,8 +768,8 @@ describe('down there it is still the bar', () => {
 	// row while the row is open. vividn, 2026-09-21: "the output section …
 	// should actually *be* the first line of the repl. That is, it shouldn't
 	// be repeated when you drag it up." Full, the strip is gone and the log
-	// draws them all (da-0b2vy) — each WHOLE: what the row cut to four keys
-	// and a `+2` is every key there.
+	// draws them all (da-0b2vy) — each WHOLE: what the row cut on one line is
+	// every key there, one to a row (da-hxjrk).
 	test('the newest entry is the row’s, and full the log draws it whole as its last line', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
@@ -790,7 +790,7 @@ describe('down there it is still the bar', () => {
 			const echoes = await logEchoes(page);
 			assert.deepEqual(echoes.slice(-2), ['occur water', 'occur brew a=1 b=2 c=3 d=4 e=5 f=6']);
 			const doc = page.locator('.log .doc').last();
-			assert.deepEqual(await doc.locator('.brace .row').allInnerTexts(), [
+			assert.deepEqual(await doc.locator('.rows .row').allInnerTexts(), [
 				'a: 1',
 				'b: 2',
 				'c: 3',
@@ -798,7 +798,6 @@ describe('down there it is still the bar', () => {
 				'e: 5',
 				'f: 6'
 			]);
-			assert.equal(await doc.locator('.brace .more').count(), 0);
 			await page.keyboard.press('Escape');
 			await settled(page);
 			assert.deepEqual(app.errors, []);
@@ -806,7 +805,7 @@ describe('down there it is still the bar', () => {
 	});
 });
 
-// ONE LIST, TWO RENDERERS, AND A HAIRLINE PER SEAM BETWEEN ITS ROWS.
+// ONE LIST, TWO RENDERERS, AND A LINE AT EVERY SEAM BETWEEN ITS ROWS.
 //
 // vividn, 2026-09-21, of the deployed build: "there is a missing line between
 // the first entry in the repl and the second." The one seam neither renderer
@@ -814,8 +813,8 @@ describe('down there it is still the bar', () => {
 // counts rules against rows ACROSS BOTH SURFACES.
 //
 // In time order (da-mwp4m) that seam is the bar's TOP RULE: the log ends
-// over it. Within the log, every row but its first is ruled — the first
-// stands against the top of the log's box, as a pane's first row does.
+// over it. Within the log, every row is a frame of its own since da-hxjrk,
+// so a seam is the edges of two frames, and no row is ruled besides.
 describe('the seam between the bar’s row and the log', () => {
 	/** Rows and rules, over the output section and the log together. */
 	const drawn = (page) =>
@@ -824,16 +823,17 @@ describe('the seam between the bar’s row and the log', () => {
 			const top = (c) => Math.round(c.getBoundingClientRect().top);
 			const first = cells.length ? top(cells[0]) : 0;
 			const ruled = (c) => getComputedStyle(c).borderTopWidth !== '0px';
+			const framed = (c) => parseFloat(getComputedStyle(c.querySelector('.frame')).borderTopWidth) >= 1;
 			return {
 				barRows: document.querySelectorAll('.prompt-bar .group:last-child .head').length,
 				logRows: document.querySelectorAll('.log .head').length,
 				firstRuled: cells.filter((c) => top(c) === first && ruled(c)).length,
-				laterUnruled: cells.filter((c) => top(c) !== first && !ruled(c)).length,
+				unframed: cells.filter((c) => !framed(c)).length,
 				barRule: parseFloat(getComputedStyle(document.querySelector('.prompt-bar')).borderTopWidth)
 			};
 		});
 
-	test('every seam between two rows has a hairline, the bar’s own included', async () => {
+	test('every seam between two rows is drawn, the bar’s own included', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			for (const line of ['occur coffee', 'occur water', 'occur tea', 'occur toast']) await app.submit(line);
@@ -843,11 +843,11 @@ describe('the seam between the bar’s row and the log', () => {
 			await settled(page);
 
 			// Full: the strip is gone, and the log draws all four (da-0b2vy).
-			const { barRows, logRows, firstRuled, laterUnruled, barRule } = await drawn(page);
+			const { barRows, logRows, firstRuled, unframed, barRule } = await drawn(page);
 			assert.equal(barRows, 0, 'the strip stayed under the full screen');
 			assert.equal(logRows, 4, `the log drew ${logRows} rows of four entries`);
 			assert.equal(firstRuled, 0, "the log ruled its first row against the top of its own box");
-			assert.equal(laterUnruled, 0, `${laterUnruled} of the log's later entries drew no hairline`);
+			assert.equal(unframed, 0, `${unframed} of the log's entries drew no frame`);
 			assert.ok(barRule >= 1, "no rule between the log's last row and the bar's");
 			assert.deepEqual(app.errors, []);
 		}, PHONE);

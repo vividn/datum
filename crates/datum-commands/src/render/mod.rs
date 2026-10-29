@@ -425,6 +425,8 @@ pub struct ActionLines {
     /// [`Self::data_items`] under the CLI's own inline-block join, so a
     /// caller never composes one.
     pub data_inline: String,
+    /// The shape of what the entry stores, in six characters ([`shape`]).
+    pub shape: &'static str,
     /// The entry's field name.
     pub field: String,
     /// The entry's state as logged — a JSON string / bool / null / object,
@@ -460,6 +462,25 @@ pub struct Undid {
     /// What the header says after the slug: `(the UPDATE of 09:01:00+1)`,
     /// and `, gone` for a create taken back, `, back` for a delete.
     pub note: String,
+}
+
+/// The shape of the data an entry stores, in six characters (da-hxjrk), read
+/// from its row and not from the command that wrote it. vividn, 2026-10-29:
+/// «Every ACTION has exactly 6 letters … for switch with a dur=MOMENT or 0,
+/// it could be MOMENT … for this 6 letter thing we could use RECORD».
+///
+/// `RECORD` a timeless card (`add`, `note`); `MOMENT` a point that carries a
+/// state (`switch … dur=0`: `occur` carries none); `HAPPEN` no state at all,
+/// an occurrence (a block of one too); `ON/OFF` a state of `true` or
+/// `false`; `SWITCH` any other state.
+pub fn shape(entry: &Entry) -> &'static str {
+    match (&entry.state, entry.verb) {
+        _ if entry.occur_time.is_none() => "RECORD",
+        (Some(_), Verb::Point | Verb::PointSwitch) => "MOMENT",
+        (None, _) => "HAPPEN",
+        (Some(JsonValue::Bool(_)), _) => "ON/OFF",
+        (Some(_), _) => "SWITCH",
+    }
 }
 
 /// Build [`ActionLines`] against an explicit `now`, so a caller that renders
@@ -533,6 +554,7 @@ pub fn action_lines_at(
         id: strip_ansi(ex.slug.as_deref().unwrap_or_default()),
         data_items,
         data_inline,
+        shape: shape(entry),
         field: entry.field.clone(),
         state: entry.state.clone(),
         action_color: action.hex().to_string(),

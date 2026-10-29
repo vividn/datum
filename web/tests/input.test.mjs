@@ -176,7 +176,8 @@ describe('the widget and the bar are two views of one command line', () => {
 			await page.locator(WIDGET).press('Enter');
 			const line = page.locator('.input-widget .result .raw.error p');
 			await line.waitFor();
-			assert.deepEqual(await page.locator('.input-widget .result .doc .action').allInnerTexts(), ['DELETE']);
+			// What the command did is the label's title; its word is the entry's shape (da-hxjrk).
+			assert.deepEqual(await page.locator('.input-widget .result .doc .action').evaluateAll((els) => els.map((el) => el.title)), ['DELETE']);
 			assert.equal(await line.innerText(), await page.locator('.prompt-bar .group:last-child .raw.error p').innerText());
 			assert.match(await line.innerText(), /nope9/, 'the error names the hid it did not find');
 			const [inside, box] = await Promise.all([line.boundingBox(), page.locator('.input-widget > .receipt').boundingBox()]);

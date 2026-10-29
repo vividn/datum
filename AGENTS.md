@@ -843,7 +843,7 @@ binary.
   scroll (text and pills are ONE strip in one scrollport, `.field` and
   `.run` in Prompt.svelte); the output is the last command's result as one
   section per document (`+N` opens a modal when they do not fit), each
-  command as wide as its documents and each document's time on a line over
+  command as wide as its documents and each document's time on a line under
   its field and state, cut where the CLI's `info_time` says (da-7xp82). The row's
   items are centered in the whole input section, and folded a command
   answers with its ACTION words along the bottom of it STARTING AT THE `❯`,
@@ -865,18 +865,20 @@ binary.
   widget; the bar's log is one command a line (CliScrollback's `lines`, da-0b2vy) — the aim:
   "the output of a single entry should be narrow enough to comfortably fit
   2 on mobile side by side". As many entries abreast as fit at the width an
-  entry's lines WANT (270px, measured), and never fewer than two wherever
+  entry's lines WANT (194px, measured), and never fewer than two wherever
   two clear what an entry NEEDS (160px, measured against the width it
-  starts being cut at): a 390px phone gets two, a 1280px screen four, a box
+  starts being cut at): a 390px phone gets two, a wider box more, a box
   narrower than two columns the single column it always had. The CLI cuts
   nothing to pay for it — it has the vertical room the bar's fixed band has
-  not, so a line too long for its column wraps and the brace drops under it
-  (`.doc.all` in Doc.svelte); a command whose answer is the CLI's own
-  printed text — a table, a drawn day, an error — takes a whole row at the
-  width it was printed for. The hairline between commands is the top edge
-  of every cell on a row past the first, so two entries side by side share
-  one rule and never stand either side of it. `tests/scrollback.test.mjs`
-  takes both measurements again against the built app.
+  not, so a line too long for its column wraps (`.doc.all` in Doc.svelte);
+  a command whose answer is the CLI's own printed text — a table, a drawn
+  day, an error — takes a whole row at the width it was printed for. Each
+  command is a frame, the time it ran and its Undo on the frame's top
+  border, and each entry it echoed a frame inside it labelled with the
+  shape it stores and its hid, its field and state over its time over its
+  data (`CliEntry.svelte`, `Doc.svelte`, da-hxjrk), on every surface.
+  `tests/scrollback.test.mjs` takes both measurements again against the
+  built app.
 - THE BAR RESTS IN THREE STATES (da-0b2vy): CLOSED, the SINGLE ROW (the
   output strip over the input), and FULLSCREEN, where the log fills the page
   to the top, one command a line, the newest its last line next to the

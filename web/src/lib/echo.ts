@@ -71,6 +71,12 @@ export interface EchoDoc {
 	 * surface falls back to its own accent.
 	 */
 	action_color?: string;
+	/**
+	 * The shape of what the entry stores, six characters (da-hxjrk): `HAPPEN`,
+	 * `ON/OFF`, `SWITCH`, `MOMENT` or `RECORD`. Absent from a module too old
+	 * to carry it, where the frame is labelled with `action` instead.
+	 */
+	shape?: string;
 	/** `#rrggbb` for the field, as `fields --json` publishes it. */
 	field_color?: string;
 	/** `#rrggbb` for the state, or null where the state paints none. */

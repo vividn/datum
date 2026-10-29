@@ -230,9 +230,8 @@
 		/* ONE ENTRY TALL (da-7xp82). vividn, 2026-10-28: «it is too tall right
 		   now, it should be wide enough for a single entry to fit nicely (+
 		   maybe space for one line for extra data) / let's make the font size
-		   a bit smaller in the output bar». So it is a strip entry's four lines
-		   — the command, the receipt, the time, the field and state
-		   (PromptBar.svelte) — at the strip's own type, with the strip's
+		   a bit smaller in the output bar». So it is a strip entry's lines
+		   (below) at the strip's own type, with the strip's
 		   padding and the rule under it, and one line more wherever the
 		   share of the page it was (da-mwp4m: 15cqh, 121px on a 390×844
 		   phone) has room for it. A short phone (412×563, 15cqh 77px) gets
@@ -241,7 +240,14 @@
 		--output-font: 0.8rem;
 		--output-line: calc(var(--output-font) * 1.35);
 		--output-pad: 0.25rem;
-		--output-entry: calc(4 * var(--output-line) + 2 * var(--output-pad) + 1px);
+		/* Since da-hxjrk the entry is three lines — the command, the field and
+		   state, the time — in two frames, each with its label standing on its
+		   top border: the command's at 0.9em tall and the entry's at 0.84em,
+		   the command's 0.15em under its last line (CliEntry.svelte,
+		   Doc.svelte), and the frames' four borders. */
+		--output-entry: calc(
+			3 * var(--output-line) + 1.89 * var(--output-font) + 2 * var(--output-pad) + 4px + 1px
+		);
 		--output-height: clamp(var(--output-entry), 15cqh, calc(var(--output-entry) + var(--output-line)));
 		/* The hairline that separates the bar from the dashboard is part of
 		   the bar's box, so it belongs in the sum: without it the sections

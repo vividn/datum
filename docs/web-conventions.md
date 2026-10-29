@@ -105,12 +105,15 @@ writing it down.
 6. **The web asks every command it runs for its echo as data** — `--show json` appended the way
    `fitArgv` appends `--width` (`echoArgv` in `#lib/echo.ts`, at `CliScrollback.runArgv` and
    `engine.alone`). The bottom bar and the CLI widget then PLACE the CLI's own strings — action, hid,
-   id, info, and its `data` items one to a row in a brace beside the two lines (da-f4mw) — and
-   compose none of them; `data_inline` is the terminal's own join and the web does not use it. The document carries the CLI's
+   id, info, `shape` (the six characters naming what the entry stores, HAPPEN, ON/OFF, SWITCH,
+   MOMENT or RECORD, which label the entry's frame, da-hxjrk), and its `data` items one to a row
+   under the lines, or in the bar's fixed band `data_inline`, the terminal's own join, on one line
+   — and compose none of them. The document carries the CLI's
    own COLORS too (da-yu9s): `field` and `state` as logged, `field_color` and `state_color` as
    `fields --json` resolves them, and `info_segments` — `info` split into `{text, color}` runs,
    which is what `Doc.svelte` paints the line from, and `info_time`, the time the line starts
-   with, where the bar's strip cuts it to put the time on a line of its own (da-7xp82). The web
+   with, where every surface cuts it to put the time on a line under the field and state (da-7xp82,
+   da-hxjrk). The web
    never looks for the field inside `info` (`switch mood mood` names it twice) and never derives
    a color of its own.
    `NO_ECHO` in that file is the

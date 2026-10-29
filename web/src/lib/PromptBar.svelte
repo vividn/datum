@@ -787,7 +787,10 @@
 		min-width: min(22ch, 100cqw);
 		max-width: 100cqw;
 		height: 100%;
-		overflow: hidden;
+		/* Sideways only: the undo's hit box reaches up out of the group to the
+		   roll's edge (CliEntry.svelte), and what overflows the foot is cut by
+		   what holds it. */
+		overflow-x: clip;
 	}
 
 	.group.wide {
@@ -797,6 +800,18 @@
 	.group:not(.wide) :global(.head) {
 		width: 0;
 		min-width: 100%;
+	}
+
+	/* The command's frame is the group's whole height (CliEntry.svelte,
+	   da-hxjrk): the head at its top, what the command answered under it,
+	   and what does not fit cut at its foot by what holds it (`.docs`, and
+	   `.raw`, which keeps its last lines): not by the frame, whose time and
+	   step stand half outside it. */
+	.group :global(.frame) {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
 	}
 
 	/* What Docs.svelte measures for its `+N` and its brace is the room the
@@ -817,37 +832,22 @@
 		line-height: inherit;
 	}
 
-	/* THE TIME OVER THE FIELD AND STATE (da-7xp82): vividn, «let's put a line
-	   break between the occur time and the field/state so that it is not so
-	   wide». Doc.svelte cuts the line where the CLI says its time ends; here
-	   the time is a line of its own and the spaces after it go. */
-	.group :global(.info .when) {
-		display: block;
+	/* The documents take what the head leaves of the frame. */
+	.group :global(.frame > .docs) {
+		flex: 1;
+		min-height: 0;
+		height: auto;
 	}
 
-	.group :global(.info .gap) {
-		display: none;
+	/* A long value is cut, rather than widening its command's group. */
+	.group :global(.doc .rows) {
+		max-width: 16rem;
 	}
 
-	/* A long value is cut, rather than widening its command's group. The
-	   brace's 40% and the hid's `100% - 8ch` are shares of a width this
-	   group no longer has: it is as wide as they are. */
-	.group :global(.brace) {
-		max-width: 12rem;
-	}
-
-	.group :global(.doc:not(.all) .receipt .hid) {
-		max-width: none;
-	}
-
-	/* THE BOUNDARY between two commands: a gap and a rule the group's whole
-	   height, in `--quiet` so it reads past the `--tint` hairline between
-	   one command's own documents (Docs.svelte) — `--rule` beside it was
-	   the same line twice — with the next command's head at its top. */
+	/* THE BOUNDARY between two commands is their frames' (CliEntry.svelte),
+	   with a gap between them. */
 	.group + .group {
-		margin-left: 0.8rem;
-		padding-left: 0.8rem;
-		border-left: 1px solid var(--quiet);
+		margin-left: 0.5rem;
 	}
 
 	/* The raw lines take what the head leaves and keep the LAST of them:

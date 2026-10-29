@@ -90,15 +90,18 @@ export function localTime(date: Date): DatumTime {
 
 /**
  * When something happened, for a reader watching it happen: the clock
- * alone while it is still today, the date in front of it once it isn't.
+ * alone while it is still today, the day in front of it once it isn't.
  *
- * The second half is the tail's rule for a row older than the day, and it
- * is `dateLabel` that applies it — the one date renderer, rather than a
- * second one grown next to it (da-6eou).
+ * The day is `datum tail`'s (`format_relative_day_prefix`, render/action.rs,
+ * da-hxjrk): `-1d` to `-3d` and `+1d` to `+3d` by calendar day, the date past
+ * that, which `dateLabel` writes — the one date renderer (da-6eou).
  */
 export function stampLabel(date: Date, now: Date): string {
 	const clock = clockSecondsLabel(date);
-	if (startOfDay(date).getTime() === startOfDay(now).getTime()) return clock;
+	const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000;
+	const delta = day(date) - day(now);
+	if (delta === 0) return clock;
+	if (Math.abs(delta) <= 3) return `${delta < 0 ? '-' : '+'}${Math.abs(delta)}d ${clock}`;
 	return `${dateLabel(localTime(date))} ${clock}`;
 }
 

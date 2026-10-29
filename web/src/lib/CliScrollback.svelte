@@ -259,13 +259,10 @@
 		grid-column: 1 / -1;
 	}
 
-	/* The same dim hairline `<hr class="rule">` drew, and the same air
-	   either side of it: a top edge, so every cell on a row starts it at
-	   the same y and the row reads as one rule with the gap in it. */
+	/* Air between two rows; the boundary between commands is their frames
+	   (CliEntry.svelte, da-hxjrk). */
 	.entry.ruled {
 		margin-top: 0.5rem;
-		padding-top: 0.5rem;
-		border-top: 1px solid var(--tint);
 	}
 
 	.progress {

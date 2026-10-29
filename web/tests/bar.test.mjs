@@ -95,18 +95,18 @@ const section = (page, i = 0) =>
 		.nth(i)
 		.evaluate((el) => ({
 			receipt: el.querySelector('.receipt')?.innerText.trim(),
-			// The line the CLI printed, whatever lines the strip cut it into (da-7xp82).
+			// What the command did to the entry, behind its shape (da-hxjrk).
+			did: el.querySelector('.action')?.title,
+			// The line the CLI printed, in the lines the frame cuts it into
+			// (da-7xp82): the field and state, then the time.
 			info: el.querySelector('.info')?.textContent,
-			rows: [...el.querySelectorAll('.brace .row')].map((r) => r.innerText),
-			more: el.querySelector('.brace .more')?.innerText ?? null,
+			what: el.querySelector('.what')?.textContent,
+			when: el.querySelector('.when')?.textContent,
+			rows: [...el.querySelectorAll('.rows .row')].map((r) => r.innerText),
 			hid: el.querySelector('.hid')?.textContent,
 			id: el.querySelector('.hid')?.getAttribute('title'),
 			size: parseFloat(getComputedStyle(el).fontSize),
-			lines: [...el.querySelector('.lines').children].length,
-			// The trap the band's fixed height makes: the brace may not be
-			// deeper than the two lines it stands beside.
-			linesHigh: el.querySelector('.lines').getBoundingClientRect().height,
-			braceHigh: el.querySelector('.brace')?.getBoundingClientRect().height ?? 0
+			lines: [...el.querySelector('.info').children].length
 		}));
 
 /**
@@ -162,7 +162,7 @@ describe('the bar never changes height', () => {
 });
 
 describe('one document', () => {
-	test('data or none, two lines at the two-line size — and the data beside them in a brace', async () => {
+	test('data or none, the field and state over the time at one size, and the data under them on one line', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
 
@@ -176,10 +176,12 @@ describe('one document', () => {
 			const plain = await section(page);
 			const plainDoc = await cliDoc(app, ['get', 'water']);
 			assert.equal(plain.lines, 2, 'an entry with no data drew a third line');
-			// No data, no brace: not an empty one, not a hidden one.
-			assert.equal(await page.locator(`${DOC} .brace`).count(), 0);
+			// No data, no rows: not an empty one, not a hidden one.
+			assert.equal(await page.locator(`${DOC} .rows`).count(), 0);
 			assert.equal(plain.hid, plainDoc.hid);
-			assert.equal(plain.info.replace(ESC, ''), plainDoc.info);
+			// The line the CLI printed, cut where it says its time ends.
+			assert.equal(plain.what, plainDoc.info.slice(plainDoc.info_time.length).trimStart());
+			assert.equal(plain.when, plainDoc.info_time);
 
 			await app.submit('occur coffee cups=2 roast=dark');
 			await page.waitForFunction(
@@ -188,45 +190,29 @@ describe('one document', () => {
 			);
 			const rich = await section(page);
 			const richDoc = await cliDoc(app, ['get', 'coffee']);
-			assert.equal(rich.lines, 2, 'an entry with data drew a third line');
-			// The CLI's `data` items, one to a row, in the CLI's order — not
-			// `data_inline`, which is the terminal's own join.
-			assert.deepEqual(rich.rows, richDoc.data);
-			assert.equal(rich.rows.length, 2, rich.rows.join(' | '));
-			assert.equal(rich.more, null);
-			// The lines did not shrink to make room for it, which is the
-			// whole of the change.
+			assert.equal(rich.lines, 2, 'an entry with data drew a third line of its info');
+			// The band's one line of data is the CLI's own join (da-hxjrk):
+			// the log draws every key one to a row (below).
+			assert.deepEqual(rich.rows, [richDoc.data_inline]);
+			// The lines did not shrink to make room for it.
 			assert.equal(rich.size, plain.size, `${rich.size}px beside ${plain.size}px`);
-			assert.ok(
-				rich.braceHigh <= rich.linesHigh + 1,
-				`the brace is ${rich.braceHigh}px against the lines' ${rich.linesHigh}px`
-			);
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	test('past four keys: four rows and a +N, whose sheet lists every one', async () => {
+	test('past four keys: the band cuts them on one line, the log has every one, one to a row', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
 			await app.declare('brew');
 			await app.submit('occur brew a=1 b=2 c=3 d=4 e=5 f=6');
-			await page.locator(`${DOC} .brace`).waitFor();
+			await page.locator(`${DOC} .rows`).waitFor();
 
-			const shown = await section(page);
 			const doc = await cliDoc(app, ['get', 'brew']);
 			assert.equal(doc.data.length, 6, doc.data.join(' | '));
-			assert.equal(shown.lines, 2);
-			assert.deepEqual(shown.rows, doc.data.slice(0, 4));
-			assert.equal(shown.more, '+2');
-			assert.ok(
-				shown.braceHigh <= shown.linesHigh + 1,
-				`four rows and a chip are ${shown.braceHigh}px against ${shown.linesHigh}px`
-			);
-
-			await page.locator(`${DOC} .brace .more`).click();
-			const keys = page.locator('dialog.sheet .key');
-			await keys.first().waitFor();
-			assert.deepEqual(await keys.allInnerTexts(), doc.data, 'the sheet lost a key');
+			assert.deepEqual((await section(page)).rows, [doc.data_inline]);
+			const logged = page.locator(`.cli .doc[data-hid="${doc.hid}"] .rows .row`);
+			await logged.first().waitFor();
+			assert.deepEqual(await logged.allInnerTexts(), doc.data, 'the log lost a key');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -266,8 +252,8 @@ describe('several documents', () => {
 			const [first, second] = [await section(page, 0), await section(page, 1)];
 			// Each side echoed its own document: `DATUM_SHOW` reaches EVERY
 			// side, not only the last.
-			assert.match(first.receipt, /^CREATE /);
-			assert.match(second.receipt, /^CREATE /);
+			assert.equal(first.did, 'CREATE');
+			assert.equal(second.did, 'CREATE');
 			assert.notEqual(first.hid, second.hid);
 			assert.ok(first.info.includes('coffee'), first.info);
 			assert.ok(second.info.includes('happy'), second.info);
@@ -297,7 +283,7 @@ describe('several documents', () => {
 			assert.equal(await listed.count(), fields.length, 'the modal lost a document');
 			assert.deepEqual(
 				await page.locator('dialog.sheet .doc .info').allInnerTexts().then((t) =>
-					t.map((s) => s.trim().split(/\s+/).at(1)).sort()
+					t.map((s) => s.trim().split(/\s+/).at(0)).sort()
 				),
 				[...fields].sort()
 			);
@@ -324,35 +310,6 @@ describe('several documents', () => {
 			await page.waitForFunction(() =>
 				document.querySelector('.prompt-bar .group:last-child .doc .info')?.textContent.includes('tea')
 			);
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	test('320px: a section too narrow for the rows draws the count, and the info line is whole', async () => {
-		await narrow(async (app) => {
-			const { page } = app;
-			await unfold(page);
-			await app.declare('brew');
-			await app.submit('occur brew a=1 bean=ethiopian c=3 grind=fine e=5 water=94C');
-			await page.locator(`${DOC} .brace`).waitFor();
-
-			const shown = await section(page);
-			// Every key behind the count: four rows of a character or two
-			// would not be the data, and the sheet has all of it.
-			assert.deepEqual(shown.rows, []);
-			assert.equal(shown.more, '+6');
-
-			// And the brace took none of the width the two lines wanted
-			// (the bead's trap 2): the info line is not ellipsized at all.
-			const cut = await page
-				.locator(`${DOC} .info`)
-				.evaluate((el) => el.scrollWidth - el.clientWidth);
-			assert.ok(cut <= 1, `the info line lost ${cut}px to the brace`);
-
-			await page.locator(`${DOC} .brace .more`).click();
-			const keys = page.locator('dialog.sheet .key');
-			await keys.first().waitFor();
-			assert.equal(await keys.count(), 6);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -384,9 +341,11 @@ describe('the output is a strip of commands, the newest at the right', () => {
 				groups: [...roll.querySelectorAll('.group')].map((g) => ({
 					line: g.querySelector('.echo').innerText.replace(/^❯ /, ''),
 					...span(g),
-					head: g.querySelector('.head').getBoundingClientRect().top - view.top,
+					// The top of the command's head: its time, on its frame's border (da-hxjrk).
+					head: g.querySelector('.stamp').getBoundingClientRect().top - view.top,
 					docs: [...g.querySelectorAll('.doc')].map(span),
-					rule: parseFloat(getComputedStyle(g).borderLeftWidth)
+					frame: span(g.querySelector('.frame')),
+					rule: parseFloat(getComputedStyle(g.querySelector('.frame')).borderLeftWidth)
 				}))
 			};
 		});
@@ -433,34 +392,41 @@ describe('the output is a strip of commands, the newest at the right', () => {
 	// for extra data) / let's make the font size a bit smaller in the output
 	// bar, and when it is collapsed, let's put a line break between the occur
 	// time and the field/state so that it is not so wide».
-	test('one entry tall: the section holds an entry’s lines and one more, in type smaller than the input’s', async () => {
+	test('one entry tall: the section holds an entry’s lines, its frames and a line of its data, in type smaller than the input’s', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await app.submit('occur coffee');
-			await page.locator(`${DOC} .info .what`).waitFor();
+			await app.submit('occur coffee cups=2');
+			await page.locator(`${DOC} .rows`).waitFor();
 			const m = await page.locator(`${BAR} .section.output`).evaluate((out) => {
 				const roll = out.querySelector('.roll');
 				const group = out.querySelector('.group:last-child');
-				const high = (s) => group.querySelector(s).getBoundingClientRect().height;
+				const box = (s) => group.querySelector(s).getBoundingClientRect();
 				const style = getComputedStyle(roll);
 				return {
 					line: parseFloat(getComputedStyle(group.querySelector('.info')).lineHeight),
 					room: roll.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
-					// The command's line, and the document's: the receipt, the time, the field and state.
-					entry: high('.head') + high('.doc .lines'),
+					// Its lines: the command, the field and state, the time (da-hxjrk).
+					lines: box('.echo').height + box('.doc .what').height + box('.doc .when').height,
+					// What is drawn, from the top of its time on the frame's
+					// border to the foot of its line of data, and where the
+					// entry's frame cuts what it holds.
+					drawn: box('.doc .rows').bottom - box('.stamp').top,
+					data: box('.doc .rows').bottom,
+					cut: box('.docs').bottom,
 					font: parseFloat(getComputedStyle(group.querySelector('.doc')).fontSize),
 					input: parseFloat(getComputedStyle(document.querySelector('.prompt-bar input')).fontSize)
 				};
 			});
-			// The command, the receipt, the time, the field and state: four lines.
-			assert.ok(Math.abs(m.entry - 4 * m.line) <= 1, `the entry is ${m.entry}px, not four lines of ${m.line}px`);
-			assert.ok(Math.abs(m.room - 5 * m.line) <= 1, `the section holds ${m.room}px, not five lines of ${m.line}px`);
+			assert.ok(Math.abs(m.lines - 3 * m.line) <= 1, `the entry's lines are ${m.lines}px, not three of ${m.line}px`);
+			assert.ok(m.data <= m.cut + 0.5, `the line of data is cut: ${JSON.stringify(m)}`);
+			// And not much more: less than a line spare.
+			assert.ok(m.room - m.drawn < m.line, `the section holds ${m.room}px for a ${m.drawn}px entry`);
 			assert.ok(m.font < m.input, `the output's type is ${m.font}px against the input's ${m.input}px`);
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
 
-	test('an entry’s time is a line of its own, above its field and state, as the CLI cut it', async () => {
+	test('an entry’s time is a line of its own, under its field and state, as the CLI cut it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.declare('mood', 'switch');
@@ -479,8 +445,120 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.equal(parts.when.text, doc.info_time);
 			assert.equal(parts.what.text, doc.info.slice(doc.info_time.length).trimStart());
 			assert.match(parts.what.text, /^mood\b/);
-			assert.ok(parts.when.bottom <= parts.what.top + 0.5, `the time is not above the field: ${JSON.stringify(parts)}`);
+			// vividn, 2026-10-29: «field/state indicator on the first line, time on the second line» (da-hxjrk).
+			assert.ok(parts.what.bottom <= parts.when.top + 0.5, `the time is not under the field: ${JSON.stringify(parts)}`);
 			assert.ok(Math.abs(parts.when.left - parts.what.left) <= 0.5, `the two lines do not start together: ${JSON.stringify(parts)}`);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	// da-hxjrk. vividn, 2026-10-29: «for each entry, give it a smaller frame
+	// inside the cli commands frame. Label this frame with the action and the
+	// hid … then put field/state indicator on the first line, time on the
+	// second line, extra data below that.» The label is the shape the entry
+	// STORES, which the CLI names (`shape`), so `end` is an ON/OFF as `start` is.
+	test('each entry is a frame labelled with the shape it stores and its hid, its field and state over its time over its data, in the strip and the log', async () => {
+		await desktop(async (app) => {
+			const { page } = app;
+			const shapes = [
+				['occur coffee cups=2 -t -50', 'HAPPEN'],
+				['start work -t -40', 'ON/OFF'],
+				['end work -t -30', 'ON/OFF'],
+				['switch mood happy -t -20', 'SWITCH'],
+				['switch mood calm dur=0 -t -10', 'MOMENT'],
+				['add book dune title=x', 'RECORD']
+			];
+			const read = (doc) =>
+				doc.evaluate((el) => {
+					const box = (s) => el.querySelector(s)?.getBoundingClientRect();
+					const frame = el.getBoundingClientRect();
+					const label = box('.receipt');
+					return {
+						hid: el.dataset.hid,
+						label: el.querySelector('.receipt').innerText.trim(),
+						onBorder: label.top < frame.top && label.bottom > frame.top,
+						lines: ['.what', '.when', '.rows'].map(box).filter(Boolean).map((r) => [r.top, r.bottom])
+					};
+				});
+			const strip = [];
+			for (const [line] of shapes) {
+				await app.submit(line);
+				const group = page.locator(OUT).filter({ has: page.locator('.echo', { hasText: line }) });
+				strip.push(await read(group.locator('.doc')));
+			}
+			const log = await page.locator('.cli .doc').evaluateAll((els) => els.map((el) => el.dataset.hid));
+			for (const [i, [line, shape]] of shapes.entries()) {
+				const logged = await read(page.locator(`.cli .doc[data-hid="${strip[i].hid}"]`));
+				assert.ok(log.includes(strip[i].hid), `${line}: not in the log`);
+				for (const [where, got] of [['strip', strip[i]], ['log', logged]]) {
+					assert.equal(got.label, `${shape} · ${got.hid}`, `${where}: ${line}`);
+					assert.ok(got.onBorder, `${where}: ${line}'s label is not on its frame's border`);
+					for (const [above, below] of got.lines.slice(1).map((r, j) => [got.lines[j], r])) {
+						assert.ok(above[1] <= below[0] + 0.5, `${where}: ${line}'s lines are out of order: ${JSON.stringify(got.lines)}`);
+					}
+				}
+			}
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// vividn, 2026-10-29: «put it right on the frame of the output section,
+	// that way the cli command gets the full top line within its box. Move
+	// the undo button to the top frame as well, also slightly smaller like
+	// the time text, but with a sufficiently large hit box.» The hit box is
+	// read off the page, by what a press at each point lands on.
+	test('the time and the undo stand on the command’s frame, the command alone on its first line, the undo a finger wide and clear of the command and the hid', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.submit('occur coffee beans=ethiopian grind=fine water=94C');
+			await page.locator(`${OUT} .step button`).waitFor();
+			const m = await page.locator(OUT).evaluate(async (group) => {
+				const r = (el) => el.getBoundingClientRect();
+				const frame = r(group.querySelector('.frame'));
+				const echo = group.querySelector('.echo');
+				const button = group.querySelector('.step button');
+				const near = r(button);
+				// Every point a press lands on the button, a pixel apart.
+				const hits = [];
+				for (let y = Math.floor(near.top) - 60; y <= near.bottom + 60; y++) {
+					for (let x = Math.floor(near.left) - 60; x <= near.right + 60; x++) {
+						if (button.contains(document.elementFromPoint(x, y))) hits.push([x, y]);
+					}
+				}
+				const xs = hits.map(([x]) => x);
+				const ys = hits.map(([, y]) => y);
+				const range = document.createRange();
+				range.selectNodeContents(echo);
+				// What of the command is drawn: a cut line's text runs on past its box.
+				const drawn = r(echo).right - parseFloat(getComputedStyle(echo).paddingRight);
+				return {
+					frameTop: frame.top,
+					stamp: r(group.querySelector('.stamp')),
+					step: near,
+					echo: r(echo),
+					hit: { left: Math.min(...xs), right: Math.max(...xs) + 1, top: Math.min(...ys), bottom: Math.max(...ys) + 1 },
+					// The full id, the entry's label at its widest (Doc.svelte):
+					// a press on it, at its middle and at its end, is the hid's.
+					hid: await (async () => {
+						const hid = group.querySelector('.doc .hid');
+						hid.click();
+						await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+						const h = r(hid);
+						const pressed = [h.left + h.width / 2, h.right - 2].map((x) => document.elementFromPoint(x, h.top + h.height / 2));
+						return { text: hid.textContent, pressed: pressed.map((el) => hid.contains(el)) };
+					})(),
+					text: [...range.getClientRects()].map((t) => ({ left: t.left, right: Math.min(t.right, drawn), top: t.top, bottom: t.bottom }))
+				};
+			});
+			for (const [what, box] of [['time', m.stamp], ['undo', m.step]]) {
+				assert.ok(box.top < m.frameTop && box.bottom > m.frameTop, `the ${what} is not on the frame's border: ${JSON.stringify(m)}`);
+				assert.ok(box.bottom <= m.echo.top + 0.5, `the ${what} shares the command's line: ${JSON.stringify(m)}`);
+			}
+			assert.ok(m.hit.right - m.hit.left >= 44 && m.hit.bottom - m.hit.top >= 44, `the undo's hit box is ${JSON.stringify(m.hit)}`);
+			const over = m.text.filter((t) => t.left < m.hit.right && t.right > m.hit.left && t.top < m.hit.bottom && t.bottom > m.hit.top);
+			assert.deepEqual(over, [], `the undo's hit box lies over the command: ${JSON.stringify(m)}`);
+			assert.match(m.hid.text, /^coffee:/, 'the full id did not open');
+			assert.deepEqual(m.hid.pressed, [true, true], `a press on the full id is not the hid's: ${JSON.stringify(m)}`);
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
@@ -576,7 +654,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 		}, PHONE);
 	});
 
-	test('a command’s documents stand side by side in one group, ruled off from the next under its own head', async () => {
+	test('a command’s documents stand side by side in one frame, apart from the next, whose time is at the top', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
 			await app.declare('coffee');
@@ -588,13 +666,13 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			const [both, next] = (await strip(page)).groups.slice(-2);
 			assert.equal(both.line, 'occur coffee , switch mood happy');
 			assert.equal(both.docs.length, 2, 'the two documents are not in one group');
-			for (const doc of both.docs) assert.ok(doc.left >= both.left - 0.5 && doc.right <= both.right + 0.5, 'a document is outside its group');
+			for (const doc of both.docs) assert.ok(doc.left >= both.frame.left && doc.right <= both.frame.right, 'a document is outside its frame');
 			assert.ok(both.docs[1].left >= both.docs[0].right, 'the documents are not side by side');
-			// The boundary: a rule at the next group's left edge, past the
-			// last of this one's documents, and the next command's own head
-			// at the top of the row beside it.
+			// The boundary: the next command's frame, past the last of this
+			// one's documents, and its time at the top of the row beside it.
 			assert.equal(next.line, 'occur water');
-			assert.ok(next.rule >= 1, 'no rule between two commands');
+			assert.ok(next.rule >= 1, 'no frame around the next command');
+			assert.ok(next.frame.left > both.frame.right, 'the two frames touch');
 			assert.ok(next.left > both.docs[1].right, 'the next group begins inside this one');
 			assert.ok(next.head >= 0 && next.head < 8, `the next command's head is not at the top: ${next.head}`);
 			assert.deepEqual(app.errors, []);
@@ -817,7 +895,8 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.equal(await page.locator(`${BAR} .group`).count(), groups, 'the undo is a command of its own in the strip');
 			// The CLI widget is the log's own component: there, the undo is what the CLI printed, and the command it undid is struck too.
 			await page.locator('.host.cli .echo', { hasText: `❯ undo ${coffee}` }).waitFor();
-			assert.match(await page.locator('.host.cli').innerText(), /UNDONE/);
+			// What it did, behind its entry's shape (da-hxjrk).
+			await page.locator('.host.cli .doc .action[title="UNDONE"]').first().waitFor();
 			assert.equal(await page.locator('.host.cli .head.struck').count(), 1);
 
 			await group('occur coffee').getByRole('button', { name: 'redo' }).tap();
@@ -960,7 +1039,8 @@ describe('a command with no echo', () => {
 			assert.equal(result.code, 1);
 			const said = result.stderr.replace(ESC, '').trim().split('\n').at(-1);
 			assert.match(said, /nope9/, 'the error names the hid it did not find');
-			assert.deepEqual(await page.locator(`${DOC} .action`).allInnerTexts(), ['DELETE']);
+			// What the command did is the label's title; its word is the entry's shape (da-hxjrk).
+			assert.deepEqual(await page.locator(`${DOC} .action`).evaluateAll((els) => els.map((el) => el.title)), ['DELETE']);
 			assert.equal((await section(page)).hid, hid);
 			assert.deepEqual(await page.locator(`${OUT} .raw.error p`).allInnerTexts(), [said]);
 			// Inside the output section, and the bar did not grow to hold it:
@@ -1295,7 +1375,8 @@ describe('folded, a command still answers', () => {
 			// documents the very same run drew in the scrollback, so nothing
 			// here is a word this file made up and nothing is run twice.
 			assert.ok(words.length > 0, 'the folded bar said nothing about a CREATE');
-			assert.deepEqual(words, await page.locator('.cli .doc .action').allInnerTexts());
+			// What each command did, behind each entry's shape (da-hxjrk).
+			assert.deepEqual(words, await page.locator('.cli .doc .action').evaluateAll((els) => els.map((el) => el.title)));
 			// IN THE BOTTOM OF THE SECTION, AND OVER BY THE `❯`. vividn asked
 			// first for the right of the row ("show all the ACTION words on the
 			// right side"), then for the padding under it ("move the ACTION
@@ -1558,7 +1639,7 @@ describe('folded, a command still answers', () => {
 			assert.equal((await app.run(['occur', 'coffee'])).code, 11, 'the second log is not a re-log');
 			const relog = await said('occur coffee');
 			// The colour is the one the same run's scrollback document drew.
-			const drawn = page.locator('.cli .doc .action', { hasText: 'EXISTS' }).first();
+			const drawn = page.locator('.cli .doc .action[title="EXISTS"]').first();
 			assert.deepEqual(relog, [{ text: 'EXISTS', color: await drawn.evaluate((el) => getComputedStyle(el).color) }]);
 
 			// The same exit with nothing echoed is a slug collision: a failure.

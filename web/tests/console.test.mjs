@@ -73,14 +73,16 @@ describe('window.datum.run — the loud door', () => {
 			await tailShows(page, 'coffee');
 			assert.equal(await samePage(page), true, 'the page reloaded');
 
-			// The receipt is the CLI's own `CREATE <hid>`, and the hid is the
-			// row's: the same assertion shell.test.mjs makes of a typed line.
+			// The receipt is the entry's shape and its hid, the CLI's own
+			// (da-hxjrk), and the hid is the row's: the same assertion
+			// shell.test.mjs makes of a typed line.
 			await page.waitForFunction(() =>
-				document.querySelector('.prompt-bar .group:last-child .receipt').textContent.startsWith('CREATE ')
+				document.querySelector('.prompt-bar .group:last-child .receipt').textContent.startsWith('HAPPEN')
 			);
-			const [word, hid] = (await receipt(page).innerText()).split(' ');
+			const [word, hid] = (await receipt(page).innerText()).split(' · ');
 			const { rows } = await app.tailRows();
-			assert.equal(word, 'CREATE');
+			assert.equal(word, 'HAPPEN');
+			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'CREATE');
 			// The declaration `declare` wrote, and the entry under it.
 			assert.equal(rows.length, 2);
 			assert.ok(
@@ -126,7 +128,7 @@ describe('window.datum.run — the loud door', () => {
 			await tailShows(page, 'cocoa');
 			assert.equal(await samePage(page), true, 'the page reloaded');
 			await page.waitForFunction(() =>
-				document.querySelector('.prompt-bar .group:last-child .receipt').textContent.startsWith('CREATE ')
+				document.querySelector('.prompt-bar .group:last-child .receipt .action').title === 'CREATE'
 			);
 			assert.deepEqual(app.errors, []);
 		}, NO_CLI);

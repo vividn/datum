@@ -20,6 +20,15 @@
 	`.stamp` and the `.echo` below, at the sizes the CLI widget already drew them:
 	he asked for the format the rest of the history has, so a smaller size
 	invented here would be a third format rather than the end of the second.
+
+	A FRAME, the time and Undo on its top border (da-hxjrk). vividn,
+	2026-10-29: «make the cli time smaller (and use the -1d framing exactly
+	like how tail does it for the date if the date is not today), and put it
+	right on the frame of the output section, that way the cli command gets
+	the full top line within its box. Move the undo button to the top frame
+	as well, also slightly smaller like the time text, but with a
+	sufficiently large hit box.» Each entry the command echoed is a frame of
+	its own inside this one (Doc.svelte).
 -->
 <script lang="ts">
 	import CliOutput from '#lib/CliOutput.svelte';
@@ -108,99 +117,112 @@
 	}
 </script>
 
-<div class="head" class:capped={!!cap} class:all class:struck={mark?.undone}>
-	<span class="stamp">{stampLabel(new Date(entry.ranAt), $now)}</span>
-	<!-- The stamp is a sibling of `.echo`, not a child of it: the echo's
-	     text is the command and nothing else, which is what every reader of
-	     it — a test, a copy-paste — already assumes. -->
-	<div class="echo"><span class="prompt">❯</span> {entry.line}</div>
-	{#if mark}
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<span
-			class="step"
-			onpointerenter={(e) => e.pointerType === 'mouse' && (told = refused)}
-			onpointerleave={(e) => e.pointerType === 'mouse' && (told = false)}
-			onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && (told = false)}
-		>
-			<button
-				type="button"
-				class={verb}
-				aria-disabled={refused || busy}
-				aria-describedby={refused ? note : undefined}
-				onclick={press}>{verb}</button
+<div class="frame" class:capped={!!cap} class:marked={!!mark} class:struck={mark?.undone}>
+	<div class="head" class:capped={!!cap} class:all class:marked={!!mark} class:struck={mark?.undone}>
+		<span class="stamp">{stampLabel(new Date(entry.ranAt), $now)}</span>
+		<!-- The stamp is a sibling of `.echo`, not a child of it: the echo's
+		     text is the command and nothing else, which is what every reader of
+		     it — a test, a copy-paste — already assumes. -->
+		<div class="echo"><span class="prompt">❯</span> {entry.line}</div>
+		{#if mark}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<span
+				class="step"
+				onpointerenter={(e) => e.pointerType === 'mouse' && (told = refused)}
+				onpointerleave={(e) => e.pointerType === 'mouse' && (told = false)}
+				onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && (told = false)}
 			>
-			<!-- In the DOM while refused, so the button is described as refused
-			     before it is pressed; drawn once it is hovered or pressed. -->
-			{#if refused}
-				<span id={note} class="buried" class:told role="status"
-					>cannot {verb}. {#if mark.buried}<button
-							type="button"
-							class="link"
-							tabindex={told ? 0 : -1}
-							onclick={follow}>more recent changes</button
-						>{:else}a change made elsewhere{/if}</span
+				<button
+					type="button"
+					class={verb}
+					aria-disabled={refused || busy}
+					aria-describedby={refused ? note : undefined}
+					onclick={press}>{verb}</button
 				>
+				<!-- In the DOM while refused, so the button is described as refused
+				     before it is pressed; drawn once it is hovered or pressed. -->
+				{#if refused}
+					<span id={note} class="buried" class:told role="status"
+						>cannot {verb}. {#if mark.buried}<button
+								type="button"
+								class="link"
+								tabindex={told ? 0 : -1}
+								onclick={follow}>more recent changes</button
+							>{:else}a change made elsewhere{/if}</span
+					>
+				{/if}
+			</span>
+		{/if}
+	</div>
+	{#if cap}
+		<!-- A surface that cannot scroll shows ONE box: four lines is not enough
+		     to spend on a stdout and a stderr separately, and what the reader
+		     needs there is the last thing said. -->
+		{#if docs}
+			<Docs {docs} {all} />
+			<!-- A run that wrote and then failed echoes its writes AND exits
+			     non-zero (da-0uvyr): `del <good>,<bad>` deleted one entry. The
+			     documents alone would read as a success, so the error's last
+			     line goes under them. -->
+			{#if failed}
+				<RawLines text={entry.result.stderr} lines={1} error />
 			{/if}
-		</span>
-	{/if}
-</div>
-{#if cap}
-	<!-- A surface that cannot scroll shows ONE box: four lines is not enough
-	     to spend on a stdout and a stderr separately, and what the reader
-	     needs there is the last thing said. -->
-	{#if docs}
-		<Docs {docs} {all} />
-		<!-- A run that wrote and then failed echoes its writes AND exits
-		     non-zero (da-0uvyr): `del <good>,<bad>` deleted one entry. The
-		     documents alone would read as a success, so the error's last
-		     line goes under them. -->
-		{#if failed}
-			<RawLines text={entry.result.stderr} lines={1} error />
+		{:else}
+			<RawLines text={raw} lines={cap} error={entry.result.code !== 0} />
 		{/if}
 	{:else}
-		<RawLines text={raw} lines={cap} error={entry.result.code !== 0} />
-	{/if}
-{:else}
-	{#if docs}
-		<!-- The same sections both surfaces draw, one per document (da-xfa4):
-		     the web asks every command it runs for `--show json`, so a
-		     multi-document result is side by side in each.
+		{#if docs}
+			<!-- The same sections both surfaces draw, one per document (da-xfa4):
+			     the web asks every command it runs for `--show json`, so a
+			     multi-document result is side by side in each.
 
-		     `--show json` carries the CLI's strings with its ANSI stripped,
-		     which for a while cost the echo datum's field and state colours
-		     while a table, a picture and an error kept theirs — they carry no
-		     echo and arrive as the CLI printed them. The document now carries
-		     the colours as DATA (`info_segments`, da-yu9s) and `Doc.svelte`
-		     paints from those, so the separation vividn asked for ("The whole
-		     web interface can take use json as the default show and then
-		     render on it's own terms which is nice separation") no longer
-		     costs the colour. -->
-		<Docs {docs} {all} />
-	{:else if entry.result.stdout}
-		<CliOutput text={entry.result.stdout} />
+			     `--show json` carries the CLI's strings with its ANSI stripped,
+			     which for a while cost the echo datum's field and state colours
+			     while a table, a picture and an error kept theirs — they carry no
+			     echo and arrive as the CLI printed them. The document now carries
+			     the colours as DATA (`info_segments`, da-yu9s) and `Doc.svelte`
+			     paints from those, so the separation vividn asked for ("The whole
+			     web interface can take use json as the default show and then
+			     render on it's own terms which is nice separation") no longer
+			     costs the colour. -->
+			<Docs {docs} {all} />
+		{:else if entry.result.stdout}
+			<CliOutput text={entry.result.stdout} />
+		{/if}
+		<!-- ALONGSIDE the branch above, not instead of it. A command can both
+		     echo a document and warn on stderr — `undo` past ten minutes does
+		     exactly that — and nesting this inside that branch dropped the
+		     warning silently. -->
+		{#if entry.result.stderr}
+			<CliOutput
+				text={entry.result.stderr}
+				stream="stderr"
+				error={entry.result.code !== 0}
+			/>
+		{/if}
 	{/if}
-	<!-- ALONGSIDE the branch above, not instead of it. A command can both
-	     echo a document and warn on stderr — `undo` past ten minutes does
-	     exactly that — and nesting this inside that branch dropped the
-	     warning silently. -->
-	{#if entry.result.stderr}
-		<CliOutput
-			text={entry.result.stderr}
-			stream="stderr"
-			error={entry.result.code !== 0}
-		/>
-	{/if}
-{/if}
+</div>
 
 <style>
-	.head {
-		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
+	/* THE COMMAND'S FRAME: the time and the step stand on its top border as
+	   a fieldset's legend does, the half of them above it the frame's
+	   margin, so the command has the whole of the first line inside. */
+	.frame {
+		position: relative;
+		min-width: 0;
+		margin-top: calc(var(--label) / 2);
+		padding: calc(var(--label) / 2) 0.45em 0.15em;
+		border: 1px solid var(--quiet);
+		border-radius: 0.45em;
+		/* Named, not inherited: the step's hit box is measured in it (below). */
+		line-height: 1.35;
+		/* The label's height: its type, a step down, on one line. */
+		--label: calc(0.75em * 1.2);
+		/* The step's hit box, at least a finger's on every surface. */
+		--hit: 44px;
 	}
 
 	.echo {
-		flex: 1;
 		min-width: 0;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
@@ -209,20 +231,10 @@
 		color: #8888aa;
 	}
 
-	/* BESIDE THE TIME WHEN IT FITS THERE, UNDER IT WHEN IT DOES NOT
-	   (da-5iyo). The history's columns are narrow enough for two on a
-	   phone, and a stamp taking 65px off the front of a 169px one left
-	   `occur brew bean=ethiopian …` breaking mid-word in the strip that
-	   was left. `flex: 1 1 auto` is what asks the question: the echo's
-	   basis is the command's own width, so a line that cannot sit beside
-	   the stamp wraps under it and takes the whole column. A command
-	   short enough is where it always was, at every width. */
-	.head.all {
-		flex-wrap: wrap;
-	}
-
-	.head.all .echo {
-		flex: 1 1 auto;
+	/* Clear of the step's hit box, which reaches down past the border to
+	   the end of this line. */
+	.head.marked .echo {
+		padding-right: calc(var(--hit) + 0.5em);
 	}
 
 	/* ONE LINE on a surface that cannot scroll. A command long enough to wrap
@@ -236,11 +248,25 @@
 		text-overflow: ellipsis;
 	}
 
+	/* ON THE BORDER, the time at its left and the step at its right, a step
+	   down from the command; their ground hides the border behind them. */
+	.stamp,
+	.step {
+		position: absolute;
+		top: 0;
+		transform: translateY(-50%);
+		padding: 0 0.25em;
+		font-size: 0.75em;
+		line-height: 1.2;
+		background: var(--ground);
+	}
+
 	/* Dimmer than the echoed command and much dimmer than the data under
 	   it: this is when you typed, and the entry's own occur_time — which
-	   the renderer prints two lines down — is what actually matters. */
+	   its frame prints under its field — is what actually matters. */
 	.stamp {
-		flex: none;
+		left: 0.4em;
+		white-space: pre;
 		color: var(--quiet);
 		font-variant-numeric: tabular-nums;
 	}
@@ -249,11 +275,9 @@
 		color: var(--accent);
 	}
 
-	/* AT THE HEAD'S END, a line tall: a taller button would grow the strip's
-	   head past the row it stands in. The hit area is the larger box behind it. */
 	.step {
-		flex: none;
-		position: relative;
+		right: 0.4em;
+		z-index: 2;
 	}
 
 	.step > button {
@@ -270,10 +294,31 @@
 		cursor: pointer;
 	}
 
+	/* THE HIT BOX, larger than the label it is behind (da-hxjrk): vividn,
+	   «slightly smaller like the time text, but with a sufficiently large
+	   hit box». It stands on the foot of the command's first line, whose
+	   text keeps clear of it (`.marked`), and reaches up out of the frame:
+	   3em of the step's type is its label (1.2) and the line (1.35 of the
+	   frame's 0.75 more). */
 	.step > button::before {
 		content: '';
 		position: absolute;
-		inset: -6px -4px;
+		top: calc(3em - var(--hit));
+		right: -0.25em;
+		width: max(100% + 0.5em, var(--hit));
+		height: var(--hit);
+	}
+
+	/* The bar's band has no room above it: there the box reaches down from
+	   the band's top edge instead, over the top border of the entry under
+	   the command, whose label stands over it: a press on the hid, the full
+	   id open or not, is the hid's and never an undo. */
+	.frame.capped .step > button::before {
+		top: -4px;
+	}
+
+	.frame.capped :global(.doc > .receipt) {
+		z-index: 3;
 	}
 
 	.step > button[aria-disabled='true'] {
@@ -311,12 +356,9 @@
 		cursor: pointer;
 	}
 
-	/* AN UNDONE COMMAND, HASHED OUT WHERE IT STANDS: the row's own box — the
-	   strip's group, the log's cell — hatched, and all of it but its redo faded.
-	   Named by the row's own `data-ran`: a `:has()` whose subject is any
-	   element made every press on the page restyle the whole subtree it
-	   landed in, the day strip's thousands of marks at a touch (da-uovtn). */
-	:global([data-ran]:has(> .head.struck)) {
+	/* AN UNDONE COMMAND, HASHED OUT WHERE IT STANDS: its frame hatched, and
+	   all of it but its redo faded. */
+	.frame.struck {
 		background-image: repeating-linear-gradient(
 			135deg,
 			transparent 0 5px,
@@ -324,7 +366,7 @@
 		);
 	}
 
-	:global([data-ran]:has(> .head.struck) > :not(.head)),
+	.frame.struck > :not(.head),
 	.struck .stamp,
 	.struck .echo {
 		opacity: 0.45;

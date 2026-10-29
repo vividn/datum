@@ -18,12 +18,8 @@
 	`all` is the CLI widget's form: no band to fit, so every document is drawn and
 	the row wraps. The modal uses it too — one rendering, three places.
 
-	Every section is the same two lines at the same size, whatever it
-	carries: a document's data sits beside its lines rather than under them
-	(da-f4mw, Doc.svelte), so there is no longer a size for the row to
-	decide. What this file still decides for a section is whether it is wide
-	enough for those rows to read — it is the surface that measures — and a
-	narrower one draws the brace as the key count alone.
+	Every section is its entry's frame (Doc.svelte, da-hxjrk), and what this
+	file decides is how many the row's measured width holds.
 -->
 <script lang="ts">
 	import { act } from '#lib/act.ts';
@@ -42,14 +38,6 @@
 
 	/** The narrowest section whose info line still reads, in px. */
 	const MIN = 208;
-	/**
-	 * The narrowest section that holds the info line AND readable data rows.
-	 *
-	 * Measured, not chosen (Doc.svelte): the info line wants 183px and the
-	 * brace's braces and chip 71px, so below this the rows are a few pixels
-	 * and the count is the honest thing to draw instead.
-	 */
-	const ROOMY = 320;
 	/** What the `+N` chip takes from the row. */
 	const CHIP = 48;
 
@@ -59,9 +47,6 @@
 	const capacity = $derived(Math.max(1, Math.floor(width / MIN)));
 	const over = $derived(!all && width > 0 && docs.length > capacity);
 	const shown = $derived(all || !over ? docs.length : Math.max(1, Math.floor((width - CHIP) / MIN)));
-	// Never in the CLI widget or the sheet: there is no band to fit there, and a
-	// section is at least the 14rem the row wraps at.
-	const tight = $derived(!all && width > 0 && width / shown < ROOMY);
 
 	function measure(node: HTMLDivElement): { destroy(): void } {
 		const observer = new ResizeObserver(([entry]) => (width = entry.contentRect.width));
@@ -77,7 +62,7 @@
 	     sizes nothing. -->
 	<div class="room" use:measure></div>
 	{#each docs.slice(0, shown) as doc (doc.hid + doc.action)}
-		<Doc {doc} {tight} {all} />
+		<Doc {doc} {all} />
 	{/each}
 	{#if over}
 		<button
@@ -118,13 +103,6 @@
 	.docs > :global(.doc) {
 		flex: 1 1 0;
 		min-width: 0;
-	}
-
-	/* Divided, as vividn asked — a hairline between neighbours, none in front
-	   of the first. */
-	.docs > :global(.doc + .doc) {
-		padding-left: 0.6rem;
-		border-left: 1px solid var(--tint);
 	}
 
 	.docs.all {

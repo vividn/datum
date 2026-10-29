@@ -236,7 +236,8 @@ async function barRun(page, line) {
 		() => page.evaluate(receiptNow),
 		(now) => now !== before && now !== ''
 	);
-	return page.locator('.prompt-bar .group:last-child .doc .receipt').last().innerText();
+	// What the command did, CREATE or EXISTS: the label is the entry's shape, and this its title (da-hxjrk).
+	return page.locator('.prompt-bar .group:last-child .doc .action').last().getAttribute('title');
 }
 
 /**
@@ -326,7 +327,7 @@ describe('a long press and a drag selects a period', () => {
 
 			// The pair is lifted onto occur_time and dur (da-mjwq): the block
 			// ENDS at `end_time=` and runs back to `start_time=`.
-			assert.match(await barRun(page, 'start posture'), /^CREATE /);
+			assert.match(await barRun(page, 'start posture'), /^CREATE$/);
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(
 				new Date(Date.parse(posture.occur_time.utc)).toISOString(),
@@ -378,7 +379,7 @@ describe('a long press and a drag selects a period', () => {
 				(seen) => seen.length === 2
 			);
 
-			assert.match(await barRun(page, 'start posture'), /^CREATE /);
+			assert.match(await barRun(page, 'start posture'), /^CREATE$/);
 			await saysPills(page, []);
 			assert.equal(await page.evaluate(() => window.datum.cursor.of()), null);
 			await until(
@@ -386,7 +387,7 @@ describe('a long press and a drag selects a period', () => {
 				(n) => n === 0
 			);
 
-			assert.match(await barRun(page, 'occur water'), /^CREATE /);
+			assert.match(await barRun(page, 'occur water'), /^CREATE$/);
 			const [water] = (await app.entries()).filter((e) => e.field === 'water');
 			assert.equal(
 				new Date(Date.parse(water.occur_time.utc)).toISOString(),
@@ -416,7 +417,7 @@ describe('a range on a day that is not today', () => {
 			await drag(page, a, b, { hold: true });
 			await saysPills(page, rangePills(from, to, dated));
 
-			assert.match(await barRun(page, 'start nap'), /^CREATE /);
+			assert.match(await barRun(page, 'start nap'), /^CREATE$/);
 			const [nap] = (await app.entries()).filter((e) => e.field === 'nap');
 			assert.equal(
 				new Date(Date.parse(nap.occur_time.utc)).toISOString(),

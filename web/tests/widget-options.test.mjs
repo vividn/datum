@@ -243,9 +243,9 @@ describe('widget options', () => {
 			assert.ok(!(await tree(page)).includes('"reversed":true'), 'a session setting reached the tree');
 
 			// An entry keeps its own order: the command, then what it
-			// answered. Inside its own cell since da-5iyo.
+			// answered. Inside its own cell since da-5iyo, its own frame since da-hxjrk.
 			const first = await page
-				.locator(`${CLI} .body .entry`)
+				.locator(`${CLI} .body .entry .frame`)
 				.first()
 				.evaluate((el) => [...el.children].map((e) => e.className));
 			assert.match(first[0], /head/, `the first entry opens with ${first[0]}`);

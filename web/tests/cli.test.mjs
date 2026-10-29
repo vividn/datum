@@ -9,12 +9,13 @@
 //   backdated `-t` can be typed against something rather than guessed at.
 //
 //   A stamp per command is when you typed it, dim on purpose: the row's
-//   own `occur_time` two lines below is the fact that matters. Past
-//   midnight the stamp grows a date, through the tail's own `dateLabel`
-//   rather than a second date formatter (the shape of da-6eou).
+//   own `occur_time` under its field is the fact that matters. Past
+//   midnight the stamp grows a day, as `datum tail` frames one (da-hxjrk),
+//   through the tail's own `dateLabel` past three days rather than a
+//   second date formatter (the shape of da-6eou).
 //
-//   A rule between commands is what makes a screenful of output legible
-//   as commands rather than as one wall.
+//   A frame around each command is what makes a screenful of output
+//   legible as commands rather than as one wall.
 //
 //   And persistence is the difference between a terminal and a text box:
 //   a reload used to empty both the scrollback and the recall history,
@@ -28,6 +29,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { HELD_AT, startApp, stopApp, withApp } from './support/app.mjs';
 import { dragBar } from './support/bar.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -141,36 +143,43 @@ describe('a command in the scrollback', () => {
 		});
 	});
 
-	test('shows a date as well when it was not run today', async () => {
-		// The clock cannot be wound forward mid-session, so the day is moved
-		// under the app instead: a scrollback written yesterday, restored
-		// today. That is also the only way this is ever seen in real use.
-		const yesterday = HELD_AT - 26 * 3600 * 1000;
+	test('frames another day as `datum tail` does: -1d within three days, the date past them', async () => {
+		// The clock cannot be wound forward mid-session, so the days are moved
+		// under the app instead: a scrollback written earlier, restored today.
+		// That is also the only way this is ever seen in real use. Entries
+		// logged at the same instants are what `tail` prints them as (da-hxjrk).
+		const runs = [5 * 24, 26].map((hours) => HELD_AT - hours * 3600 * 1000);
 		await withApp(
-			async ({ page }) => {
-				const [stamp] = await stamps(page);
-				const day = new Date(yesterday).toISOString().slice(0, 10);
-				assert.equal(stamp, `${day} ${new Date(yesterday).toISOString().slice(11, 19)}`);
+			async (app) => {
+				for (const at of runs) await app.submit(`occur coffee -t ${new Date(at).toISOString()}`);
+				const tail = await until(
+					() => app.paneTable('tail'),
+					(t) => t.rows.filter((r) => r.includes('coffee')).length === runs.length
+				);
+				const printed = tail.rows.filter((r) => r.includes('coffee')).map((r) => r[tail.keys.indexOf('time')]);
+				assert.match(printed[0], /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+				assert.match(printed[1], /^-1d \d{2}:\d{2}:\d{2}$/);
+				const restored = (await stamps(app.page)).filter((stamp) => !HHMMSS.test(stamp));
+				// Compared as sets: the scrollback's order is its own, `tail`'s by time.
+				assert.deepEqual(restored.sort(), [...printed].sort());
 			},
 			{
 				prepare: (context) =>
 					context.addInitScript(
-						([key, ranAt]) => {
+						([key, runs]) => {
 							localStorage.setItem(
 								key,
 								JSON.stringify({
-									scrollback: [
-										{
-											line: 'tail',
-											ranAt,
-											result: { argv: ['tail'], code: 0, stdout: 'nothing yet', stderr: '' }
-										}
-									],
+									scrollback: runs.map((ranAt) => ({
+										line: 'tail',
+										ranAt,
+										result: { argv: ['tail'], code: 0, stdout: 'nothing yet', stderr: '' }
+									})),
 									history: ['tail']
 								})
 							);
 						},
-						['datum.repl.v1', yesterday]
+						['datum.repl.v1', runs]
 					)
 			}
 		);
@@ -178,46 +187,48 @@ describe('a command in the scrollback', () => {
 });
 
 describe('the space between commands', () => {
-	// THE RULE STANDS ON A SEAM, and since da-5iyo the scrollback is
-	// COLUMNS: two entries side by side have no seam between them, and the
-	// one above them is the top edge of every cell on their row. So this
-	// counts rules against ROWS — read off the screen, so it holds at any
-	// width and does not care how many columns the pane happens to give.
+	// EACH COMMAND IS A FRAME (da-hxjrk), its time on the frame's border, so a
+	// seam between two commands is their two frames' edges with air between
+	// them, beside each other or one over the other, and nothing is ruled.
 	const seams = (page) =>
 		page.evaluate(() => {
 			const cells = [...document.querySelectorAll('.cli .entry')];
 			const top = (el) => Math.round(el.getBoundingClientRect().top);
+			const frames = cells.map((el) => el.querySelector('.frame'));
 			const first = cells.length ? top(cells[0]) : 0;
+			const above = frames.filter((_, i) => top(cells[i]) === first);
+			const below = cells.filter((el) => top(el) !== first);
 			return {
 				rows: new Set(cells.map(top)).size,
-				below: cells.filter((el) => top(el) !== first).length,
-				ruled: cells.filter((el) => getComputedStyle(el).borderTopWidth !== '0px').length
+				framed: frames.filter((f) => parseFloat(getComputedStyle(f).borderTopWidth) >= 1).length,
+				ruled: cells.filter((el) => getComputedStyle(el).borderTopWidth !== '0px').length,
+				// The first row's lowest frame against the top of the next row's time.
+				air: below.length
+					? Math.min(...below.map((el) => el.querySelector('.stamp').getBoundingClientRect().top)) -
+						Math.max(...above.map((f) => f.getBoundingClientRect().bottom))
+					: null,
+				frame: frames.length ? getComputedStyle(frames[0]).borderTopColor : null,
+				echo: frames.length ? getComputedStyle(frames[0].querySelector('.echo')).color : null
 			};
 		});
 
-	test('is one dim rule, on every seam between two rows and not around them', async () => {
+	test('is each command’s own frame, dimmer than the command, with air between two rows', async () => {
 		await withApp(async ({ page, submit }) => {
 			await submit('occur coffee');
-			assert.deepEqual(await seams(page), { rows: 1, below: 0, ruled: 0 }, 'a lone command got a separator');
-
 			await submit('occur tea');
-			const two = await seams(page);
-			assert.equal(two.ruled, two.below, 'the rules did not fall on the seams');
-
 			// A `tail` answers with a table, which takes a row of its own
 			// however many columns there are — so there is certainly a seam
 			// here, whatever the first two entries did.
 			await submit('tail');
 			const three = await seams(page);
 			assert.ok(three.rows > 1, 'a table did not start a row of its own');
-			assert.equal(three.ruled, three.below, 'the rules did not fall on the seams');
-			assert.ok(three.ruled > 0, 'a second row got no rule above it');
-
-			// Dim: the pane's own hairline, not a bright line across it.
-			const colour = await page.evaluate(
-				() => getComputedStyle(document.querySelector('.cli .entry.ruled')).borderTopColor
+			assert.equal(three.framed, 3, 'a command is not framed');
+			assert.equal(three.ruled, 0, 'a row is ruled as well as framed');
+			assert.ok(three.air > 0, `the rows' frames touch: ${three.air}px`);
+			assert.ok(
+				brightness(three.frame) < brightness(three.echo),
+				`the frame (${three.frame}) is not dimmer than the command (${three.echo})`
 			);
-			assert.ok(brightness(colour) < 60, `the rule between commands is not dim: ${colour}`);
 		});
 	});
 });

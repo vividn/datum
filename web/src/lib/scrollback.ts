@@ -54,36 +54,24 @@ export const MIN = 160;
 /**
  * The width an entry's output WANTS, in px.
  *
- * The third measurement: the widest the two lines a document draws ask
- * for before anything wraps, over the ORDINARY shapes of that scrollback
- * — 232px for `CREATE 2i84w` / `15:00:00+0  mood  happy` (and `work
- * start`, which ties it), against 184px for the narrowest of them.
- * Ordinary, because a field or a state long enough makes an info line as
- * wide as you like and a column sized for the longest name anyone might
- * type is a column nobody has room for; a long one wraps, which here
- * costs nothing. A column this wide holds the ordinary set unbroken,
- * which is what a box with the room to spare should be spending it on:
- * columns of `MIN` on a 1280px screen are seven strips of a phone's
- * reading, with the width they were supposed to use left empty beside
- * them.
+ * The third measurement: the widest the lines a document draws ask for
+ * before anything wraps, its frames and padding included, over the
+ * ORDINARY shapes of that scrollback. Ordinary, because a field or a
+ * state long enough makes a line as wide as you like and a column sized
+ * for the longest name anyone might type is a column nobody has room for;
+ * a long one wraps, which here costs nothing. A column this wide holds
+ * the ordinary set unbroken, which is what a box with the room to spare
+ * should be spending it on.
  *
- * ⚠ RE-MEASURED at da-gvcen, and the OLD number says why it had to be.
- * It was 270px, and the line it was measured on was `TRACK● av96x` /
- * `14:59:59+0  coffee  TRACKED` — a field's DECLARATION, which every
- * first log used to echo beside its entry. da-gvcen folds the
- * declaration into the entry's own `following_state`, and `datum track`
- * echoes the spec, or `✓ Tracking …`, rather than its row, so no scrollback draws
- * that shape any more. 270 had come loose from anything measurable,
- * which `scrollback.test.mjs` says in as many words.
- *
- * The 28px above the measurement is the headroom `MIN` carries for the
- * same reason — room for datum to reword an echo without the number
- * moving under it — and it is inside the 32px the test allows. It is
- * also what keeps the column COUNTS the layout was tuned for: a 390px
- * phone still gets two and a 1280px screen still four, which a bare 232
- * would have made five.
+ * ⚠ RE-MEASURED at da-hxjrk: 166px, a data row of `occur brew …` and
+ * `mood  happy` in their frames. It was 232 (260 with its headroom) when
+ * a document's time and field shared a line, and the frames put the time
+ * on a line of its own. The 28px above the measurement is the headroom
+ * `MIN` carries too — room for datum to reword an echo without the
+ * number moving under it. A 390px phone still gets two columns; a wide
+ * box gets more of them than the four 260 gave a 1280px screen.
  */
-export const WANT = 260;
+export const WANT = 194;
 
 /** The air between two columns, in px — the rule's own margin, sideways. */
 export const GAP = 14;
@@ -96,7 +84,7 @@ const fit = (width: number, each: number): number => Math.floor((width + GAP) / 
  *
  * AS MANY AS FIT AT THE WIDTH AN ENTRY WANTS — and never fewer than two
  * where two can be read, which is the whole of the ask. The second half
- * is what a phone gets: 351px cannot give two columns 270px each, but it
+ * is what a phone gets: 351px cannot give two columns 194px each, but it
  * can give them 169, and 169 is above everything an entry's output needs
  * (`MIN`).
  *

@@ -113,6 +113,34 @@ fn occur_emits_one_doc_with_the_addressable_pieces() {
     assert_eq!(d["data_inline"], "");
 }
 
+/// Each doc names the shape of what its entry STORES, in six characters
+/// (da-hxjrk): read off the row, so two commands that store one shape say
+/// one word, and `start` on a field already on is still an ON/OFF.
+#[test]
+fn each_doc_names_the_shape_its_entry_stores() {
+    let env = Env::new();
+    let cases: &[(&[&str], &str)] = &[
+        (&["occur", "coffee"], "HAPPEN"),
+        (&["occur", "nap", "dur=30m"], "HAPPEN"),
+        (&["start", "work"], "ON/OFF"),
+        (&["start", "work"], "ON/OFF"),
+        (&["end", "work"], "ON/OFF"),
+        (&["start", "posture", "4"], "ON/OFF"),
+        (&["switch", "mood", "happy"], "SWITCH"),
+        (&["switch", "mood", "sad", "20m"], "SWITCH"),
+        (&["switch", "mood", "calm", "dur=0"], "MOMENT"),
+        (&["switch", "mood", "calm", "dur=MOMENT"], "MOMENT"),
+        (&["add", "book", "dune", "title=x"], "RECORD"),
+        (&["note", "jot", "hi"], "RECORD"),
+    ];
+    for (args, shape) in cases {
+        let docs = env.docs(&[args, &["--show", "json"][..]].concat());
+        assert_eq!(docs.len(), 1, "{args:?}: one entry, one doc");
+        assert_eq!(docs[0]["shape"], *shape, "{args:?}");
+        assert_eq!(docs[0]["action"], "CREATE", "{args:?}: the outcome stays");
+    }
+}
+
 /// One string per key, and an inline join the caller never has to compose.
 /// Asserting on the joined string is what a per-key-only assertion misses:
 /// a join bug would still pass the array check.

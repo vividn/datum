@@ -709,12 +709,14 @@ describe('the bottom bar', () => {
 			await app.run(['setup', 'coffee', '--verb', 'occur']);
 			await input.fill('occur coffee');
 			await input.press('Enter');
-			await until(() => receipt(page).innerText(), (t) => t.startsWith('CREATE '));
+			await until(() => receipt(page).innerText(), (t) => t.startsWith('HAPPEN · '));
 			await app.idle();
 			const { rows } = await app.tailRows();
 			assert.equal(rows.length, 1);
-			const [word, hid] = (await receipt(page).innerText()).split(' ');
-			assert.equal(word, 'CREATE');
+			// The entry's shape and its hid, and what the command did to it (da-hxjrk).
+			const [word, hid] = (await receipt(page).innerText()).split(' · ');
+			assert.equal(word, 'HAPPEN');
+			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'CREATE');
 			assert.ok(hid.length >= 4 && rows[0].hid.startsWith(hid), `the receipt's ${hid} is not the row's ${rows[0].hid}`);
 			assert.equal(await receipt(page).evaluate((el) => el.classList.contains('error')), false);
 			// As if typed at the CLI widget: it is in its scrollback.
@@ -729,7 +731,7 @@ describe('the bottom bar', () => {
 			await page.locator('.bar button.widget', { hasText: 'coffee' }).click();
 			await saw('occur coffee');
 			assert.equal(await input.inputValue(), '', 'the press became the input\'s value');
-			await until(() => receipt(page).innerText(), (t) => t.startsWith('CREATE ') && t !== `CREATE ${hid}`);
+			await until(() => receipt(page).innerText(), (t) => t.startsWith('HAPPEN · ') && t !== `HAPPEN · ${hid}`);
 			await app.idle();
 			assert.equal((await app.tailRows()).rows.length, 2);
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
@@ -768,8 +770,11 @@ describe('the bottom bar', () => {
 	// 1280x800 the OPEN bar, which every screen starts on, was 46.4 + 114 +
 	// 1. da-7xp82 made it one entry tall, «it is too tall right now»: four
 	// lines of 0.8rem × 1.35, a line more, 2 × 0.25rem and its rule, so
-	// 46.4 + 95.4 + 1. The window stays absolute.
-	test('stands out at 140–146px with a ≥1.05rem prompt; the CLI has no prompt, and the bar and a chip land in its scrollback', async () => {
+	// 46.4 + 95.4 + 1. da-hxjrk framed the command and each entry, the time
+	// and the labels on the frames' borders: three lines, the two labels
+	// (1.89 × 0.8rem), the four borders, a line more, the padding and the
+	// rule, so 46.4 + 106.3 + 1. The window stays absolute.
+	test('stands out at 150–156px with a ≥1.05rem prompt; the CLI has no prompt, and the bar and a chip land in its scrollback', async () => {
 		// The shared desktop, resized: `home` puts its own size back for the
 		// next test. The scrollback is the shared page's, so the echoes and
 		// documents read are the ones past what was there when this began.
@@ -784,7 +789,7 @@ describe('the bottom bar', () => {
 				font: parseFloat(getComputedStyle(document.querySelector('.prompt-bar input')).fontSize),
 				rem: parseFloat(getComputedStyle(document.documentElement).fontSize)
 			}));
-			assert.ok(height >= 140 && height <= 146, `the bottom bar is ${height}px tall at 1280x800`);
+			assert.ok(height >= 150 && height <= 156, `the bottom bar is ${height}px tall at 1280x800`);
 			assert.ok(font >= 1.05 * rem, `the prompt's input is ${font}px on a ${rem}px rem`);
 
 			const repl = page.locator('section[data-pane="repl"]');
@@ -795,7 +800,7 @@ describe('the bottom bar', () => {
 			await app.run(['setup', 'coffee', '--verb', 'occur']);
 			const docs = await repl.locator('.doc').count();
 			await app.submit('occur coffee');
-			await until(() => receipt(page).innerText(), (t) => /^CREATE \S+$/.test(t));
+			await until(() => receipt(page).innerText(), (t) => /^HAPPEN · \S+$/.test(t));
 			assert.deepEqual((await app.echoes()).slice(echoed), ['occur coffee']);
 			// The scrollback carries the command's DOCUMENT, not its printed
 			// lines: the web asks every command it runs for `--show json`
@@ -804,8 +809,8 @@ describe('the bottom bar', () => {
 			await until(() => repl.locator('.doc').count(), (n) => n > docs);
 			assert.match(
 				await repl.locator('.doc').last().innerText(),
-				/CREATE[\s\S]*coffee/,
-				"the CLI's action is not in the scrollback"
+				/HAPPEN[\s\S]*coffee/,
+				"the entry's shape is not in the scrollback"
 			);
 
 			await app.pressWidget('coffee');

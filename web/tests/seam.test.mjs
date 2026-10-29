@@ -503,13 +503,12 @@ describe('setup', () => {
 			const typed = submit('setup coffee --delete');
 			await page.locator('dialog.confirm').getByRole('button', { name: 'delete', exact: true }).click();
 			await typed;
-			// The entry, whose echoed `❯ spec coffee --delete` carries the
-			// word in lower case: the answer is the CLI's DELETE document.
+			// The answer is the CLI's DELETE document: what the command did is
+			// its label's title, the word the entry's shape (da-hxjrk).
 			const entry = answer(page, 'setup coffee --delete');
-			await entry.getByText(/\bDELETE\b/).first().waitFor();
+			await entry.locator('.doc .action[title="DELETE"]').first().waitFor();
 			const printed = await entry.innerText();
 			assert.notEqual(printed.trim(), '', 'the prompt answered with nothing at all');
-			assert.match(printed, /DELETE/, `the answer does not say DELETE: ${printed}`);
 			assert.doesNotMatch(
 				printed,
 				/\bspec\b:?\s+(is\s+)?not available/,
@@ -525,7 +524,7 @@ describe('setup', () => {
 			const first = submit('setup --delete coffee');
 			await page.locator('dialog.confirm').getByRole('button', { name: 'delete', exact: true }).click();
 			await first;
-			await answer(page, 'setup --delete coffee').getByText(/\bDELETE\b/).first().waitFor();
+			await answer(page, 'setup --delete coffee').locator('.doc .action[title="DELETE"]').first().waitFor();
 		});
 	});
 });

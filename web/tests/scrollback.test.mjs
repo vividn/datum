@@ -75,7 +75,7 @@ const PHONES = [
 ];
 
 /** Everything inside an entry that a narrow column could cut. */
-const PIECES = '.receipt, .info, .row, .echo, .lines, .brace, .doc, .docs';
+const PIECES = '.receipt, .what, .when, .row, .echo, .doc, .docs';
 
 async function seed(app, lines = LINES) {
 	for (const line of lines) await app.submit(line);
@@ -158,15 +158,22 @@ describe('the measurements the column width rests on', () => {
 			async (app) => {
 				await seed(app, ORDINARY);
 				await sized(app.page, { width: 1600, height: 900 });
-				// One column in a box wider than any of these lines: each
-				// one is as wide as it wants to be, so its box IS its
-				// natural width (`.lines` grows for nothing).
+				// One column in a box wider than any of these lines, so none
+				// wraps: each line's own text, and the frames and padding
+				// either side of it to the column's edges (da-hxjrk).
 				const wants = await app.page.evaluate(() => {
 					const grid = document.querySelector('.entries');
 					grid.style.setProperty('--columns', '1');
-					const widths = [...document.querySelectorAll('.entry:not(.whole) .lines')].map((el) =>
-						Math.ceil(el.getBoundingClientRect().width)
-					);
+					const widths = [...document.querySelectorAll('.entry:not(.whole) .doc')].map((doc) => {
+						const cell = doc.closest('.entry').getBoundingClientRect();
+						const asks = [...doc.querySelectorAll('.what, .when, .row')].map((line) => {
+							const range = document.createRange();
+							range.selectNodeContents(line);
+							const box = line.getBoundingClientRect();
+							return range.getBoundingClientRect().width + (box.left - cell.left) + (cell.right - box.right);
+						});
+						return Math.ceil(Math.max(...asks));
+					});
 					grid.style.removeProperty('--columns');
 					return widths;
 				});
@@ -283,33 +290,44 @@ describe('what the columns cannot carry', () => {
 	});
 });
 
-describe('the hairline between commands, once there are columns', () => {
-	test('stands between rows and never between two entries side by side', async () => {
+describe('the frames, once there are columns', () => {
+	// EACH COMMAND IS A FRAME (da-hxjrk): the seam between two is their
+	// frames' edges with air between them, beside each other or one over the
+	// other, and nothing is ruled besides.
+	test('every command is its own frame, and no two frames touch', async () => {
 		await withApp(
 			async (app) => {
 				await seed(app);
 				await sized(app.page, PHONES[0]);
 				const cells = await app.page.evaluate(() =>
-					[...document.querySelectorAll('.entry')].map((el) => ({
-						top: Math.round(el.getBoundingClientRect().top),
-						ruled: getComputedStyle(el).borderTopWidth !== '0px'
-					}))
+					[...document.querySelectorAll('.entry')].map((el) => {
+						const frame = el.querySelector('.frame');
+						const { top, bottom, left, right } = frame.getBoundingClientRect();
+						return {
+							top,
+							bottom,
+							left,
+							right,
+							framed: parseFloat(getComputedStyle(frame).borderTopWidth) >= 1,
+							ruled: getComputedStyle(el).borderTopWidth !== '0px'
+						};
+					})
 				);
 
 				assert.ok(cells.length >= 4, `only ${cells.length} entries were drawn`);
-				// The first row is the pane's own top edge: no rule there
-				// (a repl widget draws `skip` 0).
-				const first = cells[0].top;
-				for (const cell of cells)
-					assert.equal(
-						cell.ruled,
-						cell.top !== first,
-						`an entry at y=${cell.top} was ${cell.ruled ? '' : 'not '}ruled`
-					);
-				// And entries that share a row share the verdict, which is
-				// what makes the row read as one rule with the gap in it.
+				for (const cell of cells) {
+					assert.ok(cell.framed, `an entry at y=${cell.top} is not framed`);
+					assert.ok(!cell.ruled, `an entry at y=${cell.top} is ruled as well`);
+				}
+				for (const [i, a] of cells.entries())
+					for (const b of cells.slice(i + 1))
+						assert.ok(
+							a.right < b.left || b.right < a.left || a.bottom < b.top || b.bottom < a.top,
+							`two frames touch: ${JSON.stringify([a, b])}`
+						);
+				// Two entries side by side, which is what the columns are for.
 				const rows = new Map();
-				for (const cell of cells) rows.set(cell.top, (rows.get(cell.top) ?? 0) + 1);
+				for (const cell of cells) rows.set(Math.round(cell.top), (rows.get(Math.round(cell.top)) ?? 0) + 1);
 				assert.ok([...rows.values()].some((n) => n > 1), 'no two entries shared a row');
 			},
 			{ viewport: PHONES[0], query: 'cli', clock: todayAt(15) }
