@@ -802,7 +802,13 @@ pub fn nowview_config(
     let time_axis_height = if snapshot {
         0.0
     } else if vertical {
-        vertical_axis_strip(&ticks, geom.time_axis_height)
+        // The box shows the window and the strip's room past it; the
+        // surroundings are drawn outside it (da-dz7wb).
+        let shown = pad_px.0 - 1e-9..=pad_px.0 + window_extent + now_width + 1e-9;
+        vertical_axis_strip(
+            ticks.iter().filter(|t| shown.contains(&t.time_pos)),
+            geom.time_axis_height,
+        )
     } else {
         geom.time_axis_height
     };
@@ -914,12 +920,16 @@ pub fn crop_to_window(svg: &str, geom: &NowviewGeometry, layout: &DayviewLayout)
 /// baseline. Horizontally a strip's height is one line of text whatever
 /// it says; vertically its width is the text's own.
 ///
+/// `ticks` are the ones the box shows (da-dz7wb): the surroundings' reach
+/// eight windows further back, so their labels are longer (`-1545m` beside
+/// a 173m window's `-150m`), and sizing by them laid every lane further
+/// across at a zoom's release, for labels drawn past the box.
+///
 /// Sized at [`AXIS_LABEL_MAX`], which is what the renderer draws
 /// in any strip that holds five characters of it.
-fn vertical_axis_strip(ticks: &[DayviewAxisTick], asked: f64) -> f64 {
+fn vertical_axis_strip<'a>(ticks: impl Iterator<Item = &'a DayviewAxisTick>, asked: f64) -> f64 {
     let size = AXIS_LABEL_MAX;
     let widest = ticks
-        .iter()
         .map(|t| t.label.as_str())
         .chain(["00:00"])
         .map(|l| text_width(l, size))
@@ -984,6 +994,43 @@ mod config_tests {
             assert_eq!(cfg.width, 400.0);
             assert_eq!(cfg.right_panel_width, 396.0 / 5.0, "{history_minutes}m");
         }
+    }
+
+    /// da-dz7wb: time running down a 390px phone, pinched out from 30m
+    /// three times. Each window's surroundings reach eight windows back,
+    /// to labels a character longer than any the box shows (`-1545m` past
+    /// a 173m window), and the strip is as wide for each: the release of a
+    /// zoom lays no lane further across.
+    #[test]
+    fn a_vertical_strip_is_sized_by_the_labels_in_the_box() {
+        let strips: Vec<(f64, usize)> = [30.0, 73.0, 177.0, 430.0]
+            .into_iter()
+            .map(|history_minutes| {
+                let geom = NowviewGeometry {
+                    history_minutes,
+                    width: Some(390.0),
+                    height: 500.0,
+                    orientation: Orientation::Vertical,
+                    surround_minutes: 8.0 * history_minutes,
+                    ahead_minutes: history_minutes,
+                    ..NowviewGeometry::default()
+                };
+                let cfg = nowview_config(Vec::new(), 0, 0, None, &geom);
+                let longest = cfg
+                    .axis_ticks_override
+                    .unwrap()
+                    .iter()
+                    .map(|t| t.label.len())
+                    .max();
+                (cfg.time_axis_height, longest.unwrap())
+            })
+            .collect();
+        let five = text_width("00:00", AXIS_LABEL_MAX) + VERTICAL_AXIS_LABEL_INSET;
+        assert!(strips.iter().all(|(w, _)| *w == five), "{strips:?}");
+        assert!(
+            strips.iter().any(|(_, n)| *n > 5),
+            "no label past the box is longer: {strips:?}"
+        );
     }
 
     /// da-pcis: a zero history is the snapshot — the whole plot is the
