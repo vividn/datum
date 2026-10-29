@@ -28,9 +28,7 @@
 // work on three, and gets one. Not half the cores, as with no override: the
 // 6-core CI lane measured 1.2 cores a file at three files (run 5177, lane CPU
 // 4920 s over 4107 s of file walls), so four is ~4.8 cores of its six.
-// Nor is it held to the cap, which is for a box cans share: an override is the
-// box's own choice — 12 on the 16-core staging ship (da-7u6ig).
 export function filesAtOnce(cores, load, cap = 6, override) {
-	if (Number.isFinite(override) && override > 0) return Math.max(1, Math.min(Math.floor(override), cores - 2));
+	if (Number.isFinite(override) && override > 0) return Math.max(1, Math.min(Math.floor(override), cap, cores - 2));
 	return Math.max(1, Math.min(cap, Math.floor(cores / 2), Math.floor(cores - 1 - Math.max(0, load) / 2)));
 }
