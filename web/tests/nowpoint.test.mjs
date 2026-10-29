@@ -22,7 +22,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
 import { PHONE, activeTab, inRoom, maximizeButton, pane, pastTheWindow, pickOption, settled, swipe, toggleOption } from './support/layout.mjs';
-import { drag, finger, swipeNoWait } from './support/press.mjs';
+import { drag, finger, lateMove, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -550,6 +550,21 @@ describe('a drag along the band pans the window', () => {
 			// selection is untouched: the same pill, the same minute.
 			assert.deepEqual(await pillsOf(page), ['time:-qq']);
 			assert.equal(await page.locator(`${NOWVIEW} .nowview-now`).innerText(), 'now →');
+		});
+	});
+
+	// da-343zv: on a busy main thread the long press's timer can run before
+	// a move the finger made well inside the wait is handled. When the
+	// finger moved decides, not when JavaScript got to it.
+	test('a drag whose move is handled only after the wait is still a pan', async () => {
+		await withBand(async (app) => {
+			const { page } = app;
+			const g = await geometry(page);
+			const at = { x: (g.lo + g.hi) / 2, y: g.y };
+			const { held, moved } = await lateMove(page, `${NOWVIEW} .nowview-band`, at, { x: at.x + 40, y: at.y }, 650);
+			assert.equal(held, 'hold', 'the timer ran first, so the move is late');
+			assert.equal(moved, 'pan', 'a move made before the wait was a range');
+			assert.deepEqual(await pillsOf(page), [], 'the pan selected something');
 		});
 	});
 

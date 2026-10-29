@@ -717,6 +717,8 @@
 	let last = { x: 0, y: 0 };
 	/** Whether the press has lasted long enough to be a range. */
 	let long = false;
+	/** When the press went down, by its event's stamp, which a move's is read against. */
+	let pressedAt = 0;
 	/** How far the band is dragged while a pan is in hand, in px. */
 	let panned = $state(0);
 	let held: ReturnType<typeof setTimeout> | undefined;
@@ -771,6 +773,7 @@
 		}
 		mode = 'press';
 		long = false;
+		pressedAt = event.timeStamp;
 		onMark = markOf(event.target);
 		last = { x: event.clientX, y: event.clientY };
 		const home = el?.getBoundingClientRect();
@@ -1270,6 +1273,8 @@
 		}
 		if (!press) return;
 		last = { x: event.clientX, y: event.clientY };
+		// When the finger moved, not when this ran (#lib/nowpoint.ts).
+		long = event.timeStamp - pressedAt >= LONG_MS;
 		step(event.clientX, event.clientY, event.timeStamp);
 	}
 

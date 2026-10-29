@@ -102,10 +102,13 @@ export const SLOP_PX = 6;
  * lasted `LONG_MS`.
  *
  * Called on every move AND once on the timer that sets `long`, so the long
- * press lands without the finger doing anything. `long` is that TIMER's
- * word and not a reading of the clock: `Date.now()` is a thing a test may
- * hold still, and a gesture the app cannot make under a fixed clock is a
- * gesture nothing can assert.
+ * press lands without the finger doing anything. `long` is not a reading
+ * of `Date.now()`, a thing a test may hold still: the timer's word for a
+ * still press, and on a move the move's own (`event.timeStamp` less the
+ * press's, at least `LONG_MS`), since on a busy main thread the timer can
+ * run before a move made earlier is handled, and the travel is then read as
+ * after the wait (da-343zv). A move that says «not yet» leaves a hold a
+ * hold while it is still: it is the travel the stamp decides.
  *
  * A COMMITTED mode is returned unchanged: what a gesture became is decided
  * once. `hold` is not committed — it is «still down, and long enough» —
@@ -120,7 +123,7 @@ export function advance(mode: Mode, p: Press, x: number, y: number, long: boolea
 	if (!undecided(mode)) return mode;
 	const [dx, dy] = [x - p.x, y - p.y];
 	const sideways = Math.abs(dx) > SLOP_PX && Math.abs(dx) >= Math.abs(dy);
-	if (!sideways) return long ? 'hold' : 'press';
+	if (!sideways) return long || mode === 'hold' ? 'hold' : 'press';
 	if (long || p.atOnce) return p.inNow && dx < 0 ? 'now' : 'range';
 	return 'pan';
 }

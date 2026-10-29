@@ -91,3 +91,37 @@ export async function finger(page, from, to = from, { hold = false, steps = 8 } 
 	await cdp.detach();
 }
 
+
+/**
+ * A mouse press at `at` whose move to `to` is MADE at once and HANDLED only
+ * after `ms`, past the long press (da-343zv): a busy main thread, which ran
+ * the long press's timer before the input waiting behind it. An event is
+ * stamped when it is made, so the move says when the finger moved. The
+ * view's `data-mode` once the wait is up and once the move is handled.
+ */
+export const lateMove = (page, view, at, to, ms) =>
+	page.evaluate(
+		async ([view, at, to, ms]) => {
+			const mode = () => new Promise((done) => setTimeout(() => done(document.querySelector(view).dataset.mode)));
+			const target = document.elementFromPoint(at.x, at.y);
+			const init = (p, buttons = 1) => ({
+				clientX: p.x,
+				clientY: p.y,
+				pointerId: 1,
+				pointerType: 'mouse',
+				isPrimary: true,
+				buttons,
+				bubbles: true,
+				composed: true
+			});
+			target.dispatchEvent(new PointerEvent('pointerdown', init(at)));
+			const move = new PointerEvent('pointermove', init(to));
+			await new Promise((done) => setTimeout(done, ms));
+			const held = await mode();
+			target.dispatchEvent(move);
+			const moved = await mode();
+			target.dispatchEvent(new PointerEvent('pointerup', init(to, 0)));
+			return { held, moved };
+		},
+		[view, at, to, ms]
+	);

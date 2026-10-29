@@ -64,6 +64,15 @@ describe('a press on the band becomes one gesture', () => {
 		assert.equal(advance('hold', p, 100 + SLOP_PX + 1, 50, true), 'range');
 	});
 
+	// da-343zv. On a busy main thread the timer can make a press HELD before
+	// a move the finger made earlier is handled: the move's own stamp says
+	// «not yet long», and its travel is still the pan.
+	test('a move stamped before the wait is a pan, even from a hold the timer made first', () => {
+		const p = press();
+		assert.equal(advance('hold', p, 100 + SLOP_PX + 1, 50, false), 'pan', 'the travel came before the wait');
+		assert.equal(advance('hold', p, 100 + 2, 50, false), 'hold', 'a still one leaves the hold held');
+	});
+
 	test('a drag sideways pans; a drag mostly downward is the page’s scroll, not ours', () => {
 		const p = press();
 		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'pan');

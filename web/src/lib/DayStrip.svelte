@@ -1587,6 +1587,8 @@
 		}
 		if (!press) return;
 		last = { x: event.clientX, y: event.clientY };
+		// When the finger moved, not when this ran (#lib/nowpoint.ts).
+		long = event.timeStamp - pressedAt >= LONG_MS;
 		step(event.clientX, event.clientY);
 	}
 
@@ -1637,6 +1639,8 @@
 	let last = { x: 0, y: 0 };
 	/** Whether the press has lasted long enough to be a range. */
 	let long = false;
+	/** When the press went down, by its event's stamp, which a move's is read against. */
+	let pressedAt = 0;
 	let longTimer: ReturnType<typeof setTimeout> | undefined;
 	/**
 	 * Where the wait is DRAWN, in px across the strip's box, while a press
@@ -1678,6 +1682,7 @@
 		};
 		mode = 'press';
 		long = false;
+		pressedAt = event.timeStamp;
 		last = { x: event.clientX, y: event.clientY };
 		const home = stripEl?.getBoundingClientRect();
 		waiting = home ? { x: event.clientX - home.x, y: event.clientY - home.y } : null;
