@@ -49,6 +49,11 @@ where
     let mut last_render = Instant::now();
     loop {
         std::thread::sleep(POLL_INTERVAL);
+        // A file opened `immutable` is never read again: its change ends
+        // the watch, as what it shows is no longer the file (da-uxfj3).
+        if db.changed_while_read() {
+            anyhow::bail!("the database changed, and this watch reads it read-only: run it again");
+        }
         // If the pragma read fails transiently, fall back to the
         // periodic-refresh tick rather than aborting the watch session.
         let version = data_version(db).unwrap_or(last_version);

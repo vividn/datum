@@ -154,6 +154,18 @@ that does not read never blocks one after it (da-29om3): a torn last line
 (so a torn line an append has followed is no longer last: `.rejected`).
 Native only: the browser's database is one process's at a time.
 
+### A reader writes nothing
+A command `reads()` names (`crates/datum-cli/src/lib.rs`), run by a process
+that cannot write the database or its directory, opens it read-only
+(`Db::open_to_read`, da-uxfj3): no migration, so a schema other than this
+datum's is refused naming both; no spool drain or spool lock; `stats` computes
+every day live and stores none; nothing is made beside the file. A writer's
+`-wal` and `-shm` both there and readable, it reads through them; one alone, or
+either unreadable, is refused as the writer's. Neither there, it opens
+`immutable`, and a change to the file's length or mtime while it read fails the
+command (`Db::changed_while_read`) and ends a watch: the output streamed, so it
+is reported rather than read again. The owner's reads open as a write does.
+
 ## CLI conventions
 
 ### Time flags (datum-compatible)

@@ -305,6 +305,30 @@ fn reads(command: &Command) -> bool {
         )
 }
 
+/// Does a command that [`reads`] the database at `path` open it read-only
+/// (da-uxfj3)? Where this process cannot write it or its directory: a
+/// reader then writes nothing anywhere, not even a `-wal`. Its owner's reads
+/// open it as a write does, so they land what is spooled and keep the schema
+/// current and `stats`' cache filled. `check --fix` writes what it finds.
+fn reader(path: &str, command: &Command) -> bool {
+    reads(command)
+        && !matches!(command, Command::Check(a) if a.fix)
+        && !datum_core::db::Db::writable(std::path::Path::new(path))
+}
+
+/// `result`, failed if the file a read-only `db` read changed meanwhile:
+/// a failure of its own is kept, as the change may or may not be its cause.
+fn whole(result: Result<()>, db: &datum_core::db::Db) -> Result<()> {
+    if !db.changed_while_read() {
+        return result;
+    }
+    let changed = "the database changed while this command read it, so what it printed may hold half of a write: run it again";
+    match result {
+        Ok(()) => Err(anyhow::anyhow!(changed)),
+        Err(e) => Err(e.context(changed)),
+    }
+}
+
 /// Refuse a read of a database that does not exist, before anything is made.
 fn refuse_missing(db: Option<&str>) -> Result<()> {
     match missing(db) {
@@ -570,6 +594,8 @@ fn dispatch_single(cli: Cli) -> Result<()> {
             datum_core::db::Db::open_unmigrated(&path)
                 .inspect(datum_commands::announce_migration)
                 .map_err(Into::into)
+        } else if reader(&path, &cli.command) {
+            datum_core::db::Db::open_to_read(&path).map_err(Into::into)
         } else {
             open_to_write(&path, spools)
         },
@@ -582,10 +608,8 @@ fn dispatch_single(cli: Cli) -> Result<()> {
     claim_behind_queue(&db, &path, &cli.command)?;
 
     let before = db.conn().total_changes();
-    name_holder(
-        locked_out(cmd::dispatch(cli, &db), &db, before, spools, &path),
-        &resolved.path,
-    )
+    let result = locked_out(cmd::dispatch(cli, &db), &db, before, spools, &path);
+    name_holder(whole(result, &db), &resolved.path)
 }
 
 /// A write that waited out the lock says who held it (da-hyem1).
@@ -626,21 +650,27 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
         Invocation::Multi { sides, .. } => sides.iter().any(|c| spools(&c.command)),
         Invocation::Single(c) => spools(&c.command),
     };
-    let db = name_holder(open_to_write(&path, spools), &resolved.path)?;
+    let reads_only = match &invocation {
+        Invocation::Multi { sides, .. } => sides.iter().all(|c| reader(&path, &c.command)),
+        Invocation::Single(c) => reader(&path, &c.command),
+    };
+    let db = if reads_only {
+        datum_core::db::Db::open_to_read(&path)?
+    } else {
+        name_holder(open_to_write(&path, spools), &resolved.path)?
+    };
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
     }
     let before = db.conn().total_changes();
-    name_holder(
-        locked_out(
-            cmd::dispatch_invocation(invocation, &db),
-            &db,
-            before,
-            spools,
-            &path,
-        ),
-        &resolved.path,
-    )
+    let result = locked_out(
+        cmd::dispatch_invocation(invocation, &db),
+        &db,
+        before,
+        spools,
+        &path,
+    );
+    name_holder(whole(result, &db), &resolved.path)
 }
 
 fn try_kit_level2_dispatch() -> Result<Option<()>> {
@@ -683,8 +713,15 @@ fn try_kit_level2_dispatch() -> Result<Option<()>> {
     if !resolved.path.exists() {
         return Ok(None);
     }
-    let db = datum_core::db::Db::open(&resolved.path.to_string_lossy())?;
-    datum_commands::announce_migration(&db);
+    let path = resolved.path.to_string_lossy();
+    // A kit command that runs a view only reads (da-uxfj3).
+    let db = if datum_core::db::Db::writable(&resolved.path) {
+        let db = datum_core::db::Db::open(&path)?;
+        datum_commands::announce_migration(&db);
+        db
+    } else {
+        datum_core::db::Db::open_to_read(&path)?
+    };
 
     let expanded = args::expand_argv_with_db(raw, &db)?;
     if expanded.len() < 2 {
@@ -700,6 +737,6 @@ fn try_kit_level2_dispatch() -> Result<Option<()>> {
     }
 
     let extra: Vec<String> = expanded.iter().skip(2).cloned().collect();
-    commands::kit_command::run(name, &extra, &db)?;
+    whole(commands::kit_command::run(name, &extra, &db), &db)?;
     Ok(Some(()))
 }

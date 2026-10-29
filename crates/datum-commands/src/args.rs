@@ -418,14 +418,19 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
 }
 
 /// The database `argv` names (its `--db`, else the configured one), opened
-/// when it exists — never created.
+/// when it exists — never created, and read-only where this process cannot
+/// write it, so a reader's alias pass writes nothing (da-uxfj3).
 pub fn open_existing_db(argv: &[String]) -> Option<datum_core::db::Db> {
+    use datum_core::db::Db;
     let cli_db = crate::config::pre_scan_db_flag(argv);
     let db_path = crate::config::locate_db(cli_db.as_deref())?;
     if !db_path.exists() {
         return None;
     }
-    datum_core::db::Db::open(db_path.to_str()?).ok()
+    match Db::writable(&db_path) {
+        true => Db::open(db_path.to_str()?).ok(),
+        false => Db::open_to_read(db_path.to_str()?).ok(),
+    }
 }
 
 /// Like [`parse_invocation`] but uses the provided `db` for alias

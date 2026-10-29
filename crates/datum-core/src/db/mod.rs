@@ -145,6 +145,15 @@ pub struct Db {
     /// When this handle's run of sync apply chunks with no pause between
     /// them began, and when it last committed one (`sync_apply`, da-2ejbs).
     pub(crate) apply_run: Cell<Option<(std::time::Instant, std::time::Instant)>>,
+    /// The file's length and modification time as an `immutable` open of
+    /// it began ([`Db::open_read_only`]); `None` for any other handle.
+    read_from: Option<(u64, std::time::SystemTime)>,
+}
+
+/// A file's length and modification time.
+fn stamp(path: &str) -> Result<(u64, std::time::SystemTime)> {
+    let m = std::fs::metadata(path)?;
+    Ok((m.len(), m.modified()?))
 }
 
 impl Db {
@@ -267,6 +276,7 @@ impl Db {
             refold_failed: Default::default(),
             create_time_ids_left: Default::default(),
             path: Some(path.into()),
+            read_from: None,
         };
         db.last_migration = db.migrate(Some(std::path::Path::new(path)))?;
         Ok(db)
@@ -293,6 +303,7 @@ impl Db {
             refold_failed: Default::default(),
             create_time_ids_left: Default::default(),
             path: Some(path.into()),
+            read_from: None,
         })
     }
 
@@ -302,16 +313,43 @@ impl Db {
     /// shell completion (`datum __complete`, da-bu09u). A missing file is an
     /// error, never a new database.
     ///
-    /// A read-only open of a WAL database still creates its `-wal` and
-    /// `-shm` files when they are absent. Absent, and with no rollback
-    /// journal to read either (WASI's every write, da-yajgu), the file is
-    /// opened `immutable` and nothing is created beside it. Beside a hot
-    /// journal SQLite refuses the open (`SQLITE_READONLY_ROLLBACK`), as a
-    /// read-only handle cannot roll it back: an error, never a cut write.
+    /// A read-only open of a WAL database creates its `-wal` and `-shm`
+    /// files when they are absent. Absent, and with no rollback journal to
+    /// read either (WASI's every write, da-yajgu), the file is opened
+    /// `immutable` and nothing is created beside it; SQLite then trusts the
+    /// file not to change, so [`Db::changed_while_read`] says whether it
+    /// did. Both there, a writer has the file open, and SQLite reads through
+    /// them; one alone, or either unreadable, is refused as the writer's
+    /// (da-uxfj3). Beside a hot journal SQLite refuses the open
+    /// (`SQLITE_READONLY_ROLLBACK`), as a read-only handle cannot roll it
+    /// back: an error, never a cut write.
     pub fn open_read_only(path: &str) -> Result<Self> {
         use rusqlite::OpenFlags;
-        let checkpointed = !std::path::Path::new(&format!("{path}-wal")).exists()
+        let beside = |ext: &str| std::fs::File::open(format!("{path}-{ext}"));
+        let there = |f: &std::io::Result<_>| !matches!(f, Err(e) if e.kind() == std::io::ErrorKind::NotFound);
+        let (wal, shm) = (beside("wal"), beside("shm"));
+        match (there(&wal), there(&shm)) {
+            (false, false) => {}
+            (true, true) if wal.is_ok() && shm.is_ok() => {}
+            _ => {
+                let say = |f: &std::io::Result<_>, ext: &str| match f {
+                    Ok(_) => format!("a -{ext}"),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => format!("no -{ext}"),
+                    Err(e) => format!("a -{ext} it cannot read ({e})"),
+                };
+                return Err(DatumError::Other(format!(
+                    "{path} is open in its writer's datum, or was left so, and this reader \
+                     cannot read beside {} and {}: try again once its writer closes it, or \
+                     its owner opens it once",
+                    say(&wal, "wal"),
+                    say(&shm, "shm")
+                )));
+            }
+        }
+        let checkpointed = !there(&wal)
             && std::fs::metadata(format!("{path}-journal")).map_or(true, |m| m.len() == 0);
+        // A file whose stamp cannot be read is read unchecked, as before.
+        let read_from = checkpointed.then(|| stamp(path).ok()).flatten();
         let escaped = path
             .replace('%', "%25")
             .replace('?', "%3f")
@@ -338,7 +376,72 @@ impl Db {
             refold_failed: Default::default(),
             create_time_ids_left: Default::default(),
             path: Some(path.into()),
+            read_from,
         })
+    }
+
+    /// [`Db::open_read_only`] for a command that reads what the database
+    /// holds (da-uxfj3): a schema other than this datum's is refused,
+    /// naming both, as no migration may run on a reader's open.
+    ///
+    /// Its first read is tried twice: a writer that opened or closed
+    /// between the look at its `-wal` and `-shm` and that read is looked at
+    /// again.
+    pub fn open_to_read(path: &str) -> Result<Self> {
+        let open = || -> Result<(Self, u32)> {
+            let db = Self::open_read_only(path)?;
+            let at = crate::migrations::peek_schema_version(&db.conn)?;
+            Ok((db, at))
+        };
+        let (db, at) = open().or_else(|_| open())?;
+        let reads = crate::migrations::CURRENT_SCHEMA_VERSION;
+        match at.cmp(&reads) {
+            std::cmp::Ordering::Equal => Ok(db),
+            std::cmp::Ordering::Less => Err(DatumError::IncompatibleSchema(format!(
+                "{path} is at schema v{at} and this datum reads v{reads}: its owner opens it \
+                 once to upgrade"
+            ))),
+            std::cmp::Ordering::Greater => Err(DatumError::IncompatibleSchema(format!(
+                "{path} is at schema v{at}, newer than this datum's v{reads}: upgrade datum"
+            ))),
+        }
+    }
+
+    /// Did the file an `immutable` open read change since it began? Then
+    /// what was read may be half of a write (da-uxfj3). Always `false` for
+    /// any other handle, whose reads SQLite keeps whole.
+    pub fn changed_while_read(&self) -> bool {
+        match (self.read_from, &self.path) {
+            (Some(from), Some(path)) => stamp(&path.to_string_lossy()).ok() != Some(from),
+            _ => false,
+        }
+    }
+
+    /// Does SQLite refuse every write on this handle?
+    pub fn read_only(&self) -> bool {
+        self.conn
+            .is_readonly(rusqlite::DatabaseName::Main)
+            .unwrap_or(false)
+    }
+
+    /// Can this process write the file at `path` and the directory it is
+    /// in, as an open that writes needs (da-uxfj3)?
+    pub fn writable(path: &std::path::Path) -> bool {
+        let dir = (path.parent())
+            .filter(|d| !d.as_os_str().is_empty())
+            .unwrap_or(std::path::Path::new("."));
+        #[cfg(unix)]
+        return [path, dir].iter().all(|p| {
+            use std::os::unix::ffi::OsStrExt;
+            std::ffi::CString::new(p.as_os_str().as_bytes())
+                // SAFETY: a NUL-terminated path, read by `access` alone.
+                .is_ok_and(|c| unsafe { libc::access(c.as_ptr(), libc::W_OK) } == 0)
+        });
+        #[cfg(not(unix))]
+        {
+            let _ = dir;
+            true
+        }
     }
 
     /// Open an in-memory database (for tests).
@@ -355,6 +458,7 @@ impl Db {
             refold_failed: Default::default(),
             create_time_ids_left: Default::default(),
             path: None,
+            read_from: None,
         };
         db.last_migration = db.migrate(None)?;
         Ok(db)

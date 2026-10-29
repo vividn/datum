@@ -387,6 +387,7 @@ impl Db {
             refold_failed: Default::default(),
             create_time_ids_left: Default::default(),
             path: None,
+            read_from: None,
         };
         db.migrate(None)?;
         let spool = beside(file, ".spool");
@@ -532,8 +533,23 @@ impl Db {
         let Some(path) = &self.path else {
             return Ok(Default::default());
         };
-        let _held = lock(path, true)?;
-        let waiting = pending(&self.conn, lines(&beside(path, ".spool"))?.0)?
+        // A read-only handle takes no lock and sets nothing aside: it
+        // writes nothing (da-uxfj3).
+        let held = (!self.read_only()).then(|| lock(path, true)).transpose()?;
+        let spool = beside(path, ".spool");
+        let read = match &held {
+            Some(_) => lines(&spool)?.0,
+            None => {
+                let bytes = match std::fs::read(&spool) {
+                    Err(e) if e.kind() == ErrorKind::NotFound => Vec::new(),
+                    read => read.map_err(|e| {
+                        DatumError::Other(format!("cannot read {}: {e}", spool.display()))
+                    })?,
+                };
+                pieces(&bytes).filter_map(|(_, line, _)| line).collect()
+            }
+        };
+        let waiting = pending(&self.conn, read)?
             .into_iter()
             .map(|(_, v)| v["at"].as_str().unwrap_or_default().to_string())
             .collect();

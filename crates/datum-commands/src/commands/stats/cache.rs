@@ -37,9 +37,10 @@ pub(super) struct Cache<'a> {
 }
 
 impl<'a> Cache<'a> {
-    /// The cache for this run, or `None` when it reads around it.
+    /// The cache for this run, or `None` when it reads around it: a
+    /// read-only open computes every day live and stores none (da-uxfj3).
     pub(super) fn open(db: &'a Db, args: &StatsArgs) -> Result<Option<Self>> {
-        if args.no_cache || args.time.timezone.is_some() {
+        if args.no_cache || args.time.timezone.is_some() || db.read_only() {
             return Ok(None);
         }
         Ok(Some(Cache::new(db)?))
