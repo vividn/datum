@@ -213,6 +213,68 @@ export const oneClock = (layer: Layer): boolean => !!layer.doc()?.querySelector(
 const NS = 'http://www.w3.org/2000/svg';
 
 /**
+ * The marks under `root`, a day's layer or a part of one, laid out in place
+ * at `along` px a unit of time and `across` px a unit across: a block as long
+ * as its time, every other mark the size `across` makes it, as `dayview`
+ * draws one at that day height. In the attributes, so no mark carries a
+ * transform of its own to keep its size: Chrome's per-frame compositing
+ * update costs one per such mark, every frame anything on the page changes
+ * (da-syaz8). `y`: time runs down (`--orientation vertical`).
+ */
+export function layMarks(root: Element, along: number, across: number, y = false): void {
+	const [kx, ky] = y ? [across, along] : [along, across];
+	const [at, length] = y ? ['y', 'height'] : ['x', 'width'];
+	const num = (el: Element, name: string) => Number(el.getAttribute(name));
+	const set = (el: Element, name: string, value: number) => el.setAttribute(name, String(value));
+	const scale = (el: Element, name: string, by: number) => el.hasAttribute(name) && set(el, name, num(el, name) * by);
+	const scaleAll = (el: Element, names: string[], by: number) => names.forEach((n) => scale(el, n, by));
+	/** A mark centered at `at` along time, `length` long: its center moved, its length `by` times (one keeps it). */
+	const center = (el: Element, by: number) => {
+		const mid = (num(el, at) + num(el, length) / 2) * along;
+		set(el, length, num(el, length) * by);
+		set(el, at, mid - num(el, length) / 2);
+	};
+	/** A glyph's own stretch along x (`matrix(a 0 0 1 dx 0)`, dx its center's), about its new center. */
+	const stretch = (el: Element, mid: number) => {
+		const a = /^matrix\(([-\d.e]+) 0 0 1 /.exec(el.getAttribute('transform') ?? '')?.[1];
+		if (a) el.setAttribute('transform', `matrix(${a} 0 0 1 ${mid * (1 - Number(a))} 0)`);
+	};
+
+	for (const el of root.querySelectorAll('rect, circle, text, use, line')) {
+		if (el.matches('.bg') || el.closest('defs')) continue;
+		if (el.localName === 'rect') {
+			if (el.matches('.point-bg')) center(el, 1);
+			else scaleAll(el, [at, length], along);
+			scaleAll(el, y ? ['x', 'width'] : ['y', 'height'], across);
+		} else if (el.localName === 'circle') {
+			stretch(el, num(el, 'cx') * kx);
+			scale(el, 'cx', kx);
+			scale(el, 'cy', ky);
+			scale(el, 'r', across);
+		} else if (el.localName === 'use') {
+			center(el, across);
+			scaleAll(el, y ? ['x', 'width'] : ['y', 'height'], across);
+			stretch(el, num(el, 'x') + num(el, 'width') / 2);
+		} else if (el.localName === 'text' && el.matches('.error-label')) {
+			// As datum sizes it: a twelfth of the day, between 7 and 11.
+			const fs = Math.min(11, Math.max(7, LAYER_HEIGHT * across * 0.12));
+			const line = el.parentElement!.querySelector('line')!;
+			set(el, 'x', num(line, 'x1') * kx + 2);
+			set(el, 'y', y ? num(line, 'y1') * ky - 2 : num(line, 'y1') * ky + fs);
+			set(el, 'font-size', fs);
+		} else if (el.localName === 'text') {
+			stretch(el, num(el, 'x') * kx);
+			scale(el, 'x', kx);
+			scale(el, 'y', ky);
+			scale(el, 'font-size', across);
+		} else if (el.localName === 'line') {
+			scaleAll(el, ['x1', 'x2'], kx);
+			scaleAll(el, ['y1', 'y2'], ky);
+		}
+	}
+}
+
+/**
  * A day's layer as the day strip's row: `width` by `dayHeight`, as `dayview
  * --days 1` draws a band at that size — its blocks as long as their hours,
  * every other mark the size the day height gives it — and, with `now`, the
@@ -224,52 +286,9 @@ export function bandOf(layer: Layer, width: number, dayHeight: number, now?: num
 	const root = doc.documentElement;
 	const span = root.querySelector('.day-data')!;
 	const [from, to] = ['data-from', 'data-to'].map((name) => Date.parse(span.getAttribute(name) ?? ''));
-	const kx = width / Number(span.getAttribute('data-hi'));
-	const ky = dayHeight / LAYER_HEIGHT;
 	const num = (el: Element, name: string) => Number(el.getAttribute(name));
 	const set = (el: Element, name: string, value: number) => el.setAttribute(name, String(value));
-	const scale = (el: Element, name: string, by: number) => el.hasAttribute(name) && set(el, name, num(el, name) * by);
-	/** A mark centered at `x` along time, `w` wide: its center moved, its size the day height's (or kept). */
-	const center = (el: Element, x: string, w: string, by: number) => {
-		const mid = (num(el, x) + num(el, w) / 2) * kx;
-		set(el, w, num(el, w) * by);
-		set(el, x, mid - num(el, w) / 2);
-		return mid;
-	};
-	/** A glyph's own stretch along time (`matrix(a 0 0 1 dx 0)`, dx its center's), about its new center. */
-	const stretch = (el: Element, mid: number) => {
-		const a = /^matrix\(([-\d.e]+) 0 0 1 /.exec(el.getAttribute('transform') ?? '')?.[1];
-		if (a) el.setAttribute('transform', `matrix(${a} 0 0 1 ${mid * (1 - Number(a))} 0)`);
-	};
-
-	for (const el of root.querySelectorAll('rect, circle, text, use, line')) {
-		if (el.matches('.bg') || el.closest('defs')) continue;
-		if (el.matches('rect.point-bg')) {
-			center(el, 'x', 'width', 1);
-		} else if (el.localName === 'rect') {
-			for (const n of ['x', 'width']) scale(el, n, kx);
-		} else if (el.localName === 'circle') {
-			stretch(el, num(el, 'cx') * kx);
-			scale(el, 'cx', kx);
-			scale(el, 'r', ky);
-		} else if (el.localName === 'use') {
-			stretch(el, center(el, 'x', 'width', ky));
-		} else if (el.localName === 'text' && el.matches('.error-label')) {
-			// As datum sizes it: a twelfth of the day, between 7 and 11.
-			const fs = Math.min(11, Math.max(7, dayHeight * 0.12));
-			set(el, 'x', num(el.parentElement!.querySelector('line')!, 'x1') * kx + 2);
-			set(el, 'y', fs);
-			set(el, 'font-size', fs);
-			continue;
-		} else if (el.localName === 'text') {
-			stretch(el, num(el, 'x') * kx);
-			scale(el, 'x', kx);
-			scale(el, 'font-size', ky);
-		} else if (el.localName === 'line') {
-			for (const n of ['x1', 'x2']) scale(el, n, kx);
-		}
-		for (const n of ['y', 'height', 'cy', 'y1', 'y2']) scale(el, n, ky);
-	}
+	layMarks(root, width / num(span, 'data-hi'), dayHeight / LAYER_HEIGHT);
 	set(span, 'data-hi', width);
 	for (const [n, v] of [['width', width], ['height', dayHeight]] as const) set(root, n, v);
 	root.setAttribute('viewBox', `0 0 ${width} ${dayHeight}`);

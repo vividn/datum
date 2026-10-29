@@ -203,7 +203,11 @@ export async function traceOf(page, cdp, act) {
 	const placed = (id, name) => (where.get(id) ?? '') + name;
 	const restyles = spans('UpdateLayoutTree').map((e) => e.args?.elementCount ?? e.args?.beginData?.elementCount ?? 0);
 	const tasks = spans('RunTask').map((e) => e.dur / 1000);
+	// Chrome's compositing update, every frame anything on the page changed:
+	// linear in the paint chunks, so in the elements with a transform of their own (da-syaz8).
+	const layerize = spans('Layerize').map((e) => e.dur / 1000);
 	return {
+		layerize: { runs: layerize.length, ms: layerize.reduce((a, b) => a + b, 0), most: Math.max(0, ...layerize) },
 		paints: named('Paint').length,
 		/** What each paint painted: the element whose layer it was. */
 		painted: named('Paint').map((e) => placed(e.args?.data?.nodeId, e.args?.data?.nodeName ?? '')),

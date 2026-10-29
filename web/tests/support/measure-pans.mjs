@@ -42,8 +42,32 @@ function say(what, trace, frames) {
 			`main thread ${round(trace.taskMs)}ms (${round(trace.taskMs / MOVES)}ms a move), script ${round(trace.scriptMs)}ms; ` +
 			`longest task ${trace.mostTaskMs}ms, long tasks [${trace.longTasks}]; ` +
 			`paints ${trace.paints}, restyles ${trace.restyled.runs} (most ${trace.restyled.most} elements, ${trace.restyled.total} in all), ` +
-			`layouts ${trace.layouts}; load ${loadavg()[0].toFixed(0)}\n  painted: ${tally(trace.painted)}\n  laid out from: ${tally(trace.laidOut)}`
+			`layouts ${trace.layouts}; layerize ${trace.layerize.runs} frames, ${(trace.layerize.ms / (trace.layerize.runs || 1)).toFixed(1)}ms a frame (most ${trace.layerize.most.toFixed(1)}); load ${loadavg()[0].toFixed(0)}\n  painted: ${tally(trace.painted)}\n  laid out from: ${tally(trace.laidOut)}`
 	);
+}
+
+/**
+ * A page at rest that changes one small thing every frame, as a clock tick
+ * or the nowview's flow does: what Chrome's Layerize costs a frame then.
+ */
+async function atRest(page, cdp, what) {
+	const trace = await traceOf(page, cdp, () =>
+		page.evaluate(
+			() =>
+				new Promise((done) => {
+					const dot = document.body.appendChild(document.createElement('div'));
+					dot.style.cssText = 'position:fixed;left:0;top:0;width:4px;height:4px;background:red;will-change:transform';
+					let n = 0;
+					const step = () => {
+						dot.style.translate = `${n % 50}px 0`;
+						if (++n < 60) requestAnimationFrame(step);
+						else (dot.remove(), done());
+					};
+					requestAnimationFrame(step);
+				})
+		)
+	);
+	console.log(`${what}, at rest, a div moved every frame: layerize ${trace.layerize.runs} frames, ${(trace.layerize.ms / (trace.layerize.runs || 1)).toFixed(1)}ms a frame (most ${trace.layerize.most.toFixed(1)}); main thread ${round(trace.taskMs)}ms; load ${loadavg()[0].toFixed(0)}`);
 }
 
 await startApp();
@@ -60,6 +84,8 @@ try {
 		const cdp = await page.context().newCDPSession(page);
 		await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
 		const bottom = () => page.locator('.stack').evaluate((s) => (s.scrollTop = s.scrollHeight));
+
+		await atRest(page, cdp, 'whole day');
 
 		// 1. Vertical: the finger down the band, the stack back through the days.
 		for (const pass of [1, 2]) {
@@ -80,8 +106,10 @@ try {
 			strip.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -300, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }));
 		}, at);
 		await page.waitForFunction(() => !!document.querySelector('.unzoom'));
+		await page.waitForFunction(() => !document.querySelector('.band.stretched'));
 		await page.waitForTimeout(1500);
 		await app.idle();
+		await atRest(page, cdp, 'zoomed');
 		for (const pass of [1, 2]) {
 			const way = pass % 2 ? -1 : 1;
 			const from = { x: at.x - way * 100, y: at.y };

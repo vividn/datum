@@ -1055,15 +1055,12 @@
 	function unstretch(): void {
 		// Not the strip's own copies (`compose`): the strip is scaled back whole, below.
 		for (const pattern of el?.querySelectorAll<SVGPatternElement>('.nowview-band svg.svg pattern:not([id$="-strip"])') ?? []) {
-			// And by what the crop stretched the day's data by, along time and
-			// across (da-0e06p, da-m6i2a).
-			const back = 1 / ((zoom?.scale || 1) * Number(pattern.getAttribute('data-scale') ?? 1));
-			const across = 1 / Number(pattern.getAttribute('data-cross') ?? 1);
+			const back = 1 / (zoom?.scale || 1);
 			const at = Number(pattern.getAttribute('data-origin') ?? 0);
 			pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
 			pattern.setAttribute(
 				'patternTransform',
-				`translate(${vertical ? `0 ${at}` : `${at} 0`}) scale(${vertical ? `${across} ${back}` : `${back} ${across}`}) ${pattern.dataset.drawn}`
+				`translate(${vertical ? `0 ${at}` : `${at} 0`}) scale(${vertical ? `1 ${back}` : `${back} 1`}) ${pattern.dataset.drawn}`
 			);
 		}
 		// And the strip at now, with its line and its word, about now (`compose`).
@@ -2071,6 +2068,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="nowview-band"
+		class:stretched={!!zoom && zoom.scale !== 1}
 		style:--zoom={zoom?.scale ?? 1}
 		style:--zoom-x="{zoom?.origin ?? 0}px"
 		data-pans={pans}
@@ -2289,17 +2287,19 @@
 
 	/* And a mark keeps its size (da-6fdaf), as on the day strip (da-dqbso):
 	   a block is as long as its minutes, and every other mark is scaled
-	   back about its own anchor, so only its place moves. */
-	/* A mark is as big as the band makes the day's layer across (`--sc`,
-	   #lib/nowcrop.ts), and a moment's line as wide as it was drawn: after
-	   the rule above, which it ties. */
+	   back about its own anchor, so only its place moves. Only while a
+	   gesture stretches the band: at rest the crop lays each mark out at
+	   its size (#lib/nowcrop.ts), and a mark with a transform of its own
+	   costs Chrome's compositing update every frame anything on the page
+	   changes (da-syaz8). What stands at now is scaled back as one, about
+	   now (`unstretch`): the strip, the dash under it, the line and the
+	   word keep their size and their place beside now. */
 	.nowview-band :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *)) {
 		transform-box: fill-box;
 		transform-origin: center;
-		scale: calc(var(--sc, 1) / (var(--zoom) * var(--sx, 1))) 1;
 	}
-	.nowview-band :global(svg.svg line.moment:not(defs *)) {
-		scale: calc(1 / (var(--zoom) * var(--sx, 1))) 1;
+	.nowview-band.stretched :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *, .at-now *)) {
+		scale: calc(1 / var(--zoom)) 1;
 	}
 	.nowview-band :global(svg.svg text[text-anchor='end']:not(defs *)) {
 		transform-origin: right;
@@ -2307,22 +2307,13 @@
 	.nowview-band :global(svg.svg text:not([text-anchor='middle']):not([text-anchor='end']):not(defs *)) {
 		transform-origin: left;
 	}
-	.vertical .nowview-band :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *)) {
-		scale: 1 calc(var(--sc, 1) / (var(--zoom) * var(--sx, 1)));
-	}
-	.vertical .nowview-band :global(svg.svg line.moment:not(defs *)) {
-		scale: 1 calc(1 / (var(--zoom) * var(--sx, 1)));
+	.vertical .nowview-band.stretched :global(svg.svg :is(circle, text, use, polygon, rect.point-bg, line):not(defs *, .at-now *)) {
+		scale: 1 calc(1 / var(--zoom));
 	}
 	/* Under a gesture, the rule of the window it is at stands in for the
 	   picture's own (`graftAxis`, da-gy4xz). */
 	.nowview-band :global(svg.svg.axis-live .plot > :is(.gridline, .tick, .tick-label)) {
 		visibility: hidden;
-	}
-	/* But what stands at now is scaled back as one, about now (`unstretch`):
-	   the strip, the dash under it, the line and the word keep their size
-	   and their place beside now. */
-	.nowview .nowview-band :global(svg.svg .at-now :is(circle, text, use, polygon, rect, line):not(defs *)) {
-		scale: none;
 	}
 
 	.vertical .hold-mark.held .stem {

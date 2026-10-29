@@ -17,6 +17,7 @@ import {
 	todayAt
 } from './support/app.mjs';
 import { pageWait } from './support/press.mjs';
+import { until } from './support/until.mjs';
 import { HOLD_MS } from '../src/lib/hold.ts';
 import {
 	NOWVIEW,
@@ -259,30 +260,39 @@ describe("the day strip's day height and its pin", () => {
 		});
 	});
 
-	// da-8khuw: a new day height asks for the days on screen alone; a day
-	// above them keeps the picture it has, stretched to the new height on
-	// the picture itself — a resting transform on `.shot` would make it the
-	// hover label's containing block (see `.shot.previewing`).
-	test('a day off screen stands in at the new height, stretched on its picture', async () => {
+	// da-8khuw: a new day height asks datum for no picture of a day off
+	// screen. One whose data layer the strip holds is laid out again at the
+	// new height from it, which runs no process (da-syaz8): left stretched,
+	// each of its marks would carry a scale of its own and cost Chrome's
+	// compositing update every frame. And nothing rests on its `.shot`,
+	// which would make it the hover label's containing block (see
+	// `.shot.previewing`).
+	test('a day off screen is laid out at the new height from the data held, asking datum for nothing', async () => {
 		await settledRoom(shared, 'standin', async (app) => {
 			await sizeFor(app, 2);
 			const was = await valueOf(app);
+			const seen = await app.spyOnRunner();
 			await say(app, { dayHeight: was + 40 });
 			await waitForHeights(app, was + 40);
-			const off = await app.page.locator('.stack').evaluate((stack) => {
-				const box = stack.getBoundingClientRect();
-				const band = [...stack.querySelectorAll('.band')].find((b) => b.getBoundingClientRect().bottom <= box.top);
-				const svg = band?.querySelector('svg.svg');
-				return svg && {
-					drawn: Number(svg.getAttribute('height')),
-					shown: svg.getBoundingClientRect().height,
-					shot: getComputedStyle(band.querySelector('.shot')).transform
-				};
-			});
-			assert.ok(off, 'no band above the box with a picture');
-			assert.equal(off.drawn, was, 'the day off screen was asked for again');
-			assert.ok(Math.abs(off.shown - (was + 40)) < 1, `it shows ${off.shown}px tall, not ${was + 40}`);
-			assert.equal(off.shot, 'none', 'its .shot carries a transform at rest');
+			const off = () =>
+				app.page.locator('.stack').evaluate((stack) => {
+					const box = stack.getBoundingClientRect();
+					const band = [...stack.querySelectorAll('.band')].find((b) => b.getBoundingClientRect().bottom <= box.top);
+					const svg = band?.querySelector('svg.svg');
+					return svg && {
+						drawn: Number(svg.getAttribute('height')),
+						shown: svg.getBoundingClientRect().height,
+						shot: getComputedStyle(band.querySelector('.shot')).transform,
+						stretched: band.classList.contains('stretched')
+					};
+				});
+			assert.ok(await off(), 'no band above the box with a picture');
+			const at = await until(off, (o) => o.drawn === was + 40);
+			assert.ok(Math.abs(at.shown - (was + 40)) < 1, `it shows ${at.shown}px tall, not ${was + 40}`);
+			assert.equal(at.shot, 'none', 'its .shot carries a transform at rest');
+			assert.equal(at.stretched, false, 'its marks are scaled back at rest');
+			const pictures = (await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer') && !argv.includes('--show'));
+			assert.deepEqual(pictures, [], 'datum was asked for a picture');
 		});
 	});
 

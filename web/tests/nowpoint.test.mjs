@@ -1350,6 +1350,26 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 			);
 		});
 	});
+
+	// da-syaz8: the page lays each mark out at the band's own scale, down the
+	// axis too, so none carries a transform of its own to keep its size.
+	test('a dot is round, at its minute, and scaled by nothing of its own', async () => {
+		await withBand(async (app, room) => {
+			const { page } = app;
+			const logged = await app.run(['occur', 'tea', '-t', '-10']);
+			assert.equal(logged.code, 0, logged.stderr);
+			await app.redraw();
+			await turn(app, room);
+			const dot = page.locator(`${NOWVIEW} svg.svg [data-field="tea"] .point-fg`).first();
+			await dot.waitFor({ state: 'attached' });
+			const g = await vgeometry(page);
+			const { box, scale } = await dot.evaluate((d) => ({ box: d.getBoundingClientRect().toJSON(), scale: getComputedStyle(d).scale }));
+			assert.equal(scale, 'none');
+			assert.ok(box.width > 2 && Math.abs(box.width - box.height) < 0.5, `the dot is ${box.width}×${box.height}`);
+			const mid = box.top + box.height / 2;
+			assert.ok(Math.abs(mid - vat(g, 10).y) < 1.5, `the dot is at ${mid}, ten minutes back at ${vat(g, 10).y}`);
+		});
+	});
 });
 
 // ── the now section (da-6csum, da-dv45l) ─────────────────────────────────

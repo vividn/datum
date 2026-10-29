@@ -15,7 +15,7 @@
 // with the block each lane holds at now. So a stretch or a pan asks the CLI
 // for its overlay alone, and a clock change is one more instant on the way.
 
-import { LAYER_HEIGHT, type Layer } from './dayLayers.js';
+import { LAYER_HEIGHT, layMarks, type Layer } from './dayLayers.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -99,7 +99,6 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 		root.append(note);
 	}
 	const spans = pages.flatMap((p) => [...p.querySelectorAll('[data-lo]')]);
-	const scale = new Map<string, number>();
 	for (const page of pages) {
 		for (const def of page.querySelectorAll('defs > *')) {
 			const id = def.localName === 'pattern' ? own(def.id) : def.id;
@@ -134,36 +133,26 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 			const a = rate(into) / rate(from);
 			const b = lo + (from.from - into.from) * rate(into) - a * from.lo;
 			const unit = (t: number) => from.lo + (t - from.from) * rate(from);
-			// A mark is as big as the band makes it (`--sc`), and as wide too.
-			const day = make('g', {
-				transform: y ? `matrix(${c} 0 0 ${a} ${cross} ${b})` : `matrix(${a} 0 0 ${c} ${b} ${cross})`,
-				style: `--sx: ${a}; --sc: ${c}`
-			});
+			// Laid out at the overlay's px (`layMarks`), a mark as big as the
+			// band makes it: under a stretch each would carry a transform of
+			// its own to keep its size (da-syaz8).
+			const day = make('g', { transform: y ? `translate(${cross} ${b})` : `translate(${b} ${cross})` });
 			for (const child of span.children) day.append(doc.importNode(child, true));
 			// A block's stripes start where it starts (da-rdiph): a copy of its
 			// pattern at its instant, which the widget scales back about it, so
-			// a stretch moves them with the block and never across it. Every
-			// stretch shares one rate: the strip is cut into the axis, not
-			// drawn at a scale of its own, so a pattern's is any stretch's.
+			// a stretch moves them with the block and never across it.
 			for (const el of day.querySelectorAll('[fill^="url(#"]')) {
-				const id = anchored(own(el.getAttribute('fill')!.slice(5, -1)), el.hasAttribute('data-from') ? unit(Date.parse(el.getAttribute('data-from')!)) : null);
+				const id = anchored(own(el.getAttribute('fill')!.slice(5, -1)), el.hasAttribute('data-from') ? unit(Date.parse(el.getAttribute('data-from')!)) * a : null);
 				el.setAttribute('fill', `url(#${id})`);
-				scale.set(id, a);
 			}
 			// A block is cut to the stretch, as the CLI's own picture cut it,
 			// and a state still running at now (drawn on to the day's end),
 			// at now — on now the clip at the now-line does that as it moves.
 			const until = flow ? into.to : Math.min(into.to, Math.max(into.from, Date.now()));
 			trim(day, unit(Math.max(into.from, from.from)), unit(Math.min(into.to, from.to)), unit(until), from.to, y);
+			layMarks(day, a, c, y);
 			at.append(day);
 		}
-	}
-
-	// What a stretch draws a mark at, a pattern draws stripes at (da-hmtoq):
-	// the widget scales them back by this as it does the marks.
-	for (const [id, a] of scale) {
-		doc.getElementById(id)?.setAttribute('data-scale', String(a));
-		doc.getElementById(id)?.setAttribute('data-cross', String(c));
 	}
 
 	// The strip, as the CLI paints it: each lane in the state its block holds
@@ -230,8 +219,6 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 		if (!doc!.getElementById(`${pattern}-strip`)) {
 			const copy = doc!.getElementById(pattern)?.cloneNode(true) as Element | undefined;
 			copy?.setAttribute('id', `${pattern}-strip`);
-			copy?.removeAttribute('data-scale');
-			copy?.removeAttribute('data-cross');
 			if (copy) defs.append(copy);
 		}
 		return `url(#${pattern}-strip)`;

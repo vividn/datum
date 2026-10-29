@@ -52,6 +52,7 @@ import {
 	todayAt
 } from './support/app.mjs';
 import { choose, chooseRoot } from './support/layout.mjs';
+import { until } from './support/until.mjs';
 import {
 	SAVE_OPTIONS,
 	settledRoom,
@@ -858,17 +859,18 @@ describe('the day strip zooms onto an hour range', () => {
 			});
 
 			// The release keeps the window — the same eight hours — and asks
-			// datum for nothing: the pictures on screen are the window's,
-			// their marks placed by the map (da-dqbso).
+			// datum for nothing: the pictures are laid out again at the
+			// window from the days' data the strip holds, the whole day three
+			// times as wide, so at rest no mark is scaled back (da-syaz8).
 			await untilWindow(app, 'w[1] - w[0] < 24');
 			assert.deepEqual(await windowHeard(app), [8, 16]);
 			await app.idle();
-			assert.deepEqual(askedWidths(await seen()), [], 'the release re-drew the bands');
-			assert.equal(await drawnWidth(app), full, 'the picture is not the one drawn at rest');
+			assert.deepEqual(askedWidths(await seen()), [], 'the release asked datum for a picture');
+			await until(() => drawnWidth(app), (w) => w === full * 3);
 
 			// And the whole strip is on those hours: one transform for every
 			// band, nine hours on screen, and a ruler that names them.
-			const after = await bandTransforms(app);
+			const after = await until(() => bandTransforms(app), (t) => t.every((x) => x === t[0]));
 			assert.deepEqual(after, after.map(() => after[0]), 'the bands moved apart');
 			assert.equal(await hoursShown(app), 9);
 			assert.deepEqual(
@@ -1035,6 +1037,8 @@ describe('the day strip zooms onto an hour range', () => {
 			await pinch(page, box, 100, 300);
 			await untilWindow(app, 'w[1] - w[0] < 24');
 			await app.idle();
+			// Each band laid out again at the window (da-syaz8).
+			await until(() => page.locator('.band.stretched').count(), (n) => n === 0);
 			const windowed = await windowHeard(app);
 
 			// So the taps the reset used to share are spoken for: aimed at
@@ -1226,10 +1230,10 @@ describe('the day strip zooms onto an hour range', () => {
 					`the pan changed how much is on screen: ${shown} → ${panShown}`
 				);
 
-				// Every band is still on the one axis: a zoom re-draws none of
-				// them (da-dqbso), so every picture is mapped by one map.
+				// Every band is still on the one axis: each is laid out again
+				// at the window (da-syaz8), and mapped by one map.
 				await app.idle();
-				const after = await bandTransforms(app);
+				const after = await until(() => bandTransforms(app), (t) => t.every((x) => x === t[0]));
 				assert.deepEqual(after, after.map(() => after[0]), 'the bands moved apart');
 
 				// The button in the corner: the whole day.

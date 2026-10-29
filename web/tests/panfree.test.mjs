@@ -77,6 +77,8 @@ test('a horizontal pan moves the pictures and redraws none of them, under the fi
 		// until then. Then idle, for the pictures the commit asks for.
 		await page.locator(`${TODAY}[data-pan-stop=""]`).waitFor();
 		await app.idle();
+		// The commit lays each band out again at the window (da-syaz8): then it is at rest.
+		await page.waitForFunction(() => !document.querySelector('.band.stretched'));
 		const cdp = await page.context().newCDPSession(page);
 		const from = { x: at.x + 60, y: at.y };
 		// The trace is of the drag with the finger still down: the release

@@ -576,6 +576,14 @@
 	 */
 	const stand = (end: number) => day / (drawn[end]?.dayHeight ?? day);
 	const scaleX = $derived(bandWidth > 0 ? Math.max(0, width - shownLabelWidth) / bandWidth : 1);
+	/**
+	 * Is band `end`'s picture stretched, so that its marks are scaled back to
+	 * their size (the CSS below)? Under a gesture, or while a picture drawn at
+	 * another size stands in, and never at rest, where it is drawn at the
+	 * window's own width (`wide`, da-syaz8). To the px `wide` is rounded to.
+	 */
+	const stretched = (end: number) =>
+		[bandZoom(end).scale * scaleX, scaleY * stand(end)].some((k) => Math.abs(k - 1) > 1 / Math.max(1, wide));
 
 	/**
 	 * The jagged line shows exactly when the band against the divider is
@@ -741,10 +749,22 @@
 	/** Is `onDay` the browser's guess, which no geometry has answered yet? */
 	let guessed = false;
 
+	/**
+	 * The width a picture is drawn at: the whole day at the committed
+	 * window's scale, so at rest the map only slides it and no mark is scaled
+	 * back to its size (da-syaz8). A mark scaled back carries a transform of
+	 * its own, and Chrome's compositing update costs one per such mark, every
+	 * frame anything on the page changes. By whole px: a pan keeps the span,
+	 * and redraws nothing. A gesture still previews on the pictures it has,
+	 * and its release draws them again at the window it asked for.
+	 */
+	const wide = $derived(Math.round((bandWidth * (HOUR_TO - HOUR_FROM)) / (committed[1] - committed[0])));
+
 	// Not on mount: the static build prerenders this page, and there is no
-	// database (or `run`) outside the browser. At the band's width whatever
-	// the window: the window is how the band shows the picture (`mapFor`).
-	const request = $derived({ width: bandWidth, dayHeight: day, epoch, midnights });
+	// database (or `run`) outside the browser. The geometry at the band's
+	// width, and each picture at `wide`, which the map shows the window of
+	// (`mapFor`).
+	const request = $derived({ width: bandWidth, wide, dayHeight: day, epoch, midnights });
 	$effect.pre(() => {
 		const [at, all] = [request, ends];
 		if (browser && measured && stored && at.width > 0) untrack(() => redraw(at, all));
@@ -772,11 +792,11 @@
 	 * band, today's cut at now, or, a day the clock changed in, the CLI's own
 	 * picture of it, whose lanes bend along the change as no scaling can.
 	 */
-	async function bandFrom(layer: Layer, at: { width: number; dayHeight: number }, end: number): Promise<RunResult> {
-		const argv = bandArgv(at.width, at.dayHeight, end);
+	async function bandFrom(layer: Layer, at: { wide: number; dayHeight: number }, end: number): Promise<RunResult> {
+		const argv = bandArgv(at.wide, at.dayHeight, end);
 		if (layer.error || !layer.doc()) return { argv, code: 1, stdout: '', stderr: layer.error ?? '' };
 		if (!oneClock(layer)) return run(argv, undefined, undefined, `${queueKey}:${end}`, undefined, undefined, true);
-		return { argv, code: 0, stdout: `${bandOf(layer, at.width, at.dayHeight, end === 0 ? Date.now() : undefined)}\n`, stderr: '' };
+		return { argv, code: 0, stdout: `${bandOf(layer, at.wide, at.dayHeight, end === 0 ? Date.now() : undefined)}\n`, stderr: '' };
 	}
 
 	/**
@@ -784,17 +804,53 @@
 	 * not held at this one, keeps it, stretched, until it is on screen:
 	 * `refreshVisible` asks for it then, as it does for a day of an older
 	 * epoch. A resize asked for the whole base stack, a fortnight of
-	 * processes in front of the days the reader sees (da-8khuw).
+	 * processes in front of the days the reader sees (da-8khuw). One whose
+	 * data layer is held is laid out again from it all the same, while the
+	 * page is idle (`relayLater`).
 	 */
 	function redraw(at: typeof request, ends: number[]): void {
 		cacheFor(at);
-		const atThisSize = (end: number) => cache.runs.has(bandArgv(at.width, at.dayHeight, end).join(' '));
-		draw(at, ends.filter((end) => end === 0 || drawn[end]?.midnights !== at.midnights || atThisSize(end)));
+		const atThisSize = (end: number) => cache.runs.has(bandArgv(at.wide, at.dayHeight, end).join(' '));
+		const now = ends.filter((end) => end === 0 || drawn[end]?.midnights !== at.midnights || atThisSize(end));
+		draw(at, now);
 		// The days on screen are read once the newest is pinned again: a
 		// taller day leaves the stack where it was, over older days.
 		void anchor();
 		refreshVisible();
+		relayLater(at, ends.filter((end) => !now.includes(end) && heldLayer(dateOf(end))));
 	}
+
+	/** The idle callback `relayLater` waits on, to cancel. */
+	let relaying = 0;
+
+	/**
+	 * Lay `ends` out again at `at` from their held data layers, which runs no
+	 * process, a day at a time while the page is idle, the nearest first, and
+	 * none `refreshVisible` drew meanwhile. Left stretched, a day's marks are
+	 * each scaled back to their size, on screen or not, and a mark with a
+	 * transform of its own costs Chrome's compositing update every frame
+	 * (da-syaz8); laid out all at once, a fortnight of dense days held the
+	 * main thread for seconds. Never under a gesture, whose frames are the
+	 * finger's, and whose re-pins of the stack a landing picture would race.
+	 * A newer size or epoch takes over.
+	 */
+	function relayLater(at: typeof request, ends: number[]): void {
+		cancelIdle(relaying);
+		const next = () => {
+			relaying = 0;
+			if (request !== at) return;
+			if (sizing || live || sliding) return void (relaying = whenIdle(next));
+			const end = ends.shift();
+			if (end === undefined) return;
+			if (!cache.runs.has(bandArgv(at.wide, at.dayHeight, end).join(' '))) draw(at, [end]);
+			relaying = whenIdle(next);
+		};
+		if (ends.length) relaying = whenIdle(next);
+	}
+	const whenIdle = (fn: () => void): number =>
+		typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 1000 }) : window.setTimeout(fn, 50);
+	const cancelIdle = (id: number) =>
+		typeof cancelIdleCallback === 'function' ? cancelIdleCallback(id) : clearTimeout(id);
 
 	// The minute turned (da-r61i, `#lib/clock.ts`): today's band is the one
 	// picture in the stack with a now in it, so the tick asks for that one
@@ -829,7 +885,7 @@
 	function tock(): void {
 		const at = request;
 		if (at.width <= 0) return;
-		for (const argv of [geometryArgv(at.width, at.dayHeight), bandArgv(at.width, at.dayHeight, 0)])
+		for (const argv of [geometryArgv(at.width, at.dayHeight), bandArgv(at.wide, at.dayHeight, 0)])
 			cache.runs.delete(argv.join(' '));
 		// A size held aside has a today of a minute ago too.
 		for (const { runs } of sizes.values())
@@ -839,13 +895,13 @@
 	}
 
 	function draw(
-		at: { width: number; dayHeight: number; epoch: number; midnights: number },
+		at: { width: number; wide: number; dayHeight: number; epoch: number; midnights: number },
 		ends: number[]
 	): void {
 		cacheFor(at);
 		const token = ++started;
 		const geometryId = geometryArgv(at.width, at.dayHeight).join(' ');
-		const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
+		const id = (end: number) => bandArgv(at.wide, at.dayHeight, end).join(' ');
 		// What is not held comes from the data layers, every day missing in
 		// one batch with whatever the nowview asks meanwhile (da-m6i2a), and
 		// the geometry in a run of its own. Each is still held by its argv.
@@ -888,7 +944,7 @@
 				if (result.superseded || token < (from[end] ?? 0)) return;
 				from[end] = token;
 				shown = { ...shown, [end]: result };
-				drawn = { ...drawn, [end]: { width: at.width, dayHeight: at.dayHeight, midnights: at.midnights } };
+				drawn = { ...drawn, [end]: { width: at.wide, dayHeight: at.dayHeight, midnights: at.midnights } };
 				void anchor();
 			});
 		}
@@ -899,9 +955,13 @@
 	 * the size left going to `sizes`; then, at a new epoch, `kept`.
 	 */
 	function cacheFor(at: typeof request): void {
-		const size = `${at.width}/${at.dayHeight}/${at.midnights}`;
+		const size = `${at.width}/${at.wide}/${at.dayHeight}/${at.midnights}`;
 		const key = `${size}/${at.epoch}`;
 		if (cache.key === key) return;
+		// Another window at the same size and epoch: its geometry stands, being of no window.
+		const geometryId = geometryArgv(at.width, at.dayHeight).join(' ');
+		const unwindowed = (key: string) => key.replace(/^([^/]*)\/[^/]*\//, '$1/');
+		const geometry = unwindowed(cache.key) === unwindowed(key) ? cache.runs.get(geometryId) : undefined;
 		if (cache.size !== size) {
 			const back = sizes.get(size) ?? { key: '', size, runs: new Map<string, Asked>() };
 			sizes.delete(size);
@@ -910,6 +970,7 @@
 			cache = back;
 		}
 		if (cache.key !== key) cache = { key, size, runs: kept(at) };
+		if (geometry && !cache.runs.has(geometryId)) cache.runs.set(geometryId, geometry);
 	}
 
 	/**
@@ -918,8 +979,8 @@
 	 * da-efxk5). Today and the geometry always go again — today has the
 	 * now in it, and the geometry is what tells the strip what day it is.
 	 */
-	function kept(at: { width: number; dayHeight: number }): Map<string, Asked> {
-		const again = new Set([bandArgv(at.width, at.dayHeight, 0), geometryArgv(at.width, at.dayHeight)].map((argv) => argv.join(' ')));
+	function kept(at: { width: number; wide: number; dayHeight: number }): Map<string, Asked> {
+		const again = new Set([bandArgv(at.wide, at.dayHeight, 0), geometryArgv(at.width, at.dayHeight)].map((argv) => argv.join(' ')));
 		return new Map([...cache.runs].filter(([id]) => !again.has(id)));
 	}
 
@@ -935,7 +996,7 @@
 	 */
 	function check(at: typeof request, ends: number[]): void {
 		const mine = cache;
-		const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
+		const id = (end: number) => bandArgv(at.wide, at.dayHeight, end).join(' ');
 		const held = ends.map((end) => mine.runs.get(id(end))!);
 		// A day already out for this epoch is not asked for again.
 		if (held.every((asked) => checking.get(asked) === at.epoch)) return;
@@ -1097,7 +1158,7 @@
 			refreshing = 0;
 			const at = request;
 			if (at.width <= 0 || !measured || !stored) return;
-			const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
+			const id = (end: number) => bandArgv(at.wide, at.dayHeight, end).join(' ');
 			const visible = visibleDays() ?? [];
 			const stale = (end: number) => (cache.runs.get(id(end))?.epoch ?? at.epoch) < at.epoch;
 			if (stale(0)) cache.runs.delete(id(0));
@@ -1846,6 +1907,7 @@
 	}
 
 	onDestroy(() => {
+		cancelIdle(relaying);
 		clearTimeout(settling);
 		clearTimeout(longTimer);
 		listen(false);
@@ -1928,6 +1990,7 @@
 							data-pans="x"
 							data-slides
 							data-pan-stop={panStop}
+							class:stretched={stretched(end)}
 							style:--zoom-x="{bandZoom(end).offset}px"
 							style:--zoom={bandZoom(end).scale}
 							style:--stand={stand(end)}
@@ -2043,6 +2106,7 @@
 					data-pans="x"
 					data-slides
 					data-pan-stop={panStop}
+					class:stretched={stretched(0)}
 					style:--zoom-x="{bandZoom(0).offset}px"
 					style:--zoom={bandZoom(0).scale}
 					style:--stand={stand(0)}
@@ -2343,7 +2407,12 @@
 	   glyph, an icon, the selection's arrow, a label grows with the day's
 	   height (as datum sizes them) and not with the window, and a line
 	   keeps its stroke. The rules after the first carry its guard: a
-	   `:not` counts what it names, so without it the first one wins. */
+	   `:not` counts what it names, so without it the first one wins.
+
+	   Only on a band that is `stretched`: a mark scaled back carries a
+	   transform of its own, and Chrome's compositing update costs one per
+	   such mark every frame anything on the page changes (da-syaz8). At rest
+	   the picture is drawn at the window's own width (`wide`). */
 	.band :global(svg.svg circle:not(defs *)),
 	.band :global(svg.svg text:not(defs *)),
 	.band :global(svg.svg use:not(defs *)),
@@ -2352,9 +2421,11 @@
 	.band :global(svg.svg line:not(defs *)) {
 		transform-box: fill-box;
 		transform-origin: center;
+	}
+	.band.stretched :global(svg.svg :is(circle, text, use, polygon, rect.point-bg):not(defs *)) {
 		scale: calc(var(--sy) * var(--stand, 1) / (var(--zoom) * var(--sx))) 1;
 	}
-	.band :global(svg.svg line:not(defs *)) {
+	.band.stretched :global(svg.svg line:not(defs *)) {
 		scale: calc(1 / (var(--zoom) * var(--sx))) 1;
 	}
 	.band :global(svg.svg text:not([text-anchor='middle']):not([text-anchor='end'])) {

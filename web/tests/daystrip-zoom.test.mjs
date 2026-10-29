@@ -4,17 +4,19 @@
 // stretch out and get weird when zooming in. It should be unnoticeable that
 // nothing has redrawn yet. Maybe we don't even need to redraw at all.»
 //
-// So a band is drawn once, at its own width, and a window is that picture
-// mapped; the map stretches time, and the strip scales every mark that is not
-// a duration back to its own size (DayStrip.svelte). Read off the screen: each
-// mark's box as the reader sees it, at rest, under the fingers and after the
-// release — and a block, which IS a duration, as the control that the zoom
-// happened at all.
+// So a gesture maps the picture it has; the map stretches time, and the strip
+// scales every mark that is not a duration back to its own size
+// (DayStrip.svelte). The release lays the picture out again at the window,
+// from the day's data it holds, so at rest no mark is scaled (da-syaz8). Read
+// off the screen: each mark's box as the reader sees it, at rest, under the
+// fingers and after the release — and a block, which IS a duration, as the
+// control that the zoom happened at all.
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, seedLines, todayAt } from './support/app.mjs';
 import { settledRoom, say, settledAt, pinch, PHONE } from './support/daystrip.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -41,6 +43,15 @@ const marks = ({ page }) =>
 			block: box('.block[data-field="work"]')
 		};
 	});
+
+/**
+ * How many of the strip's marks carry a scale of their own: a mark scaled
+ * back costs Chrome's compositing update every frame (da-syaz8).
+ */
+const scaled = ({ page }) =>
+	page.evaluate(
+		() => [...document.querySelectorAll('.band svg.svg :is(circle, text, use, rect, line)')].filter((m) => getComputedStyle(m).scale !== 'none').length
+	);
 
 /** Where the strip's own gridline for `hour` is across the screen. */
 const hourAt = ({ page }, hour) =>
@@ -76,15 +87,16 @@ async function seed(app) {
 	]);
 }
 
-test('a zoom moves every mark to its time, stretches none, and redraws nothing', async () => {
+test('a zoom moves every mark to its time, stretches none, and asks datum for nothing', async () => {
 	await settledRoom(phone, 'marks', async (app) => {
 		const { page } = app;
 		await say(app, { dayHeight: 60 });
 		await settledAt(app, 60);
 		await seed(app);
 		const rest = await marks(app);
+		assert.equal(await scaled(app), 0, 'a mark at rest is scaled');
 
-		// From the gesture on, nothing in a band may change but its map: no
+		// Under the fingers nothing in a band may change but its map: no
 		// picture swapped in, no mark moved by a redraw.
 		await page.evaluate(() => {
 			window.__redrawn = 0;
@@ -99,8 +111,12 @@ test('a zoom moves every mark to its time, stretches none, and redraws nothing',
 		await pinch(page, box, 100, 300, async () => {
 			during = await marks(app);
 			assert.deepEqual(await dayviews(seen), [], 'the gesture asked datum for a picture');
+			assert.equal(await page.evaluate(() => (window.__watch.disconnect(), window.__redrawn)), 0, 'a band’s picture changed under the fingers');
+			assert.ok((await scaled(app)) > 0, 'under the fingers no mark is scaled back');
 		});
 		await app.idle();
+		// The release lays today out again at the window: then nothing is scaled.
+		await until(() => scaled(app), (n) => n === 0);
 		const after = await marks(app);
 
 		// The control: the zoom happened, and a duration is as long as its hours.
@@ -120,11 +136,6 @@ test('a zoom moves every mark to its time, stretches none, and redraws nothing',
 		}
 
 		assert.deepEqual(await dayviews(seen), [], 'the release asked datum for a picture');
-		assert.equal(
-			await page.evaluate(() => (window.__watch.disconnect(), window.__redrawn)),
-			0,
-			'a band’s picture changed'
-		);
 		assert.deepEqual(app.errors, []);
 	});
 });

@@ -930,7 +930,7 @@ describe('a nowview stretch moves marks, never sizes them', () => {
 	const BAND = 'section[data-pane="nowview"] .nowview-band';
 	const phone = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
 
-	/** The tea dot's box, the stripes' tile on the screen as a 2×2, whether the coffee is in the band, and the nowviews asked for that are no overlay. */
+	/** The tea dot's box, the stripes' tile on the screen as a 2×2, whether the coffee is in the band, the nowviews asked for that are no overlay, and the marks with a scale of their own. */
 	const marks = (page) =>
 		page.evaluate((band) => {
 			const box = document.querySelector(band).getBoundingClientRect();
@@ -947,7 +947,8 @@ describe('a nowview stretch moves marks, never sizes them', () => {
 				tile: [m.a, m.b, m.c, m.d],
 				block: block.getBoundingClientRect().width,
 				coffee,
-				asked: (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview' && !a.includes('--overlay')).length
+				asked: (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview' && !a.includes('--overlay')).length,
+				scaled: [...document.querySelectorAll(`${band} svg.svg :is(circle, text, use, rect, line)`)].filter((m) => getComputedStyle(m).scale !== 'none').length
 			};
 		}, BAND);
 
@@ -963,6 +964,9 @@ describe('a nowview stretch moves marks, never sizes them', () => {
 			await app.idle();
 			const rest = await marks(page);
 			assert.equal(rest.coffee, false, 'the coffee is in the window before any gesture');
+			// At rest the crop lays each mark out at its size: a mark scaled
+			// back costs Chrome's compositing update every frame (da-syaz8).
+			assert.equal(rest.scaled, 0, 'a mark at rest is scaled');
 			await app.spyOnRunner();
 			const box = await page.locator(BAND).boundingBox();
 			let during;
@@ -981,6 +985,9 @@ describe('a nowview stretch moves marks, never sizes them', () => {
 			assert.ok(near(during.dot, rest.dot), `the dot is ${during.dot}, was ${rest.dot}`);
 			assert.ok(near(during.tile, rest.tile), `the stripes' tile is ${during.tile}, was ${rest.tile}`);
 			assert.deepEqual([during.coffee, during.asked], [true, 0]);
+			assert.ok(during.scaled > 0, 'under the fingers no mark is scaled back');
+			await app.idle();
+			assert.equal((await marks(page)).scaled, 0, 'a mark is still scaled after the release');
 			assert.deepEqual(app.errors, []);
 		}, phone);
 	});
