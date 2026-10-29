@@ -813,9 +813,15 @@ fn pick_ticks(span_minutes: f64) -> Vec<f64> {
 }
 
 /// The major step [`pick_ticks`] rules an axis spanning `span_minutes` at,
-/// on past an hour for a window of days (da-wd6h5).
+/// on past an hour for a window of days (da-wd6h5), and in seconds under
+/// five minutes, down to 5s, so a window of 5s or more has a label
+/// (da-6flnk).
 fn tick_major(span_minutes: f64) -> f64 {
     [
+        (10.0 / 60.0, 5.0 / 60.0),
+        (0.5, 10.0 / 60.0),
+        (2.0, 0.5),
+        (5.0, 1.0),
         (15.0, 5.0),
         (60.0, 15.0),
         (180.0, 30.0),
@@ -884,6 +890,35 @@ mod tests {
         assert_eq!(parse_hex("ABCDEF"), Some((0xAB, 0xCD, 0xEF)));
         assert_eq!(parse_hex("xyz"), None);
         assert_eq!(parse_hex("#abc"), None);
+    }
+
+    #[test]
+    fn a_window_under_five_minutes_has_ticks_in_seconds() {
+        let labels = |span: f64| -> Vec<String> {
+            let major = tick_major(span);
+            pick_ticks(span)
+                .into_iter()
+                .map(|m| relative_label(m, major))
+                .collect()
+        };
+        assert_eq!(labels(10.0 / 60.0), ["5s", "10s"]);
+        assert_eq!(labels(0.5), ["10s", "20s", "30s"]);
+        assert_eq!(labels(2.0), ["30s", "60s", "90s", "120s"]);
+        assert_eq!(labels(4.0), ["1m", "2m", "3m", "4m"]);
+    }
+
+    #[test]
+    fn a_thirty_second_band_labels_its_axis() {
+        let now = 1_700_000_000_000_i64;
+        let config = TerminalConfig {
+            history_minutes: 0.5,
+            now_width_minutes: 0.1,
+            ..cfg(now)
+        };
+        let s = render_nowview_terminal(&fields_one_block(now), &config);
+        let axis = s.lines().last().unwrap();
+        assert!(axis.contains("-30s"), "expected -30s in:\n{s}");
+        assert!(axis.contains("-10s"), "expected -10s in:\n{s}");
     }
 
     // ─── InlineBand (existing) ────────────────────────────────────────────
