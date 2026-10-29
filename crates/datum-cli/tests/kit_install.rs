@@ -598,6 +598,38 @@ fn a_built_in_name_is_no_kit_command_and_no_alias_runs_in_its_place() {
     assert!(logged_entries(&db, "y").is_empty());
 }
 
+/// A kit command named like a field's word is refused at install, the
+/// kit's field or one already here, dry run or not: the word is expanded
+/// first, so typing the command logged to the field (da-9leah).
+#[test]
+fn a_kit_command_named_like_a_field_is_refused() {
+    let command = "[[command]]\nname = \"word\"\nexpands_to = \"tail word\"\n";
+    let own =
+        format!("[kit]\nname = \"k\"\n\n[[field]]\nname = \"word\"\nverb = \"occur\"\n\n{command}");
+    let here = format!("[kit]\nname = \"k\"\n\n{command}");
+    for (kit, logged) in [(own, false), (here, true)] {
+        let db = fresh_db();
+        if logged {
+            run_cli(&["occur", "word"], &db).unwrap();
+        }
+        for extra in [&[][..], &["--dry-run"]] {
+            let err = format!("{:#}", install(&db, &kit, extra).unwrap_err());
+            assert!(
+                err.contains("kit command 'word': typing 'word' logs to the field 'word'"),
+                "{err}"
+            );
+        }
+        assert!(db.load_commands_by_kit("k").unwrap().is_empty());
+        assert_eq!(db.load_spec("word").unwrap().is_some(), logged);
+
+        // An alias row of the name takes the word before the field does:
+        // the command is that alias's clash, skipped as one (da-jp6ji).
+        run_cli(&["alias", "set", "word", "tail word"], &db).unwrap();
+        install(&db, &kit, &[]).unwrap();
+        assert!(db.load_commands_by_kit("k").unwrap().is_empty());
+    }
+}
+
 /// A `[[widget]]` is stored in the kit's own `kit:<name>` entry, so it goes
 /// with the kit, and export writes it back as it was declared (da-gh37k). A
 /// row action whose placeholder is no column refuses the kit before any

@@ -199,9 +199,16 @@ impl Db {
         if let Some(json) = json {
             return Ok(Some(serde_json::from_str(&json)?));
         }
-        // Fall through to the spec-derived aliases (da-8y2q.5), by name
-        // (da-ulu8f), and then the templates (da-38obu): a field one covers
-        // is its own word, as a specced field's is.
+        self.field_word(name)
+    }
+
+    /// `name` as a field's word: its own, `<field>e` or a state's, the
+    /// alias its spec derives. A command of that name never runs, since
+    /// the word is expanded first and logs to the field (da-9leah).
+    pub fn field_word(&self, name: &str) -> Result<Option<Alias>> {
+        // The spec-derived aliases (da-8y2q.5), by name (da-ulu8f), and
+        // then the templates (da-38obu): a field one covers is its own
+        // word, as a specced field's is.
         match self.derived_alias(name)? {
             Some(alias) => Ok(Some(alias)),
             None => self.covered_field_alias(name),

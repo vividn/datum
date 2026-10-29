@@ -34,6 +34,9 @@ pub(super) struct AliasReport {
 /// * `alias_shadowed_by_command` — a user, kit or derived alias whose name
 ///   a command takes, which runs instead (da-kba2e); each is listed with
 ///   the full form that still reaches it.
+/// * `kit_command_shadowed_by_field` — a kit command whose name is a
+///   field's word, made after the install; typing it logs to the field
+///   (da-9leah).
 /// * `spec_alias_names_stale` — an error: `spec_alias_names` lacks a row a
 ///   fill writes, holds one it does not, or a name read by it is not the
 ///   index's (da-ppkv6).
@@ -261,6 +264,43 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
         });
     }
 
+    // 1f. A kit command a field took the name of, made after the install
+    // refused one (da-9leah): the field's word is expanded first, so typing
+    // the command logs to the field. A user or kit alias row of the name
+    // takes the word before the field does, as lookup reads it.
+    let mut dead: Vec<(String, String)> = Vec::new();
+    for c in db.list_kit_commands()? {
+        if user_aliases.iter().any(|a| a.name == c.name) {
+            continue;
+        }
+        if let Some(a) = db.field_word(&c.name)? {
+            dead.push((c.name, a.expands_to));
+        }
+    }
+    if let Some((first, _)) = dead.first() {
+        let line = |(name, to): &(String, String)| {
+            format!("'{name}': `datum {name}` runs `datum {to}`, not the kit command")
+        };
+        issues.push(Issue {
+            domain: Domain::Aliases,
+            severity: Severity::Warning,
+            category: "kit_command_shadowed_by_field",
+            message: format!(
+                "{n} kit command{s} named like a field's word, which logs to the field instead",
+                n = dead.len(),
+                s = if dead.len() == 1 { "" } else { "s" },
+            ),
+            count: dead.len(),
+            example: Some(IssueExample {
+                id: None,
+                field: Some(first.clone()),
+                detail: Some(line(&dead[0])),
+            }),
+            entries: Vec::new(),
+            rendered_block: dead.iter().map(|d| line(d) + "\n").collect(),
+        });
+    }
+
     // 2 + 3. Orphans and cycles in user/kit alias chains. Spec-derived
     // aliases never need this walk — their `expands_to` always begins with
     // a KNOWN_SUBCOMMAND.
@@ -433,5 +473,42 @@ mod tests {
              'stats' → datum occur coffee: `datum stats` runs the command; \
              type `datum occur coffee`\n"
         );
+    }
+
+    /// A field made after a kit command of its name lists the command,
+    /// which its word now hides (da-9leah).
+    #[test]
+    fn kit_command_named_like_a_later_field_is_listed() {
+        let db = Db::open_in_memory().unwrap();
+        let vocab: datum_core::kit::CommandEntry =
+            toml::from_str("name = \"vocab\"\nexpands_to = \"tail word\"").unwrap();
+        db.install_kit_commands("k", &[vocab], false).unwrap();
+        let found = |db: &Db| {
+            collect_alias_drift(db, false)
+                .unwrap()
+                .issues
+                .into_iter()
+                .find(|i| i.category == "kit_command_shadowed_by_field")
+        };
+        assert!(found(&db).is_none());
+
+        let mut spec = FieldSpec::new("vocab", Action::Occur);
+        spec.regenerate_derived_aliases();
+        db.save_field_spec(&spec).unwrap();
+        let issue = found(&db).expect("the hidden command must be reported");
+        assert_eq!(issue.count, 1);
+        assert_eq!(
+            issue.rendered_block,
+            "'vocab': `datum vocab` runs `datum occur vocab`, not the kit command\n"
+        );
+
+        // A user's alias of the name takes the word before the field does.
+        db.save_alias(&Alias {
+            name: "vocab".to_string(),
+            expands_to: "tail word".to_string(),
+            description: None,
+        })
+        .unwrap();
+        assert!(found(&db).is_none());
     }
 }

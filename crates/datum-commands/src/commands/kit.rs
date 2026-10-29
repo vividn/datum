@@ -30,7 +30,7 @@ use std::fs;
 use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::path::Path;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result};
 use datum_core::db::{validate_command, Db};
@@ -326,6 +326,36 @@ fn install_toml(
         super::spec::check_presentation(&mut spec)
             .with_context(|| format!("kit field '{}'", spec.field))?;
         specs.push(spec);
+    }
+
+    // A field's word, the kit's or one already here, is expanded before a
+    // command is looked up: a command of its name would never run, and
+    // typing it would log to the field (da-9leah). An alias row of the name,
+    // here or the kit's, takes the word first, and is a clash below.
+    let rows: HashSet<String> = (db.list_user_aliases()?.into_iter().map(|a| a.name))
+        .chain(kit.aliases.iter().map(|a| a.name.clone()))
+        .collect();
+    for c in kit.commands.iter().filter(|c| !rows.contains(&c.name)) {
+        let kit_word = specs
+            .iter()
+            .flat_map(|s| &s.derived_aliases)
+            .find(|a| a.name == c.name)
+            .map(|a| a.expands_to.clone());
+        let word = match kit_word {
+            Some(to) => Some(to),
+            None => db.field_word(&c.name)?.map(|a| a.expands_to),
+        };
+        if let Some(to) = word {
+            let field = datum_parse::alias::shell_split(&to)
+                .into_iter()
+                .nth(1)
+                .unwrap_or_default();
+            anyhow::bail!(
+                "kit command '{}': typing '{}' logs to the field '{field}' (datum {to}), so the command would never run; give it another name",
+                c.name,
+                c.name
+            );
+        }
     }
 
     // Cycle detection on the kit's own anchor graph. Cycles abort install —
