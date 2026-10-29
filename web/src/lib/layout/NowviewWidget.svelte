@@ -1348,6 +1348,12 @@
 	/** What a wheel opens on and a press takes hold of: a handle's time and place, not its box. */
 	type Held = Pick<Handle, 'text' | 'minutes' | 'x' | 'y'>;
 	let handles: Handle[] = $state.raw([]);
+	/**
+	 * The band's slide (`rest + panned`) when the handles were read off the
+	 * picture: a pan slides them with their labels by what it has moved
+	 * since, every frame, not once it lets go (da-aicu3).
+	 */
+	let handlesAt = $state(0);
 	/** The widget's box on screen, for the wheel, which is drawn `fixed` beside it. */
 	let boxAt = $state.raw({ x: 0, y: 0 });
 
@@ -1584,6 +1590,7 @@
 		// under the axis line: the strip is only as tall as its 11px digits
 		// (da-a2cxp).
 		const under = (svg?.querySelector('.axis')?.getBoundingClientRect().top ?? 0) + HANDLE_PX / 2;
+		handlesAt = rest + panned;
 		handles = shown
 			.filter((l) => l.style.visibility !== 'hidden')
 			.map((l) => {
@@ -1966,7 +1973,7 @@
 	     drawn by the picture underneath. Hover or a finger opens the wheel;
 	     a drag along the axis scales the window about the anchor. -->
 	{#if handles.length && !zoom}
-		<div class="nowview-handles" data-pans={pans}>
+		<div class="nowview-handles" data-pans={pans} style:--slid="{rest + panned - handlesAt}px">
 			<!-- Unkeyed: a step redraws the labels, and the handle the
 			     keyboard is on stays the focused element through it. -->
 			{#each handles as h}
@@ -2224,6 +2231,10 @@
 	}
 	.nowview-handles .handle {
 		pointer-events: auto;
+		translate: var(--slid) 0;
+	}
+	.vertical .nowview-handles .handle {
+		translate: 0 var(--slid);
 	}
 
 	/* THE HANDLES (da-57vj4): a frame round each major label, the label's

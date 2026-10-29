@@ -1233,6 +1233,50 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 		);
 	});
 
+	// da-aicu3, vividn: «when panning on the nowview, the boxes surrounding
+	// the time axis labels don't travel with the labels, fix that please».
+	test('mid-drag, each handle stands on its label as at rest', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const box = await seeded(app);
+				await page.locator(`${PANE} .nowview-handles .handle`).first().waitFor();
+				/** Each handle's centre less its label's, and where the labels are along the band. */
+				const where = () =>
+					page.locator(PANE).evaluate((p) => {
+						const mid = (el) => {
+							const r = el.getBoundingClientRect();
+							return [r.left + r.width / 2, r.top + r.height / 2];
+						};
+						const labels = [...p.querySelectorAll('svg.svg .tick-label')].filter((l) => getComputedStyle(l).visibility !== 'hidden');
+						const off = {};
+						for (const h of p.querySelectorAll('.nowview-handles .handle')) {
+							const [hx, hy] = mid(h);
+							const [lx, ly] = mid(labels.find((l) => l.textContent === h.dataset.at));
+							off[h.dataset.at] = [hx - lx, hy - ly, lx];
+						}
+						return off;
+					});
+				const rest = await where();
+				const y = box.y + box.height / 2;
+				await page.mouse.move(box.x + 40, y);
+				await page.mouse.down();
+				await page.mouse.move(box.x + 160, y, { steps: 6 });
+				const during = await where();
+				await page.mouse.up();
+				const at = Object.keys(rest).filter((k) => k in during);
+				assert.ok(at.length >= 2, `handles at rest ${Object.keys(rest)}, mid-drag ${Object.keys(during)}`);
+				for (const k of at) {
+					assert.ok(during[k][2] - rest[k][2] > 60, `${k}'s label moved ${during[k][2] - rest[k][2]}px`);
+					const [dx, dy] = [0, 1].map((i) => Math.abs(during[k][i] - rest[k][i]));
+					assert.ok(dx <= 1 && dy <= 1, `${k}'s handle is ${dx}px, ${dy}px off where it stands at rest`);
+				}
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
 	test('a drag toward the future stops at now, elastically, and springs back to it', async () => {
 		await withApp(
 			async (app) => {
