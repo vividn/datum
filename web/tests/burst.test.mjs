@@ -83,11 +83,12 @@ describe('a burst of changes', () => {
 						// draws `svg.svg`, and the pane holds other svgs that are
 						// nobody's picture — a margin pill's lock glyph
 						// (da-rskp), which mounting once would have counted as a
-						// repaint of the band.
+						// repaint of the band. Or the box a sliding picture is
+						// held in, which is what lands (`.slide`, #lib/hover.ts).
 						new MutationObserver((records) => {
 							for (const r of records)
 								for (const n of r.addedNodes)
-									if (n.nodeName.toLowerCase() === 'svg' && n.classList?.contains('svg')) {
+									if (n.matches?.('svg.svg, .slide')) {
 										window.__paints++;
 										window.__stalePaints += nowview.lastStale;
 									}

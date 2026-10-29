@@ -435,7 +435,7 @@
 	 * and a transform moves the drawing, never the holder.
 	 */
 	function ends(): [number, number] {
-		const r = svgEl()?.parentElement?.getBoundingClientRect();
+		const r = svgEl()?.closest('.picture')?.getBoundingClientRect();
 		if (!r) return [NaN, NaN];
 		return axis?.y ? [r.top, r.bottom] : [r.left, r.right];
 	}
@@ -1451,14 +1451,35 @@
 
 	/** `read` with the picture's own slide taken off it. */
 	function unmoved<T>(svg: SVGSVGElement, read: () => T): T {
-		const moved = svg.style.transform;
+		const box = svg.closest<HTMLElement>('.slide');
+		const [moved, slid] = [svg.style.transform, box?.style.translate];
 		svg.style.transform = 'none';
+		if (box) box.style.translate = 'none';
 		try {
 			return read();
 		} finally {
 			svg.style.transform = moved;
+			if (box) box.style.translate = slid!;
 		}
 	}
+
+	/**
+	 * The band's slide, in px along time: the pan at rest, the finger's, a
+	 * pinch's shift. Written straight on the box the picture is held in
+	 * (`.slide`, #lib/hover.ts), and never as a custom property on the band,
+	 * which every mark under it inherits: each step of a pan restyled the
+	 * whole picture (da-uovtn). Nor on the svg, whose texts a move of its
+	 * own lays out again.
+	 */
+	const slideBy = $derived(rest + panned + (zoom ? shiftOf(zoom) : 0));
+	function slideTo(): void {
+		const by = vertical ? `0 ${slideBy}px` : `${slideBy}px 0`;
+		for (const box of el?.querySelectorAll<HTMLElement>('.nowview-band .slide') ?? []) box.style.translate = by;
+	}
+	$effect(() => {
+		void [slideBy, vertical];
+		untrack(slideTo);
+	});
 
 	/**
 	 * Where each margin pill sits, in px across the widget's box: over the
@@ -1500,6 +1521,8 @@
 
 	function place(): void {
 		if (!el) return;
+		// A new picture takes the slide the one before it had.
+		slideTo();
 		unstretch();
 		const home = el.getBoundingClientRect();
 		roomy = home.width >= TINY_PX;
@@ -2050,9 +2073,9 @@
 		class="nowview-band"
 		style:--zoom={zoom?.scale ?? 1}
 		style:--zoom-x="{zoom?.origin ?? 0}px"
-		style:--pan="{rest + panned + (zoom ? shiftOf(zoom) : 0)}px"
 		data-pans={pans}
 		data-points="own"
+		data-slides
 		data-mode={mode}
 		onpointerdown={onPointerDown}
 		oncontextmenu={onContextMenu}
@@ -2242,8 +2265,15 @@
 	   that stayed inside the drawing. Width only — the window is a span of
 	   time, and the field rows are not part of it. */
 	.nowview-band :global(svg.svg) {
-		transform: translateX(var(--pan)) scaleX(var(--zoom));
+		transform: scaleX(var(--zoom));
 		transform-origin: var(--zoom-x) center;
+	}
+	/* Slid by its box's `translate` (`slideTo`), on a layer of its own, so a
+	   pan moves it and paints nothing, as the day strip's pictures
+	   (da-uovtn); from `none` the first step repainted it. */
+	.nowview-band :global(.slide) {
+		will-change: transform;
+		translate: 0 0;
 	}
 
 	/* TIME RUNS DOWN (da-78evn): the same widget turned on its side. The
@@ -2253,7 +2283,7 @@
 		touch-action: pan-x;
 	}
 	.vertical .nowview-band :global(svg.svg) {
-		transform: translateY(var(--pan)) scaleY(var(--zoom));
+		transform: scaleY(var(--zoom));
 		transform-origin: center var(--zoom-x);
 	}
 

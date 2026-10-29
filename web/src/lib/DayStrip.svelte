@@ -446,6 +446,17 @@
 	const committed = $derived(clampWindow(hourFrom, hourTo));
 	/** The window on screen. */
 	const view = $derived(live ?? committed);
+	/**
+	 * The window a PAN has dragged to, which moves the pictures and redraws
+	 * none of them (da-uovtn, vividn: «There should be no redrawing at all
+	 * happening when panning around»). A pan keeps the scale, so it is a
+	 * translate, written straight on each picture's box, the gridlines and
+	 * the ruler (`slide`): never `live`, whose map every band restyles all its
+	 * marks by (they read `--zoom`) and the patterns are walked again by.
+	 */
+	let slid: [number, number] | null = null;
+	/** Is a pan in hand? The ruler then names the whole day, to slide with the rest. */
+	let sliding = $state(false);
 
 	/**
 	 * Each picture is mapped by the width IT was drawn at, not by the one
@@ -1189,10 +1200,12 @@
 		let prev = -Infinity;
 		return geometry.hours
 			.map((hour) => ({ hour, x: bandX(hour.x) }))
-			// A window leaves most of the day off the ends of the band.
-			.filter(({ x }) => x >= -1 && x <= bandWidth + 1)
+			// A window leaves most of the day off the ends of the band — but
+			// a pan slides the ruler under the rest (`slide`), so then it
+			// names the whole day and holds no label in at the ends.
+			.filter(({ x }) => sliding || (x >= -1 && x <= bandWidth + 1))
 			.map(({ hour, x }) => {
-				const at = clamp(x, half, Math.max(half, bandWidth - half));
+				const at = sliding ? x : clamp(x, half, Math.max(half, bandWidth - half));
 				// The majors are the hours datum names, thinned until two
 				// labels no longer touch. Zoomed in, the hours BETWEEN them
 				// have room too, and a ruler that named only every third of
@@ -1359,12 +1372,13 @@
 	 * or the day height a vertical pinch was previewing is written.
 	 */
 	function commit(): void {
-		const next = live;
+		const next = live ?? slid;
 		const tall = pinching?.axis === 'y';
 		pinching = null;
 		if (tall) return drop();
 		if (next) setWindow(next);
 		live = null;
+		slide(null);
 	}
 
 	/** The fingers down on the strip, by pointer id, and where they are. */
@@ -1591,7 +1605,7 @@
 	/** Let go of the press: a cancel, a pinch taking over, or the end of it. */
 	function dropPress(): void {
 		clearTimeout(longTimer);
-		if (mode === 'pan') live = null;
+		if (mode === 'pan') slide(null);
 		press = null;
 		pressDay = null;
 		panning = null;
@@ -1664,8 +1678,28 @@
 	function panTo(x: number): void {
 		if (!panning) return;
 		const f = (x - press!.x) / panning.box.width;
-		live = zoomWindow(panning.window, 1, 0.5, 0.5 + f);
+		slide(zoomWindow(panning.window, 1, 0.5, 0.5 + f));
 	}
+
+	/**
+	 * Show the pictures through `to`, a window of the committed one's span,
+	 * by moving them: one `translate` a band's `.slide`, the box its picture
+	 * is held in (#lib/hover.ts), on a layer of its own, so the step is the
+	 * compositor's and nothing under it restyles, lays out or paints. Not on
+	 * the svg: a move of an svg root lays out every text in it again. Null
+	 * puts them back, in the same task as the window it committed, so no
+	 * frame shows both. The offset is the map's, `windowMap`, which is the
+	 * same for every picture whatever width it was drawn at.
+	 */
+	function slide(to: [number, number] | null): void {
+		slid = to;
+		sliding = !!to;
+		const by = to ? `${((committed[0] - to[0]) * bandWidth) / (to[1] - to[0])}px 0` : '';
+		// The selection's pills too, which stand over their marks.
+		for (const el of stripEl?.querySelectorAll<Element & ElementCSSInlineStyle>(SLIDES) ?? []) el.style.translate = by;
+	}
+	/** What a pan moves: everything drawn along the hours. */
+	const SLIDES = '.band .slide, .gridlines, .ruler-track, .daystrip-margin';
 
 	/**
 	 * The ruler is the TIME AXIS (da-xg1vi, vividn: «if you touch in the
@@ -1892,6 +1926,7 @@
 							data-days-ago={end}
 							data-days="1"
 							data-pans="x"
+							data-slides
 							data-pan-stop={panStop}
 							style:--zoom-x="{bandZoom(end).offset}px"
 							style:--zoom={bandZoom(end).scale}
@@ -2006,6 +2041,7 @@
 					data-days-ago="0"
 					data-days="1"
 					data-pans="x"
+					data-slides
 					data-pan-stop={panStop}
 					style:--zoom-x="{bandZoom(0).offset}px"
 					style:--zoom={bandZoom(0).scale}
@@ -2021,21 +2057,29 @@
 		<!-- The ruler, drawn once, under whichever band is at the bottom. -->
 		<div class="axis" data-pans="xy">
 			{#if geometry && bandWidth > 0}
-				<svg class="ruler" width={bandWidth} height={AXIS_HEIGHT} aria-hidden="true">
-					<line class="baseline" x1="0" x2={bandWidth} y1="0.5" y2="0.5" />
-					{#each ruler as tick}
-						<line class="tick" x1={tick.x} x2={tick.x} y1="0.5" y2="4.5" />
-						{#if tick.label}
-							<text
-								class="tick-label"
-								x={tick.at}
-								y={AXIS_HEIGHT - 2}
-								text-anchor="middle"
-								font-size={AXIS_FONT}>{tick.label}</text
-							>
-						{/if}
-					{/each}
-				</svg>
+				<div class="ruler-track">
+					<svg class="ruler" width={bandWidth} height={AXIS_HEIGHT} aria-hidden="true">
+						<line
+							class="baseline"
+							x1={sliding ? Math.min(0, bandX(geometry.hours[0]?.x ?? 0)) : 0}
+							x2={sliding ? Math.max(bandWidth, bandX(geometry.hours.at(-1)?.x ?? 0)) : bandWidth}
+							y1="0.5"
+							y2="0.5"
+						/>
+						{#each ruler as tick}
+							<line class="tick" x1={tick.x} x2={tick.x} y1="0.5" y2="4.5" />
+							{#if tick.label}
+								<text
+									class="tick-label"
+									x={tick.at}
+									y={AXIS_HEIGHT - 2}
+									text-anchor="middle"
+									font-size={AXIS_FONT}>{tick.label}</text
+								>
+							{/if}
+						{/each}
+					</svg>
+				</div>
 			{/if}
 		</div>
 
@@ -2086,19 +2130,21 @@
 			the ruler, through every divider.
 		-->
 		{#if geometry && bandWidth > 0}
-			<svg class="gridlines" width={bandWidth} height="100%" aria-hidden="true">
-				{#each geometry.hours as hour}
-					<line
-						class="gridline"
-						data-hour={hour.hour}
-						x1={bandX(hour.x)}
-						x2={bandX(hour.x)}
-						y1="0"
-						y2="100%"
-						stroke-opacity={hour.major ? 0.4 : 0.1}
-					/>
-				{/each}
-			</svg>
+			<div class="grid-clip">
+				<svg class="gridlines" width={bandWidth} height="100%" aria-hidden="true">
+					{#each geometry.hours as hour}
+						<line
+							class="gridline"
+							data-hour={hour.hour}
+							x1={bandX(hour.x)}
+							x2={bandX(hour.x)}
+							y1="0"
+							y2="100%"
+							stroke-opacity={hour.major ? 0.4 : 0.1}
+						/>
+					{/each}
+				</svg>
+			</div>
 		{/if}
 	</div>
 </Pane>
@@ -2243,6 +2289,14 @@
 	.shot.previewing {
 		transform: scale(var(--sx), var(--sy));
 		transform-origin: 0 0;
+	}
+	/* A pan moves the picture's own box (`slide`), on a layer of its own,
+	   and paints nothing (da-uovtn). The translate is there at rest too:
+	   from `none` the first step of a pan repainted every picture. The
+	   hover label is the box's sibling, so no ancestor of it moves. */
+	.band :global(.slide) {
+		will-change: transform;
+		translate: 0 0;
 	}
 
 	/* The hour window (da-ukcf): the picture is drawn for the WHOLE day at
@@ -2459,8 +2513,15 @@
 		touch-action: none;
 		cursor: col-resize;
 	}
+	/* Slid by a pan, the whole day named (`ruler`), on a layer of its own:
+	   the box and not the svg, whose text a move of its own lays out again. */
+	.ruler-track {
+		will-change: transform;
+		translate: 0 0;
+	}
 	.ruler {
 		display: block;
+		overflow: visible;
 	}
 	.baseline,
 	.tick {
@@ -2562,14 +2623,25 @@
 	}
 
 	/* The stitching: over the bands, under nothing, and never in the way
-	   of a pointer asking a mark what it is. */
-	.gridlines {
+	   of a pointer asking a mark what it is. The box clips the lines: a pan
+	   slides them past its ends (`slide`), and not over the date column. */
+	.grid-clip {
 		position: absolute;
 		top: 0;
 		bottom: var(--axis);
 		left: var(--label);
+		right: 0;
+		overflow: hidden;
 		pointer-events: none;
 		z-index: 1;
+	}
+	/* Each hour of the day is drawn, the ones off the window too, so a pan
+	   moves the lines on their own layer and draws none (da-uovtn). */
+	.gridlines {
+		display: block;
+		overflow: visible;
+		will-change: transform;
+		translate: 0 0;
 	}
 	.gridline {
 		stroke: white;

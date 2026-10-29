@@ -90,7 +90,7 @@ const aMark = (page, scope, selector = '[data-id]') =>
 		// side (`--surround`, da-61nm8), and what is out there is not on screen.
 		const clip = (n) => {
 			const r = n.getBoundingClientRect();
-			const f = n.closest('svg.svg').parentElement.getBoundingClientRect();
+			const f = n.closest('.picture').getBoundingClientRect();
 			const [left, right] = [Math.max(r.left, f.left), Math.min(r.right, f.right)];
 			return { left, right, width: Math.max(0, right - left), top: r.top, height: r.height };
 		};
@@ -661,7 +661,7 @@ const apart = (page) => page.waitForTimeout(450);
 const groundIn = (page, scope) =>
 	page.locator(scope).evaluate((el) => {
 		const svg = el.querySelector('svg.svg');
-		const r = svg.parentElement.getBoundingClientRect();
+		const r = svg.closest('.picture').getBoundingClientRect();
 		for (let j = 1; j < 20; j++)
 			for (let i = 1; i < 20; i++) {
 				const [x, y] = [Math.round(r.left + (r.width * i) / 20), Math.round(r.top + (r.height * j) / 20)];

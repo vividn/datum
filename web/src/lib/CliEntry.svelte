@@ -312,8 +312,11 @@
 	}
 
 	/* AN UNDONE COMMAND, HASHED OUT WHERE IT STANDS: the row's own box — the
-	   strip's group, the log's cell — hatched, and all of it but its redo faded. */
-	:global(:has(> .head.struck)) {
+	   strip's group, the log's cell — hatched, and all of it but its redo faded.
+	   Named by the row's own `data-ran`: a `:has()` whose subject is any
+	   element made every press on the page restyle the whole subtree it
+	   landed in, the day strip's thousands of marks at a touch (da-uovtn). */
+	:global([data-ran]:has(> .head.struck)) {
 		background-image: repeating-linear-gradient(
 			135deg,
 			transparent 0 5px,
@@ -321,7 +324,7 @@
 		);
 	}
 
-	:global(:has(> .head.struck) > :not(.head)),
+	:global([data-ran]:has(> .head.struck) > :not(.head)),
 	.struck .stamp,
 	.struck .echo {
 		opacity: 0.45;

@@ -676,6 +676,9 @@ export function picture(node: HTMLElement, { text, unsynced }: { text: string; u
 		target instanceof Element ? target.closest('[data-state]') : null;
 
 	function show(mark: Element | null, x = 0, y = 0, clientX?: number) {
+		// Hidden already: nothing to write. A drag hides the label on every
+		// move, and each write restyled the tip and laid the page out (da-uovtn).
+		if (!mark && !shown && tip.hidden) return;
 		shown?.removeAttribute('aria-describedby');
 		shown = mark;
 		tip.hidden = !mark;
@@ -715,7 +718,15 @@ export function picture(node: HTMLElement, { text, unsynced }: { text: string; u
 			el.replaceWith(g);
 			g.append(el);
 		}
-		node.replaceChildren(...(svg ? [svg] : []), tip);
+		// A picture a pan slides (`data-slides`: the day strip's bands, the
+		// nowview's) is held in a box of its own, which the pan moves: a move
+		// of the svg root itself lays out every text in it again (da-uovtn).
+		const slide = svg && node.closest('[data-slides]') ? document.createElement('div') : null;
+		if (slide) {
+			slide.className = 'slide';
+			slide.append(svg!);
+		}
+		node.replaceChildren(...(slide ? [slide] : svg ? [svg] : []), tip);
 		const drawn = marks();
 		for (const mark of drawn) mark.setAttribute('tabindex', '0');
 		// A redraw replaces every mark; the keyboard keeps its place, and its

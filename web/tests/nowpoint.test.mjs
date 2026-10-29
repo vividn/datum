@@ -110,7 +110,7 @@ const geometry = (page, scope = NOWVIEW) =>
 		// (`--surround`, da-61nm8), and slid when a pan stays inside it. A
 		// picture drawn AHEAD of now (`--ahead`, da-hklaz) draws on past its
 		// now-line, behind it, so on now the window ends at that line.
-		const frame = svg.parentElement.getBoundingClientRect();
+		const frame = svg.closest('.picture').getBoundingClientRect();
 		const ahead = svg.querySelector('.flow') && svg.querySelector('.current-time-line')?.getAttribute('data-now');
 		const end = ahead ? px(Number(ahead)) : Infinity;
 		const [lo, hi] = [Math.max(drawnLo, frame.left), Math.min(drawnHi, end, frame.right)];
@@ -1255,7 +1255,7 @@ const vgeometry = (page) =>
 		const [drawnLo, drawnHi] = [px(num('data-lo')), px(num('data-hi'))];
 		const at = (y) => from + ((y - drawnLo) / (drawnHi - drawnLo)) * (to - from);
 		// The window, as `geometry` reads it.
-		const frame = svg.parentElement.getBoundingClientRect();
+		const frame = svg.closest('.picture').getBoundingClientRect();
 		const ahead = svg.querySelector('.flow') && svg.querySelector('.current-time-line')?.getAttribute('data-now');
 		const end = ahead ? px(Number(ahead)) : Infinity;
 		const [lo, hi] = [Math.max(drawnLo, frame.top), Math.min(drawnHi, end, frame.bottom)];
@@ -1366,7 +1366,7 @@ const section = (page) =>
 		const ends = (r) => r && [r.left, r.right];
 		const middle = (el) => el && ((r) => (r.left + r.right) / 2)(el.getBoundingClientRect());
 		// The picture's own box, which the band holds, as `geometry` reads it.
-		const band = root.querySelector('svg.svg').parentElement.getBoundingClientRect();
+		const band = root.querySelector('svg.svg').closest('.picture').getBoundingClientRect();
 		// The chunk where it is on screen at all: one slid off the band is none.
 		const chunk = root.querySelector('svg.svg .now-chunk')?.getBoundingClientRect();
 		const word = root.querySelector('svg.svg .now-label');
@@ -1563,7 +1563,7 @@ const point = (page, ms) => page.evaluate((ms) => window.datum.cursor.point({ at
 const atInstant = (page) =>
 	page.locator(NOWVIEW).evaluate((root) => {
 		const svg = root.querySelector('svg.svg');
-		const band = svg.parentElement.getBoundingClientRect();
+		const band = svg.closest('.picture').getBoundingClientRect();
 		const mid = (el) => (el ? ((r) => (r.left + r.right) / 2)(el.getBoundingClientRect()) : null);
 		const onScreen = (r) => r.width > 0 && r.right > band.left + 0.5 && r.left < band.right - 0.5;
 		const rects = (sel) => [...svg.querySelectorAll(sel)].map((el) => el.getBoundingClientRect()).filter(onScreen);

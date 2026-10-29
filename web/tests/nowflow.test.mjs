@@ -149,7 +149,7 @@ describe('the nowview flows', () => {
 		/** Whether each clock time on the window is drawn, and the far label's words. */
 		const shown = (page) =>
 			page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => {
-				const frame = svg.parentElement.getBoundingClientRect();
+				const frame = svg.closest('.picture').getBoundingClientRect();
 				const on = (l) => l.getBoundingClientRect().left < frame.right && l.getBoundingClientRect().right > frame.left;
 				const ticks = [...svg.querySelectorAll('.tick-label')].filter(on);
 				const far = ticks.reduce((a, b) => (b.getBoundingClientRect().left < a.getBoundingClientRect().left ? b : a));

@@ -931,10 +931,10 @@ describe('a run of swipes: the window after a switch', () => {
 			await scrollX(body, true);
 			await swipeOver(page, body, -120, 0);
 			await until(() => activeTab(page, 'side'), (t) => t === 'nowview');
-			const pan = await band.evaluate((el) => el.style.getPropertyValue('--pan'));
+			const pan = await band.evaluate((el) => el.querySelector('.slide')?.style.translate);
 			await swipeOver(page, band, -120, 0);
 			await until(() => activeTab(page, 'side'), (t) => t === 'custom');
-			assert.equal(await band.evaluate((el) => el.style.getPropertyValue('--pan')), pan, 'the band panned under the tab’s swipe');
+			assert.equal(await band.evaluate((el) => el.querySelector('.slide')?.style.translate), pan, 'the band panned under the tab’s swipe');
 
 			// A tap on the tab opens the window as well.
 			await tab('nowview');

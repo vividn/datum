@@ -79,7 +79,7 @@ async function beside(page, pane) {
 		const r = (el) => el.getBoundingClientRect();
 		const over = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
 		const svg = p.querySelector('svg.svg');
-		const frame = r(svg.parentElement);
+		const frame = r(svg.closest('.picture'));
 		const all = [...svg.querySelectorAll('.tick-label')].filter((l) => r(l).left < frame.right && r(l).right > frame.left);
 		const far = all.reduce((a, b) => (r(b).x < r(a).x ? b : a));
 		const labels = all.filter((l) => getComputedStyle(l).visibility !== 'hidden');
@@ -1256,7 +1256,7 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 							at = Math.max(at, r);
 						}
 						gap += Math.max(0, end - at);
-						frames.push({ gap, pan: b.style.getPropertyValue('--pan') + b.style.getPropertyValue('--zoom') });
+						frames.push({ gap, pan: b.querySelector('.slide')?.style.translate + b.style.getPropertyValue('--zoom') });
 						requestAnimationFrame(tick);
 					};
 					requestAnimationFrame(tick);
@@ -1528,7 +1528,7 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 					}
 					await page.waitForFunction(
 						(band) => {
-							const pan = document.querySelector(band).style.getPropertyValue('--pan');
+							const pan = document.querySelector(band).querySelector('.slide')?.style.translate;
 							const s = (window.__rest ??= { pan, n: 0 });
 							s.n = s.pan === pan ? s.n + 1 : 0;
 							s.pan = pan;
@@ -1546,7 +1546,7 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 					(pane) =>
 						new Promise((resolve) => {
 							const band = document.querySelector(`${pane} .nowview-band`);
-							let [was, n, pressed, tag] = [band.style.getPropertyValue('--pan'), 0, -1, 0];
+							let [was, n, pressed, tag] = [band.querySelector('.slide')?.style.translate, 0, -1, 0];
 							const read = () => {
 								const svg = band.querySelector('svg.svg');
 								svg.dataset.seen ??= String(++tag);
@@ -1561,7 +1561,7 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 							};
 							const frame = () => {
 								n++;
-								const pan = band.style.getPropertyValue('--pan');
+								const pan = band.querySelector('.slide')?.style.translate;
 								if (pressed < 0 && !window.__down && pan !== was) {
 									pressed = n;
 									frames.push({ ...read(), button: document.querySelector(`${pane} .nowview-now`)?.textContent });
