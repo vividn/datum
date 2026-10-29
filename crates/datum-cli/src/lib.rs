@@ -543,7 +543,8 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         anyhow::bail!("repl is unavailable in this build");
     }
 
-    // `datum config show`, `datum completions`, `datum sync daemon`,
+    // `datum config show`, `datum completions`, `datum sync daemon`, `db rename` (which
+    // moves the file),
     // `install | uninstall | upgrade` and `alias install | uninstall` run against an in-memory placeholder: they
     // do not read the entry db (the daemon opens each chained db itself, and
     // must not create the default). Nor does `nowview --overlay`, a picture
@@ -556,6 +557,7 @@ fn dispatch_single(cli: Cli) -> Result<()> {
             | Command::Uninstall
             | Command::Upgrade { .. }
             | Command::Sync(SyncCommand::Daemon(_))
+            | Command::Db(DbCommand::Rename(_))
             | Command::Alias(AliasCommand::Install { .. } | AliasCommand::Uninstall { .. })
     ) || matches!(&cli.command, Command::Nowview(a) if a.overlay)
     {

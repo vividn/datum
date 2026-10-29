@@ -395,7 +395,13 @@ pub fn first_sync(db: &Db) -> Result<Option<FirstSync>> {
     let Some(path) = db.conn().path().filter(|p| !p.is_empty()) else {
         return Ok(None);
     };
-    let path = first_sync_lock(Path::new(path));
+    hold(Path::new(path)).map(Some)
+}
+
+/// The lock [`first_sync`] holds, on the database at `db`: a `db rename`
+/// holds it too, so the daemon lets go of the file it moves.
+pub(super) fn hold(db: &Path) -> Result<FirstSync> {
+    let path = first_sync_lock(db);
     let lock = File::options()
         .create(true)
         .append(true)
@@ -404,7 +410,7 @@ pub fn first_sync(db: &Db) -> Result<Option<FirstSync>> {
     if let Err(TryLockError::WouldBlock) = lock.try_lock() {
         bail!(BUSY);
     }
-    Ok(Some(FirstSync { _lock: lock, path }))
+    Ok(FirstSync { _lock: lock, path })
 }
 
 /// Why a second `connect` or `invite` on a database is refused.

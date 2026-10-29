@@ -234,7 +234,7 @@ describe('the bar of commands', () => {
 // instead.» Which are subcommands is `datum help --json`'s to say.
 describe('a command with subcommands drills into them', () => {
 	const back = (page) => commands(page).locator('button[data-back]');
-	const DB = ['purge', 'backup', 'restore', 'migrate', 'v2import', 'config'];
+	const DB = ['purge', 'backup', 'restore', 'migrate', 'v2import', 'config', 'rename'];
 
 	test('db shows its subcommands under < Back, and migrate fills `db migrate `', async () => {
 		await onPage(async ({ page }) => {
@@ -248,6 +248,8 @@ describe('a command with subcommands drills into them', () => {
 
 			await tap(page, 'db migrate');
 			assert.equal(await back(page).count(), 1, 'a fill stays among the subcommands');
+			// It takes the new name, so it fills and runs nothing (da-o7ay8).
+			await tap(page, 'db rename');
 		});
 	});
 

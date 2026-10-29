@@ -41,7 +41,7 @@ pub(crate) fn parse_reparse_args(tail: &[&str]) -> Result<ReparseArgs> {
 pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing db subcommand (purge|backup|restore|migrate|v2import|config)".into(),
+            "missing db subcommand (purge|backup|restore|migrate|v2import|config|rename)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
@@ -52,6 +52,14 @@ pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
         "migrate" => Ok(DbCommand::Migrate(parse_migrate_cmd(rest)?)),
         "v2import" => Ok(DbCommand::V2import(parse_db_import(rest)?)),
         "config" => Ok(DbCommand::Config(parse_db_config(rest)?)),
+        "rename" => match rest {
+            [new] if !new.starts_with('-') && !new.is_empty() => {
+                Ok(DbCommand::Rename(new.to_string()))
+            }
+            _ => Err(ParseError::InvalidArg(
+                "db rename takes the database's new name: `datum --db OLD db rename NEW`".into(),
+            )),
+        },
         "import" => Err(ParseError::InvalidArg(
             "unknown db subcommand: 'import' (the legacy import is `db v2import`)".into(),
         )),

@@ -433,3 +433,92 @@ fn a_db_chained_by_path_is_the_daemons() {
         "{daemon}"
     );
 }
+
+/// `db rename` (da-o7ay8) moves a chained copy with the daemon serving it:
+/// the daemon steps aside, the copy keeps its endpoint key and its chain, its
+/// status names the new name, and both copies sync on under it.
+#[test]
+fn a_renamed_copy_is_the_same_member_under_its_new_name() {
+    let (a, b) = (Home::new(), Home::new());
+    a.ok(&["occur", "coffee"]);
+    let (inviting, _out, ticket) = a.inviting(&[]);
+    b.ok(&["--db", "old", "sync", "chain", "connect", &ticket]);
+    drop(inviting);
+    let key = b.ok(&["--db", "old", "sync", "endpoint-key"]);
+    let members = b.ok(&["--db", "old", "sync", "chain", "list"]);
+
+    let (port, _claim) = claim_port();
+    let bind = format!("127.0.0.1:{port}");
+    let mut daemon = b.spawn(&["sync", "daemon", "run"], &[("DATUM_SYNC_BIND", &bind)]);
+    let err = BufReader::new(daemon.0.stderr.take().unwrap());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        err.lines()
+            .map_while(Result::ok)
+            .try_for_each(|l| tx.send(l))
+    });
+    while !rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the daemon up within 10s")
+        .contains("is up")
+    {}
+    let said = b.ok(&["--db", "old", "db", "rename", "new"]);
+    assert!(
+        said.contains("old.db → ") && said.ends_with("new.db\n"),
+        "{said}"
+    );
+    drop(daemon);
+
+    assert!(!b.path("data/old.db").exists());
+    assert_eq!(b.ok(&["--db", "new", "sync", "endpoint-key"]), key);
+    assert_eq!(b.ok(&["--db", "new", "sync", "chain", "list"]), members);
+    let status = b.ok(&["sync", "daemon", "status"]);
+    assert!(status.contains("1 chained database(s): new"), "{status}");
+
+    let _a_runs = a.spawn(&["sync", "run"], &[]);
+    a.ok(&["occur", "tea"]);
+    b.ok(&["--db", "new", "occur", "cake"]);
+    b.ok(&["--db", "new", "sync"]);
+    for (h, args) in [(&a, &["count"][..]), (&b, &["--db", "new", "count"])] {
+        eventually("both copies holding all three", || h.ok(args).trim() == "3");
+    }
+    assert_eq!(b.ok(&["--db", "new", "sync", "chain", "list"]), members);
+}
+
+/// A name that holds a database with anything in it is refused, naming the
+/// purge that empties it; emptied, the rename puts this one in its place.
+#[test]
+fn a_rename_onto_a_database_that_holds_data_says_to_purge_it_first() {
+    let h = Home::new();
+    h.ok(&["--db", "finance-2", "occur", "coffee"]);
+    // Its first log sets the field up: two entries, the spec among them.
+    h.ok(&["--db", "finance", "occur", "tea"]);
+    let refused = h.datum(&["--db", "finance-2", "db", "rename", "finance"], &[]);
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success());
+    assert!(
+        said.contains("«finance» exists and holds 2 entries"),
+        "{said}"
+    );
+    assert!(
+        said.contains("`datum --db finance db purge`")
+            && said.contains("`datum --db finance-2 db rename finance`"),
+        "{said}"
+    );
+    assert!(h.ok(&["--db", "finance", "tail"]).contains("tea"));
+
+    // A spec alone is something to lose too.
+    h.ok(&["--db", "spec-only", "setup", "mood", "--verb", "switch"]);
+    let refused = h.datum(&["--db", "finance-2", "db", "rename", "spec-only"], &[]);
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        said.contains("«spec-only» exists and holds 1 entry"),
+        "{said}"
+    );
+
+    h.ok(&["--db", "finance", "db", "purge", "--yes"]);
+    h.ok(&["--db", "finance-2", "db", "rename", "finance"]);
+    assert!(h.ok(&["--db", "finance", "tail"]).contains("coffee"));
+    let registry = std::fs::read_to_string(h.path("dc%onf/dbs.toml")).unwrap();
+    assert!(!registry.contains("finance-2"), "{registry}");
+}

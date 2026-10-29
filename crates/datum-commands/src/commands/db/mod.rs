@@ -1,8 +1,8 @@
 //! `datum db <subcommand>` — DB-lifecycle group.
 //!
 //! Houses every database administration verb: `purge`, `backup`,
-//! `restore`, `migrate`, `v2import`, and `config`, the database's own
-//! settings. da-33g consolidated the standalone
+//! `restore`, `migrate`, `v2import`, `config`, the database's own
+//! settings, and `rename`. da-33g consolidated the standalone
 //! `setup` / `backup` / `restore` / `migrate` top-level verbs under here,
 //! and da-a4ptr folded `db setup` into `db migrate`.
 
@@ -15,6 +15,7 @@ use crate::args::DbCommand;
 use crate::args::DbPurgeArgs;
 
 pub mod import;
+mod rename;
 
 pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
     match cmd {
@@ -27,6 +28,7 @@ pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
         DbCommand::Migrate(sub) => super::migrate::migrate(sub, db),
         DbCommand::V2import(args) => import::import(args, db),
         DbCommand::Config(args) => config(args, db),
+        DbCommand::Rename(new) => rename::rename(&new, cli_db),
     }
 }
 
