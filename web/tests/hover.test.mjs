@@ -192,7 +192,10 @@ describe('hovering the day strip', () => {
 			const logged = await app.run(['occur', 'coffee', '-d', '-2', '-t', '0930']);
 			assert.equal(logged.code, 0, logged.stderr);
 			await app.redraw();
-			await app.page.evaluate(() => (document.querySelector('.cell.dayview').style.flex = '0 0 400px'));
+			// Scrolled to, as a reader would: a day held from before the write
+			// is checked once it is on screen (`refreshVisible`), and only an
+			// ask still in flight as the coffee landed drew it there before.
+			await app.page.locator('.band[data-days-ago="2"]').scrollIntoViewIfNeeded();
 			const dot = app.page.locator('.band[data-days-ago="2"] circle[data-field="coffee"]');
 			await dot.hover();
 			assert.equal(await app.page.locator('.band[data-days-ago="2"] .tip').innerText(), '09:30 coffee');
