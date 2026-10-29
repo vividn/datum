@@ -56,7 +56,8 @@
 		writer = $bindable(null),
 		/**
 		 * What the page lays over or under the CLI's own answer before it is
-		 * shown: the nowview's crop of the day's data layer (da-0e06p).
+		 * shown: the nowview's crop of the day's data layer (da-0e06p), as a
+		 * node of the page, sanitized, which is drawn as it is (da-cqiil).
 		 */
 		compose = undefined,
 		/**
@@ -80,7 +81,7 @@
 		guard?: boolean;
 		scale?: number;
 		writer?: PaneSpec | null;
-		compose?: (stdout: string, argv: string[]) => string;
+		compose?: (stdout: string, argv: string[]) => SVGSVGElement | string;
 		dims?: boolean;
 		standby?: { spec: PaneSpec; every: number; epoch?: number };
 		title?: Snippet;
@@ -297,7 +298,8 @@
 	{:else if !result}
 		<p class="quiet">…</p>
 	{:else if result.stdout}
-		<CliOutput text={compose ? compose(result.stdout, result.argv) : result.stdout} {behind} />
+		{@const drawn = compose ? compose(result.stdout, result.argv) : result.stdout}
+		<CliOutput text={typeof drawn === 'string' ? drawn : ''} svg={typeof drawn === 'string' ? undefined : drawn} {behind} />
 	{:else if result.stderr}
 		<CliOutput text={result.stderr} stream="stderr" error {behind} />
 	{:else if spec.empty}

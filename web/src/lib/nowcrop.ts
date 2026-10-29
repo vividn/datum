@@ -16,6 +16,7 @@
 // for its overlay alone, and a clock change is one more instant on the way.
 
 import { LAYER_HEIGHT, layMarks, type Layer } from './dayLayers.js';
+import { sanitizeSvg } from './svgSafe.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -64,19 +65,26 @@ function parse(text: string): Document | null {
 }
 
 /**
- * The overlay `overlay` with the data of `days` laid under it, as SVG text;
- * the overlay unchanged when it has no axis to crop for (the snapshot, an
- * error). `now` is the strip's instant: the strip is now's (da-dv45l). A day
- * whose layer failed is said over the band, not left out unsaid.
+ * The overlay `overlay` with the data of `days` laid under it, as a node of
+ * the page, sanitized as the layers are, for `CliOutput` to draw as it is:
+ * as text, a dense day was serialized and parsed again at every draw, ~450 ms
+ * of main thread (da-cqiil). The overlay's text unchanged when it has no axis
+ * to crop for (the snapshot, an error). `now` is the strip's instant: the
+ * strip is now's (da-dv45l). A day whose layer failed is said over the band,
+ * not left out unsaid.
  */
-export function compose(overlay: string, days: Layer[], now: number): string {
-	const doc = parse(overlay);
-	const root = doc?.documentElement;
-	const stretches = [...(root?.querySelectorAll('[data-lo]') ?? [])];
-	if (!doc || !root || !stretches.length) return overlay;
+export function compose(overlay: string, days: Layer[], now: number): SVGSVGElement | string {
+	const parsed = parse(overlay)?.documentElement;
+	if (!parsed?.querySelector('[data-lo]')) return overlay;
+	sanitizeSvg(parsed);
+	const root = document.importNode(parsed, true) as unknown as SVGSVGElement;
+	const stretches = [...root.querySelectorAll('[data-lo]')];
+	// The ids drawn so far: a node not in a document has no `getElementById`,
+	// whose first of an id this keeps, as the map is built from the last.
+	const ids = new Map([...root.querySelectorAll('[id]')].reverse().map((el) => [el.id, el]));
 	const slot = root.querySelector('.now-strip');
 	const make = (name: string, attrs: Record<string, string | number>) => {
-		const el = doc.createElementNS(NS, name);
+		const el = document.createElementNS(NS, name);
 		for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
 		return el;
 	};
@@ -90,6 +98,10 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 	// group under the clip at the now-line, as the CLI's own did (da-hklaz).
 	const flow = root.querySelector('clipPath[id^="flow-past"]')?.id;
 	const defs = root.querySelector('defs') ?? root.insertBefore(make('defs', {}), root.firstChild);
+	const define = (el: Element) => {
+		ids.set(el.id, el);
+		defs.append(el);
+	};
 
 	const pages = days.map((day) => day.doc()).filter((d): d is Document => !!d);
 	const failed = days.find((day) => day.error)?.error;
@@ -102,10 +114,10 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 	for (const page of pages) {
 		for (const def of page.querySelectorAll('defs > *')) {
 			const id = def.localName === 'pattern' ? own(def.id) : def.id;
-			if (!def.id || doc.getElementById(id)) continue;
-			const copy = doc.importNode(def, true) as Element;
+			if (!def.id || ids.has(id)) continue;
+			const copy = document.importNode(def, true);
 			copy.setAttribute('id', id);
-			defs.append(copy);
+			define(copy);
 		}
 	}
 
@@ -113,10 +125,10 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 		const into = axisOf(g);
 		const [lo, hi] = [into.lo - margin, into.hi - margin];
 		const id = `crop-${y ? 'y' : 'x'}${Math.round(lo * 100)}-${Math.round(hi * 100)}`;
-		if (!doc.getElementById(id)) {
+		if (!ids.has(id)) {
 			const clip = make('clipPath', { id });
 			clip.append(make('rect', y ? { x: -1e5, y: lo, width: 2e5, height: hi - lo } : { x: lo, y: -1e5, width: hi - lo, height: 2e5 }));
-			defs.append(clip);
+			define(clip);
 		}
 		let at: Element = make('g', { class: 'crop', 'clip-path': `url(#${id})` });
 		g.append(at);
@@ -137,7 +149,7 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 			// band makes it: under a stretch each would carry a transform of
 			// its own to keep its size (da-syaz8).
 			const day = make('g', { transform: y ? `translate(${cross} ${b})` : `translate(${b} ${cross})` });
-			for (const child of span.children) day.append(doc.importNode(child, true));
+			for (const child of span.children) day.append(document.importNode(child, true));
 			// A block's stripes start where it starts (da-rdiph): a copy of its
 			// pattern at its instant, which the widget scales back about it, so
 			// a stretch moves them with the block and never across it.
@@ -195,18 +207,18 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 		atNow[0].before(group);
 		group.append(...atNow);
 	}
-	return new XMLSerializer().serializeToString(doc);
+	return root;
 
 	/** The pattern `id` laid from `origin` along time, in the day's units: a copy, `data-origin` saying where. */
 	function anchored(id: string, origin: number | null): string {
 		if (origin === null || !Number.isFinite(origin)) return id;
 		const at = `${id}-at${origin}`;
-		if (!doc!.getElementById(at)) {
-			const copy = doc!.getElementById(id)?.cloneNode(true) as Element | undefined;
+		if (!ids.has(at)) {
+			const copy = ids.get(id)?.cloneNode(true) as Element | undefined;
 			if (!copy) return id;
 			copy.setAttribute('id', at);
 			copy.setAttribute('data-origin', String(origin));
-			defs.append(copy);
+			define(copy);
 		}
 		return at;
 	}
@@ -216,10 +228,10 @@ export function compose(overlay: string, days: Layer[], now: number): string {
 		const drawn = /^url\(#(.+)\)$/.exec(fill)?.[1];
 		if (!drawn) return fill;
 		const pattern = own(drawn);
-		if (!doc!.getElementById(`${pattern}-strip`)) {
-			const copy = doc!.getElementById(pattern)?.cloneNode(true) as Element | undefined;
+		if (!ids.has(`${pattern}-strip`)) {
+			const copy = ids.get(pattern)?.cloneNode(true) as Element | undefined;
 			copy?.setAttribute('id', `${pattern}-strip`);
-			if (copy) defs.append(copy);
+			if (copy) define(copy);
 		}
 		return `url(#${pattern}-strip)`;
 	}

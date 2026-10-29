@@ -160,3 +160,101 @@ test('a band laid out from its held layer is drawn as a node, never parsed again
 		{ ...DESKTOP, home: ON_COLLECT, clock: todayAt(12) }
 	);
 });
+
+// The nowview's crop goes to the page as the node it was built in (da-cqiil):
+// serialized, `inlineSvg` parsed it again at every draw, ~450 ms of main
+// thread on a dense day at CPU 4x, on every write. The overlay is sanitized
+// as the layers are: no `<title>` reaches the page, its text on the mark.
+test("the nowview's crop is drawn as a node, never serialized and parsed again", async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await app.idle();
+			await seedLines(app, ['switch mood calm -t -20', 'occur coffee -t -5']);
+			await page.locator(`${NOWVIEW} svg.svg [data-field="coffee"]`).first().waitFor({ state: 'attached' });
+			await app.idle();
+			await page.evaluate(() => {
+				const [parse, serialize] = [DOMParser.prototype.parseFromString, XMLSerializer.prototype.serializeToString];
+				window.texts = [];
+				DOMParser.prototype.parseFromString = function (text, type) {
+					window.texts.push(text);
+					return parse.call(this, text, type);
+				};
+				XMLSerializer.prototype.serializeToString = function (node) {
+					const text = serialize.call(this, node);
+					window.texts.push(text);
+					return text;
+				};
+			});
+			await seedLines(app, ['occur tea -t -2']);
+			await page.locator(`${NOWVIEW} svg.svg [data-field="tea"]`).first().waitFor({ state: 'attached' });
+			await app.idle();
+
+			const seen = await page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => ({
+				crops: svg.querySelectorAll('g.crop').length,
+				titles: svg.querySelectorAll('title').length,
+				named: [...svg.querySelectorAll('[data-state][data-title]')].map((m) => m.getAttribute('data-title')),
+				texts: window.texts
+			}));
+			assert.ok(seen.crops > 0, 'no crop drawn, so nothing was checked');
+			assert.ok(seen.texts.length > 0, 'nothing parsed, so the spy saw no redraw');
+			const again = seen.texts.filter((text) => text.includes('class="crop"'));
+			assert.deepEqual(again.map((text) => text.slice(0, 120)), [], 'the crop went through text');
+			assert.equal(seen.titles, 0, 'a <title> reached the page');
+			assert.ok(seen.named.some((title) => title.includes('tea')), `no mark named tea: ${seen.named}`);
+			assert.deepEqual(app.errors, []);
+		},
+		{ ...DESKTOP, home: ON_COLLECT, clock: todayAt(12) }
+	);
+});
+
+// Before da-cqiil the overlay reached the page through `inlineSvg`; now
+// `compose`'s own `sanitizeSvg` is all that stands between them. So the
+// overlay datum printed is handed to the page carrying what the sanitizer
+// removes (the runner wrapped, as `spyOnRunner` wraps it), and none of it
+// may reach the page: a `<script>`, an `on…` handler, a link that leaves the
+// picture, a `<title>` (its text goes onto its mark).
+test('the overlay the nowview crops under is sanitized before it reaches the page', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await app.idle();
+			await page.evaluate(() => {
+				const evil =
+					'<script>window.ran = 1</script>' +
+					'<a class="evil-link" href="https://example.com/x"><text>x</text></a>' +
+					'<rect class="evil-mark" data-state="evil" onclick="window.ran = 1"><title>evil title</title></rect>';
+				const previous = window.datum.setRunner((argv, ...rest) =>
+					previous(argv, ...rest).then((result) =>
+						argv[0] === 'nowview' && argv.includes('--overlay') && result.stdout.includes('data-lo')
+							? { ...result, stdout: result.stdout.replace(/<\/svg>\s*$/, `${evil}</svg>`) }
+							: result
+					)
+				);
+			});
+			// The overlay opens no database, so a write does not ask for it
+			// again: the clock moving the picture on past its look-ahead does.
+			await seedLines(app, ['occur coffee -t -5']);
+			await app.clock.forward(3 * 3_600_000);
+			await page.locator(`${NOWVIEW} svg.svg .evil-mark`).waitFor({ state: 'attached' });
+			await app.idle();
+
+			const seen = await page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => ({
+				crops: svg.querySelectorAll('g.crop').length,
+				scripts: svg.querySelectorAll('script').length,
+				handlers: [...svg.querySelectorAll('*')].flatMap((el) => [...el.attributes].filter((a) => /^on/i.test(a.name)).map((a) => a.name)),
+				href: svg.querySelector('.evil-link')?.getAttribute('href') ?? null,
+				titles: svg.querySelectorAll('title').length,
+				named: svg.querySelector('.evil-mark')?.getAttribute('data-title') ?? null
+			}));
+			assert.ok(seen.crops > 0, 'the picture was not cropped, so compose never saw the overlay');
+			assert.equal(seen.scripts, 0, 'a <script> reached the page');
+			assert.deepEqual(seen.handlers, [], 'an on… handler reached the page');
+			assert.equal(seen.href, null, 'a link that leaves the picture reached the page');
+			assert.equal(seen.titles, 0, 'a <title> reached the page');
+			assert.equal(seen.named, 'evil title', "the <title>'s text is not on its mark");
+			assert.deepEqual(app.errors, []);
+		},
+		{ ...DESKTOP, home: ON_COLLECT, clock: todayAt(12) }
+	);
+});
