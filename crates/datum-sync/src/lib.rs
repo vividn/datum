@@ -1059,13 +1059,16 @@ fn push<'a>(
             // Asked, a dial given way to a session between the two copies
             // (da-vj3ly, da-mghh3) waits that session out and dials again,
             // so `datum sync` says this one verified, not that one runs
-            // (da-221fe). Refused, that session may be over by now.
+            // (da-221fe). Refused, that session may be over by now. So
+            // does one the peer refused while applying a session this copy
+            // dialed it, a tick's push (da-sdrol).
             let busy = rep.as_ref().is_err_and(|e| failure(e) == Some(BUSY));
             let gave = rep.as_ref().is_err_and(gave_way);
-            if asked.is_none() || !busy || !(gave || store.serves(&p.id)) {
+            let between = || store.serves(&p.id) || store.carries(&p.id);
+            if asked.is_none() || !busy || !(gave || between()) {
                 break rep;
             }
-            while store.serves(&p.id) {
+            while between() {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         };

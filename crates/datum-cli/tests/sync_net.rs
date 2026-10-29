@@ -1243,6 +1243,42 @@ fn sync_asks_the_run_serving_its_copy_and_binds_nothing_of_its_own() {
     assert!(a.has("swim"));
 }
 
+/// An ask the member refuses as busy applying a session the run dialed it
+/// waits that session out and dials again, so `datum sync` says this one
+/// verified, not that none synced (da-sdrol, as da-221fe for one served).
+/// a's dial to b at start reaches no run and backs off, so the session a
+/// applies, slowly, is b's run's dial at start.
+#[test]
+fn an_ask_waits_out_the_session_the_run_dialed_the_member_applies() {
+    let (mut a, b) = paired();
+    import_as(&b, "stair", 300);
+    b.ok(&["sync", "pipe", "ops", "--limit", "1"]);
+    a.env.extend([
+        ("DATUM_SYNC_TIMEOUT_S", "2"),
+        ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "10"),
+    ]);
+    let _a_runs = logged(&a, &["sync", "run"], "run.log");
+    until("a's dial at start failing", Duration::from_secs(20), || {
+        log(&a, "run.log").contains("next try in")
+    });
+    let _b_runs = b.serve(&["sync", "run"]);
+    until("a applying b's dial", Duration::from_secs(20), || {
+        a.has("stair")
+    });
+    let out = b.run(&["sync"]);
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{said}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(said.contains("verify ok"), "{said}");
+    assert_eq!(
+        a.query("SELECT COUNT(*) FROM entries WHERE field = 'stair'"),
+        "300"
+    );
+}
+
 /// An answer cut short — the run stopped with a session open — fails the
 /// ask rather than reads as done, and one this build cannot read says so.
 #[test]
