@@ -1513,6 +1513,9 @@ describe('the now section belongs to now (da-dv45l)', () => {
 			const under = await instantUnder(page, x);
 			await wheelIn(page, x, g.y);
 			const stretched = await until(() => history(page), (h) => h !== undefined && h !== '30m');
+			// The live rule's ask names the window before the wheel's pause commits it (da-gy4xz),
+			// and «now» drops a stretch still in hand: wait for the gesture to be over.
+			await page.waitForFunction((band) => document.querySelector(band).style.getPropertyValue('--zoom') === '1', BAND);
 			await app.idle();
 			assert.notEqual(await asked(page), null, 'the stretch panned off now went home');
 			const after = await geometry(page);
