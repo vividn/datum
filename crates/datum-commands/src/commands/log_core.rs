@@ -803,10 +803,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // The `<field>:` prefix is implicit and never lives in the template.
     //
     // Precedence for the body template:
-    //   1. `-K` slug-keys → `%key1%__%key2%` (one `%key%` per -K, joined
+    //   1. `--id` template, which holds the `-K`s too, in the order given
+    //      (da-14ri0; an add's first bare word lands here, da-znksm, when
+    //      no `-K` or spec's `id_template` names the id)
+    //   2. `-K` slug-keys → `%key1%__%key2%` (one `%key%` per -K, joined
     //      by the canonical slug separator `__`)
-    //   2. `--id` template (an add's first bare word lands here, da-znksm,
-    //      when neither 1 nor 3 names one)
     //   3. spec's `id_template`
     //   4. Default → `%occur_time%` if the entry has an occur_time, else
     //      (timeless) `%create_time%` → `field:<create_time>c`. da-r17h:
@@ -815,18 +816,15 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     //      Distinct create_times keep many-per-field timeless notes apart.
     //      A bare `add` is the exception: it demands an explicit id (it is
     //      identified by *what*, not *when*), so it errors here instead.
-    let id_structure: String = if !args.slug_keys.is_empty() {
-        args.slug_keys
-            .iter()
-            .map(|spec| {
-                let name = spec.split_once('=').map(|(n, _)| n).unwrap_or(spec);
-                format!("%{name}%")
-            })
-            .collect::<Vec<_>>()
-            .join("__")
-    } else if let Some(tmpl) = args.id.clone() {
+    let id_structure: String = if let Some(tmpl) = args.id.clone() {
         field_spec::refuse_name_only_marker(&tmpl, None)?;
         tmpl
+    } else if !args.slug_keys.is_empty() {
+        args.slug_keys
+            .iter()
+            .map(|k| datum_parse::cli::slug_key_part(k))
+            .collect::<Vec<_>>()
+            .join("__")
     } else if let Some(tmpl) = db.load_spec(&entry.field)?.and_then(|s| s.id_template) {
         tmpl
     } else if entry.occur_time.is_some() {
@@ -1739,7 +1737,9 @@ fn apply_spec_keys(
 /// as a line's own `-K` does, so it fills a slot in its place.
 pub(crate) fn bind_spec_words(args: &mut LogArgs, words: SpecKeyWords) {
     args.keys.extend(words.slug_keys.iter().cloned());
-    args.slug_keys.extend(words.slug_keys);
+    for k in words.slug_keys {
+        args.push_slug_key(k);
+    }
     args.keys.extend(words.keys);
     args.rest.splice(0..0, words.assigned);
     if words.remainder.is_some() {

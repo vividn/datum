@@ -1397,7 +1397,7 @@ const ADD_SHARED_FLAGS: SharedFlags = SharedFlags {
             takes_value: true,
             value_hint: Some("TEMPLATE"),
             value_optional: false,
-            summary: "...or set the id directly (e.g. %field%:%uid%)",
+            summary: "...or a part of it, in order with -K (e.g. %uid%)",
             long_description: None,
             left_override: None,
         },

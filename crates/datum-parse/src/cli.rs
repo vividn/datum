@@ -345,6 +345,8 @@ pub struct LogArgs {
     /// entry's state (canonical slot `state.id`) as one space-separated
     /// string — the state-targeting analogue of `-S`. (da-vo0y Feature 1.)
     pub string_state: bool,
+    /// `--id`'s template. Once one is given it holds every `-K` too, in the
+    /// order given ([`Self::push_id_part`]).
     pub id: Option<String>,
     /// `--id-delimiter` raw CLI value. `None` means "fall through to env /
     /// `datumrc.toml` / built-in default" at the slug-interpolation site;
@@ -415,6 +417,32 @@ impl LogArgs {
             && !self.comment_remainder
     }
 
+    /// Append a part to the id, `__`-joined, as v2's `idParts` (da-14ri0):
+    /// the first takes in the `-K`s before it, so `-K a --id %b -K c` is
+    /// `%a%__%b%__%c%`.
+    pub fn push_id_part(&mut self, part: &str) {
+        match &mut self.id {
+            Some(id) => {
+                id.push_str("__");
+                id.push_str(part);
+            }
+            None => {
+                let mut parts: Vec<String> =
+                    self.slug_keys.iter().map(|k| slug_key_part(k)).collect();
+                parts.push(part.to_string());
+                self.id = Some(parts.join("__"));
+            }
+        }
+    }
+
+    /// A `-K`: its key is a part of the id, after any `--id` before it.
+    pub fn push_slug_key(&mut self, spec: String) {
+        if self.id.is_some() {
+            self.push_id_part(&slug_key_part(&spec));
+        }
+        self.slug_keys.push(spec);
+    }
+
     /// Start from `Default` with `field_or_verb` pre-set — the one field
     /// every logging caller supplies up front.
     pub fn with_field(field_or_verb: impl Into<String>) -> Self {
@@ -423,6 +451,12 @@ impl LogArgs {
             ..Self::default()
         }
     }
+}
+
+/// A `-K` slot's part of the id: `%key%`, whatever default it carries.
+pub fn slug_key_part(spec: &str) -> String {
+    let name = spec.split_once('=').map_or(spec, |(n, _)| n);
+    format!("%{name}%")
 }
 
 /// Mirrors `datum_core::db::ConflictStrategy`; lives here so `datum-parse`

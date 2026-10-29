@@ -174,7 +174,7 @@ USAGE:
 
 OPTIONS:
   -K, --slug-key <S>    ...or derive the id from this key (K / K= / K=val)
-      --id <TEMPLATE>   ...or set the id directly (e.g. %field%:%uid%)
+      --id <TEMPLATE>   ...or a part of it, in order with -K (e.g. %uid%)
   common logging options: `datum help logging`
     including -I/-R/-S/-C for values with spaces
 

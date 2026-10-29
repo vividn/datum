@@ -40,7 +40,7 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     // appear (da-zwp7g).
     r.push(local_value(Some('K'), Some("slug-key"), |p, v| {
         p.keys.push(v.to_string());
-        p.slug_keys.push(v.to_string());
+        p.push_slug_key(v.to_string());
         Ok(())
     }));
     r.push(local_value(Some('F'), Some("field-key"), |p, v| {
@@ -69,9 +69,9 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     }));
     r.push(local_value(None, Some("id"), |p, v| {
         // da-r17h (task 7): repeated `--id` flags compose into one template,
-        // joined by the canonical slug separator `__` — e.g.
-        // `--id %occurTime% --id %comment%` slugs on BOTH (each `%key%`
-        // interpolated, `__`-joined). A single `--id` is unchanged.
+        // joined by the canonical slug separator `__`, with the `-K`s in the
+        // order given (da-14ri0) — e.g. `--id %occurTime% --id %comment%`
+        // slugs on BOTH (each `%key%` interpolated, `__`-joined).
         //
         // da-es84: each value is normalized first, so the datum-compatible
         // bare-key form (`--id %occurTime`, missing its closing `%`) becomes
@@ -79,14 +79,7 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         // resolves. Without this the composed `%occurTime__%comment` is
         // malformed — interpolation drops `%occurTime` and only the literal
         // `comment` survives, collapsing the multi-`--id` to the last key.
-        let seg = normalize_id_segment(v);
-        match &mut p.id {
-            Some(existing) => {
-                existing.push_str("__");
-                existing.push_str(&seg);
-            }
-            None => p.id = Some(seg),
-        }
+        p.push_id_part(&normalize_id_segment(v));
         Ok(())
     }));
     r.push(local_value(None, Some("id-delimiter"), |p, v| {

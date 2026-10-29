@@ -864,6 +864,38 @@ fn a_timed_or_remaindered_add_keeps_its_id_and_words() {
     assert!(err.contains("add needs an id"), "{err}");
 }
 
+/// `--id` and `-K` build one id, in the order given, as v2's `idParts`
+/// (da-14ri0): with a `-K` present, `--id` was dropped.
+#[test]
+fn id_and_k_join_in_the_order_given() {
+    let db = fresh_db();
+    for (line, slug) in [
+        ("thing -K a --id %b a=1 b=2", "thing:1__2"),
+        ("thing2 --id %b a=1 b=2", "thing2:2"),
+        ("thing3 -K a --id %b -K c a=1 b=2 c=3", "thing3:1__2__3"),
+        ("thing4 --id %b -K a a=1 b=2", "thing4:2__1"),
+    ] {
+        let argv: Vec<&str> = ["add"].into_iter().chain(line.split(' ')).collect();
+        run_cli(&argv, &db).unwrap();
+        assert!(db.get_entry(slug).is_ok(), "{line} → {slug}");
+    }
+
+    // vividn's `der` adds an `--id` part to the noun's `-K`s, so it is a
+    // second word beside the bare noun, not a duplicate of it.
+    for (name, line) in [
+        ("word", "add word -F lang -K pos -K term -k def"),
+        ("noun", "word pos=noun"),
+        ("nng", "noun de --id %article"),
+        ("der", "nng article=der"),
+    ] {
+        run_cli(&["alias", "set", name, line], &db).unwrap();
+    }
+    run_cli(&["word", "de", "noun", "Hund", "dog"], &db).unwrap();
+    run_cli(&["der", "Hund", "dog"], &db).unwrap();
+    assert!(db.get_entry("word__de:noun__Hund").is_ok());
+    assert!(db.get_entry("word__de:noun__Hund__der").is_ok());
+}
+
 /// `-K` and a spec's `id_template` still name the id, and a bare word then
 /// means what it did: `-K`'s slot, or a refusal.
 #[test]
