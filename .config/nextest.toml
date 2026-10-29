@@ -1,0 +1,12 @@
+# The tests that sync real peers, each one several `datum` processes dialing
+# each other on localhost, sort next to each other, so at `--test-threads
+# num-cpus` they took every thread at once: on CI's 16- and 6-core boxes a
+# minute and more of nothing else, and a dial to a peer that was up missed its
+# 5 s limit (da-m0wvg). Held to four at a time, the rest of the suite runs
+# beside them.
+[test-groups]
+real-peer-sync = { max-threads = 4 }
+
+[[profile.default.overrides]]
+filter = 'binary_id(datum-cli::main) & test(/^(sync_net|sync_grant|sync_daemon)::/)'
+test-group = 'real-peer-sync'
