@@ -20,11 +20,18 @@
 #     0 fail, 12 files cut at the 120 s budget — the same twelve GitHub's
 #     4-core runner cuts (da-buqa). Memory never below ~2 GB available.
 #
-# One job, sequential steps, on purpose: capacity 1 and 3 cores mean parallel
-# jobs would only queue, and one job keeps the two memory peaks (linking the
-# workspace's test binaries; the browser suite) from ever overlapping. Heavy
-# steps run under /usr/bin/time -v so max RSS and wall time land in the log —
-# those numbers are what decides whether this box carries datum's CI.
+# Since 2026-10-28 it runs on the cormorant's ships instead, each one runner
+# taking one job at a time, the box its own: a PR on an `ubuntu-latest` ship
+# (6 vCPU, 12 GB), staging on the `staging` ship (16 vCPU, 32 GB). The 12-core
+# CI box still serves jobs, in 6-core lanes, until vividn retires it. So each
+# step sizes itself by the cores it finds (da-7u6ig): cargo's jobs and
+# nextest's threads are the cores (Rust reads a lane's cgroup quota), and the
+# web suite runs four files for every five cores (see `pnpm test`).
+#
+# One job, sequential steps, on purpose: one job keeps the two memory peaks
+# (linking the workspace's test binaries; the browser suite) from ever
+# overlapping. Heavy steps run under /usr/bin/time -v so max RSS and wall time
+# land in the log — those numbers are what sizes each step to its box.
 name: CI
 
 on:
@@ -85,10 +92,9 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
-  # 3 cores, 3.9 GB, no swap. Run 235 (2026-09-16, CARGO_BUILD_JOBS=2) peaked
-  # at 728 MB across the whole Rust battery — build 658 MB, clippy 590 MB —
-  # with the box never under ~2 GB available, so all three cores may build.
-  CARGO_BUILD_JOBS: 3
+  # No CARGO_BUILD_JOBS: cargo builds on every core it finds. It was 3 for the
+  # 3-core forge box; on the 16-core staging ship that left 13 idle while the
+  # build peaked at 1.2 GB max RSS (run 7051), a fraction of either ship.
 
 jobs:
   ci:
@@ -103,8 +109,8 @@ jobs:
     # it cancel in seconds. With no runner carrying that label, a staging run
     # waits forever.
     runs-on: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/staging' && 'staging' || 'ubuntu-latest' }}
-    # GitHub's six jobs sum to ~27 min on separate 4-core runners; serialised
-    # on 3 cores the bead expects 45–75 min. The runner's own cap is 3 h.
+    # At 3 threads and 4 files a run took 25 min on the staging ship and 31 on
+    # a PR ship (runs 7051, 7045). The runner's own cap is 3 h.
     timeout-minutes: 150
     steps:
       # A push to main whose COMMIT a green ci.yml run already tested ends GREEN
@@ -392,7 +398,7 @@ jobs:
           DATUM_CARGO_RETRY: |
         run: |
           set -euo pipefail
-          run=(scripts/nextest-retry.sh /usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads 3 --no-tests=pass)
+          run=(scripts/nextest-retry.sh /usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads num-cpus --no-tests=pass)
           if [ -z "${TESTS:-}" ] || [ -e "$TESTS/FULL" ]; then "${run[@]}"
           elif [ -s "$TESTS/workspace.tests" ] || [ -s "$TESTS/new.tests" ]; then
             mapfile -t names < "$TESTS/workspace.tests"; mapfile -t new < "$TESTS/new.tests"
@@ -407,7 +413,7 @@ jobs:
         if: env.TRAIN != '1'
         run: |
           set -euo pipefail
-          run=(/usr/bin/time -v cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads 3 --no-tests=pass)
+          run=(/usr/bin/time -v cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads num-cpus --no-tests=pass)
           if [ -z "${TESTS:-}" ] || [ -e "$TESTS/FULL" ]; then "${run[@]}"
           elif [ -s "$TESTS/e2e-full.tests" ] || [ -s "$TESTS/new.tests" ]; then
             mapfile -t names < "$TESTS/e2e-full.tests"; mapfile -t new < "$TESTS/new.tests"
@@ -539,8 +545,8 @@ jobs:
         working-directory: web
         run: pnpm exec playwright install --with-deps --only-shell chromium
 
-      # Last, so the browser peak never overlaps the link peak. FOUR files at
-      # a time (da-gimld, below). History: at 1, run 800's pnpm test was 46:47,
+      # Last, so the browser peak never overlaps the link peak. Four files for
+      # every five cores (da-7u6ig, at the end below). History: at 1, run 800's pnpm test was 46:47,
       # green. At 3, runs 832 and 838 (2026-09-24) were ~35 min and both RED on
       # timing, not
       # code — a TAU throw, a cut tests/shell.test.mjs, four reachable.test.mjs
@@ -573,6 +579,13 @@ jobs:
       # wall) while the lane used 359% of its six cores, so the wall moves
       # only by a fourth file at once. Kept if the wall drops beyond
       # ci-compare's noise with no new flake over three staging runs.
+      # FOUR FILES FOR EVERY FIVE CORES on the ships (da-7u6ig), which are the
+      # job's alone. At 4 files a file used 1.14 cores on the 16-core staging
+      # ship (run 7051: 456% of the lane, its 16 cores mostly idle) and 0.96 on
+      # a 6-core PR ship (7045: 383%), so 1.25 cores a file keeps the box short
+      # of saturation, where every timing wait gets slower at once: 12 files on
+      # staging, 4 on a PR ship (the cores-less-two ceiling agrees). The 12-core
+      # CI box's `nproc` is the host's; the ceiling holds its 6-core lanes to 4.
       - name: pnpm test
         if: ${{ steps.browser.outcome == 'success' }}
         working-directory: web
@@ -596,9 +609,9 @@ jobs:
             [ -s "$WEBTESTS/web.tests" ] || { echo "no web test reaches this change"; exit 0; }
             export DATUM_TEST_ONLY="$WEBTESTS/web.tests"
           fi
+          export DATUM_TEST_CONCURRENCY=$(( $(nproc) * 4 / 5 ))
           /usr/bin/time -v pnpm test
         env:
-          DATUM_TEST_CONCURRENCY: 4
           # A PR skips the staging-only tests, which name the reason in its
           # log; every push and dispatch runs them (da-v7y8x, vividn
           # 2026-10-19: «staging only»). Today that is the double-outline
@@ -745,8 +758,8 @@ jobs:
           cargo run -q -p xtask -- testmap select "$map" "$DIFF" "$sel" ||
             { mkdir -p "$sel"; echo "the selection failed" > "$sel/FULL"; echo "::warning::the selection failed: every test runs"; }
           for cohort in workspace e2e-full; do
-            run=(cargo nextest run --workspace --no-fail-fast --test-threads 3 --no-tests=pass)
-            [ "$cohort" = workspace ] || run=(cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads 3 --no-tests=pass)
+            run=(cargo nextest run --workspace --no-fail-fast --test-threads num-cpus --no-tests=pass)
+            [ "$cohort" = workspace ] || run=(cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads num-cpus --no-tests=pass)
             if [ -e "$sel/FULL" ]; then "${run[@]}"
             elif [ -s "$sel/$cohort.tests" ] || [ -s "$sel/new.tests" ]; then
               mapfile -t names < "$sel/$cohort.tests"; mapfile -t new < "$sel/new.tests"
@@ -791,7 +804,6 @@ jobs:
         working-directory: web
         env:
           DATUM_TEST_PR: "1"
-          DATUM_TEST_CONCURRENCY: 4
         run: |
           set -euo pipefail
           glob=$(cat "$RUNNER_TEMP/web.glob")
@@ -801,4 +813,4 @@ jobs:
           [ -s "$RUNNER_TEMP/web.tests" ] || { echo "no web test is listed for this branch"; exit 0; }
           while read -r t; do [ -f "$t" ] || { echo "::error::$t is listed in the permit file and does not exist"; exit 1; }; done < "$RUNNER_TEMP/web.tests"
           pnpm exec playwright install --with-deps --only-shell chromium
-          DATUM_TEST_ONLY="$RUNNER_TEMP/web.tests" pnpm test
+          DATUM_TEST_CONCURRENCY=$(( $(nproc) * 4 / 5 )) DATUM_TEST_ONLY="$RUNNER_TEMP/web.tests" pnpm test

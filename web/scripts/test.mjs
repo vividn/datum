@@ -206,6 +206,11 @@ if (shard) {
 }
 
 const before = cpuStat();
+// `memory.peak` counts the page cache, which grows into whatever the box has
+// (16.7 GiB of the staging ship's 32 at four files, run 7051), so what the
+// files themselves hold, anonymous memory, is sampled each second (da-7u6ig).
+let anonPeak = 0;
+setInterval(() => (anonPeak = Math.max(anonPeak, Number(/^anon (\d+)$/m.exec(cgroup('memory.stat') ?? '')?.[1] ?? 0))), 1000).unref();
 const t0 = Date.now();
 const took = {};
 const inside = {}; // ms of each file's top-level tests, by absolute path
@@ -350,7 +355,8 @@ out.on('end', async () => {
 			`test: ${wall.toFixed(0)} s wall, lane CPU ${used.toFixed(0)} s = ${((100 * used) / wall).toFixed(0)}%` +
 				`, throttled ${after.nr_throttled - before.nr_throttled} of ${after.nr_periods - before.nr_periods} periods` +
 				` for ${((after.throttled_usec - before.throttled_usec) / 1e6).toFixed(1)} s` +
-				(peak ? `, memory peak ${gib(Number(peak))}` : '')
+				(peak ? `, memory peak ${gib(Number(peak))}` : '') +
+				(anonPeak ? `, anon peak ${gib(anonPeak)}` : '')
 		);
 	}
 	if (process.env.DATUM_TEST_RECORD && !shard && !notRun && ran.length === all.length) {

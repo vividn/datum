@@ -52,8 +52,13 @@ describe('filesAtOnce', () => {
 		assert.equal(filesAtOnce(4, 0, 6, 3), 2);
 		assert.equal(filesAtOnce(6, 2.3, 6, 4), 4); // the 6-core CI lane
 		assert.equal(filesAtOnce(6, 0, 6, 6), 4);
-		assert.equal(filesAtOnce(12, 0, 6, 8), 6);
-		assert.equal(filesAtOnce(24, 0, 6, 12), 6);
+		assert.equal(filesAtOnce(12, 0, 6, 8), 8);
+		assert.equal(filesAtOnce(24, 0, 6, 30), 22);
+	});
+
+	test('the override is not held to the cap, which is for a shared box', () => {
+		assert.equal(filesAtOnce(16, 2.5, 6, 12), 12); // the staging ship (da-7u6ig)
+		assert.equal(filesAtOnce(24, 0, 6, 6), 6); // mq-check's
 	});
 
 	test('a platform without loadavg reports 0, which is idle', () => {
