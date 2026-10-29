@@ -1627,31 +1627,56 @@
 	// redraw a step asks for.
 
 	/** How far apart the wheel's notches are, across the axis, in px. */
-	const NOTCH_PX = { x: 22, y: 44 };
+	const NOTCH_PX = { x: 26, y: 48 };
 	/** How tall a handle's target is at least, its 11px words and all. */
 	const HANDLE_PX = 20;
-	/** How many of the ladder's steps the wheel shows either side: the next one clear, the rest fading. */
-	const SHOWN = 3;
+	/**
+	 * How clear a notch is, by how many steps it is from the one picked
+	 * (da-x9mzc): the pick and the next either way clear, the rest fading,
+	 * so a wheel turned past its third step still shows where it is.
+	 */
+	const FADE = [1, 1, 0.45, 0.18];
+	/** How many of the ladder's steps the wheel shows either side of the one picked: as many as fade. */
+	const SHOWN = FADE.length - 1;
 
 	/**
 	 * The wheel open on a handle: its time, the sign it is written with,
 	 * and its place across and down the widget's box — its OWN, not a
 	 * label's, so the redraw a step asks for neither closes nor moves it.
-	 * `pick` is how many notches a drag across the axis has turned it.
+	 * `pick` is how many notches a drag across the axis has turned it, and
+	 * `touch` whether a finger opened it, whose notches stand clear of it.
 	 */
-	let wheel = $state.raw<{ minutes: number; text: string; sign: string; x: number; y: number; pick: number } | null>(null);
+	let wheel = $state.raw<{
+		minutes: number;
+		text: string;
+		sign: string;
+		x: number;
+		y: number;
+		pick: number;
+		touch: boolean;
+	} | null>(null);
 	let wheelEl: HTMLDivElement | undefined = $state();
 
 	const around = $derived(wheel ? ladderAround(wheel.minutes, minutes) : { up: [], down: [] });
-	/** The wheel's notches as drawn: how many steps from the handle (up is longer), and the step. */
-	const notches = $derived([
-		...around.up.slice(0, SHOWN).map((step, k) => ({ k: k + 1, step })),
-		...around.down.slice(0, SHOWN).map((step, k) => ({ k: -(k + 1), step }))
-	]);
+	/** The wheel's notches as drawn around the pick: how many steps from the handle (up is longer), the step, how clear. */
+	const notches = $derived.by(() => {
+		const pick = wheel?.pick ?? 0;
+		const out: { k: number; step: string; fade: number }[] = [];
+		for (let k = pick - SHOWN; k <= pick + SHOWN; k++) {
+			const step = k > 0 ? around.up[k - 1] : k < 0 ? around.down[-k - 1] : undefined;
+			if (step) out.push({ k, step, fade: FADE[Math.abs(k - pick)] });
+		}
+		return out;
+	});
 
-	function open(h: Held): void {
-		if (wheel && Math.abs(wheel.x - h.x) < 1 && Math.abs(wheel.y - h.y) < 1) return;
-		wheel = { minutes: h.minutes, text: h.text, sign: h.text.startsWith('+') ? '+' : '-', x: h.x, y: h.y, pick: 0 };
+	function open(h: Held, touch = false): void {
+		if (wheel && Math.abs(wheel.x - h.x) < 1 && Math.abs(wheel.y - h.y) < 1) {
+			// A finger on a wheel the mouse opened: its notches clear of the thumb.
+			if (touch && !wheel.touch) wheel = { ...wheel, touch };
+			return;
+		}
+		const sign = h.text.startsWith('+') ? '+' : '-';
+		wheel = { minutes: h.minutes, text: h.text, sign, x: h.x, y: h.y, pick: 0, touch };
 	}
 
 	function close(): void {
@@ -1737,7 +1762,7 @@
 		const at = vertical ? boxAt.y + h.y : boxAt.x + h.x;
 		const anchor = (vertical ? box.y : box.x) + anchorX(svg);
 		const touch = event.pointerType !== 'mouse';
-		if (touch) open(h);
+		if (touch) open(h, true);
 		const cross = vertical ? boxAt.x + h.x : boxAt.y + h.y;
 		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, text: h.text, mode: 'press', touch };
 		dragged = at;
@@ -1754,7 +1779,7 @@
 				start();
 			} else if (!wheel) {
 				const h = handles.find((h) => h.text === grip?.text);
-				if (h) open(h);
+				if (h) open(h, grip.touch);
 			}
 		}
 		if (grip.mode === 'scale' && zoom) {
@@ -1998,16 +2023,18 @@
 	{/if}
 
 	<!-- The wheel: the ladder's steps either side of the handle it is open
-	     on, longer toward the picture, the next one clear and the rest
-	     fading. `fixed`, so a pane's edge does not cut its notches off. -->
+	     on, longer toward the picture, the one picked and the next clear
+	     and the rest fading. `fixed`, so a pane's edge does not cut its notches off. -->
 	{#if wheel && !zoom}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="nowview-wheel"
+			class:thumb={wheel.touch}
 			data-pans={pans}
 			bind:this={wheelEl}
 			style:left="{boxAt.x + wheel.x}px"
 			style:top="{boxAt.y + wheel.y}px"
+			style:--notch="{vertical ? NOTCH_PX.y : NOTCH_PX.x}px"
 			style:--turn="{wheel.pick * (vertical ? NOTCH_PX.y : NOTCH_PX.x)}px"
 			onpointerleave={leave}
 			onfocusout={blur}
@@ -2021,7 +2048,7 @@
 					data-k={n.k}
 					tabindex="-1"
 					style:--k={n.k}
-					style:--fade={Math.abs(n.k) === 1 ? 1 : Math.abs(n.k) === 2 ? 0.45 : 0.18}
+					style:--fade={n.fade}
 					onclick={() => stepTo(n.step)}>{wheel.sign}{n.step}</button
 				>
 			{/each}
@@ -2303,22 +2330,30 @@
 		top: 0;
 		box-sizing: border-box;
 		min-width: 2.6rem;
-		height: 20px;
+		height: 22px;
 		padding: 0 4px;
-		transform: translate(-50%, calc(-50% - var(--k) * 22px + var(--turn)));
+		transform: translate(-50%, calc(-50% - var(--k) * var(--notch) + var(--turn)));
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		background: var(--ground);
 		color: var(--ink);
 		font: inherit;
-		font-size: 11px;
+		font-size: 13px;
 		line-height: 1;
 		white-space: nowrap;
 		opacity: var(--fade);
 		cursor: pointer;
 	}
 	.vertical .notch {
-		transform: translate(calc(-50% + var(--k) * 44px - var(--turn)), -50%);
+		transform: translate(calc(-50% + var(--k) * var(--notch) - var(--turn)), -50%);
+	}
+	/* A finger's wheel stands clear of its thumb (da-x9mzc): the notches
+	   left of the handle, or over it where they run across the band. */
+	.nowview-wheel.thumb .notch {
+		transform: translate(calc(-100% - 1.6rem), calc(-50% - var(--k) * var(--notch) + var(--turn)));
+	}
+	.vertical .nowview-wheel.thumb .notch {
+		transform: translate(calc(-50% + var(--k) * var(--notch) - var(--turn)), calc(-100% - 1.2rem));
 	}
 	.notch:hover,
 	.notch.picked {

@@ -272,6 +272,75 @@ describe('the nowview widget', () => {
 		);
 	});
 
+	// da-x9mzc, vividn: «Make these a bit bigger font so that you can see
+	// them better … offset the times some to the left so they are not
+	// obscured by the thumb … right now the transparency doesn't change, so
+	// trying to change more than 3 steps becomes invisible».
+	test('a wheel turned four steps shows the pick clear and fades from it, in words bigger than 11px', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await beside(page, PANE);
+				const box = await handle(page, '-30m').boundingBox();
+				const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+				await hover(page, '-30m');
+				// A step's turn is the notches' spacing, as drawn.
+				const notchPx = await page.locator('.nowview-wheel').evaluate((w) => {
+					const y = (k) => w.querySelector(`.notch[data-k="${k}"]`).getBoundingClientRect().y;
+					return y(1) - y(2);
+				});
+				await page.mouse.down();
+				await page.mouse.move(x, y - 4 * notchPx, { steps: 8 });
+				await page.locator('.nowview-wheel .notch.picked[data-k="4"]').waitFor();
+				const { up, down } = await wheelOf(page);
+				const clear = Object.fromEntries([...up, ...down]);
+				// 30m's longer steps: 45m 60m 90m 2h 3h 6h 12h; picked 2h.
+				assert.deepEqual(up.map(([s]) => s), ['45m', '60m', '90m', '2h', '3h', '6h', '12h']);
+				assert.equal(clear['2h'], 1, `the pick is not clear: ${JSON.stringify(up)}`);
+				assert.ok(clear['90m'] === 1 && clear['3h'] === 1, `its neighbours are not clear: ${JSON.stringify(up)}`);
+				assert.ok(clear['60m'] < 1 && clear['45m'] < clear['60m'], `no fade below the pick: ${JSON.stringify(up)}`);
+				assert.ok(clear['6h'] < 1 && clear['12h'] < clear['6h'], `no fade above the pick: ${JSON.stringify(up)}`);
+				const size = await page.locator('.nowview-wheel .notch.picked').evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
+				assert.ok(size > 11, `the notches' words are ${size}px`);
+				await page.mouse.up();
+				await page.locator('.nowview-wheel .handle.held[data-at="-2h"]').waitFor();
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
+	test('a finger’s wheel stands left of the handle, clear of the thumb; the mouse’s is centred on it', async () => {
+		/** How far each notch's right edge, and centre, is from the held handle's centre. */
+		const offsets = (page) =>
+			page.locator('.nowview-wheel').evaluate((w) => {
+				const r = (el) => el.getBoundingClientRect();
+				const held = r(w.querySelector('.handle.held'));
+				const mid = held.left + held.width / 2;
+				return [...w.querySelectorAll('.notch')].map((n) => ({ right: r(n).right - mid, centre: (r(n).left + r(n).right) / 2 - mid }));
+			});
+		await withApp(
+			async ({ page }) => {
+				await beside(page, PANE);
+				await handle(page, '-30m').tap();
+				await page.locator('.nowview-wheel .handle.held[data-at="-30m"]').waitFor();
+				const all = await offsets(page);
+				assert.equal(all.length, 6);
+				assert.ok(all.every((o) => o.right < 0), `a notch reaches the handle's centre: ${JSON.stringify(all)}`);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+		await withApp(
+			async ({ page }) => {
+				await beside(page, PANE);
+				await hover(page, '-30m');
+				const all = await offsets(page);
+				assert.ok(all.length && all.every((o) => Math.abs(o.centre) < 1), `the mouse's notches moved: ${JSON.stringify(all)}`);
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
 	test('a drag of the far handle along the axis to halfway to now doubles the window, and the ticks follow', async () => {
 		await withApp(
 			async (app) => {
