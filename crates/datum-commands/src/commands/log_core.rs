@@ -1290,17 +1290,6 @@ pub(crate) fn parse_log_args(
         ),
         ..DataArgs::default()
     };
-    for spec in &args.slug_keys {
-        let (name, _) = spec
-            .split_once('=')
-            .map(|(n, v)| (n, Some(v)))
-            .unwrap_or((spec.as_str(), None));
-        if name.is_empty() {
-            anyhow::bail!("empty id-key name in spec '{spec}'");
-        }
-        data_args.push_id_key(spec.clone());
-    }
-
     // `-k <SPEC>` becomes a slot-with-default declaration to handle_data_args.
     // `-k KEY` is a required slot, `-k KEY=` an omit-if-absent slot, and
     // `-k KEY=VALUE` a slot whose default is `VALUE` — overridable by the
@@ -1308,8 +1297,8 @@ pub(crate) fn parse_log_args(
     // earlier "immediate" hack (route `-k KEY=VALUE` straight into the
     // data queue, never consume a positional) silently dropped positionals
     // into the primary-value remainder, which then leaked into `state`
-    // for non-state-bearing verbs like `occur`.
-    //
+    // for non-state-bearing verbs like `occur`. A `-K` is among them, where
+    // its flag stood (da-zwp7g).
     for spec in args.field_keys.iter().chain(&args.keys) {
         let (name, _) = spec
             .split_once('=')
@@ -1746,8 +1735,10 @@ fn apply_spec_keys(
 }
 
 /// Join a field's key words to the line, as its slots and ahead of its
-/// own `key=value`s.
+/// own `key=value`s. A slug key goes onto `keys` as well as `slug_keys`,
+/// as a line's own `-K` does, so it fills a slot in its place.
 pub(crate) fn bind_spec_words(args: &mut LogArgs, words: SpecKeyWords) {
+    args.keys.extend(words.slug_keys.iter().cloned());
     args.slug_keys.extend(words.slug_keys);
     args.keys.extend(words.keys);
     args.rest.splice(0..0, words.assigned);

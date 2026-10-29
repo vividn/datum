@@ -1,0 +1,8 @@
+-2024-01-15 09:00:00⟨fg=90⟩+1⟨⟩ ⟨fg=#000000 bg=#c47d18⟩word⟨⟩ ⟨fg=#c47d18 bg=#888888⟩●⟨⟩
++⟨fg=90⟩2024-01-15⟨⟩ 09:00:00⟨fg=90⟩+1⟨⟩  ⟨fg=#000000 bg=#c47d18⟩word⟨⟩ ⟨fg=90⟩∅⟨fg=#c47d18⟩●⟨⟩
+-    lang: "de",
++    lang: "de"
+-     pos: "noun",
++     pos: "noun"
+-  source: "Hund",
++  source: "Hund"

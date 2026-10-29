@@ -15,7 +15,7 @@ This crate exists to be that reference.
 |---|---|---|
 | md5 color algebra | `goldens/colors/colors.tsv` (19 rows) | no |
 | field specs both runtimes load | `specs/my_specs.toml` (7 fields, 16 states) | no |
-| `get` text output | `goldens/text/fixtures.toml` (7 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
+| `get` text output | `goldens/text/fixtures.toml` (8 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
 | `tail` text output | `goldens/text/fixtures.toml` (7 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
 | `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures, all `uncapturable` — see da-t5f5) | skipped, with the reason |
 | `dayview` SVG output | `goldens/text/fixtures.toml` (6 fixtures) | daydumb against the snapshots: no; v2 against them: yes |

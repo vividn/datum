@@ -601,9 +601,11 @@ impl FieldSpec {
 
     /// Every key the spec declares: the positional slots — the `id_keys`,
     /// the `data_keys`, then the subfields by name (da-9s98k) — then the
-    /// assigned keys (da-ulc0v). As on any line, the `-K` slots among them
-    /// bind before the `-k` ones, so an `in_slug` subfield takes a
-    /// positional ahead of the `data_keys`. A name declared twice (`spec
+    /// assigned keys (da-ulc0v). Bound to a line, they follow its own
+    /// `-k`/`-K` slots, the spec's slug keys first (`bind_spec_words`), so
+    /// an `in_slug` subfield takes a positional ahead of the `data_keys`;
+    /// a line's own slots fill in the order their flags appear
+    /// (da-zwp7g). A name declared twice (`spec
     /// set --data-key` and `track --key` write different lists) is one key,
     /// as repeated `-k` are: the first place, the last kind, in the slug if
     /// either is. An entry in `state` takes that state's keys last

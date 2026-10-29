@@ -312,7 +312,9 @@ pub struct LogArgs {
     /// semantics so the user's `uu` muscle-memory alias (re-run last
     /// command with `-u` appended) reverses the prior insert.
     pub undo: bool,
+    /// `-k` and `-K` slots, in the order their flags appear (da-zwp7g).
     pub keys: Vec<String>,
+    /// The `-K` slots again, which the slug is built from.
     pub slug_keys: Vec<String>,
     /// `-F` / `--field-key` (da-0csuh): a `-k` slot whose value is
     /// appended to the field, `__`-joined, and not stored (da-vk747) —

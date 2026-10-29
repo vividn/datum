@@ -66,6 +66,12 @@ what = "v2's `tail` ends with an empty line; daydumb's ends at the last row"
 why = "No recorded reason found."
 
 [[rule]]
+id = "get-data-commas"
+status = "open"
+what = "`get` ends each data line but the last with a comma (`lang: \"de\",`); daydumb puts none"
+why = "No recorded reason found."
+
+[[rule]]
 id = "object-value-one-line"
 status = "open"
 what = "`get` prints an object data value as one line of JSON (`{\"o\":1,\"tz\":…,\"utc\":…}`, keys sorted); v2 pretty-prints it over several lines, keys as stored (`utc`, `o`, `tz`)"
@@ -126,6 +132,10 @@ rules = ["grey-date", "get-field-gap", "null-lead-glyph", "on-off-states", "two-
 [[fixture]]
 name = "get_with_extra_data"
 rules = ["grey-date", "get-field-gap", "null-before-point"]
+
+[[fixture]]
+name = "get_key_flag_order"
+rules = ["grey-date", "get-field-gap", "null-before-point", "get-data-commas"]
 
 [[fixture]]
 name = "get_with_unit"

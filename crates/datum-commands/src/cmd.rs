@@ -862,40 +862,35 @@ mod tests {
 
     #[test]
     fn field_template_writes_field_structure_and_interpolates() {
-        // Bead da-qjrc worked example. The slot-filling order of
-        // `parse_log_args` consumes `-K` slots before `-k` slots, so the
-        // test pins `srcLang` via the `srcLang=pt` reserved-key form to
-        // avoid coupling to positional order — the headline behaviour
-        // under test is template detection + field interpolation, not
-        // slot-fill mechanics.
+        // Bead da-qjrc worked example, as v2's word alias spells it: keyless
+        // values fill `-k` and `-K` slots in the order their flags appear,
+        // and the slug is the `-K` keys' (da-zwp7g).
         use datum_core::db::Db;
+        use datum_parse::cli::Command;
         let db = Db::open_in_memory().unwrap();
 
-        let mut args = LogArgs::with_field("word__%srcLang%");
-        args.slug_keys = vec!["pos".to_string(), "source".to_string()];
-        args.remainder = Some("en".to_string());
-        args.rest = vec![
-            "srcLang=pt".to_string(),
-            "noun".to_string(),
-            "fundo".to_string(),
-            "fund".to_string(),
-            "bottom".to_string(),
-        ];
+        let cli = datum_parse::parse_argv_string(
+            "add word__%srcLang% -k srcLang -K pos -K source -R en de noun Hund dog",
+        )
+        .unwrap();
+        let Command::Add(args) = cli.command else {
+            panic!("expected an add command");
+        };
 
         log_entry(Action::Add, args, &db).unwrap();
 
-        let entries = datum_core::test_util::logged_entries(&db, "word__pt");
+        let entries = datum_core::test_util::logged_entries(&db, "word__de");
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
-        assert_eq!(e.field, "word__pt");
+        assert_eq!(e.field, "word__de");
         assert_eq!(e.field_structure.as_deref(), Some("word__%srcLang%"));
         assert_eq!(e.id_structure.as_deref(), Some("%pos%__%source%"));
-        assert_eq!(e.slug, "word__pt:noun__fundo");
+        assert_eq!(e.slug, "word__de:noun__Hund");
         let data = e.data.as_ref().expect("data populated");
-        assert_eq!(data["srcLang"], serde_json::json!("pt"));
+        assert_eq!(data["srcLang"], serde_json::json!("de"));
         assert_eq!(data["pos"], serde_json::json!("noun"));
-        assert_eq!(data["source"], serde_json::json!("fundo"));
-        assert_eq!(data["en"], serde_json::json!(["fund", "bottom"]));
+        assert_eq!(data["source"], serde_json::json!("Hund"));
+        assert_eq!(data["en"], serde_json::json!("dog"));
     }
 
     #[test]
@@ -908,6 +903,7 @@ mod tests {
 
         let mut args = LogArgs::with_field("word__%srcLang%");
         args.slug_keys = vec!["pos".to_string(), "source".to_string()];
+        args.keys = args.slug_keys.clone();
         args.rest = vec![
             "srcLang=pt".to_string(),
             "noun".to_string(),

@@ -35,7 +35,11 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         p.keys.push(v.to_string());
         Ok(())
     }));
+    // A `-K` is a `-k` whose value is also in the slug (v2's `IdKeyAction`):
+    // one list, so keyless values fill the slots in the order the flags
+    // appear (da-zwp7g).
     r.push(local_value(Some('K'), Some("slug-key"), |p, v| {
+        p.keys.push(v.to_string());
         p.slug_keys.push(v.to_string());
         Ok(())
     }));

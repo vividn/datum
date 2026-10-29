@@ -68,6 +68,15 @@ setup = [
 query = ["get", "weight:2024-01-15T06:00:00.000Z"]
 
 [[fixture]]
+name = "get_key_flag_order"
+description = "keyless values fill `-k` and `-K` slots in the order their flags appear, and the slug is the `-K` keys' (da-zwp7g); the keys sort as they were typed, so the data prints alike"
+surface = "get"
+setup = [
+  ["occur", "word", "-k", "lang", "-K", "pos", "-K", "source", "-R", "tr", "-d", "2024-01-15", "-t", "0900", "de", "noun", "Hund", "dog"],
+]
+query = ["get", "word:noun__Hund"]
+
+[[fixture]]
 name = "get_with_unit"
 description = "`get` with digits-then-letters (`200mg` is stored as the string typed)"
 surface = "get"
