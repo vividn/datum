@@ -1367,7 +1367,63 @@ fn run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once() {
     assert_eq!(said, "0", "{}", b.ok(&["sync", "status"]));
 
     write.execute_batch("COMMIT").unwrap();
-    eventually("b's walk reaching a", || a.has("walk"));
+    // A miss says what a's run said since: CI's log has nothing else (da-le37o).
+    let start = Instant::now();
+    while !a.has("walk") {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "b's walk reaching a within 10s; a's run said:\n{}",
+            rx.try_iter().collect::<Vec<_>>().join("\n")
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// a's dial given way to b's session with it (da-vj3ly, da-mghh3), heard
+/// only once that session gave way to a write on a's file, waits no
+/// minute: b, refused by the give-way, waits on a, and a pushes once the
+/// write ends (da-le37o). On a loaded box that order is rare; the knob makes
+/// a slow on purpose, and b's `datum sync`s dial a while a dials b, so a's
+/// dial is welcomed while a serves b's, and a hears it closed only after.
+#[test]
+fn a_dial_given_way_to_a_session_that_gave_way_to_a_write_waits_no_minute() {
+    let (x, y) = paired();
+    // Only the higher endpoint id closes its own dial for the other's.
+    let (mut a, b) = if x.id() > y.id() { (x, y) } else { (y, x) };
+    a.env.push(("DATUM_SYNC_TEST_LATE_MS", "600"));
+    let mut a_runs = a.serve(&["sync", "run"]);
+    let a_err = lines(a_runs.child.stderr.take().unwrap());
+    while !a_err
+        .recv_timeout(Duration::from_secs(10))
+        .expect("a up")
+        .contains("is up")
+    {}
+    let mut b_runs = b.serve(&["sync", "run"]);
+    b_runs.lines_until(" got ");
+    let write = rusqlite::Connection::open(a.db()).unwrap();
+    write.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+    b.ok(&["occur", "walk"]);
+    let start = Instant::now();
+    std::thread::scope(|s| {
+        for _ in 0..4 {
+            s.spawn(|| {
+                while start.elapsed() < Duration::from_secs(6) {
+                    b.run(&["sync"]);
+                }
+            });
+        }
+    });
+    write.execute_batch("COMMIT").unwrap();
+    let start = Instant::now();
+    while !a.has("walk") {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "b's walk reaching a within 10s; a's run said:\n{}",
+            a_err.try_iter().collect::<Vec<_>>().join("\n")
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 /// A peer whose file a write holds refuses as busy, and this copy waits the

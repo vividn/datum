@@ -1069,7 +1069,15 @@ fn push<'a>(
 ) -> Session<'a> {
     Box::pin(async move {
         let start = Instant::now();
+        // Test knob: this copy slow, as on a loaded box (datum-sync-wire's
+        // `serve` waits it too). A dial goes late, so the peer's dial
+        // crosses it, and its refusal as busy is heard twice as late, once
+        // the session it gave way to has ended (da-le37o).
+        let late = env("DATUM_SYNC_TEST_LATE_MS").map(Duration::from_millis);
         let rep = loop {
+            if let Some(late) = late {
+                tokio::time::sleep(late).await;
+            }
             let rep = async { dial(store, ep, addr(&p)?, None).await }.await;
             // Asked, a dial given way to a session between the two copies
             // (da-vj3ly, da-mghh3) waits that session out and dials again,
@@ -1078,6 +1086,9 @@ fn push<'a>(
             // does one the peer refused while applying a session this copy
             // dialed it, a tick's push (da-sdrol).
             let busy = rep.as_ref().is_err_and(|e| failure(e) == Some(BUSY));
+            if let Some(late) = late.filter(|_| busy) {
+                tokio::time::sleep(late * 2).await;
+            }
             let gave = rep.as_ref().is_err_and(gave_way);
             let between = || store.serves(&p.id) || store.carries(&p.id);
             if asked.is_none() || !busy || !(gave || between()) {
@@ -1268,8 +1279,12 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                                 pushed.remove(&id);
                                 // No wait while a session served to it
                                 // carries this copy's ops: it pushes once
-                                // that ends (da-vj3ly).
-                                if !store.serves(&id) {
+                                // that ends (da-vj3ly). Nor for a dial given
+                                // way to that session once it has ended: it
+                                // may have ended giving way to a write here,
+                                // and its peer then waits on this copy
+                                // (da-le37o).
+                                if !store.serves(&id) && !gave_way(&e) {
                                     busy.insert(id, Instant::now() + backoff(None));
                                 }
                             }

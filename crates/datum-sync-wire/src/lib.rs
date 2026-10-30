@@ -1789,6 +1789,12 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Res
     // (`carries`) and this session (`serves`) never both go on (da-mghh3).
     let carried = store.carries(&id);
     let _served = Served::new(store, &id, false);
+    // Test knob: this copy slow, as on a loaded box (datum-sync's `push`
+    // waits it too): a session it serves lasts long enough that its own
+    // dial meets it (da-le37o).
+    if let Some(ms) = env("DATUM_SYNC_TEST_LATE_MS") {
+        sleep(Duration::from_millis(ms)).await;
+    }
     let (using, mut s, mut r) = match kept {
         Some((using, s, r)) => (Some(using), s, r),
         None => {
