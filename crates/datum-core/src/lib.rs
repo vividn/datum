@@ -16,6 +16,7 @@ pub mod last_docs;
 pub mod migrations;
 pub mod slug;
 pub mod state;
+pub mod timezone_field;
 pub mod track;
 pub mod undo_log;
 pub mod views;

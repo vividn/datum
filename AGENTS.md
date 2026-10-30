@@ -143,6 +143,23 @@ over it for the fields it covers. It is an entry, `setting:auto_setup` of the
 meta field `setting` (`db/definition.rs`), so every copy of the db is strict
 (vividn, 2026-10-26: «yes it should sync»).
 
+### The `timezone` field
+A field named `timezone` is reserved in every database, with no kit and no
+install (da-yw6o2, `datum_core::timezone_field`): an ordinary switch, not in
+`META_FIELDS`, whose word `timezone` is `switch timezone` whatever an alias or a
+spec says, and which `auto_setup = false` does not close. A state is an IANA zone
+(`iana_zone`, `-z`'s parser, no fixed offset) or `IGNORED`; another is refused
+offering the nearest real ones, on a log and on an `update` that changes the
+state. A row from before the rule (a v2 import) stays as it is, and `check tz`
+says `timezone_state_not_a_zone`. Its own entry is in the zone it names: `-t` and
+a fall-back night's question read that zone's clock, a `-z` naming another is
+refused, and an offset on `-t` keeps its instant in the zone named. It changes no
+other entry. Its band defaults to very thin at the top of the day, over every
+lane, in dayview and nowview alike (`PresentationSpec::resolve_position`), until
+its spec places it; `fields` hides it `IGNORED` as any field and says the `zone`
+it holds, which datum.day's gear item, «Track timezone», reads: opt in, a click
+logs the device's zone, the next logs `IGNORED`.
+
 ### The spool: a write is never lost to the lock
 A command that changes entries (every one but sync's, `db`'s, `config`'s and
 `kit`'s, whose indices are DDL no op carries)

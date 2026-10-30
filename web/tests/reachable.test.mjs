@@ -145,10 +145,10 @@ describe('on a phone-sized screen', () => {
 
 				await page.locator('.root-bar button.gear').click();
 				const items = page.locator('[role="menu"][aria-label="settings"] button');
-				// The three acts (da-9ow8m, da-s9r58, da-jbcv) and the build
-				// stamp, which is a fact and so disabled.
-				assert.equal(await items.count(), 4);
-				assert.equal(await items.evaluateAll((all) => all.filter((b) => !b.disabled).length), 3);
+				// The four acts (da-9ow8m, da-s9r58, da-yw6o2, da-jbcv) and the
+				// build stamp, which is a fact and so disabled.
+				assert.equal(await items.count(), 5);
+				assert.equal(await items.evaluateAll((all) => all.filter((b) => !b.disabled).length), 4);
 				const menu = await page.locator('[role="menu"][aria-label="settings"]').boundingBox();
 				const screen = await page.evaluate(() => ({
 					width: document.documentElement.clientWidth,

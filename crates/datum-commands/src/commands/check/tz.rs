@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::Result;
 use datum_core::db::{agreed_zone, Db, NEIGHBOURS};
 use datum_core::entry::Entry;
+use datum_core::timezone_field::{self, TIMEZONE_FIELD};
 
 use super::{
     field_and_state, render_flagged_block, Domain, FlaggedEntry, Issue, IssueExample, Severity,
@@ -51,9 +52,21 @@ pub(super) fn collect_tz_drift(
     // with, and a zone name nothing resolves, whose offset may be right.
     let mut mismatched: Vec<(Entry, String, String)> = Vec::new();
     let mut unknown: Vec<(Entry, String, String)> = Vec::new();
+    let mut not_zones: Vec<(Entry, String, String)> = Vec::new();
     for e in entries {
         if e.deleted_at.is_some() {
             continue;
+        }
+        // da-yw6o2: a `timezone` state from before the field was reserved
+        // (a v2 import, say) stays as it was, and is said here.
+        if e.field == TIMEZONE_FIELD {
+            let other = [&e.state, &e.following_state]
+                .into_iter()
+                .flatten()
+                .find(|s| !timezone_field::holds(s));
+            if let Some(state) = other {
+                not_zones.push((e.clone(), format!("state={state}"), state.to_string()));
+            }
         }
         let Some(occur) = e.occur_time.as_ref() else {
             continue;
@@ -124,6 +137,12 @@ pub(super) fn collect_tz_drift(
         .collect();
     let names = names.into_iter().collect::<Vec<_>>().join(", ");
     Ok([
+        issue(
+            not_zones,
+            Severity::Warning,
+            "timezone_state_not_a_zone",
+            "a `timezone` state that is no IANA zone",
+        )?,
         issue(
             mismatched,
             Severity::Error,

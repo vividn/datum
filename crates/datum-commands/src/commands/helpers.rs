@@ -166,6 +166,43 @@ pub(crate) fn enforce_spec_lists(entry: &Entry, db: &Db) -> Result<()> {
     enforce_spec_lists_against(entry, &registry)
 }
 
+/// da-yw6o2: an entry of the `timezone` field holds a zone or `IGNORED`, in
+/// the zone's own spelling, and its own instant is in the zone it names: the
+/// state after its trailing edge where it has one. The instant stands, so an
+/// offset on `-t` is believed as to when and the field as to where.
+pub(crate) fn settle_timezone_entry(entry: &mut Entry) -> Result<()> {
+    use datum_core::timezone_field::{state_zone, TIMEZONE_FIELD};
+    if entry.field != TIMEZONE_FIELD {
+        return Ok(());
+    }
+    let refused = || anyhow::anyhow!("`{TIMEZONE_FIELD}` holds an IANA zone or IGNORED");
+    if entry.state.is_none() {
+        return Err(refused());
+    }
+    for state in [&mut entry.state, &mut entry.following_state]
+        .into_iter()
+        .flatten()
+    {
+        if *state != datum_core::db::IGNORED_STATE_VALUE {
+            let name = state.as_str().ok_or_else(refused)?;
+            *state = datum_parse::time::iana_zone(name)?.into();
+        }
+    }
+    let zone = [&entry.following_state, &entry.state]
+        .into_iter()
+        .flatten()
+        .find_map(state_zone);
+    if let (Some(zone), Some(t)) = (zone, entry.occur_time.as_mut()) {
+        if t.timezone.as_ref() != Some(&zone) {
+            *t = datum_core::time::DatumTime {
+                uncertainty: t.uncertainty.take(),
+                ..datum_core::time::DatumTime::from_utc_and_tz(t.utc, &zone)?
+            };
+        }
+    }
+    Ok(())
+}
+
 /// Variant of [`enforce_spec_lists`] that takes an already-loaded
 /// registry. Lets callers reuse a registry they loaded for rendering.
 pub(crate) fn enforce_spec_lists_against(entry: &Entry, registry: &SpecRegistry) -> Result<()> {

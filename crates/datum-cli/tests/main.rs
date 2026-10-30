@@ -153,6 +153,7 @@ mod template_spec;
 mod temporal_keys;
 mod timeless_id_redesign;
 mod timeless_state_note;
+mod timezone_field;
 mod track_cmd;
 mod track_declaration;
 mod trailing_commands;

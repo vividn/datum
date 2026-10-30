@@ -605,6 +605,13 @@ fn persist_with_auto_reinterp(
 ) -> Result<UpdateOutcome> {
     crate::commands::helpers::resolve_spec_colors(&mut updated, &existing)?;
     crate::commands::helpers::resolve_record_refs(db, &mut updated, Some(&existing))?;
+    // da-yw6o2: only a change of what it holds: an imported state stays as
+    // it is under an edit of something else.
+    if (&updated.field, &updated.state, &updated.following_state)
+        != (&existing.field, &existing.state, &existing.following_state)
+    {
+        crate::commands::helpers::settle_timezone_entry(&mut updated)?;
+    }
     // da-rcoi: the spec's lists are enforced on the update / merge /
     // rekey paths too — a key renamed into an undeclared slot or merged in
     // from a payload would otherwise slip past the log-time check.

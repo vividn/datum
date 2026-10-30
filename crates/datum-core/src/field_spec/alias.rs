@@ -198,6 +198,11 @@ pub fn user_alias_to_save(
         return Err("alias name must be non-empty".to_string());
     }
     datum_parse::alias::check_alias_name(name)?;
+    if name == crate::timezone_field::TIMEZONE_FIELD {
+        return Err(format!(
+            "'{name}' is reserved: it logs the field of that name"
+        ));
+    }
     let alias = Alias {
         name: name.to_string(),
         expands_to,

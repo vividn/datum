@@ -86,6 +86,8 @@
 		 * button whose whole word is a glyph.
 		 */
 		look?: 'title' | 'tab' | 'badge' | 'plain';
+		/** Called as the menu opens, for a caller with a fact to read for it. */
+		onshow?: () => void;
 		children?: Snippet;
 		[key: string]: any;
 	}
@@ -95,6 +97,7 @@
 		label,
 		title = 'pane menu',
 		look = 'title',
+		onshow,
 		children,
 		...rest
 	}: Props = $props();
@@ -168,6 +171,7 @@
 	}
 
 	async function show() {
+		onshow?.();
 		open = true;
 		await tick();
 		place();

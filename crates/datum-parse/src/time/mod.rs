@@ -54,7 +54,7 @@ pub use self::uncertainty::{
     UncertaintyUnit,
 };
 
-pub use crate::input::time_args::resolve_timezone;
+pub use crate::input::time_args::{iana_zone, resolve_timezone};
 
 #[cfg(test)]
 mod tests;

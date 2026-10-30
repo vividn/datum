@@ -413,7 +413,21 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
             }
             parse_invocation_inner(argv, &DbAliasResolver::new(&db))
         }
-        None => parse_invocation_inner(argv, &palias::NoResolver),
+        None => parse_invocation_inner(argv, &ReservedWords),
+    }
+}
+
+/// The words every database has, for the line that will create its file:
+/// `timezone` (da-yw6o2).
+struct ReservedWords;
+
+impl Resolver for ReservedWords {
+    fn lookup(&self, name: &str) -> Option<palias::ResolvedAlias> {
+        use datum_core::timezone_field::{TIMEZONE_ALIAS, TIMEZONE_FIELD};
+        (name == TIMEZONE_FIELD).then(|| palias::ResolvedAlias {
+            expands_to: TIMEZONE_ALIAS.to_string(),
+            tokens: palias::shell_split(TIMEZONE_ALIAS),
+        })
     }
 }
 

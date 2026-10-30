@@ -269,7 +269,7 @@ pub fn resolve_timezone(spec: &str) -> Result<String> {
             let name = iana_time_zone::get_timezone().map_err(|e| {
                 ParseError::InvalidArg(format!("Cannot resolve system timezone: {e}"))
             })?;
-            return validate_tz_name(&name);
+            return iana_zone(&name);
         }
         #[cfg(not(feature = "native"))]
         {
@@ -294,18 +294,54 @@ pub fn resolve_timezone(spec: &str) -> Result<String> {
     }
 
     // Fall through: treat as an IANA name.
-    validate_tz_name(spec)
+    iana_zone(spec)
 }
 
 /// The zone's canonical spelling, matched without regard to case: a zone
 /// has one spelling, so `utc` and `europe/berlin` can only mean `UTC` and
 /// `Europe/Berlin`, which is what is stored however it was typed (da-a32ze).
-fn validate_tz_name(name: &str) -> Result<String> {
+/// A name that is no zone is refused offering the nearest that are.
+pub fn iana_zone(name: &str) -> Result<String> {
     TZ_VARIANTS
         .iter()
         .find(|tz| tz.name().eq_ignore_ascii_case(name))
         .map(|tz| tz.name().to_string())
-        .ok_or_else(|| ParseError::InvalidArg(format!("Unknown timezone: {name}")))
+        .ok_or_else(|| {
+            let nearest = nearest_zones(name).join(", ");
+            ParseError::InvalidArg(format!("Unknown timezone: {name} (nearest: {nearest})"))
+        })
+}
+
+/// The three zones nearest `name` by edit distance, to the whole name or to
+/// its last part, so `Tokyo` and `Asia/Tokio` both find `Asia/Tokyo`.
+fn nearest_zones(name: &str) -> Vec<&'static str> {
+    let name = name.to_ascii_lowercase();
+    let mut zones: Vec<(usize, &'static str)> = TZ_VARIANTS
+        .iter()
+        .map(|tz| {
+            let zone = tz.name().to_ascii_lowercase();
+            let city = zone.rsplit('/').next().unwrap_or(&zone);
+            let far = edit_distance(&name, &zone).min(edit_distance(&name, city));
+            (far, tz.name())
+        })
+        .collect();
+    zones.sort();
+    zones.into_iter().take(3).map(|(_, zone)| zone).collect()
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, x) in a.chars().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, y) in b.iter().enumerate() {
+            let cost = diagonal + usize::from(x != *y);
+            diagonal = row[j + 1];
+            row[j + 1] = cost.min(row[j] + 1).min(row[j + 1] + 1);
+        }
+    }
+    row[b.len()]
 }
 
 // ─── tests ────────────────────────────────────────────────────────────────

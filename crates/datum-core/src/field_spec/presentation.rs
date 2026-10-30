@@ -23,6 +23,8 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+
+use crate::timezone_field::TIMEZONE_FIELD;
 use std::collections::BTreeMap;
 
 /// Visual layout + visibility for a single field.
@@ -224,6 +226,14 @@ pub struct ResolvedPosition {
 /// original datum's `DEFAULT_HEIGHT`.
 pub const DEFAULT_FIELD_HEIGHT: f64 = 0.12;
 
+/// The `timezone` field's band, unless its spec places it (da-yw6o2): very
+/// thin, right at the top of the day, and over every lane.
+const TIMEZONE_BAND: ResolvedPosition = ResolvedPosition {
+    y: 0.0,
+    height: 0.05,
+    z_index: 2.0,
+};
+
 /// Deterministic-hash fallback for a field's `y` position. Stable across runs
 /// and platforms so unconfigured fields land at the same vertical position
 /// every time. Direct port of the original datum:
@@ -289,6 +299,12 @@ impl PresentationSpec {
     /// one with a `height` names its top edge, as v2's `allFieldsSvg` does
     /// (`pY = specY - defaultHeight / 2` only when `spec.height` is unset).
     pub fn resolve_position(&self, field_name: &str) -> ResolvedPosition {
+        if field_name == TIMEZONE_FIELD && self.y.is_none() && self.height.is_none() {
+            return ResolvedPosition {
+                z_index: self.z_index.unwrap_or(TIMEZONE_BAND.z_index),
+                ..TIMEZONE_BAND
+            };
+        }
         let y = self.y.unwrap_or_else(|| hash_y(field_name));
         let (y, height) = match self.height {
             Some(height) => (y, height),

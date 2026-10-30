@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use anyhow::Result;
 use datum_core::db::Db;
 use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
+use datum_core::timezone_field::{state_zone, TIMEZONE_FIELD};
 use serde_json::{json, Value as JsonValue};
 
 use crate::args::{FieldsArgs, ShowFlag};
@@ -186,7 +187,7 @@ fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonV
                     .map(|s| (s.to_string(), json!(state_rgb(s, spec).hex())))
                     .collect::<serde_json::Map<_, _>>()
                     .into();
-                json!({
+                let mut row = json!({
                     "field": field,
                     "spec": spec.map(spec_json),
                     "states": states,
@@ -195,7 +196,12 @@ fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonV
                     "ignored": ignored,
                     "y": positions[field].y,
                     "height": positions[field].height,
-                })
+                });
+                // The zone it holds, so datum.day need not parse one (da-yw6o2).
+                if field == TIMEZONE_FIELD {
+                    row["zone"] = json!(latest.get(field).and_then(state_zone));
+                }
+                row
             })
             .collect(),
     ))

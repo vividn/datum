@@ -10,6 +10,7 @@ use datum_core::{
     field_spec::{verb_choice, VERB_CHOICES_TEXT, VERB_NAMES_TEXT},
     shape::is_ignored_state,
     time::DatumTime,
+    timezone_field::TIMEZONE_FIELD,
     track::track_entry,
 };
 
@@ -34,6 +35,13 @@ pub(crate) fn parse_verb(raw: &str) -> Result<Action> {
 /// decision stops depending on the log. A field with none of the three
 /// has nothing to infer from, and the user is asked (da-c8mh).
 pub fn resolve_verb(field: &str, requested: Option<&str>, db: &Db) -> Result<Action> {
+    // da-yw6o2: reserved, and a switch whatever is asked.
+    if field == TIMEZONE_FIELD {
+        return match requested.map(parse_verb).transpose()? {
+            None | Some(Action::Switch) => Ok(Action::Switch),
+            Some(_) => anyhow::bail!("'{field}' is a switch"),
+        };
+    }
     if let Some(raw) = requested {
         return parse_verb(raw);
     }
@@ -52,6 +60,10 @@ pub fn resolve_verb(field: &str, requested: Option<&str>, db: &Db) -> Result<Act
 /// state of a field if it is IGNORED or nothing (because no data exists)».
 /// A field that is running, ended or already TRACKED gets its spec and no row.
 pub(crate) fn begins_tracking(db: &Db, field: &str, now: &DatumTime) -> Result<bool> {
+    // da-yw6o2: `timezone` holds what is logged to it, and no TRACKED.
+    if field == TIMEZONE_FIELD {
+        return Ok(false);
+    }
     Ok(match db.state_at(field, now.utc)? {
         Some(state) => is_ignored_state(&state),
         None => db.entries_for_field(field, Some(1))?.is_empty(),

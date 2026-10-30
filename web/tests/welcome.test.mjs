@@ -332,11 +332,12 @@ describe('a device that has been here', () => {
 
 // da-rgyq8, vividn: an early user «suggested we call it "setup" widget and I would
 // agree». What the app ships says «Track» nowhere but as the verb of the
-// welcome's first sentence: no title, button, tab or help of the widget.
+// welcome's first sentence and of the gear's «Track timezone» (da-yw6o2,
+// vividn's word for it): no title, button, tab or help of the widget.
 test('the built app says «Track» only as a verb', () => {
 	const build = fileURLToPath(new URL('../build', import.meta.url));
 	const said = readdirSync(build, { recursive: true })
 		.filter((f) => /\.(js|html)$/.test(f))
-		.flatMap((f) => readFileSync(join(build, f), 'utf8').match(/\bTrack\b.{0,20}/g) ?? []);
+		.flatMap((f) => readFileSync(join(build, f), 'utf8').match(/\bTrack\b(?! timezone).{0,20}/g) ?? []);
 	assert.deepEqual([...new Set(said)], ['Track what matters to you']);
 });

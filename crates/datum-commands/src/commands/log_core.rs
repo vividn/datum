@@ -14,6 +14,7 @@ use datum_core::{
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
     time::{parse_duration, resolve_timezone, DatumTime, TimeCtx, Zone},
+    timezone_field::{state_zone, TIMEZONE_FIELD},
 };
 use datum_parse::input::TimeArgs;
 use datum_parse::spec_keys::{parse_key_decl, KeyKind, SpecKeyWords};
@@ -137,6 +138,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // one placed from it, so `reparse` anchors where the log did, to the
     // millisecond a `*_time` value keeps (da-x15of).
     let now = crate::args::window_now().unwrap_or_else(DatumTime::now);
+    // da-yw6o2: a `timezone` entry is in the zone it names, read as `-z`
+    // is, so its clock and a fall-back night's question are that zone's.
+    if args.field_or_verb == TIMEZONE_FIELD && !args.time.omit_timestamp {
+        if let Some(zone) = zone_on_the_line(&args, action) {
+            if let Some(other) = zone_name(&args.time)?.filter(|z| *z != zone) {
+                anyhow::bail!("-z {other} disagrees with the zone this entry names, {zone}");
+            }
+            args.time.timezone = Some(zone);
+        }
+    }
     // da-h8dvi: a past instant with no `-z` is placed as if `-z` named the
     // zone the entries around it agree on, recorded and said below.
     let inferred_zone = neighbours_zone(db, &args.time, now.utc);
@@ -708,6 +719,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
 
+    crate::commands::helpers::settle_timezone_entry(&mut entry)?;
+
     // S6: carry an explicit `-l/--last-state <v>` (or `-L`) assertion onto the entry.
     // The empty sentinel (`end_time=` on a switch naming no state) asserts
     // nothing; only a supplied value enters the column. Parsed through the same token parser that handles
@@ -907,7 +920,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // have declared this field already.
     let declares_field = db.load_spec(&entry.field)?.is_none()
         && !crate::args::field_declared_in_window(&entry.field);
-    if declares_field && entry.following_state.is_none() && entry.occur_time.is_some() {
+    if declares_field
+        && entry.following_state.is_none()
+        && entry.occur_time.is_some()
+        && entry.field != TIMEZONE_FIELD
+    {
         let declared =
             datum_core::track::declared_state(datum_core::track::verb_for_action(action));
         if datum_core::derive_verb(
@@ -2705,6 +2722,17 @@ pub(crate) fn asking<T>(
             None => return Ok(None),
         };
     }
+}
+
+/// The zone a line of the `timezone` field names, read before its time is.
+/// `None` where it names none or does not parse yet, which what follows says.
+fn zone_on_the_line(args: &LogArgs, action: Action) -> Option<String> {
+    let mut parsed = parse_log_args(args, action, None, None).ok()?;
+    let reserved = extract_reserved_columns(&mut parsed.extra_data).ok()?;
+    [reserved.following_state, reserved.state, parsed.value]
+        .iter()
+        .flatten()
+        .find_map(state_zone)
 }
 
 /// The IANA name `-z` resolves to, `None` without one: the host's zone.

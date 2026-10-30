@@ -23,6 +23,7 @@ use crate::history::ChangeKind;
 use crate::ids::Slug;
 use crate::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use crate::time::DatumTime;
+use crate::timezone_field::TIMEZONE_FIELD;
 use crate::verb::Verb;
 use datum_parse::field_template::{is_template, literal, matches, parts, ties};
 
@@ -470,7 +471,7 @@ impl Db {
     /// no 8-character id; then the database's own `auto_setup` setting.
     /// `None`: a write may create it.
     pub fn creation_closer(&self, field: &str) -> Result<Option<Closer>> {
-        if is_template(field) || is_meta_field(field) {
+        if is_template(field) || is_meta_field(field) || field == TIMEZONE_FIELD {
             return Ok(None);
         }
         let templates = self.template_specs()?;

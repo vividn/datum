@@ -23,6 +23,7 @@ use crate::error::{DatumError, Result};
 use crate::field_spec::Alias;
 use crate::ids::{Hid, Slug};
 use crate::kit::AliasEntry;
+use crate::timezone_field::{TIMEZONE_ALIAS, TIMEZONE_FIELD};
 use crate::verb::Verb;
 
 use super::types::LIVE_SQL;
@@ -188,6 +189,14 @@ impl Db {
     /// spec-derived ones; on a miss, falls back to the
     /// [`super::types::SpecAliasIndex`].
     pub fn lookup_alias(&self, name: &str) -> Result<Option<Alias>> {
+        // The reserved word (da-yw6o2), whatever a spec or an alias says.
+        if name == TIMEZONE_FIELD {
+            return Ok(Some(Alias {
+                name: name.to_string(),
+                expands_to: TIMEZONE_ALIAS.to_string(),
+                description: None,
+            }));
+        }
         let json: Option<String> = self
             .conn
             .query_row(
