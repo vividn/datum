@@ -82,3 +82,42 @@ fn a_reader_refuses_a_shm_with_no_wal_as_its_writers() {
     );
     assert!(!dir.path().join("town.db-wal").exists());
 }
+
+/// The look at a writer's `-wal` and `-shm` opens neither (da-fgx1e). A
+/// process drops every POSIX lock it holds on a file as it closes any
+/// descriptor of it, so a read-only open beside its own writer — a `sync
+/// run` reading each chain of its install, its own among them, for a grant
+/// — dropped the writer's locks on the `-shm`. The next process to open the
+/// database took the `-shm` for unused and truncated it, and the run died of
+/// SIGBUS.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_read_only_open_beside_its_own_processs_writer_leaves_the_writers_locks() {
+    use std::os::unix::fs::MetadataExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("town.db");
+    let w = writer(&path);
+    let shm = std::fs::metadata(dir.path().join("town.db-shm")).unwrap();
+    let (pid, at) = (std::process::id().to_string(), format!(":{}", shm.ino()));
+    // This process's locks on the `-shm`: `/proc/locks` names each by its
+    // holder's pid and its file's device and inode.
+    let held = || {
+        let locks = std::fs::read_to_string("/proc/locks").unwrap();
+        locks
+            .lines()
+            .map(|l| l.split_whitespace().collect::<Vec<_>>())
+            .filter(|f| {
+                f.get(4) == Some(&pid.as_str()) && f.get(5).is_some_and(|d| d.ends_with(&at))
+            })
+            .count()
+    };
+    assert!(held() > 0, "the writer holds no lock on its -shm to keep");
+    let r = Db::open_read_only(path.to_str().unwrap()).unwrap();
+    assert_eq!(sum(&r), 5000);
+    drop(r);
+    assert!(
+        held() > 0,
+        "a read-only open dropped its writer's locks on the -shm"
+    );
+    assert_eq!(sum(&w), 5000);
+}

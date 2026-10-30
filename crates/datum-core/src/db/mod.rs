@@ -328,7 +328,23 @@ impl Db {
     /// back: an error, never a cut write.
     pub fn open_read_only(path: &str) -> Result<Self> {
         use rusqlite::OpenFlags;
-        let beside = |ext: &str| std::fs::File::open(format!("{path}-{ext}"));
+        // Looked at, never opened (da-fgx1e): a process drops every POSIX
+        // lock it holds on a file as it closes any descriptor of it, so a
+        // look that opened the `-shm` of a database this process has open
+        // too dropped its writer's locks, and the next process to open the
+        // database truncated the `-shm` under that writer's map: SIGBUS.
+        let beside = |ext: &str| -> std::io::Result<()> {
+            let file = format!("{path}-{ext}");
+            #[cfg(unix)]
+            return match std::ffi::CString::new(file) {
+                // SAFETY: a NUL-terminated path, read by `access` alone.
+                Ok(c) if unsafe { libc::access(c.as_ptr(), libc::R_OK) } == 0 => Ok(()),
+                Ok(_) => Err(std::io::Error::last_os_error()),
+                Err(e) => Err(std::io::Error::other(e)),
+            };
+            #[cfg(not(unix))]
+            std::fs::File::open(file).map(drop)
+        };
         let there = |f: &std::io::Result<_>| !matches!(f, Err(e) if e.kind() == std::io::ErrorKind::NotFound);
         let (wal, shm) = (beside("wal"), beside("shm"));
         match (there(&wal), there(&shm)) {
