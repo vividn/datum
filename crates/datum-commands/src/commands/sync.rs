@@ -754,7 +754,12 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 .filter(|p| !p.is_empty())
                 .map(std::path::PathBuf::from);
             let grants = super::sync_grant::Watch::default();
-            datum_sync::run_aside(db, || {
+            let up = |at| {
+                if let Some(path) = &path {
+                    super::sync_grant::say_where(path.clone(), at)
+                }
+            };
+            datum_sync::run_aside(db, up, || {
                 grants.tick(db);
                 path.as_deref()
                     .is_some_and(super::sync_daemon::in_first_sync)

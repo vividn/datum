@@ -772,6 +772,20 @@ pub fn grant_link(db: &Db, secret: &str, expires: Duration) -> Result<String> {
     link(db, me, secret, expires)
 }
 
+/// `ticket` with `more` addresses after its own: what a grant's fellow
+/// grantees said where they serve (da-kvp9q). One that does not read is left.
+pub fn ticket_also(ticket: &str, more: &[serde_json::Value]) -> Result<String> {
+    let mut t = Ticket::decode(ticket)?;
+    for addr in more {
+        if let Ok(addr) = serde_json::from_value::<EndpointAddr>(addr.clone()) {
+            if t.addrs.iter().all(|a| a.id != addr.id) {
+                t.addrs.push(addr);
+            }
+        }
+    }
+    t.link()
+}
+
 const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";
 
 /// `datum sync chain connect <ticket>`: redeem an invite and sync, with the
@@ -794,15 +808,20 @@ pub fn connect(db: &Db, ticket: &str, name: Option<&str>, admitted: &dyn Fn()) -
                 Zone::host().local_naive(at).format("%H:%M")
             )
         });
+    // Any address the ticket lists may admit it, so a wait is on them all.
+    let (who, it) = match t.addrs.len() {
+        1 => (from.to_string(), "it"),
+        _ => (format!("{from} or another member"), "either"),
+    };
     eprintln!(
-        "joining {from}'s sync chain: waiting for it to answer{}\n\
-         it answers while it is online: datum.day open on that database, its \
+        "joining {from}'s sync chain: waiting for {it} to answer{}\n\
+         {it} answers while it is online: datum.day open on that database, its \
          sync daemon, or `datum sync chain invite` still running there",
         until.as_deref().unwrap_or_default()
     );
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let told = Told::new(format!("still waiting for {from}"));
+        let told = Told::new(format!("still waiting for {who}"));
         let store = DbStore(
             db,
             Some(&told),
@@ -825,7 +844,7 @@ pub fn connect(db: &Db, ticket: &str, name: Option<&str>, admitted: &dyn Fn()) -
             describe_self(db, name, "cli")?;
         }
         let rep = match rep {
-            Err(e) if !admitted => return Err(next_step(e, from)),
+            Err(e) if !admitted => return Err(next_step(e, from, &who)),
             rep => rep?,
         };
         print_added(&rep);
@@ -835,7 +854,7 @@ pub fn connect(db: &Db, ticket: &str, name: Option<&str>, admitted: &dyn Fn()) -
 
 /// A join that failed, as one line: why, and what to do next — by the
 /// failure's kind, never its words (da-b6xh6).
-fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
+fn next_step(e: anyhow::Error, from: &str, who: &str) -> anyhow::Error {
     let next = match failure(&e) {
         Some(Failure::Refused(Why::UnknownInvite | Why::InviteUsed | Why::InviteExpired)) => {
             format!("ask {from} for a fresh invite")
@@ -850,7 +869,7 @@ fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
             "`datum sync status` shows where this copy stands".into()
         }
         Some(Failure::Unreachable | Failure::TimedOut) => format!(
-            "{from} did not answer: open datum.day on that database (or run \
+            "{who} did not answer: open datum.day on that database (or run \
              `datum sync chain invite` there) and connect again, or ask it for a fresh invite"
         ),
         // Its own words say it already.
@@ -1169,9 +1188,12 @@ const YIELD: Duration = Duration::from_millis(250);
 /// (da-1tnup). A session open then stops as it does ([`bind`]). And with
 /// the error `stop` gives, which it asks every tick: the daemon's, once a
 /// `connect` or an `invite` takes the database (da-8sah2).
-pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
+///
+/// `up` is told the address it serves at (as JSON), once it has bound.
+pub fn run(db: &Db, up: impl Fn(String), stop: impl Fn() -> Result<()>) -> Result<()> {
     runtime()?.block_on(async {
         let ep = bind(db).await?;
+        up(serde_json::to_string(&ep.addr())?);
         db.conn().busy_timeout(YIELD)?;
         // Its own holds of the write lock past a second, with what they
         // wrote: what a person's write waited on (da-hyem1).
@@ -1377,7 +1399,7 @@ impl std::error::Error for Aside {}
 /// an `invite` at work on the database, which the daemon's run stops for
 /// (da-x5ynh). It unbinds, waits for it to end and binds again, so no two
 /// processes hold one endpoint key. Ctrl-C ends it waiting too.
-pub fn run_aside(db: &Db, aside: impl Fn() -> bool) -> Result<()> {
+pub fn run_aside(db: &Db, up: impl Fn(String), aside: impl Fn() -> bool) -> Result<()> {
     loop {
         if aside() {
             eprintln!(
@@ -1399,7 +1421,7 @@ pub fn run_aside(db: &Db, aside: impl Fn() -> bool) -> Result<()> {
                 return Ok(());
             }
         }
-        match run(db, || if aside() { Err(Aside.into()) } else { Ok(()) }) {
+        match run(db, &up, || if aside() { Err(Aside.into()) } else { Ok(()) }) {
             Err(e) if e.is::<Aside>() => {}
             done => return done,
         }

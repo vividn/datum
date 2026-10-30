@@ -285,6 +285,51 @@ fn a_grant_joins_a_device_that_shares_a_chain_online_or_later() {
     assert!(t.query("work-2", "SELECT 'x'").is_none());
 }
 
+/// `grant --like` makes every ticket before any device has joined, so each
+/// names the granter alone (da-kvp9q). A device that joined says where it
+/// serves, through the carrier, and one that comes on with the granter off
+/// joins from it, and holds the data.
+#[test]
+fn a_grant_joins_through_another_grantee_while_the_granter_is_off() {
+    let g = Install::new("gina");
+    let (t, o) = (Install::new("tom"), Install::new("olga"));
+    let home = home_chain(&g, &[&t, &o]);
+    g.ok("work", &["occur", "coffee"]);
+    g.ok("work", &["sync", "grant", "--like", "home"]);
+    let work = g.run("work");
+
+    let tom = t.run("home");
+    tom.says("joined «work»");
+    eventually("tom's work holding gina's coffee", || {
+        t.has("work", "coffee")
+    });
+    let _tom_work = t.run("work");
+    eventually("tom saying where its work serves", || {
+        records(&t, "home", "grant") == 3
+    });
+
+    // Gina goes off, and only then does olga come on.
+    drop((home, work));
+    let synced = o.ok("home", &["sync"]);
+    assert!(synced.contains("joined «work»"), "{synced}");
+    assert!(o.has("work", "coffee"));
+    assert!(synced.contains("waiting for either to answer"), "{synced}");
+
+    // What says where is no record a device outside `work` reads: it names
+    // neither the chain nor the address in the clear.
+    let chain = t.json("work", &["sync", "status", "--json"])["chain"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let body = t
+        .query(
+            "home",
+            "SELECT group_concat(body, char(10)) FROM ops WHERE hid = '~chain'",
+        )
+        .unwrap();
+    assert!(!body.contains(&chain), "{body}");
+}
+
 /// Names are not identities: a device holding a database of the grant's
 /// name, with data of its own, keeps it and joins under another name. An
 /// expired grant joins nothing, and the grant again does.

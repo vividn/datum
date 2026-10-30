@@ -702,6 +702,14 @@ process of its own, the link on stdin, into `--as` or the granter's database
 name; where that name holds data or another chain, `<name>-2` and on, never
 touching it. An expired grant is said and joins nothing: grant again. `expel`
 and `unjoin` take a member's device key prefix too.
+A ticket lists the members its maker knew, and `--like` makes each before any
+device has joined, so it names the granter alone. So a member admitted by a
+grant, once its `sync run` serves that chain, writes its address once in the
+carrier (`chain::seal_where`, one more `grant` record, to no device, a build
+before it reads nothing of it), keyed by the chain's id alone so no other device
+of the carrier reads it, and a device redeeming a grant of that chain dials
+those after the ticket's: it joins with the granter off (da-kvp9q). A carrier's
+own endpoints cannot admit it: each database has its own key.
 datum.day's sync widget draws `sync grid` with a dropdown per cell and
 «grant like…» per column (da-n0uj1.7); its CLI makes no ticket, so there a
 grant seals the one the sync worker made for an invite `sync new-invite`

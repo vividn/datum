@@ -6,6 +6,12 @@
 //! offline. The device, syncing the carrier, opens it and redeems the link
 //! as `chain connect` does: the admission is today's, every check with it.
 //!
+//! A ticket lists the members its maker knew, and `--like` makes each before
+//! any device has joined, so it names the granter alone. So a device admitted
+//! by a grant, once it serves that chain, says where in the carrier
+//! ([`say_where`]), for a fellow grantee to join through with the granter off
+//! (da-kvp9q): a carrier's own endpoints hold no other chain to admit it to.
+//!
 //! datum.day's CLI makes no ticket, having no network (da-n0uj1.7): there
 //! the grant seals the one its sync worker made for an invite written
 //! first (`--ticket`, `--invite`), and `--like` makes none but leaves them
@@ -419,9 +425,13 @@ fn pending(db: &Db, say_expired: bool) -> Result<Vec<Granted>> {
             );
             continue;
         }
+        let also: Vec<Value> = grants
+            .iter()
+            .filter_map(|g| chain::open_where(g, &s("chain")))
+            .collect();
         out.push(Granted {
             name: free_name(&s("db"), &s("chain"))?,
-            ticket: s("ticket"),
+            ticket: datum_sync::ticket_also(&s("ticket"), &also)?,
             from,
         });
     }
@@ -513,6 +523,74 @@ pub fn redeem(db: &Db, before: i64) -> Result<()> {
         match join(&g, false) {
             Ok(said) => println!("{said}"),
             Err(e) => eprintln!("⚠ {e:#}; `datum sync` tries again"),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "net")]
+/// Say `at`, where the `sync run` of the database at `path` serves, in each
+/// carrier of the grant it was admitted by, once per copy: an address is its
+/// endpoint's, found again by its id as it moves. Only a member says, a reader
+/// admitting no one. A thread of its own, so a carrier's lock holds no session
+/// up; a failure is tried again for an hour, then by the next `sync run`, and
+/// a database gone since is no failure (`Db::open` would make it again).
+pub fn say_where(path: PathBuf, at: String) {
+    std::thread::spawn(move || {
+        // The sources are per thread, as `dispatch` sets them.
+        datum_core::db::set_client_source(|| config::client_id().ok());
+        datum_core::db::set_device_source(|| config::device_key().ok());
+        for wait in [0, 1, 2, 4, 8, 15, 30] {
+            std::thread::sleep(Duration::from_secs(wait * 60));
+            if !path.exists() {
+                return;
+            }
+            let Err(e) = said_where(&path, &at) else {
+                return;
+            };
+            eprintln!("saying where this copy serves: {e:#}");
+        }
+    });
+}
+
+#[cfg(feature = "net")]
+fn said_where(path: &std::path::Path, at: &str) -> Result<()> {
+    let db = Db::open(&path.to_string_lossy())?;
+    let here = db.sync_chain()?;
+    let Some(me) = here
+        .member(&db.sync_endpoint_id()?)
+        .filter(|m| live(m) && m.role() == Role::Member)
+    else {
+        return Ok(());
+    };
+    let addr: Value = serde_json::from_str(at)?;
+    for (_, path, c) in chains(&db)?.into_iter().filter(|(_, _, c)| c.id != here.id) {
+        let came = c.grants.iter().filter_map(chain::open_grant).any(|p| {
+            p["chain"] == here.id
+                && format!("invite {}", p["invite"].as_str().unwrap_or_default()) == me.via
+        });
+        if !came {
+            continue;
+        }
+        let copy = Db::open(&path.to_string_lossy())?;
+        let writer = copy.sync_endpoint_id()?;
+        let writes = c
+            .member(&writer)
+            .is_some_and(|m| live(m) && m.role() == Role::Member);
+        let said = c
+            .grants
+            .iter()
+            .any(|g| g.by == writer && chain::says_where(g, &here.id));
+        if writes && !said {
+            let [to, eph, sealed] =
+                chain::seal_where(&here.id, &addr).map_err(anyhow::Error::msg)?;
+            copy.sync_chain_write(
+                json!({
+                    "type": "grant", "chain": c.id, "to": to, "eph": eph, "sealed": sealed,
+                    "created": Utc::now().to_rfc3339(),
+                }),
+                true,
+            )?;
         }
     }
     Ok(())

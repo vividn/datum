@@ -84,6 +84,9 @@
 //!     joins without a ticket carried by hand. Any live member that is no
 //!     reader writes one, unsigned by an admin even in a locked chain: it
 //!     changes nothing in this one.
+//!     One whose `to` is no device ([`seal_where`], da-kvp9q) says where a
+//!     device that joined by a grant serves that other chain, to whoever
+//!     holds a grant of it: readable with its chain id alone.
 //!
 //!   - `erase {endpoint}` (da-n0uj1.6, `sync chain wipe`): an order that
 //!     the member delete its own copy of the database, and a revoke from
@@ -316,6 +319,59 @@ pub fn open_grant(g: &Grant) -> Option<Value> {
     let sealed = BASE64URL_NOPAD.decode(g.sealed.as_bytes()).ok()?;
     let opened = aes_gcm::Aes256Gcm::new(&grant_key(shared, eph.as_bytes(), &to))
         .decrypt(&Default::default(), sealed.as_slice())
+        .ok()?;
+    serde_json::from_slice(&opened).ok()
+}
+
+/// The `to` of a grant saying where ([`seal_where`]): hex of 32 bytes, which
+/// the fold asks of a `to` in every build, and no device's key, so a build
+/// before it passes the record on and opens none.
+const TO_NOBODY: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+/// A where's `eph`, which finds it, and its key: both of the chain's id alone.
+fn where_keys(chain: &str) -> (String, aes_gcm::Key<aes_gcm::Aes256Gcm>) {
+    let hash = |what: &str| {
+        Sha256::new()
+            .chain_update(what)
+            .chain_update(chain)
+            .finalize()
+    };
+    (hex(&hash("datum where tag\n")), hash("datum where key\n"))
+}
+
+/// `to`, `eph` and `sealed` for a grant record saying that a member of
+/// `chain` serves at `addr` (da-kvp9q): a grant's ticket is made before its
+/// fellow grantees have joined, so names none of them. Its key is the chain's
+/// id, which only a grant of that chain or its own records tell: the carrier's
+/// other devices read neither the chain nor the address.
+pub fn seal_where(chain: &str, addr: &Value) -> std::result::Result<[String; 3], String> {
+    use aes_gcm::aead::{Aead, KeyInit};
+    let (tag, key) = where_keys(chain);
+    // Many copies write under this key, so unlike a grant's a nonce of its own.
+    let nonce: [u8; 12] = rand::random();
+    let sealed = aes_gcm::Aes256Gcm::new(&key)
+        .encrypt((&nonce).into(), addr.to_string().as_bytes())
+        .map_err(|_| "sealing failed")?;
+    let held = [&nonce[..], &sealed].concat();
+    Ok([TO_NOBODY.into(), tag, BASE64URL_NOPAD.encode(&held)])
+}
+
+/// Whether `g` says where a member of `chain` serves.
+pub fn says_where(g: &Grant, chain: &str) -> bool {
+    g.to == TO_NOBODY && g.eph == where_keys(chain).0
+}
+
+/// The address `g` says a member of `chain` serves at, when it says one.
+pub fn open_where(g: &Grant, chain: &str) -> Option<Value> {
+    use aes_gcm::aead::{Aead, KeyInit};
+    if !says_where(g, chain) {
+        return None;
+    }
+    let held = BASE64URL_NOPAD.decode(g.sealed.as_bytes()).ok()?;
+    let nonce_len = 12;
+    let (nonce, sealed) = (held.len() > nonce_len).then(|| held.split_at(nonce_len))?;
+    let opened = aes_gcm::Aes256Gcm::new(&where_keys(chain).1)
+        .decrypt(nonce.into(), sealed)
         .ok()?;
     serde_json::from_slice(&opened).ok()
 }
@@ -2089,6 +2145,32 @@ mod tests {
             add(&a, json!({"type": "describe", "endpoint": a, "label": "x"})),
             None
         );
+    }
+
+    /// A where is a grant record to no device (da-kvp9q): read with its
+    /// chain's id alone, by no other chain's and by no device's key, so a
+    /// build before it passes it on and opens nothing.
+    #[test]
+    fn a_where_opens_with_its_chain_alone() {
+        let addr = json!({"id": "x", "addrs": []});
+        let [to, eph, sealed] = seal_where("c2", &addr).unwrap();
+        let g = Grant {
+            to,
+            eph,
+            sealed,
+            hlc: String::new(),
+            by: String::new(),
+        };
+        assert!(unhex::<32>(&g.to).is_some() && unhex::<32>(&g.eph).is_some());
+        assert_eq!(open_where(&g, "c2"), Some(addr));
+        assert!(!says_where(&g, "c3"));
+        assert_eq!(open_where(&g, "c3"), None);
+        assert_eq!(open_grant(&g), None);
+        let torn = Grant {
+            sealed: "AAAA".into(),
+            ..g
+        };
+        assert_eq!(open_where(&torn, "c2"), None);
     }
 
     /// A grant (da-n0uj1.4) is a member's message to a device, sealed to its

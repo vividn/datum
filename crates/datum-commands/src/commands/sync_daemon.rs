@@ -505,7 +505,8 @@ fn run() -> Result<()> {
                         ensure!(!in_first_sync(&path), ASIDE);
                         Ok(())
                     };
-                    anyhow::Ok(datum_sync::run(&db, aside))
+                    let up = |at| super::sync_grant::say_where(path.clone(), at);
+                    anyhow::Ok(datum_sync::run(&db, up, aside))
                 })
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("sync panicked")));
                 let _ = tx.send((path, done));
