@@ -2,8 +2,8 @@
 //! Europe/Berlin is 00:30Z and 01:30Z — is asked about, never read as the
 //! first in silence. A terminal is asked which, datum.day is told the
 //! question (exit 12) and answers on a second run's stdin, and anywhere else
-//! the line is refused naming both full spellings. So is one a `*_time`
-//! key names (da-job98), spelled as the key.
+//! the line goes unanswered (exit 12) naming both full spellings. So does one
+//! a `*_time` key names (da-job98), spelled as the key.
 
 use std::process::{Command, Output, Stdio};
 
@@ -77,15 +77,17 @@ fn page(dir: &TempDir, line: &[&str], answer: &str) -> Output {
     child.wait_with_output().unwrap()
 }
 
-/// The `DATUM_CHOOSE=` line a page is told.
-fn options(out: &Output) -> String {
+/// The choices of the `DATUM_ASK=` line a page is told.
+fn options(out: &Output) -> Vec<String> {
     let err = said(out);
     assert_eq!(out.status.code(), Some(12), "{err}");
-    err.trim_end()
-        .lines()
-        .last()
-        .unwrap_or_default()
-        .to_string()
+    let asked = err.trim_end().lines().last().unwrap_or_default();
+    let asked = asked
+        .strip_prefix("DATUM_ASK=")
+        .unwrap_or_else(|| panic!("{err}"));
+    let asked: serde_json::Value = serde_json::from_str(asked).unwrap();
+    assert_eq!(asked["kind"], "choose", "{err}");
+    serde_json::from_value(asked["choices"].clone()).unwrap()
 }
 
 /// What the second reading stores: 01:30Z, in the zone it was read in.
@@ -101,25 +103,23 @@ fn said(out: &Output) -> String {
 }
 
 #[test]
-fn no_one_to_ask_refuses_naming_both_spellings() {
+fn no_one_to_ask_is_unanswered_naming_both_spellings() {
     let dir = tempfile::tempdir().unwrap();
     let out = datum(&dir).stdin(Stdio::null()).output().unwrap();
     let err = said(&out);
-    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert_eq!(options(&out), [FIRST, SECOND], "on a line of its own");
     assert!(
-        err.contains(&format!("`{FIRST}`")) && err.contains(&format!("`{SECOND}`")),
+        err.contains(&format!("1  {FIRST}")) && err.contains(&format!("2  {SECOND}")),
         "{err}"
     );
     assert_eq!(teas(&dir), vec![], "nothing written");
 }
 
+/// A terminal: the end a person types on, and the end a command reads.
 #[cfg(unix)]
-#[test]
-fn a_terminal_is_asked_and_the_second_is_stored() {
-    use std::io::Write;
+fn pty() -> (std::fs::File, std::fs::File) {
     use std::os::fd::FromRawFd;
 
-    let dir = tempfile::tempdir().unwrap();
     let (mut master, mut slave) = (0, 0);
     // SAFETY: openpty writes two fresh descriptors, each owned once below.
     let opened = unsafe {
@@ -132,12 +132,21 @@ fn a_terminal_is_asked_and_the_second_is_stored() {
         )
     };
     assert_eq!(opened, 0, "openpty");
-    let (mut master, slave) = unsafe {
+    unsafe {
         (
             std::fs::File::from_raw_fd(master),
             std::fs::File::from_raw_fd(slave),
         )
-    };
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_terminal_is_asked_and_the_second_is_stored() {
+    use std::io::Write;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut master, slave) = pty();
     // datum.day's env changes nothing on a terminal: it is still asked.
     let child = datum(&dir)
         .env("DATUM_NO_DEFAULT_ANSWER", "1")
@@ -157,6 +166,50 @@ fn a_terminal_is_asked_and_the_second_is_stored() {
     assert_eq!(teas(&dir), second_stored());
 }
 
+/// A log asks only when it must, so it runs on the database and no snapshot,
+/// and it asks before its transaction: while a person reads, another command
+/// writes straight through (da-jytnl).
+#[cfg(unix)]
+#[test]
+fn a_log_asking_holds_no_lock_and_queues_nothing() {
+    use std::io::{Read, Write};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut master, slave) = pty();
+    let mut child = datum(&dir).stdin(slave).spawn().unwrap();
+    let mut stderr = child.stderr.take().unwrap();
+    let (mut heard, mut buf) = (String::new(), [0u8; 256]);
+    while !heard.contains("[1/2]") {
+        let n = stderr.read(&mut buf).unwrap();
+        assert!(n > 0, "never asked: {heard}");
+        heard.push_str(&String::from_utf8_lossy(&buf[..n]));
+    }
+    let other = run(&dir, &["occur", "coffee"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(other.status.success(), "{}", said(&other));
+    let printed = String::from_utf8_lossy(&other.stdout);
+    assert!(!printed.contains("QUEUED"), "it took the lock: {printed}");
+
+    master.write_all(b"2\n").unwrap();
+    assert!(child.wait().unwrap().success());
+    assert_eq!(teas(&dir), second_stored());
+    assert!(!dir.path().join("t.db.spool").exists(), "nothing spooled");
+}
+
+/// A pipe nothing writes to and nothing closes is no answer, not a hang.
+#[test]
+fn a_silent_open_pipe_is_no_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut child = datum(&dir).stdin(Stdio::piped()).spawn().unwrap();
+    let open = child.stdin.take();
+    let out = child.wait_with_output().unwrap();
+    drop(open);
+    assert_eq!(out.status.code(), Some(12), "{}", said(&out));
+    assert_eq!(teas(&dir), vec![], "nothing written");
+}
+
 /// datum.day's turn: the question and its options on stderr, exit 12 and
 /// nothing written; then the line again with the second option on stdin.
 #[test]
@@ -165,13 +218,7 @@ fn the_page_is_told_the_options_and_answers_on_a_second_run() {
     let page = |answer: &str| page(&dir, &LINE, answer);
 
     let asked = page("");
-    let err = said(&asked);
-    assert_eq!(asked.status.code(), Some(12), "{err}");
-    assert_eq!(
-        err.trim_end().lines().last(),
-        Some(format!("DATUM_CHOOSE={FIRST}|{SECOND}").as_str()),
-        "{err}"
-    );
+    assert_eq!(options(&asked), [FIRST, SECOND]);
     assert_eq!(teas(&dir), vec![], "unanswered: nothing written");
 
     let answered = page(&format!("{SECOND}\n"));
@@ -211,21 +258,15 @@ fn retime_is_asked_which_reading() {
 
     let refused = retime(false, "");
     let err = said(&refused);
-    assert_eq!(refused.status.code(), Some(1), "{err}");
+    assert_eq!(refused.status.code(), Some(12), "{err}");
     assert!(
-        err.contains(&format!("`{FIRST}`")) && err.contains(&format!("`{SECOND}`")),
+        err.contains(&format!("1  {FIRST}")) && err.contains(&format!("2  {SECOND}")),
         "{err}"
     );
     assert_eq!(teas(&dir), before, "nothing moved");
 
     let asked = retime(true, "");
-    let err = said(&asked);
-    assert_eq!(asked.status.code(), Some(12), "{err}");
-    assert_eq!(
-        err.trim_end().lines().last(),
-        Some(format!("DATUM_CHOOSE={FIRST}|{SECOND}").as_str()),
-        "{err}"
-    );
+    assert_eq!(options(&asked), [FIRST, SECOND]);
     assert_eq!(teas(&dir), before, "unanswered: nothing moved");
 
     let answered = retime(true, &format!("{SECOND}\n"));
@@ -233,20 +274,20 @@ fn retime_is_asked_which_reading() {
     assert_eq!(teas(&dir), second_stored());
 }
 
-/// da-job98: an `occur_time=` key is a wall time as `-t` is, and refused
+/// da-job98: an `occur_time=` key is a wall time as `-t` is, and unanswered
 /// where no one can be asked, naming both as the key.
 #[test]
-fn a_time_key_no_one_can_be_asked_about_is_refused() {
+fn a_time_key_no_one_can_be_asked_about_is_unanswered() {
     let dir = tempfile::tempdir().unwrap();
     let out = run(&dir, &["occur", "tea", "occur_time=2026-10-25T02:30"])
         .stdin(Stdio::null())
         .output()
         .unwrap();
     let err = said(&out);
-    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert_eq!(out.status.code(), Some(12), "{err}");
     assert!(
-        err.contains("`occur_time=2026-10-25T02:30:00+02:00` (the first)")
-            && err.contains("`occur_time=2026-10-25T02:30:00+01:00` (the second)"),
+        err.contains("1  occur_time=2026-10-25T02:30:00+02:00")
+            && err.contains("2  occur_time=2026-10-25T02:30:00+01:00"),
         "{err}"
     );
     assert_eq!(teas(&dir), vec![], "nothing written");
@@ -265,9 +306,9 @@ fn a_time_key_no_one_can_be_asked_about_is_refused() {
     .output()
     .unwrap();
     let err = said(&out);
-    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert_eq!(out.status.code(), Some(12), "{err}");
     assert!(
-        err.contains("`start_time=2026-10-25T02:30:00+01:00` (the second)"),
+        err.contains("2  start_time=2026-10-25T02:30:00+01:00"),
         "{err}"
     );
 }
@@ -286,11 +327,14 @@ fn the_page_answers_each_time_key_in_turn() {
     let occur = "occur_time=2026-10-25T02:30:00+01:00";
     assert_eq!(
         options(&page(&dir, &line, "")),
-        format!("DATUM_CHOOSE=occur_time=2026-10-25T02:30:00+02:00|{occur}")
+        ["occur_time=2026-10-25T02:30:00+02:00", occur]
     );
     assert_eq!(
         options(&page(&dir, &line, &format!("{occur}\n"))),
-        "DATUM_CHOOSE=brew_time=2026-10-25T02:10:00+02:00|brew_time=2026-10-25T02:10:00+01:00"
+        [
+            "brew_time=2026-10-25T02:10:00+02:00",
+            "brew_time=2026-10-25T02:10:00+01:00"
+        ]
     );
     assert_eq!(teas(&dir), vec![], "unanswered: nothing written");
 
@@ -322,7 +366,7 @@ fn an_update_s_time_key_is_asked_about() {
         "occur_time=2026-10-25T02:30",
     ];
     let refused = run(&dir, &update).stdin(Stdio::null()).output().unwrap();
-    assert_eq!(refused.status.code(), Some(1), "{}", said(&refused));
+    assert_eq!(refused.status.code(), Some(12), "{}", said(&refused));
     assert!(
         said(&refused).contains("happens twice"),
         "{}",

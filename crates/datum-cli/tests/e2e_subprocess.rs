@@ -1509,7 +1509,16 @@ fn subprocess_unanswered_stale_retime_exits_without_retiming() {
     let out = env.run_with_stdin_env(&["retime", "-t", "+5"], "", &page);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(12), "stderr: {stderr}");
-    assert!(stderr.contains("Retime this entry? [Y/n]"), "{stderr:?}");
+    let asked = stderr.trim_end().lines().last().expect("the question");
+    let asked: serde_json::Value = serde_json::from_str(
+        asked
+            .strip_prefix("DATUM_ASK=")
+            .unwrap_or_else(|| panic!("{stderr:?}")),
+    )
+    .unwrap();
+    assert_eq!(asked["text"], "Retime this entry?", "{stderr:?}");
+    assert_eq!(asked["kind"], "yes_no", "{stderr:?}");
+    assert_eq!(asked["action"], "retime", "{stderr:?}");
     assert!(!stderr.contains("Error"), "the question alone: {stderr:?}");
     assert_eq!(occur(), before, "unanswered: nothing retimed");
 
@@ -1527,6 +1536,62 @@ fn subprocess_unanswered_stale_retime_exits_without_retiming() {
     stale();
     assert_ok(&env.run_with_stdin(&["retime", "-t", "+10"], ""), "native");
     assert_ne!(occur(), after_yes, "native empty stdin: retimed");
+}
+
+/// da-jytnl: a terminal is prompted and its answer read, under datum.day's
+/// env too: nobody there would see a question said only for a page.
+#[cfg(unix)]
+#[test]
+fn subprocess_stale_retime_on_a_terminal_reads_its_answer() {
+    use std::io::Write;
+    use std::os::fd::FromRawFd;
+
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee"]), "create");
+    Connection::open(&env.db)
+        .expect("open db")
+        .execute(
+            "UPDATE last_docs SET time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-16 minutes')",
+            [],
+        )
+        .expect("force-stale pointer");
+    let (mut master, mut slave) = (0, 0);
+    // SAFETY: openpty writes two fresh descriptors, each owned once below.
+    let opened = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    assert_eq!(opened, 0, "openpty");
+    let (mut master, slave) = unsafe {
+        (
+            std::fs::File::from_raw_fd(master),
+            std::fs::File::from_raw_fd(slave),
+        )
+    };
+    let child = Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env("DATUM_DB", &env.db)
+        .env("DATUM_HOME", &env.home)
+        .env("DATUM_CONFIG_HOME", &env.config_home)
+        .env("NO_COLOR", "1")
+        .env("DATUM_NO_DEFAULT_ANSWER", "1")
+        .args(["retime", "-t", "+5"])
+        .stdin(slave)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn datum");
+    master.write_all(b"n\n").unwrap();
+    let out = child.wait_with_output().expect("wait datum");
+    assert_ok(&out, "no");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("Retime this entry? [Y/n]"), "{stderr:?}");
+    assert!(!stderr.contains("DATUM_ASK"), "{stderr:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Aborted."));
 }
 
 /// da-e7739: an answer is read with nothing said again. The answered run
@@ -1548,7 +1613,10 @@ fn subprocess_answered_stale_retime_says_nothing_again() {
     let page = [("DATUM_NO_DEFAULT_ANSWER", "1")];
     let asked = env.run_with_stdin_env(&["retime", "-t", "+5"], "", &page);
     let asked = String::from_utf8_lossy(&asked.stderr);
-    let pin = asked.lines().last().expect("the pin").to_owned();
+    let question = asked.trim_end().lines().last().expect("the question");
+    let question: serde_json::Value =
+        serde_json::from_str(question.strip_prefix("DATUM_ASK=").unwrap()).unwrap();
+    let pin = question["pin"].as_str().expect("the pin");
     let shown = pin
         .strip_prefix("DATUM_LAST_SHOWN=")
         .unwrap_or_else(|| panic!("{asked:?}"));

@@ -20,10 +20,9 @@ const EXIT_DUPLICATE: i32 = 11;
 /// 128 + SIGPIPE, what a shell reports for any unix tool killed that way.
 const EXIT_BROKEN_PIPE: i32 = 141;
 
-/// Exit code when a question went unanswered (da-f5pg2): stdin ended under
-/// `DATUM_NO_DEFAULT_ANSWER=1`, so the default was not taken. The question is
-/// already on stderr; datum.day shows it and runs the line again with the
-/// answer on stdin and the pin printed after it in its env (da-84h6a).
+/// Exit code when a question went unanswered (da-jytnl): no answer on stdin,
+/// and no default to take. The question is already on stderr; datum.day shows
+/// it and runs the line again with the answer on stdin (`commands::question`).
 const EXIT_UNANSWERED: i32 = 12;
 
 fn main() {
@@ -52,7 +51,7 @@ fn main() {
         }
         Err(e)
             if e.chain()
-                .any(|c| c.is::<datum_commands::commands::helpers::Unanswered>()) =>
+                .any(|c| c.is::<datum_commands::commands::question::Unanswered>()) =>
         {
             eprintln!();
             std::process::exit(EXIT_UNANSWERED);

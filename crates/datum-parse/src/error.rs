@@ -75,8 +75,7 @@ pub enum ParseError {
 
     /// A `*_time` key names a wall time a fall-back night repeats
     /// (da-job98), and nothing said which reading: the command asks as it
-    /// asks of `-t` (da-6i7l1), and where no one can be asked this is the
-    /// refusal.
+    /// asks of `-t` (da-6i7l1), and `reparse` reads the row's reading.
     #[error("{0}")]
     RepeatedTime(Readings),
 }

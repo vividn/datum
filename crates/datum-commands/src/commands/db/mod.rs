@@ -6,7 +6,9 @@
 //! `setup` / `backup` / `restore` / `migrate` top-level verbs under here,
 //! and da-a4ptr folded `db setup` into `db migrate`.
 
-use std::io::{BufRead, IsTerminal, Write};
+use std::io::{BufRead, IsTerminal};
+
+use crate::commands::question::Question;
 
 use anyhow::Result;
 use datum_core::db::Db;
@@ -85,7 +87,12 @@ pub(crate) fn purge_confirmation_token(cli_db: Option<&str>, db: &Db) -> String 
     // Path-resolved (or resolution itself failed) — fall back to the
     // pragma-derived path. Empty for in-memory test DBs; harmless,
     // since interactive prompts can't fire on those (no TTY).
-    current_db_path(db).unwrap_or_default()
+    let path = current_db_path(db).unwrap_or_default();
+    // datum.day's path is its own `/data/<name>.db`: the reader knows the name.
+    match std::path::Path::new(&path).file_stem() {
+        Some(name) if crate::commands::question::page() => name.to_string_lossy().into_owned(),
+        _ => path,
+    }
 }
 
 /// Test seam — same logic as [`purge`] but with the stdin reader, TTY
@@ -227,8 +234,9 @@ fn purge_headline(path: &str, snapshots: &[std::path::PathBuf]) -> String {
 
 /// The confirmation a command that destroys the whole database asks for:
 /// `cmd` names it, `headline` (if any) says what goes, then the database's identifier, retyped —
-/// reflexive `y`-mashing won't do it. Off a TTY it refuses; `--yes` is
-/// how a script says it means it.
+/// reflexive `y`-mashing won't do it. With no terminal it is unanswered, for
+/// datum.day to ask (`commands::question`); `--yes` is how a script says it
+/// means it.
 pub(crate) fn confirm_by_name(
     cmd: &str,
     headline: &str,
@@ -236,29 +244,18 @@ pub(crate) fn confirm_by_name(
     is_tty: bool,
     confirm: &str,
 ) -> Result<()> {
-    if !is_tty {
-        anyhow::bail!("{cmd}: stdin is not a TTY; re-run with --yes to confirm without a prompt");
-    }
-    let mut stderr = std::io::stderr().lock();
-    if !headline.is_empty() {
-        writeln!(stderr, "{headline}")?;
-    }
     // Branch the prompt copy on confirmation-token shape so the
     // user sees "Type 'vremya'" instead of "Type the database
     // path" when the resolution was name-based.
     let looks_like_path =
         confirm.contains('/') || confirm.starts_with('.') || confirm.ends_with(".db");
-    if looks_like_path {
-        write!(stderr, "Type the database path to confirm: ")?;
+    let prompt = if looks_like_path {
+        "Type the database path to confirm:".to_string()
     } else {
-        write!(stderr, "Type '{confirm}' to confirm {cmd}: ")?;
-    }
-    stderr.flush()?;
-    drop(stderr);
-
-    let mut line = String::new();
-    stdin.read_line(&mut line)?;
-    if line.trim() != confirm {
+        format!("Type '{confirm}' to confirm {cmd}:")
+    };
+    let action = cmd.strip_prefix("db ").unwrap_or(cmd);
+    if Question::name(headline, action, confirm, prompt).ask_on(stdin, is_tty)? != confirm {
         anyhow::bail!("{cmd}: aborted (input did not match {confirm})");
     }
     Ok(())

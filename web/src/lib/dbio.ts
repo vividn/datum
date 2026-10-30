@@ -8,9 +8,8 @@
 // stdout, and the CLI runs `-` exactly as it would in a pipe. `db purge`,
 // which wants a TTY to ask on, asks in a dialog instead, and so do
 // `setup F --delete` (da-ez40f), `kit install`'s trust (da-axrk), a replacing `db restore`'s
-// deletions (da-jrbwc), a `--hard` one's drops (da-qq7gb), a stale
-// `_LAST`'s question (da-f5pg2, `asking`) and which of a repeated hour's
-// two readings a time means (da-6i7l1, `asking`).
+// deletions (da-jrbwc) and a `--hard` one's drops (da-qq7gb). Any other
+// question a command asks is `asking`'s, with no code here (da-jytnl).
 //
 // Every line a person types consults it — the CLI widget's own runner and the
 // bottom bar's through `press` — and nothing else: `run` is the seam and
@@ -46,11 +45,10 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	if (cmd === 'db' && sub === 'purge') {
 		// `--yes` typed by hand is the CLI's contract: straight through. So is
 		// `--chain`, `sync chain purge --data` by another name
-		// (da-2bb7z), which asks nothing and changes nothing without `--yes`.
-		const yes = flags.some((f) => f === '--yes' || f === '-y');
-		if (!yes && flags.includes('--chain')) return null;
+		// (da-2bb7z), which is `asking`'s to ask without `--yes`.
+		const straight = flags.some((f) => f === '--yes' || f === '-y' || f === '--chain');
 		// A purge that ran takes what the page kept of the data with it.
-		return (yes ? runEchoed(asking(run), argv) : purge(flags)).then((r) => {
+		return (straight ? runEchoed(asking(run), argv) : purge(flags)).then((r) => {
 			if (r.code === 0) forgetKept(dbOf(argv));
 			return r;
 		});
@@ -86,18 +84,38 @@ async function deleteSpec(argv: string[], field: string): Promise<RunResult> {
 /** `datum`'s exit code for a question stdin did not answer (`EXIT_UNANSWERED`). */
 export const UNANSWERED = 12;
 
+/** What `Question` in `datum-commands` says on stderr as `DATUM_ASK=`, the last line of a question unanswered. */
+type Question = { text: string; action: string; pin?: string } & (
+	| { kind: 'yes_no'; default?: boolean }
+	| { kind: 'choose'; choices: string[] }
+	| { kind: 'name'; name: string }
+);
+
+/** The reader's answer to `question`, as a line of stdin says it, once `said` has been read. */
+async function answer(question: Question, said: string): Promise<string> {
+	const text = [said, question.text].filter(Boolean).join('\n');
+	switch (question.kind) {
+		case 'yes_no':
+			return (await confirm(text, question.action)) ? 'y' : 'n';
+		// A button each, the one pressed on stdin, and nothing on stdin for
+		// cancel, which the CLI aborts.
+		case 'choose':
+			return (await choose(text, question.choices, 'cancel', 'run')) ?? '';
+		case 'name':
+			return (await confirm(text, question.action, question.name)) ? question.name : '';
+	}
+}
+
 /**
- * `run`, but a question the CLI could not ask on stdin — a stale `_LAST`
- * under `retime` / `update` (da-f5pg2) — is asked in a confirm, in the CLI's
- * own words: what it said on stderr, the rows it printed, then its question.
- * The line runs again with every answer so far on stdin, so a yes changes the entry
- * and a no prints the CLI's own «Aborted.». The answer carries the pin the
- * CLI printed after the question (da-84h6a): if another tab moved `_LAST`
- * meanwhile, the CLI reads no answer for an entry it never showed and asks
- * again, about the entry `_LAST` is now. A question whose answers the CLI
- * names after it (`DATUM_CHOOSE=`, a wall time a fall-back night repeats,
- * da-6i7l1) is a button an answer, and the line runs again with the env it
- * ran with, so a gesture's frozen instant is the answer's too.
+ * `run`, but a question the CLI could not ask on stdin (da-jytnl) is asked
+ * in a dialog, in the CLI's own words: what it said on stderr and printed,
+ * then its question. No command has page code for this. The line runs again
+ * with every answer so far on stdin, so a yes changes the entry and a no
+ * prints the CLI's own «Aborted.», and with the env it ran with, so a
+ * gesture's frozen instant is the answer's too. An answer carries the pin
+ * its question names (da-84h6a): if another tab moved `_LAST` meanwhile,
+ * the CLI reads no answer for an entry it never showed and asks again,
+ * about the entry `_LAST` is now.
  */
 export const asking =
 	(run: CommandRunner): CommandRunner =>
@@ -114,24 +132,20 @@ export const asking =
 		let confirmed = 0;
 		while (result.code === UNANSWERED && stdin === undefined) {
 			const said = result.stderr.trimEnd().split('\n');
-			// A question with answers of its own, a wall time a fall-back
-			// night repeats (da-6i7l1): a button each, the one pressed on
-			// stdin, and nothing on stdin for cancel, which the CLI aborts.
-			const options = said.at(-1)?.match(/^DATUM_CHOOSE=(.*)$/)?.[1].split('|');
-			if (options) {
-				said.pop();
-				answers.push((await choose(said.join('\n'), options, 'cancel', 'run')) ?? '');
-			} else {
+			const asked = said.pop()?.match(/^DATUM_ASK=(.*)$/)?.[1];
+			// Exit 12 with no question: an answer that no longer holds, which
+			// only the page's own restore gave and reads.
+			if (!asked) return result;
+			const question = JSON.parse(asked) as Question;
+			if (question.pin) {
 				// Asked again with a pin in hand, `_LAST` moved (da-84h6a): the
 				// CLI read no answer for it, so this one takes its place and
 				// whatever followed, which was about the entry it was then.
 				if (pin.length) answers.length = confirmed;
 				confirmed = answers.length;
-				pin = said.at(-1)?.startsWith('DATUM_LAST_SHOWN=') ? [said.pop()!] : [];
-				const question = said.pop()?.trimEnd() ?? '';
-				const text = [...said, result.stdout.trimEnd(), question].filter(Boolean).join('\n');
-				answers.push((await confirm(text, question.split(' ')[0].toLowerCase())) ? 'y' : 'n');
+				pin = [question.pin];
 			}
+			answers.push(await answer(question, [...said, result.stdout.trimEnd()].filter(Boolean).join('\n')));
 			const lines = answers.map((a) => `${a}\n`).join('');
 			result = await run(argv, lines, onStderr, key, stage, [...env, ...pin]);
 		}
@@ -412,7 +426,7 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	// — it refuses off a TTY too: so the name is asked only for a purge
 	// that will run.
 	const probe = await run(dbPurgeProbeArgv(flags));
-	if (!probe.stderr.includes('stdin is not a TTY')) return probe;
+	if (probe.code !== UNANSWERED) return probe;
 	const text =
 		`This will destroy ALL data in ${db}, every entry and its history, and the copies of it kept before upgrades.` +
 		(way === 'rejoin'
@@ -458,14 +472,8 @@ const mismatch = (db: string): RunResult => ({ argv: ['db', 'purge'], code: 1, s
  */
 async function purgeChain(db: string): Promise<RunResult> {
 	const said = await run(['--db', db, ...dbPurgeChainArgv()]);
-	if (said.code !== 0) return said;
-	// All but the line naming the `--yes` that does it: here, typing the name.
-	const warning = said.stdout
-		.trimEnd()
-		.split('\n')
-		.filter((line) => !line.startsWith('nothing changed:'))
-		.join('\n');
-	if (!(await confirm(`${warning}\n${CLEARS}`, 'purge every copy', db))) return mismatch(db);
+	if (said.code !== UNANSWERED) return said;
+	if (!(await confirm(`${said.stdout.trimEnd()}\n${CLEARS}`, 'purge every copy', db))) return mismatch(db);
 	const { syncAct } = await import('./syncView.js');
 	return syncAct(db, dbPurgeChainArgv(true));
 }

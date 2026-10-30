@@ -22,6 +22,7 @@ use datum_parse::{ParseError, Readings};
 use serde_json::{json, Value as JsonValue};
 use std::collections::BTreeMap;
 
+use crate::commands::question::Question;
 use crate::{
     args::{LogArgs, LogArgsExt},
     config::client_id,
@@ -2641,11 +2642,12 @@ fn neighbours_zone(db: &Db, time: &TimeArgs, now: chrono::DateTime<chrono::Utc>)
 /// Which of the two instants the flags name the line means, where they name
 /// a wall time a fall-back night repeats (da-6i7l1): `Some(later)`, `false`
 /// when there is one, or `None` when the person asked declined. `read` is
-/// the line's build with `TimeArgs::later` as given. Asked on a terminal,
-/// and of datum.day, which answers by running the line again with the answer
-/// on stdin (`DATUM_NO_DEFAULT_ANSWER=1`); anywhere else no one can be
-/// asked, and the line is refused naming both full spellings, each after
-/// `option`, how the line gave the time (`-t `, `end_time=`).
+/// the line's build with `TimeArgs::later` as given. No reading is a safe
+/// default, so with no answer the question is [`Unanswered`], naming both
+/// full spellings, each after `option`, how the line gave the time (`-t `,
+/// `end_time=`).
+///
+/// [`Unanswered`]: crate::commands::question::Unanswered
 pub(crate) fn which_reading(
     read: impl Fn(bool) -> Option<DatumTime>,
     option: &str,
@@ -2662,36 +2664,15 @@ pub(crate) fn which_reading(
 /// [`which_reading`]'s question, of a `*_time` key too (da-job98): `None`
 /// when the person asked declined.
 fn ask_reading(readings: &Readings) -> Result<Option<bool>> {
-    use std::io::{IsTerminal, Write};
-    let said = readings.said();
     let [a, b] = readings.options();
-    // A terminal is asked whatever the env says: a page's question unsaid
-    // would leave a person there waiting on nothing they can see.
-    let terminal = std::io::stdin().is_terminal();
-    let page = !terminal && std::env::var("DATUM_NO_DEFAULT_ANSWER").is_ok_and(|v| v == "1");
-    if !page && !terminal {
-        return Err(ParseError::RepeatedTime(readings.clone()).into());
-    }
-    let mut stderr = std::io::stderr().lock();
-    // The page's answer is on stdin before it is asked: asked, it said
-    // the question already, and it is not said twice.
-    if !page {
-        let _ = write!(
-            stderr,
-            "{said}. Which one?\n  1  {a}  (the first)\n  2  {b}  (the second)\n[1/2] "
-        );
-        let _ = stderr.flush();
-    }
-    let mut line = String::new();
-    if std::io::stdin().read_line(&mut line).unwrap_or(0) == 0 && page {
-        // The options after the question, a button each on the page.
-        let _ = write!(stderr, "{said}. Which one?\nDATUM_CHOOSE={a}|{b}");
-        return Err(crate::commands::helpers::Unanswered.into());
-    }
-    let answer = line.trim();
+    let question = Question::choose(
+        format!("{}. Which one?", readings.said()),
+        vec![a.clone(), b.clone()],
+    );
+    let answer = question.ask()?;
     let option = readings.option.trim_end();
     let spelled = |o: &str| o.strip_prefix(option).unwrap_or(o).trim().to_string();
-    let answer = spelled(answer);
+    let answer = spelled(&answer);
     Ok(match answer.as_str() {
         "1" => Some(false),
         "2" => Some(true),

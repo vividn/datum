@@ -27,7 +27,9 @@
 //!   `DROP INDEX` every kit-owned index.
 
 use std::fs;
-use std::io::{self, BufRead, IsTerminal, Read, Write};
+use std::io::{self, Read};
+
+use crate::commands::question::{is_yes, Question};
 use std::path::Path;
 
 use std::collections::{HashMap, HashSet};
@@ -86,11 +88,9 @@ pub trait TrustGate {
 }
 
 /// Production trust gate: prints the proposed DDL to stderr and reads
-/// y/N from stdin. Honors `--yes` (skip the prompt and approve). Falls
-/// back to deny if stdin is not a TTY and `--yes` was not passed — the
-/// design says the default is no, and a non-interactive shell that
-/// didn't pre-authorize indices should fail loudly rather than silently
-/// approve.
+/// y/N from stdin. Honors `--yes` (skip the prompt and approve). The
+/// default is no: a non-interactive shell that didn't pre-authorize
+/// indices fails loudly rather than silently approving.
 pub struct StdIoTrust;
 
 impl TrustGate for StdIoTrust {
@@ -104,31 +104,17 @@ impl TrustGate for StdIoTrust {
         if assume_yes {
             return Ok(true);
         }
-        if !io::stdin().is_terminal() {
-            anyhow::bail!(
-                "kit '{kit_name}' wants to create {} index/indices but stdin is not a TTY; \
-                 re-run with --yes to approve non-interactively",
-                indices.len()
-            );
-        }
-        let mut stderr = io::stderr().lock();
         let prefix = if is_reinstall { "Re-installing" } else { "Kit" };
-        writeln!(
-            stderr,
-            "{prefix} '{kit_name}' wants to create {} index/indices:",
+        let mut text = format!(
+            "{prefix} '{kit_name}' wants to create {} index/indices:\n",
             indices.len()
-        )?;
+        );
         for ix in indices {
-            writeln!(stderr, "  - {}", summarize_index(ix))?;
+            text += &format!("  - {}\n", summarize_index(ix));
         }
-        write!(stderr, "Allow? (y/N) [N]: ")?;
-        stderr.flush()?;
-        drop(stderr);
-
-        let mut line = String::new();
-        io::stdin().lock().read_line(&mut line)?;
-        let answer = line.trim();
-        Ok(matches!(answer, "y" | "Y" | "yes" | "YES" | "Yes"))
+        text += "Allow?";
+        let question = Question::yes_no(text, "install", Some(false));
+        Ok(is_yes(&question.ask()?))
     }
 }
 
@@ -295,7 +281,7 @@ fn install_toml(
             trust.approve_indices(&kit.kit.name, &kit.indices, is_reinstall, args.assume_yes)?;
         if !approved {
             anyhow::bail!(
-                "kit '{}' install declined: index DDL not approved",
+                "kit '{}' install declined: index DDL not approved (--yes approves it)",
                 kit.kit.name
             );
         }

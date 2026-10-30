@@ -258,9 +258,8 @@ export function dbPurgeArgv(flags: string[] = []): string[] {
 }
 
 /**
- * `db purge` without `--yes` (da-0hay9): off a TTY it makes every refusal
- * the CLI makes before its name prompt, then refuses for want of one, so
- * it purges nothing.
+ * `db purge` without `--yes` (da-0hay9): it makes every refusal the CLI
+ * makes before its name prompt, then goes unanswered, so it purges nothing.
  */
 export function dbPurgeProbeArgv(flags: string[] = []): string[] {
 	return ['db', 'purge', ...flags.filter((f) => f !== '--yes' && f !== '-y')];

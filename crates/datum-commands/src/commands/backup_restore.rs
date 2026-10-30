@@ -18,6 +18,7 @@
 //! "nothing restored". See `RestoreReport` for the projected/committed
 //! outcome contract.
 
+use crate::commands::question::{is_yes, Question};
 use anyhow::{Context, Result};
 use datum_core::{
     db::{chain, ConflictStrategy, Db, InsertOutcome},
@@ -400,7 +401,8 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
                     "\nIt leaves sync chain {c} as a new copy; a fresh invite rejoins it."
                 ))
             ),
-            &mut std::io::stdin().lock(),
+            // A backup on stdin took it: there is no one to answer on it.
+            &mut *answers_on(args.path == STDIO_PATH),
             is_tty,
             &super::db::purge_confirmation_token(cli_db, db),
         )?;
@@ -633,8 +635,8 @@ fn restore_chain(
         super::db::confirm_by_name(
             "db restore --hard --chain",
             &format!("{said}\nIt cannot be undone."),
-            &mut std::io::stdin().lock(),
             // A backup piped in took stdin: there is no one to ask on it.
+            &mut *answers_on(piped.is_some()),
             piped.is_none() && std::io::stdin().is_terminal(),
             &super::db::purge_confirmation_token(cli_db, db),
         )?;
@@ -688,23 +690,28 @@ fn print_merged(slugs: &[String], verb: &str) {
     }
 }
 
+/// Where a question's answer is read: nowhere when stdin is the backup.
+fn answers_on(backup_on_stdin: bool) -> Box<dyn std::io::BufRead> {
+    match backup_on_stdin {
+        true => Box::new(std::io::empty()),
+        false => Box::new(std::io::stdin().lock()),
+    }
+}
+
 /// Ask before a replace deletes anything; refuse on anything but yes.
 fn confirm_deletions(preview: &RestoreReport, stdin: &mut dyn std::io::BufRead) -> Result<()> {
-    use std::io::Write;
     if preview.deleted == 0 {
         return Ok(());
     }
-    let mut stderr = std::io::stderr().lock();
-    write!(
-        stderr,
-        "This restore deletes {} entries the backup lacks ({} inserted, {} updated). \
-         Continue? [y/N] ",
-        preview.deleted, preview.inserted, preview.updated
-    )?;
-    stderr.flush()?;
-    let mut line = String::new();
-    stdin.read_line(&mut line)?;
-    if !matches!(line.trim(), "y" | "Y" | "yes") {
+    let question = Question::yes_no(
+        format!(
+            "This restore deletes {} entries the backup lacks ({} inserted, {} updated). Continue?",
+            preview.deleted, preview.inserted, preview.updated
+        ),
+        "restore",
+        Some(false),
+    );
+    if !is_yes(&question.ask_on(stdin, true)?) {
         anyhow::bail!("db restore: aborted (nothing changed; --merge deletes nothing)");
     }
     Ok(())
@@ -752,7 +759,7 @@ fn unpinned(e: anyhow::Error) -> anyhow::Error {
     match e.downcast_ref() {
         Some(DatumError::Changed) => {
             eprint!("db restore: the database changed since it was counted — nothing changed; count it again");
-            super::helpers::Unanswered.into()
+            super::question::Unanswered.into()
         }
         _ => e,
     }
@@ -2318,7 +2325,7 @@ mod tests {
                 ..Mode::of(&replace_args(&path, dry_run))
             };
             let err = restore_pinned(path.to_str().unwrap(), &db, mode).unwrap_err();
-            assert!(err.is::<crate::commands::helpers::Unanswered>(), "{err:?}");
+            assert!(err.is::<crate::commands::question::Unanswered>(), "{err:?}");
         }
         std::fs::remove_file(&path).ok();
     }

@@ -246,9 +246,9 @@ is reported rather than read again. The owner's reads open as a write does.
 - a log whose flags name a wall time a fall-back night repeats (`-d
   2026-10-25 -t 02:30` in Europe/Berlin) asks which (da-6i7l1): a terminal
   lists both full spellings, `-t 2026-10-25T02:30:00+02:00` and `…+01:00`,
-  and stores the one picked; datum.day gets them as `DATUM_CHOOSE=` with
-  exit 12 and asks with a button each (`asking` in `web/src/lib/dbio.ts`);
-  anywhere else the line is refused naming both, nothing written. The
+  and stores the one picked; datum.day asks with a button each, and a pipe
+  with no answer is unanswered (exit 12) naming both, nothing written (see
+  «A command asks one way» below). The
   answer is `TimeArgs::later`, which every build of the line reads. A
   `retime` is asked the same of the time it builds from the first entry it
   makes one of, before it writes, and the answer is every entry's
@@ -333,6 +333,21 @@ help table (`crates/datum-parse/src/help/commands.rs`) — `rt` for `retime`,
 `del` for `delete`, `end` for `stop`, and `spec` for `setup`, which kept the
 old name as its alias when it was renamed (da-a4ptr, then da-3ie71: «leave
 "spec" as a verb which is aliased to setup»). Do not remove it.
+
+### A command asks one way
+A question is `commands/question.rs` (da-jytnl): yes/no with a default, named
+choices, or a name to type. A terminal is prompted. A pipe's line is the answer
+(for a typed name only under the env below, which `yes |` alone must not
+satisfy); with none, or 5 s of
+silence from a pipe left open, it takes the default, or is `Unanswered`, exit
+12, where there is no safe one. Under `DATUM_NO_DEFAULT_ANSWER=1` no default is
+taken: the question is one `DATUM_ASK=<json>` line on stderr, and `asking` in
+`web/src/lib/dbio.ts` shows it as a dialog and runs the line again with every
+answer so far on stdin, so a command that asks needs no page code.
+It asks before its transaction opens, so a person reading holds no lock.
+`asks()` in `datum-cli` names the commands that ask about an entry they found
+and so run on a snapshot from the start (`ask_first`); a command that asks only
+sometimes, a log, stays out of it and pays nothing when it does not ask.
 
 ## Sync architecture
 

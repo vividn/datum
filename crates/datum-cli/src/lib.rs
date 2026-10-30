@@ -356,9 +356,12 @@ fn missing(db: Option<&str>) -> Option<std::path::PathBuf> {
     config::locate_db(db).filter(|path| !path.exists())
 }
 
-/// Can `command` ask its person something before it writes? `edit` always
-/// (its editor), and a change to `_LAST` named by default (the stale-`_LAST`
-/// question).
+/// Does `command` ask its person about an entry it found, and so run on a
+/// snapshot (`ask_first`)? `edit` always (its editor), and a change to `_LAST`
+/// named by default (the stale-`_LAST` question). This is not every command
+/// that may ask (`commands::question`): one that asks only sometimes, a log,
+/// asks before its transaction opens, holds no lock while a person reads, and
+/// must not pay a snapshot on every run.
 fn asks(command: &Command) -> bool {
     match command {
         Command::Edit(_) => true,

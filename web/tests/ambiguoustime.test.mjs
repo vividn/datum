@@ -2,7 +2,7 @@
 //
 // vividn, 2026-10-26: «in datum.day it should pop up a dialog box with the
 // different options as buttons». 02:30 on 2026-10-25 in Europe/Berlin is
-// 00:30Z and 01:30Z: the CLI tells the page both (`DATUM_CHOOSE=`, exit 12)
+// 00:30Z and 01:30Z: the CLI tells the page both (`DATUM_ASK=`, exit 12)
 // and writes nothing, the page asks with a button each, and the line runs
 // again with the one pressed.
 
@@ -89,7 +89,7 @@ test('a stale _LAST retimed into a repeated hour asks both, and stores the readi
 			const dialog = page.locator('dialog.confirm');
 			const asks = (re) =>
 				page.waitForFunction((src) => new RegExp(src).test(document.querySelector('dialog.confirm[open] p')?.textContent ?? ''), re.source);
-			await asks(/Retime this entry\? \[Y\/n\]$/);
+			await asks(/Retime this entry\?$/);
 			await dialog.getByRole('button', { name: 'retime', exact: true }).click();
 			await asks(/happens twice in Europe\/Berlin/);
 			assert.deepEqual(await dialog.getByRole('button').allInnerTexts(), [FIRST, SECOND, 'cancel']);

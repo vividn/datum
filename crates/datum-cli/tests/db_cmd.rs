@@ -131,10 +131,9 @@ fn db_purge_non_tty_without_yes_aborts() {
     let mut stdin = Cursor::new(Vec::<u8>::new());
     let err = purge_with_io(DbPurgeArgs::default(), &db, &mut stdin, false, "")
         .expect_err("non-tty without --yes must abort");
-    let msg = err.to_string().to_lowercase();
     assert!(
-        msg.contains("--yes") && (msg.contains("tty") || msg.contains("non-interactive")),
-        "expected tty / --yes message, got: {err}"
+        err.is::<datum_commands::commands::question::Unanswered>(),
+        "{err:?}"
     );
     assert_eq!(db.count_entries().unwrap(), 1);
 }

@@ -79,10 +79,9 @@ pub fn sync_with_io(
 }
 
 /// Without `--yes`, a destructive act once it has said what goes
-/// (da-a2wyw): on a TTY it asks for the database's name, as `db purge`
-/// does; off one it changes nothing and names the command as typed, with
-/// `--yes` — datum.day's preview reads past that line. `canonical` is the
-/// command where nothing was typed.
+/// (da-a2wyw): on a TTY, and of datum.day, it asks for the database's name,
+/// as `db purge` does; anywhere else it changes nothing and names the command
+/// as typed, with `--yes`. `canonical` is the command where nothing was typed.
 fn confirmed(
     canonical: &str,
     db: &Db,
@@ -102,12 +101,12 @@ fn confirmed(
             }
             None => (canonical.into(), canonical.into()),
         };
-    if !is_tty {
+    if !is_tty && !super::question::page() {
         println!("nothing changed: `datum {typed} --yes` does it");
         return Ok(false);
     }
     let confirm = super::db::purge_confirmation_token(cli_db, db);
-    super::db::confirm_by_name(&label, "", stdin, true, &confirm)?;
+    super::db::confirm_by_name(&label, "", stdin, is_tty, &confirm)?;
     Ok(true)
 }
 

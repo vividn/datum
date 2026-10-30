@@ -13,6 +13,8 @@ use datum_core::{
 };
 use serde_json::Value as JsonValue;
 
+use crate::commands::question::{is_yes, Question};
+
 fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
     Ok(db.load_registry()?)
 }
@@ -530,15 +532,13 @@ pub(crate) fn confirm_default_last_if_stale(
     action_verb: &str,
     entries: &[Entry],
 ) -> Result<bool> {
-    let stdin = std::io::stdin();
-    let mut locked = stdin.lock();
-    confirm_default_last_if_stale_with_io(
+    confirm_stale(
         db,
         explicit_id,
         force,
         action_verb,
         entries,
-        &mut locked,
+        Question::ask,
         std::env::var("DATUM_LAST_SHOWN").ok().as_deref(),
         /*render_candidates=*/ true,
     )
@@ -546,10 +546,8 @@ pub(crate) fn confirm_default_last_if_stale(
 
 /// Test seam for [`confirm_default_last_if_stale`]: takes the stdin
 /// reader as an argument so tests can drive the prompt with a scripted
-/// answer instead of blocking on the process's real stdin, and `shown`
-/// the `DATUM_LAST_SHOWN` an answer's run carries (da-84h6a).
-/// `render_candidates = false` suppresses the candidate-row print
-/// (which uses stdout; tests don't try to capture it).
+/// answer instead of blocking on the process's real stdin.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
     db: &Db,
@@ -558,6 +556,33 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
     action_verb: &str,
     entries: &[Entry],
     stdin: &mut R,
+    shown: Option<&str>,
+    render_candidates: bool,
+) -> Result<bool> {
+    confirm_stale(
+        db,
+        explicit_id,
+        force,
+        action_verb,
+        entries,
+        |question| question.ask_on(stdin, false),
+        shown,
+        render_candidates,
+    )
+}
+
+/// [`confirm_default_last_if_stale`], asking by `ask`, with `shown` the
+/// `DATUM_LAST_SHOWN` an answer's run carries (da-84h6a).
+/// `render_candidates = false` suppresses the candidate-row print
+/// (which uses stdout; tests don't try to capture it).
+#[allow(clippy::too_many_arguments)]
+fn confirm_stale(
+    db: &Db,
+    explicit_id: Option<&str>,
+    force: bool,
+    action_verb: &str,
+    entries: &[Entry],
+    ask: impl FnOnce(&Question) -> Result<String>,
     shown: Option<&str>,
     render_candidates: bool,
 ) -> Result<bool> {
@@ -614,47 +639,20 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
             crate::render::print_entry(entry, ctxs.get(i), Some(&now), registry.as_ref());
         }
     }
-    let prompt = if entries.len() == 1 {
-        format!("{action_verb} this entry? [Y/n] ")
+    let text = if entries.len() == 1 {
+        format!("{action_verb} this entry?")
     } else {
-        format!("{action_verb} these {} entries? [Y/n] ", entries.len())
+        format!("{action_verb} these {} entries?", entries.len())
     };
-    if !answered {
-        let mut stderr = std::io::stderr().lock();
-        let _ = write!(stderr, "{prompt}");
-        let _ = stderr.flush();
+    // The pin goes with the question, for the answer to hand back.
+    let question = Question::yes_no(text, &action_verb.to_lowercase(), Some(true))
+        .pinned(format!("DATUM_LAST_SHOWN={hids}"));
+    if moved {
+        return Err(question.unanswered());
     }
-    let mut line = String::new();
-    // A stdin that ends before a line is no answer where the host says so
-    // (da-f5pg2): datum.day cannot answer on stdin, so it asks the person
-    // in a dialog and runs the line again with their answer.
-    // The pin goes after the question, for the answer to hand back.
-    if moved
-        || stdin.read_line(&mut line).unwrap_or(0) == 0
-            && std::env::var("DATUM_NO_DEFAULT_ANSWER").is_ok_and(|v| v == "1")
-    {
-        eprint!("\nDATUM_LAST_SHOWN={hids}");
-        return Err(Unanswered.into());
-    }
-    // Yes-default: empty input OR y/yes proceeds. Anything else aborts.
-    let answer = line.trim().to_lowercase();
-    Ok(answer.is_empty() || matches!(answer.as_str(), "y" | "yes"))
+    // Yes-default: no answer, an empty one or y/yes proceeds. Anything else aborts.
+    Ok(is_yes(&ask(&question)?))
 }
-
-/// A question went unanswered: stdin ended under `DATUM_NO_DEFAULT_ANSWER=1`
-/// (da-f5pg2), or answered for entries `_LAST` no longer is (da-84h6a). The
-/// question is already on stderr, then the `DATUM_LAST_SHOWN=` pin for the
-/// answer's run; `datum` exits with its own code for this and says nothing more.
-#[derive(Debug)]
-pub struct Unanswered;
-
-impl std::fmt::Display for Unanswered {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("no answer on stdin")
-    }
-}
-
-impl std::error::Error for Unanswered {}
 
 // ─── Stored alias-chain replay (shared by `reparse` + `why`) ─────────────
 
@@ -953,6 +951,7 @@ pub(crate) fn note_unseen_field(db: &Db, field: &str, doing: &str) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::question::Unanswered;
     use datum_core::{
         action::Action,
         entry::Verb,
