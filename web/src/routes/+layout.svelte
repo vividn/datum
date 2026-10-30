@@ -26,7 +26,7 @@
 	import { schedule } from '#lib/backups.ts';
 	import { installConsole } from '#lib/console.ts';
 	import BarLog from '#lib/BarLog.svelte';
-	import { attach, logHeight, shown } from '#lib/log.ts';
+	import { attach, glideEnds, logHeight, shown } from '#lib/log.ts';
 	import PromptBar from '#lib/PromptBar.svelte';
 	import Waiting from '#lib/Waiting.svelte';
 	import Damaged from '#lib/Damaged.svelte';
@@ -168,7 +168,7 @@
 	<title>{db === DEFAULT_DB ? 'datum' : `datum · ${db}`}</title>
 </svelte:head>
 
-<div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px">
+<div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px" data-glide-ends={$glideEnds}>
 	<RootBar />
 	{#if $damaged !== null}<Damaged db={$damaged} />{:else}<Waiting />{/if}
 

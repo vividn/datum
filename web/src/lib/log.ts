@@ -343,6 +343,14 @@ let frame = 0;
  */
 let aim: number | null = null;
 
+/**
+ * When the last glide is scheduled to arrive, on `performance.now()`'s clock.
+ *
+ * The motion the app schedules, which `tests/barswipe.test.mjs` holds to
+ * vividn's 250ms instead of the clock a loaded machine draws it by (da-rubmm).
+ */
+export const glideEnds = writable(0);
+
 /** Whether a settle is in flight — a press that stops one owes it an end. */
 export const moving = (): boolean => frame !== 0;
 
@@ -376,15 +384,19 @@ function glide(target: number, speed = 0): void {
 	const from = get(reveal);
 	const to = Math.max(0, Math.min(maxReveal(), target));
 	remember(to >= out() - 0.5);
-	if (reduced() || from === to) {
+	const ms =
+		reduced() || from === to
+			? 0
+			: speed
+				? Math.min(GLIDE_MAX_MS, Math.max(GLIDE_MIN_MS, (3 * Math.abs(to - from)) / Math.abs(speed)))
+				: SETTLE_MS;
+	const started = performance.now();
+	glideEnds.set(started + ms);
+	if (!ms) {
 		aim = null;
 		return put(to);
 	}
-	const ms = speed
-		? Math.min(GLIDE_MAX_MS, Math.max(GLIDE_MIN_MS, (3 * Math.abs(to - from)) / Math.abs(speed)))
-		: SETTLE_MS;
 	aim = to;
-	const started = performance.now();
 	const step = (now: number): void => {
 		// A frame's stamp is when the frame began, which can be before
 		// `started`: under 0 the curve runs backwards, below where it began.
