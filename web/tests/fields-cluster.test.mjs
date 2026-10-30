@@ -14,7 +14,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ringOf } from '../src/lib/fields.ts';
+import { ringIn, ringOf } from '../src/lib/fields.ts';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
 import { atRows } from './support/rows.mjs';
@@ -87,6 +87,36 @@ describe('ringOf', () => {
 	});
 });
 
+describe('ringIn', () => {
+	// The tutorial's `room` on a phone (da-q0lcx): its fields widget's box at
+	// 390px, its buttons as drawn, and its back icon's corner.
+	const ROOM = { w: 351, h: 88.5, side: 41.6, lid: 36.8 };
+	const SIZES = { end: 54.8, states: [87.5, 120.2, 87.5, 95.7, 87.5] };
+	const TALL = 33.9;
+	/** Whether a ring stands wholly in the room, none under a corner. */
+	const held = (ring, room) =>
+		[{ ...ring.end, w: SIZES.end }, ...ring.states.map((s, i) => ({ ...s, w: SIZES.states[i] }))].every((b) => {
+			const [left, top] = [room.w / 2 + b.x - b.w / 2, room.h / 2 + b.y - TALL / 2];
+			return left >= 0 && left + b.w <= room.w && top >= 0 && top + TALL <= room.h && (top >= room.lid || (left >= room.side && left + b.w <= room.w - room.side));
+		});
+
+	test('a box too short for the ring holds every state in its rows, between the corners on the top one', () => {
+		assert.equal(held(ringOf(SIZES, TALL, GAP), ROOM), false, 'the ring fits: the case is not tested');
+		const ring = ringIn(SIZES, TALL, GAP, ROOM);
+		assert.ok(held(ring, ROOM), JSON.stringify(ring));
+		assert.ok(Math.abs(ring.end.x) < 1, `end moved across, to ${ring.end.x}`);
+		// The old corner, «+ Add state» a third of the row: no packing holds them.
+		const old = { ...ROOM, side: 129.2, lid: 42.9 };
+		assert.equal(held(ringIn(SIZES, TALL, GAP, old), old), false, 'they fit beside the old corner: this test says nothing of it');
+	});
+
+	test('a box the ring fits keeps the ring; one nothing fits keeps it too, and pans', () => {
+		assert.deepEqual(ringIn(SIZES, TALL, GAP, { ...ROOM, h: 240 }), ringOf(SIZES, TALL, GAP));
+		const narrow = { ...ROOM, w: 200 };
+		assert.deepEqual(ringIn(SIZES, TALL, GAP, narrow), ringOf(SIZES, TALL, GAP));
+	});
+});
+
 const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 const BAR = 'section[data-pane="bar"] .bar';
 const PICKER = `${BAR} .picker`;
@@ -140,11 +170,11 @@ async function panBy(page, dx, dy) {
 
 /** Each state's centre from the pane's, to the pixel. */
 const offsets = (t) =>
-	Object.fromEntries(t.buttons.filter((b) => b.name !== 'back' && b.name !== '+ Add state').map((b) => [b.name, [Math.round(b.x - t.pane.x), Math.round(b.y - t.pane.y)]]));
+	Object.fromEntries(t.buttons.filter((b) => b.name !== 'back' && b.name !== '+').map((b) => [b.name, [Math.round(b.x - t.pane.x), Math.round(b.y - t.pane.y)]]));
 
 /** Where the two corner buttons are in the pane. */
 const corners = (t) => {
-	const [back, add] = [t.find('back'), t.find('+ Add state')];
+	const [back, add] = [t.find('back'), t.find('+')];
 	return { back: [back.left - t.pane.left, back.top - t.pane.top], add: [t.pane.right - add.right, add.top - t.pane.top] };
 };
 
@@ -166,7 +196,7 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 				const fields = await page.locator(BAR).evaluate((bar) => [...bar.querySelectorAll('[data-field]')].map((b) => b.dataset.field));
 				const picked = [fields[0], fields[Math.floor(fields.length / 2)], fields.at(-1)];
 				const first = await open(page, picked[0]);
-				assert.deepEqual(first.buttons.map((b) => b.name), ['back', 'false', ...STATES, '+ Add state']);
+				assert.deepEqual(first.buttons.map((b) => b.name), ['back', 'false', ...STATES, '+']);
 				const end = first.find('false');
 				assert.ok(Math.abs(end.x - first.pane.x) <= 1 && Math.abs(end.y - first.pane.y) <= 1, `end at ${end.x},${end.y}, the widget's centre at ${first.pane.x},${first.pane.y}`);
 				// The corners: back top left, add top right, out of the packing.
@@ -227,7 +257,7 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 			assert.ok(Math.abs(far.ring.right - far.pane.right) <= 1 && Math.abs(far.ring.bottom - far.pane.bottom) <= 1, `panned past the states: ${far.ring.right},${far.ring.bottom} in ${far.pane.right},${far.pane.bottom}`);
 			const back = await strokes(span[0], span[1]);
 			// The other way their top stops a gap below the corners, not at the pane's top.
-			const lid = Math.max(...['back', '+ Add state'].map((n) => back.buttons.find((b) => b.name === n).bottom)) + GAP;
+			const lid = Math.max(...['back', '+'].map((n) => back.buttons.find((b) => b.name === n).bottom)) + GAP;
 			assert.ok(Math.abs(back.ring.left - back.pane.left) <= 1 && Math.abs(back.ring.top - lid) <= 1, `panned past the states the other way: ${back.ring.left},${back.ring.top}, the corners end at ${lid - GAP}`);
 			await app.idle();
 			assert.equal((await app.echoes()).length, before, 'a drag pressed the state it started on');
@@ -297,7 +327,7 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 	// da-amd70: at rest a state that would stand under a corner, where a tap
 	// presses the corner, is moved down just clear of it, `end` as near the
 	// center as that leaves it; and a tap on each state drawn presses it.
-	for (const [count, rows] of [[22, 3], [22, 2], [8, 3], [8, 2]])
+	for (const [count, rows] of [[22, 3], [22, 2], [14, 3], [8, 2]])
 		test(`${count} states in a ${rows}-row pane at 390px: at rest none stands under a corner, and a tap on each state drawn logs it`, async () => {
 			const many = Array.from({ length: count }, (_, i) => `a_rather_long_state_${String(i).padStart(2, '0')}`);
 			await withApp(async (app) => {
@@ -309,7 +339,7 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 				await field.click();
 				await page.locator(`${PICKER} [data-add-state]`).waitFor();
 				const t = await seen(page);
-				const corner = ['back', '+ Add state'].map((n) => t.buttons.find((b) => b.name === n));
+				const corner = ['back', '+'].map((n) => t.buttons.find((b) => b.name === n));
 				const states = t.buttons.filter((b) => !corner.includes(b));
 				const across = (b, c) => b.left < c.right + GAP && b.right + GAP > c.left;
 				// A pixel's give: the widget places by whole-pixel offsets.
@@ -336,6 +366,51 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 				}
 			}, options());
 		});
+
+	// da-q0lcx, vividn: «let the state buttons come up into the top row rather
+	// than spilling off the bottom». The tutorial's field, at the box its
+	// widget has on a phone.
+	test('the tutorial’s five rooms in its phone-sized box: every state wholly inside, none under a corner, each pressed by a tap, and nothing to pan', async () => {
+		const rooms = ['kitchen', 'living_room', 'bedroom', 'bathroom', 'outside'];
+		await withApp(async (app) => {
+			const { page } = app;
+			await seedLines(app, [`setup room --verb switch --never-false --states ${rooms.join(',')}`]);
+			const field = page.locator(`${BAR} [data-field="room"]`);
+			await field.waitFor();
+			await field.click();
+			await page.locator(`${PICKER} [data-add-state]`).waitFor();
+			// To the box's size, measured: the page's shares are the layout's.
+			for (let i = 0; i < 6; i++) {
+				const [box, view] = [await page.locator(PICKER).boundingBox(), page.viewportSize()];
+				if (Math.abs(box.width - 351) < 1 && Math.abs(box.height - 88.5) < 1) break;
+				await page.setViewportSize({ width: Math.round(view.width + 351 - box.width), height: Math.round(view.height + (88.5 - box.height) * 2) });
+				await page.waitForFunction(([sel, w]) => Math.abs(document.querySelector(sel).clientWidth - w) < 40, [PICKER, 351]);
+			}
+			const t = await seen(page);
+			assert.ok(Math.abs(t.pane.right - t.pane.left - 351) < 2 && Math.abs(t.pane.bottom - t.pane.top - 88.5) < 2, `the box is ${t.pane.right - t.pane.left}x${t.pane.bottom - t.pane.top}`);
+			const [back, add] = [t.buttons.find((b) => b.name === 'back'), t.buttons.find((b) => b.name === '+')];
+			for (const name of rooms) {
+				const b = t.buttons.find((b) => b.name === name);
+				assert.ok(b.left >= t.pane.left && b.right <= t.pane.right && b.top >= t.pane.top && b.bottom <= t.pane.bottom, `${name} runs past the box: ${JSON.stringify(b)} in ${JSON.stringify(t.pane)}`);
+				for (const c of [back, add]) assert.ok(b.right + GAP - 1 <= c.left || b.left - GAP + 1 >= c.right || b.top - GAP + 1 >= c.bottom, `${name} under a corner`);
+			}
+			assert.ok(t.buttons.filter((b) => rooms.includes(b.name)).some((b) => b.top < back.bottom), 'no state came up into the top row');
+			assert.ok(Math.abs(add.right - add.left - (back.right - back.left)) <= 1 && Math.abs(add.bottom - add.top - (back.bottom - back.top)) <= 1, 'the + is not the back icon’s size');
+			assert.equal(await page.locator(`${PICKER} [data-add-state]`).getAttribute('aria-label'), 'add a state to room');
+			const drawn = await dragBy(page, 25, 25);
+			assert.deepEqual(drawn.ring, t.ring, 'the states moved, with nothing to pan to');
+			for (const name of rooms) {
+				const b = (await seen(page)).buttons.find((b) => b.name === name);
+				await app.clock.forward(60_000);
+				await page.mouse.click(b.x, b.y);
+				await page.locator(PICKER).waitFor({ state: 'detached' });
+				await app.idle();
+				assert.equal((await app.echoes()).at(-1), `switch room ${name}`);
+				await field.click();
+				await page.locator(`${PICKER} [data-add-state]`).waitFor();
+			}
+		}, options());
+	});
 
 	// da-71p3u: the ring overruns its room, which clips it; a reveal of a
 	// state it clips — a focus, a click's scroll into view — is a pan, so
@@ -365,6 +440,8 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 				const t = await seen(page);
 				const clipped = t.buttons.find((b) => many.includes(b.name) && outside(b, t.pane) > 1 && b.bottom > t.pane.top && b.top < t.pane.bottom);
 				assert.ok(clipped, `${when}: no state the room clips: the case is not tested`);
+				// Blurred first: a focus of what already has it reveals nothing.
+				await page.evaluate(() => document.activeElement?.blur());
 				await page.locator(`${PICKER} [data-state="${clipped.name}"]`).focus();
 				await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 				assert.deepEqual(await scrolled(), [], `${when}: focusing ${clipped.name} scrolled`);

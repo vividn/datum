@@ -497,7 +497,7 @@ export function pressArgv(button: FieldButton, state?: string): string[] {
  *     own chip draws it (`lookOf`'s switch case), and bold (the widget's);
  *   every other state — a LIGHT TINT, a quarter of its own colour, in its
  *     own outline, under the app's ink;
- *   the back icon, `+ Add state` and `end` — hollow, and not drawn here.
+ *   the back icon, the `+` and `end` — hollow, and not drawn here.
  */
 export function stateLook(button: FieldButton, state: string): Look {
 	if (button.current === state) return lookOf(button, 'state');
@@ -538,7 +538,7 @@ export interface Ring {
  * every one already placed by `gap`.
  *
  * Nothing here knows the widget's box: the same field draws the same
- * picture whatever the box, which pans where the states run past it.
+ * picture whatever the box. `ringIn` is what answers to the box.
  *
  * `w` is each button's width, `h` a button's height; every spot returned
  * is from the centre.
@@ -577,4 +577,72 @@ export function ringOf(w: { end: number; states: number[] }, h: number, gap: num
 		return { x: p.x, y: p.y };
 	});
 	return { end: { x: 0, y: 0 }, states };
+}
+
+/**
+ * The box a field's states stand in, and what its two top corners take of
+ * it: `side` from each side and `lid` from the top, a gap past them.
+ */
+export interface Room {
+	w: number;
+	h: number;
+	side: number;
+	lid: number;
+}
+
+/**
+ * The states in `room`, its center the origin (da-q0lcx) — vividn: «it
+ * seems weird that the available space is not being used first before
+ * states are drawn off the edge». The field's ring wherever it fits, moved
+ * down just clear of the corners if need be, which is what the widget's
+ * `rest` does; where it does not, `shelved`; and where that does not fit
+ * either, the ring, which pans.
+ */
+export function ringIn(w: { end: number; states: number[] }, h: number, gap: number, room: Room): Ring {
+	const ring = ringOf(w, h, gap);
+	const boxes = [{ ...ring.end, w: w.end }, ...ring.states.map((s, i) => ({ ...s, w: w.states[i] }))];
+	const top = (y: number) => (room.h - h) / 2 + y;
+	const down = Math.max(0, ...boxes.filter((b) => Math.abs(b.x) + b.w / 2 > room.w / 2 - room.side).map((b) => room.lid - top(b.y)));
+	const fits = boxes.every((b) => Math.abs(b.x) + b.w / 2 <= room.w / 2 && top(b.y) + down >= 0 && top(b.y) + down + h <= room.h);
+	return fits ? ring : (shelved(w, h, gap, room) ?? ring);
+}
+
+/**
+ * The states in the rows `room` holds, for a box too short for the ring:
+ * `end` leads the row nearest the middle that lets all of them fit, so it
+ * stands off center by half a row or so, and each state in rank order takes
+ * the row nearest `end`'s with room for it, between the corners on a row
+ * level with them. A row stands centered, its first button in the middle and
+ * the rest right, left, right, outward. Null where they do not all fit.
+ */
+function shelved(w: { end: number; states: number[] }, h: number, gap: number, room: Room): Ring | null {
+	const n = Math.floor((room.h + gap) / (h + gap));
+	const y = (row: number) => (row - (n - 1) / 2) * (h + gap);
+	const span = (row: number) => room.w - (room.h / 2 + y(row) - h / 2 < room.lid ? 2 * room.side : 0);
+	const rowsFrom = (at: number) => Array.from({ length: n }, (_, row) => row).sort((a, b) => Math.abs(a - at) - Math.abs(b - at) || a - b);
+	const wide = [w.end, ...w.states];
+	for (const home of rowsFrom((n - 1) / 2)) {
+		const rows: number[][] = Array.from({ length: n }, () => []);
+		const taken = (row: number) => rows[row].reduce((sum, i) => sum + wide[i] + gap, 0);
+		rows[home].push(0);
+		const fit = w.states.every((width, i) => {
+			// A pixel's give: the widget measures its corners and buttons in whole ones.
+			const row = rowsFrom(home).find((r) => taken(r) + width + 1 <= span(r));
+			if (row !== undefined) rows[row].push(i + 1);
+			return row !== undefined;
+		});
+		if (!fit) continue;
+		const spots: Spot[] = [];
+		rows.forEach((row, r) => {
+			const line: number[] = [];
+			row.forEach((i, k) => (k % 2 ? line.push(i) : line.unshift(i)));
+			let x = -(taken(r) - gap) / 2;
+			for (const i of line) {
+				spots[i] = { x: x + wide[i] / 2, y: y(r) };
+				x += wide[i] + gap;
+			}
+		});
+		return { end: spots[0], states: spots.slice(1) };
+	}
+	return null;
 }

@@ -28,7 +28,7 @@ import { GREEN, MOOD, seed, untilFieldStyle } from './support/fields.mjs';
 
 // A state field asks WHICH, so its button reads `name:` and a press puts
 // that field's states in place of the fields — the back icon first, then
-// `end` (da-cwieh), `+ Add state` last (da-g635), the states around `end`
+// `end` (da-cwieh), the `+` last (da-g635), the states around `end`
 // (da-7q3ka, da-vg8vr). They are written inside the bar, over its hidden
 // rows, so these tests read them out of `.bar` as they read the fields;
 // where they stand is `fields-cluster.test.mjs`.
@@ -60,7 +60,7 @@ describe('a state field fills the widget with its states', () => {
 
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="happy"]').waitFor();
-			assert.deepEqual(await ring(page), ['back', 'end', 'calm', 'happy', '+ Add state']);
+			assert.deepEqual(await ring(page), ['back', 'end', 'calm', 'happy', '+']);
 			assert.equal(await page.locator('.bar [data-field="mood"]').isVisible(), false, 'the field is still drawn over its states');
 
 			const before = (await app.echoes()).length;
@@ -126,7 +126,7 @@ describe('a state field fills the widget with its states', () => {
 			await app.idle();
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="sad"]').waitFor();
-			assert.deepEqual(await ring(page), ['back', 'end', 'calm', 'happy', 'sad', '+ Add state']);
+			assert.deepEqual(await ring(page), ['back', 'end', 'calm', 'happy', 'sad', '+']);
 		});
 	});
 
@@ -168,7 +168,7 @@ describe('a state field fills the widget with its states', () => {
 			// own chip marks it: filled with the state's colour inside the
 			// field's outline. `bad` is a light TINT of its own colour, a quarter
 			// of it, in its own outline and under the app's ink (da-7q3ka: the
-			// hollow back icon, `+ Add state` and `end` stand out against it).
+			// hollow back icon, the `+` and `end` stand out against it).
 			// `end` first, hollow in the field's colour, on every switch field (da-cwieh).
 			assert.deepEqual(painted, [
 				{ state: 'false', bg: 'rgba(0, 0, 0, 0)', border: rgb('#800080'), color: rgb('#800080') },
@@ -194,7 +194,7 @@ describe('a state field fills the widget with its states', () => {
 				await page.keyboard.press('Tab');
 				order.push(await focused());
 			}
-			assert.deepEqual(order, ['back', 'end', 'calm', 'happy', '+ Add state']);
+			assert.deepEqual(order, ['back', 'end', 'calm', 'happy', '+']);
 
 			await page.keyboard.press('Escape');
 			await closed(page);

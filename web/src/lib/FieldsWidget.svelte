@@ -94,9 +94,11 @@
 	always the same place, like a pie menu (da-7q3ka), whichever button was
 	tapped and wherever it stood. `end` is at the widget's centre, or a gap
 	of its width on a field whose spec says it is never off (da-cwieh); the
-	back icon and `+ Add state` are in the top corners, out of the packing,
+	back icon and a `+` of its size are in the top corners, out of the packing,
 	and stay there while the states pan, which a drag does in both
-	directions where they run past the box; those three are hollow, the
+	directions where they run past the box. A box too short for that ring
+	stands them in the rows it holds, between the corners on the top one,
+	before any is drawn past its edge (`ringIn`, da-q0lcx); those three are hollow, the
 	other states a light tint, the one the field is in solid and bold. The
 	fields are hidden under them, not taken out, so Back and Escape find
 	the bar as it was. A name too long for the pane is cut with an
@@ -121,7 +123,7 @@
 		FULL,
 		aligned,
 		panned,
-		ringOf,
+		ringIn,
 		lookOf,
 		yIn,
 		zoomed,
@@ -577,13 +579,15 @@
 	}
 
 	/**
-	 * Stand the states around `end` (da-vg8vr): `ringOf` gives the spots
-	 * from their measured sizes alone, and the box is cropped to them, with
-	 * `end`'s place in it the `anchor` the pane centres. Measured again
-	 * whenever a button is resized or comes or goes, as a state learned
-	 * while they are open does.
+	 * Stand the states around `end` (da-vg8vr): `ringIn` gives the spots
+	 * from their measured sizes and the pane's, and the box is cropped to
+	 * them, with the pane's center in it the `anchor`. Measured again
+	 * whenever the pane or a button is resized or a button comes or goes, as a
+	 * state learned while they are open does. The corners by the back icon's
+	 * size alone, the `+` being its size and the input it opens passing over.
 	 */
 	function around(box: HTMLElement) {
+		const pane = box.parentElement!;
 		// Unrounded: `offsetWidth` rounds down.
 		const size = (el: HTMLElement) => el.getBoundingClientRect();
 		const place = () => {
@@ -591,7 +595,13 @@
 			const end = spots.find((s) => s.dataset.role === 'end')!;
 			const states = spots.filter((s) => s.dataset.role === 'state');
 			const h = Math.max(...spots.map((s) => size(s).height));
-			const ring = ringOf({ end: size(end).width, states: states.map((s) => size(s).width) }, h, GAP);
+			const corner = pane.querySelector<HTMLElement>(':scope > .corner')!;
+			const ring = ringIn({ end: size(end).width, states: states.map((s) => size(s).width) }, h, GAP, {
+				w: pane.clientWidth,
+				h: pane.clientHeight,
+				side: corner.offsetLeft + corner.offsetWidth + GAP,
+				lid: corner.offsetTop + corner.offsetHeight + GAP
+			});
 			const placed: [HTMLElement, Spot][] = [[end, ring.end], ...states.map((s, i): [HTMLElement, Spot] => [s, ring.states[i]])];
 			const edges = placed.map(([el, p]) => ({ el, left: p.x - size(el).width / 2, top: p.y - size(el).height / 2 }));
 			const [left, top] = [Math.min(...edges.map((e) => e.left)), Math.min(...edges.map((e) => e.top))];
@@ -606,6 +616,7 @@
 			anchor = { x: -left, y: -top };
 		};
 		const observer = new ResizeObserver(place);
+		observer.observe(pane);
 		const watch = () => {
 			for (const spot of box.children) observer.observe(spot);
 			// Placed now as well, not a frame later: the buttons are in the
@@ -624,16 +635,18 @@
 	 * fit, none; along one they overrun, as far as brings their far edge to
 	 * the room's and no further, like a scroll. The room starts below the
 	 * corners, a gap past them, so a pan can always bring the top row out
-	 * from under them, where a tap would press the corner instead.
+	 * from under them, where a tap would press the corner instead. States
+	 * that rest wholly in the pane have nothing to pan to.
 	 */
 	function kept(x: number, y: number) {
 		const axis = (at: number, from: number, to: number, start: number, size: number) =>
 			Math.min(Math.max(at, Math.min(0, to - start - size)), Math.max(0, from - start));
 		const corners = [...(picker?.querySelectorAll<HTMLElement>(':scope > .corner') ?? [])];
 		const lid = Math.max(0, ...corners.map((c) => c.offsetTop + c.offsetHeight + GAP));
+		const [top, down] = [paneH / 2 - anchor.y, rest()];
 		return {
 			x: axis(x, 0, paneW, paneW / 2 - anchor.x, extent.w),
-			y: axis(y, lid, paneH, paneH / 2 - anchor.y, extent.h)
+			y: top + down >= 0 && top + down + extent.h <= paneH ? down : axis(y, lid, paneH, top, extent.h)
 		};
 	}
 
@@ -906,9 +919,10 @@
 						data-add-state
 						{disabled}
 						title="add a state to {chosen.field}"
+						aria-label="add a state to {chosen.field}"
 						onclick={() => (addingState = true)}
 					>
-						+ Add state
+						+
 					</button>
 				{/if}
 			</div>
@@ -1131,7 +1145,7 @@
 		cursor: default;
 	}
 
-	/* The back icon and `+ Add state`: the two ends of the states, and neither of
+	/* The back icon and the `+`: the two ends of the states, and neither of
 	   them a state — so they are drawn hollow in the app's own ink rather
 	   than filled in any field's colour, and cannot be mistaken for
 	   something to log (da-7q3ka). */
@@ -1192,11 +1206,14 @@
 		right: 0.25rem;
 	}
 
-	/* The back icon: no wider than it is tall. */
-	.back .nav {
+	/* The back icon and the `+`, one size: little wider than they are tall. */
+	.corner .nav {
 		display: flex;
 		align-items: center;
+		justify-content: center;
+		min-width: calc(1em + 1rem + 2px);
 		padding: 0.35rem 0.5rem;
+		line-height: 1;
 	}
 
 	.back svg {

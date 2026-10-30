@@ -76,7 +76,7 @@ describe('the outline says what a tap does', () => {
 			assert.deepEqual(list, {
 				back: 'solid',
 				...Object.fromEntries(states.map((k) => [k, 'double'])),
-				'+ Add state': 'solid'
+				'+': 'solid'
 			});
 			await page.locator('.bar [data-back]').click();
 
@@ -120,11 +120,14 @@ describe('the outline says what a tap does', () => {
 			const [pane, b] = [await page.locator('.bar .picker').boundingBox(), await now.boundingBox()];
 			const into = (lo, size, at, wide) => Math.max(lo + 4 - at, Math.min(0, lo + size - 4 - (at + wide)));
 			const [dx, dy] = [into(pane.x, pane.width, b.x, b.width), into(pane.y, pane.height, b.y, b.height)];
-			const end = await page.locator('.bar .picker [data-state="false"]').boundingBox();
-			await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
-			await page.mouse.down();
-			for (let i = 1; i <= 4; i++) await page.mouse.move(end.x + end.width / 2 + (dx * i) / 4, end.y + end.height / 2 + (dy * i) / 4);
-			await page.mouse.up();
+			// Where it stands in the pane already there is no drag: a press of `end` would end it.
+			if (dx || dy) {
+				const end = await page.locator('.bar .picker [data-state="false"]').boundingBox();
+				await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
+				await page.mouse.down();
+				for (let i = 1; i <= 4; i++) await page.mouse.move(end.x + end.width / 2 + (dx * i) / 4, end.y + end.height / 2 + (dy * i) / 4);
+				await page.mouse.up();
+			}
 			assert.equal(await now.evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
 			const state = await drawn(page, now);
 			assert.ok(apart(state.gap, state.fill) > 64, `mood's state: gap ${state.gap} on fill ${state.fill}`);
