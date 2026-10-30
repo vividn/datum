@@ -476,6 +476,8 @@ fn a_dot_is_the_standard_size_whatever_its_lane_and_scaled() {
 fn a_moment_is_a_dotted_line_its_lane_tall_and_an_occur_is_a_dot() {
     let env = Env::new();
     let at = "2026-04-27T12:00+00:00";
+    let earlier = "2026-04-27T11:30+00:00";
+    env.run(&["switch", "body", "rest", "-t", earlier]);
     env.run(&["switch", "body", "run", "-m", "distanceKm=5", "-t", at]);
     env.run(&["occur", "coffee", "-t", at]);
     env.run(&["setup", "body", "--y", "0.6", "--height", "0.4"]);
@@ -532,24 +534,53 @@ fn a_moment_is_a_dotted_line_its_lane_tall_and_an_occur_is_a_dot() {
     }
 }
 
-/// da-2028s: a moment is a dotted line where the state it records is
-/// active, `true` or a named state, and a dot, as an occur is, where it is
-/// not: `false`, TRACKED or IGNORED.
+/// da-xo58u: a moment is a dotted line where the field holds an active state
+/// at its instant, whatever the moment itself says, and a dot, as an occur
+/// is, where it holds `false`, TRACKED, IGNORED or nothing yet. Asks the day
+/// and the now view the same, as the view's own SVG answers it.
 #[test]
-fn a_moment_of_an_inactive_state_is_a_dot() {
+fn a_moment_asks_the_state_the_field_holds_at_its_instant() {
     let env = Env::new();
-    let at = "2026-04-27T12:00+00:00";
-    for (field, state) in [
-        ("on", "true"),
-        ("named", "run"),
-        ("off", "false"),
-        ("tracked", "TRACKED"),
-        ("ignored", "IGNORED"),
-    ] {
-        env.run(&["switch", field, state, "-m", "-t", at]);
-    }
-    env.run(&["occur", "coffee", "-t", at]);
-    let svg = env.run(&[
+    let at = |clock: &str| format!("2026-04-27T{clock}+00:00");
+    let log = |args: &[&str], clock: &str| {
+        let t = at(clock);
+        env.run(&[args, &["-t", &t]].concat());
+    };
+    let moment = |field: &str, state: &str, clock: &str| {
+        log(&["switch", field, state, "-m"], clock);
+    };
+
+    log(&["switch", "rest", "rest"], "08:00");
+    moment("rest", "run", "09:00");
+    log(&["switch", "off", "false"], "10:00");
+    moment("off", "run", "11:00");
+    log(&["switch", "ignored", "IGNORED"], "13:00");
+    moment("ignored", "run", "14:00");
+    log(&["switch", "tracked", "TRACKED"], "13:00");
+    moment("tracked", "run", "14:00");
+    log(&["switch", "offmoment", "rest"], "08:00");
+    moment("offmoment", "false", "09:00");
+    moment("first", "run", "09:00");
+    // The state from that instant on, either way across a transition. One
+    // field holds one row at an instant, so the transition is a block's edge.
+    log(&["switch", "rising", "false"], "08:00");
+    log(&["start", "rising", "1h"], "10:00");
+    moment("rising", "x", "09:00");
+    log(&["switch", "falling", "run"], "08:00");
+    log(&["end", "falling", "1h"], "10:00");
+    moment("falling", "x", "09:00");
+    // A block is the state it holds, and hands the field back as it ends.
+    log(&["switch", "inblock", "false"], "08:00");
+    log(&["start", "inblock", "2h"], "11:00");
+    moment("inblock", "x", "10:00");
+    log(&["switch", "pastblock", "false"], "08:00");
+    log(&["start", "pastblock", "2h"], "11:00");
+    moment("pastblock", "x", "11:01");
+    // An occur is no moment, inside an active state too.
+    log(&["switch", "coffee", "run"], "08:00");
+    log(&["occur", "coffee"], "09:00");
+
+    let day = [
         "dayview",
         "--width",
         "300",
@@ -557,30 +588,46 @@ fn a_moment_of_an_inactive_state_is_a_dot() {
         "200",
         "--end-date",
         "2026-04-27",
-    ]);
-    for (field, moment) in [
-        ("on", true),
-        ("named", true),
+    ];
+    let end = at("16:00");
+    let now = [
+        "nowview",
+        "--height",
+        "200",
+        "--context",
+        "24h",
+        "-t",
+        &end,
+        "-o",
+        "-",
+    ];
+    let wanted = [
+        ("rest", true),
         ("off", false),
-        ("tracked", false),
         ("ignored", false),
+        ("tracked", false),
+        ("offmoment", true),
+        ("first", false),
+        ("rising", true),
+        ("falling", false),
+        ("inblock", true),
+        ("pastblock", false),
         ("coffee", false),
-    ] {
-        let lane = svg
-            .split(&format!(r#"<g class="field" data-field="{field}">"#))
-            .nth(1)
-            .unwrap_or_else(|| panic!("no {field} lane\n{svg}"));
-        let lane = &lane[..lane.find("</g>").unwrap()];
-        assert_eq!(
-            lane.contains(r#"<line class="point-fg moment""#),
-            moment,
-            "{field}: {lane}"
-        );
-        assert_eq!(
-            lane.contains(r#"<circle class="point-fg""#),
-            !moment,
-            "{field}: {lane}"
-        );
+    ];
+    for args in [&day[..], &now[..]] {
+        let svg = env.run(args);
+        let drawn = wanted.map(|(field, _)| {
+            let lane = svg
+                .split(&format!(r#"<g class="field" data-field="{field}">"#))
+                .nth(1)
+                .unwrap_or_else(|| panic!("{args:?}: no {field} lane\n{svg}"));
+            let lane = &lane[..lane.find("</g>").unwrap()];
+            let line = lane.contains(r#"<line class="point-fg moment""#);
+            let dot = lane.contains(r#"<circle class="point-fg""#);
+            assert_ne!(line, dot, "{args:?} {field}: {lane}");
+            (field, line)
+        });
+        assert_eq!(drawn, wanted, "{args:?}");
     }
 }
 

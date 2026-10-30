@@ -188,9 +188,13 @@ pub(crate) fn leading_edge_ms(entry: &Entry, occur_ms: i64) -> i64 {
 /// - **Switch**, and what a block-switch or point-switch switches to:
 ///   `regions` ([`switch_regions`]), drawn first so a block paints over
 ///   the region it interrupts.
+///
+/// `rows` is the oracle a moment's mark asks: the field's state at its
+/// instant, read from rows already in hand.
 pub(crate) fn render_field_visuals(
     entries: &[Entry],
     regions: &[SwitchRegion],
+    rows: &FieldStateRows,
     field: &str,
     spec: Option<&FieldSpec>,
     day_start_ms: i64,
@@ -274,10 +278,12 @@ pub(crate) fn render_field_visuals(
                                 .icon_for(entry.state.as_ref(), entry.data.as_ref())
                                 .is_some()
                         }),
-                        // A dotted line where the field is on at this
-                        // instant, a dot where it is not: an occur, or a
-                        // moment of `false`, TRACKED or IGNORED (da-2028s).
-                        moment: !is_inactive_state(entry.state.as_ref()),
+                        // A moment is a dotted line where the field holds an
+                        // active state at its instant, whatever the moment
+                        // says, and a dot where it does not (da-xo58u). An
+                        // occur is a dot.
+                        moment: entry.state.is_some()
+                            && !is_inactive_state(rows.at(occur_dt.utc, None).as_ref()),
                     });
                 }
             }
@@ -783,8 +789,15 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let regions = stub_regions(&entries, day_end);
-        let (blocks, points) =
-            render_field_visuals(&entries, &regions, "lunch", None, day_start, day_end);
+        let (blocks, points) = render_field_visuals(
+            &entries,
+            &regions,
+            &FieldStateRows::from_entries(&entries),
+            "lunch",
+            None,
+            day_start,
+            day_end,
+        );
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
         assert_eq!(
@@ -821,8 +834,15 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let regions = stub_regions(&entries, day_end);
-        let (blocks, _points) =
-            render_field_visuals(&entries, &regions, "sleep", None, day_start, day_end);
+        let (blocks, _points) = render_field_visuals(
+            &entries,
+            &regions,
+            &FieldStateRows::from_entries(&entries),
+            "sleep",
+            None,
+            day_start,
+            day_end,
+        );
         assert_eq!(blocks.len(), 1);
         assert_eq!(
             blocks[0].start_ms,
@@ -857,8 +877,15 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let regions = stub_regions(&entries, day_end);
-        let (blocks, points) =
-            render_field_visuals(&entries, &regions, "mood", None, day_start, day_end);
+        let (blocks, points) = render_field_visuals(
+            &entries,
+            &regions,
+            &FieldStateRows::from_entries(&entries),
+            "mood",
+            None,
+            day_start,
+            day_end,
+        );
         assert!(points.is_empty());
         // The region is drawn first, so the block paints over it.
         assert_eq!(blocks.len(), 2);
@@ -904,8 +931,15 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let regions = stub_regions(&entries, day_end);
-        let (blocks, points) =
-            render_field_visuals(&entries, &regions, "task", None, day_start, day_end);
+        let (blocks, points) = render_field_visuals(
+            &entries,
+            &regions,
+            &FieldStateRows::from_entries(&entries),
+            "task",
+            None,
+            day_start,
+            day_end,
+        );
         assert_eq!(points.len(), 1);
         assert_eq!(points[0].time_ms, occur.timestamp_millis());
         assert_eq!(points[0].state_label.as_deref(), Some("commit"));
@@ -948,8 +982,15 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let regions = stub_regions(&entries, day_end);
-        let (blocks, _points) =
-            render_field_visuals(&entries, &regions, "mood", None, day_start, day_end);
+        let (blocks, _points) = render_field_visuals(
+            &entries,
+            &regions,
+            &FieldStateRows::from_entries(&entries),
+            "mood",
+            None,
+            day_start,
+            day_end,
+        );
         // 3 blocks expected: the "groggy" block 8:30→9:00, the "focused"
         // region from its trailing edge 9:00→14:00, and the "tired" switch
         // region from 14:00→day_end.
@@ -994,8 +1035,15 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let regions = stub_regions(&entries, window_end);
-        let (blocks, _points) =
-            render_field_visuals(&entries, &regions, "mood", None, day_start, window_end);
+        let (blocks, _points) = render_field_visuals(
+            &entries,
+            &regions,
+            &FieldStateRows::from_entries(&entries),
+            "mood",
+            None,
+            day_start,
+            window_end,
+        );
         // The "groggy" block alone — no "focused" band at all.
         assert_eq!(blocks.len(), 1);
         assert!(
@@ -1053,8 +1101,15 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let regions = stub_regions(entries, day_end);
-        let (blocks, points) =
-            render_field_visuals(entries, &regions, "work", None, day_start, day_end);
+        let (blocks, points) = render_field_visuals(
+            entries,
+            &regions,
+            &FieldStateRows::from_entries(entries),
+            "work",
+            None,
+            day_start,
+            day_end,
+        );
         assert!(points.is_empty());
         blocks
     }
@@ -1182,8 +1237,15 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let regions = stub_regions(&entries, day_end);
-        let (blocks, points) =
-            render_field_visuals(&entries, &regions, "mood", None, day_start, day_end);
+        let (blocks, points) = render_field_visuals(
+            &entries,
+            &regions,
+            &FieldStateRows::from_entries(&entries),
+            "mood",
+            None,
+            day_start,
+            day_end,
+        );
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].state_label.as_deref(), Some("hungry"));

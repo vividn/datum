@@ -721,14 +721,12 @@ fn build_day_fields(
         entries_for_field.sort_by_key(occur_time_ms);
         let fallback_end_ms = day_end_ms.min(now_ms);
         let window = (fetch_start, day_end_utc + buffer);
-        let regions = switch_regions(
-            &FieldStateRows::load_between(db.conn(), &field, window.0, window.1)?,
-            window,
-            fallback_end_ms,
-        );
+        let rows = FieldStateRows::load_between(db.conn(), &field, window.0, window.1)?;
+        let regions = switch_regions(&rows, window, fallback_end_ms);
         let (mut blocks, mut points) = render_field_visuals(
             &entries_for_field,
             &regions,
+            &rows,
             &field,
             spec.as_ref(),
             day_start_ms,
@@ -742,14 +740,12 @@ fn build_day_fields(
             s.field == field && (sample_always || blocks.is_empty() && points.is_empty())
         }) {
             let made = sample_entries(s, day_start_ms, day_end_ms);
-            let regions = switch_regions(
-                &FieldStateRows::from_entries(&made),
-                window,
-                fallback_end_ms,
-            );
+            let rows = FieldStateRows::from_entries(&made);
+            let regions = switch_regions(&rows, window, fallback_end_ms);
             (blocks, points) = render_field_visuals(
                 &made,
                 &regions,
+                &rows,
                 &field,
                 spec.as_ref(),
                 day_start_ms,

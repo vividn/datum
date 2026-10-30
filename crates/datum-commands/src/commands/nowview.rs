@@ -590,14 +590,12 @@ pub(crate) fn build_dayview_fields(
         entries_for_field.sort_by_key(occur_time_ms);
         // da-ncoa: a state set before the fetch window is carried in from
         // `fetch_start`, so the band does not fall back to the field color.
-        let regions = switch_regions(
-            &FieldStateRows::load_between(db.conn(), &field, fetch_start, end)?,
-            (fetch_start, end),
-            open_end_ms,
-        );
+        let rows = FieldStateRows::load_between(db.conn(), &field, fetch_start, end)?;
+        let regions = switch_regions(&rows, (fetch_start, end), open_end_ms);
         let (mut blocks, mut points) = render_field_visuals(
             &entries_for_field,
             &regions,
+            &rows,
             &field,
             spec.as_ref(),
             day_start_ms,
@@ -1387,8 +1385,15 @@ mod tests {
         let regions = stub_regions(&entries, day_end);
         let (terminal, points) = render_field_visuals_terminal(&entries, &regions, "work", None);
         assert!(points.is_empty());
-        let (dayview, _) =
-            render_field_visuals(&entries, &regions, "work", None, day_start, day_end);
+        let (dayview, _) = render_field_visuals(
+            &entries,
+            &regions,
+            &FieldStateRows::from_entries(&entries),
+            "work",
+            None,
+            day_start,
+            day_end,
+        );
 
         let terminal_spans: Vec<(i64, i64)> =
             terminal.iter().map(|b| (b.start_ms, b.end_ms)).collect();
