@@ -1406,6 +1406,104 @@ fn a_peer_held_by_a_write_comes_back_for_the_change_itself() {
     eventually("a's walk reaching b", || b.has("walk"));
 }
 
+/// A write that takes `sync run`'s file in the middle of a session it
+/// serves ends the session as one given way to, as at its handshake
+/// (da-2l0ha): the dialer is told it was busy and records no failure.
+#[test]
+fn a_write_mid_session_is_given_way_to_and_fails_nobody() {
+    let (mut a, b) = paired();
+    // A second an op before a applies it: the write takes a's file
+    // meanwhile, past the handshake.
+    a.env = vec![("DATUM_SYNC_TEST_APPLY_DELAY_MS", "1000")];
+    let mut a_runs = a.serve(&["sync", "run"]);
+    let err = lines(a_runs.child.stderr.take().unwrap());
+    let until = |needle: &str| loop {
+        let line = err.recv_timeout(Duration::from_secs(10)).expect(needle);
+        if line.contains(needle) {
+            break;
+        }
+    };
+    until("is up");
+    b.ok(&["occur", "walk"]);
+    let syncing = b.cmd(&["sync"]).spawn().unwrap();
+    std::thread::sleep(Duration::from_secs(1));
+    let write = rusqlite::Connection::open(a.db()).unwrap();
+    write.execute_batch("BEGIN IMMEDIATE").unwrap();
+    until("gave way to a write");
+    let out = syncing.wait_with_output().unwrap();
+    let said = b.query("SELECT COUNT(*) FROM sync_peers WHERE last_error IS NOT NULL");
+    assert_eq!(said, "0", "{}", String::from_utf8_lossy(&out.stdout));
+
+    write.execute_batch("COMMIT").unwrap();
+    b.ok(&["sync"]);
+    assert!(a.has("walk"));
+}
+
+/// And one that takes the dialer's file: it gives way, telling the copy it
+/// dialed, which records no failure either (da-2l0ha).
+#[test]
+fn a_dial_a_write_cuts_short_tells_its_peer_it_was_busy() {
+    let (a, mut b) = paired();
+    let _a_runs = a.serve(&["sync", "run"]);
+    a.ok(&["occur", "walk"]);
+    b.env = vec![("DATUM_SYNC_TEST_APPLY_DELAY_MS", "1000")];
+    let syncing = b.cmd(&["sync"]).spawn().unwrap();
+    std::thread::sleep(Duration::from_secs(1));
+    let write = rusqlite::Connection::open(b.db()).unwrap();
+    write.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let out = syncing.wait_with_output().unwrap();
+    write.execute_batch("COMMIT").unwrap();
+    let said = a.query("SELECT COUNT(*) FROM sync_peers WHERE last_error IS NOT NULL");
+    assert_eq!(
+        said,
+        "0",
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        a.ok(&["sync", "status"])
+    );
+    b.ok(&["sync"]);
+    assert!(b.has("walk"));
+}
+
+/// A session's verify hashes on a connection of its own, which waits for a
+/// write as the session's does: `sync run`'s quarter second, not 5 s
+/// (da-2l0ha), so a write that takes the file under it holds it no longer.
+#[test]
+fn a_verify_under_a_write_waits_as_its_session_does() {
+    let (mut a, b) = paired();
+    // a's holds of the write lock said, and a second before it hashes.
+    a.env = vec![
+        ("DATUM_SYNC_LONG_HOLD_MS", "0"),
+        ("DATUM_SYNC_TEST_VERIFY_DELAY_S", "1"),
+    ];
+    let mut a_runs = a.serve(&["sync", "run"]);
+    let err = lines(a_runs.child.stderr.take().unwrap());
+    let until = |needle: &str| loop {
+        let line = err.recv_timeout(Duration::from_secs(10)).expect(needle);
+        if line.contains(needle) {
+            break;
+        }
+    };
+    until("is up");
+    // A change, so the verify has a row's hash to keep.
+    b.ok(&["occur", "walk"]);
+    let syncing = b.cmd(&["sync"]).spawn().unwrap();
+    // Applied: the write takes a's file before its verify keeps the hash.
+    until("entries");
+    let write = rusqlite::Connection::open(a.db()).unwrap();
+    write.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let start = Instant::now();
+    let out = syncing.wait_with_output().unwrap();
+    let took = start.elapsed();
+    write.execute_batch("COMMIT").unwrap();
+    let out = String::from_utf8_lossy(&out.stdout);
+    assert!(out.contains("verify ok"), "{out}");
+    assert!(
+        took < Duration::from_secs(4),
+        "b's sync ended {took:?} after the write"
+    );
+}
+
 /// Each line `stream` prints, as it prints it.
 fn lines(stream: impl Read + Send + 'static) -> std::sync::mpsc::Receiver<String> {
     let (tx, rx) = std::sync::mpsc::channel();

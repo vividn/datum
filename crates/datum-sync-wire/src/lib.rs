@@ -213,6 +213,13 @@ pub trait Store {
     fn busy_why(&self) -> &'static str {
         BUSY_WHY
     }
+    /// Whether `e`, which ended a session past its handshake, is a write
+    /// holding this copy's file. The session gives way to it as a handshake
+    /// does: the peer is told it was busy, and neither side records a
+    /// failure (da-2l0ha).
+    fn gives_way(&self, _e: &anyhow::Error) -> bool {
+        false
+    }
     /// Whether a dial is refused as busy before it connects: while this copy
     /// is [`applying`](Store::applying), unless its dials wait a turn of
     /// their own first.
@@ -1433,6 +1440,10 @@ async fn session(
     rep.ends = ends;
     rep.sums = sums;
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
+    let gave = done.as_ref().is_err_and(|e| store.gives_way(e));
+    if gave {
+        end(&mut s, &mut r, CLOSED_BUSY);
+    }
     drop(carried);
     if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
         rep.left = Some((old, new));
@@ -1447,10 +1458,20 @@ async fn session(
     match (&using, keeps && done.is_ok()) {
         (Some(_), _) => {}
         (None, true) => keep(ep, &conn),
-        (None, false) => conn.close(0u32.into(), b"done"),
+        (None, false) if !gave => conn.close(0u32.into(), b"done"),
+        (None, false) => {}
     }
     match done {
         Ok(()) => Ok(rep),
+        Err(e) if gave => {
+            let why = format!("{} ({})", rep.label, short(&rep.id));
+            Err(e.context(Failed(Failure::Refused(Why::Busy), why)))
+        }
+        // The peer gave way to a write holding its file.
+        Err(e) if closed_busy(&e) => {
+            let why = format!("{}: {e:#}", rep.label);
+            Err(Failed(Failure::Refused(Why::Busy), why).into())
+        }
         Err(e) => Err(Lost(rep, e).into()),
     }
 }
@@ -1941,6 +1962,18 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Res
         Err(e) if closed_busy(&e) => {
             let why = format!("{}: {e:#}", rep.label);
             return Err(Failed(Failure::Refused(Why::Busy), why).into());
+        }
+        // As the dialer does, on a kept connection its stream alone.
+        Err(e) if store.gives_way(&e) => {
+            match using {
+                Some(_) => {
+                    let _ = s.reset(RESET_BUSY);
+                    let _ = r.stop(RESET_BUSY);
+                }
+                None => conn.close(0u32.into(), CLOSED_BUSY),
+            }
+            let why = format!("{} ({})", rep.label, short(&id));
+            return Err(e.context(Failed(Failure::Refused(Why::Busy), why)));
         }
         Err(e) => Err(Lost(rep, e).into()),
     };

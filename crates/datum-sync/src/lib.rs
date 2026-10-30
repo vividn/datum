@@ -346,6 +346,10 @@ impl Store for DbStore<'_> {
         gate.is_some_and(|f| matches!(f.try_lock_shared(), Err(TryLockError::WouldBlock)))
     }
 
+    fn gives_way(&self, e: &anyhow::Error) -> bool {
+        datum_core::db::busy(e.as_ref())
+    }
+
     /// A lock on `<db>.applying`, so the sessions of every process take
     /// turns. Where the filesystem has no locks, none is held.
     async fn apply_gate(&self) -> Result<impl Sized> {
@@ -419,9 +423,15 @@ impl Store for DbStore<'_> {
 
     /// Hashed on a connection of its own, off the session's thread, which
     /// sends meanwhile: a big history hashes for minutes (da-0mwws). It
-    /// writes, to keep the summed hash's parts (da-9ln3s).
+    /// writes, to keep the summed hash's parts (da-9ln3s), waiting for a
+    /// lock as the session's connection does: `run`'s [`YIELD`], not 5 s
+    /// (da-2l0ha).
     async fn verify(&self, peer: &str, sums: bool) -> Result<String> {
         let (me, peer) = (self.0.sync_endpoint_id()?, peer.to_string());
+        let wait: u64 = self
+            .0
+            .conn()
+            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))?;
         let hash = move |db: &Db| -> Result<String> {
             // Test knob: a slow verify, holding its thread as a big one does.
             let delay = env("DATUM_SYNC_TEST_VERIFY_DELAY_S").unwrap_or(0);
@@ -433,7 +443,12 @@ impl Store for DbStore<'_> {
         };
         match self.0.path().and_then(|p| p.to_str()).map(String::from) {
             Some(path) => {
-                tokio::task::spawn_blocking(move || hash(&Db::open_unmigrated(&path)?)).await?
+                tokio::task::spawn_blocking(move || {
+                    let db = Db::open_unmigrated(&path)?;
+                    db.conn().busy_timeout(Duration::from_millis(wait))?;
+                    hash(&db)
+                })
+                .await?
             }
             None => hash(self.0),
         }
