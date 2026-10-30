@@ -409,6 +409,7 @@
 		ungrip();
 		drop();
 		zoom = null;
+		waited = null;
 		reach = null;
 		centre = null;
 		ask();
@@ -1209,7 +1210,8 @@
 	 */
 	function shiftOf(z: NonNullable<typeof zoom>): number {
 		const shift = z.shift ?? 0;
-		if (z.at === undefined || !axis) return shift;
+		// On a picture of another window than `minutes`, only a window on now still reads it: the terms that differ cancel.
+		if (z.at === undefined || !axis || (waited && offNow)) return shift;
 		const home = nowMs() - (minutes / z.scale) * 30_000;
 		return Math.max(shift, (middleOf(middle) - z.at - (home - z.at) * z.scale) / msPerPx(axis));
 	}
@@ -1298,14 +1300,24 @@
 	/** How far apart they were along the axis when the pinch began, and where their middle was. */
 	let apart = 0;
 	let middleFrom = 0;
+	/**
+	 * What fingers that landed while a gesture let go of waits for its picture
+	 * have done (da-vollq, vividn: «You should be able to keep zooming in/out
+	 * as much as you like»): a scale `raw` about `at` along the axis, slid `by`,
+	 * which datum's picture carries on from as it lands (`carry`). It can land
+	 * only at a lift (#lib/hover.ts), so meanwhile the picture let go of
+	 * follows them, from `scale`, `shift` and `anchor`, where it stood and
+	 * where on screen its origin was. One finger is a slide: `raw` stays 1.
+	 */
+	let waited: { at: number; raw: number; by: number; scale: number; shift: number; anchor: number } | null = null;
 
 	/**
 	 * Two fingers along the axis: how far apart, never under a fingertip
 	 * (`NOW_PX`), so two fingers side by side across it scale by nothing
-	 * wild — and their middle.
+	 * wild — and their middle. One finger is both.
 	 */
 	const pair = () => {
-		const [a, b] = [...fingers.values()].map((f) => along(f.x, f.y));
+		const [a, b = a] = [...fingers.values()].map((f) => along(f.x, f.y));
 		return { spread: Math.max(Math.abs(a - b), NOW_PX), mid: (a + b) / 2 };
 	};
 
@@ -1334,11 +1346,13 @@
 			land();
 			caught = true;
 		}
-		// A gesture let go of is still on screen until its picture comes.
-		if (zoom?.held) return;
+		// A gesture let go of is still on screen until its picture comes: a
+		// mouse waits for it, and fingers go on from it.
+		if (zoom?.held && event.pointerType === 'mouse') return;
 		listen(true);
 		if (event.pointerType === 'mouse') return begin(event);
 		fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+		if (zoom?.held) return waitOn(zoom);
 		if (fingers.size === 1) return begin(event);
 		// A second finger is a pinch, and the first finger's gesture was
 		// never one: whatever it had become is dropped as the scale starts,
@@ -1351,8 +1365,39 @@
 		drop();
 	}
 
+	/** A finger landed or left on a picture let go of: the fingers are measured from here. */
+	function waitOn(z: NonNullable<typeof zoom>): void {
+		({ spread: apart, mid: middleFrom } = pair());
+		if (waited) return;
+		const box = svgEl()?.getBoundingClientRect();
+		const anchor = (box ? (axis?.y ? box.y : box.x) : 0) + z.origin * z.scale;
+		waited = { at: middleFrom, raw: 1, by: 0, scale: z.scale, shift: shiftOf(z), anchor };
+	}
+
+	/** The fingers moved on a picture let go of: it follows them, and `waited` keeps what they did. */
+	function waitedMove(z: NonNullable<typeof zoom>, w: NonNullable<typeof waited>): void {
+		const { spread, mid } = pair();
+		const by = mid + (w.at + w.by - middleFrom) * (spread / apart) - w.at;
+		const raw = w.raw * (spread / apart);
+		[apart, middleFrom] = [spread, mid];
+		waited = { ...w, raw, by };
+		const scale = shows(raw);
+		zoom = { ...z, scale: w.scale * scale, shift: w.shift + w.at + by + (w.anchor - w.at) * scale - w.anchor };
+	}
+
+	/** The picture came: what the fingers did in the wait is a gesture on it, let go of unless they are still down. */
+	function carry({ at, raw, by }: NonNullable<typeof waited>): void {
+		const down = fingers.size >= 2;
+		if ((!down && raw === 1 && !by) || !start(at)) return;
+		zoom = { ...zoom!, raw, scale: shows(raw), shift: by };
+		if (!down) return commit();
+		const { spread, mid } = pair();
+		[apart, middleFrom] = [spread / raw, mid];
+	}
+
 	function onPointerMove(event: PointerEvent): void {
 		if (fingers.has(event.pointerId)) fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+		if (zoom?.held && waited && fingers.has(event.pointerId)) waitedMove(zoom, waited);
 		if (zoom && !zoom.held && fingers.size === 2) {
 			const { spread, mid } = pair();
 			const raw = spread / apart;
@@ -1368,6 +1413,7 @@
 
 	function onPointerUp(event: PointerEvent): void {
 		fingers.delete(event.pointerId);
+		if (zoom?.held && waited && fingers.size) waitOn(zoom);
 		if (zoom && fingers.size < 2) commit();
 		else finish(event);
 		if (fingers.size === 0 && !press) listen(false);
@@ -1375,6 +1421,7 @@
 
 	function onPointerCancel(event: PointerEvent): void {
 		fingers.delete(event.pointerId);
+		if (zoom?.held && waited && fingers.size) waitOn(zoom);
 		if (zoom && fingers.size < 2) commit();
 		else drop();
 		if (fingers.size === 0) listen(false);
@@ -1387,7 +1434,7 @@
 	 * same: once it has committed, the move is ours.
 	 */
 	function onTouchMove(event: TouchEvent): void {
-		if (fingers.size >= 2 || mode !== 'press') event.preventDefault();
+		if (fingers.size >= 2 || mode !== 'press' || waited) event.preventDefault();
 	}
 
 	// ── ctrl+wheel ─────────────────────────────────────────────────────
@@ -1675,9 +1722,12 @@
 			zoom = null;
 			return void tick().then(() => {
 				place();
-				const turned = owed;
+				const [fingered, turned] = [waited, owed];
+				waited = null;
 				owed = 0;
-				if (turned) turn(turned);
+				if (fingered) carry(fingered);
+				if (zoom?.held) owed = turned;
+				else if (turned) turn(turned);
 			});
 		}
 		// Read unmoved, then slid by `rest` alone: a redraw mid-gesture must

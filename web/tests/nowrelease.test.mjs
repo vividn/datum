@@ -448,6 +448,142 @@ describe('a release is seamless', () => {
 		);
 	});
 
+	// da-vollq, vividn on da-wd6h5: «You should be able to keep zooming in/out
+	// as much as you like». A pinch that lands while the last pinch's picture
+	// is on its way: the picture follows it under the fingers, and its release
+	// asks for the window the two pinches made, every mark standing where the
+	// fingers left it through both pictures. The answer is the test's to let
+	// go: after the lift, or while the fingers are still down, when the picture
+	// waits for their lift (#lib/hover.ts).
+	for (const [name, whileDown, from, to, orientation] of [
+		['lifted before the answer', false, 80, 136],
+		['still down as the answer comes', true, 80, 136],
+		['out on now', false, 136, 80],
+		['with time running down', false, 80, 136, 'vertical']
+	])
+		test(`a pinch begun while the last one's picture is on its way, ${name}: nothing of it is lost`, async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					// A mark every two minutes where the fingers close in on a window of ten.
+					for (let m = 8; m <= 22; m += 2) await app.runLine(`occur sip -t -${m}`);
+					const box = await seeded(app);
+					await page.evaluate(() => {
+						window.__answering = 0;
+						const previous = window.datum.setRunner(async (argv, ...rest) => {
+							if (argv[0] !== 'nowview') return previous(argv, ...rest);
+							window.__answering += 1;
+							await window.__gate;
+							return previous(argv, ...rest).finally(() => (window.__answering -= 1));
+						});
+					});
+					const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+					const both = (apart) =>
+						orientation
+							? [
+									{ id: 1, x, y: y - apart / 2 },
+									{ id: 2, x, y: y + apart / 2 }
+								]
+							: [
+									{ id: 1, x: x - apart / 2, y },
+									{ id: 2, x: x + apart / 2, y }
+								];
+					const pinch = steps(6, (t) => both(from + t * (to - from)));
+					const zoomed = () => page.locator(BAND).evaluate((b) => Number(b.style.getPropertyValue('--zoom')));
+					const open = () => page.evaluate(() => window.__open?.());
+					// The first pinch's answers wait at the gate, shut before its lift.
+					await touch(page, pinch, () =>
+						page.evaluate(() => {
+							window.__gate = new Promise((r) => (window.__open = r));
+						})
+					);
+					await page.waitForFunction(() => window.__answering > 0);
+					const held = await zoomed();
+					const further = (a, b) => (from < to ? a > b * 1.4 : a < b / 1.4);
+					assert.ok(further(held, 1), `the first pinch is not held: ${held}`);
+					await page.evaluate(() => (window.__datumSeen = []));
+					const followed = [];
+					await touch(
+						page,
+						pinch,
+						async () => {
+							assert.ok(further(followed.at(-1), held), `the picture did not follow the fingers: ${held} to ${followed}`);
+							await record(page);
+							if (!whileDown) return;
+							await open();
+							await page.waitForFunction(() => window.__answering === 0);
+							// A frame for it to land in, were anything to let it land.
+							await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+						},
+						async () => followed.push(await zoomed())
+					);
+					await open();
+					const asked = () => page.evaluate(() => (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview').map((a) => a[a.indexOf('--history') + 1]));
+					await page.waitForFunction(() => window.__answering === 0 && (window.__datumSeen ?? []).some((a) => a[0] === 'nowview'));
+					await page.waitForFunction((band) => document.querySelector(band).style.getPropertyValue('--zoom') === '1', BAND);
+					await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+					const frames = await page.evaluate(() => {
+						window.__stopFrames = true;
+						return window.__frames;
+					});
+					// 30m scaled twice by 1.7, and no second answer lost.
+					const last = (await asked()).at(-1);
+					const m = last.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+					const minutes = Number(m?.[1] ?? 0) * 60 + Number(m?.[2] ?? 0) + Number(m?.[3] ?? 0) / 60;
+					const twice = 30 * (from / to) ** 2;
+					assert.ok(minutes > twice * 0.8 && minutes < twice * 1.2, `the second pinch asked for ${last}: ${await asked()}`);
+					assert.deepEqual(seams(frames), []);
+					assert.deepEqual(app.errors, []);
+				},
+				{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m', ...(orientation && { orientation }) })) }
+			);
+		});
+
+	// A finger on its own in the same wait slides the band, and the slide is a
+	// pan of the picture that comes.
+	test('a finger drawn along the band while a pinch waits for its picture: the window goes with it', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				for (let m = 8; m <= 22; m += 2) await app.runLine(`occur sip -t -${m}`);
+				const box = await seeded(app);
+				await page.evaluate(() => {
+					const previous = window.datum.setRunner(async (argv, ...rest) => {
+						if (argv[0] === 'nowview') await window.__gate;
+						return previous(argv, ...rest);
+					});
+				});
+				const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+				const pinch = steps(6, (t) => [
+					{ id: 1, x: x - (80 + t * 56) / 2, y },
+					{ id: 2, x: x + (80 + t * 56) / 2, y }
+				]);
+				await touch(page, pinch, () =>
+					page.evaluate(() => {
+						window.__gate = new Promise((r) => (window.__open = r));
+					})
+				);
+				const slide = () => page.locator(`${BAND} .slide`).evaluate((s) => parseFloat(s.style.translate));
+				const before = await slide();
+				await touch(page, steps(6, (t) => [{ id: 3, x: x + t * 60, y }]), async () => {
+					await page.waitForTimeout(150);
+					assert.ok(Math.abs((await slide()) - before - 60) < 1, `the band slid ${(await slide()) - before}px under a 60px finger`);
+					await record(page);
+				});
+				await page.evaluate(() => window.__open());
+				await page.waitForFunction((band) => document.querySelector(band).style.getPropertyValue('--zoom') === '1', BAND);
+				await page.evaluate(() => new Promise((r) => setTimeout(r, 500)));
+				const frames = await page.evaluate(() => {
+					window.__stopFrames = true;
+					return window.__frames;
+				});
+				assert.deepEqual(seams(frames), []);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
 	// vremya on #1280: a hold that never lets go is worse than a flash. The
 	// window moved from outside while the picture is held (the session that
 	// carried the pinch's window forgotten): the hold lets go, and the band
