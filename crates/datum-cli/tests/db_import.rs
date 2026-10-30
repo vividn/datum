@@ -1669,3 +1669,170 @@ fn import_keeps_every_other_id_structure_beside_create_time() {
         );
     }
 }
+
+/// `check` on the db at `dir`/t.db finds nothing.
+fn assert_check_clean(dir: &tempfile::TempDir, label: &str) {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env("DATUM_DB", dir.path().join("t.db"))
+        .env("DATUM_HOME", dir.path())
+        .env("DATUM_CONFIG_HOME", dir.path())
+        .env("NO_COLOR", "1")
+        .arg("check")
+        .output()
+        .unwrap();
+    let printed = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && printed.contains("No consistency issues found"),
+        "{label}: {printed}"
+    );
+}
+
+/// A doc at `07:00` with `kind`, slugged by `id_structure`.
+fn coffee_doc(id: &str, human_id: &str, kind: &str, id_structure: &str) -> serde_json::Value {
+    serde_json::json!({
+        "_id": id,
+        "data": {
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee",
+            "kind": kind
+        },
+        "meta": {
+            "humanId": human_id,
+            "createTime": {"utc": "2025-01-08T09:30:00.500Z", "o": 1, "tz": "Europe/Berlin"},
+            "idStructure": id_structure
+        }
+    })
+}
+
+/// da-pgns7: the slug is what the stored structure renders, whatever else
+/// the doc holds, so an occurTime doc with a create-time id keeps the id v2
+/// gave it, `check` agrees, an edit moves nothing and a re-import is a
+/// duplicate.
+#[test]
+fn a_docs_slug_is_what_its_id_structure_renders() {
+    for (tmpl, slug) in [
+        ("%field%:%?createTime%c", "coffee:2025-01-08T09:30:00.500Zc"),
+        (
+            "%occurTime%__%kind%",
+            "coffee:2025-01-08T07:00:00.000Z__flat",
+        ),
+        ("%kind%_%field%_x", "coffee:flat_coffee_x"),
+    ] {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = datum_core::db::Db::open(dir.path().join("t.db").to_str().unwrap()).unwrap();
+        let backup = write_backup(serde_json::json!([coffee_doc(slug, "abc", "flat", tmpl)]));
+        run_cli(&["db", "v2import", backup.path().to_str().unwrap()], &db).unwrap();
+        assert_eq!(slugs(&db), [slug], "{tmpl}");
+        assert_check_clean(&dir, tmpl);
+
+        run_cli(&["update", "abc", "milk=oat"], &db).unwrap();
+        assert_eq!(slugs(&db), [slug], "{tmpl}: an edit keeps it");
+        assert_check_clean(&dir, tmpl);
+    }
+
+    let db = fresh_db();
+    let backup = write_backup(serde_json::json!([coffee_doc(
+        "coffee:2025-01-08T09:30:00.500Zc",
+        "abc",
+        "flat",
+        "%field%:%?createTime%c",
+    )]));
+    assert!(skip_log_lines(&backup, &db).is_empty());
+    let again = skip_log_lines(&backup, &db);
+    assert_eq!(again.len(), 1);
+    assert!(again[0].starts_with("duplicate\t"), "{again:?}");
+}
+
+/// Two docs of one instant apart only by their structure's key were one
+/// slug and a skipped doc, slugged by the instant alone.
+#[test]
+fn docs_of_one_instant_their_structure_tells_apart_are_both_kept() {
+    let db = fresh_db();
+    let tmpl = "%occurTime%__%kind%";
+    let backup = write_backup(serde_json::json!([
+        coffee_doc("a", "abc", "flat", tmpl),
+        coffee_doc("b", "abd", "long", tmpl),
+    ]));
+    assert_eq!(skip_log_lines(&backup, &db), Vec::<String>::new());
+    assert_eq!(
+        slugs(&db),
+        [
+            "coffee:2025-01-08T07:00:00.000Z__flat",
+            "coffee:2025-01-08T07:00:00.000Z__long",
+        ]
+    );
+}
+
+/// A structure v3 cannot slug a doc by loses no doc and aborts no import: it
+/// is not stored, the original stays on the marker, the doc keeps its default
+/// slug, and `check` has nothing to say. So with one rendering to nothing
+/// (v2 reads `%?humanId%` from its meta), and the second of two rendering
+/// alike.
+#[test]
+fn a_structure_a_doc_cannot_slug_by_is_not_stored() {
+    let at = "coffee:2025-01-08T07:00:00.000Z";
+    let tmpl = "%?humanId%";
+    let dir = tempfile::TempDir::new().unwrap();
+    let db = datum_core::db::Db::open(dir.path().join("t.db").to_str().unwrap()).unwrap();
+    let backup = write_backup(serde_json::json!([coffee_doc("a", "abc", "flat", tmpl)]));
+    assert_eq!(skip_log_lines(&backup, &db), Vec::<String>::new());
+    assert_eq!(slugs(&db), [at]);
+    let e = &datum_core::test_util::logged_all(&db)[0];
+    assert_eq!(e.id_structure, None);
+    assert_eq!(
+        e.extra_metadata.as_ref().unwrap()["_import"]["original_id_structure"],
+        tmpl,
+    );
+    assert_check_clean(&dir, tmpl);
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let db = datum_core::db::Db::open(dir.path().join("t.db").to_str().unwrap()).unwrap();
+    let backup = write_backup(serde_json::json!([
+        coffee_doc("a", "abc", "flat", "%kind%"),
+        coffee_doc("b", "abd", "flat", "%kind%"),
+    ]));
+    // Two docs, one fact: the second is the first's duplicate, as ever. Apart
+    // in a key the structure does not name, both stay.
+    assert_eq!(skip_log_lines(&backup, &db).len(), 1);
+    assert_eq!(slugs(&db), ["coffee:flat"]);
+    assert_check_clean(&dir, "duplicate");
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let db = datum_core::db::Db::open(dir.path().join("t.db").to_str().unwrap()).unwrap();
+    let mut second = coffee_doc("b", "abd", "flat", "%kind%");
+    second["data"]["milk"] = "oat".into();
+    let backup = write_backup(serde_json::json!([
+        coffee_doc("a", "abc", "flat", "%kind%"),
+        second,
+    ]));
+    assert_eq!(skip_log_lines(&backup, &db), Vec::<String>::new());
+    assert_eq!(slugs(&db), [at, "coffee:flat"]);
+    assert_check_clean(&dir, "rendered alike");
+}
+
+/// A `::` no id may hold, which only a delimiter other than `:` leaves
+/// uncollapsed, costs that doc its structure and not the whole import.
+#[test]
+fn a_structure_rendering_an_id_no_id_may_be_does_not_abort_the_import() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let backup = write_backup(serde_json::json!([coffee_doc(
+        "a",
+        "abc",
+        "flat",
+        "%kind%::x"
+    )]));
+    let datum = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", dir.path().join("t.db"))
+            .env("DATUM_HOME", dir.path())
+            .env("DATUM_CONFIG_HOME", dir.path())
+            .env("DATUM_ID_DELIMITER", "/")
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let out = datum(&["db", "v2import", backup.path().to_str().unwrap()]);
+    assert!(out.status.success(), "{out:?}");
+    let db = datum_core::db::Db::open(dir.path().join("t.db").to_str().unwrap()).unwrap();
+    assert_eq!(slugs(&db), ["coffee:2025-01-08T07:00:00.000Z"]);
+}

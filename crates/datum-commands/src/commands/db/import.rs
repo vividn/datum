@@ -7,15 +7,18 @@
 //! path; source backups are self-consistent so this is fine, with a manual
 //! `datum conflicts list` recommended post-import.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result};
 use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome, IGNORED_STATE_VALUE},
     derive_verb,
     entry::{build_slug, Entry, Verb, V2_IMPORT_SOURCE},
-    field_spec::{strip_create_time_literal, strip_field_prefix},
-    ids::Hid,
+    field_spec::{
+        interpolate, strip_create_time_literal, strip_field_prefix, InterpolationContext,
+    },
+    ids::{Hid, Slug},
+    slug::validate_slug,
     time::{DatumTime, Zone},
 };
 use datum_parse::entry_id::DATE_ONLY_PRECISION;
@@ -60,6 +63,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     // when the source had no humanId and the entry kept its auto-generated
     // hid. Drives the pre-flight collision check below.
     let mut source_human_ids: Vec<Option<String>> = Vec::with_capacity(docs.len());
+    // The slugs the docs' id structures have rendered so far.
+    let mut rendered: HashSet<String> = HashSet::new();
+    let delim = crate::config::resolve_id_delimiter(None);
     // (reason, id, detail) — id is the source `_id` (or a synthetic
     // <missing-_id at #N> if absent). detail is an optional explanation
     // (the derive_verb error message for `invalid-shape`).
@@ -246,15 +252,6 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         let original = meta["idStructure"].as_str();
         let id_structure =
             original.map(|o| strip_create_time_literal(strip_field_prefix(o).unwrap_or(o)));
-        if let Some(orig) = original.filter(|&o| id_structure.as_deref() != Some(o)) {
-            import_marker.insert(
-                "original_id_structure".to_string(),
-                JsonValue::String(orig.to_string()),
-            );
-        }
-        let mut metadata_obj = serde_json::Map::new();
-        metadata_obj.insert("_import".to_string(), JsonValue::Object(import_marker));
-        let extra_metadata = Some(JsonValue::Object(metadata_obj));
 
         let created_at = create_time.map(|t| t.utc).unwrap_or_else(chrono::Utc::now);
         // Prefer source modifyTime; fall back to createTime so imported rows
@@ -291,7 +288,6 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // empty-string pre-2026-06-02).
         entry.raw_input = None;
         entry.alias_chain = None;
-        entry.extra_metadata = extra_metadata;
         // Preserve the source doc's `meta.humanId` as our `hid` so the same
         // doc is addressable by the same handle in both systems during a
         // parallel-run migration. Treat absent / empty as "no source hid"
@@ -305,6 +301,30 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         if let Some(ref h) = source_human_id {
             entry.hid = Hid::from(h.as_str());
         }
+        // The slug is what the stored structure renders, as a logged entry's
+        // is (da-pgns7), so `check` and a first edit read back the id it has.
+        // One it cannot slug this doc by is not stored and the doc keeps its
+        // default slug, so no doc is lost to it: v2 reads `%?humanId%` from
+        // its meta and v3 finds nothing, and two docs may render one slug.
+        if let Some(tmpl) = entry.id_structure.as_deref() {
+            let ctx = InterpolationContext::from_entry(&entry);
+            let body = interpolate(tmpl, &ctx, &delim);
+            let slug = format!("{}:{body}", entry.field);
+            if !body.is_empty() && validate_slug(&slug).is_ok() && rendered.insert(slug.clone()) {
+                entry.slug = Slug(slug);
+            } else {
+                entry.id_structure = None;
+            }
+        }
+        if let Some(orig) = original.filter(|&o| entry.id_structure.as_deref() != Some(o)) {
+            import_marker.insert(
+                "original_id_structure".to_string(),
+                JsonValue::String(orig.to_string()),
+            );
+        }
+        let mut metadata_obj = serde_json::Map::new();
+        metadata_obj.insert("_import".to_string(), JsonValue::Object(import_marker));
+        entry.extra_metadata = Some(JsonValue::Object(metadata_obj));
         // Recompute hash after overriding columns that participate in it.
         // (hid is not part of content_hash; recompute remains correct.)
         entry.content_hash = entry.expected_content_hash();
