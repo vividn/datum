@@ -320,7 +320,14 @@ async function open(): Promise<Map<string, Handle>> {
 	const handles = new Map<string, Handle>();
 	gone.clear();
 	for (const db of databases.filter((db) => !DATABASES.includes(db))) {
-		if (await dir.getFileHandle(`${db}.db`).then(() => true, () => false)) continue;
+		const here = await dir.getFileHandle(`${db}.db`).then(
+			() => true,
+			(e: { name?: string }) => {
+				if (e?.name !== 'NotFoundError') throw e;
+				return false;
+			}
+		);
+		if (here) continue;
 		const marker = await dir.getFileHandle(movedFile(db)).catch(() => null);
 		if (!marker) continue;
 		if (Date.now() - Number(await (await marker.getFile()).text()) < MOVED_MS) gone.add(db);
