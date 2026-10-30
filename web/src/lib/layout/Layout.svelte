@@ -554,7 +554,7 @@
 	}
 	.maximized :global(section.big) {
 		position: absolute;
-		inset: 0;
+		inset: 0 0 var(--strip-rise, 0px);
 		background: var(--ground);
 	}
 	.maximized :global([data-under]) {

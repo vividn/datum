@@ -1402,13 +1402,19 @@ describe('folded, a command still answers', () => {
 		}
 	});
 
-	const marks = (page) => page.locator(`${BAR} .marks`);
+	const marks = (page) => page.locator(`${BAR} .reopen .action`);
+	const LINE_OF_TWO = 'update alfa n=1 , switch mood happy';
 
 	/** What is left to type in, to the pixel it is drawn at. */
 	const boxWidth = (page) =>
 		page.locator(`${BAR} input`).evaluate((el) => el.getBoundingClientRect().width);
 
-	test('its ACTION words stand at the bottom of the row, over by the ❯, in the CLI’s own colours, and fade', async () => {
+	// vividn, 2026-10-30: «let's put it on the far right, and have it
+	// protruding into the swipe space. make it wide and tall enough for the
+	// ACTION verb to appear in there, and put the ACTION verb there after
+	// entering a command, that invites the user to pull it open to see»
+	// (da-k5kwu).
+	test('the ACTION word stands in the tab in the CLI’s own color, and fades', async () => {
 		const AT = todayAt(12, 0);
 		await withApp(async (app) => {
 			const { page } = app;
@@ -1417,86 +1423,16 @@ describe('folded, a command still answers', () => {
 			await page.clock.runFor(200);
 			await app.idle();
 			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the bar was not folded');
+			assert.equal(await marks(page).count(), 0, 'a word with nothing logged');
 
-			// NOT declared first: the clock is held, and `track` would stamp
-			// its own document at the very instant `occur` wants. Since
-			// da-gvcen a first log is ONE document — it declares its field in
-			// its own `following_state` — so this is the single-document
-			// case, and what is asserted is that the words it DOES say are
-			// the CLI's own, read off the scrollback of the same run.
 			await app.submit('occur coffee');
 			await marks(page).waitFor();
-			const words = await page.locator(`${BAR} .marks .action`).allInnerTexts();
-			// The CLI's own action words, in the CLI's order — read off the
-			// documents the very same run drew in the scrollback, so nothing
-			// here is a word this file made up and nothing is run twice.
-			assert.ok(words.length > 0, 'the folded bar said nothing about a CREATE');
-			// What each command did, the title of each label (da-hxjrk).
-			assert.deepEqual(words, await page.locator('.cli .doc .action').evaluateAll((els) => els.map((el) => el.title)));
-			// IN THE BOTTOM OF THE SECTION, AND OVER BY THE `❯`. vividn asked
-			// first for the right of the row ("show all the ACTION words on the
-			// right side"), then for the padding under it ("move the ACTION
-			// results in the padding underneath the input"), and then, seeing
-			// that on a phone, 2026-09-18: "Center the text vertically in the
-			// input section. For the output ACTION items when the output
-			// section is hidden. but them still in bottom part like this, but
-			// over by the >. Over on the right side they are hidden."
-			//
-			// So the row no longer gives up a strip's height to them — it is
-			// centred in the whole section — and the words OVERLAY the bottom
-			// of it, which they can because they begin at the `❯` and the box's
-			// own text begins after it. The claims are therefore where they
-			// END (the section's floor), which half they are in (the bottom),
-			// and where they START (at the `❯`, not at the right edge).
-			const where = await page.evaluate(() => {
-				const box = (s) => document.querySelector(s).getBoundingClientRect();
-				return {
-					marks: box('.prompt-bar .marks'),
-					field: box('.prompt-bar input'),
-					caret: box('.prompt-bar .line > .prompt'),
-					clock: box('.prompt-bar .section.input .stamp'),
-					section: box('.prompt-bar .section.input'),
-					bar: box('.prompt-bar')
-				};
-			});
-			assert.ok(
-				Math.abs(where.marks.bottom - where.section.bottom) <= 1,
-				`the words end at ${where.marks.bottom}, the input section at ${where.section.bottom}`
-			);
-			const middle = where.section.top + where.section.height / 2;
-			assert.ok(
-				where.marks.top >= middle,
-				`the words start at ${where.marks.top}, above the section's middle at ${middle}`
-			);
-			// Over by the `❯`: at it, not at the right edge and not back at the
-			// clock. Within a character of the `❯`'s own left edge.
-			assert.ok(
-				Math.abs(where.marks.left - where.caret.left) <= 12,
-				`the words start at ${where.marks.left}, the ❯ at ${where.caret.left}`
-			);
-			assert.ok(
-				where.marks.left > where.clock.right,
-				`the words start at ${where.marks.left}, back over the clock which ends at ${where.clock.right}`
-			);
-			assert.ok(where.marks.right <= where.bar.right + 1);
-
-			// "Make sure these ACTIONs are colored appropriately" (vividn). The
-			// colour is datum's, not the web's: `Outcome::hex` publishes it as
-			// `action_color` on `--show json` and both surfaces paint from it,
-			// so the bar and the scrollback cannot disagree. A CREATE's green
-			// is named here too, so a palette that quietly went grey would not
-			// pass by matching a grey scrollback.
-			const painted = await page.locator(`${BAR} .marks .action`).evaluateAll((els) =>
-				els.map((el) => getComputedStyle(el).color)
-			);
-			assert.deepEqual(
-				painted,
-				await page.locator('.cli .doc .action').evaluateAll((els) => els.map((el) => getComputedStyle(el).color))
-			);
-			assert.ok(
-				painted.includes('rgb(38, 162, 105)'),
-				`no CREATE green (#26a269) among ${painted.join(', ')}`
-			);
+			// The word the same run's document draws, in its color.
+			const drawn = page.locator('.cli .doc .action').last();
+			assert.equal(await marks(page).innerText(), await drawn.innerText());
+			const painted = await marks(page).evaluate((el) => getComputedStyle(el).color);
+			assert.equal(painted, await drawn.evaluate((el) => getComputedStyle(el).color));
+			assert.equal(painted, 'rgb(38, 162, 105)', 'not a CREATE green (#26a269)');
 
 			// Driven, not slept: fifteen seconds is not a wait a suite takes.
 			await app.clock.forward(16_000);
@@ -1511,14 +1447,7 @@ describe('folded, a command still answers', () => {
 		}, held(AT));
 	});
 
-	// The words cost the box NOTHING. They were capped at a share of the row
-	// (45%), which is not a floor: a four-sided command echoes eight
-	// documents, filled the whole share, and left a 360px phone twenty pixels
-	// to type in for fifteen seconds (measured after vremya's 127px for one
-	// word, PR #46). Since vividn moved them into the strip under the row they
-	// are not on the row at all, so the claim is the stronger one — the box
-	// does not move — and the words are cut against the bar's width instead.
-	test('however many documents a command echoes, the box does not move and the words are cut instead', async () => {
+	test('a line of two says UPD,SW in two colors, with the box unmoved at 360px, and a failure in a line says the failure', async () => {
 		const AT = todayAt(12, 0);
 		await withApp(async (app) => {
 			const { page } = app;
@@ -1528,101 +1457,34 @@ describe('folded, a command still answers', () => {
 			await app.submit('occur alfa');
 			await marks(page).waitFor();
 			const one = await boxWidth(page);
+			await app.submit(LINE_OF_TWO);
+			await page.waitForFunction(() => document.querySelector('.prompt-bar .reopen .said')?.textContent.trim() === 'UPD,SW');
+			assert.ok(Math.abs((await boxWidth(page)) - one) <= 0.5, 'the word moved the box');
+			const colors = await marks(page).evaluateAll((els) => els.map((el) => getComputedStyle(el).color));
+			assert.equal(colors.length, 2);
+			assert.notEqual(colors[0], colors[1], 'the two actions are one color');
 
-			// Enough documents to overflow 360px. A first log used to echo
-			// TWO — the entry and the TRACK row that declared its field — so
-			// four sides were eight words; da-gvcen made a first log one
-			// document, so the crowding has to come from the sides
-			// themselves. Eight of them, and the assertions below MEASURE
-			// that it really overflowed rather than trusting the count.
-			await app.submit(
-				'occur bravo , occur charlie , occur delta , occur echo , ' +
-					'occur foxtrot , occur golf , occur hotel , occur india'
-			);
-			await page.waitForFunction(
-				() => document.querySelectorAll('.prompt-bar .marks .action').length > 2
-			);
-			const many = await boxWidth(page);
-
-			assert.ok(many >= 100, `eight documents left the box ${many.toFixed(0)}px at 360px`);
-			assert.equal(
-				await page.locator(`${BAR} .marks .action`).count(),
-				8,
-				'eight sides, eight documents'
-			);
+			const fit = await page.evaluate(() => {
+				const tab = document.querySelector('.prompt-bar .reopen').getBoundingClientRect();
+				const range = document.createRange();
+				range.selectNodeContents(document.querySelector('.prompt-bar .reopen .said'));
+				const ink = range.getBoundingClientRect();
+				return { tab: [tab.left, tab.top, tab.right, tab.bottom], ink: [ink.left, ink.top, ink.right, ink.bottom] };
+			});
 			assert.ok(
-				Math.abs(many - one) <= 0.5,
-				`the words moved the box: ${one.toFixed(1)}px for one, ${many.toFixed(1)}px for eight`
+				fit.ink[0] >= fit.tab[0] && fit.ink[1] >= fit.tab[1] && fit.ink[2] <= fit.tab[2] && fit.ink[3] <= fit.tab[3],
+				`the word ${fit.ink} is out of the tab ${fit.tab}`
 			);
-			// Cut, not wrapped, and not taken out of the box.
-			const cut = await page
-				.locator(`${BAR} .marks`)
-				.evaluate((el) => ({ over: el.scrollWidth - el.clientWidth, height: el.getBoundingClientRect().height }));
-			assert.ok(cut.over > 0, 'eight words fitted, so nothing was being held back');
-			assert.ok(cut.height <= 32, `the words wrapped to ${cut.height}px instead of being cut`);
+			// «needs very small margins» (vividn): six characters and little else.
+			assert.ok(fit.tab[2] - fit.tab[0] - (fit.ink[2] - fit.ink[0]) <= 9, `margins of ${fit.tab[2] - fit.tab[0] - (fit.ink[2] - fit.ink[0])}px beside the word`);
+
+			await app.submit('occur bravo , occur nope --nonsense');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar .reopen .said')?.textContent.trim() === 'ERROR!');
 			assert.deepEqual(app.errors, []);
 		}, { ...held(AT), viewport: { width: 360, height: 640 } });
 	});
 
-	// THE LETTERS ARE NOT CUT OFF ALONG THE BOTTOM. vividn, 2026-09-21, of the
-	// deployed build: "the ACTION verb is slightly clipped under the first
-	// repl input history line." The strip's floor IS the input section's
-	// floor — the test above pins them within a pixel of each other — so a
-	// glyph that hangs below its line box hangs past the strip, and the
-	// strip's `overflow` took it away.
-	//
-	// Two things put it there, and both are asserted, because either alone
-	// would leave it cut on a machine whose monospace differs from this one:
-	// the line box must HOLD the font's own box (`line-height: 1` is the
-	// font SIZE, and a font's ascent and descent are taller than that), and
-	// what clipping the strip does must be SIDEWAYS ONLY.
-	//
-	// Measured through a Range, which is the only box here that is the
-	// font's: `.action` is a flex item, so it is blockified and its own rect
-	// is the line box — the very thing whose being too short is the defect.
-	test('the ACTION words are not clipped along the bottom of the strip', async () => {
-		const AT = todayAt(12, 0);
-		await withApp(async (app) => {
-			const { page } = app;
-			await page.clock.runFor(200);
-			await app.idle();
-			// FOLDED is the state it appears in, and the only one: the strip
-			// is drawn `{#if !$output}`, so an open bar has no words to clip.
-			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the bar was not folded');
-
-			await app.submit('occur coffee');
-			await marks(page).waitFor();
-
-			const ink = await page.evaluate(() => {
-				const strip = document.querySelector('.prompt-bar .marks');
-				const word = strip.querySelector('.action');
-				const range = document.createRange();
-				range.selectNodeContents(word);
-				const glyphs = range.getBoundingClientRect();
-				const box = strip.getBoundingClientRect();
-				const style = getComputedStyle(strip);
-				return {
-					text: word.textContent,
-					below: glyphs.bottom - box.bottom,
-					overflowX: style.overflowX,
-					overflowY: style.overflowY
-				};
-			});
-
-			assert.ok(ink.text.trim().length > 0, 'there was no word to measure');
-			assert.ok(
-				ink.below <= 0,
-				`${JSON.stringify(ink.text)} hangs ${ink.below.toFixed(2)}px below the strip it is clipped by`
-			);
-			// And if some other font ever does hang over anyway, it is seen
-			// hanging over rather than cut: the strip clips one axis.
-			assert.equal(ink.overflowY, 'visible', 'the strip clips the letters\u2019 own axis');
-			assert.notEqual(ink.overflowX, 'visible', 'the words may push the row wider');
-			assert.deepEqual(app.errors, []);
-		}, held(AT));
-	});
-
-	test('a failure says ERROR, in red, for longer — and a tap opens the output on what went wrong', async () => {
+	test('a failure says ERROR!, in red, for longer — and a tap opens the output on what went wrong', async () => {
 		const AT = todayAt(12, 0);
 		await withApp(async (app) => {
 			const { page } = app;
@@ -1632,11 +1494,7 @@ describe('folded, a command still answers', () => {
 			await app.submit('occur nope --nonsense');
 			await page.locator(`${BAR} .failed`).waitFor();
 			const failed = page.locator(`${BAR} .failed`);
-			assert.equal((await failed.innerText()).trim(), 'ERROR');
-			assert.ok(
-				await failed.evaluate((el) => el.getBoundingClientRect().height >= 24),
-				'the ERROR is not a fingertip'
-			);
+			assert.equal((await failed.innerText()).trim(), 'ERROR!');
 			assert.equal(
 				await failed.locator('.chip').evaluate((el) => getComputedStyle(el).backgroundColor),
 				await page.evaluate(() => {
@@ -1684,7 +1542,7 @@ describe('folded, a command still answers', () => {
 				return page.evaluate(() => {
 					const failed = document.querySelector('.prompt-bar .failed');
 					if (failed) return { failed: failed.innerText.trim() };
-					return [...document.querySelectorAll('.prompt-bar .marks .action')].map((el) => ({
+					return [...document.querySelectorAll('.prompt-bar .reopen .action')].map((el) => ({
 						text: el.innerText,
 						color: getComputedStyle(el).color
 					}));
@@ -1699,7 +1557,7 @@ describe('folded, a command still answers', () => {
 			assert.deepEqual(relog, [{ text: 'EXISTS', color: await drawn.evaluate((el) => getComputedStyle(el).color) }]);
 
 			// The same exit with nothing echoed is a slug collision: a failure.
-			assert.deepEqual(await said('occur coffee n=2'), { failed: 'ERROR' });
+			assert.deepEqual(await said('occur coffee n=2'), { failed: 'ERROR!' });
 			assert.deepEqual(app.errors, []);
 		}, held(AT));
 	});

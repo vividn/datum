@@ -390,7 +390,7 @@ describe('the CLI, which was the REPL', () => {
 				// No marks either: the widget says what a command said here, and
 				// an ERROR would have no output to open.
 				await app.submit('occur');
-				assert.equal(await page.locator('.prompt-bar .marks, .prompt-bar .failed').count(), 0);
+				assert.equal(await page.locator('.prompt-bar .reopen').count(), 0);
 
 				// A drag on the bar here moves nothing, nor does PageUp, and neither
 				// writes a fold for the pages that have an output (canary-qwen on #1256).

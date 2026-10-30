@@ -56,14 +56,15 @@
 	and down on the output section/input section is sufficient here».
 	Except CLOSED, where there is no output to swipe (da-d4tqt), vividn,
 	2026-10-29: «when the output section is completely hidden, show a little
-	^------^ handle in middle above the input bar that reopens it».
+	^------^ handle in middle above the input bar that reopens it». Then
+	(da-k5kwu), 2026-10-30: «let's put it on the far right, and have it
+	protruding into the swipe space. make it wide and tall enough for the
+	ACTION verb to appear in there».
 
-	FOLDED, A COMMAND STILL ANSWERS: its ACTION words — one per document,
-	in the CLI's order and in the colour a document draws its action in —
-	stand at the right of the input row and fade over `ACTION_MS`
-	(#lib/bar.ts). A failed command puts one red `ERROR` there instead,
-	for `ERROR_MS`, and a tap on it unfolds the output onto the error text.
-	Nothing unfolds by itself.
+	FOLDED, A COMMAND STILL ANSWERS, in the tab: six characters (#lib/tabWord.ts),
+	each action in the color a document draws it in, fading over `ACTION_MS`
+	(#lib/bar.ts). A failed command says a red `ERROR!`, for `ERROR_MS`, and a
+	tap on it unfolds the output onto the error text. Nothing unfolds by itself.
 
 	THE LOG IS REACHED THROUGH THE BAR. How far open the bar is, is ONE
 	number of pixels (#lib/log.ts has the arithmetic and the notch); the
@@ -103,6 +104,7 @@
 	import { layout } from '#lib/layout/current.ts';
 	import { isWidget } from '#lib/layout/types.ts';
 	import { grip } from '#lib/grip.ts';
+	import { tabWord } from '#lib/tabWord.ts';
 	import Prompt from '#lib/Prompt.svelte';
 	import { isDegraded, storage, storageSentence } from '#lib/storageState.ts';
 
@@ -397,6 +399,9 @@
 		endAt = null;
 		over = 0;
 	}
+
+	/** What the tab says. */
+	const said = $derived($marks && tabWord($marks.words, $marks.failed));
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -520,36 +525,6 @@
 		     widths; inside the block that starts there, `left: 0` IS there. -->
 		<div class="prompt" bind:this={field}>
 			<Prompt />
-
-			<!-- Folded, this is the whole of what a command says. Keyed on the
-			     object so a second command restarts the fade rather than joining
-			     the first one's; the store's own timer takes it away at the
-			     moment the fade ends (#lib/bar.ts). Not on a page that is the
-			     CLI alone: the widget says it there, and ERROR has no output
-			     to open. -->
-			{#if !$output && !$outputless && $marks}
-				{#key $marks}
-					{#if $marks.failed}
-						<!-- Its own element, not one of the words: a failure has to
-						     be TAPPABLE, and a fingertip does not fit in the strip.
-						     The button is 24px (conventions #12) and overflows the
-						     strip by a few pixels either way; the chip inside it is
-						     the paint, so the hit area can be bigger than the ink. -->
-						<button
-							type="button"
-							class="failed"
-							style="--fade: {ERROR_MS}ms"
-							onclick={openOutput}><span class="chip">ERROR</span></button
-						>
-					{:else}
-						<div class="marks" style="--fade: {ACTION_MS}ms">
-							{#each $marks.words as word, i (i)}
-								<span class="action" style:color={word.color}>{word.text}</span>
-							{/each}
-						</div>
-					{/if}
-				{/key}
-			{/if}
 		</div>
 	</div>
 
@@ -567,22 +542,37 @@
 			</div>
 		</div>
 	{/if}
-
-	<!-- THE HANDLE, CLOSED ONLY (da-d4tqt): a press is PageUp's step, to
-	     the row; a swipe on it is the bar's own (`use:grip`). Its box is
-	     no taller than the gap a nowview's handles leave over the bar at
-	     390×640 (reachable.test), so it takes no press of theirs. -->
+	<!-- THE TAB, CLOSED ONLY (da-d4tqt, da-k5kwu): a press opens the output,
+	     a swipe on it is the bar's own (`use:grip`), and what the last command
+	     said stands in it. -->
 	{#if !$outputless && $shown === 0 && !$inLog}
-		<button type="button" class="reopen" aria-label="show the output" title="show the output" onclick={raise}
-			><svg viewBox="0 0 40 6" aria-hidden="true"><path d="M1 1 4 5h32l3-4" /></svg></button
+		<button
+			type="button"
+			class="reopen"
+			class:failed={$marks?.failed}
+			aria-label="show the output"
+			title="show the output"
+			onclick={$marks?.failed ? openOutput : raise}
 		>
+			<!-- Keyed on the object, so a second command restarts the fade. -->
+			{#key $marks}
+				{#if !said}
+					<svg viewBox="0 0 40 6" aria-hidden="true"><path d="M1 1 4 5h32l3-4" /></svg>
+				{:else}
+					<span class="said" style="--fade: {$marks?.failed ? ERROR_MS : ACTION_MS}ms">
+						{#each said.parts as part, i (i)}{#if i},{/if}<span
+								class={part.text === 'ERROR!' ? 'chip' : 'action'}
+								style:color={part.color}>{part.text}</span
+							>{/each}{#if said.more}+{/if}
+					</span>
+				{/if}
+			{/key}
+		</button>
 	{/if}
 </footer>
 
 <style>
 	.prompt-bar {
-		/* The strip under the input that the ACTION words live in. */
-		--marks-strip: 1.1rem;
 		position: relative;
 		display: flex;
 		flex-direction: column;
@@ -965,98 +955,57 @@
 		padding: 0 0.2rem;
 	}
 
-	/* The action words, in the strip under the input and STARTING AT THE `❯`.
-	   vividn asked for the right side first ("show all the ACTION words on the
-	   right side") and then, on seeing it on a phone: "put them still in
-	   bottom part like this, but over by the >. Over on the right side they
-	   are hidden." A phone's right edge is where a case, a curve or the
-	   system's own furniture takes the last few millimetres; the `❯` is in
-	   the middle of the screen and in the middle of the reader's attention.
-
-	   `left: 0` of the PROMPT block, which is the element that begins at the
-	   `❯` — see the markup. */
-	.marks {
+	/* The tab: it comes out of the input's top border at the far right, its
+	   own ground covering the rule under it, and fits its six characters.
+	   vividn, 2026-10-30: «It should just come right out of the border of the
+	   input widget. The text on it will always have exactly 6 characters so it
+	   can be made to fit the text exactly and needs very small margins». No
+	   higher than the nowview's handles leave (reachable.test). A finger's
+	   24px goes on down into the row unseen, under the box's own controls
+	   (Prompt.svelte). */
+	.reopen {
 		position: absolute;
-		left: 0;
-		bottom: 0;
-		display: flex;
-		align-items: flex-end;
-		gap: 0.4rem;
-		max-width: 100%;
-		height: var(--marks-strip);
-		/* SIDEWAYS ONLY. The words may not push the row wider than the block
-		   they begin at, so the strip clips — but it sits with its bottom ON
-		   the seam, and clipping the OTHER axis there is clipping letters
-		   (da-qdm7, vividn: "the ACTION verb is slightly clipped under the
-		   first repl input history line"). `overflow: hidden` takes both
-		   axes and cannot be asked for one; `clip` can, and `visible` beside
-		   it stays visible rather than becoming a scrollport the way it
-		   would beside `hidden`. */
-		overflow-x: clip;
-		overflow-y: visible;
-		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		font-size: 0.7rem;
-		/* AND THE LINE BOX HOLDS THE LETTERS. At `1` it is the font's size
-		   and the font's own box is taller than that — 13px of ascent and
-		   descent inside an 11.2px line — so `flex-end`, which puts the LINE
-		   box on the strip's bottom edge, hung the last of every glyph PAST
-		   it, where the clip took it.
-
-		   Measured at 390x664, `TRACK●`: the ink reached 664.78 against a
-		   strip floor of 663.98, so it hung over by 0.80px; at 1.2 it reaches
-		   663.55 and clears by 0.44. THAT IS THE WHOLE MARGIN — less than half
-		   a pixel, and it is a font metric, not a chosen number. There is no
-		   room here to spend. The `overflow-y: visible` above is the second
-		   guarantee for exactly that reason: a box whose monospace resolves
-		   differently may overhang anyway, and it must be seen overhanging
-		   rather than cut. */
-		line-height: 1.2;
-		animation: mark-fade var(--fade) ease-out forwards;
-	}
-
-	/* datum's own colour for the tag, inline from `action_color` (da-ckw3);
-	   this is the fallback for a module too old to publish one. */
-	.action {
-		color: var(--accent-bright);
-		white-space: nowrap;
-	}
-
-	/* Prominent, because it is the only thing a folded bar says about a
-	   command that did not land — and a button, because it opens the output
-	   that says what went wrong. */
-	/* The hit area — a fingertip's 24px, centred on the strip so it reaches a
-	   little above it. The bar does NOT grow for it: a command that fails may
-	   not reflow the dashboard any more than one that succeeds. */
-	.failed {
-		position: absolute;
-		left: 0;
-		bottom: calc((var(--marks-strip) - 24px) / 2);
+		right: 0;
+		bottom: var(--input-height);
+		z-index: 21;
 		display: flex;
 		align-items: center;
-		height: 24px;
+		justify-content: center;
+		width: calc(6ch + 0.4rem + 1px);
+		height: 14px;
 		padding: 0;
-		background: none;
-		border: none;
-		cursor: pointer;
-		animation: mark-fade var(--fade) ease-out forwards;
-	}
-
-	/* The paint, which stays the size of the strip. */
-	.chip {
-		padding: 0 0.45rem;
-		background: var(--error);
-		border-radius: 4px;
-		color: var(--page);
+		background: var(--ground);
+		border: 1px solid var(--rule);
+		border-width: 1px 0 0 1px;
+		border-radius: 4px 0 0 0;
+		color: var(--quiet);
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.7rem;
-		font-weight: 700;
-		line-height: 1.6;
-		letter-spacing: 0.06em;
+		line-height: 1;
+		cursor: grab;
 	}
-
+	.reopen::after {
+		content: '';
+		position: absolute;
+		inset: 0 0 -10px;
+	}
+	.reopen svg {
+		width: 1.5rem;
+		height: 4px;
+		transform: rotate(180deg);
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
 	/* Held bright for most of its life and then gone: a word that fades
 	   evenly from the first second reads as unimportant for fourteen of
 	   them. */
+	.said {
+		white-space: nowrap;
+		animation: mark-fade var(--fade) ease-out forwards;
+	}
 	@keyframes mark-fade {
 		0%,
 		80% {
@@ -1066,35 +1015,17 @@
 			opacity: 0;
 		}
 	}
-
-	/* Over the output, at its height, on the input's top edge. */
-	/* 12px over the rule and 4px into the input: the nowview's handles end
-	   15px over the rule (reachable.test), and the box's text is lower. */
-	.reopen {
-		position: absolute;
-		left: 50%;
-		bottom: calc(100% - 4px);
-		transform: translateX(-50%);
-		z-index: 21;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 4.5rem;
-		height: 16px;
-		padding: 0 0 4px;
-		background: none;
-		border: none;
-		color: var(--quiet);
-		cursor: grab;
+	/* datum's own color for the tag, inline from `action_color` (da-ckw3);
+	   this is the fallback for a module too old to publish one. */
+	.action {
+		color: var(--accent-bright);
+		white-space: nowrap;
 	}
-	.reopen svg {
-		width: 2.5rem;
-		height: 6px;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-		stroke-linejoin: round;
+	.chip {
+		background: var(--error);
+		border-radius: 2px;
+		color: var(--page);
+		font-weight: 700;
 	}
 	.reopen:hover,
 	.reopen:focus-visible {
@@ -1128,7 +1059,7 @@
 	/* Shown, then gone at the same moment, for a reader who asked for no
 	   animation — the store's timer is what actually takes it away. */
 	@media (prefers-reduced-motion: reduce) {
-		.marks {
+		.said {
 			animation: none;
 		}
 		.roll:not(.pulling) {

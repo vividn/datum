@@ -36,6 +36,7 @@ import {
 	pastTheWindow,
 	scrollX,
 	settled,
+	swipe,
 	swipeOver,
 	titles,
 	widgetPane
@@ -113,6 +114,110 @@ async function wideRepl(app) {
 	);
 	return body;
 }
+
+// vividn, 2026-10-30: «the space between the output section and the
+// bottommost widget be the dedicated intertab swiping space» (da-k5kwu).
+describe('the swipe strip', () => {
+	const STRIP = '.swipe-strip';
+	const box = (page, selector) => page.locator(selector).boundingBox();
+
+	test('fills the gap under the bottom widget, 1.3× as tall as it was, and a swipe from it moves the tab', async () => {
+		await withApp(
+			async ({ page }) => {
+				assert.equal(await shown(page), 'main');
+				const [strip, bottom, main] = await Promise.all([
+					box(page, STRIP),
+					page.locator('.cell.fields .pane').first().boundingBox(),
+					box(page, 'main')
+				]);
+				assert.ok(Math.abs(strip.height - 16) <= 0.5, `the strip is ${strip.height}px tall, the gap was 12`);
+				assert.equal(strip.width, main.width, 'edge to edge');
+				assert.ok(Math.abs(strip.y + strip.height - (main.y + main.height)) <= 0.5, 'its foot is the top of the bar');
+				assert.ok(Math.abs(bottom.y + bottom.height - strip.y) <= 1, `the bottom widget ends at ${bottom.y + bottom.height}, the strip starts at ${strip.y}`);
+				assert.ok(
+					await page.locator(STRIP).evaluate((el) => el.textContent.includes('swipe between tabs')),
+					'the strip says nothing'
+				);
+				const y = strip.y + strip.height / 2;
+				await swipe(page, 330, y, -220, 0);
+				await until(() => shown(page), (name) => name === 'tail');
+				await pastTheWindow(page);
+				await swipe(page, 60, y, 220, 0);
+				await until(() => shown(page), (name) => name === 'main');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	test('a swipe from it moves the tab with the root scrolled, and a maximized pane stops above it', async () => {
+		await withApp(
+			async ({ page }) => {
+				const strip = await box(page, STRIP);
+				await page.locator('.root > .content').evaluate((el) => {
+					el.firstElementChild.style.minHeight = '2000px';
+					el.scrollTop = 300;
+				});
+				const still = await box(page, STRIP);
+				assert.deepEqual(still, strip, 'the strip scrolled with the page');
+				const taken = await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.swipe-strip'), { x: 195, y: strip.y + 2 });
+				assert.ok(taken, 'what scrolled lies over the strip');
+				await page.locator('.root > .content').evaluate((el) => {
+					el.firstElementChild.style.minHeight = '';
+					el.scrollTop = 0;
+				});
+				await page.locator('.cell.fields').getByRole('button', { name: /^maximize/ }).click();
+				const big = await page.locator('section.big').boundingBox();
+				assert.ok(Math.abs(big.y + big.height - strip.y) <= 1, `the big pane ends at ${big.y + big.height}, the strip starts at ${strip.y}`);
+				await swipe(page, 330, strip.y + strip.height / 2, -220, 0);
+				await until(() => shown(page), (name) => name === 'tail');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	test('closed, a swipe beside the output tab moves the tab; one on it does not', async () => {
+		await withApp(
+			async ({ page, submit }) => {
+				await submit('occur coffee');
+				await page.locator('.prompt-bar input').press('PageDown');
+				const handle = page.getByRole('button', { name: 'show the output' });
+				await handle.waitFor();
+				const [strip, tab] = await Promise.all([box(page, STRIP), handle.boundingBox()]);
+				const y = strip.y + strip.height / 2;
+				await swipe(page, tab.x + tab.width / 2, y, -220, 0);
+				await page.waitForTimeout(400);
+				assert.equal(await shown(page), 'main', 'a swipe on the tab moved the root tab');
+				await swipe(page, tab.x - 4, y, -220, 0);
+				await until(() => shown(page), (name) => name === 'tail');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	test('a short phone keeps the gap as tall as it was, and it still swipes', async () => {
+		await withApp(
+			async ({ page }) => {
+				const strip = await box(page, STRIP);
+				assert.ok(Math.abs(strip.height - 12) <= 0.5, `the strip is ${strip.height}px tall at 412×563`);
+				await swipe(page, 330, strip.y + strip.height / 2, -220, 0);
+				await until(() => shown(page), (name) => name === 'tail');
+			},
+			{ ...PHONE, viewport: { width: 412, height: 563 }, prepare: twoLayouts }
+		);
+	});
+
+	test('none with one tab to swipe, and none where there is no finger', async () => {
+		await phone(async ({ page }) => {
+			assert.equal(await page.locator(STRIP).count(), 0, 'one tab, and the strip offers a swipe to nowhere');
+		});
+		await withApp(
+			async ({ page }) => {
+				assert.equal(await page.locator(STRIP).count(), 0, 'a mouse, and the strip offers a swipe');
+			},
+			{ prepare: twoLayouts }
+		);
+	});
+});
 
 describe('the root swipes between layouts', () => {
 	test('a swipe over the page moves to the next layout, and back', async () => {

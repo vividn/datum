@@ -1021,8 +1021,7 @@ describe('the three states and the full screen', () => {
 	};
 
 	/** A control of the bar's that is in neither section is a handle. */
-	const handles = (page) =>
-		page.locator(`${BAR} button`).evaluateAll((all) => all.filter((b) => !b.closest('.section')).length);
+	const handles = (page) => page.getByRole('button', { name: 'show the output' }).count();
 
 	// The handle is gone (da-pnxug), vividn, 2026-10-28: «the swiping up and
 	// down on the output section/input section is sufficient here». Only
@@ -1053,18 +1052,33 @@ describe('the three states and the full screen', () => {
 
 	// vividn, 2026-10-29: «when the output section is completely hidden,
 	// show a little ^------^ handle in middle above the input bar that
-	// reopens it» (da-d4tqt).
-	test('closed, a handle centered over the input opens the row; at the row and full there is none', async () => {
+	// reopens it» (da-d4tqt), and 2026-10-30: «let's put it on the far right,
+	// and have it protruding into the swipe space» (da-k5kwu).
+	test('closed, a tab comes out of the input’s top border at the far right and opens the row; at the row and full there is none', async () => {
 		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
 			assert.equal(await state(page), 'closed');
 			const handle = page.getByRole('button', { name: 'show the output' });
 			await handle.waitFor();
-			const [h, input] = await Promise.all([handle.boundingBox(), page.locator(INPUT).boundingBox()]);
-			const off = h.x + h.width / 2 - (input.x + input.width / 2);
-			assert.ok(Math.abs(off) < 1, `the handle is ${off}px off the input's middle`);
-			assert.ok(h.y < input.y && h.y + h.height > input.y, `the handle ${h.y}–${h.y + h.height} is not on the input's top ${input.y}`);
+			const [h, input, bar] = await Promise.all([handle.boundingBox(), page.locator(INPUT).boundingBox(), page.locator(BAR).boundingBox()]);
+			assert.ok(Math.abs(h.x + h.width - (bar.x + bar.width)) <= 1, `the tab ends at ${h.x + h.width}, the bar at ${bar.x + bar.width}`);
+			assert.ok(Math.abs(h.y + h.height - input.y) <= 1, `the tab ends at ${h.y + h.height}, not at the input's top ${input.y}`);
+			assert.ok(h.height >= 12, `the tab is ${h.height}px tall`);
+			// Seen as tall as its word, and a finger's tall where it is pressed.
+			const pressed = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label'), [h.x + h.width / 2, h.y + 23]);
+			assert.equal(pressed, 'show the output', 'the tab is not a fingertip tall');
+			// With a line typed, the box's own controls take their whole box.
+			await page.locator(`${BAR} input`).fill('occur tea');
+			const missed = await page.locator(`${BAR} .send, ${BAR} .clear`).evaluateAll((all) =>
+				all.flatMap((el) => {
+					const r = el.getBoundingClientRect();
+					const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 1);
+					return el.contains(hit) ? [] : [el.className];
+				})
+			);
+			assert.deepEqual(missed, [], 'the tab lies over the controls');
+			await page.locator(`${BAR} input`).fill('');
 			await handle.click();
 			assert.equal(await state(page), 'row');
 			assert.equal(await handle.count(), 0, 'at the row, the handle is still there');

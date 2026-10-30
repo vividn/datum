@@ -552,6 +552,12 @@
 	}
 
 	/* Grey, and quiet until it is wanted: it is a way out, not an action. */
+	/* Over the foot of the closed output's tab (PromptBar.svelte). */
+	.clear,
+	.send {
+		position: relative;
+		z-index: 22;
+	}
 	.clear {
 		flex: none;
 		min-width: 24px;

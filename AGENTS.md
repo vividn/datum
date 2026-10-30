@@ -887,10 +887,10 @@ binary.
   command as wide as its documents and each document's time on a line under
   its field and state, cut where the CLI's `info_time` says (da-7xp82). The row's
   items are centered in the whole input section, and folded a command
-  answers with its ACTION words along the bottom of it STARTING AT THE `❯`,
-  in the color the CLI paints the tag (`Outcome::hex`, carried as
-  `action_color` on `--show json`), fading, or a red `ERROR` that opens the
-  output on a tap. The `❯` is a button (`commandsOpen` in `#lib/bar.ts`,
+  answers in the tab at its far right, in six characters (`#lib/tabWord.ts`:
+  `UPD,SW`, `UP,S,C`, `U,S,C+`), each action in the color the CLI paints the
+  tag (`Outcome::hex`, carried as `action_color` on `--show json`), fading, or
+  a `FAILED` or a red `ERROR!` that opens the output on a tap. The `❯` is a button (`commandsOpen` in `#lib/bar.ts`,
   da-xw655): pressed, it turns a quarter, fills, and slides the command
   widget up over the output section at its height, its buttons in columns
   scrolled up and down, a swipe or a wheel on them theirs and never the
@@ -938,8 +938,8 @@ binary.
   flow to their new places (FLIP, 200ms), not under
   `prefers-reduced-motion`. A drag
   anywhere on the bar, or a wheel over it, moves a state the way it went;
-  the one handle (da-pnxug) is a small `^------^` over the input while closed
-  alone, which opens the row (da-d4tqt), and on the box PageUp goes closed →
+  the one handle (da-pnxug) is a tab at the far right, reaching up into the
+  swipe strip, while closed alone, which opens the row (da-d4tqt, da-k5kwu), and on the box PageUp goes closed →
   row → full and PageDown back. HOW FAR OPEN the bar is, is ONE number of
   pixels (`reveal` in `#lib/log.ts`) that three boxes are sized from — the
   page itself never scrolls; the NOTCH is `--output-height`, the CEILING the

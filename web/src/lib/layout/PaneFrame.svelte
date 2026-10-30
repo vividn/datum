@@ -120,6 +120,10 @@
 	    taken that swipe internally". A run: a place the shell slides in
 	    opens no window, and a swipe the window does not take ends it
 	    (da-bgve9).
+	  - the root's swipe strip (da-k5kwu), the page's foot under a finger, is
+	    nothing but this frame: it is drawn outside the scroller, so it stays
+	    where it is and holds nothing that could take the gesture. vividn,
+	    2026-10-30: «the dedicated intertab swiping space».
 
 	Then the tab and its neighbour move as ONE STRIP (da-24fgb): the tab
 	the finger is bringing on is drawn beside the one in front, a box away,
@@ -621,6 +625,8 @@
 	 * asking how (`leave`, mode.ts — the root bar's tabs do).
 	 */
 	const swipes = $derived(many && (locked || !root));
+	/** The strip at the page's foot: where a finger is, and there are tabs to swipe to. */
+	const stripped = $derived(root && swipes && $badge > ROW);
 
 	const inRange = (index: number) => index >= 0 && index < pane.tabs.length;
 	/** The reader asked for no motion: the swap is instant, as it was. */
@@ -854,6 +860,7 @@
 	class:nested
 	class:bare
 	class:big
+	class:stripped
 	class:clip={!root && kind !== undefined}
 	class:editing={!locked}
 	data-bar-drop={dropAt?.edge}
@@ -1035,6 +1042,23 @@
 	>
 		{@render children?.(peek, moves)}
 	</div>
+	{#if stripped}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="swipe-strip"
+			ontouchstart={onTouchStart}
+			{@attach (el) => on(el, 'touchmove', onTouchMove, { passive: false })}
+			ontouchend={onTouchEnd}
+			ontouchcancel={cancel}
+		>
+			<!-- Drawn, not typed: a font's arrow heads are its own size and height. -->
+			<span aria-hidden="true">
+				<svg viewBox="0 0 32 8"><path d="M1 4h30M5 1 1 4l4 3" /></svg>
+				swipe between tabs
+				<svg viewBox="0 0 32 8"><path d="M1 4h30M27 1l4 3-4 3" /></svg>
+			</span>
+		</div>
+	{/if}
 </section>
 </div>
 
@@ -1706,5 +1730,68 @@
 	.holder.root.bare > .content {
 		margin: calc(max(var(--row), var(--badge)) / -2);
 		padding: calc(max(var(--row), var(--badge)) / 2);
+	}
+
+	/* THE SWIPE STRIP (da-k5kwu). vividn, 2026-10-30: «the space between the
+	   output section and the bottommost widget be the dedicated intertab
+	   swiping space, we can increase its width slightly maybe x1.3, give it a
+	   textured background like a rough patch, and a dim <---- swipe between
+	   tabs ---->». That space was the page's 0.75rem (`.frame`,
+	   routes/+page.svelte), so the strip fills it edge to edge and the root
+	   gives up the rest, `--strip-rise`: a maximized pane stops there too
+	   (Layout.svelte). Over the content, whose padding reaches under it. A
+	   short phone keeps the gap's own height: at 412×563 the rise took the
+	   sliver of yesterday from the day strip (da-frewq). */
+	.stripped {
+		--strip-rise: 0px;
+		padding-bottom: var(--strip-rise);
+	}
+	@media (min-height: 600px) {
+		.stripped {
+			--strip-rise: 0.25rem;
+		}
+	}
+	/* Tiny scattered dots, the one rule that says what the strip looks like.
+	   vividn, 2026-10-30: «I like scattered the best. Make the font color
+	   darker so that it is a different color than the dots. Maybe halfway
+	   between the dot color and background color». */
+	.swipe-strip {
+		--strip-ground: color-mix(in srgb, var(--quiet) 10%, var(--ground));
+		position: absolute;
+		left: -0.75rem;
+		right: -0.75rem;
+		bottom: -0.75rem;
+		z-index: 4;
+		height: calc(0.75rem + var(--strip-rise));
+		display: grid;
+		place-items: center;
+		overflow: hidden;
+		background:
+			radial-gradient(circle at 2px 3px, var(--quiet) 0.5px, transparent 0.75px) 0 0 / 15px 15px,
+			radial-gradient(circle at 5px 9px, var(--quiet) 0.4px, transparent 0.65px) 0 0 / 15px 15px,
+			radial-gradient(circle at 9px 1px, var(--quiet) 0.45px, transparent 0.7px) 0 0 / 15px 15px,
+			radial-gradient(circle at 12px 6px, var(--quiet) 0.55px, transparent 0.8px) 0 0 / 15px 15px,
+			radial-gradient(circle at 3px 12px, var(--quiet) 0.4px, transparent 0.65px) 0 0 / 15px 15px,
+			radial-gradient(circle at 8px 13px, var(--quiet) 0.5px, transparent 0.75px) 0 0 / 15px 15px,
+			var(--strip-ground);
+		color: color-mix(in srgb, var(--quiet) 50%, var(--strip-ground));
+		font-size: 0.6rem;
+		white-space: nowrap;
+		user-select: none;
+		touch-action: none;
+	}
+	.swipe-strip span {
+		display: flex;
+		align-items: center;
+		gap: 0.4em;
+	}
+	.swipe-strip svg {
+		width: 2.5em;
+		height: 0.7em;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 </style>

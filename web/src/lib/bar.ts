@@ -590,7 +590,7 @@ export const noteRun = (line: string, ranAt: number, result: RunResult): void =>
 export const ACTION_MS = 15_000;
 
 /**
- * And how long a failed command's `ERROR` stays: "Maybe FAILED should take
+ * And how long a failed command's `ERROR!` stays: "Maybe FAILED should take
  * even longer?" A minute — long enough to come back to the phone and still
  * find out that the thing you logged did not land.
  */
@@ -599,13 +599,13 @@ export const ERROR_MS = 60_000;
 /**
  * What a folded bar says about the command just run (da-ckw3).
  *
- * `words` is the action of each document the CLI echoed, in the CLI's own
- * order — CREATE, UPDATE, DELETE — each with the colour datum paints it
+ * `words` is what each document the CLI echoed draws as its action, in the
+ * CLI's own order — a CREATE's shape, UPDATE, DELETE — each with the colour datum paints it
  * (`action_color`, da-ckw3), and nothing else: a command that echoes
  * no document (a `tail`, a `now`) leaves the corner empty, and the caret is
  * one tap from what it actually answered.
  *
- * `failed` replaces them with one red `ERROR`, which opens the output on a
+ * `failed` replaces them with one red `ERROR!`, which opens the output on a
  * tap. It does NOT open by itself: vividn chose that word over an automatic
  * unfold, and the whole point of the fold is that the dashboard reflows
  * when a PERSON says so.
@@ -626,7 +626,7 @@ let fading: ReturnType<typeof setTimeout> | undefined;
 function mark(result: RunResult): void {
 	clearTimeout(fading);
 	const words = (parseEcho(result.stdout) ?? []).map((doc) => ({
-		text: doc.action,
+		text: doc.action === 'CREATE' ? (doc.shape ?? doc.action) : doc.action,
 		color: doc.action_color
 	}));
 	// Exit 11 with an echoed document is datum's benign re-log, `EXISTS`
