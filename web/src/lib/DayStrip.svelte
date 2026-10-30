@@ -76,7 +76,7 @@
 	with the fingers' vertical spread, clamped to the strip's floor and
 	ceiling, and is previewed exactly as the `+`'s drag is (the bands
 	scaled); the stack scrolls with it so the point of the day the pinch
-	began on stays under the fingers' middle (`keepUnder`), and the height
+	began on stays under the fingers' middle (`fixed`), and the height
 	is written once, on the release.
 
 	How many days the box SHOWS: as many as it holds (da-zb0d). The strip
@@ -1364,6 +1364,7 @@
 		const handle = event.currentTarget as HTMLElement;
 		handle.setPointerCapture(event.pointerId);
 		handle.focus();
+		if (axes === 'y') holdUnder(handle);
 		from0 = { height: day, width: labelWidth };
 		sizing = { x: event.clientX, y: event.clientY, height: day, width: labelWidth, axes };
 	}
@@ -1383,10 +1384,59 @@
 				? clamp(Math.round(from0.width + (event.clientX - sizing.x)), MIN_LABEL_WIDTH, MAX_LABEL_WIDTH)
 				: from0.width
 		};
+		void tick().then(hold);
 	}
 	function drop(): void {
 		if (sizing) setSizes(sizing.height, sizing.width);
 		sizing = null;
+		void tick().then(letGo);
+	}
+
+	/**
+	 * The point a height gesture keeps still on the screen (da-cbqrq): how far
+	 * down which band, and at what `y`, null for the stack's bottom edge. Every
+	 * day changes height, so a scroll position left alone moves a day by the
+	 * height of all the days above it; this one stays and the others are pushed.
+	 */
+	let fixed: { band: Element; down: number; y: number | null } | null = null;
+
+	/** Hold the point where the stack's bottom edge cuts the bands, which moves as a frozen today grows. */
+	function holdEdge(): void {
+		if (!stackEl) return;
+		const edge = stackEl.getBoundingClientRect().bottom;
+		const bands = [...stackEl.querySelectorAll('.band')];
+		const band = bands.find((b) => b.getBoundingClientRect().bottom >= edge - 1) ?? bands.at(-1);
+		if (!band) return;
+		const box = band.getBoundingClientRect();
+		fixed = { band, down: (edge - box.top) / box.height, y: null };
+	}
+
+	/**
+	 * Hold what a line is the handle of: the far edge of the day under it, so
+	 * the line stays under the pointer (vividn, 2026-10-30: «the line under your
+	 * finger should move with your finger, fix the other side of the day in
+	 * place»). The divider has no day under it in the stack: the edge.
+	 */
+	function holdUnder(line: Element): void {
+		const band = line.closest('.stack .row')?.querySelector('.band');
+		if (!band) return holdEdge();
+		fixed = { band, down: 1, y: band.getBoundingClientRect().bottom };
+	}
+
+	/**
+	 * Scroll the fixed point back, at the sizes now laid out. Either end of the
+	 * scroll stops it, as days shrink: the oldest keeps its top on the start,
+	 * the newest its bottom on the end, and the point moves with them.
+	 */
+	function hold(): void {
+		if (!fixed?.band.isConnected || !stackEl) return;
+		const box = fixed.band.getBoundingClientRect();
+		stackEl.scrollTop += box.top + fixed.down * box.height - (fixed.y ?? stackEl.getBoundingClientRect().bottom);
+	}
+
+	function letGo(): void {
+		hold();
+		fixed = null;
 	}
 
 	/** Make `node` a handle for `axes`: every day line, the spine. */
@@ -1409,7 +1459,9 @@
 		const right = axes === 'x' ? key('ArrowRight', 'ArrowLeft') : 0;
 		if (!up && !right) return;
 		event.preventDefault();
+		if (up) holdUnder(event.currentTarget as Element);
 		setSizes(day + up * STEP, labelWidth + right * STEP);
+		void tick().then(letGo);
 	}
 
 	// Today going into the scroller or out of it, from the widget's
@@ -1472,9 +1524,8 @@
 	/** The fingers down on the strip, by pointer id, and where they are. */
 	const fingers = new Map<number, { x: number; y: number }>();
 	/**
-	 * The pinch in hand: its axis, where it began, the band it began over,
-	 * and — a vertical one — the band under the fingers and how far down
-	 * it they were, which is the point kept under them (`keepUnder`).
+	 * The pinch in hand: its axis, where it began, the band it began over.
+	 * A vertical one holds the point under the fingers (`fixed`).
 	 */
 	let pinching: {
 		axis: 'x' | 'y';
@@ -1482,8 +1533,6 @@
 		apart: number;
 		mid: number;
 		box: DOMRect;
-		under: Element | null;
-		down: number;
 	} | null = null;
 
 	const at = () => [...fingers.values()];
@@ -1541,15 +1590,10 @@
 		const found = axis === 'y' ? document.elementFromPoint(middle('x'), middle('y'))?.closest('.band') : null;
 		const under = found && stackEl?.contains(found) ? found : null;
 		const was = under?.getBoundingClientRect();
-		pinching = {
-			axis,
-			window: view,
-			apart: spread(axis),
-			mid: middle(),
-			box,
-			under,
-			down: was ? (middle('y') - was.top) / was.height : 0
-		};
+		// A pinched point in the stack, or over a pinned today, the stack's edge.
+		if (under && was) fixed = { band: under, down: (middle('y') - was.top) / was.height, y: middle('y') };
+		else if (axis === 'y') holdEdge();
+		pinching = { axis, window: view, apart: spread(axis), mid: middle(), box };
 	}
 
 	/**
@@ -1562,18 +1606,8 @@
 		const by = apart >= PINCH_FLOOR ? spread('y') / apart : 1;
 		const height = clamp(Math.round(day * by), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
 		sizing = { x: 0, y: 0, height, width: labelWidth, axes: 'y' };
-		void tick().then(keepUnder);
-	}
-
-	/**
-	 * Scroll the stack so the point the pinch began on is under the
-	 * fingers' middle again, at the height now on screen. A band outside
-	 * the scroller — a pinned today — has nothing to scroll.
-	 */
-	function keepUnder(): void {
-		if (!pinching?.under || !stackEl || fingers.size < 2) return;
-		const band = pinching.under.getBoundingClientRect();
-		stackEl.scrollTop += band.top + pinching.down * band.height - middle('y');
+		if (fixed?.y != null) fixed.y = middle('y');
+		void tick().then(hold);
 	}
 
 	function onPointerMove(event: PointerEvent): void {
