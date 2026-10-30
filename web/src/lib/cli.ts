@@ -115,6 +115,18 @@ let memory: Map<string, Handle> | null = null;
 let databases: readonly string[] = DATABASES;
 
 /**
+ * The databases renamed away (`db rename`, da-u2jjc), by any tab: each leaves
+ * `<name>.moved` beside the others, the time it moved, written under the
+ * files' lock. For `MOVED_MS` after, no worker makes the old name again, one
+ * that never named it included, and a command on it is refused; a tab on it
+ * follows the move meanwhile (#lib/changes.ts). Then it is a name like any.
+ * `datum` and `_internal` never move: a command that names none runs on the default.
+ */
+const gone = new Set<string>();
+const MOVED_MS = 30_000;
+const movedFile = (db: string) => `${db}.moved`;
+
+/**
  * Follow the databases `moved` (`db rename`, da-rktt6): the new name is kept
  * on files of its own from now on, and the old, emptied, is forgotten and its
  * files in OPFS removed, so the logo's menu no longer offers it. The default
@@ -125,6 +137,7 @@ async function follow(moved: [string, string][], handles: Map<string, Handle>): 
 		if (!databases.includes(to)) databases = [...databases, to];
 		if (DATABASES.includes(from)) continue;
 		databases = databases.filter((db) => db !== from);
+		gone.add(from);
 		if (handles === memory) continue;
 		const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(OPFS_DIR);
 		for (const file of dbFiles([from])) {
@@ -132,6 +145,12 @@ async function follow(moved: [string, string][], handles: Map<string, Handle>): 
 			handles.delete(file);
 			await dir.removeEntry(file).catch(() => {});
 		}
+		const file = await dir.getFileHandle(movedFile(from), { create: true });
+		const marker = await (file as unknown as { createSyncAccessHandle(): Promise<Handle> }).createSyncAccessHandle();
+		marker.truncate(0);
+		marker.write(new TextEncoder().encode(String(Date.now())), { at: 0 });
+		marker.close();
+		await dir.removeEntry(movedFile(to)).catch(() => {});
 	}
 }
 
@@ -299,8 +318,18 @@ async function open(): Promise<Map<string, Handle>> {
 	const root = await navigator.storage.getDirectory();
 	const dir = await root.getDirectoryHandle(OPFS_DIR, { create: true });
 	const handles = new Map<string, Handle>();
+	gone.clear();
+	for (const db of databases.filter((db) => !DATABASES.includes(db))) {
+		if (await dir.getFileHandle(`${db}.db`).then(() => true, () => false)) continue;
+		const marker = await dir.getFileHandle(movedFile(db)).catch(() => null);
+		if (!marker) continue;
+		if (Date.now() - Number(await (await marker.getFile()).text()) < MOVED_MS) gone.add(db);
+		else await dir.removeEntry(movedFile(db)).catch(() => {});
+	}
+	databases = databases.filter((db) => !gone.has(db));
+	const opening = databases;
 	try {
-		for (const name of dbFiles(databases)) {
+		for (const name of dbFiles(opening)) {
 			const file = await dir.getFileHandle(name, { create: true });
 			// Worker-only, so lib.dom does not declare it.
 			const sync = file as unknown as { createSyncAccessHandle(): Promise<Handle> };
@@ -719,6 +748,12 @@ export function runCli(
 		const t1 = performance.now();
 		const runIn = async (handles: Map<string, Handle>, tries: number): Promise<CliResult> => {
 			const t2 = performance.now();
+			const named = dbNamed(argv, env);
+			if (named && gone.has(named)) {
+				const ms = { compile: t1 - t0, acquire: t2 - t1, instantiate: 0, run: 0, flush: 0, tries };
+				const stderr = `error: the database ${named} was renamed by another tab: nothing ran`;
+				return { argv, code: 1, stdout: '', stderr, changed: [], storage: handles === memory ? 'memory' : 'opfs', ms };
+			}
 			const run = await exec(module, handles, argv, env, stdin, onStderr, stage, at);
 			if (run.moved.length) {
 				await follow(run.moved, handles);

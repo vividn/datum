@@ -102,6 +102,83 @@ test('a chained database renamed at the bar syncs under its new name, the same m
 	}
 });
 
+test('a tab on another database that once named the old one does not make it again after the rename', async () => {
+	await withApp(
+		async (app) => {
+			await app.run(['occur', 'mine']);
+			// Its worker has the old name's files among its own from now on.
+			const other = await app.newTab('?db=stay');
+			assert.equal(Number((await other.run(['--db', 'gone-1', 'count', 'mine'])).stdout), 1);
+
+			const input = app.page.locator('.prompt-bar input');
+			await input.fill('db rename gone');
+			await input.press('Enter');
+			await app.page.waitForURL((url) => url.searchParams.get('db') === 'gone');
+			await ready(app.page);
+
+			await other.run(['occur', 'theirs']);
+			assert.deepEqual(await files(app), ['_internal.db', 'datum.db', 'gone.db', 'stay.db']);
+		},
+		{ query: '?db=gone-1' }
+	);
+});
+
+test('a command asked of the old name before the rename, that runs after it, is refused and does not make it again', async () => {
+	await withApp(
+		async (app) => {
+			await app.run(['occur', 'mine']);
+			const other = await app.newTab('?db=stay');
+			assert.equal(Number((await other.run(['--db', 'gone-2', 'count', 'mine'])).stdout), 1);
+			const pending = () => app.page.evaluate(async () => (await navigator.locks.query()).pending.length);
+			// The files held, so the rename and then the other tab's command queue for them, in that order.
+			await other.page.evaluate(() => {
+				navigator.locks.request('datum-cli-files', () => new Promise((resolve) => (window.letGo = resolve)));
+			});
+			const input = app.page.locator('.prompt-bar input');
+			await input.fill('db rename gone');
+			await input.press('Enter');
+			await until(pending, (n) => n === 1);
+			const asked = other.run(['--db', 'gone-2', 'count', 'mine']);
+			await until(pending, (n) => n === 2);
+			await other.page.evaluate(() => window.letGo());
+
+			const refused = await asked;
+			assert.notEqual(refused.code, 0);
+			assert.match(refused.stderr, /gone-2 was renamed by another tab/);
+			await app.page.waitForURL((url) => url.searchParams.get('db') === 'gone');
+			await ready(app.page);
+			assert.equal(await countOf(app, 'mine'), 1);
+			assert.deepEqual(await files(app), ['_internal.db', 'datum.db', 'gone.db', 'stay.db']);
+		},
+		{ query: '?db=gone-2' }
+	);
+});
+
+test('a tab that loads on the old name just after the rename, too late to hear it, follows it and does not make it again', async () => {
+	await withApp(
+		async (app) => {
+			await app.run(['occur', 'mine']);
+			// Away while it moves, as a tab reloading then would be.
+			const other = await app.newTab('?db=gone-3');
+			await other.page.goto('about:blank');
+
+			const input = app.page.locator('.prompt-bar input');
+			await input.fill('db rename gone');
+			await input.press('Enter');
+			await app.page.waitForURL((url) => url.searchParams.get('db') === 'gone');
+			await ready(app.page);
+
+			const old = new URL(app.page.url());
+			old.searchParams.set('db', 'gone-3');
+			await other.page.goto(old.href);
+			await other.page.waitForURL((url) => url.searchParams.get('db') === 'gone');
+			await ready(other.page);
+			assert.deepEqual(await files(app), ['_internal.db', 'datum.db', 'gone.db']);
+		},
+		{ query: '?db=gone-3' }
+	);
+});
+
 test('a rename onto a database that holds data is refused with the purge that empties it, and nothing moves', async () => {
 	await withApp(
 		async (app) => {

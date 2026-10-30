@@ -19,6 +19,14 @@ import { currentDb, withDb } from './database.js';
 
 const CHANNEL = 'datum-db-changes';
 
+/**
+ * The last database renamed (`db rename`, da-u2jjc), for a tab that was not
+ * listening as it moved: one loading then, a reload among them.
+ */
+const MOVED_KEY = 'datum.db.moved';
+/** How long before a tab began listening a move recorded still counts: what a tab reloading through it takes to load. */
+const MOVED_SLACK_MS = 30_000;
+
 let channel: BroadcastChannel | null = null;
 /** A tab's own id, so it can ignore the echo of its own write. */
 let self_ = '';
@@ -40,6 +48,13 @@ function open(): BroadcastChannel | null {
 	self_ = crypto.randomUUID();
 	channel = new BroadcastChannel(CHANNEL);
 	channel.addEventListener('message', (e) => e.data?.moved && follow(...(e.data.moved as [string, string])));
+	// From here every move is heard; one before it may have been missed.
+	try {
+		const moved = JSON.parse(localStorage.getItem(MOVED_KEY) ?? 'null');
+		if (moved?.at > Date.now() - MOVED_SLACK_MS) follow(moved.from, moved.to);
+	} catch {
+		// No storage: a tab loading as it moved is not told.
+	}
 	return channel;
 }
 
@@ -61,6 +76,12 @@ export function announceChange(dbs?: string[], session = false): void {
  * to the new name.
  */
 export function announceMoved(from: string, to: string): void {
+	try {
+		// `Date`, the clock two documents share: `performance.now()` stops while the system sleeps.
+		localStorage.setItem(MOVED_KEY, JSON.stringify({ from, to, at: Date.now() }));
+	} catch {
+		// As above.
+	}
 	open()?.postMessage({ from: self_, dbs: [to], moved: [from, to] });
 	follow(from, to);
 }
@@ -166,3 +187,7 @@ export function onExternalChange(handler: () => unknown, db = 'datum'): () => vo
 		here.delete(synced);
 	};
 }
+
+// Listening from the first moment, so a tab on a database renamed as it
+// loaded follows it before any command of its own makes it again.
+open();
