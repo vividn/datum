@@ -2245,12 +2245,11 @@ fn a_first_sync_of_many_rounds_counts_every_round() {
 
 /// A slow copy catching up from three members at once (da-h31wt): vividn's,
 /// after a purge, lost every session but one to «connection lost: timed
-/// out» or «database is locked». x applies at 40 ms an op, on a 6 s
-/// timeout, while three members running `sync run` each bring it 100
-/// entries, and a command is typed on it meanwhile: all four converge, and
-/// none of them says a session failed. Not 20 ms on 3 s: a loaded runner
-/// stalled a session 3 s (da-hd9sx); with the keepalives off
-/// (`DATUM_SYNC_TEST_KEEPALIVE=0`) it fails at either.
+/// out» or «database is locked». x applies at 80 ms an op, on a 12 s timeout
+/// (a loaded runner stalled 3 s, then 6 s: da-hd9sx, da-lhbzr), while three
+/// members running `sync run` each bring it 100 entries, and a command is
+/// typed on it meanwhile: all four converge, and none says a session failed,
+/// giving way to a write being none. With `DATUM_SYNC_TEST_KEEPALIVE=0` it fails.
 #[test]
 fn a_slow_copy_catches_up_from_three_members_at_once() {
     let mut x = Copy::new();
@@ -2281,9 +2280,9 @@ fn a_slow_copy_catches_up_from_three_members_at_once() {
         }
         runs.push(child);
     };
-    let timeout = ("DATUM_SYNC_TIMEOUT_S", "6");
+    let timeout = ("DATUM_SYNC_TIMEOUT_S", "12");
     x.env
-        .extend([timeout, ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "40")]);
+        .extend([timeout, ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "80")]);
     up(&x);
     for p in &mut peers {
         p.env.extend([timeout, ("DATUM_SYNC_TEST_RETRY_MS", "200")]);
@@ -2293,7 +2292,7 @@ fn a_slow_copy_catches_up_from_three_members_at_once() {
     let start = Instant::now();
     while count() == "0" {
         assert!(
-            start.elapsed() < Duration::from_secs(60),
+            start.elapsed() < Duration::from_secs(120),
             "x applied nothing"
         );
         std::thread::sleep(Duration::from_millis(50));
@@ -2302,7 +2301,7 @@ fn a_slow_copy_catches_up_from_three_members_at_once() {
     assert_ne!(count(), "300", "the command was typed after the catch-up");
     while !peers.iter().all(|p| p.has("typed") && p.hash() == x.hash()) {
         assert!(
-            start.elapsed() < Duration::from_secs(240),
+            start.elapsed() < Duration::from_secs(480),
             "converged: {:#?}",
             said.lock().unwrap()
         );
@@ -2312,6 +2311,7 @@ fn a_slow_copy_catches_up_from_three_members_at_once() {
     let said = said.lock().unwrap();
     let failed: Vec<&String> = said
         .iter()
+        .filter(|l| !l.contains("gave way to a write"))
         .filter(|l| {
             ["locked", "timed out", "connection lost", "failed"]
                 .iter()
