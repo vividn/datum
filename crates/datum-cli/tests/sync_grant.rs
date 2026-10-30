@@ -51,7 +51,7 @@ impl Install {
             .env("USER", self.user)
             .env("DATUM_SYNC_NO_DAEMON", "1")
             // A member not running is waited for this long, not a minute.
-            .env("DATUM_SYNC_TIMEOUT_S", "5")
+            .env("DATUM_SYNC_DIAL_TIMEOUT_S", "5")
             .env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", self.port(db)))
             .args(["--db", db])
             .args(args)
@@ -101,7 +101,8 @@ impl Install {
                 .map_while(Result::ok)
                 .try_for_each(|l| tx.send(l))
         });
-        let running = Running { child, log };
+        let who = format!("{}'s {db}", self.user);
+        let running = Running { child, log, who };
         running.says("is up");
         running
     }
@@ -128,6 +129,7 @@ impl Install {
 struct Running {
     child: Child,
     log: Receiver<String>,
+    who: String,
 }
 
 impl Running {
@@ -146,6 +148,12 @@ impl Running {
 
 impl Drop for Running {
     fn drop(&mut self) {
+        // A failure says how each run stood, which no line of a peer's can.
+        if std::thread::panicking() {
+            let ended = self.child.try_wait();
+            eprintln!("{}'s run, ended: {ended:?}", self.who);
+            self.log.try_iter().for_each(|l| eprintln!("  {l}"));
+        }
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
