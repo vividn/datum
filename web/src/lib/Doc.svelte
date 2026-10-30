@@ -3,13 +3,20 @@
 	status line shows it and as the CLI widget and the `+N` modal show it.
 
 	A FRAME OF ITS OWN inside its command's (da-hxjrk), labelled on its top
-	border with the shape of what the entry stores and its hid. vividn,
+	border with what the command did and the entry's hid. vividn,
 	2026-10-29: «for each entry, give it a smaller frame inside the cli
 	commands frame. Label this frame with the action and the hid … then put
 	field/state indicator on the first line, time on the second line, extra
-	data below that.» The shape is the CLI's six characters (`shape`:
-	HAPPEN, ON/OFF, SWITCH, MOMENT, RECORD), painted in the colour of what
-	the command did to it (`action_color`), whose word is the label's title.
+	data below that.» A CREATE is labelled with the shape it stores, the
+	CLI's six characters (`shape`: HAPPEN, ON/OFF, SWITCH, MOMENT, RECORD),
+	and every other action with its own word (da-nafql), vividn, 2026-10-30:
+	«For other actions besides CREATE, keep using the output actions that
+	were there before». Either way painted in the colour of what the command
+	did (`action_color`), whose word is the label's title.
+
+	An undo says what it changes in the CLI's own strings (`−` and `+` on the
+	lines, a reversed arrow), and an entry it took away is struck through
+	here: `--show json` carries no strike, so `undid` says.
 
 	The data is under the lines now, not beside them in a brace (da-f4mw):
 	every key where there is room to scroll (`all`), and in the bar's fixed
@@ -104,11 +111,12 @@
 	class:all
 	class:selected={isSelected($selected, doc.hid)}
 	data-hid={doc.hid}
+	class:gone={doc.undid?.action === 'CREATE'}
 	onmousedown={(e) => e.shiftKey && e.preventDefault()}
 	onclick={tap}
 >
 	<div class="receipt">
-		<span class="action" style:color={doc.action_color} title={doc.action}>{doc.shape ?? doc.action}</span>
+		<span class="action" style:color={doc.action_color} title={doc.action}>{doc.action === 'CREATE' ? (doc.shape ?? doc.action) : doc.action}</span>
 		<span class="dot" aria-hidden="true">·</span>
 		<button
 			type="button"
@@ -164,6 +172,12 @@
 	/* A selected entry (da-r13j): the accent the hid pill is filled with. */
 	.doc.selected {
 		background: color-mix(in srgb, var(--accent) 22%, transparent);
+	}
+
+	/* An entry an undo took away (da-nafql). */
+	.doc.gone .info,
+	.doc.gone .rows {
+		text-decoration: line-through;
 	}
 
 	/* Each line is one line: the band is a fixed height, so a string too

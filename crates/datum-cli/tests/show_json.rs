@@ -368,8 +368,8 @@ fn an_update_of_several_entries_carries_each_ones_before_and_after() {
     );
 }
 
-/// `undo` echoes UNDONE (da-3mryj): the change it took back, before the
-/// undo → after it, the header naming the command it undid, and `--show
+/// `undo` echoes UNDONE (da-3mryj): the change it took back, after the
+/// undo ← before it (da-nafql), the header naming the command it undid, and `--show
 /// json` carrying that command's action and time as `undid`.
 #[test]
 fn an_undone_update_is_the_change_taken_back() {
@@ -385,7 +385,7 @@ fn an_undone_update_is_the_change_taken_back() {
     assert_eq!(docs[0]["hid"], hid);
     assert_eq!(
         docs[0]["data"],
-        serde_json::json!(["size: \"small\" → \"large\"", "shop: \"corner\""])
+        serde_json::json!(["size: \"large\" ← \"small\"", "shop: \"corner\""])
     );
     assert_eq!(docs[0]["changes"][0]["before"], "\"small\"");
     assert_eq!(docs[0]["undid"]["action"], "UPDATE");
@@ -399,41 +399,132 @@ fn an_undone_update_is_the_change_taken_back() {
         header.starts_with(&format!("UNDONE {hid} tea:")) && header.contains("(the UPDATE of "),
         "{printed}"
     );
-    assert!(printed.contains("size: \"small\" → \"large\""), "{printed}");
+    assert!(printed.contains("size: \"large\" ← \"small\""), "{printed}");
 }
 
-/// An undone create is the entry struck through, «gone»; an undone delete
-/// the entry plain, «back» (da-3mryj).
+/// Each undo says what it changes, and no two read alike with no color at
+/// all, as on a terminal with no strikethrough (da-nafql): an undone create
+/// `−` on every line, «gone», an undone delete `+`, «back», an undone update
+/// its arrows reversed with `+` on the key it brings back and `−` on the key it
+/// takes away. The same strings reach `--show json`.
 #[test]
-fn an_undone_create_is_gone_and_an_undone_delete_back() {
+fn each_undo_says_what_it_changes() {
     let env = Env::new();
     env.run(&["occur", "tea", "-t", "9:00", "size=large"]);
-    env.run(&["occur", "tea", "-t", "9:30", "size=small"]);
+    env.run(&["occur", "tea", "-t", "9:30", "size=small", "cups=2"]);
 
-    let printed = env.run(&["undo"]);
-    let header = strip_ansi(printed.lines().next().unwrap());
+    let undo = |env: &Env| {
+        let printed = env.run(&["undo"]);
+        env.run(&["redo"]);
+        let docs = env.docs(&["undo", "--show", "json"]);
+        env.run(&["redo"]);
+        (printed, docs)
+    };
+    // The lines under an echo's header, with the time masked.
+    let body = |printed: &str| {
+        strip_ansi(printed)
+            .lines()
+            .skip(1)
+            .map(|l| match l.find("09:") {
+                Some(at) => {
+                    let end = at + l[at..].find(' ').unwrap();
+                    format!("{}TIME{}", &l[..at], &l[end..])
+                }
+                None => l.to_string(),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    // Undoing a create: every line a `−`, and struck where a terminal can.
+    let (printed, docs) = undo(&env);
     assert!(
-        header.starts_with("UNDONE ") && header.ends_with(", gone)"),
+        strip_ansi(&printed)
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with(", gone)"),
         "{printed}"
     );
-    assert!(
-        printed.contains("\x1b[2;9m"),
-        "the entry is struck through: {printed:?}"
+    assert_eq!(
+        body(&printed),
+        ["− TIME  tea  ●", "  − cups: 2", "  − size: \"small\""]
     );
-    env.run(&["redo"]);
-    let docs = env.docs(&["undo", "--show", "json"]);
+    assert!(printed.contains("\x1b[2;9m"), "struck: {printed:?}");
     assert_eq!(docs[0]["undid"]["action"], "CREATE");
+    assert_eq!(
+        docs[0]["data"],
+        serde_json::json!(["− cups: 2", "− size: \"small\""])
+    );
+    assert!(docs[0]["info"]
+        .as_str()
+        .unwrap()
+        .starts_with(docs[0]["info_time"].as_str().unwrap()));
+    let segments: String = docs[0]["info_segments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(segments, docs[0]["info"].as_str().unwrap());
 
-    env.run(&["redo"]);
+    // Undoing a delete: every line a `+`, and nothing struck.
     env.run(&["delete", "_LAST"]);
-    let printed = env.run(&["undo"]);
-    let header = strip_ansi(printed.lines().next().unwrap());
-    assert!(header.ends_with(", back)"), "{printed}");
-    assert!(!printed.contains("\x1b[2;9m"), "back, plain: {printed:?}");
-    env.run(&["redo"]);
-    let docs = env.docs(&["undo", "--show", "json"]);
+    let (printed, docs) = undo(&env);
+    assert!(
+        strip_ansi(&printed)
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with(", back)"),
+        "{printed}"
+    );
+    assert_eq!(
+        body(&printed),
+        ["+ TIME  tea  ●", "  + cups: 2", "  + size: \"small\""]
+    );
+    assert!(
+        !printed.contains("\x1b[2;9m"),
+        "back, unstruck: {printed:?}"
+    );
     assert_eq!(docs[0]["undid"]["action"], "DELETE");
-    assert_eq!(docs[0]["data"], serde_json::json!(["size: \"small\""]));
+    assert_eq!(
+        docs[0]["data"],
+        serde_json::json!(["+ cups: 2", "+ size: \"small\""])
+    );
+
+    // Undoing an update: its arrow reversed, the key it added taken away as
+    // `−`, and what it left alone left alone.
+    env.run(&["undo"]);
+    env.run(&["update", "_LAST", "size=large", "milk=oat"]);
+    let (printed, docs) = undo(&env);
+    assert!(
+        strip_ansi(&printed)
+            .lines()
+            .next()
+            .unwrap()
+            .contains("(the UPDATE of "),
+        "{printed}"
+    );
+    assert_eq!(
+        body(&printed),
+        [
+            "TIME  tea  ●",
+            "  size: \"small\" ← \"large\"",
+            "  − milk: \"oat\"",
+            "  cups: 2",
+        ]
+    );
+    assert_eq!(docs[0]["undid"]["action"], "UPDATE");
+    assert_eq!(docs[0]["data"][0], "size: \"small\" ← \"large\"");
+
+    // And the key an update took away comes back as `+`.
+    env.run(&["update", "_LAST", "--strategy", "rekey", "cups=mugs"]);
+    let (printed, _) = undo(&env);
+    assert_eq!(
+        body(&printed)[1..3],
+        ["  + cups: 2", "  − mugs: 2"],
+        "{printed}"
+    );
 }
 
 /// A bare undo of a comma-list command echoes each entry it took back,

@@ -14,12 +14,16 @@
 //! The changed lines come first, then the unchanged. One list of [`Part`]s
 //! is drawn for the terminal and carried as `changes` under `--show json`,
 //! so the two cannot disagree.
+//!
+//! `undo`'s echo is the same parts with its arrows reversed, `new ← old`, so
+//! an undone update reads as the update it takes back, pointing the other way
+//! (da-nafql). An entry an `undo` took away or brought back whole is [`whole`].
 
 use datum_core::{entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 
 use super::action::{info_parts, RenderContext};
 use super::blocks::{data_inline, data_pairs, format_state_doc_line};
-use super::colors::{ansi_segments, paint, strip_ansi, ColorOverride};
+use super::colors::{ansi_segments, paint, strip_ansi, AnsiSegment, ColorOverride};
 use super::{ActionLines, Outcome};
 
 const DIM: &str = "\x1b[2m";
@@ -35,6 +39,8 @@ struct Part {
     key: Option<String>,
     /// The ANSI color a new time, duration or value is painted: the action's.
     color: &'static str,
+    /// An `undo`'s part: its change drawn `new ← old`.
+    undoing: bool,
     before: Option<String>,
     after: Option<String>,
 }
@@ -72,6 +78,17 @@ impl Part {
         let was = |s: &str| paint(STRUCK, strip_ansi(s).trim_end());
         match (self.changed(), &self.before, &self.after) {
             (false, _, Some(a)) => paint(DIM, &strip_ansi(a)),
+            (true, Some(b), Some(a)) if self.undoing => {
+                // A state group's edge slots are spaces of their own.
+                let gap = |slot| if slot { "" } else { " " };
+                format!(
+                    "{}{}←{}{}",
+                    self.painted_new(a),
+                    gap(strip_ansi(a).ends_with(' ')),
+                    gap(strip_ansi(b).starts_with(' ')),
+                    was(b)
+                )
+            }
             (true, Some(b), Some(a)) => {
                 // A state group's lead slot is a space of its own (two).
                 let to = if strip_ansi(a).starts_with(' ') {
@@ -98,6 +115,13 @@ impl Part {
         let was = |s: &str| paint(STRUCK, &format!("− {key}{}", strip_ansi(s)));
         let body = match (self.changed(), &self.before, &self.after) {
             (false, _, Some(a)) => paint(DIM, &format!("{key}{}", strip_ansi(a))),
+            (true, Some(b), Some(a)) if self.undoing => {
+                format!(
+                    "{key}{} ← {}",
+                    self.painted_new(a),
+                    paint(STRUCK, &strip_ansi(b))
+                )
+            }
             (true, Some(b), Some(a)) => {
                 format!(
                     "{key}{} → {}",
@@ -120,8 +144,10 @@ fn parts(
     after: &Entry,
     registry: Option<&SpecRegistry>,
     now: &DatumTime,
-    color: &'static str,
+    action: Outcome,
 ) -> (Vec<Part>, Vec<Part>) {
+    let color = action.ansi_color();
+    let undoing = matches!(action, Outcome::Undone);
     let spec = |e: &Entry| registry.and_then(|r| r.fields.get(&e.field));
     let ctx = RenderContext::default();
     let [b, a] = [before, after].map(|e| info_parts(e, spec(e), &ctx, now));
@@ -132,6 +158,7 @@ fn parts(
             name,
             key: None,
             color,
+            undoing,
             before,
             after,
         })
@@ -146,6 +173,7 @@ fn parts(
         name: "state_line",
         key: None,
         color,
+        undoing,
         before: state_line(before),
         after: state_line(after),
     }];
@@ -163,6 +191,7 @@ fn parts(
         name: "data",
         key: Some(k.clone()),
         color,
+        undoing,
         before: value(&b, k),
         after: value(&a, k),
     }));
@@ -189,14 +218,13 @@ pub(crate) fn apply(
     now: &DatumTime,
     action: Outcome,
 ) {
-    let color = action.ansi_color();
-    let plain = parts(before, after, registry, now, color);
+    let plain = parts(before, after, registry, now, action);
     let (info, data) = draw(&plain);
     // Painted again with the gate open, as `action_lines_at` does, so the
     // segments' texts are `info` stripped.
     let painted = {
         let _on = ColorOverride::set(true);
-        draw(&parts(before, after, registry, now, color)).0
+        draw(&parts(before, after, registry, now, action)).0
     };
     lines.info = info;
     // The stamp `info` starts with is the time part as drawn (da-7xp82):
@@ -222,21 +250,40 @@ pub(crate) fn apply(
     );
 }
 
-/// Strike `lines`' info line and data view through, each line's indent
-/// kept: an entry an `undo` took away (da-3mryj). `info_segments` keep the
-/// entry's own colors, their texts still `info` stripped: a surface that is
-/// not a terminal reads `undid` and marks the entry gone itself (da-25q3k).
-pub(crate) fn strike(lines: &mut ActionLines) {
-    fn struck(s: &str) -> String {
-        let s = strip_ansi(s);
-        let body = s.trim_start();
-        format!("{}{}", &s[..s.len() - body.len()], paint(STRUCK, body))
+/// Mark every line of `lines` as an entry an `undo` took away (`gone`: `−`,
+/// struck through) or brought back (`+`), a key to a line as the update diff
+/// has them (da-nafql). The mark is what a terminal with no strikethrough
+/// reads. `info_segments` keep the entry's own colors, their texts still `info`
+/// stripped: a surface that is not a terminal reads `undid` and strikes the
+/// entry itself (da-25q3k).
+pub(crate) fn whole(lines: &mut ActionLines, gone: bool) {
+    let (mark, code) = if gone {
+        ("−", STRUCK)
+    } else {
+        ("+", Outcome::Undone.ansi_color())
+    };
+    lines.info = if gone {
+        paint(code, &format!("{mark} {}", strip_ansi(&lines.info)))
+    } else {
+        format!("{} {}", paint(code, mark), lines.info)
+    };
+    lines.info_time = format!("{mark} {}", lines.info_time);
+    lines.info_segments.insert(
+        0,
+        AnsiSegment {
+            text: format!("{mark} "),
+            color: (!gone).then(|| Outcome::Undone.hex().to_string()),
+            fg: None,
+        },
+    );
+    for item in &mut lines.data_items {
+        *item = format!("{mark} {item}");
     }
-    lines.info = struck(&lines.info);
+    lines.data_inline = data_inline(&lines.data_items);
     lines.data = lines
-        .data
+        .data_items
         .iter()
-        .map(|block| block.split('\n').map(struck).collect::<Vec<_>>().join("\n"))
+        .map(|item| format!("  {}", paint(code, item)))
         .collect();
 }
 
@@ -346,6 +393,86 @@ mod tests {
         assert_eq!(lines.info, "09:00:00+0 → 09:30:00+0  coffee  ●");
         assert_eq!(lines.info_time, "09:00:00+0 → 09:30:00+0");
         assert_eq!(lines.data, ["  shop: \"corner\""]);
+    }
+
+    /// The echo of `undo` taking `before` back to `after`, with no color.
+    fn undone(before: &Entry, after: &Entry) -> ActionLines {
+        let _gate = ColorOverride::set(false);
+        let time = "2024-01-01T10:00:00Z".parse().unwrap();
+        super::super::undone_lines_at(before, after, time, None, &at("12:00"))
+    }
+
+    /// An update and its undo draw one change with the arrow turned round
+    /// (da-nafql): the same two values in the same places.
+    #[test]
+    fn an_undone_update_reverses_every_arrow() {
+        let before = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(json!("calm")),
+            Some(json!({"size": "large", "shop": "corner"})),
+            Some(at("09:10")),
+            None,
+            "d1",
+        );
+        let mut after = before.clone();
+        after.state = Some(json!("tired"));
+        after.occur_time = Some(at("09:30"));
+        after.data = Some(json!({"size": "small", "milk": "oat"}));
+        // `undo` of that update: from `after` back to `before`.
+        let lines = undone(&after, &before);
+        assert_eq!(lines.info_time, "09:10:00+0 ← 09:30:00+0");
+        assert_eq!(
+            lines.info.trim_end(),
+            "09:10:00+0 ← 09:30:00+0  mood   calm  ←  tired"
+        );
+        assert_eq!(
+            lines.data,
+            [
+                "  + shop: \"corner\"",
+                "  size: \"large\" ← \"small\"",
+                "  − milk: \"oat\"",
+            ]
+        );
+        // `changes` keeps its sense: before the undo, and after it.
+        let size = lines.changes.as_ref().unwrap();
+        let size = size.iter().find(|c| c.key.as_deref() == Some("size"));
+        assert_eq!(size.unwrap().before.as_deref(), Some("\"small\""));
+    }
+
+    /// A create taken back is `−` on every line and a delete taken back `+`,
+    /// so with no color the two differ on every line; `info` still starts with
+    /// `info_time`, and the segments are still `info`.
+    #[test]
+    fn an_entry_taken_away_or_brought_back_is_marked_on_every_line() {
+        let live = coffee(json!({"shop": "corner", "cups": 2}));
+        let mut dead = live.clone();
+        dead.deleted_at = Some(live.create_time);
+        for (before, after, mark) in [(&live, &dead, "−"), (&dead, &live, "+")] {
+            let lines = undone(before, after);
+            assert_eq!(lines.info, format!("{mark} 09:00:00+0  coffee  ●"));
+            assert_eq!(lines.info_time, format!("{mark} 09:00:00+0"));
+            assert_eq!(
+                lines.data,
+                [
+                    format!("  {mark} cups: 2"),
+                    format!("  {mark} shop: \"corner\"")
+                ]
+            );
+            assert_eq!(
+                lines.data_items,
+                [
+                    format!("{mark} cups: 2"),
+                    format!("{mark} shop: \"corner\"")
+                ]
+            );
+            let segments: String = lines
+                .info_segments
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect();
+            assert_eq!(segments, lines.info);
+        }
     }
 
     /// On a terminal the old is dim and struck, the new UPDATE's cyan, and

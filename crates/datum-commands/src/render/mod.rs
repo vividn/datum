@@ -607,8 +607,9 @@ pub fn update_lines_at(
 
 /// `UNDONE`: what an `undo` took back from `before` to leave `after`
 /// (da-3mryj), the change made at `time`. A taken-back update is drawn as
-/// UPDATE's diff, before the undo → after it; a create taken back is the
-/// entry struck through, «gone»; a delete taken back is the entry, «back».
+/// UPDATE's diff with its arrows reversed, after the undo ← before it; a
+/// create taken back is the entry struck through and `−`, «gone»; a delete
+/// taken back is the entry and `+`, «back» (da-nafql).
 pub fn show_undone(
     before: &Entry,
     after: &Entry,
@@ -632,10 +633,13 @@ pub fn undone_lines_at(
     let mut lines = action_lines_at(after, Outcome::Undone, registry, None, now);
     let (action, end) = match (before.deleted_at.is_some(), after.deleted_at.is_some()) {
         (false, true) => {
-            self::diff::strike(&mut lines);
+            self::diff::whole(&mut lines, true);
             ("CREATE", ", gone")
         }
-        (true, false) => ("DELETE", ", back"),
+        (true, false) => {
+            self::diff::whole(&mut lines, false);
+            ("DELETE", ", back")
+        }
         _ => {
             self::diff::apply(&mut lines, before, after, registry, now, Outcome::Undone);
             ("UPDATE", "")

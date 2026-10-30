@@ -95,7 +95,7 @@ const section = (page, i = 0) =>
 		.nth(i)
 		.evaluate((el) => ({
 			receipt: el.querySelector('.receipt')?.innerText.trim(),
-			// What the command did to the entry, behind its shape (da-hxjrk).
+			// What the command did to the entry, whatever its label says (da-hxjrk).
 			did: el.querySelector('.action')?.title,
 			// The line the CLI printed, in the lines the frame cuts it into
 			// (da-7xp82): the field and state, then the time.
@@ -450,6 +450,62 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.ok(Math.abs(parts.when.left - parts.what.left) <= 0.5, `the two lines do not start together: ${JSON.stringify(parts)}`);
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
+	});
+
+	// da-nafql. vividn, 2026-10-30: «For other actions besides CREATE, keep using
+	// the output actions that were there before», and «Let's have UNDONE actually
+	// show what is changing». Each undo kind by what it draws, none like another.
+	test('only a CREATE is labelled with its shape, and each UNDONE draws what it changes', async () => {
+		await desktop(async (app) => {
+			const { page } = app;
+			const run = async (line) => {
+				await app.submit(line);
+				return page
+					.locator(DOC)
+					.last()
+					.evaluate((el) => {
+						const struck = (q) => getComputedStyle(el.querySelector(q)).textDecorationLine === 'line-through';
+						return {
+							hid: el.dataset.hid,
+							word: el.querySelector('.action').innerText,
+							time: el.querySelector('.when').textContent,
+							data: el.querySelector('.rows .row').innerText,
+							struck: [struck('.info'), struck('.rows')]
+						};
+					});
+			};
+			const plain = [false, false];
+
+			// Not the field's first entry, whose bare spec goes and comes back with it.
+			await app.submit('occur tea -t -50');
+			let got = await run('occur tea cups=2 shop=corner');
+			assert.deepEqual([got.word, got.struck], ['HAPPEN', plain]);
+
+			got = await run('update _LAST cups=3');
+			assert.deepEqual([got.word, got.struck], ['UPDATE', plain]);
+			assert.match(got.data, /^cups: 2 → 3/);
+
+			got = await run('undo');
+			assert.deepEqual([got.word, got.struck], ['UNDONE', plain]);
+			assert.match(got.data, /^cups: 2 ← 3/);
+
+			await app.submit('redo');
+			got = await run('delete _LAST');
+			assert.deepEqual([got.word, got.struck], ['DELETE', plain]);
+
+			got = await run('undo');
+			assert.deepEqual([got.word, got.struck], ['UNDONE', plain]);
+			assert.match(got.time, /^\+ /);
+			assert.equal(got.data, '+ cups: 3, + shop: "corner"');
+
+			await app.submit('undo');
+			got = await run('undo');
+			assert.deepEqual([got.word, got.struck], ['UNDONE', [true, true]]);
+			assert.match(got.time, /^− /);
+			assert.equal(got.data, '− cups: 2, − shop: "corner"');
+			// The log has every key on its own row.
+			assert.deepEqual(await page.locator(`.cli .doc.gone[data-hid="${got.hid}"] .row`).allInnerTexts(), ['− cups: 2', '− shop: "corner"']);
+		});
 	});
 
 	// da-hxjrk. vividn, 2026-10-29: «for each entry, give it a smaller frame
@@ -895,7 +951,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.equal(await page.locator(`${BAR} .group`).count(), groups, 'the undo is a command of its own in the strip');
 			// The CLI widget is the log's own component: there, the undo is what the CLI printed, and the command it undid is struck too.
 			await page.locator('.host.cli .echo', { hasText: `❯ undo ${coffee}` }).waitFor();
-			// What it did, behind its entry's shape (da-hxjrk).
+			// What it did (da-nafql).
 			await page.locator('.host.cli .doc .action[title="UNDONE"]').first().waitFor();
 			assert.equal(await page.locator('.host.cli .head.struck').count(), 1);
 
@@ -1039,7 +1095,7 @@ describe('a command with no echo', () => {
 			assert.equal(result.code, 1);
 			const said = result.stderr.replace(ESC, '').trim().split('\n').at(-1);
 			assert.match(said, /nope9/, 'the error names the hid it did not find');
-			// What the command did is the label's title; its word is the entry's shape (da-hxjrk).
+			// What the command did is the label's title, and its word (da-nafql).
 			assert.deepEqual(await page.locator(`${DOC} .action`).evaluateAll((els) => els.map((el) => el.title)), ['DELETE']);
 			assert.equal((await section(page)).hid, hid);
 			assert.deepEqual(await page.locator(`${OUT} .raw.error p`).allInnerTexts(), [said]);
@@ -1375,7 +1431,7 @@ describe('folded, a command still answers', () => {
 			// documents the very same run drew in the scrollback, so nothing
 			// here is a word this file made up and nothing is run twice.
 			assert.ok(words.length > 0, 'the folded bar said nothing about a CREATE');
-			// What each command did, behind each entry's shape (da-hxjrk).
+			// What each command did, the title of each label (da-hxjrk).
 			assert.deepEqual(words, await page.locator('.cli .doc .action').evaluateAll((els) => els.map((el) => el.title)));
 			// IN THE BOTTOM OF THE SECTION, AND OVER BY THE `❯`. vividn asked
 			// first for the right of the row ("show all the ACTION words on the

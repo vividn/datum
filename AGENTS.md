@@ -907,9 +907,13 @@ binary.
   a command whose answer is the CLI's own printed text — a table, a drawn
   day, an error — takes a whole row at the width it was printed for. Each
   command is a frame, the time it ran and its Undo on the frame's top
-  border, and each entry it echoed a frame inside it labelled with the
-  shape it stores and its hid, its field and state over its time over its
+  border, and each entry it echoed a frame inside it labelled with its hid
+  and, for a CREATE, the shape it stores, for any other action that action's
+  word (da-nafql), its field and state over its time over its
   data (`CliEntry.svelte`, `Doc.svelte`, da-hxjrk), on every surface.
+  An UNDONE says what it changes (`render/diff.rs`): `−` on every line of a
+  create taken back, struck through too, `+` on every line of a delete taken
+  back, and an update's arrows reversed, `new ← old`.
   `tests/scrollback.test.mjs` takes both measurements again against the
   built app.
 - THE BAR RESTS IN THREE STATES (da-0b2vy): CLOSED, the SINGLE ROW (the
