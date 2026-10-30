@@ -144,6 +144,7 @@ seed(
 		field: 'coffee',
 		symbol: 'c',
 		anchorable: true,
+		render: true,
 		symbol_by: { key: 'size', map: { big: 'C' } },
 		icon: '<svg viewBox="0 0 1 1"/>',
 		remainder: 'note',
@@ -152,6 +153,9 @@ seed(
 	})
 );
 seed(calls.specArgv({ ...SPEC, field: 'mood', verb: 'switch', never_false: true, relative_to: 'coffee', anchor_pos_ratio: 0.5, anchor_size_ratio: 0.5, state_descriptions: { happy: 'up' }, state_symbols: { happy: 'h' }, state_lookup_field: 'feeling', comment_remainder: true }));
+// A field a template covers, whose spec names it.
+seed(['setup', 'job__%hid:8%', '--verb', 'occur']);
+seed(['occur', 'job__abcd1234']);
 seed(['alias', 'set', 'cof', 'occur coffee']);
 seed(calls.savePlanArgv(PLAN, false));
 seed(calls.newLayoutArgv(LAYOUT, 'k'));
@@ -179,7 +183,7 @@ const HID = JSON.parse(seed(calls.layoutsArgv()).stdout).rows.find((r) => r.data
 /** Arguments for every call that takes some: one list per run. A call with none is run once, bare. */
 const SAMPLES = {
 	helpArgv: [[], ['db backup']],
-	fieldArgv: [['coffee'], ['mood'], ['never-logged']],
+	fieldArgv: [['coffee'], ['mood'], ['never-logged'], ['job__abcd1234']],
 	tailArgv: [[{}], [{ field: 'mood', count: 5, above: HID }]],
 	showAllArgv: [[statsArgv(DEFAULT_STATS)], [statsArgv(DEFAULT_STATS, 'mood')], [statsArgv({ range: 'all' }, 'coffee')]],
 	statsArgv: [[DEFAULT_STATS], [{ range: 'all' }, 'coffee']],

@@ -45,7 +45,17 @@
 	database holds. It is asked again whenever the spec changes, but not
 	while a drag is under way: the drawn marks are carried there meanwhile.
 
-	What is drawn around the field is the eye's above the band (da-jc8ic),
+	The eye (da-woyqh), vividn, 2026-10-30: «the placement widget should allow
+	completely hiding»: closed, the field is drawn on no picture, dayview or
+	nowview, its `render` false on the spec, so every copy agrees; it still
+	logs and is still in the tail, stats and the fields widget. Lanes are
+	fractions of the day, so no other field moves: the room is simply no
+	longer drawn on. The fields hidden are listed under the band, each with
+	its eye closed: a click draws it again at once, a save of that field and
+	not of the form's, and its name opens its setup. A field under a template
+	writes `render` true, or the template's own would show through.
+
+	What is drawn around the field is the layers' above the band (da-jc8ic),
 	cycled by a click and opened on «context» each time: «context», the
 	field's sample alone over the day before now; «current», every field's
 	state now across the band, the sample over it; «6 hours», the six hours
@@ -63,7 +73,7 @@
 	import { bandArgv, fieldArgv, fieldsArgv } from './calls.js';
 	import { run } from './run.js';
 	import type { FieldListing } from './fields.js';
-	import type { Place, Spec } from './track.js';
+	import { specArgv, type Place, type Spec } from './track.js';
 
 	let {
 		field,
@@ -123,7 +133,8 @@
 	] as const;
 	let around = $state(0);
 
-	onMount(async () => {
+	/** Read every field's lane. */
+	async function list() {
 		const listing = await run(fieldsArgv());
 		if (listing.code === 0) {
 			lanes = Object.fromEntries(
@@ -131,7 +142,25 @@
 			);
 		}
 		listed = true;
-	});
+	}
+	onMount(list);
+
+	/** A `render` as the dayview reads it, which the nowview shares unless a kit's map says otherwise. */
+	const hides = (render: Place['render']) => render === false || (typeof render === 'object' && render.dayview === false);
+	/** The `render` an open eye writes for a field: none, but for a template's, whose own would show through. */
+	const opened = (name: string) => (lanes[name]?.spec?.template ? true : undefined);
+	const hidden = $derived(hides(place.render));
+	/** The other fields hidden, the way back to each. */
+	const hiddenFields = $derived(Object.keys(lanes).filter((n) => n !== field && hides(lanes[n].spec?.render)).sort());
+
+	/** Draw a hidden field again: its spec saved now, the one the form holds not being its. */
+	async function reveal(name: string) {
+		const r = await run(specArgv({ ...lanes[name].spec, render: opened(name) } as unknown as Spec));
+		if (r.code !== 0) return;
+		await list();
+		asked = '';
+		draw();
+	}
 
 	/** What the band is to draw, and what it was last asked to. */
 	let want = '';
@@ -232,7 +261,7 @@
 	function put(y: number, h: number, to = place.relative_to) {
 		const a = to ? lanes[to] : undefined;
 		// The dot's size is not the lane's, and goes along as it was.
-		const { symbol_scale, symbol_aspect, anchorable } = place;
+		const { symbol_scale, symbol_aspect, anchorable, render } = place;
 		const at =
 			to && a?.spec && a.height > 0
 				? {
@@ -241,7 +270,7 @@
 						anchor_size_ratio: round(h / a.height)
 					}
 				: { y: round(y), height: round(h) };
-		place = { ...at, symbol_scale, symbol_aspect, anchorable };
+		place = { ...at, symbol_scale, symbol_aspect, anchorable, render };
 	}
 
 	/** Anchor to `to`, the lane put inside its anchor's where it stood outside it. */
@@ -394,11 +423,32 @@
 	);
 </script>
 
+{#snippet eye(open: boolean)}
+	<svg viewBox="0 0 16 16" aria-hidden="true">
+		{#if open}
+			<path d="M1.5 8 Q8 1.5 14.5 8 Q8 14.5 1.5 8Z" />
+			<circle class="fill" cx="8" cy="8" r="2.4" />
+		{:else}
+			<path d="M1.5 6.5 Q8 12.5 14.5 6.5 M4 9.6 2.8 11.4 M8 11 V13.3 M12 9.6 13.2 11.4" />
+		{/if}
+	</svg>
+{/snippet}
+
 <svelte:window onpointermove={slide} onpointerup={release} onpointercancel={() => (drag = null)} />
 
 <!-- It drags itself: a sideways drag in it is never the pane's tab swipe (`data-pans`, PaneFrame.svelte; da-4t0yn). -->
 <div class="placement" data-pans="x">
 	<div class="top">
+		<button
+			type="button"
+			class="eye icon toggle"
+			aria-label="hide {field} from the pictures"
+			title={hidden ? 'hidden from the pictures, its data kept: click to draw it' : 'drawn on the pictures: click to hide it, its data kept'}
+			aria-pressed={hidden}
+			onclick={() => ([place, sel] = [{ ...place, render: hidden ? opened(field) : false }, null])}
+		>
+			{@render eye(!hidden)}
+		</button>
 		<button
 			type="button"
 			class="around toggle"
@@ -407,16 +457,11 @@
 			title="what is drawn around {field}: click for the next"
 			onclick={() => ([around, sel] = [(around + 1) % AROUND.length, null])}
 		>
+			<!-- This field on top, and a layer for each thing more behind it. -->
 			<svg viewBox="0 0 16 16" aria-hidden="true">
-				{#if around === 0}
-					<path d="M1.5 6.5 Q8 12.5 14.5 6.5 M4 9.6 2.8 11.4 M8 11 V13.3 M12 9.6 13.2 11.4" />
-				{:else if around === 1}
-					<path d="M1.5 8 H14.5 Q8 14.5 1.5 8Z" />
-					<path class="pupil" d="M5.6 8 A2.4 2.4 0 0 0 10.4 8Z" />
-				{:else}
-					<path d="M1.5 8 Q8 1.5 14.5 8 Q8 14.5 1.5 8Z" />
-					<circle class="pupil" cx="8" cy="8" r="2.4" />
-				{/if}
+				<path class="fill" d="M8 1.5 14.5 5 8 8.5 1.5 5Z" />
+				{#if around > 0}<path d="M1.5 8 8 11.5 14.5 8" />{/if}
+				{#if around > 1}<path d="M1.5 11 8 14.5 14.5 11" />{/if}
 			</svg>
 			<!-- Every label in one cell, the others hidden, so the button is as wide whichever it reads. -->
 			<span class="labels">
@@ -462,7 +507,7 @@
 		{#each named.filter((n) => n !== field && lanes[n]) as name (name)}
 			<span class="name" style:top="{px(lanes[name].y)}px">{name}</span>
 		{/each}
-		<span class="own" style:top="{px(lane.y + lane.h / 2)}px">{field}</span>
+		{#if !hidden}<span class="own" style:top="{px(lane.y + lane.h / 2)}px">{field}</span>{/if}
 		{#if sel && occur}
 			<div
 				class="box dot"
@@ -546,6 +591,19 @@
 		</span>
 	</p>
 
+	{#if hiddenFields.length}
+		<p class="row hidden-fields">
+			hidden: {#each hiddenFields as name (name)}
+				<span class="hidden-field" data-field={name}>
+					<button type="button" class="icon" aria-label="draw {name} on the pictures" title="draw {name} on the pictures" onclick={() => reveal(name)}>
+						{@render eye(false)}
+					</button>
+					<button type="button" class="link" onclick={() => onopen(name)}>{name}</button>
+				</span>
+			{/each}
+		</p>
+	{/if}
+
 	{#if anchored.length}
 		<p class="anchorees">
 			⚓ anchors: {#each anchored as name, i (name)}{#if i},{' '}{/if}<button type="button" class="link" onclick={() => onopen(name)}>{name}</button>{/each}
@@ -611,7 +669,7 @@
 		stroke-linecap: round;
 	}
 
-	.around .pupil {
+	.fill {
 		fill: currentColor;
 		stroke: none;
 	}
@@ -692,6 +750,16 @@
 		margin: 0;
 		font-size: 0.75rem;
 		color: var(--ink);
+	}
+
+	.hidden-fields {
+		flex-wrap: wrap;
+	}
+
+	.hidden-field {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
 	}
 
 	.icon {

@@ -354,6 +354,8 @@ export interface Place {
 	symbol_aspect?: number;
 	/** Other fields may be placed relative to this one (da-w5ruf); absent is no. */
 	anchorable?: boolean;
+	/** Whether the pictures draw the field (da-woyqh): false on none, a map by surface; absent is every one. */
+	render?: boolean | Record<string, boolean>;
 }
 
 const PLACE_KEYS = [
@@ -364,7 +366,8 @@ const PLACE_KEYS = [
 	'anchor_size_ratio',
 	'symbol_scale',
 	'symbol_aspect',
-	'anchorable'
+	'anchorable',
+	'render'
 ] as const;
 
 /** The placement keys `spec` sets, and only those. */

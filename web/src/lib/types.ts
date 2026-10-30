@@ -43,5 +43,9 @@ export interface FieldSpec {
 	relative_to?: string | null;
 	/** Other fields may be placed against this one (da-w5ruf); absent when false. */
 	anchorable?: boolean;
+	/** Whether the pictures draw the field (da-woyqh): false on none, a map by surface; absent is every one. */
+	render?: boolean | Record<string, boolean>;
+	/** The template spec a covered field reads through, and the keys its own sets over it (da-38obu). */
+	template?: { template: string; own: string[] };
 	[key: string]: unknown;
 }

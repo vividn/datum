@@ -46,6 +46,13 @@ describe('the spec it saves', () => {
 		assert.deepEqual([freed.y, freed.height], [0.1, 0.2]);
 	});
 
+	test('whether the pictures draw it is placement too: kept when hidden, gone when the eye opens', () => {
+		const hidden = { ...base, render: false };
+		assert.equal(placeOf(hidden).render, false);
+		assert.equal(editedSpec(hidden, edit(placeOf(hidden))).render, false);
+		assert.equal('render' in editedSpec(hidden, edit({ y: 0.3, height: 0.2 })), false);
+	});
+
 	test("an occur dot's size is placement too: kept when set, dropped when the tab leaves it at 1", () => {
 		const sized = { ...base, symbol_scale: 2, symbol_aspect: 0.5 };
 		assert.deepEqual(placeOf(sized), { y: 0.3, height: 0.2, symbol_scale: 2, symbol_aspect: 0.5 });
@@ -123,11 +130,11 @@ describe('the Placement tab', () => {
 			return [Math.min(...rs.map((r) => r.top)), Math.max(...rs.map((r) => r.bottom))];
 		});
 
-	/** Click the eye until it says `label`, and wait for the band drawn around what it names (`dayview --context`). */
+	/** Click the context button until it says `label`, and wait for the band drawn around what it names (`dayview --context`). */
 	async function turn(page, label) {
-		const eye = page.locator(`${MODAL} .placement button.around`);
-		for (let i = 0; i < 3 && (await eye.innerText()).trim() !== label; i++) await eye.click();
-		assert.equal((await eye.innerText()).trim(), label);
+		const around = page.locator(`${MODAL} .placement button.around`);
+		for (let i = 0; i < 3 && (await around.innerText()).trim() !== label; i++) await around.click();
+		assert.equal((await around.innerText()).trim(), label);
 		const context = { context: 'none', current: 'now', '6 hours': '6h' }[label];
 		await page.locator(`${MODAL} .placement .band svg[data-context="${context}"]`).waitFor();
 	}
@@ -270,14 +277,14 @@ describe('the Placement tab', () => {
 
 	// da-y72v8, vividn, 2026-10-28: «have a toggleble button next to the "context" button: [⚓ be anchor]. Only show
 	// this button for on/off and switch fields».
-	test('«⚓ be anchor» stands beside the eye on an on/off or a switch field, and not on an occurrence', async () => {
+	test('«⚓ be anchor» stands beside the context button on an on/off or a switch field, and not on an occurrence', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			for (const [field, verb, shown] of [['pill', 'occur', 0], ['light', 'start', 1], ['mood', 'switch', 1]]) {
 				await app.run(['track', field, '--verb', verb]);
 				const { saved } = await openPlacement(page, field);
 				assert.equal(await page.locator(BE_ANCHOR).count(), shown, verb);
-				// Beside the eye, in the row above the band.
+				// Beside the context button, in the row above the band.
 				if (shown) assert.equal(await page.locator(`${MODAL} .placement .top button.around + button.be-anchor`).count(), 1);
 				await leaveField(page);
 				assert.equal(await saved, null);
@@ -598,7 +605,7 @@ describe('the Placement tab', () => {
 	// field actually happen in the last 12 hours, actually use these to do the placement».
 	// da-y72v8, vividn, 2026-10-28: «change "now" on the context button to be "current" so that the button stays the same
 	// size across modes, let's change 12 hours to be 6 hours».
-	test('the eye cycles context, current and 6 hours: the sample alone, every state now, the last six hours', async () => {
+	test('the context button cycles context, current and 6 hours: the sample alone, every state now, the last six hours', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['switch', 'mood', 'happy', '-t', '-300']);
@@ -635,8 +642,8 @@ describe('the Placement tab', () => {
 
 			for (const field of ['pill', 'light', 'weather']) {
 				const { saved } = await openPlacement(page, field);
-				const eye = page.locator(`${MODAL} .placement button.around`);
-				assert.equal((await eye.innerText()).trim(), 'context', `${field} opens on context`);
+				const around = page.locator(`${MODAL} .placement button.around`);
+				assert.equal((await around.innerText()).trim(), 'context', `${field} opens on context`);
 				let seen = await picture(field);
 				assert.deepEqual([seen.fields, seen.errors, seen.named], [[field], 0, 0], `${field}: the sample alone`);
 				assert.ok(seen.own > 1, `${field}: a sample, ${seen.own} marks`);
@@ -685,7 +692,7 @@ describe('the Placement tab', () => {
 	// A new field not yet named drew today's day with no sample, which no context is drawn around. da-y72v8, vividn,
 	// 2026-10-28: «when field is empty do not show anything in the placement tool (can render context, but should not
 	// have any sample data yet)».
-	test('each click of the eye changes what the band draws, on a field with entries and on a new one', async () => {
+	test('each click of the context button changes what the band draws, on a field with entries and on a new one', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['switch', 'mood', 'happy', '-t', '-300']);
@@ -721,7 +728,7 @@ describe('the Placement tab', () => {
 
 	// da-y72v8, vividn, 2026-10-28: «make the placement widget about 2/3 of it's current height / move the now line
 	// always to the right edge of the placement widget».
-	test('the band is two thirds as tall, now at its right edge in every context, and the eye one width in each', async () => {
+	test('the band is two thirds as tall, now at its right edge in every context, and the context button one width in each', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['switch', 'mood', 'happy', '-t', '-300']);
@@ -741,10 +748,160 @@ describe('the Placement tab', () => {
 					assert.ok(at.now !== undefined && Math.abs(at.now - at.right) < 1.5, `«${field}», ${label}: now at ${at.now}, the edge at ${at.right}`);
 					widths.push(Math.round((await page.locator(`${MODAL} .placement button.around`).boundingBox()).width));
 				}
-				assert.equal(new Set(widths).size, 1, `the eye's widths: ${widths}`);
+				assert.equal(new Set(widths).size, 1, `the context button's widths: ${widths}`);
 				await leaveField(page);
 				assert.equal(await saved, null);
 			}
+		});
+	});
+
+	// da-woyqh, vividn, 2026-10-30: «the placement widget should allow completely hiding».
+	describe('the eye', () => {
+		const EYE = `${MODAL} .placement button.eye`;
+		const hiddenRow = (field) => `${MODAL} .placement .hidden-field[data-field="${field}"]`;
+		/** The fields each picture draws, as the CLI says. */
+		const pictures = async (app) => {
+			const day = JSON.parse((await app.run(['dayview', '--show', 'json'])).stdout);
+			const now = JSON.parse((await app.run(['nowview', '--show', 'json'])).stdout);
+			return {
+				dayview: day.days.flatMap((d) => d.fields.map((f) => f.field)).sort(),
+				nowview: now.panel.map((f) => f.field).sort()
+			};
+		};
+		const onBand = (page, field) => page.locator(`${MODAL} .placement .band g.field[data-field="${field}"]`);
+
+		test('closed, a field is on neither picture and still logs; open, it is drawn again', async () => {
+			await shared.solo(async (app) => {
+				const { page } = app;
+				await app.run(['start', 'walk', '-t', '-30']);
+				await app.run(['start', 'read', '-t', '-20']);
+
+				let { saved } = await openPlacement(page, 'walk');
+				assert.equal(await page.locator(EYE).getAttribute('aria-pressed'), 'false', 'open');
+				assert.equal(await page.locator(`${EYE} circle`).count(), 1, 'an open eye has a pupil');
+				await onBand(page, 'walk').waitFor();
+				await page.locator(EYE).click();
+				assert.equal(await page.locator(EYE).getAttribute('aria-pressed'), 'true', 'closed');
+				assert.equal(await page.locator(`${EYE} circle`).count(), 0, 'a closed eye has none');
+				await onBand(page, 'walk').waitFor({ state: 'detached' });
+				await leaveField(page);
+				await saved;
+
+				assert.equal((await spec(app, 'walk')).render, false);
+				assert.deepEqual(await pictures(app), { dayview: ['read'], nowview: ['read'] });
+				assert.match((await app.run(['tail', 'walk'])).stdout, /walk/, 'still in the tail');
+				assert.ok(await lane(app, 'walk'), 'still in the fields widget');
+
+				await app.pressWidget('walk');
+				assert.equal(JSON.parse((await app.run(['tail', 'walk', '--json'])).stdout).rows.length, 2, 'a tap still logs it');
+				assert.deepEqual((await pictures(app)).dayview, ['read'], 'and it stays hidden');
+
+				({ saved } = await openPlacement(page, 'walk'));
+				assert.equal(await page.locator(EYE).getAttribute('aria-pressed'), 'true', 'opens as it was saved');
+				await page.locator(EYE).click();
+				await onBand(page, 'walk').waitFor();
+				await leaveField(page);
+				await saved;
+				assert.equal('render' in (await spec(app, 'walk')), false, 'open is no key at all');
+				assert.deepEqual((await pictures(app)).dayview, ['read', 'walk']);
+			});
+		});
+
+		test('a hidden lane gives its room back: nothing is drawn or named there, and no other lane moves', async () => {
+			await onSeam(async (app) => {
+				const { page } = app;
+				for (const f of ['over', 'under']) await app.run(['start', f, '-t', '-30']);
+				await setPlace(app, 'over', { y: 0.2, height: 0.4, z_index: 2, anchorable: true });
+				await setPlace(app, 'under', { y: 0.3, height: 0.2, z_index: 1 });
+				await app.run(['start', 'tied', '-t', '-30']);
+				await setPlace(app, 'tied', { relative_to: 'over', anchor_pos_ratio: 0.5, anchor_size_ratio: 0.5 });
+				const before = [await lane(app, 'under'), await lane(app, 'tied')].map((f) => [f.y, f.height]);
+
+				/** What is on top at the middle of `under`'s first block, and the names the band prints, on `under`'s band with every state now. */
+				const look = async () => {
+					const opened = await openPlacement(page, 'under');
+					await turn(page, 'current');
+					await page.locator(`${MODAL} .placement .band[data-drawn]`).waitFor();
+					const seen = await page.locator(`${MODAL} .placement .band`).evaluate((band) => {
+						const svg = band.querySelector('svg');
+						const r = svg.querySelector('g.field[data-field="under"] rect.block').getBoundingClientRect();
+						const top = document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2).find((el) => svg.contains(el) && el.closest('g.field'));
+						return { top: top.closest('g.field').dataset.field, names: [...band.querySelectorAll('.name')].map((n) => n.textContent) };
+					});
+					await leaveField(page);
+					await opened.saved;
+					return seen;
+				};
+				const drawn = await look();
+				assert.equal(drawn.top, 'over', 'its lane lies over this one, until');
+				assert.ok(drawn.names.includes('over'), drawn.names.join());
+				await setPlace(app, 'over', { render: false });
+				const seen = await look();
+				assert.equal(seen.top, 'under', 'nothing lies over it');
+				assert.equal(seen.names.includes('over'), false, seen.names.join());
+				assert.deepEqual([await lane(app, 'under'), await lane(app, 'tied')].map((f) => [f.y, f.height]), before, 'and it stayed where it was, its anchor hidden or not');
+			});
+		});
+
+		test('the tool lists the fields hidden, each with its eye closed: a click draws it, its name opens its setup', async () => {
+			await onSeam(async (app) => {
+				const { page } = app;
+				for (const f of ['walk', 'read', 'cook']) await app.run(['start', f, '-t', '-30']);
+				await setPlace(app, 'walk', { render: false });
+				await setPlace(app, 'cook', { render: false, y: 0.7, height: 0.1 });
+
+				await openPlacement(page, 'read');
+				await turn(page, 'current');
+				assert.deepEqual(await page.locator(`${MODAL} .placement .hidden-field`).evaluateAll((els) => els.map((e) => e.dataset.field)), ['cook', 'walk']);
+				assert.equal(await page.locator(`${hiddenRow('walk')} circle`).count(), 0, 'its eye is closed');
+				assert.equal(await onBand(page, 'cook').count(), 0);
+
+				await page.locator(`${hiddenRow('cook')} button.icon`).click();
+				await page.locator(hiddenRow('cook')).waitFor({ state: 'detached' });
+				await onBand(page, 'cook').waitFor();
+				const back = await spec(app, 'cook');
+				assert.equal('render' in back, false, 'saved at once');
+				assert.deepEqual([back.y, back.height], [0.7, 0.1], 'and nothing else of it changed');
+
+				await page.locator(`${hiddenRow('walk')} button.link`).click();
+				await page.locator(FORM_OF('walk')).waitFor();
+				await page.locator(`${EYE}[aria-pressed="true"]`).waitFor();
+				assert.equal(await page.locator(`${MODAL} .placement .hidden-field`).count(), 0, 'a field does not list itself');
+				await leaveField(page);
+				// The form it went to keeps what it said, hidden.
+				assert.equal((await spec(app, 'walk')).render, false);
+			});
+		});
+
+		test('anchoring a hidden field leaves it hidden', async () => {
+			await onSeam(async (app) => {
+				const { page } = app;
+				for (const f of ['body', 'walk']) await app.run(['start', f, '-t', '-30']);
+				await setPlace(app, 'body', { y: 0.2, height: 0.4, anchorable: true });
+				await setPlace(app, 'walk', { render: false });
+				const { saved } = await openPlacement(page, 'walk');
+				await page.selectOption(PICKER, 'body');
+				await leaveField(page);
+				await saved;
+				const after = await spec(app, 'walk');
+				assert.deepEqual([after.relative_to, after.render], ['body', false]);
+			});
+		});
+
+		test("a field under a template that hides is drawn by its own eye, the template's key showing through otherwise", async () => {
+			await onSeam(async (app) => {
+				const { page } = app;
+				await app.run(['setup', 'job__%hid:8%', '--verb', 'occur']);
+				await app.run(['setup', 'job__%hid:8%', '--from-json', JSON.stringify({ ...(await spec(app, 'job__%hid:8%')), render: false })]);
+				await app.run(['occur', 'job__abcd1234', '-t', '-5']);
+				const { saved } = await openPlacement(page, 'job__abcd1234');
+				assert.equal(await page.locator(EYE).getAttribute('aria-pressed'), 'true', 'the template hides it');
+				await page.locator(EYE).click();
+				await leaveField(page);
+				await saved;
+				assert.equal((await spec(app, 'job__abcd1234')).render, true);
+				assert.deepEqual((await pictures(app)).dayview, ['job__abcd1234']);
+			});
 		});
 	});
 
