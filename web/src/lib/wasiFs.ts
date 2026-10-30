@@ -82,13 +82,18 @@ export type Handle = ConstructorParameters<typeof SyncOPFSFile>[0];
  * `name`, preopened, with `handles` as the files SQLite creates and deletes
  * — and, given a `stage`, its files in a `stage` directory beside them.
  */
-export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?: Stage): PreopenDirectory {
+export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?: Stage): PreopenDirectory & { moved: [string, string][]; left: Set<Handle> } {
 	const backed = new Map([...handles].map(([file, handle]) => [file, new SyncOPFSFile(quotaAware(handle))]));
 
 	class Contents extends Map<string, Inode> {
 		delete(file: string): boolean {
 			const opfs = backed.get(file);
 			if (opfs && this.get(file) === opfs) opfs.handle.truncate(0);
+			return super.delete(file);
+		}
+
+		/** `file` out of the directory, its handle as it was. */
+		detach(file: string): boolean {
 			return super.delete(file);
 		}
 	}
@@ -111,7 +116,54 @@ export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?
 		}
 	}
 
-	const preopen = new PreopenDirectory(name, new Map());
+	/**
+	 * A rename is an unlink and then a link (the shim's `path_rename`), and a
+	 * handle cannot change its name. So a file with one leaves the directory
+	 * with its handle as it was, `left` until the process is over, and its
+	 * bytes are copied into the new name's handle where there is one, and into
+	 * memory otherwise, for `keep` to write to OPFS. The worker empties what
+	 * was left only once every copy is kept (`exec`), so a rename that could
+	 * not be kept loses nothing (da-rktt6). A database moved so is in `moved`,
+	 * by name.
+	 */
+	class OpfsPreopen extends PreopenDirectory {
+		moved: [string, string][] = [];
+		left = new Set<Handle>();
+		private leaving = '';
+
+		path_unlink(path: string) {
+			const opfs = backed.get(path);
+			if (!opfs || this.dir.contents.get(path) !== opfs) return super.path_unlink(path);
+			(this.dir.contents as Contents).detach(path);
+			this.left.add(opfs.handle);
+			this.leaving = path;
+			return { ret: wasi.ERRNO_SUCCESS, inode_obj: opfs as Inode };
+		}
+
+		path_link(path: string, inode: Inode, allowDir: boolean) {
+			const leaving = this.leaving;
+			this.leaving = '';
+			const opfs = backed.get(path);
+			if (inode === opfs) this.left.delete(opfs.handle);
+			else if (inode instanceof SyncOPFSFile && (opfs || this.left.has(inode.handle))) {
+				const bytes = new Uint8Array(inode.handle.getSize());
+				inode.handle.read(bytes, { at: 0 });
+				// Emptied before it is written: a database there was refused
+				// unless empty (`refuse_unless_empty`, rename.rs), so a short
+				// write loses nothing. Keep it so if the order changes.
+				const into = opfs?.handle ?? new MemoryHandle();
+				into.truncate(0);
+				if (into.write(bytes, { at: 0 }) !== bytes.length) return wasi.ERRNO_NOSPC;
+				inode = opfs ?? new SyncOPFSFile(into);
+			}
+			const ret = super.path_link(path, inode, allowDir);
+			const [from, to] = [leaving, path].map((file) => /^[^/]+\.db$/.exec(file) && file.slice(0, -3));
+			if (ret === wasi.ERRNO_SUCCESS && from && to && from !== to) this.moved.push([from, to]);
+			return ret;
+		}
+	}
+
+	const preopen = new OpfsPreopen(name, new Map());
 	const files: [string, Inode][] = [...backed].filter(([, opfs]) => opfs.handle.getSize() > 0);
 	if (stage) files.push(['stage', new Directory(Object.entries(stage).map(([file, bytes]) => [file, new File(bytes)]))]);
 	preopen.dir = new OpfsDirectory(new Contents(files));

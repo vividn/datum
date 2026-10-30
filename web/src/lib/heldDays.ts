@@ -118,6 +118,19 @@ export function keepDay(db: string, size: string, date: string, svg: string): vo
 	write(db, kept, { db, size, date, svg, at: Date.now() });
 }
 
+/** `from`'s kept days as `to`'s: the database renamed (da-rktt6). */
+export async function moveDays(from: string, to: string): Promise<void> {
+	const idb = await open().catch(() => null);
+	if (!idb) return;
+	const tx = idb.transaction(STORE, 'readwrite');
+	const store = tx.objectStore(STORE);
+	const rows: Row[] = await done(store.getAll(rowsOf(from)));
+	store.delete(rowsOf(to));
+	store.delete(rowsOf(from));
+	for (const row of rows) store.put({ ...row, db: to });
+	await new Promise((resolve) => (tx.oncomplete = tx.onerror = tx.onabort = resolve));
+}
+
 /** Write `row`, if any, and drop from `kept` and the store the dates past `MONTH` of each size and the sizes past `SIZES`. */
 function write(db: string, kept: Kept, row?: Row): void {
 	const old: [string, string][] = [];

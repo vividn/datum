@@ -41,6 +41,8 @@ export interface CliResult {
 	 * `_internal`) — other tabs refresh what reads that one.
 	 */
 	changed: string[];
+	/** The databases the process renamed, old name and new (`db rename`, da-rktt6). */
+	moved?: [string, string][];
 	/** The stage's files once the process has exited, when it was given one. */
 	stage?: Stage;
 	storage: StorageKind;

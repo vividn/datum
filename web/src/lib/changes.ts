@@ -15,6 +15,7 @@
  * database each.
  */
 import { browser } from '$app/env';
+import { currentDb, withDb } from './database.js';
 
 const CHANNEL = 'datum-db-changes';
 
@@ -38,6 +39,7 @@ function open(): BroadcastChannel | null {
 	if (!browser || typeof BroadcastChannel === 'undefined') return null;
 	self_ = crypto.randomUUID();
 	channel = new BroadcastChannel(CHANNEL);
+	channel.addEventListener('message', (e) => e.data?.moved && follow(...(e.data.moved as [string, string])));
 	return channel;
 }
 
@@ -50,6 +52,30 @@ function open(): BroadcastChannel | null {
 export function announceChange(dbs?: string[], session = false): void {
 	open()?.postMessage({ from: self_, dbs });
 	for (const hear of own) hear(dbs, session);
+}
+
+/**
+ * Say that database `from` is now `to` (`db rename`, da-rktt6): every tab on
+ * it, this one too, goes to `to`. A load, as the logo's menu does
+ * (#lib/Brand.svelte), so every listener and the sync leader's lock are keyed
+ * to the new name.
+ */
+export function announceMoved(from: string, to: string): void {
+	open()?.postMessage({ from: self_, dbs: [to], moved: [from, to] });
+	follow(from, to);
+}
+
+/**
+ * The database this tab is leaving, renamed away: nothing more runs on it
+ * here (#lib/db.ts), since a pane's read or the sync leader's next session
+ * would make it again under the old name.
+ */
+export const renamedAway = new Set<string>();
+
+function follow(from: string, to: string): void {
+	if (currentDb() !== from) return;
+	renamedAway.add(from);
+	location.assign(withDb(location.pathname, to));
 }
 
 /**

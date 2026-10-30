@@ -5,11 +5,14 @@
 // one command out, one process's outcome back, and the storage it ran on.
 
 import type { CliResult, DbCommand, DbMessage, DbResponse, Stage, StorageKind } from './dbProtocol.js';
-import { announceChange } from './changes.js';
+import { announceChange, announceMoved, renamedAway } from './changes.js';
 import { answered, blocked, upgrading } from './waiting.js';
 import { DAMAGED, damaged } from './damaged.js';
-import { DEFAULT_DB } from './database.js';
+import { currentDb, DEFAULT_DB } from './database.js';
+import { dbFlag } from './dbFlag.js';
 import { dbOf } from './run.js';
+import { moveDays } from './heldDays.js';
+import { moveShell } from './layout/draft.js';
 
 export type { StorageKind };
 
@@ -159,11 +162,21 @@ export async function runCli(
 	session?: boolean,
 	pane?: boolean
 ): Promise<CliResult | null> {
+	const named = dbFlag(argv)?.db ?? env.findLast((v) => v.startsWith('DATUM_DB='))?.slice(9) ?? DEFAULT_DB;
+	if (renamedAway.has(named)) return null;
 	const cli = (await request({ op: 'cli', argv, env, stdin, key, stage, pane, session }, onStderr)).cli;
 	if (!cli) return null;
 	// A file SQLite cannot read fails every command on it, `db purge` too:
 	// the page offers the way out that does not go through SQLite (da-0v940).
 	if (cli.code !== 0 && DAMAGED.test(cli.stderr)) damaged.set(dbOf(argv, DEFAULT_DB));
+	// What the page keeps by a renamed database's name goes with it (da-rktt6).
+	for (const [from, to] of cli.moved ?? []) {
+		if (from === currentDb()) renamedAway.add(from);
+		moveShell(from, to);
+		void moveDays(from, to)
+			.catch(() => {})
+			.then(() => announceMoved(from, to));
+	}
 	if (cli.changed.length) {
 		announceChange(cli.changed, session);
 		if (cli.storage === 'opfs') {

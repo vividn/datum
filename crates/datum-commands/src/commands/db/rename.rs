@@ -1,7 +1,8 @@
 //! `datum --db OLD db rename NEW` (da-o7ay8): the database under another
 //! name. Its sync chain, ops and endpoint key are tables in the file, and a
 //! file MOVED keeps its key (`sync::endpoint`), so it is the same member to
-//! every other copy.
+//! every other copy. In datum.day the files are OPFS handles, and the
+//! worker's filesystem moves a renamed one's bytes (`web/src/lib/wasiFs.ts`).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -19,20 +20,16 @@ const LET_GO: Duration = Duration::from_secs(10);
 const RUNTIME: &[&str] = &[".joining", ".writing", ".applying", ".sync", ".spool.lock"];
 
 pub fn rename(new: &str, cli_db: Option<&str>) -> Result<()> {
-    // The page keeps its databases in OPFS, by name, which a move here misses.
-    if cfg!(target_family = "wasm") {
-        bail!("db rename: not in datum.day yet");
-    }
     let from = config::locate_db(cli_db).context("Cannot determine data directory")?;
     ensure!(
         from.exists(),
         "db rename: there is no database at {}",
         from.display()
     );
-    let from = from.canonicalize()?;
+    let from = real(&from)?;
     let to = config::locate_db(Some(new)).context("Cannot determine data directory")?;
     ensure!(
-        to.canonicalize().ok().as_ref() != Some(&from),
+        real(&to).ok().as_ref() != Some(&from),
         "db rename: it is «{new}» already"
     );
     if to.exists() {
@@ -59,11 +56,9 @@ pub fn rename(new: &str, cli_db: Option<&str>) -> Result<()> {
     }
     // Every name it is registered under, read while the file is there.
     let mut registry = config::load_registry().unwrap_or_default();
-    registry.db.retain(|_, e| {
-        Path::new(&e.path)
-            .canonicalize()
-            .map_or(true, |p| p != from)
-    });
+    registry
+        .db
+        .retain(|_, e| real(Path::new(&e.path)).map_or(true, |p| p != from));
     let stem = file_name(&from);
     for path in std::fs::read_dir(from.parent().context("no directory")?)? {
         let path = path?.path();
@@ -148,6 +143,15 @@ fn alone(db: &Path) -> Result<Db> {
             );
         }
         std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// `path` with its links resolved. WASI has no `realpath`, and its preopen
+/// has no links to resolve.
+fn real(path: &Path) -> std::io::Result<PathBuf> {
+    match cfg!(target_family = "wasm") {
+        true => Ok(path.to_path_buf()),
+        false => path.canonicalize(),
     }
 }
 

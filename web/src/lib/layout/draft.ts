@@ -121,6 +121,12 @@ export function loadShell(db: string): Layout | null {
 
 export const saveShell = (db: string, layout: Layout) => set(SHELL + db, JSON.stringify(layout));
 
+/** `from`'s tree as `to`'s: the database renamed (da-rktt6). */
+export function moveShell(from: string, to: string): void {
+	set(SHELL + to, get(SHELL + from));
+	set(SHELL + from, null);
+}
+
 /** JSON with every object's keys sorted, so key order is never a change. */
 function canonical(value: unknown): string {
 	return JSON.stringify(value, (_, v) =>

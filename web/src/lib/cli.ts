@@ -115,6 +115,27 @@ let memory: Map<string, Handle> | null = null;
 let databases: readonly string[] = DATABASES;
 
 /**
+ * Follow the databases `moved` (`db rename`, da-rktt6): the new name is kept
+ * on files of its own from now on, and the old, emptied, is forgotten and its
+ * files in OPFS removed, so the logo's menu no longer offers it. The default
+ * and `_internal` stay, since a command that names none runs on the default.
+ */
+async function follow(moved: [string, string][], handles: Map<string, Handle>): Promise<void> {
+	for (const [from, to] of moved) {
+		if (!databases.includes(to)) databases = [...databases, to];
+		if (DATABASES.includes(from)) continue;
+		databases = databases.filter((db) => db !== from);
+		if (handles === memory) continue;
+		const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(OPFS_DIR);
+		for (const file of dbFiles([from])) {
+			handles.get(file)?.close();
+			handles.delete(file);
+			await dir.removeEntry(file).catch(() => {});
+		}
+	}
+}
+
+/**
  * The database `argv` and `env` name, if they name one by NAME.
  *
  * The CLI's own resolution, in TypeScript: the `--db` flag (#lib/dbFlag.ts),
@@ -516,16 +537,27 @@ async function exec(
 	}
 	const ran = performance.now();
 	for (const handle of handles.values()) handle.flush();
+	// In memory, what OPFS would keep is kept in the map.
+	if (handles === memory) for (const [file, handle] of unkept(data)) handles.set(file, handle);
 	const unsaved = handles === memory ? [] : await keep(handles, data);
+	// A rename is done once what it moved is all kept: then what it left is
+	// emptied. Otherwise the copies are, and it is no rename (da-rktt6).
+	const undone = data.left.size > 0 && unsaved.length > 0;
+	if (undone) for (const [, to] of data.moved) handles.get(`${to}.db`)?.truncate(0);
+	else for (const handle of data.left) handle.truncate(0);
+	const moved = undone ? [] : data.moved;
 	return {
-		code,
+		code: undone ? code || 1 : code,
 		// Unterminated, as every stdout on the seam is.
 		stdout: stdout.text().replace(/\n+$/, ''),
 		stderr: [stderr.text().replace(/\n+$/, ''), ...unsaved].filter(Boolean).join('\n'),
 		stage: stage && staged(data),
+		// A database renamed away is gone, not changed: a reader of it would make it again.
 		changed: dbs
 			.filter(({ db }, i) => before[i] !== false && changeCounter(db) !== before[i])
-			.map(({ name }) => name),
+			.map(({ name }) => name)
+			.filter((name) => !moved.some(([from]) => from === name)),
+		moved,
 		started,
 		ran,
 		flushed: performance.now()
@@ -556,7 +588,11 @@ async function keep(handles: Map<string, Handle>, data: PreopenDirectory): Promi
 		} catch (e) {
 			handle?.close();
 			await dir.removeEntry(name).catch(() => {});
-			said.push(`warning: the backup ${name} could not be kept: ${e}`);
+			said.push(
+				name.endsWith('.db')
+					? `error: the rename to ${name.slice(0, -3)} was not kept, and nothing moved: ${e}`
+					: `warning: the backup ${name} could not be kept: ${e}`
+			);
 		}
 	}
 	return said;
@@ -684,12 +720,18 @@ export function runCli(
 		const runIn = async (handles: Map<string, Handle>, tries: number): Promise<CliResult> => {
 			const t2 = performance.now();
 			const run = await exec(module, handles, argv, env, stdin, onStderr, stage, at);
+			if (run.moved.length) {
+				await follow(run.moved, handles);
+				// The next command opens the files of the databases as they are now.
+				if (handles !== memory) release();
+			}
 			return {
 				argv,
 				code: run.code,
 				stdout: run.stdout,
 				stderr: run.stderr,
 				changed: run.changed,
+				...(run.moved.length && { moved: run.moved }),
 				...(run.stage && { stage: run.stage }),
 				storage: handles === memory ? 'memory' : 'opfs',
 				ms: {
