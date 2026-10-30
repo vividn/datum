@@ -17,6 +17,10 @@
 //! first (`--ticket`, `--invite`), and `--like` makes none but leaves them
 //! to the page (`--defer`). The rest is the same in either build.
 
+#[cfg(feature = "net")]
+use std::collections::BTreeMap;
+#[cfg(feature = "net")]
+use std::path::Path;
 use std::path::PathBuf;
 #[cfg(feature = "net")]
 use std::sync::{Arc, Mutex};
@@ -529,33 +533,95 @@ pub fn redeem(db: &Db, before: i64) -> Result<()> {
 }
 
 #[cfg(feature = "net")]
-/// Say `at`, where the `sync run` of the database at `path` serves, in each
-/// carrier of the grant it was admitted by, once per copy: an address is its
-/// endpoint's, found again by its id as it moves. Only a member says, a reader
-/// admitting no one. A thread of its own, so a carrier's lock holds no session
-/// up; a failure is tried again for an hour, then by the next `sync run`, and
-/// a database gone since is no failure (`Db::open` would make it again).
-pub fn say_where(path: PathBuf, at: String) {
-    std::thread::spawn(move || {
-        // The sources are per thread, as `dispatch` sets them.
-        datum_core::db::set_client_source(|| config::client_id().ok());
-        datum_core::db::set_device_source(|| config::device_key().ok());
-        for wait in [0, 1, 2, 4, 8, 15, 30] {
-            std::thread::sleep(Duration::from_secs(wait * 60));
-            if !path.exists() {
-                return;
-            }
-            let Err(e) = said_where(&path, &at) else {
-                return;
-            };
-            eprintln!("saying where this copy serves: {e:#}");
-        }
-    });
+/// What is left to say, by database. A failed say waits these minutes, one
+/// after each failure, and then is left to the next `sync run`.
+static SAYING: Mutex<BTreeMap<PathBuf, Saying>> = Mutex::new(BTreeMap::new());
+#[cfg(feature = "net")]
+const SAY_WAITS: [u64; 6] = [1, 2, 4, 8, 15, 30];
+
+#[cfg(feature = "net")]
+struct Saying {
+    at: String,
+    due: Instant,
+    failed: usize,
 }
 
 #[cfg(feature = "net")]
-fn said_where(path: &std::path::Path, at: &str) -> Result<()> {
-    let db = Db::open(&path.to_string_lossy())?;
+/// Say `at`, where the `sync run` of the database at `path` serves, in each
+/// carrier of the grant it was admitted by, once per copy: an address is its
+/// endpoint's, found again by its id as it moves. Only a member says, a reader
+/// admitting no one. One thread a process however many rebinds, so a carrier's
+/// lock holds no session up, and a rebind's address takes the place of an
+/// earlier one still unsaid.
+pub fn say_where(path: PathBuf, at: String) {
+    if ask(&mut SAYING.lock().unwrap(), path, at) {
+        std::thread::spawn(say_all);
+    }
+}
+
+#[cfg(feature = "net")]
+/// Whether a thread is wanted: with nothing left to say, none is at work.
+/// An address asked again starts its waits over: it is a new bind's, due now,
+/// and the old one's failures say nothing of it.
+fn ask(saying: &mut BTreeMap<PathBuf, Saying>, path: PathBuf, at: String) -> bool {
+    let idle = saying.is_empty();
+    let due = Instant::now();
+    saying.insert(path, Saying { at, due, failed: 0 });
+    idle
+}
+
+#[cfg(feature = "net")]
+/// Says what is due until nothing is left. A database gone since is no failure.
+fn say_all() {
+    // The sources are per thread, as `dispatch` sets them.
+    datum_core::db::set_client_source(|| config::client_id().ok());
+    datum_core::db::set_device_source(|| config::device_key().ok());
+    loop {
+        let due = {
+            let saying = SAYING.lock().unwrap();
+            if saying.is_empty() {
+                return;
+            }
+            let due = saying.iter().find(|(_, s)| s.due <= Instant::now());
+            due.map(|(path, s)| (path.clone(), s.at.clone()))
+        };
+        let Some((path, at)) = due else {
+            std::thread::sleep(Duration::from_secs(1));
+            continue;
+        };
+        // A panic is a failure like any other: the other databases wait on this thread.
+        let said = !path.exists()
+            || std::panic::catch_unwind(|| said_where(&path, &at))
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("it panicked")))
+                .map_err(|e| eprintln!("saying where this copy serves: {e:#}"))
+                .is_ok();
+        settle(&mut SAYING.lock().unwrap(), &path, &at, said);
+    }
+}
+
+#[cfg(feature = "net")]
+/// A try at saying `at` is over: said, or out of waits, it is forgotten. A
+/// newer address asked meanwhile stays due.
+fn settle(saying: &mut BTreeMap<PathBuf, Saying>, path: &Path, at: &str, said: bool) {
+    let Some(s) = saying.get_mut(path).filter(|s| s.at == at) else {
+        return;
+    };
+    match SAY_WAITS.get(s.failed).filter(|_| !said) {
+        Some(minutes) => {
+            s.failed += 1;
+            s.due = Instant::now() + Duration::from_secs(minutes * 60);
+        }
+        None => {
+            saying.remove(path);
+        }
+    }
+}
+
+#[cfg(feature = "net")]
+/// Reads through handles that cannot make a database that went since, and
+/// opens a carrier to write only with a record to write, just read there.
+fn said_where(path: &Path, at: &str) -> Result<()> {
+    let db = Db::open_read_only(&path.to_string_lossy())?;
     let here = db.sync_chain()?;
     let Some(me) = here
         .member(&db.sync_endpoint_id()?)
@@ -572,8 +638,7 @@ fn said_where(path: &std::path::Path, at: &str) -> Result<()> {
         if !came {
             continue;
         }
-        let copy = Db::open(&path.to_string_lossy())?;
-        let writer = copy.sync_endpoint_id()?;
+        let writer = Db::open_read_only(&path.to_string_lossy())?.sync_endpoint_id()?;
         let writes = c
             .member(&writer)
             .is_some_and(|m| live(m) && m.role() == Role::Member);
@@ -584,7 +649,7 @@ fn said_where(path: &std::path::Path, at: &str) -> Result<()> {
         if writes && !said {
             let [to, eph, sealed] =
                 chain::seal_where(&here.id, &addr).map_err(anyhow::Error::msg)?;
-            copy.sync_chain_write(
+            Db::open(&path.to_string_lossy())?.sync_chain_write(
                 json!({
                     "type": "grant", "chain": c.id, "to": to, "eph": eph, "sealed": sealed,
                     "created": Utc::now().to_rfc3339(),
@@ -649,5 +714,73 @@ impl Watch {
             });
             s.retry = failed.then(|| (Instant::now() + wait, wait));
         });
+    }
+}
+
+#[cfg(all(test, feature = "net"))]
+mod tests {
+    use super::*;
+
+    fn at(saying: &BTreeMap<PathBuf, Saying>, path: &str) -> String {
+        saying[Path::new(path)].at.clone()
+    }
+
+    /// One thread however many rebinds and databases, and a rebind's
+    /// address is the one said (da-3d3wv).
+    #[test]
+    fn only_the_first_ask_starts_a_thread_and_the_newest_address_wins() {
+        let mut saying = BTreeMap::new();
+        assert!(ask(&mut saying, "a".into(), "1".into()));
+        assert!(!ask(&mut saying, "a".into(), "2".into()));
+        assert!(!ask(&mut saying, "b".into(), "3".into()));
+        assert_eq!((at(&saying, "a"), saying.len()), ("2".to_string(), 2));
+
+        // A try at the address replaced says nothing of the newer one.
+        settle(&mut saying, Path::new("a"), "1", true);
+        settle(&mut saying, Path::new("a"), "1", false);
+        assert_eq!(saying[Path::new("a")].failed, 0);
+
+        settle(&mut saying, Path::new("a"), "2", true);
+        settle(&mut saying, Path::new("b"), "3", true);
+        assert!(saying.is_empty());
+        assert!(ask(&mut saying, "a".into(), "4".into()), "the thread ended");
+    }
+
+    #[test]
+    fn a_failure_waits_its_waits_and_then_is_forgotten() {
+        let mut saying = BTreeMap::new();
+        ask(&mut saying, "a".into(), "1".into());
+        for _ in SAY_WAITS {
+            settle(&mut saying, Path::new("a"), "1", false);
+            assert!(saying[Path::new("a")].due > Instant::now());
+        }
+        settle(&mut saying, Path::new("a"), "1", false);
+        assert!(saying.is_empty());
+
+        // A rebind between failures: due now, its waits from the first.
+        ask(&mut saying, "a".into(), "1".into());
+        settle(&mut saying, Path::new("a"), "1", false);
+        ask(&mut saying, "a".into(), "2".into());
+        let s = &saying[Path::new("a")];
+        assert!(s.due <= Instant::now());
+        assert_eq!(s.failed, 0);
+    }
+
+    /// A database gone since is not made again, by a try already past the
+    /// look at the path or by the thread itself (da-3d3wv).
+    #[test]
+    fn saying_where_does_not_make_a_database_that_went() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gone = tmp.path().join("gone.db");
+        assert!(said_where(&gone, "{}").is_err());
+        assert!(!gone.exists());
+
+        say_where(gone.clone(), "{}".into());
+        let start = Instant::now();
+        while !SAYING.lock().unwrap().is_empty() {
+            assert!(start.elapsed() < Duration::from_secs(20));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!gone.exists());
     }
 }

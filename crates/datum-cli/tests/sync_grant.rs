@@ -93,7 +93,12 @@ impl Install {
 
     /// `sync run` on `db`, up, its stderr read on a thread.
     fn run(&self, db: &'static str) -> Running {
-        let mut child = self.cmd(db, &["sync", "run"]).spawn().unwrap();
+        self.running(db, self.cmd(db, &["sync", "run"]))
+    }
+
+    /// `c`, a run of `db`, once it says it is up.
+    fn running(&self, db: &'static str, mut c: Command) -> Running {
+        let mut child = c.spawn().unwrap();
         let err = BufReader::new(child.stderr.take().unwrap());
         let (tx, log) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -328,6 +333,33 @@ fn a_grant_joins_through_another_grantee_while_the_granter_is_off() {
         )
         .unwrap();
     assert!(!body.contains(&chain), "{body}");
+}
+
+/// The daemon says where as a `sync run` does: it is what serves a device
+/// in use. It runs both databases, so on a port each.
+#[test]
+fn a_daemon_says_where_it_serves_a_granted_database() {
+    let g = Install::new("gina");
+    let t = Install::new("tom");
+    let _home = home_chain(&g, &[&t]);
+    g.ok("work", &["occur", "coffee"]);
+    g.ok("work", &["sync", "grant", "--like", "home"]);
+    let _work = g.run("work");
+
+    let tom = t.run("home");
+    tom.says("joined «work»");
+    eventually("tom's work holding gina's coffee", || {
+        t.has("work", "coffee")
+    });
+    drop(tom);
+    assert_eq!(records(&t, "home", "grant"), 1, "said by no run yet");
+
+    let mut daemon = t.cmd("work", &["sync", "daemon", "run"]);
+    daemon.env("DATUM_SYNC_BIND", "127.0.0.1:0");
+    let _daemon = t.running("work", daemon);
+    eventually("tom's daemon saying where its work serves", || {
+        records(&t, "home", "grant") == 2
+    });
 }
 
 /// Names are not identities: a device holding a database of the grant's
