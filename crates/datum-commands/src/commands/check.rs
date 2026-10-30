@@ -19,7 +19,9 @@ use serde_json::Value as JsonValue;
 use crate::args::{CheckArgs, ShowFlag};
 use crate::commands::helpers::load_registry_opt;
 use crate::commands::render_helpers::build_render_contexts;
-use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
+use crate::render::{
+    field_and_state_cells, format_table_with, OutputArgs, TableArgs, TimeMetricCol,
+};
 
 mod aliases;
 use aliases::collect_alias_drift;
@@ -1092,15 +1094,34 @@ fn render_flagged_block(db: &Db, entries: &[Entry]) -> String {
     let ctxs = build_render_contexts(entries, db);
     let registry = load_registry_opt(db);
     let now = DatumTime::now();
-    let tbl = TableArgs {
+    let tbl = flagged_table();
+    format_table_with(entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl).unwrap_or_default()
+}
+
+/// The table a checker's block is drawn with: no header, no width to fit.
+fn flagged_table() -> TableArgs {
+    TableArgs {
         output: OutputArgs::default(),
         metric: TimeMetricCol::Hybrid,
         columns: Vec::new(),
         suppress_header: true,
         max_total_width: None,
-    };
-    format_table_with(entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl).unwrap_or_default()
+    }
 }
+
+/// Each entry's field and state as [`render_flagged_block`] draws them, on
+/// one line each.
+fn field_and_state(db: &Db, entries: &[Entry]) -> Vec<String> {
+    let ctxs = build_render_contexts(entries, db);
+    let registry = load_registry_opt(db);
+    let now = DatumTime::now();
+    let tbl = flagged_table();
+    field_and_state_cells(entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl)
+}
+
+/// Starts a line of a rendered block that is the one its checker flagged,
+/// among rows that are not: [`render_human`] draws the marker in the gutter.
+const FLAGGED_ROW: &str = "> ";
 
 /// [`render_flagged_block`] with a line under each row that has one. The
 /// table aligns its rows, but a state with a newline in it takes two lines:
@@ -1437,8 +1458,13 @@ pub fn render_human(report: &Report) -> String {
         // and the per-line push re-adds the newline.
         if !issue.rendered_block.is_empty() {
             for line in issue.rendered_block.lines() {
-                out.push_str("    ");
-                out.push_str(line);
+                if let Some(row) = line.strip_prefix(FLAGGED_ROW) {
+                    out.push_str("  > ");
+                    out.push_str(row);
+                } else if !line.is_empty() {
+                    out.push_str("    ");
+                    out.push_str(line);
+                }
                 out.push('\n');
             }
         } else if let Some(ex) = &issue.example {

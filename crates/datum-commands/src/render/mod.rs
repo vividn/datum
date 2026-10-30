@@ -1437,6 +1437,30 @@ pub fn format_table_with(
     Some(out)
 }
 
+/// Each entry's field and state cells as [`format_table_with`] paints them,
+/// on one line: a newline in a state reads `\\n`, and no width cuts it.
+pub fn field_and_state_cells(
+    entries: &[Entry],
+    contexts: Option<&[RenderContext]>,
+    now: Option<&DatumTime>,
+    registry: Option<&SpecRegistry>,
+    args: &TableArgs,
+) -> Vec<String> {
+    let (rows, _) = build_rows(entries, contexts, now, registry, args);
+    rows.iter()
+        .map(|r| {
+            let state = state_with_keys(r, usize::MAX).replace('\n', "\\n");
+            // An unpainted lead slot: the one space below does its work.
+            let state = state.strip_prefix(' ').unwrap_or(&state);
+            match (r.field.is_empty(), state.is_empty()) {
+                (false, false) => format!("{} {state}", r.field),
+                (false, true) => r.field.clone(),
+                _ => state.to_string(),
+            }
+        })
+        .collect()
+}
+
 /// One column of the table: its header word and one cell per row.
 ///
 /// The pieces [`format_table_with`] pads into a terminal grid, handed over

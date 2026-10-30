@@ -102,15 +102,81 @@ fn alone_check_sums_up_and_a_named_check_lists_all() {
     );
     // And `tz` the entries before and after it, with their zones and offsets.
     let tz = datum(&db, &["check", "tz"]);
-    let before = tz.lines().find(|l| l.contains("↳ before:")).expect(&tz);
-    let after = tz.lines().find(|l| l.contains("↳ after:")).expect(&tz);
-    assert!(
-        before.contains("2026-03-02 13:00 +01:00 Europe/Berlin"),
+    assert!(!tz.contains("↳"), "{tz}");
+    let rows = around_rows(&tz);
+    assert_eq!(
+        rows,
+        [
+            "    2026-03-02 12:00:00  +01:00  Europe/Berlin     ",
+            "    2026-03-02 13:00:00  +01:00  Europe/Berlin     ",
+            "    2026-03-02 14:00:00  +01:00  Europe/Berlin     ",
+            "  > 2026-03-02 09:00:00  -05:00  America/New_York  ",
+            "    2026-03-02 16:00:00  +01:00  Europe/Berlin     ",
+            "    2026-03-02 17:00:00  +01:00  Europe/Berlin     ",
+            "    2026-03-02 18:00:00  +01:00  Europe/Berlin     ",
+        ]
+        .map(|cols| (cols.to_string(), 5)),
         "{tz}"
     );
-    assert_eq!(before.matches("Europe/Berlin").count(), 3, "{tz}");
+    // The entry, on its own row and no other: the rows hold a hid and stop.
+    assert_eq!(
+        tz.lines()
+            .filter(|l| l.contains("walk"))
+            .collect::<Vec<_>>(),
+        tz.lines()
+            .filter(|l| l.starts_with("  > "))
+            .collect::<Vec<_>>(),
+        "{tz}"
+    );
+    assert!(tz.lines().any(|l| l.ends_with("  walk ●")), "{tz}");
+}
+
+/// The rows of `report`'s first block of `tz_off_neighbours`, each as its
+/// columns up to the hid and the length of its hid.
+fn around_rows(report: &str) -> Vec<(String, usize)> {
+    (report.lines())
+        .skip_while(|l| !l.contains("tz_off_neighbours"))
+        .skip(1)
+        .take_while(|l| l.starts_with("    ") || l.starts_with("  > "))
+        .map(|l| {
+            let start = 4 + 19 + 2 + 6 + 2 + "America/New_York".len() + 2;
+            let hid = l[start..].split(' ').next().unwrap();
+            (l[..start].to_string(), hid.len())
+        })
+        .collect()
+}
+
+/// Two flagged entries whose neighbors overlap are a block each, in full,
+/// a blank line between, each marking its own (da-la4n9).
+#[test]
+fn two_flagged_are_two_blocks() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("two.db");
+    for h in 10..21 {
+        let zone = match h {
+            14 | 17 => "America/New_York",
+            _ => "Europe/Berlin",
+        };
+        let t = format!("2026-03-02T{h}:00:00+00:00");
+        datum(&db, &["occur", "walk", "-t", &t, "-z", zone]);
+    }
+    let tz = datum(&db, &["check", "tz"]);
+    let blocks: Vec<&str> = (tz.split("\n\n")).filter(|b| b.contains("  > ")).collect();
+    assert_eq!(blocks.len(), 2, "{tz}");
+    let marked = |b: &str| {
+        let row = b.lines().find(|l| l.starts_with("  > ")).expect(b);
+        row[4..23].to_string()
+    };
+    assert_eq!(marked(blocks[0]), "2026-03-02 09:00:00", "{tz}");
+    assert_eq!(marked(blocks[1]), "2026-03-02 12:00:00", "{tz}");
+    for block in &blocks {
+        let rows = block.lines().filter(|l| l.contains("2026-03-02")).count();
+        assert_eq!(rows, 7, "{tz}");
+        assert_eq!(block.matches("  > ").count(), 1, "{tz}");
+    }
+    // The other flagged entry stands among the first's neighbors, unmarked.
     assert!(
-        after.contains("2026-03-02 16:00 +01:00 Europe/Berlin"),
+        blocks[0].contains("\n    2026-03-02 12:00:00  -05:00"),
         "{tz}"
     );
 }

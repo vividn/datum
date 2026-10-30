@@ -7,7 +7,10 @@ use anyhow::Result;
 use datum_core::db::{agreed_zone, Db, NEIGHBOURS};
 use datum_core::entry::Entry;
 
-use super::{render_flagged_block, rows_with, Domain, FlaggedEntry, Issue, IssueExample, Severity};
+use super::{
+    field_and_state, render_flagged_block, Domain, FlaggedEntry, Issue, IssueExample, Severity,
+    FLAGGED_ROW,
+};
 
 /// Recompute each live entry's `occur_time` offset from its `timezone` at
 /// `utc` and flag any row whose stored `offset_minutes` disagrees — the
@@ -33,8 +36,9 @@ use super::{render_flagged_block, rows_with, Domain, FlaggedEntry, Issue, IssueE
 /// deserves a human, so there is deliberately no `--fix` re-derivation yet
 /// (a future `--fix` would trust `timezone` and re-run `refresh_offset`).
 ///
-/// With `around`, under each row the entries either side of it and their
-/// zones and offsets, which `datum check tz` shows (da-3zq6g). With `near`,
+/// With `around`, each row between the entries either side of it, with their
+/// zones and offsets ([`around_blocks`]), which `datum check tz` shows
+/// (da-3zq6g, da-la4n9). With `near`,
 /// a zone the rows around one agree is not its own is read only near those
 /// instants ([`off_zone`]).
 pub(super) fn collect_tz_drift(
@@ -86,10 +90,7 @@ pub(super) fn collect_tz_drift(
         };
         let found: Vec<Entry> = rows.iter().map(|r| r.0.clone()).collect();
         let rendered_block = match around {
-            true => {
-                let under = found.iter().map(|e| neighbors(db, e).map(Some));
-                rows_with(db, &found, &under.collect::<Result<Vec<_>>>()?)
-            }
+            true => around_blocks(db, &found)?,
             false => render_flagged_block(db, &found),
         };
         Ok(Some(Issue {
@@ -149,37 +150,59 @@ pub(super) fn collect_tz_drift(
     .collect())
 }
 
-/// The [`NEIGHBOURS`] entries either side of `e`, oldest first, each at its
-/// own wall clock and offset, in its zone.
-fn neighbors(db: &Db, e: &Entry) -> Result<String> {
-    let Some(at) = e.occur_time.as_ref() else {
-        return Ok("no time, so no entries around it".into());
-    };
-    let (mut before, after) = db.entries_around(at.utc)?;
-    before.reverse();
-    let said = |rows: &[Entry]| {
-        let each: Vec<String> = (rows.iter())
-            .filter_map(|n| {
-                let t = n.occur_time.as_ref()?;
-                let offset = chrono::FixedOffset::east_opt(t.offset_minutes * 60)?;
-                Some(format!(
-                    "{} {} ({})",
-                    t.utc.with_timezone(&offset).format("%Y-%m-%d %H:%M %:z"),
-                    t.timezone.as_deref().unwrap_or("—"),
-                    n.short_uid(),
-                ))
+/// A block per entry of `found`, a blank line between: the [`NEIGHBOURS`]
+/// entries either side of it and it, in time order, their date and time,
+/// offset, zone and hid in columns, each in its own zone. It alone is marked,
+/// [`FLAGGED_ROW`], and has its field and state after the columns.
+fn around_blocks(db: &Db, found: &[Entry]) -> Result<String> {
+    let mut blocks = Vec::new();
+    for (e, drawn) in found.iter().zip(field_and_state(db, found)) {
+        let (mut before, after) = match e.occur_time.as_ref() {
+            Some(at) => db.entries_around(at.utc)?,
+            None => Default::default(),
+        };
+        before.reverse();
+        let rows: Vec<[String; 4]> = (before.iter().chain([e]).chain(&after))
+            .map(zone_columns)
+            .collect();
+        let width = |c: usize| rows.iter().map(|r| r[c].chars().count()).max().unwrap_or(0);
+        let [time_w, offset_w, zone_w, hid_w] = [0, 1, 2, 3].map(width);
+        let lines: Vec<String> = (rows.iter().enumerate())
+            .map(|(i, [time, offset, zone, hid])| {
+                let row =
+                    format!("{time:<time_w$}  {offset:<offset_w$}  {zone:<zone_w$}  {hid:<hid_w$}");
+                match i == before.len() {
+                    true => format!("{FLAGGED_ROW}{row}  {drawn}"),
+                    false => row.trim_end().to_string(),
+                }
             })
             .collect();
-        match each.is_empty() {
-            true => "none".to_string(),
-            false => each.join(", "),
-        }
+        blocks.push(lines.join("\n") + "\n");
+    }
+    Ok(blocks.join("\n"))
+}
+
+/// An entry's date and time at its stored offset, that offset, its zone as
+/// stored, resolvable or not, and its hid. An offset no clock has is said in
+/// minutes, beside the time in UTC.
+fn zone_columns(e: &Entry) -> [String; 4] {
+    let Some(t) = e.occur_time.as_ref() else {
+        return ["—".into(), "—".into(), "—".into(), e.short_uid()];
     };
-    Ok(format!(
-        "before: {}\n  ↳ after: {}",
-        said(&before),
-        said(&after)
-    ))
+    const AT: &str = "%Y-%m-%d %H:%M:%S";
+    let clock = (t.offset_minutes.checked_mul(60)).and_then(chrono::FixedOffset::east_opt);
+    let (time, offset) = match clock {
+        Some(clock) => {
+            let at = t.utc.with_timezone(&clock);
+            (at.format(AT).to_string(), at.format("%:z").to_string())
+        }
+        None => (
+            t.utc.format(AT).to_string(),
+            format!("{:+}m", t.offset_minutes),
+        ),
+    };
+    let zone = t.timezone.clone().unwrap_or_else(|| "—".into());
+    [time, offset, zone, e.short_uid()]
 }
 
 /// The entries in a run of fewer than [`NEIGHBOURS`] in one zone, where the
@@ -560,5 +583,110 @@ mod tests {
                 .is_empty(),
             "desynced tombstone must not be flagged",
         );
+    }
+
+    /// A `work` entry at `utc`, in `zone`.
+    fn at(db: &Db, utc: &str, zone: &str) {
+        let occur = DatumTime::from_utc_and_tz(t_at(utc).utc, zone).unwrap();
+        let entry = Entry::new_legacy("work", Verb::Point, None, None, Some(occur), None, "d1");
+        db.insert_entry(&entry).unwrap();
+    }
+
+    /// The lines of `category`'s block as `datum check tz` renders it.
+    fn block_of(db: &Db, category: &str) -> Vec<String> {
+        let issues = collect_tz_drift(db, &all(db), true, None).unwrap();
+        let issue = issues.iter().find(|i| i.category == category).unwrap();
+        (issue.rendered_block.lines())
+            .map(crate::render::colors::strip_ansi)
+            .collect()
+    }
+
+    /// A flagged row between its neighbors (da-la4n9): the columns line up by
+    /// position across every row, whatever the zone's length or the offset's
+    /// size, each row at its own clock, and only the flagged row has the entry.
+    #[test]
+    fn around_columns_line_up_by_position() {
+        let db = Db::open_in_memory().unwrap();
+        const LONG: &str = "America/Argentina/ComodRivadavia";
+        at(&db, "2024-01-15T00:00:00+00:00", "Asia/Tokyo");
+        at(&db, "2024-01-15T01:00:00+00:00", "Pacific/Chatham");
+        at(&db, "2024-01-15T02:00:00+00:00", LONG);
+        at(&db, "2024-01-15T03:00:00+00:00", "Europe/Berlin");
+        db.conn()
+            .execute(
+                "UPDATE entries SET occur_time_offset = 0 WHERE occur_time_tz = 'Europe/Berlin'",
+                [],
+            )
+            .unwrap();
+        let rows = block_of(&db, "tz_offset_mismatch");
+        let cells: Vec<(&str, &str, &str, &str)> = (rows.iter())
+            .map(|r| {
+                let r = r.strip_prefix(FLAGGED_ROW).unwrap_or(r);
+                let hid = 29 + LONG.len() + 2;
+                (&r[..19], &r[21..27], r[29..hid].trim_end(), &r[hid..])
+            })
+            .collect();
+        assert_eq!(
+            cells.iter().map(|c| (c.0, c.1, c.2)).collect::<Vec<_>>(),
+            [
+                ("2024-01-15 09:00:00", "+09:00", "Asia/Tokyo"),
+                ("2024-01-15 14:45:00", "+13:45", "Pacific/Chatham"),
+                ("2024-01-14 23:00:00", "-03:00", LONG),
+                ("2024-01-15 03:00:00", "+00:00", "Europe/Berlin"),
+            ],
+            "{rows:#?}"
+        );
+        let flagged: Vec<bool> = rows.iter().map(|r| r.starts_with(FLAGGED_ROW)).collect();
+        assert_eq!(flagged, [false, false, false, true], "{rows:#?}");
+        let entry: Vec<bool> = cells.iter().map(|c| c.3.contains("work")).collect();
+        assert_eq!(entry, flagged, "{rows:#?}");
+    }
+
+    /// A zone nothing resolves is said as stored, an offset no clock has in
+    /// minutes, and the columns stay.
+    #[test]
+    fn around_says_what_a_row_stored() {
+        let db = Db::open_in_memory().unwrap();
+        at(&db, "2024-01-15T00:00:00+00:00", "Asia/Tokyo");
+        at(&db, "2024-01-15T01:00:00+00:00", "Europe/Berlin");
+        db.conn()
+            .execute(
+                "UPDATE entries SET occur_time_tz = 'Mars/Base', occur_time_offset = 2000
+                  WHERE occur_time_tz = 'Europe/Berlin'",
+                [],
+            )
+            .unwrap();
+        let rows = block_of(&db, "unknown_timezone");
+        assert_eq!(rows.len(), 2, "{rows:#?}");
+        let tokyo = "2024-01-15 09:00:00  +09:00  Asia/Tokyo";
+        assert!(rows[0].starts_with(tokyo), "{rows:#?}");
+        let mars = "> 2024-01-15 01:00:00  +2000m  Mars/Base ";
+        assert!(rows[1].starts_with(mars), "{rows:#?}");
+    }
+
+    /// A newline in the flagged entry's state stays on its row.
+    #[test]
+    fn around_keeps_a_state_on_its_row() {
+        let db = Db::open_in_memory().unwrap();
+        let occur =
+            DatumTime::from_utc_and_tz(t_at("2024-01-15T00:00:00+00:00").utc, "Europe/Berlin")
+                .unwrap();
+        let state = serde_json::json!("a\nb");
+        let entry = Entry::new_legacy(
+            "work",
+            Verb::PointSwitch,
+            Some(state),
+            None,
+            Some(occur),
+            None,
+            "d1",
+        );
+        db.insert_entry(&entry).unwrap();
+        db.conn()
+            .execute("UPDATE entries SET occur_time_offset = 0", [])
+            .unwrap();
+        let rows = block_of(&db, "tz_offset_mismatch");
+        assert_eq!(rows.len(), 1, "{rows:#?}");
+        assert!(rows[0].contains("a\\nb"), "{rows:#?}");
     }
 }
