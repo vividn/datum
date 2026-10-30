@@ -1551,3 +1551,121 @@ fn identical_timeless_docs_on_different_days_are_two_rows() {
     );
     assert_eq!(datum_core::test_util::logged_all(&db).len(), 2);
 }
+
+// ─── v2's literal `c` beside its create time (da-hcxdx) ──────────────
+
+/// A timeless `bPlants` doc under `id_structure`, its `_id` as v2 wrote it.
+fn plants_with_id_structure(id_structure: &str, id: &str) -> tempfile::NamedTempFile {
+    write_backup(serde_json::json!([{
+        "_id": id,
+        "data": {"field": "bPlants", "watered": true},
+        "meta": {
+            "humanId": "kz2ki",
+            "createTime": {"utc": "2025-11-26T23:32:52.840Z", "o": 1, "tz": "Europe/Berlin"},
+            "idStructure": id_structure
+        }
+    }]))
+}
+
+/// v3's `%create_time%` renders its own `c`, so v2's literal one would
+/// double: `check` drifted on every such row, and a first edit would write
+/// the doubled slug. A real database and binary, since `check`'s verdict is
+/// its output.
+#[test]
+fn import_drops_v2s_literal_c_beside_create_time() {
+    for (tmpl, id) in [
+        (
+            "%field%:%?createTime%c",
+            "bPlants:2025-11-26T23:32:52.840Zc",
+        ),
+        ("%?createTime%c", "2025-11-26T23:32:52.840Zc"),
+        (
+            "%field%:c%?createTime%",
+            "bPlants:c2025-11-26T23:32:52.840Z",
+        ),
+        ("c%?createTime%", "c2025-11-26T23:32:52.840Z"),
+    ] {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("t.db");
+        let backup = plants_with_id_structure(tmpl, id);
+        let db = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
+        run_cli(&["db", "v2import", backup.path().to_str().unwrap()], &db).unwrap();
+        let check = || {
+            let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+                .env("DATUM_DB", &path)
+                .env("DATUM_HOME", dir.path())
+                .env("DATUM_CONFIG_HOME", dir.path())
+                .env("NO_COLOR", "1")
+                .arg("check")
+                .output()
+                .unwrap();
+            let printed = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                out.status.success() && printed.contains("No consistency issues found"),
+                "{tmpl}: {printed}"
+            );
+        };
+        check();
+
+        let e = &datum_core::test_util::logged_all(&db)[0];
+        assert_eq!(
+            e.slug.as_str(),
+            "bPlants:2025-11-26T23:32:52.840Zc",
+            "{tmpl}"
+        );
+        assert_eq!(e.id_structure.as_deref(), Some("%?createTime%"), "{tmpl}");
+        assert_eq!(
+            e.extra_metadata.as_ref().unwrap()["_import"]["original_id_structure"],
+            tmpl,
+        );
+
+        let again = skip_log_lines(&backup, &db);
+        assert_eq!(again.len(), 1, "{tmpl}");
+        assert!(again[0].starts_with("duplicate\t"), "{tmpl}: {again:?}");
+
+        // An edit keeps the slug, and a new row under the field's spec has
+        // one `c`: the import writes the field no id template of v2's.
+        run_cli(&["update", "kz2ki", "watered=false"], &db).unwrap();
+        assert_eq!(
+            db.get_entry("kz2ki").unwrap().slug.as_str(),
+            "bPlants:2025-11-26T23:32:52.840Zc",
+            "{tmpl}",
+        );
+        assert_eq!(db.load_spec("bPlants").unwrap().unwrap().id_template, None);
+        run_cli(&["occur", "bPlants", "-T"], &db).unwrap();
+        let new = datum_core::test_util::logged_all(&db)
+            .into_iter()
+            .find(|e| e.hid.as_str() != "kz2ki")
+            .unwrap();
+        let body = new.slug.as_str().strip_prefix("bPlants:").unwrap();
+        assert!(
+            body.ends_with("Zc") && !body.ends_with("cc"),
+            "{tmpl}: {body}"
+        );
+        check();
+    }
+}
+
+/// Only a `c` that is the create time's own goes, and nothing else moves.
+#[test]
+fn import_keeps_every_other_id_structure_beside_create_time() {
+    for tmpl in [
+        "%?createTime%cups",
+        "abc%?createTime%",
+        "%?createTime%",
+        "%kind%c",
+        "%field%",
+    ] {
+        let db = fresh_db();
+        let f = coffee_with_id_structure(tmpl);
+        run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+        let e = &datum_core::test_util::logged_all(&db)[0];
+        assert_eq!(e.id_structure.as_deref(), Some(tmpl), "kept verbatim");
+        assert!(
+            e.extra_metadata.as_ref().unwrap()["_import"]
+                .get("original_id_structure")
+                .is_none(),
+            "nothing stripped, nothing recorded: {tmpl}",
+        );
+    }
+}

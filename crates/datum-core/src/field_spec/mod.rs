@@ -44,8 +44,8 @@ pub use alias::{
 };
 pub use interpolation::{
     contains_template, copy_from_record, interpolate, interpolate_field, names_time, reads_record,
-    record_keys, refuse_name_only_marker, strip_field_prefix, unfilled, InterpolationContext,
-    DEFAULT_ID_DELIMITER,
+    record_keys, refuse_name_only_marker, strip_create_time_literal, strip_field_prefix, unfilled,
+    InterpolationContext, DEFAULT_ID_DELIMITER,
 };
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};
 pub use presentation::{

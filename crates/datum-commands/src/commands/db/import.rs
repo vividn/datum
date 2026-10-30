@@ -14,7 +14,7 @@ use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome, IGNORED_STATE_VALUE},
     derive_verb,
     entry::{build_slug, Entry, Verb, V2_IMPORT_SOURCE},
-    field_spec::strip_field_prefix,
+    field_spec::{strip_create_time_literal, strip_field_prefix},
     ids::Hid,
     time::{DatumTime, Zone},
 };
@@ -241,16 +241,17 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         }
         // v3's slug prefixes the field implicitly, so a v2 template that
         // leads with `%field%` would name it twice; the original stays on
-        // the marker (da-ipwqb).
+        // the marker (da-ipwqb). So with the literal `c` v2 writes beside
+        // its create time, which v3's token renders itself (da-hcxdx).
         let original = meta["idStructure"].as_str();
-        let stripped = original.and_then(strip_field_prefix);
-        if let (Some(orig), Some(_)) = (original, stripped) {
+        let id_structure =
+            original.map(|o| strip_create_time_literal(strip_field_prefix(o).unwrap_or(o)));
+        if let Some(orig) = original.filter(|&o| id_structure.as_deref() != Some(o)) {
             import_marker.insert(
                 "original_id_structure".to_string(),
                 JsonValue::String(orig.to_string()),
             );
         }
-        let id_structure = stripped.or(original).map(str::to_string);
         let mut metadata_obj = serde_json::Map::new();
         metadata_obj.insert("_import".to_string(), JsonValue::Object(import_marker));
         let extra_metadata = Some(JsonValue::Object(metadata_obj));

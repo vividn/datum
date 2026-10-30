@@ -148,6 +148,37 @@ pub fn strip_field_prefix(template: &str) -> Option<&str> {
     (!sep.is_alphanumeric() && !matches!(sep, '%' | '\\') && !body.is_empty()).then_some(body)
 }
 
+/// `template` without the literal `c` datum v2 writes beside its create
+/// time, after it or before it (da-hcxdx): v3's `%create_time%` renders its
+/// own, so the literal would double it. Only that token's own `c` goes, not
+/// the start of a word (`%?createTime%cups`, `abc%?createTime%`).
+pub fn strip_create_time_literal(template: &str) -> String {
+    let marks: Vec<usize> = template
+        .match_indices('%')
+        .map(|(i, _)| i)
+        .filter(|&i| !template[..i].ends_with('\\'))
+        .collect();
+    let mut out = template.to_string();
+    for token in marks.chunks_exact(2).rev() {
+        let (open, close) = (token[0], token[1]);
+        if canonical_key(&template[open + 1..close]) != "create_time" {
+            continue;
+        }
+        let after = template[close + 1..]
+            .strip_prefix('c')
+            .is_some_and(|rest| !rest.starts_with(char::is_alphanumeric));
+        let before = template[..open]
+            .strip_suffix('c')
+            .is_some_and(|head| !head.ends_with(|c: char| c.is_alphanumeric() || c == '%'));
+        if after {
+            out.remove(close + 1);
+        } else if before {
+            out.remove(open - 1);
+        }
+    }
+    out
+}
+
 /// Interpolate a template like `"%field%:%uid%"` into a string using the
 /// lookup context. Unknown keys resolve to the empty string; runs of
 /// `delimiter` produced by empty substitutions collapse to a single delimiter
@@ -1008,6 +1039,28 @@ mod tests {
             "%?field%:%occurTime%",
         ] {
             assert_eq!(strip_field_prefix(kept), None, "{kept}");
+        }
+    }
+
+    #[test]
+    fn strip_create_time_literal_takes_only_the_tokens_own_c() {
+        for (given, want) in [
+            ("%?createTime%c", "%?createTime%"),
+            ("c%?createTime%", "%?createTime%"),
+            ("%createTime%c", "%createTime%"),
+            ("%create_time%c", "%create_time%"),
+            ("%?createTime%c__%kind%", "%?createTime%__%kind%"),
+            ("%kind%__c%?createTime%", "%kind%__%?createTime%"),
+            ("%?createTime%c%kind%", "%?createTime%%kind%"),
+            ("c%?createTime%c", "c%?createTime%"),
+            ("%?createTime%cups", "%?createTime%cups"),
+            ("abc%?createTime%", "abc%?createTime%"),
+            ("%kind%c%?createTime%", "%kind%c%?createTime%"),
+            ("%?occurTime%c", "%?occurTime%c"),
+            (r"\%createTime\%c", r"\%createTime\%c"),
+            ("%?createTime%", "%?createTime%"),
+        ] {
+            assert_eq!(strip_create_time_literal(given), want, "{given}");
         }
     }
 
