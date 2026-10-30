@@ -98,25 +98,41 @@ fn a_read_only_open_beside_its_own_processs_writer_leaves_the_writers_locks() {
     let path = dir.path().join("town.db");
     let w = writer(&path);
     let shm = std::fs::metadata(dir.path().join("town.db-shm")).unwrap();
-    let (pid, at) = (std::process::id().to_string(), format!(":{}", shm.ino()));
-    // This process's locks on the `-shm`: `/proc/locks` names each by its
-    // holder's pid and its file's device and inode.
+    // Does this process hold a lock on the `-shm`? Asked of the kernel on
+    // the writer's own descriptor of it, so nothing is opened or closed to
+    // ask: an OFD lock's owner is the descriptor, not the process, so the
+    // query meets the process's POSIX locks. `/proc/locks` was read a page
+    // at a time, and another process's locks changing between two pages
+    // skipped this one's line (da-nvcb0).
     let held = || {
-        let locks = std::fs::read_to_string("/proc/locks").unwrap();
-        locks
-            .lines()
-            .map(|l| l.split_whitespace().collect::<Vec<_>>())
-            .filter(|f| {
-                f.get(4) == Some(&pid.as_str()) && f.get(5).is_some_and(|d| d.ends_with(&at))
+        std::fs::read_dir("/proc/self/fd")
+            .unwrap()
+            .flatten()
+            .any(|e| {
+                let Ok(fd) = e.file_name().to_string_lossy().parse::<i32>() else {
+                    return false;
+                };
+                if !std::fs::metadata(e.path())
+                    .is_ok_and(|m| m.dev() == shm.dev() && m.ino() == shm.ino())
+                {
+                    return false;
+                }
+                // SAFETY: a zeroed `flock` is a valid one to fill in.
+                let mut lock: libc::flock = unsafe { std::mem::zeroed() };
+                lock.l_type = libc::F_WRLCK as _;
+                lock.l_whence = libc::SEEK_SET as _;
+                // SAFETY: `fd` is open, and `lock` a `flock` F_OFD_GETLK fills in.
+                (unsafe { libc::fcntl(fd, libc::F_OFD_GETLK, &mut lock) }) == 0
+                    && lock.l_type != libc::F_UNLCK as libc::c_short
+                    && lock.l_pid == std::process::id() as i32
             })
-            .count()
     };
-    assert!(held() > 0, "the writer holds no lock on its -shm to keep");
+    assert!(held(), "the writer holds no lock on its -shm to keep");
     let r = Db::open_read_only(path.to_str().unwrap()).unwrap();
     assert_eq!(sum(&r), 5000);
     drop(r);
     assert!(
-        held() > 0,
+        held(),
         "a read-only open dropped its writer's locks on the -shm"
     );
     assert_eq!(sum(&w), 5000);
