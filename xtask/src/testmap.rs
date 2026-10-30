@@ -379,6 +379,14 @@ fn select(map_path: &Path, base: &str, out: &Path) -> Result<()> {
             println!("  {r}");
         }
         fs::write(out.join("FULL"), reasons.join("\n") + "\n")?;
+        // CI runs everything here; a can's gate runs these (scripts/mq-check.sh).
+        fs::write(
+            out.join("new.tests"),
+            touched_tests(base)?
+                .iter()
+                .map(|n| format!("{n}\n"))
+                .collect::<String>(),
+        )?;
         Ok(())
     };
 
@@ -549,23 +557,7 @@ fn select(map_path: &Path, base: &str, out: &Path) -> Result<()> {
         &mut map.always.iter().copied(),
     );
 
-    // A test the PR adds or edits, by name: a new one is in no map.
-    let range = format!("{base}...HEAD");
-    let mut args = vec!["diff", "-U0", "--no-renames", &range, "--"];
-    args.extend(rust.iter().map(|p| p.as_str()));
-    let diff = if rust.is_empty() {
-        String::new()
-    } else {
-        git(&args)?
-    };
-    let mut named = BTreeSet::new();
-    for (file, lines) in changed_lines(&diff, Side::New) {
-        let text = fs::read_to_string(root.join(&file)).unwrap_or_default();
-        for name in tests_touched(&text, &lines) {
-            println!("{file}: the PR adds or changes test `{name}`");
-            named.insert(name);
-        }
-    }
+    let named = touched_tests(base)?;
 
     // nextest's positional filters, one argument a test (a filterset is ONE
     // argument, and Linux caps one at 128 KiB): `<cohort>.tests` go after
@@ -594,6 +586,28 @@ fn select(map_path: &Path, base: &str, out: &Path) -> Result<()> {
         lines(&mut named.iter().map(String::as_str)),
     )?;
     Ok(())
+}
+
+/// The tests the change adds or edits, by name: a new one is in no map.
+fn touched_tests(base: &str) -> Result<BTreeSet<String>> {
+    let root = PathBuf::from(git(&["rev-parse", "--show-toplevel"])?.trim());
+    let diff = git(&[
+        "diff",
+        "-U0",
+        "--no-renames",
+        &format!("{base}...HEAD"),
+        "--",
+        "*.rs",
+    ])?;
+    let mut named = BTreeSet::new();
+    for (file, lines) in changed_lines(&diff, Side::New) {
+        let text = fs::read_to_string(root.join(&file)).unwrap_or_default();
+        for name in tests_touched(&text, &lines) {
+            println!("{file}: the PR adds or changes test `{name}`");
+            named.insert(name);
+        }
+    }
+    Ok(named)
 }
 
 /// Why a changed path runs the whole suite, if it does.

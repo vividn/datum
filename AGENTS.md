@@ -1269,13 +1269,25 @@ Before opening a PR, run the gate:
 bash scripts/mq-check.sh
 ```
 
-It runs only what the diff can break: for Rust,
-`scripts/check-changed.sh` — `cargo fmt --check`, then clippy, build, tests
-and doc tests scoped to the crates you touched plus their workspace
-dependents, falling back to the full `scripts/check.sh` on a workspace-root
-config change or when the closure is most of the workspace; for `web/`, the
-web suite; for docs alone, nothing. Do not run `cargo test --workspace` or
-`scripts/check.sh` for a localized change. CI on a PR runs the Rust tests
+It runs what CI would run for this PR, by the same selections (da-678rb), and
+prints which tests and why, so a PR description can say so. For Rust: `cargo
+xtask check lint`, then `scripts/check-changed.sh --no-tests` (`cargo fmt
+--check`, then clippy, build and doc tests scoped to the crates you touched plus
+their workspace dependents, on a workspace-root config change or when the
+closure is most of the workspace the whole of them), then the tests `cargo xtask
+testmap select` picks. For `web/`: `pnpm run check`, then the files `node
+web/scripts/testmap.mjs select` picks, through `DATUM_TEST_ONLY`. A PR into an
+integration branch (its fork point is on one the permit lists) runs that entry's
+`web_tests`, as `CI (integration)` does, with the PR's own edited test files. For
+docs alone, nothing.
+
+Where the selection says the whole suite (a stale map, a shared file, CI itself),
+or picks more web files than `MAX_LOCAL_WEB_FILES` in the script, a can runs the
+PR's own new and edited tests, prints the reason, and passes: CI runs the rest
+and is the verdict, and the box is shared. `--full` (or `MQ_FULL=1`) runs the
+closure's whole crates and the whole web suite, as the refinery's verdict always
+does (`*/alchemiter`); `--dry-run` prints what would run and runs no check. Do not
+run `cargo test --workspace` or `scripts/check.sh` for a localized change. CI on a PR runs the Rust tests
 its change can reach by per-test coverage (`cargo xtask testmap select`
 against the `testmap` branch's map of a staging commit, da-fnt3v) — for
 `README.md` or a `docs/*.md`, the tests that read the docs (`DOC_READERS`,

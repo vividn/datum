@@ -61,7 +61,7 @@ export const READS_TREE = /\bread(?:File|dir)(?:Sync)?\([^\n]*\b(?:src|build|bui
 export function choose({ map, behind, changed, tests }) {
 	if (!map) return { full: ['no web test map'] };
 	const full = [];
-	if (behind === null) full.push(`the map's commit ${map.commit} is not an ancestor of HEAD`);
+	if (behind === null) full.push(`the map's commit ${map.commit} is not an ancestor of the base`);
 	else if (behind > MAX_BEHIND) full.push(`the map is ${behind} commits behind the base (more than ${MAX_BEHIND})`);
 	if (!changed.length) full.push('no file differs from the base');
 	const picked = new Map();
@@ -209,7 +209,7 @@ function select(mapPath, base, out) {
 	mkdirSync(out, { recursive: true });
 	for (const f of ['FULL', 'web.tests']) rmSync(join(out, f), { force: true });
 	const map = existsSync(mapPath) ? JSON.parse(readFileSync(mapPath, 'utf8')) : undefined;
-	const ancestor = map && spawnSync('git', ['merge-base', '--is-ancestor', map.commit, 'HEAD'], { cwd: web }).status === 0;
+	const ancestor = map && spawnSync('git', ['merge-base', '--is-ancestor', map.commit, base], { cwd: web }).status === 0;
 	const behind = ancestor ? Number(git('rev-list', '--count', `${map.commit}..${base}`)) : null;
 	const changed = git('diff', '--name-only', '--no-renames', `${base}...HEAD`).split('\n').filter(Boolean);
 	// test.mjs's own list: the DEBUG files are not run under CI.

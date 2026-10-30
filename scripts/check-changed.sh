@@ -22,6 +22,8 @@
 # Usage:
 #   ./scripts/check-changed.sh                  # diff vs origin/main
 #   ./scripts/check-changed.sh --base <ref>     # diff vs custom ref
+#   ./scripts/check-changed.sh --no-tests       # all but the test run, which
+#                                               # mq-check.sh picks for a can
 #
 # Requires: git, jq, cargo. Uses cargo-nextest when installed (matching
 # scripts/check.sh); otherwise falls back to `cargo test`.
@@ -34,12 +36,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 BASE_REF=""
+NO_TESTS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --base)
             [[ $# -ge 2 ]] || { printf '--base requires an argument\n' >&2; exit 2; }
             BASE_REF="$2"
             shift 2
+            ;;
+        --no-tests)
+            NO_TESTS=(--no-tests)
+            shift
             ;;
         -h|--help)
             sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//; s/^#$//'
@@ -62,7 +69,7 @@ note() { printf '\033[36m%s\033[0m\n' "$1"; }
 
 fallback() {
     note "$1 — running full battery via scripts/check.sh."
-    exec "$ROOT/scripts/check.sh"
+    exec "$ROOT/scripts/check.sh" "${NO_TESTS[@]}"
 }
 
 # --- Resolve base ref --------------------------------------------------------
@@ -214,7 +221,9 @@ cargo clippy "${P_ARGS[@]}" --all-targets -- -D warnings
 step "cargo build ${P_ARGS[*]} --all-targets"
 cargo build "${P_ARGS[@]}" --all-targets
 
-if command -v cargo-nextest >/dev/null 2>&1; then
+if [[ ${#NO_TESTS[@]} -gt 0 ]]; then
+    note "Test run left to the caller."
+elif command -v cargo-nextest >/dev/null 2>&1; then
     step "cargo nextest run ${P_ARGS[*]} --no-fail-fast"
     cargo nextest run "${P_ARGS[@]}" --no-fail-fast
 else

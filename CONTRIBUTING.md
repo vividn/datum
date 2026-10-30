@@ -24,17 +24,20 @@ Before opening a PR, run the gate:
 bash scripts/mq-check.sh
 ```
 
-It runs only what the diff can break. A Rust change runs
-`scripts/check-changed.sh`: `cargo fmt --check`, then clippy, build, the
-test suite (via `cargo-nextest` when installed, otherwise `cargo test`)
-and the doc tests, scoped to the workspace crates the diff touches plus
-their transitive workspace dependents (so a one-line change in
-`datum-layout` does not rebuild and retest `datum-parity`). It falls back to
-the full `scripts/check.sh` battery when a workspace-root config file
-changes, when nothing crate-shaped is touched, or when the dependent
-closure already covers ≥75% of the workspace. A `web/` change runs the
-web suite; a docs-only change runs nothing here, and on a PR CI runs the
-tests that read `README.md` and `docs/*.md` (`DOC_READERS` in
+It runs what CI would run for your PR, by the same test-map selections, and
+prints which tests and why. A Rust change runs `scripts/check-changed.sh
+--no-tests`: `cargo fmt --check`, then clippy, build and the doc tests, scoped to
+the workspace crates the diff touches plus their transitive workspace dependents
+(so a one-line change in `datum-layout` does not rebuild `datum-parity`), or the
+whole workspace when a workspace-root config file changes, when nothing
+crate-shaped is touched, or when the dependent closure already covers ≥75% of it;
+then the tests `cargo xtask testmap select` picks. A `web/` change runs `pnpm run
+check` and the files `web/scripts/testmap.mjs select` picks. Where a selection
+says the whole suite, or picks more web files than `MAX_LOCAL_WEB_FILES`, the gate
+runs your PR's own new and edited tests, says why, and passes, leaving the rest to
+CI; `--full` runs the whole web suite and the closure's whole crates, and
+`--dry-run` prints what would run. A docs-only change runs nothing here, and on a
+PR CI runs the tests that read `README.md` and `docs/*.md` (`DOC_READERS` in
 `xtask/src/testmap.rs`). CI runs, on a PR, the tests
 its change reaches by per-test coverage, and the full workspace battery on
 staging as the safety net; `./scripts/check.sh` is its local mirror when

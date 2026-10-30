@@ -44,7 +44,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 step 'cargo build --workspace --all-targets'
 cargo build --workspace --all-targets
 
-if command -v cargo-nextest >/dev/null 2>&1; then
+if [[ "${1:-}" == --no-tests ]]; then
+    printf '\nTest run left to the caller.\n'
+elif command -v cargo-nextest >/dev/null 2>&1; then
     step 'cargo nextest run --workspace --no-fail-fast'
     cargo nextest run --workspace --no-fail-fast
 else
