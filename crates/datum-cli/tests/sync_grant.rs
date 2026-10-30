@@ -362,6 +362,32 @@ fn a_daemon_says_where_it_serves_a_granted_database() {
     });
 }
 
+/// A session one member refuses leaves what another brought this device's:
+/// the sync fails, as it did, and the grant the granter's session carried
+/// joins (da-ogje9).
+#[test]
+fn a_grant_joins_though_another_members_session_failed() {
+    let g = Install::new("gina");
+    let (r, t) = (Install::new("rita"), Install::new("tom"));
+    let _home = home_chain(&g, &[&r, &t]);
+    g.ok("work", &["occur", "coffee"]);
+    g.ok("work", &["sync", "new-invite"]);
+    let _work = g.run("work");
+    let _rita = r.run("home");
+    r.ok("home", &["sync", "pause"]);
+
+    g.ok("work", &["sync", "grant", &t.device(), "member"]);
+    let out = t.cmd("home", &["sync"]).output().unwrap();
+    let (said, err) = (
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(!out.status.success(), "{said}{err}");
+    assert!(err.contains("1 of 2 peer(s) failed"), "{said}{err}");
+    assert!(said.contains("joined «work»"), "{said}{err}");
+    assert!(t.has("work", "coffee"));
+}
+
 /// Names are not identities: a device holding a database of the grant's
 /// name, with data of its own, keeps it and joins under another name. An
 /// expired grant joins nothing, and the grant again does.

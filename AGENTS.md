@@ -723,7 +723,7 @@ AES-256-GCM, `chain::seal_grant`), so only it opens it, and relayed by every
 member, so it waits for a device that is offline (default `--expires 7d`). A
 grant is a message, written by any live member that is no reader, unsigned by
 an admin even in a locked carrier. The device, after a bare `sync` of the
-carrier or on a `sync run` tick that brought a chain record, opens each grant
+carrier, whichever session failed (da-ogje9), or on a `sync run` tick that brought a chain record, opens each grant
 to it that no live copy of its own came into that chain by (its admission's
 `via` is the grant's invite, so an expelled copy, never told, is admitted
 again), and runs `chain join` in a

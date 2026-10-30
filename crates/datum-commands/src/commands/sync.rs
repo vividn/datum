@@ -139,10 +139,11 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             if let Some(line) = summary(db)? {
                 println!("{line}");
             }
-            synced?;
-            // What it brought for this device (da-n0uj1.4).
+            // What it brought for this device (da-n0uj1.4) is this device's
+            // whichever session failed, and the sync's error stays (da-ogje9).
             #[cfg(feature = "net")]
-            super::sync_grant::redeem(db, records)?
+            let synced = synced.and(super::sync_grant::redeem(db, records));
+            synced?
         }
         SyncCommand::Pause => {
             ensure!(db.sync_chain()?.exists(), NO_CHAIN);
