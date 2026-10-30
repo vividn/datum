@@ -82,7 +82,7 @@
 	what says where it begins and ends. The ROOT pane is the exception at
 	the other end: it draws no bar of its own at all, however many tabs
 	it has, and no box, because the shell draws the root's tabs as the
-	page's top bar (da-0a5o).
+	page's tab bar (da-0a5o).
 
 	A layout tab's frame is also where that layout's identity is worked
 	(da-crp5): the acts the root bar draws for a root tab — save, restore,

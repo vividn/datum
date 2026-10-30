@@ -42,7 +42,7 @@
 
 	<h3>Where it is</h3>
 	<p>
-		The gear at the top, then <b class="ui">Sync</b>; or type <code>sync</code> in the input bar.
+		The gear at the foot of the page, then <b class="ui">Sync</b>; or type <code>sync</code> in the input bar.
 		<button type="button" class="command" use:act={'open'} onclick={() => void openPlace('sync')}>Open Sync</button>
 	</p>
 
@@ -81,7 +81,7 @@
 
 	<h3>When it says a device joined</h3>
 	<p>
-		Every other device shows a ⚠ at the top: tap it, and it says «Another device joined», names it and when, and offers
+		Every other device shows a ⚠ in the tab bar: tap it, and it says «Another device joined», names it and when, and offers
 		to expel it should it not be yours. Sync lists it too, with <b class="ui">OK</b>. The device that joined is told
 		the chain’s members once, plainly.
 	</p>

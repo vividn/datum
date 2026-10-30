@@ -97,7 +97,7 @@ describe('a first visit', () => {
 				'Log them as they happen: tap, or type in the input bar.',
 				'Find your patterns: visualize and analyze all that beautiful data.',
 				'Every tap shows the command it ran',
-				'Open a widget, or a tab you closed: the + at the top.',
+				'Open a widget, or a tab you closed: the + beside the tabs.',
 				'Move a tab: drag it. On a phone, hold it first.',
 				'Change a page: hold its tab, or right-click it, for layout mode.',
 				"In layout mode a pane's name splits, changes or closes it.",
@@ -237,7 +237,7 @@ describe('a first visit', () => {
 			await app.reload();
 			assert.deepEqual(await rootNames(page), ['setup', 'collect']);
 
-			// «Open a widget, or a tab you closed: the + at the top.»
+			// «Open a widget, or a tab you closed: the + beside the tabs.»
 			await page.locator('.root-bar button.add').first().click();
 			await chooser(page).locator('button', { hasText: exactly('welcome') }).click();
 			await until(() => rootNames(page), (names) => names.join() === 'setup,collect,welcome');

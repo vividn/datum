@@ -1,7 +1,11 @@
 <!--
-	The root tab bar — the page's top bar, in place of the header (da-0a5o).
+	The root tab bar, at the foot of the screen under the input bar
+	(da-6no9e; it took the header's place at the top in da-0a5o). vividn,
+	2026-10-30: «let's move the tab bar to the bottom of the screen
+	underneath the input bar. Put the gear menu and the help button on the
+	left hand side too».
 
-	It is the pane title bar, formatted as a top bar (da-wjob). vividn: it
+	It is the pane title bar, formatted as a bar of the page (da-wjob). vividn: it
 	"is actually just a specially formatted version of the same thing —
 	make sure it is really completely aligned with the other widget picker,
 	just formatted differently". So the ACTIVE tab's name is the button of
@@ -33,7 +37,7 @@
 	While the tab is modified Save and Restore are marked in the menu and
 	the tab keeps its dot, so the dot's meaning is one press from the dot.
 	Restore goes back to the last save; with nothing to discard it opens
-	the save's versions under the bar instead, and `→ forward` undoes the
+	the save's versions over the bar instead, and `→ forward` undoes the
 	last restore. A tab holding a layout that SHIPPED with datum has
 	another, `Reset layout` (da-luwe), beside Restore: the other way back,
 	to `defaults.ts` rather than to the save.
@@ -44,7 +48,7 @@
 	is what says which copy's tree is being saved — so this menu acts on
 	the ROOT tab's layout however deep the layouts under it go.
 
-	At the right end is a gear (da-pp1a): the GLOBAL settings menu, the
+	At the left end is a gear (da-pp1a): the GLOBAL settings menu, the
 	root's alone, and the same `PaneMenu` as every other menu here. vividn, from the train: "Can we add a global
 	settings menu at the top right (little gear icon)? ... Maybe we can put
 	the version and hash string in that menu as well." That stamp — the
@@ -89,9 +93,9 @@
 	header bar. move the beta info message into the gear icon by the
 	version number". It was a `beta` mark and an ⓘ before the gear
 	(da-y992), whose note is now the gear menu's last item, under the
-	version. So the bar's right end is the gear.
+	version.
 
-	Left of the gear, where the padlock was, a (?) (da-hibn3): the commands
+	Beside the gear, where the padlock was, a (?) (da-hibn3): the commands
 	widget's Help button, so the page's next tap is explained on any page,
 	one with no commands widget too. vividn, 2026-10-14: «replace it with a (?)
 	button which functions like the help button, so it let's you query and
@@ -100,7 +104,7 @@
 	armed, it is the general help. Layout mode has none: the mode's menus say
 	what they do, and on a phone its tabs' × need the room (vremya on #764).
 
-	Before the gear, a ⚠ (da-8fucg) while a sync notice — a new device,
+	At the right end, a ⚠ (da-8fucg) while a sync notice — a new device,
 	a new admin, an unlock — is unacknowledged. vividn, 2026-10-09: "a little
 	warning icon in the upper bar next to the gear and stuff. If you click
 	on it it displays a message box saying that another device joined. ok
@@ -109,7 +113,8 @@
 	widget never showed it.
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
-	always — while the `+` and the gear stay where they are.
+	always — while the `+` and the gear stay where they are, and what is
+	at the right end stays there.
 
 	A tab DRAGGED along the strip moves there (da-w19ny, `reorder.ts`):
 	picked up by a mouse that moves, or by a finger that holds, so a
@@ -348,7 +353,7 @@
 	const doResetDefaults = () =>
 		attempt(async () => {
 			const yes = await confirm(
-				'Every layout that ships with datum goes back to the way it came, and the tabs at the top of the page go back to welcome, track and collect.\n\n' +
+				'Every layout that ships with datum goes back to the way it came, and the tabs along the foot of the page go back to welcome, track and collect.\n\n' +
 					'Layouts you saved yourself, and layouts a kit installed, are not touched — they stay in the +.',
 				'reset'
 			);
@@ -450,6 +455,31 @@
 <svelte:window onkeydown={onEscape} />
 
 <nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts" data-layout-mode={$editing ? '' : undefined}>
+	<PaneMenu
+		items={settings}
+		look="badge"
+		label="settings"
+		title="settings"
+		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Sync, this page's devices and how each stands; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
+		class="gear"
+		aria-label="settings"
+		><svg class="cog" viewBox="-12 -12 24 24" width="20" height="20" aria-hidden="true">
+			{#each TEETH as angle}<rect x="-1.9" y="-11.4" width="3.8" height="5.6" rx="1" transform="rotate({angle})" />{/each}
+			<circle class="ring" r="6.2" />
+		</svg><span class="beta" aria-hidden="true">beta</span></PaneMenu
+	>
+	{#if !$editing}
+	<button
+		type="button"
+		class="control badge help"
+		class:armed={$helping}
+		data-command="help"
+		aria-pressed={$helping}
+		aria-label="help"
+		title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
+		onclick={arm}>?</button
+	>
+	{/if}
 	<!-- A hold on the OPEN tab, let go where it was, or its context menu —
 	     a right click, the menu key, Shift+F10 — enters layout mode
 	     (da-vvcxc); a hold that moves still reorders (`reorder.ts`). -->
@@ -513,6 +543,7 @@
 		data-help="A layout is a page of panes, each holding a widget. Opens one as a new tab — a saved layout, a new blank one you name, or a single widget on its own; the tabs switch between them."
 		onclick={add}>+</button
 	>
+	<span class="end">
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
 	<!-- Sync paused (da-wlbyx) is loud: vividn calls it risky. Every tab hears
 	     it from the database's sync leader, and a tap resumes. -->
@@ -539,32 +570,6 @@
 			onclick={doNotices}>{alarming ? '⚠' : 'ⓘ'}</button
 		>
 	{/if}
-	<span class="end">
-	{#if !$editing}
-	<button
-		type="button"
-		class="control badge help"
-		class:armed={$helping}
-		data-command="help"
-		aria-pressed={$helping}
-		aria-label="help"
-		title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
-		onclick={arm}>?</button
-	>
-	{/if}
-	<PaneMenu
-		items={settings}
-		look="badge"
-		label="settings"
-		title="settings"
-		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Sync, this page's devices and how each stands; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
-		class="gear"
-		aria-label="settings"
-		><svg class="cog" viewBox="-12 -12 24 24" width="20" height="20" aria-hidden="true">
-			{#each TEETH as angle}<rect x="-1.9" y="-11.4" width="3.8" height="5.6" rx="1" transform="rotate({angle})" />{/each}
-			<circle class="ring" r="6.2" />
-		</svg><span class="beta" aria-hidden="true">beta</span></PaneMenu
-	>
 	</span>
 	{#if trail && !dirty}
 		<ul class="versions">
@@ -591,14 +596,16 @@
 		align-items: center;
 		gap: 4px;
 		flex-shrink: 0;
-		padding: 0.3rem 0.5rem;
+		/* The screen's foot is this bar's, so the home indicator's inset is
+		   too: under it, and gone with it while a keyboard hides it. */
+		padding: 0.3rem 0.5rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
 		background: var(--ground);
-		border-bottom: 1px solid var(--rule);
+		border-top: 1px solid var(--rule);
 		min-width: 0;
 	}
 
 	/* One row, always: the strip scrolls sideways on a phone, and the bar
-	   itself clips nothing — the versions list hangs below it. */
+	   itself clips nothing — the versions list stands over it. */
 	.tabs {
 		display: flex;
 		gap: 4px;
@@ -675,8 +682,8 @@
 			color-mix(in srgb, var(--accent) 16%, var(--ground)) 0 6px,
 			var(--ground) 6px 14px
 		);
-		border-bottom-color: var(--accent);
-		box-shadow: 0 1px 0 var(--accent);
+		border-top-color: var(--accent);
+		box-shadow: 0 -1px 0 var(--accent);
 	}
 
 	/* Its tabs give the × room (da-yxfem): at 360px wide a first visit's
@@ -709,10 +716,9 @@
 		font-style: italic;
 	}
 
-	/* The gear: at the bar's right end at every width, and a badge like the
+	/* The gear: at the bar's left end at every width, and a badge like the
 	   `+` — so it is on its 24px floor under a fingertip too
-	   (reachable.test.mjs). It rides at the end because `.end`, just
-	   before it, carries the `auto`.
+	   (reachable.test.mjs).
 
 	   A BIGGER badge than the rest of the bar's, and a drawn cog rather
 	   than the `⚙` character (da-jbcv). vividn: "Make the gear icon much
@@ -721,8 +727,8 @@
 	   the em it fills is the reader's font's business and not ours. A
 	   path fills the box it is given, on every device, and the box is
 	   this one. */
-	/* The bar's right end: the (?) and the gear. `auto` here rather than on the tabs,
-	   which scroll, so it is carried to the end. */
+	/* The bar's right end: what sync and an act have to say. `auto` here rather than on
+	   the tabs, which scroll, so it is carried to the end. */
 	.end {
 		display: flex;
 		align-items: center;
@@ -733,6 +739,7 @@
 
 	/* The (?) is round, and armed it is lit as the commands widget's Help is. */
 	.help {
+		flex: none;
 		border-radius: 50%;
 	}
 
@@ -742,21 +749,15 @@
 		color: var(--page);
 	}
 
-	/* The ⚠ (da-8fucg) rides at the end too, ahead of the gear, so while it
-	   is drawn the `auto` is its own. A pill and not a badge: it opens a
-	   dialog, and so wears the `›` (#lib/act.ts). */
+	/* The ⚠ (da-8fucg) is a pill and not a badge: it opens a dialog, and so
+	   wears the `›` (#lib/act.ts). */
 	.notices {
-		margin-left: auto;
 		flex: none;
 		block-size: 24px;
 		padding: 0 0.4rem;
 		color: var(--warn);
 		border-color: var(--warn);
 		white-space: nowrap;
-	}
-
-	.notices + .end {
-		margin-left: 0;
 	}
 
 	.root-bar :global(.gear) {
@@ -797,10 +798,12 @@
 
 	.versions {
 		position: absolute;
-		top: 100%;
+		bottom: 100%;
 		right: 0;
 		z-index: 10;
-		margin: 0.3rem 0 0;
+		margin: 0 0 0.3rem;
+		max-block-size: calc(100cqh - 3rem);
+		overflow-y: auto;
 		padding: 0.3rem 0.6rem;
 		list-style: none;
 		background: var(--ground);

@@ -132,7 +132,7 @@ describe('on a phone-sized screen', () => {
 	// menu, holding «Backups» (da-9ow8m), «Sync» (da-s9r58), «Reset default layouts»
 	// (da-jbcv) and the build stamp. The bar is one row that never wraps, so the thing that can
 	// push the gear off is a crowded strip of tabs on a narrow screen —
-	// and its menu, which opens from the right edge, has to land on the
+	// and its menu, which opens up from the foot, has to land on the
 	// screen as well.
 	test('the gear and its menu are on screen', async (t) => {
 		await phone.solo(async ({ page }) => {

@@ -125,10 +125,10 @@ comment: obsessed with time</pre>
 			command's full output.
 		</p>
 		<h3>Tabs and widgets</h3>
-		<p>Tabs run across the top; each is a page of widgets. In layout mode you can rearrange a page or build your own.</p>
+		<p>Tabs run across the foot of the page; each is a page of widgets. In layout mode you can rearrange a page or build your own.</p>
 		<ul>
 			<li>Move a tab: drag it. On a phone, hold it first.</li>
-			<li>Open a widget, or a tab you closed: the + at the top.</li>
+			<li>Open a widget, or a tab you closed: the + beside the tabs.</li>
 			<li>Change a page: hold its tab, or right-click it, for layout mode.</li>
 			<li>In layout mode a pane's name splits, changes or closes it.</li>
 			<li>Leave by the tab's name: Accept, Save layout (every device), or Discard changes.</li>

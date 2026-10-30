@@ -6,7 +6,7 @@
 	holding widgets, split and tabbed and resized from each pane's `…`
 	menu, with today's arrangement as the default (`#lib/layout/defaults`)
 	and the reader's own kept as a draft (`#lib/layout/current`). Its root
-	pane's tabs are the page's top bar (da-0a5o, `#lib/layout/RootBar`),
+	pane's tabs are the page's tab bar (da-0a5o, `#lib/layout/RootBar`),
 	each one a layout, and the shell (`#lib/layout/shell`) fills the tree
 	on boot — from `+layout.svelte`, so `loaded` is already on its way by
 	the time this mounts.

@@ -902,6 +902,10 @@ binary.
   which a stored layout still opens as it) is that history as a pane, and
   a root tab that is the CLI alone (`/cli`, `/repl`) draws no output
   section at all: the widget is the output there.
+- The root tab bar (`#lib/layout/RootBar.svelte`, da-6no9e) is the screen's foot, under the
+  input and taking the bottom safe-area inset: from the left the gear, help, the tabs and `+`,
+  and what sync says on the right. On a phone with the keyboard open it hides, so the input
+  sits on the keyboard (`data-keyboard`, `followViewport` in `routes/+layout.svelte`).
 - THE SCROLLBACK STANDS IN COLUMNS (`#lib/scrollback.ts`) in the CLI
   widget; the bar's log is one command a line (CliScrollback's `lines`, da-0b2vy) — the aim:
   "the output of a single entry should be narrow enough to comfortably fit

@@ -1,9 +1,9 @@
 <!--
 	The app shell.
 
-	The root tab bar above, and under it the PAGE: a scroller holding three
-	boxes — the dashboard, the log, and the bottom bar at the foot, which is
-	the output over the input (da-ckw3, da-mwp4m). The document itself still never scrolls, and neither does
+	The PAGE, and under it the root tab bar at the screen's foot (da-6no9e).
+	The page is a scroller holding three boxes — the dashboard, the log, and
+	the bottom bar, which is the output over the input (da-ckw3, da-mwp4m). The document itself still never scrolls, and neither does
 	this box under any gesture of the browser's: it is `overflow: hidden`
 	and the only thing that moves it is the bar's own drag and wheel
 	(#lib/log.ts, which has the arithmetic that makes the two rest states
@@ -19,6 +19,10 @@
 	`followViewport` narrows it to what is VISIBLE — above an on-screen
 	keyboard that only shrinks the visual viewport (iOS) — measured on every
 	viewport change and once more after load.
+
+	On a phone with its keyboard open the tab bar goes, so the input sits on
+	the keyboard (`data-keyboard`, `followViewport`): tabs under the input would take height when
+	there is least, where a thumb aiming at the keys lands.
 -->
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
@@ -102,13 +106,26 @@
 	function followViewport() {
 		const viewport = window.visualViewport;
 		if (!viewport) return;
-		const root = document.documentElement.style;
+		const html = document.documentElement;
+		const root = html.style;
+		// No browser says a keyboard is up. So: a coarse pointer, a box focused
+		// to type in, and a fifth of the tallest this width has been gone, which
+		// is more than a URL bar takes. An attribute and not `$state`, as the
+		// heights are: a focused element Svelte removes fires `focusout` inside
+		// its update, where writing state throws (`state_unsafe_mutation`).
+		const coarse = matchMedia('(pointer: coarse)');
+		let [width, tallest] = [0, 0];
 		const measure = () => {
 			if (viewport.scale > 1.01) {
 				root.removeProperty('--viewport-height');
 				root.removeProperty('--viewport-top');
+				html.removeAttribute('data-keyboard');
 				return;
 			}
+			// A new width is a rotation: the last one's tallest says nothing of this one.
+			if (viewport.width !== width) [width, tallest] = [viewport.width, 0];
+			tallest = Math.max(tallest, viewport.height);
+			html.toggleAttribute('data-keyboard', coarse.matches && viewport.height < 0.8 * tallest && !!document.activeElement?.matches('input, textarea, [contenteditable]'));
 			root.setProperty('--viewport-height', `${viewport.height}px`);
 			root.setProperty('--viewport-top', `${viewport.offsetTop}px`);
 		};
@@ -118,12 +135,16 @@
 		viewport.addEventListener('scroll', measure);
 		addEventListener('orientationchange', measure);
 		addEventListener('pageshow', measure);
+		addEventListener('focusin', measure);
+		addEventListener('focusout', measure);
 		return () => {
 			cancelAnimationFrame(frame);
 			viewport.removeEventListener('resize', measure);
 			viewport.removeEventListener('scroll', measure);
 			removeEventListener('orientationchange', measure);
 			removeEventListener('pageshow', measure);
+			removeEventListener('focusin', measure);
+			removeEventListener('focusout', measure);
 		};
 	}
 
@@ -169,7 +190,6 @@
 </svelte:head>
 
 <div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px" data-glide-ends={$glideEnds}>
-	<RootBar />
 	{#if $damaged !== null}<Damaged db={$damaged} />{:else}<Waiting />{/if}
 
 	<!-- The page. Moved by the bar and by nothing else: see the header. -->
@@ -198,6 +218,7 @@
 		<BarLog />
 		<PromptBar />
 	</div>
+	<RootBar />
 	<PlaceModal />
 </div>
 <!-- Outside the shell, a size container, which would be its fixed boxes' frame. -->
@@ -207,8 +228,8 @@
 	/* See the note above. `100%` is the layout viewport the shell is fixed
 	   to; `--viewport-height` the visible part of it, which is never taller,
 	   so a stale measurement can only be ignored, never hang the bar below
-	   the screen. The insets keep a notch or a home indicator off the
-	   prompt. A size container, so a box inside is a share of THIS box
+	   the screen. The insets keep a notch off the page; the home indicator's
+	   is the root bar's, at the foot. A size container, so a box inside is a share of THIS box
 	   rather than of `vh`.
 
 	   THE BAR'S TWO HEIGHTS ARE DECLARED HERE, together and nowhere else
@@ -267,9 +288,12 @@
 		display: flex;
 		flex-direction: column;
 		height: min(100%, var(--viewport-height, 100%));
-		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-			env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
 		container-type: size;
+	}
+
+	:global([data-keyboard]) :global(.root-bar) {
+		display: none;
 	}
 
 	/* The page: the dashboard, the log, the bar. `overflow: hidden` and a
@@ -281,7 +305,7 @@
 
 	   TWO SIZE CONTAINERS, NESTED, ON PURPOSE (a canary on PR #46 asked why).
 	   `cqh` resolves against the NEAREST one, so `100cqh` in `main` and in
-	   `.log` is this box — the page under the root tab bar — and never the
+	   `.log` is this box — the page over the root tab bar — and never the
 	   shell, which is that bar plus this box. That is exactly what the
 	   arithmetic wants: the travel is the dashboard's height, and the
 	   dashboard is the page less the bar. The shell keeps its own container

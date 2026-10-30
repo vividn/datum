@@ -2,7 +2,7 @@
 // da-crp5).
 //
 // The page is one layout tree (`current.ts`), and the root pane's tabs are
-// the page's top bar. A tab whose `layout` is set (types.ts) HOLDS that
+// the page's tab bar. A tab whose `layout` is set (types.ts) HOLDS that
 // saved layout — its content is the saved tree inlined, so the engine,
 // `apply` and the draft never learn that layouts exist. What this module
 // owns is the seam between a tab and its save: `inline` (a saved `Layout`
@@ -1258,7 +1258,7 @@ async function offerDefaults(fresh: boolean): Promise<void> {
 	if (seen >= news.length) return;
 	const yes = await confirm(
 		`datum has a new default layout. ${news.slice(seen).join(' ')}\n\n` +
-			'Using it puts every layout that ships with datum back the way it comes, and the tabs at the top of the page back to the ones a first visit opens. ' +
+			'Using it puts every layout that ships with datum back the way it comes, and the tabs along the foot of the page back to the ones a first visit opens. ' +
 			'Layouts you saved yourself, and layouts a kit installed, are not touched.\n\n' +
 			'Keep yours and this is not asked again; «Reset default layouts» in the ⚙ menu does the same at any time.',
 		'Use the new layout',

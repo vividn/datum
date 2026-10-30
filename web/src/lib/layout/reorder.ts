@@ -1,4 +1,4 @@
-// DRAGGING A ROOT TAB ALONG THE TOP BAR (da-w19ny). vividn: «Let's allow
+// DRAGGING A ROOT TAB ALONG THE TAB BAR (da-w19ny). vividn: «Let's allow
 // dragging to reorder root level tabs».
 //
 // A press is still a click until it moves: a mouse past `SLOP` picks the

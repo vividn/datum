@@ -71,7 +71,7 @@
 <style>
 	.damaged {
 		position: absolute;
-		top: 2.6rem;
+		top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: 30;
