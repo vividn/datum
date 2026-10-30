@@ -313,3 +313,112 @@ fn the_dayview_draws_it_at_the_top_over_every_lane_and_ignored_not_at_all() {
     assert!(svg.contains(r#"data-state="Europe/Berlin""#), "{svg}");
     assert!(!svg.contains(r#"data-state="IGNORED""#));
 }
+
+/// da-wpgrm: `datum check tz` warns where an entry's zone is not the one the
+/// field holds at its instant.
+mod off_declared {
+    use super::*;
+
+    const T0: &str = "2026-03-01T12:00:00+00:00";
+    const T1: &str = "2026-03-02T12:00:00+00:00";
+    const T2: &str = "2026-03-03T12:00:00+00:00";
+
+    /// `timezone <zone>` at `T0`, and a `work` entry in `own` at `T1`.
+    fn declared(zone: &str, own: &str) -> Env {
+        let env = Env::new();
+        env.ok(&["timezone", zone, "-t", T0]);
+        env.ok(&["occur", "work", "-t", T1, "-z", own]);
+        env
+    }
+
+    /// What `datum check tz` finds, as `(entry's zone, what the field holds)`.
+    fn found(env: &Env) -> Vec<(String, String)> {
+        let out = env.run_in("Europe/Berlin", &["check", "tz", "--json"]);
+        let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let issues = report["issues"].as_array().unwrap();
+        let Some(issue) = issues.iter().find(|i| i["category"] == "tz_off_declared") else {
+            return vec![];
+        };
+        assert_eq!(issue["severity"], "warning", "{issue}");
+        let detail = issue["example"]["detail"].as_str().unwrap();
+        let (own, declared) = detail.split_once("  declared=").unwrap();
+        vec![(
+            own.trim_start_matches("tz=").to_string(),
+            declared.to_string(),
+        )]
+    }
+
+    fn pair(own: &str, declared: &str) -> Vec<(String, String)> {
+        vec![(own.to_string(), declared.to_string())]
+    }
+
+    #[test]
+    fn a_zone_other_than_the_declared_one_warns_and_shows_it() {
+        let env = declared("Asia/Tokyo", "Europe/Berlin");
+        assert_eq!(found(&env), pair("Europe/Berlin", "Asia/Tokyo"));
+        let shown = env.ok(&["check", "tz"]);
+        let row = (shown.lines())
+            .find(|l| l.contains("work"))
+            .unwrap_or_else(|| panic!("{shown}"));
+        assert!(row.contains("declared Asia/Tokyo"), "{shown}");
+    }
+
+    /// Same rules are no excuse, same offset today less so, and a spelling of
+    /// the zone is the zone.
+    #[test]
+    fn it_compares_names_and_not_rules() {
+        let env = declared("Europe/Paris", "Europe/Berlin");
+        assert_eq!(found(&env), pair("Europe/Berlin", "Europe/Paris"));
+        let env = declared("Africa/Lagos", "Europe/Berlin");
+        assert_eq!(found(&env), pair("Europe/Berlin", "Africa/Lagos"));
+        assert_eq!(found(&declared("Asia/Kolkata", "Asia/Calcutta")), vec![]);
+        assert_eq!(found(&declared("Asia/Calcutta", "Asia/Kolkata")), vec![]);
+    }
+
+    #[test]
+    fn no_field_and_no_zone_held_claim_nothing() {
+        let env = Env::new();
+        env.ok(&["occur", "work", "-t", T1, "-z", "Asia/Tokyo"]);
+        assert_eq!(found(&env), vec![]);
+        // Before the field's first row, and under IGNORED.
+        env.ok(&["timezone", "Europe/Berlin", "-t", T2]);
+        assert_eq!(found(&env), vec![]);
+        let env = declared("IGNORED", "Asia/Tokyo");
+        assert_eq!(found(&env), vec![]);
+    }
+
+    /// The entry on the instant of a switch is under it, and a later switch
+    /// ends what the earlier one claims.
+    #[test]
+    fn each_entry_is_read_against_the_zone_at_its_instant() {
+        let env = declared("Asia/Tokyo", "Asia/Tokyo");
+        env.ok(&["timezone", "Europe/Paris", "-t", T2]);
+        env.ok(&["occur", "walk", "-t", T2, "-z", "Asia/Tokyo"]);
+        assert_eq!(found(&env), pair("Asia/Tokyo", "Europe/Paris"));
+    }
+
+    /// A second run reads what a retroactive switch reaches, though the
+    /// entries it reaches did not change, and what a later one takes back.
+    #[test]
+    fn a_second_run_reads_what_a_change_to_the_field_reaches() {
+        let env = declared("Europe/Berlin", "Europe/Berlin");
+        env.ok(&["occur", "walk", "-t", T2, "-z", "Europe/Berlin"]);
+        assert_eq!(found(&env), vec![]);
+        let at = "2026-03-02T00:00:00+00:00";
+        env.ok(&["timezone", "Asia/Tokyo", "-t", at]);
+        let out = env.ok(&["check", "tz", "--json"]);
+        let report: Value = serde_json::from_str(&out).unwrap();
+        let issues = report["issues"].as_array().unwrap();
+        let off = (issues.iter())
+            .find(|i| i["category"] == "tz_off_declared")
+            .unwrap_or_else(|| panic!("{report}"));
+        assert_eq!(off["count"], 2, "{off}");
+        env.ok(&[
+            "timezone",
+            "Europe/Berlin",
+            "-t",
+            "2026-03-02T06:00:00+00:00",
+        ]);
+        assert_eq!(found(&env), vec![]);
+    }
+}

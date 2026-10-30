@@ -4,8 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
-use datum_core::db::{agreed_zone, Db, NEIGHBOURS};
+use datum_core::db::{agreed_zone, is_meta_field, Db, NEIGHBOURS};
 use datum_core::entry::Entry;
+use datum_core::state::FieldStateRows;
 use datum_core::timezone_field::{self, TIMEZONE_FIELD};
 
 use super::{
@@ -103,7 +104,15 @@ pub(super) fn collect_tz_drift(
         };
         let found: Vec<Entry> = rows.iter().map(|r| r.0.clone()).collect();
         let rendered_block = match around {
-            true => around_blocks(db, &found)?,
+            true => {
+                let notes: Vec<&str> = (rows.iter())
+                    .map(|(.., state)| match category {
+                        "tz_off_declared" => state.as_str(),
+                        _ => "",
+                    })
+                    .collect();
+                around_blocks(db, &found, &notes)?
+            }
             false => render_flagged_block(db, &found),
         };
         Ok(Some(Issue {
@@ -163,6 +172,12 @@ pub(super) fn collect_tz_drift(
             "tz_off_neighbours",
             "a timezone the entries around them agree is not theirs",
         )?,
+        issue(
+            off_declared(db, entries)?,
+            Severity::Warning,
+            "tz_off_declared",
+            "a timezone other than the one the `timezone` field holds at that instant",
+        )?,
     ]
     .into_iter()
     .flatten()
@@ -172,10 +187,11 @@ pub(super) fn collect_tz_drift(
 /// A block per entry of `found`, a blank line between: the [`NEIGHBOURS`]
 /// entries either side of it and it, in time order, their date and time,
 /// offset, zone and hid in columns, each in its own zone. It alone is marked,
-/// [`FLAGGED_ROW`], and has its field and state after the columns.
-fn around_blocks(db: &Db, found: &[Entry]) -> Result<String> {
+/// [`FLAGGED_ROW`], and has its field and state after the columns, then its
+/// note where `notes` has one.
+fn around_blocks(db: &Db, found: &[Entry], notes: &[&str]) -> Result<String> {
     let mut blocks = Vec::new();
-    for (e, drawn) in found.iter().zip(field_and_state(db, found)) {
+    for ((e, drawn), note) in found.iter().zip(field_and_state(db, found)).zip(notes) {
         let (mut before, after) = match e.occur_time.as_ref() {
             Some(at) => db.entries_around(at.utc)?,
             None => Default::default(),
@@ -191,7 +207,9 @@ fn around_blocks(db: &Db, found: &[Entry]) -> Result<String> {
                 let row =
                     format!("{time:<time_w$}  {offset:<offset_w$}  {zone:<zone_w$}  {hid:<hid_w$}");
                 match i == before.len() {
-                    true => format!("{FLAGGED_ROW}{row}  {drawn}"),
+                    true => format!("{FLAGGED_ROW}{row}  {drawn}  {note}")
+                        .trim_end()
+                        .to_string(),
                     false => row.trim_end().to_string(),
                 }
             })
@@ -222,6 +240,48 @@ fn zone_columns(e: &Entry) -> [String; 4] {
     };
     let zone = t.timezone.clone().unwrap_or_else(|| "—".into());
     [time, offset, zone, e.short_uid()]
+}
+
+/// The rows of `entries` whose zone is not the one the `timezone` field holds
+/// at their instant, by name ([`timezone_field::same_zone`], da-wpgrm). Where
+/// it holds no zone it claims nothing: before its first row, under `IGNORED`.
+/// Not compared: a row with no zone name, which claims none, or one nothing
+/// resolves, which is `unknown_timezone`; the field's own rows, in the zone
+/// they name or `timezone_state_not_a_zone`; and a meta field's, whose time is
+/// no moment lived, as [`Db::zone_sequence`] leaves them out.
+fn off_declared(db: &Db, entries: &[Entry]) -> Result<Vec<(Entry, String, String)>> {
+    let rows = FieldStateRows::load_transitions(db.conn(), TIMEZONE_FIELD)?;
+    let stretches: Vec<_> = (rows.changes().into_iter())
+        .map(|c| (c.at, timezone_field::state_zone(&c.state)))
+        .collect();
+    let mut off = Vec::new();
+    for e in entries {
+        let Some(t) = e.occur_time.as_ref() else {
+            continue;
+        };
+        if e.deleted_at.is_some()
+            || e.superseded_by.is_some()
+            || e.field == TIMEZONE_FIELD
+            || is_meta_field(&e.field)
+            || !matches!(t.expected_offset_minutes(), Ok(Some(_)))
+        {
+            continue;
+        }
+        let holding = stretches.partition_point(|(at, _)| *at <= t.utc);
+        let declared = holding.checked_sub(1).and_then(|i| stretches[i].1.as_ref());
+        let (Some(declared), Some(own)) = (declared, t.timezone.as_deref()) else {
+            continue;
+        };
+        if !timezone_field::same_zone(own, declared) {
+            off.push((
+                e.clone(),
+                format!("tz={own}  declared={declared}"),
+                format!("declared {declared}"),
+            ));
+        }
+    }
+    off.sort_by_key(|(e, ..)| e.occur_time.as_ref().map(|t| t.utc));
+    Ok(off)
 }
 
 /// The entries in a run of fewer than [`NEIGHBOURS`] in one zone, where the
@@ -308,6 +368,15 @@ mod tests {
     use super::*;
     use datum_core::entry::Verb;
     use datum_core::time::DatumTime;
+
+    /// `timezone_field`'s `SPELLINGS` is drawn from the tzdb chrono-tz ships,
+    /// whose links no running code can read. A rename adds a name, so a change
+    /// in how many says to draw the table again, from the `backward` file's
+    /// sections its comment names, and then change this number.
+    #[test]
+    fn a_new_tzdb_is_a_reminder_to_draw_the_spellings_again() {
+        assert_eq!(chrono_tz::TZ_VARIANTS.len(), 597);
+    }
 
     /// da-3zq6g: a second run reads a zone the rows around one agree is not
     /// its own only around the instants that changed and those it found last

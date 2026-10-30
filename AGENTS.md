@@ -160,6 +160,14 @@ its spec places it; `fields` hides it `IGNORED` as any field and says the `zone`
 it holds, which datum.day's gear item, «Track timezone», reads: opt in, a click
 logs the device's zone, the next logs `IGNORED`.
 
+`datum check tz` warns, `tz_off_declared`, of an entry whose zone is not the one
+the field holds at its instant (da-wpgrm). It compares names: Berlin and Paris
+differ, though their rules agree, and a spelling is one zone (`same_zone`, tzdb's
+sections of old names for one place, so `Asia/Calcutta` is `Asia/Kolkata` while
+`Europe/Stockholm`, merged with Berlin for sharing its clock, is not Berlin).
+Where the field holds no zone it claims nothing. A changed `timezone` row makes
+`tz`'s next run read every entry, as it reaches rows that did not change.
+
 ### The spool: a write is never lost to the lock
 A command that changes entries (every one but sync's, `db`'s, `config`'s and
 `kit`'s, whose indices are DDL no op carries)

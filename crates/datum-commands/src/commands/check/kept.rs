@@ -7,11 +7,13 @@
 //! fields changed since. A field's changed spec reads that field's rows
 //! again, the one meta row these findings read; a template's spec, a kit, a
 //! chain record, another datum or schema, `--fix`, or a mark the log's cap or
-//! another stamp's prune has passed (da-4a3cv, da-tuhig) reads every one.
+//! another stamp's prune has passed (da-4a3cv, da-tuhig) reads every one, as a
+//! changed `timezone` row does for `tz`.
 
 use std::collections::BTreeSet;
 
 use datum_core::db::{chain::CHAIN_HID, Db, SPEC_FIELD};
+use datum_core::timezone_field::TIMEZONE_FIELD;
 
 use super::Issue;
 
@@ -54,6 +56,9 @@ impl Plan {
         for (hid, field, _) in &changed {
             match (hid.as_str(), field.as_str()) {
                 (CHAIN_HID, _) | (_, "kit") => return None,
+                // What the field declares reaches every row after it, which
+                // no change of theirs says (da-wpgrm).
+                (_, TIMEZONE_FIELD) if checker == "tz" => return None,
                 (_, SPEC_FIELD) => {
                     specs.insert(hid.clone());
                 }
