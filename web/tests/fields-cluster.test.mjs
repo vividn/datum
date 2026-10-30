@@ -384,7 +384,8 @@ describe('a switch field’s states in the fields’ place, `end` at the centre'
 				const [box, view] = [await page.locator(PICKER).boundingBox(), page.viewportSize()];
 				if (Math.abs(box.width - 351) < 1 && Math.abs(box.height - 88.5) < 1) break;
 				await page.setViewportSize({ width: Math.round(view.width + 351 - box.width), height: Math.round(view.height + (88.5 - box.height) * 2) });
-				await page.waitForFunction(([sel, w]) => Math.abs(document.querySelector(sel).clientWidth - w) < 40, [PICKER, 351]);
+				// A frame, not a read: the box takes its new size as it is read, the states only when the widget's observers run.
+				await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 			}
 			const t = await seen(page);
 			assert.ok(Math.abs(t.pane.right - t.pane.left - 351) < 2 && Math.abs(t.pane.bottom - t.pane.top - 88.5) < 2, `the box is ${t.pane.right - t.pane.left}x${t.pane.bottom - t.pane.top}`);
