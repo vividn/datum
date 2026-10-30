@@ -26,7 +26,7 @@ pub(super) struct AliasReport {
 ///   table, hence "first-saved-wins" was a silent collision (Appendix C
 ///   jade + garnet retros).
 /// * `alias_orphan` — a user/kit alias's expansion chain ends in a name
-///   that is neither a known subcommand nor any other resolvable alias.
+///   that is no known subcommand, kit command or other resolvable alias.
 ///   Typical cause: a downstream alias's owning spec was deleted.
 /// * `alias_cycle` — expanding a user/kit alias revisits a name in the
 ///   chain. The `expand_argv` pre-pass would bail at
@@ -319,7 +319,7 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
                         id: None,
                         field: Some(alias.name.clone()),
                         detail: Some(format!(
-                            "{path} → '{broken_at}' (no known alias or subcommand)",
+                            "{path} → '{broken_at}' (no known alias, subcommand or kit command)",
                             path = chain.join(" → "),
                         )),
                     });
@@ -380,7 +380,8 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
 /// Outcome of walking a single alias's expansion chain.
 #[derive(Debug, Clone)]
 enum ChainOutcome {
-    /// Chain reaches a known subcommand or a positional placeholder.
+    /// Chain reaches a known subcommand, a kit command's view or a positional
+    /// placeholder.
     Resolved,
     /// Chain terminates at an unresolvable name partway through.
     Orphan {
@@ -393,27 +394,35 @@ enum ChainOutcome {
 }
 
 /// Walk an alias's chain by repeatedly looking up the head of each
-/// expansion. Stops on a known subcommand, a positional placeholder, an
-/// unresolved name, a revisited name, or after [`MAX_ALIAS_HOPS`] hops
+/// expansion. Stops on a known subcommand, a kit command's view, a positional
+/// placeholder, an unresolved name, a revisited name, or after
+/// [`MAX_ALIAS_HOPS`] hops
 /// (which we treat as a cycle — a chain that long is unreachable in
 /// practice).
 fn analyze_chain(db: &Db, start: &str) -> Result<ChainOutcome> {
     let mut visited: Vec<String> = vec![start.to_string()];
     let mut current = start.to_string();
     for _ in 0..MAX_ALIAS_HOPS {
-        let alias = match db.lookup_alias(&current)? {
-            Some(a) => a,
-            None => {
-                // The starting alias is guaranteed resolvable by its
-                // caller (we just enumerated it), so a None here means
-                // we hit an unresolved hop mid-walk.
-                return Ok(ChainOutcome::Orphan {
-                    broken_at: current,
-                    chain: visited,
-                });
-            }
+        // An alias of the name takes the word first, then a kit command's
+        // expansion, as the resolver reads them; a kit command with none
+        // runs its view.
+        let expands_to = if let Some(alias) = db.lookup_alias(&current)? {
+            alias.expands_to
+        } else if let Some(command) = db.get_kit_command(&current)? {
+            let Some(expands_to) = command.expands_to else {
+                return Ok(ChainOutcome::Resolved);
+            };
+            expands_to
+        } else {
+            // The starting alias is guaranteed resolvable by its caller (we
+            // just enumerated it), so a None here means we hit an unresolved
+            // hop mid-walk.
+            return Ok(ChainOutcome::Orphan {
+                broken_at: current,
+                chain: visited,
+            });
         };
-        let tokens = shell_split(&alias.expands_to);
+        let tokens = shell_split(&expands_to);
         let Some(head) = tokens.first() else {
             return Ok(ChainOutcome::Resolved);
         };
@@ -510,5 +519,61 @@ mod tests {
         })
         .unwrap();
         assert!(found(&db).is_none());
+    }
+
+    /// An alias reaching a kit command, directly or through another alias,
+    /// is no orphan, and one reaching nothing still is, through a kit
+    /// command's expansion too (da-sunqa).
+    #[test]
+    fn alias_to_a_kit_command_is_no_orphan() {
+        let db = Db::open_in_memory().unwrap();
+        let command = |name: &str, expands_to: &str| -> datum_core::kit::CommandEntry {
+            toml::from_str(&format!("name = \"{name}\"\nexpands_to = \"{expands_to}\"")).unwrap()
+        };
+        db.install_kit_commands(
+            "k",
+            &[
+                command("ll", "tail"),
+                command("broken", "nothing"),
+                toml::from_str("name = \"seen\"\nview = \"v\"").unwrap(),
+            ],
+            false,
+        )
+        .unwrap();
+        for (name, expands_to) in [
+            ("лл", "ll"),
+            ("l2", "лл --flag"),
+            ("gone", "nothing"),
+            ("via", "broken"),
+            ("view", "seen"),
+        ] {
+            db.save_alias(&Alias {
+                name: name.to_string(),
+                expands_to: expands_to.to_string(),
+                description: None,
+            })
+            .unwrap();
+        }
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "alias_orphan")
+            .expect("the alias to nothing must be reported");
+        assert_eq!(issue.count, 2);
+        let orphans: Vec<_> = db
+            .list_user_aliases()
+            .unwrap()
+            .into_iter()
+            .filter(|a| {
+                matches!(
+                    analyze_chain(&db, &a.name).unwrap(),
+                    ChainOutcome::Orphan { .. }
+                )
+            })
+            .map(|a| a.name)
+            .collect();
+        assert_eq!(orphans, ["gone", "via"]);
     }
 }
