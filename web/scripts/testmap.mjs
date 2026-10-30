@@ -32,7 +32,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const MAX_BEHIND = 10;
+// 25 is past the worst lag vremya measured on the two-hour timer, 21 commits on
+// 10-19, where 10 sent 18 of 94 long PR runs to the whole suite (da-eqjzg,
+// da-reck6). Keep xtask/src/testmap.rs's equal.
+export const MAX_BEHIND = 25;
 
 /** Changed paths no web test reads: the docs, xtask, the repo's own scripts, markdown. */
 const NOT_WEB = /^(docs|xtask|scripts)\/|\.md$/;

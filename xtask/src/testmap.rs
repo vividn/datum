@@ -20,8 +20,11 @@ use std::sync::mpsc;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// A map further behind the base than this is too old to trust.
-const MAX_BEHIND: usize = 10;
+/// A map further behind the base than this is too old to trust. 25 is past the
+/// worst lag vremya measured on the two-hour timer, 21 commits on 10-19, where
+/// 10 sent 18 of 94 long PR runs to the whole suite (da-eqjzg, da-reck6). Keep
+/// web/scripts/testmap.mjs's equal.
+const MAX_BEHIND: usize = 25;
 /// The branch the map is made on. An integration branch's freshness is
 /// measured at the staging commit it was last synced from, so its own
 /// commits are not staleness (da-47l15).
