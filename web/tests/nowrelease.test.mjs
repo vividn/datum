@@ -112,6 +112,7 @@ function record(page, labels = false) {
 				if (!window.__stopFrames) requestAnimationFrame(tick);
 			};
 			window.__stopFrames = false;
+			window.__answered = [];
 			// Back once a frame under the finger is in hand: the lift comes after it.
 			return new Promise((resolve) =>
 				requestAnimationFrame(() => {
@@ -126,8 +127,13 @@ function record(page, labels = false) {
 
 /**
  * Wait for `n` frames after the lift — and, when the release asked datum for
- * a picture, after that picture has replaced the one under the fingers —
- * then stop recording. The frames, and whether a picture was asked.
+ * a picture, after every ask is answered and a picture has replaced the one
+ * on screen as the first answer came (where none came after the lift, the one
+ * under the fingers) — then stop recording. The frames, and whether a picture
+ * was asked. By the answers and not by the first new picture: one arrives in
+ * the lift's own frame, before any answer, and a next gesture begun on its
+ * count of frames lands while this one's picture is on its way, and is dropped
+ * (`zoom.held`, da-zo8qd).
  */
 async function untilSettled(page, n = 20) {
 	const after = (answer) =>
@@ -136,7 +142,9 @@ async function untilSettled(page, n = 20) {
 				const f = window.__frames;
 				const up = f.findIndex((x) => !x.down);
 				if (up < 1) return false;
-				const from = answer ? f.findIndex((x, i) => i > up && x.svg !== f[up - 1].svg) : up;
+				if (answer && window.__nowviews) return false;
+				const heard = window.__answered.find((i) => i > up) ?? up;
+				const from = answer ? f.findIndex((x, i) => i >= heard && x.svg !== f[heard - 1].svg) : up;
 				return from > 0 && f.length - from >= n;
 			},
 			[answer, n]
@@ -193,7 +201,7 @@ async function touch(page, moves, midway, each) {
 }
 
 /** A coffee every 20 minutes for eight hours back, so a pan always has a mark in the band. */
-async function seeded(app) {
+async function seeded(app, answer = 333) {
 	for (let i = 0; i < 24; i++) await app.runLine(`occur coffee -t -${5 + 20 * i}`);
 	await app.redraw();
 	await app.page.locator(`${BAND} svg.svg [data-field="coffee"] .point-fg`).first().waitFor({ state: 'attached' });
@@ -201,12 +209,24 @@ async function seeded(app) {
 	// Datum's answer for a new window held back a third of a second, as a
 	// phone's can be: whatever the page shows meanwhile is on screen for
 	// twenty frames, not one.
-	await app.page.evaluate(() => {
+	await app.page.evaluate((answer) => {
 		const previous = window.datum.setRunner((argv, ...rest) =>
-			argv[0] === 'nowview' ? new Promise((r) => setTimeout(r, 333)).then(() => previous(argv, ...rest)) : previous(argv, ...rest)
+			argv[0] === 'nowview' ? new Promise((r) => setTimeout(r, answer)).then(() => previous(argv, ...rest)) : previous(argv, ...rest)
 		);
-	});
+	}, answer);
 	await app.spyOnRunner();
+	// Outermost, so it counts each run from where it is asked, and notes the frame each answer comes at.
+	await app.page.evaluate(() => {
+		window.__nowviews = 0;
+		const previous = window.datum.setRunner((argv, ...rest) => {
+			if (argv[0] !== 'nowview') return previous(argv, ...rest);
+			window.__nowviews += 1;
+			return previous(argv, ...rest).finally(() => {
+				window.__nowviews -= 1;
+				window.__answered?.push(window.__frames.length);
+			});
+		});
+	});
 	return app.page.locator(BAND).boundingBox();
 }
 
@@ -332,16 +352,8 @@ describe('a release is seamless', () => {
 			await withApp(
 				async (app) => {
 					const { page } = app;
-					const box = await seeded(app);
-					// Outermost, so it counts each run from where it is asked.
-					await page.evaluate(() => {
-						window.__nowviews = 0;
-						const previous = window.datum.setRunner((argv, ...rest) => {
-							if (argv[0] !== 'nowview') return previous(argv, ...rest);
-							window.__nowviews += 1;
-							return previous(argv, ...rest).finally(() => (window.__nowviews -= 1));
-						});
-					});
+					// An answer a second late, past any count of frames: the next pinch waits for it (da-zo8qd).
+					const box = await seeded(app, 1000);
 					const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
 					// Along time: down the band when it runs down (da-78evn).
 					const both = (apart) =>
