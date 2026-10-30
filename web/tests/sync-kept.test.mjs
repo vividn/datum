@@ -39,8 +39,8 @@ const past = (run, from, sent) =>
 async function pair() {
 	const [a, b] = [await nativeCopy(relay), await nativeCopy(relay)];
 	const inviting = a.spawn(['sync', 'chain', 'invite']);
-	const [, ticket] = await until(() => /datum sync chain connect '([^']+)'/.exec(inviting.stdout), Boolean);
-	assert.equal((await b.run(['sync', 'chain', 'connect', ticket])).code, 0);
+	const [, ticket] = await until(() => /datum sync chain join '([^']+)'/.exec(inviting.stdout), Boolean);
+	assert.equal((await b.run(['sync', 'chain', 'join', ticket])).code, 0);
 	// A short session timeout, so a dead connection's stream fails in seconds.
 	const env = { DATUM_SYNC_TIMEOUT_S: '5', DATUM_SYNC_TEST_RETRY_MS: '500' };
 	const runs = { a: a.spawn(['sync', 'run'], env), b: b.spawn(['sync', 'run'], env) };

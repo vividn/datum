@@ -26,7 +26,7 @@ async function invite(app) {
 	await app.page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).click();
 	const offer = app.page.locator(`${WIDGET} .offer[data-db="datum"]`);
 	await offer.locator('.qr svg').waitFor();
-	const [, link] = /datum sync chain connect '([^']+)'/.exec(await offer.locator('.ticket').textContent());
+	const [, link] = /datum sync chain join '([^']+)'/.exec(await offer.locator('.ticket').textContent());
 	return { offer, link };
 }
 
@@ -66,7 +66,7 @@ describe('the invite panel (da-2bvxq)', () => {
 						assert.deepEqual(await offered(offer), SPENT);
 
 						await offer.getByRole('button', { name: 'Add another device' }).click();
-						await until(() => offer.locator('.ticket').textContent().catch(() => ''), (t) => t.includes('connect') && !t.includes(link));
+						await until(() => offer.locator('.ticket').textContent().catch(() => ''), (t) => t.includes('chain join') && !t.includes(link));
 						assert.equal(await offer.locator('.joined').count(), 0);
 					},
 					{ prepare: relayed(relay), viewport: DESKTOP }

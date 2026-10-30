@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
 use crate::commands::check::{Domain, Issue, Severity, Source};
 
-const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain connect <TICKET>` joins one with a ticket from another";
+const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain join <TICKET>` joins one with a ticket from another";
 
 /// What a copy of a chain a purge dissolved says (da-qzrj9): it is in none,
 /// though it keeps the chain's records to pass the order on.
@@ -29,7 +29,7 @@ fn dissolved(chain: &Chain) -> Option<String> {
         format!(
             "this copy is in no sync chain: a purge dissolved sync chain {} at {}, and this copy \
              passes that on to its members still to hear of it. `datum sync chain invite` starts a \
-             new one, or `datum sync chain connect <TICKET>` joins one",
+             new one, or `datum sync chain join <TICKET>` joins one",
             chain.id,
             chain::hlc_time(&w.hlc)
         )
@@ -684,7 +684,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             datum_sync::offer(db, &secret, expires, &local(&expires_at), qr)?
         }
         #[cfg(feature = "net")]
-        SyncCommand::Connect { ticket, label } => {
+        SyncCommand::Join { ticket, label } => {
             let label = label.map(checked).transpose()?;
             db.sync_refuse_debug()?;
             let ticket = match ticket {

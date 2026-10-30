@@ -34,7 +34,7 @@
 	(da-6du3o). The header's `?` opens the guide to all of it (da-oyvsz).
 	[Add device], or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
 	and its own buttons at its bottom — with the ticket under a closed
-	«connect from a terminal». Once the invite is used, or expired, the QR and
+	«join from a terminal». Once the invite is used, or expired, the QR and
 	link go: the panel names the device that joined, or says it expired, and
 	offers [Add another device] (da-2bvxq). The cards a link opens — `/sync/approve#…`,
 	which names what the passkey signs before it offers the passkey, since
@@ -702,8 +702,8 @@
 					<p class="head">Add a device to {offer.db}: scan this with it, or open the link in its browser. It works once, until {offer.until}.</p>
 					<div class="qr">{@html offer.svg}</div>
 					<details class="terminal">
-						<summary>connect from a terminal</summary>
-						<code class="code ticket">datum sync chain connect '{offer.link}'</code>
+						<summary>join from a terminal</summary>
+						<code class="code ticket">datum sync chain join '{offer.link}'</code>
 					</details>
 				{/if}
 				<div class="actions">

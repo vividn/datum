@@ -4,8 +4,8 @@ Copies of a database sync peer to peer over [iroh](https://iroh.computer),
 as members of a sync chain. Join one with a one-time invite, then sync:
 
 ```bash,no_run
-datum sync chain invite            # on the first copy: starts a chain, prints `datum sync chain connect <LINK>`
-datum sync chain connect <LINK>    # on the second: it joins the chain, and they sync
+datum sync chain invite            # on the first copy: starts a chain, prints `datum sync chain join <LINK>`
+datum sync chain join <LINK>       # on the second: it joins the chain, and they sync
 datum sync                         # sync with every member once
 datum sync status                  # how this copy stands with each member
 datum sync chain list              # list them; `datum sync chain expel <WHO>` removes one

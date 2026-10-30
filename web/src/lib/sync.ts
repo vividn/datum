@@ -43,7 +43,7 @@
 //   Pairing is the chain's (da-6177s): `offer` writes a chain invite —
 //   starting an open chain when there is none — and `connect` redeems one.
 // - A ticket travels as a JOIN LINK (da-l9kdr), `/sync/join#<ticket>`, which
-//   the CLI's `connect` takes too, and `sync chain connect` typed on the page
+//   the CLI's `join` takes too, and `sync chain join` typed on the page
 //   comes here (`syncCommand`) rather than to the CLI, which has no network.
 //
 // A relay other than n0's is named in `localStorage` (`datum.syncRelay`),
@@ -321,7 +321,7 @@ class Leader {
 	 * chain, which it names and which has its key (da-idw54). A join
 	 * cut short, by a reload say, resumes there: the endpoint starts and
 	 * dials the copies it was joining through, and once in the chain the
-	 * copy says what it is, as `connect` does.
+	 * copy says what it is, as `join` does.
 	 *
 	 * A read that fails changes nothing (da-zyox0): emptying the peers
 	 * first left a failed one pushing to nobody until the next refresh.
@@ -487,7 +487,7 @@ class Leader {
 			const label = c.label ?? suggestedLabel(this.db);
 			const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket, label }).finally(() => this.progress());
 			this.done(report.id, report);
-			// Admitted to a chain, it says what it is (`datum sync chain connect`):
+			// Admitted to a chain, it says what it is (`datum sync chain join`):
 			// a name it was told as told, else none: the chain assembles one (da-xijlw).
 			// Its peers hear on the next sync, as natively: pushed on, it dialed
 			// the inviter, whose invite has ended, and held the page's one
@@ -646,9 +646,9 @@ export function ticketAbout(ticket: string): Promise<TicketAbout> {
 export const inviting = writable<string | null>(null);
 
 /**
- * `sync chain connect <TICKET|LINK>` typed on the page (da-l9kdr): the page's
+ * `sync chain join <TICKET|LINK>` typed on the page (da-l9kdr): the page's
  * CLI has no network, so the ticket goes to the sync worker (`syncConnect`),
- * and the result says what native `connect` says. The argv it echoes holds
+ * and the result says what native `join` says. The argv it echoes holds
  * no ticket. A bare `sync chain invite` (da-5g0nk) waits for a redeemer, which
  * no prompt line can show, so it opens the Sync widget with the invite under
  * way there, as a bare `sync` opens it (da-s9r58). Null for anything
@@ -657,7 +657,7 @@ export const inviting = writable<string | null>(null);
 export function syncCommand(argv: string[]): Promise<RunResult> | null {
 	if (words(argv).join(' ') === 'sync') return syncHere(argv);
 	if (chainArgs(argv, 'invite')?.length === 0) return inviteHere(argv);
-	const [ticket, ...rest] = chainArgs(argv, 'connect') ?? [];
+	const [ticket, ...rest] = chainArgs(argv, 'join') ?? [];
 	if (!ticket || ticket.startsWith('-') || rest.length) return null;
 	const shown = argv.map((w) => (w === ticket ? '<ticket>' : w));
 	return syncConnect(dbOf(argv), ticket).then(
@@ -704,7 +704,7 @@ export function suggestedLabel(db: string): string {
 	return `datum.day (${db})`;
 }
 
-/** Redeem `ticket` and sync (`datum sync chain connect [--label]`): `label`, or `suggestedLabel`. */
+/** Redeem `ticket` and sync (`datum sync chain join [--label]`): `label`, or `suggestedLabel`. */
 export function syncConnect(db: string, ticket: string, label?: string): Promise<SyncReport> {
 	return call(db, { op: 'connect', ticket, label });
 }
@@ -775,13 +775,13 @@ function chainArgs(argv: string[], sub: string): string[] | null {
 }
 
 /**
- * `line` with every word a `sync chain connect` could take as its ticket
+ * `line` with every word a `sync chain join` could take as its ticket
  * written `<ticket>` — split as `syncCommand` reads it, so a `--db` anywhere
  * hides none — for the scrollback and the recall history, which keep no
  * secret.
  */
 export function maskTicket(line: string): string {
-	for (const word of chainArgs(shellSplit(line), 'connect') ?? []) {
+	for (const word of chainArgs(shellSplit(line), 'join') ?? []) {
 		if (word.startsWith('-')) continue;
 		const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 		line = line.replace(new RegExp(`(^|[\\s'"])${esc}(?=$|[\\s'"])`, 'g'), '$1<ticket>');

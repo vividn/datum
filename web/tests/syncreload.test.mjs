@@ -79,7 +79,7 @@ test('a browser reloaded mid-join resumes it by itself, and the inviter pushes t
 
 		await until(() => countOf(b, 'seed'), (n) => n === N, 90_000);
 		await until(async () => [await verifyOf(a), await verifyOf(b)], ([x, y]) => x === y);
-		// In the chain now, and said what it is, as `connect` does.
+		// In the chain now, and said what it is, as `join` does.
 		const status = JSON.parse((await b.run(['sync', 'status', '--json'])).stdout);
 		assert.equal(status.chain, chain);
 		await until(

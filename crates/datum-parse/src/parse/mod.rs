@@ -1397,7 +1397,7 @@ mod tests {
             ("sync pause", ""),
             ("sync resume", ""),
             ("sync chain invite", ""),
-            ("sync chain connect", "ticket"),
+            ("sync chain join", "ticket"),
             ("sync chain leave", ""),
             ("sync chain rename", "bob Bobby"),
             ("sync chain expel", "bob"),

@@ -50,7 +50,7 @@ test('a chained database renamed at the bar syncs under its new name, the same m
 		await withWallClock(
 			async (app) => {
 				const serving = native.spawn(['sync', 'chain', 'invite']);
-				const said = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
+				const said = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
 				const joined = await app.page.evaluate((t) => window.datum.sync.connect('work-2', t), said[1]);
 				assert.equal(joined.verified, true);
 				native.spawn(['sync', 'run']);

@@ -118,10 +118,10 @@ test('every control the guide names is one the widget shows, walked as a person 
 				await widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Turn on sync' }).click();
 				const offer = widget.locator('.offer[data-db="datum"]');
 				await offer.locator('.qr svg').waitFor();
-				await offer.locator('summary', { hasText: 'connect from a terminal' }).click();
+				await offer.locator('summary', { hasText: 'join from a terminal' }).click();
 				await look(offer);
-				const ticket = /datum sync chain connect '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
-				const joined = await native.run(['sync', 'chain', 'connect', ticket]);
+				const ticket = /datum sync chain join '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
+				const joined = await native.run(['sync', 'chain', 'join', ticket]);
 				assert.equal(joined.code, 0, joined.stderr);
 				await until(() => widget.locator('.devices li').count(), (n) => n === 2);
 				// It joined: the ⚠, and Sync's line with OK.
@@ -135,7 +135,7 @@ test('every control the guide names is one the widget shows, walked as a person 
 
 				// The other side: a join link opened in a browser, on a database in no chain.
 				const serving = native.spawn(['sync', 'chain', 'invite']);
-				const [, link] = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
+				const [, link] = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
 				await app.goto(`/sync/join?db=phone#${link.split('#').pop()}`);
 				const card = page.locator('.card.join');
 				await card.getByRole('button', { name: 'Join', exact: true }).waitFor();

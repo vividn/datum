@@ -18,7 +18,7 @@ default = ["native"]
 # wasm32-wasip1 CLI (da-1vat) turns it off: it has a clock (WASI's
 # `clock_time_get`, and `TZ` from its caller) but no terminal.
 native = ["dep:crossterm", "dep:tempfile", "net"]
-# Easy Sync over iroh (da-rugg8): `sync`, `sync chain invite / connect`, `sync run`.
+# Easy Sync over iroh (da-rugg8): `sync`, `sync chain invite / join`, `sync run`.
 # WASI has no sockets, so the wasm build leaves it off and
 # those subcommands say so.
 net = ["dep:datum-sync"]

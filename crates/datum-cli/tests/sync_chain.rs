@@ -356,7 +356,7 @@ fn a_chain_of_one_is_left_with_its_entries() {
     assert_eq!(a.hash(), b.hash());
 }
 
-/// The leave `connect` makes on its own (`--alone`, da-h7pnc) is only a
+/// The leave `join` makes on its own (`--alone`, da-h7pnc) is only a
 /// copy's holding nothing but its own data: another member, or a revoked
 /// one's data, refuses it, and nothing goes.
 /// Being in no chain is a state, which `--json` answers as `sync status
@@ -381,7 +381,7 @@ fn a_chainless_copy_lists_its_chain_and_admins_as_json() {
 }
 
 #[test]
-fn the_leave_connect_makes_is_refused_a_copy_holding_others_data() {
+fn the_leave_join_makes_is_refused_a_copy_holding_others_data() {
     let (a, b) = chained();
     b.ok(&["occur", "tea"]);
     assert!(b.send(&a).0);
@@ -748,7 +748,7 @@ fn a_refused_invite_in_a_locked_chain_renames_nothing() {
 }
 
 #[test]
-fn two_copies_with_no_admin_join_by_invite_and_connect() {
+fn two_copies_with_no_admin_join_by_invite_and_join() {
     let (a, b) = (Copy::new(), Copy::new());
     a.ok(&["occur", "tea"]);
     admit(&a, &b, "b", None);
@@ -2475,7 +2475,7 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     assert_eq!(
         complete(&["chain"]),
         [
-            "invite", "connect", "leave", "list", "rename", "expel", "unjoin", "wipe", "purge",
+            "invite", "join", "leave", "list", "rename", "expel", "unjoin", "wipe", "purge",
             "role", "ack", "rekey"
         ]
     );
@@ -2484,6 +2484,12 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     // `chain copy` is `grant --like`, and cut too (da-pvax0).
     let copy = a.fails(&["sync", "chain", "copy", "--from", "x"], "");
     assert!(copy.contains("unknown sync chain subcommand"), "{copy}");
+    // `connect` is `join`, and cut too (da-ka4iw).
+    let connect = a.fails(&["sync", "chain", "connect", "x"], "");
+    assert!(
+        connect.contains("unknown sync chain subcommand"),
+        "{connect}"
+    );
     for gone in ["revoke", "revert"] {
         let out = a.fails(&["sync", "chain", gone, "x"], "");
         assert!(
@@ -2507,7 +2513,7 @@ fn bare_sync_in_no_chain_says_how_to_start_one() {
     let out = Copy::new().ok(&["sync"]);
     assert!(
         out.contains("`datum sync chain invite` on this device")
-            && out.contains("`datum sync chain connect <TICKET>`"),
+            && out.contains("`datum sync chain join <TICKET>`"),
         "{out}"
     );
 }
@@ -3010,7 +3016,7 @@ fn a_reader_invite_refuses_a_redeemer_holding_entries() {
         assert!(
             refused.contains(
                 "r holds 42 entries of its own; a reader writes nothing, so joining as one \
-                 would hide them. Connect from a fresh database (`--db`), or ask for a member invite"
+                 would hide them. Join from a fresh database (`--db`), or ask for a member invite"
             ),
             "{refused}"
         );

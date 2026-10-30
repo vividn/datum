@@ -178,10 +178,10 @@ fn home_chain(g: &Install, others: &[&Install]) -> Running {
         let mut inviting = g.cmd("home", &["sync", "chain", "invite"]).spawn().unwrap();
         let mut out = BufReader::new(inviting.stdout.take().unwrap()).lines();
         let line = out
-            .find_map(|l| l.ok().filter(|l| l.contains("datum sync chain connect ")))
-            .expect("the invite's connect line");
+            .find_map(|l| l.ok().filter(|l| l.contains("datum sync chain join ")))
+            .expect("the invite's join line");
         let ticket = line.trim().rsplit(' ').next().unwrap().trim_matches('\'');
-        o.ok("home", &["sync", "chain", "connect", ticket]);
+        o.ok("home", &["sync", "chain", "join", ticket]);
         assert!(inviting.wait().unwrap().success());
     }
     // Each says what it is, its device with it, on the sync after its join.

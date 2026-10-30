@@ -59,7 +59,7 @@ async function paired(body, { online = true } = {}) {
 		await withApp(
 			async (app) => {
 				const inviting = native.spawn(['sync', 'chain', 'invite']);
-				const said = await until(() => /datum sync chain connect '([^']+)'/.exec(inviting.stdout), Boolean);
+				const said = await until(() => /datum sync chain join '([^']+)'/.exec(inviting.stdout), Boolean);
 				const report = await app.page.evaluate((t) => window.datum.sync.connect('datum', t), said[1]);
 				assert.equal(report.verified, true, JSON.stringify(report));
 				inviting.child.kill();

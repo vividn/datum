@@ -56,14 +56,14 @@ describe('the sync widget’s actions', () => {
 					await actions.getByRole('button', { name: 'Turn on sync' }).click();
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
-					await offer.locator('summary', { hasText: 'connect from a terminal' }).click();
-					const ticket = /datum sync chain connect '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
+					await offer.locator('summary', { hasText: 'join from a terminal' }).click();
+					const ticket = /datum sync chain join '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
 					// This browser is the chain's first member, and the chain is open.
 					const chain = JSON.parse(await cli(app, ['sync', 'chain', 'list', '--json']));
 					assert.equal(chain.members.length, 1);
 					assert.deepEqual(chain.admins, []);
 
-					const joined = await native.run(['sync', 'chain', 'connect', ticket]);
+					const joined = await native.run(['sync', 'chain', 'join', ticket]);
 					assert.equal(joined.code, 0, joined.stderr);
 					await until(async () => (await page.locator(`${WIDGET} .devices li`).count()) === 2, Boolean);
 					await offer.getByRole('button', { name: 'Done' }).click();
@@ -98,9 +98,9 @@ describe('the sync widget’s actions', () => {
 					await app.submit('sync chain invite');
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
-					await offer.locator('summary', { hasText: 'connect from a terminal' }).click();
-					const ticket = /datum sync chain connect '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
-					const joined = await native.run(['sync', 'chain', 'connect', ticket]);
+					await offer.locator('summary', { hasText: 'join from a terminal' }).click();
+					const ticket = /datum sync chain join '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
+					const joined = await native.run(['sync', 'chain', 'join', ticket]);
 					assert.equal(joined.code, 0, joined.stderr);
 					await until(async () => (await page.locator(`${WIDGET} .devices li`).count()) === 2, Boolean);
 				},

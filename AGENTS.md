@@ -370,8 +370,8 @@ The hidden `datum sync pipe vector / ops / apply / verify` move ops as JSON
 lines over a pipe. The transport is iroh (`crates/datum-sync`, behind
 datum-commands' `net` feature, so the CLI's wasm build has no iroh): the iroh
 endpoint key IS the db's endpoint key, copies join a sync chain with one-time
-invites (`sync chain invite` / `connect`; the invite is a datum.day join link,
-`/sync/join#<ticket>`, which `connect`, a browser and the page's prompt bar all
+invites (`sync chain invite` / `join`; the invite is a datum.day join link,
+`/sync/join#<ticket>`, which `join`, a browser and the page's prompt bar all
 redeem, so a browser can join a chain as well as start one), only members are
 served (`sync_peers` is just where they were last seen), and bare `sync` / the
 hidden `sync run` swap vectors and ops until neither moves, with every member
@@ -606,7 +606,7 @@ not (da-371m8) — and a sender's `{"purged": …}` line after the order filling
 gaps of a copy behind. `--all` dissolves the chain: the fold takes no record
 after it, a copy holding it serves only records and stubs and says «in no sync
 chain», and keeps its key and records to pass the order on until an invite or
-connect starts it afresh.
+join starts it afresh.
 
 The ordering copy writes a backup, `<db>.purge-<time>.jsonl.gz`, before it
 purges, and every other copy it reaches one of its own, as a restore's does
@@ -707,7 +707,7 @@ an admin even in a locked carrier. The device, after a bare `sync` of the
 carrier or on a `sync run` tick that brought a chain record, opens each grant
 to it that no live copy of its own came into that chain by (its admission's
 `via` is the grant's invite, so an expelled copy, never told, is admitted
-again), and runs `chain connect` in a
+again), and runs `chain join` in a
 process of its own, the link on stdin, into `--as` or the granter's database
 name; where that name holds data or another chain, `<name>-2` and on, never
 touching it. An expired grant is said and joins nothing: grant again. `expel`
@@ -747,21 +747,21 @@ link's records, a genesis first into a database in no chain.
 The tree: `sync`, `status`, `grid` (every device against every chain this
 install's databases are in, by device key and chain id, read only, da-n0uj1.3),
 `grant <DEVICE> member|reader [--as <NAME>] | --like <DB>` (below), `pause | resume`, `diff <WHO>`, `refold`, `chain
-invite | connect | leave | list | rename | expel | unjoin | wipe | ack | rekey`,
+invite | join | leave | list | rename | expel | unjoin | wipe | ack | rekey`,
 `admin list | add | remove`, `daemon install | uninstall | status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync
 run` for every chained db `known_dbs` lists; a copy's first `chain invite` /
-`connect` keeps a db opened by path in the registry under its absolute path, so
+`join` keeps a db opened by path in the registry under its absolute path, so
 the daemon finds it too (da-zrl7n), and installs it unless
-`DATUM_SYNC_NO_DAEMON=1`, and `datum install` and `datum upgrade` restart it onto a new binary; a `connect`
+`DATUM_SYNC_NO_DAEMON=1`, and `datum install` and `datum upgrade` restart it onto a new binary; a `join`
 installs it once admitted and holds `<db>.joining` locked for its life, so the
-daemon leaves that database alone until the `connect` ends or is killed, and
+daemon leaves that database alone until the `join` ends or is killed, and
 then finishes a first sync cut short; an `invite` holds the same lock, so a
 joiner is served by the `invite` that shows it and not by the daemon — whose
 thread already serving the database steps aside on its next tick, da-8sah2, and a foreground `sync run` unbinds
 until it ends, da-x5ynh; the
 `invite` serves every member meanwhile, as the daemon would, da-dwm2y — and
-a second `connect` or `invite` on the database is refused while it is held,
+a second `join` or `invite` on the database is refused while it is held,
 da-apd52; a chained copy with none says so in `sync status`, da-qr7gz).
 
 ### Diagnosing a mismatch

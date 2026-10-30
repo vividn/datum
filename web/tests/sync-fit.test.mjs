@@ -114,7 +114,7 @@ describe('the sync widget fits its screen, legibly', () => {
 				const own = await offer.locator('.actions button').allInnerTexts();
 				assert.deepEqual(own.filter((l) => l !== 'Share'), ['Copy link', 'Done']);
 				await offer.locator('summary').click();
-				assert.match(await offer.locator('.ticket').innerText(), /^datum sync chain connect 'https?:\/\/[^\s']+\/sync\/join#[^\s']+'$/);
+				assert.match(await offer.locator('.ticket').innerText(), /^datum sync chain join 'https?:\/\/[^\s']+\/sync\/join#[^\s']+'$/);
 				await fits(page, 'terminal', screen.name);
 				await offer.getByRole('button', { name: 'Done' }).click();
 

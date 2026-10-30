@@ -259,7 +259,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|leave|list|rename|expel|unjoin|wipe|purge|role|ack|rekey";
+    const SET: &str = "invite|join|leave|list|rename|expel|unjoin|wipe|purge|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = ["expires", "admin-key", "fields", "kit", "label"];
@@ -274,9 +274,9 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 admin_key: o.get("admin-key"),
             }
         }
-        Some("connect") => {
+        Some("join") => {
             let mut o = opts(rest, &["label"], &[], 0..=1)?;
-            SyncCommand::Connect {
+            SyncCommand::Join {
                 ticket: o.positional.pop(),
                 label: o.get("label"),
             }
@@ -761,20 +761,20 @@ mod tests {
             }
         );
         assert_eq!(
-            p(&["chain", "connect"]),
-            SyncCommand::Connect {
+            p(&["chain", "join"]),
+            SyncCommand::Join {
                 ticket: None,
                 label: None
             }
         );
         assert_eq!(
-            p(&["chain", "connect", "--label", "phone", "t"]),
-            SyncCommand::Connect {
+            p(&["chain", "join", "--label", "phone", "t"]),
+            SyncCommand::Join {
                 ticket: Some("t".into()),
                 label: Some("phone".into())
             }
         );
-        assert!(parse_sync_cmd(&["chain", "connect", "t", "u"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "join", "t", "u"]).is_err());
         assert_eq!(
             p(&["chain", "list"]),
             SyncCommand::Members {

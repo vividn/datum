@@ -35,7 +35,7 @@ pub fn rename(new: &str, cli_db: Option<&str>) -> Result<()> {
     if to.exists() {
         refuse_unless_empty(&to, new, cli_db)?;
     }
-    // The daemon steps aside, as for a `connect`, and no process has it open.
+    // The daemon steps aside, as for a `join`, and no process has it open.
     #[cfg(feature = "net")]
     let _aside = crate::commands::sync_daemon::hold(&from)?;
     // Its lock held through the move, so no write lands meanwhile: in
@@ -137,7 +137,7 @@ fn alone(db: &Path) -> Result<Db> {
         }
         if Instant::now() > until {
             bail!(
-                "db rename: another process has {} open (a `datum sync run`, a `--watch`): \
+                "db rename: another process has {} open (a sync, a `--watch`): \
                  stop it, then rename",
                 db.display()
             );

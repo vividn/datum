@@ -148,7 +148,7 @@ use crate::error::{DatumError, Refusal, Result};
 pub const MIN_PREFIX: usize = 4;
 
 /// What a member not yet holding an invite says to its redeemer, which
-/// `connect` takes as a cue to try the ticket's next address.
+/// `join` takes as a cue to try the ticket's next address.
 pub const UNKNOWN_INVITE: &str = "unknown invite";
 
 /// The longest label a member or an admin may carry, in characters.
@@ -1698,7 +1698,7 @@ impl Db {
             let entries = if holds == 1 { "entry" } else { "entries" };
             return Err(DatumError::Other(format!(
                 "{label} holds {holds} {entries} of its own; a reader writes nothing, so joining \
-                 as one would hide them. Connect from a fresh database (`--db`), or ask for a \
+                 as one would hide them. Join from a fresh database (`--db`), or ask for a \
                  member invite"
             )));
         }
@@ -1716,7 +1716,7 @@ impl Db {
     /// would read, to a copy holding the old ones, as a second copy signing
     /// with it. The next sync signs every entry again as a baseline, so a
     /// later invite from it starts a new chain vouching for all it holds,
-    /// and a later connect joins another chain the same way. Its pause and
+    /// and a later join enters another chain the same way. Its pause and
     /// client stay (`sync_local`).
     pub fn sync_chain_leave(&self) -> Result<()> {
         if !self.sync_chain()?.exists() {

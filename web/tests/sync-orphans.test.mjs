@@ -23,7 +23,7 @@ const { startRelay, nativeCopy } = await import(${JSON.stringify(SYNC)});
 const { until } = await import(${JSON.stringify(UNTIL)});
 const relay = await startRelay();
 const serving = (await nativeCopy(relay)).spawn(['sync', 'chain', 'invite']);
-await until(() => serving.stdout.includes('datum sync chain connect'), Boolean);
+await until(() => serving.stdout.includes('datum sync chain join'), Boolean);
 console.log(JSON.stringify({ relay: relay.pid, datum: serving.child.pid }));
 setInterval(() => {}, 1 << 30);
 `;

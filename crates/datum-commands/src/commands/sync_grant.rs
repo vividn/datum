@@ -4,7 +4,7 @@
 //! `grant` record of a chain the two share already: the CARRIER, whose
 //! members relay it like any record, so it waits there for a device that is
 //! offline. The device, syncing the carrier, opens it and redeems the link
-//! as `chain connect` does: the admission is today's, every check with it.
+//! as `chain join` does: the admission is today's, every check with it.
 //!
 //! A ticket lists the members its maker knew, and `--like` makes each before
 //! any device has joined, so it names the granter alone. So a device admitted
@@ -468,7 +468,7 @@ fn free_name(want: &str, chain: &str) -> Result<String> {
 }
 
 #[cfg(feature = "net")]
-/// Join `g` as `chain connect` does, in a process of its own, with this
+/// Join `g` as `chain join` does, in a process of its own, with this
 /// one's environment, so its data directory and registry: the ticket on its
 /// stdin, which no other user reads. A bound address (the tests') gets a
 /// port of its own: the carrier's run may hold this one.
@@ -476,7 +476,7 @@ fn join(g: &Granted, quiet: bool) -> Result<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
     let mut c = Command::new(std::env::current_exe()?);
-    c.args(["--db", &g.name, "sync", "chain", "connect"])
+    c.args(["--db", &g.name, "sync", "chain", "join"])
         .stdin(Stdio::piped());
     if let Ok(at) = std::env::var("DATUM_SYNC_BIND") {
         let ip = at

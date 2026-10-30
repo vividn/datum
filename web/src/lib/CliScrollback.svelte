@@ -175,7 +175,7 @@
 	 * A file command (#lib/dbio.ts) goes the browser's way, before any
 	 * await: its dialog needs the keypress — unless the caller brought
 	 * `stdin` itself, which is a file already chosen (`engine.press`). So
-	 * does `sync chain connect`, to the sync worker (#lib/sync.ts).
+	 * does `sync chain join`, to the sync worker (#lib/sync.ts).
 	 *
 	 * `env` is the press's own: its frozen clock (`gesture` in engine.ts).
 	 */

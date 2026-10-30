@@ -1304,18 +1304,35 @@ fn help_on_a_mistyped_subcommand_says_it_is_unknown() {
             assert_eq!(e.to_string(), want, "{line}");
         }
     }
-    assert!(err("sync chain conect --help").contains("(expected invite|connect|"));
+    assert!(err("sync chain conect --help").contains("(expected invite|join|"));
     // A real subcommand missing its arguments is still its page.
     let page = |line: &str| {
         let e = crate::parse_argv(&argv(line)).unwrap_err();
         super::special_output(&e, "", None).unwrap()
     };
     assert_eq!(
-        page("sync chain connect --help"),
-        command_help("sync chain connect")
+        page("sync chain join --help"),
+        command_help("sync chain join")
     );
     assert_eq!(page("help sync chain"), command_help("sync chain"));
     assert_eq!(page("occur coffee --help"), command_help("occur"));
+}
+
+/// The help names neither `connect`, which `join` replaced, nor `sync run`,
+/// a hidden command (da-ka4iw; vividn, 2026-10-30: «don't mention run»).
+#[test]
+fn no_page_names_connect_or_sync_run() {
+    for name in every_page() {
+        let page = command_help(&name);
+        let words: Vec<&str> = page
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .collect();
+        assert!(!words.windows(2).any(|w| w == ["sync", "run"]), "{name}");
+        assert!(!words.contains(&"connect"), "{name}");
+        assert!(!words.contains(&"Connect"), "{name}");
+    }
+    assert!(command_help("sync").contains("sync chain join"));
 }
 
 /// Every subcommand's page carries its usage lines and something its

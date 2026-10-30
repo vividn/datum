@@ -64,7 +64,7 @@
 	</ol>
 	<p>
 		A link adds one device, once, and only until the time it says. For the next device, press Add device again.
-		On a computer with the datum command, open <b class="ui">connect from a terminal</b> under the QR and run what it
+		On a computer with the datum command, open <b class="ui">join from a terminal</b> under the QR and run what it
 		shows there.
 	</p>
 

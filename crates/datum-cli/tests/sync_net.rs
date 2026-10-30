@@ -142,7 +142,7 @@ impl Copy {
     /// `sync chain invite` serving, and its ticket.
     fn invite(&self, args: &[&str]) -> (Serving, String) {
         let mut s = self.serve(&[&["sync", "chain", "invite"], args].concat());
-        let line = s.lines_until("datum sync chain connect ");
+        let line = s.lines_until("datum sync chain join ");
         let ticket = line.trim().rsplit(' ').next().unwrap();
         let ticket = ticket.trim_matches('\'').to_string();
         (s, ticket)
@@ -232,7 +232,7 @@ impl Drop for Serving {
 fn paired() -> (Copy, Copy) {
     let (a, b) = (Copy::new(), Copy::new());
     let (mut inviting, ticket) = a.invite(&[]);
-    b.ok(&["sync", "chain", "connect", &ticket]);
+    b.ok(&["sync", "chain", "join", &ticket]);
     assert!(inviting.finish().0);
     (a, b)
 }
@@ -254,7 +254,7 @@ fn an_invite_pairs_two_copies_and_their_data_converges() {
     a.ok(&["occur", "coffee", "cups=2"]);
     b.ok(&["occur", "tea"]);
     let (mut inviting, ticket) = a.invite(&["--expires", "5m"]);
-    let joined = b.ok(&["sync", "chain", "connect", &ticket]);
+    let joined = b.ok(&["sync", "chain", "join", &ticket]);
     assert!(joined.contains("added sync peer"), "{joined}");
     assert!(joined.contains("verify ok"), "{joined}");
     let (ok, served) = inviting.finish();
@@ -267,23 +267,21 @@ fn an_invite_pairs_two_copies_and_their_data_converges() {
     assert!(b.ok(&["sync", "chain", "list"]).contains(&a.id()[..10]));
 }
 
-/// An invite prints a datum.day join link (da-l9kdr), which `connect`
+/// An invite prints a datum.day join link (da-l9kdr), which `join`
 /// takes whole, as it takes the bare ticket the link's fragment holds.
 #[test]
-fn connect_takes_the_join_link_or_its_bare_ticket() {
+fn join_takes_the_join_link_or_its_bare_ticket() {
     let (a, b, c) = (Copy::new(), Copy::new(), Copy::new());
     let (mut inviting, link) = a.invite(&[]);
     assert!(link.starts_with("https://datum.day/sync/join#"), "{link}");
     assert!(b
-        .ok(&["sync", "chain", "connect", &link])
+        .ok(&["sync", "chain", "join", &link])
         .contains("verify ok"));
     assert!(inviting.finish().0);
 
     let (mut inviting, link) = a.invite(&[]);
     let bare = link.rsplit('#').next().unwrap();
-    assert!(c
-        .ok(&["sync", "chain", "connect", bare])
-        .contains("verify ok"));
+    assert!(c.ok(&["sync", "chain", "join", bare]).contains("verify ok"));
     assert!(inviting.finish().0);
     assert_eq!(a.hash(), c.hash());
 }
@@ -333,14 +331,14 @@ fn an_invites_qr_code_says_to_scan_it() {
     assert!(code.contains(['█', '▀', '▄']), "{code:?}");
 }
 
-/// The connect line an invite prints, pasted into a shell, hands `connect` the
+/// The join line an invite prints, pasted into a shell, hands `join` the
 /// whole link as one argument (da-sin5b). Unquoted, zsh with `extendedglob`
 /// refused it — the `#` is a glob there, «no matches found» — and sh took it.
 #[test]
-fn the_printed_connect_line_pastes_into_a_shell() {
+fn the_printed_join_line_pastes_into_a_shell() {
     let a = Copy::new();
     let mut inviting = a.serve(&["sync", "chain", "invite"]);
-    let line = inviting.lines_until("datum sync chain connect ");
+    let line = inviting.lines_until("datum sync chain join ");
     let link = line.trim().rsplit(' ').next().unwrap().trim_matches('\'');
     assert!(link.starts_with("https://datum.day/sync/join#"), "{line}");
     let args = line.trim().strip_prefix("datum ").unwrap();
@@ -365,7 +363,7 @@ fn the_printed_connect_line_pastes_into_a_shell() {
         );
         assert_eq!(
             said.lines().collect::<Vec<_>>(),
-            ["sync", "chain", "connect", link],
+            ["sync", "chain", "join", link],
             "{}",
             shell[0]
         );
@@ -441,7 +439,7 @@ fn sync_names_its_members_first_and_each_as_it_ends() {
     let (mut a, b) = paired();
     let c = Copy::new();
     let (mut inviting, ticket) = a.invite(&[]);
-    c.ok(&["sync", "chain", "connect", &ticket]);
+    c.ok(&["sync", "chain", "join", &ticket]);
     assert!(inviting.finish().0);
     let (up, down) = (member_label(&a, &b.id()), member_label(&a, &c.id()));
     let _b_runs = b.serve(&["sync", "run"]);
@@ -514,7 +512,7 @@ fn an_invite_is_one_time_and_expires() {
     let (a, b) = (Copy::new(), Copy::new());
     let (mut inviting, ticket) = a.invite(&[]);
     // The ticket from stdin works as well as the argument.
-    b.run_in(&["sync", "chain", "connect"], &ticket);
+    b.run_in(&["sync", "chain", "join"], &ticket);
     assert!(inviting.finish().0);
 
     let (mut expiring, stale) = a.invite(&["--expires", "1s"]);
@@ -523,7 +521,7 @@ fn an_invite_is_one_time_and_expires() {
 
     let _serving = a.serve(&["sync", "run"]);
     let c = Copy::new();
-    let used = c.fails(&["sync", "chain", "connect", &ticket], "");
+    let used = c.fails(&["sync", "chain", "join", &ticket], "");
     assert!(used.contains("invite already used"), "{used}");
     // Why, and what to do next (da-0tawk).
     assert!(
@@ -531,25 +529,25 @@ fn an_invite_is_one_time_and_expires() {
         "{used}"
     );
     // A member presenting it is a redeemer like any (da-j8c4l): refused.
-    let again = b.fails(&["sync", "chain", "connect", &ticket], "");
+    let again = b.fails(&["sync", "chain", "join", &ticket], "");
     assert!(again.contains("invite already used"), "{again}");
-    let expired = c.fails(&["sync", "chain", "connect", &stale], "");
+    let expired = c.fails(&["sync", "chain", "join", &stale], "");
     assert!(expired.contains("invite expired"), "{expired}");
     assert!(expired.contains("for a fresh invite"), "{expired}");
     assert!(!a.ok(&["sync", "chain", "list"]).contains(&c.id()[..10]));
 }
 
-/// `connect` says at once whom it waits for and until when, says every few
+/// `join` says at once whom it waits for and until when, says every few
 /// seconds that it still is, and a join nobody answers ends saying why and
 /// what to do next (da-0tawk): vividn's terminal sat silent for a minute.
 #[test]
-fn connect_says_what_it_waits_for_and_why_it_ended_unanswered() {
+fn join_says_what_it_waits_for_and_why_it_ended_unanswered() {
     let (a, mut b) = (Copy::new(), Copy::new());
     let (inviting, ticket) = a.invite(&[]);
     // Nobody serves the invite now.
     drop(inviting);
     b.env = vec![("DATUM_SYNC_TIMEOUT_S", "6")];
-    let out = b.fails(&["sync", "chain", "connect", &ticket], "");
+    let out = b.fails(&["sync", "chain", "join", &ticket], "");
     let lines: Vec<&str> = out.lines().collect();
     let waiting = lines.iter().position(|l| {
         l.contains("'s sync chain: waiting for it to answer (the invite holds until ")
@@ -575,7 +573,7 @@ fn a_late_ticket_nobody_answers_says_it_expired() {
     let (mut expiring, stale) = a.invite(&["--expires", "1s"]);
     assert!(!expiring.finish().0);
     c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
-    let late = c.fails(&["sync", "chain", "connect", &stale], "");
+    let late = c.fails(&["sync", "chain", "join", &stale], "");
     // As before da-b6xh6: the expiry, caused by the leg that was down.
     assert!(
         late.contains("invite expired: ask the inviting device for a new one\n\nCaused by:")
@@ -599,13 +597,13 @@ fn a_refusal_names_its_next_step_by_its_kind() {
         serde_json::from_slice(&b32.decode(code.to_uppercase().as_bytes()).unwrap()).unwrap();
     t["secret"] = "not-an-invite-this-chain-holds".into();
     let forged = format!("{head}#{}", b32.encode(&serde_json::to_vec(&t).unwrap()));
-    let unknown = c.fails(&["sync", "chain", "connect", &forged], "");
+    let unknown = c.fails(&["sync", "chain", "join", &forged], "");
     assert!(unknown.contains("refused: unknown invite"), "{unknown}");
     assert!(unknown.contains("Next: ask "), "{unknown}");
     assert!(unknown.contains(" for a fresh invite"), "{unknown}");
 
     a.ok(&["sync", "pause"]);
-    let paused = c.fails(&["sync", "chain", "connect", &ticket], "");
+    let paused = c.fails(&["sync", "chain", "join", &ticket], "");
     assert!(
         paused.contains("refused: sync is paused on this copy"),
         "{paused}"
@@ -627,7 +625,7 @@ fn a_refusal_names_its_next_step_by_its_kind() {
 fn a_copy_of_this_key_is_refused() {
     let (a, _b) = paired();
     let (_inviting, ticket) = a.invite(&[]);
-    let mut own = a.cmd(&["sync", "chain", "connect", &ticket]);
+    let mut own = a.cmd(&["sync", "chain", "join", &ticket]);
     let (port, _claim) = claim_port();
     own.env("DATUM_SYNC_BIND", format!("127.0.0.1:{port}"));
     let out = own.output().unwrap();
@@ -649,7 +647,7 @@ fn a_copy_in_a_chain_is_refused_another_chains_invite() {
     let c = Copy::new();
     let (_inviting, ticket) = c.invite(&[]);
     let ops = a.query("SELECT COUNT(*) FROM ops");
-    let refused = a.fails(&["sync", "chain", "connect", &ticket], "");
+    let refused = a.fails(&["sync", "chain", "join", &ticket], "");
     let chain = a
         .query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1");
     assert!(
@@ -677,7 +675,7 @@ fn a_chain_of_one_joins_another_chain_its_entries_with_it() {
     let b_chain =
         b.query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain'");
     let (mut inviting, ticket) = a.invite(&[]);
-    let joined = b.ok(&["sync", "chain", "connect", &ticket]);
+    let joined = b.ok(&["sync", "chain", "join", &ticket]);
     let a_chain =
         a.query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain'");
     assert!(
@@ -714,7 +712,7 @@ fn a_paused_chain_of_one_refused_at_its_own_handshake_keeps_its_chain() {
     b.ok(&["sync", "pause"]);
     let ops = b.query("SELECT COUNT(*) FROM ops");
     let (_inviting, ticket) = a.invite(&[]);
-    let refused = b.fails(&["sync", "chain", "connect", &ticket], "");
+    let refused = b.fails(&["sync", "chain", "join", &ticket], "");
     assert!(refused.contains("paused"), "{refused}");
     // Its OWN pause: no next step pointing at the inviter (da-b6xh6).
     assert!(!refused.contains("Next:"), "{refused}");
@@ -736,7 +734,7 @@ fn a_chain_of_one_holding_a_revoked_members_data_is_refused() {
     a.ok(&["sync", "chain", "expel", &b.id()]);
     let c = Copy::new();
     let (_inviting, ticket) = c.invite(&[]);
-    let refused = a.fails(&["sync", "chain", "connect", &ticket], "");
+    let refused = a.fails(&["sync", "chain", "join", &ticket], "");
     assert!(
         refused.contains("(1 members); a copy belongs to one chain"),
         "{refused}"
@@ -755,7 +753,7 @@ fn a_purge_drops_the_ops_the_chain_and_the_endpoint_key() {
     b.ok(&["occur", "coffee"]);
     let (mut inviting, ticket) = a.invite(&[]);
     assert!(b
-        .ok(&["sync", "chain", "connect", &ticket])
+        .ok(&["sync", "chain", "join", &ticket])
         .contains("verify ok"));
     assert!(inviting.finish().0);
     b.ok(&["sync", "chain", "expel", &a.id()]);
@@ -822,7 +820,7 @@ fn a_hard_restore_leaves_the_chain_and_rejoins_by_invite() {
     drop(_a_runs);
     let (mut inviting, ticket) = a.invite(&[]);
     assert!(b
-        .ok(&["sync", "chain", "connect", &ticket])
+        .ok(&["sync", "chain", "join", &ticket])
         .contains("verify ok"));
     assert!(inviting.finish().0);
     assert_eq!(b.query(CHAIN), old_chain);
@@ -871,7 +869,7 @@ fn a_purge_with_rejoin_refetches_from_the_chain_and_verifies() {
     let (a, b) = paired();
     let c = Copy::new();
     let (mut inviting, ticket) = a.invite(&[]);
-    c.ok(&["sync", "chain", "connect", &ticket]);
+    c.ok(&["sync", "chain", "join", &ticket]);
     assert!(inviting.finish().0);
     a.ok(&["occur", "tea"]);
     b.ok(&["occur", "coffee"]);
@@ -1155,7 +1153,7 @@ fn a_revoked_device_rejoins_by_a_fresh_invite_and_data_goes_both_ways() {
     b.ok(&["occur", "out"]);
     a.ok(&["occur", "meanwhile"]);
     let (mut inviting, ticket) = a.invite(&[]);
-    let joined = b.ok(&["sync", "chain", "connect", &ticket]);
+    let joined = b.ok(&["sync", "chain", "join", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
     assert!(!joined.contains("is replaced by"), "{joined}");
     assert!(inviting.finish().0);
@@ -1830,14 +1828,14 @@ fn member_label(of: &Copy, id: &str) -> String {
         .to_string()
 }
 
-/// `invite --label` names the copy that starts the chain, `connect --label`
+/// `invite --label` names the copy that starts the chain, `join --label`
 /// the one that joins, and every member lists both; an invite from a copy
 /// in the chain renames it (da-ey3hz).
 #[test]
-fn invite_and_connect_name_their_copies_by_label() {
+fn invite_and_join_name_their_copies_by_label() {
     let (a, b) = (Copy::new(), Copy::new());
     let (mut inviting, ticket) = a.invite(&["--label", "laptop"]);
-    b.ok(&["sync", "chain", "connect", "--label", "phone", &ticket]);
+    b.ok(&["sync", "chain", "join", "--label", "phone", &ticket]);
     assert!(inviting.finish().0);
     for copy in [&a, &b] {
         assert_eq!(member_label(copy, &a.id()), "laptop");
@@ -1853,7 +1851,7 @@ fn invite_and_connect_name_their_copies_by_label() {
 #[test]
 fn a_label_the_chain_refuses_is_refused_at_the_flag() {
     let a = Copy::new();
-    for cmd in [&["invite"][..], &["connect", "ticket"]] {
+    for cmd in [&["invite"][..], &["join", "ticket"]] {
         let argv = [&["sync", "chain"][..], cmd, &["--label", "a\u{1b}[2J"]].concat();
         let err = a.fails(&argv, "");
         assert!(
@@ -1881,7 +1879,7 @@ fn an_unset_label_is_assembled_alike_on_every_copy() {
     let a = Copy::of("ann", "data.db");
     let join = |copy: &Copy| {
         let (mut inviting, ticket) = a.invite(&[]);
-        copy.ok(&["sync", "chain", "connect", &ticket]);
+        copy.ok(&["sync", "chain", "join", &ticket]);
         assert!(inviting.finish().0);
     };
     let (bob, work) = (Copy::of("bob", "data.db"), Copy::of("ann", "work.db"));
@@ -1938,7 +1936,7 @@ fn a_new_member_is_announced_once() {
 /// A first sync whose apply outlasts the progress timeout (da-039jx): b applies
 /// a's 300-odd ops at 20ms each, 6s, on a 3s timeout, sending a `BUSY`
 /// between chunks paced to a sixteenth of it unless `keepalive` is off. The
-/// connect's output, and whether the invite exited 0 and what it printed.
+/// join's output, and whether the invite exited 0 and what it printed.
 fn slow_first_sync(keepalive: bool) -> (Copy, Copy, Output, (bool, String)) {
     let (mut a, mut b) = (Copy::new(), Copy::new());
     for i in 0..300 {
@@ -1955,7 +1953,7 @@ fn slow_first_sync(keepalive: bool) -> (Copy, Copy, Output, (bool, String)) {
         ];
     }
     let (mut inviting, ticket) = a.invite(&[]);
-    let joined = b.run(&["sync", "chain", "connect", &ticket]);
+    let joined = b.run(&["sync", "chain", "join", &ticket]);
     let served = inviting.finish();
     (a, b, joined, served)
 }
@@ -2029,7 +2027,7 @@ fn slow_verify(joiner: bool, keepalive: bool) -> ((bool, String), (bool, String)
     let slow = if joiner { &mut b } else { &mut a };
     slow.env.push(("DATUM_SYNC_TEST_VERIFY_DELAY_S", "6"));
     let (mut inviting, ticket) = a.invite(&[]);
-    let joined = b.run(&["sync", "chain", "connect", &ticket]);
+    let joined = b.run(&["sync", "chain", "join", &ticket]);
     let (served_ok, mut served) = inviting.finish();
     let err = inviting.child.stderr.as_mut().unwrap();
     err.read_to_string(&mut served).unwrap();
@@ -2074,7 +2072,7 @@ fn a_first_sync_says_how_far_it_is_on_both_sides() {
     }
     b.env = vec![("DATUM_SYNC_TEST_APPLY_DELAY_MS", "40")];
     let (mut inviting, ticket) = a.invite(&[]);
-    let mut joining = b.cmd(&["sync", "chain", "connect", &ticket]);
+    let mut joining = b.cmd(&["sync", "chain", "join", &ticket]);
     let mut joining = joining.spawn().expect("spawn datum");
 
     // The inviter names the joiner while the joiner is still at it.
@@ -2127,10 +2125,7 @@ fn an_invite_serves_the_other_members_while_its_joiner_joins() {
     b.env.push(("DATUM_SYNC_TIMEOUT_S", "5"));
     c.env.push(("DATUM_SYNC_TEST_APPLY_DELAY_MS", "50"));
     let (mut inviting, ticket) = a.invite(&[]);
-    let mut joining = c
-        .cmd(&["sync", "chain", "connect", &ticket])
-        .spawn()
-        .unwrap();
+    let mut joining = c.cmd(&["sync", "chain", "join", &ticket]).spawn().unwrap();
     until("c applies a's first ops", Duration::from_secs(60), || {
         // Read as c writes: a lock or a table not there yet is «not yet».
         rusqlite::Connection::open(c.db())
@@ -2184,10 +2179,7 @@ fn a_first_sync_of_many_rounds_counts_every_round() {
         ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "30"),
     ];
     let (mut inviting, ticket) = a.invite(&[]);
-    let joined = b
-        .cmd(&["sync", "chain", "connect", &ticket])
-        .output()
-        .unwrap();
+    let joined = b.cmd(&["sync", "chain", "join", &ticket]).output().unwrap();
     let err = String::from_utf8_lossy(&joined.stderr);
     assert!(joined.status.success(), "{err}");
     assert!(inviting.finish().0);
@@ -2256,7 +2248,7 @@ fn a_slow_copy_catches_up_from_three_members_at_once() {
     let mut peers: Vec<Copy> = (0..3).map(|_| Copy::new()).collect();
     for p in &peers {
         let (mut inviting, ticket) = x.invite(&[]);
-        p.ok(&["sync", "chain", "connect", &ticket]);
+        p.ok(&["sync", "chain", "join", &ticket]);
         assert!(inviting.finish().0);
     }
     for (i, p) in peers.iter().enumerate() {
@@ -2465,7 +2457,7 @@ fn a_big_import_reaches_a_slow_copy_without_sending_it_many_times() {
     let (mut a, mut b, mut c, mut d) = (Copy::new(), Copy::new(), Copy::new(), Copy::new());
     for joiner in [&b, &c, &d] {
         let (mut inviting, ticket) = a.invite(&[]);
-        joiner.ok(&["sync", "chain", "connect", &ticket]);
+        joiner.ok(&["sync", "chain", "join", &ticket]);
         assert!(inviting.finish().0);
     }
     for copy in [&mut a, &mut b, &mut c, &mut d] {
@@ -2568,7 +2560,7 @@ fn two_members_catching_a_copy_up_at_once_send_it_the_catch_up_once() {
     let (mut a, mut b, mut d) = (Copy::new(), Copy::new(), Copy::new());
     for joiner in [&b, &d] {
         let (mut inviting, ticket) = a.invite(&[]);
-        joiner.ok(&["sync", "chain", "connect", &ticket]);
+        joiner.ok(&["sync", "chain", "join", &ticket]);
         assert!(inviting.finish().0);
     }
     for copy in [&mut a, &mut b, &mut d] {
@@ -2794,7 +2786,7 @@ fn a_member_admits_an_invites_redeemer_while_the_inviter_is_offline() {
     let mut c = Copy::new();
     c.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "3")];
     c.ok(&["occur", "from-c"]);
-    let joined = c.ok(&["sync", "chain", "connect", &ticket]);
+    let joined = c.ok(&["sync", "chain", "join", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
     assert!(c.has("from-a") && b.has("from-c"));
     let members = b.ok(&["sync", "chain", "list"]);
@@ -2809,7 +2801,7 @@ fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
     std::thread::sleep(Duration::from_millis(1100));
     let mut d = Copy::new();
     let (mut inviting, ticket) = a.invite(&[]);
-    d.ok(&["sync", "chain", "connect", &ticket]);
+    d.ok(&["sync", "chain", "join", &ticket]);
     assert!(inviting.finish().0);
 
     // Only d fetches the next invite before a goes away; b is behind, and
@@ -2822,7 +2814,7 @@ fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
     let (_b_runs, _d_runs) = (b.serve(&["sync", "run"]), d.serve(&["sync", "run"]));
     let mut c = Copy::new();
     c.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "3")];
-    let joined = c.ok(&["sync", "chain", "connect", &ticket]);
+    let joined = c.ok(&["sync", "chain", "join", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
     // c joined through b, so d hears of c only from b's `sync run` pushing
     // to it afterwards.
@@ -2844,7 +2836,7 @@ fn admitted_by_one_inviter() -> (Copy, Copy, Copy) {
     let (a, mut b) = paired();
     let mut c = Copy::new();
     let (mut inviting, ticket) = a.invite(&[]);
-    c.ok(&["sync", "chain", "connect", &ticket]);
+    c.ok(&["sync", "chain", "join", &ticket]);
     assert!(inviting.finish().0);
     let (serving, _) = a.invite(&[]);
     b.ok(&["sync"]);
@@ -3080,7 +3072,7 @@ fn a_copy_holding_entries_is_refused_a_reader_invite() {
         r.ok(&["occur", "tea"]);
         r.ok(&["occur", "tea", "-t", "-5"]);
         let (mut inviting, ticket) = a.invite(caps);
-        let refused = r.fails(&["sync", "chain", "connect", &ticket], "");
+        let refused = r.fails(&["sync", "chain", "join", &ticket], "");
         assert!(
             refused.contains("holds 2 entries of its own; a reader writes nothing"),
             "{refused}"
@@ -3098,7 +3090,7 @@ fn a_copy_holding_entries_is_refused_a_reader_invite() {
         assert!(!r.has("coffee"));
 
         let fresh = Copy::new();
-        let joined = fresh.ok(&["sync", "chain", "connect", &ticket]);
+        let joined = fresh.ok(&["sync", "chain", "join", &ticket]);
         assert!(joined.contains("verify ok"), "{joined}");
         assert!(fresh.has("coffee"));
         assert!(inviting.finish().0);
@@ -3118,7 +3110,7 @@ fn a_copy_holding_a_flag_and_a_meta_note_is_refused_a_reader_invite() {
     assert_eq!(r.ok(&["count"]).trim(), "0");
     assert_eq!(r.ok(&["sync", "holds"]).trim(), "2");
     let (_inviting, ticket) = a.invite(&["--reader"]);
-    let refused = r.fails(&["sync", "chain", "connect", &ticket], "");
+    let refused = r.fails(&["sync", "chain", "join", &ticket], "");
     assert!(
         refused.contains("holds 2 entries of its own; a reader writes nothing"),
         "{refused}"
@@ -3137,7 +3129,7 @@ fn a_filtered_reader_over_the_link_gets_its_fields_and_verifies() {
     }
     a.ok(&["occur", "tea", "-t", "-100"]);
     let (mut inviting, ticket) = a.invite(&["--fields", "coffee"]);
-    let joined = r.ok(&["sync", "chain", "connect", &ticket]);
+    let joined = r.ok(&["sync", "chain", "join", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
     assert!(inviting.finish().0);
     assert_eq!(
@@ -3174,7 +3166,7 @@ fn admitted_unheard(caps: &[&str]) -> (Copy, Copy, Copy) {
     a.ok(&["occur", "from-a"]);
     let mut c = Copy::new();
     let (mut inviting, ticket) = a.invite(caps);
-    c.ok(&["sync", "chain", "connect", &ticket]);
+    c.ok(&["sync", "chain", "join", &ticket]);
     assert!(inviting.finish().0);
     let at = format!(
         "SELECT addrs FROM sync_peers WHERE endpoint_id = '{}'",
@@ -3435,7 +3427,7 @@ fn a_filtered_readers_diff_is_over_its_fields_alone() {
     a.ok(&["occur", "coffee"]);
     a.ok(&["occur", "tea"]);
     let (mut inviting, ticket) = a.invite(&["--fields", "coffee"]);
-    r.ok(&["sync", "chain", "connect", &ticket]);
+    r.ok(&["sync", "chain", "join", &ticket]);
     assert!(inviting.finish().0);
     assert!(!r.has("tea"));
 

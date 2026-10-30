@@ -24,8 +24,8 @@ async function purgeOf(writes) {
 	try {
 		for (const argv of writes) assert.equal((await b.run(argv)).code, 0, argv.join(' '));
 		const serving = a.spawn(['sync', 'chain', 'invite']);
-		const [, ticket] = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
-		const joined = await b.run(['sync', 'chain', 'connect', ticket]);
+		const [, ticket] = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
+		const joined = await b.run(['sync', 'chain', 'join', ticket]);
 		assert.equal(joined.code, 0, joined.stderr);
 		const { endpoint } = JSON.parse((await b.run(['sync', 'status', '--json'])).stdout).this;
 		const preview = await a.run(['sync', 'chain', 'unjoin', endpoint, '--json']);

@@ -9,7 +9,7 @@ fn one_up_one_off() -> (Copy, Copy, Serving, String) {
     let (a, b) = paired();
     let c = Copy::new();
     let (mut inviting, ticket) = a.invite(&[]);
-    c.ok(&["sync", "chain", "connect", &ticket]);
+    c.ok(&["sync", "chain", "join", &ticket]);
     assert!(inviting.finish().0);
     let off = member_label(&a, &c.id());
     let b_runs = b.serve(&["sync", "run"]);

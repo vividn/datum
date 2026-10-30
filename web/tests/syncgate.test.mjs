@@ -39,13 +39,13 @@ test('a member dialing a page whose join is applying is refused as busy (da-dwm2
 		const restored = await a.run(['db', 'restore', '-', '--yes'], backup(200));
 		assert.equal(restored.code, 0, restored.stderr);
 		const first = a.spawn(['sync', 'chain', 'invite']);
-		const [, ticket] = await until(() => /datum sync chain connect '([^']+)'/.exec(first.stdout), Boolean);
-		assert.equal((await b.run(['sync', 'chain', 'connect', ticket])).code, 0);
+		const [, ticket] = await until(() => /datum sync chain join '([^']+)'/.exec(first.stdout), Boolean);
+		assert.equal((await b.run(['sync', 'chain', 'join', ticket])).code, 0);
 		await withWallClock(
 			async (app) => {
 				await app.page.evaluate(() => localStorage.setItem('datum.syncHoldApplyAfter', '1'));
 				const serving = a.spawn(['sync', 'chain', 'invite']);
-				const [, t] = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
+				const [, t] = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
 				const joining = app.page.evaluate((t) => window.datum.sync.connect('datum', t).catch(() => {}), t).catch(() => {});
 				// The page holds its apply after the first chunk.
 				await until(() => app.page.evaluate(() => window.datum.sync.states().datum?.applying?.done), (n) => n === 64).catch((e) => {
@@ -99,8 +99,8 @@ test('a page pushing to two members runs one session at a time (da-dwm2y)', asyn
 	const [a, b] = [await nativeCopy(relay), await nativeCopy(relay)];
 	try {
 		const first = a.spawn(['sync', 'chain', 'invite']);
-		const [, ticket] = await until(() => /datum sync chain connect '([^']+)'/.exec(first.stdout), Boolean);
-		assert.equal((await b.run(['sync', 'chain', 'connect', ticket])).code, 0);
+		const [, ticket] = await until(() => /datum sync chain join '([^']+)'/.exec(first.stdout), Boolean);
+		assert.equal((await b.run(['sync', 'chain', 'join', ticket])).code, 0);
 		await withWallClock(
 			async (app) => {
 				assert.equal((await pairWith(app, a)).verified, true);
@@ -260,7 +260,7 @@ test('a member dialing a page whose own dial is still connecting syncs (da-gvia0
 				// ends. The page dials c alone: a dial to a, offline, would
 				// hold the page's turn through c's join.
 				for (const copy of [a, c]) {
-					const joined = await copy.run(['sync', 'chain', 'connect', await offer(app)]);
+					const joined = await copy.run(['sync', 'chain', 'join', await offer(app)]);
 					assert.equal(joined.code, 0, joined.stdout + joined.stderr);
 					if (copy !== a) continue;
 					await unsend(app, a);
@@ -289,8 +289,8 @@ test('a page dial past its handshake is not given way (da-gvia0)', async () => {
 	const [a, b] = [await nativeCopy(relay), await nativeCopy(relay)];
 	try {
 		const first = a.spawn(['sync', 'chain', 'invite']);
-		const [, ticket] = await until(() => /datum sync chain connect '([^']+)'/.exec(first.stdout), Boolean);
-		assert.equal((await b.run(['sync', 'chain', 'connect', ticket])).code, 0);
+		const [, ticket] = await until(() => /datum sync chain join '([^']+)'/.exec(first.stdout), Boolean);
+		assert.equal((await b.run(['sync', 'chain', 'join', ticket])).code, 0);
 		await withWallClock(
 			async (app) => {
 				assert.equal((await pairWith(app, a)).verified, true);
@@ -300,7 +300,7 @@ test('a page dial past its handshake is not given way (da-gvia0)', async () => {
 				assert.equal(restored.code, 0, restored.stderr);
 				// An invite serves and dials no one: what reaches the page is its own dial.
 				const serving = a.spawn(['sync', 'chain', 'invite']);
-				await until(() => serving.stdout, (s) => s.includes('datum sync chain connect'));
+				await until(() => serving.stdout, (s) => s.includes('datum sync chain join'));
 				await app.page.evaluate(() => localStorage.setItem('datum.syncHoldApplyAfter', '1'));
 				await app.run(['occur', 'tea', '-t', '0800']);
 				const applying = () => app.page.evaluate(() => window.datum.sync.states().datum?.applying?.done);

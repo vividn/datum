@@ -510,7 +510,7 @@ impl Node {
         report(rep)
     }
 
-    /// `datum sync chain connect [--label]`: redeem `ticket` as `label`,
+    /// `datum sync chain join [--label]`: redeem `ticket` as `label`,
     /// which the admit records, and sync.
     pub async fn connect(&self, ticket: String, label: Option<String>) -> Result<String, JsError> {
         let ticket = Ticket::decode(&ticket).map_err(js)?;

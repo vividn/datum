@@ -50,7 +50,7 @@ test(`a page joins a chain holding ${ENTRIES} entries, says how far it is, and h
 		await withWallClock(
 			async (app) => {
 				const serving = native.spawn(['sync', 'chain', 'invite'], { DATUM_SYNC_TEST_ROUND: String(ROUND) });
-				const [, link] = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
+				const [, link] = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
 				await app.goto(`/sync/join#${link.split('#').pop()}`);
 				const card = app.page.locator('.card.join');
 				const join = card.getByRole('button', { name: 'Join', exact: true });

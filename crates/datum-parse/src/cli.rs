@@ -962,10 +962,10 @@ pub enum SyncCommand {
         label: Option<String>,
         admin_key: Option<String>,
     },
-    /// `datum sync chain connect [<TICKET>] [--label <L>]` — redeem an
+    /// `datum sync chain join [<TICKET>] [--label <L>]` — redeem an
     /// invite (the ticket from stdin when not given) and sync, joining as
     /// `--label` or with none, its label assembled by the chain (da-xijlw).
-    Connect {
+    Join {
         ticket: Option<String>,
         label: Option<String>,
     },
@@ -973,7 +973,7 @@ pub enum SyncCommand {
     /// chain, keeping every entry, under a new endpoint key (da-j8c4l), once
     /// a member holds its departure; `--force` leaves telling no one
     /// (da-dsob1). Hidden
-    /// `--alone`: the leave `connect` makes to join another chain, only of a
+    /// `--alone`: the leave `join` makes to join another chain, only of a
     /// copy holding nothing but its own data, keeping its key (da-h7pnc).
     /// `--dry-run` only says whether it may.
     Leave {

@@ -37,7 +37,7 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 				await app.run(['occur', 'left', '-t', '0800']);
 				assert.equal((await native.run(['occur', 'right', '-t', '0900'])).code, 0);
 				const link = await app.page.evaluate(async () => `${location.origin}/sync/join#${await window.datum.sync.offer('datum')}`);
-				const joined = await native.run(['sync', 'chain', 'connect', link]);
+				const joined = await native.run(['sync', 'chain', 'join', link]);
 				assert.equal(joined.code, 0, joined.stderr);
 				assert.match(joined.stdout, /verify ok/);
 				assert.equal(await countOf(app, 'right'), 1);
@@ -68,7 +68,7 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 					DIAL
 				);
 				// The other copy's side: it names what runs a terminal's sync.
-				assert.match(down, /`datum sync run`/);
+				assert.match(down, /`datum sync daemon status`/);
 				assert.equal(await line.locator('.reason').count(), 0);
 
 				// The relay stops: this copy is the one cut off, and it says so.
@@ -77,7 +77,7 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 				const cut = await until(() => reason.innerText().catch(() => ''), (t) => /http:\/\/127\.0\.0\.1/.test(t), DIAL);
 				// This copy's side: it names its relay, and not the other copy's `sync run`.
 				assert.match(cut, /http:\/\/127\.0\.0\.1:\d+/);
-				assert.doesNotMatch(cut, /`datum sync run`/);
+				assert.doesNotMatch(cut, /`datum sync daemon status`/);
 			},
 			{ prepare: relayed(relay) }
 		);
@@ -98,9 +98,9 @@ test('a terminal redeeming a link already used is told by the page to ask for a 
 		await withWallClock(
 			async (app) => {
 				const link = await app.page.evaluate(async () => `${location.origin}/sync/join#${await window.datum.sync.offer('datum')}`);
-				const joined = await first.run(['sync', 'chain', 'connect', link]);
+				const joined = await first.run(['sync', 'chain', 'join', link]);
 				assert.equal(joined.code, 0, joined.stderr);
-				const used = await second.run(['sync', 'chain', 'connect', link]);
+				const used = await second.run(['sync', 'chain', 'join', link]);
 				assert.notEqual(used.code, 0, used.stdout);
 				// The kind, used, and the step it leads to: back to datum.day, not `sync status`.
 				assert.match(used.stderr, /refused: .*\bused\b/);
@@ -131,7 +131,7 @@ test('an invite made before the page reaches its relay names the relay once it i
 				const offered = app.page.evaluate(() => window.datum.sync.offer('datum'));
 				await new Promise((resolve) => setTimeout(resolve, 12_000));
 				late = await startRelay(port);
-				const joined = await native.run(['sync', 'chain', 'connect', await offered]);
+				const joined = await native.run(['sync', 'chain', 'join', await offered]);
 				assert.equal(joined.code, 0, joined.stderr);
 			},
 			{ prepare: relayed({ url }) }

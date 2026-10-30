@@ -154,7 +154,7 @@ describe('datum.day and a native copy', () => {
 					await app.run(['occur', 'coffee', '-t', '0900']);
 					await app.run(['occur', 'coffee', '-t', '1000']);
 					const serving = native.spawn(['sync', 'chain', 'invite', '--reader']);
-					const said = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
+					const said = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
 					const refused = await app.page.evaluate(
 						(t) => window.datum.sync.connect('datum', t).then(
 							() => 'joined',
@@ -273,7 +273,7 @@ describe('datum.day and a native copy', () => {
 					assert.notEqual(now.code, 0, now.stdout);
 					// The state and when it was last seen, then `-v`'s words: what runs the other copy's sync.
 					assert.match(now.stdout, /: offline\b.*\b\d\d:\d\d\b/);
-					assert.match(now.stdout, /`datum sync run`/);
+					assert.match(now.stdout, /`datum sync daemon status`/);
 
 					assert.equal((await native.run(['occur', 'meanwhile', '-t', '1000'])).code, 0);
 					native.spawn(['sync', 'run']);

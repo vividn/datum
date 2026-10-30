@@ -104,7 +104,7 @@ fn a_copy_holding_debug_ops_does_not_sync() {
         &["sync"],
         &["sync", "run"],
         &["sync", "chain", "invite"],
-        &["sync", "chain", "connect", "nonsense"],
+        &["sync", "chain", "join", "nonsense"],
     ] {
         let (ok, out) = env.run(argv);
         assert!(!ok && out.contains("debug device"), "{argv:?}: {out}");

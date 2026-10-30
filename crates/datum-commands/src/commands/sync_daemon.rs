@@ -2,9 +2,9 @@
 //! chained database syncing in the background — a systemd user unit on
 //! Linux, a launchd agent on macOS — running the hidden `sync daemon run`,
 //! which is `sync run` for each of them in one process. The first `chain
-//! invite` or `chain connect` of a copy in no chain installs it, unless
+//! invite` or `chain join` of a copy in no chain installs it, unless
 //! `DATUM_SYNC_NO_DAEMON=1`: background work starts when the person opts
-//! into the feature it serves, never at CLI install time. A `connect`
+//! into the feature it serves, never at CLI install time. A `join`
 //! installs it once admitted, so a first sync cut short leaves it, and the
 //! daemon finishes that sync (da-qr7gz). Linger is left alone: a user
 //! service stops at logout, and `status` says so.
@@ -363,7 +363,7 @@ pub fn missing() -> bool {
             .is_some_and(|p| !p.exists())
 }
 
-/// A `connect` or an `invite` at work on a database (da-qr7gz, da-apd52): a
+/// A `join` or an `invite` at work on a database (da-qr7gz, da-apd52): a
 /// lock on a file beside it, held for the command's life and so let go when
 /// it is killed. The daemon leaves the database alone until then: it would
 /// bind the copy's endpoint key in a second process, and a relay sends a
@@ -388,7 +388,7 @@ fn first_sync_lock(db: &Path) -> PathBuf {
 }
 
 /// Hold `db`'s [`FirstSync`]. A database with no file has none. A second
-/// `connect` or `invite` on the database is refused: waiting, it would wait
+/// `join` or `invite` on the database is refused: waiting, it would wait
 /// out the first, an invite its whole expiry. Where the filesystem has no
 /// locks, it goes on without one.
 pub fn first_sync(db: &Db) -> Result<Option<FirstSync>> {
@@ -413,15 +413,15 @@ pub(super) fn hold(db: &Path) -> Result<FirstSync> {
     Ok(FirstSync { _lock: lock, path })
 }
 
-/// Why a second `connect` or `invite` on a database is refused.
-const BUSY: &str = "a `datum sync chain connect` or `invite` is at work on this database: \
+/// Why a second `join` or `invite` on a database is refused.
+const BUSY: &str = "a `datum sync chain join` or `invite` is at work on this database: \
      let it end, or stop it, first";
 
 /// Why the daemon stopped serving a database it had taken up.
-const ASIDE: &str = "a `datum sync chain connect` or `invite` is at work on it: \
+const ASIDE: &str = "a `datum sync chain join` or `invite` is at work on it: \
      stepping aside until it ends";
 
-/// Whether a `connect` or an `invite` holds `db`'s [`FirstSync`].
+/// Whether a `join` or an `invite` holds `db`'s [`FirstSync`].
 pub(super) fn in_first_sync(db: &Path) -> bool {
     File::open(first_sync_lock(db))
         .is_ok_and(|f| matches!(f.try_lock_shared(), Err(TryLockError::WouldBlock)))
@@ -458,7 +458,7 @@ pub fn auto_install(db: &Db) {
 
 /// Every database datum knows of that is in a sync chain, or was admitted
 /// to one and has its first sync to finish (da-qr7gz), read without touching
-/// it. Not one a `connect` or an `invite` is still at work on.
+/// it. Not one a `join` or an `invite` is still at work on.
 fn chained() -> Vec<(String, PathBuf)> {
     config::known_dbs()
         .into_iter()
@@ -496,7 +496,7 @@ fn run() -> Result<()> {
                 let done = std::panic::catch_unwind(|| {
                     let db = Db::open(&path.to_string_lossy())?;
                     super::sync::bind_device(&db);
-                    // A `connect` or an `invite` taking it up meanwhile has it
+                    // A `join` or an `invite` taking it up meanwhile has it
                     // to itself (da-8sah2): this endpoint would serve its
                     // joiner too. Retried at a look that finds it free.
                     let grants = super::sync_grant::Watch::default();

@@ -91,7 +91,7 @@ describe('`db purge --leave` in the bar', () => {
 					const { page } = app;
 					const serve = async () => {
 						const serving = native.spawn(['sync', 'chain', 'invite']);
-						return [serving, (await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean))[1]];
+						return [serving, (await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean))[1]];
 					};
 					const [pairing, ticket] = await serve();
 					await page.evaluate((t) => window.datum.sync.connect('datum', t), ticket);

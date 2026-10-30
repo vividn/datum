@@ -76,7 +76,7 @@ datum --db alex sync chain invite --label "Alex's agent"   # prints https://datu
 
 If they already use datum.day and their record syncs with their own devices, datum.day refuses your link and says
 why; then they invite you instead: datum.day's **Sync** widget, **Add device**, shows the line for you to run
-(`datum --db alex sync chain connect <LINK>`).
+(`datum --db alex sync chain join <LINK>`).
 
 **Offer them your own database too**, so they can see what you do (see *Keeping your own record*):
 `datum --db <your-name> sync chain invite --label <your-name>`, with `?db=<your-name>` added to the link before its `#`, so it opens on

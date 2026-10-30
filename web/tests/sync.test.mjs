@@ -152,18 +152,18 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 		});
 	});
 
-	test('through the prompt bar: `sync chain connect <link>` joins, and no history keeps the ticket', async () => {
+	test('through the prompt bar: `sync chain join <link>` joins, and no history keeps the ticket', async () => {
 		await twoBrowsers(async (a, b) => {
 			await a.run(['occur', 'left', '-t', '0800']);
 			await b.run(['occur', 'right', '-t', '0900']);
 			const link = await linkFrom(a);
 			const ticket = link.split('#')[1];
-			await b.submit(`sync chain connect ${link}`);
+			await b.submit(`sync chain join ${link}`);
 			assert.match((await b.stdouts()).at(-1), /verify ok/);
-			assert.equal((await b.echoes()).at(-1), 'sync chain connect <ticket>');
+			assert.equal((await b.echoes()).at(-1), 'sync chain join <ticket>');
 			await converged(a, b);
 			const kept = await b.page.evaluate(() => localStorage.getItem('datum.repl.v1'));
-			assert.ok(kept.includes('sync chain connect <ticket>'), kept);
+			assert.ok(kept.includes('sync chain join <ticket>'), kept);
 			assert.ok(!kept.includes(ticket), 'the ticket is in the stored scrollback or history');
 		});
 	});
@@ -176,7 +176,7 @@ describe('the name a browser joins as (da-uyyyg)', () => {
 	/** Open a join link to `native`'s chain in `app`, the card's name field filled in as it comes. */
 	async function card(app, native) {
 		const serving = native.spawn(['sync', 'chain', 'invite']);
-		const [, link] = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
+		const [, link] = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
 		await app.goto(`/sync/join#${link.split('#').pop()}`);
 		const card = app.page.locator('.card.join');
 		const name = card.getByLabel('This device’s name');

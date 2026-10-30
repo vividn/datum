@@ -460,7 +460,7 @@ impl Ticket {
         Ok(BASE32_NOPAD.encode(&serde_json::to_vec(self)?))
     }
 
-    /// The join link a browser opens, and `connect` takes as well.
+    /// The join link a browser opens, and `join` takes as well.
     pub fn link(&self) -> Result<String> {
         Ok(format!("{JOIN}{}", self.encode()?))
     }
@@ -1880,7 +1880,7 @@ fn unreachable(ep: &Endpoint, id: &str, e: anyhow::Error) -> anyhow::Error {
     } else {
         format!(
             "could not reach {}: {e}; is the other copy running? A terminal syncs while \
-             `datum sync run` or its daemon runs (`datum sync daemon status`), datum.day while \
+             its sync daemon runs (`datum sync daemon status`), datum.day while \
              a tab is open on the database",
             short(id)
         )

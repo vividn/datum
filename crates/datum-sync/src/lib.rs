@@ -98,7 +98,7 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 /// A session's store: this copy's `Db`, on the session's own thread, where
 /// a command that says how its one session goes hears of it, what to do
 /// the first time a peer this copy dialed welcomes it, and the label a
-/// `connect --label` introduces it by.
+/// `join --label` introduces it by.
 struct DbStore<'a>(
     &'a Db,
     Option<&'a Mutex<Told>>,
@@ -690,7 +690,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
         println!("One-time invite, until {expires_at}. On the other copy run:\n");
         // Quoted: zsh's `extendedglob` reads the `#` as a glob (da-sin5b).
         // The link is a fixed prefix and base32, so it holds no `'`.
-        println!("  datum sync chain connect '{link}'\n");
+        println!("  datum sync chain join '{link}'\n");
         if qr {
             println!("or open the link in a browser, or scan this code with a phone's camera:");
             let code = qrcode::QrCode::new(link.as_bytes())?;
@@ -797,7 +797,7 @@ pub fn ticket_also(ticket: &str, more: &[serde_json::Value]) -> Result<String> {
 
 const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";
 
-/// `datum sync chain connect <ticket>`: redeem an invite and sync, with the
+/// `datum sync chain join <ticket>`: redeem an invite and sync, with the
 /// first of the ticket's addresses that admits it. It says at once whom it
 /// waits for and until when, then every [`WAITING`] that it still is, and
 /// once it is answered how far the sync is; a join that fails ends saying why
@@ -871,15 +871,15 @@ fn next_step(e: anyhow::Error, from: &str, who: &str) -> anyhow::Error {
         // Its words say «this copy», read on the redeemer's terminal.
         Some(Failure::Refused(Why::Paused)) => format!(
             "sync is paused on {from}, not on this copy: resume it there (`datum sync \
-             resume`, or tap «sync paused» on datum.day) and connect again"
+             resume`, or tap «sync paused» on datum.day) and join again"
         ),
-        Some(Failure::Refused(Why::Busy)) => format!("connect again once {from} is done"),
+        Some(Failure::Refused(Why::Busy)) => format!("join again once {from} is done"),
         Some(Failure::Refused(Why::Other | Why::NotMember)) => {
             "`datum sync status` shows where this copy stands".into()
         }
         Some(Failure::Unreachable | Failure::TimedOut) => format!(
             "{who} did not answer: open datum.day on that database (or run \
-             `datum sync chain invite` there) and connect again, or ask it for a fresh invite"
+             `datum sync chain invite` there) and join again, or ask it for a fresh invite"
         ),
         // Its own words say it already.
         Some(Failure::Late | Failure::Protocol | Failure::Refused(Why::Wiped | Why::Upgrade))
@@ -1205,7 +1205,7 @@ const YIELD: Duration = Duration::from_millis(250);
 /// And once the file's schema is not this build's: a newer datum migrated it
 /// (da-1tnup). A session open then stops as it does ([`bind`]). And with
 /// the error `stop` gives, which it asks every tick: the daemon's, once a
-/// `connect` or an `invite` takes the database (da-8sah2).
+/// `join` or an `invite` takes the database (da-8sah2).
 ///
 /// `up` is told the address it serves at (as JSON), once it has bound.
 pub fn run(db: &Db, up: impl Fn(String), stop: impl Fn() -> Result<()>) -> Result<()> {
@@ -1413,7 +1413,7 @@ impl std::fmt::Display for Aside {
 
 impl std::error::Error for Aside {}
 
-/// [`run`] in the foreground, stepping aside while `aside`: a `connect` or
+/// [`run`] in the foreground, stepping aside while `aside`: a `join` or
 /// an `invite` at work on the database, which the daemon's run stops for
 /// (da-x5ynh). It unbinds, waits for it to end and binds again, so no two
 /// processes hold one endpoint key. Ctrl-C ends it waiting too.
@@ -1421,7 +1421,7 @@ pub fn run_aside(db: &Db, up: impl Fn(String), aside: impl Fn() -> bool) -> Resu
     loop {
         if aside() {
             eprintln!(
-                "{} a `datum sync chain connect` or `invite` is at work on this database: stepping aside until it ends",
+                "{} a `datum sync chain join` or `invite` is at work on this database: stepping aside until it ends",
                 now()
             );
             let ended = runtime()?.block_on(async {

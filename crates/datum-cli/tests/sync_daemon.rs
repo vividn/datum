@@ -112,7 +112,7 @@ impl Home {
             .map_while(Result::ok)
             .find_map(|l| {
                 Some(
-                    l.split("datum sync chain connect ")
+                    l.split("datum sync chain join ")
                         .nth(1)?
                         .trim()
                         .trim_matches('\'')
@@ -233,7 +233,7 @@ fn a_join_whose_first_sync_fails_still_installs_it() {
         ("DATUM_SYNC_TEST_KEEPALIVE", "0"),
     ];
     let (inviting, _out, ticket) = a.inviting(&slow);
-    let joined = b.datum(&["sync", "chain", "connect", &ticket], &slow);
+    let joined = b.datum(&["sync", "chain", "join", &ticket], &slow);
     drop(inviting);
     let said = format!(
         "{}{}",
@@ -246,9 +246,9 @@ fn a_join_whose_first_sync_fails_still_installs_it() {
     assert!(b.service().exists());
 }
 
-/// `connect` installs the daemon once it is admitted, not after its first
+/// `join` installs the daemon once it is admitted, not after its first
 /// sync (da-qr7gz): killed while that sync runs it has left the daemon, which
-/// kept off the database for as long as the `connect` lived, and finishes
+/// kept off the database for as long as the `join` lived, and finishes
 /// the join. The joiner applies 300 ops at 20 ms each: six seconds to be
 /// killed in.
 #[test]
@@ -259,7 +259,7 @@ fn a_join_killed_at_its_first_sync_left_the_daemon_which_finishes_it() {
     }
     let (inviting, _out, ticket) = a.inviting(&[]);
     let slow = [("DATUM_SYNC_TEST_APPLY_DELAY_MS", "20")];
-    let mut joining = b.spawn(&["sync", "chain", "connect", &ticket], &slow);
+    let mut joining = b.spawn(&["sync", "chain", "join", &ticket], &slow);
     // Read no further, and kept open: a closed stderr would end the join.
     let mut err = BufReader::new(joining.0.stderr.take().unwrap());
     let said = (&mut err)
@@ -268,7 +268,7 @@ fn a_join_killed_at_its_first_sync_left_the_daemon_which_finishes_it() {
         .any(|l| l.contains("sync now runs in the background"));
     assert!(said, "the join ended without installing the daemon");
     // Said with the first sync still to finish, and the daemon leaves the
-    // database to the `connect` meanwhile.
+    // database to the `join` meanwhile.
     let status = b.ok(&["sync", "status"]);
     assert!(status.contains("joining a sync chain through"), "{status}");
     let daemon = b.ok(&["sync", "daemon", "status"]);
@@ -295,7 +295,7 @@ fn a_join_killed_at_its_first_sync_left_the_daemon_which_finishes_it() {
     assert!(b.ok(&["tail", "-n", "1"]).contains("step"));
 }
 
-/// An open invite holds the copy as `connect` does (da-apd52): a daemon
+/// An open invite holds the copy as `join` does (da-apd52): a daemon
 /// serving it too binds its endpoint key in a second process and may admit
 /// the joiner itself, and the invite, having seen nothing, waits out its
 /// expiry. Redeemed, the invite says so and exits, and the daemon takes the
@@ -307,7 +307,7 @@ fn an_open_invite_keeps_the_daemon_off_the_copy() {
     let daemon = a.ok(&["sync", "daemon", "status"]);
     assert!(daemon.contains("0 chained database(s)"), "{daemon}");
 
-    b.ok(&["sync", "chain", "connect", &ticket]);
+    b.ok(&["sync", "chain", "join", &ticket]);
     let said: Vec<String> = out.lines().map_while(Result::ok).collect();
     assert!(inviting.0.wait().unwrap().success(), "{said:?}");
     assert!(
@@ -348,7 +348,7 @@ fn an_invite_moves_the_daemon_serving_the_copy_aside() {
 
     let (mut inviting, out, ticket) = a.inviting(&[]);
     says("stepping aside until it ends");
-    b.ok(&["sync", "chain", "connect", &ticket]);
+    b.ok(&["sync", "chain", "join", &ticket]);
     let said: Vec<String> = out.lines().map_while(Result::ok).collect();
     assert!(inviting.0.wait().unwrap().success(), "{said:?}");
     assert!(
@@ -384,7 +384,7 @@ fn an_invite_moves_a_foreground_run_aside_until_it_ends() {
 
     let (mut inviting, out, ticket) = a.inviting(&[]);
     says("stepping aside until it ends");
-    b.ok(&["sync", "chain", "connect", &ticket]);
+    b.ok(&["sync", "chain", "join", &ticket]);
     let said: Vec<String> = out.lines().map_while(Result::ok).collect();
     assert!(inviting.0.wait().unwrap().success(), "{said:?}");
     assert!(
@@ -442,7 +442,7 @@ fn a_renamed_copy_is_the_same_member_under_its_new_name() {
     let (a, b) = (Home::new(), Home::new());
     a.ok(&["occur", "coffee"]);
     let (inviting, _out, ticket) = a.inviting(&[]);
-    b.ok(&["--db", "old", "sync", "chain", "connect", &ticket]);
+    b.ok(&["--db", "old", "sync", "chain", "join", &ticket]);
     drop(inviting);
     let key = b.ok(&["--db", "old", "sync", "endpoint-key"]);
     let members = b.ok(&["--db", "old", "sync", "chain", "list"]);

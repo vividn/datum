@@ -28,7 +28,7 @@ from the table the binary itself carries:
 | `FORCE_COLOR`          | The same as `CLICOLOR_FORCE` (Node's name); `0` or `false` does not force.                      |
 | `DATUM_SHOW`           | `--show` for a command that has the rendering, kept out of `raw_input` (a typed `--show` wins). |
 | `DATUM_NO_TIPS`        | Set to `1` to never print the one-time tab-completion tip.                                      |
-| `DATUM_SYNC_NO_DAEMON` | Set to `1` so a first `sync chain invite`/`connect` does not install the sync daemon.           |
+| `DATUM_SYNC_NO_DAEMON` | Set to `1` so a first `sync chain invite`/`join` does not install the sync daemon.              |
 <!-- END AUTOGEN: ENV -->
 
 `week_start` (env `DATUM_WEEK_START`, toml `week_start = "monday"`) says
