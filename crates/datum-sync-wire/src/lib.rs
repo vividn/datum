@@ -358,8 +358,8 @@ fn idle_of(set: u64) -> Duration {
     Duration::from_secs(set.or_else(|| env("DATUM_SYNC_TIMEOUT_S")).unwrap_or(60))
 }
 
-/// How long a dial may take to reach a member: `DATUM_SYNC_DIAL_TIMEOUT_S`,
-/// else [`idle`]. Its own, so a test can give up on an offline member fast
+/// How long a dial with no person waiting ([`Asked`]) may take to reach a
+/// member: `DATUM_SYNC_DIAL_TIMEOUT_S`, else [`idle`]. Its own, so a test can give up on an offline member fast
 /// and still give its live sessions [`idle`]'s whole limit (da-c6v27).
 fn dial_limit() -> Duration {
     dial_limit_of(env("DATUM_SYNC_DIAL_TIMEOUT_S"))
@@ -370,13 +370,50 @@ fn dial_limit_of(set: Option<u64>) -> Duration {
         .map_or_else(idle, Duration::from_secs)
 }
 
+/// How long a dial may take with a person waiting on it (da-75rbi). A live
+/// dial measured 0.2 s from the relay's address, and at worst 3.5 s of a dozen
+/// over a link of 500 ms RTT and 10% loss, 2.1 s at 1 s RTT and 20%. [`idle`]
+/// or `DATUM_SYNC_DIAL_TIMEOUT_S` may say otherwise.
+const ASKED: Duration = Duration::from_secs(5);
+
+fn asked_limit_of(set: Option<u64>) -> Duration {
+    set.filter(|&s| s > 0)
+        .map_or_else(|| ASKED.min(idle()), Duration::from_secs)
+}
+
+/// A dial with a person waiting on it, `datum sync`'s: reaching the member
+/// takes [`ASKED`] from here in all, and a session once connected keeps
+/// [`idle`]'s whole limit.
+pub struct Asked {
+    limit: Duration,
+    at: Instant,
+    settle: bool,
+}
+
+impl Asked {
+    /// Started now. `settle`: its endpoint came of [`bind_now`], so a session
+    /// that connects waits for the relay with what is left, and says the
+    /// address that names it.
+    pub fn now(settle: bool) -> Self {
+        Asked {
+            limit: asked_limit_of(env("DATUM_SYNC_DIAL_TIMEOUT_S")),
+            at: Instant::now(),
+            settle,
+        }
+    }
+
+    fn left(&self) -> Duration {
+        self.limit.saturating_sub(self.at.elapsed())
+    }
+}
+
 async fn within<T>(f: impl Future<Output = Result<T>>) -> Result<T> {
     within_of(idle(), f).await
 }
 
 async fn within_of<T>(limit: Duration, f: impl Future<Output = Result<T>>) -> Result<T> {
     timeout(limit, f).await.map_err(|_| {
-        let why = format!("timed out: nothing moved for {}s", limit.as_secs());
+        let why = format!("timed out: nothing moved for {:.0}s", limit.as_secs_f32());
         Failed(Failure::TimedOut, why)
     })?
 }
@@ -1188,12 +1225,13 @@ pub async fn dial(
     ep: &Endpoint,
     addr: EndpointAddr,
     invite: Option<&Redeem<'_>>,
+    asked: Option<&Asked>,
 ) -> Result<Report> {
     let id = addr.id.to_string();
     if store.dial_busy() {
         return Err(Failed(Failure::Refused(Why::Busy), format!("this copy {BUSY_WHY}")).into());
     }
-    let rep = session(store, ep, addr, invite).await;
+    let rep = session(store, ep, addr, invite, asked).await;
     // Busy is no session, and nothing failed (da-h31wt).
     let busy = rep.as_ref().err().and_then(failure) == Some(Failure::Refused(Why::Busy));
     if busy {
@@ -1293,6 +1331,7 @@ async fn session(
     ep: &Endpoint,
     addr: EndpointAddr,
     invite: Option<&Redeem<'_>>,
+    asked: Option<&Asked>,
 ) -> Result<Report> {
     ensure!(addr.id != ep.id(), COPY);
     let id = addr.id.to_string();
@@ -1305,7 +1344,7 @@ async fn session(
         Some(_) => None,
         None => store.wipe_order(&id).await?,
     };
-    let hello = Hello {
+    let mut hello = Hello {
         label: store.label(),
         addr: ep.addr(),
         invite: invite.map(|r| r.secret.to_string()),
@@ -1335,7 +1374,14 @@ async fn session(
         let conn = match using.as_ref().map(|kept| kept.conn.clone()) {
             Some(conn) => conn,
             None => {
-                let conn = connect(ep, addr.clone(), ALPN).await?;
+                let limit = asked.map_or_else(dial_limit, Asked::left);
+                let conn = connect(ep, addr.clone(), ALPN, limit).await?;
+                // The peer keeps the address it is told in place of the one
+                // it held, so it should name the relay.
+                if let Some(asked) = asked.filter(|a| a.settle) {
+                    let _ = timeout(asked.left(), ep.online()).await;
+                    hello.addr = ep.addr();
+                }
                 // A connect can take seconds, and a session the peer dialed
                 // meanwhile may have left one kept: this session runs on
                 // that, and this closes as busy (da-qv0do).
@@ -1361,9 +1407,13 @@ async fn session(
             Ok::<_, anyhow::Error>((s, r, reply))
         };
         // A kept connection's first reply is how the peer is reached: one
-        // gone since waits the dial's limit, not the session's (da-c6v27).
+        // gone since waits the dial's limit, not the session's (da-c6v27);
+        // asked, half of it, the rest being the fresh connect's.
         let opened = match using {
-            Some(_) => within_of(dial_limit(), opened).await,
+            Some(_) => {
+                let limit = asked.map_or_else(dial_limit, |a| a.limit / 2);
+                within_of(limit, opened).await
+            }
             None => opened.await,
         };
         match opened {
@@ -1738,7 +1788,7 @@ pub struct Diffed {
 pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Result<Diffed> {
     ensure!(addr.id != ep.id(), COPY);
     let id = addr.id.to_string();
-    let conn = connect(ep, addr, DIFF).await?;
+    let conn = connect(ep, addr, DIFF, dial_limit()).await?;
     let (mut s, mut r) = conn.open_bi().await?;
     let hello = Hello {
         label: store.label(),
@@ -1786,9 +1836,14 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
 }
 
 /// Connect to `addr` over `alpn`, or say why not.
-async fn connect(ep: &Endpoint, addr: EndpointAddr, alpn: &[u8]) -> Result<Connection> {
+async fn connect(
+    ep: &Endpoint,
+    addr: EndpointAddr,
+    alpn: &[u8],
+    limit: Duration,
+) -> Result<Connection> {
     let id = addr.id.to_string();
-    within_of(dial_limit(), async { Ok(ep.connect(addr, alpn).await?) })
+    within_of(limit, async { Ok(ep.connect(addr, alpn).await?) })
         .await
         .map_err(|e| match other_protocol(&e) {
             true => Failed(Failure::Protocol, format!("{}: {OTHER}", short(&id))).into(),
@@ -2113,7 +2168,7 @@ pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Resul
     let mut rep = Err(anyhow!("the ticket names no address"));
     // A member rejoining is named among its chain's members (da-j8c4l).
     for addr in ticket.addrs.iter().filter(|a| a.id != ep.id()) {
-        rep = dial(store, ep, addr.clone(), Some(&invite)).await;
+        rep = dial(store, ep, addr.clone(), Some(&invite), None).await;
         // Unreachable, or a member not yet holding the invite: the next
         // address may admit. Any other refusal stops here, a paused inviter
         // too, and so does another protocol: going on would report whatever
@@ -2155,6 +2210,20 @@ pub enum Net {
 
 /// The endpoint whose key is `secret`, the db's endpoint key.
 pub async fn bind(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
+    let ep = bind_now(secret, net).await?;
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    let relayed = !matches!(net, Net::Local(_));
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    let relayed = true;
+    if relayed {
+        // The address a ticket or a peer is handed should name the relay.
+        let _ = timeout(Duration::from_secs(10), ep.online()).await;
+    }
+    Ok(ep)
+}
+
+/// [`bind`] with no wait for the relay: a person is waiting ([`Asked`]).
+pub async fn bind_now(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
     let builder = match net {
         Net::N0 => Endpoint::builder(presets::N0),
         Net::Relay(url) => Endpoint::builder(presets::Minimal).relay_mode(RelayMode::custom([url
@@ -2166,20 +2235,11 @@ pub async fn bind(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
             .clear_ip_transports()
             .bind_addr(*addr)?,
     };
-    let ep = builder
+    Ok(builder
         .secret_key(SecretKey::from_bytes(&secret))
         .alpns(vec![ALPN.to_vec(), DIFF.to_vec()])
         .bind()
-        .await?;
-    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
-    let relayed = !matches!(net, Net::Local(_));
-    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-    let relayed = true;
-    if relayed {
-        // The address a ticket or a peer is handed should name the relay.
-        let _ = timeout(Duration::from_secs(10), ep.online()).await;
-    }
-    Ok(ep)
+        .await?)
 }
 
 #[cfg(test)]
@@ -2438,7 +2498,8 @@ mod tests {
             .await
             .unwrap();
         let answering = async { accepted(other.accept().await.unwrap()).await };
-        let (dialed, answered) = tokio::join!(connect(&this, other.addr(), ALPN), answering);
+        let (dialed, answered) =
+            tokio::join!(connect(&this, other.addr(), ALPN, dial_limit()), answering);
         let e = dialed.err().unwrap();
         assert_eq!(failure(&e), Some(Failure::Protocol));
         let id = other.id().to_string();
@@ -2650,5 +2711,15 @@ mod tests {
         assert_eq!(dial_limit_of(Some(0)), idle());
         assert_eq!(dial_limit_of(Some(3)), Duration::from_secs(3));
         assert_eq!(idle(), Duration::from_secs(60));
+    }
+
+    /// A dial a person waits on is short, a test's limit still says.
+    #[test]
+    fn an_asked_dial_is_short_unless_a_test_says() {
+        assert_eq!(asked_limit_of(None), ASKED);
+        assert_eq!(asked_limit_of(Some(0)), ASKED);
+        assert_eq!(asked_limit_of(Some(1)), Duration::from_secs(1));
+        assert_eq!(asked_limit_of(Some(9)), Duration::from_secs(9));
+        assert!(ASKED < idle());
     }
 }

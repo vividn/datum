@@ -494,7 +494,7 @@ impl Node {
             by: Rc::clone(&by),
             _turn: turn,
         }));
-        let dialed = dial(&self.cli, &self.ep, addr, None);
+        let dialed = dial(&self.cli, &self.ep, addr, None, None);
         let Ok(rep) = Abortable::new(dialed, registration).await else {
             let by = by.take().unwrap_or_default();
             return report(Err(match by == peer {

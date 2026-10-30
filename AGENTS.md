@@ -444,6 +444,14 @@ member at once and answers each session's line, so the endpoint key is bound
 once and the traffic is not doubled; with no run listening it dials as before
 (da-tltjj).
 
+A person waits on that bare `sync`, so either way its dial reaches a member in
+5 s or calls it offline (`Asked` in the wire crate, da-75rbi), counting from
+when it dials: it waits for no relay first, only a session that connected waits
+for one with what is left, since the address it tells the peer replaces the one
+the peer held. A kept connection's first reply takes half of the 5 s. A session
+once connected keeps the idle limit's whole minute, and a `sync run`'s own
+rounds, `connect` and a grant's join keep the minute for the dial too.
+
 `sync run` tries a member it failed to reach again after a minute, the gap
 doubling to half an hour, dials every member when it starts or its address
 changes, dials no member it is already in a session with unless `datum sync`

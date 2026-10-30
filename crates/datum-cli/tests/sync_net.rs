@@ -16,6 +16,7 @@ use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use tempfile::TempDir;
 
 mod closing;
+mod giving_up;
 
 /// A copy's UDP port, and the claim that holds it for as long as the copy
 /// lives (da-nuxm6). A port read off a probe bound to `:0` is free the moment

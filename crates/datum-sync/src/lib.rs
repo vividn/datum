@@ -31,9 +31,9 @@ use datum_core::error::{DatumError, Refusal as CoreRefusal};
 use datum_core::migrations::{CURRENT_SCHEMA_VERSION, SYNC_FLOOR};
 use datum_parse::time::Zone;
 use datum_sync_wire::{
-    accept, dial, failure, gave_way, redeem, serve, unix_now, About, Applied, Diffed, Digest,
-    Endpoint, EndpointAddr, Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector, Version,
-    Why,
+    accept, dial, failure, gave_way, redeem, serve, unix_now, About, Applied, Asked, Diffed,
+    Digest, Endpoint, EndpointAddr, Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector,
+    Version, Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use iroh::{SecretKey, Watcher};
@@ -641,21 +641,30 @@ fn paired_unfinished(e: &anyhow::Error, then: &str) -> bool {
 
 // ─── The endpoint ───────────────────────────────────────────────────────────
 
+fn net() -> Result<Net> {
+    Ok(
+        match (
+            std::env::var("DATUM_SYNC_BIND"),
+            std::env::var("DATUM_SYNC_RELAY"),
+        ) {
+            (Ok(addr), _) => Net::Local(addr.parse::<SocketAddr>().context("DATUM_SYNC_BIND")?),
+            (_, Ok(url)) => Net::Relay(url),
+            _ => Net::N0,
+        },
+    )
+}
+
 async fn bind(db: &Db) -> Result<Endpoint> {
-    let net = match (
-        std::env::var("DATUM_SYNC_BIND"),
-        std::env::var("DATUM_SYNC_RELAY"),
-    ) {
-        (Ok(addr), _) => Net::Local(addr.parse::<SocketAddr>().context("DATUM_SYNC_BIND")?),
-        (_, Ok(url)) => Net::Relay(url),
-        _ => Net::N0,
-    };
-    let ep = datum_sync_wire::bind(db.sync_endpoint_secret()?, &net).await?;
+    let ep = datum_sync_wire::bind(db.sync_endpoint_secret()?, &net()?).await?;
+    Ok(bound(db, ep))
+}
+
+fn bound(db: &Db, ep: Endpoint) -> Endpoint {
     // Its sessions are this endpoint's: on a file purged or rekeyed under
     // them they stop, and write nothing into it (da-otz0d). Until the
     // command ends, which unbinds (`commands::sync`).
     db.sync_session_as(Some(&ep.id().to_string()));
-    Ok(ep)
+    ep
 }
 
 fn print_added(rep: &Report) {
@@ -1013,16 +1022,21 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
         return ended(failed, synced, of);
     }
     runtime()?.block_on(async {
-        let ep = bind(db).await?;
+        // No wait for the relay before dialing: only a session that connects
+        // needs it (`Asked`), and with no network it never comes.
+        let net = net()?;
+        let ep = datum_sync_wire::bind_now(db.sync_endpoint_secret()?, &net).await?;
+        let ep = &bound(db, ep);
+        let settle = !matches!(net, Net::Local(_));
         let store = &DbStore::new(db);
-        let ep = &ep;
         // Each said as its session ends, not after the slowest (da-a4fxr).
         let mut dials: FuturesUnordered<_> = peers
             .iter()
             .map(|p| async move {
                 // The whole dial, connecting included.
                 let start = Instant::now();
-                let rep = async { dial(store, ep, addr(p)?, None).await }.await;
+                let asked = Asked::now(settle);
+                let rep = async { dial(store, ep, addr(p)?, None, Some(&asked)).await }.await;
                 (p, rep, start.elapsed())
             })
             .collect();
@@ -1037,7 +1051,9 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
             }
         }
         print_no_address(db)?;
-        ep.close().await;
+        // Long enough to say goodbye to a live member (0.7 s measured), and
+        // not the 3 s it drains a dial no one answered for (da-75rbi).
+        let _ = tokio::time::timeout(Duration::from_secs(1), ep.close()).await;
         ended(failed, synced, peers.len())
     })
 }
@@ -1097,7 +1113,9 @@ fn push<'a>(
             if let Some(late) = late {
                 tokio::time::sleep(late).await;
             }
-            let rep = async { dial(store, ep, addr(&p)?, None).await }.await;
+            // A person is waiting on an ask's dial, and on no round's.
+            let reach = asked.as_ref().map(|_| Asked::now(false));
+            let rep = async { dial(store, ep, addr(&p)?, None, reach.as_ref()).await }.await;
             // Asked, a dial given way to a session between the two copies
             // (da-vj3ly, da-mghh3) waits that session out and dials again,
             // so `datum sync` says this one verified, not that one runs
