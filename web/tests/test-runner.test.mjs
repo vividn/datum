@@ -6,7 +6,7 @@
 
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { filesAtOnce } from '../scripts/concurrency.mjs';
+import { claim, filesAtOnce } from '../scripts/concurrency.mjs';
 import { parseShard, shardFiles } from '../scripts/shard.mjs';
 
 describe('filesAtOnce', () => {
@@ -67,6 +67,41 @@ describe('filesAtOnce', () => {
 	});
 });
 
+// Runs that start together each read the load at about 0 (da-ueire), so each
+// first counts the files the live runs before it took.
+describe('claim', () => {
+	const registry = () => mkdtempSync(join(tmpdir(), 'datum-suites-'));
+	const dead = spawnSync(process.execPath, ['-e', '']).pid;
+
+	test('counts the live runs, forgets the dead ones, and enters its own', () => {
+		const dir = registry();
+		writeFileSync(join(dir, String(process.ppid)), '6');
+		writeFileSync(join(dir, String(dead)), '6');
+		let seen;
+		assert.equal(claim(dir, (n) => ((seen = n), 2)), 2);
+		assert.equal(seen, 6);
+		assert.deepEqual(readdirSync(dir).sort(), [String(process.pid), String(process.ppid)].sort());
+		assert.equal(readFileSync(join(dir, String(process.pid)), 'utf8'), '2');
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test('a lock its run died holding is taken after five seconds', () => {
+		const dir = registry();
+		mkdirSync(join(dir, 'lock'));
+		const old = new Date(Date.now() - 6_000);
+		utimesSync(join(dir, 'lock'), old, old);
+		assert.equal(claim(dir, (n) => n + 1), 1);
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test('a registry it cannot write decides on the load alone', () => {
+		const dir = registry();
+		writeFileSync(join(dir, 'file'), '');
+		assert.equal(claim(join(dir, 'file', 'suites'), (n) => n + 3), 3);
+		rmSync(dir, { recursive: true, force: true });
+	});
+});
+
 // Which files a run takes — the other half of `pnpm test`'s arithmetic. The
 // invariant the CI matrix rests on: the M shards, concatenated, are the suite
 // exactly once (da-buqa).
@@ -122,7 +157,7 @@ describe('parseShard', () => {
 // The retry (da-8bmqe), through the real runner: a temp dir holding a file
 // that fails once and then passes, and one that always fails.
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';

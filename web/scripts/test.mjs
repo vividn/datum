@@ -9,6 +9,10 @@
 // the smaller of six and what the machine has AND what the machine's current
 // load leaves — see `filesAtOnce`.
 //
+// Runs that start together each read the load before the others add to it, so
+// each run also counts the files the box's other live runs took, from a
+// registry in the temp dir (`claim`, da-ueire).
+//
 // `DATUM_TEST_CONCURRENCY` overrides the load, but not the cores: it is capped
 // at the cores less two (da-dwq7g, da-gimld). The merge queue's
 // `scripts/mq-check.sh` sets it on the refinery's run alone, because its
@@ -113,12 +117,12 @@
 // — runs inside its first test and counts as that test's. The run prints the
 // files where that is largest, and the lane's memory beside its cores.
 
-import { availableParallelism, loadavg, totalmem } from 'node:os';
+import { availableParallelism, loadavg, tmpdir, totalmem } from 'node:os';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { run } from 'node:test';
 import { spec as Spec, tap } from 'node:test/reporters';
-import { filesAtOnce } from './concurrency.mjs';
+import { claim, filesAtOnce } from './concurrency.mjs';
 import { parseShard, shardFiles } from './shard.mjs';
 
 const args = process.argv.slice(2);
@@ -159,12 +163,14 @@ const memory = `${gib(totalmem())}${Number.isFinite(memMax) ? ` (cgroup memory.m
 const pidsMax = cgroup('pids.max')?.trim();
 
 const cores = Math.max(1, Math.min(availableParallelism(), Math.floor(lane ?? Infinity)));
-// Read once: a run's concurrency is fixed at its start.
+// Read once: a run's concurrency is fixed at its start. The files the box's
+// other live runs took count as load the average has not caught up with yet.
 const load = loadavg()[0];
 const override = process.env.DATUM_TEST_CONCURRENCY ? Number(process.env.DATUM_TEST_CONCURRENCY) : undefined;
-const concurrency = filesAtOnce(cores, load, 6, override);
+let others = 0;
+const concurrency = claim(join(tmpdir(), 'datum-web-suites'), (n) => filesAtOnce(cores, Math.max(load, 2 * (others = n)), 6, override));
 console.log(
-	`test: ${cores} cores${lane ? ` (cgroup cpu.max ${lane})` : ''}, ${memory}${pidsMax ? `, pids.max ${pidsMax} (pids.current ${cgroup('pids.current')?.trim()})` : ''}, load ${load.toFixed(1)} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ` (override ${override}${concurrency < Math.floor(override) ? ', capped by cores' : ''})` : ''}`
+	`test: ${cores} cores${lane ? ` (cgroup cpu.max ${lane})` : ''}, ${memory}${pidsMax ? `, pids.max ${pidsMax} (pids.current ${cgroup('pids.current')?.trim()})` : ''}, load ${load.toFixed(1)}${others && !override ? `, ${others} file${others === 1 ? '' : 's'} of other runs` : ''} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ` (override ${override}${concurrency < Math.floor(override) ? ', capped by cores' : ''})` : ''}`
 );
 if (Number(process.versions.node.split('.')[0]) < 24)
 	console.log(`test: node ${process.versions.node} cuts each FILE at 300 s, not each test; node 24 budgets the test (da-l5k9e)`);
