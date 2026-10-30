@@ -353,8 +353,8 @@
 	const doResetDefaults = () =>
 		attempt(async () => {
 			const yes = await confirm(
-				'Every layout that ships with datum goes back to the way it came, and the tabs along the foot of the page go back to welcome, track and collect.\n\n' +
-					'Layouts you saved yourself, and layouts a kit installed, are not touched — they stay in the +.',
+				'Every layout that ships with datum goes back to the way it comes, one you changed included, and the tabs along the foot of the page go back to the ones a first visit opens.\n\n' +
+					'Layouts you saved under a name of your own, and layouts a kit installed, are not touched — they stay in the +.',
 				'reset'
 			);
 			if (yes) await resetDefaults();

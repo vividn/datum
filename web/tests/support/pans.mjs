@@ -48,7 +48,8 @@ export async function seedMarks(app) {
 	await app.reload();
 	// The marks, not the band: a reload draws today from its picture kept
 	// before the seed until today's run lands (da-8xy6u).
-	await app.page.locator('.band[data-days-ago="0"] [data-field="tick"]').first().waitFor({ state: 'attached' });
+	if (await app.page.locator('.band').count())
+		await app.page.locator('.band[data-days-ago="0"] [data-field="tick"]').first().waitFor({ state: 'attached' });
 	if (await app.page.locator('.nowview-band').count())
 		await app.page.locator('.nowview-band [data-field="tick"]').first().waitFor({ state: 'attached' });
 	await app.idle();

@@ -32,7 +32,7 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const FIRST = ['welcome', 'setup', 'collect'];
+const FIRST = ['welcome', 'setup', 'collect', 'dayview'];
 const FRESH_DESKTOP = { ...DESKTOP, home: null, desk: null };
 const FRESH_PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: null };
 
@@ -55,8 +55,8 @@ const closeWelcome = (page) => page.getByRole('button', { name: 'Close welcome',
 
 describe('a first visit', () => {
 	for (const [what, device, collect] of [
-		['a desktop', FRESH_DESKTOP, ['dayview', 'tail', 'nowview', 'stats', 'fields']],
-		['a phone', FRESH_PHONE, ['dayview', 'tail', 'fields', 'nowview']]
+		['a desktop', FRESH_DESKTOP, ['dayview', 'tail', 'fields', 'nowview', 'stats']],
+		['a phone', FRESH_PHONE, ['tail', 'nowview', 'fields']]
 	])
 		test(`${what} opens welcome · setup · collect on welcome; its button lands on setup; collect is the page it opened before`, async () => {
 			await withApp(async (app) => {
@@ -177,15 +177,15 @@ describe('a first visit', () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				await closeWelcome(page).click();
-				await until(() => rootNames(page), (names) => names.join() === 'setup,collect');
+				await until(() => rootNames(page), (names) => names.join() === 'setup,collect,dayview');
 				assert.deepEqual(await front(page), ['setup', 'setup']);
 
 				await app.reload();
-				assert.deepEqual(await rootNames(page), ['setup', 'collect']);
+				assert.deepEqual(await rootNames(page), ['setup', 'collect', 'dayview']);
 
 				await page.locator('.root-bar button.add').first().click();
 				await chooser(page).locator('button', { hasText: exactly('welcome') }).click();
-				await until(() => rootNames(page), (names) => names.join() === 'setup,collect,welcome');
+				await until(() => rootNames(page), (names) => names.join() === 'setup,collect,dayview,welcome');
 				await closeWelcome(page).waitFor();
 				assert.deepEqual(app.errors, []);
 			}, device);
@@ -200,8 +200,7 @@ describe('a first visit', () => {
 			await leaveLayoutMode(page);
 
 			// The root's last tab does not close (tree.ts), so nothing offers to.
-			await page.evaluate(() => window.datum.shell.close(2));
-			await page.evaluate(() => window.datum.shell.close(1));
+			for (const at of [3, 2, 1]) await page.evaluate((at) => window.datum.shell.close(at), at);
 			await until(() => rootNames(page), (names) => names.join() === 'welcome');
 			assert.equal(await closeWelcome(page).count(), 0);
 			assert.deepEqual(app.errors, []);
@@ -231,25 +230,25 @@ describe('a first visit', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await manageRoot(page, 'Close tab');
-			await until(() => rootNames(page), (names) => names.join() === 'setup,collect');
+			await until(() => rootNames(page), (names) => names.join() === 'setup,collect,dayview');
 			assert.deepEqual(await front(page), ['setup', 'setup']);
 
 			await app.reload();
-			assert.deepEqual(await rootNames(page), ['setup', 'collect']);
+			assert.deepEqual(await rootNames(page), ['setup', 'collect', 'dayview']);
 
 			// «Open a widget, or a tab you closed: the + beside the tabs.»
 			await page.locator('.root-bar button.add').first().click();
 			await chooser(page).locator('button', { hasText: exactly('welcome') }).click();
-			await until(() => rootNames(page), (names) => names.join() === 'setup,collect,welcome');
+			await until(() => rootNames(page), (names) => names.join() === 'setup,collect,dayview,welcome');
 			assert.ok((await words(page)).includes('Record your life'));
 
 			// And collect, which is no widget kind, comes back from it too.
 			await rootMenuButton(page).waitFor();
 			await page.evaluate(() => window.datum.shell.close(1));
-			await until(() => rootNames(page), (names) => names.join() === 'setup,welcome');
+			await until(() => rootNames(page), (names) => names.join() === 'setup,dayview,welcome');
 			await page.locator('.root-bar button.add').first().click();
 			await chooser(page).locator('button.layout', { hasText: exactly('collect') }).click();
-			await until(() => rootNames(page), (names) => names.join() === 'setup,welcome,collect');
+			await until(() => rootNames(page), (names) => names.join() === 'setup,dayview,welcome,collect');
 			assert.deepEqual(app.errors, []);
 		}, FRESH_DESKTOP);
 	});
@@ -266,8 +265,8 @@ describe('a first visit', () => {
 describe('a device that has been here', () => {
 	test('keeps the tabs it had, and the tree under them', async () => {
 		for (const [device, name, shown] of [
-			[{ ...DESKTOP, desk: null }, 'main', ['dayview', 'tail', 'nowview', 'stats', 'fields']],
-			[{ ...FRESH_PHONE, home: 'mobile' }, 'mobile', ['dayview', 'tail', 'fields', 'nowview']]
+			[{ ...DESKTOP, desk: null }, 'main', ['dayview', 'tail', 'fields', 'nowview', 'stats']],
+			[{ ...FRESH_PHONE, home: 'mobile' }, 'mobile', ['tail', 'nowview', 'fields']]
 		])
 			await withApp(async ({ page }) => {
 				assert.deepEqual(await rootNames(page), [name]);
@@ -280,10 +279,11 @@ describe('a device that has been here', () => {
 	test('with the old track tab open, opens it as setup', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			assert.deepEqual(await rootNames(page), FIRST);
+			const names = ['welcome', 'setup', 'collect'];
+			assert.deepEqual(await rootNames(page), names);
 			assert.deepEqual(await front(page), ['setup', 'setup']);
 			await app.reload();
-			assert.deepEqual(await rootNames(page), FIRST);
+			assert.deepEqual(await rootNames(page), names);
 			assert.deepEqual(app.errors, []);
 		}, { ...DESKTOP, home: { names: ['welcome', 'track', 'collect'], active: 1 } });
 	});

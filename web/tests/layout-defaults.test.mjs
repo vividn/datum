@@ -204,10 +204,10 @@ describe('Reset default layouts', () => {
 			await chooseSettings(page, RESET);
 			await answer(page, 'reset');
 
-			// The root's tabs are the shipped set: the three a fresh install
-			// shows (da-u7vz8). `main` is no longer among them, so it is
+			// The root's tabs are the shipped set: the four a fresh install
+			// shows (da-u7vz8, da-uzi5x). `main` is no longer among them, so it is
 			// opened again to be read.
-			await until(() => rootNames(page), (names) => names.join() === 'welcome,setup,collect');
+			await until(() => rootNames(page), (names) => names.join() === 'welcome,setup,collect,dayview');
 			await page.evaluate(() => window.datum.shell.open('main'));
 
 			// And the built-in is the tree it shipped with — the same tree,

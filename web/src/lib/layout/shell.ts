@@ -144,11 +144,12 @@ const phone = () =>
 
 /**
  * The root bar a fresh install shows (da-u7vz8), `welcome` in front: what
- * datum is, the setup widget to choose what to track in, and `collect`,
- * the page to log on — which is what a first visit opened alone before, as
- * `mobile` on a phone (da-shzs) and `main` elsewhere.
+ * datum is, the setup widget to choose what to track in, `collect`, the page
+ * to log on — which is what a first visit opened alone before, as `mobile`
+ * on a phone (da-shzs) and `main` elsewhere — and `dayview`, the day strip
+ * alone (da-uzi5x).
  */
-const fresh = (): RootState => ({ names: ['welcome', 'setup', 'collect'], active: 0 });
+const fresh = (): RootState => ({ names: ['welcome', 'setup', 'collect', 'dayview'], active: 0 });
 
 /**
  * This DEVICE, in the word a layout's `designedFor` uses: decided ONCE, by
@@ -1258,9 +1259,10 @@ async function offerDefaults(fresh: boolean): Promise<void> {
 	if (seen >= news.length) return;
 	const yes = await confirm(
 		`datum has a new default layout. ${news.slice(seen).join(' ')}\n\n` +
-			'Using it puts every layout that ships with datum back the way it comes, and the tabs along the foot of the page back to the ones a first visit opens. ' +
-			'Layouts you saved yourself, and layouts a kit installed, are not touched.\n\n' +
-			'Keep yours and this is not asked again; «Reset default layouts» in the ⚙ menu does the same at any time.',
+			'Using it puts every layout that ships with datum back the way it comes, one you changed included, and the tabs along the foot of the page back to the ones a first visit opens. ' +
+			'Layouts you saved under a name of your own, and layouts a kit installed, are not touched.\n\n' +
+			'«Keep mine» keeps your tabs and the layouts you changed or saved, and this is not asked again. A layout that ships with datum and that you never changed draws the new way anyway. ' +
+			'«Reset default layouts» in the ⚙ menu does what using it does, at any time.',
 		'Use the new layout',
 		'',
 		'Keep mine'

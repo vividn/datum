@@ -432,7 +432,7 @@ export const focusTop = (page) =>
  * A first visit's tabs with `collect` in front (da-u7vz8): the page a fresh
  * device opened alone until then, `mobile`'s tree on a phone.
  */
-export const ON_COLLECT = { names: ['welcome', 'setup', 'collect'], active: 2 };
+export const ON_COLLECT = { names: ['welcome', 'setup', 'collect', 'dayview'], active: 2 };
 
 export const SYNC_TIMEOUT_S = 5;
 

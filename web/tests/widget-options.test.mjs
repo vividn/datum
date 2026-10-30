@@ -699,7 +699,7 @@ describe('widget options', () => {
 		await shared.room('wo-apart', async (app, room) => {
 			const { page } = app;
 			// `orientation`, whose default the two layouts share: the freeze
-			// is main's on by default and mobile's off (da-2hd21), so a write
+			// is main's on by default and collect's off (da-2hd21), so a write
 			// to it could not tell a shared setting from a default.
 			const ORIENT = 'orientation';
 			const orientation = async (id) =>
@@ -708,33 +708,33 @@ describe('widget options', () => {
 			await pickOption(page, dayStrip, ORIENT, 'vertical');
 			assert.equal(await orientation(dayStrip), 'vertical');
 
-			await page.evaluate(() => window.datum.shell.open('mobile'));
-			await page.locator('.root-bar [role="tab"][aria-selected="true"]').filter({ hasText: 'mobile' }).waitFor();
-			const mobileStrip = await titledPane(page, 'dayview').first().getAttribute('data-pane');
-			assert.equal(await orientation(mobileStrip), 'horizontal', 'the two layouts shared one tab’s setting');
+			await page.evaluate(() => window.datum.shell.open('collect'));
+			await page.locator('.root-bar [role="tab"][aria-selected="true"]').filter({ hasText: 'collect' }).waitFor();
+			const otherStrip = await titledPane(page, 'dayview').first().getAttribute('data-pane');
+			assert.equal(await orientation(otherStrip), 'horizontal', 'the two layouts shared one tab’s setting');
 
 			// BOTH DIRECTIONS (the panel on #64): main's write not showing on
-			// mobile is half the claim. Write on mobile too and hold the two
+			// collect is half the claim. Write on mobile too and hold the two
 			// to their own values — a collision the other way round, where the
 			// second layout's write lands on the first layout's entry, reads
 			// the same as isolation until this is asserted.
-			await pickOption(page, mobileStrip, ORIENT, 'vertical');
-			assert.equal(await orientation(mobileStrip), 'vertical');
+			await pickOption(page, otherStrip, ORIENT, 'vertical');
+			assert.equal(await orientation(otherStrip), 'vertical');
 
 			// Back on `main`: its own strip still holds what was set on it, so
 			// leaving a root tab and coming back keeps this session's — and
-			// mobile's write did not reach it.
+			// collect's write did not reach it.
 			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly(room) }).click();
 			await page.locator('section.pane[data-title="cli"]').waitFor();
 			assert.equal(await orientation(dayStrip), 'vertical', 'leaving a root tab lost what it held');
 
 			// And once more the other way, with the two now set apart: put
-			// main's back to the default and mobile's must not follow.
+			// main's back to the default and collect's must not follow.
 			await pickOption(page, dayStrip, ORIENT, 'horizontal');
 			assert.equal(await orientation(dayStrip), 'horizontal');
-			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('mobile') }).click();
+			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('collect') }).click();
 			await titledPane(page, 'dayview').first().waitFor();
-			assert.equal(await orientation(mobileStrip), 'vertical', 'main’s write reached mobile');
+			assert.equal(await orientation(otherStrip), 'vertical', 'main’s write reached collect');
 			assert.deepEqual(app.errors, []);
 		});
 	});

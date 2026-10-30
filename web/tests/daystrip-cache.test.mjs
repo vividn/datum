@@ -52,7 +52,7 @@ async function pictures({ page }) {
 }
 
 /** To the next layout and back to `main` by the root's swipe, with `between` done there. */
-async function awayAndBack(app, between = async () => {}, to = 'tail') {
+async function awayAndBack(app, between = async () => {}, to = 'tail', from = { x: 0.5, y: 0.5 }) {
 	const { page } = app;
 	const root = page.locator('section.root > .content');
 	await swipeOver(page, root, -150, 0);
@@ -60,7 +60,7 @@ async function awayAndBack(app, between = async () => {}, to = 'tail') {
 	await atRest(root);
 	if (to === 'tail') assert.equal(await page.locator('.band').count(), 0, 'the strip is still mounted on `tail`');
 	await between();
-	await swipeOver(page, root, 150, 0);
+	await swipeOver(page, root, 150, 0, from);
 	await until(() => shown(page), (name) => name === 'main');
 	await atRest(root);
 }
@@ -249,7 +249,8 @@ describe('the day strip across a swipe', () => {
 				await seedLines(app, ['occur coffee -d -1']);
 				await pictures(app);
 				await app.idle();
-				await awayAndBack(app, () => app.page.setViewportSize({ width: 360, height: 700 }), 'collect');
+				// Back from over its tail: the nowview in collect's middle pans under a finger.
+				await awayAndBack(app, () => app.page.setViewportSize({ width: 360, height: 700 }), 'collect', { x: 0.5, y: 0.15 });
 				const today = app.page.locator('section[data-pane] .band[data-days-ago="0"]').first();
 				await until(
 					async () => [

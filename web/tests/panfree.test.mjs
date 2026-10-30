@@ -28,6 +28,8 @@ before(startApp);
 after(stopApp);
 
 const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
+// The strip is the dayview tab's on a phone (da-uzi5x), the nowview collect's.
+const ON_DAYVIEW = { ...PHONE, home: { ...ON_COLLECT, active: 3 } };
 const TODAY = '.band[data-days-ago="0"]';
 const MOVES = 20;
 
@@ -60,7 +62,7 @@ test('a vertical drag on the strip scrolls the stack from the first move past sl
 		// Chrome's touch slop is a few moves of 8px; the scroll is under way
 		// by the move after it, and not a wait later.
 		assert.ok(frames.movesBeforeScroll <= 4, `${frames.movesBeforeScroll} moves were heard before the stack scrolled`);
-	}, PHONE);
+	}, ON_DAYVIEW);
 });
 
 test('a horizontal pan moves the pictures and redraws none of them, under the finger every frame', async () => {
@@ -100,7 +102,7 @@ test('a horizontal pan moves the pictures and redraws none of them, under the fi
 		// In the thread's own time: a wall clock's counts the runner's other
 		// files too, 18–20ms a move with four at once, 12 alone.
 		assert.ok(trace.threadMs / MOVES < FRAME_MS, `the main thread took ${Math.round(trace.threadMs / MOVES)}ms a move`);
-	}, PHONE);
+	}, ON_DAYVIEW);
 });
 
 test("the nowview's pan restyles none of its marks", async () => {

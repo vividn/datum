@@ -1062,9 +1062,9 @@ binary.
   widget kinds and their components,
   floors and settings are `registry.ts`; today's page as data is
   `defaults.ts` (a desktop and a phone tree), which a first visit opens as
-  the third of three root tabs (da-u7vz8, `fresh` in `shell.ts`):
+  the third of four root tabs (da-u7vz8, da-uzi5x, `fresh` in `shell.ts`):
   `welcome`, a widget saying what datum is and how tabs and widgets are
-  handled, `setup`, the setup widget (da-rgyq8; `track` and `field` open it), and `collect`, that page; the one live store is
+  handled, `setup`, the setup widget (da-rgyq8; `track` and `field` open it), `collect`, that page, and `dayview`, the day strip alone; the one live store is
   `current.ts` (`layout` + `apply`), which the header's save/restore
   controls fill from the draft or the saved layout. `engine.ts`
   owns the epoch and routes a widget-bar press through whichever CLI widget is

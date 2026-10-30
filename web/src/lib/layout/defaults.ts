@@ -79,26 +79,23 @@ const legibly = (heights: number[]): number[] =>
 	heights.map((h) => h / heights.reduce((a, b) => a + b, 0));
 
 /**
- * The desktop: dayview / tail | nowview | stats / fields.
+ * The desktop: dayview over a row of tail | fields | nowview over stats.
  *
- * vividn, 2026-09-23 (da-ncsyn): «change the default desktop interface to be
- * more similar to the mobile interface, so commands along the bottom, next
- * row up can just be fields. In the second row, let's have tail, nowview,
- * and stats. Then dayview along the top». So it is `MOBILE_LAYOUT`'s four
- * rows with stats added to the second and the third reduced to fields
- * alone. The second row is a row of three side by side, not tabs: the
- * desktop has the width, and mobile's rows are splits for the reason he
- * gave there (da-hkjp) — so all three are visible by default. No `input`
- * pane, for the reason `MOBILE_LAYOUT` gives: the bottom bar is one.
+ * vividn, 2026-10-30 (da-uzi5x): «on desktop
+ * [   dayview         ] 1/3
+ * |tail |fields |[nowview]| 2/3
+ * |tail |       |[stats]  |
+ *  1/3     1/3     1/3
+ * with also a separate dayview tab». The shares are his, so they are written
+ * as he gave them and not through `legibly`, and the sweep in tree.test.mjs
+ * leaves this tree out; layout-desktop.test.mjs measures each pane against
+ * its legible box at six screens. Nowview over stats at a half each is a
+ * default of the bead's: he gave them no split.
  *
- * Every share is `legibly`'s: the strip's 85 (da-r0ydu), the row's max
- * (tail 116, nowview 122, stats 154) and fields 63. Across the row, their
- * legible WIDTHS (200, 160, 240), as mobile's fields | nowview pair is.
- *
- * The commands pane at the foot went in da-mwp4m. vividn, 2026-10-27:
- * «remove the command widget on the collect tab (it can remain a widget in
- * general)», and its room is the bar's output section's now, open above
- * the input (`--output-height`, routes/+layout.svelte).
+ * No `input` pane: the bottom bar is one, and the room of the commands pane
+ * da-mwp4m took away is the bar's output section's (`--output-height`,
+ * routes/+layout.svelte). vividn, 2026-10-27: «remove the command widget on
+ * the collect tab (it can remain a widget in general)».
  */
 export const DEFAULT_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -106,17 +103,19 @@ export const DEFAULT_LAYOUT: Layout = {
 	designedFor: 'desktop',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([85, 154, 63]), [
+		split('main', 'column', [1 / 3, 2 / 3], [
 			strip(),
 			holder(
 				'row',
-				split('glance', 'row', legibly([200, 160, 240]), [
+				split('glance', 'row', [1 / 3, 1 / 3, 1 / 3], [
 					widgetPane('tail', 'tail'),
-					widgetPane('nowview', 'nowview'),
-					widgetPane('stats', 'stats')
+					widgetPane('bar', 'widgetbar'),
+					holder(
+						'now',
+						split('now-stats', 'column', [1 / 2, 1 / 2], [widgetPane('nowview', 'nowview'), widgetPane('stats', 'stats')])
+					)
 				])
-			),
-			widgetPane('bar', 'widgetbar')
+			)
 		])
 	)
 };
@@ -155,98 +154,27 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
 
 /**
  * `mobile` (vividn, 2026-09-17: "the default one loaded when the site is
- * opened on a phone"): dayview / tail | a tiny nowview / fields beside a
- * nowview / commands, one column. The tiny nowview was the snapshot
- * (`history: '0'`) — each field's current state and no time axis — and
- * went in da-2hd21, leaving tail its row alone. His «input bar» is the
- * app's own bottom bar, which every layout already has: an `input` pane
- * here would draw the same command line twice, one above the other.
+ * opened on a phone"): tail / nowview / fields, one column, each the full
+ * width. His «input bar» is the app's own bottom bar, which every layout
+ * already has: an `input` pane here would draw the same command line twice,
+ * one above the other.
  *
- * vividn, 2026-09-21, on what it should be instead of what da-shzs built:
- * «decrease dayview height to be just 1 day / decrease fontsize of tail a
- * little bit / let's make the fields widget and nowview widget in the
- * third row a split rather than tabs so they're both visible by default».
- * All three are here (da-hkjp), and the two that are not just a number
- * are written down below because they were MEASURED, at the four screens
- * da-shzs measured: 390×844, 390×664 (Safari with its bars), 360×640 and
- * 412×563. The acceptance is da-shzs's: every command button whole at all
- * four.
+ * vividn, 2026-10-30 (da-uzi5x): «let's redesign the collect layout too
+ * on mobile:
+ * [tail] 1/3
+ * [nowview] 1/4
+ * [fields] 5/12
+ * then have a dayview tab be a whole tab». So the day strip is the `dayview`
+ * tab's now, beside this one. The shares are his, so they are written as he
+ * gave them and not through `legibly`, and the sweep in tree.test.mjs leaves
+ * this layout out. The tail keeps its smaller type (da-hkjp: «decrease
+ * fontsize of tail a little bit»).
  *
- * ⚑ ROW 3 IS A ROW, NOT A COLUMN — «fields BESIDE nowview». Measured: a
- * COLUMN split of the two does not fit 412×563 at ANY day height. Stacked,
- * their legible heights SUM (63 + 122 + a border = 193) where tabs took
- * their MAX (122), which puts 71px onto the root's legible minimum; the
- * shortest day the strip may draw (`MIN_DAY_HEIGHT`, panes.ts) gives back
- * only 45, and `main` does not scroll — its scrollHeight is its clientHeight
- * at every size — so the commands pane is not pushed down, it is CUT. At
- * 412×563 it measured 457…518 against a bottom bar starting at 516, and
- * that is the acceptance test failing. Side by side the row's legible
- * height is their max again, 122, exactly as the tabs' was, so the
- * column's arithmetic is the one da-shzs measured and only the strip's
- * share has moved. Their widths fit too: 160 + 160 + a border = 328,
- * inside a 360px phone.
- *
- * ⚑ EVERY SHARE HERE IS `legibly`'s AGAIN (da-r0ydu). It was not: da-hkjp
- * weighted the strip at a measured 59 instead of its legible 130, because
- * a day was a FIXED height inside a pane that is a PROPORTION — so the
- * strip showed the same NUMBER of days at every size, «exactly one day»
- * was the ~3px window between today's band showing whole (`todayBox`) and
- * yesterday's beginning to show, and the four screens' column heights
- * differ by 1.59× (734px at 390×844 against 453px at 412×563). No ratio
- * holds a 3px window across a 1.59× spread, so the number had to be
- * measured at one of them.
- *
- * The DAY follows the WIDGET now (`dayFilling`, panes.ts), so one day
- * fits at every size by construction and there is nothing left to tune.
- * The strip's floor moved with it — the shortest day it may draw, 85 with
- * its frame, where 130 was one day at 85px — and that floor is the weight
- * here, exactly as the other three are: the row max(tail 103, nowview
- * 122), row 3 max(fields 63, nowview 122), commands 63.
- *
- * ⚑ MEASURED AFTER THE CHANGE, AT THE FOUR SIZES, so it is a decision and
- * not a surprise. The strip's inner box is 141 / 102 / 97 / 80 px and the
- * day drawn in it 126 / 87 / 82 / 65 — today's band WHOLE at all four,
- * where da-hkjp's weight clipped it from the top at the three shorter
- * ones, and nothing of yesterday showing at any of them (since da-2hd21
- * a pinned today leaves a quarter of yesterday showing: 100 / 69 / 65 /
- * 51 of today and 25 / 17 / 16 / 13 of yesterday). The commands
- * pane is the thing this must not cost, and it does not: 114 / 85 / 81 /
- * 69 px against the 63 it needs, where da-hkjp measured 122 / 91 / 87 /
- * 74. It went DOWN and still clears, because the strip's floor fell 45px
- * (130 to 85) while its share of the column rose.
- *
- * vividn, 2026-10-15 (da-2hd21): «it should definitely be always
- * scrollable. default mobile collect view, let's make the dayview at the
- * top a little narrower, maybe half the height it is right now, and yes
- * show a little bit of yesterday … get rid of the nowview on the second
- * row, so just tail for now. decrease the height of the second row, and
- * the extra height from the shortening of row 1 and 2 give to row 3». So
- * the strip's 85 was 48, about half its box at 390×844; row 2 is the
- * tail alone at its legible height in small type and its frame (103,
- * registry.ts) where nowview's 122 held it; row 3 took the 56 the two
- * gave up; the commands kept their 63, and the column's total, so their
- * pixels too, until da-mwp4m took the pane away (below). Half left the three shorter phones a strip of 52 / 49 / 40
- * px, under the shortest day it draws (40), its ruler and the seam, so
- * today was cut and no yesterday showed. vividn, 2026-10-15 (da-frewq),
- * «B»: about 70% of the old height instead, so the sliver shows on every
- * phone. MEASURED, the least share that does it at 412×563 is 70 (60, a
- * literal 70% of 85, gives that phone 53 px and no yesterday): a strip of
- * 114 / 82 / 77 / 64 px, about 80% of the old 141 / 102 / 97 / 80, drawing
- * today whole at 77 / 51 / 47 / 40 and 18 / 12 / 12 / 5 px of yesterday;
- * row 3 gives back the 22, 178 − 22 = 156. These four are NOT
- * `legibly`'s, and the sweep in tree.test.mjs leaves this layout out:
- * the strip is below its legible box by vividn's choice.
- * A pinned today leaves a quarter of yesterday over it (`dayUnderSliver`),
- * and in a box too short for both today gives way from the top, so the
- * strip scrolls into the past at every size.
- *
- * The commands pane at the foot went in da-mwp4m. vividn, 2026-10-27:
- * «remove the command widget on the collect tab (it can remain a widget in
- * general)», and «make the output section open by default … take up a bit
- * more room, basically where the command widget is now by default». So
- * the bar's output section, above the input, has its room
- * (`--output-height`), and the three rows above keep their shares of
- * what is left.
+ * vividn, 2026-10-27: «remove the command widget on the collect tab (it can
+ * remain a widget in general)», and «make the output section open by default
+ * … take up a bit more room, basically where the command widget is now by
+ * default». So the bar's output section, above the input, has that room
+ * (`--output-height`), and the three rows share what is left.
  */
 export const MOBILE_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -254,19 +182,10 @@ export const MOBILE_LAYOUT: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([70, 103, 156]), [
-			strip(),
+		split('main', 'column', [1 / 3, 1 / 4, 5 / 12], [
 			widgetPane('tail', 'tail', { type: 'small' }),
-			holder(
-				'fields',
-				// `legibly` of their legible WIDTHS, which is a half each
-				// today — written as the rule rather than as 0.5, so it
-				// follows if either kind's floor moves.
-				split('pair', 'row', legibly([160, 160]), [
-					widgetPane('bar', 'widgetbar'),
-					widgetPane('nowview', 'nowview')
-				])
-			)
+			widgetPane('nowview', 'nowview'),
+			widgetPane('bar', 'widgetbar')
 		])
 	)
 };
@@ -298,9 +217,9 @@ export const defaultLayoutFor = (phone: boolean): Layout =>
 // per widget kind that is just that widget, named as its pane is titled
 // (`nowview`, `tail`, `stats`, …), so
 // `datum.day/nowview` is the nowview alone. A saved layout of the same
-// name shadows a built-in. And the three tabs a first visit opens
-// (da-u7vz8, `fresh` in shell.ts): `welcome` and `setup`, kinds' own; and
-// `collect`. vividn's
+// name shadows a built-in. And the tabs a first visit opens (da-u7vz8,
+// `fresh` in shell.ts): `welcome` and `setup`, kinds' own; `collect`; and
+// `dayview`, the day strip alone (da-uzi5x). vividn's
 // prebuilt layouts (collect / check / analyze) are his to design: one
 // object each, added to `BUILTIN` below.
 
@@ -382,7 +301,8 @@ const NEW_DEFAULTS: string[] = [
 	'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; setup, where you choose what to track; and collect, the page you log on.',
 	"On a phone, collect's day strip is half as tall and shows a sliver of yesterday to scroll up into, the tail has its row alone, and the fields and nowview below it have the room.",
 	"On a phone, collect's day strip is a little taller again, so the sliver of yesterday shows on shorter phones too.",
-	"collect has no command pane now: the command line's output stands open above it, where the commands were. The commands are still a widget to add."
+	"collect has no command pane now: the command line's output stands open above it, where the commands were. The commands are still a widget to add.",
+	"collect is laid out anew. On a phone: the tail, the nowview and the fields, one under the other, and no day strip. On a desktop: the day strip over the tail, the fields, and the nowview over the stats. And a new tab, dayview, is the day strip alone."
 ];
 
 /** `NEW_DEFAULTS`, or the web suite's in its place, handed over as `pinned`'s tree is. */

@@ -17,7 +17,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP } from './support/layout.mjs';
+import { DESKTOP, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -44,7 +44,8 @@ const FIRST_VISIT = [
 	['welcome', 'setup', 'collect'],
 	['welcome', 'setup', 'collect'],
 	['welcome', 'setup', 'collect'],
-	['welcome', 'setup', 'collect']
+	['welcome', 'setup', 'collect'],
+	['welcome', 'setup', 'collect', 'dayview']
 ];
 
 /** From the next load on, datum has shipped `news`. */
@@ -119,6 +120,70 @@ describe('a new default is offered', () => {
 			await app.reload();
 			assert.equal(await offer(page).count(), 0);
 		}, { ...DESKTOP, home: null, prepare: (context) => ship(context, [FIRST, SECOND]) });
+	});
+});
+
+// The redesign of da-uzi5x, on datum's OWN list: a device that opened
+// `collect` before it, which had seen the four sentences before its own.
+describe('the new collect and the dayview tab, to a device already here', () => {
+	const BEFORE = ['welcome', 'setup', 'collect'];
+	const COLLECT = ['dayview', 'tail', 'fields', 'nowview', 'stats'];
+	const THEIRS = {
+		id: 'mine',
+		tabs: [{ id: 'mine-tab', content: { id: 'mine-w', kind: 'stats', settings: {} } }],
+		active: 0,
+		bar: { edge: 'top', align: 'start' }
+	};
+	const here = (context) =>
+		context.addInitScript(
+			([key, tabs]) => {
+				if (localStorage.getItem(key) !== null) return;
+				localStorage.setItem(key, '4');
+				localStorage.setItem('datum.layout.root.v1', JSON.stringify({ names: tabs, active: 2 }));
+			},
+			[SEEN, BEFORE]
+		);
+	const device = { ...DESKTOP, home: null, desk: null, prepare: here };
+	const answer = (page, name) => offer(page).getByRole('button', { name, exact: true }).click();
+
+	test('«Use the new layout» gives it the new trees and the tab, a collect it saved included', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const text = await offer(page).locator('p').innerText();
+			assert.ok(text.includes('dayview') && text.includes('collect'), text);
+			// What «Keep mine» cannot keep, said before it is chosen (vremya on #1444).
+			assert.ok(text.includes('never changed'), text);
+			await answer(page, KEEP);
+			await offer(page).waitFor({ state: 'detached' });
+			await page.evaluate((root) => window.datum.layouts.saveLayout({ version: 1, name: 'collect', root }), THEIRS);
+			await page.evaluate((key) => localStorage.setItem(key, '4'), SEEN);
+			await app.reload();
+			await answer(page, USE);
+			await until(() => rootNames(page), (names) => names.join() === FIRST_VISIT.at(-1).join());
+			await page.evaluate(() => window.datum.shell.open('collect'));
+			await until(() => titles(page), (t) => t.join() === COLLECT.join());
+			await page.evaluate(() => window.datum.shell.open('dayview'));
+			await until(() => titles(page), (t) => t.join() === 'dayview');
+		}, device);
+	});
+
+	test('«Keep mine» keeps its tabs and the collect it saved; one it never changed follows the shipped tree', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await answer(page, KEEP);
+			await offer(page).waitFor({ state: 'detached' });
+			assert.deepEqual(await rootNames(page), BEFORE);
+			// ⚑ Nothing pins a tree no one changed: no save or draft stands
+			// between the name and defaults.ts, so this is what every shipped
+			// change to a tree has done, the offer or not.
+			assert.deepEqual(await titles(page), COLLECT);
+
+			await page.evaluate((root) => window.datum.layouts.saveLayout({ version: 1, name: 'collect', root }), THEIRS);
+			await app.reload();
+			assert.equal(await offer(page).count(), 0);
+			assert.deepEqual(await rootNames(page), BEFORE);
+			await until(() => titles(page), (t) => t.join() === 'stats');
+		}, device);
 	});
 });
 

@@ -18,7 +18,7 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const ON_SETUP = { names: ['welcome', 'setup', 'collect'], active: 1 };
+const ON_SETUP = { names: ['welcome', 'setup', 'collect', 'dayview'], active: 1 };
 const FRESH = { home: ON_SETUP, desk: null, tour: true };
 const PHONE = { ...FRESH, viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true } };
 const DESKTOP = { ...FRESH, viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' };
@@ -51,7 +51,7 @@ describe('the first field\'s tour', () => {
 		['a phone', PHONE, 'coffee', 'occur', true],
 		['a desktop', DESKTOP, 'sleep', 'start', false]
 	])
-		test(`${what}: the first field's Save tours its button on collect, the nowview and the dayview; the second's shows nothing`, async () => {
+		test(`${what}: the first field's Save tours its button on collect, the nowview and any dayview there; the second's shows nothing`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				await page.locator(FIELD_FORM).waitFor();
@@ -77,9 +77,12 @@ describe('the first field\'s tour', () => {
 				await app.idle();
 				assert.deepEqual(await rows(), saved);
 
-				// 3. «next»: the dayview, and «done» or Escape ends it.
-				await page.locator('.tour button.next').click();
-				await until(() => stop(page, '[data-widget="daystrip"] > section'), (s) => s.round && !!s.say);
+				// 3. «next»: the dayview, where collect draws one (a phone's has
+				// its own tab, da-uzi5x), and «done» or Escape ends it.
+				if (!pulse) {
+					await page.locator('.tour button.next').click();
+					await until(() => stop(page, '[data-widget="daystrip"] > section'), (s) => s.round && !!s.say);
+				}
 				assert.equal((await page.locator('.tour button.next').innerText()).trim(), 'done');
 				if (pulse) await page.locator('.tour button.next').click();
 				else await page.keyboard.press('Escape');

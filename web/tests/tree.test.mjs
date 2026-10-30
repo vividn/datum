@@ -725,12 +725,14 @@ describe('snapsOfKind', () => {
 		// following the widget, and every share of its column is `legibly`'s
 		// again — which is the claim this test is.
 		// …until da-2hd21, where vividn halved its strip and gave row 3 the
-		// room: its shares are his, below the strip's legible box.
-		const { DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE } = await import('../src/lib/layout/defaults.ts');
+		// room: its shares are his, below the strip's legible box. The desktop
+		// tree's are his too since da-uzi5x, and layout-desktop.test.mjs
+		// measures them against the legible boxes.
+		const { DEFAULT_LAYOUT_MOBILE } = await import('../src/lib/layout/defaults.ts');
 		const chrome = (pane) => ('children' in pane.tabs[pane.active].content ? { width: 0, height: 0 } : { width: 2, height: 14 });
 		const columns = (pane) =>
 			pane.tabs.flatMap(({ content }) => ('children' in content ? [content, ...content.children.flatMap(columns)] : []));
-		for (const layout of [DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE]) {
+		for (const layout of [DEFAULT_LAYOUT_MOBILE]) {
 			for (const split of columns(layout.root).filter((s) => s.direction === 'column')) {
 				const shared = split.children.filter((c) => !KINDS[c.tabs[c.active].content.kind]?.fit);
 				const want = shared.map(

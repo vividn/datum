@@ -193,7 +193,6 @@ test('a fresh phone: the most used field is whole on open, and the fields start 
 			const { page } = app;
 			await aligned(app, [...SMALL, ...Array.from({ length: 6 }, (_, i) => `occur crowd7 -t -${i + 1}`)]);
 			const { bar, fields } = await boxes(page);
-			assert.ok(bar.width < 250, `the fields pane is not the half-width one: ${bar.width}px`);
 			const most = fields.crowd7;
 			assert.ok(most.left >= -0.5 && most.right <= bar.width + 0.5, `crowd7 at ${most.left}–${most.right} of ${bar.width}`);
 			assert.ok(Math.min(...Object.values(fields).map((r) => r.left)) <= 0.5, 'no field starts at the left edge');

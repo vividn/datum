@@ -99,19 +99,22 @@ describe('normal mode', () => {
 });
 
 // vremya on #764 (da-hibn3): the (?) took the bar's last 13px and put
-// `collect`'s × half under the `+`. A first visit's three tabs, each with its
-// ×, fit a phone in layout mode — 390 wide, and 360, a common Android width,
-// where they once measured 299 of 284px (da-yxfem) — so the next control
-// added to the root bar finds out here.
+// `collect`'s × half under the `+`. The strip scrolls once a first visit's
+// tabs, each with its ×, pass a phone's width, as its four do in layout mode
+// (da-uzi5x, vividn's dayview tab): at 390 wide, and 360, a common Android
+// width, every × is reachable and none stands under the `+`.
 describe('on a phone', () => {
 	for (const width of [390, 360]) {
-		test(`${width} wide: a first visit's three tabs and their × fit the strip in layout mode`, async () => {
+		test(`${width} wide: a first visit's four tabs and their × are all reached in the strip in layout mode`, async (t) => {
 			await withApp(async ({ page }) => {
+				const rest = await page.locator('.root-bar .tabs').evaluate((el) => [el.scrollWidth, el.clientWidth]);
+				t.diagnostic(`${width} wide, out of layout mode: the strip is ${rest[0]} of ${rest[1]}px`);
 				await enterLayoutMode(page);
 				const at = await page.locator('.root-bar .tabs').evaluate((el) => {
 					const strip = el.getBoundingClientRect();
 					const out = [...el.querySelectorAll('[role="tab"], .tab-close')]
 						.filter((b) => {
+							b.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'instant' });
 							const r = b.getBoundingClientRect();
 							return r.left < strip.left - 0.5 || r.right > strip.right + 0.5;
 						})
@@ -124,10 +127,10 @@ describe('on a phone', () => {
 						client: el.clientWidth
 					};
 				});
-				assert.deepEqual(at.names, ['welcome', 'setup', 'collect']);
-				assert.equal(at.closes, 3);
-				assert.deepEqual(at.out, [], `outside the strip's ${at.client}px`);
-				assert.ok(at.scroll <= at.client, `the strip is ${at.scroll} of ${at.client}px`);
+				assert.deepEqual(at.names, ['welcome', 'setup', 'collect', 'dayview']);
+				assert.equal(at.closes, 4);
+				assert.deepEqual(at.out, [], `out of reach of the strip's ${at.client}px`);
+				t.diagnostic(`${width} wide: the strip is ${at.scroll} of ${at.client}px`);
 			}, { ...PHONE, viewport: { width, height: 640 }, home: null });
 		});
 	}
