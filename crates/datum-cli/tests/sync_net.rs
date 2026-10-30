@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use tempfile::TempDir;
 
+mod closing;
+
 /// A copy's UDP port, and the claim that holds it for as long as the copy
 /// lives (da-nuxm6). A port read off a probe bound to `:0` is free the moment
 /// the probe drops, and any bind on the box to `:0` — another test's probe, a

@@ -428,6 +428,12 @@ pipe verify --ordered`), kept until an entry changes (`sync_state_hashes`,
 da-4be5x). A round reads each endpoint's ops from its `since` on, by the
 primary key, and no other op.
 
+A session that gives up says why as it closes (da-s9rwd): `timed out` or
+`failed`, so the other copy reads «closed by peer: timed out (code 0)» and not
+«closed by peer: 0»; on a kept connection a reset's code says it, which reads
+«the other copy timed out». Either stays a failure on both copies, retried as
+any is: the session did not finish, whichever side stopped waiting.
+
 ### Who dials whom
 
 Bare `sync` on a copy a `sync run` serves dials nothing itself: it connects to

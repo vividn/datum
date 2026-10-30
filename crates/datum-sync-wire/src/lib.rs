@@ -1211,14 +1211,73 @@ const CLOSED_BUSY: &[u8] = b"busy";
 /// the dialer resets its stream with it, and leaves the connection open.
 const RESET_BUSY: VarInt = VarInt::from_u32(1);
 
+/// The reasons a session that gave up closes with, so the peer reads why
+/// and not «closed by peer: 0» (da-s9rwd). Only the kind: the rest is in the
+/// log and `sync status` of the copy that gave up.
+const CLOSED_TIMED_OUT: &[u8] = b"timed out";
+const CLOSED_FAILED: &[u8] = b"failed";
+
+/// Why this copy gives up on a session, for the peer to read.
+fn gave_up(e: &anyhow::Error) -> &'static [u8] {
+    match failure(e) {
+        Some(Failure::TimedOut) => CLOSED_TIMED_OUT,
+        _ => CLOSED_FAILED,
+    }
+}
+
+/// A reason on a kept connection, where a stream's reset carries a code and
+/// no words.
+fn reset_code(reason: &[u8]) -> VarInt {
+    match reason {
+        CLOSED_BUSY => RESET_BUSY,
+        CLOSED_TIMED_OUT => VarInt::from_u32(2),
+        CLOSED_FAILED => VarInt::from_u32(3),
+        _ => VarInt::from_u32(0),
+    }
+}
+
+/// End a session early: on a kept connection the stream alone.
+fn end(conn: &Connection, kept: bool, s: &mut SendStream, r: &mut RecvStream, reason: &[u8]) {
+    match kept {
+        true => {
+            let _ = s.reset(reset_code(reason));
+            let _ = r.stop(reset_code(reason));
+        }
+        false => conn.close(0u32.into(), reason),
+    }
+}
+
+/// The code the peer reset `e`'s stream with.
+fn reset_of(e: &anyhow::Error) -> Option<VarInt> {
+    e.chain().find_map(|e| match e.downcast_ref() {
+        Some(ReadExactError::ReadError(ReadError::Reset(c))) => Some(*c),
+        _ => match e.downcast_ref() {
+            Some(WriteError::Stopped(c)) => Some(*c),
+            _ => None,
+        },
+    })
+}
+
 /// Whether `e` is the peer closing with [`CLOSED_BUSY`], or its stream with
 /// [`RESET_BUSY`].
 fn closed_busy(e: &anyhow::Error) -> bool {
-    e.chain().any(|e| {
-        matches!(e.downcast_ref(), Some(ConnectionError::ApplicationClosed(c)) if c.reason == CLOSED_BUSY)
-            || matches!(e.downcast_ref(), Some(ReadExactError::ReadError(ReadError::Reset(c))) if *c == RESET_BUSY)
-            || matches!(e.downcast_ref(), Some(WriteError::Stopped(c)) if *c == RESET_BUSY)
-    })
+    reset_of(e) == Some(RESET_BUSY)
+        || e.chain().any(|e| {
+            matches!(e.downcast_ref(), Some(ConnectionError::ApplicationClosed(c)) if c.reason == CLOSED_BUSY)
+        })
+}
+
+/// A session lost, where a reset's code says why the peer gave up.
+fn lost(rep: Report, e: anyhow::Error) -> anyhow::Error {
+    let code = reset_of(&e);
+    let why = [CLOSED_TIMED_OUT, CLOSED_FAILED]
+        .into_iter()
+        .find(|why| Some(reset_code(why)) == code);
+    let e = match why {
+        Some(why) => e.context(format!("the other copy {}", String::from_utf8_lossy(why))),
+        None => e,
+    };
+    Lost(rep, e).into()
 }
 
 /// Why a copy applying another session's ops refuses one more.
@@ -1310,25 +1369,28 @@ async fn session(
         match opened {
             Ok((s, r, reply)) => break (conn, using, s, r, reply),
             Err(_) if using.is_some() => conn.close(0u32.into(), b"stale"),
-            Err(e) => return Err(e),
+            Err(e) => {
+                conn.close(0u32.into(), gave_up(&e));
+                return Err(e);
+            }
         }
     };
-    // How a session ends early: on a kept connection the stream alone.
-    let end = |s: &mut SendStream, r: &mut RecvStream, reason: &[u8]| match using {
-        Some(_) => {
-            let code = if reason == CLOSED_BUSY {
-                RESET_BUSY
-            } else {
-                VarInt::from_u32(0)
-            };
-            let _ = s.reset(code);
-            let _ = r.stop(code);
-        }
-        None => conn.close(0u32.into(), reason),
-    };
+    let kept = using.is_some();
+    let end =
+        |s: &mut SendStream, r: &mut RecvStream, reason: &[u8]| end(&conn, kept, s, r, reason);
     if hello.proves && matches!(reply, Reply::Prove) {
-        put_json(&mut s, &store.records().await?).await?;
-        reply = get_json(&mut r, MAX_RECORDS).await?;
+        let proved = async {
+            put_json(&mut s, &store.records().await?).await?;
+            get_json(&mut r, MAX_RECORDS).await
+        }
+        .await;
+        reply = match proved {
+            Ok(reply) => reply,
+            Err(e) => {
+                end(&mut s, &mut r, gave_up(&e));
+                return Err(e);
+            }
+        };
     }
     // Refused, with the chain's order that this copy delete itself: it
     // answers whether it did, and reads on until the member has read it.
@@ -1441,8 +1503,10 @@ async fn session(
     rep.sums = sums;
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
     let gave = done.as_ref().is_err_and(|e| store.gives_way(e));
-    if gave {
-        end(&mut s, &mut r, CLOSED_BUSY);
+    match &done {
+        Err(_) if gave => end(&mut s, &mut r, CLOSED_BUSY),
+        Err(e) => end(&mut s, &mut r, gave_up(e)),
+        Ok(()) => {}
     }
     drop(carried);
     if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
@@ -1458,7 +1522,7 @@ async fn session(
     match (&using, keeps && done.is_ok()) {
         (Some(_), _) => {}
         (None, true) => keep(ep, &conn),
-        (None, false) if !gave => conn.close(0u32.into(), b"done"),
+        (None, false) if done.is_ok() => conn.close(0u32.into(), b"done"),
         (None, false) => {}
     }
     match done {
@@ -1472,7 +1536,7 @@ async fn session(
             let why = format!("{}: {e:#}", rep.label);
             Err(Failed(Failure::Refused(Why::Busy), why).into())
         }
-        Err(e) => Err(Lost(rep, e).into()),
+        Err(e) => Err(lost(rep, e)),
     }
 }
 
@@ -1784,6 +1848,21 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Res
         Arriving::Dialed(incoming) => (accepted(*incoming).await?, None),
         Arriving::Kept(using, s, r) => (using.conn.clone(), Some((using, s, r))),
     };
+    let fresh = kept.is_none();
+    let rep = answer(store, ep, &conn, kept).await;
+    // No-op where a path already closed it, or the peer did.
+    if let (true, Err(e)) = (fresh, &rep) {
+        conn.close(0u32.into(), gave_up(e));
+    }
+    rep
+}
+
+async fn answer(
+    store: &impl Store,
+    ep: &Endpoint,
+    conn: &Connection,
+    kept: Option<(Using, SendStream, RecvStream)>,
+) -> Result<Report> {
     let id = conn.remote_id().to_string();
     // Taken with the mark, so the peer's own dial past its handshake
     // (`carries`) and this session (`serves`) never both go on (da-mghh3).
@@ -1959,7 +2038,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Res
             match hello.keeps {
                 true => {
                     let _ = timeout(Duration::from_secs(5), r.read_to_end(0)).await;
-                    keep(ep, &conn);
+                    keep(ep, conn);
                 }
                 false => drop(timeout(Duration::from_secs(5), conn.closed()).await),
             }
@@ -1969,19 +2048,16 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, arriving: Arriving) -> Res
             let why = format!("{}: {e:#}", rep.label);
             return Err(Failed(Failure::Refused(Why::Busy), why).into());
         }
-        // As the dialer does, on a kept connection its stream alone.
+        // As the dialer does.
         Err(e) if store.gives_way(&e) => {
-            match using {
-                Some(_) => {
-                    let _ = s.reset(RESET_BUSY);
-                    let _ = r.stop(RESET_BUSY);
-                }
-                None => conn.close(0u32.into(), CLOSED_BUSY),
-            }
+            end(conn, using.is_some(), &mut s, &mut r, CLOSED_BUSY);
             let why = format!("{} ({})", rep.label, short(&id));
             return Err(e.context(Failed(Failure::Refused(Why::Busy), why)));
         }
-        Err(e) => Err(Lost(rep, e).into()),
+        Err(e) => {
+            end(conn, using.is_some(), &mut s, &mut r, gave_up(&e));
+            Err(lost(rep, e))
+        }
     };
     record(store, &id, &done).await;
     done
