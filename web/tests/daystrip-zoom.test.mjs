@@ -21,7 +21,11 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const phone = sharedApp({ ...PHONE, clock: todayAt(12) });
+// A picture held past a lift waits a second here, not a task: so a test
+// reads inside the wait on every runner, and a release that held the old
+// picture at the new window's map fails (da-mdfkf, da-49ssb).
+const holdLift = (context) => context.addInitScript(() => localStorage.setItem('datum.liftHoldMs', '1000'));
+const phone = sharedApp({ ...PHONE, clock: todayAt(12), prepare: holdLift });
 
 const TODAY = '.band[data-days-ago="0"]';
 
@@ -183,7 +187,7 @@ test('a pinch down the strip grows a dot as the day drawn at that height has it'
 // the tile lands on the screen — the block's own screen CTM times the
 // pattern's transform — for the stripes and for the hatch of the hour a
 // clock change skipped (Berlin, 2026-03-29).
-const dst = sharedApp({ ...PHONE, timezone: 'Europe/Berlin', clock: Date.UTC(2026, 2, 29, 12) });
+const dst = sharedApp({ ...PHONE, timezone: 'Europe/Berlin', clock: Date.UTC(2026, 2, 29, 12), prepare: holdLift });
 
 /** How the stripes' and the hatch's tiles lie on the screen, as a 2×2, and the block's width. */
 const tiles = ({ page }) =>

@@ -324,6 +324,8 @@ describe('the time cursor', () => {
 			const { page } = app;
 			const tea = page.locator(`${TODAY} .field[data-field="tea"]`);
 			const at = await spot(page, TODAY, 0.5);
+			// The held redraw waits seconds past the lift, not a task (da-49ssb).
+			await page.evaluate(() => localStorage.setItem('datum.liftHoldMs', '3000'));
 			await page.mouse.move(at.x, at.y);
 			await page.mouse.down();
 			const logged = await app.run(['occur', 'tea', '-t', '11:00']);
@@ -331,6 +333,9 @@ describe('the time cursor', () => {
 			await app.redraw();
 			assert.equal(await tea.count(), 0, 'the day was redrawn under the press');
 			await page.mouse.up();
+			// A press that did not travel waits for its click: not drawn at the lift.
+			assert.equal(await tea.count(), 0, 'the day was redrawn at the lift');
+			await page.evaluate(() => localStorage.removeItem('datum.liftHoldMs'));
 
 			const text = await pillText(page);
 			assert.match(text ?? '', /^-t \d\d:\d\d$/, `the pill: ${text}`);

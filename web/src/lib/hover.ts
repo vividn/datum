@@ -702,6 +702,15 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	 */
 	let pressed = false;
 	let late: PictureOf | null = null;
+	// A task, or what a test says in `datum.liftHoldMs`: a runner whose next
+	// read lands inside the task then reads inside it every run (da-49ssb).
+	const liftHold = () => {
+		try {
+			return Number(localStorage.getItem('datum.liftHoldMs')) || 0;
+		} catch {
+			return 0;
+		}
+	};
 	let lifting: ReturnType<typeof setTimeout> | undefined;
 	const hold = (e: PointerEvent) => {
 		// Only the press a click comes of: a right press's lift may go to
@@ -719,7 +728,7 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 			late = null;
 		};
 		if (pressTraveled()) release();
-		else lifting = setTimeout(release);
+		else lifting = setTimeout(release, liftHold());
 	};
 	const LIFTS = ['pointerup', 'pointercancel', 'contextmenu'];
 
