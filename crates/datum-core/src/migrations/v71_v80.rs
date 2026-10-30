@@ -114,3 +114,38 @@ pub(super) fn down_74_to_73_check_kept(conn: &Connection) -> Result<()> {
     )?;
     Ok(())
 }
+
+/// da-l6roh: `entries_field_deciding`, the rows a state read walks back
+/// through, and `entries_field_blocks` without the moments, which took the
+/// places of the read's lookback and lookahead though they decide nothing.
+pub(super) fn m74_to_75_field_deciding_index(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "entries")? {
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS entries_field_deciding
+                 ON entries (field, occur_time, slug)
+                 WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+                   AND verb <> 'point';
+             DROP INDEX IF EXISTS entries_field_blocks;
+             CREATE INDEX entries_field_blocks
+                 ON entries (field, occur_time, slug)
+                 WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+                   AND dur IS NOT NULL
+                   AND verb <> 'point';",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v74→v75.
+pub(super) fn down_75_to_74_field_deciding_index(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entries_field_deciding;
+         DROP INDEX IF EXISTS entries_field_blocks;
+         CREATE INDEX IF NOT EXISTS entries_field_blocks
+             ON entries (field, occur_time, slug)
+             WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+               AND dur IS NOT NULL
+               AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));",
+    )?;
+    Ok(())
+}

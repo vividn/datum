@@ -297,14 +297,16 @@ fn normalize_object(obj: &Map<String, Value>) -> Value {
 /// block's stored `occur` is its END, so the row that covers `at` can sit
 /// in `at`'s future; the nearest few forward blocks are the only ones
 /// whose span can reach back over it (overlapping blocks are an integrity
-/// warning, not a shape the reader has to unravel).
+/// warning, not a shape the reader has to unravel). A moment is no block:
+/// it spans nothing, so it takes no place here (da-l6roh).
 pub const SPAN_LOOKAHEAD: usize = 8;
 
 /// How many rows a state read may walk back through to find the state a
 /// block handed the field back to. Each completed block immediately
-/// preceding the read consumes one; a real ledger never stacks anywhere
-/// near this many back to back, and past the limit the read reports "no
-/// state" rather than inventing one.
+/// preceding the read consumes one, and a moment or an occur none, as they
+/// never decide a state (da-l6roh); a real ledger never stacks anywhere
+/// near this many blocks back to back, and past the limit the read reports
+/// "no state" rather than inventing one.
 pub const RESUME_LOOKBACK: usize = 64;
 
 /// SQL for [`StateRow::is_occur_dot`]. The depth-limited state reads leave
@@ -314,6 +316,13 @@ pub const RESUME_LOOKBACK: usize = 64;
 /// The partial index `entries_field_state` spells it too, and SQLite uses
 /// that index only while the two spellings match (da-asgt4).
 pub(crate) const OCCUR_DOT_SQL: &str = "(verb = 'point' AND (state IS NULL OR state = 'true'))";
+
+/// SQL for a row that can decide a state, which is what a read walks back
+/// and looks ahead through: no point does, occur dot
+/// ([`StateRow::is_occur_dot`]) or moment ([`StateRow::is_moment_state`]). The partial
+/// indexes `entries_field_deciding` and `entries_field_blocks` spell it too,
+/// and SQLite uses them only while the spellings match (da-l6roh).
+pub(crate) const DECIDES_STATE_SQL: &str = "verb <> 'point'";
 
 /// One state-bearing row, in as much of it as the oracle reads. The
 /// input of [`resolve_effective`], so `now` (which holds whole
@@ -581,9 +590,9 @@ fn effective_state(row: &StateRow, at: DateTime<Utc>) -> Value {
 /// of one per probe. It decides nothing: every probe hands
 /// [`resolve_effective`] the SAME window of rows the SQL read behind
 /// [`crate::db::Db::state_at`] selects (the newest row at or before the
-/// probe, [`RESUME_LOOKBACK`] of them when that one hands the field back,
-/// and the [`SPAN_LOOKAHEAD`] oldest blocks stored after it, occur dots
-/// aside; then, if that says IGNORED, the first dot after it), so the two
+/// probe, the [`RESUME_LOOKBACK`] newest that can decide a state when that
+/// one hands the field back, and the [`SPAN_LOOKAHEAD`] oldest blocks stored
+/// after it; then, if that says IGNORED, the first dot after it), so the two
 /// fetches cannot answer differently.
 #[derive(Default, Debug, Clone)]
 pub struct FieldStateRows {
@@ -593,8 +602,11 @@ pub struct FieldStateRows {
     rows: Vec<StateRow>,
     /// The occur dots ([`StateRow::is_occur_dot`]), oldest first.
     dots: Vec<StateRow>,
-    /// Where in `rows` the blocks are, the rows with a `dur`, so a read
-    /// looks ahead through those alone (da-u65pa).
+    /// Where in `rows` the rows that can decide a state are, every one but
+    /// the moments, so a read walks back through those alone (da-l6roh).
+    deciding: Vec<usize>,
+    /// Where in `rows` the blocks are, the deciding rows with a `dur`, so a
+    /// read looks ahead through those alone (da-u65pa).
     blocks: Vec<usize>,
 }
 
@@ -641,8 +653,18 @@ impl FieldStateRows {
         let (mut dots, rows): (Vec<_>, Vec<_>) =
             newest_first.into_iter().partition(StateRow::is_occur_dot);
         dots.reverse();
-        let blocks = (0..rows.len()).filter(|&i| rows[i].dur.is_some()).collect();
-        FieldStateRows { rows, dots, blocks }
+        let deciding: Vec<usize> = (0..rows.len())
+            .filter(|&i| !rows[i].is_moment_state())
+            .collect();
+        let blocks = (deciding.iter().copied())
+            .filter(|&i| rows[i].dur.is_some())
+            .collect();
+        FieldStateRows {
+            rows,
+            dots,
+            deciding,
+            blocks,
+        }
     }
 
     /// Every state-participating row of `field`.
@@ -678,7 +700,7 @@ impl FieldStateRows {
     /// [`Self::load`] for a reader that asks about `[from, until]` and
     /// nothing else ([`Self::changes_between`]): the rows stored in it;
     /// after it, the [`SPAN_LOOKAHEAD`] oldest blocks; before it, the
-    /// newest row that is not an occur dot ([`RESUME_LOOKBACK`] of them
+    /// newest row that can decide a state ([`RESUME_LOOKBACK`] of them
     /// when a block among the rows can hand the field back), the dots
     /// after the earliest instant any of those rows can have taken effect,
     /// and — when that is all its history — the field's first dot. That
@@ -734,15 +756,15 @@ impl FieldStateRows {
         let last = |n: usize| format!("{newest} LIMIT {n}");
         let (lo, hi) = (from.to_rfc3339(), until.to_rfc3339());
 
-        // Blocks, as `window` reads them: an occur's MOMENT is not one.
-        let after = format!("AND occur_time > ?2 AND dur IS NOT NULL AND NOT {OCCUR_DOT_SQL}");
+        // Blocks, as `window` reads them: a MOMENT is not one.
+        let after = format!("AND occur_time > ?2 AND dur IS NOT NULL AND {DECIDES_STATE_SQL}");
         let mut rows = read(&after, &first(SPAN_LOOKAHEAD), &[&hi])?;
         rows.reverse();
         let within = "AND occur_time >= ?2 AND occur_time <= ?3";
         rows.extend(read(within, newest, &[&lo, &hi])?);
         // As deep as the SQL read goes: one row, or RESUME_LOOKBACK when
         // the row a probe lands on can be a block handing the field back.
-        let before = format!("AND occur_time < ?2 AND NOT {OCCUR_DOT_SQL}");
+        let before = format!("AND occur_time < ?2 AND {DECIDES_STATE_SQL}");
         let mut depth = 1;
         let mut older = read(&before, &last(depth), &[&lo])?;
         let deep = |r: &StateRow| r.hands_field_back(DateTime::<Utc>::MAX_UTC);
@@ -807,7 +829,12 @@ impl FieldStateRows {
             WALKED.with(|n| n.set(n.get() + 1));
         };
         let split = self.rows.partition_point(|r| r.occur > Some(at));
-        let past = self.rows[split..].iter().inspect(walked).filter(kept);
+        let at_or_before = self.deciding.partition_point(|&i| i < split);
+        let past = self.deciding[at_or_before..]
+            .iter()
+            .map(|&i| &self.rows[i])
+            .inspect(walked)
+            .filter(kept);
         let deep = past.clone().next().is_some_and(|r| r.hands_field_back(at));
         let mut out: Vec<&StateRow> = past.take(if deep { RESUME_LOOKBACK } else { 1 }).collect();
         let newer = self.blocks.partition_point(|&i| i < split);

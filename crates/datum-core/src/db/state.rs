@@ -90,7 +90,7 @@ impl Db {
         // of the pre-da-phoe cost. A field whose newest row is a block
         // that has already handed the field back needs the row behind
         // it, so those fields (only) are re-read to depth.
-        let mut rows = self.state_rows_at(fields, t, 1)?;
+        let mut rows = self.state_rows_at(fields, t, false)?;
         let deep: Vec<&str> = fields
             .iter()
             .copied()
@@ -101,7 +101,7 @@ impl Db {
             })
             .collect();
         if !deep.is_empty() {
-            rows.extend(self.state_rows_at(&deep, t, crate::state::RESUME_LOOKBACK)?);
+            rows.extend(self.state_rows_at(&deep, t, true)?);
         }
         // The reads leave occur dots out; a field an occur moves (IGNORED,
         // or no state at all — a field of nothing but dots included) needs
@@ -151,9 +151,10 @@ impl Db {
         })
     }
 
-    /// The newest `depth` state-participating rows for every field in
-    /// `fields`, evaluated at `t`, newest first — the column-level input
-    /// [`crate::state::resolve_effective`] reads. Fields with no
+    /// For every field in `fields`, evaluated at `t`, newest first, the
+    /// column-level input [`crate::state::resolve_effective`] reads: its
+    /// newest row, or `deep`, its [`crate::state::RESUME_LOOKBACK`] newest
+    /// that can decide a state ([`state_rows_sql`]). Fields with no
     /// qualifying entry are absent from the map.
     ///
     /// da-vmjh: one index-bounded `ORDER BY … LIMIT depth` PER FIELD,
@@ -172,7 +173,7 @@ impl Db {
         &self,
         fields: &[&str],
         t: DateTime<Utc>,
-        depth: usize,
+        deep: bool,
     ) -> Result<std::collections::HashMap<String, Vec<crate::state::StateRow>>> {
         let mut out: std::collections::HashMap<String, Vec<crate::state::StateRow>> =
             std::collections::HashMap::with_capacity(fields.len());
@@ -180,7 +181,7 @@ impl Db {
             return Ok(out);
         }
         let cutoff = t.to_rfc3339();
-        let mut stmt = self.conn.prepare(&state_rows_sql(depth))?;
+        let mut stmt = self.conn.prepare(&state_rows_sql(deep))?;
         for field in dedup_fields(fields) {
             let rows = stmt.query_map(rusqlite::params![field, cutoff], read_state_columns)?;
             for r in rows {
@@ -426,9 +427,10 @@ fn dedup_fields<'a>(fields: &[&'a str]) -> Vec<&'a str> {
     fields.iter().copied().filter(|f| seen.insert(*f)).collect()
 }
 
-/// The single-field state read (da-vmjh): the newest `depth`
-/// state-participating rows at or before `?2`, newest first. Bound
-/// `?1` = field, `?2` = the RFC-3339 cutoff.
+/// The single-field state read (da-vmjh): the newest state-participating
+/// row at or before `?2`, or `deep`, the [`crate::state::RESUME_LOOKBACK`]
+/// newest that can decide a state, so no number of moments fills the walk
+/// (da-l6roh), newest first. Bound `?1` = field, `?2` = the RFC-3339 cutoff.
 ///
 /// The shape is the point: an equality on `field` plus a range on
 /// `occur_time`, ordered the way `entries_live_field_occur` already
@@ -437,18 +439,22 @@ fn dedup_fields<'a>(fields: &[&'a str]) -> Vec<&'a str> {
 /// slug tiebreak sorting within one `occur_time`, which still lets the
 /// scan terminate early. A plan that SCANs a subquery instead has read
 /// the whole history.
-pub(super) fn state_rows_sql(depth: usize) -> String {
-    use crate::state::OCCUR_DOT_SQL;
+pub(super) fn state_rows_sql(deep: bool) -> String {
+    use crate::state::{DECIDES_STATE_SQL, OCCUR_DOT_SQL, RESUME_LOOKBACK};
     // da-2i8g: each row's verb / occur_time / dur / following_state come
     // along so the trailing-edge rules can be applied in Rust — `dur` is
     // an ISO-8601 string, which SQL cannot add to a time.
     let occur = time_expr(TimeMetric::Occur);
+    let (rows, depth) = match deep {
+        true => (DECIDES_STATE_SQL.to_string(), RESUME_LOOKBACK),
+        false => (format!("NOT {OCCUR_DOT_SQL}"), 1),
+    };
     format!(
         "SELECT field, state, verb, occur_time, dur, following_state, hid
            FROM entries
           WHERE field = ?1
             AND {STATE_PARTICIPATION_SQL}
-            AND NOT {OCCUR_DOT_SQL}
+            AND {rows}
             AND {occur} <= ?2
           ORDER BY {STATE_ORDER_NEWEST_FIRST}
           LIMIT {depth}"
@@ -459,14 +465,14 @@ pub(super) fn state_rows_sql(depth: usize) -> String {
 /// dur-bearing rows stored after `?2`, oldest first. Same index and same
 /// early exit as [`state_rows_sql`], walked the other way.
 pub(super) fn spanning_blocks_sql(limit: usize) -> String {
-    use crate::state::OCCUR_DOT_SQL;
+    use crate::state::DECIDES_STATE_SQL;
     let occur = time_expr(TimeMetric::Occur);
     format!(
         "SELECT field, state, verb, occur_time, dur, following_state, hid
            FROM entries
           WHERE field = ?1
             AND {STATE_PARTICIPATION_SQL}
-            AND NOT {OCCUR_DOT_SQL}
+            AND {DECIDES_STATE_SQL}
             AND dur IS NOT NULL
             AND {occur} > ?2
           ORDER BY {STATE_ORDER_OLDEST_FIRST}
@@ -620,7 +626,8 @@ mod tests {
     /// `SEARCH … USING INDEX entries_field_state` is the seek: the partial
     /// index of the rows that move a state, whose predicate
     /// [`STATE_PARTICIPATION_SQL`] and `NOT` [`crate::state::OCCUR_DOT_SQL`]
-    /// imply. A `SCAN` line is the discriminator — the predecessor ranked
+    /// imply; `entries_field_deciding` the same without the moments, which
+    /// the deep read would otherwise walk one by one (da-l6roh). A `SCAN` line is the discriminator — the predecessor ranked
     /// every row of every field with `ROW_NUMBER() OVER (PARTITION BY field
     /// …)` and filtered `rn <= depth` outside the window, so its plan read
     /// `CO-ROUTINE (subquery-N)` / `SCAN (subquery-N)` / `USE TEMP B-TREE
@@ -641,11 +648,15 @@ mod tests {
         push_switch(&db, "mood", json!("happy"), 100);
 
         for (label, sql, index) in [
-            ("state_rows_sql", state_rows_sql(1), "entries_field_state"),
+            (
+                "state_rows_sql",
+                state_rows_sql(false),
+                "entries_field_state",
+            ),
             (
                 "state_rows_sql deep",
-                state_rows_sql(crate::state::RESUME_LOOKBACK),
-                "entries_field_state",
+                state_rows_sql(true),
+                "entries_field_deciding",
             ),
             (
                 "spanning_blocks_sql",
@@ -670,13 +681,63 @@ mod tests {
         }
     }
 
+    /// da-l6roh: a moment decides nothing, so it takes no place in the
+    /// lookback: the state before any number of them holds, by every read.
+    #[test]
+    fn a_state_holds_past_more_moments_than_the_lookback() {
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "body", json!("rest"), 0);
+        for i in 1..=crate::state::RESUME_LOOKBACK as i64 + 6 {
+            push_moment_switch(&db, "body", json!("run"), 60 * i);
+        }
+        let at = probe();
+        assert_eq!(db.state_at("body", at).unwrap(), Some(json!("rest")));
+        let whole = crate::state::FieldStateRows::load(&db.conn, "body").unwrap();
+        assert_eq!(whole.at(at, None), Some(json!("rest")));
+        let window = crate::state::FieldStateRows::load_between(&db.conn, "body", at, at).unwrap();
+        assert_eq!(window.at(at, None), Some(json!("rest")));
+        let now = db
+            .current_now(&crate::db::NowFilter {
+                snapshot_time: Some(at),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(now.active[0].state, json!("rest"));
+    }
+
+    /// da-l6roh: nor in the lookahead: a block is reached past any number
+    /// of moments inside it, after the instant asked about.
+    #[test]
+    fn a_running_block_is_reached_past_more_moments_than_the_lookahead() {
+        let db = Db::open_in_memory().unwrap();
+        for i in 1..=crate::state::SPAN_LOOKAHEAD as i64 + 2 {
+            push_moment_switch(&db, "body", json!("run"), 3_600 + 60 * i);
+        }
+        let block = Entry::new(
+            "body",
+            Verb::Block,
+            Some(json!("long")),
+            None,
+            Some(at(7_200)),
+            crate::dur::Dur::parse("PT2H"),
+            "d1",
+        );
+        db.insert_entry(&block).unwrap();
+        let t = at(1_800).utc;
+        assert_eq!(db.state_at("body", t).unwrap(), Some(json!("long")));
+        let whole = crate::state::FieldStateRows::load(&db.conn, "body").unwrap();
+        assert_eq!(whole.at(t, None), Some(json!("long")));
+        let window = crate::state::FieldStateRows::load_between(&db.conn, "body", t, t).unwrap();
+        assert_eq!(window.at(t, None), Some(json!("long")));
+    }
+
     /// The per-field loop must not double a repeated name — `field IN
     /// (…)` used to dedupe for free.
     #[test]
     fn repeated_field_reads_once() {
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "mood", json!("happy"), 100);
-        let rows = db.state_rows_at(&["mood", "mood"], probe(), 4).unwrap();
+        let rows = db.state_rows_at(&["mood", "mood"], probe(), true).unwrap();
         assert_eq!(rows["mood"].len(), 1);
     }
 

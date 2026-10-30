@@ -239,6 +239,15 @@ CREATE INDEX IF NOT EXISTS entries_field_state
     WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
       AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));
 
+-- Those without the moments: the rows that can decide a state, which a read
+-- walks back through to the one a block handed the field back to
+-- (`RESUME_LOOKBACK`). On the state index a run of moments took the walk's
+-- every place, and the state before it was lost (da-l6roh).
+CREATE INDEX IF NOT EXISTS entries_field_deciding
+    ON entries (field, occur_time, slug)
+    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+      AND verb <> 'point';
+
 -- The blocks among those: the rows a state read looks ahead through for a
 -- block still running at its instant (`SPAN_LOOKAHEAD`). On the state index
 -- a field with no later block walked every later row to find none, so a
@@ -247,7 +256,7 @@ CREATE INDEX IF NOT EXISTS entries_field_blocks
     ON entries (field, occur_time, slug)
     WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
       AND dur IS NOT NULL
-      AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));
+      AND verb <> 'point';
 
 -- The states each field has been logged with (`datum fields`): live,
 -- stated, and not a TRACK declaration — `NOT_A_DECLARATION_SQL`, spelled as

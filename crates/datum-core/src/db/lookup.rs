@@ -235,8 +235,9 @@ impl Db {
     /// first — [`Db::latest_entry_for_now`] with room to look further
     /// back. `now` reads one row in the common case and asks for more
     /// only when that row is a block that has already handed the field
-    /// back and the resumed state lies behind it (da-phoe). `skip_dots`
-    /// leaves occur dots out, as the depth-limited state reads do.
+    /// back and the resumed state lies behind it (da-phoe). `deciding`
+    /// leaves out the points, occur dots and moments, as the deep state
+    /// reads do (da-l6roh).
     ///
     /// A flag (`extra_metadata.flag`, `datum flag`) is no row of `now`'s,
     /// as it is none of `tail`'s (da-sy7zl): its comment is stored as its
@@ -246,15 +247,15 @@ impl Db {
         field: &str,
         snapshot_time: Option<chrono::DateTime<chrono::Utc>>,
         limit: usize,
-        skip_dots: bool,
+        deciding: bool,
     ) -> Result<Vec<Entry>> {
         let expr = time_expr(TimeMetric::Occur);
         let (bound, cutoff) = match snapshot_time {
             None => (String::new(), None),
             Some(t) => (format!("AND {expr} <= ?2"), Some(t.to_rfc3339())),
         };
-        let dots = if skip_dots {
-            format!("AND NOT {}", crate::state::OCCUR_DOT_SQL)
+        let deciding = if deciding {
+            format!("AND {}", crate::state::DECIDES_STATE_SQL)
         } else {
             String::new()
         };
@@ -262,7 +263,7 @@ impl Db {
             "SELECT * FROM entries
              WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
                AND json_extract(extra_metadata, '$.flag') IS NOT 1
-               {bound} {dots}
+               {bound} {deciding}
              ORDER BY {STATE_ORDER_NEWEST_FIRST}
              LIMIT {limit}",
         );
@@ -292,10 +293,11 @@ impl Db {
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
-               AND dur IS NOT NULL AND {expr} > ?2
+               AND dur IS NOT NULL AND {decides} AND {expr} > ?2
              ORDER BY {expr} ASC
              LIMIT {}",
             crate::state::SPAN_LOOKAHEAD,
+            decides = crate::state::DECIDES_STATE_SQL,
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![field, t.to_rfc3339()], row_to_entry)?;
