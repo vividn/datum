@@ -269,6 +269,7 @@ fn dayview_at(width: f64, orientation: Orientation) -> String {
         orientation,
         axis_ticks_override: None,
         right_panel_width: 0.0,
+        clock_axis_height: 0.0,
     };
     render_dayview_svg(&compute_dayview(&config))
 }

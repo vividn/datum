@@ -43,13 +43,16 @@ const shift = (el: Element | null | undefined) =>
  * Where the overlay `root`'s band starts across time, in its plot's units, and
  * how far across it reaches: under the axis strip, read off where the axis's
  * baseline stands — below the band, or right of the strip when time runs down
- * the page — whether or not a now strip is drawn (da-dv45l).
+ * the page — whether or not a now strip is drawn (da-dv45l); and short of the
+ * clock's strip when time runs down, which stands right of the band (da-b9glf).
  */
 export function bandOf(root: Element, y: boolean): { start: number; extent: number } {
 	const axis = shift(root.querySelector('.axis'));
 	if (!y) return { start: 0, extent: axis[1] };
 	const margin = shift(root.querySelector('.plot'))[0];
-	return { start: axis[0], extent: Number(root.getAttribute('width')) - 2 * margin - axis[0] };
+	const clock = root.querySelector('.clock-axis');
+	const end = clock ? shift(clock)[0] : Number(root.getAttribute('width')) - 2 * margin;
+	return { start: axis[0], extent: end - axis[0] };
 }
 
 /**

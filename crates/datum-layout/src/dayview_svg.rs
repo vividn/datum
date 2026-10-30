@@ -203,17 +203,19 @@ pub struct DayviewSvgOpts<'a> {
     /// `.flow` group, clipped at the now-line so what is drawn ahead of now
     /// waits behind it, and the now strip outside it, where it stays.
     pub flow: bool,
-    /// Instants marked as they flow past (`flow` only): a dim dashed line
-    /// across the bands and its label on the axis, in a `.flow` group too.
-    pub flow_marks: &'a [FlowMark],
+    /// The clock times written on the clock strip
+    /// ([`DayviewLayout::clock_axis_height`], da-b9glf), each a solid line
+    /// across the bands: in a `.flow` group when the picture flows, so they
+    /// move with the data.
+    pub clock_marks: &'a [ClockMark],
     /// The bands' data alone (`dayview --data-layer`, da-0e06p): no
     /// gridlines and no now-line, which its viewer draws over a crop of it.
     pub data_layer: bool,
 }
 
-/// An instant a flowing picture marks: nowview's whole minutes, `12:25`.
+/// A clock time the clock strip writes: nowview's `12:25`.
 #[derive(Debug, Clone)]
-pub struct FlowMark {
+pub struct ClockMark {
     pub ms: i64,
     pub label: String,
 }
@@ -328,7 +330,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         &mut out,
         r#"<g class="plot" transform="translate({mx},{my})">"#,
         mx = layout.margin,
-        my = layout.margin,
+        my = layout.plot.y,
     );
 
     // Per-day rendering.
@@ -741,6 +743,13 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
     // Drawn AFTER per-day bands and the axis so the semi-transparent lines
     // overlay the data (matches original datum z-order — see dayview.ts).
     // 40% opacity every 3rd hour, 10% otherwise. A data layer has none.
+    // Beside a clock strip these are times relative to an instant, which
+    // are dotted: a solid line is a clock time, as on the dayview (da-b9glf).
+    let dash = if layout.clock_axis_height > 0.0 {
+        r#" stroke-dasharray="2,3""#
+    } else {
+        ""
+    };
     for tick in layout.axis_ticks.iter().filter(|_| !opts.data_layer) {
         let opacity = if tick.is_major { 0.4 } else { 0.1 };
         let (x1, y1, x2, y2) = match layout.orientation {
@@ -755,13 +764,13 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         };
         let _ = write!(
             &mut out,
-            r#"<line class="gridline" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="white" stroke-opacity="{op}"/>"#,
+            r#"<line class="gridline" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="white" stroke-opacity="{op}"{dash}/>"#,
             op = opacity,
         );
     }
 
-    if flow_now.is_some() {
-        emit_flow_marks(&mut out, layout, &geom, opts.flow_marks, &flow_open);
+    if layout.clock_axis_height > 0.0 && !opts.data_layer {
+        emit_clock_axis(&mut out, layout, &geom, opts, &flow_open);
     }
 
     // Per-day now-lines. Emitted last so they sit above gridlines and data.
@@ -1242,23 +1251,48 @@ fn greedy_place(
     out
 }
 
-/// A flowing picture's marks (da-hklaz): a dim dashed line across the bands
-/// at each, and its label on the axis strip as the ticks' are, all in one
-/// `.flow` group under the clip, so they move with the data and wait behind
-/// the now-line.
-fn emit_flow_marks(
+/// The clock strip (da-b9glf): its baseline, and at each of `opts.clock_marks`
+/// a solid line across the bands and through the strip, and its time written
+/// in the strip. The marks are in a `.flow` group under the clip on a picture
+/// that flows (da-hklaz), so they move with the data and wait behind the
+/// now-line; in a `.clock-marks` group otherwise.
+fn emit_clock_axis(
     out: &mut String,
     layout: &DayviewLayout,
     geom: &PlotGeom,
-    marks: &[FlowMark],
-    open: &str,
+    opts: DayviewSvgOpts<'_>,
+    flow_open: &str,
 ) {
-    let Some(day) = layout.days.iter().find(|d| d.now_time_pos.is_some()) else {
+    let c = layout.clock_axis_height;
+    let horizontal = matches!(layout.orientation, Orientation::Horizontal);
+    // Past the bands: above them, or right of them when time runs down.
+    let edge = if horizontal {
+        0.0
+    } else {
+        geom.data_x + geom.cross_total
+    };
+    let _ = if horizontal {
+        write!(
+            out,
+            r#"<path class="clock-axis" transform="translate({x},0)" d="M0.5,-{t}V-0.5H{end}V-{t}" fill="none" stroke="{a}"/>"#,
+            x = geom.data_x,
+            t = TICK_LENGTH,
+            end = axis_end(layout, opts) + 0.5,
+            a = AXIS_COLOR,
+        )
+    } else {
+        write!(
+            out,
+            r#"<path class="clock-axis" transform="translate({edge},{y})" d="M{t},0.5H-0.5V{end}H{t}" fill="none" stroke="{a}"/>"#,
+            y = geom.data_y,
+            t = TICK_LENGTH,
+            end = axis_end(layout, opts) + 0.5,
+            a = AXIS_COLOR,
+        )
+    };
+    let Some(day) = layout.days.first().filter(|_| !opts.clock_marks.is_empty()) else {
         return;
     };
-    if marks.is_empty() {
-        return;
-    }
     let pos = |ms: i64| {
         let s = day
             .spans
@@ -1267,52 +1301,64 @@ fn emit_flow_marks(
         let f = (ms - s.start_ms) as f64 / (s.end_ms - s.start_ms).max(1) as f64;
         Some(s.time_offset + f * s.time_extent)
     };
-    let size = axis_label_size(layout.orientation, layout.time_axis_height);
-    out.push_str(&open.replace(r#"class="flow""#, r#"class="flow minute-marks""#));
-    for (mark, t) in marks.iter().filter_map(|m| Some((m, pos(m.ms)?))) {
-        let (x1, y1, x2, y2, lx, ly, anchor) = match layout.orientation {
-            Orientation::Horizontal => {
-                let x = geom.data_x + t;
-                let axis = geom.data_y + geom.cross_total;
-                (
-                    x,
-                    geom.data_y,
-                    x,
-                    axis,
-                    x,
-                    axis + layout.time_axis_height,
-                    r#"text-anchor="middle""#,
-                )
-            }
-            Orientation::Vertical => {
-                let y = geom.data_y + t;
-                let x = geom.data_x;
-                (
-                    x,
-                    y,
-                    x + geom.cross_total,
-                    y,
-                    x - VERTICAL_AXIS_LABEL_INSET,
-                    y,
-                    r#"text-anchor="end" dy="0.35em""#,
-                )
-            }
+    let size = if horizontal {
+        axis_label_size(layout.orientation, c)
+    } else {
+        AXIS_LABEL_MAX.min(c - VERTICAL_AXIS_LABEL_INSET)
+    };
+    if flow_open.is_empty() {
+        out.push_str(r#"<g class="clock-marks">"#);
+    } else {
+        out.push_str(&flow_open.replace(r#"class="flow""#, r#"class="flow clock-marks""#));
+    }
+    for (mark, t) in opts
+        .clock_marks
+        .iter()
+        .filter_map(|m| Some((m, pos(m.ms)?)))
+    {
+        let (x1, y1, x2, y2, lx, ly, anchor) = if horizontal {
+            let x = geom.data_x + t;
+            let y = geom.data_y + geom.cross_total;
+            (
+                x,
+                -TICK_LENGTH,
+                x,
+                y,
+                x,
+                -TICK_LENGTH - 1.0,
+                r#"text-anchor="middle""#,
+            )
+        } else {
+            let y = geom.data_y + t;
+            (
+                geom.data_x,
+                y,
+                edge + TICK_LENGTH,
+                y,
+                edge + VERTICAL_AXIS_LABEL_INSET,
+                y,
+                r#"text-anchor="start" dy="0.35em""#,
+            )
         };
         let _ = write!(
             out,
-            r#"<line class="minute-mark" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="white" stroke-opacity="0.35" stroke-dasharray="2,3" data-at="{at}"/>"#,
+            r#"<line class="clock-mark" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="white" stroke-opacity="0.35" data-at="{at}"/>"#,
             at = iso(mark.ms),
         );
-        if size > 0.0 {
+        if size >= 6.0 {
             let _ = write!(
                 out,
-                r#"<text class="minute-label" x="{lx}" y="{ly}" {anchor} fill="{c}" fill-opacity="0.6" font-size="{size}" font-family="{AXIS_LABEL_FONT}">{label}</text>"#,
+                r#"<text class="clock-label" x="{lx}" y="{ly}" {anchor} fill="{c}" stroke="{c}" font-size="{size}" font-family="{AXIS_LABEL_FONT}">{label}</text>"#,
                 c = TEXT_COLOR,
                 label = escape_xml(&mark.label),
             );
         }
     }
-    out.push_str("</g></g>");
+    out.push_str(if flow_open.is_empty() {
+        "</g>"
+    } else {
+        "</g></g>"
+    });
 }
 
 fn emit_time_axis(

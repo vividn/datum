@@ -14,8 +14,8 @@ use std::fmt::Write;
 
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
 use crate::dayview_svg::{
-    axis_label_size, icon_id, now_chunk, render_dayview_svg_with, text_width, DayviewSvgOpts,
-    FlowMark, RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR,
+    axis_label_size, icon_id, now_chunk, render_dayview_svg_with, text_width, ClockMark,
+    DayviewSvgOpts, RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR,
 };
 use crate::nowview::NowviewCurrentState;
 
@@ -47,20 +47,22 @@ pub fn render_nowview_svg(
         current_states,
         labels,
         now_label,
-        None,
+        false,
+        &[],
     )
 }
 
-/// [`render_nowview_svg`], drawn to be slid along with the clock when
-/// `flow` is given (`--ahead`, da-hklaz): the instants it marks as they
-/// flow past, none for a window too long to mark its minutes.
+/// [`render_nowview_svg`] with `clock` written on the clock strip
+/// (da-b9glf), drawn to be slid along with the clock when `flow` (`--ahead`,
+/// da-hklaz).
 pub fn render_nowview_svg_with(
     layout: &DayviewLayout,
     current_time_label: &str,
     current_states: &[NowviewCurrentState],
     labels: bool,
     now_label: bool,
-    flow: Option<&[FlowMark]>,
+    flow: bool,
+    clock: &[ClockMark],
 ) -> String {
     let current_time_label = if now_label { "" } else { current_time_label };
     let fills = now_strip_fills(current_states);
@@ -70,8 +72,8 @@ pub fn render_nowview_svg_with(
         axis_end_reserved: clock_reserved_px(layout, current_time_label),
         axis_keep_out: strip_label_keep_out(layout, now_label.then_some(&NOW)),
         right_panel_fills: &fills,
-        flow: flow.is_some(),
-        flow_marks: flow.unwrap_or_default(),
+        flow,
+        clock_marks: clock,
         data_layer: false,
     };
     let (gutter, label_group) = label_gutter(layout, current_states, labels);
@@ -104,6 +106,7 @@ pub fn render_nowview_at_svg(
     current_states: &[NowviewCurrentState],
     labels: bool,
     now_label: bool,
+    clock_marks: &[ClockMark],
 ) -> String {
     // `--labels` means one thing on every nowview picture (da-7q8r): the
     // states now, in a gutter past the right edge.
@@ -124,6 +127,7 @@ pub fn render_nowview_at_svg(
         axis_end_reserved: 0.0,
         axis_keep_out: strip_label_keep_out(layout, Some(&label)),
         right_panel_fills: &fills,
+        clock_marks,
         ..Default::default()
     };
     let mut svg = render_dayview_svg_with(layout, opts);
@@ -786,6 +790,7 @@ mod tests {
                 500.0, 30.0, 15.0,
             )),
             right_panel_width: 0.0,
+            clock_axis_height: 0.0,
         };
         compute_dayview(&cfg)
     }
@@ -887,6 +892,7 @@ mod tests {
             orientation: Orientation::Horizontal,
             axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0, 20.0)),
             right_panel_width: 120.0,
+            clock_axis_height: 0.0,
         };
         let layout = compute_dayview(&cfg);
         // Right panel reserved → time axis shrinks by 120 px.
@@ -1530,7 +1536,7 @@ mod tests {
             id: None,
         }];
         let svg = if centred {
-            render_nowview_at_svg(&layout, "12:00", None, &states, false, now_label)
+            render_nowview_at_svg(&layout, "12:00", None, &states, false, now_label, &[])
         } else {
             render_nowview_svg(&layout, "12:00", &states, false, now_label)
         };
@@ -1774,6 +1780,7 @@ mod tests {
                 std::slice::from_ref(&state),
                 false,
                 true,
+                &[],
             );
             let (extent, strip) = (layout.time_axis_extent, layout.right_panel_width);
             assert_eq!((extent, strip), (320.0, 80.0));
@@ -1851,11 +1858,11 @@ mod tests {
     /// under a clip ending at the now-line — the future at the past's own
     /// scale on past it, waiting there — and the now strip is outside the
     /// group, where it stays as a viewer slides the group along with the
-    /// clock. The whole minutes are marked in a `.flow` group of their own,
+    /// clock. The clock times are marked in a `.flow` group of their own,
     /// and the axis still stops at the now-line.
     #[test]
     fn a_picture_drawn_ahead_flows_behind_the_now_line() {
-        use crate::dayview_svg::FlowMark;
+        use crate::dayview_svg::ClockMark;
         use crate::nowview::{nowview_config, NowviewGeometry};
         let now = 1_700_000_000_000_i64;
         let min = 60_000;
@@ -1890,11 +1897,11 @@ mod tests {
             colors: vec!["#abcdef".into()],
             id: None,
         }];
-        let marks = [FlowMark {
+        let marks = [ClockMark {
             ms: now + 3 * min,
             label: "12:03".into(),
         }];
-        let svg = render_nowview_svg_with(&layout, "12:00", &states, false, false, Some(&marks));
+        let svg = render_nowview_svg_with(&layout, "12:00", &states, false, false, true, &marks);
         let extent = layout.time_axis_extent;
         let per_min = extent / 30.0;
 
@@ -1930,10 +1937,25 @@ mod tests {
         assert_eq!(width - 1e5, extent, "{clip}");
 
         let marked = svg
-            .split(r#"<g class="flow minute-marks">"#)
+            .split(r#"<g class="flow clock-marks">"#)
             .nth(1)
             .expect("the marks");
-        assert!((num(marked, "line", "minute-mark", "x1") - (extent + 3.0 * per_min)).abs() < 1e-6);
+        assert!((num(marked, "line", "clock-mark", "x1") - (extent + 3.0 * per_min)).abs() < 1e-6);
+        // Solid, through the clock strip above the bands and down them (da-b9glf).
+        let mark = marked.split("<line").nth(1).unwrap();
+        assert!(!mark.contains("dasharray"), "{mark}");
+        assert!(num(marked, "line", "clock-mark", "y1") < 0.0, "{marked}");
+        assert!(num(marked, "text", "clock-label", "y") < 0.0, "{marked}");
+        assert!(svg.contains(r#"<path class="clock-axis""#), "{svg}");
+        // And the relative rule dotted.
+        let grid = svg.split(r#"<line class="gridline""#).nth(1).unwrap();
+        assert!(
+            grid.split("/>")
+                .next()
+                .unwrap()
+                .contains("stroke-dasharray"),
+            "{grid}"
+        );
         assert!(marked.contains(">12:03</text>"), "{marked}");
         assert!(svg.contains(&format!("H{}V", extent + 0.5)), "{svg}");
 

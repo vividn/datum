@@ -487,6 +487,7 @@ fn layout_of(
         orientation,
         axis_ticks_override: window_ticks,
         right_panel_width: 0.0,
+        clock_axis_height: 0.0,
     };
 
     Ok((compute_dayview(&config), end_date))

@@ -305,6 +305,10 @@ pub struct DayviewConfig {
     /// da-34w nowview uses this to stack a current-state panel beside the
     /// now-line.
     pub right_panel_width: f64,
+    /// Pixel size of a second time-axis strip across the data from the
+    /// first: above the bands horizontally, right of them vertically.
+    /// Nowview writes its clock times there (da-b9glf). Default 0, none.
+    pub clock_axis_height: f64,
 }
 
 impl Default for DayviewConfig {
@@ -322,6 +326,7 @@ impl Default for DayviewConfig {
             orientation: Orientation::default(),
             axis_ticks_override: None,
             right_panel_width: 0.0,
+            clock_axis_height: 0.0,
         }
     }
 }
@@ -365,6 +370,14 @@ pub struct DayviewLayout {
     /// overlay. Carried through from [`DayviewConfig::right_panel_width`] so
     /// nowview's overlay knows where its panel sits.
     pub right_panel_width: f64,
+    /// As [`DayviewConfig::clock_axis_height`]: the plot group is drawn
+    /// that much lower horizontally, so the strip is above its origin.
+    #[serde(default, skip_serializing_if = "no_strip")]
+    pub clock_axis_height: f64,
+}
+
+fn no_strip(x: &f64) -> bool {
+    *x == 0.0
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -804,16 +817,17 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
     // Resolve total SVG dimensions + plot rect + time-axis extent based on
     // orientation. The layout always lays out `(time, cross)` logically;
     // the renderer maps to SVG (x, y).
+    let clock = config.clock_axis_height.max(0.0);
     let (width, height, plot, time_axis_extent) = match config.orientation {
         Orientation::Horizontal => {
             let plot_width = (config.width - 2.0 * config.margin).max(0.0);
             let time_axis_extent =
                 (plot_width - label_width - config.right_panel_width.max(0.0)).max(0.0);
             let plot_height = data_rows_extent + config.time_axis_height;
-            let height = plot_height + 2.0 * config.margin;
+            let height = plot_height + clock + 2.0 * config.margin;
             let plot = Rect {
                 x: config.margin,
-                y: config.margin,
+                y: config.margin + clock,
                 width: plot_width,
                 height: plot_height,
             };
@@ -835,7 +849,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             let time_axis_extent =
                 (plot_height - label_width - config.right_panel_width.max(0.0)).max(0.0);
             // Recompute total width from the day-stack data plus axis strip.
-            let resolved_plot_width = config.time_axis_height + data_rows_extent;
+            let resolved_plot_width = config.time_axis_height + data_rows_extent + clock;
             let width = resolved_plot_width + 2.0 * config.margin;
             let plot = Rect {
                 x: config.margin,
@@ -858,7 +872,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
     // SVG origin of the data area: the plot's translate plus the strips
     // the renderer puts before it (`dayview_svg::PlotGeom`).
     let (data_x, data_y) = match config.orientation {
-        Orientation::Horizontal => (config.margin + label_width, config.margin),
+        Orientation::Horizontal => (config.margin + label_width, config.margin + clock),
         Orientation::Vertical => (
             config.margin + config.time_axis_height,
             config.margin + label_width,
@@ -1105,6 +1119,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         axis_ticks,
         hours,
         right_panel_width: config.right_panel_width.max(0.0),
+        clock_axis_height: clock,
     }
 }
 

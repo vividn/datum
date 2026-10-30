@@ -547,12 +547,13 @@ fn nowview_lanes_fill_edge_to_edge_and_carry_a_now_chunk() {
     let svg = three_field_nowview();
     let now_x = now_x(&svg);
 
-    // Nothing is labelled but the axis: the state panel is gone.
+    // Nothing is labelled but the axes, the clock's too (da-b9glf): the
+    // state panel is gone.
     for text in svg.split(r#"<text class=""#).skip(1) {
         let class = &text[..text.find('"').expect("class close")];
         assert!(
-            class == "tick-label" || class == "current-time-text",
-            "unexpected <text class=\"{class}\"> — nowview labels only the axis: {svg}"
+            ["tick-label", "clock-label", "current-time-text"].contains(&class),
+            "unexpected <text class=\"{class}\"> — nowview labels only the axes: {svg}"
         );
     }
 
@@ -1178,13 +1179,17 @@ fn nowview_vertical_turns_the_picture_on_its_side() {
     let now_y = num(line, "y1");
     assert_eq!(now_y, num(line, "y2"), "now-line is horizontal: {line}");
     // It crosses the axis strip on the left, as the horizontal one crosses
-    // the strip below, and stops at the right edge (plot-local: the canvas
-    // less its 2px margin each side).
-    assert_eq!(
-        (num(line, "x1"), num(line, "x2")),
-        (0.0, 300.0 - 4.0),
-        "{line}"
-    );
+    // the strip below, and stops at the clock's strip on the right
+    // (da-b9glf), where the clock-axis stands (plot-local).
+    let clock = tags(&v, r#"<path class="clock-axis" "#)[0];
+    let clock_x: f64 = clock
+        .split("translate(")
+        .nth(1)
+        .and_then(|t| t.split(',').next())
+        .and_then(|x| x.parse().ok())
+        .expect("the clock-axis's place");
+    assert!(clock_x < 300.0 - 4.0 - 20.0, "{clock}");
+    assert_eq!((num(line, "x1"), num(line, "x2")), (0.0, clock_x), "{line}");
     let chunk = tags(&v, r#"<rect class="now-chunk" "#)[0];
     assert!(
         (num(chunk, "y") - now_y).abs() < 1e-6,

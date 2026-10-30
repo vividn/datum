@@ -33,7 +33,8 @@ const NOW = Date.UTC(2026, 8, 10, 15, 0, 0);
 const MINUTE = 60_000;
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 const BAND = `${NOWVIEW} .nowview-band`;
-const MARGIN = `${NOWVIEW} .nowview-margin`;
+/** The selection's pills drawn on the nowview's axes (da-b9glf). */
+const ON_AXIS = `${NOWVIEW} .nowview-pills`;
 const TODAY = '.band[data-days-ago="0"]';
 
 /**
@@ -836,7 +837,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			await drag(page, at(g, 5), at(g, 20), { shift: true });
 			await saysPills(page, ['time:-q', 'dur:dur=15m']);
 
-			await page.locator(`${MARGIN} .pill.dur button.remove`).click();
+			await page.locator('.prompt-bar .pill.dur button.remove').click();
 			await saysPills(page, ['time:-q']);
 			await until(
 				() => drawn(page, NOWVIEW).then((d) => d.span),
@@ -878,50 +879,60 @@ describe('the now region: a long press dragged LEFT is a duration ending NOW', (
 	});
 });
 
-// ── the margin ─────────────────────────────────────────────────────────
+// ── the pills on the axes (da-b9glf) ───────────────────────────────────
 
-describe('the pills live in the band’s margin too', () => {
-	test('drawn in the margin over the mark it names AND in the bar; × in either clears both', async () => {
+describe('the pills lie on their axis too', () => {
+	test('a relative pill on the relative axis and an absolute one on the clock’s, over the instant; words only, the bar’s × clears both', async () => {
 		await withBand(async (app) => {
 			const { page } = app;
 			const mark = await gridline(page, 15);
 			await page.mouse.click(mark.x, mark.y);
 			await saysPills(page, ['time:-qqq']);
 
-			const margin = page.locator(`${MARGIN} .pill.time`);
-			await margin.waitFor();
+			const onAxis = page.locator(`${ON_AXIS} .pill.time`);
+			await onAxis.waitFor();
 			assert.equal(await page.locator('.prompt-bar .pill.time').count(), 1, 'the bar lost its copy');
+			// Words only: a press where it stands is the axis's.
+			assert.equal(await onAxis.evaluate((p) => !!p.closest('[inert]')), true, 'the pill on the axis takes the pointer');
 
-			// Over the dashed line its instant is drawn as (da-dv45l), and
-			// clear of the band.
+			// Over the dashed line its instant is drawn as (da-dv45l), on the
+			// relative axis under the band.
 			await instantDrawn(page, NOW - 15 * MINUTE);
 			const section = page.locator(`${NOWVIEW} svg.svg line.instant-line`).last();
-			const [pill, label, band] = await until(
-				() => Promise.all([margin.boundingBox(), section.boundingBox(), page.locator(BAND).boundingBox()]),
+			const axis = await page.locator(`${NOWVIEW} svg.svg path.axis`).boundingBox();
+			const [pill, label] = await until(
+				() => Promise.all([onAxis.boundingBox(), section.boundingBox()]),
 				([p, l]) => Math.abs(p.x + p.width / 2 - (l.x + l.width / 2)) <= 2
 			);
 			const over = label.x + label.width / 2;
 			assert.ok(Math.abs(pill.x + pill.width / 2 - over) <= 2, `the pill at ${pill.x}, the section at ${over}`);
-			assert.ok(pill.y + pill.height <= band.y + 1, `the pill lies over the band: ${pill.y + pill.height} / ${band.y}`);
+			assert.ok(pill.y + pill.height / 2 >= axis.y, `the pill is not on the relative axis: ${pill.y} / ${axis.y}`);
 
-			// × in the margin takes the bar's copy and the line with it.
-			await margin.locator('button.remove').click();
+			// × in the bar takes the axis's copy and the line with it.
+			await page.locator('.prompt-bar .pill.time button.remove').click();
 			await saysPills(page, []);
-			assert.equal(await page.locator('.prompt-bar .pill.time').count(), 0);
+			await until(
+				() => page.locator(`${ON_AXIS} .pill`).count(),
+				(n) => n === 0
+			);
 			await until(
 				() => drawn(page, NOWVIEW).then((d) => d.head),
 				(h) => h === null
 			);
 
-			// And the other way about.
-			await page.mouse.click(mark.x, mark.y);
-			await saysPills(page, ['time:-qqq']);
-			await page.locator('.prompt-bar .pill.time button.remove').click();
-			await saysPills(page, []);
+			// A tap on the clock's axis, between its labels: absolute, and on it.
+			const clock = await page.locator(`${NOWVIEW} svg.svg path.clock-axis`).boundingBox();
+			const ten = await gridline(page, 10);
+			await page.mouse.click((mark.x + ten.x) / 2, clock.y - 3);
 			await until(
-				() => page.locator(`${MARGIN} .pill`).count(),
-				(n) => n === 0
+				() => pillsOf(page),
+				(p) => p.length === 1 && /^time:-t \d\d:\d\d$/.test(p[0])
 			);
+			const top = await until(
+				() => onAxis.boundingBox(),
+				(b) => b !== null
+			);
+			assert.ok(top.y + top.height / 2 <= clock.y + clock.height, `the pill is not on the clock's axis: ${top.y} / ${clock.y}`);
 		});
 	});
 });
@@ -1018,11 +1029,11 @@ async function toNowviewTab(app) {
 }
 
 describe('on a phone', () => {
-	// vremya drove this on PR #48 and it DOES work — my own attempt started
-	// the touch off the margin's centre line and read nothing. His call,
-	// kept: the swipe is centred ON the strip, ten steps, and the tab is
-	// read off the pane. This is the spec's own sentence, end to end.
-	test('a swipe from the MARGIN changes the tab, either way; the same swipe on the band does not', async () => {
+	// The band is the window's, its two axes included (da-b9glf took the
+	// margin row that was the pane's room above it, vividn: «at smaller
+	// heights the pill row takes up an enormous amount of room»): a swipe
+	// across it pans, and never changes the pane's tab — the tab strip does.
+	test('a swipe on the band, or along either of its axes, pans or scrubs and leaves the tab', async () => {
 		await withBand(
 			async (app) => {
 				const { page } = app;
@@ -1038,37 +1049,23 @@ describe('on a phone', () => {
 					);
 					return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 				};
-
-				// The margin is the pane's room (da-um7y's "a little padding so
-				// that swiping is still possible"). `side` holds tail | nowview
-				// | custom with nowview in front, so a leftward swipe is the
-				// next tab and a rightward one the tab before — and the nowview
-				// is brought back in front between them, because a pane's
-				// `data-title` IS its active tab and the margin goes with it.
-				for (const [dx, want] of [
-					[-160, 'custom'],
-					[160, 'tail']
-				]) {
-					const m = await from(MARGIN);
-					await swipe(page, m.x - dx / 2, m.y, dx, 0, 10);
-					await until(
-						() => activeTab(page, 'side'),
-						(tab) => tab === want
-					);
-					await toNowviewTab(app);
-				}
-
-				// The band is the window's: the same swipe leaves the tab alone.
+				const svg = await from(`${BAND} svg.svg`);
+				const [rel, clock] = await Promise.all(['path.axis', 'path.clock-axis'].map((p) => page.locator(`${BAND} svg.svg ${p}`).boundingBox()));
 				await app.spyOnRunner();
+				for (const y of [clock.y - 3, rel.y + rel.height + 3])
+					for (const dx of [-160, 160]) {
+						await swipeNoWait(page, svg.x - dx / 2, y, dx, 0, 10);
+						await settled(page);
+						assert.equal(await activeTab(page, 'side'), 'nowview', `a ${dx}px drag on an axis moved the tab`);
+					}
 				for (const dx of [-160, 160]) {
 					const b = await from(`${BAND} svg.svg`);
 					await swipeNoWait(page, b.x - dx / 2, b.y, dx, 0, 10);
 					await settled(page);
 					assert.equal(await activeTab(page, 'side'), 'nowview', `a ${dx}px drag on the band moved the tab`);
 				}
-				// And it panned instead, which is the other half of the same rule:
-				// on toward the future it stops at now (da-v8gzq), and back it
-				// leaves now, with the button home.
+				// And it panned instead: on toward the future it stops at now
+				// (da-v8gzq), and back it leaves now, with the button home.
 				await page.locator(`${NOWVIEW} .nowview-now`).waitFor();
 			},
 			{ ...PHONE, ready: toNowviewTab }
@@ -1158,7 +1155,7 @@ describe('on a phone', () => {
 		);
 	});
 
-	test('the MARGIN declares no axis and the band and its controls do; a drag on the band pans', async () => {
+	test('the band and its controls declare the axis; a drag on the band pans', async () => {
 		await withBand(
 			async (app) => {
 				const { page } = app;
@@ -1167,10 +1164,9 @@ describe('on a phone', () => {
 				// THE RULE the test above is a consequence of, kept beside it
 				// at vremya's word: `pannersUnder` (PaneFrame.svelte) walks
 				// from the finger up to the frame and yields the gesture to
-				// anything declaring the axis. So the margin is the pane's room
-				// exactly as long as nothing between it and its pane says
-				// `data-pans` — read here at the pixel a finger would land on,
-				// which is the half a swipe test cannot show when it passes.
+				// anything declaring the axis — read here at the pixel a finger
+				// would land on, which is the half a swipe test cannot show
+				// when it passes.
 				const declared = (selector) =>
 					page.locator(selector).evaluate((el) => {
 						const box = el.getBoundingClientRect();
@@ -1186,7 +1182,6 @@ describe('on a phone', () => {
 						}
 						return out;
 					});
-				assert.deepEqual(await declared(MARGIN), [], 'the margin took the axis from the pane');
 				assert.deepEqual(await declared(`${BAND} svg.svg`), ['x'], 'the band did not take the axis');
 				// And the two controls drawn OVER the band, which are its
 				// siblings in the DOM and would otherwise hand a drag that
@@ -1613,7 +1608,7 @@ const atInstant = (page) =>
 			line: mid([...svg.querySelectorAll('line.instant-line')].at(-1)),
 			label: svg.querySelector('.instant-label') !== null,
 			dots: [...svg.querySelectorAll('.point-bg[data-field="coffee"]')].map((d) => ({ at: Date.parse(d.getAttribute('data-at')), x: mid(d) })),
-			pill: mid(root.querySelector('.nowview-margin .margin-pill')),
+			pill: mid(root.querySelector('.nowview-pills .axis-pill')),
 			button: button && { text: button.textContent.trim(), at: mid(button) },
 			ticks: Object.fromEntries(
 				[...svg.querySelectorAll('.tick-label')]

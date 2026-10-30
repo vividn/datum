@@ -26,10 +26,10 @@ use datum_core::shape::{is_block_verb, is_unrendered_switch_value, render_shape,
 use datum_core::state::FieldStateRows;
 use datum_core::time::{Zone, ZoneTimeline};
 use datum_layout::dayview::{compute_dayview, DayviewFieldInput, Orientation};
-use datum_layout::dayview_svg::FlowMark;
+use datum_layout::dayview_svg::ClockMark;
 use datum_layout::nowview::{
-    ahead, crop_to_window, nowview_config, NowviewBlock, NowviewCurrentState, NowviewField,
-    NowviewGeometry, NowviewPoint, FLOW_MARKS_MINUTES,
+    ahead, clock_step_seconds, crop_to_window, nowview_config, NowviewBlock, NowviewCurrentState,
+    NowviewField, NowviewGeometry, NowviewPoint,
 };
 use datum_layout::nowview_svg::{
     inject_inside_plot_group, label_gutter_extent, render_nowview_at_svg, render_nowview_svg_with,
@@ -229,9 +229,10 @@ struct NowComputed {
     history_minutes: f64,
     /// The window's two ends, in ms.
     window: (i64, i64),
-    /// The whole minutes a picture drawn `--ahead` marks as they flow past,
-    /// or `None` for one that is not drawn ahead (da-hklaz).
-    flow: Option<Vec<FlowMark>>,
+    /// Whether the picture is drawn `--ahead`, to flow (da-hklaz).
+    flow: bool,
+    /// The clock times its clock strip writes (da-b9glf).
+    clock: Vec<ClockMark>,
     geometry: NowviewGeometry,
     layout: datum_layout::dayview::DayviewLayout,
     current_states: Vec<NowviewCurrentState>,
@@ -333,22 +334,6 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         middle.timestamp_millis() - minutes(history_minutes - after).num_milliseconds(),
         middle.timestamp_millis() + minutes(after).num_milliseconds(),
     );
-    // Its whole minutes, in a window short enough to tell them apart.
-    let flow = (ahead > 0.0).then(|| {
-        let day = &config.days[0];
-        let marked = history_minutes <= FLOW_MARKS_MINUTES;
-        let first = day.start_ms.div_euclid(60_000) + 1;
-        let last = day.end_ms.div_euclid(60_000);
-        (first..=last)
-            .filter(|_| marked)
-            .filter_map(|m| Utc.timestamp_millis_opt(m * 60_000).single())
-            .map(|t| FlowMark {
-                ms: t.timestamp_millis(),
-                label: format_local_hh_mm(t),
-            })
-            .collect()
-    });
-
     let mut layout = compute_dayview(&config);
     let mut current_states = build_current_states(db, anchor, &layout);
     // `--labels` beside a length asked for along time: their gutter comes
@@ -376,6 +361,7 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         current_states = build_current_states(db, anchor, &layout);
     }
 
+    let clock = clock_marks(&layout);
     Ok(NowComputed {
         now_ms: now.timestamp_millis(),
         anchor,
@@ -383,7 +369,8 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         center,
         history_minutes,
         window,
-        flow,
+        flow: ahead > 0.0,
+        clock,
         geometry,
         layout,
         current_states,
@@ -420,6 +407,7 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             &states,
             args.labels,
             args.now_label,
+            &c.clock,
         )
     } else {
         render_nowview_svg_with(
@@ -428,7 +416,8 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             &c.current_states,
             args.labels,
             args.now_label,
-            c.flow.as_deref(),
+            c.flow,
+            &c.clock,
         )
     };
     let mut svg = svg;
@@ -961,6 +950,37 @@ fn push_switch_region_terminal(
 
 /// `t` on the reader's clock — the zone `DatumTime::now()` stamps with, which
 /// in the browser is the page's `TZ` (`chrono::Local` is UTC there, da-y6qj).
+/// The clock strip's marks over all `layout` draws (da-b9glf): each instant
+/// the host's clock reads a whole number of its step at, `HH:MM`, and `:SS`
+/// between whole minutes. A clock the zone moved reads as it was lived, so a
+/// repeated hour is marked twice.
+fn clock_marks(layout: &datum_layout::dayview::DayviewLayout) -> Vec<ClockMark> {
+    let (Some(step), Some(day)) = (clock_step_seconds(layout), layout.days.first()) else {
+        return Vec::new();
+    };
+    // Every zone is a whole number of quarter hours from UTC.
+    let by = step.min(900);
+    let zone = Zone::host();
+    // From the first instant drawn, on it too.
+    let first = (day.start_ms + by * 1000 - 1).div_euclid(by * 1000);
+    let last = day.end_ms.div_euclid(by * 1000);
+    (first..=last)
+        .filter_map(|k| Utc.timestamp_millis_opt(k * by * 1000).single())
+        .filter_map(|t| {
+            let local = zone.local_naive(t);
+            let s = i64::from(chrono::Timelike::num_seconds_from_midnight(&local));
+            (s % step == 0).then(|| ClockMark {
+                ms: t.timestamp_millis(),
+                label: if s % 60 == 0 {
+                    crate::render::action::clock_label(&local)
+                } else {
+                    format!(":{:02}", s % 60)
+                },
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
     crate::render::action::clock_label(&Zone::host().local_naive(t))
 }
@@ -993,9 +1013,9 @@ mod tests {
 
     /// da-hklaz: `--ahead` draws a window ending at now on past it — what
     /// is open runs to the picture's end, under the now line — and marks
-    /// the whole minutes of a short one; the JSON's window still ends at now.
+    /// its clock times; the JSON's window still ends at now.
     #[test]
-    fn ahead_runs_open_states_on_and_marks_the_minutes() {
+    fn ahead_runs_open_states_on_and_marks_the_clock() {
         use datum_core::entry::{Entry, Verb};
         use datum_parse::time::clock::{install, uninstall, MockClock};
         let start = DatumTime::now();
@@ -1026,11 +1046,53 @@ mod tests {
         let focus = day.fields.iter().find(|f| f.field == "focus").unwrap();
         assert_eq!(focus.blocks[0].end_ms, day.end_ms);
         assert_eq!(c.window.1, c.now_ms);
-        let marks = c.flow.unwrap();
-        assert_eq!(marks.len(), 2, "two whole minutes in two minutes");
-        assert!(marks.iter().all(|m| m.ms % 60_000 == 0));
-        assert!(marks.iter().all(|m| m.label.len() == 5));
-        assert_eq!(wide.flow.map(|m| m.len()), Some(0));
+        assert!(c.flow && wide.flow);
+        // Its clock times, to the zoom's step (da-b9glf): a minute's
+        // `HH:MM`, its half `:30`, over the two minutes drawn.
+        let step = clock_step_seconds(&c.layout).unwrap();
+        assert_eq!(step, 30);
+        assert_eq!(c.clock.len(), 4, "{:?}", c.clock);
+        assert!(c.clock.iter().all(|m| m.ms % 30_000 == 0));
+        for m in &c.clock {
+            let whole = m.ms % 60_000 == 0;
+            assert_eq!(m.label.len(), if whole { 5 } else { 3 }, "{m:?}");
+            assert_eq!(!whole, m.label == ":30", "{m:?}");
+        }
+        assert!(clock_step_seconds(&wide.layout).unwrap() >= 300);
+        assert!(wide.clock.iter().all(|m| m.label.len() == 5));
+    }
+
+    /// da-b9glf: every second the picture draws that the host clock reads a
+    /// whole step at is marked, the first instant drawn included when it is
+    /// one — a window starting on a mark lost it to an off-by-one.
+    #[test]
+    fn clock_marks_are_every_whole_step_drawn_ends_included() {
+        let geom = NowviewGeometry {
+            history_minutes: 30.0,
+            width: Some(400.0),
+            ..NowviewGeometry::default()
+        };
+        // A window starting on a whole hour (1.8e12 ms is one), in UTC and in
+        // any zone a whole quarter-hour from it.
+        let at = 1_800_000_000_000 + 1_800_000;
+        let layout = compute_dayview(&nowview_config(Vec::new(), at, at, None, &geom));
+        let step = clock_step_seconds(&layout).unwrap();
+        let day = &layout.days[0];
+        let zone = Zone::host();
+        let want: Vec<i64> = (day.start_ms / 1000..=day.end_ms / 1000)
+            .map(|s| s * 1000)
+            .filter(|ms| *ms >= day.start_ms)
+            .filter(|ms| {
+                let t = Utc.timestamp_millis_opt(*ms).single().unwrap();
+                i64::from(chrono::Timelike::num_seconds_from_midnight(
+                    &zone.local_naive(t),
+                )) % step
+                    == 0
+            })
+            .collect();
+        let got: Vec<i64> = clock_marks(&layout).iter().map(|m| m.ms).collect();
+        assert_eq!(got, want);
+        assert_eq!(got.first(), Some(&day.start_ms), "step {step}");
     }
 
     /// Without the `png` feature, requesting a `.png` output path must

@@ -137,6 +137,9 @@ describe('a press snaps to a gridline it lands near', () => {
 		assert.equal(snapTo(208, [200, 210]), 210);
 		assert.equal(snapTo(202, [200, 210]), 200);
 		assert.equal(snapTo(205, [200, 210]), 200, 'a tie lands on the first, twice running');
+		// A mark of the other axis standing on it is a tie too (da-b9glf).
+		assert.equal(snapTo(205, [200, 199.8]), 200, 'within half a pixel is a tie');
+		assert.equal(snapTo(205, [200, 201]), 201);
 		assert.equal(snapTo(205, [210, 200]), 210);
 		assert.equal(snapTo(150, []), 150);
 	});

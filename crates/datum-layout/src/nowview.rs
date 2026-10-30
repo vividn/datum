@@ -538,14 +538,13 @@ mod tests {
         assert_eq!(labels(0.5), vec!["-30s", ""]);
     }
 
-    /// da-hklaz: a window whose whole minutes flow past (`--ahead`, five
-    /// minutes or less) is ruled at its own length, leaving them the axis;
-    /// not drawn ahead, it is ruled for its pixels.
+    /// da-b9glf: the clock times have a strip of their own, so a window
+    /// drawn ahead (`--ahead`) is ruled for its pixels, as one that is not.
     #[test]
-    fn a_window_marked_as_it_flows_rules_its_own_length() {
+    fn a_window_drawn_ahead_rules_its_pixels() {
         let labels = |ahead_minutes: f64| -> Vec<String> {
             let geom = NowviewGeometry {
-                history_minutes: FLOW_MARKS_MINUTES,
+                history_minutes: 5.0,
                 width: Some(600.0),
                 ahead_minutes,
                 ..NowviewGeometry::default()
@@ -557,8 +556,44 @@ mod tests {
                 .map(|t| t.label)
                 .collect()
         };
-        assert_eq!(labels(FLOW_MARKS_MINUTES), vec!["-5m", ""]);
-        assert_eq!(labels(0.0), vec!["-5m", "-4m", "-3m", "-2m", "-1m", ""]);
+        assert_eq!(labels(5.0), vec!["-5m", "-4m", "-3m", "-2m", "-1m", ""]);
+        assert_eq!(labels(5.0), labels(0.0));
+    }
+
+    /// da-b9glf: a strip for the clock across the bands from the relative
+    /// axis, a line of text tall, out of the band's room; none on the
+    /// snapshot. Its step follows the zoom: finer the shorter the window.
+    #[test]
+    fn the_clock_strip_and_its_step_follow_the_zoom() {
+        let layout = |history_minutes: f64| {
+            let geom = NowviewGeometry {
+                history_minutes,
+                width: Some(400.0),
+                height: 100.0,
+                ..NowviewGeometry::default()
+            };
+            crate::dayview::compute_dayview(&nowview_config(Vec::new(), 0, 0, None, &geom))
+        };
+        let thirty = layout(30.0);
+        assert_eq!(thirty.clock_axis_height, 15.0);
+        assert_eq!(thirty.plot.y, 2.0 + 15.0);
+        assert_eq!(thirty.day_height, 100.0 - 4.0 - 15.0 - 15.0);
+        assert_eq!(thirty.height, 100.0);
+        assert_eq!(layout(0.0).clock_axis_height, 0.0);
+        assert_eq!(clock_step_seconds(&layout(0.0)), None);
+        let steps: Vec<i64> = [1.0, 5.0, 30.0, 120.0, 720.0]
+            .into_iter()
+            .map(|m| clock_step_seconds(&layout(m)).unwrap())
+            .collect();
+        assert!(steps.windows(2).all(|w| w[0] < w[1]), "{steps:?}");
+        // Two labels apart, at the window's scale: 320px for 30 minutes.
+        let px = |s: i64| s as f64 * 320.0 / 1800.0;
+        let label =
+            text_width("00:00", axis_label_size(Orientation::Horizontal, 15.0)) + AXIS_LABEL_GAP;
+        let step = clock_step_seconds(&thirty).unwrap();
+        assert!(px(step) >= 2.0 * label);
+        let finer = CLOCK_STEPS[CLOCK_STEPS.iter().position(|s| *s == step).unwrap() - 1];
+        assert!(px(finer) < 2.0 * label);
     }
 
     #[test]
@@ -570,11 +605,42 @@ mod tests {
 
 // ─── Shared config assembly (CLI + browser) ──────────────────────────────────
 
-/// The longest window a picture drawn `--ahead` marks the whole minutes of
-/// (da-hklaz): vividn's «for the 1 and 2 minute nowviews, let's show the
-/// actual whole minute marks as they are flowing past», and up to the 5m
-/// beside them, where five marks still stand apart.
-pub const FLOW_MARKS_MINUTES: f64 = 5.0;
+/// The steps the clock strip is ruled at (da-b9glf), in seconds: each a
+/// whole number of the local clock's minutes or hours, the finest with room
+/// for two labels taken ([`clock_step_seconds`]).
+pub const CLOCK_STEPS: [i64; 18] = [
+    1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400,
+];
+
+/// The clock strip's step for `layout`, in seconds: the finest of
+/// [`CLOCK_STEPS`] at least two labels apart at its scale, as the relative
+/// axis spaces its majors, so the zoom chooses it. `None` without a strip.
+pub fn clock_step_seconds(layout: &DayviewLayout) -> Option<i64> {
+    let span = layout.days.first()?.spans.first()?;
+    let ms = (span.end_ms - span.start_ms) as f64;
+    if layout.clock_axis_height <= 0.0 || ms <= 0.0 || span.time_extent <= 0.0 {
+        return None;
+    }
+    let px_per_second = span.time_extent / ms * 1000.0;
+    let label = match layout.orientation {
+        Orientation::Horizontal => text_width(
+            "00:00",
+            axis_label_size(layout.orientation, layout.clock_axis_height),
+        ),
+        Orientation::Vertical => AXIS_LABEL_MAX,
+    } + AXIS_LABEL_GAP;
+    Some(
+        CLOCK_STEPS
+            .into_iter()
+            .find(|s| *s as f64 * px_per_second >= 2.0 * label)
+            .unwrap_or(CLOCK_STEPS[CLOCK_STEPS.len() - 1]),
+    )
+}
+
+/// How wide a vertical clock strip is: `00:00` beside its baseline.
+fn vertical_clock_strip() -> f64 {
+    text_width("00:00", AXIS_LABEL_MAX) + VERTICAL_AXIS_LABEL_INSET + 2.0
+}
 
 /// Default history window (minutes) when the caller passes none.
 pub const DEFAULT_HISTORY_MINUTES: f64 = 30.0;
@@ -767,20 +833,11 @@ pub fn nowview_config(
         }];
     }
     let reach = (before + zero).abs().max((after - zero).abs());
-    // A window whose whole minutes flow past leaves them the axis: it is
-    // ruled at its own length, as one of two minutes or less always is.
-    let cfg = if ahead > 0.0 && history_minutes <= FLOW_MARKS_MINUTES {
-        TickConfig {
-            major_minutes: reach,
-            minor_minutes: None,
-        }
-    } else {
-        tick_config(
-            reach,
-            window_extent / history_minutes.max(f64::MIN_POSITIVE),
-            label_px(geom.orientation, geom.time_axis_height, reach),
-        )
-    };
+    let cfg = tick_config(
+        reach,
+        window_extent / history_minutes.max(f64::MIN_POSITIVE),
+        label_px(geom.orientation, geom.time_axis_height, reach),
+    );
     let mut ticks = ticks_spaced_for(
         time_axis_extent_for_ticks + more_px,
         before + pad_before,
@@ -813,12 +870,21 @@ pub fn nowview_config(
         geom.time_axis_height
     };
     let axis_ticks_override = Some(ticks);
+    // The clock strip across the bands from the relative axis (da-b9glf):
+    // the snapshot has neither.
+    let clock_axis_height = if snapshot {
+        0.0
+    } else if vertical {
+        vertical_clock_strip()
+    } else {
+        geom.time_axis_height
+    };
 
     let day_height = if across > 0.0 {
         // Use the requested extent as the per-day band, leaving room for
         // axis + margins. Floor at a sensible minimum so labels stay
         // readable.
-        (across - 2.0 * geom.margin - time_axis_height).max(50.0)
+        (across - 2.0 * geom.margin - time_axis_height - clock_axis_height).max(50.0)
     } else {
         DEFAULT_DAY_HEIGHT
     };
@@ -838,6 +904,7 @@ pub fn nowview_config(
         orientation: geom.orientation,
         axis_ticks_override,
         right_panel_width: now_width,
+        clock_axis_height,
     }
 }
 
@@ -975,7 +1042,8 @@ mod config_tests {
             ..NowviewGeometry::default()
         };
         let cfg = nowview_config(Vec::new(), 0, 0, None, &geom);
-        assert_eq!(cfg.day_height, 300.0 - 4.0 - 22.0);
+        // Less both axis strips: the relative one and the clock's (da-b9glf).
+        assert_eq!(cfg.day_height, 300.0 - 4.0 - 22.0 - 22.0);
     }
 
     /// da-9g3bf: the now strip is a sliver, the same share of the plot

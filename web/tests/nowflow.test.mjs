@@ -5,8 +5,8 @@
 // over (could this even be done in realtime without second jitters)?»
 //
 // So on now the picture is drawn AHEAD of now as well (`--ahead`), its lanes
-// and whole-minute marks in `.flow` groups clipped at the now line, and the
-// widget slides them along with the clock — no CLI run per tick.
+// and its clock times (da-b9glf) in `.flow` groups clipped at the now line,
+// and the widget slides them along with the clock — no CLI run per tick.
 //
 // The page's timers are held (`holdTimers`), so a second of clock is a
 // second of the slide's timer and nothing else runs: what moved is read off
@@ -59,14 +59,14 @@ const reading = (page) =>
 		};
 	});
 
-/** Where the minute `iso` is marked on screen, and where its label stands. */
+/** Where the clock time `iso` is marked on screen, and where its label stands. */
 const minute = (page, iso, label) =>
 	page.locator(`${NOWVIEW} svg.svg`).evaluate(
 		(svg, [iso, label]) => {
 			const centre = (el) => (el ? el.getBoundingClientRect().left + el.getBoundingClientRect().width / 2 : null);
-			const mark = [...svg.querySelectorAll('.minute-mark')].find((m) => Date.parse(m.dataset.at) === Date.parse(iso));
-			const text = [...svg.querySelectorAll('.minute-label')].find((l) => l.textContent === label);
-			return { mark: centre(mark), label: centre(text), labels: [...svg.querySelectorAll('.minute-label')].map((l) => l.textContent) };
+			const mark = [...svg.querySelectorAll('.clock-mark')].find((m) => Date.parse(m.dataset.at) === Date.parse(iso));
+			const text = [...svg.querySelectorAll('.clock-label')].find((l) => l.textContent === label);
+			return { mark: centre(mark), label: centre(text), labels: [...svg.querySelectorAll('.clock-label')].map((l) => l.textContent) };
 		},
 		[iso, label]
 	);
@@ -109,11 +109,11 @@ describe('the nowview flows', () => {
 		);
 	});
 
-	test('whole-minute marks flow past with their clock labels, at the instants they name', async () => {
+	test('the clock times flow past with their labels, at the instants they name', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				await page.locator(`${NOWVIEW} svg.svg .minute-mark`).first().waitFor({ state: 'attached' });
+				await page.locator(`${NOWVIEW} svg.svg .clock-mark`).first().waitFor({ state: 'attached' });
 				await page.clock.runFor(SETTLE);
 				await app.idle();
 				const seen = await app.spyOnRunner();
@@ -133,71 +133,93 @@ describe('the nowview flows', () => {
 				assert.ok(Math.abs(at.label - at.mark) < 0.5, `the label is at ${at.label}, its mark at ${at.mark}`);
 				assert.deepEqual(await seen(), [], 'datum was asked for something while the marks flowed');
 
-				// The 2-minute window marks its minutes too; a 30-minute one does not.
+				// The 2-minute window marks its minutes too; a 30-minute one its
+				// clock at a coarser step, the zoom's (da-b9glf).
 				const two = await app.run(['nowview', '-o', '-', '--history', '2m', '--surround', '2m', '--ahead', '2m']);
 				assert.match(two.stdout, />14:59<\/text>/);
 				assert.match(two.stdout, />14:58<\/text>/);
 				const wide = await app.run(['nowview', '-o', '-', '--history', '30m', '--ahead', '30m']);
-				assert.ok(!wide.stdout.includes('class="minute-mark"'), 'a 30m window marks its minutes');
+				const times = [...wide.stdout.matchAll(/class="clock-label"[^>]*>([^<]*)</g)].map((m) => m[1]);
+				assert.ok(times.length >= 2 && times.every((t) => /^\d\d:\d[05]$/.test(t)), `a 30m window's clock: ${times}`);
 				assert.deepEqual(app.errors, []);
 			},
 			{ clock: AT, holdTimers: true, desk: deskWith({ history: '1m' }) }
 		);
 	});
 
-	test('a clock time slid under the far label is hidden, and drawn again clear of it (da-to5n4)', async () => {
-		/** Whether each clock time on the window is drawn, and the far label's words. */
-		const shown = (page) =>
-			page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => {
-				const frame = svg.closest('.picture').getBoundingClientRect();
-				const on = (l) => l.getBoundingClientRect().left < frame.right && l.getBoundingClientRect().right > frame.left;
-				const ticks = [...svg.querySelectorAll('.tick-label')].filter(on);
-				const far = ticks.reduce((a, b) => (b.getBoundingClientRect().left < a.getBoundingClientRect().left ? b : a));
-				const labels = [...svg.querySelectorAll('.minute-label')].filter(on);
-				return {
-					far: far.textContent,
-					drawn: Object.fromEntries(labels.map((l) => [l.textContent, getComputedStyle(l).visibility !== 'hidden']))
-				};
+	// The clock's labels slide with the flow, and its axis's handle with them
+	// (da-b9glf): over the first label wholly inside the window, the next one
+	// once that one has slid out. They no longer share an axis with the
+	// relative labels, which da-to5n4 hid them under.
+	test('the clock axis’s handle stays on its label as it slides, and takes the next as it leaves', async () => {
+		/** The clock handle's words and center, and the center of the label it names. */
+		const held = (page) =>
+			page.locator(NOWVIEW).evaluate((root) => {
+				const h = root.querySelector('.nowview-handles .handle[data-axis="abs"]');
+				const mid = (el) => el.getBoundingClientRect().left + el.getBoundingClientRect().width / 2;
+				const frame = root.querySelector('.picture').getBoundingClientRect();
+				const label = [...root.querySelectorAll('svg.svg .clock-label')].find(
+					(l) => l.textContent === h?.dataset.at && l.getBoundingClientRect().left >= frame.left - 1
+				);
+				// Its instant, as `:30` names every half minute: the mark datum draws before it.
+				const at = label && Date.parse(label.previousElementSibling.getAttribute('data-at'));
+				return { at, text: h?.dataset.at, handle: h && mid(h), label: label && mid(label), left: label?.getBoundingClientRect().left - frame.left };
 			});
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				await page.locator(`${NOWVIEW} .nowview-handles .handle`).first().waitFor();
+				await page.locator(`${NOWVIEW} .nowview-handles .handle[data-axis="abs"]`).waitFor();
 				await page.clock.runFor(SETTLE);
 				await app.idle();
-				// 14:59:10: 14:58 is 70 s back on a 2-minute window, well clear of «-2m».
-				assert.deepEqual(await shown(page), { far: '-2m', drawn: { '14:58': true, '14:59': true } });
+				const before = await held(page);
+				assert.ok(Math.abs(before.handle - before.label) < 1, JSON.stringify(before));
 				const seen = await app.spyOnRunner();
-				// 50 s on it has slid to the window's far end, under «-2m», with no new picture.
+				// 3 s on, it has slid, and the handle with it.
+				await app.clock.forward(3_000);
+				const slid = await held(page);
+				assert.equal(slid.at, before.at);
+				assert.ok(slid.label < before.label - 1, `the label did not slide: ${JSON.stringify([before, slid])}`);
+				assert.ok(Math.abs(slid.handle - slid.label) < 1, JSON.stringify(slid));
+				// Long enough on that it has left the window, the 2m window's first
+				// label being in its first half-minute, and short of the half of
+				// what is drawn ahead that asks datum again: the handle is on the next.
 				await app.clock.forward(50_000);
+				const next = await held(page);
+				assert.notEqual(next.at, before.at);
+				assert.ok(next.left >= -1 && Math.abs(next.handle - next.label) < 1, JSON.stringify(next));
 				assert.deepEqual((await seen()).filter((a) => a[0] === 'nowview'), [], 'datum was asked for a new picture');
-				assert.deepEqual(await shown(page), { far: '-2m', drawn: { '14:58': false, '14:59': true, '15:00': true } });
 				assert.deepEqual(app.errors, []);
 			},
 			{ clock: todayAt(14, 59) + 10_000, holdTimers: true, desk: deskWith({ history: '2m' }) }
 		);
 	});
 
-	test('a clock time still to come is not drawn beside «now», and is at its instant (da-xwe0h)', async () => {
-		/** The 15:00 label: where its near edge is against the now line, and whether it is drawn. */
+	// And none is cut by the clip there (da-b9glf): drawn once it is wholly behind it.
+	test('a clock time still to come is not drawn beside «now», nor until it is wholly behind it (da-xwe0h)', async () => {
+		/** The 15:00 label: where its edges are against the now line, and whether it is drawn. */
 		const next = (page) =>
 			page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => {
-				const label = [...svg.querySelectorAll('.minute-label')].find((l) => l.textContent === '15:00');
+				const label = [...svg.querySelectorAll('.clock-label')].find((l) => l.textContent === '15:00');
 				const line = svg.querySelector('.current-time-line');
 				const now = new DOMPoint(Number(line.dataset.now), 0).matrixTransform(svg.getScreenCTM()).x;
-				return { peeks: label.getBoundingClientRect().left < now, drawn: getComputedStyle(label).visibility !== 'hidden' };
+				const r = label.getBoundingClientRect();
+				return { peeks: r.left < now, behind: r.right < now, drawn: getComputedStyle(label).visibility !== 'hidden', width: r.width };
 			});
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				await page.locator(`${NOWVIEW} svg.svg .minute-mark`).first().waitFor({ state: 'attached' });
+				await page.locator(`${NOWVIEW} svg.svg .clock-mark`).first().waitFor({ state: 'attached' });
 				await page.clock.runFor(SETTLE);
 				await app.idle();
 				// A second short of 15:00, half its label lies before the now line.
-				assert.deepEqual(await next(page), { peeks: true, drawn: false });
-				// Half a second on, the slide's last step has passed 15:00.
+				assert.deepEqual(await next(page), { ...(await next(page)), peeks: true, behind: false, drawn: false });
+				// Past 15:00 it straddles the line, which would cut it: not drawn.
 				await app.clock.forward(1_500);
-				assert.equal((await next(page)).drawn, true);
+				assert.deepEqual(await next(page), { ...(await next(page)), peeks: true, behind: false, drawn: false });
+				// Its half-width on, and a second, it is wholly behind it, and drawn.
+				const { pxPerSecond } = await reading(page);
+				await app.clock.forward(Math.ceil(((await next(page)).width / 2 / pxPerSecond + 1) * 1000));
+				assert.deepEqual(await next(page), { ...(await next(page)), behind: true, drawn: true });
 				assert.deepEqual(app.errors, []);
 			},
 			{ clock: AT - 1_000 - SETTLE, holdTimers: true, desk: deskWith({ history: '2m' }) }

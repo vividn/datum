@@ -872,6 +872,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
         orientation: Orientation::Horizontal,
         axis_ticks_override,
         right_panel_width: panel_width,
+        clock_axis_height: 0.0,
     };
     let layout = compute_dayview(&cfg);
     let current_states = vec![NowviewCurrentState {
@@ -944,6 +945,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         orientation: Orientation::Horizontal,
         axis_ticks_override,
         right_panel_width: panel_width,
+        clock_axis_height: 0.0,
     };
     let layout = compute_dayview(&cfg);
     let current_states = vec![NowviewCurrentState {
@@ -1027,6 +1029,7 @@ fn nowview_scene_at_instant() -> DayviewLayoutResult {
         &[state("focused", "#cc8844")],
         false,
         true,
+        &[],
     );
     DayviewLayoutResult { svg }
 }

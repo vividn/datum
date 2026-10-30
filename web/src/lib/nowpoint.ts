@@ -148,16 +148,17 @@ export const SNAP_PX = 12;
  * `marks` are the gridlines' own screen positions, read off the picture —
  * never a multiple of five minutes computed here, because which minutes
  * the picture RULED is the picture's to say (a 12-hour window rules hours).
- * Two marks equally near is the FIRST of them, in the order the picture
- * drew them: a tie has to land somewhere, and «somewhere» has to be the
- * same answer twice.
+ * Two marks equally near, to half a pixel, is the FIRST of them, in the
+ * order the picture drew them: a tie has to land somewhere, and
+ * «somewhere» has to be the same answer twice — and a mark of one axis
+ * standing on one of the other's is a tie (da-b9glf).
  */
 export function snapTo(x: number, marks: number[]): number {
 	let best = x;
 	let off = Infinity;
 	for (const mark of marks) {
 		const d = Math.abs(mark - x);
-		if (d <= SNAP_PX && d < off) [best, off] = [mark, d];
+		if (d <= SNAP_PX && d < off - 0.5) [best, off] = [mark, d];
 	}
 	return best;
 }

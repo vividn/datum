@@ -1,5 +1,6 @@
-// The nowview widget's HANDLES (da-57vj4): each major label of the time
-// axis is one. Hover it, or press a finger on it, and a wheel of the
+// The nowview widget's HANDLES (da-57vj4): the outermost label of each of
+// its two time axes is one (da-b9glf) — the relative axis's far label, and the
+// clock's first. Hover it, or press a finger on it, and a wheel of the
 // ladder's steps opens around it (down to 30s and up to 12h, never to the
 // snapshot, which is the widget's «show history» turned off, da-hklaz); a
 // step keeps the handle's place and gives it the step's time, so the window
@@ -41,9 +42,9 @@ const asked = (page, h) =>
 		return argv?.[argv.indexOf('--history') + 1] === h;
 	}, h);
 
-/** The handles' words, far first. */
+/** The relative axis's handles' words, far first. */
 const handled = (page, pane = PANE) =>
-	page.locator(`${pane} .nowview-handles .handle`).evaluateAll((hs) => hs.map((h) => h.dataset.at));
+	page.locator(`${pane} .nowview-handles .handle[data-axis="rel"]`).evaluateAll((hs) => hs.map((h) => h.dataset.at));
 
 /** The open wheel's notches, the longer (up) then the shorter, nearest first, and how clear each is. */
 const wheelOf = (page) =>
@@ -84,7 +85,7 @@ async function beside(page, pane) {
 		const far = all.reduce((a, b) => (r(b).x < r(a).x ? b : a));
 		const labels = all.filter((l) => getComputedStyle(l).visibility !== 'hidden');
 		const axis = r(svg.querySelector('.axis'));
-		const handles = [...p.querySelectorAll('.nowview-handles .handle')];
+		const handles = [...p.querySelectorAll('.nowview-handles .handle[data-axis="rel"]')];
 		const wrong = [];
 		if (r(far).left < frame.left - 0.5) wrong.push(`the far label starts at ${r(far).left}, the window at ${frame.left}`);
 		if (!labels.includes(far)) wrong.push(`the far label ${far.textContent} is hidden`);
@@ -124,12 +125,14 @@ const farIs = (page, at, pane = PANE) =>
 	);
 
 describe('the nowview widget', () => {
-	test('a handle over every label the window shows, the far one first, and no − / +', async () => {
+	test('a handle over the far label alone, another over the clock’s first, and no − / +', async () => {
 		await shared.solo(async ({ page }) => {
 			const where = await beside(page, PANE);
 			assert.equal(where.far, '-30m');
 			assert.deepEqual(where.wrong, []);
-			assert.ok((await handled(page)).length >= 2, `one handle: ${await handled(page)}`);
+			assert.deepEqual(await handled(page), ['-30m']);
+			const clock = await page.locator(`${PANE} .nowview-handles .handle[data-axis="abs"]`).getAttribute('data-at');
+			assert.match(clock, /^\d\d:\d\d$/);
 			assert.equal(await page.locator(`${PANE} .nowview-steps, ${PANE} .step`).count(), 0, 'the − / + are still drawn');
 		});
 	});
@@ -169,7 +172,7 @@ describe('the nowview widget', () => {
 		});
 	});
 
-	test('with the cursor set the far label is the leftmost, and a handle on each side of it', async () => {
+	test('with the cursor set the far label is the leftmost, and the only handle of its axis', async () => {
 		await withApp(
 			async ({ page }) => {
 				await page.evaluate((ms) => window.datum.cursor.set(new Date(ms)), todayAt(9, 0));
@@ -181,7 +184,7 @@ describe('the nowview widget', () => {
 				const where = await beside(page, PANE);
 				assert.equal(where.far, '-15m');
 				assert.deepEqual(where.wrong, []);
-				assert.ok((await handled(page)).includes('+15m'), `${await handled(page)}`);
+				assert.deepEqual(await handled(page), ['-15m']);
 			},
 			{ clock: todayAt(12, 0) }
 		);
@@ -220,23 +223,23 @@ describe('the nowview widget', () => {
 		});
 	});
 
-	test('on −15m in a 30m window, 20m makes the window 40m; the wheel’s steps end at 30s and 12h', async () => {
+	// The clock's handle (da-b9glf) is a time 20 minutes back, no step of the
+	// ladder: a notch gives its place the step's time, written as the clock
+	// time it puts there, and the window rescales by their ratio.
+	test('on the clock’s 14:40 in a 30m window to 15:00, 30m (14:30) makes the window 45m; the wheel’s steps end at 30s and 12h', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				await beside(page, PANE);
 				await app.spyOnRunner();
-				// A box narrow enough that the 30m window labels its −15m.
-				assert.ok((await handled(page)).includes('-15m'), `${await handled(page)}`);
-				await hover(page, '-15m');
-				await notch(page, '20m').click();
-				await asked(page, '40m');
+				assert.equal(await page.locator(`${PANE} .nowview-handles .handle[data-axis="abs"]`).getAttribute('data-at'), '14:40');
+				await hover(page, '14:40');
+				assert.equal((await notch(page, '30m').textContent()).trim(), '14:30');
+				await notch(page, '30m').click();
+				await asked(page, '45m');
 				await app.idle();
 				assert.deepEqual(app.errors, [], 'datum did not take a window off the ladder');
 			},
-			// 460, not 400: the now strip takes its share of the plot (da-6csum),
-			// and at 400 five minutes of window were a pixel short of the room
-			// two labels need, so the 30m window ruled tens and drew no −15m.
 			{ viewport: { width: 460, height: 700 }, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 		);
 		// Past the ladder's ends a handle's wheel has no step that way (da-wd6h5).
@@ -905,11 +908,12 @@ describe('the nowview draws past its box', () => {
 		}, phone);
 	});
 
-	test('there is no clock: no HH:MM anywhere in the picture', async () => {
+	test('no clock under the now section: an HH:MM is the clock axis’s alone', async () => {
 		await withApp(async ({ page }) => {
 			await page.locator(`${BAND} svg.svg .tick-label`).first().waitFor({ state: 'attached' });
-			const texts = await page.locator(`${BAND} svg.svg text`).allTextContents();
+			const texts = await page.locator(`${BAND} svg.svg text:not(.clock-label)`).allTextContents();
 			assert.deepEqual(texts.filter((t) => /\d{1,2}:\d\d/.test(t)), []);
+			assert.ok((await page.locator(`${BAND} svg.svg .clock-label`).count()) > 0, 'no clock axis');
 			assert.equal(await page.locator(`${BAND} svg.svg .current-time-text`).count(), 0);
 		}, phone);
 	});
@@ -1339,7 +1343,7 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 							const r = el.getBoundingClientRect();
 							return [r.left + r.width / 2, r.top + r.height / 2];
 						};
-						const labels = [...p.querySelectorAll('svg.svg .tick-label')].filter((l) => getComputedStyle(l).visibility !== 'hidden');
+						const labels = [...p.querySelectorAll('svg.svg :is(.tick-label, .clock-label)')].filter((l) => getComputedStyle(l).visibility !== 'hidden');
 						const off = {};
 						for (const h of p.querySelectorAll('.nowview-handles .handle')) {
 							const [hx, hy] = mid(h);
@@ -1356,7 +1360,8 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 				const during = await where();
 				await page.mouse.up();
 				const at = Object.keys(rest).filter((k) => k in during);
-				assert.ok(at.length >= 2, `handles at rest ${Object.keys(rest)}, mid-drag ${Object.keys(during)}`);
+				// The clock's may have moved on to a label the drag brought in.
+				assert.ok(at.length >= 1, `handles at rest ${Object.keys(rest)}, mid-drag ${Object.keys(during)}`);
 				for (const k of at) {
 					assert.ok(during[k][2] - rest[k][2] > 60, `${k}'s label moved ${during[k][2] - rest[k][2]}px`);
 					const [dx, dy] = [0, 1].map((i) => Math.abs(during[k][i] - rest[k][i]));

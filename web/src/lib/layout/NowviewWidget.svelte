@@ -1,7 +1,8 @@
 <!--
 	The nowview widget (da-pcis): datum's nowview picture through a CliPane,
-	and a HANDLE over each major label of its time axis (da-57vj4), which
-	replaced the − / + beside the far one (da-ndzl). Hover a handle, or
+	and a HANDLE over the outermost label of each of its two time axes
+	(da-57vj4, da-b9glf), which replaced the − / + beside the far one
+	(da-ndzl). Hover a handle, or
 	press a finger on it, and a wheel of the ladder's steps opens around it
 	(down to 30s, halving past 5m through the 2m and 1m a game needs, up to
 	12h): a click or a swipe across the axis gives the handle that time in
@@ -40,8 +41,8 @@
 	  tap it again            → UNSELECTS it (vividn, 10-28, da-fzdkc)
 	  double tap, anywhere    → a SELECTION there; what was selected stays
 	  tap on ground           → a SELECTION where it fell; the window does not move
-	  touch the time axis     → SCRUB: the time under the finger, following it
-	    and drag                to the lift — not snapped, and no pan
+	  touch a time axis       → SCRUB: the time under the finger, following it
+	    and drag                to the lift, and no pan
 	  drag sideways           → PAN in time; the selection does not move,
 	                            and never past now (da-v8gzq): a finger's
 	                            flick coasts on after the lift
@@ -71,13 +72,24 @@
 	field, the state and the two instants (vividn's «bare info»). Not the
 	comment — a mark does not carry one, and see #lib/inspect.ts.
 
-	What a tap MEANS depends on where the window is. On now the axis is
-	RELATIVE, so the selection is too: the −5 / −10 / −15 / −20 gridlines
-	spell themselves `-q` … `-qqqq` and everywhere else is the relative
-	`-t -7`, and the white line stays on its gridline as the minutes pass
-	(`#lib/cursor.ts`). Panned away the axis is absolute, and so is the
-	pill: `-t HH:MM`, the one the dayview has always made (vividn, 17:01:
-	«off-now, yes use absolute time»).
+	THE TWO AXES (da-b9glf). The CLI writes the clock over the band (right of
+	it when time runs down), each time a solid line through it as on the
+	dayview, at a step the zoom chooses; and the times relative to the
+	instant under it (left of it), each a dotted line. A selection is ONE
+	pill, absolute (`-t 14:07`) or relative (`-t -7`), by how it was made:
+
+	  scrub the clock's axis  → absolute, stopping on a dot or a state change
+	                            it passes within a few px (`SCRUB_SNAP_PX`)
+	  scrub the relative one  → relative, not snapped, which is the point
+	  tap near an axis mark   → that mark, absolute for a clock time and
+	                            relative for a relative one (`SNAP_PX`)
+	  long press near a dot   → its instant, absolute; and so a right click
+	    or a state change
+
+	A tap snapped to nothing still means what the window is: on now
+	RELATIVE, the white line staying where it fell as the minutes pass
+	(`#lib/cursor.ts`); panned away absolute, `-t HH:MM`, the one the dayview
+	has always made (vividn, 17:01: «off-now, yes use absolute time»).
 
 	A click on the DAYVIEW still centres this window on the instant, which
 	is what it has always done; a click in a nowview does not, and says so
@@ -86,11 +98,12 @@
 	clicks alone, the same idiom as `data-pans`.
 
 	The pills the selection makes are drawn TWICE — in the bottom bar, as
-	every pill is, and here in the band's MARGIN beside the instant each one
-	names (vividn: «let's show the pills in the margin of the nowview»). One
-	store, two views, `Pill.svelte` for both. The margin is real room: a
-	swipe that starts in it changes tabs, because `data-pans` is the BAND's
-	and not the widget's.
+	every pill is, and here on the AXIS each belongs to, beside the instant
+	it names (vividn: «let's show the pills in the margin of the nowview»,
+	then da-b9glf: the margin row went, «at smaller heights the pill row
+	takes up an enormous amount of room, and looks weird all empty like
+	that»). One store, two views, `Pill.svelte` for both; these are words
+	only, as a press where they stand is the axis's.
 
 	THE NOW SECTION is the CLI's strip of each field's current state, and it
 	belongs to now (da-dv45l, vividn: «it is no longer pinned on the side,
@@ -126,7 +139,7 @@
 	`data-pans="x"` (da-kcmp): a one-finger drag across it is never a swipe
 	between the pane's tabs, whatever the pane it is in.
 
-	The handles, the buttons and the margin pills are the WIDGET's, not the
+	The handles, the buttons and the axis pills are the WIDGET's, not the
 	picture's: a redraw replaces the picture, never them — it only re-places
 	them against the new picture's geometry.
 
@@ -145,7 +158,7 @@
 	import { hidOf, markOf, marksIn, pressSpent } from '#lib/inspect.ts';
 	import { isSelected } from '#lib/selection.ts';
 	import { readLanes } from '#lib/lanes.ts';
-	import { advance, LONG_MS, SLOP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
+	import { advance, LONG_MS, SLOP_PX, SNAP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
 	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
 	import { layers, spanDates, standIn, type Layer } from '#lib/dayLayers.ts';
@@ -676,9 +689,12 @@
 	 * window rules five-minute steps, a 12-hour one rules hours — so a
 	 * press snaps to what is DRAWN and never to a number computed here.
 	 */
-	function gridlines(): number[] {
+	function gridlines(of = '.gridline'): number[] {
 		const svg = svgEl();
-		return [...(svg?.querySelectorAll('.gridline') ?? [])].map((l) => {
+		// A clock time still to come is drawn ahead, behind the clip at the now-line.
+		const now = drawn ? drawn.now + slid : Infinity;
+		const shown = (l: Element) => !(Date.parse(l.getAttribute('data-at') ?? '') - now > 1);
+		return [...(svg?.querySelectorAll(of) ?? [])].filter(shown).map((l) => {
 			const r = l.getBoundingClientRect();
 			return axis?.y ? r.top + r.height / 2 : r.left + r.width / 2;
 		});
@@ -745,13 +761,59 @@
 	let waiting = $state.raw<{ x: number; y: number } | null>(null);
 
 	/**
-	 * Whether a point is on the TIME AXIS: the axis line and the ticks and
-	 * labels beyond it, below the plot or, when time runs down, left of it.
+	 * Which TIME AXIS a point is on, if either (da-b9glf): the relative one
+	 * — its line and the ticks and labels beyond it, below the plot or, when
+	 * time runs down, left of it — or the clock's, across the bands from it.
 	 */
-	function onAxis(x: number, y: number): boolean {
-		const line = svgEl()?.querySelector('path.axis')?.getBoundingClientRect();
-		if (!line || !axis) return false;
-		return axis.y ? x <= line.right + 2 : y >= line.top - 2;
+	function axisAt(x: number, y: number): 'rel' | 'abs' | null {
+		const svg = svgEl();
+		const [rel, abs] = ['path.axis', 'path.clock-axis'].map((s) => svg?.querySelector(s)?.getBoundingClientRect());
+		if (!axis) return null;
+		if (rel && (axis.y ? x <= rel.right + 2 : y >= rel.top - 2)) return 'rel';
+		if (abs && (axis.y ? x >= abs.left - 2 : y <= abs.bottom + 2)) return 'abs';
+		return null;
+	}
+
+	/** Where an instant is along the axis on screen, as the picture is slid now: `instantAlong` turned round. */
+	function posOf(ms: number): number {
+		const t = ms - slid;
+		const a = stretches.find((s) => s.from <= t && t <= s.to) ?? axis;
+		return a ? a.lo + (t - a.from) / msPerPx(a) : NaN;
+	}
+
+	/**
+	 * The instant of the occur dot or the state change nearest `pos` along
+	 * the axis, within `px`, or null (da-b9glf): a dot's time, and each end
+	 * of a block before now — one still running ends at no change.
+	 */
+	function dataNear(pos: number, px: number): number | null {
+		const svg = svgEl();
+		if (!svg || !axis) return null;
+		const at = (el: Element, name: string) => Date.parse(el.getAttribute(name) ?? '');
+		const instants = [
+			...[...svg.querySelectorAll('[data-field][data-at]')].map((d) => at(d, 'data-at')),
+			...[...svg.querySelectorAll('rect.block')].flatMap((b) => [at(b, 'data-from'), at(b, 'data-to')])
+		].filter((t) => t < nowMs() - EDGE_MS);
+		let best: number | null = null;
+		let off = px;
+		for (const t of instants) {
+			const d = Math.abs(posOf(t) - pos);
+			if (d <= off) [best, off] = [t, d];
+		}
+		return best;
+	}
+
+	/** How near a scrub of the clock axis passes a dot or a state change to stop on it: a few px, not a magnet. */
+	const SCRUB_SNAP_PX = 4;
+	/** Which axis the scrub in hand is of. */
+	let scrubbing: 'rel' | 'abs' = 'rel';
+
+	/** The time a scrub at a point names: the clock's, stopping on what it passes, or the relative axis's. */
+	function scrubAt(x: number, y: number) {
+		const at = instantAt(x, y);
+		if (scrubbing === 'rel') return selection(at, undefined, 'rel');
+		const near = dataNear(along(x, y), SCRUB_SNAP_PX);
+		return near === null ? selection(at, undefined, 'abs') : exact(near);
 	}
 
 	function begin(event: PointerEvent): void {
@@ -762,14 +824,18 @@
 			inNow: inNowRegion(event.clientX, event.clientY),
 			atOnce: event.shiftKey
 		};
-		// The time axis SCRUBS (da-xg1vi, vividn: «if you touch in the time
+		// A time axis SCRUBS (da-xg1vi, vividn: «if you touch in the time
 		// axis and drag around, in this case, do not pan but rather be able to
 		// precisely choose a time»): the time under the finger at once, and
-		// wherever it goes until the lift — not snapped, which is the point.
-		if (onAxis(press.x, press.y)) {
+		// wherever it goes until the lift. The clock's is absolute and stops
+		// a few px either side of a dot or a state change; the relative one's
+		// is relative and not snapped, which is the point (da-b9glf).
+		const on = axisAt(press.x, press.y);
+		if (on) {
 			mode = 'scrub';
+			scrubbing = on;
 			waiting = null;
-			return pointAt(selection(instantAt(press.x, press.y)));
+			return pointAt(scrubAt(press.x, press.y));
 		}
 		mode = 'press';
 		long = false;
@@ -801,7 +867,7 @@
 	/** Run the machine to where the pointer is now, at `t` (its event's own time), and do what the mode does. */
 	function step(x: number, y: number, t = performance.now()): void {
 		if (!press || !axis) return;
-		if (mode === 'scrub') return pointAt(selection(instantAt(x, y)));
+		if (mode === 'scrub') return pointAt(scrubAt(x, y));
 		const was = mode;
 		// The machine reads «sideways» as «along time»: hand it the axes
 		// turned when time runs down.
@@ -822,16 +888,19 @@
 	}
 
 	/**
-	 * The selection an instant in this window is: RELATIVE while the window
-	 * is on now — the axis is, so a `-q` stays on its gridline and the entry
-	 * is logged that long before the Enter — and absolute once it is not.
-	 * Either is to the window's own step (`tapStep`): seconds on a window
-	 * of a few minutes, whole minutes from 30 up.
+	 * The selection an instant in this window is: absolute (`abs`) or
+	 * RELATIVE (`rel`), by the axis that made it (da-b9glf); where none did,
+	 * relative while the window is on now — so a `-q` stays on its gridline
+	 * and the entry is logged that long before the Enter — and absolute once
+	 * it is not. Either is to the window's own step (`tapStep`): seconds on a
+	 * window of a few minutes, whole minutes from 30 up.
 	 */
-	const selection = (ms: number, span?: number) =>
-		offNow
+	const selection = (ms: number, span?: number, kind: 'abs' | 'rel' = offNow ? 'abs' : 'rel') =>
+		kind === 'abs'
 			? { at: new Date(ms), step: grain, span, from: 'nowview' as const }
 			: { rel: (Math.round((nowMs() - ms) / 1000 / grain) * grain) / 60, span, from: 'nowview' as const };
+	/** An instant a mark or a clock time names, absolute and to the second: what a snap lands on. */
+	const exact = (ms: number) => ({ at: new Date(ms), step: 1, from: 'nowview' as const });
 
 	/** A range between two instants: it ENDS at the later, because a duration runs back. */
 	function range(a: number, b: number): void {
@@ -839,10 +908,28 @@
 		pointAt(selection(to, (to - from) / 60_000));
 	}
 
-	/** A tap: the selection lands where it fell, and the window is left alone. */
+	/**
+	 * A tap: the selection lands where it fell, and the window is left alone
+	 * — on a mark of either axis within a finger's reach (`SNAP_PX`),
+	 * absolute for a clock time, relative for a relative one (da-b9glf).
+	 */
 	function tap(x: number, y: number): void {
-		const at = axis ? instantAlong(snapTo(along(x, y), gridlines())) : null;
-		if (at !== null) pointAt(selection(at));
+		if (!axis) return lanesAt(x, y, null);
+		const pos = along(x, y);
+		// The window's own kind first, which a mark of the other standing on it does not displace.
+		const [rel, abs] = [gridlines(), gridlines('.clock-mark')];
+		const p = snapTo(pos, offNow ? [...abs, ...rel] : [...rel, ...abs]);
+		const at = instantAlong(p);
+		const kind = p === pos ? undefined : (offNow ? abs.includes(p) : !rel.includes(p)) ? 'abs' : 'rel';
+		pointAt(kind === 'abs' ? exact(at) : selection(at, undefined, kind));
+		lanesAt(x, y, at);
+	}
+
+	/** A long press let go where it was, or a right click: on a dot or a state change within reach, its instant; else a tap's (da-b9glf). */
+	function holdAt(x: number, y: number): void {
+		const at = axis ? dataNear(along(x, y), SNAP_PX) : null;
+		if (at === null) return tap(x, y);
+		pointAt(exact(at));
 		lanesAt(x, y, at);
 	}
 
@@ -1028,6 +1115,7 @@
 		if (!caught && !pressSpent() && still && undecided(mode)) {
 			const entry = mode === 'press' && inspectMark(markOf(event.target) ?? onMark, event, svgEl());
 			if (entry) lanesAt(press.x, press.y, axis ? instantAt(press.x, press.y) : null);
+			else if (mode === 'hold') holdAt(press.x, press.y);
 			else tap(press.x, press.y);
 		}
 		drop();
@@ -1037,7 +1125,7 @@
 	function onContextMenu(event: MouseEvent): void {
 		if (pressSpent() || !axis) return;
 		event.preventDefault();
-		tap(event.clientX, event.clientY);
+		holdAt(event.clientX, event.clientY);
 	}
 
 	// ── the zoom ───────────────────────────────────────────────────────
@@ -1344,14 +1432,14 @@
 		settle = setTimeout(commit, 120);
 	}
 
-	// ── the handles, the margin and the buttons ────────────────────────
+	// ── the handles, the pills and the buttons ─────────────────────────
 
 	/** The room a handle keeps clear along the axis either side of its label. */
 	const GAP_PX = 4;
 
 	/**
-	 * Below this width the margin strip, its pills and `← sel` do not fit,
-	 * and the widget shows the LINES alone.
+	 * Below this width the selection's pills and `← sel` do not fit, and the
+	 * widget shows the LINES alone.
 	 *
 	 * The tiny nowview in `mobile` is ~100px wide (measured on the built
 	 * app): the old `now →` was 46px there and the shortest time pill —
@@ -1366,61 +1454,99 @@
 	 */
 	const TINY_PX = 200;
 
-	/** Whether this nowview is wide enough for the margin and the buttons. */
+	/** Whether this nowview is wide enough for the pills and the buttons. */
 	let roomy = $state(true);
 
 	/**
-	 * A HANDLE over each major tick label the window shows (da-57vj4): its
-	 * words (`-15m`), how far from the anchor they say it is in minutes,
+	 * A HANDLE over the outermost label of each axis (da-57vj4, da-b9glf,
+	 * vividn: «Let's only have the furthest out axis label be the
+	 * handle/button, the others then are not»): its words (`-15m`, or a
+	 * clock's `14:40`), how far from the anchor they say it is in minutes,
 	 * and its box, centred at `x`, `y` across and down the widget's. The
-	 * far label is the first along time, which is how far back the window
-	 * reaches; it is moved in off the window's edge, where the surroundings
-	 * put it, and a nearer label it would lie over is not drawn. None when
+	 * relative axis's is its far label, the first along time, which is how
+	 * far back the window reaches; it is moved in off the window's edge,
+	 * where the surroundings put it, and a nearer label it would lie over is
+	 * not drawn. The clock's is its first label inside the window, at its
+	 * instant (`clock`), which it follows as the picture flows. None when
 	 * the picture draws no axis — the snapshot.
+	 *
+	 * `slid` is the band's slide (`rest + panned`) when it was read off the
+	 * picture: a pan slides it with its label by what it has moved since,
+	 * every frame, not once it lets go (da-aicu3).
 	 */
-	type Handle = { text: string; minutes: number; x: number; y: number; w: number; h: number };
+	type Handle = { text: string; minutes: number; x: number; y: number; w: number; h: number; slid: number; clock?: number };
 	/** What a wheel opens on and a press takes hold of: a handle's time and place, not its box. */
-	type Held = Pick<Handle, 'text' | 'minutes' | 'x' | 'y'>;
-	let handles: Handle[] = $state.raw([]);
-	/**
-	 * The band's slide (`rest + panned`) when the handles were read off the
-	 * picture: a pan slides them with their labels by what it has moved
-	 * since, every frame, not once it lets go (da-aicu3).
-	 */
-	let handlesAt = $state(0);
+	type Held = Pick<Handle, 'text' | 'minutes' | 'x' | 'y' | 'clock'>;
+	let farHandle = $state.raw<Handle | null>(null);
+	let clockHandle = $state.raw<Handle | null>(null);
+	const handles = $derived([farHandle, clockHandle].filter((h): h is Handle => !!h));
 	/** The widget's box on screen, for the wheel, which is drawn `fixed` beside it. */
 	let boxAt = $state.raw({ x: 0, y: 0 });
 
 	/**
-	 * Hide each clock time (`.minute-label`) a handle stands over, as
-	 * `place` hides a tick label the far one would cover. They slide with
-	 * the flow, so this runs at each slide too (da-to5n4). So is one whose
-	 * minute is still to come: the clip at the now-line hides only its far
-	 * half, and the near one peeked in beside «now» (da-xwe0h).
+	 * Hide each clock time still to come, or reaching past the now-line: the
+	 * clip there hides only part of it, and the near one peeked in beside
+	 * «now» (da-xwe0h). They slide with the flow, so this runs at each slide,
+	 * and the clock's handle is read again with them.
 	 */
 	function clearFar(): void {
-		const box = el?.getBoundingClientRect();
-		const y = axis?.y;
-		const spans = box
-			? handles.map((h) => {
-					const [c, half] = y ? [h.y + box.y, h.h / 2] : [h.x + box.x, h.w / 2];
-					return [c - half - GAP_PX, c + half + GAP_PX];
-				})
-			: [];
 		const now = drawn ? drawn.now + slid : Infinity;
-		for (const l of el?.querySelectorAll<SVGElement>('svg.svg .minute-label') ?? []) {
-			const r = l.getBoundingClientRect();
-			const [a, b] = y ? [r.top, r.bottom] : [r.left, r.right];
+		const line = Number.isFinite(now) ? posOf(now) : Infinity;
+		for (const l of el?.querySelectorAll<SVGElement>('svg.svg .clock-label') ?? []) {
 			// Its mark, which datum draws just before it, holds the instant; a
 			// millisecond spares `drawn.now`'s rounding.
 			const ahead = Date.parse(l.previousElementSibling?.getAttribute('data-at') ?? '') - now > 1;
-			l.style.visibility = ahead || spans.some(([from, to]) => a < to && b > from) ? 'hidden' : '';
+			const r = l.getBoundingClientRect();
+			l.style.visibility = ahead || (axis?.y ? r.bottom : r.right) > line + 0.5 ? 'hidden' : '';
 		}
+		readClockHandle();
 	}
-	$effect.pre(() => {
-		void handles;
-		untrack(clearFar);
-	});
+
+	/**
+	 * The clock axis's handle: over its first label along time inside the
+	 * window and before the anchor, whole, at its instant (da-b9glf). None
+	 * where no label is wholly inside before the anchor — a window shorter
+	 * than its clock's step — as the relative axis's has none on the
+	 * snapshot. Written only when it moved, being read at every slide.
+	 */
+	function readClockHandle(): void {
+		// Not before the widget is mounted: the flow's effect runs as it is
+		// set up, above where the handles are declared.
+		if (!el) return;
+		const [svg, home] = [svgEl(), el.getBoundingClientRect()];
+		const [lo, hi] = ends();
+		const y = axis?.y;
+		const anchor = instantMs();
+		const read = (l: SVGElement) => {
+			const r = l.getBoundingClientRect();
+			const at = Date.parse(l.previousElementSibling?.getAttribute('data-at') ?? '');
+			return { l, r, at, mid: y ? r.top + r.height / 2 : r.left + r.width / 2, half: (y ? r.height : r.width) / 2 };
+		};
+		const first = !svg || !home || !axis || zoom
+			? undefined
+			: [...svg.querySelectorAll<SVGElement>('.clock-label')]
+					.map(read)
+					.filter((c) => c.l.style.visibility !== 'hidden' && c.at < anchor && c.mid - c.half >= lo && c.mid + c.half <= hi)
+					.sort((a, b) => a.mid - b.mid)[0];
+		const next: Handle | null = first
+			? {
+					text: first.l.textContent ?? '',
+					minutes: (anchor - first.at) / 60_000,
+					clock: first.at,
+					x: first.r.left + first.r.width / 2 - home!.x,
+					y: (y ? first.r.top + first.r.height / 2 : Math.min(first.r.top + first.r.height / 2, clockAbove() - HANDLE_PX / 2)) - home!.y,
+					w: first.r.width + 8,
+					h: Math.max(first.r.height + 4, HANDLE_PX),
+					slid: rest + panned
+				}
+			: null;
+		const was = clockHandle;
+		if (!next || !was || next.text !== was.text || Math.abs(next.x - was.x) > 0.25 || Math.abs(next.y - was.y) > 0.25 || next.slid !== was.slid)
+			clockHandle = next;
+	}
+
+	/** Where the clock strip's line is, across the band: a handle's target stays above it, as the far one's stays under the axis. */
+	const clockAbove = () => svgEl()?.querySelector('.clock-axis')?.getBoundingClientRect().bottom ?? Infinity;
 
 	/** The instants at the window's two ends, as the picture on screen draws them. */
 	let view = $state.raw<[number, number] | null>(null);
@@ -1492,16 +1618,19 @@
 	});
 
 	/**
-	 * Where each margin pill sits, in px across the widget's box: over the
-	 * mark the selection was drawn as.
+	 * Where each of the selection's pills sits, in px across and down the
+	 * widget's box: on the axis it belongs to (da-b9glf) — the clock's for an
+	 * absolute one, the relative axis's for a relative one — over the mark
+	 * the selection was drawn as along time.
 	 *
 	 * Read off the DRAWN marks (`#lib/hover.ts` puts the arrow at the
-	 * selection and the band over the range), so a pill in the margin and
-	 * the line under it cannot disagree by a pixel — including for a
-	 * relative selection, which is placed against the picture's own
-	 * now-line and not against the clock.
+	 * selection and the band over the range), so a pill and the line under
+	 * it cannot disagree by a pixel — including for a relative selection,
+	 * which is placed against the picture's own now-line and not against the
+	 * clock.
 	 */
-	let spots: { time: number | null; dur: number | null } = $state.raw({ time: null, dur: null });
+	type Spot = { x: number; y: number } | null;
+	let spots: { time: Spot; dur: Spot } = $state.raw({ time: null, dur: null });
 
 	/**
 	 * Where the picture writes «now» under its now section, in px across
@@ -1585,24 +1714,35 @@
 		// and leaves by the first of them, and a selection is drawn there
 		// too.
 		outline();
+		const [length, start] = vertical ? ([home.height, home.y] as const) : ([home.width, home.x] as const);
 		const centreOf = (selector: string) => {
 			const r = el?.querySelector(selector)?.getBoundingClientRect();
-			return r ? r.left + r.width / 2 - home.x : null;
+			return r ? (vertical ? r.top + r.height / 2 : r.left + r.width / 2) - start : null;
 		};
-		// Kept inside the strip: a pill centred on a mark at either end of
-		// the band would otherwise hang half of itself off the widget. The
-		// pill's own width is read off the one on screen, so a two-section
-		// `-t 2026-09-09T14:30` is held in as firmly as a `-qq`; a pill wider
-		// than the strip is simply centred.
-		const held = (x: number | null, selector: string) => {
-			if (x === null) return null;
-			const half = (el?.querySelector(selector)?.getBoundingClientRect().width ?? 0) / 2;
-			const lo = Math.min(half, home.width / 2);
-			return Math.max(lo, Math.min(Math.max(home.width - half, home.width / 2), x));
+		// Kept inside the band: a pill centered on a mark at either end of it
+		// would otherwise hang half of itself off the widget. The pill's own
+		// length is read off the one on screen, so a two-section
+		// `-t 2026-09-09T14:30` is held in as firmly as a `-qq`; a pill longer
+		// than the band is simply centered.
+		const held = (at: number | null, selector: string) => {
+			if (at === null) return null;
+			const r = el?.querySelector(selector)?.getBoundingClientRect();
+			const half = ((vertical ? r?.height : r?.width) ?? 0) / 2;
+			const lo = Math.min(half, length / 2);
+			return Math.max(lo, Math.min(Math.max(length - half, length / 2), at));
 		};
+		// Across, the middle of its axis's strip: between the picture's edge and the axis's line.
+		const [frame, rel, abs] = [svg, svg?.querySelector('path.axis'), svg?.querySelector('path.clock-axis')].map((e) => e?.getBoundingClientRect());
+		const strip = !frame
+			? null
+			: $pointed?.rel !== undefined
+				? rel && (vertical ? (frame.left + rel.right) / 2 - home.x : (rel.top + frame.bottom) / 2 - home.y)
+				: abs && (vertical ? (abs.left + frame.right) / 2 - home.x : (frame.top + abs.bottom) / 2 - home.y);
+		const spot = (at: number | null): Spot =>
+			at === null || strip == null ? null : vertical ? { x: strip, y: at } : { x: at, y: strip };
 		spots = {
-			time: held(centreOf('svg.svg .cursor-head'), '.nowview-margin .pill.time'),
-			dur: held(centreOf('svg.svg .cursor-span'), '.nowview-margin .pill.dur')
+			time: spot(held(centreOf('svg.svg .cursor-head'), '.nowview-pills .pill.time')),
+			dur: spot(held(centreOf('svg.svg .cursor-span'), '.nowview-pills .pill.dur'))
 		};
 		// The «now» under the strip, or, with none drawn, the axis's row and
 		// the side of the window now lies on (da-dv45l).
@@ -1619,40 +1759,39 @@
 		if (word) word.style.visibility = homeward ? 'hidden' : '';
 		// A picture landing under a gesture takes its rule too.
 		if (zoom && laid?.svg !== svg) rule();
-		const shown = inset();
-		if (!shown.length || !axis) return void (handles = []);
-		const y = axis.y;
-		const box = (l: SVGElement) => l.getBoundingClientRect();
+		const far = inset();
+		readClockHandle();
+		if (!far || !axis) return void (farHandle = null);
+		const r = far.getBoundingClientRect();
+		const text = far.textContent ?? '';
+		const mid = r.top + r.height / 2;
 		// On the label's middle, but no higher than keeps a handle's target
 		// under the axis line: the strip is only as tall as its 11px digits
 		// (da-a2cxp).
 		const under = (svg?.querySelector('.axis')?.getBoundingClientRect().top ?? 0) + HANDLE_PX / 2;
-		handlesAt = rest + panned;
-		handles = shown
-			.filter((l) => l.style.visibility !== 'hidden')
-			.map((l) => {
-				const r = box(l);
-				const text = l.textContent ?? '';
-				const mid = r.top + r.height / 2;
-				return {
-					text,
-					minutes: stepMinutes(text.replace(/^[-+]/, '')),
-					x: r.left + r.width / 2 - home.x,
-					y: (y ? mid : Math.max(mid, under)) - home.y,
-					w: r.width + 8,
-					h: Math.max(r.height + 4, HANDLE_PX)
-				};
-			})
-			.filter((h) => h.minutes > 0);
+		const minutes = stepMinutes(text.replace(/^[-+]/, ''));
+		farHandle =
+			minutes > 0 && far.style.visibility !== 'hidden'
+				? {
+						text,
+						minutes,
+						x: r.left + r.width / 2 - home.x,
+						y: (axis.y ? mid : Math.max(mid, under)) - home.y,
+						w: r.width + 8,
+						h: Math.max(r.height + 4, HANDLE_PX),
+						slid: rest + panned
+					}
+				: null;
 	}
 
 	/**
-	 * The axis's labels inside the window, the first along time — leftmost,
-	 * or topmost when time runs down — inset clear of the window's edge for
-	 * its handle, and any it then lies over hidden. A gesture's rule's
-	 * (`graftAxis`) where it has one: as the picture of its window will be.
+	 * The relative axis's far label: the first along time inside the window —
+	 * leftmost, or topmost when time runs down — inset clear of the window's
+	 * edge for its handle, and any it then lies over hidden. A gesture's
+	 * rule's (`graftAxis`) where it has one: as the picture of its window
+	 * will be.
 	 */
-	function inset(): SVGElement[] {
+	function inset(): SVGElement | null {
 		const svg = svgEl();
 		const labels = [...(svg?.querySelectorAll<SVGElement>(svg.classList.contains('axis-live') ? '.live-axis .tick-label' : '.tick-label') ?? [])];
 		for (const l of labels) {
@@ -1660,7 +1799,7 @@
 			l.style.visibility = '';
 		}
 		const ctm = svg?.getScreenCTM();
-		if (!labels.length || !axis || !ctm) return [];
+		if (!labels.length || !axis || !ctm) return null;
 		const y = axis.y;
 		const box = (l: SVGElement) => l.getBoundingClientRect();
 		const span = (r: DOMRect) => (y ? [r.top, r.bottom] : [r.left, r.right]);
@@ -1670,7 +1809,7 @@
 			return (a + b) / 2 >= lo - 1 && (a + b) / 2 <= hi + 1;
 		};
 		const shown = labels.filter(inside);
-		if (!shown.length) return [];
+		if (!shown.length) return null;
 		const label = shown.reduce((a, b) => (span(box(b))[0] < span(box(a))[0] ? b : a));
 		// In the label's own units, which a stretch scales back by itself (the CSS below).
 		const by = (Math.max(0, lo + GAP_PX - span(box(label))[0]) * (zoom?.scale ?? 1)) / (y ? ctm.d : ctm.a);
@@ -1680,7 +1819,7 @@
 			const [a, b] = span(box(l));
 			if (l !== label && a < to + GAP_PX * 2 && b > from - GAP_PX * 2) l.style.visibility = 'hidden';
 		}
-		return shown;
+		return label;
 	}
 
 	// ── the rule under a gesture (da-gy4xz) ────────────────────────────
@@ -1794,6 +1933,8 @@
 		y: number;
 		pick: number;
 		touch: boolean;
+		/** Open on the clock axis's handle: its notches say the clock time each step puts there. */
+		onClock: boolean;
 	} | null>(null);
 	let wheelEl: HTMLDivElement | undefined = $state();
 
@@ -1816,8 +1957,16 @@
 			return;
 		}
 		const sign = h.text.startsWith('+') ? '+' : '-';
-		wheel = { minutes: h.minutes, text: h.text, sign, x: h.x, y: h.y, pick: 0, touch };
+		wheel = { minutes: h.minutes, text: h.text, sign, x: h.x, y: h.y, pick: 0, touch, onClock: h.clock !== undefined };
 	}
+
+	/** A notch's words: the step, or on the clock's handle the clock time that far before the anchor (da-b9glf). */
+	const notchText = (step: string) => {
+		if (!wheel?.onClock) return (wheel?.sign ?? '-') + step;
+		const at = new Date(instantMs() - stepMinutes(step) * 60_000);
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${pad(at.getHours())}:${pad(at.getMinutes())}${at.getSeconds() ? `:${pad(at.getSeconds())}` : ''}`;
+	};
 
 	function close(): void {
 		if (!grip) wheel = null;
@@ -1828,7 +1977,7 @@
 		if (!wheel || !step) return;
 		const to = stepMinutes(step);
 		const next = historyArg((minutes * to) / wheel.minutes);
-		wheel = { ...wheel, minutes: to, text: wheel.sign + step, pick: 0 };
+		wheel = { ...wheel, minutes: to, text: notchText(step), pick: 0 };
 		rescale(next);
 	}
 
@@ -1980,8 +2129,8 @@
 		grab(event, wheel);
 	}
 
-	/** The pills the selection made: the ones the margin draws beside their instants. */
-	const marginPills = $derived($pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID));
+	/** The pills the selection made: the ones drawn on the axis beside their instants. */
+	const axisPills = $derived($pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID));
 
 	// ── the selected entry, outlined ───────────────────────────────────
 	//
@@ -2061,22 +2210,6 @@
 </script>
 
 <div class="nowview" class:vertical bind:this={el}>
-	<!-- The margin: the pills the selection made, each over the mark it
-	     names, and ✕-able here as in the bar. NOT `data-pans`, so a swipe
-	     that starts in it still changes the pane's tab (da-um7y). A strip
-	     OVER the band lies along a horizontal axis only; a vertical one
-	     leaves the pills to the bar (da-78evn). -->
-	{#if roomy && !vertical}
-		<div class="nowview-margin" aria-label="selection">
-			{#each marginPills as pill (pill.id)}
-				{@const x = pill.id === SPAN_ID ? spots.dur : spots.time}
-				{#if x !== null}
-					<span class="margin-pill" style:left="{x}px"><Pill {pill} /></span>
-				{/if}
-			{/each}
-		</div>
-	{/if}
-
 	<!-- The band is pointed into, not a control: its marks take the keyboard. -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
@@ -2121,11 +2254,26 @@
 		</div>
 	{/if}
 
-	<!-- The handles (da-57vj4): one over each major tick label, its words
-	     drawn by the picture underneath. Hover or a finger opens the wheel;
-	     a drag along the axis scales the window about the anchor. -->
+	<!-- The selection's pills (da-b9glf), each on its axis over the mark it
+	     names. Words only, `inert`: they stand where a finger scrubs, and a
+	     press there is the axis's — the bar's own pills are the ✕-able ones. -->
+	{#if roomy}
+		<div class="nowview-pills" aria-label="selection" inert>
+			{#each axisPills as pill (pill.id)}
+				{@const at = pill.id === SPAN_ID ? spots.dur : spots.time}
+				{#if at}
+					<span class="axis-pill" style:left="{at.x}px" style:top="{at.y}px"><Pill {pill} /></span>
+				{/if}
+			{/each}
+		</div>
+	{/if}
+
+	<!-- The handles (da-57vj4, da-b9glf): one over the outermost label of each
+	     axis, its words drawn by the picture underneath. Hover or a finger
+	     opens the wheel; a drag along the axis scales the window about the
+	     anchor. -->
 	{#if handles.length && !zoom}
-		<div class="nowview-handles" data-pans={pans} style:--slid="{rest + panned - handlesAt}px">
+		<div class="nowview-handles" data-pans={pans}>
 			<!-- Unkeyed: a step redraws the labels, and the handle the
 			     keyboard is on stays the focused element through it. -->
 			{#each handles as h}
@@ -2133,8 +2281,10 @@
 					type="button"
 					class="handle"
 					data-at={h.text}
+					data-axis={h.clock === undefined ? 'rel' : 'abs'}
 					aria-label="window handle {h.text}"
 					title="{h.text}: hover or hold for the steps, drag along the axis to scale"
+					style:--slid="{rest + panned - h.slid}px"
 					style:left="{h.x}px"
 					style:top="{h.y}px"
 					style:width="{h.w}px"
@@ -2176,7 +2326,7 @@
 					tabindex="-1"
 					style:--k={n.k}
 					style:--fade={n.fade}
-					onclick={() => stepTo(n.step)}>{wheel.sign}{n.step}</button
+					onclick={() => stepTo(n.step)}>{notchText(n.step)}</button
 				>
 			{/each}
 			<span class="handle held" class:turned={wheel.pick !== 0} data-at={wheel.text} aria-hidden="true"
@@ -2233,7 +2383,7 @@
 
 <style>
 	/* The frame's content box, for the pane inside (`display: contents` in a
-	   frame) and for the steps, the margin pills and the buttons over it. */
+	   frame) and for the steps, the axis pills and the buttons over it. */
 	.nowview {
 		position: relative;
 		display: flex;
@@ -2241,11 +2391,15 @@
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
+		/* The half-row the frame's own titles hang into the widget (PR #43,
+		   measured at 8px on both screens): the clock strip starts under it
+		   (da-b9glf), where the margin row's pills sat at its bottom. */
+		padding-top: 8px;
 		/* A finger still scrolls whatever this pane sits in, and two fingers
 		   are the zoom's, not the browser's page zoom. On the WHOLE widget,
-		   margin included: sideways is the page's to claim otherwise, and a
-		   swipe from the margin is the pane's tab swipe — which the browser
-		   would take first. */
+		   its top included: sideways is the page's to claim otherwise, and a
+		   swipe from there is the pane's tab swipe — which the browser would
+		   take first. */
 		touch-action: pan-y;
 	}
 
@@ -2350,26 +2504,20 @@
 		bottom: 30px;
 	}
 
-	/* A strip above the band: one pill tall, plus the half-row the frame's
-	   own titles hang into it (PR #43) — measured at 8px on both screens,
-	   which is why the pill sits at the strip's BOTTOM and not its top. A
-	   pill drawn up there is a pill with a tab strip over it, which is what
-	   the phone showed. Its own room besides: a swipe here is the pane's,
-	   not the band's, because nothing in it declares `data-pans`. */
-	.nowview-margin {
-		position: relative;
-		flex: 0 0 auto;
-		height: 1.75rem;
-		/* The pill reads at the command line's size where the bar draws it;
-		   here it is a label over a band and takes a smaller one. */
-		--input-font: 0.7rem;
-	}
-
-	/* Centred on the mark it names, and held inside the strip (see `held`). */
-	.margin-pill {
+	/* The selection's pills on their axis (da-b9glf): over the band, centered
+	   on the instant along time and on the axis's strip across it. The pill
+	   reads at the command line's size where the bar draws it; here it is a
+	   label on an axis and takes a smaller one. */
+	.nowview-pills {
 		position: absolute;
-		bottom: 0;
-		transform: translateX(-50%);
+		inset: 0;
+		pointer-events: none;
+		--input-font: 0.7rem;
+		z-index: 3;
+	}
+	.axis-pill {
+		position: absolute;
+		transform: translate(-50%, -50%);
 		max-width: 100%;
 	}
 
