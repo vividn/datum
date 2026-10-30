@@ -146,6 +146,10 @@ test('while the first sync runs, every pane stays whole and answers (da-xzty6)',
 		// should be dimmed is the part of the dayview/nowview since the last
 		// sync. However the two widgets should still be useable and act as normal».
 		await wrote(app, native, 3000);
+		// Each check below wants the sync under way: held after its first
+		// apply until they are done, or a fast runner lands it between polls
+		// (da-rn8fs).
+		await app.page.evaluate(() => localStorage.setItem('datum.syncGateApplyAfter', '1'));
 		await app.clock.forward(2 * HOUR);
 		await app.reload();
 		const syncing = async (what) => {
@@ -175,6 +179,7 @@ test('while the first sync runs, every pane stays whole and answers (da-xzty6)',
 		assert.equal((await look(app, 'nowview')).opacity, 1);
 
 		// And the dayview dims the two hours since the last sync, no more.
+		await app.page.evaluate(() => localStorage.removeItem('datum.syncGateApplyAfter'));
 		await until(() => countOf(app, 'tea'), (n) => n === 1000, 120_000);
 		const seen = await until(() => dims(app), (s) => s.length && !s.at(-1).length);
 		assert.ok(dimmed(seen).length, `never dimmed: ${JSON.stringify(seen)}`);

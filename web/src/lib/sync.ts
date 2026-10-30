@@ -72,6 +72,10 @@ const HOLD_KEY = 'datum.syncHoldApply';
 /** How many `sync pipe apply` runs go through before the rest are held as
  * `HOLD_KEY` holds them: a join cut short once its count shows (da-dwm2y). */
 const HOLD_AFTER_KEY = 'datum.syncHoldApplyAfter';
+/** While set to N, this page's `sync pipe apply` runs after its first N
+ * since it loaded wait until it is removed, then go on: a test's lever for
+ * a sync held under way however fast the runner is (da-rn8fs). */
+const GATE_KEY = 'datum.syncGateApplyAfter';
 /** While set, the worker's `sync pipe verify` is never answered: a test's
  * lever for a session that has applied and not ended (da-ajk4z). */
 const HOLD_VERIFY_KEY = 'datum.syncHoldVerify';
@@ -165,7 +169,8 @@ function syncWorker(): Worker {
 		if ('run' in data) {
 			if (data.argv.includes('apply') && held()) return;
 			if (data.argv.includes('verify') && lever(HOLD_VERIFY_KEY)) return;
-			void cli(data.argv, data.stdin, true).then((r) => {
+			const gate = data.argv.includes('apply') ? gated() : Promise.resolve();
+			void gate.then(() => cli(data.argv, data.stdin, true)).then((r) => {
 				// What a peer sent is this tab's to show once it applies, not
 				// once the session's verify, a hash of every row on both
 				// sides, is over too: seconds on a big history (da-ajk4z).
@@ -219,6 +224,18 @@ function held(): boolean {
 	} catch {
 		return false;
 	}
+}
+
+let applies = 0;
+async function gated(): Promise<void> {
+	let n: number;
+	try {
+		n = Number(localStorage.getItem(GATE_KEY) ?? Infinity);
+	} catch {
+		return;
+	}
+	if (applies++ < n) return;
+	while (lever(GATE_KEY)) await new Promise((r) => setTimeout(r, 100));
 }
 
 /** Throws while `FAIL_KEY` counts down (da-zyox0's injection, da-olsuv). */
