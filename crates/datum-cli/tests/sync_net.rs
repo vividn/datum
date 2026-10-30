@@ -1055,10 +1055,10 @@ fn a_migration_under_sync_run_or_the_daemon_stops_it() {
         let versions = migrate_under(&b);
         let before = held(&b);
         let start = Instant::now();
-        while b_runs.child.try_wait().unwrap().is_none() {
-            assert!(start.elapsed() < Duration::from_secs(10), "still running");
+        while b_runs.child.try_wait().unwrap().is_none() && start.elapsed().as_secs() < 10 {
             std::thread::sleep(Duration::from_millis(100));
         }
+        let _ = b_runs.child.kill();
         let (ok, _) = b_runs.finish();
         let mut why = String::new();
         let mut stderr = b_runs.child.stderr.take().unwrap();

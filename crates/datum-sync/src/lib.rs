@@ -1351,7 +1351,10 @@ pub fn run(db: &Db, up: impl Fn(String), stop: impl Fn() -> Result<()>) -> Resul
                         if !sessions.is_empty() && since.elapsed() < Duration::from_secs(2) {
                             continue;
                         }
-                        ep.close().await;
+                        // As `datum sync`'s close (da-75rbi): a stop with a
+                        // member offline waits out the 3 s of the dial no
+                        // one answered, past the 2 s above (da-n6rhn).
+                        let _ = tokio::time::timeout(Duration::from_secs(1), ep.close()).await;
                         return Err(e);
                     }
                     // What a command spooled while another held the lock (da-9q3fr).
