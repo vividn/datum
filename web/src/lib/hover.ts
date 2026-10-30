@@ -680,8 +680,9 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 		for (const mark of drawn) mark.setAttribute('tabindex', '0');
 		// A redraw replaces every mark; the keyboard keeps its place, and its
 		// label only if it had one: a mark a press focused and a pan then
-		// took the label off stays unlabeled (da-tke7i).
-		(drawn[focused] as SVGElement | undefined)?.focus();
+		// took the label off stays unlabeled (da-tke7i). And nothing moves for
+		// it: a reader scrolled away from that mark stays where they are (da-332xu).
+		(drawn[focused] as SVGElement | undefined)?.focus({ preventScroll: true });
 		if (!labeled) show(null);
 		drawUnsynced(svg, unsynced);
 		drawCursor(svg, sel);

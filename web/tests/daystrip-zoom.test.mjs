@@ -15,7 +15,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, seedLines, todayAt } from './support/app.mjs';
-import { settledRoom, say, settledAt, pinch, PHONE } from './support/daystrip.mjs';
+import { settledRoom, say, settledAt, pinch, wheelOverPast, PHONE } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -232,6 +232,112 @@ test('a zoom keeps the stripes and the hatch as wide and as steep as at rest', a
 		sameTiles(await tiles(app), rest, 'after the release');
 		// And a day twice as tall, previewed: the tile is not stretched down.
 		await pinch(page, box, 30, 60, async () => sameTiles(await tiles(app), rest, 'under a pinch down the strip'), 'y');
+		assert.deepEqual(app.errors, []);
+	});
+});
+
+// da-332xu: vividn, 2026-10-30: «zooming in on the dayview while data is
+// selected causes a strange bug. after letting go, the day with the data (and
+// only that day) offsets itself considerably, showing a different part of the
+// day misaligned with the time axis». So read each day against the axis after
+// the release, the selected one and the one beside it alike: its box unscrolled,
+// and its block's edge on the strip's 02:00.
+const offAxis = (app) =>
+	app.page.evaluate(() => {
+		const hours = document.querySelectorAll('.gridlines .gridline');
+		const two = hours[2].getBoundingClientRect();
+		return [...document.querySelectorAll('.band')]
+			.filter((band) => band.querySelector('.block[data-field="work"]'))
+			.map((band) => {
+				const block = band.querySelector('.block[data-field="work"]').getBoundingClientRect();
+				const box = band.getBoundingClientRect();
+				return {
+					day: band.dataset.daysAgo,
+					scrolled: [band.scrollLeft, band.scrollTop],
+					across: block.x - (two.x + two.width / 2),
+					wide: block.width,
+					down: (block.y - box.y) / box.height
+				};
+			});
+	});
+
+/**
+ * The two days' blocks, and today's tea at 11:00, tapped: selected, and focused
+ * as a tap focuses. Past a window on the morning, where a box can scroll to it:
+ * a mark before the window lies at a negative scroll, which none reaches.
+ */
+async function selectTea(app) {
+	await say(app, { dayHeight: 60 });
+	await settledAt(app, 60);
+	await seedLines(app, [
+		'start work -d -1 -t 2:00',
+		'end work -d -1 -t 4:00',
+		'start work -t 2:00',
+		'end work -t 4:00',
+		'occur tea -t 11:00'
+	]);
+	const { page } = app;
+	const at = await page.locator(`${TODAY} [data-field="tea"] .point-fg`).boundingBox();
+	await page.touchscreen.tap(at.x + at.width / 2, at.y + at.height / 2);
+	const chosen = page.locator(`${TODAY} svg.svg [data-selected]`);
+	await until(() => chosen.count(), (n) => n > 0);
+	assert.ok(await chosen.first().evaluate((m) => m === document.activeElement), 'the tap focused no mark');
+	return page.locator(TODAY).boundingBox();
+}
+
+test('a zoom with an entry selected leaves its day on the axis, as the day beside it', async () => {
+	await settledRoom(phone, 'selected zoom', async (app) => {
+		const box = await selectTea(app);
+		const rest = await offAxis(app);
+		// About the band's first third, three times over: 11:00 falls off the window.
+		await pinch(app.page, { ...box, width: box.width / 3 }, 40, 120);
+		await app.idle();
+		await until(() => scaled(app), (n) => n === 0);
+		const days = await offAxis(app);
+		assert.equal(days.length, 2, JSON.stringify(days));
+		// The control: the zoom happened, which no scroll can fake, a block's width being its hours.
+		const wide = days[0].wide / rest[0].wide;
+		assert.ok(Math.abs(wide - 3) < 0.2, `the block grew ${wide} times`);
+		for (const day of days) {
+			assert.deepEqual(day.scrolled, [0, 0], `day ${day.day} is scrolled in its band: ${JSON.stringify(days)}`);
+			assert.ok(Math.abs(day.across) < 1, `day ${day.day}'s 02:00 is ${day.across}px off the axis`);
+		}
+		// And a focus of the browser's own, as Tab is, which no call here can tell not to scroll.
+		await app.page.locator(`${TODAY} svg.svg [data-selected]`).first().evaluate((m) => (m.blur(), m.focus()));
+		assert.deepEqual((await offAxis(app)).map((day) => day.scrolled), [[0, 0], [0, 0]], 'a focus scrolled a band');
+		assert.deepEqual(app.errors, []);
+	});
+});
+
+test('a redraw of the day holding the focus leaves a stack scrolled back where it is', async () => {
+	await settledRoom(phone, 'selected scrolled', async (app) => {
+		const { page } = app;
+		await selectTea(app);
+		const top = () => page.locator('.stack').evaluate((stack) => stack.scrollTop);
+		const pinned = await top();
+		await wheelOverPast(app, -600);
+		const back = await until(top, (at) => at < pinned);
+		await app.runLine('occur mate -t 11:30');
+		await app.redraw();
+		await app.idle();
+		// The control: today was drawn again, and the focus is on its new mark.
+		await page.locator(`${TODAY} [data-field="mate"]`).first().waitFor({ state: 'attached' });
+		assert.ok(await page.locator(`${TODAY} svg.svg [data-selected]`).first().evaluate((m) => m === document.activeElement), 'the redraw kept no focus');
+		assert.equal(await top(), back, 'the redraw scrolled the stack to the focused mark');
+		assert.deepEqual(app.errors, []);
+	});
+});
+
+test('a pinch down the strip with an entry selected leaves its day where the day beside it is', async () => {
+	await settledRoom(phone, 'selected tall', async (app) => {
+		const box = await selectTea(app);
+		await pinch(app.page, box, 30, 60, undefined, 'y');
+		await settledAt(app, 120);
+		await app.idle();
+		const days = await offAxis(app);
+		assert.equal(days.length, 2, JSON.stringify(days));
+		for (const day of days) assert.deepEqual(day.scrolled, [0, 0], `day ${day.day} is scrolled in its band`);
+		assert.ok(Math.abs(days[0].down - days[1].down) < 0.01, JSON.stringify(days));
 		assert.deepEqual(app.errors, []);
 	});
 });

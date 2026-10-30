@@ -2342,7 +2342,7 @@
 	/* Today's band is the strip's bottom edge. In a strip too short for it
 	   and the stack's sliver it gives way, clipped from the TOP: the picture
 	   sits on the band's floor and runs out past its start edge, which the
-	   band's `overflow: hidden` cuts. */
+	   band's `overflow: clip` cuts. */
 	.row.pinned {
 		height: var(--band);
 		flex: 0 1 auto;
@@ -2375,10 +2375,13 @@
 		white-space: nowrap;
 	}
 
+	/* `clip`, not `hidden`: a hidden box can still be scrolled, and focusing a
+	   mark past the window's end did, a redraw keeping a tapped mark's focus,
+	   which left that day alone off the axis (da-332xu). */
 	.band {
 		flex: 1 1 auto;
 		min-width: 0;
-		overflow: hidden;
+		overflow: clip;
 	}
 	/* The picture at the size it was drawn, scaled only WHILE the handle is
 	   being dragged — the preview.
