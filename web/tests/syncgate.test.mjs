@@ -108,8 +108,9 @@ test('a page pushing to two members runs one session at a time (da-dwm2y)', asyn
 				// Each applies slowly, so a session with either lasts long enough to overlap.
 				const slow = { DATUM_SYNC_TEST_APPLY_DELAY_MS: '1500' };
 				a.spawn(['sync', 'run'], slow);
-				const heard = await b.run(['sync']);
-				assert.equal(heard.code, 0, heard.stdout + heard.stderr);
+				// A run is reachable once its relay is up, about 3 s on, and a person's
+				// dial gives up in 5 (da-75rbi): a loaded runner reads it as offline.
+				await until(() => b.run(['sync']), (heard) => heard.code === 0, 60_000);
 				b.spawn(['sync', 'run'], slow);
 				await until(() => app.page.evaluate(() => Object.keys(window.datum.sync.states().datum?.peers ?? {}).length), (n) => n === 2);
 				await app.page.evaluate(() => (window.__sessions.most = window.__sessions.open.size));
