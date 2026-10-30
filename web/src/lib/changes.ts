@@ -20,12 +20,21 @@ import { currentDb, withDb } from './database.js';
 const CHANNEL = 'datum-db-changes';
 
 /**
- * The last database renamed (`db rename`, da-u2jjc), for a tab that was not
- * listening as it moved: one loading then, a reload among them.
+ * The databases renamed (`db rename`, da-u2jjc), oldest first, for a tab that
+ * was not listening as one moved: one loading then, one the browser froze or
+ * discarded, a page in the back/forward cache.
  */
 const MOVED_KEY = 'datum.db.moved';
+const MOVED_KEPT = 32;
 /** How long before a tab began listening a move recorded still counts: what a tab reloading through it takes to load. */
 const MOVED_SLACK_MS = 30_000;
+/**
+ * The database this tab is on and since when, `{db, since}`. A tab that was on
+ * a name as it moved follows it however late, while a new navigation there gets
+ * only the slack, so a person can make a database of that name again (vividn,
+ * 2026-10-30, da-jwdbd). Per tab, and it survives a discard (Chromium, checked).
+ */
+const TAB_KEY = 'datum.db.tab';
 
 let channel: BroadcastChannel | null = null;
 /** A tab's own id, so it can ignore the echo of its own write. */
@@ -49,13 +58,35 @@ function open(): BroadcastChannel | null {
 	channel = new BroadcastChannel(CHANNEL);
 	channel.addEventListener('message', (e) => e.data?.moved && follow(...(e.data.moved as [string, string])));
 	// From here every move is heard; one before it may have been missed.
-	try {
-		const moved = JSON.parse(localStorage.getItem(MOVED_KEY) ?? 'null');
-		if (moved?.at > Date.now() - MOVED_SLACK_MS) follow(moved.from, moved.to);
-	} catch {
-		// No storage: a tab loading as it moved is not told.
-	}
+	catchUp();
+	// A page from the back/forward cache heard nothing while it was in there.
+	addEventListener('pageshow', (e) => e.persisted && catchUp());
 	return channel;
+}
+
+/** The moves recorded. A record from before the log is one move, and reads as one. */
+function moves(): { from: string; to: string; at: number }[] {
+	try {
+		return [JSON.parse(localStorage.getItem(MOVED_KEY) ?? '[]')].flat();
+	} catch {
+		return [];
+	}
+}
+
+/** Follow every move of this tab's database it missed, one after another, to where they lead. */
+function catchUp(): void {
+	const db = currentDb();
+	let since = Date.now() - MOVED_SLACK_MS;
+	try {
+		const tab = JSON.parse(sessionStorage.getItem(TAB_KEY) ?? 'null');
+		if (tab?.db === db) since = Math.min(since, tab.since);
+		else sessionStorage.setItem(TAB_KEY, JSON.stringify({ db, since: Date.now() }));
+	} catch {
+		// No storage: this tab gets the slack alone.
+	}
+	let to = db;
+	for (const move of moves()) if (move.from === to && move.at > since) to = move.to;
+	if (to !== db) follow(db, to);
 }
 
 /**
@@ -78,7 +109,7 @@ export function announceChange(dbs?: string[], session = false): void {
 export function announceMoved(from: string, to: string): void {
 	try {
 		// `Date`, the clock two documents share: `performance.now()` stops while the system sleeps.
-		localStorage.setItem(MOVED_KEY, JSON.stringify({ from, to, at: Date.now() }));
+		localStorage.setItem(MOVED_KEY, JSON.stringify([...moves(), { from, to, at: Date.now() }].slice(-MOVED_KEPT)));
 	} catch {
 		// As above.
 	}
@@ -96,7 +127,8 @@ export const renamedAway = new Set<string>();
 function follow(from: string, to: string): void {
 	if (currentDb() !== from) return;
 	renamedAway.add(from);
-	location.assign(withDb(location.pathname, to));
+	// In its place: the way back would be a new navigation to the old name, and make it again.
+	location.replace(withDb(location.pathname, to));
 }
 
 /**

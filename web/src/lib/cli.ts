@@ -118,8 +118,8 @@ let databases: readonly string[] = DATABASES;
  * The databases renamed away (`db rename`, da-u2jjc), by any tab: each leaves
  * `<name>.moved` beside the others, the time it moved, written under the
  * files' lock. For `MOVED_MS` after, no worker makes the old name again, one
- * that never named it included, and a command on it is refused; a tab on it
- * follows the move meanwhile (#lib/changes.ts). Then it is a name like any.
+ * that never named it included, and a command on it is refused. Then it is a
+ * name like any, which a tab that was on it still leaves (#lib/changes.ts).
  * `datum` and `_internal` never move: a command that names none runs on the default.
  */
 const gone = new Set<string>();

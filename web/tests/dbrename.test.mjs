@@ -179,6 +179,93 @@ test('a tab that loads on the old name just after the rename, too late to hear i
 	);
 });
 
+const renameAt = async (page, name) => {
+	const input = page.locator('.prompt-bar input');
+	await input.fill(`db rename ${name}`);
+	await input.press('Enter');
+	await page.waitForURL((url) => url.searchParams.get('db') === name);
+	await ready(page);
+};
+
+const urlOn = (app, db) => {
+	const url = new URL(app.page.url());
+	url.searchParams.set('db', db);
+	return url.href;
+};
+
+test('a tab that was on the old name as it moved, back long after, follows every rename since and does not make it again', async () => {
+	await withApp(
+		async (app) => {
+			await app.run(['occur', 'mine']);
+			// Away while it moves, as a tab the browser discarded is.
+			const other = await app.newTab('?db=late-1');
+			await other.page.goto('about:blank');
+
+			await app.clock.forward(1_000);
+			await renameAt(app.page, 'late-2');
+			await renameAt(app.page, 'late-3');
+			await app.clock.forward(31_000);
+
+			await other.page.goto(urlOn(app, 'late-1'));
+			await other.page.waitForURL((url) => url.searchParams.get('db') === 'late-3');
+			await ready(other.page);
+			assert.equal(await countOf(other, 'mine'), 1);
+			assert.deepEqual(await files(app), ['_internal.db', 'datum.db', 'late-3.db']);
+			// The way back does not lead to the old name.
+			await other.page.goBack();
+			assert.equal(other.page.url(), 'about:blank');
+		},
+		{ query: '?db=late-1' }
+	);
+});
+
+test('a new navigation to the old name, past the window, makes it again and stays, and it can move in turn', async () => {
+	await withApp(
+		async (app) => {
+			await app.run(['occur', 'mine']);
+			await app.clock.forward(1_000);
+			await renameAt(app.page, 'again-2');
+			await app.clock.forward(31_000);
+
+			const fresh = await app.newTab('?db=again-1');
+			await fresh.run(['occur', 'theirs']);
+			await fresh.page.reload();
+			await ready(fresh.page);
+			assert.equal(new URL(fresh.page.url()).searchParams.get('db'), 'again-1');
+			assert.equal(await countOf(fresh, 'theirs'), 1);
+
+			// The same from the tab that did the rename, as the logo's menu goes there.
+			await app.page.evaluate((href) => location.assign(href), urlOn(app, 'again-1'));
+			await app.page.waitForURL((url) => url.searchParams.get('db') === 'again-1');
+			await ready(app.page);
+			assert.equal(new URL(app.page.url()).searchParams.get('db'), 'again-1');
+			assert.equal(await countOf(app, 'theirs'), 1);
+
+			await app.clock.forward(1_000);
+			await renameAt(app.page, 'again-3');
+			await fresh.page.waitForURL((url) => url.searchParams.get('db') === 'again-3');
+			assert.deepEqual(await files(app), ['_internal.db', 'again-2.db', 'again-3.db', 'datum.db']);
+		},
+		{ query: '?db=again-1' }
+	);
+});
+
+test('a page back from the back/forward cache follows a move it heard nothing of', async () => {
+	await withApp(
+		async (app) => {
+			// Playwright turns the cache off, so the record is written and the page told as the browser would.
+			await app.clock.forward(1_000);
+			await app.page.evaluate(() => {
+				localStorage.setItem('datum.db.moved', JSON.stringify([{ from: 'cached-1', to: 'cached-2', at: Date.now() }]));
+			});
+			await app.clock.forward(31_000);
+			await app.page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+			await app.page.waitForURL((url) => url.searchParams.get('db') === 'cached-2');
+		},
+		{ query: '?db=cached-1' }
+	);
+});
+
 test('a tab whose day strip is still asking as the rename reaches it follows it, and does not freeze', async () => {
 	await withApp(
 		async (app) => {
