@@ -695,7 +695,10 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	 * the lift (da-hn2w6). It replaces the element the press went down on,
 	 * and the browser then has nothing to dispatch the click at: the press
 	 * set no cursor and said nothing. Drawn a task after the lift, which is
-	 * after its click.
+	 * after its click; at the lift itself for a press that traveled, which
+	 * has no click to wait for. A zoom's release hands the day strip's band
+	 * a picture at the new window's width, which the band is mapped by from
+	 * then on: held a task, the old picture was shown at that map (da-mdfkf).
 	 */
 	let pressed = false;
 	let late: PictureOf | null = null;
@@ -710,11 +713,13 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	const lift = () => {
 		if (!pressed) return;
 		clearTimeout(lifting);
-		lifting = setTimeout(() => {
+		const release = () => {
 			pressed = false;
 			if (late !== null) draw(late.text, late.svg);
 			late = null;
-		});
+		};
+		if (pressTraveled()) release();
+		else lifting = setTimeout(release);
 	};
 	const LIFTS = ['pointerup', 'pointercancel', 'contextmenu'];
 
