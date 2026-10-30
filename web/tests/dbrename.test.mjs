@@ -179,6 +179,36 @@ test('a tab that loads on the old name just after the rename, too late to hear i
 	);
 });
 
+test('a tab whose day strip is still asking as the rename reaches it follows it, and does not freeze', async () => {
+	await withApp(
+		async (app) => {
+			await app.run(['occur', 'mine']);
+			const other = await app.newTab('?db=gone-4');
+			// Its next digests alone held, and answered with none just after it hears
+			// the move, so the pictures it then asks for come after `follow`.
+			await other.page.evaluate(() => {
+				const real = window.datum.setRunner((argv, ...rest) =>
+					argv.includes('--digests') && !window.letGo
+						? new Promise((resolve) => (window.letGo = () => resolve({ argv, code: 0, stdout: '{}', stderr: '' })))
+						: real(argv, ...rest)
+				);
+				new BroadcastChannel('datum-db-changes').onmessage = ({ data }) => data.moved && window.letGo();
+			});
+			await app.run(['occur', 'more']);
+			await until(() => other.page.evaluate(() => typeof window.letGo), (type) => type === 'function');
+
+			const input = app.page.locator('.prompt-bar input');
+			await input.fill('db rename gone');
+			await input.press('Enter');
+			await app.page.waitForURL((url) => url.searchParams.get('db') === 'gone');
+			await other.page.waitForURL((url) => url.searchParams.get('db') === 'gone');
+			await ready(other.page);
+			assert.deepEqual(await files(app), ['_internal.db', 'datum.db', 'gone.db']);
+		},
+		{ query: '?db=gone-4' }
+	);
+});
+
 test('a rename onto a database that holds data is refused with the purge that empties it, and nothing moves', async () => {
 	await withApp(
 		async (app) => {

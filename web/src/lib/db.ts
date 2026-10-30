@@ -163,7 +163,10 @@ export async function runCli(
 	pane?: boolean
 ): Promise<CliResult | null> {
 	const named = dbFlag(argv)?.db ?? env.findLast((v) => v.startsWith('DATUM_DB='))?.slice(9) ?? DEFAULT_DB;
-	if (renamedAway.has(named)) return null;
+	// The page is leaving, so no answer ever: `null` reads as superseded, and
+	// #lib/dayLayers.ts asks a superseded day again, in microtasks that no task,
+	// the navigation's commit included, could then get between (da-mbxq5).
+	if (renamedAway.has(named)) return new Promise(() => {});
 	const cli = (await request({ op: 'cli', argv, env, stdin, key, stage, pane, session }, onStderr)).cli;
 	if (!cli) return null;
 	// A file SQLite cannot read fails every command on it, `db purge` too:
