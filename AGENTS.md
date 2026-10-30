@@ -105,7 +105,9 @@ da-3zq6g): `integrity` the fields changed, `tz`'s neighbors the stretches
 around what changed, `sync` the rows and the rows they supersede.
 A field's changed spec reads that field's rows again; a template's spec, a
 kit, a chain record, another datum, schema or id delimiter, or `--fix` runs
-from scratch. Local and derived, never synced; a migration
+from scratch. So does a mark past the log's cap (da-4a3cv): a trigger holds
+`check_changes` to 32,768 rows and a chunk with no check ever run, about where
+reading the log costs what reading everything does. Local and derived, never synced; a migration
 that rebuilds `entries` or `ops` drops the triggers, and the next open lays
 them again. `check_second_run.rs` holds a second run to reading no table
 whole. Alone, `datum check` sums each checker up (its findings where five or

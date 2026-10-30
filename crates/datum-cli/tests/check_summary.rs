@@ -210,6 +210,37 @@ fn a_second_run_finds_what_a_run_from_scratch_finds() {
     assert!(read(&again) < read(&whole), "{again}\n{whole}");
 }
 
+/// A finding written before the log's cap passed a run's mark is found: the
+/// run reads from scratch, not the part of the log the cap left (da-4a3cv).
+#[test]
+fn a_mark_the_cap_passed_finds_what_it_dropped() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("capped.db");
+    datum(&db, &["occur", "tea"]);
+    let check = || -> Value { serde_json::from_str(&datum(&db, &["check", "--json"])).unwrap() };
+    assert!(check()["issues"].as_array().unwrap().is_empty());
+    // The spike, then enough changes that the cap drops it from the log.
+    spike(&db, "2026-03-02");
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute(
+        "WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM c WHERE i < 40000)
+         INSERT INTO check_changes (hid, field, at) SELECT 'h', 'f', '' FROM c",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let run = check();
+    assert!(run["examined"].get("rest_unchanged").is_none(), "{run}");
+    assert!(
+        run["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["category"] == "tz_off_neighbours"),
+        "{run}"
+    );
+}
+
 /// A row moved in place (a retime keeps its hid) leaves findings where it
 /// was, which the log's old instant alone reaches (vremya, PR #1400): a run
 /// of three New York rows among Berlin ones is a step, and with one moved

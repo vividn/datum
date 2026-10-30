@@ -40,13 +40,23 @@ impl Db {
     }
 
     /// The rows changed after `through`, `(hid, field, occur_time)`, an
-    /// op's field and time `''`.
-    pub fn check_changed(&self, through: i64) -> Result<Vec<(String, String, String)>> {
-        self.conn
-            .prepare_cached("SELECT hid, field, at FROM check_changes WHERE seq > ?1")?
-            .query_map(params![through], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-            .map(|r| r.map_err(DatumError::Db))
-            .collect()
+    /// op's field and time `''`. `None` where the log's cap has dropped some
+    /// of them (da-4a3cv): a prune never passes a mark, so the row after the
+    /// mark is there unless the cap took it. One statement, so no prune or
+    /// cap lands between the rows and that answer.
+    pub fn check_changed(&self, through: i64) -> Result<Option<Vec<(String, String, String)>>> {
+        let mut statement = self
+            .conn
+            .prepare_cached("SELECT seq, hid, field, at FROM check_changes WHERE seq > ?1")?;
+        let mut rows = statement.query(params![through])?;
+        let mut changed = Vec::new();
+        while let Some(row) = rows.next()? {
+            if changed.is_empty() && row.get::<_, i64>(0)? != through + 1 {
+                return Ok(None);
+            }
+            changed.push((row.get(1)?, row.get(2)?, row.get(3)?));
+        }
+        Ok(Some(changed))
     }
 
     /// `checker`'s last run, `None` where it has kept none.
@@ -162,7 +172,69 @@ mod tests {
         let through = db.check_through().unwrap();
         assert!(through > 0);
         db.check_keep("tz", "s", through, &[]).unwrap();
-        assert_eq!(db.check_changed(0).unwrap(), Vec::new());
+        assert_eq!(db.check_changed(0).unwrap(), Some(Vec::new()));
         assert_eq!(db.check_through().unwrap(), through);
+    }
+
+    /// `n` more rows in the log, as the triggers append them.
+    fn append(db: &Db, n: i64) {
+        db.conn()
+            .execute(
+                "WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM c WHERE i < ?1)
+                 INSERT INTO check_changes (hid, field, at) SELECT 'h', 'f', '' FROM c",
+                params![n],
+            )
+            .unwrap();
+    }
+
+    fn logged(db: &Db) -> i64 {
+        db.conn()
+            .query_row("SELECT count(*) FROM check_changes", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// With no check ever run the log stays within the cap and a chunk, and
+    /// a real write reaches the cap's trigger through its own (da-4a3cv).
+    #[test]
+    fn the_log_stays_bounded() {
+        const CAP: i64 = 32_768;
+        const CHUNK: i64 = 1_024;
+        let db = Db::open_in_memory().unwrap();
+        append(&db, CAP);
+        assert_eq!(logged(&db), CAP, "the cap takes nothing it need not");
+        for _ in 0..4 {
+            append(&db, CAP - 1);
+            assert!(logged(&db) < CAP + CHUNK, "{}", logged(&db));
+        }
+        // One row short of the next chunk, and an entry's insert is its last.
+        let through = db.check_through().unwrap();
+        append(&db, CHUNK - through % CHUNK - 1);
+        let before = logged(&db);
+        assert!(before >= CAP + CHUNK - 1, "{before}");
+        let t = crate::time::DatumTime::now();
+        let e = Entry::new(
+            "tea",
+            crate::entry::Verb::Point,
+            None,
+            None,
+            Some(t),
+            None,
+            "d",
+        );
+        db.insert_entry(&e).unwrap();
+        assert!(logged(&db) <= CAP + 1, "{}", logged(&db));
+    }
+
+    /// A mark the cap has passed is told so, at one row past it and not at
+    /// the row before; a prune that empties the log is not that.
+    #[test]
+    fn a_mark_the_cap_passed_reads_from_scratch() {
+        let db = Db::open_in_memory().unwrap();
+        append(&db, 40_960);
+        // The chunk at 40,960 dropped through 8,192.
+        assert!(db.check_changed(8_191).unwrap().is_none());
+        let at_edge = db.check_changed(8_192).unwrap().unwrap();
+        assert_eq!(at_edge.len(), 32_768);
+        assert_eq!(db.check_changed(40_960).unwrap(), Some(Vec::new()));
     }
 }

@@ -6,7 +6,8 @@
 //! finding is a field's (`integrity`'s repeats), it reads again only the
 //! fields changed since. A field's changed spec reads that field's rows
 //! again, the one meta row these findings read; a template's spec, a kit, a
-//! chain record, another datum or schema, or `--fix` reads every one.
+//! chain record, another datum or schema, `--fix`, or a mark the log's cap has
+//! passed (da-4a3cv) reads every one.
 
 use std::collections::BTreeSet;
 
@@ -43,7 +44,7 @@ impl Plan {
         if kept.stamp != self.stamp {
             return None;
         }
-        let mut changed = db.check_changed(kept.through).ok()?;
+        let mut changed = db.check_changed(kept.through).ok()??;
         // Another run that kept since moved the mark and may have pruned the
         // log under it: what was read of it is not the whole.
         if db.check_kept(checker).ok()??.through != kept.through {

@@ -13,7 +13,8 @@
 -- write pays one insert; a row touched twice between checks is named twice,
 -- and the next check prunes both. What changed since a check is the rows
 -- past the `seq` it read through. AUTOINCREMENT: a `seq` is never reused,
--- even once a prune has emptied the log.
+-- even once a prune has emptied the log. The cap's trigger below holds it to
+-- 32,768 rows and a chunk, whoever writes.
 CREATE TABLE IF NOT EXISTS check_changes (
     seq   INTEGER PRIMARY KEY AUTOINCREMENT,
     hid   TEXT NOT NULL,
@@ -30,6 +31,16 @@ CREATE TABLE IF NOT EXISTS check_kept (
     through INTEGER NOT NULL,
     kept    TEXT NOT NULL
 );
+
+-- da-4a3cv: only a check prunes, so with none the log would grow for good. A
+-- trigger and not a step at open: a `sync run` holds one connection for its
+-- life. 32,768 rows because a run reading that many costs about what a run
+-- from scratch does; a mark the cap has passed reads from scratch, which
+-- `Db::check_changed` says. Every 1,024th row, so no one write pays for more.
+CREATE TRIGGER IF NOT EXISTS check_changes_cap AFTER INSERT ON check_changes
+    WHEN new.seq % 1024 = 0 BEGIN
+    DELETE FROM check_changes WHERE seq <= new.seq - 32768;
+END;
 
 CREATE TRIGGER IF NOT EXISTS check_changes_insert AFTER INSERT ON entries BEGIN
     INSERT INTO check_changes (hid, field, at)

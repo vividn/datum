@@ -3432,8 +3432,8 @@ fn roundtrip_v73_to_v74_check_kept() {
     };
     assert_eq!(objects(), 0);
     apply_one_up(conn, 73);
-    // Two tables, six triggers and the index.
-    assert_eq!(objects(), 9);
+    // Two tables, seven triggers and the index.
+    assert_eq!(objects(), 10);
     apply_one_down(conn, 74);
     assert_eq!(objects(), 0);
 }

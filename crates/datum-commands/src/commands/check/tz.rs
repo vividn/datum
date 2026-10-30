@@ -339,7 +339,7 @@ mod tests {
             // The instants a second run reads around, as it reads them: what
             // the last run found, and what the triggers logged since, a moved
             // row's old place among them.
-            let logged = db.check_changed(through).unwrap().into_iter();
+            let logged = db.check_changed(through).unwrap().unwrap().into_iter();
             let near: BTreeSet<String> = (found.iter())
                 .filter_map(|(e, ..)| Some(e.occur_time.as_ref()?.utc.to_rfc3339()))
                 .chain(logged.map(|(.., at)| at).filter(|at| !at.is_empty()))
