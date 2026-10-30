@@ -126,79 +126,68 @@ pub fn active_db_name(cli_db: Option<&str>) -> Option<String> {
 }
 
 /// Cheap pre-scan of argv for the global `--db <value>` / `--db=<value>`
-/// flag, without invoking the full parser. Used by the alias-resolution
-/// pre-pass so it can route to the user-selected db before the parser
-/// has even seen argv. Stops at a `--` separator: anything after is
-/// positional and never carries the global db flag.
+/// flag, without invoking the full parser: the last one on the line, which
+/// is the one the parser keeps. Used by the alias-resolution pre-pass so it
+/// can route to the user-selected db before the parser has even seen argv.
+/// Stops at a `--` separator: anything after is positional and never
+/// carries the global db flag.
 pub fn pre_scan_db_flag(argv: &[String]) -> Option<String> {
-    extract_global_db_flag(argv).map(|(_, _, value)| value)
+    global_db_flags(argv).pop().map(|(_, value)| value)
 }
 
-/// Like [`pre_scan_db_flag`] but also returns the slice of argv that
-/// makes up the flag (one token for `--db=X`, two for `--db X`). The
-/// alias pre-pass uses this to strip the flag out of argv before
-/// alias-expansion runs, so the alias name isn't shadowed by `--db`
-/// at `argv[1]`. Returns `(start_index, end_index_exclusive, value)`.
-/// `None` when no `--db` is present before `--`.
-pub fn extract_global_db_flag(argv: &[String]) -> Option<(usize, usize, String)> {
+/// Every `--db` in argv before any `--`, wherever it stands: the tokens it
+/// takes up (one for `--db=X`, two for `--db X`) and its value. A `--db`
+/// with nothing after it is none, and stays on the line for the parser to
+/// refuse.
+fn global_db_flags(argv: &[String]) -> Vec<(std::ops::Range<usize>, String)> {
+    let mut flags = Vec::new();
     let mut i = 1; // skip argv[0] (binary name)
-    while i < argv.len() {
-        let tok = &argv[i];
-        if tok == "--" {
-            return None;
-        }
+    while let Some(tok) = argv.get(i).filter(|tok| *tok != "--") {
         if let Some(v) = tok.strip_prefix("--db=") {
-            return Some((i, i + 1, v.to_string()));
-        }
-        if tok == "--db" {
-            if i + 1 >= argv.len() {
-                return None;
-            }
-            return Some((i, i + 2, argv[i + 1].clone()));
+            flags.push((i..i + 1, v.to_string()));
+        } else if let Some(v) = argv.get(i + 1).filter(|_| tok == "--db") {
+            flags.push((i..i + 2, v.clone()));
+            i += 1;
         }
         i += 1;
     }
-    None
+    flags
 }
 
 /// Split argv into (argv-without-`--db`-tokens, `--db`-tokens). Used by
 /// the alias-expansion pre-pass: the global `--db <X>` flag must not
 /// occupy `argv[1]` or it shadows the alias name. Strip it for expansion,
 /// re-prepend it before the parser sees the final argv so the global
-/// flag still routes downstream.
+/// flag still routes downstream. All of them, in order: the parser's walk
+/// in front of the command keeps the last.
 pub fn split_off_global_db_flag(argv: Vec<String>) -> (Vec<String>, Vec<String>) {
-    let Some((start, end, _)) = extract_global_db_flag(&argv) else {
-        return (argv, Vec::new());
-    };
-    let mut without: Vec<String> = Vec::with_capacity(argv.len() - (end - start));
-    let mut flag: Vec<String> = Vec::with_capacity(end - start);
-    for (i, tok) in argv.into_iter().enumerate() {
-        if i >= start && i < end {
-            flag.push(tok);
-        } else {
-            without.push(tok);
-        }
-    }
-    (without, flag)
+    let flags = global_db_flags(&argv);
+    let (flag, without) = argv
+        .into_iter()
+        .enumerate()
+        .partition::<Vec<_>, _>(|(i, _)| flags.iter().any(|(range, _)| range.contains(i)));
+    let tokens = |v: Vec<(usize, String)>| v.into_iter().map(|(_, tok)| tok).collect();
+    (tokens(without), tokens(flag))
 }
 
 /// Split the global `--color WHEN` / `--color=WHEN` off argv, as
 /// [`split_off_global_db_flag`] does `--db`. Only in front of the command
 /// and of any `--`: after the command, `--color` is `track`'s and `setup`'s.
 pub fn split_off_global_color_flag(mut argv: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let mut flag = Vec::new();
     let mut i = 1;
     while let Some(tok) = argv.get(i) {
         if tok == "--color" || tok.starts_with("--color=") {
             let end = (i + 1 + usize::from(tok == "--color")).min(argv.len());
-            let flag = argv.drain(i..end).collect();
-            return (argv, flag);
+            flag.extend(argv.drain(i..end));
+            continue;
         }
         if !tok.starts_with('-') || tok == "--" {
             break;
         }
         i += 1 + usize::from(tok == "--show");
     }
-    (argv, Vec::new())
+    (argv, flag)
 }
 
 /// Load the DB registry from `~/.config/datum/dbs.toml` (or via

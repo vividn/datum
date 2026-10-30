@@ -694,36 +694,21 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
 }
 
 fn try_kit_level2_dispatch() -> Result<Option<()>> {
-    let mut raw: Vec<String> = std::env::args()
+    let raw: Vec<String> = std::env::args()
         .map(datum_parse::alias::spell_color)
         .collect();
-    // A leading `--db NAME` names the database the command runs against —
-    // the web passes one on every named database (da-1mkej) — and a
-    // `--color WHEN` beside it was already checked by the parse that failed.
-    let (mut named, mut color) = (None, None);
-    while let Some(first) = raw.get(1).cloned() {
-        let (flag, value) = match first.split_once('=') {
-            Some((f @ ("--db" | "--color"), v)) => {
-                raw.remove(1);
-                (f.to_string(), v.to_string())
-            }
-            None if (first == "--db" || first == "--color") && raw.len() > 2 => {
-                let v = raw.remove(2);
-                raw.remove(1);
-                (first.clone(), v)
-            }
-            _ => break,
-        };
-        if flag == "--db" {
-            named = Some(value);
-        } else {
-            color = match value.as_str() {
-                "always" => Some(true),
-                "never" => Some(false),
-                _ => None,
-            };
-        }
-    }
+    // A `--db NAME` names the database the command runs against — the web
+    // passes one on every named database (da-1mkej) — and a `--color WHEN`
+    // in front was already checked by the parse that failed.
+    let named = config::pre_scan_db_flag(&raw);
+    let (raw, _db) = config::split_off_global_db_flag(raw);
+    let (raw, color) = config::split_off_global_color_flag(raw);
+    let color = color.iter().rfind(|tok| *tok != "--color");
+    let color = color.and_then(|tok| match tok.strip_prefix("--color=").unwrap_or(tok) {
+        "always" => Some(true),
+        "never" => Some(false),
+        _ => None,
+    });
     let _color = color.map(output::colors::ColorOverride::set);
     if raw.len() < 2 {
         return Ok(None);

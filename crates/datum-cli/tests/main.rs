@@ -50,6 +50,7 @@ mod date_vocabulary;
 mod dayview_cmd;
 mod dayview_integrity;
 mod db_cmd;
+mod db_flag_last_wins;
 mod db_import;
 mod db_import_regression;
 mod debug_cmd;

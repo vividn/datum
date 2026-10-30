@@ -605,6 +605,31 @@ mod tests {
     }
 
     #[test]
+    fn the_last_global_db_in_front_of_the_command_wins() {
+        for line in [
+            &["--db", "a", "--db", "b", "occur", "f"][..],
+            &["--db=a", "--db=b", "occur", "f"],
+            &["--db", "a", "--db=b", "occur", "f"],
+        ] {
+            assert_eq!(parse_argv(&argv(line)).unwrap().db.as_deref(), Some("b"));
+        }
+    }
+
+    #[test]
+    fn a_global_db_with_no_value_is_an_error() {
+        for line in [&["--db"][..], &["--db", "a", "--db"]] {
+            let e = parse_argv(&argv(line)).unwrap_err().to_string();
+            assert!(e.contains("--db requires a value"), "{e}");
+        }
+    }
+
+    #[test]
+    fn the_last_global_color_in_front_of_the_command_wins() {
+        let cli = parse_argv(&argv(&["--color", "always", "--color=never", "occur", "f"]));
+        assert_eq!(cli.unwrap().color, Some(false));
+    }
+
+    #[test]
     fn bare_invocation_is_repl() {
         let cli = parse_argv(&argv(&[])).unwrap();
         assert!(matches!(cli.command, Command::Repl));

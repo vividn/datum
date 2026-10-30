@@ -1,7 +1,7 @@
 /**
- * The `--db` flag `argv` carries: `--db X` or `--db=X`, the first of them,
+ * The `--db` flag `argv` carries: `--db X` or `--db=X`, the last of them,
  * stopping at `--` — the CLI's own pre-scan to the token
- * (`extract_global_db_flag`, `crates/datum-commands/src/config.rs`).
+ * (`global_db_flags`, `crates/datum-commands/src/config.rs`).
  * Undefined when there is none; `{}` for a `--db` with nothing after it,
  * which names no database but is still a flag the caller wrote.
  *
@@ -16,11 +16,14 @@
  * and the CLI's to the same cases.
  */
 export function dbFlag(argv: readonly string[]): { db?: string } | undefined {
+	let flag: { db?: string } | undefined;
 	for (let i = 0; i < argv.length; i += 1) {
 		const word = argv[i];
-		if (word === '--') return undefined;
-		if (word === '--db') return i + 1 < argv.length ? { db: argv[i + 1] } : {};
-		if (word.startsWith('--db=')) return { db: word.slice(5) };
+		if (word === '--') break;
+		if (word === '--db') {
+			if (i + 1 < argv.length) flag = { db: argv[++i] };
+			else flag ??= {};
+		} else if (word.startsWith('--db=')) flag = { db: word.slice(5) };
 	}
-	return undefined;
+	return flag;
 }

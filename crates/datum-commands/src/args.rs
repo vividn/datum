@@ -724,3 +724,92 @@ impl DbImportArgsExt for DbImportArgs {
 fn _parse_error_goes_into_anyhow(e: ParseError) -> anyhow::Error {
     anyhow::Error::from(e)
 }
+
+#[cfg(test)]
+mod global_flag_tests {
+    use super::*;
+
+    fn parsed(line: &[&str]) -> anyhow::Result<Invocation> {
+        let argv = std::iter::once("datum").chain(line.iter().copied());
+        parse_invocation_inner(argv.map(String::from).collect(), &palias::NoResolver)
+    }
+
+    fn db_of(line: &[&str]) -> Option<String> {
+        match parsed(line).unwrap() {
+            Invocation::Single(cli) => cli.db,
+            Invocation::Multi { sides, .. } => {
+                let dbs: Vec<_> = sides.into_iter().map(|cli| cli.db).collect();
+                assert!(dbs.windows(2).all(|two| two[0] == two[1]), "{dbs:?}");
+                dbs[0].clone()
+            }
+        }
+    }
+
+    #[test]
+    fn the_last_db_on_the_line_wins_wherever_it_stands() {
+        for (line, db) in [
+            (&["--db", "t1", "occur", "f", "--db", "t2"][..], "t2"),
+            (&["occur", "f", "--db", "t3", "--db", "t4"], "t4"),
+            (&["--db", "t1", "tail", "--db", "t2"], "t2"),
+            (&["--db=t1", "occur", "f", "--db=t2"], "t2"),
+            (&["occur", "f", "--db", "t3"], "t3"),
+            (&["--db", "t1", "--db", "t5", "occur", "f"], "t5"),
+        ] {
+            assert_eq!(db_of(line).as_deref(), Some(db), "{line:?}");
+        }
+    }
+
+    /// The whole line runs against one database: a `--db` on any side of a
+    /// `,` is every side's, and the last on the line wins for all of them.
+    #[test]
+    fn a_line_of_commands_runs_against_its_last_db() {
+        for (line, db) in [
+            (&["occur", "a", "--db", "x", ",", "occur", "b"][..], "x"),
+            (&["occur", "a", ",", "occur", "b", "--db", "x"], "x"),
+            (
+                &["occur", "a", "--db", "x", ",", "occur", "b", "--db", "y"],
+                "y",
+            ),
+        ] {
+            assert_eq!(db_of(line).as_deref(), Some(db), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn a_separator_ends_the_flags() {
+        let Invocation::Single(cli) = parsed(&["note", "jot", "--", "--db", "x"]).unwrap() else {
+            panic!("one command");
+        };
+        assert_eq!(cli.db, None);
+    }
+
+    #[test]
+    fn a_db_with_no_value_is_still_an_error() {
+        for line in [
+            &["occur", "f", "--db"][..],
+            &["--db", "a", "occur", "f", "--db"],
+        ] {
+            assert!(parsed(line).is_err(), "{line:?}");
+        }
+    }
+
+    /// In front of the command they all come off, so none stands where an
+    /// alias is looked up. After it `--color` is `setup`'s, so it stays.
+    #[test]
+    fn every_color_in_front_comes_off_and_none_after() {
+        let line = |l: &[&str]| {
+            let argv = std::iter::once("datum").chain(l.iter().copied());
+            let (rest, flag) =
+                crate::config::split_off_global_color_flag(argv.map(String::from).collect());
+            (rest[1..].join(" "), flag.join(" "))
+        };
+        assert_eq!(
+            line(&["--color", "always", "--color=never", "al"]),
+            ("al".into(), "--color always --color=never".into())
+        );
+        assert_eq!(
+            line(&["setup", "x", "--color", "red"]),
+            ("setup x --color red".into(), String::new())
+        );
+    }
+}

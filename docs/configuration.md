@@ -44,7 +44,9 @@ sync, upgrade, or turn this on.
 
 The default database lives at `$DATUM_HOME/default.db` (creating the
 directory if needed). The active DB can also be overridden per-invocation
-with `--db <name-or-path>`. Named databases are tracked in
+with `--db <name-or-path>`, before or after the command; given more than
+once, the last one on the line wins and no other is opened or created, and
+a line of several commands joined by `,` runs against it whole. Named databases are tracked in
 `$DATUM_CONFIG_HOME/datum/dbs.toml`.
 
 `--show` controls how much of each entry a command prints. Its modes are
