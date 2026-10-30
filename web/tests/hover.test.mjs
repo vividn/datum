@@ -123,21 +123,6 @@ describe('hovering the day strip', () => {
 		});
 	});
 
-	// A tap selects the entry, whose label is then its name alone (da-k16pi).
-	test('a tap shows the label and a tap elsewhere hides it', async () => {
-		await withDay(
-			async ({ page }) => {
-				await page.locator(DOT).tap();
-				assert.equal(await page.locator(TIP).innerText(), 'coffee');
-				// Anywhere but the strip: a pane's own body. Not its title —
-				// that is the button that opens the pane's menu now (da-9vtw).
-				await page.locator('section.pane[data-title="cli"] .body').tap();
-				assert.ok(await page.locator(TIP).isHidden());
-			},
-			{ device: devices['iPhone 13'] }
-		);
-	});
-
 	test('at 390px the label stays inside the viewport', async () => {
 		await withDay(
 			async ({ page }) => {

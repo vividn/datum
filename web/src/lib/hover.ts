@@ -488,9 +488,8 @@ function highlight(svg: SVGSVGElement | null, field: string | null): void {
  * CLI widget, a double tap on a mark — reaches every picture through it.
  *
  * «the field outline will highlight all data in that field, the hid will
- * highlight just one block, I suppose they should look the same» — so
- * `data-selected` wears the SAME halo `data-pilled` does, one rule for
- * both in CliOutput.svelte, and nothing is done to the marks around it.
+ * highlight just one block, I suppose they should look the same». What it
+ * wears is `outlineSelected`, and every other mark dimmed (CliOutput.svelte).
  */
 function bringOut(svg: SVGSVGElement | null, hids: string[]): void {
 	svg?.querySelectorAll('[data-selected]').forEach((m) => m.removeAttribute('data-selected'));
@@ -502,17 +501,58 @@ function bringOut(svg: SVGSVGElement | null, hids: string[]): void {
 }
 
 /**
+ * Whether `root`, a picture or the day strip's days together, draws a selected
+ * mark, which dims the rest (CliOutput.svelte). An attribute and not `:has`:
+ * over the strip, each element a pan adds or takes away makes Chromium ask
+ * again and restyle every mark (da-uovtn).
+ */
+const dimOthers = (root: Element) => root.toggleAttribute('data-dims', !!root.querySelector('[data-selected]'));
+
+/**
  * A mark's box as it is SEEN: one that flows (nowview's `--ahead`, da-hklaz)
  * is drawn on past the now-line, where its clip hides it, and its box would
- * take the nowview's outline there — so it stops at the line.
+ * take the outline there — so it stops at the line.
  */
-export function shownBox(mark: Element): DOMRect {
+function shownBox(mark: Element): DOMRect {
 	const box = mark.getBoundingClientRect();
 	const line = mark.closest('.flow') && mark.closest('svg')?.querySelector('.current-time-line')?.getBoundingClientRect();
 	if (!line) return box;
 	if (mark.closest('[data-axis]')?.getAttribute('data-axis') === 'y')
 		return new DOMRect(box.x, box.y, box.width, Math.max(0, Math.min(box.bottom, line.top) - box.y));
 	return new DOMRect(box.x, box.y, Math.max(0, Math.min(box.right, line.left) - box.x), box.height);
+}
+
+/**
+ * THE ONE MARKER on a picture's marks: a pixel's outline around each selected
+ * mark and the mark with the keyboard's focus, the same at any zoom (da-67mwa,
+ * da-rvbns, vividn: «Subtle outline»). A halo or a
+ * ring on the mark is drawn in its own units, which the crop and a gesture
+ * stretch, and non-scaling-stroke leaves the svg's own CSS transform out; so
+ * these are boxes beside the svg, in its `.slide` where it has one, so a pan
+ * carries them, read where the marks are SEEN.
+ *
+ * A picture calls it as its marks or the selection change. A widget that
+ * stretches or moves a picture any other way calls it at each step.
+ */
+export function outlineSelected(root: ParentNode | null | undefined): void {
+	for (const layer of root?.querySelectorAll('.outlines') ?? []) {
+		const boxes = [...(layer.previousElementSibling?.querySelectorAll('[data-selected], [data-state]:focus-visible') ?? [])]
+			.map((m) => ({ m, r: shownBox(m) }))
+			.filter(({ r }) => r.width && r.height);
+		// The same boxes moved, none swapped: the nowview reads a picture's
+		// children changing as a redraw and comes back here (`place`).
+		while (layer.childElementCount > boxes.length) layer.lastElementChild!.remove();
+		while (layer.childElementCount < boxes.length) layer.append(document.createElement('span'));
+		if (!boxes.length) continue;
+		const home = layer.getBoundingClientRect();
+		boxes.forEach(({ m, r }, i) => {
+			const o = layer.children[i] as HTMLElement;
+			o.className = 'outline';
+			o.classList.toggle('dot', m.localName === 'circle');
+			o.classList.toggle('focus', m.matches(':focus-visible'));
+			o.style.cssText = `left:${r.left - home.left}px;top:${r.top - home.top}px;width:${r.width}px;height:${r.height}px`;
+		});
+	}
 }
 
 /** How soon a second tap makes a DOUBLE tap, in ms, and how near the first it must land, in px. */
@@ -591,8 +631,8 @@ const ownsPointer = (node: HTMLElement) => !!node.closest('[data-points="own"]')
 
 /**
  * Svelte action: draw `text` into `node` and make its marks answer a
- * pointer, a tap and the keyboard with a label — the time and what the
- * mark is. Nothing is shown over empty space.
+ * mouse and the keyboard with a label — the time and what the mark is. A
+ * tap selects and says none (da-rvbns). Nothing is shown over empty space.
  *
  * And the time cursor (da-wnt2, #lib/cursor.ts): a tap on a day's ground,
  * a right click, or a double tap points the page at
@@ -612,6 +652,8 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	tip.id = `picture-tip-${++tips}`;
 	tip.setAttribute('role', 'tooltip');
 	tip.hidden = true;
+	const outlines = document.createElement('div');
+	outlines.className = 'outlines';
 
 	const own = () => ownsPointer(node);
 	/** Where the marks whose log time this picture draws are: the day strip's, all its bands. */
@@ -651,7 +693,9 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	}
 
 	function draw(text: string, given?: SVGSVGElement) {
-		const focused = marks().indexOf(document.activeElement as Element);
+		// The keyboard's alone: `focus()` on a mark a press focused would read
+		// as the keyboard's (:focus-visible), and outline it.
+		const focused = document.activeElement?.matches(':focus-visible') ? marks().indexOf(document.activeElement) : -1;
 		const labeled = !!shown && shown === document.activeElement;
 		show(null);
 		const svg = given ? (given.isConnected ? (given.cloneNode(true) as SVGSVGElement) : given) : inlineSvg(text);
@@ -673,9 +717,9 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 		const slide = svg && node.closest('[data-slides]') ? document.createElement('div') : null;
 		if (slide) {
 			slide.className = 'slide';
-			slide.append(svg!);
+			slide.append(svg!, outlines);
 		}
-		node.replaceChildren(...(slide ? [slide] : svg ? [svg] : []), tip);
+		node.replaceChildren(...(slide ? [slide] : svg ? [svg, outlines] : []), tip);
 		const drawn = marks();
 		for (const mark of drawn) mark.setAttribute('tabindex', '0');
 		// A redraw replaces every mark; the keyboard keeps its place, and its
@@ -688,6 +732,8 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 		drawCursor(svg, sel);
 		highlight(svg, pilled);
 		bringOut(svg, chosen);
+		dimOthers(logs() ?? node);
+		outlineSelected(node);
 		drawLogged(svg, logs(), chosen);
 	}
 
@@ -800,31 +846,26 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 		else setCursor(markTime(mark));
 	};
 
-	// A pan never labels what it passes over (da-xg1vi): a drag that
-	// traveled hides the label, and a FINGER's label waits for its lift,
-	// since its press may be the start of a scroll.
+	// A pan never labels what it passes over (da-xg1vi): a drag that traveled
+	// hides the label. A finger never labels: its tap selects, and a selection
+	// says no label (da-67mwa, da-rvbns, vividn: «it still produces a label.
+	// Please remove this selection marker»).
 	const point = (e: PointerEvent) =>
-		(e.buttons && pressTraveled()) || (e.type === 'pointerdown' && e.pointerType === 'touch')
+		e.pointerType === 'touch' || (e.buttons && pressTraveled())
 			? show(null)
 			: show(markAt(e.target), e.clientX, e.clientY, e.clientX);
-	// Not in a band that takes the pointer itself (the nowview's): there a tap
-	// selects, and its selection says no label (da-67mwa, vividn: «let's try
-	// getting rid of the selection labels on nowview»).
-	const tapped = (e: PointerEvent) =>
-		e.pointerType === 'touch' &&
-		!own() &&
-		!pressTraveled() &&
-		show(markAt(e.target), e.clientX, e.clientY, e.clientX);
-	// A finger lifting leaves the element too; its label stays until the
-	// next tap lands somewhere else.
-	const leave = (e: PointerEvent) => e.pointerType !== 'touch' && show(null);
-	// The keyboard's focus alone in the nowview's band: a tap focuses the mark
-	// too, and is a selection there (`tapped`).
+	const leave = () => show(null);
+	// The keyboard's focus alone: a press focuses the mark too, and is a selection.
 	const focus = (e: FocusEvent) => {
+		outlineSelected(node);
 		const mark = markAt(e.target);
-		if (own() && !mark?.matches(':focus-visible')) return;
-		const box = mark?.getBoundingClientRect();
-		show(mark, box?.left, box?.bottom);
+		if (!mark?.matches(':focus-visible')) return;
+		const box = mark.getBoundingClientRect();
+		show(mark, box.left, box.bottom);
+	};
+	const unfocus = () => {
+		outlineSelected(node);
+		show(null);
 	};
 	const blur = () => show(null);
 	const away = (e: PointerEvent) => !node.contains(e.target as Node) && show(null);
@@ -832,12 +873,11 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	draw(text, given);
 	node.addEventListener('pointermove', point);
 	node.addEventListener('pointerdown', point);
-	node.addEventListener('pointerup', tapped);
 	node.addEventListener('pointerleave', leave);
 	// The wheel scrolls and pans: the label would stay where the mark was.
 	node.addEventListener('wheel', blur, { passive: true });
 	node.addEventListener('focusin', focus);
-	node.addEventListener('focusout', blur);
+	node.addEventListener('focusout', unfocus);
 	document.addEventListener('pointerdown', away);
 	node.addEventListener('pointerdown', press);
 	node.addEventListener('pointerdown', hold);
@@ -866,6 +906,8 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	const unchosen = selected.subscribe((hids) => {
 		chosen = hids;
 		bringOut(node.querySelector('svg'), chosen);
+		dimOthers(logs() ?? node);
+		outlineSelected(node);
 		drawLogged(node.querySelector('svg'), logs(), chosen);
 		// The label up says whether its entry is selected.
 		if (shown) tip.textContent = tipText(shown, shownX);

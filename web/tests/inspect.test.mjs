@@ -139,7 +139,7 @@ const saysPills = (page, want) =>
 		(seen) => seen.join('|') === want.join('|')
 	);
 
-/** The entries brought out in `scope`'s picture: the marks wearing the halo. */
+/** The entries brought out in `scope`'s picture: the marks marked selected. */
 const litUp = (page, scope) =>
 	page.locator(scope).evaluate((el) => [
 		...new Set([...el.querySelectorAll('svg.svg [data-id][data-selected]')].map((m) => m.getAttribute('data-id')))
@@ -150,8 +150,8 @@ const litUp = (page, scope) =>
  * each beside the box its mark is SEEN in: cut at the now-line where it flows
  * on past it, as `shownBox` (#lib/hover.ts) cuts it.
  */
-const outlined = (page) =>
-	page.locator(BAND).evaluate((band) => {
+const outlined = (page, scope = BAND) =>
+	page.locator(scope).evaluate((band) => {
 		const seen = (m) => {
 			const r = m.getBoundingClientRect();
 			const line = m.closest('.flow') && m.closest('svg').querySelector('.current-time-line')?.getBoundingClientRect();
@@ -649,6 +649,140 @@ describe('a selection in the nowview: no label, a pixel’s outline at any zoom,
 			},
 			{ clock: NOW, ...DESKTOP, device: { hasTouch: true } }
 		);
+	});
+});
+
+// ── one marker on either picture (da-rvbns) ───────────────────────────
+//
+// vividn, 2026-10-30: «there seem to be 2 seperate selection mechanisms in
+// dayview and the history part of nowview … It has a really ugly enormous
+// black and white outline that is huge … and it still produces a label».
+// It was Chromium's own `:focus` ring for svg, `auto 5px` in the mark's units,
+// which a tap's focus gave the mark however `:focus-visible` read.
+
+describe('a tap on either picture: no browser ring, no label, the one outline at any zoom', () => {
+	const TOUCH = { clock: NOW, ...DESKTOP, device: { hasTouch: true } };
+	const seed = async (app, scope) => {
+		for (const argv of [
+			['switch', 'work', 'coding', '-t', '14:00'],
+			['switch', 'mood', 'good', '-t', '09:00'],
+			['switch', 'mood', 'great', '-t', '11:00']
+		])
+			assert.equal((await app.run(argv)).code, 0);
+		await app.redraw();
+		await app.page.locator(`${scope} svg.svg`).waitFor();
+		await app.idle();
+	};
+	/** What the focused element wears: the ring goes by `:focus`, whatever `:focus-visible` says. */
+	const focused = (page) =>
+		page.evaluate(() => {
+			const a = document.activeElement;
+			return { mark: a.matches('[data-state]:focus'), ring: getComputedStyle(a).outlineStyle };
+		});
+	const zoomOf = (page, scope) =>
+		page.locator(`${scope} svg.svg`).evaluate((svg) => Number(getComputedStyle(svg).getPropertyValue('--zoom')));
+
+	for (const [view, scope] of [
+		['the dayview', TODAY],
+		['the nowview', BAND]
+	]) {
+		test(`${view}: a tap, a redraw and a ×3 pinch`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await seed(app, scope);
+				const mark = await aMark(page, scope, '[data-id][data-state]');
+				await page.touchscreen.tap(early(mark).x, early(mark).y);
+				await saysPills(page, [`hid:${mark.id}`]);
+				const rest = await until(
+					() => outlined(page, scope),
+					(o) => o.length > 0 && o.every((l) => l.on)
+				);
+				assert.deepEqual(await focused(page), { mark: true, ring: 'none' });
+				await page.waitForTimeout(150);
+				assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the tap put a label up');
+				const halo = await page.locator(`${scope} svg.svg [data-selected]`).first().evaluate((m) => getComputedStyle(m).filter);
+				assert.equal(halo, 'none');
+
+				// A write redraws the picture under the mark the tap focused.
+				const before = await page.locator(`${scope} svg.svg`).elementHandle();
+				assert.equal((await app.run(['occur', 'coffee', '-t', '14:30'])).code, 0);
+				await app.redraw();
+				await until(
+					() => before.evaluate((svg) => !svg.isConnected),
+					(gone) => gone
+				);
+				await app.idle();
+				await until(
+					() => outlined(page, scope),
+					(o) => o.length > 0 && o.every((l) => l.on)
+				);
+				assert.equal(await page.locator(`${scope} .outline.focus`).count(), 0, 'the redraw gave the tap the keyboard’s focus');
+				assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the redraw put a label up');
+
+				const band = await page.locator(scope).boundingBox();
+				const box = { x: early(mark).x - 100, y: band.y, width: 200, height: band.height };
+				let during;
+				await pinch(page, box, 60, 180, async () => {
+					during = { zoom: await zoomOf(page, scope), lines: await outlined(page, scope) };
+				});
+				// The control: the picture is stretched along time.
+				assert.ok(during.zoom > 1.5, `the pinch stretched by ${during.zoom}`);
+				assert.ok(during.lines.length > 0, 'the outline went under the pinch');
+				assert.ok(during.lines.every((l) => l.on), `the outline left its mark: ${JSON.stringify(during.lines)}`);
+				assert.deepEqual(
+					[...new Set(during.lines.flatMap((l) => l.border))],
+					[...new Set(rest.flatMap((l) => l.border))],
+					'the outline changed width under the pinch'
+				);
+				assert.ok(during.lines.every((l) => l.border.every((w) => w === '1px')));
+				assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the pinch put a label up');
+				assert.deepEqual(app.errors, []);
+			}, TOUCH);
+		});
+
+		test(`${view}: the keyboard’s focus is the same pixel’s outline, and labels`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await seed(app, scope);
+				await page.locator(`${scope} svg.svg [data-state]`).first().focus();
+				assert.ok(await page.evaluate(() => document.activeElement.matches(':focus-visible')));
+				assert.equal((await focused(page)).ring, 'none');
+				const lines = await until(
+					() => page.locator(`${scope} .outline.focus`).evaluateAll((all) => all.map((o) => getComputedStyle(o).borderTopWidth)),
+					(o) => o.length > 0
+				);
+				assert.deepEqual(lines, ['1px']);
+				assert.equal(await page.locator(`${scope} .tip:not([hidden])`).count(), 1);
+				await page.evaluate(() => document.activeElement.blur());
+				await until(
+					() => page.locator(`${scope} .outline`).count(),
+					(n) => n === 0
+				);
+			}, { clock: NOW, ...DESKTOP });
+		});
+	}
+
+	test('with an entry selected, the marks of every day in the strip dim, and its own do not', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seed(app, TODAY);
+			// Closed yesterday: an entry that ran on into today would be the one selected.
+			assert.equal((await app.run(['start', 'walk', '-t', 'yesterday 10:00'])).code, 0);
+			assert.equal((await app.run(['end', 'walk', '-t', 'yesterday 11:00'])).code, 0);
+			await app.redraw();
+			const other = page.locator('.band[data-days-ago="1"] svg.svg [data-field="walk"][data-state]').first();
+			await other.waitFor({ state: 'attached' });
+			const mark = await aMark(page, TODAY, '[data-id][data-state]');
+			await page.mouse.click(early(mark).x, early(mark).y);
+			await saysPills(page, [`hid:${mark.id}`]);
+			await until(
+				() => other.evaluate((m) => Number(getComputedStyle(m).opacity)),
+				(o) => o < 1 && o >= 0.5
+			);
+			assert.ok(
+				await page.locator(`${TODAY} svg.svg [data-selected]`).first().evaluate((m) => getComputedStyle(m).opacity === '1')
+			);
+		}, { clock: NOW, ...DESKTOP });
 	});
 });
 

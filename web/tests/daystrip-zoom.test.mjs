@@ -313,6 +313,10 @@ test('a redraw of the day holding the focus leaves a stack scrolled back where i
 	await settledRoom(phone, 'selected scrolled', async (app) => {
 		const { page } = app;
 		await selectTea(app);
+		// The keyboard's focus, which a redraw gives back; a tap's it does not (da-rvbns).
+		await page.keyboard.press('Tab');
+		const keyed = await page.locator(`${TODAY} svg.svg [data-selected]`).first().evaluate((m) => (m.focus({ preventScroll: true }), m.matches(':focus-visible')));
+		assert.ok(keyed, 'the mark does not have the keyboard’s focus');
 		const top = () => page.locator('.stack').evaluate((stack) => stack.scrollTop);
 		const pinned = await top();
 		await wheelOverPast(app, -600);

@@ -12,8 +12,9 @@
 	picture is on screen (da-8810n): the group datum named is marked
 	`data-pilled` and the halo below is the whole of it. A SELECTED entry
 	(da-pzzoz) is marked `data-selected` on the mark that names it and
-	wears the same halo, wherever the selection was made — a row in the
-	tail, a document in the CLI widget, a double tap on the mark itself.
+	gets a pixel's outline (`outlineSelected`, #lib/hover.ts), wherever the
+	selection was made — a row in the tail, a document in the CLI widget,
+	a tap on the mark itself.
 
 	`datum dayview` is the exception that proves the pane is rendering CLI
 	output faithfully: its stdout is an SVG document, so it is shown as a
@@ -144,17 +145,46 @@
 	   one: a single 2px blur around a 1px dot is a smudge, while two 1px
 	   passes read as an edge. Nothing is done to the other fields at all:
 	   whatever is not pilled is drawn exactly as datum drew it. */
-	/* A SELECTED ENTRY wears the very same halo (da-pzzoz). vividn: "the
-	   field outline will highlight all data in that field, the hid will
-	   highlight just one block, I suppose they should look the same" — so
-	   one rule says both, and a reader who has learned what the glow means
-	   for a field has learned it for an entry. The difference is only what
-	   it is ON: a field's whole group, or the one mark that names the
-	   entry (`bringOut` in #lib/hover.ts). The nowview, which stretches its
-	   marks' units, outlines a selection over the band instead (da-67mwa). */
-	.picture :global(.field[data-pilled]),
-	.picture :global([data-selected]) {
+	.picture :global(.field[data-pilled]) {
 		filter: drop-shadow(0 0 1px var(--ink-bright)) drop-shadow(0 0 1px var(--ink-bright));
+	}
+
+	/* THE SELECTED ENTRY (da-67mwa, da-rvbns): a pixel's outline around each
+	   of its marks, the same at any scale (`outlineSelected`, #lib/hover.ts),
+	   and every other mark dimmed a little, «just a little bit to make the
+	   selected entry/field pop», on every day of a strip (`dimOthers`). */
+	:global([data-dims] svg.svg :is([data-state], [data-id]):not([data-selected])) {
+		opacity: 0.7;
+	}
+	/* A box with no height under the svg: the origin of the boxes in it. */
+	.picture :global(.outlines) {
+		position: relative;
+		height: 0;
+	}
+	.picture :global(.outline) {
+		position: absolute;
+		box-sizing: content-box;
+		margin: -1px;
+		border: 1px solid var(--ink-bright);
+		pointer-events: none;
+	}
+	.picture :global(.outline.dot) {
+		border-radius: 50%;
+	}
+	.picture :global(.outline.focus) {
+		border-color: var(--accent);
+	}
+	/* While a border's drag stretches the picture nothing reads its marks
+	   again: the drop draws them anew. */
+	.picture.stretch :global(.outlines) {
+		display: none;
+	}
+	/* Chromium's own stylesheet for svg rings a focused element, however it
+	   was focused, at `auto 5px` in the mark's units: a white and black band a
+	   stretch makes enormous (da-rvbns, vividn: «really ugly enormous black and
+	   white outline»). The keyboard's focus is an outline above. */
+	.picture :global(svg.svg :focus) {
+		outline: none;
 	}
 
 	/* Fixed, so a band that clips its picture does not clip the label. */

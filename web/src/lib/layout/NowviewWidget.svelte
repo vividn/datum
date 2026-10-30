@@ -154,9 +154,8 @@
 	import Pill from '#lib/Pill.svelte';
 	import { pills, selected } from '#lib/bar.ts';
 	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '#lib/cursor.ts';
-	import { inspectMark, instantOn, msPerPx, shownBox, timeAxis } from '#lib/hover.ts';
-	import { hidOf, markOf, marksIn, pressSpent } from '#lib/inspect.ts';
-	import { isSelected } from '#lib/selection.ts';
+	import { inspectMark, instantOn, msPerPx, outlineSelected, timeAxis } from '#lib/hover.ts';
+	import { markOf, pressSpent } from '#lib/inspect.ts';
 	import { readLanes } from '#lib/lanes.ts';
 	import { advance, LONG_MS, SLOP_PX, SNAP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
@@ -664,7 +663,7 @@
 		slid = Math.max(0, Date.now() - drawn.now);
 		const by = `${vertical ? 'translateY' : 'translateX'}(${-slid / drawn.msPerUnit}px)`;
 		for (const g of groups) g.style.transform = by;
-		outline();
+		outlineSelected(el);
 		clearFar();
 		if (slid > drawn.ahead / 2 && refilled !== drawn.now) {
 			refilled = drawn.now;
@@ -1763,7 +1762,7 @@
 		// Before the early returns below: a snapshot draws no tick labels
 		// and leaves by the first of them, and a selection is drawn there
 		// too.
-		outline();
+		outlineSelected(el);
 		const [length, start] = vertical ? ([home.height, home.y] as const) : ([home.width, home.x] as const);
 		const centreOf = (selector: string) => {
 			const r = el?.querySelector(selector)?.getBoundingClientRect();
@@ -2182,37 +2181,11 @@
 	/** The pills the selection made: the ones drawn on the axis beside their instants. */
 	const axisPills = $derived($pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID));
 
-	// ── the selected entry, outlined ───────────────────────────────────
-	//
-	// vividn, 2026-10-28 (da-67mwa): «the outline is huge and gets huger when
-	// you zoom in. Let's change the highlight to be like what happens when a
-	// field pill is selected. Subtle outline, we can also slightly dim
-	// everything else». The picture's halo is drawn in the mark's own units,
-	// which the crop and a gesture stretch along time, so it is drawn here
-	// instead, over the band: a box a pixel wide around each mark that names
-	// a selected entry, whatever selected it, read where the mark is SEEN.
-	// So it is read again wherever a mark moves: a redraw or a resize
-	// (`place`), the slide on now (`flow`), and each step of a gesture.
-
-	/** The selected entries' marks, in px across and down the band. */
-	let outlines = $state.raw<{ x: number; y: number; w: number; h: number; dot: boolean }[]>([]);
-
-	function outline(): void {
-		const [svg, band] = [svgEl(), el?.querySelector('.nowview-band')?.getBoundingClientRect()];
-		const hids = $selected;
-		outlines =
-			!svg || !band || !hids.length
-				? []
-				: marksIn(svg)
-						.filter((m) => isSelected(hids, hidOf(m) ?? ''))
-						.map((m) => ({ r: shownBox(m), dot: m.localName === 'circle' }))
-						.filter(({ r }) => r.width > 0 && r.height > 0)
-						.map(({ r, dot }) => ({ x: r.left - band.left, y: r.top - band.top, w: r.width, h: r.height, dot }));
-	}
-
+	// The selected entry's outline, read again as a gesture moves its marks
+	// (`outlineSelected`, #lib/hover.ts); `place` and `flow` for the rest.
 	$effect(() => {
-		void [$selected, zoom, rest, panned];
-		untrack(outline);
+		void [zoom, rest, panned];
+		untrack(() => outlineSelected(el));
 	});
 
 	/**
@@ -2281,9 +2254,6 @@
 		     snapshot, the one picture here drawn from data: the overlay has
 		     none, and a write asks for the day's data layer (da-0e06p). -->
 		<CliPane {spec} epoch={(showHistory ? 0 : epoch) + refills} compose={crop} dims={false} {standby} />
-		{#each outlines as o}
-			<span class="outline" class:dot={o.dot} style:left="{o.x}px" style:top="{o.y}px" style:width="{o.w}px" style:height="{o.h}px"></span>
-		{/each}
 	</div>
 
 	<!-- The wait's mark: a ring that closes over LONG_MS, and a dashed stem
@@ -2830,26 +2800,5 @@
 			animation: none;
 			opacity: 0.8;
 		}
-	}
-
-	/* THE SELECTED ENTRY (da-67mwa): a pixel's outline around each of its
-	   marks, the same at any scale, in place of the picture's halo, which a
-	   stretch widens; and every other mark dimmed a little, «just a little
-	   bit to make the selected entry/field pop». */
-	.nowview-band :global(svg.svg [data-selected]) {
-		filter: none;
-	}
-	.nowview-band :global(svg.svg:has([data-selected]) :is([data-state], [data-id]):not([data-selected])) {
-		opacity: 0.7;
-	}
-	.outline {
-		position: absolute;
-		box-sizing: content-box;
-		margin: -1px;
-		border: 1px solid var(--ink-bright);
-		pointer-events: none;
-	}
-	.outline.dot {
-		border-radius: 50%;
 	}
 </style>

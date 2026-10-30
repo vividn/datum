@@ -187,9 +187,8 @@
 
 	A PAN NEVER SELECTS AND NEVER LABELS (da-xg1vi). A press that traveled
 	— the stack's scroll, a pan of the hours, a pinch — selects nothing
-	with its click and shows no tooltip; a finger's label waits for its
-	lift (`pressTraveled`, #lib/inspect.ts, which every picture asks, the
-	nowview's too). What selects is what the tree above says: a tap, a
+	with its click and shows no tooltip (`pressTraveled`, #lib/inspect.ts,
+	which every picture asks, the nowview's too). What selects is what the tree above says: a tap, a
 	long tap, a long tap's drag, the ruler.
 
 	THE DAY HEIGHT IS THE ONE THAT MAY BE ABSENT (da-r0ydu). No day height
@@ -280,7 +279,7 @@
 	import { pills } from './bar.js';
 	import { minute } from './clock.js';
 	import { pointAt, pointed, setCursor, SPAN_ID } from './cursor.js';
-	import { timeAt } from './hover.js';
+	import { outlineSelected, timeAt } from './hover.js';
 	import { spendPress } from './inspect.js';
 	import { advance, LONG_MS, SLOP_PX, undecided, type Mode, type Press } from './nowpoint.js';
 	import { run, runKey } from './run.js';
@@ -516,6 +515,7 @@
 				if (pattern.getAttribute('patternTransform') !== t) pattern.setAttribute('patternTransform', t);
 			}
 		}
+		outlineSelected(stripEl);
 	});
 
 	/**
@@ -2428,6 +2428,11 @@
 	.shot.previewing {
 		transform: scale(var(--sx), var(--sy));
 		transform-origin: 0 0;
+	}
+	/* Scaled with it, a selection's outline would be no pixel: back with the
+	   picture the drop draws. */
+	.shot.previewing :global(.outlines) {
+		display: none;
 	}
 	/* A pan moves the picture's own box (`slide`), on a layer of its own,
 	   and paints nothing (da-uovtn). The translate is there at rest too:
