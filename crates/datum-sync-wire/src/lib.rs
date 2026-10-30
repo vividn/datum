@@ -220,9 +220,9 @@ pub trait Store {
     fn gives_way(&self, _e: &anyhow::Error) -> bool {
         false
     }
-    /// Whether a dial is refused as busy before it connects: while this copy
-    /// is [`applying`](Store::applying), unless its dials wait a turn of
-    /// their own first.
+    /// Whether a dial no person waits on ([`Asked`]) is refused as busy before
+    /// it connects: while this copy is [`applying`](Store::applying), unless
+    /// its dials wait a turn of their own first.
     fn dial_busy(&self) -> bool {
         self.applying()
     }
@@ -1228,7 +1228,9 @@ pub async fn dial(
     asked: Option<&Asked>,
 ) -> Result<Report> {
     let id = addr.id.to_string();
-    if store.dial_busy() {
+    // A person waiting is told of the member, so an asked dial goes on: its
+    // apply takes its turn at the gate (da-ahivt).
+    if asked.is_none() && store.dial_busy() {
         return Err(Failed(Failure::Refused(Why::Busy), format!("this copy {BUSY_WHY}")).into());
     }
     let rep = session(store, ep, addr, invite, asked).await;

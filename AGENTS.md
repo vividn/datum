@@ -476,7 +476,9 @@ status`, with nothing «to send».
 One session applies into a database at a time, in any process (`<db>.applying`,
 da-h31wt): another waits its turn sending BUSYs, a copy applying refuses a new
 session as busy and pushes to every member once done, and neither side counts
-busy, or giving way to a write, as a failure. datum.day runs one session at a
+busy, or giving way to a write, as a failure. A `datum sync` dials on while its
+own copy applies, its apply waiting its turn, so it says each member's answer
+and an offline one reads offline (da-ahivt). datum.day runs one session at a
 time, applying or not (da-dwm2y): its CLI runs one process at a time, so a
 second session's handshake waited behind the first's verify with nothing sent.
 Its dials wait their turn, and a session served while another is open is
