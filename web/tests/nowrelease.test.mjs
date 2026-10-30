@@ -53,7 +53,14 @@ function record(page, labels = false) {
 			const frames = (window.__frames = []);
 			let down = true;
 			for (const type of ['pointerup', 'touchend', 'mouseup'])
-				window.addEventListener(type, () => (down = false), { capture: true });
+				window.addEventListener(
+					type,
+					() => {
+						down = false;
+						window.__lifted = true;
+					},
+					{ capture: true }
+				);
 			const opacity = (el) => {
 				let o = 1;
 				for (let e = el; e && e instanceof Element; e = e.parentElement) {
@@ -128,12 +135,16 @@ function record(page, labels = false) {
 /**
  * Wait for `n` frames after the lift — and, when the release asked datum for
  * a picture, after every ask is answered and a picture has replaced the one
- * on screen as the first answer came (where none came after the lift, the one
- * under the fingers) — then stop recording. The frames, and whether a picture
+ * on screen as the first answer to an ask since the lift came (where none
+ * came after the lift, the one under the fingers) — then stop recording. The frames, and whether a picture
  * was asked. By the answers and not by the first new picture: one arrives in
  * the lift's own frame, before any answer, and a next gesture begun on its
  * count of frames lands while this one's picture is on its way, and is dropped
- * (`zoom.held`, da-zo8qd).
+ * (`zoom.held`, da-zo8qd). An ask since the lift: one from under the fingers
+ * is the gesture's rule (`graftAxis`), which draws no picture, and counted
+ * from its answer that picture in the lift's frames passes for the answer's,
+ * so the labels read are the last pinch's (da-xvand). Not the last answer: a
+ * window off now also asks for the picture on now (`standby`), which is not drawn.
  */
 async function untilSettled(page, n = 20) {
 	const after = (answer) =>
@@ -158,6 +169,7 @@ async function untilSettled(page, n = 20) {
 		});
 	const frames = await page.evaluate(() => {
 		window.__stopFrames = true;
+		window.__lifted = false;
 		return window.__frames;
 	});
 	return { frames, asked };
@@ -215,15 +227,16 @@ async function seeded(app, answer = 333) {
 		);
 	}, answer);
 	await app.spyOnRunner();
-	// Outermost, so it counts each run from where it is asked, and notes the frame each answer comes at.
+	// Outermost, so it counts each run from where it is asked, and notes the frame the answer to each asked since the lift comes at.
 	await app.page.evaluate(() => {
 		window.__nowviews = 0;
 		const previous = window.datum.setRunner((argv, ...rest) => {
 			if (argv[0] !== 'nowview') return previous(argv, ...rest);
 			window.__nowviews += 1;
+			const released = window.__lifted;
 			return previous(argv, ...rest).finally(() => {
 				window.__nowviews -= 1;
-				window.__answered?.push(window.__frames.length);
+				if (released) window.__answered?.push(window.__frames.length);
 			});
 		});
 	});
