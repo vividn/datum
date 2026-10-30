@@ -241,6 +241,44 @@ fn a_mark_the_cap_passed_finds_what_it_dropped() {
     );
 }
 
+/// A prune under another stamp that empties the log passes a mark, and leaves
+/// no row to tell by: the run reads from scratch all the same (da-tuhig).
+#[test]
+fn a_mark_another_stamp_pruned_past_finds_what_it_dropped() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("stamps.db");
+    datum(&db, &["occur", "tea"]);
+    datum(&db, &["check"]);
+    spike(&db, "2026-03-02");
+    let other = Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env("DATUM_DB", &db)
+        .env("DATUM_HOME", dir.path())
+        .env("DATUM_CONFIG_HOME", dir.path())
+        .env("DATUM_SYNC_NO_DAEMON", "1")
+        .env("DATUM_ID_DELIMITER", ";")
+        .env("TZ", "Europe/Berlin")
+        .args(["check", "integrity"])
+        .output()
+        .expect("spawn datum");
+    assert!(other.status.success());
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let logged: i64 = conn
+        .query_row("SELECT count(*) FROM check_changes", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(logged, 0, "the other stamp's run prunes the log empty");
+    drop(conn);
+    let run: Value = serde_json::from_str(&datum(&db, &["check", "tz", "--json"])).unwrap();
+    assert!(
+        run["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["category"] == "tz_off_neighbours"),
+        "{run}"
+    );
+    assert!(run["examined"].get("rest_unchanged").is_none(), "{run}");
+}
+
 /// A row moved in place (a retime keeps its hid) leaves findings where it
 /// was, which the log's old instant alone reaches (vremya, PR #1400): a run
 /// of three New York rows among Berlin ones is a step, and with one moved

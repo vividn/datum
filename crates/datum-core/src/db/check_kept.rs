@@ -40,10 +40,13 @@ impl Db {
     }
 
     /// The rows changed after `through`, `(hid, field, occur_time)`, an
-    /// op's field and time `''`. `None` where the log's cap has dropped some
-    /// of them (da-4a3cv): a prune never passes a mark, so the row after the
-    /// mark is there unless the cap took it. One statement, so no prune or
-    /// cap lands between the rows and that answer.
+    /// op's field and time `''`. `None` where some of them are gone: the
+    /// log's cap dropped them (da-4a3cv), or a prune under another stamp did,
+    /// which passes this mark as a prune under its own never does (da-tuhig).
+    /// So the row after the mark is there, or with the log empty the sequence
+    /// is at the mark, unless they went. One statement for the rows, so no
+    /// prune or cap lands between them and that answer; the sequence only
+    /// rises, so reading it after can only read from scratch for nothing.
     pub fn check_changed(&self, through: i64) -> Result<Option<Vec<(String, String, String)>>> {
         let mut statement = self
             .conn
@@ -55,6 +58,9 @@ impl Db {
                 return Ok(None);
             }
             changed.push((row.get(1)?, row.get(2)?, row.get(3)?));
+        }
+        if changed.is_empty() && through < self.check_through()? {
+            return Ok(None);
         }
         Ok(Some(changed))
     }
@@ -172,7 +178,7 @@ mod tests {
         let through = db.check_through().unwrap();
         assert!(through > 0);
         db.check_keep("tz", "s", through, &[]).unwrap();
-        assert_eq!(db.check_changed(0).unwrap(), Some(Vec::new()));
+        assert_eq!(db.check_changed(through).unwrap(), Some(Vec::new()));
         assert_eq!(db.check_through().unwrap(), through);
     }
 
@@ -226,7 +232,8 @@ mod tests {
     }
 
     /// A mark the cap has passed is told so, at one row past it and not at
-    /// the row before; a prune that empties the log is not that.
+    /// the row before; a prune that empties the log down to the mark is not
+    /// that.
     #[test]
     fn a_mark_the_cap_passed_reads_from_scratch() {
         let db = Db::open_in_memory().unwrap();
@@ -236,5 +243,18 @@ mod tests {
         let at_edge = db.check_changed(8_192).unwrap().unwrap();
         assert_eq!(at_edge.len(), 32_768);
         assert_eq!(db.check_changed(40_960).unwrap(), Some(Vec::new()));
+    }
+
+    /// A prune under another stamp that empties the log is told too, with no
+    /// row to tell by (da-tuhig); the mark it pruned down to reads nothing.
+    #[test]
+    fn a_mark_another_stamp_pruned_past_reads_from_scratch() {
+        let db = Db::open_in_memory().unwrap();
+        append(&db, 10);
+        db.check_keep("tz", "one", 4, &[]).unwrap();
+        db.check_keep("integrity", "other", 10, &[]).unwrap();
+        assert_eq!(logged(&db), 0);
+        assert!(db.check_changed(4).unwrap().is_none());
+        assert_eq!(db.check_changed(10).unwrap(), Some(Vec::new()));
     }
 }

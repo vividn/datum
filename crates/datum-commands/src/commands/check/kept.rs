@@ -6,8 +6,8 @@
 //! finding is a field's (`integrity`'s repeats), it reads again only the
 //! fields changed since. A field's changed spec reads that field's rows
 //! again, the one meta row these findings read; a template's spec, a kit, a
-//! chain record, another datum or schema, `--fix`, or a mark the log's cap has
-//! passed (da-4a3cv) reads every one.
+//! chain record, another datum or schema, `--fix`, or a mark the log's cap or
+//! another stamp's prune has passed (da-4a3cv, da-tuhig) reads every one.
 
 use std::collections::BTreeSet;
 
