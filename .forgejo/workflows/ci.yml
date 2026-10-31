@@ -360,7 +360,7 @@ jobs:
       # README.md or a docs/*.md the tests that read the docs. The whole
       # suite instead, each reason printed, for a manifest, a build script,
       # CI, a non-Rust file under crates/, a migration, test support, a map
-      # missing or over ten commits behind, or a selection that fails. A
+      # missing or over MAX_BEHIND commits behind, or a selection that fails. A
       # push runs everything: staging's full run is what main is promoted
       # on. The doc tests and the lint gates always run in full.
       - name: Which Rust tests can this change reach?
@@ -460,8 +460,8 @@ jobs:
       # know, and those that read src/ or the build as data. The whole suite
       # instead, each reason printed, for any other change that can reach the
       # web (fixtures, config, static, the CLI's build, a kit, CI), a web/src
-      # or support file no test reached, a map missing or over ten commits
-      # behind, or a selection that fails. A crate's file selects nothing
+      # or support file no test reached, a map missing or over MAX_BEHIND
+      # commits behind, or a selection that fails. A crate's file selects nothing
       # (da-q587o): the module the selection runs on is built from it, and
       # staging's full run tests the rest. A push runs everything.
       - name: Which web tests can this change reach?

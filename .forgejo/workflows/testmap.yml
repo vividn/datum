@@ -19,7 +19,7 @@ name: testmap
 
 # On a timer, not on every staging push (da-2r82v): between 02:59 and 07:22
 # on 10-16 the push builds took 260 of a lane's 263 minutes, 44 each, more
-# than ci.yml's run of the same commit. A map more than MAX_BEHIND (10)
+# than ci.yml's run of the same commit. A map more than MAX_BEHIND
 # commits behind sends a PR to its whole suite; staging moved up to 3
 # commits an hour that week, so a build every two hours keeps the map within
 # it, and one staging has not moved past since is skipped. A schedule runs
