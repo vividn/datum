@@ -1023,9 +1023,9 @@ describe('the three states and the full screen', () => {
 	/** A control of the bar's that is in neither section is a handle. */
 	const handles = (page) => page.getByRole('button', { name: 'show the output' }).count();
 
-	// The handle is gone (da-pnxug), vividn, 2026-10-28: «the swiping up and
-	// down on the output section/input section is sufficient here». Only
-	// closed is there one, with no output to swipe (da-d4tqt).
+	// «the swiping up and down on the output section/input section is
+	// sufficient here» (vividn, 2026-10-28, da-pnxug), and the tab that says
+	// «show the output» only closed, with no output to swipe (da-d4tqt).
 	test('a swipe on the input or the output: up from closed is the row, up from the row full, down from full the row, down from the row closed', async () => {
 		await phone(async (app) => {
 			const { page } = app;
@@ -1054,7 +1054,7 @@ describe('the three states and the full screen', () => {
 	// show a little ^------^ handle in middle above the input bar that
 	// reopens it» (da-d4tqt), and 2026-10-30: «let's put it on the far right,
 	// and have it protruding into the swipe space» (da-k5kwu).
-	test('closed, a tab comes out of the input’s top border at the far right and opens the row; at the row and full there is none', async () => {
+	test('closed, a tab comes out of the input’s top border at the far right and opens the row; at the row it stands on the output and closes it; full there is none', async () => {
 		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
@@ -1081,10 +1081,20 @@ describe('the three states and the full screen', () => {
 			await page.locator(`${BAR} input`).fill('');
 			await handle.click();
 			assert.equal(await state(page), 'row');
-			assert.equal(await handle.count(), 0, 'at the row, the handle is still there');
+			// vividn, 2026-10-31: «leaving that tab there too when the output
+			// section is open» (da-sz4f6): the far right of the bar's top, as closed.
+			const close = page.getByRole('button', { name: 'hide the output' });
+			const [t, out] = await Promise.all([close.boundingBox(), page.locator(OUTPUT).boundingBox()]);
+			assert.ok(Math.abs(t.x + t.width - (out.x + out.width)) <= 1, `the tab ends at ${t.x + t.width}, the output at ${out.x + out.width}`);
+			assert.ok(Math.abs(t.y + t.height - out.y) <= 1, `the tab ends at ${t.y + t.height}, the output starts at ${out.y}`);
+			assert.equal(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label') ?? null, [t.x + t.width / 2, t.y + t.height + 3]) === 'hide the output', false, 'the tab reaches over the output');
+			await close.click();
+			assert.equal(await state(page), 'closed');
+			await handle.click();
+			assert.equal(await state(page), 'row');
 			await dragBy(page, INPUT, -60);
 			assert.equal(await state(page), 'full');
-			assert.equal(await handle.count(), 0, 'full, the handle is still there');
+			assert.equal(await page.locator(`${BAR} .reopen`).count(), 0, 'full, the handle is still there');
 			await dragBy(page, INPUT, 60);
 			assert.equal(await state(page), 'row');
 			await dragBy(page, INPUT, 60);

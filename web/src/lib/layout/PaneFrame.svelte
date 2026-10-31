@@ -194,6 +194,7 @@
 	import { act } from '#lib/act.ts';
 	import { ask } from '#lib/confirm.ts';
 	import { holds } from '#lib/hold.ts';
+	import { settled } from '#lib/run.ts';
 	import { writable } from 'svelte/store';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
@@ -254,6 +255,13 @@
 	 * short of a reader who has looked at the tab and reached into it.
 	 */
 	const AGAIN_MS = 1000;
+	/** How long a tap on the swipe strip keeps its words up, their fade included. */
+	const TOLD_MS = 3000;
+	/**
+	 * How far down the swipe strip a finger goes before a lift refreshes: past
+	 * any swipe, and short of the room under the strip with the bar closed.
+	 */
+	const PULL_PX = 64;
 
 	// What `Pane.svelte` looks for: it renders body-only inside a frame and
 	// reports its alarm here, so the orange reaches whichever pane holds
@@ -555,7 +563,9 @@
 		target: EventTarget | null;
 		panners: HTMLElement[];
 		fresh: boolean;
-		state: 'pending' | 'ours' | 'theirs';
+		/** It began on the swipe strip, where a tap and a pull down mean something too. */
+		strip: boolean;
+		state: 'pending' | 'ours' | 'theirs' | 'pull';
 	};
 	let touch: Swipe | null = null;
 	/** The finger's pointer id, for the cancel a window's claim sends what is under it. */
@@ -627,6 +637,26 @@
 	const swipes = $derived(many && (locked || !root));
 	/** The strip at the page's foot: where a finger is, and there are tabs to swipe to. */
 	const stripped = $derived(root && swipes && $badge > ROW);
+	/** A tap on the strip, counted so another restarts the fade; 0 while its words are gone. */
+	let told = $state(0);
+	let telling: ReturnType<typeof setTimeout> | undefined;
+	/** How far down the strip the finger has pulled, and kept at that once a refresh waits to reload. */
+	let pulled = $state(0);
+	/** A finger has hold of the strip: its texture follows with no transition. */
+	let gripped = $state(false);
+	/**
+	 * Where the texture is along the swipe: `grab` from where this gesture took
+	 * it, `worn` from where earlier ones left it. They swap at a landing, so
+	 * the texture does not move there as the tab's own offset goes back to 0.
+	 */
+	let grab = $state(0);
+	let worn = $state(0);
+
+	function tell() {
+		clearTimeout(telling);
+		told++;
+		telling = setTimeout(() => (told = 0), TOLD_MS);
+	}
 
 	const inRange = (index: number) => index >= 0 && index < pane.tabs.length;
 	/** The reader asked for no motion: the swap is instant, as it was. */
@@ -680,6 +710,7 @@
 			target: event.target,
 			panners: pannersUnder(event.target, event.currentTarget as HTMLElement, vertical ? 'y' : 'x'),
 			fresh: switched?.frame === self && performance.now() < switched.until,
+			strip: event.currentTarget !== contentEl,
 			state: event.touches.length > 1 || under ? 'theirs' : 'pending'
 		};
 	}
@@ -714,6 +745,16 @@
 		const dy = t.clientY - was.y;
 		const along = vertical ? dy : dx;
 		const across = vertical ? dx : dy;
+		if (was.state === 'pending' && was.strip && !vertical && across >= COMMIT_PX && across > Math.abs(along)) {
+			was.state = 'pull';
+			gripped = true;
+		}
+		if (was.state === 'pull') {
+			event.preventDefault();
+			// Gone more sideways than down, it is no pull, and a lift refreshes nothing.
+			pulled = across > Math.abs(along) ? across : 0;
+			return;
+		}
 		if (was.state === 'pending') {
 			if (Math.max(Math.abs(along), Math.abs(across)) < COMMIT_PX) return;
 			const axis = vertical ? 'y' : 'x';
@@ -735,6 +776,8 @@
 		event.stopPropagation();
 		event.preventDefault();
 		if (still()) return;
+		gripped = true;
+		grab = along;
 		// The strip waits out the first SWIPE_PX, then follows from there,
 		// and never towards a side with no tab on it.
 		const way = along < 0 ? 1 : -1;
@@ -745,6 +788,14 @@
 	function onTouchEnd(event: TouchEvent) {
 		const was = touch;
 		touch = null;
+		gripped = false;
+		if (was?.state === 'pull') {
+			// A reload kills the process under a write, so what is running or queued answers first.
+			if (pulled >= PULL_PX) void settled().then(() => location.reload());
+			else pulled = 0;
+			return;
+		}
+		if (was?.state === 'pending' && was.strip) tell();
 		if (!was || was.state !== 'ours') return;
 		event.stopPropagation();
 		const t = event.changedTouches[0];
@@ -757,11 +808,14 @@
 
 	function cancel() {
 		touch = null;
+		gripped = false;
+		pulled = 0;
 		void home();
 	}
 
 	/** Back where it started, and the neighbour put away. */
 	async function home() {
+		grab = 0;
 		await glide(0);
 		if (!touch) peek = -1;
 	}
@@ -777,10 +831,13 @@
 	async function slide(next: number, way: number) {
 		if (still()) return void activate(next);
 		const extent = (vertical ? contentEl?.clientHeight : contentEl?.clientWidth) ?? 0;
+		grab = way * extent;
 		await glide(way * extent);
 		activate(next);
 		offset = 0;
 		peek = -1;
+		worn += grab;
+		grab = 0;
 	}
 
 	/** A slide the shell asked for is under way: the strip stands a box apart before it moves. */
@@ -1043,20 +1100,43 @@
 		{@render children?.(peek, moves)}
 	</div>
 	{#if stripped}
+		<!-- THE ROUGH PATCH (da-sz4f6). vividn, 2026-10-31: «if you tap on the
+		     rough patch show that in white for a few seconds before fading
+		     away», «you should be able to drag down on the rough patch to
+		     refresh the page», «move the texture of the rough patch with the tab
+		     when you're dragging». -->
+		{#if pulled > 0}
+			<div
+				class="refresh"
+				class:bright={pulled >= PULL_PX}
+				style:opacity={Math.min(pulled / PULL_PX, 1)}
+				style:--grown={Math.min(pulled / PULL_PX, 1)}
+			>
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 1.5v3h-3" /></svg>
+				refresh
+			</div>
+		{/if}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="swipe-strip"
+			class:gripped
+			style:--slide="{SLIDE_MS}ms"
+			style:background-position={vertical ? `0 ${worn + grab}px` : `${worn + grab}px ${pulled}px`}
 			ontouchstart={onTouchStart}
 			{@attach (el) => on(el, 'touchmove', onTouchMove, { passive: false })}
 			ontouchend={onTouchEnd}
 			ontouchcancel={cancel}
 		>
-			<!-- Drawn, not typed: a font's arrow heads are its own size and height. -->
-			<span aria-hidden="true">
-				<svg viewBox="0 0 32 8"><path d="M1 4h30M5 1 1 4l4 3" /></svg>
-				swipe between tabs
-				<svg viewBox="0 0 32 8"><path d="M1 4h30M27 1l4 3-4 3" /></svg>
-			</span>
+			{#key told}
+				{#if told}
+					<!-- Drawn, not typed: a font's arrow heads are its own size and height. -->
+					<span aria-hidden="true" style:--told="{TOLD_MS}ms">
+						<svg viewBox="0 0 32 8"><path d="M1 4h30M5 1 1 4l4 3" /></svg>
+						swipe between tabs
+						<svg viewBox="0 0 32 8"><path d="M1 4h30M27 1l4 3-4 3" /></svg>
+					</span>
+				{/if}
+			{/key}
 		</div>
 	{/if}
 </section>
@@ -1741,20 +1821,20 @@
 	   gives up the rest, `--strip-rise`: a maximized pane stops there too
 	   (Layout.svelte). Over the content, whose padding reaches under it. A
 	   short phone keeps the gap's own height: at 412×563 the rise took the
-	   sliver of yesterday from the day strip (da-frewq). */
+	   sliver of yesterday from the day strip (da-frewq). And 1.3× as tall again
+	   (da-sz4f6), vividn, 2026-10-31: «increase the height of the rough patch
+	   x1.3»: 16px to 20.8px. */
 	.stripped {
 		--strip-rise: 0px;
 		padding-bottom: var(--strip-rise);
 	}
 	@media (min-height: 600px) {
 		.stripped {
-			--strip-rise: 0.25rem;
+			--strip-rise: 0.55rem;
 		}
 	}
 	/* Tiny scattered dots, the one rule that says what the strip looks like.
-	   vividn, 2026-10-30: «I like scattered the best. Make the font color
-	   darker so that it is a different color than the dots. Maybe halfway
-	   between the dot color and background color». */
+	   vividn, 2026-10-30: «I like scattered the best». */
 	.swipe-strip {
 		--strip-ground: color-mix(in srgb, var(--quiet) 10%, var(--ground));
 		position: absolute;
@@ -1774,16 +1854,40 @@
 			radial-gradient(circle at 3px 12px, var(--quiet) 0.4px, transparent 0.65px) 0 0 / 15px 15px,
 			radial-gradient(circle at 8px 13px, var(--quiet) 0.5px, transparent 0.75px) 0 0 / 15px 15px,
 			var(--strip-ground);
-		color: color-mix(in srgb, var(--quiet) 50%, var(--strip-ground));
-		font-size: 0.6rem;
+		color: white;
+		font-size: 0.78rem;
+		line-height: 1;
 		white-space: nowrap;
 		user-select: none;
 		touch-action: none;
+		transition: background-position var(--slide) ease-out;
 	}
+	.swipe-strip.gripped {
+		transition: none;
+	}
+	/* Held for most of its life and then gone, as the output tab's word is. */
 	.swipe-strip span {
 		display: flex;
 		align-items: center;
 		gap: 0.4em;
+		animation: told-fade var(--told) ease-out forwards;
+	}
+	@keyframes told-fade {
+		0%,
+		70% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.swipe-strip {
+			transition: none;
+		}
+		.swipe-strip span {
+			animation: none;
+		}
 	}
 	.swipe-strip svg {
 		width: 2.5em;
@@ -1791,6 +1895,41 @@
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	/* What a pull down on the strip is about to do, over the widget above the
+	   strip since the finger hides what is under it: it grows with the pull,
+	   and is bright where a lift refreshes. As the output's × comes out (da-uqx7n). */
+	.refresh {
+		position: absolute;
+		left: 50%;
+		bottom: calc(var(--strip-rise) + 0.5rem);
+		z-index: 4;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 0.3rem 0.5rem;
+		translate: -50% 0;
+		scale: calc(0.4 + 0.6 * var(--grown));
+		transform-origin: bottom;
+		background: var(--ground);
+		border: 1.5px solid currentColor;
+		border-radius: 0.5rem;
+		color: var(--quiet);
+		font-size: 0.7rem;
+		pointer-events: none;
+	}
+	.refresh.bright {
+		background: var(--accent);
+		color: var(--ground);
+	}
+	.refresh svg {
+		width: 1.2rem;
+		height: 1.2rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}

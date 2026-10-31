@@ -234,7 +234,8 @@ describe('on a phone-sized screen', () => {
 			name: 'main',
 			root: { id: 'only', tabs: [{ id: 'only-tab', content: { id: 'only-widget', kind: 'nowview', settings: {} } }], active: 0 }
 		});
-		await withApp(
+		// A mouse's tab and a finger's, which is bigger and reaches further (da-sz4f6).
+		for (const touch of [false, true]) await withApp(
 			async ({ page }) => {
 				const grabbed = async (state) => {
 					// Once the pane has its new height, a handle stands within
@@ -266,7 +267,7 @@ describe('on a phone-sized screen', () => {
 				await assertOnScreen(page, '.prompt-bar .section.output', 'the output a swipe opens');
 				await grabbed('at the row');
 			},
-			{ viewport: PHONE, prepare: (context) => context.addInitScript(draft, nowview) }
+			{ viewport: PHONE, hasTouch: touch, prepare: (context) => context.addInitScript(draft, nowview) }
 		);
 	});
 

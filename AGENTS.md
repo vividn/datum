@@ -1018,7 +1018,7 @@ binary.
   `prefers-reduced-motion`. A drag
   anywhere on the bar, or a wheel over it, moves a state the way it went;
   the one handle (da-pnxug) is a tab at the far right, reaching up into the
-  swipe strip, while closed alone, which opens the row (da-d4tqt, da-k5kwu), and on the box PageUp goes closed →
+  swipe strip, closed or at the row, which opens the row or closes it (da-d4tqt, da-k5kwu, da-sz4f6), and on the box PageUp goes closed →
   row → full and PageDown back. HOW FAR OPEN the bar is, is ONE number of
   pixels (`reveal` in `#lib/log.ts`) that three boxes are sized from — the
   page itself never scrolls; the NOTCH is `--output-height`, the CEILING the

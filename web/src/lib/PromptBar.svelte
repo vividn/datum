@@ -59,7 +59,11 @@
 	^------^ handle in middle above the input bar that reopens it». Then
 	(da-k5kwu), 2026-10-30: «let's put it on the far right, and have it
 	protruding into the swipe space. make it wide and tall enough for the
-	ACTION verb to appear in there».
+	ACTION verb to appear in there». Then (da-sz4f6), 2026-10-31: «leaving that
+	tab there too when the output section is open so that you can close and open
+	the output section consistently». So it stands on the bar's top edge whatever
+	the output's height, in the strip: a press toggles the output, and a drag on
+	it is the bar's, as anywhere on the bar. The full log has `close history`.
 
 	FOLDED, A COMMAND STILL ANSWERS, in the tab: six characters (#lib/tabWord.ts),
 	each action in the color a document draws it in, fading over `ACTION_MS`
@@ -542,21 +546,22 @@
 			</div>
 		</div>
 	{/if}
-	<!-- THE TAB, CLOSED ONLY (da-d4tqt, da-k5kwu): a press opens the output,
-	     a swipe on it is the bar's own (`use:grip`), and what the last command
-	     said stands in it. -->
-	{#if !$outputless && $shown === 0 && !$inLog}
+	<!-- THE TAB (da-d4tqt, da-k5kwu, da-sz4f6): a press opens the output or
+	     closes it, a swipe on it is the bar's own (`use:grip`), and closed, what
+	     the last command said stands in it. -->
+	{#if !$outputless && !$inLog}
 		<button
 			type="button"
 			class="reopen"
-			class:failed={$marks?.failed}
-			aria-label="show the output"
-			title="show the output"
-			onclick={$marks?.failed ? openOutput : raise}
+			class:open={$output}
+			class:failed={!$output && $marks?.failed}
+			aria-label={$output ? 'hide the output' : 'show the output'}
+			title={$output ? 'hide the output' : 'show the output'}
+			onclick={$output ? closeLog : $marks?.failed ? openOutput : raise}
 		>
 			<!-- Keyed on the object, so a second command restarts the fade. -->
 			{#key $marks}
-				{#if !said}
+				{#if $output || !said}
 					<svg viewBox="0 0 40 6" aria-hidden="true"><path d="M1 1 4 5h32l3-4" /></svg>
 				{:else}
 					<span class="said" style="--fade: {$marks?.failed ? ERROR_MS : ACTION_MS}ms">
@@ -946,7 +951,7 @@
 		padding: 0 0.2rem;
 	}
 
-	/* The tab: it comes out of the input's top border at the far right, its
+	/* The tab: it comes out of the bar's top edge at the far right, its
 	   own ground covering the rule under it, and fits its six characters.
 	   vividn, 2026-10-30: «It should just come right out of the border of the
 	   input widget. The text on it will always have exactly 6 characters so it
@@ -955,9 +960,10 @@
 	   24px goes on down into the row unseen, under the box's own controls
 	   (Prompt.svelte). */
 	.reopen {
+		--tab-reach: 10px;
 		position: absolute;
 		right: 0;
-		bottom: var(--input-height);
+		bottom: calc(var(--input-height) + var(--shown, 0px));
 		z-index: 21;
 		display: flex;
 		align-items: center;
@@ -978,7 +984,25 @@
 	.reopen::after {
 		content: '';
 		position: absolute;
-		inset: 0 0 -10px;
+		inset: 0 0 calc(-1 * var(--tab-reach));
+	}
+	/* Open, what is under it is the newest command, whose undo stands at this
+	   corner: a finger's reach goes up instead. */
+	.reopen.open::after {
+		inset: calc(-1 * var(--tab-reach)) 0 0;
+	}
+	.reopen.open svg {
+		transform: none;
+	}
+	/* vividn, 2026-10-31: «increase the size of the output section tab as well
+	   so that the text can be bigger and more readable»: 1.3×, with the swipe
+	   strip it stands in, and still a finger's 24px where it is pressed. */
+	@media (pointer: coarse) {
+		.reopen {
+			--tab-reach: 6px;
+			height: 18px;
+			font-size: 0.91rem;
+		}
 	}
 	.reopen svg {
 		width: 1.5rem;

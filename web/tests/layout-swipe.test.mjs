@@ -121,7 +121,7 @@ describe('the swipe strip', () => {
 	const STRIP = '.swipe-strip';
 	const box = (page, selector) => page.locator(selector).boundingBox();
 
-	test('fills the gap under the bottom widget, 1.3× as tall as it was, and a swipe from it moves the tab', async () => {
+	test('fills the gap under the bottom widget, 1.3× as tall again, says nothing at rest, and a swipe from it moves the tab', async () => {
 		await withApp(
 			async ({ page }) => {
 				assert.equal(await shown(page), 'main');
@@ -130,16 +130,13 @@ describe('the swipe strip', () => {
 					page.locator('.cell.fields .pane').first().boundingBox(),
 					box(page, 'main')
 				]);
-				assert.ok(Math.abs(strip.height - 16) <= 0.5, `the strip is ${strip.height}px tall, the gap was 12`);
+				assert.ok(Math.abs(strip.height - 20.8) <= 0.5, `the strip is ${strip.height}px tall, it was 16`);
 				assert.equal(strip.width, main.width, 'edge to edge');
 				assert.ok(Math.abs(strip.y + strip.height - (main.y + main.height)) <= 0.5, 'its foot is the top of the bar');
 				assert.ok(Math.abs(bottom.y + bottom.height - strip.y) <= 1, `the bottom widget ends at ${bottom.y + bottom.height}, the strip starts at ${strip.y}`);
-				assert.ok(
-					await page.locator(STRIP).evaluate((el) => el.textContent.includes('swipe between tabs')),
-					'the strip says nothing'
-				);
+				assert.equal((await page.locator(STRIP).textContent()).trim(), '', 'the strip has words at rest');
 				const y = strip.y + strip.height / 2;
-				await swipe(page, 330, y, -220, 0);
+				await swipe(page, 300, y, -220, 0);
 				await until(() => shown(page), (name) => name === 'tail');
 				await pastTheWindow(page);
 				await swipe(page, 60, y, 220, 0);
@@ -168,7 +165,7 @@ describe('the swipe strip', () => {
 				await page.locator('.cell.fields').getByRole('button', { name: /^maximize/ }).click();
 				const big = await page.locator('section.big').boundingBox();
 				assert.ok(Math.abs(big.y + big.height - strip.y) <= 1, `the big pane ends at ${big.y + big.height}, the strip starts at ${strip.y}`);
-				await swipe(page, 330, strip.y + strip.height / 2, -220, 0);
+				await swipe(page, 300, strip.y + strip.height / 2, -220, 0);
 				await until(() => shown(page), (name) => name === 'tail');
 			},
 			{ ...PHONE, prepare: twoLayouts }
@@ -194,6 +191,51 @@ describe('the swipe strip', () => {
 		);
 	});
 
+	test('the output tab grew with the strip, and its word still fits in it', async () => {
+		await withApp(
+			async ({ page, submit }) => {
+				await page.locator('.prompt-bar input').press('PageDown');
+				await submit('occur alfa');
+				await submit('update alfa n=1 , switch mood happy');
+				await page.waitForFunction(() => document.querySelector('.prompt-bar .reopen .said')?.textContent.trim() === 'UPD,SW');
+				const seen = await page.evaluate(() => {
+					const tab = document.querySelector('.prompt-bar .reopen');
+					const range = document.createRange();
+					range.selectNodeContents(tab.querySelector('.said'));
+					const [t, w] = [tab.getBoundingClientRect(), range.getBoundingClientRect()];
+					return { height: t.height, font: parseFloat(getComputedStyle(tab).fontSize), inside: w.left >= t.left && w.right <= t.right && w.top >= t.top && w.bottom <= t.bottom };
+				});
+				assert.deepEqual(seen, { height: 18, font: 0.91 * 16, inside: true });
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	test('a drag on the output tab moves the output, up and down, and never reloads', async () => {
+		await withApp(
+			async ({ page, submit }) => {
+				await submit('occur coffee');
+				await page.locator('.prompt-bar input').press('PageDown');
+				const show = page.getByRole('button', { name: 'show the output' });
+				const hide = page.getByRole('button', { name: 'hide the output' });
+				await show.waitFor();
+				await page.evaluate(() => (window.__notReloaded = true));
+				const from = async (tab) => {
+					const b = await tab.boundingBox();
+					return [b.x + b.width / 2, b.y + b.height / 2];
+				};
+				await swipe(page, ...(await from(show)), 0, -40);
+				await hide.waitFor();
+				await until(() => page.locator('.prompt-bar .section.output').boundingBox(), (b) => b && b.height > 40);
+				await swipe(page, ...(await from(hide)), 0, 70);
+				await show.waitFor();
+				await page.waitForTimeout(400);
+				assert.equal(await page.evaluate(() => window.__notReloaded), true, 'a drag on the tab reloaded');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
 	test('a short phone keeps the gap as tall as it was, and it still swipes', async () => {
 		await withApp(
 			async ({ page }) => {
@@ -203,6 +245,128 @@ describe('the swipe strip', () => {
 				await until(() => shown(page), (name) => name === 'tail');
 			},
 			{ ...PHONE, viewport: { width: 412, height: 563 }, prepare: twoLayouts }
+		);
+	});
+
+	// vividn, 2026-10-31 (da-sz4f6), and what follows.
+	test('a tap shows the words in white, they fade, and the tab stays', async () => {
+		await withApp(
+			async ({ page }) => {
+				const strip = await box(page, STRIP);
+				await page.touchscreen.tap(195, strip.y + strip.height / 2);
+				const words = page.locator(`${STRIP} span`);
+				await words.waitFor();
+				assert.ok((await words.textContent()).includes('swipe between tabs'));
+				assert.equal(await words.evaluate((el) => getComputedStyle(el).color), 'rgb(255, 255, 255)');
+				assert.equal(await words.evaluate((el) => getComputedStyle(el).animationName.includes('told-fade')), true, 'nothing fades them');
+				await words.waitFor({ state: 'detached' });
+				assert.equal(await shown(page), 'main', 'a tap moved the tab');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	/** A finger on the strip off the tab: `moves` are where it goes in turn, `during` reads at each. */
+	async function onStrip(page, moves, during = async () => {}) {
+		const strip = await box(page, STRIP);
+		const x = 195;
+		const y = strip.y + strip.height / 2;
+		const cdp = await page.context().newCDPSession(page);
+		const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+		await at('touchStart', [{ x, y }]);
+		for (const [dx, dy] of moves) {
+			await at('touchMove', [{ x: x + dx, y: y + dy }]);
+			await during(dx, dy);
+		}
+		await at('touchEnd', []);
+		await cdp.detach();
+	}
+	const REFRESH = '.refresh';
+	const mark = (page) => page.evaluate(() => (window.__notReloaded = true));
+	const reloaded = (page) => page.waitForFunction(() => !window.__notReloaded);
+	const stillHere = async (page, why) => {
+		await page.waitForTimeout(400);
+		assert.equal(await page.evaluate(() => window.__notReloaded), true, why);
+	};
+
+	test('a long pull down reloads and says so on the way; a short one, or one taken back, does not', async () => {
+		await withApp(
+			async ({ page }) => {
+				await page.locator('.prompt-bar input').press('PageDown');
+				await page.getByRole('button', { name: 'show the output' }).waitFor();
+				// The whole pull fits under the strip with the bar closed.
+				const strip = await box(page, STRIP);
+				assert.ok(page.viewportSize().height - strip.y - strip.height / 2 > 70, 'no room to pull');
+				await mark(page);
+				await onStrip(page, [[0, 12], [0, 25]]);
+				await stillHere(page, 'a short pull reloaded');
+				assert.equal(await page.locator(REFRESH).count(), 0, 'a short pull left its mark');
+
+				const bright = [];
+				await onStrip(page, [[0, 30], [0, 70], [0, 30]], async () =>
+					bright.push(await page.locator(REFRESH).evaluate((el) => el.classList.contains('bright')))
+				);
+				assert.deepEqual(bright, [false, true, false]);
+				await stillHere(page, 'a pull taken back reloaded');
+
+				// Begun down, gone sideways: past the line, and no longer a pull.
+				await onStrip(page, [[0, 30], [-150, 70]]);
+				await stillHere(page, 'a pull that went sideways reloaded');
+				assert.equal(await page.locator(REFRESH).count(), 0, 'a pull that went sideways left its mark');
+
+				const moved = [];
+				await onStrip(page, [[0, 30], [0, 70]], async () => moved.push(await page.locator(STRIP).evaluate((el) => el.style.backgroundPositionY)));
+				assert.deepEqual(moved, ['30px', '70px'], 'the texture did not come down with the finger');
+				await reloaded(page);
+				await page.locator(STRIP).waitFor();
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	// A reload kills the process under a write, and the journal rolls it back:
+	// the write would be gone, with no word. So it waits for what is out.
+	test('a pull past the line waits for a write in flight, which lands', async () => {
+		await withApp(
+			async ({ page }) => {
+				await page.evaluate(() => {
+					const previous = window.datum.setRunner((argv, ...rest) =>
+						argv[0] === 'occur'
+							? new Promise((go) => (window.__letGo = go)).then(() => previous(argv, ...rest))
+							: previous(argv, ...rest)
+					);
+				});
+				await page.locator('.prompt-bar input').fill('occur inflight');
+				await page.locator('.prompt-bar input').press('Enter');
+				await page.waitForFunction(() => window.__letGo);
+				await mark(page);
+				await onStrip(page, [[0, 30], [0, 70]]);
+				await stillHere(page, 'the reload did not wait for the write');
+				await page.evaluate(() => window.__letGo());
+				await reloaded(page);
+				await page.waitForFunction(() => window.datum?.run);
+				const { stdout } = await page.evaluate(() => window.datum.run(['tail', 'inflight', '--json']));
+				assert.ok(stdout.includes('inflight'), `the write is gone: ${stdout}`);
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	test('the texture follows the finger, goes back with a short swipe, and settles with the tab', async () => {
+		await withApp(
+			async ({ page }) => {
+				const at = () => page.locator(STRIP).evaluate((el) => parseFloat(el.style.backgroundPositionX));
+				const seen = [];
+				await onStrip(page, [[-20, 0], [-30, 0]], async () => seen.push(await at()));
+				assert.deepEqual(seen, [-20, -30], 'it did not follow from the first move, ahead of the tab');
+				await until(at, (x) => x === 0);
+				await onStrip(page, [[-60, 0], [-150, 0]]);
+				await until(() => shown(page), (name) => name === 'tail');
+				const main = await box(page, 'main');
+				assert.equal(await at(), -main.width, 'it did not go the whole way with the tab');
+				assert.ok(await page.locator(STRIP).evaluate((el) => !el.classList.contains('gripped')));
+			},
+			{ ...PHONE, prepare: twoLayouts }
 		);
 	});
 
