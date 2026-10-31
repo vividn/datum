@@ -179,6 +179,8 @@ export interface FieldListing {
 	height: number;
 	/** How much the field is used, recent use weighing more — `--sort frecency` alone carries it (da-xtkcp). */
 	frecency?: number;
+	/** The field has no off whatever its spec says: `timezone`'s row alone. */
+	never_false?: boolean;
 }
 
 /** One row of `datum now --json`'s `active`. */
@@ -206,7 +208,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 	const now = new Map(active.map((a) => [a.field, a.state]));
 	return [...listing]
 		.sort((a, b) => a.y - b.y)
-		.map(({ field, spec, states, color, state_colors, ignored, y, height }) => {
+		.map(({ field, spec, states, color, state_colors, ignored, y, height, never_false }) => {
 			const state = now.get(field);
 			return {
 				field,
@@ -215,7 +217,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				color,
 				stateColors: state_colors,
 				glyph: spec?.symbol ?? undefined,
-				neverFalse: !!spec?.never_false && !spec.allowed_states?.includes('false'),
+				neverFalse: never_false || (!!spec?.never_false && !spec.allowed_states?.includes('false')),
 				active: now.has(field),
 				current: state === true || (typeof state === 'string' && state !== '') ? state : undefined,
 				y,

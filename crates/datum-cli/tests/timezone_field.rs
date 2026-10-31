@@ -422,3 +422,77 @@ mod off_declared {
         assert_eq!(found(&env), vec![]);
     }
 }
+
+/// da-uhpql: `_` reads the same clock `timezone X` would: the zone it names.
+#[test]
+fn the_previous_state_is_at_the_clock_of_the_zone_it_names() {
+    let env = Env::new();
+    env.ok(&["timezone", "Asia/Tokyo", "-t", "2026-06-01T10:00"]);
+    env.ok(&["timezone", "America/Chicago", "-t", "2026-06-02T10:00"]);
+    let out = env.ok(&["timezone", "_", "-t", "2026-06-03T10:00", "--show", "json"]);
+    assert!(out.contains("timezone:2026-06-03T01:00:00.000Z"), "{out}");
+    let err = env.refused(&["timezone", "_", "-z", "Europe/Berlin"]);
+    assert!(err.contains("disagrees"), "{err}");
+}
+
+/// da-uhpql: a line naming the field by its key is the line naming it by word.
+#[test]
+fn a_field_named_by_key_is_at_the_clock_of_the_zone_it_names() {
+    let env = Env::new();
+    env.ok(&[
+        "switch",
+        "field=timezone",
+        "Asia/Tokyo",
+        "-t",
+        "2026-06-01T14:00",
+    ]);
+    let at = env.only().occur_time.unwrap();
+    assert_eq!(at.utc.to_rfc3339(), "2026-06-01T05:00:00+00:00");
+    assert_eq!(at.timezone.as_deref(), Some("Asia/Tokyo"));
+    let err = env.refused(&["switch", "field=timezone", "Asia/Seoul", "-z", "Asia/Tokyo"]);
+    assert!(err.contains("disagrees"), "{err}");
+    assert_eq!(env.rows().len(), 1);
+    // A `field=` naming another field is that field's, its `-z` its own.
+    env.ok(&["switch", "field=mood", "Asia/Seoul", "-z", "Asia/Tokyo"]);
+}
+
+/// da-uhpql: as a log's `-z` is, by entry: `IGNORED` names no zone.
+#[test]
+fn retime_refuses_a_z_that_disagrees() {
+    let env = Env::new();
+    env.ok(&["timezone", "Asia/Tokyo", "-t", "2026-06-01T10:00"]);
+    let before = env.only().occur_time.unwrap();
+    for line in [
+        &["retime", "_LAST", "-z", "Europe/Berlin"][..],
+        &["retime", "--field", "timezone", "-z", "Europe/Berlin"],
+    ] {
+        let err = env.refused(line);
+        assert!(
+            err.contains("Europe/Berlin") && err.contains("Asia/Tokyo"),
+            "{err}"
+        );
+    }
+    let after = env.only().occur_time.unwrap();
+    assert_eq!((after.utc, &after.timezone), (before.utc, &before.timezone));
+    env.ok(&["retime", "_LAST", "-t", "11:00", "-z", "Asia/Tokyo"]);
+    let at = env.only().occur_time.unwrap();
+    assert_eq!(at.utc.to_rfc3339(), "2026-06-01T02:00:00+00:00");
+
+    env.ok(&["timezone", "IGNORED", "-t", "2026-06-02T10:00"]);
+    env.ok(&["retime", "_LAST", "-z", "Europe/Berlin"]);
+    // Another field's entries are no concern of it.
+    env.ok(&["occur", "tea", "-t", "2026-06-02T11:00"]);
+    env.ok(&["retime", "_LAST", "-z", "Europe/Berlin"]);
+}
+
+/// da-uhpql: the picker reads it, for a field `end` is refused on.
+#[test]
+fn fields_says_it_has_no_off() {
+    let env = Env::new();
+    env.ok(&["timezone", "Asia/Tokyo"]);
+    assert_eq!(env.fields_row()["never_false"], json!(true));
+    env.refused(&["end", "timezone"]);
+    env.ok(&["switch", "mood", "calm"]);
+    let row = &serde_json::from_str::<Value>(&env.ok(&["fields", "mood", "--json"])).unwrap()[0];
+    assert_eq!(row.get("never_false"), None);
+}

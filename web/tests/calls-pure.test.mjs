@@ -135,6 +135,7 @@ seed(['switch', 'mood', 'happy', '-t', '-120']);
 seed(['switch', 'mood', 'calm', '-t', '-60']);
 seed(['start', 'walk']);
 seed(['track', 'coffee', '--verb', 'occur']);
+seed(['timezone', 'UTC', '-t', '-30']);
 // Every key a spec leaves out when empty, on a spec that has it.
 const SPEC = { verb: 'occur', color: null, description: null, allowed_states: null, state_colors: {} };
 const SIZE = { required: false, value_type: 'string', in_slug: false, default: 'big' };
@@ -183,7 +184,7 @@ const HID = JSON.parse(seed(calls.layoutsArgv()).stdout).rows.find((r) => r.data
 /** Arguments for every call that takes some: one list per run. A call with none is run once, bare. */
 const SAMPLES = {
 	helpArgv: [[], ['db backup']],
-	fieldArgv: [['coffee'], ['mood'], ['never-logged'], ['job__abcd1234']],
+	fieldArgv: [['coffee'], ['mood'], ['never-logged'], ['job__abcd1234'], ['timezone']],
 	tailArgv: [[{}], [{ field: 'mood', count: 5, above: HID }]],
 	showAllArgv: [[statsArgv(DEFAULT_STATS)], [statsArgv(DEFAULT_STATS, 'mood')], [statsArgv({ range: 'all' }, 'coffee')]],
 	statsArgv: [[DEFAULT_STATS], [{ range: 'all' }, 'coffee']],

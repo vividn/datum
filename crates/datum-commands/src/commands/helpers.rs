@@ -168,12 +168,26 @@ pub(crate) fn enforce_spec_lists(entry: &Entry, db: &Db) -> Result<()> {
     enforce_spec_lists_against(entry, &registry)
 }
 
+/// The zone an entry of the `timezone` field is in: the state after its
+/// trailing edge where it has one. `None` for any other field's, `IGNORED`
+/// and a state imported that names none.
+pub(crate) fn zone_it_names(entry: &Entry) -> Option<String> {
+    use datum_core::timezone_field::{state_zone, TIMEZONE_FIELD};
+    if entry.field != TIMEZONE_FIELD {
+        return None;
+    }
+    [&entry.following_state, &entry.state]
+        .into_iter()
+        .flatten()
+        .find_map(state_zone)
+}
+
 /// da-yw6o2: an entry of the `timezone` field holds a zone or `IGNORED`, in
 /// the zone's own spelling, and its own instant is in the zone it names: the
 /// state after its trailing edge where it has one. The instant stands, so an
 /// offset on `-t` is believed as to when and the field as to where.
 pub(crate) fn settle_timezone_entry(entry: &mut Entry) -> Result<()> {
-    use datum_core::timezone_field::{state_zone, TIMEZONE_FIELD};
+    use datum_core::timezone_field::TIMEZONE_FIELD;
     if entry.field != TIMEZONE_FIELD {
         return Ok(());
     }
@@ -190,11 +204,7 @@ pub(crate) fn settle_timezone_entry(entry: &mut Entry) -> Result<()> {
             *state = datum_parse::time::iana_zone(name)?.into();
         }
     }
-    let zone = [&entry.following_state, &entry.state]
-        .into_iter()
-        .flatten()
-        .find_map(state_zone);
-    if let (Some(zone), Some(t)) = (zone, entry.occur_time.as_mut()) {
+    if let (Some(zone), Some(t)) = (zone_it_names(entry), entry.occur_time.as_mut()) {
         if t.timezone.as_ref() != Some(&zone) {
             *t = datum_core::time::DatumTime {
                 uncertainty: t.uncertainty.take(),

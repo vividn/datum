@@ -141,11 +141,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let now = crate::args::window_now().unwrap_or_else(DatumTime::now);
     // da-yw6o2: a `timezone` entry is in the zone it names, read as `-z`
     // is, so its clock and a fall-back night's question are that zone's.
-    if args.field_or_verb == TIMEZONE_FIELD && !args.time.omit_timestamp {
-        if let Some(zone) = zone_on_the_line(&args, action) {
-            if let Some(other) = zone_name(&args.time)?.filter(|z| *z != zone) {
-                anyhow::bail!("-z {other} disagrees with the zone this entry names, {zone}");
-            }
+    if may_name_timezone(&args) && !args.time.omit_timestamp {
+        if let Some(zone) = zone_on_the_line(&args, action, db) {
+            zone_agrees(&args.time, &zone)?;
             args.time.timezone = Some(zone);
         }
     }
@@ -2705,15 +2703,53 @@ pub(crate) fn asking<T>(
     }
 }
 
-/// The zone a line of the `timezone` field names, read before its time is.
-/// `None` where it names none or does not parse yet, which what follows says.
-fn zone_on_the_line(args: &LogArgs, action: Action) -> Option<String> {
+/// Whether a line can be a `timezone` entry's, so every other log parses once
+/// more only if it holds a word starting `field`: `field=timezone`, `-k field`.
+fn may_name_timezone(args: &LogArgs) -> bool {
+    args.field_or_verb == TIMEZONE_FIELD
+        || std::iter::once(&args.field_or_verb)
+            .chain(&args.rest)
+            .chain(&args.keys)
+            .chain(&args.field_keys)
+            .any(|word| word.starts_with("field"))
+}
+
+/// The zone a line's `timezone` entry will name, if it is one and names one:
+/// the state after its trailing edge where it has one, `_` read as the log
+/// reads it, at now and so with no need of the instant this zone will place.
+fn zone_on_the_line(args: &LogArgs, action: Action, db: &Db) -> Option<String> {
     let mut parsed = parse_log_args(args, action, None, None).ok()?;
-    let reserved = extract_reserved_columns(&mut parsed.extra_data).ok()?;
-    [reserved.following_state, reserved.state, parsed.value]
-        .iter()
-        .flatten()
-        .find_map(state_zone)
+    let mut reserved = extract_reserved_columns(&mut parsed.extra_data).ok()?;
+    let field = compound_field(
+        reserved.field.take().unwrap_or(parsed.field),
+        &args.field_keys,
+        &parsed.field_values,
+    )
+    .ok()?;
+    let field = written_field(db, &field, args.setup).ok()?.unwrap_or(field);
+    if field != TIMEZONE_FIELD {
+        return None;
+    }
+    let back = |state: Option<JsonValue>| match action {
+        Action::Switch => resolve_underscore_state(state, db, &field).ok()?,
+        _ => state,
+    };
+    [
+        reserved.following_state,
+        back(reserved.state),
+        back(parsed.value),
+    ]
+    .iter()
+    .flatten()
+    .find_map(state_zone)
+}
+
+/// A `-z` on a `timezone` entry names the zone the entry does (da-yw6o2).
+pub(crate) fn zone_agrees(time: &TimeArgs, zone: &str) -> Result<()> {
+    match zone_name(time)?.filter(|z| z != zone) {
+        Some(other) => anyhow::bail!("-z {other} disagrees with the zone this entry names, {zone}"),
+        None => Ok(()),
+    }
 }
 
 /// The IANA name `-z` resolves to, `None` without one: the host's zone.

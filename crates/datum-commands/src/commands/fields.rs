@@ -197,9 +197,11 @@ fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonV
                     "y": positions[field].y,
                     "height": positions[field].height,
                 });
-                // The zone it holds, so datum.day need not parse one (da-yw6o2).
+                // The zone it holds, so datum.day need not parse one (da-yw6o2),
+                // and that it has no off, whatever its spec row says.
                 if field == TIMEZONE_FIELD {
                     row["zone"] = json!(latest.get(field).and_then(state_zone));
+                    row["never_false"] = json!(true);
                 }
                 row
             })

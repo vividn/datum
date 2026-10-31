@@ -113,3 +113,18 @@ test('in the fields widget unless IGNORED', async () => {
 		await until(() => chip.count(), (n) => n === 0);
 	}, BERLIN);
 });
+
+test('its picker offers no `end`, which the CLI refuses, and leaves the gap of a field never off', async () => {
+	await withApp(async (app) => {
+		const { page } = app;
+		assert.equal((await app.run(['timezone', 'Asia/Tokyo'])).code, 0);
+		await app.redraw();
+		const chip = page.locator('.bar [data-field="timezone"]');
+		await chip.waitFor();
+		await chip.dispatchEvent('click');
+		const picker = page.locator('.bar .picker');
+		await picker.locator('[data-state="Asia/Tokyo"]').waitFor();
+		assert.equal(await picker.locator('[data-role="end"].gap').count(), 1);
+		assert.equal(await picker.locator('[data-role="end"] button:not([disabled])').count(), 0);
+	}, BERLIN);
+});

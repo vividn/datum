@@ -151,13 +151,14 @@ spec says, and which `auto_setup = false` does not close. A state is an IANA zon
 (`iana_zone`, `-z`'s parser, no fixed offset) or `IGNORED`; another is refused
 offering the nearest real ones, on a log and on an `update` that changes the
 state. A row from before the rule (a v2 import) stays as it is, and `check tz`
-says `timezone_state_not_a_zone`. Its own entry is in the zone it names: `-t` and
-a fall-back night's question read that zone's clock, a `-z` naming another is
-refused, and an offset on `-t` keeps its instant in the zone named. It changes no
+says `timezone_state_not_a_zone`. Its own entry is in the zone it names, the line
+saying `field=timezone` or `_` or not: `-t` and a fall-back night's question read
+that zone's clock, a `-z` naming another is refused, on `retime` too, and an offset
+on `-t` keeps its instant in the zone named. It changes no
 other entry. Its band defaults to very thin at the top of the day, over every
 lane, in dayview and nowview alike (`PresentationSpec::resolve_position`), until
-its spec places it; `fields` hides it `IGNORED` as any field and says the `zone`
-it holds, which datum.day's gear item, «Track timezone», reads: opt in, a click
+its spec places it; `fields` hides it `IGNORED` as any field, says `never_false`,
+so its picker draws no `end`, and says the `zone` it holds, which datum.day's gear item, «Track timezone», reads: opt in, a click
 logs the device's zone, the next logs `IGNORED`.
 
 `datum check tz` warns, `tz_off_declared`, of an entry whose zone is not the one
