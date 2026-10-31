@@ -2270,3 +2270,125 @@ fn a_doc_with_its_fields_at_the_top_level_imports() {
     let check = datum(&["check"]);
     assert!(check.contains("No consistency issues"), "{check}");
 }
+
+// ─── A negative dur is a hole (da-djfsh) ─────────────────────────────
+// v2's `start dance -5`: at vividn/datum d866811f stateChangeView emits
+// [S → false] at occur − |dur| and [false → S] at occur, `false` the boolean
+// for a named state too. A dropped one makes the field read on through a gap
+// its person recorded.
+
+/// `state` held from 07:00, then `state` with `dur: -PT10M` at 08:00.
+fn holed_backup(state: serde_json::Value) -> tempfile::NamedTempFile {
+    write_backup(serde_json::json!([
+        doc_occurring(
+            "hole07",
+            serde_json::json!({
+                "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 0, "tz": "UTC"},
+                "field": "f",
+                "state": state,
+            })
+        ),
+        doc_occurring(
+            "hole08",
+            serde_json::json!({
+                "occurTime": {"utc": "2025-01-08T08:00:00.000Z", "o": 0, "tz": "UTC"},
+                "field": "f",
+                "state": state,
+                "dur": "-PT10M",
+            })
+        ),
+    ]))
+}
+
+fn field_tail_json(db: &std::path::Path) -> serde_json::Value {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env("DATUM_DB", db)
+        .args(["tail", "f", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+#[test]
+fn a_negative_dur_imports_as_a_false_block_returning_to_the_state() {
+    for state in [serde_json::json!(true), serde_json::json!("stringState")] {
+        let f = holed_backup(state.clone());
+
+        // The dry run says what the real run does: nothing skipped, nothing kept.
+        let db = fresh_db();
+        assert_eq!(skipped_by(&f, &db, true), Vec::<String>::new());
+        assert!(datum_core::test_util::logged_all(&db).is_empty());
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.db");
+        let db = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
+        assert_eq!(skipped_by(&f, &db, false), Vec::<String>::new());
+
+        let hole = datum_core::test_util::logged_all(&db)
+            .into_iter()
+            .find(|e| e.dur.is_some())
+            .expect("the hole was imported");
+        assert_eq!(hole.state, Some(serde_json::json!(false)));
+        assert_eq!(hole.following_state.as_ref(), Some(&state));
+        assert_eq!(hole.dur.unwrap().to_storage_string(), "PT10M");
+        assert_eq!(
+            hole.occur_time.unwrap().utc.to_rfc3339(),
+            "2025-01-08T08:00:00+00:00"
+        );
+
+        let at = |t: &str| db.state_at("f", t.parse().unwrap()).unwrap();
+        assert_eq!(
+            at("2025-01-08T07:49:59Z").as_ref(),
+            Some(&state),
+            "before the hole"
+        );
+        assert_eq!(
+            at("2025-01-08T07:55:00Z"),
+            Some(serde_json::json!(false)),
+            "in the hole"
+        );
+        assert_eq!(
+            at("2025-01-08T08:00:00Z").as_ref(),
+            Some(&state),
+            "at its end"
+        );
+        assert_eq!(
+            at("2025-01-08T09:00:00Z").as_ref(),
+            Some(&state),
+            "after it"
+        );
+
+        let tail = field_tail_json(&path);
+        let row = &tail["rows"][1];
+        assert_eq!(row["hid"], "hole08");
+        assert_eq!(row["verb"], "block-switch");
+        assert_eq!(row["previous_state"], state);
+        assert_eq!(row["state"], false);
+        assert_eq!(row["state_label"], "off");
+        assert_eq!(row["following_state"], state);
+        assert_eq!(row["dur"], "PT10M");
+
+        // Its hash holds the doc's identity, so a second import adds nothing.
+        run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+        assert_eq!(datum_core::test_util::logged_all(&db).len(), 2);
+    }
+}
+
+/// v2's stateChangeView reads a doc with no state as `true`.
+#[test]
+fn a_negative_dur_with_no_state_returns_to_true() {
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([doc_occurring(
+        "hole08",
+        serde_json::json!({
+            "occurTime": {"utc": "2025-01-08T08:00:00.000Z", "o": 0, "tz": "UTC"},
+            "field": "f",
+            "dur": "-PT10M",
+        })
+    )]));
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+    let e = &datum_core::test_util::logged_all(&db)[0];
+    assert_eq!(e.state, Some(serde_json::json!(false)));
+    assert_eq!(e.following_state, Some(serde_json::json!(true)));
+}

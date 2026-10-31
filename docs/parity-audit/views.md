@@ -133,7 +133,8 @@ either 1 event (`start`/`switch` with no `end_time`, `stop`, `occur`) or
   verb's intrinsic semantics.
 * datum emits "hole" blocks when `data.dur` is negative (corrective rows
   that flip state back via negative durations). daydumb doesn't synthesise
-  those; R3 keeps the pre-R3 behavior.
+  those; R3 keeps the pre-R3 behavior. `db v2import` stores each as the
+  block of `false` it means, returning to the doc's state (da-djfsh).
 * `add` entries never surface (map/reduce framework vs SQL both skip them).
 
 **Tests:** `state_change::tests::state_change_view_emits_transitions`, `state_change_view_skips_tombstoned_and_noteonly`, `state_change_pushes_field_filter`.

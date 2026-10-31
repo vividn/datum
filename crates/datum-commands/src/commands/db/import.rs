@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome, IGNORED_STATE_VALUE},
     derive_verb,
+    dur::{Dur, DurSpan},
     entry::{build_slug, Entry, Verb, V2_IMPORT_SOURCE},
     field_spec::{
         interpolate, strip_create_time_literal, strip_field_prefix, InterpolationContext,
@@ -108,7 +109,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         //   `{id: x}` → `x`, per element of an array; a structured state
         //   with more keys is kept as it is.
         let raw_state = data.get("state");
-        let state_in: Option<JsonValue> = match raw_state {
+        let mut state_in: Option<JsonValue> = match raw_state {
             None => None,
             Some(v) if v.is_null() => Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
             Some(v) => {
@@ -156,8 +157,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         //   legacy `dur` malformed               → dur=NULL, warn, preserve
         //                                          literal in `data` blob
         //   legacy `dur` numeric (rare)          → dur="PT<n>S" (seconds)
+        //   legacy `dur` negative                → a hole, below
         let raw_dur = data.get("dur");
-        let dur_in: Option<datum_core::dur::Dur> = match raw_dur {
+        let mut dur_in: Option<datum_core::dur::Dur> = match raw_dur {
             None => None,
             Some(v) if v.is_null() => Some(datum_core::dur::Dur::moment()),
             Some(JsonValue::String(s)) => {
@@ -190,10 +192,30 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             }
         };
 
+        // ─── hole ───────────────────────────────────────────────────
+        // v2's `start f -5`: `state: S, dur: "-D"` is a hole in S, what a
+        // block of `false` that returns to S says here (da-djfsh). `false`
+        // is the boolean whatever S is, a named state too, as v2's
+        // stateChangeView emits it (vividn/datum d866811f, its test «emits a
+        // false block if dur is negative returning to state», `stringState`).
+        // A doc with no state is `true` there. Only the import takes a
+        // negative: `derive_verb` refuses one from anywhere else.
+        let mut following_state = None;
+        if let Some(Dur {
+            span: DurSpan::Of(d),
+            uncertainty,
+        }) = &dur_in
+        {
+            if *d < chrono::Duration::zero() {
+                following_state = Some(state_in.take().unwrap_or(JsonValue::Bool(true)));
+                state_in = Some(JsonValue::Bool(false));
+                dur_in = Some(Dur::of(-*d).with_uncertainty(uncertainty.clone()));
+            }
+        }
+
         // ─── verb + state ───────────────────────────────────────────
-        // following_state is always None for legacy entries (block-switch /
-        // point-switch are daydumb-new shapes — they never appear in a
-        // CouchDB dump).
+        // A hole above is the only following_state a legacy entry has
+        // (block-switch / point-switch are daydumb-new shapes otherwise).
         //
         // We do NOT canonicalize state (the null→true promotion) here.
         // Per the da-5ns.3 contract, `derive_verb_for_storage` owns verb
@@ -208,8 +230,8 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // them fail at insert) and discard its outputs. `verb = Point` is
         // a placeholder that won't trip the switch-style state→true
         // promotion in `derive_verb_for_storage`; storage will compute
-        // the real verb from raw `(state_in, dur_in, None)`.
-        if let Err(e) = derive_verb(state_in.clone(), dur_in.as_ref(), None) {
+        // the real verb from raw `(state_in, dur_in, following_state)`.
+        if let Err(e) = derive_verb(state_in.clone(), dur_in.as_ref(), following_state.clone()) {
             eprintln!("warning: skipping {}: {}", field, e);
             skipped_records.push((SkipReason::InvalidShape, doc_id, Some(e.to_string())));
             continue;
@@ -299,6 +321,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             dur_in.clone(),
             client.clone(),
         );
+        entry.following_state = following_state;
         entry.create_time = created_at;
         entry.modify_time = modified_at;
         // A timeless row slugs on its create time, which is the source's,
