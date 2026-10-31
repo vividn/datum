@@ -223,12 +223,15 @@ pub fn shadow_warning(name: &str) -> Option<String> {
 
 /// Decide `sub` against the alias rows (`user`, in name order) and the
 /// spec-derived index. `user` rows shadow derived ones, matching
-/// `Db::lookup_alias`.
+/// `Db::lookup_alias`. `spell` writes out the keys and remainder of the fields
+/// an expansion logs to, for `show`, as `--help` says them (da-11xdd); `list`
+/// keeps the stored words, reading no spec per alias.
 pub fn alias_effect(
     sub: &datum_parse::cli::AliasCommand,
     user: &[Alias],
     kits: &HashMap<String, String>,
     derived: &SpecAliasIndex,
+    spell: &dyn Fn(&str) -> String,
 ) -> AliasEffect {
     use datum_parse::cli::AliasCommand;
     use datum_parse::input::Show;
@@ -266,7 +269,13 @@ pub fn alias_effect(
                 .into_iter()
                 .find(|(a, _)| &a.name == name)
             {
-                Some((a, _)) => line(a, kits.get(name), a.description.as_deref(), ""),
+                Some((a, _)) => {
+                    let spelled = Alias {
+                        expands_to: spell(&a.expands_to),
+                        ..a.clone()
+                    };
+                    line(&spelled, kits.get(name), a.description.as_deref(), "")
+                }
                 None => format!("No alias '{name}'"),
             },
         ),

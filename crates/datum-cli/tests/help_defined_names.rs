@@ -195,3 +195,54 @@ fn a_fields_word_says_the_keys_it_carries() {
         .ok(&["opt", "--help"])
         .contains("options: datum help occur\n"));
 }
+
+/// `alias show` says what `--help` says it expands to, keys and remainder
+/// written out; `alias list` and its JSON keep the stored words, reading no
+/// spec per alias (da-11xdd).
+#[test]
+fn alias_show_says_the_keys_it_carries() {
+    let env = Env::new();
+    env.ok(&[
+        "setup", "turn", "--verb", "occur", "-k", "kind=", "-R", "words",
+    ]);
+    env.ok(&["alias", "set", "spin", "occur turn mood=calm"]);
+    env.ok(&[
+        "setup", "mood", "--verb", "switch", "-k", "why=", "--states", "happy",
+    ]);
+    env.ok(&["alias", "set", "both", "occur turn , switch mood happy"]);
+    env.ok(&["alias", "set", "hello", "note word \"to run\""]);
+
+    // Its first line: a field's own word has a description under it.
+    let shown = |name: &str| {
+        let out = env.ok(&["alias", "show", name]);
+        out.lines().next().unwrap().to_string()
+    };
+    assert_eq!(shown("turn"), "turn → datum occur turn -k kind= -R words");
+    assert_eq!(shown("happy"), "happy → datum switch mood happy -k why=");
+    assert_eq!(shown("moode"), "moode → datum end mood");
+    assert_eq!(
+        shown("spin"),
+        "spin → datum occur turn mood=calm -k kind= -R words"
+    );
+    assert_eq!(
+        shown("both"),
+        "both → datum occur turn -k kind= -R words , switch mood happy -k why="
+    );
+    assert_eq!(shown("hello"), "hello → datum note word \"to run\"");
+    for name in ["turn", "spin", "both"] {
+        let page = env.ok(&[name, "--help"]);
+        let expands = shown(name);
+        let (_, words) = expands.split_once(" → datum ").unwrap();
+        assert!(
+            page.contains(&format!("expands to: datum {words}\n")),
+            "{page}"
+        );
+    }
+
+    let list = env.ok(&["alias", "list"]);
+    assert!(list.contains("  turn → datum occur turn\n"), "{list}");
+    assert!(
+        list.contains("  spin → datum occur turn mood=calm\n"),
+        "{list}"
+    );
+}

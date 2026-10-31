@@ -77,7 +77,7 @@ pub fn page(name: &str, db: &Db) -> Result<Option<String>> {
 /// What a stored expansion carries, its fields' keys and remainder written
 /// out as a line would (da-6l1hf, vividn: «it should say that it expands to
 /// `occur turn -k kind`»).
-fn spelled(expands_to: &str, db: &Db) -> String {
+pub(crate) fn spelled(expands_to: &str, db: &Db) -> String {
     alias::shell_join(&alias::spelled_with_spec_keys(
         &alias::shell_split(expands_to),
         &DbAliasResolver::new(db),
