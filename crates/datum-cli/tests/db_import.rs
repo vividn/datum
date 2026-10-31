@@ -1507,6 +1507,135 @@ fn a_plain_string_occur_time_is_the_instant_v2_wrote() {
     );
 }
 
+fn doc_with_meta(id: &str, data: serde_json::Value, meta: serde_json::Value) -> serde_json::Value {
+    let mut doc = doc_occurring(id, data);
+    doc["meta"] = serde_json::json!({"humanId": id});
+    doc["meta"]
+        .as_object_mut()
+        .unwrap()
+        .extend(meta.as_object().unwrap().clone());
+    doc
+}
+
+#[test]
+fn plain_string_create_and_modify_times_are_what_v2_wrote() {
+    let f = write_backup(serde_json::json!([
+        doc_with_meta(
+            "timeless",
+            serde_json::json!({}),
+            serde_json::json!({
+                "createTime": "2021-03-01T10:00:00.000Z",
+                "modifyTime": "2021-03-02T11:00:00.000Z",
+                "utcOffset": -5,
+            }),
+        ),
+        // After v2 moved utcOffset to data (#251), a string with no offset.
+        doc_with_meta(
+            "no-offset",
+            serde_json::json!({}),
+            serde_json::json!({"createTime": "2021-03-03T10:00:00.000Z"}),
+        ),
+        // A date-only time takes its zone from the create time.
+        doc_with_meta(
+            "a-date",
+            serde_json::json!({"occurTime": {"utc": "2021-03-05"}}),
+            serde_json::json!({"createTime": "2021-03-04T03:00:00.000Z", "utcOffset": -5}),
+        ),
+    ]));
+
+    let dry = fresh_db();
+    assert_eq!(skipped_by(&f, &dry, true), Vec::<String>::new());
+    assert!(datum_core::test_util::logged_all(&dry).is_empty());
+
+    let db = fresh_db();
+    assert_eq!(skipped_by(&f, &db, false), Vec::<String>::new());
+    let rows = datum_core::test_util::logged_all(&db);
+    let row = |hid: &str| {
+        rows.iter()
+            .find(|e| e.hid.as_str() == hid)
+            .unwrap_or_else(|| panic!("{hid} in {rows:?}"))
+    };
+
+    let t = row("timeless");
+    assert_eq!(t.create_time.to_rfc3339(), "2021-03-01T10:00:00+00:00");
+    assert_eq!(t.modify_time.to_rfc3339(), "2021-03-02T11:00:00+00:00");
+    assert_eq!(t.slug.as_str(), "seen:2021-03-01T10:00:00.000Zc");
+
+    let n = row("no-offset");
+    assert_eq!(n.create_time.to_rfc3339(), "2021-03-03T10:00:00+00:00");
+    assert_eq!(n.modify_time, n.create_time);
+
+    let d = row("a-date").occur_time.clone().expect("an occur time");
+    assert_eq!(d.offset_minutes, -300);
+    assert_eq!(d.utc.to_rfc3339(), "2021-03-05T05:00:00+00:00");
+    assert_eq!(row("a-date").occur_uncertainty(), Some("P1D"));
+}
+
+#[test]
+fn an_unreadable_create_or_modify_time_is_listed_and_not_stamped_with_the_clock() {
+    let time = |key: &str, v: serde_json::Value| {
+        let mut meta = serde_json::json!({"createTime": "2025-03-03T12:00:00.000Z"});
+        meta[key] = v;
+        meta
+    };
+    let unreadable = [
+        ("c-word", "createTime", time("createTime", "lately".into())),
+        ("c-empty", "createTime", time("createTime", "".into())),
+        (
+            "c-bad-utc",
+            "createTime",
+            time("createTime", serde_json::json!({"utc": "bad"})),
+        ),
+        (
+            "c-number",
+            "createTime",
+            time("createTime", 1735714800.into()),
+        ),
+        ("m-word", "modifyTime", time("modifyTime", "lately".into())),
+        (
+            "m-no-utc",
+            "modifyTime",
+            time("modifyTime", serde_json::json!({"o": 1})),
+        ),
+    ];
+    let docs: Vec<_> = unreadable
+        .iter()
+        .map(|(id, _, meta)| doc_with_meta(id, serde_json::json!({}), meta.clone()))
+        .chain([
+            // Absent or null says nothing, as an occurTime's does.
+            doc_with_meta(
+                "null-modify",
+                serde_json::json!({"occurTime": {"utc": "2025-01-01T07:00:00.000Z"}}),
+                time("modifyTime", serde_json::Value::Null),
+            ),
+            doc_with_meta(
+                "null-create",
+                serde_json::json!({"occurTime": {"utc": "2025-01-02T07:00:00.000Z"}}),
+                serde_json::json!({"createTime": null}),
+            ),
+        ])
+        .collect();
+    let f = write_backup(serde_json::Value::Array(docs));
+
+    for dry in [true, false] {
+        let db = fresh_db();
+        let skipped = skipped_by(&f, &db, dry);
+        assert_eq!(skipped.len(), unreadable.len(), "dry={dry}: {skipped:?}");
+        for ((id, key, _), line) in unreadable.iter().zip(&skipped) {
+            assert!(
+                line.starts_with(&format!("invalid-shape\t{id}\t{key} ")),
+                "dry={dry}: {line}"
+            );
+        }
+        let rows = datum_core::test_util::logged_all(&db);
+        if dry {
+            assert!(rows.is_empty(), "a dry run writes nothing");
+        } else {
+            assert_eq!(rows.len(), 2, "{rows:?}");
+        }
+    }
+}
+
 #[test]
 fn timeless_docs_slug_on_their_own_create_time() {
     let db = fresh_db();

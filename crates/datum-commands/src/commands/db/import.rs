@@ -117,8 +117,19 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             }
         };
 
+        let (create_time, modify_time) = match (
+            v2_meta_time(meta, "createTime"),
+            v2_meta_time(meta, "modifyTime"),
+        ) {
+            (Ok(c), Ok(m)) => (c, m),
+            // Not stamped with this import's clock (da-2tobf).
+            (Err(e), _) | (_, Err(e)) => {
+                eprintln!("warning: skipping {}: {}", field, e);
+                skipped_records.push((SkipReason::InvalidShape, doc_id, Some(e)));
+                continue;
+            }
+        };
         let occur = v2_occur_block(data, meta);
-        let create_time = DatumTime::from_v2_json(&meta["createTime"]);
         let occur_time = match DatumTime::from_v2_json(&occur) {
             Some(mut t) => {
                 t.uncertainty = parse_datum_uncertainty(&occur);
@@ -265,9 +276,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         let created_at = create_time.map(|t| t.utc).unwrap_or_else(chrono::Utc::now);
         // Prefer source modifyTime; fall back to createTime so imported rows
         // never carry a fresh "now" stamp when the source had a time at all.
-        let modified_at = DatumTime::from_v2_json(&meta["modifyTime"])
-            .map(|t| t.utc)
-            .unwrap_or(created_at);
+        let modified_at = modify_time.map(|t| t.utc).unwrap_or(created_at);
 
         let mut entry = Entry::new(
             field,
@@ -630,6 +639,23 @@ fn v2_occur_block(data: &JsonValue, meta: &JsonValue) -> JsonValue {
             serde_json::json!({"utc": utc, "o": o})
         }
         None => occur.clone(),
+    }
+}
+
+/// A doc's `meta.createTime` or `meta.modifyTime`. Before vividn/datum d23a1eac6
+/// (#759) v2 wrote a plain ISO string, its offset in hours in `meta.utcOffset`
+/// if at all: read here as v2's own `migrateDatumTime2` reads it. Absent or null
+/// says nothing; any other that does not read is the `Err`, naming it.
+fn v2_meta_time(meta: &JsonValue, key: &str) -> Result<Option<DatumTime>, String> {
+    let time = &meta[key];
+    let block = match time.as_str() {
+        Some(utc) => serde_json::json!({"utc": utc, "o": meta["utcOffset"].as_f64()}),
+        None => time.clone(),
+    };
+    match DatumTime::from_v2_json(&block) {
+        Some(t) => Ok(Some(t)),
+        None if time.is_null() => Ok(None),
+        None => Err(format!("{key} {time} is not a time")),
     }
 }
 
