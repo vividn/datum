@@ -472,10 +472,7 @@ impl Db {
             )?;
             Ok(counts)
         };
-        match commit {
-            true => self.compute_then_write_with(compute, write),
-            false => self.rehearse_with(compute, write),
-        }
+        self.write_or_rehearse_with(commit, compute, write)
     }
 
     /// The fingerprint of the live set, as a replace's counts carry it: what
@@ -536,10 +533,7 @@ impl Db {
             )?;
             Ok(counts)
         };
-        match commit {
-            true => self.compute_then_write_with(compute, write),
-            false => self.rehearse_with(compute, write),
-        }
+        self.write_or_rehearse_with(commit, compute, write)
     }
 
     /// Bulk-load fast path for one-shot ingestion (e.g. `datum db v2import`).
@@ -578,14 +572,22 @@ impl Db {
                 "insert_entries_bulk supports only ConflictStrategy::Ignore, got {strategy:?}",
             )));
         }
-        self.write_with(|tx| {
-            let mut outcomes = Vec::with_capacity(entries.len());
-            for entry in entries {
-                outcomes.push(insert_entry_bulk_in_tx(tx, entry)?);
-                on_row(outcomes.len());
-            }
-            Ok(outcomes)
-        })
+        self.write_with(|tx| insert_entries_bulk_in_tx(tx, entries, on_row))
+    }
+
+    /// [`Self::insert_entries_bulk`] rolled back, `then` reading its outcomes
+    /// while the rows are still there: a dry run, whose counts are the real
+    /// run's by construction.
+    pub fn rehearse_entries_bulk<T, E: From<DatumError>>(
+        &self,
+        entries: &[Entry],
+        on_row: &mut dyn FnMut(usize),
+        then: impl FnOnce(&[InsertOutcome]) -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
+        self.rehearse_with(
+            |_| Ok(()),
+            |tx, ()| then(&insert_entries_bulk_in_tx(tx, entries, on_row)?),
+        )
     }
 
     /// Persist a mutation to an existing entry, matched by `entry.hid` (a
@@ -1173,6 +1175,19 @@ fn write_entry_in_tx(
 /// Uses `prepare_cached` for the dedup SELECT so the bulk loop reuses one
 /// prepared statement rather than re-parsing SQL per row. The INSERT side
 /// (`try_insert`) is also cached.
+fn insert_entries_bulk_in_tx(
+    conn: &Connection,
+    entries: &[Entry],
+    on_row: &mut dyn FnMut(usize),
+) -> Result<Vec<InsertOutcome>> {
+    let mut outcomes = Vec::with_capacity(entries.len());
+    for entry in entries {
+        outcomes.push(insert_entry_bulk_in_tx(conn, entry)?);
+        on_row(outcomes.len());
+    }
+    Ok(outcomes)
+}
+
 fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
     crate::slug::validate_field_name(&entry.field)?;
     crate::slug::validate_slug(&entry.slug.0)?;

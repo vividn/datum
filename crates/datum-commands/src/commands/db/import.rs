@@ -373,9 +373,6 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             points += 1;
         }
 
-        if dry_run {
-            println!("[dry-run] would import: {}", entry.slug);
-        }
         entries.push(entry);
         entry_doc_ids.push(doc_id);
         source_human_ids.push(source_human_id);
@@ -429,21 +426,11 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         }
     }
 
-    let imported = if dry_run {
-        entries.len()
-    } else {
-        // Bulk-load fast path: single tx, no per-row history rows, no
-        // per-row conflict detection. Source backups are self-consistent;
-        // run `datum conflicts list` post-import for belt-and-braces.
-        // Dedup (`Ignored`) maps to `skipped` to mirror the previous per-row
-        // behavior; skipped rows also retract their point/block tally.
-        let mark = datum_core::last_docs::history_mark(db)?;
-        let mut inserting = Progress::new("v2import: inserting", Some(entries.len()));
-        let outcomes = db.insert_entries_bulk(&entries, ConflictStrategy::Ignore, &mut |n| {
-            inserting.tick(n)
-        })?;
-        inserting.finish(entries.len());
-        let mut inserted = 0usize;
+    // Dedup (`Ignored`) maps to `skipped` to mirror the previous per-row
+    // behavior; skipped rows also retract their point/block tally. Reads the
+    // rows the batch wrote, so a dry run calls it before they roll back.
+    let mut would_import: Vec<&Slug> = Vec::new();
+    let mut tally = |outcomes: &[InsertOutcome]| -> Result<Vec<Hid>> {
         let mut inserted_hids = Vec::new();
         for ((entry, outcome), doc_id) in entries
             .iter()
@@ -452,8 +439,8 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         {
             match outcome {
                 InsertOutcome::Inserted { hid, .. } => {
-                    inserted += 1;
                     inserted_hids.push(hid.clone());
+                    would_import.push(&entry.slug);
                 }
                 InsertOutcome::Ignored { slug } => {
                     // Ignored is a live row with this content, or a row holding
@@ -502,14 +489,44 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                 _ => {}
             }
         }
+        Ok(inserted_hids)
+    };
+    let mut inserting = Progress::new(
+        if dry_run {
+            "v2import: checking"
+        } else {
+            "v2import: inserting"
+        },
+        Some(entries.len()),
+    );
+    let inserted_hids = if dry_run {
+        // The real run's writes rolled back (da-fk1fp): only they say which
+        // docs the database, or an earlier doc of the file, already holds.
+        db.rehearse_entries_bulk(&entries, &mut |n| inserting.tick(n), &mut tally)?
+    } else {
+        // Bulk-load fast path: single tx, no per-row history rows, no
+        // per-row conflict detection. Source backups are self-consistent;
+        // run `datum conflicts list` post-import for belt-and-braces.
+        let mark = datum_core::last_docs::history_mark(db)?;
+        let outcomes = db.insert_entries_bulk(&entries, ConflictStrategy::Ignore, &mut |n| {
+            inserting.tick(n)
+        })?;
+        let inserted_hids = tally(&outcomes)?;
         write_track_specs(db, &entries)?;
         // The whole import is `_LAST` and one action, so one `undo` reverts it
         // (da-yyjob, da-z0zh3): the specs by their history, the bulk rows,
         // which have none, by hid.
         datum_core::last_docs::set_last_to_batch(db, mark, &inserted_hids)?;
         datum_core::undo_log::add_untracked(db.conn(), &inserted_hids)?;
-        inserted
+        inserted_hids
     };
+    inserting.finish(entries.len());
+    let imported = inserted_hids.len();
+    if dry_run {
+        for slug in would_import {
+            println!("[dry-run] would import: {slug}");
+        }
+    }
 
     let skipped = skipped_records.len();
     let breakdown = skip_breakdown(&skipped_records);

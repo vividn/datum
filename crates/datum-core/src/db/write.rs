@@ -194,6 +194,17 @@ impl Db {
         self.locked(false, compute, write)
     }
 
+    /// UNBATCHED: one write that a dry run rolls back: `commit` picks
+    /// [`Db::compute_then_write_with`] or [`Db::rehearse_with`].
+    pub fn write_or_rehearse_with<P, T, E: From<DatumError>>(
+        &self,
+        commit: bool,
+        compute: impl FnMut(&View) -> std::result::Result<P, E>,
+        write: impl FnOnce(&Connection, P) -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
+        self.locked(commit, compute, write)
+    }
+
     /// UNBATCHED: `f` under the lock, for a write that reads nothing but
     /// the rows it writes.
     pub fn write_with<T, E: From<DatumError>>(
@@ -485,17 +496,22 @@ mod tests {
 
     /// The writes that still run a closure under the lock (da-8i7f0). Each
     /// one reduced to a [`WriteBatch`] lowers this, and nothing raises it.
-    const UNBATCHED: usize = 33;
+    const UNBATCHED: usize = 32;
 
     #[test]
     fn unbatched_writes_only_shrink() {
         let n: usize = sources()
             .iter()
             .map(|(_, text)| {
-                ["write_with(", "compute_then_write_with(", "rehearse_with("]
-                    .iter()
-                    .map(|f| text.matches(&format!(".{f}")).count())
-                    .sum::<usize>()
+                [
+                    "write_with(",
+                    "compute_then_write_with(",
+                    "rehearse_with(",
+                    "write_or_rehearse_with(",
+                ]
+                .iter()
+                .map(|f| text.matches(&format!(".{f}")).count())
+                .sum::<usize>()
             })
             .sum();
         assert!(n <= UNBATCHED, "{n} writes run a closure under the lock, past the {UNBATCHED} allowed: compute a WriteBatch on a View and Db::write it");
