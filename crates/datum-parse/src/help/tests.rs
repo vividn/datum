@@ -19,7 +19,7 @@ USAGE:
   datum [--db NAME_OR_PATH] <command> [args]
 
 EXAMPLES:
-  datum occur coffee                  a coffee, now
+  datum moment coffee                 a coffee, now
   datum switch mood happy             mood is happy from now on
   datum tail                          the last ten entries
   datum now                           each field's state now
@@ -27,7 +27,7 @@ EXAMPLES:
 LOGGING:
   add      Register a keyed timeless record, by an id (alias: card)
   note     Jot a timeless entry (auto create_time id)
-  occur    Record a point-in-time event
+  moment   A point in time (alias: occur)
   start    Begin a duration-tracked activity (alias: on)
   stop     End a duration-tracked activity (alias: end, off)
   switch   Transition a field to a new state
@@ -682,7 +682,7 @@ fn folding_the_wall_does_not_shrink_the_grammar() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|c| c["name"] == "occur")
+        .find(|c| c["name"] == "moment")
         .unwrap();
     let longs: Vec<&str> = occur["flags"]
         .as_array()
@@ -1036,7 +1036,7 @@ fn help_json_lists_db_subcommands() {
     assert_eq!(db["bare"], false);
     assert_eq!(entry("sync")["bare"], true);
     assert_eq!(entry("conflicts")["bare"], true);
-    assert_eq!(entry("occur")["subcommands"], serde_json::json!([]));
+    assert_eq!(entry("moment")["subcommands"], serde_json::json!([]));
 }
 
 /// A flag in `help --json` says what it does and whether a value follows
@@ -1051,7 +1051,7 @@ fn help_json_flags_carry_help_and_takes_value() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|c| c["name"] == "occur")
+        .find(|c| c["name"] == "moment")
         .unwrap();
     let flag = |short: &str| {
         occur["flags"]
@@ -1428,8 +1428,8 @@ fn no_help_page_says_colour() {
 /// The pages a newcomer reaches first: the welcome's «Learn more», then the
 /// verbs and the commands met next.
 const NEWCOMER_PAGES: &[&str] = &[
-    "logging", "time", "setup", "alias", "sync", "db", "stats", "track", "occur", "start", "stop",
-    "now", "switch", "tail", "undo",
+    "logging", "time", "setup", "alias", "sync", "db", "stats", "track", "moment", "occur",
+    "start", "stop", "now", "switch", "tail", "undo",
 ];
 
 fn page_json(name: &str) -> serde_json::Value {
@@ -1533,14 +1533,15 @@ fn a_page_as_json_leads_with_its_intro_and_marks_its_reference_sections() {
             .collect()
     };
     let h = |s: &str, r: bool| (s.to_string(), r);
-    let occur = page_json("occur");
-    assert_eq!(occur["title"], "datum occur — record a point-in-time event");
-    assert!(occur["intro"]
-        .as_str()
-        .unwrap()
-        .starts_with("Occur marks a moment"));
+    let moment = page_json("moment");
     assert_eq!(
-        heads("occur"),
+        moment["title"],
+        "datum moment — a point in time (alias: occur)"
+    );
+    assert_eq!(page_json("occur"), moment, "its alias opens the page");
+    assert!(moment["intro"].as_str().unwrap().starts_with("A moment is"));
+    assert_eq!(
+        heads("moment"),
         [h("USAGE", true), h("OPTIONS", true), h("OUTPUT", true)]
     );
     // Prose at the margin after USAGE's lines is read, not folded away.

@@ -371,7 +371,9 @@ pub const WIDGET_READS: [&str; 15] = [
 
 /// The verbs a widget's `row_action` may start with: a tap logs, and does
 /// nothing else a kit, which is shared text, could ask of it.
-pub const WIDGET_ACTIONS: [&str; 7] = ["occur", "start", "end", "stop", "switch", "add", "note"];
+pub const WIDGET_ACTIONS: [&str; 8] = [
+    "moment", "occur", "start", "end", "stop", "switch", "add", "note",
+];
 
 /// Screen a `[[widget]]` block: a name; a command that only reads — one of
 /// [`WIDGET_READS`], or a kit command that runs a view, and never
@@ -1393,6 +1395,7 @@ color = "#1a3d6e"
     #[test]
     fn kit_verb_takes_the_web_kind_names() {
         for (name, verb) in [
+            ("moment", Action::Occur),
             ("occurrence", Action::Occur),
             ("on", Action::Start),
             ("on/off", Action::Start),

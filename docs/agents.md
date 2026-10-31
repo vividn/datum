@@ -13,7 +13,7 @@ What an agent can track about itself, if it wants to know where its time and att
 
 ```bash
 datum switch activity reviewing           # what it is doing now, until it switches
-datum occur decision choice=merge         # a decision, with what it chose
+datum moment decision choice=merge         # a decision, with what it chose
 datum switch tone patient                 # a background mood, if it keeps one
 datum switch activity off                 # done; the gap after is honest
 datum tail activity                       # read it back

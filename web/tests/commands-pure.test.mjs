@@ -42,7 +42,7 @@ import {
  */
 const SECTIONS = [
 	['undo', ['undo', 'help']],
-	['log', ['occur', 'start', 'end', 'switch', 'add', 'note', 'flag']],
+	['log', ['moment', 'start', 'end', 'switch', 'add', 'note', 'flag']],
 	['setup', ['track', 'ignore', 'setup', 'alias', 'kit', 'view', 'config']],
 	['edit', ['delete', 'update', 'retime']],
 	[
@@ -98,7 +98,7 @@ describe('the commands, in order', () => {
 // da-y6jfb. vividn, 2026-10-08: «each one needs a different icon, at least
 // for the most commonly used actions».
 describe('the icons', () => {
-	const COMMON = ['undo', 'occur', 'start', 'end', 'switch', 'add', 'note', 'track', 'delete', 'retime', 'tail', 'stats', 'sync'];
+	const COMMON = ['undo', 'moment', 'start', 'end', 'switch', 'add', 'note', 'track', 'delete', 'retime', 'tail', 'stats', 'sync'];
 
 	test('every common command has one, and no two share it', () => {
 		assert.deepEqual(Object.keys(ICONS).sort(), [...COMMON].sort());
@@ -108,20 +108,21 @@ describe('the icons', () => {
 
 	test('a verb wears the glyph the CLI prints for the row it writes', () => {
 		// track.ts's table is the one track.test.mjs holds to the CLI's render.
-		for (const { verb, glyph } of TRACK_VERBS) assert.equal(ICONS[verb], glyph, verb);
+		for (const { verb, glyph } of TRACK_VERBS) assert.equal(ICONS[verb === 'occur' ? 'moment' : verb], glyph, verb);
 	});
 });
 
 describe('the verb a line is pending', () => {
 	test('the first word, whole', () => {
-		assert.equal(pendingVerb('occur '), 'occur');
-		assert.equal(pendingVerb('occur'), 'occur');
+		assert.equal(pendingVerb('moment '), 'moment');
+		assert.equal(pendingVerb('moment'), 'moment');
+		assert.equal(pendingVerb('occur coffee'), 'moment', 'its alias is the same verb pending');
 		assert.equal(pendingVerb('  switch mood happy'), 'switch');
 		assert.equal(pendingVerb('end work'), 'end');
 	});
 
 	test('anything else pends nothing', () => {
-		for (const line of ['', '   ', 'tail', 'occurrence x', 'coffee occur', '-t 09:00'])
+		for (const line of ['', '   ', 'tail', 'occurrence x', 'coffee moment', '-t 09:00'])
 			assert.equal(pendingVerb(line), null, JSON.stringify(line));
 	});
 });
@@ -137,8 +138,8 @@ const ALL = [point, record, offBlock, onBlock, boolSwitch, onSwitch];
 const under = (verb) => fieldsUnder(ALL, verb).map((b) => b.field);
 
 describe('what a pending verb leaves showing', () => {
-	test('occur, switch and add are the fields of that verb', () => {
-		assert.deepEqual(under('occur'), ['coffee']);
+	test('moment, switch and add are the fields of that verb', () => {
+		assert.deepEqual(under('moment'), ['coffee']);
 		assert.deepEqual(under('switch'), ['light', 'mood']);
 		assert.deepEqual(under('add'), ['rec']);
 	});
@@ -163,7 +164,7 @@ describe('what a pending verb leaves showing', () => {
 // verb narrows the fields with (`verbFits`). Every verb names its field at
 // slot 1, as `datum help --json` says, so the pill itself hides none.
 const GRAMMAR = grammarOf(
-	['occur', 'start', 'stop', 'switch', 'add'].map((name) => ({
+	['moment', 'start', 'stop', 'switch', 'add'].map((name) => ({
 		name,
 		aliases: name === 'stop' ? ['end'] : [],
 		usage: [`datum ${name} <FIELD>`],
@@ -177,8 +178,8 @@ const verbsUnder = (pills) =>
 		.filter((name) => VERBS.includes(name));
 
 describe('what a loaded field leaves of the verbs', () => {
-	test('an occur field leaves occur, and not start, end or switch', () => {
-		assert.deepEqual(verbsUnder([pill(point)]), ['occur']);
+	test('a moment field leaves moment, and not start, end or switch', () => {
+		assert.deepEqual(verbsUnder([pill(point)]), ['moment']);
 	});
 
 	// `end` only while it is on: off, there is nothing to end.
@@ -201,7 +202,7 @@ describe('what a loaded field leaves of the verbs', () => {
 			commandsUnder(byId, pills, ALL)
 				.map((c) => c.name)
 				.filter((name) => VERBS.includes(name));
-		assert.deepEqual(verbs([pill(point)]), ['occur'], 'the argument field narrows');
+		assert.deepEqual(verbs([pill(point)]), ['moment'], 'the argument field narrows');
 		assert.deepEqual(verbs([pill(point), hid]), VERBS);
 	});
 
@@ -238,20 +239,20 @@ describe('what a loaded field leaves of the verbs', () => {
 	});
 });
 
-// da-lxqqz, vividn: «when a field is selected, then the start/end/occur
+// da-lxqqz, vividn: «when a field is selected, then the start/end/moment
 // buttons should … auto trigger entry (unless there are extra keys to be
 // filled in…». Required keys only: one with a default does not stop it.
 describe('a verb under a field pill', () => {
 	const keyed = { ...point, required: ['amount'] };
 	const fields = [{ ...point, required: [] }, keyed, { ...onBlock, required: [] }];
 
-	test('occur, start and end run a field that needs nothing typed', () => {
-		assert.deepEqual(fieldVerb('occur', [pill(point)], fields), { field: pill(point), runs: true });
+	test('moment, start and end run a field that needs nothing typed', () => {
+		assert.deepEqual(fieldVerb('moment', [pill(point)], fields), { field: pill(point), runs: true });
 		for (const verb of ['start', 'end']) assert.equal(fieldVerb(verb, [pill(onBlock)], fields)?.runs, true, verb);
 	});
 
 	test('a key with no default fills instead, with the pill to go on the line', () => {
-		assert.deepEqual(fieldVerb('occur', [pill(keyed)], [keyed]), { field: pill(keyed), runs: false });
+		assert.deepEqual(fieldVerb('moment', [pill(keyed)], [keyed]), { field: pill(keyed), runs: false });
 	});
 
 	// da-o4jaa, vividn: «generally speaking I don't save any extra_data in this one».
@@ -262,16 +263,16 @@ describe('a verb under a field pill', () => {
 	});
 
 	test('no field pill, another verb, an unknown field, or a context field: the press as it was', () => {
-		assert.equal(fieldVerb('occur', [], fields), null);
+		assert.equal(fieldVerb('moment', [], fields), null);
 		for (const verb of ['switch', 'add', 'tail']) assert.equal(fieldVerb(verb, [pill(point)], fields), null, verb);
-		assert.equal(fieldVerb('occur', [{ id: 'field', kind: 'field', text: 'brandnew' }], fields), null);
-		assert.equal(fieldVerb('occur', [pill(point), { id: 'hid', kind: 'hid', text: 'abcde' }], fields), null);
+		assert.equal(fieldVerb('moment', [{ id: 'field', kind: 'field', text: 'brandnew' }], fields), null);
+		assert.equal(fieldVerb('moment', [pill(point), { id: 'hid', kind: 'hid', text: 'abcde' }], fields), null);
 	});
 });
 
 describe('what a press under a verb runs', () => {
 	test('`<verb> <field>`, at once', () => {
-		assert.deepEqual(verbPress('occur', point), ['occur', 'coffee']);
+		assert.deepEqual(verbPress('moment', point), ['moment', 'coffee']);
 		assert.deepEqual(verbPress('start', offBlock), ['start', 'sleep']);
 		assert.deepEqual(verbPress('end', onSwitch), ['end', 'mood']);
 		// A switch with `true` among its states is startable AS a block.
@@ -311,14 +312,14 @@ describe('what a field tap does', () => {
 		assert.equal(pressKind(boolSwitch, 'start'), 'run');
 	});
 
-	// da-chml5, vividn: «occur/start/end run at once with a double outline,
+	// da-chml5, vividn: «moment/start/end run at once with a double outline,
 	// unless there are required keys only, in which case fill the line».
 	test('a field with a required key fills, bare or under a verb — but end still runs', () => {
 		const tea = { ...point, field: 'tea', required: ['amount'] };
 		const shift = { ...offBlock, required: ['project'] };
 		const on = { ...onBlock, required: ['project'] };
 		assert.equal(pressKind(tea, null), 'fill');
-		assert.equal(pressKind(tea, 'occur'), 'fill');
+		assert.equal(pressKind(tea, 'moment'), 'fill');
 		assert.equal(pressKind(shift, null), 'fill');
 		assert.equal(pressKind(shift, 'start'), 'fill');
 		assert.equal(pressKind(on, null), 'run', 'a tap on a running block ends it');
@@ -348,16 +349,16 @@ describe('the scroll rule', () => {
 	// da-vu7pi: item `i` to row `i % rows`, so each row packs on its own
 	// and the first few items still start the rows.
 	test('the items are dealt into the rows by index, and no row is left empty', () => {
-		const items = ['Undo', 'Redo', 'occur', 'start', 'end', 'switch', 'add'];
+		const items = ['Undo', 'Redo', 'moment', 'start', 'end', 'switch', 'add'];
 		assert.deepEqual(lanesOf(items, 1), [items]);
 		assert.deepEqual(lanesOf(items, 2), [
-			['Undo', 'occur', 'end', 'add'],
+			['Undo', 'moment', 'end', 'add'],
 			['Redo', 'start', 'switch']
 		]);
 		assert.deepEqual(lanesOf(items, 3), [
 			['Undo', 'start', 'add'],
 			['Redo', 'end'],
-			['occur', 'switch']
+			['moment', 'switch']
 		]);
 		assert.deepEqual(lanesOf(['+', 'coffee'], 3), [['+'], ['coffee']]);
 		assert.deepEqual(lanesOf([], 2), []);
@@ -431,9 +432,9 @@ describe('flags', () => {
 	// The CLI's order, scrambled against the curated one on purpose.
 	const TREE = grammarOf([
 		{
-			name: 'occur',
+			name: 'moment',
 			aliases: [],
-			usage: ['datum occur <FIELD>'],
+			usage: ['datum moment <FIELD>'],
 			flags: [f('y', 'yesterday'), f('q', 'quick'), f('d', 'date', true), f('t', 'time', true), f('z', 'timezone', true), f('c', 'comment', true), f(null, 'id', true), f('m', 'moment')]
 		},
 		{ name: 'stop', aliases: ['end'], usage: ['datum stop <FIELD>'], flags: [f('t', 'time', true), f('L', 'ensure-last-state', true)] }
@@ -441,7 +442,7 @@ describe('flags', () => {
 
 	test('< Back and Help lead; the curated flags first, the rest in the CLI order; a value flag is typed next', () => {
 		assert.deepEqual(
-			flagsOf(TREE, 'occur').map((c) => [c.name, c.press, c.next ?? null]),
+			flagsOf(TREE, 'moment').map((c) => [c.name, c.press, c.next ?? null]),
 			[
 				['back', 'back', null],
 				['help', 'help', null],
@@ -455,33 +456,33 @@ describe('flags', () => {
 				['--id', 'flag', 'type']
 			]
 		);
-		assert.equal(flagsOf(TREE, 'occur')[2].help, 'time help');
+		assert.equal(flagsOf(TREE, 'moment')[2].help, 'time help');
 	});
 
 	test('a flag appends to its own command\'s line, and starts any other line afresh', () => {
-		assert.equal(withFlag('occur ', 'occur', '-q'), 'occur -q ');
-		assert.equal(withFlag('occur -q ', 'occur', '-t'), 'occur -q -t ');
-		assert.equal(withFlag('occur', 'occur', '-t'), 'occur -t ');
+		assert.equal(withFlag('moment ', 'moment', '-q'), 'moment -q ');
+		assert.equal(withFlag('moment -q ', 'moment', '-t'), 'moment -q -t ');
+		assert.equal(withFlag('moment', 'moment', '-t'), 'moment -t ');
 		// PR #216: after a run, and under another command.
-		assert.equal(withFlag('', 'occur', '-q'), 'occur -q ');
-		assert.equal(withFlag('tail ', 'occur', '-q'), 'occur -q ');
-		assert.equal(withFlag('occurrence ', 'occur', '-q'), 'occur -q ');
+		assert.equal(withFlag('', 'moment', '-q'), 'moment -q ');
+		assert.equal(withFlag('tail ', 'moment', '-q'), 'moment -q ');
+		assert.equal(withFlag('occurrence ', 'moment', '-q'), 'moment -q ');
 	});
 
-	// da-bbmpx: a field tap under `occur -q ` runs `occur -q coffee`.
+	// da-bbmpx: a field tap under `moment -q ` runs `moment -q coffee`.
 	test('a line of flags is what a field tap runs; a positional or a flag waiting for its value is not', () => {
-		const occur = TREE.get('occur');
-		assert.deepEqual(flagLine(['occur'], occur), ['occur']);
-		assert.deepEqual(flagLine(['occur', '-q'], occur), ['occur', '-q']);
-		assert.deepEqual(flagLine(['occur', '-t', '-8', '-qq', '--id', 'x'], occur), ['occur', '-t', '-8', '-qq', '--id', 'x']);
-		assert.equal(flagLine(['occur', 'half-typed'], occur), null);
-		assert.equal(flagLine(['occur', '-q', '-t'], occur), null);
-		assert.equal(flagLine(['occur', '-q', '--time'], occur), null);
+		const moment = TREE.get('moment');
+		assert.deepEqual(flagLine(['moment'], moment), ['moment']);
+		assert.deepEqual(flagLine(['moment', '-q'], moment), ['moment', '-q']);
+		assert.deepEqual(flagLine(['moment', '-t', '-8', '-qq', '--id', 'x'], moment), ['moment', '-t', '-8', '-qq', '--id', 'x']);
+		assert.equal(flagLine(['moment', 'half-typed'], moment), null);
+		assert.equal(flagLine(['moment', '-q', '-t'], moment), null);
+		assert.equal(flagLine(['moment', '-q', '--time'], moment), null);
 		// No grammar: a value cannot be told from a positional, nor a value
 		// flag from a switch, so only a bare verb is taken (PR #219, kimi-k3).
-		assert.equal(flagLine(['occur', '-t', '1400'], undefined), null);
-		assert.equal(flagLine(['occur', '-t'], undefined), null);
-		assert.deepEqual(flagLine(['occur'], undefined), ['occur']);
+		assert.equal(flagLine(['moment', '-t', '1400'], undefined), null);
+		assert.equal(flagLine(['moment', '-t'], undefined), null);
+		assert.deepEqual(flagLine(['moment'], undefined), ['moment']);
 		// da-n86g3: `-L` takes its word, as v2's did, so a bare one waits for it.
 		const stop = TREE.get('stop');
 		assert.equal(flagLine(['stop', '-L'], stop), null);

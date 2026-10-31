@@ -123,12 +123,12 @@
 		{
 			"argv": ["setup", "coffee", "--color", "#884400"],
 			"code": 0,
-			"stdout": "\u001b[36mUPDATE\u001b[0m \u001b[36m<id8>\u001b[0m \u001b[90mspec:coffee\u001b[0m\ncoffee  occur  #884400  tracked\n+ color   #884400"
+			"stdout": "\u001b[36mUPDATE\u001b[0m \u001b[36m<id8>\u001b[0m \u001b[90mspec:coffee\u001b[0m\ncoffee  moment  #884400  tracked\n+ color   #884400"
 		},
 		{
 			"argv": ["setup", "coffee"],
 			"code": 0,
-			"stdout": "coffee  occur  #884400  tracked"
+			"stdout": "coffee  moment  #884400  tracked"
 		},
 		{
 			"argv": ["nosuch"],

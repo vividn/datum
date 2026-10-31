@@ -242,7 +242,7 @@ describe('the logic', () => {
 	test('an occur spec presses `occur`, even once it has been logged with a boolean state (da-u8n7)', () => {
 		const shape = shapeFor(spec('jumps', { verb: 'occur' }), [true]);
 		assert.deepEqual(shape, { kind: 'point' });
-		assert.deepEqual(pressArgv({ field: 'jumps', shape, tracked: true, stateColors: {} }), ['occur', 'jumps']);
+		assert.deepEqual(pressArgv({ field: 'jumps', shape, tracked: true, stateColors: {} }), ['moment', 'jumps']);
 	});
 
 	// da-c8mh: every spec carries a verb, so only a field with NO spec is

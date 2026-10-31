@@ -512,7 +512,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			// Not the field's first entry, whose bare spec goes and comes back with it.
 			await app.submit('occur tea -t -50');
 			let got = await run('occur tea cups=2 shop=corner');
-			assert.deepEqual([got.word, got.struck], ['HAPPEN', plain]);
+			assert.deepEqual([got.word, got.struck], ['MOMENT', plain]);
 
 			got = await run('update _LAST cups=3');
 			assert.deepEqual([got.word, got.struck], ['UPDATE', plain]);
@@ -550,11 +550,12 @@ describe('the output is a strip of commands, the newest at the right', () => {
 		await desktop(async (app) => {
 			const { page } = app;
 			const shapes = [
-				['occur coffee cups=2 -t -50', 'HAPPEN'],
+				['occur coffee cups=2 -t -50', 'MOMENT'],
 				['start work -t -40', 'ON/OFF'],
 				['end work -t -30', 'ON/OFF'],
 				['switch mood happy -t -20', 'SWITCH'],
 				['switch mood calm dur=0 -t -10', 'MOMENT'],
+				['switch mood sad 5m -t -5', 'PERIOD'],
 				['add book dune title=x', 'RECORD']
 			];
 			const read = (doc) =>
@@ -1815,7 +1816,7 @@ describe('the pills ride with the text', () => {
 			await app.pressWidget('coffee');
 			// The ghost is the command ALONE: the pill is drawn as a pill
 			// beside it, so saying it in the text too would say it twice.
-			assert.deepEqual([...new Set((await saw('occur coffee')).map((g) => g.line))], ['occur coffee']);
+			assert.deepEqual([...new Set((await saw('moment coffee')).map((g) => g.line))], ['moment coffee']);
 			await page.waitForFunction(
 				(was) => window.__datumGhosts.some((g) => g.left > was + 20),
 				placed

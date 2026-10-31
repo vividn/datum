@@ -490,7 +490,7 @@ describe('a URL', () => {
 			await pick(page, 'a-command');
 			await until(() => activeRootTab(page), (t) => t === 'a-command');
 			assert.deepEqual(await titles(page), ['command']);
-			await page.locator('section.pane[data-title="command"] button[data-command="occur"]').waitFor();
+			await page.locator('section.pane[data-title="command"] button[data-command="moment"]').waitFor();
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -709,13 +709,13 @@ describe('the bottom bar', () => {
 			await app.run(['setup', 'coffee', '--verb', 'occur']);
 			await input.fill('occur coffee');
 			await input.press('Enter');
-			await until(() => receipt(page).innerText(), (t) => t.startsWith('HAPPEN · '));
+			await until(() => receipt(page).innerText(), (t) => t.startsWith('MOMENT · '));
 			await app.idle();
 			const { rows } = await app.tailRows();
 			assert.equal(rows.length, 1);
 			// The entry's shape and its hid, and what the command did to it (da-hxjrk).
 			const [word, hid] = (await receipt(page).innerText()).split(' · ');
-			assert.equal(word, 'HAPPEN');
+			assert.equal(word, 'MOMENT');
 			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'CREATE');
 			assert.ok(hid.length >= 4 && rows[0].hid.startsWith(hid), `the receipt's ${hid} is not the row's ${rows[0].hid}`);
 			assert.equal(await receipt(page).evaluate((el) => el.classList.contains('error')), false);
@@ -729,9 +729,9 @@ describe('the bottom bar', () => {
 			await app.clock.forward(1000);
 			const saw = await app.watchGhosts();
 			await page.locator('.bar button.widget', { hasText: 'coffee' }).click();
-			await saw('occur coffee');
+			await saw('moment coffee');
 			assert.equal(await input.inputValue(), '', 'the press became the input\'s value');
-			await until(() => receipt(page).innerText(), (t) => t.startsWith('HAPPEN · ') && t !== `HAPPEN · ${hid}`);
+			await until(() => receipt(page).innerText(), (t) => t.startsWith('MOMENT · ') && t !== `MOMENT · ${hid}`);
 			await app.idle();
 			assert.equal((await app.tailRows()).rows.length, 2);
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
@@ -800,7 +800,7 @@ describe('the bottom bar', () => {
 			await app.run(['setup', 'coffee', '--verb', 'occur']);
 			const docs = await repl.locator('.doc').count();
 			await app.submit('occur coffee');
-			await until(() => receipt(page).innerText(), (t) => /^HAPPEN · \S+$/.test(t));
+			await until(() => receipt(page).innerText(), (t) => /^MOMENT · \S+$/.test(t));
 			assert.deepEqual((await app.echoes()).slice(echoed), ['occur coffee']);
 			// The scrollback carries the command's DOCUMENT, not its printed
 			// lines: the web asks every command it runs for `--show json`
@@ -809,12 +809,12 @@ describe('the bottom bar', () => {
 			await until(() => repl.locator('.doc').count(), (n) => n > docs);
 			assert.match(
 				await repl.locator('.doc').last().innerText(),
-				/HAPPEN[\s\S]*coffee/,
+				/MOMENT[\s\S]*coffee/,
 				"the entry's shape is not in the scrollback"
 			);
 
 			await app.pressWidget('coffee');
-			assert.deepEqual((await app.echoes()).slice(echoed), ['occur coffee', 'occur coffee']);
+			assert.deepEqual((await app.echoes()).slice(echoed), ['occur coffee', 'moment coffee']);
 
 			await app.submit('tail');
 			const input = page.locator('.prompt-bar input');

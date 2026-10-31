@@ -1,5 +1,5 @@
 // A command button focuses the line without raising a phone's keyboard
-// (da-k34p). vividn, 2026-09-17: «when hitting occur, start, etc commands,
+// (da-k34p). vividn, 2026-09-17: «when hitting moment, start, etc commands,
 // don't auto open the keyboard on mobile. The flow is much more likely that
 // they will then hit a field button rather than type something.»
 //
@@ -43,7 +43,7 @@ const onPhone = (fn, layout = page_()) =>
 		return fn(app);
 	}, layout);
 
-const SEED = ['setup coffee --verb occur', 'setup sleep --verb start', 'setup rec --verb add'];
+const SEED = ['setup coffee --verb moment', 'setup sleep --verb start', 'setup rec --verb add'];
 
 const BAR = '.prompt-bar input';
 const commands = (page) => page.locator('main .bar.commands');
@@ -72,14 +72,14 @@ async function tapCommand(page, name, selector = BAR) {
 }
 
 describe('a command tap focuses the line without the keyboard', () => {
-	test('occur: focused, no keyboard, fields filtered, shell unchanged; a field spends it', async () => {
+	test('moment: focused, no keyboard, fields filtered, shell unchanged; a field spends it', async () => {
 		await onPhone(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const height = await shellHeight(page);
 
-			await tapCommand(page, 'occur');
-			assert.deepEqual(await state(page), { text: 'occur ', focused: true, mode: 'none' });
+			await tapCommand(page, 'moment');
+			assert.deepEqual(await state(page), { text: 'moment ', focused: true, mode: 'none' });
 			await page.waitForFunction(() => document.querySelectorAll('section[data-pane="bar"] [data-field]').length === 1);
 			assert.equal(await shellHeight(page), height, 'the shell moved');
 
@@ -111,7 +111,7 @@ describe('a command tap focuses the line without the keyboard', () => {
 	test('retime with the hid alone fills; the tap after the time pill arrives runs it and empties the line', async () => {
 		await onPhone(async (app) => {
 			const { page } = app;
-			await seedLines(app, [...SEED, 'occur coffee -t -60']);
+			await seedLines(app, [...SEED, 'moment coffee -t -60']);
 			const [entry] = await app.entries(1);
 			const load = (pills) => page.evaluate((all) => window.datum.bar.setPills(all), pills);
 			const hid = { id: 'h', kind: 'hid', text: entry.hid };
@@ -164,24 +164,24 @@ describe('a command tap focuses the line without the keyboard', () => {
 			};
 
 			// Run: a hardware keyboard finishes the line, Enter runs it.
-			await tapCommand(page, 'occur');
+			await tapCommand(page, 'moment');
 			await page.keyboard.type('coffee');
 			await page.keyboard.press('Enter');
 			await page.waitForFunction((s) => document.querySelector(s).value === '', BAR);
 			await refocused('a run');
 
 			// Cleared.
-			await tapCommand(page, 'occur');
-			for (let i = 0; i < 'occur '.length; i++) await page.keyboard.press('Backspace');
+			await tapCommand(page, 'moment');
+			for (let i = 0; i < 'moment '.length; i++) await page.keyboard.press('Backspace');
 			await refocused('a clear');
 
 			// Blur, with the line still pending.
-			await tapCommand(page, 'occur');
+			await tapCommand(page, 'moment');
 			await page.evaluate((s) => document.querySelector(s).blur(), BAR);
 			assert.equal((await state(page)).mode, '', 'still none after a blur');
 
 			// The verb spent by a field.
-			await tapCommand(page, 'occur');
+			await tapCommand(page, 'moment');
 			await fieldsBar(page).locator('[data-field="coffee"]').tap();
 			await page.waitForFunction((s) => document.querySelector(s).value === '', BAR);
 			await refocused('the verb was spent');
@@ -192,8 +192,8 @@ describe('a command tap focuses the line without the keyboard', () => {
 		const WIDGET = '.input-widget input';
 		await onPhone(
 			async ({ page }) => {
-				await tapCommand(page, 'occur', WIDGET);
-				assert.deepEqual(await state(page, WIDGET), { text: 'occur ', focused: true, mode: 'none' });
+				await tapCommand(page, 'moment', WIDGET);
+				assert.deepEqual(await state(page, WIDGET), { text: 'moment ', focused: true, mode: 'none' });
 				await page.locator(WIDGET).tap();
 				assert.equal((await state(page, WIDGET)).mode, '');
 			},
@@ -205,7 +205,7 @@ describe('a command tap focuses the line without the keyboard', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
-			await commands(page).locator('button[data-command="occur"]').click();
+			await commands(page).locator('button[data-command="moment"]').click();
 			await page.waitForFunction((s) => document.activeElement === document.querySelector(s), BAR);
 			await page.keyboard.type('coffee');
 			await page.keyboard.press('Enter');
@@ -223,11 +223,11 @@ describe('the line is focused once the database is ready, where the pointer is f
 	/** A timer's turn after the app is up: the one the focus waits for. */
 	const settle = (page) => page.evaluate(() => new Promise((r) => setTimeout(r, 50)));
 
-	test('desktop: focused on load, and `occur coffee⏎` logs it with no click', async () => {
+	test('desktop: focused on load, and `moment coffee⏎` logs it with no click', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await page.waitForFunction((s) => document.activeElement === document.querySelector(s), BAR);
-			await page.keyboard.type('occur coffee');
+			await page.keyboard.type('moment coffee');
 			await page.keyboard.press('Enter');
 			await page.waitForFunction((s) => document.querySelector(s).value === '', BAR);
 			await app.idle();

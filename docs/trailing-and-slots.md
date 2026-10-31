@@ -66,8 +66,8 @@ implementation detail.
      # oov = "outside , vertical" expands to:
      # ( outside , vertical ,, ) , switch project gardening  (empty region)
    ax y
-     # a  = "occur a -k keyX -k keyY";  ax = "a x" — expands to:
-     # ( ( occur a -k keyX -k keyY ,, x ) ,, y )  (x→keyX; keyX satisfied, y→keyY)
+     # a  = "moment a -k keyX -k keyY";  ax = "a x" — expands to:
+     # ( ( moment a -k keyX -k keyY ,, x ) ,, y )  (x→keyX; keyX satisfied, y→keyY)
    z , oov 30m
      # the v2 corner that forced the typed/emitted split: oov's group
      # keeps 30m off z even when z is dur-bearing:
@@ -92,9 +92,9 @@ implementation detail.
 
    ```
    note cmd -- --verbose --dry-run        # stores two dash-positionals
-   note cmd -- --verbose , occur coffee -q  # side 2's -q is still a flag
-   occur jot -C -- see https://x.org/?a=b   # one comment, no key
-   occur f -k expr ,, \(                  # expr="(" — escaped literal
+   note cmd -- --verbose , moment coffee -q  # side 2's -q is still a flag
+   moment jot -C -- see https://x.org/?a=b   # one comment, no key
+   moment f -k expr ,, \(                  # expr="(" — escaped literal
    ```
 
 ## Slot model
@@ -113,7 +113,7 @@ implementation detail.
    per-side). `state?` exists for switch-family verbs; `dur?` for
    dur-bearing verbs. There is **no** primary-value slot — `value` is a
    retired concept (vividn, 2026-06-04), and a bare positional beyond the
-   declared slots is excess (rule 9): `occur coffee 2` errors with or
+   declared slots is excess (rule 9): `moment coffee 2` errors with or
    without an alias in between. At most one greedy per side (`-I`
    conflicts with `-S/-R/-C` at validation, which guarantees it).
 6. **Cross-side unification** (per region walk): `-k` slots unify **by
@@ -123,7 +123,7 @@ implementation detail.
    skipped by the walk.
 
    ```
-   occur f1 -k key1 -k key2 -k key3 , start f2 -k key2 -k key4 key5=val5 \
+   moment f1 -k key1 -k key2 -k key3 , start f2 -k key2 -k key4 key5=val5 \
        ,, key6=val6 val1 val2 val3 val4 30m
    # f1: key1=val1 key2=val2 key3=val3 key6=val6
    # f2: dur=30m  key2=val2 key4=val4 key5=val5 key6=val6

@@ -125,9 +125,9 @@ const frames = (page) =>
  * a value this file wrote, not about md5.
  */
 const SEED = [
-	'setup coffee --verb occur --color #ffa500',
+	'setup coffee --verb moment --color #ffa500',
 	'setup mood --verb switch --states happy --color #0000ff',
-	'occur coffee',
+	'moment coffee',
 	'switch mood happy'
 ];
 
@@ -430,7 +430,7 @@ describe('the gesture, and the pill it mints', () => {
 	});
 
 	// THE SILENT ONE, at the seam rather than in the pure test: the field is
-	// a line's first positional, so `occur coffee` under a `mood` pill would log mood as
+	// a line's first positional, so `moment coffee` under a `mood` pill would log mood as
 	// coffee's STATE. The pill is refused and stays loaded.
 	test('a press that already names a field does not get the pill appended', async () => {
 		await seeded(async (app) => {
@@ -440,9 +440,9 @@ describe('the gesture, and the pill it mints', () => {
 
 			const seen = await app.spyOnRunner();
 			await chip(page, 'coffee').click();
-			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'occur'));
-			assert.deepEqual((await seen()).find((a) => a[0] === 'occur'), [
-				'occur',
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'moment'));
+			assert.deepEqual((await seen()).find((a) => a[0] === 'moment'), [
+				'moment',
 				'coffee'
 			]);
 			await app.idle();
@@ -470,13 +470,13 @@ describe('what narrows to it', () => {
 				() => !document.querySelector('[data-command="get"]')
 			);
 			const under = await commands(page);
-			for (const name of ['occur', 'tail', 'stats', 'count', 'ids', 'setup'])
+			for (const name of ['moment', 'tail', 'stats', 'count', 'ids', 'setup'])
 				assert.ok(under.includes(name), `${name} names a field and was hidden`);
 			for (const name of ['get', 'now', 'delete', 'update', 'grep', 'dayview'])
 				assert.ok(!under.includes(name), `${name} names no field and was not hidden`);
 			// coffee is an OCCUR field (da-57j14): the other verbs are hidden.
 			for (const name of ['start', 'end', 'switch', 'add'])
-				assert.ok(!under.includes(name), `${name} does not fit an occur field and was not hidden`);
+				assert.ok(!under.includes(name), `${name} does not fit a moment field and was not hidden`);
 			// The order is the widget's usual one; the filter only removes.
 			assert.deepEqual(under, whole.filter((name) => under.includes(name)));
 			assert.deepEqual(app.errors, []);
@@ -491,15 +491,15 @@ describe('what narrows to it', () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			const verbs = async () =>
-				(await commands(page)).filter((name) => ['occur', 'start', 'end', 'switch', 'add'].includes(name));
+				(await commands(page)).filter((name) => ['moment', 'start', 'end', 'switch', 'add'].includes(name));
 
 			await hold(page, 'mood');
-			await page.waitForFunction(() => !document.querySelector('[data-command="occur"]'));
+			await page.waitForFunction(() => !document.querySelector('[data-command="moment"]'));
 			assert.deepEqual(await verbs(), ['end', 'switch']);
 
 			await fieldPill(page).locator('button.remove').click();
-			await page.waitForFunction(() => document.querySelector('[data-command="occur"]'));
-			assert.deepEqual(await verbs(), ['occur', 'start', 'end', 'switch', 'add']);
+			await page.waitForFunction(() => document.querySelector('[data-command="moment"]'));
+			assert.deepEqual(await verbs(), ['moment', 'start', 'end', 'switch', 'add']);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -851,7 +851,7 @@ describe('`setup` under the pill', () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			// Logging declares a field, so its spec is taken away after.
-			await app.submit('occur tea');
+			await app.submit('moment tea');
 			await app.run(['setup', 'tea', '--delete']);
 			assert.match((await app.run(['setup', 'tea', '--json'])).stdout, /No spec defined/, 'tea has a spec to edit');
 			await chip(page, 'tea').waitFor();

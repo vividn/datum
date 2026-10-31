@@ -445,16 +445,16 @@ describe('a place on a phone', () => {
 	test('a held command comes back with its flags, and the line with the ones tapped', async () => {
 		await withApp(
 			async ({ page, errors }) => {
-				const box = await commands(page).locator('button[data-command="occur"]').boundingBox();
+				const box = await commands(page).locator('button[data-command="moment"]').boundingBox();
 				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 				await page.mouse.down();
 				await back(page).waitFor();
 				await page.mouse.up();
-				await commands(page).locator('button[data-flag="occur -q"]').click();
-				await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');
+				await commands(page).locator('button[data-flag="moment -q"]').click();
+				await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment -q ');
 				await roundTrip(page);
-				assert.equal(await commands(page).locator('button[data-flag="occur -t"]').count(), 1, 'the flags are gone');
-				assert.equal(await page.locator('.prompt-bar input').inputValue(), 'occur -q ');
+				assert.equal(await commands(page).locator('button[data-flag="moment -t"]').count(), 1, 'the flags are gone');
+				assert.equal(await page.locator('.prompt-bar input').inputValue(), 'moment -q ');
 
 				await page.keyboard.press('Escape');
 				await back(page).waitFor({ state: 'detached' });

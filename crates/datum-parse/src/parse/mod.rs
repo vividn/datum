@@ -255,7 +255,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     let rest: &[&str] = &swept;
 
     let command = match sub {
-        "occur" => Command::Occur(parse_log_args(rest)?),
+        "moment" | "occur" => Command::Occur(parse_log_args(rest)?),
         "start" | "on" => Command::Start(parse_log_args(rest)?),
         "stop" | "end" | "off" => Command::Stop(parse_log_args(rest)?),
         "switch" => Command::Switch(parse_log_args(rest)?),

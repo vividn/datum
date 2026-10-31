@@ -72,8 +72,8 @@ export interface EchoDoc {
 	 */
 	action_color?: string;
 	/**
-	 * The shape of what the entry stores, six characters (da-hxjrk): `HAPPEN`,
-	 * `ON/OFF`, `SWITCH`, `MOMENT` or `RECORD`. Absent from a module too old
+	 * The shape of what the entry stores, six characters (da-hxjrk): `MOMENT`,
+	 * `PERIOD`, `ON/OFF`, `SWITCH` or `RECORD`. Absent from a module too old
 	 * to carry it, where the frame is labelled with `action` instead. A
 	 * CREATE's frame alone is labelled with it (da-nafql).
 	 */

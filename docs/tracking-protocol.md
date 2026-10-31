@@ -4,11 +4,11 @@ Datum exists so you can log moments and see where your time and attention actual
 
 ## An entry, in one line
 
-`field` + `verb` + `state`/value + `time`. *What* you're tracking (`coffee`, `mood`, `activity`), *how* it changes (`occur`, `switch`, …), the value, and *when*. Time is always derivable; duration is always *derived*, never stored twice.
+`field` + `verb` + `state`/value + `time`. *What* you're tracking (`coffee`, `mood`, `activity`), *how* it changes (`moment`, `switch`, …), the value, and *when*. Time is always derivable; duration is always *derived*, never stored twice.
 
 ## Verbs — choosing the right one
 
-- **occur** — a point event happened. `coffee`, an arriving message, one rep. No duration (or a negligible one).
+- **moment** (alias `occur`) — a point event happened. `coffee`, an arriving message, one rep. No duration (or a negligible one).
 - **start / stop** — open a block now, close it later, when you don't yet know the end (a sleep, a focus session).
 - **switch** — change the *current* state of a field. The new state runs until the next switch. This is how you track "what is true now": mood, posture, the activity you're in.
 - **block-switch** (`switch f X <dur> , switch f Y`) — one-shot: "was in X for `<dur>`, now Y." Use when the block is already closed and you know what follows.

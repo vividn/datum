@@ -9,7 +9,7 @@ One-line summaries of the model:
 - **Field** — what is being tracked: `mood`, `coffee`, `weight`,
   `project`. Freeform by default; can be schema-constrained via
   `datum setup <field>`.
-- **Action** — the user's command intent at the CLI: `add`, `occur`,
+- **Action** — the user's command intent at the CLI: `add`, `moment`,
   `start`, `stop`, `switch`. Action is parsed from argv, canonicalizes
   the (state, dur, following_state) triple (`start` ⇒ state=true,
   `stop` ⇒ state=false), and is then discarded — only the triple
@@ -17,7 +17,7 @@ One-line summaries of the model:
 - **Verb** — the storage classifier derived from (state, dur,
   following_state) by `derive_verb` (datum-parse::verb): `point`,
   `switch`, `block`, `block-switch`, `point-switch`. The CLI verbs
-  `add`/`occur`/`start`/`stop`/`switch` map onto these via the truth
+  `add`/`moment`/`start`/`stop`/`switch` map onto these via the truth
   table in `crates/datum-parse/src/verb.rs`.
 - **State** — derived from state-bearing entries (`Switch`,
   `BlockSwitch`, `PointSwitch`, `Block` with state=set, `Point` as a
@@ -37,7 +37,7 @@ One-line summaries of the model:
   states a FIELD is in, carried by ordinary rows in the same `state`
   column every other value lands in — not flags on a row, not columns
   of their own. A field is ignored when its newest state-bearing row is
-  `IGNORED`, and the next `occur`/`start`/`switch`/`track` on it tracks
+  `IGNORED`, and the next `moment`/`start`/`switch`/`track` on it tracks
   it again; so tracked-ness is read off the entry log
   (`is_ignored_state` in `crates/datum-parse/src/shape.rs`,
   `Db::get_tracked_fields` in `crates/datum-core/src/db/state.rs`),

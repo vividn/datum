@@ -29,7 +29,7 @@ const solo = (fn) => shared.solo(fn, PAGE);
 const PHONE = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
 
 /** Four entries of one field, after the row that tracks it. */
-const SEED = ['track a --verb occur', 'occur a', 'occur a', 'occur a', 'occur a'];
+const SEED = ['track a --verb moment', 'moment a', 'moment a', 'moment a', 'moment a'];
 
 /**
  * `seedLines(SEED)`, a second apart: the clock is held (da-ydao), and one
@@ -83,7 +83,7 @@ describe('a tap on a tail row', () => {
 			const { page } = app;
 			await seedApart(app);
 			const whole = await drawn(page);
-			assert.ok(whole.includes('occur'), 'no pill: every command');
+			assert.ok(whole.includes('moment'), 'no pill: every command');
 
 			const [row] = await last(page, 2);
 			const hid = await row.getAttribute('data-hid');
@@ -92,7 +92,7 @@ describe('a tap on a tail row', () => {
 			assert.deepEqual(await sections(page), [hid.slice(0, 5)]);
 			assert.equal(await row.evaluate((tr) => tr.classList.contains('selected')), true);
 
-			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="occur"]'));
+			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="moment"]'));
 			assert.deepEqual(await drawn(page), ID_COMMANDS);
 
 			await run(app, 'get');
@@ -104,7 +104,7 @@ describe('a tap on a tail row', () => {
 			await hidPill(page).waitFor();
 			await row.click();
 			await hidPill(page).waitFor({ state: 'detached' });
-			await page.locator('main .bar.commands [data-command="occur"]').waitFor();
+			await page.locator('main .bar.commands [data-command="moment"]').waitFor();
 			assert.deepEqual(await drawn(page), whole, 'the dismiss brings the whole list back');
 			assert.deepEqual(app.errors, []);
 		});
@@ -177,7 +177,7 @@ describe('a tap on a tail row', () => {
 			const whole = await drawn(page);
 			await rows(page).first().click();
 			await hidPill(page).waitFor();
-			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="occur"]'));
+			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="moment"]'));
 			// Help takes no pill and explains every one, so no pill hides it (da-vjwid).
 			assert.deepEqual(await drawn(page), whole.filter((name) => takesId.has(name) || name === 'help'));
 		});
@@ -191,7 +191,7 @@ describe('a line the grammar does not know', () => {
 		await solo(async (app) => {
 			const { page } = app;
 			await seedApart(app);
-			await page.evaluate(() => window.datum.runQuiet(['alias', 'set', 'a', 'occur a']));
+			await page.evaluate(() => window.datum.runQuiet(['alias', 'set', 'a', 'moment a']));
 			const [row] = await last(page, 1);
 			const hid = await row.getAttribute('data-hid');
 			await row.click();
@@ -321,7 +321,7 @@ describe('a -t pill', () => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 10:00' }]));
 			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="now"]'));
 			const names = await drawn(page);
-			for (const n of ['occur', 'start', 'end', 'switch', 'add', 'retime']) assert.ok(names.includes(n), n);
+			for (const n of ['moment', 'start', 'end', 'switch', 'add', 'retime']) assert.ok(names.includes(n), n);
 			for (const n of ['now', 'get', 'delete', 'undo']) assert.ok(!names.includes(n), n);
 			await page.locator('.prompt-bar .pill.time button.remove').click();
 			await page.locator('main .bar.commands [data-command="now"]').waitFor();

@@ -182,7 +182,7 @@ fn track_without_a_verb_or_a_log_names_the_choices() {
     let db = fresh_db();
     let err = run_cli(&["track", "x"], &db).unwrap_err().to_string();
     assert!(err.contains("--verb"), "err = {err}");
-    for choice in ["occur", "start", "switch", "add"] {
+    for choice in ["moment", "start", "switch", "add"] {
         assert!(err.contains(choice), "err = {err}");
     }
     assert!(db.load_spec("x").unwrap().is_none(), "a spec was minted");

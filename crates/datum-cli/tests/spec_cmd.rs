@@ -445,7 +445,7 @@ fn the_spec_help_names_the_four_verbs_and_a_wrong_one_points_at_them() {
     let logging = datum_parse::help::command_help("logging");
     assert!(page.contains("\nVERB: "), "{page}");
     for line in [
-        "  occur    a moment                  datum occur coffee",
+        "  moment   a point in time           datum moment coffee",
         "  start    something that lasts      datum start work",
         "  switch   a change of state         datum switch mood happy",
         "  add      a record with a key       datum add book -K title Dune",
@@ -467,8 +467,8 @@ fn the_spec_help_names_the_four_verbs_and_a_wrong_one_points_at_them() {
         let err = run_cli(&["setup", field, "--verb", "event"], &db).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "invalid --verb 'event' — must be one of: occur|start|switch|add, \
-             or datum.day's occurrence|on|on/off|card (`datum help logging` says what each is)"
+            "invalid --verb 'event' — must be one of: moment|start|switch|add, \
+             or occur|occurrence|on|on/off|card (`datum help logging` says what each is)"
         );
     }
 }
@@ -494,7 +494,5 @@ fn setup_verb_takes_the_web_kind_names_and_stores_the_canonical_verb() {
             .unwrap();
         assert_eq!(stored["verb"], verb.to_string(), "{name}");
     }
-    assert!(
-        datum_parse::help::command_help("logging").contains("occurrence, on/off, switch or card")
-    );
+    assert!(datum_parse::help::command_help("logging").contains("moment, on/off, switch or card"));
 }

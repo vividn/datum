@@ -279,14 +279,14 @@ pub const VERB_CHOICES: &[Action] = &[Action::Occur, Action::Start, Action::Swit
 
 /// The one sentence every "which verb?" error says, so the four choices
 /// are spelled the same everywhere the user meets them.
-pub const VERB_CHOICES_TEXT: &str = "occur|start|switch|add";
+pub const VERB_CHOICES_TEXT: &str = "moment|start|switch|add";
 
-/// A field's verb by name: one of the four, or datum.day's name for it —
-/// `occurrence`, `on` or `on/off`, `card` (da-qk4jo). The four are what is
-/// stored, so a spec reads the same whichever name set it.
+/// A field's verb by name: one of the four, `moment` being `occur` (da-cswh8), or
+/// datum.day's name for it — `occurrence`, `on` or `on/off`, `card` (da-qk4jo). The
+/// four are what is stored, so a spec reads the same whichever name set it.
 pub fn verb_choice(name: &str) -> Option<Action> {
     match name.to_lowercase().as_str() {
-        "occur" | "occurrence" => Some(Action::Occur),
+        "moment" | "occur" | "occurrence" => Some(Action::Occur),
         "start" | "on" | "on/off" => Some(Action::Start),
         "switch" => Some(Action::Switch),
         "add" | "card" => Some(Action::Add),
@@ -295,8 +295,7 @@ pub fn verb_choice(name: &str) -> Option<Action> {
 }
 
 /// Every name [`verb_choice`] takes, for the error that refuses another.
-pub const VERB_NAMES_TEXT: &str =
-    "occur|start|switch|add, or datum.day's occurrence|on|on/off|card";
+pub const VERB_NAMES_TEXT: &str = "moment|start|switch|add, or occur|occurrence|on|on/off|card";
 
 /// The verb a field's LOG implies, for a field that has no spec yet.
 ///

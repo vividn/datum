@@ -1,5 +1,5 @@
 // A field tap when the field has a REQUIRED key (da-chml5). vividn, 09-27:
-// «occur/start/end run at once with a double outline, unless there are
+// «moment/start/end run at once with a double outline, unless there are
 // required keys only, in which case fill the line and focus it». The rule
 // is `typesKeys` in #lib/commands.ts; the verb under a field PILL, which
 // had it first (da-lxqqz), is `commands.test.mjs`'s.
@@ -12,8 +12,8 @@ import { changeCounter, sharedApp, startApp, stopApp } from './support/app.mjs';
 import { type } from './support/fields.mjs';
 
 const SEED = [
-	'track tea --verb occur -k amount -k cups=1',
-	'track juice --verb occur -k cups=1',
+	'track tea --verb moment -k amount -k cups=1',
+	'track juice --verb moment -k cups=1',
 	'track shift --verb start -k project',
 	'track mood --verb switch --states good,bad -k why'
 ];
@@ -40,16 +40,16 @@ describe('a field with a required key', () => {
 
 			await chip(page, 'tea').click();
 			// The first key's frame, which a bare word fills (da-31d1d, da-p3hxn).
-			await lineIs(page, 'occur tea ');
+			await lineIs(page, 'moment tea ');
 			await app.idle();
 			assert.equal(await changeCounter(page), counter, 'the tap wrote');
 
 			// Under a pending verb its flags come too, after the field, so
 			// the frame is still written (canary finding on #273).
-			await page.locator('.prompt-bar input').fill('occur -q ');
+			await page.locator('.prompt-bar input').fill('moment -q ');
 			await page.waitForFunction(() => document.querySelector('.bar [data-field="tea"]')?.dataset.act === 'fill');
 			await chip(page, 'tea').click();
-			await lineIs(page, 'occur tea -q ');
+			await lineIs(page, 'moment tea -q ');
 			await app.idle();
 			assert.equal(await changeCounter(page), counter, 'the tap wrote');
 			assert.deepEqual(app.errors, []);
@@ -62,7 +62,7 @@ describe('a field with a required key', () => {
 			for (const line of SEED) await type(page, line);
 			assert.equal(await chip(page, 'juice').getAttribute('data-act'), 'run');
 			await app.pressWidget('juice');
-			assert.equal((await app.echoes()).at(-1), 'occur juice');
+			assert.equal((await app.echoes()).at(-1), 'moment juice');
 		});
 	});
 
@@ -104,12 +104,12 @@ describe('a field with a required key', () => {
 	test('a spaced field: its fill quotes it, from the chip and under a pending verb, and Enter logs to it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await type(page, 'track "my coffee" --verb occur -k amount');
+			await type(page, 'track "my coffee" --verb moment -k amount');
 			// The clock is held: a log at the declaration's instant would share its slug.
 			await app.clock.forward(1000);
 			await app.idle();
 			await chip(page, 'my coffee').click();
-			await lineIs(page, 'occur "my coffee" ');
+			await lineIs(page, 'moment "my coffee" ');
 			await page.keyboard.type('3');
 			await page.keyboard.press('Enter');
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
@@ -117,10 +117,10 @@ describe('a field with a required key', () => {
 			const [entry] = await app.entries(1);
 			assert.deepEqual([entry.field, entry.data], ['my coffee', { amount: 3 }]);
 
-			await page.locator('.prompt-bar input').fill('occur -q ');
+			await page.locator('.prompt-bar input').fill('moment -q ');
 			await page.waitForFunction(() => document.querySelector('.bar [data-field="my coffee"]')?.dataset.act === 'fill');
 			await chip(page, 'my coffee').click();
-			await lineIs(page, 'occur "my coffee" -q ');
+			await lineIs(page, 'moment "my coffee" -q ');
 			assert.deepEqual(app.errors, []);
 		});
 	});

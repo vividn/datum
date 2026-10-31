@@ -362,7 +362,7 @@ fn with_no_db_it_offers_the_grammar_and_creates_nothing() {
     let mut cmd = env.cmd();
     cmd.env("DATUM_DB", &missing);
     let found = complete_with(cmd, "");
-    assert!(found.lines().any(|l| l == "occur"), "{found}");
+    assert!(found.lines().any(|l| l == "moment"), "{found}");
     let mut cmd = env.cmd();
     cmd.env("DATUM_DB", &missing);
     assert!(

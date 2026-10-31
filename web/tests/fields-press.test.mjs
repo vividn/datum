@@ -35,8 +35,8 @@ describe('a press', () => {
 	const shared = sharedApp();
 
 	// da-emze's bug, as da-c8mh settles it. A colour needs a spec to live
-	// in, and the spec used to be minted with `occur` — so colouring a
-	// start/stop field turned it into a one-tap occur button. A colour is
+	// in, and the spec used to be minted with `moment` — so colouring a
+	// start/stop field turned it into a one-tap moment button. A colour is
 	// still not a verb: `track --color` takes the verb the LOG implies and
 	// writes it, so the button stays a block, and an explicit verb changes it.
 	test('colouring a start/stop field leaves it a block; naming a verb is what changes it', async () => {
@@ -58,10 +58,10 @@ describe('a press', () => {
 			assert.equal((await app.echoes()).at(-1), 'start sleep', 'a colour made it a point');
 
 			await type(page, 'end sleep');
-			await type(page, 'setup sleep --verb occur');
+			await type(page, 'setup sleep --verb moment');
 			await untilShape(page, 'point');
 			await app.pressWidget('sleep');
-			assert.equal((await app.echoes()).at(-1), 'occur sleep', 'an explicit verb was not honoured');
+			assert.equal((await app.echoes()).at(-1), 'moment sleep', 'an explicit verb was not honoured');
 		});
 	});
 
@@ -97,14 +97,14 @@ describe('a press', () => {
 			// Ghosted beside the prompt, not typed into it (da-jprg) — read
 			// off a watch begun before the press, since a slow press can
 			// outlast the ghost (da-ehpe5).
-			await saw('occur coffee');
+			await saw('moment coffee');
 			// The bar's row one once the press has landed, its echo with its
 			// receipt, the entry's shape and hid (da-hxjrk): FIXTURE's last line
 			// left a receipt there too, so a wait
 			// for one passed before the press did, and said nothing of what
 			// stood there when it did not (da-v5ote).
 			await app.idle();
-			assert.match(await page.locator('.prompt-bar .section.output').innerText(), /❯ occur coffee\nundo\nHAPPEN · \w+/);
+			assert.match(await page.locator('.prompt-bar .section.output').innerText(), /❯ moment coffee\nundo\nMOMENT · \w+/);
 			assert.equal((await app.tailRows()).rows.at(-1).field, 'coffee');
 
 			await type(page, 'start work');
@@ -120,10 +120,10 @@ describe('a press', () => {
 			const seen = await app.spyOnRunner();
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 09:00', kind: 'time' }]));
 			await page.locator('.bar [data-field="coffee"]').click();
-			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'occur'));
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'moment'));
 			// No `--show json`: the echo is asked for in the env (da-vx31e).
-			assert.deepEqual((await seen()).find((a) => a[0] === 'occur'), [
-				'occur',
+			assert.deepEqual((await seen()).find((a) => a[0] === 'moment'), [
+				'moment',
 				'coffee',
 				'-t',
 				'09:00'

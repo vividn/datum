@@ -139,7 +139,7 @@ describe('the ghost', () => {
 
 			const saw = await app.watchGhosts();
 			await page.locator('.bar [data-field="coffee"]').click();
-			const { values, look } = await ghostOf(saw, 'occur coffee');
+			const { values, look } = await ghostOf(saw, 'moment coffee');
 			assert.deepEqual(values, [''], 'the press became the input’s value');
 
 			// Dimmer than a typed line, and brighter than the placeholder it
@@ -188,7 +188,7 @@ describe('the ghost', () => {
 			// is known to be another element and not the same one living on.
 			const saw = await app.watchGhosts();
 			await page.locator('.bar [data-field="coffee"]').click();
-			assert.deepEqual((await ghostOf(saw, 'occur coffee')).values, ['']);
+			assert.deepEqual((await ghostOf(saw, 'moment coffee')).values, ['']);
 
 			await page.locator('.bar [data-field="coffee"]').click();
 			// A fresh element AND a fade starting over: the element's own
@@ -197,7 +197,7 @@ describe('the ghost', () => {
 				.waitForFunction(() => window.__datumGhosts.some((g) => g.look.nth === 2) && window.__datumGhosts)
 				.then((h) => h.jsonValue());
 			const second = ghosts.find((g) => g.look.nth === 2);
-			assert.equal(second.line, 'occur coffee');
+			assert.equal(second.line, 'moment coffee');
 			assert.ok(second.look.age < 400, `the second ghost's fade began ${second.look.age}ms in`);
 			assert.deepEqual([...new Set(ghosts.map((g) => g.count))], [1], 'two ghosts at once');
 		});
@@ -211,7 +211,7 @@ describe('the ghost', () => {
 
 			const saw = await app.watchGhosts();
 			await page.locator('.bar [data-field="coffee"]').click();
-			assert.deepEqual((await ghostOf(saw, 'occur coffee')).values, ['']);
+			assert.deepEqual((await ghostOf(saw, 'moment coffee')).values, ['']);
 
 			// A key that types nothing, so what clears the ghost is the
 			// keystroke itself and not the box turning non-empty. Read in the
@@ -263,7 +263,7 @@ describe('the ghost', () => {
 
 				const saw = await app.watchGhosts();
 				await page.locator('.bar [data-field="coffee"]').click();
-				const { values, look } = await ghostOf(saw, 'occur coffee');
+				const { values, look } = await ghostOf(saw, 'moment coffee');
 				assert.deepEqual(values, ['']);
 				assert.equal(look.animations, 0, 'the ghost fades for a reader who asked for no motion');
 				await gone(page);

@@ -44,8 +44,8 @@ a top-level `migrations/` folder.)
 - `slug`: `field:2024-03-16T09:15Z` (human reference, datum-compatible). Derived from field + occur_time, so `retime` rewrites it — **mutable, not an identity**.
 - `content_hash`: SHA-256 dedup key
 - `field`: what is being tracked (e.g. "coffee", "mood", "project", "word")
-- `verb`: the STORED classification, derived from state + dur — `point` | `switch` | `block` | `block-switch` | `point-switch` (`crates/datum-parse/src/verb.rs`). The words a person types — `occur`, `start`, `stop`/`end`, `switch`, `note`, `add` — are the COMMANDS; they set the state and the duration the verb is derived from.
-- `state`: the primary JSON value (the state for a switch, the quantity for an occur). **There is no `value` field** — `state` is the canonical name, and a `value` appearing in new code is a bug, not a synonym.
+- `verb`: the STORED classification, derived from state + dur — `point` | `switch` | `block` | `block-switch` | `point-switch` (`crates/datum-parse/src/verb.rs`). The words a person types — `moment` (its alias `occur`), `start`, `stop`/`end`, `switch`, `note`, `add` — are the COMMANDS; they set the state and the duration the verb is derived from.
+- `state`: the primary JSON value (the state for a switch, the quantity for a moment). **There is no `value` field** — `state` is the canonical name, and a `value` appearing in new code is a bug, not a synonym.
 - `following_state`: the trailing-edge state of a switch-style verb; meaningful only alongside a `dur`.
 - `data`: arbitrarily nested JSON. (Not `extra_data`.) Nothing infers a unit: `weight=75.2kg` stores the string `"75.2kg"`.
   `update` replaces its top-level keys; `merge` is datum's: a key both hold collects both values
@@ -311,7 +311,7 @@ is reported rather than read again. The owner's reads open as a write does.
   transaction, so of racing claims on one database one lands, and never
   spooled. Two synced copies can each grant one (da-ovnf9). v2's `-L`
   recorded: record with `-l`
-- `start_time=` / `end_time=` on `add`/`note`/`start`/`switch`/`occur` are
+- `start_time=` / `end_time=` on `add`/`note`/`start`/`switch`/`moment` are
   lifted onto `occur_time`/`dur`, parsed exactly as `-t` is: the
   pair is the block between them, `start_time=S` + a duration ends at
   `S + dur`, `end_time=E` alone on `start` becomes `end -t E` (on `switch
@@ -326,10 +326,10 @@ is reported rather than read again. The owner's reads open as a write does.
   spec), so `datum mood happy` logs and `datum mood tail` is that alias's
   line given the word `tail`, never `datum tail mood`.
 - Trailing verbs, v2's `changeDatumCommand` (`dataArgs.ts`): on a log line,
-  `occur` / `start` / `end` (`stop`) / `switch` in the `dur=` slot, or
+  `moment` (`occur`) / `start` / `end` (`stop`) / `switch` in the `dur=` slot, or
   leading the words no slot or remainder takes, change the command and the
   words after it are read again as the new command's. So with `bed` →
-  `start sleep`, `datum bed end` ends sleep; `datum occur coffee start`
+  `start sleep`, `datum bed end` ends sleep; `datum moment coffee start`
   starts coffee; `datum mood happy end` ends mood with `-l happy`. A
   remainder keeps the word as text (`datum note jot the end of it`).
   `handle_log_data_args` in `datum-parse`'s `input/data_args`, the alias
@@ -352,7 +352,7 @@ always (`resolve_read_fields` in `cmd.rs`); a write, once `-F` has built
 the name, only where it could not create it anyway, which `creation_closed_by`
 in `log_core.rs` answers (`Db::creation_closer`: a template with
 `auto_setup = false` covering the name, or its literal head `issue__` starting
-it, or the database's `auto_setup = false`; no `--setup`), so `occur envi` in an open db still makes `envi`. In an entry's place (`get x`, `get x::state`) a field
+it, or the database's `auto_setup = false`; no `--setup`), so `moment envi` in an open db still makes `envi`. In an entry's place (`get x`, `get x::state`) a field
 wins over a hid, and no field is named as a hid, nor a hid drawn as a field.
 
 ### Alias system (built-in, not shell aliases)
@@ -361,7 +361,9 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 - Then `datum vbp correr "to run"` expands to `datum note word srcLang=pt pos=verb correr "to run"`
 
 A command's own short names are not these: they sit in its `aliases` in the
-help table (`crates/datum-parse/src/help/commands.rs`) — `rt` for `retime`,
+help table (`crates/datum-parse/src/help/commands.rs`) — `occur` for `moment`
+(da-cswh8: the word for the shape; `Action::Occur` and stored specs keep the
+old one), `rt` for `retime`,
 `del` for `delete`, `end` for `stop`, and `spec` for `setup`, which kept the
 old name as its alias when it was renamed (da-a4ptr, then da-3ie71: «leave
 "spec" as a verb which is aliased to setup»). Do not remove it.

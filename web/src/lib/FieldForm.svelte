@@ -9,7 +9,7 @@
 	#lib/track.ts, `track_action_label` in datum-core): the row this form
 	is about to write will print `TRACK●` in every action column there is,
 	so what a person presses here is the shape they will meet again. Each is
-	named as the welcome names it — occurrence, on/off, switch, card — with
+	named as the welcome names it — moment, on/off, switch, card — with
 	a line of what it is beside it.
 
 	It opens on the SHAPES (da-uipyt), vividn, 2026-10-14: «rather than the
@@ -528,7 +528,7 @@
 									<input
 										class="expands"
 										bind:value={alias.expands_to}
-										placeholder="{verb ?? 'occur'} {field}"
+										placeholder="{!verb || verb === 'occur' ? 'moment' : verb} {field}"
 										aria-label="what {alias.state || 'it'} runs"
 										spellcheck="false"
 										autocapitalize="none"

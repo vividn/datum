@@ -89,6 +89,7 @@ impl<'a> Resolver for MapResolver<'a> {
 /// so both datum-parse and datum-commands agree; every name and short name
 /// in the help table is here (`known_subcommands_cover_the_help_table`).
 pub const KNOWN_SUBCOMMANDS: &[&str] = &[
+    "moment",
     "occur",
     "start",
     "on",
@@ -150,11 +151,17 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "upgrade",
 ];
 
-/// datum.day's names for three commands (`web/src/lib/track.ts`), each the
-/// command it names (da-zz6en). A side's lead word is read as that command
-/// as aliases expand, so everything after reads `start`, `stop` or `add`;
-/// only a help page keeps the word it was asked by.
-const COMMAND_SYNONYMS: &[(&str, &str)] = &[("on", "start"), ("off", "stop"), ("card", "add")];
+/// Other names for four commands, each the command it names (da-zz6en): `moment`
+/// is `occur`'s (da-cswh8), the rest datum.day's (`web/src/lib/track.ts`). A
+/// side's lead word is read as that command as aliases expand, so everything
+/// after reads `occur`, `start`, `stop` or `add`; only a help page keeps the
+/// word it was asked by.
+const COMMAND_SYNONYMS: &[(&str, &str)] = &[
+    ("moment", "occur"),
+    ("on", "start"),
+    ("off", "stop"),
+    ("card", "add"),
+];
 
 /// The command `word` names: itself, or the one a synonym stands for.
 fn command_named(word: &str) -> &str {

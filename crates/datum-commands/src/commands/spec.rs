@@ -37,7 +37,7 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
                 }
             }
             None => println!(
-                "No spec defined for field '{field}'; set one up: `datum setup {field} --verb occur` \
+                "No spec defined for field '{field}'; set one up: `datum setup {field} --verb moment` \
                  (or start, switch, add; `datum help logging` says what each is)"
             ),
         },
@@ -900,7 +900,7 @@ struct Block {
 
 impl Block {
     fn of(spec: &FieldSpec, ignored: bool) -> Self {
-        let mut head = vec![("verb".to_string(), spec.verb.to_string())];
+        let mut head = vec![("verb".to_string(), spec.verb.word())];
         if let Some(c) = &spec.color {
             head.push(("color".into(), c.clone()));
         }

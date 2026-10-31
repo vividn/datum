@@ -8,7 +8,7 @@
 	commands frame. Label this frame with the action and the hid … then put
 	field/state indicator on the first line, time on the second line, extra
 	data below that.» A CREATE is labelled with the shape it stores, the
-	CLI's six characters (`shape`: HAPPEN, ON/OFF, SWITCH, MOMENT, RECORD),
+	CLI's six characters (`shape`: MOMENT, PERIOD, ON/OFF, SWITCH, RECORD),
 	and every other action with its own word (da-nafql), vividn, 2026-10-30:
 	«For other actions besides CREATE, keep using the output actions that
 	were there before». Either way painted in the colour of what the command

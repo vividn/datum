@@ -20,9 +20,9 @@ import type { Pill } from './bar.js';
 import type { FieldButton } from './fields.js';
 
 /** A verb the command line can be pending: the five a field is logged with. */
-export type Verb = 'occur' | 'start' | 'end' | 'switch' | 'add';
+export type Verb = 'moment' | 'start' | 'end' | 'switch' | 'add';
 
-export const VERBS: Verb[] = ['occur', 'start', 'end', 'switch', 'add'];
+export const VERBS: Verb[] = ['moment', 'start', 'end', 'switch', 'add'];
 
 /** What a press on a command button does. */
 export type Press =
@@ -157,7 +157,7 @@ export const COMMANDS: CommandButton[] = [
  */
 export const ICONS: Record<string, string> = {
 	undo: '↶',
-	occur: '●',
+	moment: '●',
 	start: '█',
 	end: '■',
 	switch: '▞',
@@ -174,13 +174,14 @@ export const ICONS: Record<string, string> = {
 /**
  * The verb the command line is pending, from what is typed in it.
  *
- * The FIRST WORD, whole: a tap on `occur` puts `occur ` in the box and a
- * person typing the same word reaches the same state, because both are
- * read back off the one buffer (#lib/bar.ts's `text`) rather than from a
- * second store a tap would have to remember to set.
+ * The FIRST WORD, whole: a tap on `moment` puts `moment ` in the box and a
+ * person typing the same word, or its alias `occur`, reaches the same state,
+ * because both are read back off the one buffer (#lib/bar.ts's `text`) rather
+ * than from a second store a tap would have to remember to set.
  */
 export function pendingVerb(line: string): Verb | null {
-	const [word] = line.trimStart().split(/\s/, 1);
+	const [typed] = line.trimStart().split(/\s/, 1);
+	const word = typed === 'occur' ? 'moment' : typed;
 	return (VERBS as string[]).includes(word) ? (word as Verb) : null;
 }
 
@@ -199,7 +200,7 @@ const on = (button: FieldButton): boolean => button.current !== undefined;
  */
 export function verbFits(verb: Verb, button: FieldButton): boolean {
 	switch (verb) {
-		case 'occur':
+		case 'moment':
 			return button.shape.kind === 'point';
 		case 'add':
 			return button.shape.kind === 'record';
@@ -284,8 +285,8 @@ export function pressKind(button: FieldButton, verb: Verb | null): PressKind {
 	if (verb !== null && verbPress(verb, button)) return typesKeys(verb, button) ? 'fill' : 'run';
 	if (button.shape.kind === 'record') return 'fill';
 	if (button.shape.kind === 'states') return 'show';
-	// A bare tap logs `occur` or `start`, or ends a running block (`pressArgv`).
-	return typesKeys(button.current ? 'end' : 'occur', button) ? 'fill' : 'run';
+	// A bare tap logs `moment` or `start`, or ends a running block (`pressArgv`).
+	return typesKeys(button.current ? 'end' : 'moment', button) ? 'fill' : 'run';
 }
 
 /**
@@ -540,7 +541,7 @@ export function fires(takes: Takes | undefined, all: Pill[]): boolean {
  * selected, then the start/end/occur buttons should … auto trigger entry
  * (unless there are extra keys to be filled in, in which case the input
  * line should automatically be selected for typing in those fields». So
- * `occur`, `start` and `end` with a known field's pill as an argument
+ * `moment`, `start` and `end` with a known field's pill as an argument
  * RUN, unless that field has a key with no default (`required`); then the
  * tap writes `<verb> <field> ` for the keys to be typed after. `end`
  * always runs (da-o4jaa), vividn, 09-27: «generally speaking I don't save
@@ -551,7 +552,7 @@ export function fires(takes: Takes | undefined, all: Pill[]): boolean {
 export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { field: Pill; runs: boolean } | null {
 	const field = argumentsOf(all).find((p) => p.kind === 'field');
 	const button = fields.find((b) => b.field === field?.text);
-	if (!field || !button || !['occur', 'start', 'end'].includes(name)) return null;
+	if (!field || !button || !['moment', 'start', 'end'].includes(name)) return null;
 	return { field, runs: !typesKeys(name, button) };
 }
 
@@ -667,9 +668,9 @@ export function withFlag(line: string, command: string, flag: string): string {
 
 /**
  * The line's words when everything after its verb is a flag, each one
- * that takes a value followed by it (`occur -q`, `occur -t 1400`): a field
+ * that takes a value followed by it (`moment -q`, `moment -t 1400`): a field
  * tap under that verb runs them with the field after, and spends the line
- * (da-bbmpx). Null for anything else — a positional (`occur half-typed`)
+ * (da-bbmpx). Null for anything else — a positional (`moment half-typed`)
  * is a line being typed, which a press never takes, and a trailing `-t`
  * waits for its value, which the field would otherwise become. A flag
  * whose value only ever comes attached (`value_optional`) is not waiting.

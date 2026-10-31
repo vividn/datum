@@ -13,7 +13,7 @@ import type { FieldSpec } from './types.js';
 /**
  * What a press on a button means, derived from the field's declared shape.
  *
- *   point  — a thing that happened:  `occur <field>`
+ *   point  — a thing that happened:  `moment <field>`
  *   state  — a block, on or off:     `start <field>` / `end <field>`
  *   states — a state among several:  `switch <field> <state>`
  *   record — a keyed record:         `add <field> …`, typed, never pressed
@@ -483,7 +483,7 @@ export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Loo
 export function pressArgv(button: FieldButton, state?: string): string[] {
 	const { kind } = button.shape;
 	return kind === 'point'
-		? ['occur', button.field]
+		? ['moment', button.field]
 		: kind === 'state'
 			? [button.current ? 'end' : 'start', button.field]
 			: kind === 'record'

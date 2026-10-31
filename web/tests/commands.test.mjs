@@ -64,7 +64,7 @@ const onPage = (fn) =>
  * its states, which is the other half of `start`'s rule.
  */
 const SEED = [
-	'setup coffee --verb occur',
+	'setup coffee --verb moment',
 	'setup sleep --verb start',
 	'setup work --verb start',
 	'setup mood --verb switch --states good,bad',
@@ -151,7 +151,7 @@ describe('the bar of commands', () => {
 				'Undo',
 				'↷',
 				'Help',
-				'occur',
+				'moment',
 				'start',
 				'end',
 				'switch',
@@ -183,7 +183,7 @@ describe('the bar of commands', () => {
 					})
 				)
 			);
-			const glyphs = { undo: '↶', occur: '●', start: '█', end: '■', switch: '▞', add: '¢', note: '✎', track: '+' };
+			const glyphs = { undo: '↶', moment: '●', start: '█', end: '■', switch: '▞', add: '¢', note: '✎', track: '+' };
 			for (const [name, glyph] of Object.entries(glyphs)) assert.ok(looks[name].icon.startsWith(`"${glyph}"`), `${name} draws ${looks[name].icon}`);
 			for (const name of ['delete', 'retime', 'tail', 'stats', 'sync']) assert.match(looks[name].icon, /^M/, `${name} draws ${looks[name].icon}`);
 			const iconed = Object.values(looks).map((l) => l.icon).filter((icon) => icon !== 'none');
@@ -276,7 +276,7 @@ describe('a command with subcommands drills into them', () => {
 			await commands(page).locator('button[data-command="db"]').click();
 			await back(page).click();
 			await back(page).waitFor({ state: 'detached' });
-			assert.ok((await drawn(page)).includes('occur'), 'Back is the whole list');
+			assert.ok((await drawn(page)).includes('moment'), 'Back is the whole list');
 
 			await commands(page).locator('button[data-command="db"]').click();
 			await tap(page, 'db migrate');
@@ -295,7 +295,7 @@ describe('a command with subcommands drills into them', () => {
 	});
 });
 
-// da-st2xl. vividn, 2026-09-25: «long pressing on a command, like occur
+// da-st2xl. vividn, 2026-09-25: «long pressing on a command, like moment
 // should add it to the input box as well, and then display various flags
 // that you can add, like -q, -t, etc, sorted in a useful order … for -t
 // keyboard should be opened on mobile». A REAL long press: the timers are
@@ -321,10 +321,10 @@ describe('holding a command fills it and shows its flags', () => {
 			return { text: input.value, focused: document.activeElement === input, keyboard: input.inputMode !== 'none' };
 		});
 
-	test('occur fills `occur ` and its flags follow Back and Help, the curated ones first', async () => {
+	test('moment fills `moment ` and its flags follow Back and Help, the curated ones first', async () => {
 		await onPage(async ({ page }) => {
-			await hold(page, 'occur');
-			assert.equal((await typed(page)).text, 'occur ', 'the hold fills as the tap does');
+			await hold(page, 'moment');
+			assert.equal((await typed(page)).text, 'moment ', 'the hold fills as the tap does');
 			assert.deepEqual(await drawn(page), ['Help'], 'Back, Help, then flags: no command beside them');
 			assert.deepEqual((await flags(page)).slice(0, 7), ['-t', '-d', '-y', '-q', '-c', '-m', '-k']);
 			assert.ok((await flags(page)).includes('--id'), 'the rest follow, long-only ones included');
@@ -333,54 +333,54 @@ describe('holding a command fills it and shows its flags', () => {
 
 	test('-q appends with the keyboard shut; -t appends and opens it; the line composes', async () => {
 		await onPage(async ({ page }) => {
-			await hold(page, 'occur');
-			await commands(page).locator('button[data-flag="occur -q"]').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');
-			assert.deepEqual(await typed(page), { text: 'occur -q ', focused: true, keyboard: false });
+			await hold(page, 'moment');
+			await commands(page).locator('button[data-flag="moment -q"]').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment -q ');
+			assert.deepEqual(await typed(page), { text: 'moment -q ', focused: true, keyboard: false });
 
-			await commands(page).locator('button[data-flag="occur -t"]').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q -t ');
-			assert.deepEqual(await typed(page), { text: 'occur -q -t ', focused: true, keyboard: true });
+			await commands(page).locator('button[data-flag="moment -t"]').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment -q -t ');
+			assert.deepEqual(await typed(page), { text: 'moment -q -t ', focused: true, keyboard: true });
 		});
 	});
 
 	// PR #216 (vremya): the flags outlive the line — a run spends it, a
 	// reader types another command — and a flag tap then starts the line
 	// afresh with the command whose flags are showing.
-	test('after a run, or under another command, a flag tap starts `occur -q ` again', async () => {
+	test('after a run, or under another command, a flag tap starts `moment -q ` again', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['setup coffee --verb occur']);
-			const q = commands(page).locator('button[data-flag="occur -q"]');
+			await seedLines(app, ['setup coffee --verb moment']);
+			const q = commands(page).locator('button[data-flag="moment -q"]');
 			const value = (v) => page.waitForFunction((v) => document.querySelector('.prompt-bar input').value === v, v);
-			await hold(page, 'occur');
+			await hold(page, 'moment');
 			await q.click();
-			await value('occur -q ');
+			await value('moment -q ');
 			await page.keyboard.type('coffee');
 			await page.keyboard.press('Enter');
 			await value('');
 			assert.equal(await back(page).count(), 1, 'the flags stayed open');
 			await q.click();
-			await value('occur -q ');
+			await value('moment -q ');
 
 			await page.locator('.prompt-bar input').fill('tail ');
 			await q.click();
-			await value('occur -q ');
+			await value('moment -q ');
 			await app.idle();
 		});
 	});
 
-	// da-bbmpx: the verb is still pending under `occur -q `, so the fields
-	// narrow to occur's — and a tap on one runs the LINE with the field.
-	test('a field tap under `occur -q ` runs `occur -q coffee` and spends the line', async () => {
+	// da-bbmpx: the verb is still pending under `moment -q `, so the fields
+	// narrow to moment's — and a tap on one runs the LINE with the field.
+	test('a field tap under `moment -q ` runs `moment -q coffee` and spends the line', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['setup coffee --verb occur']);
-			await hold(page, 'occur');
-			await commands(page).locator('button[data-flag="occur -q"]').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');
+			await seedLines(app, ['setup coffee --verb moment']);
+			await hold(page, 'moment');
+			await commands(page).locator('button[data-flag="moment -q"]').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment -q ');
 			await echoed(app, () => fieldsBar(page).locator('[data-field="coffee"]').click());
-			assert.equal((await app.echoes()).at(-1), 'occur -q coffee');
+			assert.equal((await app.echoes()).at(-1), 'moment -q coffee');
 			assert.equal((await typed(page)).text, '', 'the line was not spent');
 			await app.idle();
 		});
@@ -388,43 +388,43 @@ describe('holding a command fills it and shows its flags', () => {
 
 	test('< Back and Escape return to the commands, and leave the line as it is', async () => {
 		await onPage(async ({ page }) => {
-			await hold(page, 'occur');
+			await hold(page, 'moment');
 			await back(page).click();
 			await back(page).waitFor({ state: 'detached' });
-			assert.ok((await drawn(page)).includes('occur'));
+			assert.ok((await drawn(page)).includes('moment'));
 
-			await hold(page, 'occur');
+			await hold(page, 'moment');
 			await page.keyboard.press('Escape');
 			await back(page).waitFor({ state: 'detached' });
-			assert.ok((await drawn(page)).includes('occur'));
-			assert.equal((await typed(page)).text, 'occur ', 'the same Escape peeled the line too');
+			assert.ok((await drawn(page)).includes('moment'));
+			assert.equal((await typed(page)).text, 'moment ', 'the same Escape peeled the line too');
 		});
 	});
 
 	test('a command without flags is not held', async () => {
 		await onPage(async ({ page }) => {
 			assert.equal(await commands(page).locator('button[data-command="delete"][data-holds]').count(), 0);
-			assert.equal(await commands(page).locator('button[data-command="occur"][data-holds]').count(), 1);
+			assert.equal(await commands(page).locator('button[data-command="moment"][data-holds]').count(), 1);
 		});
 	});
 });
 
 describe('a verb fills the line and filters the fields', () => {
-	test('occur leaves the occur fields, and a tap on one runs at once', async () => {
+	test('moment leaves the moment fields, and a tap on one runs at once', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			assert.deepEqual(await showing(page), ['coffee', 'light', 'mood', 'rec', 'sleep', 'work']);
 
-			await tap(page, 'occur');
-			assert.deepEqual(await line(page), { text: 'occur ', focused: true });
+			await tap(page, 'moment');
+			assert.deepEqual(await line(page), { text: 'moment ', focused: true });
 			assert.deepEqual(await showing(page), ['coffee']);
 
 			// The fields alone: no `+` ends the filtered list (da-myet1).
 			assert.deepEqual(await fieldsBar(page).locator('button').evaluateAll((all) => all.filter((b) => b.textContent.trim() === '+').length), 0);
 
 			await echoed(app, () => fieldsBar(page).locator('[data-field="coffee"]').click());
-			assert.equal((await app.echoes()).at(-1), 'occur coffee');
+			assert.equal((await app.echoes()).at(-1), 'moment coffee');
 			assert.equal((await line(page)).text, '', 'the verb was not spent');
 			// The verb is spent: the list is whole again.
 			assert.deepEqual(await showing(page), ['coffee', 'light', 'mood', 'rec', 'sleep', 'work']);
@@ -464,14 +464,14 @@ describe('a verb fills the line and filters the fields', () => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const verbs = async () =>
-				(await drawn(page)).filter((name) => ['occur', 'start', 'end', 'switch', 'add'].includes(name));
+				(await drawn(page)).filter((name) => ['moment', 'start', 'end', 'switch', 'add'].includes(name));
 
 			for (const field of ['work', 'sleep']) {
 				await fieldsBar(page).locator(`[data-field="${field}"]`).click({ button: 'right' });
-				await page.waitForFunction(() => !document.querySelector('[data-command="occur"]'));
+				await page.waitForFunction(() => !document.querySelector('[data-command="moment"]'));
 				assert.deepEqual(await verbs(), ['start', 'end'], field);
 				await page.locator('.prompt-bar .pill.field button.remove').click();
-				await page.waitForFunction(() => document.querySelector('[data-command="occur"]'));
+				await page.waitForFunction(() => document.querySelector('[data-command="moment"]'));
 			}
 
 			await tap(page, 'start');
@@ -515,7 +515,7 @@ describe('a verb fills the line and filters the fields', () => {
 	});
 });
 
-// da-lxqqz, vividn: «when a field is selected, then the start/end/occur
+// da-lxqqz, vividn: «when a field is selected, then the start/end/moment
 // buttons should become double lines and auto trigger entry (unless there
 // are extra keys to be filled in, in which case the input line should
 // automatically be selected for typing in those fields». Required keys
@@ -523,8 +523,8 @@ describe('a verb fills the line and filters the fields', () => {
 describe('a verb under a field pill', () => {
 	const KEYED = [
 		...SEED,
-		'setup tea --verb occur --data-key amount',
-		'setup juice --verb occur --data-key cups=1',
+		'setup tea --verb moment --data-key amount',
+		'setup juice --verb moment --data-key cups=1',
 		'setup shift --verb start --data-key project --data-key n=1',
 		'start shift project=a n=1 -t -30'
 	];
@@ -543,10 +543,10 @@ describe('a verb under a field pill', () => {
 			const { page } = app;
 			await seedLines(app, KEYED);
 			await pillOf(page, 'coffee');
-			assert.equal(await verb(page, 'occur').getAttribute('data-act'), 'run');
+			assert.equal(await verb(page, 'moment').getAttribute('data-act'), 'run');
 
-			await echoed(app, () => verb(page, 'occur').click());
-			assert.equal((await app.echoes()).at(-1), 'occur coffee');
+			await echoed(app, () => verb(page, 'moment').click());
+			assert.equal((await app.echoes()).at(-1), 'moment coffee');
 			await fieldPill(page).waitFor({ state: 'detached' });
 			assert.equal((await line(page)).text, '');
 			await app.idle();
@@ -579,20 +579,20 @@ describe('a verb under a field pill', () => {
 			await app.idle();
 			const before = (await app.allEntries()).length;
 			await pillOf(page, 'tea');
-			assert.equal(await verb(page, 'occur').getAttribute('data-act'), 'fill');
+			assert.equal(await verb(page, 'moment').getAttribute('data-act'), 'fill');
 
-			await verb(page, 'occur').click();
+			await verb(page, 'moment').click();
 			// Straight into the first key's frame (da-31d1d), which a bare word fills (da-p3hxn).
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur tea ');
-			assert.deepEqual(await line(page), { text: 'occur tea ', focused: true });
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment tea ');
+			assert.deepEqual(await line(page), { text: 'moment tea ', focused: true });
 			assert.notEqual(await page.locator('.prompt-bar input').getAttribute('inputmode'), 'none', 'the keyboard stayed shut');
 			// The pill is on the line now, so it is spent rather than appended a second time.
 			await fieldPill(page).waitFor({ state: 'detached' });
 			await app.idle();
 			assert.equal((await app.allEntries()).length, before, 'the tap logged something');
 
-			await echoed(app, () => app.submit('occur tea 2'));
-			assert.equal((await app.echoes()).at(-1), 'occur tea 2');
+			await echoed(app, () => app.submit('moment tea 2'));
+			assert.equal((await app.echoes()).at(-1), 'moment tea 2');
 			assert.deepEqual((await app.entries(1))[0].data, { amount: 2 });
 			assert.deepEqual(app.errors, []);
 		});
@@ -603,10 +603,10 @@ describe('a verb under a field pill', () => {
 	test('a spaced field under its pill: the fill and the echo quote it, and both log to it', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['setup "my coffee" --verb occur --data-key amount', 'setup "iced tea" --verb occur']);
+			await seedLines(app, ['setup "my coffee" --verb moment --data-key amount', 'setup "iced tea" --verb moment']);
 			await pillOf(page, 'my coffee');
-			await verb(page, 'occur').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur "my coffee" ');
+			await verb(page, 'moment').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment "my coffee" ');
 			await fieldPill(page).waitFor({ state: 'detached' });
 			const filled = (await line(page)).text;
 			await echoed(app, () => app.submit(`${filled}2`));
@@ -615,8 +615,8 @@ describe('a verb under a field pill', () => {
 
 			await app.clock.forward(60_000);
 			await pillOf(page, 'iced tea');
-			await echoed(app, () => verb(page, 'occur').click());
-			assert.equal((await app.echoes()).at(-1), 'occur "iced tea"');
+			await echoed(app, () => verb(page, 'moment').click());
+			assert.equal((await app.echoes()).at(-1), 'moment "iced tea"');
 			await app.idle();
 			assert.equal((await app.entries(1))[0].field, 'iced tea');
 			assert.deepEqual(app.errors, []);
@@ -630,10 +630,10 @@ describe('a verb under a field pill', () => {
 			const { page } = app;
 			await seedLines(app, KEYED);
 			await pillOf(page, 'juice');
-			assert.equal(await verb(page, 'occur').getAttribute('data-act'), 'run');
+			assert.equal(await verb(page, 'moment').getAttribute('data-act'), 'run');
 
-			await echoed(app, () => verb(page, 'occur').click());
-			assert.equal((await app.echoes()).at(-1), 'occur juice');
+			await echoed(app, () => verb(page, 'moment').click());
+			assert.equal((await app.echoes()).at(-1), 'moment juice');
 			await app.idle();
 			await fieldPill(page).waitFor({ state: 'detached' });
 			assert.equal((await app.entries(1))[0].field, 'juice');
@@ -757,18 +757,18 @@ describe('the scroll rule', () => {
 				packed(await gaps(commands(page), '.lane > *'), `${want} rows`);
 				if (want === 2) {
 					// Dealt by index: Undo and Help start the two rows (da-vjwid),
-					// occur follows Undo and start follows Help.
+					// moment follows Undo and start follows Help.
 					const at = Object.fromEntries(drawn.map((b) => [b.name, b]));
 					assert.deepEqual(
 						[
 							at.redo.line === at.undo.line && at.redo.left > at.undo.left,
 							at.undo.left === at.help.left,
 							at.undo.line < at.help.line,
-							at.occur.line === at.undo.line && at.occur.left > at.redo.left,
+							at.moment.line === at.undo.line && at.moment.left > at.redo.left,
 							at.start.line === at.help.line && at.start.left > at.help.left
 						],
 						[true, true, true, true, true],
-						'the rows are not Undo ↷ occur … over Help start …'
+						'the rows are not Undo ↷ moment … over Help start …'
 					);
 				}
 				// And the rest really is reached by scrolling, not by spilling —
@@ -888,7 +888,7 @@ describe('the sections that scroll (da-u79wl)', () => {
 				three.sections.filter((s) => s.hidden).map((s) => s.name),
 				three.sections.filter((s) => s.names.length > 3 * COLUMNS[s.name]).map((s) => s.name)
 			);
-			assert.deepEqual(three.sections[1].shown, ['occur', 'start', 'end', 'switch', 'add', 'note', 'flag']);
+			assert.deepEqual(three.sections[1].shown, ['moment', 'start', 'end', 'switch', 'add', 'note', 'flag']);
 
 			// Conflicts, on a screen too narrow for either bar: the row bar's
 			// button is off it, the new bar's is pinned before the scroller
@@ -958,7 +958,7 @@ describe('Undo', () => {
 	test('runs at once, and past ten minutes runs anyway and says how old', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['setup coffee --verb occur', 'occur coffee']);
+			await seedLines(app, ['setup coffee --verb moment', 'moment coffee']);
 			assert.equal((await app.entries(1))[0].field, 'coffee');
 
 			await commands(page).locator('button[data-command="undo"]').click();
@@ -972,7 +972,7 @@ describe('Undo', () => {
 			);
 
 			// Eleven minutes on: it still reverts, and the CLI's warning is shown.
-			await app.submit('occur coffee');
+			await app.submit('moment coffee');
 			await app.clock.set(AT + 11 * 60_000);
 			await commands(page).locator('button[data-command="undo"]').click();
 			await page.waitForFunction(() => window.__datumInflight === 0);
@@ -986,7 +986,7 @@ describe('Undo', () => {
 	test('pressed twice after two logs, it takes both back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['occur coffee', 'occur tea']);
+			await seedLines(app, ['moment coffee', 'moment tea']);
 			assert.equal((await app.entries(2)).length, 2);
 			const undo = commands(page).locator('button[data-command="undo"]');
 			for (const left of [1, 0]) {
@@ -1020,7 +1020,7 @@ describe('Undo', () => {
 				await app.idle();
 			};
 
-			await seedLines(app, ['setup coffee --verb occur', 'occur coffee']);
+			await seedLines(app, ['setup coffee --verb moment', 'moment coffee']);
 			assert.deepEqual(await lit(false), { label: 'redo', title: 'nothing to redo' });
 			assert.equal(await undo.getAttribute('aria-label'), 'undo');
 
@@ -1043,7 +1043,7 @@ describe('Undo', () => {
 			await press(undo);
 			await lit(true);
 			await app.clock.forward(60_000);
-			await app.submit('occur coffee');
+			await app.submit('moment coffee');
 			await app.idle();
 			await lit(false);
 

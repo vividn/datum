@@ -24,13 +24,13 @@ Key slot forms (`-k` and `-K` accept the same three shapes): `-k key` is require
 
 `--` semantics in multi-entry contexts: inside an alias body, flags before `--` scope to their side and flags after `--` apply to all sides. `--` is implicit at the end of every alias body, so call-site flags apply to all sides by default. A `--` inside an alias body does not propagate past the alias boundary.
 
-Time flags at the call site compose with the ones the alias bound: `-q` and a relative `-t` add to whatever time the alias bound — on an alias bound to `-t +5`, `-t +10` writes at +15 — and `-y` and `-d` move the day of a clock it bound; beside a relative time they need one (`datum help time`). A time flag on one side of a `,` is that side's: `occur tea -t 9:00 , switch mood calm -t 9:10` writes tea at 9:00 and mood at 9:10, and a side naming no time takes the first side's.
+Time flags at the call site compose with the ones the alias bound: `-q` and a relative `-t` add to whatever time the alias bound — on an alias bound to `-t +5`, `-t +10` writes at +15 — and `-y` and `-d` move the day of a clock it bound; beside a relative time they need one (`datum help time`). A time flag on one side of a `,` is that side's: `moment tea -t 9:00 , switch mood calm -t 9:10` writes tea at 9:00 and mood at 9:10, and a side naming no time takes the first side's.
 
 After a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.
 
-After an alias's slots are filled, a word naming a command runs that command on the alias's field: a log verb logs (`bed end`, with `bed` = `start sleep`, ends sleep), and any other takes the field as its first word, with the state the alias names as its filter where it takes one (`outside tail`, with `outside` = `switch environment outside`, is `tail environment:outside`) and ignoring its other data. An alias of several fields passes them all. Slots fill first, so a state wins over a command: `envi tail`, with `envi` = `switch environment`, switches to «tail», and `envi . tail` is `tail environment`. `.` takes a slot's default (a switch's state is true, a start's duration none, a key its default or nothing, a required key refuses it), and `...` is a `.` for every slot left: `practice ... tail` is `tail session` when `practice` = `occur session -k skill -k dur`.
+After an alias's slots are filled, a word naming a command runs that command on the alias's field: a log verb logs (`bed end`, with `bed` = `start sleep`, ends sleep), and any other takes the field as its first word, with the state the alias names as its filter where it takes one (`outside tail`, with `outside` = `switch environment outside`, is `tail environment:outside`) and ignoring its other data. An alias of several fields passes them all. Slots fill first, so a state wins over a command: `envi tail`, with `envi` = `switch environment`, switches to «tail», and `envi . tail` is `tail environment`. `.` takes a slot's default (a switch's state is true, a start's duration none, a key its default or nothing, a required key refuses it), and `...` is a `.` for every slot left: `practice ... tail` is `tail session` when `practice` = `moment session -k skill -k dur`.
 
-`datum alias install zsh >> ~/.zshrc` (or `bash >> ~/.bashrc`) adds a loop to the rc file, which `install` prints and does not write, so a new shell runs each alias, and `occur`, `start`, `stop`, `switch`, `on`, `off` and `card`, by its bare name, making a shell alias only of a name that is not already a command (`find` stays `/usr/bin/find`). The loop reads the names from `datum alias list --names`, so only names, never code, come from datum as a shell starts; `datum alias uninstall zsh` takes the loop out.
+`datum alias install zsh >> ~/.zshrc` (or `bash >> ~/.bashrc`) adds a loop to the rc file, which `install` prints and does not write, so a new shell runs each alias, and `moment`, `start`, `stop`, `switch`, `on`, `off` and `card`, by its bare name, making a shell alias only of a name that is not already a command (`find` stays `/usr/bin/find`). The loop reads the names from `datum alias list --names`, so only names, never code, come from datum as a shell starts; `datum alias uninstall zsh` takes the loop out.
 
 #### Usage
 
@@ -71,7 +71,7 @@ datum oov
 The same trigger inside an alias body: `datum oov` writes both rows atomically.
 
 ```
-datum alias set caf5 "occur caffeine -t +5"
+datum alias set caf5 "moment caffeine -t +5"
 datum caf5        # now + 5
 datum caf5 -t +10 # now + 15
 datum caf5 -q     # now + 5, then 5 back: now

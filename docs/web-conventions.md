@@ -105,8 +105,8 @@ writing it down.
 6. **The web asks every command it runs for its echo as data** — `--show json` appended the way
    `fitArgv` appends `--width` (`echoArgv` in `#lib/echo.ts`, at `CliScrollback.runArgv` and
    `engine.alone`). The bottom bar and the CLI widget then PLACE the CLI's own strings — action, hid,
-   id, info, `shape` (the six characters naming what the entry stores, HAPPEN, ON/OFF, SWITCH,
-   MOMENT or RECORD, which label a CREATE's frame, da-hxjrk, any other action's its own word,
+   id, info, `shape` (the six characters naming what the entry stores, MOMENT, PERIOD, ON/OFF,
+   SWITCH or RECORD, which label a CREATE's frame, da-hxjrk, any other action's its own word,
    da-nafql), and its `data` items one to a row
    under the lines, or in the bar's fixed band `data_inline`, the terminal's own join, on one line
    — and compose none of them. The document carries the CLI's

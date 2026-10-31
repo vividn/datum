@@ -344,7 +344,7 @@ fn whole(result: Result<()>, db: &datum_core::db::Db) -> Result<()> {
 fn refuse_missing(db: Option<&str>) -> Result<()> {
     match missing(db) {
         Some(path) => anyhow::bail!(
-            "no database at {}: a read does not create one, the first write does (e.g. `datum occur <field>`)",
+            "no database at {}: a read does not create one, the first write does (e.g. `datum moment <field>`)",
             path.display()
         ),
         None => Ok(()),

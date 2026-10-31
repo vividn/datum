@@ -115,19 +115,24 @@ fn occur_emits_one_doc_with_the_addressable_pieces() {
 
 /// Each doc names the shape of what its entry STORES, in six characters
 /// (da-hxjrk): read off the row, so two commands that store one shape say
-/// one word, and `start` on a field already on is still an ON/OFF.
+/// one word, and `start` on a field already on is still an ON/OFF. Geometry
+/// first (da-cswh8): a point is a MOMENT with a state or none, and anything
+/// with a duration a PERIOD, a hole's false block included.
 #[test]
 fn each_doc_names_the_shape_its_entry_stores() {
     let env = Env::new();
     let cases: &[(&[&str], &str)] = &[
-        (&["occur", "coffee"], "HAPPEN"),
-        (&["occur", "nap", "dur=30m"], "HAPPEN"),
+        (&["moment", "coffee"], "MOMENT"),
+        (&["occur", "coffee", "cups=2"], "MOMENT"),
+        (&["occur", "blink", "dur=0"], "MOMENT"),
+        (&["occur", "nap", "dur=30m"], "PERIOD"),
         (&["start", "work"], "ON/OFF"),
         (&["start", "work"], "ON/OFF"),
         (&["end", "work"], "ON/OFF"),
-        (&["start", "posture", "4"], "ON/OFF"),
+        (&["start", "posture", "4"], "PERIOD"),
+        (&["end", "posture", "5"], "PERIOD"),
         (&["switch", "mood", "happy"], "SWITCH"),
-        (&["switch", "mood", "sad", "20m"], "SWITCH"),
+        (&["switch", "mood", "sad", "20m"], "PERIOD"),
         (&["switch", "mood", "calm", "dur=0"], "MOMENT"),
         (&["switch", "mood", "calm", "dur=MOMENT"], "MOMENT"),
         (&["add", "book", "dune", "title=x"], "RECORD"),
@@ -139,6 +144,61 @@ fn each_doc_names_the_shape_its_entry_stores() {
         assert_eq!(docs[0]["shape"], *shape, "{args:?}");
         assert_eq!(docs[0]["action"], "CREATE", "{args:?}: the outcome stays");
     }
+}
+
+/// `moment` is the command and `occur` its alias (da-cswh8, vividn, 2026-10-31:
+/// «we can still use occur as an alias for moment»): a line, an alias's body and
+/// a trailing word each write the same entry and print the same, only the raw
+/// line differing.
+#[test]
+fn moment_and_occur_write_the_same_entry() {
+    let written = |line: &[&str], setup: &[&[&str]]| {
+        let env = Env::new();
+        for args in setup {
+            assert!(env.output(args).status.success(), "{args:?}");
+        }
+        let at = ["-t", "2026-03-16T09:15:00Z", "--show", "json"];
+        let out = env.output(&[line, &at[..]].concat());
+        assert!(out.status.success(), "{line:?}: {out:?}");
+        let printed = String::from_utf8(out.stdout).unwrap();
+        let hid = parse_docs(&printed)[0]["hid"].as_str().unwrap().to_string();
+        let doc = parse_docs(&printed.replace(&hid, "hid")).remove(0);
+        let row: [Option<String>; 9] = rusqlite::Connection::open(&env.db)
+            .unwrap()
+            .query_row(
+                "SELECT slug, content_hash, state, dur, following_state, verb, data, occur_time,
+                        raw_input FROM entries WHERE hid LIKE ?1 || '%'",
+                [&hid],
+                |r| {
+                    Ok(std::array::from_fn(|i| {
+                        r.get::<_, Option<String>>(i).unwrap()
+                    }))
+                },
+            )
+            .unwrap();
+        let (row, raw) = (row[..8].to_vec(), row[8].clone().unwrap());
+        (doc, row, raw)
+    };
+
+    let moment = written(&["moment", "coffee", "cups=2"], &[]);
+    let occur = written(&["occur", "coffee", "cups=2"], &[]);
+    assert_eq!(moment.0, occur.0, "the same echo");
+    assert_eq!(moment.0["shape"], "MOMENT");
+    assert_eq!(moment.1, occur.1, "the same row");
+    assert!(moment.2.starts_with("moment coffee"), "{}", moment.2);
+    assert!(occur.2.starts_with("occur coffee"), "{}", occur.2);
+
+    for (name, body) in [("m", "moment coffee"), ("o", "occur coffee")] {
+        let via = written(&[name], &[&["alias", "set", name, body]]);
+        assert_eq!(via.0["shape"], "MOMENT", "{body}");
+        assert_eq!(via.0["field"], "coffee", "{body}");
+    }
+    let alias: &[&[&str]] = &[&["alias", "set", "bed", "start sleep"]];
+    let moment = written(&["bed", "moment"], alias);
+    let occur = written(&["bed", "occur"], alias);
+    assert_eq!(moment.0, occur.0, "a trailing word: the same echo");
+    assert_eq!(moment.1, occur.1, "a trailing word: the same row");
+    assert_eq!(moment.0["shape"], "MOMENT");
 }
 
 /// One string per key, and an inline join the caller never has to compose.

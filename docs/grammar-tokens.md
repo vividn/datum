@@ -82,7 +82,7 @@ A region binds within its innermost enclosing group, so a group is how
 you keep one out of another's way. Quote them past the shell.
 
 ```bash
-datum occur a , '(' occur b , occur c ,, k=1 ')'
+datum moment a , '(' moment b , moment c ,, k=1 ')'
 ```
 
 ```
@@ -105,7 +105,7 @@ Parens are structural unconditionally — `--` does not demote them — so a
 literal one is spelled with a backslash.
 
 ```bash
-datum occur f -k expr ,, '\('
+datum moment f -k expr ,, '\('
 ```
 
 ```
@@ -117,7 +117,7 @@ CREATE qf416 f:2026-09-22T15:59:03.584Z
 Unbalance them and the error names the escape:
 
 ```bash,fails_with=1
-datum occur f ,, '('
+datum moment f ,, '('
 ```
 
 ```
@@ -129,7 +129,7 @@ Only a *bare* paren token is structural: `(x)` and `:-)` never were.
 ### `--` — end of flags, side-scoped
 
 ```bash,fails_with=1
-datum occur g -k note --verbose
+datum moment g -k note --verbose
 ```
 
 ```
@@ -137,7 +137,7 @@ Error: Invalid argument: unexpected flag: --verbose
 ```
 
 ```bash
-datum occur f -k note -- --verbose
+datum moment f -k note -- --verbose
 ```
 
 ```
@@ -152,7 +152,7 @@ never leaks to the call site.
 ### `.` — skip a slot, and `\.` — a dot that is data
 
 ```bash
-datum alias set scaff "switch body sit , occur caffeine -k doseMg="
+datum alias set scaff "switch body sit , moment caffeine -k doseMg="
 datum scaff .
 ```
 
@@ -181,12 +181,12 @@ CREATE mz3aa tv:2026-09-22T15:59:03.816Z
 ### `-` — stdin or stdout instead of a file
 
 ```bash
-datum occur x
+datum moment x
 datum db backup -
 ```
 
 The backup goes to stdout rather than to a file, so the first bytes after
-the `occur`'s own CREATE line are the archive itself:
+the `moment`'s own CREATE line are the archive itself:
 
 ```
 {"type":"daydumb_backup","schema_version":37,"ba…
@@ -283,7 +283,7 @@ column, not in `data`:
 An interior dot is a path into `data`:
 
 ```bash
-datum occur run gear.shoes=trail
+datum moment run gear.shoes=trail
 ```
 
 ```
@@ -307,11 +307,11 @@ item can't hold a glued comma — the bracket form can: `'["a,b", "c"]'`;
 comma made the array — a trailing one alone, too — and `,` was `[]`.
 
 ```bash
-datum occur tagged tags=work,home
-datum occur one tags=,work
-datum occur gappy tags=x,,y
-datum occur prose 'note=met Anna, Ben' left=Anna,
-datum occur cleared 'tags=[]'
+datum moment tagged tags=work,home
+datum moment one tags=,work
+datum moment gappy tags=x,,y
+datum moment prose 'note=met Anna, Ben' left=Anna,
+datum moment cleared 'tags=[]'
 ```
 
 ```
@@ -343,7 +343,7 @@ empty value, leaves the key out. The string `"null"` is reachable through
 the JSON-quote escape below.
 
 ```bash
-datum occur n k=null j=undefined s='"null"'
+datum moment n k=null j=undefined s='"null"'
 ```
 
 ```
@@ -362,7 +362,7 @@ Anything strict JSON parses keeps its JSON shape. `''` and `""` are the
 empty string — quote them past the shell.
 
 ```bash
-datum occur shapes flag=true obj='{"a":1}' empty="''"
+datum moment shapes flag=true obj='{"a":1}' empty="''"
 ```
 
 ```
@@ -380,7 +380,7 @@ shell takes one layer of quotes itself, so on a command line it is
 `"'a,b'"` or `'"a,b"'`. A lone or unbalanced `'` is text.
 
 ```bash
-datum occur quoted -k key "',,'" "v='a,b'" "l=['a', 'b']"
+datum moment quoted -k key "',,'" "v='a,b'" "l=['a', 'b']"
 ```
 
 ```
@@ -393,7 +393,7 @@ An `=` with nothing before it is not a key at all — the whole token,
 `=` included, is data:
 
 ```bash
-datum occur f -k raw ,, '=2'
+datum moment f -k raw ,, '=2'
 ```
 
 ```
@@ -409,7 +409,7 @@ Digits followed by letters are not a number with a unit: `75.2kg`,
 what strict JSON parses is a number.
 
 ```bash
-datum occur lift weight=75.2kg reps=10 set=4th
+datum moment lift weight=75.2kg reps=10 set=4th
 ```
 
 ```
@@ -433,7 +433,7 @@ a comment is kept as typed: `-c 42` is `"42"`. `delete -c WHY` appends
 comma list.
 
 ```bash
-datum occur coffee -c decaf
+datum moment coffee -c decaf
 datum update coffee:_ -c "second cup"
 datum delete coffee:_ -c "wrong day"
 ```
@@ -483,13 +483,13 @@ record that refers to the field's, with the keys that do.
 
 ```bash
 datum add book --id dune title=Dune
-datum occur read what=ref://book:dune
-datum occur quote said='"ref://book:dune"'
+datum moment read what=ref://book:dune
+datum moment quote said='"ref://book:dune"'
 datum get read:_::what::title
 datum get quote:_::said
-datum setup task --from-json '{"field":"task","verb":"occur","subfields":{"blocker":{"value_type":"ref"}}}'
-datum occur task blocker=issue:k7f2a
-datum occur plan needs=ref://book:dune,ref://book:emma
+datum setup task --from-json '{"field":"task","verb":"moment","subfields":{"blocker":{"value_type":"ref"}}}'
+datum moment task blocker=issue:k7f2a
+datum moment plan needs=ref://book:dune,ref://book:emma
 datum check refs
 ```
 
@@ -539,7 +539,7 @@ is no reference.
 ### `±` — uncertainty
 
 ```bash
-datum occur coffee -t '14:00±15m'
+datum moment coffee -t '14:00±15m'
 datum get coffee -A
 ```
 
@@ -590,8 +590,8 @@ precision would stop them ever deduping.
 ### `+` and `-` on a date — which way to resolve
 
 ```bash
-datum occur probe -d sunday-
-datum occur probe -d sunday+
+datum moment probe -d sunday-
+datum moment probe -d sunday+
 ```
 
 ```
@@ -606,10 +606,10 @@ an ISO date, a compact date with a year — ignore it.
 ### `-` `@` `,` — the year on a compact date
 
 ```bash
-datum occur probe -d apr29
-datum occur probe -d apr29-2025
-datum occur probe -d apr29@2024
-datum occur probe -d oct10,2022
+datum moment probe -d apr29
+datum moment probe -d apr29-2025
+datum moment probe -d apr29@2024
+datum moment probe -d oct10,2022
 ```
 
 ```
@@ -651,10 +651,10 @@ kit's `command:hydration`, while `command:*` is every kit command.
 read is the one you type.
 
 ```bash
-datum occur a
-datum occur b
-datum occur c
-datum occur d
+datum moment a
+datum moment b
+datum moment c
+datum moment d
 datum tail
 datum get _2-_3
 datum get b:_

@@ -20,8 +20,10 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "kebab-case")]
 #[derive(Default)]
 pub enum Action {
-    /// `datum occur <field>` — single point-in-time event with no state.
+    /// `datum moment <field>` (alias `occur`, the name stored) — single
+    /// point-in-time event with no state.
     #[default]
+    #[serde(alias = "moment")]
     Occur,
     /// `datum start <field>` — begin a state (canonicalizes a missing
     /// `state` to `true`).
@@ -46,6 +48,17 @@ pub enum Action {
     Note,
 }
 
+impl Action {
+    /// The word a person reads: `Display` is the name stored, and `occur`'s
+    /// word is `moment` (da-cswh8).
+    pub fn word(self) -> String {
+        match self {
+            Action::Occur => "moment".to_string(),
+            other => other.to_string(),
+        }
+    }
+}
+
 impl std::fmt::Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -64,7 +77,7 @@ impl std::str::FromStr for Action {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "occur" => Ok(Action::Occur),
+            "moment" | "occur" => Ok(Action::Occur),
             "start" => Ok(Action::Start),
             "stop" | "end" => Ok(Action::Stop),
             "switch" => Ok(Action::Switch),

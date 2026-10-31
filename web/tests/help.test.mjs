@@ -141,15 +141,15 @@ describe('the Help button', () => {
 
 	test('then a command: the CLI\'s own help for it in the Help place, and the command does not run', async () => {
 		await onPage(async ({ page }) => {
-			const occur = page.locator('.bar.commands button[data-command="occur"]');
-			const lines = await explain(page, occur, 'datum help occur');
-			assert.equal(lines[0], (await cliHelp(page, 'occur')).title);
-			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'occur filled the line');
+			const moment = page.locator('.bar.commands button[data-command="moment"]');
+			const lines = await explain(page, moment, 'datum help moment');
+			assert.equal(lines[0], (await cliHelp(page, 'moment')).title);
+			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'moment filled the line');
 			assert.equal(await label(page), 'Help', 'one-shot: it disarms');
 
 			// The next tap acts as it always did.
-			await occur.click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur ');
+			await moment.click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment ');
 		});
 	});
 
@@ -172,21 +172,21 @@ describe('the Help button', () => {
 	// flag table, and the tap appends nothing. A right click is the hold.
 	test('then a flag of a held command: its help line, and the line is left alone', async () => {
 		await onPage(async ({ page }) => {
-			await page.locator('.bar.commands button[data-command="occur"]').click({ button: 'right' });
-			const t = page.locator('.bar.commands button[data-flag="occur -t"]');
+			await page.locator('.bar.commands button[data-command="moment"]').click({ button: 'right' });
+			const t = page.locator('.bar.commands button[data-flag="moment -t"]');
 			await t.waitFor();
-			const lines = await explain(page, t, 'datum occur -t');
+			const lines = await explain(page, t, 'datum moment -t');
 			const grammar = JSON.parse((await page.evaluate(() => window.datum.runQuiet(['help', '--json']))).stdout);
-			const flag = grammar.find((c) => c.name === 'occur').flags.find((f) => f.short === 't');
+			const flag = grammar.find((c) => c.name === 'moment').flags.find((f) => f.short === 't');
 			assert.deepEqual(lines, [flag.help], 'its line of the CLI\'s flag table');
-			assert.equal(await page.locator('.prompt-bar input').inputValue(), 'occur ', '-t was appended');
+			assert.equal(await page.locator('.prompt-bar input').inputValue(), 'moment ', '-t was appended');
 		});
 	});
 
 	test('then a widget: its kind\'s help, and a press inside it does nothing else', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
-			await seedLines(app, ['setup coffee --verb occur']);
+			await seedLines(app, ['setup coffee --verb moment']);
 			const coffee = page.locator('section[data-pane="bar"] .bar button.widget', { hasText: 'coffee' }).first();
 			const lines = await explain(page, coffee, 'fields');
 			assert.equal(lines.join('\n'), await kindHelp('widgetbar'));
@@ -254,9 +254,9 @@ describe('the Help button', () => {
 			await page.locator('section.pane[data-title="help"]').waitFor();
 			const tabs = await rootTabs(page);
 			await help(page).click();
-			await page.locator('.bar.commands button[data-command="occur"]').click();
-			const lines = await read(page, 'datum help occur');
-			assert.equal(lines[0], (await cliHelp(page, 'occur')).title);
+			await page.locator('.bar.commands button[data-command="moment"]').click();
+			const lines = await read(page, 'datum help moment');
+			assert.equal(lines[0], (await cliHelp(page, 'moment')).title);
 			// The pane shows it at once; a tab `openPlace` opened would land a
 			// layout load later, so the tabs are watched for a while.
 			for (let i = 0; i < 10; i++, await page.waitForTimeout(100)) {
@@ -284,9 +284,9 @@ describe('the Help button', () => {
 		);
 		await onPage(async ({ page }) => {
 			await page.locator('.tab-body.behind .host[data-widget="help"]').waitFor({ state: 'attached' });
-			const occur = page.locator('.bar.commands button[data-command="occur"]');
-			const lines = await explain(page, occur, 'datum help occur');
-			assert.equal(lines[0], (await cliHelp(page, 'occur')).title);
+			const moment = page.locator('.bar.commands button[data-command="moment"]');
+			const lines = await explain(page, moment, 'datum help moment');
+			assert.equal(lines[0], (await cliHelp(page, 'moment')).title);
 		}, behind);
 	});
 	test('on a desktop, the answer opens the Help place in a modal, and Escape closes it', async () => {
@@ -294,9 +294,9 @@ describe('the Help button', () => {
 			const modal = page.locator('dialog.sheet[open][data-place="help"]');
 			const tabs = await rootTabs(page);
 			await help(page).click();
-			await page.locator('.bar.commands button[data-command="occur"]').click();
-			await until(() => modal.locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === 'datum help occur');
-			assert.equal((await modal.locator('pre.help').innerText()).split('\n')[0], (await cliHelp(page, 'occur')).title);
+			await page.locator('.bar.commands button[data-command="moment"]').click();
+			await until(() => modal.locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === 'datum help moment');
+			assert.equal((await modal.locator('pre.help').innerText()).split('\n')[0], (await cliHelp(page, 'moment')).title);
 			assert.deepEqual(await rootTabs(page), tabs, 'a tab opened');
 			await page.keyboard.press('Escape');
 			await modal.waitFor({ state: 'detached' });
@@ -316,7 +316,7 @@ describe('a help page', () => {
 	/** The pages `datum help` answers to that are not commands (`TOPICS` in datum-parse's help). */
 	const TOPICS = ['logging', 'time', 'debug', 'color', 'env'];
 	/** The pages whose intros were written as guides for a newcomer. */
-	const GUIDES = ['logging', 'time', 'setup', 'alias', 'sync', 'db', 'stats', 'track', 'occur', 'start', 'stop', 'switch', 'tail', 'undo'];
+	const GUIDES = ['logging', 'time', 'setup', 'alias', 'sync', 'db', 'stats', 'track', 'moment', 'start', 'stop', 'switch', 'tail', 'undo'];
 
 	/** Open `datum help <name>` in the Help pane, as a «Learn more» link does. */
 	async function open(page, name) {
@@ -349,17 +349,17 @@ describe('a help page', () => {
 		}, WITH_PANE);
 	});
 
-	test('occur: the intro, then Usage, Options and Output folded; an opened fold stays open on the next page', async () => {
+	test('moment: the intro, then Usage, Options and Output folded; an opened fold stays open on the next page', async () => {
 		await onPage(async ({ page }) => {
 			await place(page).waitFor();
-			await open(page, 'occur');
+			await open(page, 'moment');
 			const lead = await place(page).locator('pre.help').innerText();
-			const { title, intro } = await cliHelp(page, 'occur');
+			const { title, intro } = await cliHelp(page, 'moment');
 			assert.equal(flat(lead), flat(`${title} ${intro}`), 'the CLI\'s title, then its intro');
 			assert.deepEqual(await place(page).locator('details summary').allInnerTexts(), ['Usage', 'Options', 'Output']);
 			const options = place(page).locator('details[data-section="OPTIONS"]');
 			await options.locator('summary').click();
-			const said = (await cliHelp(page, 'occur')).sections.find((s) => s.heading === 'OPTIONS').text;
+			const said = (await cliHelp(page, 'moment')).sections.find((s) => s.heading === 'OPTIONS').text;
 			assert.equal(flat(await options.locator('pre').innerText()), flat(said));
 			await open(page, 'start');
 			assert.equal(await options.getAttribute('open'), '', 'the opened fold closed on the next page');
@@ -382,7 +382,7 @@ describe('a help page', () => {
 	test('a fold clicked shut as the page is drawn again stays shut', async () => {
 		await onPage(async ({ page }) => {
 			await place(page).waitFor();
-			await open(page, 'occur');
+			await open(page, 'moment');
 			const options = place(page).locator('details[data-section="OPTIONS"]');
 			await options.locator('summary').click();
 			await page.reload();

@@ -609,7 +609,7 @@ fn setup_of_a_field_with_no_spec_says_how_to_set_one_up() {
     env.run(&["occur", "coffee"]);
     assert_eq!(
         env.run(&["setup", "tea"]),
-        "No spec defined for field 'tea'; set one up: `datum setup tea --verb occur` \
+        "No spec defined for field 'tea'; set one up: `datum setup tea --verb moment` \
          (or start, switch, add; `datum help logging` says what each is)\n"
     );
 }

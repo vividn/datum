@@ -19,7 +19,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 ## Examples
 
 ```
-  datum occur coffee                  a coffee, now
+  datum moment coffee                 a coffee, now
   datum switch mood happy             mood is happy from now on
   datum tail                          the last ten entries
   datum now                           each field's state now
@@ -29,7 +29,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 - `add` — Register a keyed timeless record, by an id (alias: card)
 - `note` — Jot a timeless entry (auto create_time id)
-- `occur` — Record a point-in-time event
+- `moment` — A point in time (alias: occur)
 - `start` — Begin a duration-tracked activity (alias: on)
 - `stop` — End a duration-tracked activity (alias: end, off)
 - `switch` — Transition a field to a new state

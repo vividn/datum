@@ -104,7 +104,7 @@ fn an_alias_a_kit_command_and_a_miss_each_answer_for_themselves() {
         format!("datum help: no command, topic or alias named 'zzznosuchcommand'\n\n{general}")
     );
     // A built-in command is still the table's page, the db not asked.
-    assert!(env.ok(&["help", "occur"]).starts_with("datum occur — "));
+    assert!(env.ok(&["help", "occur"]).starts_with("datum moment — "));
 }
 
 #[test]

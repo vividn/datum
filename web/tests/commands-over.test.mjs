@@ -85,7 +85,7 @@ describe('the ❯ opens the commands over the output', () => {
 			assert.ok(shut.size >= 24, `the ❯ is ${shut.size}px`);
 
 			await page.locator(CHEVRON).click();
-			await page.locator(`${OVER} .bar.commands button[data-command="occur"]`).waitFor();
+			await page.locator(`${OVER} .bar.commands button[data-command="moment"]`).waitFor();
 			await slid(page);
 			await page.locator(CHEVRON).evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
 			const open = await chevron(page);
@@ -146,7 +146,7 @@ describe('the ❯ opens the commands over the output', () => {
 		await onPage(async ({ page, errors }) => {
 			await page.locator(CHEVRON).click();
 			await page.locator(OVER).waitFor();
-			await page.locator(`${BAR} input`).fill('occur coffee');
+			await page.locator(`${BAR} input`).fill('moment coffee');
 			await page.locator(`${BAR} input`).press('Enter');
 			await page.locator(OVER).waitFor({ state: 'detached' });
 			await page.locator(`${BAR} .section.output .group:last-child`, { hasText: 'coffee' }).waitFor();
@@ -158,9 +158,9 @@ describe('the ❯ opens the commands over the output', () => {
 	test('choosing a command fills the line and closes them', async () => {
 		await onPage(async ({ page, errors }) => {
 			await page.locator(CHEVRON).click();
-			await page.locator(`${OVER} button[data-command="occur"]`).click();
+			await page.locator(`${OVER} button[data-command="moment"]`).click();
 			await page.locator(OVER).waitFor({ state: 'detached' });
-			assert.equal(await page.locator(`${BAR} input`).inputValue(), 'occur ');
+			assert.equal(await page.locator(`${BAR} input`).inputValue(), 'moment ');
 			assert.deepEqual(errors, []);
 		});
 	});
@@ -172,17 +172,17 @@ describe('the ❯ opens the commands over the output', () => {
 		await onPage(async ({ page, errors }) => {
 			await page.locator(CHEVRON).click();
 			// Where it comes to rest: a press on a button still sliding under it is no hold.
-			await page.locator(`${OVER} button[data-command="occur"]`).waitFor();
+			await page.locator(`${OVER} button[data-command="moment"]`).waitFor();
 			await slid(page);
-			const box = await page.locator(`${OVER} button[data-command="occur"]`).boundingBox();
+			const box = await page.locator(`${OVER} button[data-command="moment"]`).boundingBox();
 			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 			await page.mouse.down();
 			await page.locator(`${OVER} button[data-back]`).waitFor();
 			await page.mouse.up();
-			await page.locator(`${OVER} button[data-flag="occur -q"]`).click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');
-			await page.locator(`${OVER} button[data-flag="occur -t"]`).click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q -t ');
+			await page.locator(`${OVER} button[data-flag="moment -q"]`).click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment -q ');
+			await page.locator(`${OVER} button[data-flag="moment -t"]`).click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment -q -t ');
 			assert.equal(await page.locator(OVER).count(), 1, 'the flags closed the commands');
 			assert.deepEqual(errors, []);
 		});
@@ -211,7 +211,7 @@ describe('the ❯ opens the commands over the output', () => {
 			await page.waitForTimeout(50);
 			await open();
 			// The commands follow the pills that are left.
-			await page.locator(`${OVER} button[data-command="occur"]`).waitFor();
+			await page.locator(`${OVER} button[data-command="moment"]`).waitFor();
 			await drop('c');
 			await page.locator(OVER).waitFor({ state: 'detached' });
 			assert.equal((await chevron(page)).expanded, 'false');
@@ -289,7 +289,7 @@ describe('a swipe on the commands is theirs', () => {
 
 	const open = async (page) => {
 		await page.locator(CHEVRON).click();
-		await page.locator(`${LIST} button[data-command="occur"]`).waitFor();
+		await page.locator(`${LIST} button[data-command="moment"]`).waitFor();
 		await slid(page);
 	};
 

@@ -347,7 +347,7 @@ fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
     let verb: Option<&str> = side
         .first()
         .map(String::as_str)
-        .filter(|t0| DUR_VERBS.contains(t0) || *t0 == "occur" || *t0 == "add");
+        .filter(|t0| DUR_VERBS.contains(t0) || matches!(*t0, "moment" | "occur" | "add"));
 
     let mut keys: Vec<String> = Vec::new();
     let mut explicit_kv: Vec<String> = Vec::new(); // body `key=value` names

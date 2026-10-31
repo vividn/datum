@@ -43,17 +43,17 @@ type Slot = [minutes: number, jitter: number, words: string[]];
  */
 const WEEKDAY: Slot[] = [
 	[430, 25, ['end', 'sleep']],
-	[460, 15, ['occur', 'coffee']],
+	[460, 15, ['moment', 'coffee']],
 	[480, 30, ['switch', 'mood', 'focused|calm']],
 	[535, 5, ['switch', 'project', 'datum|email']],
 	[545, 5, ['start', 'work']],
-	[630, 40, ['occur', 'water', 'amount=300']],
+	[630, 40, ['moment', 'water', 'amount=300']],
 	[730, 15, ['end', 'work']],
 	[775, 8, ['start', 'walk', '25m']],
 	[800, 8, ['start', 'work']],
-	[870, 30, ['occur', 'coffee']],
+	[870, 30, ['moment', 'coffee']],
 	[930, 30, ['switch', 'project', 'email|admin|datum']],
-	[965, 30, ['occur', 'water', 'amount=250']],
+	[965, 30, ['moment', 'water', 'amount=250']],
 	[1005, 15, ['switch', 'mood', 'happy', '20m']],
 	[1060, 20, ['end', 'work']],
 	[1260, 30, ['switch', 'mood', 'tired|calm']],
@@ -63,12 +63,12 @@ const WEEKDAY: Slot[] = [
 /** A weekend day: a later morning, a long walk, no work. */
 const WEEKEND: Slot[] = [
 	[520, 40, ['end', 'sleep']],
-	[550, 30, ['occur', 'coffee']],
+	[550, 30, ['moment', 'coffee']],
 	[570, 40, ['switch', 'mood', 'calm|happy']],
 	[690, 30, ['start', 'walk', '70m']],
-	[780, 60, ['occur', 'water', 'amount=300']],
+	[780, 60, ['moment', 'water', 'amount=300']],
 	[900, 60, ['switch', 'project', 'admin']],
-	[960, 45, ['occur', 'coffee']],
+	[960, 45, ['moment', 'coffee']],
 	[1230, 40, ['switch', 'mood', 'tired|calm']],
 	[1420, 20, ['start', 'sleep']]
 ];
@@ -110,7 +110,7 @@ export function sampleCommands(now = new Date()): string[][] {
 		}
 	}
 	const open = (field: string) =>
-		at.findLast(([, [verb, f]]) => f === field && verb !== 'occur')?.[1][0] === 'start';
+		at.findLast(([, [verb, f]]) => f === field && verb !== 'moment')?.[1][0] === 'start';
 	if (!open('work') && !open('sleep'))
 		at.push([new Date(now.getTime() - (20 + Math.random() * 30) * 60 * 1000), ['start', 'read']]);
 	return at

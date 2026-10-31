@@ -30,6 +30,7 @@ pub use self::action::{
 pub use self::colors::{strip_ansi, visible_width};
 pub use self::ordinals::{attach_quick_ordinals, quick_ordinal_map};
 
+use datum_core::dur::Dur;
 use datum_core::entry::Verb;
 use datum_core::{entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 use datum_parse::time::{format_human_duration, DurationPrecision};
@@ -470,20 +471,30 @@ pub struct Undid {
 
 /// The shape of the data an entry stores, in six characters (da-hxjrk), read
 /// from its row and not from the command that wrote it. vividn, 2026-10-29:
-/// «Every ACTION has exactly 6 letters … for switch with a dur=MOMENT or 0,
-/// it could be MOMENT … for this 6 letter thing we could use RECORD».
+/// «Every ACTION has exactly 6 letters … for this 6 letter thing we could use
+/// RECORD». The shape is geometry (da-cswh8), vividn, 2026-10-31: «I think moment
+/// is what we should call this shape in general».
 ///
-/// `RECORD` a timeless card (`add`, `note`); `MOMENT` a point that carries a
-/// state (`switch … dur=0`: `occur` carries none); `HAPPEN` no state at all,
-/// an occurrence (a block of one too); `ON/OFF` a state of `true` or
-/// `false`; `SWITCH` any other state.
+/// `RECORD` a timeless card (`add`, `note`); `PERIOD` anything with a duration,
+/// whatever its state, a hole's false block included; a change with no duration
+/// `ON/OFF` by a state of `true` or `false`, `SWITCH` by any other; and `MOMENT`
+/// a point, with a state or none.
 pub fn shape(entry: &Entry) -> &'static str {
-    match (&entry.state, entry.verb) {
-        _ if entry.occur_time.is_none() => "RECORD",
-        (Some(_), Verb::Point | Verb::PointSwitch) => "MOMENT",
-        (None, _) => "HAPPEN",
-        (Some(JsonValue::Bool(_)), _) => "ON/OFF",
-        (Some(_), _) => "SWITCH",
+    if entry.occur_time.is_none() {
+        return "RECORD";
+    }
+    if entry
+        .dur
+        .as_ref()
+        .and_then(Dur::as_seconds)
+        .is_some_and(|s| s != 0)
+    {
+        return "PERIOD";
+    }
+    match (entry.verb, &entry.state) {
+        (Verb::Switch, Some(JsonValue::Bool(_))) => "ON/OFF",
+        (Verb::Switch, _) => "SWITCH",
+        _ => "MOMENT",
     }
 }
 
@@ -2606,6 +2617,85 @@ mod tests {
                 _no: ScopedEnv::remove("NO_COLOR"),
             }
         }
+    }
+
+    /// The shape is geometry (da-cswh8), whatever the state: a negative `dur`,
+    /// which no line writes today, is as much a span as a positive one.
+    #[test]
+    fn the_shape_is_the_entrys_geometry() {
+        use datum_core::dur::Dur;
+        let on = Some(serde_json::json!(true));
+        let off = Some(serde_json::json!(false));
+        let named = Some(serde_json::json!("happy"));
+        let at = |verb, state: &Option<JsonValue>, dur: Option<&str>| {
+            let mut entry = sample_entry("f", verb, state.clone());
+            entry.dur = dur.map(|d| Dur::parse(d).unwrap());
+            shape(&entry)
+        };
+        for (got, want, what) in [
+            (
+                at(Verb::Point, &None, Some("MOMENT")),
+                "MOMENT",
+                "stateless point",
+            ),
+            (
+                at(Verb::Point, &None, Some("UNKNOWN")),
+                "MOMENT",
+                "a point of no known length",
+            ),
+            (
+                at(Verb::Point, &named, Some("MOMENT")),
+                "MOMENT",
+                "point with a state",
+            ),
+            (
+                at(Verb::PointSwitch, &on, Some("PT0S")),
+                "MOMENT",
+                "point handing a state on",
+            ),
+            (
+                at(Verb::BlockSwitch, &None, Some("PT0S")),
+                "MOMENT",
+                "stateless dur=0",
+            ),
+            (
+                at(Verb::Block, &None, Some("PT30M")),
+                "PERIOD",
+                "stateless block",
+            ),
+            (
+                at(Verb::Block, &on, Some("PT30M")),
+                "PERIOD",
+                "boolean block",
+            ),
+            (
+                at(Verb::BlockSwitch, &named, Some("PT30M")),
+                "PERIOD",
+                "stateful block",
+            ),
+            (at(Verb::Block, &off, Some("PT30M")), "PERIOD", "a hole"),
+            (
+                at(Verb::Block, &off, Some("-PT30M")),
+                "PERIOD",
+                "negative-dur hole",
+            ),
+            (
+                at(Verb::Switch, &on, None),
+                "ON/OFF",
+                "open switch on a boolean",
+            ),
+            (at(Verb::Switch, &off, None), "ON/OFF", "open switch off"),
+            (
+                at(Verb::Switch, &named, None),
+                "SWITCH",
+                "open switch on a state",
+            ),
+        ] {
+            assert_eq!(got, want, "{what}");
+        }
+        let mut timeless = sample_entry("f", Verb::Point, named.clone());
+        timeless.occur_time = None;
+        assert_eq!(shape(&timeless), "RECORD");
     }
 
     /// da-w149: the tail pane's state cell for a timeless note naming a

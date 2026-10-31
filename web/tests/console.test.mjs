@@ -77,11 +77,11 @@ describe('window.datum.run — the loud door', () => {
 			// (da-hxjrk), and the hid is the row's: the same assertion
 			// shell.test.mjs makes of a typed line.
 			await page.waitForFunction(() =>
-				document.querySelector('.prompt-bar .group:last-child .receipt').textContent.startsWith('HAPPEN')
+				document.querySelector('.prompt-bar .group:last-child .receipt').textContent.startsWith('MOMENT')
 			);
 			const [word, hid] = (await receipt(page).innerText()).split(' · ');
 			const { rows } = await app.tailRows();
-			assert.equal(word, 'HAPPEN');
+			assert.equal(word, 'MOMENT');
 			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'CREATE');
 			// The declaration `declare` wrote, and the entry under it.
 			assert.equal(rows.length, 2);

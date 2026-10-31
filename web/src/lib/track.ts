@@ -37,11 +37,11 @@ export interface VerbChoice {
 }
 
 /**
- * The four, in the CLI's order (`VERB_CHOICES`): `occur` first, the
- * smallest claim a field can make.
+ * The four, in the CLI's order (`VERB_CHOICES`): `occur`, which a person
+ * calls a moment, first, the smallest claim a field can make.
  */
 export const VERBS: VerbChoice[] = [
-	{ verb: 'occur', glyph: '●', what: 'occurrence', line: 'a single point in time (no state)' },
+	{ verb: 'occur', glyph: '●', what: 'moment', line: 'a single point in time (no state)' },
 	{ verb: 'start', glyph: '█', what: 'on/off', line: 'on for a while, then off' },
 	{ verb: 'switch', glyph: '▞', what: 'switch', line: 'one state until the next (custom states)' },
 	{ verb: 'add', glyph: '¢', what: 'card', line: 'keys and values, with no time' }

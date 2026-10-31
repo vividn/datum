@@ -1,7 +1,7 @@
 // HELP AT THE WIDTH IT IS SHOWN IN (da-nt53d).
 //
 // The pages are written at 73 columns, and a phone's CLI widget holds about 43:
-// `help occur` was a 597px `pre` in a 351px column, read by scrolling the
+// `help moment` was a 597px `pre` in a 351px column, read by scrolling the
 // whole history sideways. The CLI widget now asks for help at its own width in
 // characters (`COLUMNS`, `helpEnv` in #lib/panes.ts) and the CLI fits the
 // page to it (`datum_parse::help::fit`): no line wider than the pane, and a
@@ -31,7 +31,7 @@ const newest = (page) =>
 		};
 	});
 
-for (const line of ['help occur', 'help']) {
+for (const line of ['help moment', 'help']) {
 	test(`${line} on a ${PHONE.width}px phone reads without scrolling sideways`, async () => {
 		await withApp(
 			async (app) => {
@@ -74,7 +74,7 @@ const wrapped = (page) =>
 		});
 	});
 
-for (const name of ['occur', undefined, 'logging']) {
+for (const name of ['moment', undefined, 'logging']) {
 	const title = `datum help${name ? ` ${name}` : ''}`;
 	test(`the Help place's ${title} on a ${PHONE.width}px phone is wrapped by the CLI alone`, async () => {
 		await withApp(
@@ -83,10 +83,10 @@ for (const name of ['occur', undefined, 'logging']) {
 				const asked = app.page.locator('.host[data-widget="help"] h3.asked');
 				await until(() => asked.innerText().catch(() => ''), (t) => t.trim() === title);
 				await until(() => wrapped(app.page), (over) => over.length === 0);
-				if (name !== 'occur') return;
+				if (name !== 'moment') return;
 				// Its example rows stack as the CLI widget's do.
 				const intro = (await app.page.locator('.host[data-widget="help"] pre.help').innerText()).split('\n');
-				const row = intro.indexOf('  datum occur coffee');
+				const row = intro.indexOf('  datum moment coffee');
 				assert.ok(row > 0, intro.join('\n'));
 				assert.equal(intro[row + 1], '      a coffee, now');
 			},
@@ -114,17 +114,17 @@ const first = (line) => (context) =>
 		requestAnimationFrame(type);
 	}, line);
 
-test(`help occur typed as the prompt is enabled fits a ${PHONE.width}px phone`, async () => {
+test(`help moment typed as the prompt is enabled fits a ${PHONE.width}px phone`, async () => {
 	await withApp(
 		async (app) => {
 			await app.page.locator('.cli .entry pre').first().waitFor();
 			await app.idle();
 			const { lines, wide, room, sideways } = await newest(app.page);
-			assert.ok(lines.length > 10, `help occur printed ${lines.length} lines`);
-			assert.ok(wide <= room, `help occur is ${wide}px wide in a ${room}px pane`);
+			assert.ok(lines.length > 10, `help moment printed ${lines.length} lines`);
+			assert.ok(wide <= room, `help moment is ${wide}px wide in a ${room}px pane`);
 			assert.equal(sideways, 0, `the history scrolls ${sideways}px sideways`);
 		},
-		{ viewport: PHONE, query: 'cli', prepare: first('help occur') }
+		{ viewport: PHONE, query: 'cli', prepare: first('help moment') }
 	);
 });
 

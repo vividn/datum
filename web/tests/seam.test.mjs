@@ -213,9 +213,9 @@ describe('the teach-echo', () => {
 			await pressWidget('coffee');
 			const [executed] = await seen();
 			// No `--show json`: the echo is asked for in the env (da-vx31e).
-			assert.deepEqual(executed, ['occur', 'coffee']);
+			assert.deepEqual(executed, ['moment', 'coffee']);
 			// The ECHO is the argv the widget asked for (da-xfa4).
-			assert.equal((await echoes()).at(-1), 'occur coffee');
+			assert.equal((await echoes()).at(-1), 'moment coffee');
 			// The first run seen is the press only while no minute tick
 			// re-draws the strip inside the window (da-6ehq): the shared
 			// app's clock is held (da-ydao), so none does.
@@ -570,7 +570,7 @@ describe('help and version', () => {
 			]) {
 				const result = await run(argv);
 				assert.equal(result.code, OK, `${argv.join(' ')} → ${result.stderr}`);
-				assert.match(result.stdout, /datum occur/, `${argv.join(' ')}: ${result.stdout}`);
+				assert.match(result.stdout, /datum moment/, `${argv.join(' ')}: ${result.stdout}`);
 			}
 		});
 	});

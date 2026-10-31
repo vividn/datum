@@ -1463,7 +1463,7 @@ pub(crate) fn parse_log_args(
     let (mut datum_data, command) =
         handle_log_data_args(&data_args).map_err(anyhow::Error::from)?;
     let command = command.map(|c| match c.as_str() {
-        "occur" => Action::Occur,
+        "moment" | "occur" => Action::Occur,
         "start" => Action::Start,
         "switch" => Action::Switch,
         _ => Action::Stop,

@@ -22,7 +22,7 @@ import { DATUM_SPACE, shellSpans } from './shellSplit.js';
  * draws no frames, and a `key=value` typed on it by hand still runs as
  * typed.
  */
-const VERBS = ['occur', 'start', 'add', 'switch'];
+const VERBS = ['moment', 'occur', 'start', 'add', 'switch'];
 
 /** A field and the keys a log of it takes (`FieldButton`'s). */
 type Keyed = { field: string; keys: Key[]; stateKeys?: Record<string, Key[]> };
@@ -41,7 +41,7 @@ export const writes = (key: Key): string => `${key.name}=`;
 
 /**
  * The frames for a line — one per key the field declares, in its order —
- * or null when the line is not `occur|start|add <field>`, or `switch
+ * or null when the line is not `moment|start|add <field>`, or `switch
  * <field> <state>`, for a field with keys. A key is written when a token
  * after the field names it (`key=value`), or when a bare word falls to it:
  * the bare words fill the unnamed keys in order, as the CLI binds them.

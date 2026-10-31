@@ -2,7 +2,7 @@
 
 **Record your life, cultivate awareness, and confront the truth.**
 
-datum is a tool for mindfully recording a life. You log moments (`occur coffee`), stretches of time (`start reading`
+datum is a tool for mindfully recording a life. You log moments (`moment coffee`), stretches of time (`start reading`
 … `stop reading`) and states that hold until they change (`switch environment home`), each in a word or two, and read them
 back as timelines, the state of things now, and statistics. Logging asks for a moment of attention; looking back
 shows you what actually happened, not what you remember. datum has been recording its author's life since 2016,
@@ -20,7 +20,7 @@ what you tap there is a datum command.
 ## Examples
 
 ```bash
-datum occur coffee                 # a moment: a coffee, now
+datum moment coffee                # a moment: a coffee, now
 datum start reading                # a stretch of time begins
 datum stop reading                 # and ends
 datum switch environment home      # a state: home until it changes
@@ -85,10 +85,10 @@ It defines `alias word='datum word'` only where the word is free, so `tail` stay
 
 **For yourself**, whatever you want to notice:
 
-- a coffee, a dose, a symptom: `datum occur coffee`
-- how you are: `datum occur mood rating=7` (a key is any word you choose)
+- a coffee, a dose, a symptom: `datum moment coffee`
+- how you are: `datum moment mood rating=7` (a key is any word you choose)
 - what you spend time on: `datum start work`, then `datum stop work`
-- a measurement: `datum occur weight kg=75.2`
+- a measurement: `datum moment weight kg=75.2`
 - chores that come round again: `datum kit install kits/chores.toml`, then `datum chorelist` (a
   [kit](kits/chores.toml) bundles fields, aliases and commands in one file)
 
@@ -97,7 +97,7 @@ the verb: `coffee`, `sleep`, `environment`) can also declare the keys its entrie
 part of the data:
 
 ```bash
-datum setup pill --verb occur -k medicine -k doseMg=   # medicine is required, doseMg is optional
+datum setup pill --verb moment -k medicine -k doseMg=   # medicine is required, doseMg is optional
 datum pill ibuprofen 400                                # medicine=ibuprofen, doseMg=400
 datum alias set ibu "pill ibuprofen"                    # a word of your own, with its data built in
 datum ibu 200                                           # medicine=ibuprofen, doseMg=200
@@ -117,7 +117,7 @@ datum, it looks them up.
 
 **Ask your agent to help you set up your data.** It can:
 
-1. pick a verb for each thing you track: a moment is `occur`, a stretch is `start` and `stop`, a lasting state is
+1. pick a verb for each thing you track: a point in time is `moment`, a stretch is `start` and `stop`, a lasting state is
    `switch`;
 2. log what you tell it after the fact with `-t` (and `-y` for yesterday), and read the record back as JSON
    (`datum tail --json`, `datum now --json`);

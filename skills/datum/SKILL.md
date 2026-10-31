@@ -1,6 +1,6 @@
 ---
 name: datum
-description: Log and review personal life-data with the `datum` CLI in this repo. Use when recording events, states, or durations (the verbs occur / start / stop / switch / note / add) or reading them back (tail / now / get / grep / dayview). Covers time-flags for backdating, choosing a database, and the data model.
+description: Log and review personal life-data with the `datum` CLI in this repo. Use when recording events, states, or durations (the verbs moment / start / stop / switch / note / add) or reading them back (tail / now / get / grep / dayview). Covers time-flags for backdating, choosing a database, and the data model.
 ---
 
 # Using datum
@@ -13,7 +13,7 @@ them back as lists, current state, or visual timelines. `datum --help` and
 ## Logging — pick the verb by what you're recording
 
 ```bash
-datum occur coffee                  # a point-in-time event (no duration)
+datum moment coffee                 # a point-in-time event (no duration)
 datum switch mood happy             # a field's new state (persists until changed)
 datum switch weight 75.2kg          # state stored exactly as typed: "75.2kg"
 datum start work project=writing    # begin a duration-tracked activity
@@ -32,7 +32,7 @@ A field's spec can declare keys, and bare values after the field then fill them 
 order, so a log line needs no `key=`:
 
 ```bash
-datum setup juice --verb occur --data-key cups --data-key temp=cold
+datum setup juice --verb moment --data-key cups --data-key temp=cold
 datum juice 2              # cups=2, temp=cold (the default)
 datum juice 3 temp=warm    # a key=value still overrides
 datum juice                # Error: Missing required key: cups
@@ -40,7 +40,7 @@ datum juice                # Error: Missing required key: cups
 
 `--data-key K` is required, `K=` optional, and `K=D` has a default. `--id-key K` puts
 the value in the entry's id (like `-K`), and `--assign K=V` writes a fixed value on
-every log. A new field needs `--verb` (occur | start | switch | add) so its bare
+every log. A new field needs `--verb` (moment | start | switch | add) so its bare
 name knows what a press means. `datum setup <field>` prints what is declared.
 
 ### note vs add — timeless data, split by identity (when vs what)
@@ -69,7 +69,7 @@ kept, `dur=MOMENT`, and nothing starts or ends. A duration beside `-T` is
 dropped, as `retime -T` drops an entry's.
 
 ```bash
-datum occur chore -T next_date=+3   # bump the next-due date; logs no occurrence
+datum moment chore -T next_date=+3  # bump the next-due date; logs no occurrence
 datum switch environment outside -T # a note about "outside"; the field's state is unchanged
 ```
 
@@ -147,13 +147,13 @@ point-switch) from the (state, dur) it produces.
 
 Entries go to the default database unless overridden — `datum --db <name-or-path> …`
 or the `DATUM_DB` environment variable. All reads (`tail`, `now`, …) respect the same
-selection. Use a throwaway db while experimenting: `datum --db /tmp/scratch.db occur test`.
+selection. Use a throwaway db while experimenting: `datum --db /tmp/scratch.db moment test`.
 
 ## Handy
 
-- **Aliases** pre-bake commands: `datum alias set vbp "switch body vertical , occur caffeine"`,
+- **Aliases** pre-bake commands: `datum alias set vbp "switch body vertical , moment caffeine"`,
   then `datum vbp` runs the body.
 - A whitespace-bounded `,` token logs **multiple entries atomically** with one shared
-  timestamp: `datum switch body vertical , occur caffeine`.
+  timestamp: `datum switch body vertical , moment caffeine`.
 - `datum --man <command>` prints a man page to stdout; `datum setup <field> …`
   shapes a field: its keys (above), allowed states, colors, symbols and id template.
