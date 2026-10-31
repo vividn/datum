@@ -13,10 +13,15 @@
 use serde_json::Value;
 
 /// Port of datum's `datumPath`. Maps `state` → `state.id` and any
-/// leading-dot path (e.g. `.title`) → `state.title`.
+/// leading-dot path (e.g. `.title`) → `state.title`. The entry's time is
+/// `at`, and its old names are read as it (da-o5bww).
 pub(super) fn datum_path(path: &str) -> String {
     if path == "state" {
         "state.id".to_string()
+    } else if path == "occur_time" {
+        "at".to_string()
+    } else if path == "occur_time_uncertainty" {
+        "at_uncertainty".to_string()
     } else if let Some(rest) = path.strip_prefix('.') {
         format!("state.{rest}")
     } else {
@@ -70,6 +75,9 @@ pub(super) fn find_default_for_path(keys: &[String], path: &str) -> Option<Strin
 }
 
 pub(super) fn path_is_time(path: &str) -> bool {
+    if path == "at" {
+        return true;
+    }
     matches_suffix(path, "time")
 }
 
@@ -128,6 +136,8 @@ mod tests {
     #[test]
     fn datum_path_rewrites() {
         assert_eq!(datum_path("plain"), "plain");
+        assert_eq!(datum_path("occur_time"), "at");
+        assert_eq!(datum_path("occur_time_uncertainty"), "at_uncertainty");
         assert_eq!(datum_path("state"), "state.id");
         assert_eq!(datum_path(".key"), "state.key");
         assert_eq!(datum_path(".deep.sub"), "state.deep.sub");

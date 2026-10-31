@@ -168,7 +168,7 @@ pub struct DataArgs {
     /// falls through as the raw string and a `*_time` reads the wall clock.
     pub base: Option<DatumTime>,
     /// The time flags `base` was built from, on a log (da-johpu): an
-    /// `occur_time=` is one more `-t` beside them, and a relative one
+    /// `at=` is one more `-t` beside them, and a relative one
     /// beside a named day needs a clock as theirs does. `None` where the
     /// base is a clock of its own, an entry's time (`update`).
     pub time_flags: Option<TimeArgs>,

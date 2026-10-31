@@ -453,7 +453,7 @@ fn apply_mutation(
     db: &Db,
 ) -> Result<UpdateOutcome> {
     // da-5ns.3: peel reserved column-bound keys (`state=`, `dur=`,
-    // `following_state=`, `occur_time=`) out of the payload and route
+    // `following_state=`, `at=`) out of the payload and route
     // them to the entry's columns instead of `data`. Unknown keys
     // (including `value=`) stay in `data` (da-53rz). The storage layer's
     // `derive_verb` call recomputes the verb on the resulting (state,
@@ -571,7 +571,14 @@ fn apply_data_key_rename(
                     anyhow::bail!("rekey mapping value for '{old_key}' must be a non-empty string")
                 }
             };
-            if let Some(value) = data_map.remove(&old_key) {
+            // The parser read a typed `occur_time` as `at`; a row may hold
+            // a data key by that old name.
+            let value = data_map.remove(&old_key).or_else(|| {
+                (old_key == "at")
+                    .then(|| data_map.remove("occur_time"))
+                    .flatten()
+            });
+            if let Some(value) = value {
                 data_map.insert(new_key, value);
             }
         }
@@ -603,6 +610,9 @@ fn persist_with_auto_reinterp(
     slug_delimiter: &str,
     db: &Db,
 ) -> Result<UpdateOutcome> {
+    if datum_core::entry::gains_at_key(&existing, &updated) {
+        anyhow::bail!(datum_core::entry::AT_RESERVED);
+    }
     crate::commands::helpers::resolve_spec_colors(&mut updated, &existing)?;
     crate::commands::helpers::resolve_record_refs(db, &mut updated, Some(&existing))?;
     crate::commands::helpers::settle_timezone_edit(&existing, &mut updated)?;

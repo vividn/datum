@@ -88,7 +88,7 @@ pub(crate) fn declared_zone(
 }
 
 /// The instant the line names, read in `zone`, or the host's: the flags', or
-/// an `occur_time=` key's, one more `-t` on them (da-87wvg), read as the log
+/// an `at=` key's, one more `-t` on them (da-87wvg), read as the log
 /// reads it: from the flags' time and not the midnight `-D` makes of it, then
 /// made the key's whole day.
 fn read_in(
@@ -108,7 +108,7 @@ fn read_in(
     let base = build_time_from_flags(&clock, now).ok()?;
     let key = parse_log_args(args, action, Some(base.clone()), None)
         .ok()
-        .and_then(|parsed| parsed.extra_data?.get("occur_time").cloned());
+        .and_then(|parsed| parsed.extra_data?.get("at").cloned());
     let at = match key {
         Some(key) => parse_reserved_occur_time(&key, &base).ok()?,
         None => return Some(build_time_from_flags(&time, now).ok()?.utc),

@@ -1320,7 +1320,7 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
                         let collider = fetch_field_occur_collider(conn, &entry.field, &occur_str)?
                             .unwrap_or_else(|| "<unknown>".to_string());
                         return Err(DatumError::Duplicate(format!(
-                            "entry collides with {collider} on field={}, occur_time={occur_str}",
+                            "entry collides with {collider} on field={}, at={occur_str}",
                             entry.field,
                         )));
                     }

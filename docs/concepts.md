@@ -3,7 +3,7 @@
 One-line summaries of the model:
 
 - **Entry** — one row. Has an id (ULID), a slug (`field:time`), a field,
-  a verb (storage classifier), an `occur_time`, a `state` JSON value, an
+  a verb (storage classifier), an `at`, a `state` JSON value, an
   optional ISO-8601 `dur`, an optional `following_state`, and arbitrarily
   nested `extra_data`.
 - **Field** — what is being tracked: `mood`, `coffee`, `weight`,

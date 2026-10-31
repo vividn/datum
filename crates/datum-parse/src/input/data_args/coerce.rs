@@ -182,7 +182,12 @@ pub(super) fn infer_typed_value(
         return Err(e);
     }
 
-    let declared = compat.types.and_then(|t| t.get(path)).copied();
+    // `at` is the entry's time whatever a spec declares of a key by that name.
+    let declared = compat
+        .types
+        .filter(|_| path != "at")
+        .and_then(|t| t.get(path))
+        .copied();
     let Some(ty) = declared.or_else(|| KeyType::of_suffix(path)) else {
         return Ok(infer_type(value));
     };
@@ -200,7 +205,7 @@ pub(super) fn infer_typed_value(
     // da-johpu: the flags alone are a day and the key alone a shift, of the
     // midnight that day is stored as. So the two are asked as one line, the
     // key one more `-t`; quoted, it is read as one all the same.
-    if let (true, Some(flags)) = (path == "occur_time", compat.time_flags) {
+    if let (true, Some(flags)) = (path == "at", compat.time_flags) {
         let key = parse_time(value.trim_matches('"'), time_ctx(compat));
         if let (Ok(flags), Ok(key)) = (flags.builder_anchored(TimeCtx::now()), key) {
             flags.with_time_arg(key).shift_needs_clock()?;
@@ -252,7 +257,7 @@ pub(super) fn infer_typed_value(
 }
 
 /// The keys that place the entry rather than describe it.
-const ENTRY_KEYS: [&str; 4] = ["dur", "occur_time", "start_time", "end_time"];
+const ENTRY_KEYS: [&str; 4] = ["dur", "at", "start_time", "end_time"];
 
 /// `value` as a `ty`, or `None` when it is not one.
 ///

@@ -123,7 +123,7 @@ export const asking =
 		let result = await run(argv, stdin, onStderr, key, stage, env);
 		// Every answer so far, a line each in the order asked, and the pin of
 		// the `_LAST` it confirmed: a line may ask more than one question —
-		// two wall times a fall-back night repeats (an `occur_time=` and a
+		// two wall times a fall-back night repeats (an `at=` and a
 		// `wake_time=`, da-job98), a stale `_LAST` and then which reading of
 		// its new time (da-7bomd) — and each run asks the next only once the
 		// earlier are answered.

@@ -454,14 +454,14 @@ fn reparse_passes_over_a_row_that_no_longer_parses() {
 }
 
 /// da-b2f8o: the types a spec gave its keys ride with the entry, as its
-/// bound keys do (da-zv2jr), so `--fix` replays `at=yesterday 10am` as the
+/// bound keys do (da-zv2jr), so `--fix` replays `seen=yesterday 10am` as the
 /// datetime it was logged as — not as the text, which no longer says which
 /// day it was.
 #[test]
 fn reparse_fix_replays_a_spec_typed_value_as_its_type() {
     let db = fresh_db();
     let spec = serde_json::json!({"field": "run", "verb": "occur", "subfields": {
-        "at": {"value_type": "datetime"},
+        "seen": {"value_type": "datetime"},
         "on": {"value_type": "date"},
         "code": {"value_type": "string"},
     }});
@@ -469,14 +469,14 @@ fn reparse_fix_replays_a_spec_typed_value_as_its_type() {
     let line = [
         "occur",
         "run",
-        "at=yesterday 10am",
+        "seen=yesterday 10am",
         "on=yesterday",
         "code=007",
     ];
     run_cli(&[&line[..], &["-t", "2026-10-07T12:00"]].concat(), &db).unwrap();
     let hid = db.entries_for_field("run", None).unwrap()[0].hid.0.clone();
     let logged =
-        serde_json::json!({"at": "2026-10-06T10:00:00", "on": "2026-10-06", "code": "007"});
+        serde_json::json!({"seen": "2026-10-06T10:00:00", "on": "2026-10-06", "code": "007"});
     assert_eq!(db.get_entry(&hid).unwrap().data, Some(logged.clone()));
 
     run_cli(&["reparse", &hid, "--fix"], &db).expect("reparse --fix");

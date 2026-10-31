@@ -15,7 +15,7 @@ use super::chain::hlc_time;
 use super::{about, contention, contestable, device, entry_from, fold, merge_from, merged_into};
 use super::{side, values, Chain, Op};
 use crate::db::Db;
-use crate::entry::Entry;
+use crate::entry::{surface_keys, surface_name, Entry};
 use crate::error::Result;
 
 /// One version of an entry: one of its ops.
@@ -53,6 +53,29 @@ pub struct Version {
 }
 
 impl Version {
+    /// This version as a person reads it: a key its effect, fork or join
+    /// names by a column's stored name says it as [`surface_name`] does.
+    pub fn surface(mut self) -> Self {
+        let named = |m: Map<String, Value>| -> Map<String, Value> {
+            m.into_iter()
+                .map(|(k, v)| (surface_name(&k).to_string(), v))
+                .collect()
+        };
+        (self.fork, self.join) = (named(self.fork), named(self.join));
+        for part in ["create", "set"] {
+            if let Some(row) = self.effect.get_mut(part) {
+                *row = surface_keys(row.take());
+            }
+        }
+        let unset = self.effect.get_mut("unset").and_then(Value::as_array_mut);
+        for key in unset.into_iter().flatten() {
+            if let Some(name) = key.as_str().map(surface_name).map(str::to_string) {
+                *key = Value::String(name);
+            }
+        }
+        self
+    }
+
     /// What an edit set (`Some`) and unset (`None`), key by key, without the
     /// keys every edit moves or that follow from others. A create's is its
     /// whole row, and none here.

@@ -279,15 +279,15 @@ fn retime_is_asked_which_reading() {
 #[test]
 fn a_time_key_no_one_can_be_asked_about_is_unanswered() {
     let dir = tempfile::tempdir().unwrap();
-    let out = run(&dir, &["occur", "tea", "occur_time=2026-10-25T02:30"])
+    let out = run(&dir, &["occur", "tea", "at=2026-10-25T02:30"])
         .stdin(Stdio::null())
         .output()
         .unwrap();
     let err = said(&out);
     assert_eq!(out.status.code(), Some(12), "{err}");
     assert!(
-        err.contains("1  occur_time=2026-10-25T02:30:00+02:00")
-            && err.contains("2  occur_time=2026-10-25T02:30:00+01:00"),
+        err.contains("1  at=2026-10-25T02:30:00+02:00")
+            && err.contains("2  at=2026-10-25T02:30:00+01:00"),
         "{err}"
     );
     assert_eq!(teas(&dir), vec![], "nothing written");
@@ -321,13 +321,13 @@ fn the_page_answers_each_time_key_in_turn() {
     let line = [
         "occur",
         "tea",
-        "occur_time=2026-10-25T02:30",
+        "at=2026-10-25T02:30",
         "brew_time=2026-10-25T02:10",
     ];
-    let occur = "occur_time=2026-10-25T02:30:00+01:00";
+    let occur = "at=2026-10-25T02:30:00+01:00";
     assert_eq!(
         options(&page(&dir, &line, "")),
-        ["occur_time=2026-10-25T02:30:00+02:00", occur]
+        ["at=2026-10-25T02:30:00+02:00", occur]
     );
     assert_eq!(
         options(&page(&dir, &line, &format!("{occur}\n"))),
@@ -363,7 +363,7 @@ fn an_update_s_time_key_is_asked_about() {
     let update = [
         "update",
         "tea:2026-10-25T11:00:00.000Z",
-        "occur_time=2026-10-25T02:30",
+        "at=2026-10-25T02:30",
     ];
     let refused = run(&dir, &update).stdin(Stdio::null()).output().unwrap();
     assert_eq!(refused.status.code(), Some(12), "{}", said(&refused));

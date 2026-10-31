@@ -92,7 +92,7 @@ impl Db {
             e.occur_time = None;
             e.following_state = None;
             e.dur = (e.state.is_some() || e.dur.is_some()).then(crate::dur::Dur::moment);
-            if e.id_structure.as_deref() == Some("%occur_time%") {
+            if matches!(e.id_structure.as_deref(), Some("%occur_time%" | "%at%")) {
                 e.id_structure = Some("%create_time%".into());
             }
             Ok(())

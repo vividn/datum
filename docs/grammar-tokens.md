@@ -54,7 +54,7 @@ CREATE t45xa project:2026-09-22T15:59:03.422Z
 17:59:03+2  project  gardening
 ```
 
-Both rows carry the same `occur_time` and are written atomically. The
+Both rows carry the same `at` and are written atomically. The
 comma must be its own token — whitespace on both sides — so `vertical,`
 and `,sit` are single values and `vertical,sit` is one word. There is no
 escape syntax; whitespace is the whole trigger. See the README's "Atomic
@@ -554,10 +554,10 @@ as an exact one and no column shifts. The amount is not printed there; `get -A` 
 instant, in a column of its own, as `--json` carries it:
 
 ```
-  occur_time                2026-09-22T12:00:00+00:00
-  occur_time_offset         120 min
-  occur_time_tz             Europe/Berlin
-  occur_time_uncertainty    PT15M
+  at                        2026-09-22T12:00:00+00:00
+  at_offset                 120 min
+  at_tz                     Europe/Berlin
+  at_uncertainty            PT15M
 ```
 
 `14:00+-15m` is the same input — the ASCII form only splits when
@@ -814,9 +814,9 @@ Summary: 0 errors, 2 warnings.
 | `\%`        | a literal `%`                                               |
 
 The column names are `field`, `uid`, `state`, `dur`, `following_state`,
-`occur_time`, `create_time`, `modify_time`. `occurTime` / `createTime` /
-`modifyTime` also resolve, for templates carried over from the original
-datum. Anything else is a dot-path lookup into `data`.
+`at`, `create_time`, `modify_time`. `occur_time` also resolves, and
+`occurTime` / `createTime` / `modifyTime`, for templates carried over from the
+original datum. Anything else is a dot-path lookup into `data`.
 
 In an `--id`, a path segment also indexes a list — `%comment.0%` is the
 first comment, `%comment.-1%` the last — and a list or object slugs as

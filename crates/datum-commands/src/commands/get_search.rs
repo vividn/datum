@@ -74,14 +74,14 @@ fn resolve_key(entry: &Entry, key: &str) -> Option<JsonValue> {
             .as_ref()
             .and_then(|d| d.as_seconds())
             .map(JsonValue::from),
-        // da-zwct: `occur_time` IS the block's end and the duration is
+        // da-zwct: `at` IS the block's end and the duration is
         // the span before it, so `end_time` is the stored instant and
         // `start_time` is the one that needs the arithmetic.
         "start_time" => entry
             .computed_start_time()
             .or_else(|| entry.occur_time.clone())
             .map(|t| JsonValue::String(t.utc.to_rfc3339())),
-        "end_time" => entry
+        "at" | "occur_time" | "end_time" => entry
             .occur_time
             .as_ref()
             .map(|t| JsonValue::String(t.utc.to_rfc3339())),

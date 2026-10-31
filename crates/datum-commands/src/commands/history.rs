@@ -60,7 +60,7 @@ fn history_of(
     };
 
     if let Some(v) = args.version {
-        println!("{}", serde_json::to_string_pretty(&snapshot(v)?)?);
+        println!("{}", datum_core::entry::surface_pretty(&snapshot(v)?)?);
         return Ok(());
     }
 
@@ -68,9 +68,12 @@ fn history_of(
         let (a, b) = (ab[0], ab[1]);
         let (snap_a, snap_b) = (snapshot(a)?, snapshot(b)?);
         if json {
+            let shown = |e: &Entry| -> Result<JsonValue> {
+                Ok(datum_core::entry::surface_keys(serde_json::to_value(e)?))
+            };
             let payload = serde_json::json!({
-                "a": { "version": a, "snapshot": snap_a },
-                "b": { "version": b, "snapshot": snap_b },
+                "a": { "version": a, "snapshot": shown(&snap_a)? },
+                "b": { "version": b, "snapshot": shown(&snap_b)? },
             });
             println!("{}", serde_json::to_string_pretty(&payload)?);
         } else {
@@ -80,7 +83,11 @@ fn history_of(
     }
 
     // Default: list every version, newest first.
-    let mut versions = db.versions(&current)?;
+    let mut versions: Vec<_> = db
+        .versions(&current)?
+        .into_iter()
+        .map(|v| v.surface())
+        .collect();
     let devices = names_devices(db, &versions)?;
     versions.reverse();
 
@@ -148,8 +155,9 @@ fn print_history_diff(a: u32, snap_a: &Entry, b: u32, snap_b: &Entry) {
 /// diff lines as hex noise — skip it (da-r8xj). `modify_time` lines stay:
 /// they tell the user when each side was written.
 fn history_diff_lines(snap_a: &Entry, snap_b: &Entry) -> Vec<String> {
-    let va = serde_json::to_value(snap_a).unwrap_or(serde_json::Value::Null);
-    let vb = serde_json::to_value(snap_b).unwrap_or(serde_json::Value::Null);
+    let shown =
+        |e| serde_json::to_value(e).map_or(JsonValue::Null, datum_core::entry::surface_keys);
+    let (va, vb) = (shown(snap_a), shown(snap_b));
     let mut lines = Vec::new();
     diff_json("", &va, &vb, &mut lines);
     lines

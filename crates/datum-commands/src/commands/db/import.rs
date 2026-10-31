@@ -55,6 +55,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     let mut points = 0usize;
     let mut blocks = 0usize;
     let mut dur_parse_warnings = 0usize;
+    let mut at_keyed = 0usize;
     let mut states_normalized = 0usize;
     let mut entries: Vec<Entry> = Vec::with_capacity(docs.len());
     // Parallel to `entries`: the source `_id` for each entry, so we can
@@ -262,6 +263,12 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                     blob.insert(k.clone(), v.clone());
                 }
             }
+        }
+        // da-o5bww: `at` is the time's name here, and v2's own data may use
+        // it. The key is kept, as all data is, and said.
+        if blob.contains_key("at") {
+            at_keyed += 1;
+            println!("  data key `at`  {doc_id}: {}", blob["at"]);
         }
         let data_blob = if blob.is_empty() {
             None
@@ -596,6 +603,12 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // Source backups are self-consistent so this is normally fine,
         // but give the user a one-liner manual fallback.
         println!("(run `datum conflicts list` to verify nothing slipped through.)");
+    }
+    if at_keyed > 0 {
+        println!(
+            "{at_keyed} doc(s) hold a data key called `at`, the name of an entry's time here: \
+             kept as data. `datum check` names them; rename with `datum rekey <hid> at=<name>`."
+        );
     }
     if states_normalized > 0 {
         println!("states normalized: {states_normalized} ({{id: x}} collapsed to x)");

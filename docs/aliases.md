@@ -18,7 +18,7 @@ Manage aliases
 
 Aliases expand argv before the parser sees it, so an alias can stand in for any prefix of a `datum` invocation — verb, field, flags, or all three.
 
-A standalone, whitespace-bounded `,` token splits one invocation into N sides that write atomically, at one occur_time unless a side names its own. The trigger works at the top-level CLI, inside alias bodies, and through chains of alias-of-alias (multi-of-multi flattens to N flat sides). The comma must be its own token: `vertical , sit` triggers a multi. Inside a word it joins a list instead — `vertical,sit` is one parallel state, `key=a,b` one list value — and a comma touching one side only (`vertical, sit`) is refused.
+A standalone, whitespace-bounded `,` token splits one invocation into N sides that write atomically, at one time unless a side names its own. The trigger works at the top-level CLI, inside alias bodies, and through chains of alias-of-alias (multi-of-multi flattens to N flat sides). The comma must be its own token: `vertical , sit` triggers a multi. Inside a word it joins a list instead — `vertical,sit` is one parallel state, `key=a,b` one list value — and a comma touching one side only (`vertical, sit`) is refused.
 
 Key slot forms (`-k` and `-K` accept the same three shapes): `-k key` is required and errors at call time if unfilled, `-k key=` is optional with no default (silently skipped), `-k key=val` defaults to `val` when no value is supplied. A `-k` or `-K` name declared on multiple sides becomes a shared slot — one call-site value propagates to every declaring side. The `.` token skips a slot on its side; for a shared slot it skips on all sides.
 
@@ -61,7 +61,7 @@ An alias stands in for any PREFIX of an invocation — verb, field, flags, data 
 datum switch body vertical , switch body sit
 ```
 
-A whitespace-bounded `,` splits one invocation into two sides that write atomically at one `occur_time`. Same field, same instant, so the two merge into ONE `body` row with `state = [vertical, sit]` rather than overwriting each other.
+A whitespace-bounded `,` splits one invocation into two sides that write atomically at one `at`. Same field, same instant, so the two merge into ONE `body` row with `state = [vertical, sit]` rather than overwriting each other.
 
 ```
 datum alias set oov "switch environment outside , switch body vertical"

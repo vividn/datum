@@ -402,7 +402,7 @@ pub struct LogArgs {
 impl LogArgs {
     /// da-znksm: whether an `add` line's first bare word is its id: where
     /// today the line is refused for having none. So no `-K` or `--id`, no
-    /// time (`-T`, a time flag, or an `occur_time=` / `start_time=` /
+    /// time (`-T`, a time flag, or an `at=` / `start_time=` /
     /// `end_time=` key, whose instant is the id), and no `-R`/`-S`/`-C`
     /// to take its bare words. A spec's `id_template` is the caller's to
     /// rule out.
@@ -410,7 +410,7 @@ impl LogArgs {
         let timed = |t: &String| {
             matches!(
                 t.split_once('='),
-                Some(("occur_time" | "start_time" | "end_time", _))
+                Some(("at" | "occur_time" | "start_time" | "end_time", _))
             )
         };
         self.slug_keys.is_empty()

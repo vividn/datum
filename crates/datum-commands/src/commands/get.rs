@@ -217,7 +217,7 @@ fn project(piece: &str, db: &Db) -> Result<()> {
 
 /// da-qhm51: a field's first name reads its record ([`Db::collect`]): the
 /// whole of it when empty (`<field>::`), else its key, and a name the record
-/// lacks (a column: `hid`, `occur_time`) its newest entry's.
+/// lacks (a column: `hid`, `at`) its newest entry's.
 fn read_in(
     record: Option<serde_json::Map<String, serde_json::Value>>,
     entry: &datum_core::entry::Entry,
@@ -227,7 +227,10 @@ fn read_in(
     match (record, name) {
         (Some(record), "") => Ok(record.into()),
         (None, "") => anyhow::bail!("{at} is no field, and only a field has a record (<field>::)"),
-        (Some(mut record), _) if record.contains_key(name) => Ok(record.remove(name).unwrap()),
+        // `at` is the column even where a record holds a key by that name.
+        (Some(mut record), _) if name != "at" && record.contains_key(name) => {
+            Ok(record.remove(name).unwrap())
+        }
         _ => read(entry, name, at),
     }
 }
@@ -236,10 +239,16 @@ fn read_in(
 /// [`datum_core::entry::Entry`]) means the column, `.x.y` walks the state,
 /// and anything else walks `data`. Null or absent is "`at` has no `name`".
 fn read(entry: &datum_core::entry::Entry, name: &str, at: &str) -> Result<serde_json::Value> {
-    let mut row = serde_json::to_value(entry)?;
+    // `occur_time` is read as the column it was, and a row with no time and
+    // a data key `at` (which `datum check` names) still reads that key.
+    let name = if name == "occur_time" { "at" } else { name };
+    let mut row = datum_core::entry::surface_keys(serde_json::to_value(entry)?);
     row["raw_input"] = serde_json::json!(entry.raw_input);
-    if let Some(t) = &entry.occur_time {
-        row["occur_time"] = serde_json::json!(t.utc);
+    match &entry.occur_time {
+        Some(t) => row["at"] = serde_json::json!(t.utc),
+        None => {
+            row.as_object_mut().map(|r| r.remove("at"));
+        }
     }
     let (root, path) = match name.strip_prefix('.') {
         Some(path) => (entry.state.as_ref(), Some(path)),

@@ -1194,6 +1194,39 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
         });
     }
 
+    // da-o5bww: `at` is the entry's time, so a data key by that name can only
+    // have come from before that, an import or another copy.
+    let at_keyed: Vec<FlaggedEntry> = entries
+        .iter()
+        .filter(|e| e.deleted_at.is_none())
+        .filter(|e| e.data.as_ref().is_some_and(|d| d.get("at").is_some()))
+        .map(|e| FlaggedEntry {
+            hid: e.hid.to_string(),
+            field: e.field.clone(),
+            state: String::new(),
+        })
+        .collect();
+    if !at_keyed.is_empty() {
+        issues.push(Issue {
+            domain: Domain::Entries,
+            severity: Severity::Warning,
+            category: "reserved_data_key",
+            message: format!(
+                "{} hold{} a data key called `at`, the name of the entry's time; \
+                 rename it: datum rekey <hid> at=<name>",
+                match at_keyed.len() {
+                    1 => "1 entry".to_string(),
+                    n => format!("{n} entries"),
+                },
+                if at_keyed.len() == 1 { "s" } else { "" },
+            ),
+            count: at_keyed.len(),
+            example: None,
+            entries: at_keyed,
+            rendered_block: String::new(),
+        });
+    }
+
     // 2. content_hash mismatches (ERROR)
     let mut mismatches: Vec<(String, String, String, String, String)> = Vec::new();
     for e in entries {

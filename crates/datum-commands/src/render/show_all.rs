@@ -29,10 +29,10 @@ const KEY_WIDTH: usize = 25;
 const ID_COLS: &[&str] = &["hid", "slug", "content_hash"];
 const WHAT_COLS: &[&str] = &["field", "verb", "state", "dur", "following_state", "data"];
 const WHEN_COLS: &[&str] = &[
-    "occur_time",
-    "occur_time_offset",
-    "occur_time_tz",
-    "occur_time_uncertainty",
+    "at",
+    "at_offset",
+    "at_tz",
+    "at_uncertainty",
     "dur_uncertainty",
 ];
 const WHERE_COLS: &[&str] = &["lat", "lon", "location"];
@@ -130,7 +130,7 @@ fn render_column(col: &str, e: &Entry) -> String {
         // da-5uph: P1D rows render as a bare local date — engineers
         // scanning the show-all dump shouldn't see a synthetic 00:00:00
         // UTC stamp for what the user logged as a date-only entry.
-        "occur_time" => match &e.occur_time {
+        "at" => match &e.occur_time {
             Some(t) => {
                 if e.occur_uncertainty() == Some("P1D") {
                     t.local_time().format("%Y-%m-%d").to_string()
@@ -140,15 +140,15 @@ fn render_column(col: &str, e: &Entry) -> String {
             }
             None => null_marker(),
         },
-        "occur_time_offset" => match &e.occur_time {
+        "at_offset" => match &e.occur_time {
             Some(t) => format!("{} min", t.offset_minutes),
             None => null_marker(),
         },
-        "occur_time_tz" => match &e.occur_time {
+        "at_tz" => match &e.occur_time {
             Some(t) => render_str_opt(t.timezone.as_deref()),
             None => null_marker(),
         },
-        "occur_time_uncertainty" => render_str_opt(e.occur_uncertainty()),
+        "at_uncertainty" => render_str_opt(e.occur_uncertainty()),
         "dur_uncertainty" => render_str_opt(e.dur_uncertainty()),
         "lat" => match e.lat {
             Some(v) => v.to_string(),
@@ -452,7 +452,7 @@ mod tests {
         }
 
         for col in &schema_cols {
-            match listed.get(col.as_str()) {
+            match listed.get(datum_core::entry::surface_name(col)) {
                 None => panic!(
                     "schema column `{col}` is missing from the `-A` view — \
                      add `{col}` to a show_all group (ID/WHAT/WHEN/WHERE/BOOK/INTENT_COLS) \
@@ -467,7 +467,9 @@ mod tests {
 
         for col in listed.keys() {
             assert!(
-                schema_cols.iter().any(|c| c == col),
+                schema_cols
+                    .iter()
+                    .any(|c| datum_core::entry::surface_name(c) == *col),
                 "show_all lists `{col}` but the entries table has no such column — \
                  remove it from its group or fix the schema"
             );

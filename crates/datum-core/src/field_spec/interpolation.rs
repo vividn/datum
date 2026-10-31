@@ -296,7 +296,7 @@ fn canonical_key(key: &str) -> &str {
     // working. Other camelCase keys fall through to lookup_extra_data
     // unchanged.
     match key {
-        "occurTime" => "occur_time",
+        "at" | "occurTime" => "occur_time",
         "createTime" => "create_time",
         "modifyTime" => "modify_time",
         // following_state and dur have no legacy camelCase form (they're
@@ -306,7 +306,7 @@ fn canonical_key(key: &str) -> &str {
 }
 
 /// True iff `template` has a placeholder for one of the entry's times
-/// (`occur_time` / `create_time` / `modify_time`, in any spelling
+/// (`at` / `create_time` / `modify_time`, in any spelling
 /// [`lookup_field`] resolves). A template without one is a KEY: two
 /// entries it renders alike are one record, not two events (da-b5k87).
 pub fn names_time(template: &str) -> bool {
@@ -1104,6 +1104,8 @@ mod tests {
     #[test]
     fn names_time_walks_placeholders_like_interpolate() {
         for t in [
+            "%at%",
+            "%?at%",
             "%occur_time%",
             "%?occur_time%",
             "%?createTime%",
@@ -1113,6 +1115,7 @@ mod tests {
         }
         for t in [
             "%uid%",
+            "%at_extra%",
             "%occur_time_extra%",
             r"\%occur_time\%",
             "a%b%occur_time",

@@ -1570,7 +1570,7 @@ fn push_cell(buf: &mut String, body: &str, width: usize, right_align: bool) {
 
 /// Pretty JSON output for `datum get --pretty`.
 pub fn print_entry_pretty(entry: &Entry) -> serde_json::Result<()> {
-    println!("{}", serde_json::to_string_pretty(entry)?);
+    println!("{}", datum_core::entry::surface_pretty(entry)?);
     Ok(())
 }
 

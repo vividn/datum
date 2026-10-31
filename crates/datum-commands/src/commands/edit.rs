@@ -78,9 +78,9 @@ pub(crate) struct UserEditableEntry {
     following_state: Option<JsonValue>,
     #[serde(default)]
     data: Option<JsonValue>,
-    #[serde(default)]
+    #[serde(default, rename = "at", alias = "occur_time")]
     /// Carries its own `"uncertainty"` key — there is no separate
-    /// `occur_time_precision` key since da-b8rs.
+    /// `at_precision` key since da-b8rs.
     occur_time: Option<DatumTime>,
     #[serde(default)]
     lat: Option<f64>,
@@ -232,6 +232,9 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     // are all editable here, and all feed the templates. The helper records
     // a UserEdit history row, recomputes content_hash, and returns the fresh
     // row under its possibly-rekeyed slug.
+    if datum_core::entry::gains_at_key(&existing, &updated) {
+        anyhow::bail!(datum_core::entry::AT_RESERVED);
+    }
     let delim = crate::config::resolve_id_delimiter(None);
     let (entry, old_slug) =
         db.save_existing_entry_with_auto_reinterp(&existing.slug, updated, &delim)?;
@@ -374,7 +377,7 @@ mod tests {
             "dur": e.dur,
             "following_state": e.following_state,
             "data": e.data,
-            "occur_time": serde_json::to_value(&e.occur_time).unwrap(),
+            "at": serde_json::to_value(&e.occur_time).unwrap(),
             "lat": e.lat,
             "lon": e.lon,
             "location": e.location,
@@ -777,7 +780,7 @@ mod tests {
             uncertainty: None,
         };
         let payload = editor_payload(&before, |doc| {
-            doc["occur_time"] = serde_json::to_value(&new_dt).unwrap();
+            doc["at"] = serde_json::to_value(&new_dt).unwrap();
         });
         let prep = write_editor_payload(&payload);
 

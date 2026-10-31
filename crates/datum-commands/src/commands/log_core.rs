@@ -211,15 +211,15 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         println!("Aborted.");
         return Ok(());
     };
-    // da-bcdjm: an `occur_time=` key places the entry, so the relative keys
+    // da-bcdjm: an `at=` key places the entry, so the relative keys
     // anchor at it as they do at `-t`. Resolved against the same base the
     // column gets below, then the line is parsed again at that anchor —
-    // keeping the first pass's `occur_time`, which a second coercion at the
-    // new base would shift again (`occur_time=+5` must not become +10).
-    let data_occur_time = |p: &ParsedLogArgs| p.extra_data.as_ref()?.get("occur_time").cloned();
+    // keeping the first pass's `at`, which a second coercion at the
+    // new base would shift again (`at=+5` must not become +10).
+    let data_occur_time = |p: &ParsedLogArgs| p.extra_data.as_ref()?.get("at").cloned();
     // da-2mti0: `-D` wins over the key as it does over `-t`, the key being
     // one more `-t`. So beside `-D` it is read from the flags' time and not
-    // from the midnight `-D` made of it (`-D occur_time=-6` is today), and
+    // from the midnight `-D` made of it (`-D at=-6` is today), and
     // the relative keys anchor at its day's midnight, as at `-D -t`'s.
     let full_day = args.time.full_day;
     if full_day && data_occur_time(&parsed).is_some() {
@@ -245,7 +245,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         };
         parsed = again;
         if let Some(JsonValue::Object(obj)) = parsed.extra_data.as_mut() {
-            obj.insert("occur_time".into(), t);
+            obj.insert("at".into(), t);
         }
     }
     // da-x34md: a side of a multi line that states its time keeps it.
@@ -760,7 +760,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if let Some(u) = reserved.occur_time_uncertainty {
         if entry.occur_time.is_none() {
             anyhow::bail!(
-                "occur_time_uncertainty= needs a time: a timeless entry has no instant to qualify"
+                "at_uncertainty= needs a time: a timeless entry has no instant to qualify"
             );
         }
         entry.set_occur_uncertainty(Some(u));
@@ -2404,19 +2404,19 @@ pub(crate) struct ReservedColumns {
     /// ± radius. Lands inside `entry.dur` (da-b8rs), so it needs a `dur`
     /// to attach to.
     pub(crate) dur_uncertainty: Option<String>,
-    /// `occur_time_uncertainty=` — the same, for `occur_time`.
+    /// `at_uncertainty=` — the same, for the entry's time.
     pub(crate) occur_time_uncertainty: Option<String>,
     pub(crate) following_state: Option<JsonValue>,
     pub(crate) occur_time: Option<JsonValue>,
 }
 
 /// da-5ns.3: route the reserved column-bound keys (`state=`, `dur=`,
-/// `following_state=`, `occur_time=`) out of the user's `data` payload
+/// `following_state=`, `at=`) out of the user's `data` payload
 /// onto entry columns. Unknown keys (including `value=`) fall through
 /// to the user-data payload — `value` is no longer a column post-da-5ns,
 /// so `value=X` lands as `data.value = X` like any other user key (da-53rz).
 ///
-/// `occur_time=` is captured but its value-shape grammar (RFC3339,
+/// `at=` is captured but its value-shape grammar (RFC3339,
 /// signed offsets, `now`) is left to callers to interpret — the
 /// existing time-flag pipeline already handles common cases via
 /// `-t/--time`; sub-bead 6 (import) drives the column-keyed form.
@@ -2482,7 +2482,10 @@ pub(crate) fn extract_reserved_columns(
             out.dur_uncertainty = Some(json_to_raw_token(&v));
         }
     }
-    if let Some(v) = obj.remove("occur_time_uncertainty") {
+    // The parser reads the old names as `at`; a payload that did not come
+    // through it may still say them.
+    let uncertainty = obj.remove("occur_time_uncertainty");
+    if let Some(v) = obj.remove("at_uncertainty").or(uncertainty) {
         if v.is_null() || matches!(v.as_str(), Some("null")) {
             // intentionally drop — leave the uncertainty unstated.
         } else {
@@ -2493,8 +2496,13 @@ pub(crate) fn extract_reserved_columns(
         // da-lvyt0: a trailing-edge state takes the same `{id: x}` rule.
         out.following_state = Some(normalize_state(v));
     }
-    if let Some(v) = obj.remove("occur_time") {
+    let old_name = obj.remove("occur_time");
+    if let Some(v) = obj.remove("at").or(old_name) {
         out.occur_time = Some(v);
+    }
+    // da-o5bww: `at` is the entry's time, so it is no list to add to.
+    if let Some(op) = ["at+", "at-"].into_iter().find(|k| obj.contains_key(*k)) {
+        anyhow::bail!("{op}=: {}", datum_core::entry::AT_RESERVED);
     }
     if obj.is_empty() {
         *extra_data = None;
@@ -2527,18 +2535,20 @@ fn json_to_raw_token(v: &JsonValue) -> String {
     v.to_string()
 }
 
-/// da-5ns.4: parse the reserved `occur_time=` payload from `dm update`:
+/// da-5ns.4: parse the reserved `at=` payload from `dm update`:
 /// "now", or anything `-t` takes. Exposed crate-private so [`update_core::apply_mutation`]
-/// can reuse the parser.
+/// can reuse the parser. What is no time may be someone's own key (`at=home`),
+/// so a refusal says why the name is taken (da-o5bww).
 pub(crate) fn parse_reserved_occur_time(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
     parse_add_time_value(v, base)
+        .map_err(|e| anyhow::anyhow!("{e}. {}", datum_core::entry::AT_RESERVED))
 }
 
-/// Parse an `occur_time=…` value token against a base time. (da-mjwq: the
+/// Parse an `at=…` value token against a base time. (da-mjwq: the
 /// `start_time=` / `end_time=` keys no longer come through here — they are
 /// lifted raw and take the `-t` path, see [`lift_time_keys`].) Accepts:
 ///  * a v2 time block `{utc, o, tz}` — what `infer_typed_value` makes of
-///    every `*_time` key's value, `occur_time` included (da-x15of)
+///    every `*_time` key's value, `at` included (da-x15of)
 ///  * empty or "now" → `base`
 ///  * anything `-t` takes, composed from `base` as `-t` composes it, and
 ///    nothing else: an unsigned duration (`30m`, `90`) is refused with

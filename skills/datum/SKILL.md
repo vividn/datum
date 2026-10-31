@@ -45,7 +45,7 @@ name knows what a press means. `datum setup <field>` prints what is declared.
 
 ### note vs add — timeless data, split by identity (when vs what)
 
-Both `note` and `add` record **timeless** data (no `occur_time`); they differ in
+Both `note` and `add` record **timeless** data (no `at`); they differ in
 how the entry is identified:
 
 - **`note` = "record this moment, won't look it up."** Identified by *when* —
@@ -136,7 +136,7 @@ datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .
 ## The data model (essentials)
 
 An **entry** has a `field` (what is tracked), a `state` (JSON value), an optional
-ISO-8601 `dur`, an `occur_time`, and a `slug` — the human-readable id, `field:<time>`
+ISO-8601 `dur`, an `at` (its time), and a `slug` — the human-readable id, `field:<time>`
 for a time-anchored entry or `field:c<create_time>` for a timeless `note`/`-T` one
 (the short `hid` in `datum tail` resolves to the same entry, as does the `_n`
 ordinal beside it — `_1` is the newest entry, `_2` the one before it). You choose the CLI verb;

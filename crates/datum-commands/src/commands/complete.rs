@@ -638,7 +638,9 @@ fn projections(db: &Db, cur: &str) -> Candidates {
     let spec = db.load_spec(&entry.field).ok().flatten();
     let at = |name: &str| format!("{id}::{name}");
     let mut out = Vec::new();
-    if let Ok(serde_json::Value::Object(row)) = serde_json::to_value(&entry) {
+    if let Ok(serde_json::Value::Object(row)) =
+        serde_json::to_value(&entry).map(datum_core::entry::surface_keys)
+    {
         out.extend(row.iter().filter(|(_, v)| !v.is_null()).map(|(k, _)| at(k)));
     }
     if let Some(state) = &entry.state {

@@ -119,8 +119,14 @@ fn update_occur_time_reads_its_value_as_retime_does() {
         ("PT30M", None),
         ("1.5", None),
     ] {
-        let updated = after("update", &format!("occur_time={token}"));
-        assert_eq!(updated, after("retime", token), "{token}");
+        // A refused `at=` says what `-t` says, and why the name is taken.
+        let reason = format!(". {}", datum_core::entry::AT_RESERVED);
+        let plain = |e: String| e.trim_end_matches(&reason).to_string();
+        for key in ["occur_time", "at"] {
+            let updated = after("update", &format!("{key}={token}")).map_err(plain);
+            assert_eq!(updated, after("retime", token), "{key}={token}");
+        }
+        let updated = after("update", &format!("at={token}")).map_err(plain);
         assert_eq!(updated.ok(), want.map(utc), "{token}");
     }
 }

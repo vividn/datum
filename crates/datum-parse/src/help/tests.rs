@@ -41,7 +41,7 @@ MUTATE:
   comment  Add a comment to an existing entry
   merge    Merge values into an entry, collecting a key's into a list
   rekey    Rename an entry's data keys, in place
-  retime   Move an entry's occur_time (alias: rt)
+  retime   Move an entry's time, its `at` (alias: rt)
   rename   Give a field another name, its entries and spec with it
   delete   Delete an entry (alias: del)
   undo     Undo the last command, or one entry's last change
@@ -463,7 +463,7 @@ fn alias_del_renders_with_canonical_name() {
 #[test]
 fn alias_rt_renders_with_canonical_name() {
     let s = command_help("rt");
-    assert!(s.starts_with("datum retime — move an entry's occur_time (alias: rt)\n"));
+    assert!(s.starts_with("datum retime — move an entry's time, its `at` (alias: rt)\n"));
 }
 
 // ---------------------------------------------------------------------------

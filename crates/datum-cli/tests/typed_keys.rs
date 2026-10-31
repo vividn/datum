@@ -20,7 +20,7 @@ fn typed_db() -> Db {
         "code": {"value_type": "string"},
         "ok": {"value_type": "bool"},
         "on": {"value_type": "date"},
-        "at": {"value_type": "datetime"},
+        "seen": {"value_type": "datetime"},
     }});
     run_cli(&["setup", "run", "--from-json", &spec.to_string()], &db).unwrap();
     db
@@ -60,10 +60,10 @@ fn a_spec_typed_key_stores_its_type() {
         ("ok=TRUE", json!(true)),
         ("on=yesterday", json!("2026-10-06")),
         ("on=2026-09-28", json!("2026-09-28")),
-        ("at=9am", json!("2026-10-07T09:00:00")),
-        ("at=yesterday 10am", json!("2026-10-06T10:00:00")),
-        ("at=2026-09-28T10:00+02:00", json!("2026-09-28T08:00:00Z")),
-        ("at=2026-09-28T10:00Z", json!("2026-09-28T10:00:00Z")),
+        ("seen=9am", json!("2026-10-07T09:00:00")),
+        ("seen=yesterday 10am", json!("2026-10-06T10:00:00")),
+        ("seen=2026-09-28T10:00+02:00", json!("2026-09-28T08:00:00Z")),
+        ("seen=2026-09-28T10:00Z", json!("2026-09-28T10:00:00Z")),
     ] {
         assert_eq!(log(&db, "run", kv), Ok(want), "{kv}");
     }
@@ -83,7 +83,7 @@ fn a_spec_typed_key_refuses_what_is_not_its_type() {
         ("km=nan", r#"km: "nan" is not a number"#),
         ("ok=yes", r#"ok: "yes" is not a bool"#),
         ("on=tomorow", r#"on: "tomorow" is not a date"#),
-        ("at=soonish", r#"at: "soonish" is not a datetime"#),
+        ("seen=soonish", r#"seen: "soonish" is not a datetime"#),
     ] {
         assert_eq!(log(&db, "run", kv), Err(want.to_string()), "{kv}");
     }
@@ -140,7 +140,7 @@ fn a_datetime_is_the_time_keys_instant_as_a_wall_clock() {
     let mut stored = vec![];
     for (i, v) in forms.iter().enumerate() {
         let at = format!("2026-10-07T12:{i:02}");
-        let (a, t) = (format!("at={v}"), format!("wake_time={v}"));
+        let (a, t) = (format!("seen={v}"), format!("wake_time={v}"));
         run_cli(&["occur", "run", &a, &t, "-t", &at], &db).unwrap();
         let entries = logged_entries(&db, "run");
         let latest = entries
@@ -150,7 +150,7 @@ fn a_datetime_is_the_time_keys_instant_as_a_wall_clock() {
         let wake = DatumTime::from_v2_json(&data["wake_time"]).expect(v);
         let wall = wake.local_time().naive_local();
         let wall = wall.format("%Y-%m-%dT%H:%M:%S").to_string();
-        assert_eq!(data["at"], json!(wall), "{v}");
+        assert_eq!(data["seen"], json!(wall), "{v}");
         stored.push(wall);
     }
     assert_eq!(stored[0], "2026-10-08T09:00:00");
@@ -389,4 +389,22 @@ fn the_spec_help_update_clears_an_old_value_a_later_type_lists() {
         json!([8])
     );
     assert!(!mistyped(&db), "check is clean after the update");
+}
+
+/// da-o5bww: `at` is the entry's time whatever a spec declares of a key by
+/// that name, so no type turns it into data or refuses a time.
+#[test]
+fn a_spec_types_no_key_called_at() {
+    let db = fresh_db();
+    let spec = json!({"field": "run", "verb": "occur", "subfields": {
+        "at": {"value_type": "number"},
+    }});
+    run_cli(&["setup", "run", "--from-json", &spec.to_string()], &db).unwrap();
+    run_cli(&["occur", "run", "at=2026-10-07T09:00Z"], &db).unwrap();
+    let [e] = &logged_entries(&db, "run")[..] else {
+        panic!("one entry");
+    };
+    let t = e.occur_time.as_ref().unwrap().utc.to_rfc3339();
+    assert_eq!(t, "2026-10-07T09:00:00+00:00");
+    assert_eq!(e.data, None);
 }

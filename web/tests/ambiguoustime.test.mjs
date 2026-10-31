@@ -55,9 +55,9 @@ test('two time keys are two dialogs, and each stores the reading pressed', async
 		async (app) => {
 			const { page } = app;
 			await app.declare('tea');
-			await type(page, 'occur tea occur_time=2026-10-25T02:30 brew_time=2026-10-25T02:10');
+			await type(page, 'occur tea at=2026-10-25T02:30 brew_time=2026-10-25T02:10');
 			const dialog = page.locator('dialog.confirm');
-			const occur = 'occur_time=2026-10-25T02:30:00+01:00';
+			const occur = 'at=2026-10-25T02:30:00+01:00';
 			await dialog.getByRole('button', { name: occur, exact: true }).click();
 			const brew = 'brew_time=2026-10-25T02:10:00+02:00';
 			const before = await page.locator('.cli .echo').count();

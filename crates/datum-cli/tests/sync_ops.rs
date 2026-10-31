@@ -1376,6 +1376,31 @@ fn two_retimes_of_one_instant_logged_twice_are_an_occur_time_conflict() {
     assert_eq!(x.conflicts(&first), y.conflicts(&first));
 }
 
+/// Such a conflict reads and is settled as `at`, though the column and the
+/// ops still name it `occur_time` (da-o5bww).
+#[test]
+fn a_conflict_on_the_time_says_at() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let (first, second) = one_id_twice(&x, &y);
+    x.ok(&["retime", &first, "-t", "2026-10-04 09:00"]);
+    y.ok(&["retime", &second, "-t", "2026-10-04 10:00"]);
+    converged(&x, &y);
+    assert_eq!(sides(&x.conflicts(&first), "occur_time").len(), 2);
+
+    let listed = x.ok(&["conflicts"]);
+    assert!(listed.contains("\n    at\n"), "{listed}");
+    assert!(!listed.contains("occur_time"), "{listed}");
+    let json: Value = serde_json::from_str(&x.ok(&["conflicts", "--json"])).unwrap();
+    assert_eq!(json[0]["conflicts"]["at"].as_array().unwrap().len(), 2);
+    assert!(json[0]["conflicts"].get("occur_time").is_none(), "{json}");
+
+    let settled = x.ok(&["conflicts", "resolve", &first, "at=a"]);
+    assert!(settled.contains("    at  "), "{settled}");
+    assert_eq!(x.conflicts(&first), Value::Null);
+    converged(&x, &y);
+    assert_eq!(y.conflicts(&first), Value::Null);
+}
+
 /// A coffee logged at an instant another copy's coffee was moved FROM, by a
 /// copy that had seen it move, is a coffee of its own on every copy.
 #[test]

@@ -63,6 +63,7 @@ a top-level `migrations/` folder.)
   The only planned form is a typed value (`u://`/`unit://`), not built.
 - `occur_time` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.
 - the zone travels with the time (`occur_time_tz`): an IANA name, e.g. "America/Chicago"
+- What a person types and reads calls the time `at` (da-o5bww): `at=` and `at_uncertainty=` on a line (`occur_time=` still read), `%at%` in a template (`%occur_time%` and `%occurTime%` still read), `at`, `at_tz`, `at_offset` and `at_uncertainty` in `get`, `edit`, `history`, `why` and `conflicts`. The column, the Rust names, a backup's lines and the ops still say `occur_time`, and a new entry's stored `id_structure` `%occur_time%`, until da-95avu. So `at` is no data key: refused on a new write, and one already held (an import, another copy) is named by `datum check` (`reserved_data_key`) and `db v2import`, and kept.
 - `create_time` / `modify_time` / `client_id`
 
 ### Time model
@@ -166,7 +167,7 @@ Where it holds a zone, an entry is in the field's zone at its instant, past or
 present (da-mvt5i): `-yy -t 8` two days ago in Lisbon is 8:00 in Lisbon. `-z` and
 an offset win, and the entries around it decide where the field claims nothing.
 Which zone depends on the instant it gives, so each stretch reads the flags, and
-an `occur_time=` key on them (da-87wvg), in its own zone
+an `at=` key on them (da-87wvg), in its own zone
 (`Declared::reading_itself`, `commands/follow_zone.rs`); the hour
 a move west repeats goes to the stretch being begun, and an hour a move east
 skipped keeps the clock typed, in the zone held at its reading in the host's,
@@ -262,9 +263,9 @@ is reported rather than read again. The owner's reads open as a write does.
   the anchor is now (`TimeBuilder::shift_needs_clock`): shift then day and
   day then shift part at midnight and at DST. `-y -t 18:30 -t -6` is 18:24
   yesterday. `retime` anchors on the entry's own time, a clock, and takes them.
-  A relative `occur_time=` on a log is one more `-t ±N` to the rule
-  (`-y occur_time=-6` is refused), and `-D` wins over the key as over `-t`
-  (`-D occur_time=18:30` is the whole day); on `update` its anchor is the
+  A relative `at=` on a log is one more `-t ±N` to the rule
+  (`-y at=-6` is refused), and `-D` wins over the key as over `-t`
+  (`-D at=18:30` is the whole day); on `update` its anchor is the
   entry's time
 - with no `-z`, a log at a past instant is placed as if `-z` named the zone
   the entries around it agree on (`agreed_zone`: most of the three nearest on
@@ -283,7 +284,7 @@ is reported rather than read again. The owner's reads open as a write does.
   answer is `TimeArgs::later`, which every build of the line reads. A
   `retime` is asked the same of the time it builds from the first entry it
   makes one of, before it writes, and the answer is every entry's
-  (da-z3fzv). A `*_time` key's value (`occur_time=`, `wake_time=`, a pair's `start_time=`)
+  (da-z3fzv). A `*_time` key's value (`at=`, `wake_time=`, a pair's `start_time=`)
   on a log or an `update` is asked about the same way, spelled as the key
   (da-job98): the data coercion refuses it with `ParseError::RepeatedTime`
   unless `DataArgs::later` answers its key, and `log_core::asking` asks and

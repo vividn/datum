@@ -223,6 +223,47 @@ pub struct Entry {
 /// parse bug and want to re-derive the canonical fields.
 pub const CURRENT_PARSER_VERSION: u32 = 2;
 
+/// Why `at` names no data key (da-o5bww).
+pub const AT_RESERVED: &str =
+    "`at` is the entry's time, so no key of your own can be named at; call it something else";
+
+/// A column as a person reads it: the time is `at`, its family with it. The
+/// column, the row as stored and the ops keep `occur_time` (da-o5bww).
+pub fn surface_name(column: &str) -> &str {
+    match column {
+        "occur_time" => "at",
+        "occur_time_offset" => "at_offset",
+        "occur_time_tz" => "at_tz",
+        "occur_time_uncertainty" => "at_uncertainty",
+        other => other,
+    }
+}
+
+/// `row`'s keys as [`surface_name`] says them, its own object's and no deeper.
+pub fn surface_keys(row: JsonValue) -> JsonValue {
+    match row {
+        JsonValue::Object(map) => map
+            .into_iter()
+            .map(|(k, v)| (surface_name(&k).to_string(), v))
+            .collect(),
+        other => other,
+    }
+}
+
+/// An entry as pretty JSON, in its columns' order, its time named `at`. Only a
+/// top-level key starts a line at two spaces: a string's newline is escaped.
+pub fn surface_pretty(entry: &Entry) -> serde_json::Result<String> {
+    let pretty = serde_json::to_string_pretty(entry)?;
+    Ok(pretty.replacen("\n  \"occur_time\":", "\n  \"at\":", 1))
+}
+
+/// Whether an edit gives `after` a data key `at` that `before` lacks, which it
+/// refuses: a row already holding one, which `datum check` names, stays editable.
+pub fn gains_at_key(before: &Entry, after: &Entry) -> bool {
+    let has = |e: &Entry| e.data.as_ref().is_some_and(|d| d.get("at").is_some());
+    has(after) && !has(before)
+}
+
 fn default_parser_version() -> u32 {
     CURRENT_PARSER_VERSION
 }
@@ -878,5 +919,32 @@ mod tests {
             })
         };
         assert_eq!(inputs(&built), inputs(&parsed));
+    }
+
+    /// da-o5bww: only the column is renamed: a data key by the old name, at
+    /// any depth or in a string's text, stays, and the columns keep their order.
+    #[test]
+    fn surface_pretty_renames_the_column_and_nothing_else() {
+        let t = DatumTime::from_utc_and_tz("2026-05-01T10:00:00Z".parse().unwrap(), "UTC").unwrap();
+        let data = serde_json::json!({"occur_time": 1, "text": "\n  \"occur_time\": 2"});
+        let e = Entry::new(
+            "f",
+            Verb::Point,
+            None,
+            Some(data.clone()),
+            Some(t),
+            None,
+            "c",
+        );
+        let pretty = surface_pretty(&e).unwrap();
+        let row: JsonValue = serde_json::from_str(&pretty).unwrap();
+        assert_eq!(row["at"]["utc"], "2026-05-01T10:00:00Z");
+        assert_eq!(row["data"], data);
+        assert!(row.get("occur_time").is_none(), "{pretty}");
+        assert!(
+            pretty.find("\n  \"data\":") < pretty.find("\n  \"at\":"),
+            "{pretty}"
+        );
+        assert_eq!(row, surface_keys(serde_json::to_value(&e).unwrap()));
     }
 }
