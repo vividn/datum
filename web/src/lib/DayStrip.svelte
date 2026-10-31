@@ -2786,6 +2786,11 @@
 		pointer-events: none;
 		z-index: 1;
 	}
+	/* The grid is the strip's: a day the clock changed in is the CLI's own
+	   picture, which rules its own, and two sets of lines read brighter (da-zz2b3). */
+	.band :global(svg.svg .plot > .gridline) {
+		display: none;
+	}
 	/* Each hour of the day is drawn, the ones off the window too, so a pan
 	   moves the lines on their own layer and draws none (da-uovtn). */
 	.gridlines {

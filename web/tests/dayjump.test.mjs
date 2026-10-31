@@ -300,3 +300,35 @@ for (const names of [['b'], ['a', 'b']])
 			{ clock: Date.UTC(2026, 2, 29, 12), ...BERLIN, desk: strips(...names) }
 		);
 	});
+
+test('a fall-back day draws each hour line once, as the ordinary day under it does (da-zz2b3)', async () => {
+	await withApp(
+		async ({ page, redraw, idle }) => {
+			await redraw();
+			await page.locator('.band[data-days-ago="1"] svg.svg .day-data[data-offset]').first().waitFor({ state: 'attached' });
+			await idle();
+			const lines = await page.evaluate(() => {
+				const drawnIn = (ago) => {
+					const band = document.querySelector(`.band[data-days-ago="${ago}"]`).getBoundingClientRect();
+					const inStack = [...document.querySelectorAll('line.gridline')].filter((line) => {
+						const r = line.getBoundingClientRect();
+						return getComputedStyle(line).display !== 'none' && r.top < band.bottom && r.bottom > band.top;
+					});
+					// Each hour's x, to the pixel: the opacities drawn there, in this band.
+					const at = {};
+					for (const line of inStack) {
+						const x = Math.round(line.getBoundingClientRect().x);
+						(at[x] ??= []).push(line.getAttribute('stroke-opacity'));
+					}
+					return at;
+				};
+				return { hours: document.querySelectorAll('svg.gridlines line').length, ordinary: drawnIn(0), fallBack: drawnIn(1) };
+			});
+			assert.equal(lines.hours, 25);
+			assert.equal(Object.keys(lines.ordinary).length, 25, 'the ordinary day has its 25 lines');
+			assert.ok(Object.values(lines.ordinary).every((at) => at.length === 1), 'one line an hour on the ordinary day');
+			assert.deepEqual(lines.fallBack, lines.ordinary);
+		},
+		{ clock: Date.UTC(2026, 9, 26, 12), ...BERLIN }
+	);
+});
