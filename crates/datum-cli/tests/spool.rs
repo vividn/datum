@@ -16,6 +16,12 @@ use rusqlite::Connection;
 use serde_json::Value;
 use tempfile::TempDir;
 
+/// What a write under a held lock may take: ~0.8 s, the 750 ms it waits for the
+/// lock and then the snapshot. A stall of a loaded runner must fit in the margin
+/// (six tests stalled to 2.4 s together, da-ufixm), and it must stay under the
+/// 5 s a command takes to wait the lock out, which is what this catches.
+const QUEUES_WITHIN: Duration = Duration::from_secs(4);
+
 struct Env {
     _tmp: TempDir,
     home: PathBuf,
@@ -103,9 +109,7 @@ impl Env {
             String::from_utf8_lossy(&out.stderr)
         );
         assert!(stdout.contains("QUEUED"), "{args:?} printed: {stdout}");
-        // ~0.8 s here: the 750 ms it waits for the lock, then the snapshot.
-        // Two seconds leaves a loaded runner room and is still far from the 5 s.
-        assert!(took < Duration::from_secs(2), "{args:?} took {took:?}");
+        assert!(took < QUEUES_WITHIN, "{args:?} took {took:?}");
         stdout
     }
 
@@ -689,11 +693,7 @@ fn a_repl_write_under_a_held_lock_is_queued_and_lands_later() {
     let began = Instant::now();
     let out = env.ok_in(&[], "occur tea\n");
     assert!(out.contains("QUEUED"), "{out}");
-    assert!(
-        began.elapsed() < Duration::from_secs(2),
-        "{:?}",
-        began.elapsed()
-    );
+    assert!(began.elapsed() < QUEUES_WITHIN, "{:?}", began.elapsed());
     assert_eq!(env.rows().len(), 1, "nothing lands while the lock is held");
     let text = env.ok(&["check", "spool"]);
     assert!(text.contains("[WARN ] spool_waiting (x1)"), "{text}");
