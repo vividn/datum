@@ -2081,3 +2081,107 @@ fn a_structure_rendering_an_id_no_id_may_be_does_not_abort_the_import() {
     let db = datum_core::db::Db::open(dir.path().join("t.db").to_str().unwrap()).unwrap();
     assert_eq!(slugs(&db), ["coffee:2025-01-08T07:00:00.000Z"]);
 }
+
+// ─── A doc's fields at its top level (da-rwcha) ──────────────────────
+// v2's `DataOnlyDocument`, and the older language and task docs with `meta`
+// beside the fields that their `subdataMigration`s read the same way.
+
+fn data_only_docs() -> serde_json::Value {
+    let berlin = |utc: &str| serde_json::json!({"utc": utc, "o": 1, "tz": "Europe/Berlin"});
+    serde_json::json!([
+        {
+            "_id": "plain:1", "_rev": "1-a", "_attachments": {},
+            "field": "bare", "state": "on", "dur": "PT30M", "word": "kept",
+            "occurTime": berlin("2025-01-08T07:00:00.000Z"),
+            "meta": {"humanId": "plainhid", "createTime": berlin("2025-01-08T07:00:01.000Z")}
+        },
+        {
+            "_id": "plain:2", "_rev": "1-a",
+            "field": "bare", "state": "off", "occurTime": berlin("2025-01-08T08:00:00.000Z")
+        },
+        // No time of any kind: `_id` alone tells these apart.
+        {"_id": "word:one", "_rev": "1-a", "field": "word", "text": "a"},
+        {"_id": "other", "_rev": "1-a", "field": "word", "text": "b", "meta": {}},
+        // `data` without `meta` is an ordinary key to v2, where a field stands beside it.
+        {"_id": "plain:3", "field": "keyed", "data": {"inner": 1}},
+        {"_id": "orphan", "_rev": "1-a", "text": "no field", "meta": {}},
+    ])
+}
+
+#[test]
+fn a_doc_with_its_fields_at_the_top_level_imports() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v2.db");
+    let f = write_backup(data_only_docs());
+    let backup = f.path().to_str().unwrap();
+    let datum = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", &path)
+            .env("NO_COLOR", "1")
+            .args(args)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        assert!(out.status.success(), "{args:?}: {stdout}");
+        stdout
+    };
+
+    let out = datum(&["db", "v2import", "--dry-run", backup]);
+    assert!(
+        out.contains("5 would import (4 point, 1 block), 1 skipped (1 no-field)"),
+        "{out}"
+    );
+    assert!(out.contains("  no-field  orphan\n"), "{out}");
+    assert!(out.contains("would import: word:one\n"), "{out}");
+
+    let out = datum(&["db", "v2import", backup]);
+    assert!(
+        out.contains("5 imported (4 point, 1 block), 1 skipped (1 no-field)"),
+        "{out}"
+    );
+    let db = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
+    let entries = datum_core::test_util::logged_all(&db);
+    let row = |slug: &str| {
+        entries
+            .iter()
+            .find(|e| e.slug.as_str() == slug)
+            .unwrap_or_else(|| panic!("no {slug} in {entries:#?}"))
+    };
+
+    let with_meta = row("bare:2025-01-08T07:00:00.000Z");
+    assert_eq!(with_meta.hid.as_str(), "plainhid");
+    assert_eq!(with_meta.state, Some(serde_json::json!("on")));
+    assert_eq!(with_meta.dur.as_ref().unwrap().to_storage_string(), "PT30M");
+    let occur = with_meta.occur_time.as_ref().unwrap();
+    assert_eq!(occur.utc.to_rfc3339(), "2025-01-08T07:00:00+00:00");
+    assert_eq!(occur.timezone.as_deref(), Some("Europe/Berlin"));
+    assert_eq!(
+        with_meta.create_time.to_rfc3339(),
+        "2025-01-08T07:00:01+00:00"
+    );
+    // Only what has no column, and nothing of CouchDB's or `meta`.
+    assert_eq!(with_meta.data, Some(serde_json::json!({"word": "kept"})));
+
+    let without_meta = row("bare:2025-01-08T08:00:00.000Z");
+    assert_eq!(without_meta.state, Some(serde_json::json!("off")));
+    assert_eq!(without_meta.data, None);
+
+    assert_eq!(row("word:one").data, Some(serde_json::json!({"text": "a"})));
+    assert_eq!(
+        row("word:other").data,
+        Some(serde_json::json!({"text": "b"}))
+    );
+    assert!(row("word:one").occur_time.is_none());
+
+    let keyed = entries.iter().find(|e| e.field == "keyed").unwrap();
+    assert_eq!(keyed.data, Some(serde_json::json!({"data": {"inner": 1}})));
+
+    // The same backup again adds nothing, timeless docs included.
+    let out = datum(&["db", "v2import", backup]);
+    assert!(
+        out.contains("0 imported (0 point, 0 block), 6 skipped (5 duplicate, 1 no-field)"),
+        "{out}"
+    );
+    let check = datum(&["check"]);
+    assert!(check.contains("No consistency issues"), "{check}");
+}

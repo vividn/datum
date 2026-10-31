@@ -1271,6 +1271,8 @@ The original datum uses CouchDB JSON documents. Backup format:
 { "backupTime": "...", "docs": [...CouchDB docs...] }
 ```
 Each doc has `data.field`, `data.occurTime`, `data.state`, `data.dur`, `meta.createTime`.
+A doc with no `data` wrapper has them at its top level, `meta` beside them or not (v2's `DataOnlyDocument`, da-rwcha);
+with no time of any kind it slugs on its `_id`.
 Migration: `datum db v2import --from backup.json`
 
 ## Running tests

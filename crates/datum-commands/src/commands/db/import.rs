@@ -83,7 +83,8 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     let mut reading = Progress::new("v2import: reading", Some(docs.len()));
     for (doc_idx, doc) in docs.iter().enumerate() {
         reading.tick(doc_idx);
-        let data = &doc["data"];
+        let flat = data_only_fields(doc);
+        let data = flat.as_ref().unwrap_or(&doc["data"]);
         let meta = &doc["meta"];
         let doc_id = doc_id_or_synthetic(doc, doc_idx);
         if doc_id.starts_with("_design/") {
@@ -270,8 +271,19 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // the marker (da-ipwqb). So with the literal `c` v2 writes beside
         // its create time, which v3's token renders itself (da-hcxdx).
         let original = meta["idStructure"].as_str();
-        let id_structure =
-            original.map(|o| strip_create_time_literal(strip_field_prefix(o).unwrap_or(o)));
+        // A doc with no time of any kind would slug on this run's clock, so its
+        // docs collide and a second import doubles them. v2's id for a doc with
+        // no structure is its `_id` (`assembleId`), which is stable and unique.
+        let own_id = doc["_id"]
+            .as_str()
+            .filter(|_| original.is_none() && occur_time.is_none() && create_time.is_none())
+            .map(|id| {
+                let bare = id.strip_prefix(&format!("{field}:")).unwrap_or(id);
+                bare.to_string()
+            });
+        let id_structure = original
+            .map(|o| strip_create_time_literal(strip_field_prefix(o).unwrap_or(o)))
+            .or(own_id);
 
         let created_at = create_time.map(|t| t.utc).unwrap_or_else(chrono::Utc::now);
         // Prefer source modifyTime; fall back to createTime so imported rows
@@ -567,7 +579,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SkipReason {
-    /// Source doc had no `data.field` — can't be imported.
+    /// Source doc had no `field`, in `data` or at its top level — can't be imported.
     NoField,
     /// `derive_verb` rejected the (state, dur) shape.
     InvalidShape,
@@ -640,6 +652,27 @@ fn write_skip_log(
         writeln!(f, "{}\t{}\t{}", reason.as_str(), id, detail)?;
     }
     Ok(())
+}
+
+/// The data of a v2 `DataOnlyDocument`, whose fields stand at its top level, as
+/// v2 reads it: every key but `meta` and CouchDB's `_` keys, as its language and
+/// task `subdataMigration`s split one, `None` for a doc with a `data` wrapper.
+/// `isDatumDocument` (vividn/datum d866811f) also calls a doc with `data` and no
+/// `meta` data-only, its `data` an ordinary key; that is read so only where the
+/// top level names a field, since such a doc without one was always read as
+/// wrapped here and v2 has no field for it.
+fn data_only_fields(doc: &JsonValue) -> Option<JsonValue> {
+    let wrapped =
+        doc["data"].is_object() && (doc.get("meta").is_some() || !doc["field"].is_string());
+    if wrapped {
+        return None;
+    }
+    let keys = doc.as_object()?.iter();
+    Some(JsonValue::Object(
+        keys.filter(|(k, _)| k.as_str() != "meta" && !k.starts_with('_'))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    ))
 }
 
 /// A doc's `occurTime` as a v2 time block. Before vividn/datum 76c6f8e7 (#541)
