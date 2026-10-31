@@ -121,6 +121,24 @@ describe('the swipe strip', () => {
 	const STRIP = '.swipe-strip';
 	const box = (page, selector) => page.locator(selector).boundingBox();
 
+	/**
+	 * Close the bar, and wait for it to get there. The tab stands through the
+	 * glide (da-sz4f6) and says «show the output» from its first frames, so its
+	 * word is where the bar is going. Its foot on the input's top is where it is.
+	 */
+	const closeBar = async (page) => {
+		await page.locator('.prompt-bar input').press('PageDown');
+		const tab = page.getByRole('button', { name: 'show the output' });
+		await until(
+			async () => {
+				const [t, input] = await Promise.all([tab.boundingBox(), box(page, '.prompt-bar .section.input')]);
+				return Math.abs(t.y + t.height - input.y);
+			},
+			(gap) => gap <= 1
+		);
+		return tab;
+	};
+
 	test('fills the gap under the bottom widget, 1.3× as tall again, says nothing at rest, and a swipe from it moves the tab', async () => {
 		await withApp(
 			async ({ page }) => {
@@ -176,9 +194,7 @@ describe('the swipe strip', () => {
 		await withApp(
 			async ({ page, submit }) => {
 				await submit('occur coffee');
-				await page.locator('.prompt-bar input').press('PageDown');
-				const handle = page.getByRole('button', { name: 'show the output' });
-				await handle.waitFor();
+				const handle = await closeBar(page);
 				const [strip, tab] = await Promise.all([box(page, STRIP), handle.boundingBox()]);
 				const y = strip.y + strip.height / 2;
 				await swipe(page, tab.x + tab.width / 2, y, -220, 0);
@@ -215,10 +231,8 @@ describe('the swipe strip', () => {
 		await withApp(
 			async ({ page, submit }) => {
 				await submit('occur coffee');
-				await page.locator('.prompt-bar input').press('PageDown');
-				const show = page.getByRole('button', { name: 'show the output' });
+				const show = await closeBar(page);
 				const hide = page.getByRole('button', { name: 'hide the output' });
-				await show.waitFor();
 				await page.evaluate(() => (window.__notReloaded = true));
 				const from = async (tab) => {
 					const b = await tab.boundingBox();
@@ -292,9 +306,7 @@ describe('the swipe strip', () => {
 	test('a long pull down reloads and says so on the way; a short one, or one taken back, does not', async () => {
 		await withApp(
 			async ({ page }) => {
-				await page.locator('.prompt-bar input').press('PageDown');
-				await page.getByRole('button', { name: 'show the output' }).waitFor();
-				// The whole pull fits under the strip with the bar closed.
+				// The whole pull fits under the strip with the bar at the row.
 				const strip = await box(page, STRIP);
 				assert.ok(page.viewportSize().height - strip.y - strip.height / 2 > 70, 'no room to pull');
 				await mark(page);
