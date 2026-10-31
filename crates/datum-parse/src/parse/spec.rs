@@ -309,6 +309,14 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
                 out.never_false = Some(false);
                 i += 1;
             }
+            FlagSplit::Long("hide") => {
+                out.hide = Some(true);
+                i += 1;
+            }
+            FlagSplit::Long("draw") => {
+                out.hide = Some(false);
+                i += 1;
+            }
             FlagSplit::Long("auto-setup") => {
                 let (v, ni) = take_value(tail, i, None, "--auto-setup")?;
                 out.auto_setup = Some(parse_auto_setup(v)?);

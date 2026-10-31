@@ -218,3 +218,64 @@ fn spec_is_setups_alias() {
     // The field `spec` stays the specs' own.
     assert!(refused(&dir, &["occur", "spec"]).contains("reserved for field specs"));
 }
+
+/// da-bbhlp: `--hide` takes the field out of the pictures and the block says
+/// so, `--draw` puts it back with no key left, and it logs throughout.
+#[test]
+fn hide_says_it_and_draw_takes_it_back() {
+    let dir = TempDir::new().unwrap();
+    let drawn = |dir: &TempDir| -> [bool; 2] {
+        ["dayview", "nowview"].map(|picture| {
+            let path = dir.path().join("picture.json");
+            ok(dir, &[picture, "--json", "-o", path.to_str().unwrap()]);
+            std::fs::read_to_string(&path).unwrap().contains("\"nap\"")
+        })
+    };
+    ok(&dir, &["setup", "nap", "--verb", "start"]);
+    ok(&dir, &["start", "nap", "-q"]);
+    assert_eq!(drawn(&dir), [true; 2], "the control: drawn until hidden");
+    assert!(!ok(&dir, &["setup", "nap"]).contains("hidden"));
+
+    let line = "hidden from dayview and nowview: --draw draws it";
+    let out = lines(&ok(&dir, &["setup", "nap", "--hide"]));
+    assert!(out.contains(&format!("+ {line}")), "{out:?}");
+    assert!(lines(&ok(&dir, &["setup", "nap"])).contains(&line.to_string()));
+    assert_eq!(drawn(&dir), [false; 2]);
+    assert_eq!(ok(&dir, &["setup", "nap", "--hide"]).trim(), "no change");
+    ok(&dir, &["end", "nap"]);
+    assert!(ok(&dir, &["tail", "nap"]).contains("nap"));
+
+    let out = lines(&ok(&dir, &["setup", "nap", "--draw"]));
+    assert!(out.contains(&format!("− {line}")), "{out:?}");
+    assert_eq!(drawn(&dir), [true; 2]);
+    assert!(!ok(&dir, &["setup", "nap", "--json"]).contains("render"));
+    assert_eq!(ok(&dir, &["setup", "nap", "--draw"]).trim(), "no change");
+}
+
+/// A kit's map hides on the pictures it names, and the line names those.
+/// `--hide` is every picture, and `--draw` drops the map.
+#[test]
+fn the_hidden_line_names_the_pictures_a_map_hides_it_from() {
+    let dir = TempDir::new().unwrap();
+    let body = r#"{"verb":"occur","render":{"nowview":false,"dayview":true}}"#;
+    ok(&dir, &["setup", "tea", "--from-json", body]);
+    let out = lines(&ok(&dir, &["setup", "tea"]));
+    assert!(
+        out.contains(&"hidden from nowview: --draw draws it".to_string()),
+        "{out:?}"
+    );
+    let out = lines(&ok(&dir, &["setup", "tea", "--hide"]));
+    assert!(
+        out.contains(
+            &"~ hidden from nowview: --draw draws it → from dayview and nowview: --draw draws it"
+                .to_string()
+        ),
+        "{out:?}"
+    );
+    ok(&dir, &["setup", "tea", "--draw"]);
+    assert!(!ok(&dir, &["setup", "tea", "--json"]).contains("render"));
+
+    let body = r#"{"verb":"occur","render":{"nowview":true}}"#;
+    ok(&dir, &["setup", "tea", "--from-json", body]);
+    assert!(!ok(&dir, &["setup", "tea"]).contains("hidden"));
+}

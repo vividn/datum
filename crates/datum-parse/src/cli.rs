@@ -838,6 +838,9 @@ pub struct SpecSetArgs {
     /// `--never-false` / `--allow-false` (da-cwieh): the spec's
     /// `never_false`; `None` leaves the existing value.
     pub never_false: Option<bool>,
+    /// `--hide` / `--draw` (da-bbhlp): the spec's `render`, false on every
+    /// picture or none; `None` leaves the existing value.
+    pub hide: Option<bool>,
     /// `--auto-setup true|false|''` (da-j04cq): a template's
     /// `auto_setup`, `''` clearing it; `None` leaves the existing value.
     pub auto_setup: Option<Option<bool>>,

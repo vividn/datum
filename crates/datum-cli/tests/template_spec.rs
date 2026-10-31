@@ -415,3 +415,40 @@ fn every_advised_setup_runs_and_then_takes_the_refused_line() {
         }
     }
 }
+
+/// da-bbhlp: a template's `--hide` hides what it covers, and a covered field's
+/// `--draw` must stay on its own spec, or the template's would show through.
+/// Under a template with no `render`, `--draw` stores none.
+#[test]
+fn a_covered_field_draws_itself_out_from_under_a_template_that_hides() {
+    use datum_core::field_spec::Render;
+    let db = board();
+    let render = |field: &str| db.load_spec(field).unwrap().unwrap().presentation.render;
+    let own = |field: &str| db.spec_entry(field).unwrap().and_then(|e| e.data);
+    let (one, two) = ("issue__2qvk0dk4", "issue__3abcd0ef");
+
+    run_cli(&["setup", one, "--hide"], &db).unwrap();
+    assert_eq!(render(one), Some(Render::All(false)));
+    run_cli(&["setup", one, "--draw"], &db).unwrap();
+    assert_eq!(render(one), None);
+    assert!(
+        own(one).is_none_or(|d| d.get("render").is_none()),
+        "no template says, so no key"
+    );
+
+    run_cli(&["setup", "issue__%hid:8%", "--hide"], &db).unwrap();
+    assert_eq!(render(two), Some(Render::All(false)), "it covers them");
+    assert_eq!(render(one), Some(Render::All(false)));
+
+    run_cli(&["setup", one, "--draw"], &db).unwrap();
+    assert_eq!(render(one), Some(Render::All(true)));
+    assert_eq!(render(two), Some(Render::All(false)), "the other stays");
+
+    // The field's own `--hide` agrees with the template, and stores no key.
+    run_cli(&["setup", one, "--hide"], &db).unwrap();
+    assert_eq!(render(one), Some(Render::All(false)));
+    assert!(own(one).is_some_and(|d| d.get("render").is_none()));
+
+    run_cli(&["setup", "issue__%hid:8%", "--draw"], &db).unwrap();
+    assert_eq!(render(two), None);
+}

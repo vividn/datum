@@ -5,7 +5,7 @@ use datum_core::{
     action::Action,
     db::{Db, IGNORED_STATE_VALUE},
     entry::Entry,
-    field_spec::{parse_key_decl, FieldSpec, KeyKind, SymbolBy},
+    field_spec::{parse_key_decl, FieldSpec, KeyKind, Render, SymbolBy},
     kit_color::resolve,
     shape::{is_ignored_state, TRACKED_STATE_VALUE},
     time::DatumTime,
@@ -375,6 +375,12 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(a) = args.auto_setup {
         spec.auto_setup = a;
     }
+    if let Some(hide) = args.hide {
+        spec.presentation.render = match hide {
+            true => Some(Render::All(false)),
+            false => drawn(db, &spec.field)?,
+        };
+    }
     if args.y.is_some() {
         spec.presentation.y = args.y;
     }
@@ -470,6 +476,31 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The `render` a field `--draw` stores (da-bbhlp): none, but for a field under
+/// a template that has one, whose own would show through.
+fn drawn(db: &Db, field: &str) -> Result<Option<Render>> {
+    let Some(covered) = db.load_spec(field)?.and_then(|s| s.template) else {
+        return Ok(None);
+    };
+    let template = db.load_spec(&covered.template)?;
+    let says = template.is_some_and(|t| t.presentation.render.is_some());
+    Ok(says.then_some(Render::All(true)))
+}
+
+/// The pictures `render` keeps a field out of (da-bbhlp), for its line in the
+/// block; none where it is drawn on all of them.
+fn hidden_from(render: Option<&Render>) -> Vec<&str> {
+    match render {
+        Some(Render::All(false)) => vec!["dayview", "nowview"],
+        Some(Render::PerSurface(map)) => map
+            .iter()
+            .filter(|(_, drawn)| !**drawn)
+            .map(|(surface, _)| surface.as_str())
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// The states `--states` and `--add-state` name.
@@ -916,6 +947,13 @@ impl Block {
             .collect();
         if !position.is_empty() {
             line("position", position.join("  "));
+        }
+        let hidden = hidden_from(pres.render.as_ref());
+        if !hidden.is_empty() {
+            line(
+                "hidden",
+                format!("from {}: --draw draws it", hidden.join(" and ")),
+            );
         }
         if let Some(f) = &spec.state_lookup_field {
             line("state lookup", f.clone());
