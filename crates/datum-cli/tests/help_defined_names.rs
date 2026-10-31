@@ -137,3 +137,61 @@ fn a_fields_own_word_names_the_page_of_its_verb() {
          options: datum help occur\n"
     );
 }
+
+/// vividn, 2026-10-31: «it should say that it expands to `occur turn -k
+/// kind`». A field's word carries its spec's keys and remainder, so the page
+/// says them, in the words a line would (da-6l1hf).
+#[test]
+fn a_fields_word_says_the_keys_it_carries() {
+    let env = Env::new();
+    let says = |field: &str, spec: &[&str]| {
+        let mut setup = vec!["setup", field, "--verb", "occur"];
+        setup.extend(spec);
+        env.ok(&setup);
+        let page = env.ok(&[field, "--help"]);
+        let line = page
+            .lines()
+            .find(|l| l.starts_with("expands to: "))
+            .unwrap();
+        line["expands to: datum ".len()..].to_string()
+    };
+    assert_eq!(says("bare", &[]), "occur bare");
+    assert_eq!(says("one", &["-k", "kind"]), "occur one -k kind");
+    assert_eq!(says("opt", &["-k", "kind="]), "occur opt -k kind=");
+    assert_eq!(says("dflt", &["-k", "kind=a"]), "occur dflt -k kind=a");
+    assert_eq!(says("rest", &["-R", "words"]), "occur rest -R words");
+    assert_eq!(
+        says("both", &["-k", "kind=", "-R", "words"]),
+        "occur both -k kind= -R words"
+    );
+    // The spec's own spelling, as a line binds it.
+    assert_eq!(
+        says("req", &["-R", "words", "-k", "words"]),
+        "occur req -k words -R words"
+    );
+
+    // An add's keys follow its id, and are as much its line's.
+    env.ok(&["setup", "doc", "--verb", "add", "-k", "kind="]);
+    assert!(env
+        .ok(&["doc", "--help"])
+        .contains("expands to: datum add doc -k kind=\n"));
+    // A state's word carries them too; an end's takes none.
+    env.ok(&[
+        "setup", "mood", "--verb", "switch", "-k", "why=", "--states", "happy",
+    ]);
+    assert!(env
+        .ok(&["happy", "--help"])
+        .contains("expands to: datum switch mood happy -k why=\n"));
+    assert!(env
+        .ok(&["moode", "--help"])
+        .contains("expands to: datum end mood\n"));
+    // A word of yours on such a field says the same, its own words first.
+    env.ok(&["alias", "set", "calm", "occur opt mood=calm"]);
+    assert!(env
+        .ok(&["calm", "--help"])
+        .contains("expands to: datum occur opt mood=calm -k kind=\n"));
+    // The stored alias is unchanged, and the options page is still the verb's.
+    assert!(env
+        .ok(&["opt", "--help"])
+        .contains("options: datum help occur\n"));
+}

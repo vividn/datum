@@ -6,7 +6,9 @@
 
 use anyhow::Result;
 use datum_core::db::Db;
-use datum_parse::{help, ParseError};
+use datum_parse::{alias, help, ParseError};
+
+use crate::args::DbAliasResolver;
 
 /// The name a help request asks about when only the database can answer
 /// it: `help NAME` or `NAME --help` naming no built-in command or topic.
@@ -28,7 +30,10 @@ pub fn asks_the_db(e: &ParseError) -> Option<&str> {
 pub fn page(name: &str, db: &Db) -> Result<Option<String>> {
     if let Some(a) = db.lookup_alias(name)? {
         let mut s = heading(name, a.description.as_deref(), "an alias");
-        s.push_str(&format!("\nexpands to: datum {}\n", a.expands_to));
+        s.push_str(&format!(
+            "\nexpands to: datum {}\n",
+            spelled(&a.expands_to, db)
+        ));
         // What may follow it is the page of what it expands to (da-wxan9).
         if let Some(next) = a.expands_to.split_whitespace().next() {
             if help::find_command(next).is_some() || db.lookup_alias(next)?.is_some() {
@@ -45,7 +50,7 @@ pub fn page(name: &str, db: &Db) -> Result<Option<String>> {
     };
     let mut s = heading(name, c.help.as_deref(), "a kit command");
     if let Some(to) = &c.expands_to {
-        s.push_str(&format!("\nexpands to: datum {to}\n"));
+        s.push_str(&format!("\nexpands to: datum {}\n", spelled(to, db)));
     } else {
         let mut usage = format!("datum {name}");
         for arg in &c.args {
@@ -67,6 +72,16 @@ pub fn page(name: &str, db: &Db) -> Result<Option<String>> {
         s.push_str(&from_kit(kit));
     }
     Ok(Some(s))
+}
+
+/// What a stored expansion carries, its fields' keys and remainder written
+/// out as a line would (da-6l1hf, vividn: «it should say that it expands to
+/// `occur turn -k kind`»).
+fn spelled(expands_to: &str, db: &Db) -> String {
+    alias::shell_join(&alias::spelled_with_spec_keys(
+        &alias::shell_split(expands_to),
+        &DbAliasResolver::new(db),
+    ))
 }
 
 fn from_kit(kit: &str) -> String {

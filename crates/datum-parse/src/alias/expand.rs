@@ -416,6 +416,26 @@ pub fn try_expand_alias(
 /// log path still adds the keys then, though the call site's positionals
 /// do not bind to them. True when anything was added.
 fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Resolver) -> bool {
+    spec_keys_on_sides(body, trailing, resolver, false)
+}
+
+/// An alias body with its fields' keys written out, as a line typing them
+/// would spell them: what `--help` says it expands to (da-6l1hf). It reads
+/// the spec of each field the body logs to and no other.
+pub fn spelled_with_spec_keys(body: &[String], resolver: &dyn Resolver) -> Vec<String> {
+    let mut spelled = body.to_vec();
+    spec_keys_on_sides(&mut spelled, &[], resolver, true);
+    spelled
+}
+
+/// `spell`: say an add's keys too, which the log path takes after its id
+/// rather than the alias walk binding them.
+fn spec_keys_on_sides(
+    body: &mut Vec<String>,
+    trailing: &[String],
+    resolver: &dyn Resolver,
+    spell: bool,
+) -> bool {
     use crate::spec_keys::{spec_key_words, takes_spec_keys, typed_state};
     let grouped = |t: &String| {
         t == super::regions::BOUNDARY
@@ -453,7 +473,8 @@ fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Res
             let remainder = resolver.spec_remainder(&line.field_or_verb);
             // An add whose first bare word is its id (da-znksm) leaves its
             // keys to the log path, which takes the id ahead of them.
-            if verb == "add"
+            if !spell
+                && verb == "add"
                 && line.takes_positional_id()
                 && !declared.iter().any(|k| k.id)
                 && remainder == crate::spec_keys::SpecRemainder::default()

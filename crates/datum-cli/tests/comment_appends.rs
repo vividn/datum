@@ -146,8 +146,10 @@ fn one_comment_prints_bare_in_columns_and_format_strings() {
         .skip(1)
         .map(|l| l.rsplit("  ").next().unwrap().to_string())
         .collect();
-    let want = vec!["a".to_string(), r#"["a","b"]"#.to_string()];
-    assert_eq!((formatted, column), (want.clone(), want));
+    // A format string keeps a list's JSON, as it does a list state's; a
+    // table's cell writes it as the state column does (da-6l1hf).
+    assert_eq!(formatted, ["a", r#"["a","b"]"#]);
+    assert_eq!(column, ["a", "a,b"]);
 }
 
 /// A `get` matcher reads a comment as the data block does: one comment is

@@ -41,7 +41,7 @@ use crossterm::{
 use datum_core::{db::Db, entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 
 use super::render_helpers::build_table_contexts;
-use super::tail::{split_columns, tail_entries_with_default_count};
+use super::tail::{split_columns, tail_entries_with_default_count, WatchedSpecs};
 use crate::args::OutputFlagsExt;
 use crate::render::term_layout::truncate_visible;
 use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
@@ -58,11 +58,11 @@ const MAX_BUFFER: usize = 50_000;
 /// Entry point from [`super::tail::tail`] when `--watch` is set and
 /// stdout is a TTY. Owns the screen until the user quits, then restores
 /// it. Returns once the loop exits cleanly.
-pub fn run(
+pub(crate) fn run(
     args: &crate::args::TailArgs,
     db: &Db,
     metric: TimeMetricCol,
-    registry: Option<&SpecRegistry>,
+    mut specs: WatchedSpecs,
     interval: Duration,
 ) -> Result<()> {
     let output = args.output()?;
@@ -117,7 +117,7 @@ pub fn run(
                 new_below,
                 db,
                 metric,
-                registry,
+                specs.registry.as_ref(),
                 &output,
                 &columns,
                 cols,
@@ -209,6 +209,9 @@ pub fn run(
             }
             buffer = fetch_buffer(args, db, fetch_cap)?;
             state.recompute(&slugs_of(&buffer), view_height(rows), anchor);
+            if specs.changed(db) {
+                last_sig = None;
+            }
             next_fetch = Instant::now() + interval;
         }
     }

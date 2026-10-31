@@ -1088,7 +1088,8 @@ fn build_rows(
 }
 
 /// An occur dot's values for its spec's declared keys, in the order a
-/// person types them (the `-K` slots, then the `-k`), space-separated
+/// person types them (the `-K` slots, the `-k`, then the remainder, a key
+/// like them, da-6l1hf), space-separated
 /// (da-gw0sh, vividn: «show the first few defined keys in the spec so that
 /// it is similar to what a user would type in to log it»). A row with a
 /// state of its own, or a key the entry lacks, shows nothing for it.
@@ -1104,8 +1105,14 @@ pub(super) fn declared_key_values(e: &Entry, registry: Option<&SpecRegistry>) ->
     keys.retain(|k| !matches!(k.kind, KeyKind::Assign(_)));
     // The `-K` slots (`id`) first, as they bind; stable within each.
     keys.sort_by_key(|k| std::cmp::Reverse(k.id));
+    let remainder = spec
+        .remainder
+        .as_deref()
+        .filter(|r| !keys.iter().any(|k| k.name == *r));
     keys.iter()
-        .map(|k| extract_column(e, &k.name))
+        .map(|k| k.name.as_str())
+        .chain(remainder)
+        .map(|key| extract_column(e, key))
         .filter(|v| !v.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
@@ -1610,12 +1617,11 @@ pub fn print_logged(entry: &Entry) {
 
 // ─── Extra data rendering ────────────────────────────────────────────────────
 
-/// Render a value for non-block consumers — format-string interpolation
-/// (`%amount%`) and the `tail --columns` extractor. These callers want a
-/// bare, copy-paste-friendly form (no quotes around strings), distinct
-/// from the user-data block
-/// renderer in [`blocks::format_data_block`] which follows the rule-11
-/// quoting convention.
+/// Render a value for format-string interpolation (`%amount%`), and for a
+/// table's cell through [`render_cell_value`]. These callers want a bare,
+/// copy-paste-friendly form (no quotes around strings), distinct from the
+/// user-data block renderer in [`blocks::format_data_block`] which follows
+/// the rule-11 quoting convention.
 fn render_extra_value(v: &JsonValue) -> String {
     match v {
         JsonValue::String(s) => s.clone(),
@@ -1623,16 +1629,29 @@ fn render_extra_value(v: &JsonValue) -> String {
     }
 }
 
+/// A value in a table's cell: a list reads as the state column writes one,
+/// `calm,curious` (da-6l1hf, vividn: «it shouldn't show the json syntax»).
+fn render_cell_value(v: &JsonValue) -> String {
+    match v {
+        JsonValue::Array(items) => items
+            .iter()
+            .map(render_cell_value)
+            .collect::<Vec<_>>()
+            .join(","),
+        other => render_extra_value(other),
+    }
+}
+
 fn extract_column(entry: &Entry, col: &str) -> String {
     if let (LAST_STATE_COLUMN, Some(v)) = (col, &entry.user_asserted_last_state) {
-        return render_extra_value(v);
+        return render_cell_value(v);
     }
     entry
         .data
         .as_ref()
         .and_then(|v| v.get(col))
         .map(|v| {
-            render_extra_value(&datum_core::doc_ref::shown(
+            render_cell_value(&datum_core::doc_ref::shown(
                 datum_core::entry::shown_data_value(col, v),
             ))
         })

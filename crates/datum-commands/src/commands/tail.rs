@@ -1,11 +1,14 @@
 //! `datum tail` — list the most recent entries.
 
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use chrono::Utc;
 use datum_core::time::Zone;
 use datum_core::{
     db::{Db, ListParams, TimeMetric},
     entry::Entry,
+    field_spec::SpecRegistry,
     time::{resolve_timezone, DatumTime, TimeCtx},
 };
 
@@ -13,6 +16,7 @@ use crate::args::{OutputFlagsExt, TailArgs};
 use crate::commands::helpers::{load_registry_opt, registry_of, resolve_prefix_or_tombstone};
 use crate::commands::render_helpers::build_table_contexts;
 use crate::commands::time_bounds::parse_since;
+use crate::commands::watch::data_version;
 use crate::render::tail_rows::{tail_rows, TailDocument};
 use crate::render::term_layout::{detect_cols, detect_rows, given_cols, given_rows, is_stdout_tty};
 use crate::render::{print_table_with, table_columns_with, TableArgs, TimeMetricCol};
@@ -69,9 +73,9 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         (tty && args.count.is_none()).then(|| auto_fill_rows(given_rows(5).unwrap_or(24)));
     let entries = tail_entries_with_default_count(&args, auto_count, db)?;
     // A watch shows rows of fields it has not read yet.
-    let registry = match args.watch {
-        Some(_) => load_registry_opt(db),
-        None => registry_of(db, &entries),
+    let mut specs = match args.watch {
+        Some(_) => WatchedSpecs::read(db),
+        None => WatchedSpecs::of(registry_of(db, &entries)),
     };
     let output = args.output()?;
 
@@ -88,7 +92,13 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     };
     let now = DatumTime::now();
     let ctxs = build_table_contexts(&entries, db);
-    print_table_with(&entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl);
+    print_table_with(
+        &entries,
+        Some(&ctxs),
+        Some(&now),
+        specs.registry.as_ref(),
+        &tbl,
+    );
 
     if let Some(secs) = args.watch {
         let interval = watch_interval(secs);
@@ -98,14 +108,14 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
             // screen until the user quits, then restores it. Non-TTY
             // consumers stay on the append/repaint loop below.
             #[cfg(feature = "native")]
-            return crate::commands::tail_tui::run(&args, db, metric, registry.as_ref(), interval);
+            return crate::commands::tail_tui::run(&args, db, metric, specs, interval);
             // No TUI without a terminal layer; fall through to the plain
             // repaint loop, which is what non-TTY consumers already use.
         }
         // da-d6yo: seed the watch loop with the signature of what we
         // just painted so the first tick's no-op render is suppressed.
         let initial = frame_signature(tty, &entries);
-        watch_repaint_loop(&args, db, metric, registry.as_ref(), interval, initial)?;
+        watch_repaint_loop(&args, db, metric, &mut specs, interval, initial)?;
     }
 
     Ok(())
@@ -150,9 +160,11 @@ fn tail_json(args: &TailArgs, metric: TimeMetricCol, columns: Vec<String>, db: &
         Ok(())
     };
 
+    // Ahead of the first frame, so a spec written after it is a change.
+    let specs = args.watch.is_some().then(|| WatchedSpecs::read(db));
     let entries = tail_entries_with_default_count(args, None, db)?;
     emit(&entries)?;
-    let Some(secs) = args.watch else {
+    let (Some(secs), Some(mut specs)) = (args.watch, specs) else {
         return Ok(());
     };
     let interval = watch_interval(secs);
@@ -161,12 +173,66 @@ fn tail_json(args: &TailArgs, metric: TimeMetricCol, columns: Vec<String>, db: &
         std::thread::sleep(interval);
         let entries = tail_entries_with_default_count(args, None, db)?;
         let sig = frame_signature(false, &entries);
-        if sig == last_sig {
+        if !specs.changed(db) && sig == last_sig {
             continue;
         }
         last_sig = sig;
         emit(&entries)?;
     }
+}
+
+/// The specs a watch draws with (da-6l1hf, vividn: «It should be responsive
+/// to changes in spec»), read again only once another connection has written,
+/// by the `data_version` poll, and never on a timer.
+pub(crate) struct WatchedSpecs {
+    version: Option<i64>,
+    pub(crate) registry: Option<SpecRegistry>,
+}
+
+impl WatchedSpecs {
+    fn read(db: &Db) -> Self {
+        // The version first: a spec written between the two leaves an older
+        // version beside it, so the next poll reads again.
+        let version = data_version(db).ok();
+        Self {
+            version,
+            registry: load_registry_opt(db),
+        }
+    }
+
+    /// What a one-shot `tail` drew with, which no poll ever asks again.
+    fn of(registry: Option<SpecRegistry>) -> Self {
+        Self {
+            version: None,
+            registry,
+        }
+    }
+
+    /// Whether a spec changed since the last read, so the frame is stale
+    /// though its entries are not.
+    pub(crate) fn changed(&mut self, db: &Db) -> bool {
+        // The version first, as in `read`.
+        let version = data_version(db).ok();
+        if version == self.version {
+            return false;
+        }
+        let fresh = Self {
+            version,
+            registry: load_registry_opt(db),
+        };
+        let changed = spec_values(&fresh.registry) != spec_values(&self.registry);
+        *self = fresh;
+        changed
+    }
+}
+
+/// A registry's specs in a form two reads compare by.
+fn spec_values(registry: &Option<SpecRegistry>) -> BTreeMap<&str, Option<serde_json::Value>> {
+    registry
+        .iter()
+        .flat_map(|r| &r.fields)
+        .map(|(field, spec)| (field.as_str(), serde_json::to_value(spec).ok()))
+        .collect()
 }
 
 /// Per-frame fingerprint used by the watch loop to suppress idle
@@ -223,7 +289,7 @@ fn watch_repaint_loop(
     args: &TailArgs,
     db: &Db,
     metric: TimeMetricCol,
-    registry: Option<&datum_core::field_spec::SpecRegistry>,
+    specs: &mut WatchedSpecs,
     interval: std::time::Duration,
     initial_sig: FrameSig,
 ) -> Result<()> {
@@ -248,7 +314,7 @@ fn watch_repaint_loop(
         };
         let entries = tail_entries_with_default_count(args, auto_count, db)?;
         let sig = frame_signature(tty, &entries);
-        if sig == last_sig {
+        if !specs.changed(db) && sig == last_sig {
             continue;
         }
         last_sig = sig;
@@ -266,7 +332,13 @@ fn watch_repaint_loop(
         };
         let now = DatumTime::now();
         let ctxs = build_table_contexts(&entries, db);
-        print_table_with(&entries, Some(&ctxs), Some(&now), registry, &tbl);
+        print_table_with(
+            &entries,
+            Some(&ctxs),
+            Some(&now),
+            specs.registry.as_ref(),
+            &tbl,
+        );
     }
 }
 
@@ -617,6 +689,37 @@ mod tests {
     fn install_sigwinch_handler_is_idempotent() {
         install_sigwinch_handler();
         install_sigwinch_handler();
+    }
+
+    /// A watch reads its specs again for a spec another connection wrote,
+    /// and says so for no other write.
+    #[test]
+    fn a_watch_notices_a_change_of_spec_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("w.db");
+        let path = path.to_str().unwrap();
+        let writer = Db::open(path).unwrap();
+        let spec = |key: Option<&str>| {
+            let mut spec: datum_core::field_spec::FieldSpec =
+                serde_json::from_value(serde_json::json!({"field": "feel", "verb": "occur"}))
+                    .unwrap();
+            spec.data_keys.extend(key.map(str::to_string));
+            spec
+        };
+        writer.save_field_spec(&spec(None)).unwrap();
+
+        let reader = Db::open(path).unwrap();
+        let mut specs = WatchedSpecs::read(&reader);
+        assert!(!specs.changed(&reader), "nothing written");
+
+        datum_core::test_util::entry_builder("other").insert(&writer);
+        assert!(!specs.changed(&reader), "an entry is no spec");
+
+        writer.save_field_spec(&spec(Some("words="))).unwrap();
+        assert!(specs.changed(&reader), "the spec");
+        let declared = &specs.registry.as_ref().unwrap().fields["feel"].data_keys;
+        assert_eq!(declared, &["words="]);
+        assert!(!specs.changed(&reader), "told once");
     }
 
     // ─── da-fu5l: auto-fill row budget ──────────────────────────────────
