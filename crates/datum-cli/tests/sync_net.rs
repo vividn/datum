@@ -354,9 +354,11 @@ fn member_label(of: &Copy, id: &str) -> String {
 }
 
 /// A first sync whose apply outlasts the progress timeout (da-039jx): b applies
-/// a's 300-odd ops at 20ms each, 6s, on a 3s timeout, sending a `BUSY`
+/// a's 300-odd ops at 40ms each, 12s, on a 6s timeout, sending a `BUSY`
 /// between chunks paced to a sixteenth of it unless `keepalive` is off. The
-/// join's output, and whether the invite exited 0 and what it printed.
+/// timeout is the most one chunk may hold b's thread, and on a loaded box one
+/// was held past 3s, about where a WAL checkpoint falls in these ops (da-qwa1c).
+/// The join's output, and whether the invite exited 0 and what it printed.
 fn slow_first_sync(keepalive: bool) -> (Copy, Copy, Output, (bool, String)) {
     let (mut a, mut b) = (Copy::new(), Copy::new());
     for i in 0..300 {
@@ -364,8 +366,8 @@ fn slow_first_sync(keepalive: bool) -> (Copy, Copy, Output, (bool, String)) {
     }
     for c in [&mut a, &mut b] {
         c.env = vec![
-            ("DATUM_SYNC_TIMEOUT_S", "3"),
-            ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "20"),
+            ("DATUM_SYNC_TIMEOUT_S", "6"),
+            ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "40"),
             (
                 "DATUM_SYNC_TEST_KEEPALIVE",
                 if keepalive { "1" } else { "0" },
