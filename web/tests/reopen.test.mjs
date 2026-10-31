@@ -110,6 +110,50 @@ test('another tab holding the files: the line says so, and the page opens once i
 	}, PHONE);
 });
 
+// da-3oe4q: `left: 50%` left a shrink-to-fit box half the phone to fit in, so
+// this line took four rows and more, with `s` alone on the last of a count.
+test('on a phone the waiting line takes the width, a rem short of each edge, and a count stays with its unit', async () => {
+	await withApp(
+		async (other) => {
+			const phone = await other.newTab();
+			await holdFiles(other);
+			const counted = phone.run(['count']);
+			try {
+				const line = phone.page.locator('.waiting');
+				await line.filter({ hasText: BLOCKED }).waitFor();
+				// Fifteen seconds on, with none spent: the count is two digits.
+				await phone.page.evaluate(() => {
+					const real = performance.now.bind(performance);
+					performance.now = () => real() + 15000;
+				});
+				await line.filter({ hasText: /\b\d\d s$/ }).waitFor();
+
+				const box = await line.boundingBox();
+				assert.ok(box.width > 390 / 2, `${box.width}px of a 390px screen`);
+				const margins = [box.x, 390 - box.x - box.width];
+				assert.ok(margins.every((margin) => margin >= 16), `${margins.join('px and ')}px from the edges`);
+
+				// A pixel short of the width the whole line takes, the last word
+				// must move down, whatever the font: which at any phone's width the
+				// wrap may simply not make it do.
+				const squeezed = await line.evaluate((el) => {
+					el.style.maxWidth = 'none';
+					el.style.width = 'max-content';
+					const { width, height } = el.getBoundingClientRect();
+					el.style.width = `${width - 1}px`;
+					return { wrapped: el.getBoundingClientRect().height > height, rows: el.querySelector('.seconds').getClientRects().length };
+				});
+				assert.ok(squeezed.wrapped, 'the squeeze moved nothing, so it tested no wrap');
+				assert.equal(squeezed.rows, 1, 'the count broke across lines');
+			} finally {
+				await other.page.evaluate(() => window.letGo());
+				await counted;
+			}
+		},
+		{ ...PHONE, viewport: { width: 390, height: 844 } }
+	);
+});
+
 // A boot that never becomes ready fails naming what it waited on (da-hqpe7):
 // on CI one sat 30 s short of an enabled prompt, and its bare TimeoutError
 // said nothing more. Here the database worker's script is never answered.

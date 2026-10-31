@@ -66,6 +66,9 @@
 		z-index: 20;
 		margin: 0;
 		padding: 0.3rem 0.8rem;
+		/* Shrink-to-fit would get only what `left: 50%` leaves, half the screen
+		   (da-3oe4q). The global border-box puts the padding inside `max-width`. */
+		width: max-content;
 		max-width: calc(100% - 2rem);
 		font-size: 0.8rem;
 		color: var(--ink);
@@ -74,6 +77,7 @@
 		border-radius: 999px;
 	}
 	.seconds {
+		white-space: nowrap;
 		color: var(--muted);
 		font-variant-numeric: tabular-nums;
 	}
