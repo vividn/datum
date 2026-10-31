@@ -1,6 +1,7 @@
-//! scripts/mq-check.sh --dry-run (da-678rb) against a fixture repo: what a can's
-//! gate would run for a selection, for the whole-suite answer, and for a PR into
-//! an integration branch. Each case prints the plan and runs no check.
+//! scripts/mq-check.sh against a fixture repo. With --dry-run (da-678rb): what a
+//! can's gate would run for a selection, for the whole-suite answer, and for a PR
+//! into an integration branch. Without it, on stubs: what a can's gate runs at and
+//! logs (da-9az39).
 //!
 //! origin/staging is `base` then `moved`, and the maps are of `moved`, so a PR
 //! forked at `base` is older than its map, as a can's branch often is.
@@ -324,4 +325,110 @@ fn the_flag_and_the_refinery_run_the_whole_web_suite() {
         );
         assert!(!plan.contains("web tests:"), "{role}: {plan}");
     }
+}
+
+/// A can's real gate, with `pnpm` and `cargo` a stub that says what it was given
+/// and then runs `then`: its child, for the test to signal its bash, and the path
+/// of what the stub said.
+fn gate(repo: &Repo, then: &str) -> (std::process::Child, PathBuf) {
+    let stubs = repo.dir.join(".git/stubs");
+    std::fs::create_dir_all(&stubs).unwrap();
+    let said = repo.dir.join(".git/said");
+    let stub = format!(
+        "#!/bin/sh\necho \"files=$DATUM_TEST_CONCURRENCY nice=$(nice)\" >>{}\n{then}\n",
+        said.display()
+    );
+    for name in ["pnpm", "cargo"] {
+        let to = stubs.join(name);
+        std::fs::write(&to, &stub).unwrap();
+        repo.cmd("chmod").arg("+x").arg(&to).status().unwrap();
+    }
+    // Seen on PATH, or the gate's fallback puts the real pnpm ahead of these. The
+    // selection it fails is the dry runs' to test: the gate reads none and goes on.
+    let node = stubs.join("node");
+    std::fs::write(&node, "#!/bin/sh\nexit 1\n").unwrap();
+    repo.cmd("chmod").arg("+x").arg(&node).status().unwrap();
+    let path = format!(
+        "{}:{}",
+        stubs.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let out = std::fs::File::create(repo.dir.join(".git/gate.out")).unwrap();
+    let child = repo
+        .cmd("bash")
+        .arg("scripts/mq-check.sh")
+        .env("PATH", path)
+        .env("TMPDIR", repo.dir.join(".git"))
+        .env("CT_ROLE", "daydumb/cans/x")
+        .env("DATUM_TEST_CONCURRENCY", "3")
+        .env_remove("GT_ROLE")
+        .env_remove("MQ_BASE")
+        .env_remove("MQ_FULL")
+        .env_remove("CI")
+        .stdout(out.try_clone().unwrap())
+        .stderr(out)
+        .spawn()
+        .unwrap();
+    (child, said)
+}
+
+fn gate_log(repo: &Repo) -> String {
+    std::fs::read_to_string(repo.dir.join(".git/datum-gates.log")).unwrap_or_default()
+}
+
+#[test]
+fn a_cans_gate_runs_six_files_at_nice_10_whatever_it_pinned_and_logs_what_it_cost() {
+    let repo = Repo::new("gate-line", 0);
+    repo.write("web/src/a.ts", "changed\n");
+    repo.commit("the change");
+    let (mut child, said) = gate(&repo, "exit 0");
+    assert!(child.wait().unwrap().success());
+    let said = std::fs::read_to_string(said).unwrap();
+    assert!(said.lines().last().unwrap() == "files=6 nice=10", "{said}");
+    let log = gate_log(&repo);
+    assert!(log.contains(" daydumb/cans/x ran="), "{log}");
+    assert!(log.contains("s exit=0 load="), "{log}");
+}
+
+#[test]
+fn a_failed_gate_logs_its_status_and_exits_with_it() {
+    let repo = Repo::new("gate-red", 0);
+    repo.write("web/src/a.ts", "changed\n");
+    repo.commit("the change");
+    let (mut child, _) = gate(&repo, "exit 7");
+    assert_eq!(child.wait().unwrap().code(), Some(7));
+    let log = gate_log(&repo);
+    assert!(log.contains("s exit=7 load="), "{log}");
+}
+
+#[test]
+fn a_killed_gate_does_not_log_as_passed() {
+    let repo = Repo::new("gate-killed", 0);
+    repo.write("web/src/a.ts", "changed\n");
+    repo.commit("the change");
+    // Its child ends with 0, the status a killed bash would otherwise log.
+    let (mut child, said) = gate(&repo, "sleep 1; exit 0");
+    while !said.exists() {
+        if let Some(status) = child.try_wait().unwrap() {
+            let out = std::fs::read_to_string(repo.dir.join(".git/gate.out")).unwrap();
+            panic!("the gate ended with {status} before its stub ran:\n{out}");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    repo.cmd("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert_eq!(child.wait().unwrap().code(), Some(143));
+    let log = gate_log(&repo);
+    assert!(log.contains("s exit=143 load="), "{log}");
+}
+
+#[test]
+fn a_dry_run_logs_nothing() {
+    let repo = Repo::new("gate-none", 0);
+    repo.write("web/src/a.ts", "changed\n");
+    repo.commit("the change");
+    repo.can_plan();
+    assert_eq!(gate_log(&repo), "");
 }

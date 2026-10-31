@@ -53,17 +53,22 @@ done
 # Who runs it decides how hard it may press on the box. The refinery's verdict
 # (role `<kiez>/alchemiter`) is the one run that must not wait behind the cans',
 # so it names its own numbers. A can sharing the box runs the same gate before
-# `ct done`, and when it named them too, three cans at once took the 24-core box
-# to load 98 (10-29): so a can's web suite reads the load, and its nextest takes
-# a quarter of the cores, not all of them (da-5f20z). Anyone else, CI included
-# (which never runs this script), keeps the tools' defaults.
+# `ct done`. Reading the load left it at one file for hours, so cans pinned six
+# and read nothing (da-5f20z, da-9az39), so it runs six files whatever it pinned,
+# at nice 10 so the refinery and the sessions go first, and its nextest takes a
+# quarter of the cores. Each adds a line to `$TMPDIR/datum-gates.log`, which is
+# what says whether real gates still push the load past twice the cores: if they
+# do, a queue comes back with that measurement behind it (vremya, 2026-10-30, on
+# #1463, whose first head holds one). Anyone else, CI included (which never runs
+# this script), keeps the tools' defaults.
 role="${CT_ROLE:-${GT_ROLE:-}}"
+can=
 case "$role" in
   */alchemiter | */refinery) refinery=1; full=1 ;;
   *) refinery= ;;
 esac
 case "$role" in
-  */cans/*) cores="$(nproc)"; export NEXTEST_TEST_THREADS="${NEXTEST_TEST_THREADS:-$(( cores / 4 > 2 ? cores / 4 : 2 ))}" ;;
+  */cans/*) can=1; cores="$(nproc)"; export NEXTEST_TEST_THREADS="${NEXTEST_TEST_THREADS:-$(( cores / 4 > 2 ? cores / 4 : 2 ))}" ;;
 esac
 
 # Cans branch from staging, which runs ahead of main: diffing against main
@@ -174,6 +179,16 @@ web_selection() {
   sed 's/^/  /' "$sel/web.tests"
 }
 
+if [ -n "$can" ] && [ -z "$dry" ] && [ -n "$rust$web" ]; then
+  renice -n 10 -p $$ >/dev/null || true
+  gate_start=$SECONDS
+  trap 'code=$?; rm -rf "$sel"; { echo "$(date -Is) $role ran=$((SECONDS - gate_start))s exit=$code load=$(cut -d" " -f1 /proc/loadavg)" >>"${TMPDIR:-/tmp}/datum-gates.log"; } 2>/dev/null || true' EXIT
+  # Left to itself a killed bash runs that trap with the last command's status.
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+fi
+
 if [ -n "$rust" ]; then
   if [ -n "$dry" ]; then
     echo "mq-check: Rust changed — cargo xtask check lint, scripts/check-changed.sh --base $merge_base"
@@ -203,10 +218,9 @@ if [ -n "$web" ] || { [ -n "$integration" ] && [ -n "$rust" ] && [ -z "$full" ];
     export PATH="${node_bin:+$node_bin:}$HOME/.local/share/pnpm/bin:$HOME/.local/share/pnpm:$PATH"
   fi
   # The suite otherwise reads the box's load average and yields to it, which is
-  # right for a can sharing the box and wrong for the refinery's verdict. So the
-  # queue names its own number and everyone else reads the load (da-x38v,
-  # da-5f20z).
+  # wrong for these two (da-x38v, da-9az39).
   [ -z "$refinery" ] || export DATUM_TEST_CONCURRENCY="${DATUM_TEST_CONCURRENCY:-6}"
+  [ -z "$can" ] || export DATUM_TEST_CONCURRENCY=6
   if [ -n "$full" ]; then
     echo "mq-check: web/ changed — running the web check and suite"
     if [ -z "$dry" ]; then

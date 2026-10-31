@@ -1317,6 +1317,11 @@ Before opening a PR, run the gate:
 bash scripts/mq-check.sh
 ```
 
+A can's gate runs six web files at nice 10, whatever the caller pinned, and adds a
+line to `$TMPDIR/datum-gates.log`. So run the gate, `--full` if you need the whole
+suite, rather than `pnpm test` with `DATUM_TEST_CONCURRENCY` pinned, which that log
+never sees.
+
 It runs what CI would run for this PR, by the same selections (da-678rb), and
 prints which tests and why, so a PR description can say so. For Rust: `cargo
 xtask check lint`, then `scripts/check-changed.sh --no-tests` (`cargo fmt
