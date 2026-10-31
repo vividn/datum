@@ -794,6 +794,43 @@ describe('the field widget', () => {
 		});
 	});
 
+	// vividn, 2026-10-31: «on the web, it should fail once warning that the other field name already exists and then give you the option to merge the other name into it» (da-icna7).
+	test('«rename» onto a name that exists warns, offers the merge with its numbers, and only a yes merges', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['occur', 'coffe', '-t', '2026-03-01T08:00:00Z']);
+			await app.run(['occur', 'coffe', '-t', '2026-03-01T10:00:00Z', 'cups=1']);
+			await app.run(['occur', 'coffee', '-t', '2026-03-01T10:00:00Z', 'cups=2']);
+			const fields = async () => (await app.entries()).map((e) => e.field).sort();
+			const offer = async () => {
+				await page.locator(`${FIELD_FORM} button.rename`).click();
+				const ask = page.locator('dialog.ask');
+				await ask.locator('input').fill('coffee');
+				await ask.locator('button[value]').click();
+				const confirm = page.locator('dialog.confirm');
+				await confirm.waitFor();
+				return confirm;
+			};
+			await openField(page, 'coffe');
+			await page.locator(`${FIELD_FORM} h2`).waitFor();
+			const before = await fields();
+
+			const declined = await offer();
+			const said = await declined.locator('p').innerText();
+			for (const fact of [/\bcoffee\b/, /\b2\b/, /data\.cups/]) assert.match(said, fact);
+			await page.keyboard.press('Escape');
+			await declined.waitFor({ state: 'detached' });
+			assert.deepEqual(await fields(), before);
+			assert.equal(await heading(page), 'coffe');
+
+			await (await offer()).locator('button[value="merge"]').click();
+			await until(() => heading(page), (t) => t === 'coffee');
+			assert.deepEqual(await fields(), ['coffee', 'coffee']);
+			assert.equal(JSON.parse((await app.run(['conflicts', 'list', '--show', 'json'])).stdout).length, 1);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	// vividn, 2026-10-19: «there should probably be an explicit rename button though» (da-qimwi).
 	test('«rename» on a field asks the new name, shows the dry run, runs `rename`, and the panes show the new name', async () => {
 		await shared.solo(async (app) => {
@@ -820,14 +857,14 @@ describe('the field widget', () => {
 			const [box, name] = [await button.boundingBox(), await page.locator(`${FIELD_FORM} h2`).boundingBox()];
 			assert.ok(Math.abs(box.y + box.height / 2 - (name.y + name.height / 2)) < 4, 'rename is not beside the name');
 
-			// A name that is taken is refused by the dry run, and asked again saying why.
+			// A name that cannot be is refused by the dry run, and asked again saying why.
 			const ask = page.locator('dialog.ask');
 			await button.click();
 			assert.equal(await ask.locator('input').inputValue(), 'mood');
-			await ask.locator('input').fill('tea');
+			await ask.locator('input').fill('spec');
 			await ask.locator('button[value]').click();
-			await until(() => ask.locator('span').innerText(), (t) => t.includes('tea') && t.endsWith('rename mood to:') && t !== 'rename mood to:');
-			assert.equal(await ask.locator('input').inputValue(), 'tea');
+			await until(() => ask.locator('span').innerText(), (t) => t.includes('spec') && t.endsWith('rename mood to:') && t !== 'rename mood to:');
+			assert.equal(await ask.locator('input').inputValue(), 'spec');
 			await ask.locator('input').fill('feeling');
 			await ask.locator('button[value]').click();
 			// The dry run's counts — the two switches and the TRACK row — and nothing moved yet.

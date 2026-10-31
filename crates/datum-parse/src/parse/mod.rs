@@ -1114,9 +1114,17 @@ mod tests {
                 old: "mood".into(),
                 new: "feeling".into(),
                 dry_run: true,
+                merge: false,
             };
             assert_eq!(a, want);
         }
+        let Command::Rename(a) = parse_argv(&argv(&["rename", "a", "b", "--merge"]))
+            .unwrap()
+            .command
+        else {
+            panic!("expected Rename")
+        };
+        assert!(a.merge && !a.dry_run);
         assert!(parse_argv(&argv(&["rename", "mood"])).is_err());
         assert!(parse_argv(&argv(&["rename", "mood", "feeling", "--force"])).is_err());
     }

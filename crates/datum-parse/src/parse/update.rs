@@ -122,13 +122,14 @@ pub(crate) fn parse_comment_args(tail: &[&str]) -> Result<UpdateArgs> {
     Ok(args)
 }
 
-/// `rename OLD NEW [--dry-run]`.
+/// `rename OLD NEW [--merge] [--dry-run]`.
 pub(crate) fn parse_rename_args(tail: &[&str]) -> Result<RenameArgs> {
-    let mut dry_run = false;
+    let (mut dry_run, mut merge) = (false, false);
     let mut pos = Vec::new();
     for (i, tok) in tail.iter().enumerate() {
         match split_flag(tok) {
             FlagSplit::Long("dry-run") => dry_run = true,
+            FlagSplit::Long("merge") => merge = true,
             FlagSplit::Positional("--") => {
                 pos.extend_from_slice(&tail[i + 1..]);
                 break;
@@ -142,6 +143,7 @@ pub(crate) fn parse_rename_args(tail: &[&str]) -> Result<RenameArgs> {
             old: old.into(),
             new: new.into(),
             dry_run,
+            merge,
         }),
         _ => Err(ParseError::InvalidArg(
             "rename takes two fields: datum rename <OLD> <NEW>".into(),

@@ -1583,15 +1583,7 @@ pub(super) fn restore(conn: &Connection, incoming: &Entry, hash: &str) -> Result
             return Ok(None);
         }
     }
-    // An entry older than its ops is signed as it stands first: a baseline
-    // this copy signed after the restore would have seen it.
-    for b in &live {
-        if !has_ops(conn, &b.hid)? {
-            push_entry(conn, &ep, b, "baseline", create_effect(b))?;
-        }
-    }
-    push_entry(conn, &ep, &row, "restore", create_effect(&row))?;
-    refold(conn, row.hid.as_str(), ChangeKind::UserEdit)?;
+    restore_row(conn, &row)?;
     conn.query_row(
         "SELECT slug FROM entries
          WHERE hid = (SELECT COALESCE(superseded_by, hid) FROM entries WHERE hid = ?1)",
@@ -1600,6 +1592,40 @@ pub(super) fn restore(conn: &Connection, incoming: &Entry, hash: &str) -> Result
     )
     .optional()
     .map_err(DatumError::Db)
+}
+
+/// Bring in `row`, a hid no row holds, as [`restore`] does: signed as a
+/// `restore`, which saw none of the ops of the entries holding its identity,
+/// so the fold merges it with them and derives their conflicts, and one
+/// `undo` takes it back out ([`TAKEN_BACK`]).
+pub(super) fn restore_row(conn: &Connection, row: &Entry) -> Result<()> {
+    let ep = endpoint(conn)?;
+    if let Some(why) = read_only(conn, &ep)? {
+        return Err(DatumError::Other(why.into()));
+    }
+    // An entry older than its ops is signed as it stands first: a baseline
+    // this copy signed after the restore would have seen it.
+    for b in &blockers(conn, row)? {
+        if !has_ops(conn, &b.hid)? {
+            push_entry(conn, &ep, b, "baseline", create_effect(b))?;
+        }
+    }
+    push_entry(conn, &ep, row, "restore", create_effect(row))?;
+    refold(conn, row.hid.as_str(), ChangeKind::UserEdit)?;
+    Ok(())
+}
+
+/// The keys `a` and `b` say differently, field and id aside, as two rows
+/// merged into one compare them: none, and they are one entry written twice
+/// (da-icna7). When each was written is no difference.
+pub(super) fn differences(a: &Entry, b: &Entry) -> Vec<String> {
+    const ASIDE: [&str; 4] = ["field", "id_structure", "field_structure", "extra_metadata"];
+    let (x, y) = (content(&row(a)), content(&row(b)));
+    let keys: BTreeSet<&String> = x.keys().chain(y.keys()).collect();
+    keys.into_iter()
+        .filter(|k| contestable(k) && !ASIDE.contains(&k.as_str()) && x.get(*k) != y.get(*k))
+        .cloned()
+        .collect()
 }
 
 /// The highest seq this copy has signed: where a command run on a

@@ -193,7 +193,7 @@ const SAMPLES = {
 	entriesHistoryArgv: [[[HID]], [[HID, HID]]],
 	stepArgv: [['undo', [HID]], ['redo', [HID]]],
 	undoToVersionArgv: [[HID, 1]],
-	renameFieldArgv: [['coffee', 'drink', true], ['mood', 'feeling']],
+	renameFieldArgv: [['coffee', 'drink', true], ['mood', 'feeling'], ['coffe', 'coffee', true, true], ['coffe', 'coffee', false, true]],
 	bandArgv: [[400, 40], [400, 40, 3]],
 	geometryArgv: [[400, 40]],
 	layersArgv: [[['2026-10-25', '2026-10-28'], false], [['2026-10-27'], true, true]],

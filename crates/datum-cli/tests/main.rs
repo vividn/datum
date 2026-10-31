@@ -112,6 +112,7 @@ mod readme_anti_drift;
 mod readme_snippets;
 mod record_refs;
 mod redo_cmd;
+mod rename_merge;
 mod render_state_group;
 mod reparse_cmd;
 mod repl_lines;

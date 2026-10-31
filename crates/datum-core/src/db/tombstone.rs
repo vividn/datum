@@ -209,13 +209,19 @@ fn make_room(conn: &Connection, current: &Entry, target: &Entry, kind: ChangeKin
         )));
     }
     for held in held {
-        let mut aside = held.clone();
-        aside.slug.0 = format!("{}~{}", held.slug, held.hid);
-        history::record(conn, &held, kind)?;
-        apply_entry_state(conn, &aside)?;
-        super::sync::emit(conn, Some(&held), &held.hid, kind)?;
+        move_aside(conn, &held, kind)?;
     }
     Ok(())
+}
+
+/// Move a deleted row's slug aside, `<slug>~<hid>`, as a signed `kind` step:
+/// the UNIQUE index holds a tombstone's slug too.
+pub(super) fn move_aside(conn: &Connection, held: &Entry, kind: ChangeKind) -> Result<()> {
+    let mut aside = held.clone();
+    aside.slug.0 = format!("{}~{}", held.slug, held.hid);
+    history::record(conn, held, kind)?;
+    apply_entry_state(conn, &aside)?;
+    super::sync::emit(conn, Some(held), &held.hid, kind)
 }
 
 /// Transaction-free body of [`Db::soft_delete_entry_as`]: tombstones inside

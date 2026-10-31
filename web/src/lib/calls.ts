@@ -102,9 +102,9 @@ export function undoToVersionArgv(hid: string, version: number): string[] {
 	return ['undo', hid, '--to-version', String(version)];
 }
 
-/** The field renamed, or with `dry` what it would move (da-qimwi). */
-export function renameFieldArgv(old: string, to: string, dry = false): string[] {
-	return ['rename', old, to, ...(dry ? ['--dry-run'] : [])];
+/** The field renamed, or with `dry` what it would move (da-qimwi); with `merge`, into a field that exists (da-icna7). */
+export function renameFieldArgv(old: string, to: string, dry = false, merge = false): string[] {
+	return ['rename', old, to, ...(merge ? ['--merge'] : []), ...(dry ? ['--dry-run'] : [])];
 }
 
 /** A command's entries stepped back, or forward again, by its button (da-25q3k). */

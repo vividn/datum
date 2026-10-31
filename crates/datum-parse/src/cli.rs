@@ -632,6 +632,8 @@ pub struct RenameArgs {
     pub new: String,
     /// `--dry-run`: say what would move, and move nothing.
     pub dry_run: bool,
+    /// `--merge`: NEW may exist, and takes OLD's entries (da-icna7).
+    pub merge: bool,
 }
 
 #[derive(Debug, Default)]

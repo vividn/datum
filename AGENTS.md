@@ -418,6 +418,11 @@ alone: it takes the identity from no row that was not restored, so the live
 entry keeps its hid, and as a tombstone it is no part of the entry it went under
 — which is `undo` of the restore, exactly, on every copy.
 
+`rename OLD NEW --merge` (da-icna7) brings in an entry that lands on one of NEW's
+and differs the same way: a `restore` row with a new hid, its old row deleted
+naming it, since `superseded_by` stands once set and a row moved in by an edit
+could not be undone out. Its side's device reads `backup`.
+
 ### History and the clock
 
 An entry's history is read from the same ops (`db/sync/versions.rs`, da-s4erq):

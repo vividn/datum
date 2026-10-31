@@ -147,7 +147,21 @@ impl Db {
         compute: impl FnMut(&super::View) -> Result<(Vec<(Slug, Entry)>, P)>,
         kind: crate::history::ChangeKind,
     ) -> Result<(Vec<Entry>, P)> {
-        self.compute_then_write_with(compute, |_, (rows, more)| {
+        self.save_edits_around(true, compute, kind, |_, _| Ok(()), |_, _| Ok(()))
+    }
+
+    /// [`Db::save_edits`] rolled back unless `commit`, with `before` and
+    /// `after` run around the saves, in their transaction.
+    pub(super) fn save_edits_around<P>(
+        &self,
+        commit: bool,
+        compute: impl FnMut(&super::View) -> Result<(Vec<(Slug, Entry)>, P)>,
+        kind: crate::history::ChangeKind,
+        before: impl FnOnce(&rusqlite::Connection, &P) -> Result<()>,
+        after: impl FnOnce(&rusqlite::Connection, &P) -> Result<()>,
+    ) -> Result<(Vec<Entry>, P)> {
+        self.write_or_rehearse_with(commit, compute, |tx, (rows, more)| {
+            before(tx, &more)?;
             let mut saved = Vec::with_capacity(rows.len());
             for (slug, e) in rows {
                 let (e, _) = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
@@ -158,6 +172,7 @@ impl Db {
                 )?;
                 saved.push(e);
             }
+            after(tx, &more)?;
             Ok((saved, more))
         })
     }

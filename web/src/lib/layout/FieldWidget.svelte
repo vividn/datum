@@ -181,10 +181,10 @@
 		$editing = { field };
 	}
 
-	/** The field renamed: asked, its dry run shown, run, and the form on the new name. */
+	/** The field renamed: asked, its dry run shown, run, and the form on the new name. A name that exists says so, and offers the merge with its dry run (da-icna7). */
 	async function rename(): Promise<void> {
 		const old = $editing.field;
-		let [to, said]: [string | null, string] = [old, `rename ${old} to:`];
+		let [to, said, merge]: [string | null, string, boolean] = [old, `rename ${old} to:`, false];
 		for (;;) {
 			to = await ask(said, 'rename', to ?? old);
 			if (to === null || to === old) return;
@@ -193,10 +193,18 @@
 				if ((await choose(dry.stdout.trim(), ['rename'], 'cancel', 'run')) === null) return;
 				break;
 			}
-			said = `${stripAnsi(dry.stderr).trim()} — rename ${old} to:`;
+			// Refused as it stands and not as a merge: the name exists. Refused either way, the name is what is wrong.
+			const merging = await run(renameFieldArgv(old, to, true, true));
+			if (merging.code === 0) {
+				const offer = `${to} already exists. Merge ${old} into it?\n\n${stripAnsi(merging.stdout).trim()}`;
+				if ((await choose(offer, ['merge'], 'cancel', 'run')) === null) return;
+				merge = true;
+				break;
+			}
+			said = `${stripAnsi(merging.stderr).trim()} — rename ${old} to:`;
 		}
 		await flush();
-		const result = await press(renameFieldArgv(old, to));
+		const result = await press(renameFieldArgv(old, to, false, merge));
 		if (result.code === 0 && $editing.field === old) $editing = { field: to };
 	}
 

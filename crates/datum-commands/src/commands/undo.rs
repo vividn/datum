@@ -119,9 +119,18 @@ fn undo_stack(
         },
         |tx, (id, time, skipped, report, members)| {
             let mut steps: Vec<(Entry, Entry)> = Vec::new();
+            // A row refused its slug because another took it in this command
+            // goes back once that one has left it, by the end (da-icna7).
+            let mut held = Vec::new();
             for (member, current) in members {
                 let after = if member.first > 1 {
-                    revert_in_tx(tx, &member.hid, member.first - 1, ChangeKind::Undo)?
+                    match revert_in_tx(tx, &member.hid, member.first - 1, ChangeKind::Undo) {
+                        Err(DatumError::Duplicate(_)) => {
+                            held.push((member, current));
+                            continue;
+                        }
+                        after => after?,
+                    }
                 } else if current.deleted_at.is_none() {
                     // The action created it: before it, there was nothing.
                     soft_delete_in_tx(tx, &member.hid, ChangeKind::Undo, None)?;
@@ -129,6 +138,10 @@ fn undo_stack(
                 } else {
                     continue;
                 };
+                steps.push((current, after));
+            }
+            for (member, current) in held {
+                let after = revert_in_tx(tx, &member.hid, member.first - 1, ChangeKind::Undo)?;
                 steps.push((current, after));
             }
             undo_log::set_undone(tx, id, &skipped)?;
