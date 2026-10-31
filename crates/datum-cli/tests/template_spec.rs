@@ -216,7 +216,7 @@ fn a_db_with_auto_setup_off_refuses_a_new_field_unless_setup() {
     let db = fresh_db();
     run_cli(&["occur", "coffee"], &db).unwrap();
     run_cli(&["db", "config", "auto_setup", "false"], &db).unwrap();
-    assert_eq!(db.setting("auto_setup").unwrap(), Some(false));
+    assert_eq!(db.setting("auto_setup").unwrap(), Some(false.into()));
 
     let err = run_cli(&["occur", "newfield"], &db).unwrap_err();
     let err = err.to_string();

@@ -34,7 +34,7 @@ pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
     }
 }
 
-/// `datum db config [KEY [true|false]]` (da-w6pp2): each setting is an entry
+/// `datum db config [KEY [VALUE]]` (da-w6pp2): each setting is an entry
 /// (`setting:<KEY>`), so it syncs to every copy of the database. Bare, every
 /// setting and its value; with KEY, its value; with a value, sets it.
 fn config(args: crate::args::DbConfigArgs, db: &Db) -> Result<()> {
@@ -49,7 +49,9 @@ fn config(args: crate::args::DbConfigArgs, db: &Db) -> Result<()> {
     }
     for key in keys {
         match db.setting(key)? {
+            Some(serde_json::Value::String(v)) => println!("{key} {v}"),
             Some(v) => println!("{key} {v}"),
+            None if key == "timezone_follow" => println!("{key} ask (default)"),
             None => println!("{key} true (default)"),
         }
     }

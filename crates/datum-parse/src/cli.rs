@@ -126,6 +126,12 @@ pub enum Command {
     /// what the parser produces today vs. the persisted columns.
     Reparse(ReparseArgs),
 
+    /// Hidden: `datum follow-zone` — what datum.day runs as it loads: the
+    /// question a log at now would ask where this device is in another zone
+    /// than the `timezone` field, or with `timezone_follow = auto` the switch
+    /// (da-mvt5i).
+    FollowZone,
+
     /// `datum completions <shell | install | uninstall>` — shell tab
     /// completion (da-bu09u).
     Completions(CompletionsCommand),
@@ -262,7 +268,7 @@ pub struct DbConfigArgs {
     /// The setting named; `None` lists them all.
     pub key: Option<String>,
     /// The value to set it to; `None` prints it.
-    pub value: Option<bool>,
+    pub value: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Default)]

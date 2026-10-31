@@ -9,10 +9,12 @@
 //! there is no I/O left to amortize.
 
 use chrono::{DateTime, Utc};
+use rusqlite::OptionalExtension;
 
 use crate::entry::Entry;
 use crate::error::Result;
 use crate::time::{Zone, ZoneTimeline};
+use crate::timezone_field::Declared;
 
 use super::row_mapper::row_to_entry;
 use super::Db;
@@ -126,6 +128,49 @@ impl Db {
             }
         }
         Ok(ZoneTimeline::new(observations, fallback))
+    }
+
+    /// What the `timezone` field holds over time.
+    pub fn declared_zones(&self) -> Result<Declared> {
+        Declared::load(&self.conn)
+    }
+
+    /// Whether this copy was told no about moving the field from `stored` to
+    /// `device` (da-mvt5i). `_meta`, so this device's and never synced.
+    pub fn zone_declined(&self, stored: &str, device: &str) -> Result<bool> {
+        let held: Option<String> = self
+            .conn
+            .prepare_cached("SELECT value FROM _meta WHERE key = 'zone_declined'")?
+            .query_row([], |row| row.get(0))
+            .optional()?;
+        Ok(held.as_deref() == Some(&format!("{stored} {device}")))
+    }
+
+    /// Remember the no, in place of any before it: one pair is held, so a
+    /// second move asks, and a return to a pair declined long ago asks too.
+    pub fn decline_zone(&self, stored: &str, device: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO _meta (key, value) VALUES ('zone_declined', ?1)",
+            [format!("{stored} {device}")],
+        )?;
+        Ok(())
+    }
+
+    /// Whether any no is held.
+    pub fn zone_declined_any(&self) -> Result<bool> {
+        let held = self
+            .conn
+            .prepare_cached("SELECT 1 FROM _meta WHERE key = 'zone_declined'")?
+            .exists([])?;
+        Ok(held)
+    }
+
+    /// Forget the no: the device and the field agree again.
+    pub fn zone_agreed(&self) -> Result<()> {
+        self.conn
+            .prepare_cached("DELETE FROM _meta WHERE key = 'zone_declined'")?
+            .execute([])?;
+        Ok(())
     }
 
     /// The named zones of the [`NEIGHBOURS`] entries nearest before `at`

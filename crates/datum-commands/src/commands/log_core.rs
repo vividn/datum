@@ -22,6 +22,7 @@ use datum_parse::{ParseError, Readings};
 use serde_json::{json, Value as JsonValue};
 use std::collections::BTreeMap;
 
+use crate::commands::follow_zone::{declared_zone, following};
 use crate::commands::question::Question;
 use crate::{
     args::{LogArgs, LogArgsExt},
@@ -147,8 +148,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             args.time.timezone = Some(zone);
         }
     }
-    // da-h8dvi: a past instant with no `-z` is placed as if `-z` named the
-    // zone the entries around it agree on, recorded and said below.
+    // da-mvt5i: an entry is in the zone the `timezone` field holds at its
+    // instant; at about now a device in another asks to move the field.
+    if let Some(zone) = declared_zone(db, &args.time, now.utc)? {
+        args.time.timezone = Some(match following(db, &args, &zone, now.utc)? {
+            Some(device) => device,
+            None => zone,
+        });
+    }
+    // da-h8dvi: a past instant with no `-z` the field does not place is placed
+    // as if `-z` named the zone the entries around it agree on, recorded and
+    // said below.
     let inferred_zone = neighbours_zone(db, &args.time, now.utc);
     if inferred_zone.is_some() {
         args.time.timezone = inferred_zone.clone();
@@ -2601,6 +2611,17 @@ pub(crate) fn build_time_from_flags(
     build_time_anchored(time, now, None, false)
 }
 
+/// Whether the flags say where they are: `-z`, or an offset on `-t`, the one
+/// form the builder keeps as `iso_instant_override`, which is believed
+/// (da-kvosn). A timeless entry has no instant to place.
+pub(crate) fn zone_is_settled(time: &TimeArgs) -> bool {
+    time.timezone.is_some()
+        || time.omit_timestamp
+        || time
+            .builder(TimeCtx::now())
+            .is_ok_and(|b| b.iso_instant_override.is_some())
+}
+
 /// The zone a past instant takes when no `-z` names one (da-h8dvi): the one
 /// the entries around it agree on ([`agreed_zone`]), where it is not the
 /// host's. The host's is where datum is now, rarely where a backfilled
@@ -2608,17 +2629,7 @@ pub(crate) fn build_time_from_flags(
 /// then again around them read in its own, where the entry lands, so it
 /// holds only where both agree.
 fn neighbours_zone(db: &Db, time: &TimeArgs, now: chrono::DateTime<chrono::Utc>) -> Option<String> {
-    if time.timezone.is_some() || time.omit_timestamp {
-        return None;
-    }
-    // A `-t` with an offset (`…T12:00+09:00`) is the one form the builder
-    // keeps as `iso_instant_override`; that offset is believed (da-kvosn).
-    if time
-        .builder(TimeCtx::now())
-        .ok()?
-        .iso_instant_override
-        .is_some()
-    {
+    if zone_is_settled(time) {
         return None;
     }
     let around = |time: &TimeArgs| -> Option<(String, Option<String>)> {

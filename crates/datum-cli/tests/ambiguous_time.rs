@@ -117,7 +117,7 @@ fn no_one_to_ask_is_unanswered_naming_both_spellings() {
 
 /// A terminal: the end a person types on, and the end a command reads.
 #[cfg(unix)]
-fn pty() -> (std::fs::File, std::fs::File) {
+pub(crate) fn pty() -> (std::fs::File, std::fs::File) {
     use std::os::fd::FromRawFd;
 
     let (mut master, mut slave) = (0, 0);

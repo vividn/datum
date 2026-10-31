@@ -376,6 +376,37 @@ async function alone(argv: string[], line?: string, stdin?: string, env?: string
 }
 
 /**
+ * What this page does as it loads about a device in another zone than the
+ * `timezone` field (da-mvt5i): the CLI's question, a dialog like any, or with
+ * `timezone_follow = auto` no question, and the switch in the bar and the
+ * log. With nothing to do it prints nothing, and nothing shows that it ran.
+ *
+ * It waits until the tree has mounted and its widgets have asked, past the
+ * two frames `Stale.svelte` gives them: its answer empties the CLI's queue,
+ * which takes a widget's copy from the last visit down, and on a tab of a CLI
+ * widget, which asks nothing, it took it down before it was ever drawn. A tab
+ * opened in the background waits for its first frame, so asks once it is seen.
+ */
+export async function followZone(): Promise<void> {
+	await settledTree();
+	await new Promise<void>((settled) => {
+		let off = () => {};
+		off = ready.subscribe((on) => {
+			if (!on) return;
+			settled();
+			queueMicrotask(() => off());
+		});
+	});
+	for (let frames = 3; frames > 0; frames--) await new Promise(requestAnimationFrame);
+	const argv = ['follow-zone'];
+	const ranAt = Date.now();
+	const result = await runEchoed(asking(run), argv);
+	if (result.code === 0 && !result.stdout.trim()) return;
+	record(shellJoin(argv), ranAt, result);
+	await ran(result);
+}
+
+/**
  * A command's undo or redo button (da-25q3k): every entry it wrote stepped
  * back, or forward again, by hid — `redo <hid>` still puts back an undo a
  * later write has followed. Recorded as OF that command, so the strip marks

@@ -143,6 +143,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "conflicts",
     "debug",
     "reparse",
+    "follow-zone",
     "completions",
     "install",
     "uninstall",

@@ -161,6 +161,26 @@ its spec places it; `fields` hides it `IGNORED` as any field, says `never_false`
 so its picker draws no `end`, and says the `zone` it holds, which datum.day's gear item, «Track timezone», reads: opt in, a click
 logs the device's zone, the next logs `IGNORED`.
 
+Where it holds a zone, an entry is in the field's zone at its instant, past or
+present (da-mvt5i): `-yy -t 8` two days ago in Lisbon is 8:00 in Lisbon. `-z` and
+an offset win, and the entries around it decide where the field claims nothing.
+Which zone depends on the instant it gives, so each stretch reads the flags in
+its own zone (`Declared::reading_itself`, `commands/follow_zone.rs`); the hour
+a move west repeats goes to the stretch being begun, and an hour a move east
+skipped keeps the clock typed, in the zone held at its reading in the host's,
+which `check tz` names.
+
+A log at about now (15 minutes) on a device in another zone, by name and a tzdb
+spelling being the zone (`same_zone`), moves the field by `datum db config
+timezone_follow`: `ask`, the default, a question through `commands/question.rs`,
+or `auto`, the switch logged with no question, its echo beside the entry's. Yes
+logs the device's zone, which the entry takes. No keeps the stored zone and is
+kept in `_meta` `zone_declined` for this pair until the two agree or another
+pair comes. Only a person moves it, a terminal or the page: a pipe's stdin is
+the script's, so nothing reads it, prompts or logs, under `auto` too. A multi
+line's sides write together and do not ask. datum.day asks as it loads too
+(hidden `follow-zone`, `followZone` in `engine.ts`).
+
 `datum check tz` warns, `tz_off_declared`, of an entry whose zone is not the one
 the field holds at its instant (da-wpgrm). It compares names: Berlin and Paris
 differ, though their rules agree, and a spelling is one zone (`same_zone`, tzdb's

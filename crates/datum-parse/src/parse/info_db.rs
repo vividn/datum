@@ -69,7 +69,8 @@ pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
     }
 }
 
-/// `datum db config [KEY [true|false]]`.
+/// `datum db config [KEY [VALUE]]`: `timezone_follow` is `ask` or `auto`, any
+/// other setting `true` or `false`.
 fn parse_db_config(tail: &[&str]) -> Result<DbConfigArgs> {
     let mut pos: Vec<&str> = Vec::new();
     for tok in tail {
@@ -78,11 +79,17 @@ fn parse_db_config(tail: &[&str]) -> Result<DbConfigArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    let value = match pos.get(1) {
-        None => None,
-        Some(&"true") => Some(true),
-        Some(&"false") => Some(false),
-        Some(v) => {
+    let value = match (pos.first(), pos.get(1)) {
+        (_, None) => None,
+        (Some(&"timezone_follow"), Some(&v)) if v == "ask" || v == "auto" => Some(v.into()),
+        (Some(&"timezone_follow"), Some(v)) => {
+            return Err(ParseError::InvalidArg(format!(
+                "db config: timezone_follow is ask or auto, got '{v}' (not tracking is `timezone IGNORED`)"
+            )))
+        }
+        (_, Some(&"true")) => Some(true.into()),
+        (_, Some(&"false")) => Some(false.into()),
+        (_, Some(v)) => {
             return Err(ParseError::InvalidArg(format!(
                 "db config: a setting is true or false, got '{v}'"
             )))

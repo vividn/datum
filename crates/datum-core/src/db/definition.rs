@@ -51,15 +51,17 @@ pub const KIT_FIELD: &str = "kit";
 /// (da-w6pp2).
 pub const SETTING_FIELD: &str = "setting";
 
-/// The settings a database takes, each a bool and true until set:
-/// `auto_setup`, whether a write may create a field (da-j04cq).
-pub const SETTINGS: &[&str] = &["auto_setup"];
+/// The settings a database takes: `auto_setup`, whether a write may create a
+/// field (da-j04cq), a bool and true until set; and `timezone_follow`, what a
+/// device in another zone than the `timezone` field does (da-mvt5i), `ask`
+/// until set, or `auto`.
+pub const SETTINGS: &[&str] = &["auto_setup", "timezone_follow"];
 
 /// A database setting as its entry holds it.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SettingEntry {
     pub name: String,
-    pub value: bool,
+    pub value: JsonValue,
 }
 
 /// The data key naming the kit that shipped a definition, as for specs.
@@ -245,7 +247,7 @@ impl Db {
     }
 
     /// The database's setting `name` (da-w6pp2): `None` until set.
-    pub fn setting(&self, name: &str) -> Result<Option<bool>> {
+    pub fn setting(&self, name: &str) -> Result<Option<JsonValue>> {
         let Some(row) = self.definition_entry(&format!("{SETTING_FIELD}:{name}"))? else {
             return Ok(None);
         };
@@ -256,7 +258,7 @@ impl Db {
     }
 
     /// Set the database's setting `name`, as its entry, so it syncs.
-    pub fn set_setting(&self, name: &str, value: bool) -> Result<Hid> {
+    pub fn set_setting(&self, name: &str, value: JsonValue) -> Result<Hid> {
         let data = definition_data(
             &SettingEntry {
                 name: name.into(),

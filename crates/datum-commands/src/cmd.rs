@@ -404,6 +404,7 @@ fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
         Command::Sync(sub) => commands::sync::sync(sub, cli.db.as_deref(), db),
         Command::Reparse(args) => commands::reparse::reparse(args, db),
+        Command::FollowZone => commands::follow_zone::follow_zone(db),
         Command::Completions(sub) => commands::completions::run(&sub),
         #[cfg(feature = "net")]
         Command::Install(args) => commands::install::install(args),

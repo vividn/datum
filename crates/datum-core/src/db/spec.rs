@@ -497,7 +497,7 @@ impl Db {
                 }
             }
         }
-        Ok((self.setting("auto_setup")? == Some(false)).then_some(Closer::Db))
+        Ok((self.setting("auto_setup")? == Some(JsonValue::Bool(false))).then_some(Closer::Db))
     }
 
     /// The fields whose names start with `prefix` (da-tldkb), alphabetical,

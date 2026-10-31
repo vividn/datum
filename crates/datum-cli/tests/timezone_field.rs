@@ -496,3 +496,428 @@ fn fields_says_it_has_no_off() {
     let row = &serde_json::from_str::<Value>(&env.ok(&["fields", "mood", "--json"])).unwrap()[0];
     assert_eq!(row.get("never_false"), None);
 }
+
+/// An entry follows the field at its instant, and a device in another zone
+/// asks to move it (da-mvt5i).
+mod follow {
+    use super::*;
+    use rusqlite::Connection;
+    use std::io::Write;
+    use std::process::Stdio;
+
+    const BERLIN: &str = "Europe/Berlin";
+    const PARIS: &str = "Europe/Paris";
+    const LISBON: &str = "Europe/Lisbon";
+
+    /// The line as datum.day runs it, `answers` its stdin.
+    fn page(env: &Env, tz: &str, args: &[&str], answers: &str) -> Output {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .args(["--db", env.path().to_str().unwrap()])
+            .args(args)
+            .env("TZ", tz)
+            .env("HOME", env.0.path())
+            .env("DATUM_SYNC_NO_DAEMON", "1")
+            .env("DATUM_NO_DEFAULT_ANSWER", "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(answers.as_bytes()).unwrap();
+        drop(stdin);
+        child.wait_with_output().unwrap()
+    }
+
+    fn asked(out: &Output) -> bool {
+        let said = String::from_utf8_lossy(&out.stderr);
+        out.status.code() == Some(12) && said.contains("DATUM_ASK=")
+    }
+
+    fn sql(env: &Env, query: &str) -> Vec<(String, String)> {
+        let conn = Connection::open(env.path()).unwrap();
+        let mut stmt = conn.prepare(query).unwrap();
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)));
+        let rows = rows.unwrap().collect::<Result<_, _>>();
+        rows.unwrap()
+    }
+
+    /// Each `coffee`'s time and zone.
+    fn coffees(env: &Env) -> Vec<(String, String)> {
+        sql(
+            env,
+            "SELECT occur_time, IFNULL(occur_time_tz, '') FROM entries WHERE field = 'coffee' ORDER BY rowid",
+        )
+    }
+
+    fn zones_logged(env: &Env) -> Vec<String> {
+        let rows = sql(
+            env,
+            "SELECT json_extract(state, '$'), '' FROM entries WHERE field = 'timezone' ORDER BY rowid",
+        );
+        rows.into_iter().map(|r| r.0).collect()
+    }
+
+    fn holding(zone: &str) -> Env {
+        let env = Env::new();
+        env.ok(&["timezone", zone, "-t", "-100"]);
+        env
+    }
+
+    /// Berlin until 08:00 UTC on the 10th, Lisbon until 17:00 UTC (18:00
+    /// Berlin) on the 12th, Berlin again; March, so an hour between them.
+    fn trip() -> Env {
+        let env = Env::new();
+        for (zone, at) in [
+            (BERLIN, "2026-03-01T00:00:00+00:00"),
+            (LISBON, "2026-03-10T08:00:00+00:00"),
+            (BERLIN, "2026-03-12T17:00:00+00:00"),
+        ] {
+            env.ok(&["timezone", zone, "-t", at]);
+        }
+        env
+    }
+
+    /// `-d day -t clock` on a host in Berlin: where it lands, and in what.
+    fn placed(env: &Env, day: &str, clock: &str) -> (String, String) {
+        env.ok(&["occur", "coffee", "-d", day, "-t", clock]);
+        coffees(env).pop().unwrap()
+    }
+
+    fn assert_instant(got: &(String, String), utc: &str, zone: &str) {
+        let at: chrono::DateTime<chrono::Utc> = got.0.parse().unwrap();
+        let want: chrono::DateTime<chrono::Utc> = utc.parse().unwrap();
+        assert_eq!((at, got.1.as_str()), (want, zone));
+    }
+
+    #[test]
+    fn a_clock_inside_a_trip_is_the_trips_and_past_the_switch_is_home() {
+        let env = trip();
+        let inside = placed(&env, "2026-03-11", "8:00");
+        assert_instant(&inside, "2026-03-11T08:00:00Z", LISBON);
+        let past = placed(&env, "2026-03-13", "8:00");
+        assert_instant(&past, "2026-03-13T07:00:00Z", BERLIN);
+        let before = placed(&env, "2026-03-05", "8:00");
+        assert_instant(&before, "2026-03-05T07:00:00Z", BERLIN);
+    }
+
+    /// The instant the trip begins, by its own clock, is the trip: read by
+    /// Berlin's, 8:00 is an hour before it, and that used to be its reading.
+    #[test]
+    fn at_a_trips_first_instant_its_clock_wins() {
+        let env = trip();
+        let first = placed(&env, "2026-03-10", "8:00");
+        assert_instant(&first, "2026-03-10T08:00:00Z", LISBON);
+        // The hour the move west repeats goes to the stretch being begun.
+        let repeated = placed(&env, "2026-03-10", "8:30");
+        assert_instant(&repeated, "2026-03-10T08:30:00Z", LISBON);
+        // Before it, only Berlin's clock reads it.
+        let before = placed(&env, "2026-03-10", "7:30");
+        assert_instant(&before, "2026-03-10T06:30:00Z", BERLIN);
+    }
+
+    #[test]
+    fn at_a_trips_last_edge_each_side_reads_its_own_clock() {
+        let env = trip();
+        let last = placed(&env, "2026-03-12", "16:30");
+        assert_instant(&last, "2026-03-12T16:30:00Z", LISBON);
+        let home = placed(&env, "2026-03-12", "18:00");
+        assert_instant(&home, "2026-03-12T17:00:00Z", BERLIN);
+        // The hour the move east skipped: the clock typed, `check tz` naming it.
+        let skipped = placed(&env, "2026-03-12", "17:30");
+        assert_instant(&skipped, "2026-03-12T17:30:00Z", LISBON);
+        let out = env.ok(&["check", "tz", "--json"]);
+        assert!(out.contains("tz_off_declared"), "{out}");
+    }
+
+    #[test]
+    fn a_relative_time_lands_in_the_stretch_it_names() {
+        let env = Env::new();
+        env.ok(&["timezone", LISBON, "-t", "-3000"]);
+        env.ok(&["timezone", BERLIN, "-t", "-1000"]);
+        env.ok(&["occur", "coffee", "-t", "-2000"]);
+        assert_eq!(coffees(&env).pop().unwrap().1, LISBON);
+    }
+
+    /// A trip two days back, `-yy` read in the trip's own zone.
+    #[test]
+    fn yy_is_the_trips_clock() {
+        let env = Env::new();
+        env.ok(&["timezone", LISBON, "-t", "-5000"]);
+        env.ok(&["timezone", BERLIN, "-t", "-1000"]);
+        env.ok(&["occur", "coffee", "-yy", "-t", "8"]);
+        let db = Db::open(env.path().to_str().unwrap()).unwrap();
+        let (hid, _) = sql(&env, "SELECT hid, '' FROM entries WHERE field = 'coffee'").remove(0);
+        let at = db.get_entry(&hid).unwrap().occur_time.unwrap();
+        assert_eq!(at.timezone.as_deref(), Some(LISBON));
+        let clock = at.utc + chrono::TimeDelta::minutes(at.offset_minutes.into());
+        assert_eq!(clock.format("%H:%M").to_string(), "08:00", "{at:?}");
+    }
+
+    #[test]
+    fn z_and_an_offset_win_over_the_field() {
+        let env = trip();
+        env.ok(&[
+            "occur",
+            "coffee",
+            "-d",
+            "2026-03-11",
+            "-t",
+            "8",
+            "-z",
+            "Asia/Tokyo",
+        ]);
+        assert_eq!(coffees(&env).pop().unwrap().1, "Asia/Tokyo");
+        env.ok(&["occur", "coffee", "-t", "2026-03-11T09:00:00+09:00"]);
+        assert_ne!(coffees(&env).pop().unwrap().1, LISBON);
+    }
+
+    /// Where the field claims nothing, the entries around it still decide.
+    #[test]
+    fn under_ignored_the_neighbours_decide() {
+        let env = Env::new();
+        for at in [
+            "2026-03-01T08:00:00+00:00",
+            "2026-03-01T09:00:00+00:00",
+            "2026-03-01T10:00:00+00:00",
+            "2026-03-01T12:00:00+00:00",
+            "2026-03-01T22:00:00+00:00",
+        ] {
+            env.ok(&["occur", "walk", "-t", at, "-z", "Asia/Tokyo"]);
+        }
+        env.ok(&["timezone", "IGNORED", "-t", "2026-02-01T00:00:00+00:00"]);
+        env.ok(&["occur", "coffee", "-d", "2026-03-01", "-t", "20:30"]);
+        assert_eq!(coffees(&env).pop().unwrap().1, "Asia/Tokyo");
+    }
+
+    #[test]
+    fn a_device_in_another_zone_is_asked_and_yes_moves_the_field_and_the_entry() {
+        let env = holding(BERLIN);
+        let unanswered = page(&env, PARIS, &["occur", "coffee"], "");
+        assert!(asked(&unanswered), "{unanswered:?}");
+        assert!(coffees(&env).is_empty(), "asked before anything is written");
+        assert_eq!(zones_logged(&env), [BERLIN]);
+
+        let yes = page(&env, PARIS, &["occur", "coffee"], "y\n");
+        assert!(yes.status.success(), "{yes:?}");
+        assert_eq!(coffees(&env).pop().unwrap().1, PARIS);
+        assert_eq!(zones_logged(&env), [BERLIN, PARIS]);
+        let raw = sql(
+            &env,
+            "SELECT field, raw_input FROM entries WHERE raw_input != '' ORDER BY rowid",
+        );
+        assert!(raw[1].1.starts_with("timezone Europe/Paris -t "), "{raw:?}");
+        assert!(raw[2].1.ends_with("occur coffee"), "{raw:?}");
+
+        let again = page(&env, PARIS, &["occur", "tea"], "");
+        assert!(again.status.success(), "the two agree now: {again:?}");
+    }
+
+    #[test]
+    fn no_keeps_the_stored_zone_and_is_not_asked_again_until_something_changes() {
+        let env = holding(BERLIN);
+        let no = page(&env, PARIS, &["occur", "coffee"], "n\n");
+        assert!(no.status.success(), "{no:?}");
+        assert_eq!(coffees(&env).pop().unwrap().1, BERLIN);
+        assert_eq!(zones_logged(&env), [BERLIN]);
+
+        let quiet = page(&env, PARIS, &["occur", "tea"], "");
+        assert!(quiet.status.success(), "the same pair: {quiet:?}");
+        assert!(asked(&page(
+            &env,
+            "Asia/Tokyo",
+            &["occur", "tea", "-t", "-1"],
+            ""
+        )));
+
+        // Home, and the same trip again, is asked again.
+        assert!(page(&env, BERLIN, &["occur", "tea", "-t", "-2"], "")
+            .status
+            .success());
+        assert!(asked(&page(&env, PARIS, &["occur", "tea", "-t", "-3"], "")));
+    }
+
+    /// The very zone named two ways, whichever the field and the host use.
+    #[test]
+    fn a_tzdb_spelling_is_not_another_zone() {
+        for (stored, device) in [
+            ("Asia/Kolkata", "Asia/Calcutta"),
+            ("Asia/Calcutta", "Asia/Kolkata"),
+        ] {
+            let env = holding(stored);
+            let out = page(&env, device, &["occur", "coffee"], "");
+            assert!(out.status.success(), "{out:?}");
+            assert_eq!(coffees(&env).pop().unwrap().1, stored);
+        }
+    }
+
+    #[test]
+    fn auto_logs_the_switch_with_no_question_and_says_so() {
+        let env = holding(BERLIN);
+        env.ok(&["db", "config", "timezone_follow", "auto"]);
+        assert_eq!(
+            env.ok(&["db", "config", "timezone_follow"]),
+            "timezone_follow auto\n"
+        );
+        let out = page(&env, PARIS, &["occur", "coffee"], "");
+        assert!(out.status.success(), "{out:?}");
+        assert_eq!(coffees(&env).pop().unwrap().1, PARIS);
+        assert_eq!(zones_logged(&env), [BERLIN, PARIS]);
+        let said = String::from_utf8_lossy(&out.stdout);
+        assert!(said.contains("timezone") && said.contains(PARIS), "{said}");
+    }
+
+    #[test]
+    fn nothing_is_asked_where_the_field_claims_nothing() {
+        let none = Env::new();
+        let out = page(&none, PARIS, &["occur", "coffee"], "");
+        assert!(out.status.success(), "{out:?}");
+        assert_eq!(coffees(&none).pop().unwrap().1, PARIS);
+
+        let ignored = holding("IGNORED");
+        let out = page(&ignored, PARIS, &["occur", "coffee"], "");
+        assert!(out.status.success(), "{out:?}");
+        assert_eq!(coffees(&ignored).pop().unwrap().1, PARIS);
+        assert_eq!(zones_logged(&ignored), ["IGNORED"]);
+    }
+
+    /// Only at about now, on a write, and never in place of `-z`, the field's
+    /// own line, or a line with sides writing together.
+    #[test]
+    fn it_asks_only_for_a_write_at_about_now() {
+        let env = holding(BERLIN);
+        for line in [
+            &["occur", "coffee", "-y"][..],
+            &["occur", "coffee", "-t", "-60"],
+            &["occur", "coffee", "-z", "Asia/Tokyo"],
+            &["add", "coffee", "-T", "a=1"],
+            &["tail"],
+            &["timezone", "Asia/Tokyo", "-t", "-1"],
+            &["timezone", "IGNORED"],
+        ] {
+            let out = page(&env, PARIS, line, "");
+            assert!(out.status.success(), "{line:?}: {out:?}");
+        }
+        let env = holding(BERLIN);
+        assert!(asked(&page(&env, PARIS, &["occur", "coffee", "-q"], "")));
+        assert!(page(&env, PARIS, &["occur", "a", ",", "occur", "b"], "")
+            .status
+            .success());
+        assert_eq!(zones_logged(&env), [BERLIN]);
+    }
+
+    /// No person there: stdin is the script's own, so nothing reads it, says
+    /// a prompt, or moves the field, `auto` or not.
+    #[test]
+    fn a_pipe_is_no_person() {
+        let env = holding(BERLIN);
+        let mut child = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .args(["--db", env.path().to_str().unwrap(), "occur", "coffee"])
+            .env("TZ", PARIS)
+            .env("HOME", env.0.path())
+            .env_remove("DATUM_NO_DEFAULT_ANSWER")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let held_open = child.stdin.take();
+        let started = std::time::Instant::now();
+        let out = child.wait_with_output().unwrap();
+        drop(held_open);
+        assert!(out.status.success(), "{out:?}");
+        assert!(
+            started.elapsed().as_secs() < 4,
+            "it waited on a silent pipe"
+        );
+        assert_eq!(String::from_utf8_lossy(&out.stderr), "");
+        assert_eq!(coffees(&env).pop().unwrap().1, BERLIN);
+
+        env.ok(&["db", "config", "timezone_follow", "auto"]);
+        assert!(env.run_in(PARIS, &["occur", "tea"]).status.success());
+        assert_eq!(zones_logged(&env), [BERLIN]);
+    }
+
+    /// A terminal's answer; and a log at no mismatch runs on the database with
+    /// no snapshot, spool or `_meta` row.
+    #[cfg(unix)]
+    #[test]
+    fn a_terminal_is_asked_and_its_answer_taken() {
+        use crate::ambiguous_time::pty;
+        use std::io::Read;
+
+        let env = holding(BERLIN);
+        let (mut master, slave) = pty();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .args(["--db", env.path().to_str().unwrap(), "occur", "coffee"])
+            .env("TZ", PARIS)
+            .env("HOME", env.0.path())
+            .env("DATUM_SYNC_NO_DAEMON", "1")
+            .env_remove("DATUM_NO_DEFAULT_ANSWER")
+            .stdin(slave)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stderr = child.stderr.take().unwrap();
+        let (mut heard, mut buf) = (String::new(), [0u8; 256]);
+        while !heard.contains("[y/N]") {
+            let n = stderr.read(&mut buf).unwrap();
+            assert!(n > 0, "never asked: {heard}");
+            heard.push_str(&String::from_utf8_lossy(&buf[..n]));
+        }
+        master.write_all(b"y\n").unwrap();
+        assert!(child.wait().unwrap().success());
+        assert_eq!(coffees(&env).pop().unwrap().1, PARIS);
+        assert_eq!(zones_logged(&env), [BERLIN, PARIS]);
+    }
+
+    #[test]
+    fn a_log_with_no_mismatch_leaves_nothing_behind() {
+        let env = holding(BERLIN);
+        assert!(page(&env, BERLIN, &["occur", "coffee"], "")
+            .status
+            .success());
+        assert!(!env.path().with_extension("db.spool").exists());
+        let held = sql(
+            &env,
+            "SELECT key, value FROM _meta WHERE key = 'zone_declined'",
+        );
+        assert!(held.is_empty(), "{held:?}");
+    }
+
+    /// `follow-zone`, what the page runs as it loads: the same question.
+    #[test]
+    fn the_pages_load_asks_the_same_question() {
+        let env = holding(BERLIN);
+        let line = ["follow-zone"];
+        assert!(asked(&page(&env, PARIS, &line, "")));
+        assert!(page(&env, PARIS, &line, "n\n").status.success());
+        assert!(page(&env, PARIS, &line, "").status.success(), "once only");
+        assert_eq!(zones_logged(&env), [BERLIN]);
+        assert!(asked(&page(&env, "Asia/Tokyo", &line, "")));
+        let yes = page(&env, "Asia/Tokyo", &line, "y\n");
+        assert!(yes.status.success(), "{yes:?}");
+        assert_eq!(zones_logged(&env), [BERLIN, "Asia/Tokyo"]);
+
+        env.ok(&["db", "config", "timezone_follow", "auto"]);
+        assert!(page(&env, PARIS, &line, "").status.success());
+        assert_eq!(zones_logged(&env), [BERLIN, "Asia/Tokyo", PARIS]);
+
+        let none = Env::new();
+        assert!(page(&none, PARIS, &line, "").status.success());
+        assert!(zones_logged(&none).is_empty());
+    }
+
+    #[test]
+    fn timezone_follow_takes_ask_or_auto() {
+        let env = Env::new();
+        assert_eq!(
+            env.ok(&["db", "config", "timezone_follow"]),
+            "timezone_follow ask (default)\n"
+        );
+        let refused = env.refused(&["db", "config", "timezone_follow", "off"]);
+        assert!(refused.contains("IGNORED"), "{refused}");
+        env.refused(&["db", "config", "auto_setup", "auto"]);
+    }
+}

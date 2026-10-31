@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::Result;
 use datum_core::db::{agreed_zone, is_meta_field, Db, NEIGHBOURS};
 use datum_core::entry::Entry;
-use datum_core::state::FieldStateRows;
 use datum_core::timezone_field::{self, TIMEZONE_FIELD};
 
 use super::{
@@ -250,10 +249,7 @@ fn zone_columns(e: &Entry) -> [String; 4] {
 /// they name or `timezone_state_not_a_zone`; and a meta field's, whose time is
 /// no moment lived, as [`Db::zone_sequence`] leaves them out.
 fn off_declared(db: &Db, entries: &[Entry]) -> Result<Vec<(Entry, String, String)>> {
-    let rows = FieldStateRows::load_transitions(db.conn(), TIMEZONE_FIELD)?;
-    let stretches: Vec<_> = (rows.changes().into_iter())
-        .map(|c| (c.at, timezone_field::state_zone(&c.state)))
-        .collect();
+    let declared_zones = db.declared_zones()?;
     let mut off = Vec::new();
     for e in entries {
         let Some(t) = e.occur_time.as_ref() else {
@@ -267,9 +263,7 @@ fn off_declared(db: &Db, entries: &[Entry]) -> Result<Vec<(Entry, String, String
         {
             continue;
         }
-        let holding = stretches.partition_point(|(at, _)| *at <= t.utc);
-        let declared = holding.checked_sub(1).and_then(|i| stretches[i].1.as_ref());
-        let (Some(declared), Some(own)) = (declared, t.timezone.as_deref()) else {
+        let (Some(declared), Some(own)) = (declared_zones.at(t.utc), t.timezone.as_deref()) else {
             continue;
         };
         if !timezone_field::same_zone(own, declared) {

@@ -23,6 +23,7 @@ pub mod end;
 pub mod field_visuals;
 pub mod fields;
 pub mod flag;
+pub mod follow_zone;
 pub mod get;
 pub mod get_search;
 pub mod grep;

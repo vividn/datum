@@ -4,9 +4,13 @@
 //! «a special switch field called timezone, where you can put in the IANA
 //! timezone … enforce that it is an IANA timezone, and sets it's timezone».
 
+use chrono::{DateTime, Utc};
+use rusqlite::Connection;
 use serde_json::Value as JsonValue;
 
 use crate::db::IGNORED_STATE_VALUE;
+use crate::error::Result;
+use crate::state::FieldStateRows;
 
 pub const TIMEZONE_FIELD: &str = "timezone";
 
@@ -32,6 +36,41 @@ pub fn same_zone(a: &str, b: &str) -> bool {
 /// A state the field may hold: a zone, or `IGNORED`.
 pub fn holds(state: &JsonValue) -> bool {
     state == IGNORED_STATE_VALUE || state_zone(state).is_some()
+}
+
+/// What the field holds over time: each stretch's first instant and its zone,
+/// oldest first, `None` where it claims none (`IGNORED`). Before the first
+/// stretch it claims nothing either.
+pub struct Declared(Vec<(DateTime<Utc>, Option<String>)>);
+
+impl Declared {
+    pub fn load(conn: &Connection) -> Result<Self> {
+        let rows = FieldStateRows::load_transitions(conn, TIMEZONE_FIELD)?;
+        let stretches = (rows.changes().into_iter())
+            .map(|c| (c.at, state_zone(&c.state)))
+            .collect();
+        Ok(Self(stretches))
+    }
+
+    /// The zone the field holds at `at`.
+    pub fn at(&self, at: DateTime<Utc>) -> Option<&str> {
+        let holding = self.0.partition_point(|(from, _)| *from <= at);
+        self.0.get(holding.checked_sub(1)?)?.1.as_deref()
+    }
+
+    /// The zone of the latest stretch that `read`, given its zone, lands
+    /// inside: the wall clock a line names belongs to the stretch whose own
+    /// clock it reads inside it (da-mvt5i). Two can, where a move west
+    /// repeated the hour, and the later is taken, the stretch being begun.
+    pub fn reading_itself(&self, read: impl Fn(&str) -> Option<DateTime<Utc>>) -> Option<&str> {
+        let until = |i: usize| self.0.get(i + 1).map(|(at, _)| *at);
+        (0..self.0.len()).rev().find_map(|i| {
+            let (from, zone) = &self.0[i];
+            let zone = zone.as_deref()?;
+            let at = read(zone)?;
+            (*from <= at && until(i).is_none_or(|end| at < end)).then_some(zone)
+        })
+    }
 }
 
 /// Another spelling of a zone and the zone, by spelling: tzdb's `backward` file

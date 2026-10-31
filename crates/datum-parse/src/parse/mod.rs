@@ -348,6 +348,8 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
 
         "reparse" => Command::Reparse(parse_reparse_args(rest)?),
 
+        "follow-zone" => Command::FollowZone,
+
         "completions" => Command::Completions(parse_completions_cmd(rest)?),
 
         "install" => Command::Install(parse_install_args(rest)?),

@@ -698,7 +698,9 @@ export function boot(): Promise<void> {
 		onExternalChange(refreshKits, currentDb());
 		// Every tab takes part; one per database leads it (da-6kpj5).
 		void import('#lib/sync.ts').then(({ startSync }) => startSync(currentDb()));
-		void offerDefaults(stored === null);
+		void offerDefaults(stored === null)
+			.then(() => import('./engine.js'))
+			.then(({ followZone }) => followZone());
 	})());
 }
 
