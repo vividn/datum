@@ -16,7 +16,9 @@ fn a_session_given_up_on_idle_names_that_to_the_other_copy() {
 
 /// On a kept connection only the stream goes, and a reset carries a code and
 /// no words: the copy left stalled reads why all the same. b applies 300-odd
-/// ops at 20ms each on a 3s timeout, with no keepalives.
+/// ops at 20ms each on a 3s timeout, with no keepalives. Read from its log:
+/// the next session on that connection follows at once, and succeeding clears
+/// the words from `sync status` within a moment (da-i5tj8).
 #[test]
 fn a_session_given_up_on_a_kept_connection_names_that_to_the_other_copy() {
     let (mut a, mut b) = paired();
@@ -28,14 +30,13 @@ fn a_session_given_up_on_a_kept_connection_names_that_to_the_other_copy() {
     b.env = quick.to_vec();
     b.env.push(("DATUM_SYNC_TEST_APPLY_DELAY_MS", "20"));
     let _a_runs = a.serve(&["sync", "run"]);
-    let _b_runs = b.serve(&["sync", "run"]);
+    let _b_runs = logged(&b, &["sync", "run"], "run.log");
     a.ok(&["occur", "first"]);
     until("the first session", Duration::from_secs(60), || {
         a.hash() == b.hash()
     });
     import(&a, 300);
-    let error = || entry_of(&b, "status", &a)["error"].to_string();
     until("b reads why", Duration::from_secs(60), || {
-        error().contains("the other copy timed out")
+        log(&b, "run.log").contains("the other copy timed out")
     });
 }
