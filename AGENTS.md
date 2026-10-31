@@ -1372,8 +1372,9 @@ does (`*/alchemiter`); `--dry-run` prints what would run and runs no check. Do n
 run `cargo test --workspace` or `scripts/check.sh` for a localized change. CI on a PR runs the Rust tests
 its change can reach by per-test coverage (`cargo xtask testmap select`
 against the `testmap` branch's map of a staging commit, da-fnt3v) — for
-`README.md` or a `docs/*.md`, the tests that read the docs (`DOC_READERS`,
-da-1nqv4), which docs alone run nowhere else — and
+`README.md`, a `docs/*.md` or `web/static/agents.md`, the tests that read the docs (`DOC_READERS`,
+da-1nqv4), which docs alone run nowhere else, and for a file the release key is quoted in the test
+that reads it (`RELEASE_KEY_QUOTES`, da-mc8b1) — and
 everything when the change is a manifest, a build script, CI, a non-Rust
 file under `crates/` or the map is missing or stale; the job log names each
 test or the reason. Staging runs the full workspace, and that is the safety

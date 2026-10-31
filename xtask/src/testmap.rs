@@ -31,14 +31,21 @@ const MAX_BEHIND: usize = 25;
 const STAGING: &str = "origin/staging";
 /// The cohorts: ci.yml's two nextest steps.
 const COHORTS: [&str; 2] = ["workspace", "e2e-full"];
-/// The tests that read README.md and docs/ as data, which coverage cannot
-/// see: a change to a doc runs them (seconds) where it would run none, so a
-/// drift between the docs and the binary is caught on the PR (da-1nqv4).
+/// The tests that read README.md, docs/ and datum.day's guide for agents as
+/// data, which coverage cannot see: a change to a doc runs them (seconds) where
+/// it would run none, so a drift between the docs and the binary is caught on
+/// the PR (da-1nqv4).
 const DOC_READERS: [&str; 3] = [
     "readme_anti_drift::readme_autogen_sections_in_sync",
     "readme_anti_drift::every_generated_block_has_markers_in_its_file",
     "readme_snippets::markdown_bash_snippets_run_against_datum_binary",
 ];
+/// The test holding each published copy of the release key to the one built
+/// in, and the files it reads, install.sh among them (da-mc8b1).
+const RELEASE_KEY_READER: &str =
+    "commands::install::tests::the_release_key_is_quoted_where_it_is_published";
+const RELEASE_KEY_QUOTES: [&str; 3] =
+    ["README.md", "web/static/install.sh", "web/static/agents.md"];
 
 #[derive(Serialize, Deserialize)]
 struct Map {
@@ -453,10 +460,10 @@ fn select(map_path: &Path, base: &str, out: &Path) -> Result<()> {
             // reaches tests no coverage of it names; a test file's own tests
             // are found by name below.
             reasons.push(format!("{path}: no function of it is in the map"));
-        } else if is_doc(path) && doc_readers(&map).len() < DOC_READERS.len() {
+        } else if readers_in(&map, path).len() < readers_of(path).len() {
             reasons.push(format!(
-                "{path}: a test that reads the docs is not in the map (one of {})",
-                DOC_READERS.join(", ")
+                "{path}: a test that reads it is not in the map (one of {})",
+                readers_of(path).join(", ")
             ));
         }
     }
@@ -472,13 +479,14 @@ fn select(map_path: &Path, base: &str, out: &Path) -> Result<()> {
         println!("{why}: +{} tests", picked.len() - n);
     };
     for p in changed.iter().filter(|p| !p.ends_with(".rs")) {
-        if is_doc(p) {
-            take(
-                format!("{p}: the tests that read the docs"),
-                &mut doc_readers(&map).into_iter(),
-            );
-        } else {
+        let readers = readers_in(&map, p);
+        if readers.is_empty() {
             println!("{p}: no Rust test reads it");
+        } else {
+            take(
+                format!("{p}: the tests that read it"),
+                &mut readers.into_iter(),
+            );
         }
     }
     let whole = |file: &str| -> Vec<u32> {
@@ -652,15 +660,30 @@ fn trigger(path: &str) -> Option<&'static str> {
     (!unread).then_some("a file outside crates/ that a test may read (kits/, tests/, scripts/)")
 }
 
-/// README.md or a Markdown file under docs/: what [`DOC_READERS`] read.
+/// What [`DOC_READERS`] read.
 fn is_doc(path: &str) -> bool {
-    path == "README.md" || (path.starts_with("docs/") && path.ends_with(".md"))
+    path == "README.md"
+        || path == "web/static/agents.md"
+        || (path.starts_with("docs/") && path.ends_with(".md"))
 }
 
-/// The map's indices of [`DOC_READERS`].
-fn doc_readers(map: &Map) -> Vec<u32> {
+/// The tests that read a file outside crates/ as data.
+fn readers_of(path: &str) -> Vec<&'static str> {
+    let mut names = Vec::new();
+    if is_doc(path) {
+        names.extend(DOC_READERS);
+    }
+    if RELEASE_KEY_QUOTES.contains(&path) {
+        names.push(RELEASE_KEY_READER);
+    }
+    names
+}
+
+/// The map's indices of [`readers_of`] a path.
+fn readers_in(map: &Map, path: &str) -> Vec<u32> {
+    let names = readers_of(path);
     (0..map.tests.len() as u32)
-        .filter(|&i| DOC_READERS.contains(&map.tests[i as usize][2].as_str()))
+        .filter(|&i| names.contains(&map.tests[i as usize][2].as_str()))
         .collect()
 }
 
@@ -844,11 +867,12 @@ mod tests {
     }
 
     #[test]
-    fn a_doc_selects_the_tests_that_read_the_docs_and_no_other() {
+    fn a_doc_selects_the_tests_that_read_it_and_no_other() {
         let test = |name: &str| ["workspace".into(), "datum-cli::main".into(), name.into()];
         let mut tests = vec![
             test("readme_snippets::parser_tests::tokenize_strips_inline_comments"),
             test("readme_anti_drift::render_adapters_round_trip_command_names"),
+            test(RELEASE_KEY_READER),
         ];
         tests.extend(DOC_READERS.map(test));
         let map = Map {
@@ -858,16 +882,43 @@ mod tests {
             files: BTreeMap::new(),
             always: Vec::new(),
         };
-        for p in ["README.md", "docs/grammar-tokens.md"] {
-            assert!(trigger(p).is_none() && is_doc(p), "{p}");
-            let names: Vec<&str> = doc_readers(&map)
+        let names = |p| -> Vec<String> {
+            readers_in(&map, p)
                 .iter()
-                .map(|&i| map.tests[i as usize][2].as_str())
-                .collect();
-            assert_eq!(names, DOC_READERS, "{p}");
+                .map(|&i| map.tests[i as usize][2].clone())
+                .collect()
+        };
+        for p in ["README.md", "web/static/agents.md"] {
+            assert!(trigger(p).is_none(), "{p}");
+            assert_eq!(names(p)[0], RELEASE_KEY_READER, "{p}");
+            assert_eq!(names(p)[1..], DOC_READERS, "{p}");
         }
+        assert_eq!(names("docs/grammar-tokens.md"), DOC_READERS);
+        assert_eq!(names("web/static/install.sh"), [RELEASE_KEY_READER]);
         for p in ["AGENTS.md", "web/README.md", "docs/parity-audit/notes.txt"] {
-            assert!(!is_doc(p), "{p}");
+            assert!(names(p).is_empty(), "{p}");
+        }
+    }
+
+    /// What the two tests read, as they say it. A file a test starts reading
+    /// here fails this before it goes unselected.
+    #[test]
+    fn the_files_named_are_the_ones_the_tests_read() {
+        let install = include_str!("../../crates/datum-commands/src/commands/install.rs");
+        assert!(install.contains(&format!("for file in {RELEASE_KEY_QUOTES:?}")));
+        let test = RELEASE_KEY_READER.rsplit("::").next().unwrap();
+        assert!(install.contains(&format!("fn {test}()")));
+        let snippets = include_str!("../../crates/datum-cli/tests/readme_snippets.rs");
+        let docs = snippets.split("SNIPPET_DOCS: &[&str] = &[").nth(1).unwrap();
+        for doc in docs
+            .split("];")
+            .next()
+            .unwrap()
+            .split('"')
+            .skip(1)
+            .step_by(2)
+        {
+            assert!(is_doc(doc), "{doc}");
         }
     }
 
