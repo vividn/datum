@@ -117,15 +117,23 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             }
         };
 
-        let occur_uncertainty = parse_datum_uncertainty(&data["occurTime"]);
+        let occur = v2_occur_block(data, meta);
         let create_time = DatumTime::from_v2_json(&meta["createTime"]);
-        let occur_time = match DatumTime::from_v2_json(&data["occurTime"]) {
+        let occur_time = match DatumTime::from_v2_json(&occur) {
             Some(mut t) => {
-                t.uncertainty = occur_uncertainty;
+                t.uncertainty = parse_datum_uncertainty(&occur);
                 Some(t)
             }
-            None => v2_date_only(&data["occurTime"], create_time.as_ref()),
+            None => v2_date_only(&occur, create_time.as_ref()),
         };
+        // A doc that says when it happened and cannot be read is listed, not
+        // moved to when it was recorded (da-9l0t3). Absent or null says nothing.
+        if occur_time.is_none() && !occur.is_null() {
+            let e = format!("occurTime {} is not a time", data["occurTime"]);
+            eprintln!("warning: skipping {}: {}", field, e);
+            skipped_records.push((SkipReason::InvalidShape, doc_id, Some(e)));
+            continue;
+        }
 
         // ─── dur ────────────────────────────────────────────────────
         // Per da-5ns.6, and da-w94vu for null:
@@ -212,6 +220,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                 let column = match k.as_str() {
                     "field" | "state" | "occurTime" | "lastState" => true,
                     "dur" => dur_in.is_some(),
+                    "occurUtcOffset" => data["occurTime"].is_string(),
                     _ => false,
                 };
                 if !column {
@@ -605,6 +614,23 @@ fn write_skip_log(
         writeln!(f, "{}\t{}\t{}", reason.as_str(), id, detail)?;
     }
     Ok(())
+}
+
+/// A doc's `occurTime` as a v2 time block. Before vividn/datum 76c6f8e7 (#541)
+/// v2 wrote a plain ISO string, an instant or a date, with its offset in hours
+/// in `data.occurUtcOffset` or, earlier, `meta.utcOffset`: read here as v2's own
+/// migration reads it (`migrateDatumTime1`, eb543870).
+fn v2_occur_block(data: &JsonValue, meta: &JsonValue) -> JsonValue {
+    let occur = &data["occurTime"];
+    match occur.as_str() {
+        Some(utc) => {
+            let o = data["occurUtcOffset"]
+                .as_f64()
+                .or(meta["utcOffset"].as_f64());
+            serde_json::json!({"utc": utc, "o": o})
+        }
+        None => occur.clone(),
+    }
 }
 
 /// v2 writes a date-only time (`-D`, or `-d`/`-y` with no time) as

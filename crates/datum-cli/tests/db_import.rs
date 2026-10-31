@@ -1312,25 +1312,7 @@ fn import_preserves_a_half_hour_offset() {
 // field per millisecond collided and were counted as «duplicate».
 
 fn skip_log_lines(docs: &tempfile::NamedTempFile, db: &datum_core::db::Db) -> Vec<String> {
-    let log = tempfile::NamedTempFile::new().unwrap();
-    let log_path = log.path().to_str().unwrap();
-    run_cli(
-        &[
-            "db",
-            "v2import",
-            docs.path().to_str().unwrap(),
-            "--skip-log",
-            log_path,
-        ],
-        db,
-    )
-    .unwrap();
-    std::fs::read_to_string(log_path)
-        .unwrap()
-        .lines()
-        .filter(|l| !l.starts_with('#'))
-        .map(str::to_string)
-        .collect()
+    skipped_by(docs, db, false)
 }
 
 fn slugs(db: &datum_core::db::Db) -> Vec<String> {
@@ -1389,6 +1371,140 @@ fn date_only_docs_import_as_whole_days() {
         "{again:?}"
     );
     assert_eq!(datum_core::test_util::logged_all(&db).len(), 3);
+}
+
+fn doc_occurring(id: &str, data: serde_json::Value) -> serde_json::Value {
+    let mut full = serde_json::json!({"field": "seen"});
+    full.as_object_mut()
+        .unwrap()
+        .extend(data.as_object().unwrap().clone());
+    serde_json::json!({
+        "_id": id,
+        "data": full,
+        "meta": {
+            "humanId": id,
+            "createTime": {"utc": "2025-03-03T12:00:00.000Z", "o": 0, "tz": "UTC"}
+        }
+    })
+}
+
+/// The lines a run lists as skipped, dry or real: the two read one vector.
+fn skipped_by(f: &tempfile::NamedTempFile, db: &datum_core::db::Db, dry: bool) -> Vec<String> {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let log_path = log.path().to_str().unwrap();
+    let mut args = vec![
+        "db",
+        "v2import",
+        f.path().to_str().unwrap(),
+        "--skip-log",
+        log_path,
+    ];
+    if dry {
+        args.push("--dry-run");
+    }
+    run_cli(&args, db).unwrap();
+    std::fs::read_to_string(log_path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn an_unreadable_occur_time_is_listed_and_not_moved_to_the_create_time() {
+    let unreadable = [
+        ("a-word", serde_json::json!("yesterdayish")),
+        ("empty", serde_json::json!("")),
+        ("bad-utc", serde_json::json!({"utc": "bad"})),
+        ("null-utc", serde_json::json!({"utc": null})),
+        ("no-utc", serde_json::json!({"o": 1})),
+        ("number", serde_json::json!(1735714800)),
+    ];
+    // A timeless doc slugs on its create time, so these two need their own.
+    let mut null_time = doc_occurring("null", serde_json::json!({"occurTime": null}));
+    null_time["meta"]["createTime"]["utc"] = serde_json::json!("2025-03-04T12:00:00.000Z");
+    let docs: Vec<_> = unreadable
+        .iter()
+        .map(|(id, occur)| doc_occurring(id, serde_json::json!({"occurTime": occur})))
+        .chain([doc_occurring("absent", serde_json::json!({})), null_time])
+        .collect();
+    let f = write_backup(serde_json::Value::Array(docs));
+
+    for dry in [true, false] {
+        let db = fresh_db();
+        let skipped = skipped_by(&f, &db, dry);
+        assert_eq!(skipped.len(), unreadable.len(), "dry={dry}: {skipped:?}");
+        for ((id, _), line) in unreadable.iter().zip(&skipped) {
+            assert!(
+                line.starts_with(&format!("invalid-shape\t{id}\toccurTime ")),
+                "dry={dry}: {line}"
+            );
+        }
+        let rows = datum_core::test_util::logged_all(&db);
+        if dry {
+            assert!(rows.is_empty(), "a dry run writes nothing");
+            continue;
+        }
+        // Only the two that named no time are in, at their create time.
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        assert!(rows.iter().all(|e| e.occur_time.is_none()), "{rows:?}");
+    }
+}
+
+#[test]
+fn a_plain_string_occur_time_is_the_instant_v2_wrote() {
+    let mut offset_in_meta = doc_occurring(
+        "offset-in-meta",
+        serde_json::json!({"occurTime": "2025-01-04T07:00:00.000Z"}),
+    );
+    offset_in_meta["meta"]["utcOffset"] = serde_json::json!(-5);
+    let f = write_backup(serde_json::json!([
+        doc_occurring(
+            "offset-beside",
+            serde_json::json!({"occurTime": "2025-01-01T07:00:00.000Z", "occurUtcOffset": 5.5}),
+        ),
+        doc_occurring(
+            "no-offset",
+            serde_json::json!({"occurTime": "2025-01-02T07:00:00.000Z"}),
+        ),
+        doc_occurring("a-date", serde_json::json!({"occurTime": "2025-01-03"})),
+        offset_in_meta,
+    ]));
+
+    let dry = fresh_db();
+    assert_eq!(skipped_by(&f, &dry, true), Vec::<String>::new());
+    assert!(datum_core::test_util::logged_all(&dry).is_empty());
+
+    let db = fresh_db();
+    assert_eq!(skipped_by(&f, &db, false), Vec::<String>::new());
+    let rows = datum_core::test_util::logged_all(&db);
+    let row = |hid: &str| {
+        rows.iter()
+            .find(|e| e.hid.as_str() == hid)
+            .unwrap_or_else(|| panic!("{hid} in {rows:?}"))
+    };
+    let at = |hid: &str| row(hid).occur_time.clone().expect("an occur time");
+
+    let t = at("offset-beside");
+    assert_eq!(t.utc.to_rfc3339(), "2025-01-01T07:00:00+00:00");
+    assert_eq!(t.offset_minutes, 330);
+    assert!(
+        row("offset-beside").data.is_none(),
+        "the offset has a column: {:?}",
+        row("offset-beside").data
+    );
+    assert_eq!(at("offset-in-meta").offset_minutes, -300);
+
+    let t = at("no-offset");
+    assert_eq!(t.utc.to_rfc3339(), "2025-01-02T07:00:00+00:00");
+    assert_eq!(t.offset_minutes, 0);
+
+    assert_eq!(row("a-date").occur_uncertainty(), Some("P1D"));
+    assert_eq!(
+        at("a-date").local_time().format("%F %H:%M").to_string(),
+        "2025-01-03 00:00"
+    );
 }
 
 #[test]
