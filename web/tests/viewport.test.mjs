@@ -31,11 +31,11 @@ const onPhone = (engine) => ({
 	...(engine === chromium ? { device: { isMobile: true, hasTouch: true } } : {})
 });
 
-/** The bottoms of the shell and of the tab bar at its foot, and the visible height. */
+/** The bottoms of the shell and of the bottom bar, and the visible height. */
 const edges = (page) =>
 	page.evaluate(() => ({
 		shell: Math.round(document.querySelector('.shell').getBoundingClientRect().bottom),
-		bar: Math.round(document.querySelector('.root-bar').getBoundingClientRect().bottom),
+		bar: Math.round(document.querySelector('.prompt-bar').getBoundingClientRect().bottom),
 		visible: Math.round(visualViewport.height)
 	}));
 

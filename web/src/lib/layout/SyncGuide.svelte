@@ -42,7 +42,7 @@
 
 	<h3>Where it is</h3>
 	<p>
-		The gear at the foot of the page, then <b class="ui">Sync</b>; or type <code>sync</code> in the input bar.
+		The gear at the top of the page, then <b class="ui">Sync</b>; or type <code>sync</code> in the input bar.
 		<button type="button" class="command" use:act={'open'} onclick={() => void openPlace('sync')}>Open Sync</button>
 	</p>
 

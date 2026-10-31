@@ -60,7 +60,7 @@
 <style>
 	.waiting {
 		position: absolute;
-		top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+		top: calc(env(safe-area-inset-top, 0px) + 2.6rem);
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: 20;

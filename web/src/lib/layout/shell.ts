@@ -1261,7 +1261,7 @@ async function offerDefaults(fresh: boolean): Promise<void> {
 	if (seen >= news.length) return;
 	const yes = await confirm(
 		`datum has a new default layout. ${news.slice(seen).join(' ')}\n\n` +
-			'Using it puts every layout that ships with datum back the way it comes, one you changed included, and the tabs along the foot of the page back to the ones a first visit opens. ' +
+			'Using it puts every layout that ships with datum back the way it comes, one you changed included, and the tabs at the top of the page back to the ones a first visit opens. ' +
 			'Layouts you saved under a name of your own, and layouts a kit installed, are not touched.\n\n' +
 			'«Keep mine» keeps your tabs and the layouts you changed or saved, and this is not asked again. A layout that ships with datum and that you never changed draws the new way anyway. ' +
 			'«Reset default layouts» in the ⚙ menu does what using it does, at any time.',

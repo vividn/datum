@@ -1,11 +1,11 @@
-// THE TAB BAR AT THE SCREEN'S FOOT (da-6no9e). vividn, 2026-10-30: «let's move
-// the tab bar to the bottom of the screen underneath the input bar. Put the
-// gear menu and the help button on the left hand side too».
+// THE TAB BAR AT THE TOP, THE GEAR AND HELP AT ITS LEFT (da-mt32t, da-6no9e).
+// vividn, 2026-10-31: «let's move the tab bar back to the top, i don't like it
+// at the bottom. But keep the gear and the help button on the left like they
+// are now».
 //
-// Top to bottom: the dashboard, the input, the tab bar, nothing between them
-// and nothing past it, so the dashboard is what the two bars leave of the
-// screen. What opened downward from the top now opens upward and stays on
-// screen. A phone's keyboard hides the bar, a default of vremya's.
+// Top to bottom: the tab bar, the dashboard, the input, nothing between them
+// and nothing past them, so the dashboard is what the two bars leave of the
+// screen. What opens from the bar opens under it and stays on screen.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -48,16 +48,17 @@ const close = async (page, selector) => {
 
 for (const [name, size] of SIZES) {
 	describe(name, () => {
-		test('the bar is under the input and on the screen’s foot, and the dashboard is what is left', async () => {
+		test('the bar is on the screen’s top, over the panes, the input on its foot under them', async () => {
 			await withApp(async ({ page }) => {
 				const screen = await page.evaluate(() => innerHeight);
-				const [main, prompt, input, bar] = await Promise.all(
-					['main', '.prompt-bar', '.prompt-bar .section.input', BAR].map((s) => edges(page, s))
+				const [main, prompt, bar, pane] = await Promise.all(
+					['main', '.prompt-bar', BAR, 'main section[data-title]'].map((s) => edges(page, s))
 				);
-				assert.ok(bar.top >= input.bottom - 0.5, `the bar's top ${bar.top} is above the input's bottom ${input.bottom}`);
-				assert.ok(Math.abs(bar.bottom - screen) <= 0.5, `the bar's bottom ${bar.bottom} is not the screen's ${screen}`);
-				assert.ok(Math.abs(prompt.bottom - bar.top) <= 0.5, `the input ends at ${prompt.bottom}, the bar begins at ${bar.top}`);
-				assert.ok(Math.abs(main.top) <= 0.5 && Math.abs(main.bottom - prompt.top) <= 0.5, `the dashboard is ${main.top}–${main.bottom}, the input starts at ${prompt.top}`);
+				assert.ok(Math.abs(bar.top) <= 0.5, `the bar's top is ${bar.top}`);
+				assert.ok(bar.bottom <= pane.top + 0.5, `the bar ends at ${bar.bottom}, a pane starts at ${pane.top}`);
+				assert.ok(pane.bottom <= prompt.top + 0.5, `a pane ends at ${pane.bottom}, the input bar starts at ${prompt.top}`);
+				assert.ok(Math.abs(prompt.bottom - screen) <= 0.5, `the input bar's bottom ${prompt.bottom} is not the screen's ${screen}`);
+				assert.ok(Math.abs(main.top - bar.bottom) <= 0.5 && Math.abs(main.bottom - prompt.top) <= 0.5, `the dashboard is ${main.top}–${main.bottom}, between ${bar.bottom} and ${prompt.top}`);
 			}, size);
 		});
 
@@ -76,19 +77,19 @@ for (const [name, size] of SIZES) {
 			}, size);
 		});
 
-		test('each menu opens inside the viewport', async () => {
+		test('each menu opens under the bar, inside the viewport', async () => {
 			await withApp(async ({ page }) => {
-				// Above what opened it: a button is inside the bar, a little under its top.
-				const above = async (trigger, selector, what) =>
-					assert.ok((await onScreen(page, selector, what)).bottom <= (await trigger.evaluate((el) => el.getBoundingClientRect().top)), `${what} is not above its button`);
+				// Below what opened it: a button is inside the bar, a little over its foot.
+				const below = async (trigger, selector, what) =>
+					assert.ok((await onScreen(page, selector, what)).top >= (await trigger.evaluate((el) => el.getBoundingClientRect().bottom)), `${what} is not below its button`);
 
 				await rootMenuButton(page).click();
-				await above(rootMenuButton(page), '[role="menu"]', 'the tab’s menu');
+				await below(rootMenuButton(page), '[role="menu"]', 'the tab’s menu');
 				await close(page, '[role="menu"]');
 
 				const gear = page.locator(`${BAR} button.gear`);
 				await gear.click();
-				await above(gear, '[role="menu"][aria-label="settings"]', 'the gear’s menu');
+				await below(gear, '[role="menu"][aria-label="settings"]', 'the gear’s menu');
 				await close(page, '[role="menu"]');
 
 				await page.locator(`${BAR} button.add`).click();
@@ -96,13 +97,13 @@ for (const [name, size] of SIZES) {
 				await close(page, 'dialog.chooser');
 
 				await chooseRoot(page, 'Restore layout');
-				await above(rootMenuButton(page), `${BAR} .versions`, 'the versions');
+				await below(rootMenuButton(page), `${BAR} .versions`, 'the versions');
 				await chooseRoot(page, 'Restore layout');
 				await page.locator(`${BAR} .versions`).waitFor({ state: 'detached' });
 
 				await enterLayoutMode(page);
 				await rootMenuButton(page).click();
-				await above(rootMenuButton(page), '[role="menu"]', 'the layout-mode menu');
+				await below(rootMenuButton(page), '[role="menu"]', 'the layout-mode menu');
 			}, size);
 		});
 	});
@@ -115,57 +116,12 @@ const visible = (page, height) =>
 		visualViewport.dispatchEvent(new Event('resize'));
 	}, height);
 
-const barShown = (page) => page.locator(BAR).isVisible();
-
-describe('a phone’s keyboard', () => {
-	test('hides the bar, so the input sits on it, and closing it brings the bar back', async () => {
-		await withApp(async ({ page }) => {
-			await page.locator('.prompt-bar input').focus();
-			await visible(page, 480);
-			await until(() => barShown(page), (shown) => !shown);
-			await until(() => edges(page, '.prompt-bar'), (box) => Math.abs(box.bottom - 480) <= 0.5);
-
-			await visible(page, 844);
-			await until(() => barShown(page), (shown) => shown);
-			assert.ok(Math.abs((await edges(page, BAR)).bottom - 844) <= 0.5);
-		}, PHONE);
-	});
-
-	test('a box let go with the viewport still short brings the bar back, with no viewport event', async () => {
-		await withApp(async ({ page }) => {
-			const box = page.locator('.prompt-bar input');
-			await box.focus();
-			await visible(page, 480);
-			await until(() => barShown(page), (shown) => !shown);
-
-			await box.blur();
-			await until(() => barShown(page), (shown) => shown);
-			await box.focus();
-			await until(() => barShown(page), (shown) => !shown);
-		}, PHONE);
-	});
-
-	test('is not a URL bar sliding in, nor a shorter window with no box focused', async () => {
-		await withApp(async ({ page }) => {
-			await visible(page, 480);
-			await until(() => edges(page, '.shell'), (box) => Math.abs(box.bottom - 480) <= 0.5);
-			assert.ok(await barShown(page), 'a shorter window with no box focused hid the bar');
-
-			await visible(page, 844);
-			await page.locator('.prompt-bar input').focus();
-			await visible(page, 760);
-			await until(() => edges(page, '.shell'), (box) => Math.abs(box.bottom - 760) <= 0.5);
-			assert.ok(await barShown(page), 'a URL bar’s 84px hid the bar');
-		}, PHONE);
-	});
-
-	test('is no keyboard under a mouse', async () => {
-		await withApp(async ({ page }) => {
-			await page.locator('.prompt-bar input').focus();
-			const height = DESKTOP.viewport.height;
-			await visible(page, height / 2);
-			await until(() => edges(page, '.shell'), (box) => Math.abs(box.bottom - height / 2) <= 0.5);
-			assert.ok(await barShown(page), 'a desktop window made short hid the bar');
-		}, DESKTOP);
-	});
+test('a phone’s keyboard leaves the bar at the top and the input sitting on it', async () => {
+	await withApp(async ({ page }) => {
+		await page.locator('.prompt-bar input').focus();
+		await visible(page, 480);
+		await until(() => edges(page, '.prompt-bar'), (box) => Math.abs(box.bottom - 480) <= 0.5);
+		assert.ok(await page.locator(BAR).isVisible(), 'the keyboard hid the bar');
+		assert.ok(Math.abs((await edges(page, BAR)).top) <= 0.5);
+	}, PHONE);
 });

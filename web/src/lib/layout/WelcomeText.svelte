@@ -125,7 +125,7 @@ comment: obsessed with time</pre>
 			command's full output.
 		</p>
 		<h3>Tabs and widgets</h3>
-		<p>Tabs run across the foot of the page; each is a page of widgets. In layout mode you can rearrange a page or build your own.</p>
+		<p>Tabs run across the top of the page; each is a page of widgets. In layout mode you can rearrange a page or build your own.</p>
 		<ul>
 			<li>Move a tab: drag it. On a phone, hold it first.</li>
 			<li>Open a widget, or a tab you closed: the + beside the tabs.</li>

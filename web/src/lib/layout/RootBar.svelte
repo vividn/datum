@@ -1,9 +1,9 @@
 <!--
-	The root tab bar, at the foot of the screen under the input bar
-	(da-6no9e; it took the header's place at the top in da-0a5o). vividn,
-	2026-10-30: «let's move the tab bar to the bottom of the screen
-	underneath the input bar. Put the gear menu and the help button on the
-	left hand side too».
+	The root tab bar, at the top of the screen, where it took the header's
+	place (da-0a5o), with the gear and the help at its left (da-6no9e, which
+	had it at the foot for a day). vividn, 2026-10-31: «let's move the tab
+	bar back to the top, i don't like it at the bottom. But keep the gear
+	and the help button on the left like they are now» (da-mt32t).
 
 	It is the pane title bar, formatted as a bar of the page (da-wjob). vividn: it
 	"is actually just a specially formatted version of the same thing —
@@ -37,7 +37,7 @@
 	While the tab is modified Save and Restore are marked in the menu and
 	the tab keeps its dot, so the dot's meaning is one press from the dot.
 	Restore goes back to the last save; with nothing to discard it opens
-	the save's versions over the bar instead, and `→ forward` undoes the
+	the save's versions under the bar instead, and `→ forward` undoes the
 	last restore. A tab holding a layout that SHIPPED with datum has
 	another, `Reset layout` (da-luwe), beside Restore: the other way back,
 	to `defaults.ts` rather than to the save.
@@ -354,7 +354,7 @@
 	const doResetDefaults = () =>
 		attempt(async () => {
 			const yes = await confirm(
-				'Every layout that ships with datum goes back to the way it comes, one you changed included, and the tabs along the foot of the page go back to the ones a first visit opens.\n\n' +
+				'Every layout that ships with datum goes back to the way it comes, one you changed included, and the tabs at the top of the page go back to the ones a first visit opens.\n\n' +
 					'Layouts you saved under a name of your own, and layouts a kit installed, are not touched — they stay in the +.',
 				'reset'
 			);
@@ -614,16 +614,14 @@
 		align-items: center;
 		gap: 4px;
 		flex-shrink: 0;
-		/* The screen's foot is this bar's, so the home indicator's inset is
-		   too: under it, and gone with it while a keyboard hides it. */
-		padding: 0.3rem 0.5rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
+		padding: 0.3rem 0.5rem;
 		background: var(--ground);
-		border-top: 1px solid var(--rule);
+		border-bottom: 1px solid var(--rule);
 		min-width: 0;
 	}
 
 	/* One row, always: the strip scrolls sideways on a phone, and the bar
-	   itself clips nothing — the versions list stands over it. */
+	   itself clips nothing — the versions list hangs below it. */
 	.tabs {
 		display: flex;
 		gap: 4px;
@@ -700,8 +698,8 @@
 			color-mix(in srgb, var(--accent) 16%, var(--ground)) 0 6px,
 			var(--ground) 6px 14px
 		);
-		border-top-color: var(--accent);
-		box-shadow: 0 -1px 0 var(--accent);
+		border-bottom-color: var(--accent);
+		box-shadow: 0 1px 0 var(--accent);
 	}
 
 	/* Its tabs give the × room (da-yxfem): at 360px wide a first visit's
@@ -816,10 +814,10 @@
 
 	.versions {
 		position: absolute;
-		bottom: 100%;
+		top: 100%;
 		right: 0;
 		z-index: 10;
-		margin: 0 0 0.3rem;
+		margin: 0.3rem 0 0;
 		max-block-size: calc(100cqh - 3rem);
 		overflow-y: auto;
 		padding: 0.3rem 0.6rem;
