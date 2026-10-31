@@ -43,7 +43,7 @@ use datum_core::{db::Db, entry::Entry, field_spec::SpecRegistry, time::DatumTime
 use super::render_helpers::build_table_contexts;
 use super::tail::{split_columns, tail_entries_with_default_count};
 use crate::args::OutputFlagsExt;
-use crate::render::term_layout::{truncate_visible, visible_width};
+use crate::render::term_layout::truncate_visible;
 use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
 
 /// Initial history window fetched when the user hasn't pinned `-n`. Large
@@ -67,6 +67,7 @@ pub fn run(
 ) -> Result<()> {
     let output = args.output()?;
     let columns = split_columns(&args.columns);
+    let name = db_name(db);
     let _guard = TuiGuard::enter()?;
 
     let (mut cols, mut rows) = terminal::size().unwrap_or((80, 24));
@@ -109,7 +110,18 @@ pub fn run(
         );
         if last_sig.as_ref() != Some(&sig) {
             render_frame(
-                &buffer, &state, new_below, db, metric, registry, &output, &columns, cols, rows,
+                &mut io::stdout().lock(),
+                &name,
+                &buffer,
+                &state,
+                new_below,
+                db,
+                metric,
+                registry,
+                &output,
+                &columns,
+                cols,
+                rows,
             )?;
             last_sig = Some(sig);
         }
@@ -221,9 +233,16 @@ fn max_modify(buffer: &[Entry]) -> Option<chrono::DateTime<chrono::Utc>> {
     buffer.iter().map(|e| e.modify_time).max()
 }
 
-/// Body rows available for entries: terminal height minus the pinned
-/// header row and the bottom status bar. Floored at 1 so absurdly short
-/// terminals still render a row.
+/// The database's name on the status bar: its file's, without the `.db`.
+fn db_name(db: &Db) -> String {
+    db.path()
+        .and_then(|p| p.file_stem())
+        .map_or("memory".into(), |s| s.to_string_lossy().into_owned())
+}
+
+/// Body rows available for entries: terminal height minus the status bar
+/// and the pinned header row. Floored at 1 so absurdly short terminals
+/// still render a row.
 fn view_height(rows: u16) -> usize {
     (rows as usize).saturating_sub(2).max(1)
 }
@@ -352,11 +371,13 @@ impl ViewState {
     }
 }
 
-/// Paint one frame: pinned header row, the scrolled body window, blank
-/// fill, and the bottom status bar. Repaints line-by-line (no full-screen
+/// Paint one frame: the dim status bar, pinned header row, the scrolled
+/// body window, and blank fill. Repaints line-by-line (no full-screen
 /// clear) so the alt-screen surface doesn't flash between frames.
 #[allow(clippy::too_many_arguments)]
 fn render_frame(
+    out: &mut impl Write,
+    name: &str,
     buffer: &[Entry],
     state: &ViewState,
     new_below: usize,
@@ -382,31 +403,36 @@ fn render_frame(
     );
     let width = cols as usize;
 
-    let mut out = io::stdout().lock();
+    // Status bar (first row).
+    queue!(
+        out,
+        cursor::MoveTo(0, 0),
+        Clear(ClearType::CurrentLine),
+        SetAttribute(Attribute::Dim),
+        Print(status_bar(
+            name,
+            state,
+            new_below,
+            buffer.len(),
+            view_h,
+            width
+        )),
+        SetAttribute(Attribute::Reset),
+        ResetColor,
+    )?;
     // Header row.
-    queue!(out, cursor::MoveTo(0, 0), Clear(ClearType::CurrentLine))?;
+    queue!(out, cursor::MoveTo(0, 1), Clear(ClearType::CurrentLine))?;
     if let Some(h) = &header {
         queue!(out, Print(truncate_visible(h, width)), ResetColor)?;
     }
     // Body window.
     for r in 0..view_h {
-        let row = (r + 1) as u16;
+        let row = (r + 2) as u16;
         queue!(out, cursor::MoveTo(0, row), Clear(ClearType::CurrentLine))?;
         if let Some(line) = body.get(r) {
             queue!(out, Print(truncate_visible(line, width)), ResetColor)?;
         }
     }
-    // Status bar (last row).
-    let bar = status_bar(state, new_below, buffer.len(), view_h, width);
-    queue!(
-        out,
-        cursor::MoveTo(0, rows.saturating_sub(1)),
-        Clear(ClearType::CurrentLine),
-        SetAttribute(Attribute::Reverse),
-        Print(bar),
-        SetAttribute(Attribute::Reset),
-        ResetColor,
-    )?;
     out.flush()
 }
 
@@ -452,11 +478,12 @@ fn render_lines(
     }
 }
 
-/// Build the bottom status bar, padded to the full terminal width so the
-/// reverse-video bar spans the row. Surfaces the live/browse mode and,
-/// when scrolled up with fresh arrivals, the `▼ N new below` indicator
-/// plus the jump-to-latest hotkey hint (bead point 2).
+/// Build the status bar: the database's name, then the scroll and quit
+/// hints or, scrolled up, the position in the buffer, and with fresh
+/// arrivals the `▼ N new below` indicator plus the jump-to-latest hotkey
+/// hint (bead point 2).
 fn status_bar(
+    name: &str,
     state: &ViewState,
     new_below: usize,
     total: usize,
@@ -464,20 +491,17 @@ fn status_bar(
     width: usize,
 ) -> String {
     let text = if total == 0 {
-        " no entries · q quit".to_string()
+        format!("{name} · no entries · q quit")
     } else if new_below > 0 {
-        format!(" ▼ {new_below} new below · G→latest · q quit")
+        format!("{name} · ▼ {new_below} new below · G→latest · q quit")
     } else if state.follow {
-        format!(" ● live · {total} entries · ↑↓/PgUp/PgDn scroll · q quit")
+        format!("{name} · ↑↓/PgUp/PgDn scroll · q quit")
     } else {
         let top = state.scroll + 1;
         let bot = (state.scroll + view_h).min(total);
-        format!(" ◌ browse {top}–{bot}/{total} · G→latest · q quit")
+        format!("{name} · ◌ browse {top}–{bot}/{total} · G→latest · q quit")
     };
-    let mut bar = truncate_visible(&text, width);
-    let pad = width.saturating_sub(visible_width(&bar));
-    bar.push_str(&" ".repeat(pad));
-    bar
+    truncate_visible(&text, width)
 }
 
 /// RAII terminal restore. Entering installs raw mode + the alternate
@@ -613,6 +637,81 @@ mod tests {
              {:?} vs {:?}",
             windowed[0],
             all[1],
+        );
+    }
+
+    /// da-csxuf: the bar is the frame's first row, names the database, says
+    /// neither `live` nor `entries`, and is not reversed; the header and the
+    /// rows sit under it, and nothing of it stays on the last row.
+    #[test]
+    fn the_status_bar_tops_the_frame_naming_the_db() {
+        let _clock = freeze_time("2026-05-01T12:00:00Z");
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(dir.path().join("work.db").to_str().unwrap()).unwrap();
+        let buffer = vec![entry_builder("mood").insert(&db)];
+        let state = ViewState::new();
+
+        let mut frame = Vec::new();
+        render_frame(
+            &mut frame,
+            &db_name(&db),
+            &buffer,
+            &state,
+            0,
+            &db,
+            TimeMetricCol::Hybrid,
+            None,
+            &OutputArgs::default(),
+            &[],
+            80,
+            5,
+        )
+        .unwrap();
+        let frame = String::from_utf8(frame).unwrap();
+
+        // Each row is painted from a cursor move to its own (1-based) row.
+        let row = |n: usize| {
+            let rest = &frame[frame.find(&format!("\x1b[{n};1H")).unwrap()..];
+            &rest[..rest
+                .find(&format!("\x1b[{};1H", n + 1))
+                .unwrap_or(rest.len())]
+        };
+        assert!(
+            row(1).contains("work · ↑↓/PgUp/PgDn scroll · q quit"),
+            "{:?}",
+            row(1)
+        );
+        assert!(!row(1).contains("live") && !row(1).contains("entries"));
+        assert!(!frame.contains("\x1b[7m"), "reversed: {frame:?}");
+        assert!(!row(2).contains("mood"), "the header row: {:?}", row(2));
+        assert!(row(3).contains("mood"), "{:?}", row(3));
+        assert_eq!(frame.matches("q quit").count(), 1);
+    }
+
+    /// Every state of the bar leads with the name; scrolled up keeps its
+    /// position, and no state says the count of entries.
+    #[test]
+    fn every_status_bar_leads_with_the_name() {
+        let mut browsing = ViewState::new();
+        browsing.follow = false;
+        browsing.scroll = 4;
+        let following = ViewState::new();
+
+        assert_eq!(
+            status_bar("w", &following, 0, 0, 10, 80),
+            "w · no entries · q quit"
+        );
+        assert_eq!(
+            status_bar("w", &browsing, 3, 50, 10, 80),
+            "w · ▼ 3 new below · G→latest · q quit"
+        );
+        assert_eq!(
+            status_bar("w", &following, 0, 50, 10, 80),
+            "w · ↑↓/PgUp/PgDn scroll · q quit"
+        );
+        assert_eq!(
+            status_bar("w", &browsing, 0, 50, 10, 80),
+            "w · ◌ browse 5–14/50 · G→latest · q quit"
         );
     }
 
