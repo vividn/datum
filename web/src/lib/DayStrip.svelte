@@ -771,6 +771,15 @@
 	 */
 	const wide = $derived(Math.round((bandWidth * (HOUR_TO - HOUR_FROM)) / (committed[1] - committed[0])));
 
+	/** The idle callback `relayLater` waits on, to cancel. */
+	let relaying = 0;
+	const whenIdle = (fn: () => void): number =>
+		typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 1000 }) : window.setTimeout(fn, 50);
+	const cancelIdle = (id: number) =>
+		typeof cancelIdleCallback === 'function' ? cancelIdleCallback(id) : clearTimeout(id);
+	/** The frame a pending refresh is waiting for; a scroll is many events. */
+	let refreshing = 0;
+
 	// Not on mount: the static build prerenders this page, and there is no
 	// database (or `run`) outside the browser. The geometry at the band's
 	// width, and each picture at `wide`, which the map shows the window of
@@ -831,9 +840,6 @@
 		relayLater(at, ends.filter((end) => !now.includes(end) && heldLayer(dateOf(end))));
 	}
 
-	/** The idle callback `relayLater` waits on, to cancel. */
-	let relaying = 0;
-
 	/**
 	 * Lay `ends` out again at `at` from their held data layers, which runs no
 	 * process, a day at a time while the page is idle, the nearest first, and
@@ -858,10 +864,6 @@
 		};
 		if (ends.length) relaying = whenIdle(next);
 	}
-	const whenIdle = (fn: () => void): number =>
-		typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 1000 }) : window.setTimeout(fn, 50);
-	const cancelIdle = (id: number) =>
-		typeof cancelIdleCallback === 'function' ? cancelIdleCallback(id) : clearTimeout(id);
 
 	// The minute turned (da-r61i, `#lib/clock.ts`): today's band is the one
 	// picture in the stack with a now in it, so the tick asks for that one
@@ -1162,9 +1164,6 @@
 		stackEl.scrollTop = stackEl.scrollHeight - below;
 		seenTop = stackEl.scrollTop;
 	}
-
-	/** The frame a pending refresh is waiting for; a scroll is many events. */
-	let refreshing = 0;
 
 	/**
 	 * Check the days now on screen that were drawn before the current

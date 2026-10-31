@@ -252,6 +252,25 @@
 	const fit = $derived(measure(box, probeHead, probeRows));
 	const n = $derived(fit ? (drawn.n ?? fit.n) : null);
 	const slack = $derived(fit ? Math.min(fit.slack, drawn.slack) : 0);
+	/**
+	 * A row's place in the listing, the CLI's order: by time — a timeless
+	 * row's is the stamp it was created at (da-2vgj1) — then by slug.
+	 */
+	const at = (row: Shown) => (row.time === null ? -Infinity : Date.parse(row.time));
+	const above = (a: Shown, b: Shown) => at(a) < at(b) || (at(a) === at(b) && a.row.slug < b.row.slug);
+	const nearBottom = () =>
+		!scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 2;
+	/**
+	 * The last listing asked for, and what it asked with. A resize that
+	 * leaves the count alone asks the same `tail -n`, whose answer only an
+	 * epoch or a field can change: it reuses this one, in flight or landed,
+	 * rather than re-run it — 1.3 s in the one queue on five years of data
+	 * (da-4glsf).
+	 */
+	let asked: { with: string; listing: ReturnType<typeof tailListing> } | null = null;
+	/** This table in the worker's queue: its newer listing drops its older, unstarted one. */
+	const key = runKey();
+
 	// A box that holds no row still asks for one: its columns are the
 	// header. A new box lays the listing out again at the same count: its
 	// width rewraps — but asks the CLI only if the count changed (da-4glsf).
@@ -436,13 +455,6 @@
 		own = last = scroller.scrollTop;
 	}
 
-	/**
-	 * A row's place in the listing, the CLI's order: by time — a timeless
-	 * row's is the stamp it was created at (da-2vgj1) — then by slug.
-	 */
-	const at = (row: Shown) => (row.time === null ? -Infinity : Date.parse(row.time));
-	const above = (a: Shown, b: Shown) => at(a) < at(b) || (at(a) === at(b) && a.row.slug < b.row.slug);
-
 	/** A cell a row has no listing's word for: `keys` is every listing's columns. */
 	const BLANK = ansiSpans('');
 
@@ -478,9 +490,6 @@
 		}
 		keys.sort((a, b) => rank(a) - rank(b));
 	}
-
-	const nearBottom = () =>
-		!scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 2;
 
 	// A new box draws a new slack before the listing for it lands: at the
 	// end before it, at the end after it, or that listing reads the body as
@@ -523,17 +532,6 @@
 		}
 		scrollTo(top);
 	}
-
-	/**
-	 * The last listing asked for, and what it asked with. A resize that
-	 * leaves the count alone asks the same `tail -n`, whose answer only an
-	 * epoch or a field can change: it reuses this one, in flight or landed,
-	 * rather than re-run it — 1.3 s in the one queue on five years of data
-	 * (da-4glsf).
-	 */
-	let asked: { with: string; listing: ReturnType<typeof tailListing> } | null = null;
-	/** This table in the worker's queue: its newer listing drops its older, unstarted one. */
-	const key = runKey();
 
 	async function refresh(count: number, _epoch: number, force = false): Promise<void> {
 		const started_at = ++started;
@@ -760,6 +758,11 @@
 	// the top, less a screen, the page above; at the bottom, nothing is unseen. A table that fits exactly
 	// cannot be scrolled at all, so a wheel or a finger pulling down at the
 	// top asks the same way.
+	/** The body's height as last observed, and how many times it has changed. */
+	let height = 0;
+	let resizes = 0;
+	let sizes: ResizeObserver | undefined;
+
 	let attached: HTMLElement | undefined;
 	$effect.pre(() => {
 		const el = scroller;
@@ -788,11 +791,6 @@
 		sizes?.unobserve(attached);
 		attached = undefined;
 	}
-
-	/** The body's height as last observed, and how many times it has changed. */
-	let height = 0;
-	let resizes = 0;
-	let sizes: ResizeObserver | undefined;
 
 	/**
 	 * The body's height changed (da-vcdil): the browser keeps `scrollTop`,

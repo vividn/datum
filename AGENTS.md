@@ -926,6 +926,10 @@ binary.
 - Svelte 5, runes only (`$props`, `$state`, `$derived`, `$effect`, snippets,
   `onclick`, a callback prop for an event): `compilerOptions: { runes: true }`
   in `web/vite.config.ts` (da-ul23i), so the old syntax does not compile
+- A component reads no top-level binding before its declaration during init
+  (`$effect.pre`, a top-level call, the functions they call): `vite dev` throws
+  where a build inlined the constant. `web/tests/initorder.test.mjs` walks each
+  script's reads (da-1oi8w); declare the binding higher
 - The real `datum` CLI is the only runner: `datum-cli` built for
   wasm32-wasip1, one WASI process per command in `web/src/lib/db.worker.ts`
   (`cli.ts`, `wasiFs.ts`), its SQLite file in OPFS. There is no SQL, parser
