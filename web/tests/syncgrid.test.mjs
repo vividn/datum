@@ -47,6 +47,17 @@ const joins = (native, db) =>
 	);
 
 /**
+ * One sync of `db` that got through: the page's own session refusing it
+ * leaves it none synced, which the next one gets past. Any other failure
+ * fails in its words. The CLI's words only steer the wait: reworded, this
+ * is a plain assert again, which fails saying them.
+ */
+const syncs = async (native, db) => {
+	const { code, stderr } = await until(() => native.run(['--db', db, 'sync']), (r) => r.code === 0 || !r.stderr.includes('none of'));
+	assert.equal(code, 0, stderr);
+};
+
+/**
  * A software passkey answering the page's `navigator.credentials.get` as one at datum.day would (P-256,
  * user present and verified), so a native copy reached through the local relay can share the test: a
  * virtual authenticator needs the page at https://datum.day, which reaches no local relay. Its admin
@@ -108,7 +119,7 @@ describe('the sync widget’s grid', () => {
 
 					assert.match((await joins(native, 'work')).stdout, /joined «work»/);
 					// Its describe, binding the endpoint to its device, reaches the page on its next sync.
-					assert.equal((await native.run(['--db', 'work', 'sync'])).code, 0);
+					await syncs(native, 'work');
 					await until(() => stateOf(page, device, 'work'), (s) => s === 'member');
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
@@ -177,7 +188,7 @@ describe('the sync widget’s grid', () => {
 					assert.match(lines[1], /^granted\b.*\bmember\b/);
 
 					assert.match((await joins(native, 'notes')).stdout, /joined «notes»/);
-					assert.equal((await native.run(['--db', 'notes', 'sync'])).code, 0);
+					await syncs(native, 'notes');
 					await until(() => stateOf(page, device, 'notes'), (s) => s === 'member');
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
@@ -207,7 +218,7 @@ describe('the sync widget’s grid', () => {
 					assert.equal(admins.length, 1);
 
 					assert.match((await joins(native, 'notes')).stdout, /joined «notes»/);
-					assert.equal((await native.run(['--db', 'notes', 'sync'])).code, 0);
+					await syncs(native, 'notes');
 					await until(() => stateOf(page, device, 'notes'), (s) => s === 'member');
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
