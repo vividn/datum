@@ -494,6 +494,10 @@ takes half of the 5 s. A session
 once connected keeps the idle limit's whole minute, and a `sync run`'s own
 rounds, `connect` and a grant's join keep the minute for the dial too.
 
+A dial that fails blames this copy's relay only where iroh saw that relay fail:
+one still connecting says either side may be off (`unreachable` in the wire
+crate, da-2vx8s).
+
 `sync run` tries a member it failed to reach again after a minute, the gap
 doubling to half an hour, dials every member when it starts or its address
 changes, dials no member it is already in a session with unless `datum sync`

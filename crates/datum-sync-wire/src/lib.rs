@@ -1862,23 +1862,28 @@ fn other_protocol(e: &anyhow::Error) -> bool {
 }
 
 /// Why a dial reached no one, and what to do about it (da-shfv4): this
-/// copy's own relay is down, or the other copy is not running. Either way it
-/// is [`Failure::Unreachable`], which `redeem` reads as «try the next address».
+/// copy's own relay is down, the other copy is not running, or the relay is
+/// still connecting, which says neither: a dial goes before the relay is up
+/// (da-75rbi), so only a failure iroh saw blames the relay (da-2vx8s). Each is
+/// [`Failure::Unreachable`], which `redeem` reads as «try the next address».
 fn unreachable(ep: &Endpoint, id: &str, e: anyhow::Error) -> anyhow::Error {
     let relays = ep.home_relay_status().get();
-    let why = if !relays.is_empty() && !relays.iter().any(|r| r.is_connected()) {
-        format!(
-            "could not reach {}: this copy is not connected to its relay ({}); is it online?",
-            short(id),
-            relays[0].url()
-        )
-    } else {
-        format!(
-            "could not reach {}: {e}; is the other copy running? A terminal syncs while \
-             its sync daemon runs (`datum sync daemon status`), datum.day while \
-             a tab is open on the database",
-            short(id)
-        )
+    let id = short(id);
+    let other = "is the other copy running? A terminal syncs while its sync daemon runs \
+                 (`datum sync daemon status`), datum.day while a tab is open on the database";
+    let why = match relays.first() {
+        Some(r) if !relays.iter().any(|r| r.is_connected()) => {
+            let url = r.url();
+            if relays.iter().all(|r| r.last_error().is_some()) {
+                format!("could not reach {id}: this copy is not connected to its relay ({url}); is it online?")
+            } else {
+                format!(
+                    "could not reach {id}: {e}; this copy is still connecting to its relay \
+                     ({url}), so it may be the one offline. If not, {other}"
+                )
+            }
+        }
+        _ => format!("could not reach {id}: {e}; {other}"),
     };
     Failed(Failure::Unreachable, why).into()
 }

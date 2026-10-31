@@ -74,10 +74,13 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 				// The relay stops: this copy is the one cut off, and it says so.
 				await relay.stop();
 				await app.run(['occur', 'offline', '-t', '1300']);
-				const cut = await until(() => reason.innerText().catch(() => ''), (t) => /http:\/\/127\.0\.0\.1/.test(t), DIAL);
-				// This copy's side: it names its relay, and not the other copy's `sync run`.
-				assert.match(cut, /http:\/\/127\.0\.0\.1:\d+/);
-				assert.doesNotMatch(cut, /`datum sync daemon status`/);
+				// This copy's side: it names its relay, and not the other copy's `sync run`. A dial
+				// ending in a retry's moment of connecting says either side may be off; the next says this one.
+				await until(
+					() => reason.innerText().catch(() => ''),
+					(t) => /http:\/\/127\.0\.0\.1:\d+/.test(t) && !/`datum sync daemon status`/.test(t),
+					DIAL
+				);
 			},
 			{ prepare: relayed(relay) }
 		);
