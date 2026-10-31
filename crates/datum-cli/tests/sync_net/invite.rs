@@ -142,6 +142,8 @@ fn a_member_not_running_is_named_with_what_runs_it() {
     ] {
         assert!(said.contains(words), "{words}: {said}");
     }
+    // No relay configured: nothing to have reached (da-bwi3a).
+    assert!(!said.contains("reached no relay"), "{said}");
 }
 
 /// A member that never answers reads `offline` in `sync status`, with when

@@ -221,3 +221,38 @@ fn a_relay_still_connecting_blames_neither_side_and_one_that_failed_this_one() {
     assert!(said.contains("not connected to its relay"), "{said}");
     assert!(!said.contains("`datum sync daemon status`"), "{said}");
 }
+
+/// A relay that takes each connection and never answers.
+fn silent_relay() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        let _held: Vec<_> = listener.incoming().flatten().collect();
+    });
+    url
+}
+
+/// A copy that never reached a relay, one refusing or never answering from the
+/// start, has no home relay, as a copy with none configured has: it may be the
+/// offline one, where it asked only whether the other copy runs (da-bwi3a).
+#[test]
+fn a_copy_that_reached_no_relay_says_it_may_be_the_one_offline() {
+    let (_a, b) = paired();
+    for relay in ["http://127.0.0.1:9".to_string(), silent_relay()] {
+        let out = b
+            .cmd(&["sync", "-v"])
+            .env_remove("DATUM_SYNC_BIND")
+            .env("DATUM_SYNC_RELAY", &relay)
+            .env("DATUM_SYNC_DIAL_TIMEOUT_S", "2")
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+        let said = String::from_utf8_lossy(&out.stdout);
+        for words in [
+            "has reached no relay, so it may be the one offline",
+            "is the other copy running?",
+        ] {
+            assert!(said.contains(words), "{relay}: {words}: {said}");
+        }
+    }
+}

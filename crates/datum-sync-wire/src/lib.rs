@@ -1608,6 +1608,9 @@ struct Keeper {
     kept: BTreeMap<String, Kept>,
     arrived: VecDeque<Arriving>,
     notify: Arc<tokio::sync::Notify>,
+    /// Bound with relays to reach: its home relay's status, empty, says none
+    /// was reached and not that there are none (da-bwi3a).
+    relayed: bool,
 }
 
 /// Every endpoint's [`Keeper`], by its id. One is never removed: a running
@@ -1864,8 +1867,11 @@ fn other_protocol(e: &anyhow::Error) -> bool {
 /// Why a dial reached no one, and what to do about it (da-shfv4): this
 /// copy's own relay is down, the other copy is not running, or the relay is
 /// still connecting, which says neither: a dial goes before the relay is up
-/// (da-75rbi), so only a failure iroh saw blames the relay (da-2vx8s). Each is
-/// [`Failure::Unreachable`], which `redeem` reads as «try the next address».
+/// (da-75rbi), so only a failure iroh saw blames the relay (da-2vx8s). So too a
+/// copy that has reached no relay: iroh chooses a home relay only from a net
+/// report that reached one, so it may be offline or only not there yet
+/// (da-bwi3a). Each is [`Failure::Unreachable`], which `redeem` reads as «try
+/// the next address».
 fn unreachable(ep: &Endpoint, id: &str, e: anyhow::Error) -> anyhow::Error {
     let relays = ep.home_relay_status().get();
     let id = short(id);
@@ -1883,6 +1889,10 @@ fn unreachable(ep: &Endpoint, id: &str, e: anyhow::Error) -> anyhow::Error {
                 )
             }
         }
+        None if keeper(&ep.id().to_string(), |k| k.relayed) => format!(
+            "could not reach {id}: {e}; this copy has reached no relay, so it may be the one \
+             offline. If not, {other}"
+        ),
         _ => format!("could not reach {id}: {e}; {other}"),
     };
     Failed(Failure::Unreachable, why).into()
@@ -2208,14 +2218,19 @@ pub enum Net {
     Local(std::net::SocketAddr),
 }
 
+/// Whether an endpoint on `net` has relays to reach.
+fn relayed(net: &Net) -> bool {
+    match net {
+        #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+        Net::Local(_) => false,
+        _ => true,
+    }
+}
+
 /// The endpoint whose key is `secret`, the db's endpoint key.
 pub async fn bind(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
     let ep = bind_now(secret, net).await?;
-    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
-    let relayed = !matches!(net, Net::Local(_));
-    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-    let relayed = true;
-    if relayed {
+    if relayed(net) {
         // The address a ticket or a peer is handed should name the relay.
         let _ = timeout(Duration::from_secs(10), ep.online()).await;
     }
@@ -2235,11 +2250,13 @@ pub async fn bind_now(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
             .clear_ip_transports()
             .bind_addr(*addr)?,
     };
-    Ok(builder
+    let ep = builder
         .secret_key(SecretKey::from_bytes(&secret))
         .alpns(vec![ALPN.to_vec(), DIFF.to_vec()])
         .bind()
-        .await?)
+        .await?;
+    keeper(&ep.id().to_string(), |k| k.relayed = relayed(net));
+    Ok(ep)
 }
 
 #[cfg(test)]

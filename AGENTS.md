@@ -557,6 +557,10 @@ and `sync status` calls the member `offline`, with when it was last seen and
 none of the words, which `--json`'s `error` still carries; one that reached it
 and then failed is `error`, with them (da-ueb4p).
 
+A dial that fails with a relay configured and no home relay chosen says this copy
+has reached no relay and may be the one offline (`unreachable` in the wire crate,
+da-bwi3a): iroh chooses one only from a net report that reached a relay.
+
 `sync pause` is this copy's alone (`sync_local.paused_at`): its handshake and
 pipe refuse, `sync run` and the page's leader push nothing, and datum.day's root
 bar says «sync paused» in every tab until a tap resumes it.
