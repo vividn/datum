@@ -96,6 +96,27 @@ fn seed_tea(dir: &Path) -> String {
     tea_time(dir).0
 }
 
+/// `tea` as a v2 import holds it, in a zone that is none, at +1.
+fn import_tea_in_mars(dir: &Path) {
+    let time = serde_json::json!({"utc": "2025-01-01T09:34:00.000Z", "o": 1, "tz": "Mars"});
+    let doc = serde_json::json!({
+        "_id": "tea:2025-01-01T09:34:00.000Z",
+        "_rev": "1-synthetic",
+        "data": {"occurTime": time, "field": "tea"},
+        "meta": {
+            "humanId": "syn0001",
+            "createTime": time,
+            "modifyTime": time,
+            "idStructure": "%field%:%occurTime%",
+        },
+    });
+    let backup = dir.join("backup.json");
+    let body = serde_json::json!({"backupTime": "2025-02-02T12:26:32.488Z", "docs": [doc]});
+    std::fs::write(&backup, body.to_string()).unwrap();
+    let import = ["db", "v2import", "--from", backup.to_str().unwrap()];
+    assert!(run_bin(dir, &import, "").status.success());
+}
+
 #[test]
 fn a_name_that_is_no_zone_is_refused_and_nothing_changes() {
     let tmp = tempfile::tempdir().unwrap();
@@ -138,23 +159,7 @@ fn a_zone_is_stored_as_z_stores_it_and_the_instant_stands() {
 #[test]
 fn a_row_already_holding_a_bad_zone_can_be_edited_and_repaired() {
     let tmp = tempfile::tempdir().unwrap();
-    let time = serde_json::json!({"utc": "2025-01-01T09:34:00.000Z", "o": 1, "tz": "Mars"});
-    let doc = serde_json::json!({
-        "_id": "tea:2025-01-01T09:34:00.000Z",
-        "_rev": "1-synthetic",
-        "data": {"occurTime": time, "field": "tea"},
-        "meta": {
-            "humanId": "syn0001",
-            "createTime": time,
-            "modifyTime": time,
-            "idStructure": "%field%:%occurTime%",
-        },
-    });
-    let backup = tmp.path().join("backup.json");
-    let body = serde_json::json!({"backupTime": "2025-02-02T12:26:32.488Z", "docs": [doc]});
-    std::fs::write(&backup, body.to_string()).unwrap();
-    let import = ["db", "v2import", "--from", backup.to_str().unwrap()];
-    assert!(run_bin(tmp.path(), &import, "").status.success());
+    import_tea_in_mars(tmp.path());
     let utc = tea_time(tmp.path()).0;
 
     // Left as it is, the edit of something else goes through.
@@ -165,6 +170,84 @@ fn a_row_already_holding_a_bad_zone_can_be_edited_and_repaired() {
     let (out, row) = edit_zone(tmp.path(), "Europe/Paris");
     assert!(out.status.success(), "{out:?}");
     assert_eq!(row, (utc, Some("Europe/Paris".into()), 60));
+}
+
+/// da-i35uc: a moved instant takes its zone's offset there, with the zone
+/// changed in the same edit or not, and `check tz` finds nothing.
+#[test]
+fn a_moved_instant_takes_its_zones_offset_there() {
+    let tmp = tempfile::tempdir().unwrap();
+    seed_tea(tmp.path());
+
+    let out = edit_tea(tmp.path(), "s|\"utc\": \"2026-06-02|\"utc\": \"2026-12-02|");
+    assert!(out.status.success(), "{out:?}");
+    let (utc, zone, offset) = tea_time(tmp.path());
+    assert!(utc.starts_with("2026-12-02"), "{utc}");
+    assert_eq!((zone.as_deref(), offset), (Some("Europe/Berlin"), 60));
+    let check = run_bin(tmp.path(), &["check", "tz"], "");
+    assert!(check.status.success(), "{check:?}");
+
+    let out = edit_tea(
+        tmp.path(),
+        "s|\"utc\": \"2026-12-02|\"utc\": \"2026-06-02|; \
+         s|\"timezone\": [^,]*|\"timezone\": \"America/Chicago\"|",
+    );
+    assert!(out.status.success(), "{out:?}");
+    let (utc, zone, offset) = tea_time(tmp.path());
+    assert!(utc.starts_with("2026-06-02"), "{utc}");
+    assert_eq!((zone.as_deref(), offset), (Some("America/Chicago"), -300));
+}
+
+/// A zone the edit left stays even where it cannot be read, so a row holding a
+/// bad one still takes a new instant, keeping the offset it has.
+#[test]
+fn a_bad_zone_left_keeps_its_offset_as_the_instant_moves() {
+    let tmp = tempfile::tempdir().unwrap();
+    import_tea_in_mars(tmp.path());
+
+    let out = edit_tea(tmp.path(), "s|\"utc\": \"2025-01-01|\"utc\": \"2025-07-01|");
+    assert!(out.status.success(), "{out:?}");
+    let (utc, zone, offset) = tea_time(tmp.path());
+    assert!(utc.starts_with("2025-07-01"), "{utc}");
+    assert_eq!((zone.as_deref(), offset), (Some("Mars"), 60));
+}
+
+/// da-i35uc: a zone the neighbours gave is a guess until it is stated, and
+/// an edit changing it states it; any other edit leaves the marker.
+#[test]
+fn an_edit_changing_the_zone_drops_the_neighbours_marker() {
+    let tmp = tempfile::tempdir().unwrap();
+    for day in [12, 13, 14, 16, 17, 18] {
+        let date = format!("2024-06-{day}");
+        let z = ["occur", "coffee", "-z", "Pacific/Chatham", "-d", &date];
+        assert!(
+            run_bin(tmp.path(), &[&z[..], &["-t", "12:00"]].concat(), "")
+                .status
+                .success()
+        );
+    }
+    let tea = ["occur", "tea", "-d", "2024-06-15", "-t", "12:00"];
+    assert!(run_bin(tmp.path(), &tea, "").status.success());
+    let meta = || -> Option<String> {
+        Db::open(tmp.path().join("e.db").to_str().unwrap())
+            .unwrap()
+            .conn()
+            .query_row(
+                "SELECT extra_metadata FROM entries WHERE field = 'tea'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(meta().as_deref(), Some(r#"{"tz_from":"neighbours"}"#));
+
+    let out = edit_tea(tmp.path(), "s|\"utc\": \"2024-06-14|\"utc\": \"2024-06-13|");
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(meta().as_deref(), Some(r#"{"tz_from":"neighbours"}"#));
+
+    let (out, _) = edit_zone(tmp.path(), "Asia/Tokyo");
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(meta(), None);
 }
 
 #[test]

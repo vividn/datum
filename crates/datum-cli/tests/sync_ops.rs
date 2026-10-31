@@ -2777,7 +2777,7 @@ fn an_identical_note_on_each_copy_is_two_notes() {
 }
 
 /// A zone the neighbours gave is marked a guess (da-h8dvi) until one is
-/// stated — `retime -z`, or an `update` putting the entry in another zone —
+/// stated — `retime -z`, or an `update` or `edit` putting the entry in another zone —
 /// and the marker's removal is in the op, so every copy drops it
 /// (da-n79py). A retime naming no zone keeps it.
 #[test]
@@ -2823,6 +2823,20 @@ fn stating_the_zone_drops_the_neighbours_marker_on_every_copy() {
             "{how:?}"
         );
     }
+
+    // An `edit` changing the zone states it too (da-i35uc).
+    a.ok(&["occur", "tea", "-d", "2024-06-15", "-t", "12:00"]);
+    let hid = a.hid("tea");
+    converged(&a, &b);
+    assert_eq!(meta(&b, &hid), r#"{"tz_from":"neighbours"}"#);
+    let to_tokyo = r#"sed -i 's|"timezone": [^,]*|"timezone": "Asia/Tokyo"|'"#;
+    let out = a.run_env(&["edit", &hid], "", &[("DATUM_EDITOR", to_tokyo)]);
+    assert!(out.status.success(), "{out:?}");
+    converged(&a, &b);
+    assert_eq!(
+        (meta(&a, &hid), meta(&b, &hid)),
+        ("none".into(), "none".into())
+    );
 }
 
 /// da-ftls7: `rename` moves a field's entries of every shape and its spec,

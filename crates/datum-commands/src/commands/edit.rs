@@ -252,21 +252,27 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
 /// is refused, a zone is stored in its own spelling and a fixed offset with no
 /// name (da-kvosn), and the instant stands, its offset following the zone. A
 /// zone the edit left stays, so a row already holding a bad one can be repaired.
+///
+/// da-i35uc: a moved instant takes its zone's offset there, as a retime's does,
+/// and a bad zone left keeps the offset it has. A zone the edit changed is
+/// stated, so no guess (da-n79py).
 #[cfg(feature = "native")]
 fn settle_edited_zone(existing: &Entry, updated: &mut Entry) -> Result<()> {
-    let was = existing.occur_time.as_ref().map(|t| &t.timezone);
-    let Some(t) = updated
-        .occur_time
-        .as_mut()
-        .filter(|t| Some(&t.timezone) != was)
-    else {
-        return Ok(());
-    };
-    if let Some(name) = &t.timezone {
-        t.timezone = Some(datum_parse::time::resolve_timezone(name)?);
-        t.refresh_offset()?;
-        t.timezone
-            .take_if(|zone| datum_parse::time::fixed_offset_minutes(zone).is_some());
+    let was = existing.occur_time.as_ref();
+    if let Some(t) = updated.occur_time.as_mut() {
+        if Some(&t.timezone) != was.map(|w| &w.timezone) {
+            if let Some(name) = &t.timezone {
+                t.timezone = Some(datum_parse::time::resolve_timezone(name)?);
+                t.refresh_offset()?;
+                t.timezone
+                    .take_if(|zone| datum_parse::time::fixed_offset_minutes(zone).is_some());
+            }
+        } else if Some(t.utc) != was.map(|w| w.utc) {
+            t.refresh_offset().ok();
+        }
+    }
+    if updated.occur_time.as_ref().map(|t| &t.timezone) != was.map(|w| &w.timezone) {
+        updated.zone_stated();
     }
     Ok(())
 }
