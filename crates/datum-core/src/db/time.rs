@@ -50,6 +50,7 @@ impl Db {
             if let Some(t) = e.occur_time.as_mut() {
                 *t = new_start(t)?;
             }
+            crate::timezone_field::keep_in_named_zone(e)?;
             if zone_stated {
                 e.zone_stated();
             }

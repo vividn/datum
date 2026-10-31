@@ -164,6 +164,92 @@ fn an_offset_on_t_keeps_its_instant_in_the_zone_named() {
     assert_eq!(at.offset_minutes, 9 * 60);
 }
 
+/// da-h8k9q: the entrances that move a logged entry hold it to the same rule.
+mod moved {
+    use super::*;
+
+    const LOGGED: &[&str] = &["timezone", "Asia/Tokyo", "-t", "2026-06-02T10:00+02:00"];
+
+    /// The entry at 10:00+02:00 on 2026-06-03, in Tokyo as 17:00.
+    fn assert_in_tokyo(entry: &Entry) {
+        let at = entry.occur_time.as_ref().unwrap();
+        assert_eq!(at.utc.to_rfc3339(), "2026-06-03T08:00:00+00:00");
+        assert_eq!(at.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert_eq!(at.offset_minutes, 9 * 60);
+    }
+
+    #[test]
+    fn an_offset_on_retime_t() {
+        let env = Env::new();
+        env.ok(LOGGED);
+        let hid = env.only().hid;
+        env.ok(&["retime", hid.as_str(), "-t", "2026-06-03T10:00+02:00"]);
+        assert_in_tokyo(&env.only());
+    }
+
+    #[test]
+    fn an_offset_on_update_occur_time() {
+        let env = Env::new();
+        env.ok(LOGGED);
+        let hid = env.only().hid;
+        env.ok(&["update", hid.as_str(), "occur_time=2026-06-03T10:00+02:00"]);
+        assert_in_tokyo(&env.only());
+    }
+
+    /// Its instant in another's spelling changes nothing, and writes nothing.
+    #[test]
+    fn the_same_instant_on_update_is_no_change() {
+        let env = Env::new();
+        env.ok(LOGGED);
+        let hid = env.only().hid;
+        let out = env.ok(&["update", hid.as_str(), "occur_time=2026-06-02T10:00+02:00"]);
+        assert!(out.contains("NODIFF"), "{out}");
+    }
+
+    fn edit(env: &Env, hid: &str, sed: &str) -> Output {
+        let script = env.0.path().join("editor.sh");
+        std::fs::write(&script, format!("sed -i -E '{sed}' \"$1\"\n")).unwrap();
+        Command::new(env!("CARGO_BIN_EXE_datum"))
+            .args(["--db", env.path().to_str().unwrap(), "edit", hid])
+            .env("TZ", "Europe/Berlin")
+            .env("HOME", env.0.path())
+            .env("EDITOR", format!("sh {}", script.display()))
+            .output()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_time_and_a_state_on_edit() {
+        let env = Env::new();
+        env.ok(LOGGED);
+        let hid = env.only().hid;
+        let moved = edit(
+            &env,
+            hid.as_str(),
+            r#"s/"utc": .*/"utc": "2026-06-03T08:00:00Z",/; s/"offset_minutes": .*/"offset_minutes": 120,/; s/"timezone": .*/"timezone": "Europe\/Berlin"/"#,
+        );
+        assert!(moved.status.success(), "{moved:?}");
+        assert_in_tokyo(&env.only());
+        let bad = edit(&env, hid.as_str(), r#"s/"state": .*/"state": "Tokyo",/"#);
+        assert!(!bad.status.success(), "{bad:?}");
+        assert_in_tokyo(&env.only());
+    }
+
+    /// `IGNORED` names no zone to go to, and is no reason to refuse a new time.
+    #[test]
+    fn a_row_naming_no_zone_keeps_the_offset_it_is_given() {
+        let env = Env::new();
+        env.ok(&["timezone", "IGNORED", "-t", "2026-06-02T10:00+02:00"]);
+        let hid = env.only().hid;
+        env.ok(&["retime", hid.as_str(), "-t", "2026-06-03T10:00+05:00"]);
+        assert_eq!(
+            env.only().occur_time.unwrap().offset_minutes,
+            5 * 60,
+            "IGNORED names no zone"
+        );
+    }
+}
+
 /// A fall-back night is the named zone's, not the host's.
 #[test]
 fn a_repeated_clock_is_asked_about_in_the_zone_named() {
@@ -251,6 +337,8 @@ fn an_imported_state_that_is_no_zone_loads_as_it_is_and_check_reports_it() {
     env.ok(&["update", "syn0001", "note=old"]);
     assert_eq!(env.only().state, Some(json!("somewhere")));
     env.refused(&["update", "syn0001", "state=elsewhere"]);
+    env.ok(&["update", "syn0001", "occur_time=2025-01-02T10:00+02:00"]);
+    assert_eq!(env.only().occur_time.unwrap().offset_minutes, 2 * 60);
     assert_eq!(env.fields_row()["zone"], Value::Null);
 }
 

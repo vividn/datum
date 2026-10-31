@@ -9,8 +9,10 @@ use rusqlite::Connection;
 use serde_json::Value as JsonValue;
 
 use crate::db::IGNORED_STATE_VALUE;
+use crate::entry::Entry;
 use crate::error::Result;
 use crate::state::FieldStateRows;
+use crate::time::DatumTime;
 
 pub const TIMEZONE_FIELD: &str = "timezone";
 
@@ -71,6 +73,33 @@ impl Declared {
             (*from <= at && until(i).is_none_or(|end| at < end)).then_some(zone)
         })
     }
+}
+
+/// The zone an entry of this field is in: the state after its trailing edge
+/// where it has one. `None` for any other field's, `IGNORED` and a state
+/// imported that names none.
+pub fn zone_it_names(entry: &Entry) -> Option<String> {
+    if entry.field != TIMEZONE_FIELD {
+        return None;
+    }
+    [&entry.following_state, &entry.state]
+        .into_iter()
+        .flatten()
+        .find_map(state_zone)
+}
+
+/// Put an entry of this field in the zone it names. The instant stands, so an
+/// offset is believed as to when and the field as to where.
+pub fn keep_in_named_zone(entry: &mut Entry) -> Result<()> {
+    if let (Some(zone), Some(t)) = (zone_it_names(entry), entry.occur_time.as_mut()) {
+        if t.timezone.as_ref() != Some(&zone) {
+            *t = DatumTime {
+                uncertainty: t.uncertainty.take(),
+                ..DatumTime::from_utc_and_tz(t.utc, &zone)?
+            };
+        }
+    }
+    Ok(())
 }
 
 /// Another spelling of a zone and the zone, by spelling: tzdb's `backward` file

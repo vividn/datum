@@ -224,6 +224,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     settle_edited_zone(&existing, &mut updated)?;
     updated.modify_time = Utc::now();
     crate::commands::helpers::resolve_spec_colors(&mut updated, &existing)?;
+    crate::commands::helpers::settle_timezone_edit(&existing, &mut updated)?;
 
     // da-mryo: persist via the auto-reinterp path (like retime/update/rekey)
     // so a templated slug/field re-derives against the edited values —

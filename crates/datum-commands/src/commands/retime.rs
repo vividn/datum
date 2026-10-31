@@ -20,7 +20,7 @@ use datum_core::{
 };
 
 use crate::args::RetimeArgs;
-use crate::commands::helpers::{registry_of, resolve_batch, zone_it_names, BatchMode};
+use crate::commands::helpers::{registry_of, resolve_batch, BatchMode};
 use crate::commands::log_core::{build_time_anchored, which_reading, zone_agrees};
 use crate::commands::time_bounds::{parse_after, parse_before};
 use crate::render::{show_retime, OutputArgs};
@@ -139,7 +139,11 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
     // A `timezone` entry is in the zone it names (da-yw6o2), whatever `-z` says.
     if args.time.timezone.is_some() {
         for filter in &filters {
-            for zone in db.retime_targets(filter)?.iter().filter_map(zone_it_names) {
+            for zone in db
+                .retime_targets(filter)?
+                .iter()
+                .filter_map(datum_core::timezone_field::zone_it_names)
+            {
                 zone_agrees(&args.time, &zone)?;
             }
         }

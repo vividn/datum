@@ -149,12 +149,13 @@ install (da-yw6o2, `datum_core::timezone_field`): an ordinary switch, not in
 `META_FIELDS`, whose word `timezone` is `switch timezone` whatever an alias or a
 spec says, and which `auto_setup = false` does not close. A state is an IANA zone
 (`iana_zone`, `-z`'s parser, no fixed offset) or `IGNORED`; another is refused
-offering the nearest real ones, on a log and on an `update` that changes the
-state. A row from before the rule (a v2 import) stays as it is, and `check tz`
+offering the nearest real ones, on a log and on an `update` or `edit` that
+changes the state. A row from before the rule (a v2 import) stays as it is, and `check tz`
 says `timezone_state_not_a_zone`. Its own entry is in the zone it names, the line
 saying `field=timezone` or `_` or not: `-t` and a fall-back night's question read
 that zone's clock, a `-z` naming another is refused, on `retime` too, and an offset
-on `-t` keeps its instant in the zone named. It changes no
+on `-t` keeps its instant in the zone named, as a new time from `retime`, `update`
+or `edit` does (da-h8k9q). It changes no
 other entry. Its band defaults to very thin at the top of the day, over every
 lane, in dayview and nowview alike (`PresentationSpec::resolve_position`), until
 its spec places it; `fields` hides it `IGNORED` as any field, says `never_false`,
