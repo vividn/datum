@@ -38,7 +38,7 @@
 	import { boot as bootShell, openPlace } from '#lib/layout/shell.ts';
 	import { approving, joining } from '#lib/syncView.ts';
 	import { get, toStore } from 'svelte/store';
-	import { currentDb, DEFAULT_DB, hueOf, INTERNAL_DB, refusedDb } from '#lib/database.ts';
+	import { colorOf, currentDb, DEFAULT_DB, INTERNAL_DB, refusedDb } from '#lib/database.ts';
 	import { browser } from '$app/env';
 	import { page } from '$app/state';
 
@@ -51,8 +51,9 @@
 	const db = $derived($url ? currentDb() : DEFAULT_DB);
 	const refused = $derived($url ? refusedDb() : null);
 
-	// The page's base colour says which database it is (da-y992): one hue,
-	// derived from the name, and every accent in app.css is drawn from it.
+	// The page's base color says which database it is (da-y992): a hue, a
+	// saturation and a lightness derived from the name (da-wikou), and every
+	// accent and ground in app.css is drawn from them.
 	//
 	// Written on the DOCUMENT rather than on `.shell`, because the things
 	// that most need to agree with the page are not inside it: a menu, a
@@ -60,7 +61,12 @@
 	// (PaneMenu's `portal`), where a custom property set on the shell does
 	// not reach.
 	$effect.pre(() => {
-		if (browser) document.documentElement.style.setProperty('--hue', String(hueOf(db)));
+		if (!browser) return;
+		const { hue, sat, shift } = colorOf(db);
+		const { style } = document.documentElement;
+		style.setProperty('--hue', String(hue));
+		style.setProperty('--sat', String(sat));
+		style.setProperty('--shift', `${shift}%`);
 	});
 
 	// `window.datum` — the command seam at the browser's own prompt. Mounted

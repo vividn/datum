@@ -137,6 +137,8 @@
 	}
 
 	button.danger {
+		/* `--error` on `--raised` is under 4.5:1 on a yellow database. */
+		background: var(--ground);
 		border-color: var(--error);
 		color: var(--error);
 	}

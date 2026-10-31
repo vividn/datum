@@ -37,7 +37,7 @@
 	  not offered — it is the app's own furniture, and `?db` refuses it
 	  anyway (#lib/database.ts).
 	- it is DRAWN IN the database's colour, which is the whole page's accent
-	  and the tint of its grounds (`--hue`, routes/+layout.svelte, app.css).
+	  and the tint of its grounds (`colorOf`, routes/+layout.svelte, app.css).
 
 	Choosing is a FULL navigation, not `goto`. Two listeners are keyed to
 	the page's database once, at mount — the root frame's and the shell's

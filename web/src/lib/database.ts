@@ -85,30 +85,58 @@ export function withDb(path: string, db = currentDb()): string {
 	return `${pathname}?${params}${hash ? `#${hash}` : ''}`;
 }
 
-/** The hue `datum` has always been drawn in: today's `--accent`, #7c7cff. */
-export const DEFAULT_HUE = 240;
+/** A database's color: what the shell writes for app.css's tokens to read. */
+export interface DbColor {
+	/** Degrees. */
+	hue: number;
+	/** A factor on the palette's saturations. */
+	sat: number;
+	/** Points of lightness added to the grounds. */
+	shift: number;
+}
+
+/** The lowest `sat` a name can get. */
+export const SAT_MIN = 0.4;
+
+/** The darkest `shift` a name can get, at any `sat`. */
+export const SHIFT_MIN = -3;
 
 /**
- * The hue the page is painted in while it is on `name` (da-y992).
+ * The lightest `shift` a name can get at `sat`: more as saturation falls, since
+ * the accent, bluest where it is tightest, gains contrast as it loses saturation.
+ * Measured, and held, by the walk in brand.test.mjs (da-wikou).
+ */
+export const shiftMax = (sat: number): number => 2 + 5 * (1 - sat);
+
+/**
+ * The color the page is painted in while it is on `name` (da-y992, da-wikou).
  *
  * vividn, 2026-09-16 22:26: "the base color of the app changes depending on
  * the db you select. That way it is both a logo and functional."
  *
  * Derived from the name and nothing else — FNV-1a, a hash whose whole
  * virtue here is that it is the same everywhere: the same database is the
- * same colour across reloads, across tabs and across devices, with nothing
- * stored and no setting to disagree with. The default database keeps 240,
- * so the app a person already knows has not changed colour.
+ * same color across reloads, across tabs and across devices, with nothing
+ * stored and no setting to disagree with. The default database keeps its
+ * palette to the byte, so the app a person already knows has not changed.
  *
- * Only the HUE: saturation and lightness are fixed in app.css, which is
- * what keeps every name's accent legible (see the note there).
+ * Saturation leans to 1, so most databases stay vivid and a few are muted.
+ * Both it and the shift come from the hash run through murmur3's finalizer:
+ * FNV's top bits barely differ between `db1` and `db2`.
  */
-export function hueOf(name: string): number {
-	if (name === DEFAULT_DB) return DEFAULT_HUE;
+export function colorOf(name: string): DbColor {
+	if (name === DEFAULT_DB) return { hue: 240, sat: 1, shift: 0 };
 	let hash = 0x811c9dc5;
 	for (let i = 0; i < name.length; i += 1) {
 		hash ^= name.charCodeAt(i);
 		hash = Math.imul(hash, 0x01000193);
 	}
-	return (hash >>> 0) % 360;
+	let mixed = hash ^ (hash >>> 16);
+	mixed = Math.imul(mixed, 0x85ebca6b);
+	mixed ^= mixed >>> 13;
+	mixed = Math.imul(mixed, 0xc2b2ae35);
+	mixed ^= mixed >>> 16;
+	const sat = Math.round(100 * (1 - (1 - SAT_MIN) * ((mixed & 0xffff) / 0x10000) ** 2)) / 100;
+	const shift = SHIFT_MIN + (shiftMax(sat) - SHIFT_MIN) * ((mixed >>> 16) / 0x10000);
+	return { hue: (hash >>> 0) % 360, sat, shift: Math.floor(shift * 10) / 10 };
 }

@@ -45,52 +45,57 @@
 		That way it is both a logo and functional." And on PR #25: "change
 		the subtle background color too, not just the accent color."
 
-		So every colour below down to `--ink-bright` is ONE hue — they were
-		all hue 240, the page's blue, already — and only that hue moves:
-		`hueOf` in #lib/database.ts derives it from the database's name and
-		the shell writes it here (routes/+layout.svelte). Each keeps the
-		saturation and lightness it had, which is why `datum`, at 240, is
-		today's palette to the byte (#0a0a1a … #adadff).
+		So every color below is ONE hue, and three numbers move it: `colorOf`
+		in #lib/database.ts derives them from the database's name and the
+		shell writes them here (routes/+layout.svelte).
+		- `--hue`.
+		- `--sat`, a factor on every saturation. The accent keeps a floor of
+		  0.6: it is the app's one color, and it has to stay a color beside
+		  the ink.
+		- `--shift`, added to the lightness of the grounds alone. `--muted` and
+		  `--quiet` rise with it where it is positive, since they sit under
+		  4.5:1 on purpose, and a lighter ground would make them fainter still.
+		At 240, 1 and 0%, `datum`, each token is today's palette to the byte
+		(#0a0a1a … #adadff).
 
-		That is also the contrast guarantee, rather than a clamp on the
-		hash: with S and L fixed, what a hue can change is only how light a
-		colour LOOKS, and every pair the app reads text on was measured at
-		all 360 hues — no pair that is legible at 240 falls under 4.5:1 at
-		any other. Accent on `--tint` is the tightest, 4.76:1, and blue
-		(today) is its worst hue; body text on `--tint` is 9.5:1 at its
-		worst. (`--muted` and `--quiet` are under 4.5:1 today, as a
-		control's rest and a placeholder are meant to be, and no hue makes
-		them fainter than 240 does.)
+		The contrast guarantee is a test, the walk in brand.test.mjs, and not
+		a property of these numbers: over every hue, the range of `--sat` and
+		each `--shift` it allows, no pair the app reads text on and that is
+		legible for `datum` falls under 4.5:1, and `--muted` and `--quiet` are
+		no fainter than `datum`'s. Accent on `--tint` is the tightest, blue at
+		full saturation and the lightest shift. A new pair goes in its list.
 
 		The colours that MEAN something are outside it and do not move with
 		the database: `--alarm`, `--error`, `--warn`, `--track` below, the gear's beta
 		amber, and every field's own colour, which the CLI picks.
 	*/
 	--hue: 240;
+	--sat: 1;
+	--shift: 0%;
 	/* The ground behind the panes: the page itself, and the ink on a filled accent. */
-	--page: hsl(var(--hue) 44.4% 7.1%);
+	--page: hsl(var(--hue) calc(44.4% * var(--sat)) calc(7.1% + var(--shift)));
 	/* A pane's, a bar's, a menu's own background — one step up from the page. */
-	--ground: hsl(var(--hue) 33.3% 7.6%);
+	--ground: hsl(var(--hue) calc(33.3% * var(--sat)) calc(7.6% + var(--shift)));
 	/* A hovered row's ground, and a rule quiet enough to sit inside a pane. */
-	--tint: hsl(var(--hue) 30.2% 16.9%);
+	--tint: hsl(var(--hue) calc(30.2% * var(--sat)) calc(16.9% + var(--shift)));
 	/* Every outline, border and separator. */
-	--rule: hsl(var(--hue) 27.6% 22.7%);
+	--rule: hsl(var(--hue) calc(27.6% * var(--sat)) calc(22.7% + var(--shift)));
 	/* The app's one colour: a pane's title, a link, the thing that is chosen. */
-	--accent: hsl(var(--hue) 100% 74.3%);
+	--accent: hsl(var(--hue) calc(100% * max(var(--sat), 0.6)) 74.3%);
 	/* The accent under the pointer or the keyboard. */
-	--accent-bright: hsl(var(--hue) 100% 83.9%);
+	--accent-bright: hsl(var(--hue) calc(100% * max(var(--sat), 0.6)) 83.9%);
 	/* A control at rest, and the labels that stand beside one. */
-	--muted: hsl(var(--hue) 23.8% 43.7%);
+	--muted: hsl(var(--hue) calc(23.8% * var(--sat)) calc(43.7% + max(0%, var(--shift))));
 	/* Secondary text: a hint, a timestamp, a placeholder, a disabled word. */
-	--quiet: hsl(var(--hue) 20% 33.3%);
+	--quiet: hsl(var(--hue) calc(20% * var(--sat)) calc(33.3% + max(0%, var(--shift))));
 	/* Body text. */
-	--ink: hsl(var(--hue) 41% 84.7%);
+	--ink: hsl(var(--hue) calc(41% * var(--sat)) 84.7%);
 	/* Body text under the pointer, or text that carries more than the rest. */
-	--ink-bright: hsl(var(--hue) 100% 93.9%);
+	--ink-bright: hsl(var(--hue) calc(100% * var(--sat)) 93.9%);
 	/* A raised control's ground: a button, a chip, a field's input. In the
 	   database's hue like the rest (da-c0laf): at 240 it is #1a1a30, the
 	   literal it was before, which clashed with every other database's page. */
-	--raised: hsl(var(--hue) 29.7% 14.5%);
+	--raised: hsl(var(--hue) calc(29.7% * var(--sat)) calc(14.5% + var(--shift)));
 	/* "Your data is not safe yet" — a warning about the future, not a
 	   report of a failure, which is why it is orange and not red. */
 	--alarm: #e8820c;

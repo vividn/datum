@@ -15,13 +15,17 @@
 //
 // Every claim is read off the PAGE: what the mark says and in what face,
 // what the menu offers and where choosing goes, what colour the app is then
-// painted, and where the beta mark went. The hash itself is not asserted
-// anywhere — only that two databases differ and that one database does not.
+// painted, and where the beta mark went. The hash is asserted only for what
+// da-wikou promised of it: a name keeps its hue, and the ranges hold.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { focusTop, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
+import { resolveLibAsSource } from './support/libhook.mjs';
+
+resolveLibAsSource();
+const { colorOf, SAT_MIN, SHIFT_MIN, shiftMax } = await import('../src/lib/database.ts');
 
 before(startApp);
 after(stopApp);
@@ -502,68 +506,138 @@ describe('the base colour follows the database', () => {
 		}, { query: '?db=other' });
 	});
 
-	test('whatever hue a name picks, text is legible on the tinted grounds', async () => {
-		// The guarantee is structural — app.css fixes every colour's
-		// saturation and lightness and moves only the hue — but a tinted
-		// GROUND is where a structural guarantee can quietly stop being one,
-		// so this holds the page to the standard at EVERY hue a name can
-		// pick, rather than at the few a handful of names happen to hash to
-		// (da-kni8r). One page: `datum` crosses the name → hue path once,
-		// then the root's `--hue` is turned through all 360 as the shell
-		// itself writes it.
-		const PAIRS = [
-			['--ink', '--page'],
-			['--ink', '--tint'],
-			['--ink-bright', '--page'],
-			['--ink-bright', '--tint'],
-			['--accent', '--page'],
-			['--accent', '--ground'],
-			['--accent', '--tint'],
-			['--ink', '--raised'],
-			['--ink-bright', '--raised'],
-			['--accent', '--raised']
+	test('the shell writes the three numbers the name gives', async () => {
+		await withApp(async ({ page }) => {
+			const written = await page.evaluate(() => {
+				const { style } = document.documentElement;
+				return ['--hue', '--sat', '--shift'].map((p) => style.getPropertyValue(p));
+			});
+			const { hue, sat, shift } = colorOf('other');
+			assert.deepEqual(written, [String(hue), String(sat), `${shift}%`]);
+		}, { query: '?db=other' });
+	});
+
+	test('whatever color a name picks, text is legible on the tinted grounds', async () => {
+		// Every hue, across the range of saturation and at each end of the
+		// lightness it allows: a tinted GROUND is where a guarantee can quietly
+		// stop being one, so this holds the page at every color a name can pick
+		// rather than the few a handful of names hash to (da-kni8r, da-wikou).
+		// A literal is a text color no token names.
+		const grounds = ['--page', '--ground', '--tint', '--raised'];
+		const LEGIBLE = [
+			...['--ink', '--ink-bright', '--accent', '--accent-bright', '--warn'].flatMap((ink) => grounds.map((g) => [ink, g])),
+			...['--error', '--track'].flatMap((ink) => [[ink, '--page'], [ink, '--ground']]),
+			// A word under the prompt (CliEntry, Doc, RawLines), and the darkest
+			// terminal color legible on a pane (ansi.ts).
+			['#8888aa', '--ground'],
+			['#6a8cff', '--ground'],
+			// The ink on a fill.
+			['--page', '--accent'],
+			['--ground', '--accent'],
+			['--page', '--error'],
+			['--page', '#f0b429']
 		];
-		const tokens = [...new Set(PAIRS.flat())];
+		const FAINT = ['--muted', '--quiet'].flatMap((ink) => grounds.map((g) => [ink, g]));
+		const tokens = [...new Set([...LEGIBLE, ...FAINT].flat())];
+		const colors = [];
+		for (let sat = 1; sat >= SAT_MIN - 0.001; sat -= 0.1) {
+			for (const shift of [SHIFT_MIN, 0, shiftMax(sat)]) colors.push({ sat: sat.toFixed(1), shift });
+		}
 		await plain.solo(async ({ page }) => {
-			const { own, painted } = await page.evaluate((tokens) => {
-				// The tokens resolve `var(--hue)` at the root, so the hue is
-				// turned there; with the page's body out of the styling for the
-				// sweep, a turn restyles the probes and not the whole app. All
-				// in one task, so no frame is drawn and no observer sees it.
-				const html = document.documentElement;
-				const own = html.style.getPropertyValue('--hue');
-				const display = document.body.style.display;
-				const probes = tokens.map((t) => {
-					const probe = document.createElement('span');
-					probe.style.color = `var(${t})`;
-					html.append(probe);
-					return probe;
-				});
-				const read = () => Object.fromEntries(probes.map((p, i) => [tokens[i], getComputedStyle(p).color]));
-				const at = { datum: read() };
-				document.body.style.display = 'none';
-				for (let hue = 0; hue < 360; hue++) {
-					html.style.setProperty('--hue', String(hue));
-					at[hue] = read();
-				}
-				html.style.setProperty('--hue', own);
-				document.body.style.display = display;
-				probes.forEach((p) => p.remove());
-				return { own, painted: at };
-			}, tokens);
-			// The `datum` row is the name → hue path only if the shell wrote
-			// the hue; with none inline it would be the stylesheet's 240.
-			assert.notEqual(own, '', 'the shell wrote no --hue on the root');
-			assert.equal(Object.keys(painted).length, 361);
+			const { own, painted } = await page.evaluate(
+				({ tokens, colors }) => {
+					// The tokens resolve at the root, so the numbers are turned there;
+					// with the page's body out of the styling for the sweep, a turn
+					// restyles the probes and not the whole app. All in one task, so
+					// no frame is drawn and no observer sees it.
+					const html = document.documentElement;
+					const own = ['--hue', '--sat', '--shift'].map((p) => html.style.getPropertyValue(p));
+					const display = document.body.style.display;
+					const probes = tokens.map((t) => {
+						const probe = document.createElement('span');
+						probe.style.color = t.startsWith('--') ? `var(${t})` : t;
+						html.append(probe);
+						return probe;
+					});
+					const read = () => Object.fromEntries(probes.map((p, i) => [tokens[i], getComputedStyle(p).color]));
+					const at = { datum: read() };
+					document.body.style.display = 'none';
+					for (const { sat, shift } of colors) {
+						html.style.setProperty('--sat', sat);
+						html.style.setProperty('--shift', `${shift}%`);
+						for (let hue = 0; hue < 360; hue++) {
+							html.style.setProperty('--hue', String(hue));
+							at[`hue ${hue} sat ${sat} shift ${shift}`] = read();
+						}
+					}
+					['--hue', '--sat', '--shift'].forEach((p, i) => html.style.setProperty(p, own[i]));
+					document.body.style.display = display;
+					probes.forEach((p) => p.remove());
+					return { own, painted: at };
+				},
+				{ tokens, colors }
+			);
+			// The `datum` row is the name → color path only if the shell wrote
+			// the numbers; with none inline it would be the stylesheet's.
+			assert.deepEqual(own, ['240', '1', '0%'], 'the shell did not write datum its color');
+			assert.equal(Object.keys(painted).length, 1 + colors.length * 360);
 			const low = [];
-			for (const [hue, paint] of Object.entries(painted)) {
-				for (const [ink, ground] of PAIRS) {
+			for (const [color, paint] of Object.entries(painted)) {
+				for (const [ink, ground] of LEGIBLE) {
 					const ratio = contrast(paint[ink], paint[ground]);
-					if (!(ratio >= 4.5)) low.push(`${hue === 'datum' ? hue : `hue ${hue}`}: ${ink} on ${ground} is ${ratio.toFixed(3)}:1`);
+					if (!(ratio >= 4.5)) low.push(`${color}: ${ink} on ${ground} is ${ratio.toFixed(3)}:1`);
+				}
+				for (const [ink, ground] of FAINT) {
+					const ratio = contrast(paint[ink], paint[ground]);
+					const floor = contrast(painted.datum[ink], painted.datum[ground]);
+					// What rounding a channel to 8 bits can move a ratio this low.
+					if (!(ratio >= floor - 0.02)) low.push(`${color}: ${ink} on ${ground} is ${ratio.toFixed(3)}:1, datum's ${floor.toFixed(3)}:1`);
 				}
 			}
-			assert.deepEqual(low, [], 'text is under 4.5:1');
+			assert.deepEqual(low, [], 'text is under its contrast');
 		});
+	});
+});
+
+describe('a name gives its color', () => {
+	test('datum is pinned, and the same name always gets the same color', () => {
+		assert.deepEqual(colorOf('datum'), { hue: 240, sat: 1, shift: 0 });
+		for (const name of ['work', 'other', 'db1']) assert.deepEqual(colorOf(name), colorOf(name));
+	});
+
+	test('a name keeps the hue it had', () => {
+		// Written out from `hueOf` as it stood before da-wikou.
+		for (const [name, hue] of Object.entries({ work: 264, other: 21, db1: 134, db2: 315, journal: 288, health: 39, 'é-notes': 40 })) assert.equal(colorOf(name).hue, hue, name);
+	});
+
+	const NAMES = Array.from({ length: 5000 }, (_, i) => (i % 2 ? `db${i}` : `${i.toString(36)}-notes`));
+
+	test('saturation and lightness stay in their ranges, leaning to full saturation', () => {
+		const sats = [];
+		for (const name of NAMES) {
+			const { sat, shift } = colorOf(name);
+			assert.ok(sat >= SAT_MIN && sat <= 1, `${name}: sat ${sat}`);
+			assert.ok(shift >= SHIFT_MIN && shift <= shiftMax(sat), `${name}: shift ${shift} at sat ${sat}`);
+			sats.push(sat);
+		}
+		sats.sort((a, b) => a - b);
+		const share = (under) => sats.filter((s) => s < under).length / sats.length;
+		assert.ok(sats[sats.length >> 1] >= 0.8, `the median is ${sats[sats.length >> 1]}`);
+		assert.ok(share(0.6) > 0.1 && share(0.6) < 0.25, `${share(0.6)} are under 0.6`);
+	});
+
+	test('neither saturation nor lightness follows the hue', () => {
+		// The mean over each sixth of the wheel against the whole's.
+		const mean = (of, names) => names.reduce((sum, n) => sum + of(colorOf(n)), 0) / names.length;
+		for (const [of, near] of [[(c) => c.sat, 0.03], [(c) => c.shift, 0.3]]) {
+			const whole = mean(of, NAMES);
+			for (let sixth = 0; sixth < 6; sixth++) {
+				const part = NAMES.filter((n) => Math.floor(colorOf(n).hue / 60) === sixth);
+				assert.ok(Math.abs(mean(of, part) - whole) < near, `sixth ${sixth}: ${mean(of, part)} against ${whole}`);
+			}
+		}
+		const siblings = new Set(['db1', 'db2', 'db3', 'db4'].map((n) => colorOf(n).sat));
+		assert.ok(siblings.size > 1, 'names one digit apart share a saturation');
 	});
 });
 
