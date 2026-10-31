@@ -141,10 +141,68 @@ fn v2import_lists_skipped_docs_and_ignores_design_docs() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     for want in [
-        "2 would import (2 point, 0 block), 1 skipped (1 no-field).\n",
-        "  no-field  orphan\n",
+        "0 would import (0 point, 0 block), 3 skipped (2 duplicate, 1 no-field).\n",
+        "  no-field   orphan\n",
         "1 CouchDB design doc (_design/…) ignored: views, not entries.\n",
     ] {
         assert!(stdout.contains(want), "want {want:?} in:\n{stdout}");
     }
+}
+
+/// A dry run says what the real run would: its summary and skip list are the
+/// real run's, on an empty database and on one already holding the docs, and
+/// it writes nothing (da-fk1fp).
+#[test]
+fn v2import_dry_run_says_what_the_real_run_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let occur = |utc: &str| serde_json::json!({"utc": utc, "o": 0});
+    let meta = serde_json::json!({"createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 0}});
+    let coffee =
+        serde_json::json!({"field": "coffee", "occurTime": occur("2025-01-08T07:00:00.000Z")});
+    let tea = serde_json::json!({"field": "tea", "occurTime": occur("2025-01-08T08:00:00.000Z"), "dur": "PT5M"});
+    let backup = serde_json::json!({"backupTime": "2025-02-01T00:00:00Z", "docs": [
+        {"_id": "coffee:a", "data": coffee, "meta": meta},
+        {"_id": "coffee:copy", "data": coffee, "meta": meta},
+        {"_id": "coffee:other", "data": {"field": "coffee", "occurTime": coffee["occurTime"], "n": 2}, "meta": meta},
+        {"_id": "tea:a", "data": tea, "meta": meta},
+        {"_id": "orphan", "data": {"occurTime": coffee["occurTime"]}, "meta": meta},
+    ]})
+    .to_string();
+    let db = dir.path().join("v2.db");
+    let run = |args: &[&str]| {
+        String::from_utf8_lossy(&datum(&db, args, backup.as_bytes()).stdout).into_owned()
+    };
+    // The summary and each skipped doc, in the real run's words.
+    let said = |stdout: &str| -> Vec<String> {
+        stdout
+            .lines()
+            .filter(|l| l.contains("Migration") || l.starts_with("  "))
+            .map(|l| {
+                l.replace("[dry-run] Migration summary", "Migration complete")
+                    .replace(" would import ", " imported ")
+            })
+            .collect()
+    };
+    let dry = ["db", "v2import", "--dry-run", "-"];
+    let real = ["db", "v2import", "-"];
+
+    let (rehearsed, ran) = (run(&dry), run(&real));
+    assert_eq!(said(&rehearsed), said(&ran), "{rehearsed}\n{ran}");
+    assert!(
+        ran.contains("2 imported (1 point, 1 block), 3 skipped"),
+        "{ran}"
+    );
+    assert_eq!(
+        rehearsed.matches("would import: ").count(),
+        2,
+        "{rehearsed}"
+    );
+
+    let (rehearsed, ran) = (run(&dry), run(&real));
+    assert_eq!(said(&rehearsed), said(&ran), "{rehearsed}\n{ran}");
+    assert!(
+        ran.contains("0 imported (0 point, 0 block), 5 skipped"),
+        "{ran}"
+    );
+    assert!(!rehearsed.contains("would import: "), "{rehearsed}");
 }
