@@ -854,22 +854,13 @@
 	}
 
 	/* The raw lines take what the head leaves and keep the LAST of them:
-	   `cap` asks for more than fit, and a column standing on its foot cuts
-	   the overflow from the top. */
-	/* `.raw.raw`: RawLines' own `.raw` centres its lines at the same
-	   specificity, and which of two equal rules wins is the bundler's order. */
-	.group :global(.raw.raw) {
+	   `cap` asks for more than fit, and RawLines' column stands on its foot,
+	   so the overflow is cut from the top (one line wrapped past the room,
+	   from its end). */
+	.group :global(.raw) {
 		flex: 0 1 auto;
 		min-height: 0;
-		justify-content: flex-end;
 		overflow: hidden;
-	}
-
-	/* Each line its own height: a line clips its own overflow sideways, and
-	   a flex item that clips may shrink to nothing, which squashed every line
-	   into the box instead of cutting the oldest. */
-	.group :global(.raw p) {
-		flex: none;
 	}
 
 	.section.output :global(.result) {

@@ -18,9 +18,9 @@
 	mid-write — still shows the lines datum printed. Nothing here composes
 	a line of its own; the one exception is named where it is made.
 
-	The area's height never changes with what is in it. Every line is one
-	line, cut with an ellipsis, and the count is capped: the bar is a fixed
-	height and the dashboard above it must not reflow because a command
+	The area's height never changes with what is in it. A long line wraps,
+	what does not fit is cut, and the count is capped: the bar is
+	a fixed height and the dashboard above it must not reflow because a command
 	printed a long answer.
 -->
 <script lang="ts">

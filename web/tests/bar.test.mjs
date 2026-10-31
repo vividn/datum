@@ -1062,6 +1062,78 @@ describe('a command with no echo', () => {
 		});
 	});
 
+	// Each raw line against the box that clips it (da-3d1ro): its line boxes
+	// up and down, its text across, wherever it wrapped. Not its text up and
+	// down: the font's content area stands past a line of this line-height.
+	const inBox = (raw) => {
+		const box = raw.getBoundingClientRect();
+		const range = document.createRange();
+		return [...raw.querySelectorAll('p')].map((p) => {
+			range.selectNodeContents(p);
+			const rects = [...range.getClientRects()];
+			const { top, bottom } = p.getBoundingClientRect();
+			return {
+				text: p.textContent,
+				lines: new Set(rects.map((r) => Math.round(r.top))).size,
+				start: top >= box.top - 0.5,
+				end: bottom <= box.bottom + 0.5,
+				across: rects.every((r) => r.left >= box.left - 0.5 && r.right <= box.right + 0.5)
+			};
+		});
+	};
+
+	test('a line too long for a phone wraps and is whole, in the frame it had (da-3d1ro)', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const f of 'abcdefghijkl') assert.equal((await app.run(['occur', f])).code, 0);
+			const height = await barHeight(page);
+			await app.submit('check');
+			await page.locator(`${OUT} .raw p`).first().waitFor();
+
+			// What that run printed: a second `check` says something else.
+			const { result } = await page.evaluate(() => window.datum.bar.last());
+			const [line, ...more] = await page.locator(`${OUT} .raw`).evaluate(inBox);
+			assert.deepEqual(more, []);
+			assert.equal(line.text, result.stdout.replace(ESC, '').trim());
+			assert.ok(line.lines >= 2, `${line.text.length} characters took ${line.lines} line(s): nothing to prove`);
+			assert.ok(line.start && line.end && line.across, `a piece of the line lies outside its box: ${JSON.stringify(line)}`);
+			assert.equal(await barHeight(page), height);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('one line that does not fit even wrapped keeps its start, in the frame it had (da-3d1ro)', async () => {
+		// The iPhone 12's viewport, Safari's bars taken off: `check` is a line short.
+		await withApp(async (app) => {
+			const { page } = app;
+			const height = await barHeight(page);
+			await app.submit('check');
+			await page.locator(`${OUT} .raw p`).first().waitFor();
+
+			const [line] = await page.locator(`${OUT} .raw`).evaluate(inBox);
+			assert.ok(!line.end, 'the line fitted: nothing to prove');
+			assert.ok(line.start, 'the verdict at the start of the line was cut');
+			assert.equal(await barHeight(page), height);
+			assert.deepEqual(app.errors, []);
+		}, { ...PHONE, viewport: { width: 390, height: 664 } });
+	});
+
+	test('lines that do not fit even wrapped are cut from the top, in the frame they had (da-3d1ro)', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const f of 'abcdefghijkl') assert.equal((await app.run(['occur', f])).code, 0);
+			const height = await barHeight(page);
+			await app.submit('tail');
+			await page.locator(`${OUT} .raw p`).first().waitFor();
+
+			const lines = await page.locator(`${OUT} .raw`).evaluate(inBox);
+			assert.ok(!lines[0].start, 'the tail fitted: nothing to prove');
+			assert.ok(lines.at(-1).start && lines.at(-1).end, 'the newest row is not whole');
+			assert.equal(await barHeight(page), height);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
 	test('an error is marked, and shown from stderr', async () => {
 		await desktop(async (app) => {
 			const { page } = app;

@@ -38,7 +38,7 @@
 	const shown = $derived(drawing ? [] : all.slice(-lines));
 </script>
 
-<div class="raw" class:error>
+<div class="raw" class:error class:single={shown.length === 1}>
 	{#if drawing}
 		<!-- The one string on this surface that is not datum's: its stdout is
 		     an SVG document, and four lines of XML is not what "show the
@@ -55,27 +55,44 @@
 	.raw {
 		display: flex;
 		flex-direction: column;
-		justify-content: center;
+		/* Centered by the two struts below while the lines fit; past that there
+		   is nothing to share, and a column on its foot keeps the last of them. */
+		justify-content: flex-end;
 		min-width: 0;
 		width: 100%;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		/* Four lines inside the section; see the bar's own height note. */
+		/* Five lines inside a phone's section, which is what `check`'s one line
+		   wraps to at 390 wide; see the bar's own height note. */
 		font-size: 0.68rem;
-		line-height: 1.25;
+		line-height: 1.15;
 		/* Not a token: the same step between `--quiet` and `--ink` the
 		   CLI widget's echoed line uses (CliScrollback.svelte). */
 		color: #8888aa;
+	}
+
+	.raw::before,
+	.raw::after {
+		content: '';
+		flex: 1;
+	}
+
+	/* One line that wrapped past the room is read from its start: `check`'s
+	   verdict comes first, and what it cuts is the end of one sentence. */
+	.raw.single {
+		justify-content: flex-start;
 	}
 
 	.raw.error {
 		color: var(--error);
 	}
 
+	/* A line too long for the width wraps (da-3d1ro): `pre-wrap`, not `normal`,
+	   because datum lays its lines out with runs of spaces. Only what holds the
+	   lines cuts them, so no line is cut with room left under it. */
 	.raw p {
 		margin: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: pre;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
 	.aside {
