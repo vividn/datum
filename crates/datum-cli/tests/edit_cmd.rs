@@ -48,6 +48,125 @@ fn seed(dir: &Path) {
     }
 }
 
+/// `datum edit tea` with an editor that runs `sed` on the file.
+fn edit_tea(dir: &Path, sed: &str) -> Output {
+    let editor = dir.join("sed.sh");
+    std::fs::write(&editor, format!("#!/bin/sh\nsed -i '{sed}' \"$1\"\n")).unwrap();
+    std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env("DATUM_DB", dir.join("e.db"))
+        .env("DATUM_HOME", dir.join("home"))
+        .env("DATUM_CONFIG_HOME", dir.join("home"))
+        .env("DATUM_EDITOR", &editor)
+        .args(["edit", "tea"])
+        .stdin(Stdio::null())
+        .output()
+        .expect("spawn datum")
+}
+
+/// [`edit_tea`] setting the zone to `zone`, and the row's time after it.
+fn edit_zone(dir: &Path, zone: &str) -> (Output, (String, Option<String>, i32)) {
+    let sed = format!("s|\"timezone\": [^,]*|\"timezone\": \"{zone}\"|");
+    (edit_tea(dir, &sed), tea_time(dir))
+}
+
+fn tea_time(dir: &Path) -> (String, Option<String>, i32) {
+    Db::open(dir.join("e.db").to_str().unwrap())
+        .unwrap()
+        .conn()
+        .query_row(
+            "SELECT occur_time, occur_time_tz, occur_time_offset FROM entries WHERE field = 'tea'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap()
+}
+
+/// `tea` at 10:00 in Berlin, whose +2 no other zone below shares.
+fn seed_tea(dir: &Path) -> String {
+    let args = [
+        "occur",
+        "tea",
+        "-t",
+        "2026-06-02T10:00",
+        "-z",
+        "Europe/Berlin",
+    ];
+    assert!(run_bin(dir, &args, "").status.success());
+    tea_time(dir).0
+}
+
+#[test]
+fn a_name_that_is_no_zone_is_refused_and_nothing_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let utc = seed_tea(tmp.path());
+
+    for bad in ["Mars", ""] {
+        let (out, row) = edit_zone(tmp.path(), bad);
+        assert!(!out.status.success(), "{bad:?} must be refused: {out:?}");
+        assert_eq!(row, (utc.clone(), Some("Europe/Berlin".into()), 120));
+    }
+    let (out, _) = edit_zone(tmp.path(), "Asia/Tokio");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Asia/Tokyo"),
+        "offers the nearest: {stderr}"
+    );
+}
+
+#[test]
+fn a_zone_is_stored_as_z_stores_it_and_the_instant_stands() {
+    let tmp = tempfile::tempdir().unwrap();
+    let utc = seed_tea(tmp.path());
+
+    for (typed, zone, offset) in [
+        ("asia/tokyo", Some("Asia/Tokyo"), 540),
+        ("UTC+5:30", None, 330),
+        ("-3", None, -180),
+        ("UTC", Some("UTC"), 0),
+    ] {
+        let (out, row) = edit_zone(tmp.path(), typed);
+        assert!(out.status.success(), "{typed}: {out:?}");
+        assert_eq!(
+            row,
+            (utc.clone(), zone.map(String::from), offset),
+            "{typed}"
+        );
+    }
+}
+
+#[test]
+fn a_row_already_holding_a_bad_zone_can_be_edited_and_repaired() {
+    let tmp = tempfile::tempdir().unwrap();
+    let time = serde_json::json!({"utc": "2025-01-01T09:34:00.000Z", "o": 1, "tz": "Mars"});
+    let doc = serde_json::json!({
+        "_id": "tea:2025-01-01T09:34:00.000Z",
+        "_rev": "1-synthetic",
+        "data": {"occurTime": time, "field": "tea"},
+        "meta": {
+            "humanId": "syn0001",
+            "createTime": time,
+            "modifyTime": time,
+            "idStructure": "%field%:%occurTime%",
+        },
+    });
+    let backup = tmp.path().join("backup.json");
+    let body = serde_json::json!({"backupTime": "2025-02-02T12:26:32.488Z", "docs": [doc]});
+    std::fs::write(&backup, body.to_string()).unwrap();
+    let import = ["db", "v2import", "--from", backup.to_str().unwrap()];
+    assert!(run_bin(tmp.path(), &import, "").status.success());
+    let utc = tea_time(tmp.path()).0;
+
+    // Left as it is, the edit of something else goes through.
+    let out = edit_tea(tmp.path(), "s|\"state\": [^,]*|\"state\": \"hot\"|");
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(tea_time(tmp.path()).1.as_deref(), Some("Mars"));
+
+    let (out, row) = edit_zone(tmp.path(), "Europe/Paris");
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(row, (utc, Some("Europe/Paris".into()), 60));
+}
+
 #[test]
 fn a_bare_edit_opens_the_last_entry() {
     let tmp = tempfile::tempdir().unwrap();

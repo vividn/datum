@@ -221,6 +221,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
 
     let mut updated = existing.clone();
     edited_view.apply_to(&mut updated);
+    settle_edited_zone(&existing, &mut updated)?;
     updated.modify_time = Utc::now();
     crate::commands::helpers::resolve_spec_colors(&mut updated, &existing)?;
 
@@ -244,6 +245,29 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
         &args.output()?,
         db,
     );
+    Ok(())
+}
+
+/// da-pzm3p: a zone the edit changed reads as `-z` does: a name that is no zone
+/// is refused, a zone is stored in its own spelling and a fixed offset with no
+/// name (da-kvosn), and the instant stands, its offset following the zone. A
+/// zone the edit left stays, so a row already holding a bad one can be repaired.
+#[cfg(feature = "native")]
+fn settle_edited_zone(existing: &Entry, updated: &mut Entry) -> Result<()> {
+    let was = existing.occur_time.as_ref().map(|t| &t.timezone);
+    let Some(t) = updated
+        .occur_time
+        .as_mut()
+        .filter(|t| Some(&t.timezone) != was)
+    else {
+        return Ok(());
+    };
+    if let Some(name) = &t.timezone {
+        t.timezone = Some(datum_parse::time::resolve_timezone(name)?);
+        t.refresh_offset()?;
+        t.timezone
+            .take_if(|zone| datum_parse::time::fixed_offset_minutes(zone).is_some());
+    }
     Ok(())
 }
 
