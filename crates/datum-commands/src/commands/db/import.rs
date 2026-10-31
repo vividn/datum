@@ -232,7 +232,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                 let column = match k.as_str() {
                     "field" | "state" | "occurTime" | "lastState" => true,
                     "dur" => dur_in.is_some(),
-                    "occurUtcOffset" => data["occurTime"].is_string(),
+                    "occurUtcOffset" => data["occurTime"].is_string() && v.is_number(),
                     _ => false,
                 };
                 if !column {
@@ -713,17 +713,29 @@ fn v2_meta_time(meta: &JsonValue, key: &str) -> Result<Option<DatumTime>, String
 /// `{utc: "YYYY-MM-DD"}` with no zone. It imports as `occur -D` writes one:
 /// local midnight with [`DATE_ONLY_PRECISION`], in the zone of the doc's
 /// createTime (UTC without one), so the calendar date stays v2's (da-dvyga).
+/// An older doc states an offset as `o` (see [`v2_occur_block`]), which wins.
 fn v2_date_only(occur: &JsonValue, create: Option<&DatumTime>) -> Option<DatumTime> {
     let date: chrono::NaiveDate = occur.get("utc")?.as_str()?.parse().ok()?;
     // A zone name that does not parse leaves the offset, still known.
-    let (zone, timezone) = match create {
+    let (mut zone, mut timezone) = match create {
         Some(t) => match Zone::of(t) {
             Ok(z) => (z, t.timezone.clone()),
             Err(_) => (Zone::Fixed(*t.local_time().offset()), None),
         },
         None => (Zone::Fixed(chrono::FixedOffset::east_opt(0)?), None),
     };
-    let utc = zone.resolve(date.and_hms_opt(0, 0, 0)?).for_boundary();
+    let midnight = date.and_hms_opt(0, 0, 0)?;
+    // An offset the doc states for this time wins over createTime's zone,
+    // which keeps its name where the two agree.
+    if let Some(stated) = occur["o"]
+        .as_f64()
+        .and_then(|o| chrono::FixedOffset::east_opt((o * 3600.0).round() as i32))
+    {
+        if zone.offset_at(zone.resolve(midnight).for_boundary()) != stated {
+            (zone, timezone) = (Zone::Fixed(stated), None);
+        }
+    }
+    let utc = zone.resolve(midnight).for_boundary();
     Some(DatumTime {
         utc,
         offset_minutes: zone.offset_at(utc).local_minus_utc() / 60,

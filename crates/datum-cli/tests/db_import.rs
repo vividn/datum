@@ -1637,6 +1637,91 @@ fn an_unreadable_create_or_modify_time_is_listed_and_not_stamped_with_the_clock(
 }
 
 #[test]
+fn an_offset_not_read_stays_in_data() {
+    let f = write_backup(serde_json::json!([doc_occurring(
+        "odd-offset",
+        serde_json::json!({"occurTime": "2025-01-01T07:00:00.000Z", "occurUtcOffset": "5.5"}),
+    )]));
+    let db = fresh_db();
+    assert_eq!(skipped_by(&f, &db, false), Vec::<String>::new());
+    let rows = datum_core::test_util::logged_all(&db);
+    assert_eq!(rows[0].occur_time.as_ref().unwrap().offset_minutes, 0);
+    assert_eq!(
+        rows[0].data.as_ref().unwrap()["occurUtcOffset"],
+        "5.5",
+        "the only copy of it"
+    );
+}
+
+/// `migrateDatumTime1` leaves a date-only string as `{utc: date, o}`, so an
+/// old date-only doc states its offset in either shape.
+#[test]
+fn a_date_only_doc_stays_on_the_offset_it_states() {
+    let berlin =
+        serde_json::json!({"utc": "2025-01-03T21:00:00.000Z", "o": 1, "tz": "Europe/Berlin"});
+    let with_create = |id: &str, occur: serde_json::Value, create: &serde_json::Value| {
+        let mut d = doc_occurring(id, occur);
+        d["meta"]["createTime"] = create.clone();
+        d
+    };
+    let f = write_backup(serde_json::json!([
+        with_create(
+            "string-disagrees",
+            serde_json::json!({"occurTime": "2025-01-03", "occurUtcOffset": -5}),
+            &berlin,
+        ),
+        with_create(
+            "block-disagrees",
+            serde_json::json!({"occurTime": {"utc": "2025-01-04", "o": -5}}),
+            &berlin,
+        ),
+        with_create(
+            "agrees",
+            serde_json::json!({"occurTime": "2025-01-05", "occurUtcOffset": 1}),
+            &berlin,
+        ),
+        with_create(
+            "no-create",
+            serde_json::json!({"occurTime": "2025-01-06", "occurUtcOffset": 5.5}),
+            &serde_json::Value::Null,
+        ),
+    ]));
+    let db = fresh_db();
+    assert_eq!(skipped_by(&f, &db, false), Vec::<String>::new());
+    let rows = datum_core::test_util::logged_all(&db);
+    let at = |hid: &str| {
+        let e = rows.iter().find(|e| e.hid.as_str() == hid).unwrap();
+        assert_eq!(e.occur_uncertainty(), Some("P1D"), "{hid}");
+        e.occur_time.clone().unwrap()
+    };
+    let local = |t: &datum_parse::time::DatumTime| t.local_time().format("%F %H:%M").to_string();
+
+    for (hid, date) in [
+        ("string-disagrees", "2025-01-03 00:00"),
+        ("block-disagrees", "2025-01-04 00:00"),
+    ] {
+        let t = at(hid);
+        assert_eq!(
+            (local(&t).as_str(), t.offset_minutes),
+            (date, -300),
+            "{hid}"
+        );
+        assert_eq!(t.timezone, None, "{hid}: Berlin was never this time's zone");
+    }
+    let t = at("agrees");
+    assert_eq!(
+        (local(&t).as_str(), t.offset_minutes),
+        ("2025-01-05 00:00", 60)
+    );
+    assert_eq!(t.timezone.as_deref(), Some("Europe/Berlin"));
+    let t = at("no-create");
+    assert_eq!(
+        (local(&t).as_str(), t.offset_minutes),
+        ("2025-01-06 00:00", 330)
+    );
+}
+
+#[test]
 fn timeless_docs_slug_on_their_own_create_time() {
     let db = fresh_db();
     let docs: Vec<_> = (1..=3)
