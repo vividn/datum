@@ -14,7 +14,7 @@ use datum_core::{
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
     time::{parse_duration, resolve_timezone, DatumTime, TimeCtx, Zone},
-    timezone_field::{state_zone, TIMEZONE_FIELD},
+    timezone_field::TIMEZONE_FIELD,
 };
 use datum_parse::input::TimeArgs;
 use datum_parse::spec_keys::{parse_key_decl, KeyKind, SpecKeyWords};
@@ -22,7 +22,7 @@ use datum_parse::{ParseError, Readings};
 use serde_json::{json, Value as JsonValue};
 use std::collections::BTreeMap;
 
-use crate::commands::follow_zone::{declared_zone, following};
+use crate::commands::follow_zone::{declared_zone, following, may_name_timezone, timezone_line};
 use crate::commands::question::Question;
 use crate::{
     args::{LogArgs, LogArgsExt},
@@ -142,19 +142,26 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let now = crate::args::window_now().unwrap_or_else(DatumTime::now);
     // da-yw6o2: a `timezone` entry is in the zone it names, read as `-z`
     // is, so its clock and a fall-back night's question are that zone's.
+    let mut own_line = args.field_or_verb == TIMEZONE_FIELD;
     if may_name_timezone(&args) && !args.time.omit_timestamp {
-        if let Some(zone) = zone_on_the_line(&args, action, db) {
-            zone_agrees(&args.time, &zone)?;
-            args.time.timezone = Some(zone);
+        if let Some(named) = timezone_line(&args, action, db) {
+            own_line = true;
+            if let Some(zone) = named {
+                zone_agrees(&args.time, &zone)?;
+                args.time.timezone = Some(zone);
+            }
         }
     }
     // da-mvt5i: an entry is in the zone the `timezone` field holds at its
-    // instant; at about now a device in another asks to move the field.
+    // instant; at about now a device in another asks to move the field, unless
+    // this line is the field's own, however it spells it (da-ckito).
     if let Some(zone) = declared_zone(db, &args, action, now.utc)? {
-        args.time.timezone = Some(match following(db, &args, action, &zone, now.utc)? {
-            Some(device) => device,
-            None => zone,
-        });
+        let moved = if own_line {
+            None
+        } else {
+            following(db, &args, action, &zone, now.utc)?
+        };
+        args.time.timezone = Some(moved.unwrap_or(zone));
     }
     // da-h8dvi: a past instant with no `-z` the field does not place is placed
     // as if `-z` named the zone the entries around it agree on, recorded and
@@ -1251,7 +1258,7 @@ fn refuse_unset_up_field(db: &Db, field: &str, setup: bool) -> Result<()> {
 /// ([`creation_closed_by`]), so in an open db `occur envi` beside
 /// `environment` still makes `envi`. Starting several there is refused,
 /// naming them.
-fn written_field(db: &Db, name: &str, setup: bool) -> Result<Option<String>> {
+pub(crate) fn written_field(db: &Db, name: &str, setup: bool) -> Result<Option<String>> {
     if setup || name.is_empty() || field_spec::contains_template(name) || db.field_exists(name)? {
         return Ok(None);
     }
@@ -1925,7 +1932,7 @@ pub(crate) fn validate_switch_state_token(s: &str) -> Result<()> {
 /// Errors when the user explicitly asked for a back-state but the field's
 /// history doesn't run that deep — silently storing the literal string
 /// `"_"` would be confusing.
-fn resolve_underscore_state(
+pub(crate) fn resolve_underscore_state(
     value: Option<JsonValue>,
     db: &Db,
     field: &str,
@@ -2712,47 +2719,6 @@ pub(crate) fn asking<T>(
             None => return Ok(None),
         };
     }
-}
-
-/// Whether a line can be a `timezone` entry's, so every other log parses once
-/// more only if it holds a word starting `field`: `field=timezone`, `-k field`.
-fn may_name_timezone(args: &LogArgs) -> bool {
-    args.field_or_verb == TIMEZONE_FIELD
-        || std::iter::once(&args.field_or_verb)
-            .chain(&args.rest)
-            .chain(&args.keys)
-            .chain(&args.field_keys)
-            .any(|word| word.starts_with("field"))
-}
-
-/// The zone a line's `timezone` entry will name, if it is one and names one:
-/// the state after its trailing edge where it has one, `_` read as the log
-/// reads it, at now and so with no need of the instant this zone will place.
-fn zone_on_the_line(args: &LogArgs, action: Action, db: &Db) -> Option<String> {
-    let mut parsed = parse_log_args(args, action, None, None).ok()?;
-    let mut reserved = extract_reserved_columns(&mut parsed.extra_data).ok()?;
-    let field = compound_field(
-        reserved.field.take().unwrap_or(parsed.field),
-        &args.field_keys,
-        &parsed.field_values,
-    )
-    .ok()?;
-    let field = written_field(db, &field, args.setup).ok()?.unwrap_or(field);
-    if field != TIMEZONE_FIELD {
-        return None;
-    }
-    let back = |state: Option<JsonValue>| match action {
-        Action::Switch => resolve_underscore_state(state, db, &field).ok()?,
-        _ => state,
-    };
-    [
-        reserved.following_state,
-        back(reserved.state),
-        back(parsed.value),
-    ]
-    .iter()
-    .flatten()
-    .find_map(state_zone)
 }
 
 /// A `-z` on a `timezone` entry names the zone the entry does (da-yw6o2).

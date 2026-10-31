@@ -964,6 +964,32 @@ mod follow {
         assert_eq!(zones_logged(&env), [BERLIN]);
     }
 
+    /// The field's own line asks nothing however it spells the field, naming a
+    /// zone or not, `auto` logging no zone of the device's before it.
+    #[test]
+    fn the_fields_own_line_is_not_asked_about_in_any_spelling() {
+        for auto in [false, true] {
+            for line in [
+                &["switch", "field=timezone", "IGNORED"][..],
+                &["switch", "field=timezone", "state=IGNORED"],
+                &["switch", "timezone", "IGNORED"],
+                &["timezone", "IGNORED"],
+            ] {
+                let env = holding(BERLIN);
+                if auto {
+                    env.ok(&["db", "config", "timezone_follow", "auto"]);
+                }
+                let out = page(&env, PARIS, line, "");
+                assert!(out.status.success(), "{line:?}: {out:?}");
+                assert_eq!(zones_logged(&env), [BERLIN, "IGNORED"], "{line:?}");
+            }
+        }
+        // `field=` of another field is any other log.
+        let env = holding(BERLIN);
+        let out = page(&env, PARIS, &["switch", "field=mood", "happy"], "");
+        assert!(asked(&out), "{out:?}");
+    }
+
     /// No person there: stdin is the script's own, so nothing reads it, says
     /// a prompt, or moves the field, `auto` or not.
     #[test]

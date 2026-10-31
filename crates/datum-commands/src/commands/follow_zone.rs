@@ -6,17 +6,62 @@ use chrono::{DateTime, Utc};
 use datum_core::{
     action::Action,
     db::{is_meta_field, Db},
-    timezone_field::{same_zone, TIMEZONE_FIELD},
+    timezone_field::{same_zone, state_zone, TIMEZONE_FIELD},
 };
 use datum_parse::input::TimeArgs;
+use serde_json::Value as JsonValue;
 use std::io::IsTerminal;
 
 use crate::args::LogArgs;
 use crate::commands::log_core::{
-    build_time_from_flags, log_entry, parse_log_args, parse_reserved_occur_time, whole_day,
-    zone_is_settled,
+    build_time_from_flags, compound_field, extract_reserved_columns, log_entry, parse_log_args,
+    parse_reserved_occur_time, resolve_underscore_state, whole_day, written_field, zone_is_settled,
 };
 use crate::commands::question::{is_yes, page, Question};
+
+/// Whether a line can be a `timezone` entry's, so every other log parses once
+/// more only if it holds a word starting `field`: `field=timezone`, `-k field`.
+pub(crate) fn may_name_timezone(args: &LogArgs) -> bool {
+    args.field_or_verb == TIMEZONE_FIELD
+        || std::iter::once(&args.field_or_verb)
+            .chain(&args.rest)
+            .chain(&args.keys)
+            .chain(&args.field_keys)
+            .any(|word| word.starts_with("field"))
+}
+
+/// `Some` where a line is a `timezone` entry, with the zone it will name, if it
+/// names one: the state after its trailing edge where it has one, `_` read as
+/// the log reads it, at now and so with no need of the instant this zone will
+/// place.
+pub(crate) fn timezone_line(args: &LogArgs, action: Action, db: &Db) -> Option<Option<String>> {
+    let mut parsed = parse_log_args(args, action, None, None).ok()?;
+    let mut reserved = extract_reserved_columns(&mut parsed.extra_data).ok()?;
+    let field = compound_field(
+        reserved.field.take().unwrap_or(parsed.field),
+        &args.field_keys,
+        &parsed.field_values,
+    )
+    .ok()?;
+    let field = written_field(db, &field, args.setup).ok()?.unwrap_or(field);
+    if field != TIMEZONE_FIELD {
+        return None;
+    }
+    let back = |state: Option<JsonValue>| match action {
+        Action::Switch => resolve_underscore_state(state, db, &field).ok()?,
+        _ => state,
+    };
+    Some(
+        [
+            reserved.following_state,
+            back(reserved.state),
+            back(parsed.value),
+        ]
+        .iter()
+        .flatten()
+        .find_map(state_zone),
+    )
+}
 
 /// The zone the `timezone` field holds at the instant the line names, where
 /// no `-z` or offset says (da-mvt5i). Which zone applies depends on the
@@ -86,7 +131,7 @@ const ABOUT_NOW: chrono::TimeDelta = chrono::TimeDelta::minutes(15);
 /// `None`, the entry keeping `stored`. Only at about now, read in either zone:
 /// a person in Tokyo typing `-t 1513` means Tokyo's. A multi line's sides write
 /// together, so none would see the switch another side asked for: it asks at
-/// the next log.
+/// the next log. The caller keeps the field's own line from here.
 pub(crate) fn following(
     db: &Db,
     args: &LogArgs,
@@ -94,10 +139,7 @@ pub(crate) fn following(
     stored: &str,
     now: DateTime<Utc>,
 ) -> Result<Option<String>> {
-    if args.field_or_verb == TIMEZONE_FIELD
-        || is_meta_field(&args.field_or_verb)
-        || crate::args::window_now().is_some()
-    {
+    if is_meta_field(&args.field_or_verb) || crate::args::window_now().is_some() {
         return Ok(None);
     }
     let Some(device) = device_zone() else {
