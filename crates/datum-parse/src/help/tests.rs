@@ -1247,16 +1247,25 @@ fn subcommand_help_is_its_own_page() {
     assert!(chain.contains("`datum db purge --chain`"), "{chain}");
     assert!(!chain.contains("  unjoin"), "{chain}");
 
-    // `grant --like` is grant's page, both usages and what it says of each
-    // (da-pvax0); `chain copy` is gone from every page.
-    let grant = parse("sync grant --like home --help");
-    assert_eq!(grant, parse("help sync grant"));
-    assert!(grant.contains("datum sync grant --like <DB>"), "{grant}");
-    assert!(
-        grant.contains("--like <DB> grants another database's devices, never its"),
-        "{grant}"
-    );
+    // `invite`'s page is all three forms, each usage and how they differ
+    // (da-pvax0, da-p76eu); `chain copy` and `sync grant` are gone from every page.
+    let invite = parse("sync chain invite --like home --help");
+    assert_eq!(invite, parse("help sync chain invite"));
+    assert_eq!(invite, parse("sync chain invite 9ae6 --help"));
+    for usage in ["invite [--reader]", "invite <DEVICE>", "invite --like <DB>"] {
+        assert!(invite.contains(usage), "{invite}");
+    }
+    for said in [
+        "Serves until redeemed",
+        "It returns at once",
+        "default --expires 10m",
+        "--expires 7d",
+        "--like <DB> invites another database's devices, never its",
+    ] {
+        assert!(invite.contains(said), "{invite}");
+    }
     assert!(!command_help("sync").contains("chain copy"));
+    assert!(!command_help("sync").contains("sync grant"));
 
     // `status` is the top-level row; the daemon's is under `daemon`.
     assert!(parse("sync status -h").contains("Per member"));

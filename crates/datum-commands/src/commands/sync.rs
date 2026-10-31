@@ -563,7 +563,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         SyncCommand::Approve { link } => {
             let mut records = chain::approve_records(&link)
                 .context("not an approve link: https://datum.day/sync/approve#<record>")?;
-            // A batch may start the chain: `grant --like` into a database in
+            // A batch may start the chain: `chain invite --like` into a database in
             // none (da-7bjai).
             let starts = records[0]["type"] == "genesis";
             let chain = db.sync_chain()?;

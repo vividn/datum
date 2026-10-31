@@ -32,92 +32,6 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 show: Show::Default,
             }
         }
-        "grant" => {
-            let mut o = opts(
-                &mut rest,
-                &[
-                    "as",
-                    "expires",
-                    "admin-key",
-                    "ticket",
-                    "invite",
-                    "like",
-                    "devices",
-                ],
-                &["defer"],
-                0..=2,
-            )?;
-            let expires_secs = o.expires_or(7 * 24 * 3600)?;
-            let admin_key = o.get("admin-key");
-            // `--like <DB>` (da-pvax0): every device of DB, as it is there.
-            if let Some(like) = o.get("like") {
-                if !o.positional.is_empty() {
-                    return Err(ParseError::InvalidArg(
-                        "`sync grant` takes a device and a role, or --like <DB>, not both".into(),
-                    ));
-                }
-                if let Some(f) = ["as", "ticket", "invite"]
-                    .into_iter()
-                    .find(|f| o.get(f).is_some())
-                {
-                    return Err(ParseError::InvalidArg(format!("--like takes no --{f}")));
-                }
-                let devices = o.get("devices").map(|d| {
-                    let d = d.split(',').map(str::trim).filter(|d| !d.is_empty());
-                    d.map(Into::into).collect::<Vec<String>>()
-                });
-                if devices.as_ref().is_some_and(Vec::is_empty) {
-                    return Err(ParseError::InvalidArg("--devices names no device".into()));
-                }
-                SyncCommand::GrantLike {
-                    like,
-                    devices,
-                    expires_secs,
-                    admin_key,
-                    defer: o.on("defer"),
-                }
-            } else {
-                if o.positional.len() != 2 {
-                    return Err(ParseError::InvalidArg(
-                        "`sync grant` takes a device and a role, or --like <DB>".into(),
-                    ));
-                }
-                if let Some(f) = ["devices", "defer"]
-                    .into_iter()
-                    .find(|f| o.get(f).is_some() || o.on(f))
-                {
-                    return Err(ParseError::InvalidArg(format!(
-                        "--{f} goes with --like <DB>"
-                    )));
-                }
-                let reader = match o.positional.pop().as_deref() {
-                    Some("reader") => true,
-                    Some("member") => false,
-                    r => {
-                        return Err(ParseError::InvalidArg(format!(
-                            "a grant is of member or reader, not {}",
-                            r.unwrap_or_default()
-                        )))
-                    }
-                };
-                SyncCommand::Grant {
-                    device: o.positional.remove(0),
-                    reader,
-                    expires_secs,
-                    name: o.get("as"),
-                    admin_key,
-                    ticket: match (o.get("ticket"), o.get("invite")) {
-                        (Some(t), Some(i)) => Some((t, i)),
-                        (None, None) => None,
-                        _ => {
-                            return Err(ParseError::InvalidArg(
-                                "--ticket and --invite go together".into(),
-                            ))
-                        }
-                    },
-                }
-            }
-        }
         "resume" => SyncCommand::Resume,
         "diff" => SyncCommand::Diff {
             who: opts(&mut rest, &[], &[], 1..=1)?.positional.remove(0),
@@ -243,7 +157,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             return Err(unknown(
                 "sync",
                 other,
-                "status|grid|grant|diff|refold|chain|admin|daemon|pause|resume|help",
+                "status|grid|diff|refold|chain|admin|daemon|pause|resume|help",
             ))
         }
     };
@@ -262,8 +176,73 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
     const SET: &str = "invite|join|leave|list|rename|expel|unjoin|wipe|purge|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
-            let values = ["expires", "admin-key", "fields", "kit", "label"];
-            let o = opts(rest, &values, &["qr", "reader"], 0..=0)?;
+            let values = [
+                "expires",
+                "admin-key",
+                "fields",
+                "kit",
+                "label",
+                "as",
+                "like",
+                "devices",
+                "ticket",
+                "invite",
+            ];
+            let mut o = opts(rest, &values, &["qr", "reader", "defer"], 0..=1)?;
+            let (device, like) = (o.positional.pop(), o.get("like"));
+            if device.is_some() && like.is_some() {
+                return Err(ParseError::InvalidArg(
+                    "`sync chain invite` takes a device or --like <DB>, not both".into(),
+                ));
+            }
+            if like.is_none() {
+                refuse(&o, &["devices", "defer"], "goes with --like <DB>")?;
+            }
+            if device.is_none() {
+                refuse(&o, &["as", "ticket", "invite"], "goes with a device")?;
+            }
+            if device.is_some() || like.is_some() {
+                let why = "goes with a bare `sync chain invite`, which prints a link";
+                refuse(&o, &["qr", "label", "fields", "kit"], why)?;
+            }
+            // The role and the expiry: a device may be off for days.
+            let week = 7 * 24 * 3600;
+            if let Some(like) = like {
+                let why = "does not go with --like <DB>: each device takes the role it has there";
+                refuse(&o, &["reader"], why)?;
+                let devices = o.get("devices").map(|d| {
+                    let d = d.split(',').map(str::trim).filter(|d| !d.is_empty());
+                    d.map(Into::into).collect::<Vec<String>>()
+                });
+                if devices.as_ref().is_some_and(Vec::is_empty) {
+                    return Err(ParseError::InvalidArg("--devices names no device".into()));
+                }
+                return Ok(SyncCommand::GrantLike {
+                    like,
+                    devices,
+                    expires_secs: o.expires_or(week)?,
+                    admin_key: o.get("admin-key"),
+                    defer: o.on("defer"),
+                });
+            }
+            if let Some(device) = device {
+                return Ok(SyncCommand::Grant {
+                    device,
+                    reader: o.on("reader"),
+                    expires_secs: o.expires_or(week)?,
+                    name: o.get("as"),
+                    admin_key: o.get("admin-key"),
+                    ticket: match (o.get("ticket"), o.get("invite")) {
+                        (Some(t), Some(i)) => Some((t, i)),
+                        (None, None) => None,
+                        _ => {
+                            return Err(ParseError::InvalidArg(
+                                "--ticket and --invite go together".into(),
+                            ))
+                        }
+                    },
+                });
+            }
             let filter = o.filter()?;
             SyncCommand::Invite {
                 reader: o.on("reader") || filter.is_some(),
@@ -472,6 +451,14 @@ fn parse_pipe(rest: &mut Rest) -> Result<SyncCommand> {
         Some(other) => return Err(unknown("sync pipe", other, SET)),
         None => return Err(missing("sync pipe", SET)),
     })
+}
+
+/// Refused when any of `flags` is given: `--<flag> <why>`.
+fn refuse(o: &Opts, flags: &[&str], why: &str) -> Result<()> {
+    match flags.iter().find(|f| o.get(f).is_some() || o.on(f)) {
+        Some(f) => Err(ParseError::InvalidArg(format!("--{f} {why}"))),
+        None => Ok(()),
+    }
 }
 
 fn unknown(group: &str, word: &str, set: &str) -> ParseError {
@@ -993,12 +980,14 @@ mod tests {
         assert!(parse_sync_cmd(&["status", "extra"]).is_err());
     }
 
-    /// `grant` (da-n0uj1.4): a device and a role, a week's expiry unless
-    /// `--expires` says otherwise.
+    /// `chain invite <DEVICE>` (da-n0uj1.4, da-p76eu): a member unless
+    /// `--reader`, a week's expiry unless told, and datum.day's ticket
+    /// comes with its invite or not at all.
     #[test]
-    fn grant_takes_a_device_and_a_role() {
+    fn invite_takes_a_device() {
+        let invite = |rest: &[&'static str]| [&["chain", "invite"][..], rest].concat();
         assert_eq!(
-            p(&["grant", "9ae6", "reader", "--as", "work"]),
+            p(&invite(&["9ae6", "--reader", "--as", "work"])),
             SyncCommand::Grant {
                 device: "9ae6".into(),
                 reader: true,
@@ -1009,7 +998,7 @@ mod tests {
             }
         );
         assert_eq!(
-            p(&["grant", "9ae6", "member", "--expires", "1h"]),
+            p(&invite(&["9ae6", "--expires", "1h"])),
             SyncCommand::Grant {
                 device: "9ae6".into(),
                 reader: false,
@@ -1019,9 +1008,8 @@ mod tests {
                 ticket: None,
             }
         );
-        // datum.day's (da-n0uj1.7): the ticket its worker made, for the invite named.
         assert_eq!(
-            p(&["grant", "9ae6", "member", "--ticket", "T", "--invite", "01j"]),
+            p(&invite(&["9ae6", "--ticket", "T", "--invite", "01j"])),
             SyncCommand::Grant {
                 device: "9ae6".into(),
                 reader: false,
@@ -1031,17 +1019,16 @@ mod tests {
                 ticket: Some(("T".into(), "01j".into())),
             }
         );
-        assert!(parse_sync_cmd(&["grant", "9ae6", "member", "--ticket", "T"]).is_err());
-        assert!(parse_sync_cmd(&["grant", "9ae6"]).is_err());
-        assert!(parse_sync_cmd(&["grant", "9ae6", "admin"]).is_err());
+        assert!(parse_sync_cmd(&invite(&["9ae6", "--ticket", "T"])).is_err());
+        assert!(parse_sync_cmd(&invite(&["9ae6", "tom"])).is_err());
     }
 
-    /// `grant --like` (da-n0uj1.5, da-pvax0): a database, every device or
-    /// those `--devices` names, a week's expiry as a grant's.
+    /// `chain invite --like` (da-n0uj1.5, da-pvax0, da-p76eu): a database,
+    /// every device or those `--devices` names, a week's expiry as a device's.
     #[test]
-    fn grant_like_takes_a_database_and_devices() {
+    fn invite_like_takes_a_database_and_devices() {
         assert_eq!(
-            p(&["grant", "--like", "home"]),
+            p(&["chain", "invite", "--like", "home"]),
             SyncCommand::GrantLike {
                 like: "home".into(),
                 devices: None,
@@ -1052,33 +1039,97 @@ mod tests {
         );
         assert_eq!(
             p(&[
-                "grant",
-                "--like=home",
+                "chain",
+                "invite",
+                "--like",
+                "home",
                 "--devices",
                 "9ae6, tom",
-                "--admin-key",
-                "k",
-                "--defer"
+                "--expires",
+                "1h",
+                "--defer",
             ]),
             SyncCommand::GrantLike {
                 like: "home".into(),
                 devices: Some(vec!["9ae6".into(), "tom".into()]),
-                expires_secs: 7 * 24 * 3600,
-                admin_key: Some("k".into()),
+                expires_secs: 3600,
+                admin_key: None,
                 defer: true,
             }
         );
-        let said = |argv: &[&str]| parse_sync_cmd(argv).unwrap_err().to_string();
-        assert!(said(&["grant"]).contains("a device and a role, or --like <DB>"));
-        assert!(said(&["grant", "9ae6", "member", "--like", "home"]).contains("not both"));
-        assert!(said(&["grant", "9ae6", "--like", "home"]).contains("not both"));
-        assert!(said(&["grant", "--like", "home", "--as", "x"]).contains("--like takes no --as"));
-        assert!(said(&["grant", "9ae6", "member", "--devices", "a"]).contains("--devices goes"));
-        assert!(parse_sync_cmd(&["grant", "--like", "home", "--devices", ","]).is_err());
-        // The old spelling is cut, not aliased (da-pvax0).
-        assert!(
-            said(&["chain", "copy", "--from", "home"]).contains("unknown sync chain subcommand")
+        assert!(parse_sync_cmd(&["chain", "invite", "--like", "home", "--devices", ","]).is_err());
+    }
+
+    /// A bare invite stays as it was, and takes none of the other forms' flags.
+    #[test]
+    fn a_bare_invite_keeps_ten_minutes_and_its_own_flags() {
+        assert_eq!(
+            p(&["chain", "invite", "--qr", "--label", "x"]),
+            SyncCommand::Invite {
+                reader: false,
+                filter: None,
+                qr: true,
+                expires_secs: 600,
+                label: Some("x".into()),
+                admin_key: None,
+            }
         );
+    }
+
+    /// Every combination the three forms refuse, each naming the flag.
+    #[test]
+    fn invite_refuses_what_its_form_does_not_take() {
+        let refused: &[(&[&str], &str)] = &[
+            (&["9ae6", "--like", "home"], "not both"),
+            (&["--as", "x"], "--as goes with a device"),
+            (
+                &["--ticket", "T", "--invite", "i"],
+                "--ticket goes with a device",
+            ),
+            (&["--invite", "i"], "--invite goes with a device"),
+            (&["--devices", "a"], "--devices goes with --like"),
+            (&["--defer"], "--defer goes with --like"),
+            (&["9ae6", "--devices", "a"], "--devices goes with --like"),
+            (&["9ae6", "--defer"], "--defer goes with --like"),
+            (&["9ae6", "--qr"], "--qr goes with a bare"),
+            (&["9ae6", "--label", "x"], "--label goes with a bare"),
+            (&["9ae6", "--fields", "a"], "--fields goes with a bare"),
+            (&["9ae6", "--kit", "k"], "--kit goes with a bare"),
+            (&["--like", "h", "--as", "x"], "--as goes with a device"),
+            (
+                &["--like", "h", "--ticket", "T"],
+                "--ticket goes with a device",
+            ),
+            (&["--like", "h", "--qr"], "--qr goes with a bare"),
+            (&["--like", "h", "--label", "x"], "--label goes with a bare"),
+            (
+                &["--like", "h", "--fields", "a"],
+                "--fields goes with a bare",
+            ),
+            (&["--like", "h", "--kit", "k"], "--kit goes with a bare"),
+            (
+                &["--like", "h", "--reader"],
+                "--reader does not go with --like",
+            ),
+        ];
+        for (rest, why) in refused {
+            let args = [&["chain", "invite"][..], rest].concat();
+            let Err(ParseError::InvalidArg(said)) = parse_sync_cmd(&args) else {
+                panic!("{rest:?} is refused");
+            };
+            assert!(said.contains(why), "{rest:?}: {said}");
+        }
+    }
+
+    /// `sync grant` went into `chain invite`, with no alias (da-p76eu).
+    #[test]
+    fn grant_is_no_subcommand() {
+        for args in [&["grant", "9ae6"][..], &["grant", "--like", "home"][..]] {
+            let Err(ParseError::InvalidArg(said)) = parse_sync_cmd(args) else {
+                panic!("{args:?} is refused");
+            };
+            assert!(said.contains("unknown sync subcommand: 'grant'"), "{said}");
+        }
     }
 
     /// Every spelling the regrouping retired is gone (da-aam46), as are

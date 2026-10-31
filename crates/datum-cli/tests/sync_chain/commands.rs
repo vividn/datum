@@ -92,10 +92,7 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     }
     assert_eq!(
         top,
-        [
-            "status", "grid", "grant", "pause", "resume", "diff", "refold", "chain", "admin",
-            "daemon"
-        ]
+        ["status", "grid", "pause", "resume", "diff", "refold", "chain", "admin", "daemon"]
     );
     assert_eq!(
         complete(&["chain"]),
@@ -106,9 +103,12 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     );
     // `revoke` and `revert` were renamed `expel` and `unjoin`, and cut
     // (da-n0uj1.1): each is unknown, naming the verbs there are.
-    // `chain copy` is `grant --like`, and cut too (da-pvax0).
+    // `chain copy` is `chain invite --like`, and cut too (da-pvax0).
     let copy = a.fails(&["sync", "chain", "copy", "--from", "x"], "");
     assert!(copy.contains("unknown sync chain subcommand"), "{copy}");
+    // `grant` is `chain invite <DEVICE>` or `--like`, and cut too (da-p76eu).
+    let grant = a.fails(&["sync", "grant", "x", "member"], "");
+    assert!(grant.contains("unknown sync subcommand"), "{grant}");
     // `connect` is `join`, and cut too (da-ka4iw).
     let connect = a.fails(&["sync", "chain", "connect", "x"], "");
     assert!(

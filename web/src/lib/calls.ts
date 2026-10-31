@@ -160,7 +160,7 @@ export function gridArgv(): string[] {
 
 /** `device` invited to this chain, the invite's `ticket` (the sync worker's) sealed to it in a chain both share (da-n0uj1.7). */
 export function grantArgv(device: string, role: 'member' | 'reader', ticket: string, invite: string, name?: string): string[] {
-	return ['sync', 'grant', device, role, '--ticket', ticket, '--invite', invite, ...(name ? ['--as', name] : [])];
+	return ['sync', 'chain', 'invite', device, ...(role === 'reader' ? ['--reader'] : []), '--ticket', ticket, '--invite', invite, ...(name ? ['--as', name] : [])];
 }
 
 /** A member's role changed. */
@@ -175,7 +175,7 @@ export function wipeArgv(endpoint: string): string[] {
 
 /** This chain takes `like`'s devices: it starts one with `like`'s admins if in none, and leaves each grant to the page (da-n0uj1.7, da-pvax0). */
 export function grantLikeArgv(like: string): string[] {
-	return ['sync', 'grant', '--like', like, '--defer'];
+	return ['sync', 'chain', 'invite', '--like', like, '--defer'];
 }
 
 export function endpointKeyArgv(): string[] {

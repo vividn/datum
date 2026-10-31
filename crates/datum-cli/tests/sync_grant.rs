@@ -1,4 +1,4 @@
-//! `datum sync grant` (da-n0uj1.4): a device in one chain with the granter
+//! `datum sync chain invite <DEVICE>` (da-n0uj1.4, da-p76eu): a device in one chain with the granter
 //! joins another with no ticket carried by hand, its invite sealed to it in a
 //! record of the chain the two share. Installs of the real binary, each with
 //! databases by name in its own `DATUM_HOME`, each database on a localhost
@@ -229,7 +229,7 @@ fn a_grant_joins_a_device_that_shares_a_chain_online_or_later() {
 
     // Online: its run takes the grant up as it lands, and joins.
     let tom = t.run("home");
-    let said = g.ok("work", &["sync", "grant", &t.device()[..12], "member"]);
+    let said = g.ok("work", &["sync", "chain", "invite", &t.device()[..12]]);
     assert!(said.contains("joins as «work»"), "{said}");
     tom.says("joined «work»");
     eventually("tom's work holding gina's coffee", || {
@@ -242,7 +242,15 @@ fn a_grant_joins_a_device_that_shares_a_chain_online_or_later() {
     // Offline when granted: the grant waits in the chain they share.
     let said = g.ok(
         "work",
-        &["sync", "grant", &o.device(), "reader", "--as", "gina"],
+        &[
+            "sync",
+            "chain",
+            "invite",
+            &o.device(),
+            "--reader",
+            "--as",
+            "gina",
+        ],
     );
     assert!(said.contains("joins as «gina»"), "{said}");
     assert!(o.query("gina", "SELECT 'x'").is_none());
@@ -282,7 +290,7 @@ fn a_grant_joins_a_device_that_shares_a_chain_online_or_later() {
 
     // Expelled, it is never told, and still holds the chain: granted again,
     // it is admitted again, its copy the same.
-    g.ok("work", &["sync", "grant", &t.device(), "member"]);
+    g.ok("work", &["sync", "chain", "invite", &t.device()]);
     tom.says("joined «work»");
     eventually("tom a member of work again", || {
         cell(&g, &chain, &t.device()).as_deref() == Some("member")
@@ -290,7 +298,7 @@ fn a_grant_joins_a_device_that_shares_a_chain_online_or_later() {
     assert!(t.query("work-2", "SELECT 'x'").is_none());
 }
 
-/// `grant --like` makes every ticket before any device has joined, so each
+/// `chain invite --like` makes every ticket before any device has joined, so each
 /// names the granter alone (da-kvp9q). A device that joined says where it
 /// serves, through the carrier, and one that comes on with the granter off
 /// joins from it, and holds the data.
@@ -300,7 +308,7 @@ fn a_grant_joins_through_another_grantee_while_the_granter_is_off() {
     let (t, o) = (Install::new("tom"), Install::new("olga"));
     let home = home_chain(&g, &[&t, &o]);
     g.ok("work", &["occur", "coffee"]);
-    g.ok("work", &["sync", "grant", "--like", "home"]);
+    g.ok("work", &["sync", "chain", "invite", "--like", "home"]);
     let work = g.run("work");
 
     let tom = t.run("home");
@@ -343,7 +351,7 @@ fn a_daemon_says_where_it_serves_a_granted_database() {
     let t = Install::new("tom");
     let _home = home_chain(&g, &[&t]);
     g.ok("work", &["occur", "coffee"]);
-    g.ok("work", &["sync", "grant", "--like", "home"]);
+    g.ok("work", &["sync", "chain", "invite", "--like", "home"]);
     let _work = g.run("work");
 
     let tom = t.run("home");
@@ -376,7 +384,7 @@ fn a_grant_joins_though_another_members_session_failed() {
     let _rita = r.run("home");
     r.ok("home", &["sync", "pause"]);
 
-    g.ok("work", &["sync", "grant", &t.device(), "member"]);
+    g.ok("work", &["sync", "chain", "invite", &t.device()]);
     let out = t.cmd("home", &["sync"]).output().unwrap();
     let (said, err) = (
         String::from_utf8_lossy(&out.stdout),
@@ -403,7 +411,7 @@ fn a_grant_never_takes_a_database_of_its_name_and_an_expired_one_is_granted_agai
 
     g.ok(
         "work",
-        &["sync", "grant", &t.device(), "member", "--expires", "1s"],
+        &["sync", "chain", "invite", &t.device(), "--expires", "1s"],
     );
     std::thread::sleep(Duration::from_millis(1500));
     let synced = t.ok("home", &["sync"]);
@@ -413,13 +421,52 @@ fn a_grant_never_takes_a_database_of_its_name_and_an_expired_one_is_granted_agai
     );
     assert!(t.query("work-2", "SELECT 'x'").is_none());
 
-    g.ok("work", &["sync", "grant", &t.device(), "member"]);
+    g.ok("work", &["sync", "chain", "invite", &t.device()]);
     let synced = t.ok("home", &["sync"]);
     assert!(synced.contains("joined «work-2»"), "{synced}");
     assert!(t.has("work-2", "coffee") && !t.has("work-2", "tea"));
     assert!(t.has("work", "tea") && !t.has("work", "coffee"));
     let own = t.json("work", &["sync", "status", "--json"]);
     assert!(own["chain"].is_null(), "{own}");
+}
+
+/// A name that is no device is an error, and writes and prints no invite. A
+/// device known but sharing no chain this copy can carry it in says to carry
+/// a link instead: here the expelled tom, the one chain they shared being
+/// the one it would join (da-p76eu).
+#[test]
+fn an_unknown_device_or_one_sharing_no_chain_is_refused_with_no_invite() {
+    let g = Install::new("gina");
+    let t = Install::new("tom");
+    let _home = home_chain(&g, &[&t]);
+    let refused = |who: &str, why: &str| {
+        let out = g
+            .cmd("home", &["sync", "chain", "invite", who])
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success() && err.contains(why), "{err}");
+        assert!(String::from_utf8_lossy(&out.stdout).is_empty());
+    };
+    let held = records(&g, "home", "invite");
+    refused("no-such-device", "names no device");
+    let chain = g.json("home", &["sync", "status", "--json"])["chain"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let grid = |d: &str| {
+        let grid = g.json("home", &["sync", "grid", "--json"]);
+        let rows = grid["devices"].as_array().unwrap().clone();
+        let row = rows.into_iter().find(|r| r["device"] == d);
+        row.and_then(|r| r["cells"][&chain]["state"].as_str().map(String::from))
+    };
+    eventually("tom a member of home", || {
+        grid(&t.device()).as_deref() == Some("member")
+    });
+    g.ok("home", &["sync", "chain", "expel", &t.device()[..12]]);
+    refused(&t.device(), "a bare `datum sync chain invite`");
+    assert_eq!(records(&g, "home", "invite"), held);
+    assert_eq!(records(&g, "home", "grant"), 0);
 }
 
 /// The key file `name` in `i`'s directory, its path.
@@ -438,7 +485,7 @@ fn records(i: &Install, db: &str, kind: &str) -> usize {
     n.map_or(0, |n| n.parse().unwrap())
 }
 
-/// `grant --like` into a database in no chain (da-n0uj1.5): it starts one
+/// `chain invite --like` into a database in no chain (da-n0uj1.5): it starts one
 /// whose admins are the source's, signed by one of them, and grants each
 /// device the role it has there.
 #[test]
@@ -464,7 +511,15 @@ fn a_new_database_copies_its_sources_admins_and_each_devices_role() {
 
     let said = g.ok(
         "work",
-        &["sync", "grant", "--like", "home", "--admin-key", &admin],
+        &[
+            "sync",
+            "chain",
+            "invite",
+            "--like",
+            "home",
+            "--admin-key",
+            &admin,
+        ],
     );
     assert!(said.contains("started sync chain"), "{said}");
     // The same keys under the same labels, each added when its chain began.
@@ -497,7 +552,7 @@ fn a_new_database_copies_its_sources_admins_and_each_devices_role() {
     });
 }
 
-/// `grant --like` into a database in a chain of its own: only its admin
+/// `chain invite --like` into a database in a chain of its own: only its admin
 /// copies, `--devices` takes a subset, a device it holds is not granted
 /// again, and the chain is never a second one.
 #[test]
@@ -507,7 +562,7 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
     let _home = home_chain(&g, &[&t, &o]);
     let (home_key, work_key) = (key(&g, "home.key"), key(&g, "work.key"));
     let like = |i: &Install, db, more: &[&str]| {
-        let args = [&["sync", "grant", "--like", "home"][..], more].concat();
+        let args = [&["sync", "chain", "invite", "--like", "home"][..], more].concat();
         i.cmd(db, &args).output().unwrap()
     };
     let refused = |out: std::process::Output, why: &str| {
@@ -533,7 +588,7 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
     );
     o.ok("home", &["sync"]);
     // It carries no grant in home: refused before its database is in a chain.
-    refused(like(&o, "notes", &[]), "carries no grant");
+    refused(like(&o, "notes", &[]), "carries no invite");
     assert_eq!(records(&o, "notes", "genesis"), 0);
 
     g.ok("work", &["occur", "coffee"]);
@@ -566,7 +621,8 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
         "work",
         &[
             "sync",
-            "grant",
+            "chain",
+            "invite",
             "--like",
             "home",
             "--devices",
@@ -590,7 +646,15 @@ fn an_existing_chain_takes_the_devices_it_lacks_from_its_admin_alone() {
     eventually("tom a member of work", || {
         cell(&g, &chain, &t.device()).as_deref() == Some("member")
     });
-    let all = ["sync", "grant", "--like", "home", "--admin-key", &work_key];
+    let all = [
+        "sync",
+        "chain",
+        "invite",
+        "--like",
+        "home",
+        "--admin-key",
+        &work_key,
+    ];
     let said = g.ok("work", &all);
     assert!(said.contains("member here already"), "{said}");
     assert!(said.contains("a reader of some of home's fields"), "{said}");
@@ -644,7 +708,7 @@ fn batch_link(texts: &[String]) -> String {
     format!("https://datum.day/sync/approve#{fragment}")
 }
 
-/// `grant --like` from a passkey-locked chain (da-7bjai): the genesis and an
+/// `chain invite --like` from a passkey-locked chain (da-7bjai): the genesis and an
 /// invite per device are approved at once, one link and one code, and all
 /// three devices join. The code over that batch approves no other: a batch
 /// with one invite altered is refused, nothing written.
@@ -665,7 +729,7 @@ fn a_passkey_approves_a_grant_like_of_three_devices_once() {
     g.ok("work", &["occur", "coffee"]);
 
     let mut copying = g
-        .cmd("work", &["sync", "grant", "--like", "home"])
+        .cmd("work", &["sync", "chain", "invite", "--like", "home"])
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
@@ -777,26 +841,19 @@ fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_grant_like_leaves_its_gr
         )
     };
     let tom = &t.device()[..12];
-    let grant = |role, ticket: &str| {
-        g.cmd(
-            "work",
-            &[
-                "sync", "grant", tom, role, "--ticket", ticket, "--invite", id,
-            ],
-        )
-        .output()
-        .unwrap()
+    let grant = |role: &[&str], ticket: &str| {
+        let form = [
+            "sync", "chain", "invite", tom, "--ticket", ticket, "--invite", id,
+        ];
+        g.cmd("work", &[&form[..], role].concat()).output().unwrap()
     };
     for (out, why) in [
+        (grant(&[], &ticket("not-its-secret")), "no ticket of invite"),
         (
-            grant("member", &ticket("not-its-secret")),
-            "no ticket of invite",
-        ),
-        (
-            grant("reader", &ticket(secret)),
+            grant(&["--reader"], &ticket(secret)),
             "a member's, not a reader's",
         ),
-        (grant("member", "not a ticket"), "--ticket is not a ticket"),
+        (grant(&[], "not a ticket"), "--ticket is not a ticket"),
     ] {
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success() && err.contains(why), "{err}");
@@ -804,7 +861,7 @@ fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_grant_like_leaves_its_gr
     assert_eq!(records(&g, "home", "grant"), 0);
 
     let _work = g.run("work");
-    let out = grant("member", &ticket(secret));
+    let out = grant(&[], &ticket(secret));
     assert!(
         out.status.success(),
         "{}",
@@ -815,7 +872,10 @@ fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_grant_like_leaves_its_gr
     assert!(t.has("work", "coffee"));
 
     let out = g
-        .cmd("notes", &["sync", "grant", "--like", "home", "--defer"])
+        .cmd(
+            "notes",
+            &["sync", "chain", "invite", "--like", "home", "--defer"],
+        )
         .output()
         .unwrap();
     assert!(

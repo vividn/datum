@@ -771,8 +771,10 @@ through the hidden `sync pipe records` and `sync handshake --records`.
 
 ### Grants: a device joins with no ticket carried
 
-`datum --db X sync grant <DEVICE> member|reader [--as <NAME>]` (da-n0uj1.4)
-writes an invite in X's chain, as `chain invite` does, and its join link in a
+`datum --db X sync chain invite <DEVICE> [--reader] [--as <NAME>]` (da-n0uj1.4;
+`sync grant` until da-p76eu, no alias) returns at once where a bare `chain
+invite` serves until redeemed: it writes an invite in X's chain, as a bare one
+does, and its join link in a
 `grant {to, eph, sealed}` record of another chain this install shares with the
 device (the carrier): sealed to the device's key (X25519 of the Ed25519 keys,
 AES-256-GCM, `chain::seal_grant`), so only it opens it, and relayed by every
@@ -785,7 +787,7 @@ to it that no live copy of its own came into that chain by (its admission's
 again), and runs `chain join` in a
 process of its own, the link on stdin, into `--as` or the granter's database
 name; where that name holds data or another chain, `<name>-2` and on, never
-touching it. An expired grant is said and joins nothing: grant again. `expel`
+touching it. An expired grant is said and joins nothing: invite again. `expel`
 and `unjoin` take a member's device key prefix too.
 A ticket lists the members its maker knew, and `--like` makes each before any
 device has joined, so it names the granter alone. So a member admitted by a
@@ -796,14 +798,15 @@ of the carrier reads it, and a device redeeming a grant of that chain dials
 those after the ticket's: it joins with the granter off (da-kvp9q). A carrier's
 own endpoints cannot admit it: each database has its own key.
 datum.day's sync widget draws `sync grid` with a dropdown per cell and
-«grant like…» per column (da-n0uj1.7); its CLI makes no ticket, so there a
+«invite like…» per column (da-n0uj1.7); its CLI makes no ticket, so there a
 grant seals the one the sync worker made for an invite `sync new-invite`
 wrote (hidden `--ticket`, `--invite`, refused unless the ticket's secret is
-that invite's), and `grant --like --defer` makes none, printing those
+that invite's), and `chain invite --like --defer` makes none, printing those
 left for the page to make.
 
-`datum --db X sync grant --like SRC [--devices <D>,…]` (da-n0uj1.5, da-pvax0;
-`chain copy --from` until it was cut, no alias) is a
+`datum --db X sync chain invite --like SRC [--devices <D>,…]` (da-n0uj1.5,
+da-pvax0; `chain copy --from`, then `sync grant --like`, until each was cut, no
+alias) is a
 grant per device live in SRC's chain (or each `--devices` names), with the role
 it has there; a filtered reader is said and left, its fields being SRC's. X in
 no chain first starts one whose `genesis` takes SRC's admins, signed by one of
@@ -821,8 +824,8 @@ link's records, a genesis first into a database in no chain.
 
 The tree: `sync`, `status`, `grid` (every device against every chain this
 install's databases are in, by device key and chain id, read only, da-n0uj1.3),
-`grant <DEVICE> member|reader [--as <NAME>] | --like <DB>` (below), `pause | resume`, `diff <WHO>`, `refold`, `chain
-invite | join | leave | list | rename | expel | unjoin | wipe | ack | rekey`,
+`pause | resume`, `diff <WHO>`, `refold`, `chain
+invite [<DEVICE> | --like <DB>]` (below) `| join | leave | list | rename | expel | unjoin | wipe | ack | rekey`,
 `admin list | add | remove`, `daemon install | uninstall | status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync
 run` for every chained db `known_dbs` lists; a copy's first `chain invite` /

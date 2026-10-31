@@ -19,12 +19,12 @@
 
 	Under it, the grid (da-n0uj1.7): every device this install's databases
 	know of against every database, each cell its standing there as `sync
-	grid` has it and a dropdown of what may be done to it — a role (a grant,
+	grid` has it and a dropdown of what may be done to it — a role (an invite,
 	sealed to the device in a chain both share, or a role change), expel,
 	unjoin, wipe, each of the last three confirming in a dialog that says
-	what happens to whose data. A column's «grant like…» gives its database
-	another's devices (`sync grant --like`), starting its chain with that one's
-	admins when it is in none. Only the CLI's commands: the grant's ticket is
+	what happens to whose data. A column's «invite like…» gives its database
+	another's devices (`sync chain invite --like`), starting its chain with that one's
+	admins when it is in none. Only the CLI's commands: the invite's ticket is
 	the sync worker's, as [Add device]'s is.
 
 	Bottom, every act together: [Turn on sync] alone for a database in no
@@ -370,9 +370,9 @@
 
 	/**
 	 * `device` invited to `d` as `role`, the invite's ticket made here as [Add device]'s is: what the CLI says of it.
-	 * Each chain the device is live in here is synced, so the grant reaches it now if it is online: the
+	 * Each chain the device is live in here is synced, so the invite reaches it now if it is online: the
 	 * CLI picks one of them as the carrier (one this copy writes to) and does not say which, so all are
-	 * pushed, and one that fails is a device away, which the grant waits for in the chain.
+	 * pushed, and one that fails is a device away, which the invite waits for in the chain.
 	 */
 	async function granting(d: string, device: string, role: 'member' | 'reader', name?: string, made?: Invite): Promise<string> {
 		waiting = 'Making the invite…';
@@ -389,7 +389,7 @@
 
 	type GridRow = Grid['devices'][number];
 
-	/** A cell's dropdown chose `what`: a role is a grant, or a role change for a live member; the rest confirm first. */
+	/** A cell's dropdown chose `what`: a role is an invite, or a role change for a live member; the rest confirm first. */
 	function cellAct(row: GridRow, col: { chain: string | null; db: string }, what: string): void {
 		const cell = col.chain ? row.cells[col.chain] : null;
 		if (what === 'expel' && cell) return void expel(row.label, cell.endpoint, col.db);
@@ -399,20 +399,20 @@
 		void doing(async () => {
 			if (cell && (cell.state === 'member' || cell.state === 'reader')) return void (said = ok(await syncAct(col.db, roleArgv(cell.endpoint, role))).stdout.trim());
 			if (!row.device) return;
-			const name = await ask(`Grant ${row.label} ${role === 'reader' ? 'read-only access to' : 'membership of'} ${col.db}. The name it takes on that device:`, 'grant', col.db);
+			const name = await ask(`Invite ${row.label} to ${col.db} as a ${role === 'reader' ? 'reader' : 'member'}. The name it takes on that device:`, 'invite', col.db);
 			if (name) said = await granting(col.db, row.device, role, name === col.db ? undefined : name);
 		});
 	}
 
-	/** «grant like…»: `col` takes another database's devices, each with its role there, the grants left to this page: one approval for all their invites (da-7bjai). */
+	/** «invite like…»: `col` takes another database's devices, each with its role there, the invites left to this page: one approval for all their invites (da-7bjai). */
 	const grantLike = (col: { chain: string | null; db: string }) =>
 		doing(async () => {
 			const sources = columns.filter((c) => c.chain && c.db !== col.db).map((c) => c.db);
 			const which = col.chain ? `Each of its devices ${col.db} lacks` : `${col.db} starts a sync chain with the same admins, and each of its devices`;
-			const from = await choose(`Grant ${col.db} the devices of which database? ${which} is granted the role it has there, and joins ${col.db} when it next syncs.`, sources);
+			const from = await choose(`Invite to ${col.db} the devices of which database? ${which} is invited with the role it has there, and joins ${col.db} when it next syncs.`, sources);
 			if (!from) return;
 			const r = ok(await syncAct(col.db, grantLikeArgv(from)));
-			// `grant --like --defer` prints the grants left as its one stdout line, saying all else on stderr.
+			// `chain invite --like --defer` prints the invites left as its one stdout line, saying all else on stderr.
 			const { grants } = JSON.parse(r.stdout.split('\n').find((l) => l.startsWith('{"grants"')) ?? '') as Deferred;
 			const lines = [r.stderr.trim()];
 			for (const g of grants) lines.push(await granting(col.db, g.device, g.role, undefined, g.invite));
@@ -647,7 +647,7 @@
 												class="command like"
 												use:act={'open'}
 												disabled={busy}
-												onclick={() => grantLike(col)}>grant like…</button
+												onclick={() => grantLike(col)}>invite like…</button
 											>{/if}</th
 									>
 								{/each}

@@ -1107,8 +1107,8 @@ pub enum SyncCommand {
     Grid {
         show: Show,
     },
-    /// `datum sync grant <DEVICE> <member|reader> [--as <NAME>] [--expires
-    /// <DUR>] [--admin-key <FILE>]` (da-n0uj1.4): an invite to this chain,
+    /// `datum sync chain invite <DEVICE> [--reader] [--as <NAME>] [--expires
+    /// <DUR>] [--admin-key <FILE>]` (da-n0uj1.4, da-p76eu): an invite to this chain,
     /// its ticket sealed to the device in a chain the two share already.
     /// `--as` is the database's name on that device, if not this one's.
     Grant {
@@ -1122,16 +1122,16 @@ pub enum SyncCommand {
         /// new-invite` wrote here, so no invite is made.
         ticket: Option<(String, String)>,
     },
-    /// `datum sync grant --like <DB> [--devices <D>,…] [--expires <DUR>]
-    /// [--admin-key <FILE>]` (da-n0uj1.5, da-pvax0): this database takes
-    /// `--like`'s devices, a grant each with the role it has there; in no
+    /// `datum sync chain invite --like <DB> [--devices <D>,…] [--expires <DUR>]
+    /// [--admin-key <FILE>]` (da-n0uj1.5, da-pvax0, da-p76eu): this database takes
+    /// `--like`'s devices, an invite each with the role it has there; in no
     /// chain, it starts one whose admins are `--like`'s.
     GrantLike {
         like: String,
         devices: Option<Vec<String>>,
         expires_secs: u64,
         admin_key: Option<String>,
-        /// Hidden (da-n0uj1.7): make no grant, and print the grants left as
+        /// Hidden (da-n0uj1.7): seal no invite, and print those left as
         /// JSON, for datum.day to make each with a ticket of its own.
         defer: bool,
     },

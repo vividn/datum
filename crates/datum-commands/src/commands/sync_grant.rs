@@ -1,6 +1,7 @@
-//! `datum sync grant` (da-n0uj1.4): a device joins this database's chain
-//! with no ticket carried by hand. The granter writes an invite here, as
-//! `chain invite` does, and its join link, sealed to the device's key, in a
+//! `datum sync chain invite <DEVICE>` (da-n0uj1.4, da-p76eu): a device joins
+//! this database's chain with no ticket carried by hand. The granter writes an
+//! invite here, as a bare `chain invite` does, and its join link, sealed to the
+//! device's key, in a
 //! `grant` record of a chain the two share already: the CARRIER, whose
 //! members relay it like any record, so it waits there for a device that is
 //! offline. The device, syncing the carrier, opens it and redeems the link
@@ -68,7 +69,7 @@ fn device(columns: &[(String, PathBuf, Chain)], who: &str) -> Result<(String, St
     }
 }
 
-/// `datum --db X sync grant <DEVICE> member|reader [--as NAME]`. `given`:
+/// `datum --db X sync chain invite <DEVICE> [--reader] [--as NAME]`. `given`:
 /// the ticket made elsewhere for an invite already here, and that invite.
 pub fn grant(
     db: &Db,
@@ -82,7 +83,7 @@ pub fn grant(
     let columns = chains(db)?;
     let here = db.sync_chain()?;
     let Some((db_name, _, _)) = columns.first().filter(|(_, _, c)| c.id == here.id) else {
-        bail!("this copy is in no sync chain: `datum sync chain invite` starts one");
+        bail!("this copy is in no sync chain: a bare `datum sync chain invite` starts one");
     };
     if let Some(n) = name {
         ensure!(
@@ -120,8 +121,8 @@ pub fn grant(
     });
     let Some((via, carrier, copy)) = carrier else {
         bail!(
-            "{label} shares no sync chain where this install is a member (a reader sends no \
-             grant): `datum sync chain invite` makes a ticket to carry to it instead"
+            "{label} shares no sync chain where this install is a member (a reader carries no \
+             invite): a bare `datum sync chain invite` makes a link to carry to it instead"
         );
     };
     let role = if reader { "reader" } else { "member" };
@@ -139,7 +140,7 @@ pub fn grant(
             );
             ensure!(
                 !filtered,
-                "invite {id} is a filtered reader's: a grant is of all of this database"
+                "invite {id} is a filtered reader's: a device's is of all of this database"
             );
             (ticket.to_string(), until.to_string(), id.to_string())
         }
@@ -153,7 +154,7 @@ pub fn grant(
         #[cfg(not(feature = "net"))]
         None => {
             let _ = (expires, admin_key);
-            bail!("this build makes no ticket: datum.day's sync widget grants a device")
+            bail!("this build makes no ticket: datum.day's sync widget invites a device")
         }
     };
     let as_name = name.unwrap_or(db_name);
@@ -171,15 +172,15 @@ pub fn grant(
         true,
     )?;
     println!(
-        "granted {label} {role} of this database: the invite rides sealed to it in {via}'s sync \
+        "invited {label} as a {role} of this database: the invite rides sealed to it in {via}'s sync \
          chain, and {label} joins as «{as_name}» when it next syncs {via} there, until {}",
         datum_core::time::on_readers_clock(&expires_at, "%Y-%m-%d %H:%M")
     );
     Ok(())
 }
 
-/// `datum --db X sync grant --like SRC [--devices D,…]` (da-n0uj1.5, da-pvax0):
-/// X takes SRC's devices, a grant each with the role it has in SRC. X in no
+/// `datum --db X sync chain invite --like SRC [--devices D,…]` (da-n0uj1.5,
+/// da-pvax0, da-p76eu): X takes SRC's devices, a grant each with the role it has in SRC. X in no
 /// chain starts one whose admins are SRC's (vividn: «if db2 is really new,
 /// then can auto setup admin to be the same as db1»), signed by one of them;
 /// X in a chain takes grants for the devices it lacks, signed by its own
@@ -196,7 +197,7 @@ pub fn grant_like(
 ) -> Result<()> {
     ensure!(
         defer || cfg!(feature = "net"),
-        "this build makes no ticket: datum.day's sync widget grants a database's devices"
+        "this build makes no ticket: datum.day's sync widget invites a database's devices"
     );
     let say = |line: String| match defer {
         true => eprintln!("{line}"),
@@ -213,7 +214,7 @@ pub fn grant_like(
     let src = src_db.sync_chain()?;
     ensure!(
         src.exists() && src.dissolved().is_none(),
-        "{like} is in no sync chain: it has no devices to grant"
+        "{like} is in no sync chain: it has no devices to invite"
     );
     // A grant rides SRC's chain to its device: so before anything is
     // written, this install writes there.
@@ -222,7 +223,7 @@ pub fn grant_like(
         src.member(&src_me)
             .is_some_and(|m| live(m) && m.role() == Role::Member),
         "this install's {like} writes nothing to its sync chain (a reader, or expelled): \
-         it carries no grant to {like}'s devices"
+         it carries no invite to {like}'s devices"
     );
     let here = db.sync_chain()?;
     let starts = !here.exists() || here.dissolved().is_some();
@@ -234,7 +235,7 @@ pub fn grant_like(
         let me = here.member(&db.sync_endpoint_id()?);
         ensure!(
             me.is_some_and(|m| live(m) && m.role() == Role::Member),
-            "this copy writes nothing to its sync chain (a reader, or expelled): it grants no devices"
+            "this copy writes nothing to its sync chain (a reader, or expelled): it invites no devices"
         );
     }
     // Whose admin signs: this chain's, or the one a new chain takes its admins from.
@@ -246,7 +247,7 @@ pub fn grant_like(
         let key = chain::ed25519_admin_key(&super::sync::key_file(k, false)?);
         ensure!(
             signer.admins.iter().any(|a| a.key == key),
-            "{k} is no admin key of {whose}'s sync chain: only its admin grants devices into it"
+            "{k} is no admin key of {whose}'s sync chain: only its admin invites devices into it"
         );
     }
 
@@ -317,7 +318,7 @@ pub fn grant_like(
         } else if m.filter.is_some() {
             notes.push(format!(
                 "{label} is a reader of some of {like}'s fields, which are not this database's: \
-                 `datum sync grant {} reader` makes it a reader of all of it",
+                 `datum sync chain invite {} --reader` makes it a reader of all of it",
                 &d[..12.min(d.len())]
             ));
         } else {
@@ -371,7 +372,7 @@ pub fn grant_like(
     if unbound > 0 {
         say(format!(
             "{unbound} member(s) of {like} bound to no device key (an older datum's copy) \
-             are not granted: `datum sync chain invite` makes a ticket to carry to each"
+             are not invited: a bare `datum sync chain invite` makes a link to carry to each"
         ));
     }
     Ok(())
@@ -424,7 +425,7 @@ fn pending(db: &Db, say_expired: bool) -> Result<Vec<Granted>> {
                 continue;
             }
             eprintln!(
-                "⚠ {from}'s grant of «{}» expired before this device synced: ask it for another",
+                "⚠ {from}'s invite to «{}» expired before this device synced: ask it for another",
                 s("db")
             );
             continue;
@@ -450,7 +451,7 @@ fn pending(db: &Db, say_expired: bool) -> Result<Vec<Granted>> {
 fn free_name(want: &str, chain: &str) -> Result<String> {
     ensure!(
         !want.is_empty() && !config::looks_like_path(want),
-        "a grant names no database: {want:?}"
+        "an invite names no database: {want:?}"
     );
     for n in 1.. {
         let name = match n {
@@ -504,7 +505,7 @@ fn join(g: &Granted, quiet: bool) -> Result<String> {
     let out = child.wait_with_output()?;
     let said = String::from_utf8_lossy(&out.stderr).trim().to_string();
     ensure!(out.status.success(), "joining «{}» failed: {said}", g.name);
-    Ok(format!("joined «{}», granted by {}", g.name, g.from))
+    Ok(format!("joined «{}», invited by {}", g.name, g.from))
 }
 
 /// The chain records `db` holds: a grant's arrival moves it.
@@ -523,7 +524,7 @@ pub fn records(db: &Db) -> i64 {
 /// said, and tried again at the next sync: the sync itself did not fail.
 pub fn redeem(db: &Db, before: i64) -> Result<()> {
     for g in pending(db, records(db) != before)? {
-        println!("joining «{}»: {} granted it to this device", g.name, g.from);
+        println!("joining «{}»: {} invited this device", g.name, g.from);
         match join(&g, false) {
             Ok(said) => println!("{said}"),
             Err(e) => eprintln!("⚠ {e:#}; `datum sync` tries again"),
@@ -692,7 +693,7 @@ impl Watch {
         let grants = match pending(db, arrived) {
             Ok(g) if !g.is_empty() => g,
             Ok(_) => return,
-            Err(e) => return eprintln!("grants: {e:#}"),
+            Err(e) => return eprintln!("invites to this device: {e:#}"),
         };
         s.joining = true;
         let watch = self.0.clone();

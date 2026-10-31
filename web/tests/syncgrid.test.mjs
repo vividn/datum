@@ -1,7 +1,7 @@
 // The Sync widget's grid (da-n0uj1.7): every device against every database,
-// a dropdown per cell and «grant like…» per column, each act a CLI command —
-// `sync grant` with the sync worker's ticket, `sync chain expel | unjoin |
-// wipe | role`, `sync grant --like --defer` — and every expel, unjoin and wipe
+// a dropdown per cell and «invite like…» per column, each act a CLI command —
+// `sync chain invite` with the sync worker's ticket, `sync chain expel | unjoin |
+// wipe | role`, `sync chain invite --like --defer` — and every expel, unjoin and wipe
 // confirmed in a dialog saying what happens to whose data.
 //
 // A device in the grid is a native copy paired with the page's `datum` (so
@@ -94,7 +94,7 @@ async function gridWith(app, native, db = 'home') {
 }
 
 describe('the sync widget’s grid', () => {
-	test('a grant from a cell: the device joins the database when it next syncs, and its cell says member', async () => {
+	test('an invite from a cell: the device joins the database when it next syncs, and its cell says member', async () => {
 		const native = await nativeCopy(relay);
 		try {
 			await withWallClock(
@@ -111,11 +111,11 @@ describe('the sync widget’s grid', () => {
 					const asked = page.locator('dialog.ask');
 					assert.ok((await asked.innerText()).includes('work'));
 					assert.equal(await asked.locator('input').inputValue(), 'work');
-					await asked.getByRole('button', { name: 'grant' }).click();
+					await asked.getByRole('button', { name: 'invite' }).click();
 					const said = page.locator(`${WIDGET} .grid .said`);
 					await said.waitFor();
-					// Granted as a member, carried by datum's chain.
-					assert.match(await said.innerText(), /^granted\b.*\bmember\b.*\bdatum\b/);
+					// Invited as a member, carried by datum's chain.
+					assert.match(await said.innerText(), /^invited\b.*\bmember\b.*\bdatum\b/);
 
 					assert.match((await joins(native, 'work')).stdout, /joined «work»/);
 					// Its describe, binding the endpoint to its device, reaches the page on its next sync.
@@ -166,7 +166,7 @@ describe('the sync widget’s grid', () => {
 		}
 	});
 
-	test('«grant like…» starts a database in no chain with another’s admins, and grants it each of that one’s devices', async () => {
+	test('«invite like…» starts a database in no chain with another’s admins, and invites each of that one’s devices', async () => {
 		const native = await nativeCopy(relay);
 		try {
 			await withWallClock(
@@ -174,7 +174,7 @@ describe('the sync widget’s grid', () => {
 					const { page } = app;
 					await cli(app, ['--db', 'notes', 'occur', 'jot']);
 					const { device } = await gridWith(app, native);
-					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'grant like…' }).click();
+					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'invite like…' }).click();
 					const dialog = page.locator('dialog.confirm');
 					assert.ok((await dialog.innerText()).includes('notes'));
 					await dialog.getByRole('button', { name: 'datum' }).click();
@@ -185,7 +185,7 @@ describe('the sync widget’s grid', () => {
 					assert.ok(chain);
 					const lines = (await said.innerText()).split('\n');
 					assert.ok(lines[0].includes(chain), lines[0]);
-					assert.match(lines[1], /^granted\b.*\bmember\b/);
+					assert.match(lines[1], /^invited\b.*\bmember\b/);
 
 					assert.match((await joins(native, 'notes')).stdout, /joined «notes»/);
 					await syncs(native, 'notes');
@@ -198,7 +198,7 @@ describe('the sync widget’s grid', () => {
 		}
 	});
 
-	test('«grant like…» a passkey-locked chain asks the passkey once for the new chain and every invite (da-7bjai)', async () => {
+	test('«invite like…» a passkey-locked chain asks the passkey once for the new chain and every invite (da-7bjai)', async () => {
 		const native = await nativeCopy(relay);
 		try {
 			await withWallClock(
@@ -207,12 +207,12 @@ describe('the sync widget’s grid', () => {
 					await cli(app, ['--db', 'notes', 'occur', 'jot']);
 					const { device } = await gridWith(app, native, 'datum');
 					await cli(app, ['--db', 'datum', 'sync', 'admin', 'add', await softPasskey(page)]);
-					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'grant like…' }).click();
+					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'invite like…' }).click();
 					await page.locator('dialog.confirm').getByRole('button', { name: 'datum' }).click();
 					const said = page.locator(`${WIDGET} .grid .said`);
 					await said.waitFor();
 					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0, await page.locator(WIDGET).innerText());
-					assert.match(await said.innerText(), /\bgranted\b.*\bmember\b/);
+					assert.match(await said.innerText(), /\binvited\b.*\bmember\b/);
 					assert.equal(await page.evaluate(() => window.passkeyAsks), 1);
 					const admins = JSON.parse(await cli(app, ['--db', 'notes', 'sync', 'admin', 'list', '--json'])).admins;
 					assert.equal(admins.length, 1);
