@@ -690,6 +690,76 @@ mod follow {
         assert_eq!(coffees(&env).pop().unwrap().1, "Asia/Tokyo");
     }
 
+    /// The key is one more `-t` (da-87wvg), so it is read as `-t` is.
+    fn keyed(env: &Env, line: &[&str]) -> (String, String) {
+        env.ok(&[&["occur", "coffee"], line].concat());
+        coffees(env).pop().unwrap()
+    }
+
+    #[test]
+    fn an_occur_time_key_is_in_the_zone_held_at_its_instant() {
+        let env = trip();
+        let inside = keyed(&env, &["occur_time=2026-03-11T08:00"]);
+        assert_instant(&inside, "2026-03-11T08:00:00Z", LISBON);
+        let first = keyed(&env, &["occur_time=2026-03-10T08:00"]);
+        assert_instant(&first, "2026-03-10T08:00:00Z", LISBON);
+        let before = keyed(&env, &["occur_time=2026-03-10T07:30"]);
+        assert_instant(&before, "2026-03-10T06:30:00Z", BERLIN);
+        let past = keyed(&env, &["occur_time=2026-03-13T08:00"]);
+        assert_instant(&past, "2026-03-13T07:00:00Z", BERLIN);
+    }
+
+    #[test]
+    fn an_occur_time_key_counts_from_the_flags_and_z_and_its_offset_win() {
+        let env = trip();
+        let relative = keyed(&env, &["-d", "2026-03-11", "-t", "8", "occur_time=-30"]);
+        assert_instant(&relative, "2026-03-11T07:30:00Z", LISBON);
+        let named = keyed(&env, &["-z", "Asia/Tokyo", "occur_time=2026-03-11T09:00"]);
+        assert_instant(&named, "2026-03-11T00:00:00Z", "Asia/Tokyo");
+        let offset = keyed(&env, &["occur_time=2026-03-11T10:00:00+09:00"]);
+        assert_instant(&offset, "2026-03-11T01:00:00Z", "");
+    }
+
+    /// `-D` makes the key's whole day, midnight by the trip's clock.
+    #[test]
+    fn a_whole_day_key_is_that_stretchs_midnight() {
+        let env = trip();
+        let day = keyed(&env, &["-D", "occur_time=2026-03-11T08:00"]);
+        assert_instant(&day, "2026-03-11T00:00:00Z", LISBON);
+    }
+
+    /// The field claims nothing at the key's instant, whatever it holds now.
+    #[test]
+    fn before_the_first_stretch_a_key_takes_nothing_from_the_field() {
+        let env = trip();
+        let early = keyed(&env, &["occur_time=2026-01-11T08:00"]);
+        assert_instant(&early, "2026-01-11T07:00:00Z", BERLIN);
+        let env = Env::new();
+        env.ok(&["timezone", LISBON, "-t", "-100"]);
+        let early = keyed(&env, &["occur_time=2026-01-11T08:00"]);
+        assert_instant(&early, "2026-01-11T07:00:00Z", BERLIN);
+    }
+
+    /// Only an entry at about now asks: the key's time decides that, as `-t`'s.
+    #[test]
+    fn a_key_in_the_past_does_not_ask_and_one_at_now_does() {
+        let env = holding(BERLIN);
+        let past = page(
+            &env,
+            PARIS,
+            &["occur", "coffee", "occur_time=2026-01-11T08:00"],
+            "",
+        );
+        assert!(past.status.success(), "{past:?}");
+        assert_eq!(zones_logged(&env), [BERLIN]);
+        assert!(asked(&page(
+            &env,
+            PARIS,
+            &["occur", "coffee", "occur_time=-1"],
+            ""
+        )));
+    }
+
     #[test]
     fn a_device_in_another_zone_is_asked_and_yes_moves_the_field_and_the_entry() {
         let env = holding(BERLIN);

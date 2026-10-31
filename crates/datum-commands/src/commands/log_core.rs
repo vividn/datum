@@ -150,8 +150,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
     // da-mvt5i: an entry is in the zone the `timezone` field holds at its
     // instant; at about now a device in another asks to move the field.
-    if let Some(zone) = declared_zone(db, &args.time, now.utc)? {
-        args.time.timezone = Some(match following(db, &args, &zone, now.utc)? {
+    if let Some(zone) = declared_zone(db, &args, action, now.utc)? {
+        args.time.timezone = Some(match following(db, &args, action, &zone, now.utc)? {
             Some(device) => device,
             None => zone,
         });
@@ -2591,7 +2591,7 @@ fn check_no_time_flags(args: &LogArgs) -> Result<()> {
 
 /// `t`'s whole day, as `-D` makes it of the flags' time: its midnight in
 /// its own zone, `P1D` wide.
-fn whole_day(t: &DatumTime) -> Result<DatumTime> {
+pub(crate) fn whole_day(t: &DatumTime) -> Result<DatumTime> {
     let full_day = TimeArgs {
         full_day: true,
         ..Default::default()

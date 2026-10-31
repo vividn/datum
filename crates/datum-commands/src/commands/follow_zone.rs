@@ -12,39 +12,70 @@ use datum_parse::input::TimeArgs;
 use std::io::IsTerminal;
 
 use crate::args::LogArgs;
-use crate::commands::log_core::{build_time_from_flags, log_entry, zone_is_settled};
+use crate::commands::log_core::{
+    build_time_from_flags, log_entry, parse_log_args, parse_reserved_occur_time, whole_day,
+    zone_is_settled,
+};
 use crate::commands::question::{is_yes, page, Question};
 
-/// The zone the `timezone` field holds at the instant the flags name, where
+/// The zone the `timezone` field holds at the instant the line names, where
 /// no `-z` or offset says (da-mvt5i). Which zone applies depends on the
-/// instant the zone gives, so each stretch reads the flags in its own zone
+/// instant the zone gives, so each stretch reads the line in its own zone
 /// ([`Declared::reading_itself`]): `-yyt 8` is 8:00 in Lisbon when the trip
 /// begins at 8:00 Lisbon time, though 8:00 here was before it. Where no stretch
-/// reads them inside itself, a clock skipped by a move east, it is the zone
-/// held at the flags read in the host's, keeping the clock typed, which `check
+/// reads it inside itself, a clock skipped by a move east, it is the zone
+/// held at the line read in the host's, keeping the clock typed, which `check
 /// tz` then names (`tz_off_declared`).
 pub(crate) fn declared_zone(
     db: &Db,
-    time: &TimeArgs,
+    args: &LogArgs,
+    action: Action,
     now: DateTime<Utc>,
 ) -> Result<Option<String>> {
-    if zone_is_settled(time) {
+    if zone_is_settled(&args.time) {
         return Ok(None);
     }
     let declared = db.declared_zones()?;
     let zone = declared
-        .reading_itself(|zone| read_in(time, Some(zone), now))
-        .or_else(|| declared.at(read_in(time, None, now)?));
+        .reading_itself(|zone| read_in(args, action, Some(zone), now))
+        .or_else(|| declared.at(read_in(args, action, None, now)?));
     Ok(zone.map(str::to_string))
 }
 
-/// The instant the flags name, read in `zone`, or the host's.
-fn read_in(time: &TimeArgs, zone: Option<&str>, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+/// The instant the line names, read in `zone`, or the host's: the flags', or
+/// an `occur_time=` key's, one more `-t` on them (da-87wvg), read as the log
+/// reads it: from the flags' time and not the midnight `-D` makes of it, then
+/// made the key's whole day.
+fn read_in(
+    args: &LogArgs,
+    action: Action,
+    zone: Option<&str>,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
     let time = TimeArgs {
         timezone: zone.map(str::to_string),
+        ..args.time.clone()
+    };
+    let clock = TimeArgs {
+        full_day: false,
         ..time.clone()
     };
-    Some(build_time_from_flags(&time, now).ok()?.utc)
+    let base = build_time_from_flags(&clock, now).ok()?;
+    let key = parse_log_args(args, action, Some(base.clone()), None)
+        .ok()
+        .and_then(|parsed| parsed.extra_data?.get("occur_time").cloned());
+    let at = match key {
+        Some(key) => parse_reserved_occur_time(&key, &base).ok()?,
+        None => return Some(build_time_from_flags(&time, now).ok()?.utc),
+    };
+    Some(
+        if time.full_day {
+            whole_day(&at).ok()?
+        } else {
+            at
+        }
+        .utc,
+    )
 }
 
 /// How far from now a line's time may be and still be the place this device
@@ -59,6 +90,7 @@ const ABOUT_NOW: chrono::TimeDelta = chrono::TimeDelta::minutes(15);
 pub(crate) fn following(
     db: &Db,
     args: &LogArgs,
+    action: Action,
     stored: &str,
     now: DateTime<Utc>,
 ) -> Result<Option<String>> {
@@ -71,8 +103,8 @@ pub(crate) fn following(
     let Some(device) = device_zone() else {
         return Ok(None);
     };
-    let in_device = read_in(&args.time, Some(&device), now);
-    let about_now = [read_in(&args.time, Some(stored), now), in_device]
+    let in_device = read_in(args, action, Some(&device), now);
+    let about_now = [read_in(args, action, Some(stored), now), in_device]
         .into_iter()
         .flatten()
         .any(|at| (at - now).abs() <= ABOUT_NOW);
